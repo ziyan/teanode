@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
+	"github.com/ziyan/teanode/internal/agent/indexed"
 	"github.com/ziyan/teanode/internal/agent/reading"
+	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -65,6 +67,15 @@ type AgentGraphQuery interface {
 
 	// The places the person has pointed their agent at. Needs agent:use.
 	ListAgentKnowledgeSources(ctx context.Context) ([]*models.AgentKnowledgeSource, error)
+
+	// Passages from what those places indexed, by words: the same search
+	// the agent's knowledge tool runs, so that a person can look through
+	// their own documents without asking their agent to. Needs agent:use.
+	SearchAgentDocuments(ctx context.Context, arguments SearchAgentDocumentsArguments) (*indexed.Found, error)
+
+	// One of those documents, from an offset: the heading a search cites
+	// and as much of the text as was asked for. Needs agent:use.
+	ReadAgentDocument(ctx context.Context, arguments ReadAgentDocumentArguments) (*indexed.Extract, error)
 }
 
 // AgentGraphMutation changes it.
@@ -294,6 +305,34 @@ type SaveAgentKnowledgeSourceArguments struct {
 
 type DeleteAgentKnowledgeSourceArguments struct {
 	SourceID string `json:"sourceId"`
+}
+
+// SearchAgentDocumentsArguments is what to look for in what was indexed.
+type SearchAgentDocumentsArguments struct {
+	// Query is words, a name, or an identifier out of a log: an
+	// identifier is looked up exactly as well as searched for.
+	Query string `json:"query"`
+
+	// First is how many passages; zero is indexed.SearchLimit.
+	First int `json:"first" graphapi:"nullable"`
+
+	// SourceID narrows the search to one source, by its identifier or by
+	// its name, because a person types the name and a script has the
+	// identifier.
+	SourceID string `json:"sourceId" graphapi:"nullable"`
+}
+
+// ReadAgentDocumentArguments is which document to read and how much of it.
+type ReadAgentDocumentArguments struct {
+	// DocumentID is the document, or the "document#passage" a search
+	// cites.
+	DocumentID string `json:"documentId"`
+
+	// From is where in the text to start, in characters, and First how
+	// many to return; zero is indexed.ReadLimit. A read that does not
+	// reach the end says where the next one starts.
+	From  int `json:"from" graphapi:"nullable"`
+	First int `json:"first" graphapi:"nullable"`
 }
 
 // AgentPageRevision is one change to a page, as somebody reads it.
@@ -836,6 +875,77 @@ func (self *graph) ListAgentKnowledgeSources(ctx context.Context) ([]*models.Age
 		sources = []*models.AgentKnowledgeSource{}
 	}
 	return sources, nil
+}
+
+// SearchAgentDocuments is the knowledge tool's search, run for the person
+// rather than for their agent.
+//
+// It is indexed.Search either way: the tool prints the rows into a turn
+// and this hands them back as data, and neither can find something the
+// other cannot. What the deployment has decides how they are ranked --
+// with an embedding model, what the words find and what the question
+// means, fused; without one, the words alone, which the result says.
+func (self *graph) SearchAgentDocuments(ctx context.Context, arguments SearchAgentDocumentsArguments) (*indexed.Found, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	var sourceIds []string
+	if named := strings.TrimSpace(arguments.SourceID); named != "" {
+		source, err := self.agentSourceNamed(tx, found.ID, named)
+		if err != nil {
+			return nil, err
+		}
+		sourceIds = []string{source.ID}
+	}
+	// Nil where agents are off, which searches by words rather than
+	// refusing: what was indexed is still theirs to look through.
+	var meaning indexed.Meaning
+	if worker := self.agentWorker(); worker != nil {
+		meaning = worker.KnowledgeMeaning(found.ID)
+	}
+	return indexed.Search(ctx, tx, meaning, found.ID, indexed.Query{
+		Words: arguments.Query, SourceIds: sourceIds, Limit: arguments.First,
+	})
+}
+
+// ReadAgentDocument reads one of the caller's own documents.
+//
+// A document is found under the caller's agent, so an identifier out of
+// somebody else's search is not there: not found, not somebody else's
+// text.
+func (self *graph) ReadAgentDocument(ctx context.Context, arguments ReadAgentDocumentArguments) (*indexed.Extract, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	extract, err := indexed.Read(self.transaction(ctx), found.ID, arguments.DocumentID, arguments.From, arguments.First)
+	if err != nil {
+		return nil, err
+	}
+	if extract == nil {
+		return nil, api.ErrNotFound
+	}
+	return extract, nil
+}
+
+// agentSourceNamed is a source by its identifier or by its name, which is
+// what the command line's --source takes.
+func (self *graph) agentSourceNamed(tx db.Transaction, agentId, wanted string) (*models.AgentKnowledgeSource, error) {
+	source, err := tx.GetAgentSource(agentId, wanted)
+	if err != nil {
+		return nil, err
+	}
+	if source == nil {
+		if source, err = tx.GetAgentSourceByName(agentId, wanted); err != nil {
+			return nil, err
+		}
+	}
+	if source == nil {
+		return nil, api.ErrNotFound
+	}
+	return source, nil
 }
 
 // --- writing ----------------------------------------------------------

@@ -10,6 +10,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/ziyan/teanode/internal/agent/indexed"
 	"github.com/ziyan/teanode/internal/agent/reading"
 	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/models"
@@ -164,6 +165,28 @@ func newAgentKnowledgeCommand() *cli.Command {
 				Usage:  "the sources, with how far each has got",
 				Flags:  []cli.Flag{JSONFlag()},
 				Action: runKnowledgeList,
+			},
+			{
+				Name:      "search",
+				Usage:     "find passages in what has been indexed: your code, your chat, your notes",
+				ArgsUsage: "<words>",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.IntFlag{Name: "first", Usage: "how many passages", Value: indexed.SearchLimit},
+					&cli.StringFlag{Name: "source", Usage: "narrow to one source, by name or identifier"},
+				},
+				Action: runKnowledgeSearch,
+			},
+			{
+				Name:      "read",
+				Usage:     "read one of those documents, by the identifier a search prints",
+				ArgsUsage: "<document-id>",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.IntFlag{Name: "from", Usage: "where in the document to start, in characters"},
+					&cli.IntFlag{Name: "first", Usage: "how many characters", Value: indexed.ReadLimit},
+				},
+				Action: runKnowledgeRead,
 			},
 			{
 				Name:      "add",
@@ -809,6 +832,114 @@ func knowledgeSourceRow(source *client.AgentKnowledgeSource) []string {
 		source.ID, source.Name, source.Kind, where, state,
 		strconv.Itoa(source.DocumentCount), strconv.Itoa(source.ChunkCount), note,
 	}
+}
+
+// runKnowledgeSearch searches what the sources indexed.
+//
+// The same search the agent's knowledge tool runs, printed the way the
+// tool reads it: an identifier looked up exactly first, then the
+// passages, each under the document it came from. A passage is somebody
+// else's text -- a commit message, a chat post -- so it goes through
+// forTerminal before it is written out.
+func runKnowledgeSearch(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 1 {
+		return fmt.Errorf("search for what? teanode agent knowledge search \"the migration that failed\"")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	found, err := client.SearchAgentDocuments(ctx, connection,
+		strings.Join(command.Args().Slice(), " "), int(command.Int("first")), command.String("source"))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(found)
+	}
+	if found == nil || (len(found.Passages) == 0 && len(found.Definitions) == 0) {
+		_, _ = fmt.Fprintln(command.Writer, "nothing in what has been indexed is about that")
+		return nil
+	}
+	if len(found.Definitions) > 0 {
+		_, _ = fmt.Fprintln(command.Writer, "Defined in:")
+		for _, definition := range found.Definitions {
+			_, _ = fmt.Fprintf(command.Writer, "  %s (%s) — %s:%d  [%s]\n",
+				forTerminal(definition.Symbol), forTerminal(definition.Kind),
+				forTerminal(definition.ExternalID), definition.Line, definition.DocumentID)
+		}
+		_, _ = fmt.Fprintln(command.Writer)
+	}
+	for _, passage := range found.Passages {
+		heading := forTerminal(passage.Title)
+		if passage.Author != "" {
+			heading += " — " + forTerminal(passage.Author)
+		}
+		if passage.HappenedAt != nil {
+			heading += " — " + passage.HappenedAt.Format("2 Jan 2006")
+		}
+		if passage.Source != "" {
+			heading += " — " + forTerminal(passage.Source)
+		}
+		_, _ = fmt.Fprintf(command.Writer, "%s  [%s#%d]\n", heading, passage.DocumentID, passage.Number)
+		_, _ = fmt.Fprintln(command.Writer, indent(forTerminal(excerpt(passage.Text, indexed.PassageShown)), "  "))
+		_, _ = fmt.Fprintln(command.Writer)
+	}
+	if !found.Meaningful {
+		_, _ = fmt.Fprintln(command.Writer, "(found by words alone; this deployment cannot search by meaning)")
+	}
+	return nil
+}
+
+// excerpt is as much of a passage as a listing shows, cut between
+// characters rather than inside one, and marked where it was cut. The
+// whole passage is one `knowledge read` away, and twelve whole passages
+// are a screenful nobody reads.
+func excerpt(text string, characters int) string {
+	runes := []rune(text)
+	if len(runes) <= characters {
+		return text
+	}
+	return string(runes[:characters]) + "…"
+}
+
+// runKnowledgeRead reads one indexed document, a slice at a time.
+func runKnowledgeRead(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 1 {
+		return fmt.Errorf("read which? give the identifier a search printed: teanode agent knowledge read <document-id>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	extract, err := client.ReadAgentDocument(ctx, connection,
+		command.Args().First(), int(command.Int("from")), int(command.Int("first")))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(extract)
+	}
+	if extract == nil {
+		return fmt.Errorf("there is no document %q", command.Args().First())
+	}
+	_, _ = fmt.Fprintln(command.Writer, forTerminal(extract.Title))
+	if extract.URL != "" {
+		_, _ = fmt.Fprintln(command.Writer, forTerminal(extract.URL))
+	}
+	if extract.Author != "" {
+		_, _ = fmt.Fprintln(command.Writer, "by "+forTerminal(extract.Author))
+	}
+	if extract.Source != "" {
+		_, _ = fmt.Fprintln(command.Writer, "from "+forTerminal(extract.Source))
+	}
+	_, _ = fmt.Fprintln(command.Writer)
+	_, _ = fmt.Fprintln(command.Writer, forTerminal(extract.Text))
+	if extract.Next > 0 {
+		_, _ = fmt.Fprintf(command.Writer, "\n… %d characters more: teanode agent knowledge read %s --from %d\n",
+			extract.Total-extract.Next, extract.DocumentID, extract.Next)
+	}
+	return nil
 }
 
 func runKnowledgeAdd(ctx context.Context, command *cli.Command) error {

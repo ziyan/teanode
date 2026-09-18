@@ -128,6 +128,62 @@ type AgentKnowledgeSpecification struct {
 	MailboxID string   `json:"mailboxId"`
 }
 
+// AgentPassage is one passage a search of what was indexed found, with
+// enough of the document it came from to cite it.
+type AgentPassage struct {
+	DocumentID string     `json:"documentId"`
+	ExternalID string     `json:"externalId"`
+	Title      string     `json:"title"`
+	URL        string     `json:"url"`
+	Kind       string     `json:"kind"`
+	Author     string     `json:"author"`
+	SourceID   string     `json:"sourceId"`
+	Source     string     `json:"source"`
+	HappenedAt *time.Time `json:"happenedAt"`
+	Private    bool       `json:"private"`
+	Number     int        `json:"number"`
+	Text       string     `json:"text"`
+	Score      float64    `json:"score"`
+}
+
+// AgentDefinition is one place an identifier in the words is defined.
+type AgentDefinition struct {
+	Symbol     string `json:"symbol"`
+	Kind       string `json:"kind"`
+	Line       int    `json:"line"`
+	DocumentID string `json:"documentId"`
+	ExternalID string `json:"externalId"`
+	Title      string `json:"title"`
+}
+
+// AgentDocumentSearch is what a search of what was indexed found.
+// Meaningful is false where the deployment can only search by words.
+type AgentDocumentSearch struct {
+	Passages    []*AgentPassage    `json:"passages"`
+	Definitions []*AgentDefinition `json:"definitions"`
+	Meaningful  bool               `json:"meaningful"`
+}
+
+// AgentDocumentExtract is a document and a slice of its text. Next is
+// where the read that carries on from this one starts, and zero at the
+// end of the document.
+type AgentDocumentExtract struct {
+	DocumentID string     `json:"documentId"`
+	ExternalID string     `json:"externalId"`
+	Title      string     `json:"title"`
+	URL        string     `json:"url"`
+	Kind       string     `json:"kind"`
+	Author     string     `json:"author"`
+	SourceID   string     `json:"sourceId"`
+	Source     string     `json:"source"`
+	HappenedAt *time.Time `json:"happenedAt"`
+	Private    bool       `json:"private"`
+	From       int        `json:"from"`
+	Text       string     `json:"text"`
+	Total      int        `json:"total"`
+	Next       int        `json:"next"`
+}
+
 // AgentDream is what the nightly run did.
 type AgentDream struct {
 	ID         string     `json:"id"`
@@ -165,6 +221,8 @@ const nodeFields = `{ id path kind name aliases summary contactId pinned importa
 const factFields = `{ id number kind text happenedAt confidence inferred evidence { kind id quote } audiences dormant createdAt }`
 const sourceFields = `{ id kind name specification { computer path format include exclude tool start depth mailboxId } rootPath enabled cron lastRunAt nextRunAt lastError documentCount chunkCount refusedCount more unknownAuthors }`
 const revisionFields = `{ revision kind actor summary change before after path reason createdAt }`
+const passageFields = `{ documentId externalId title url kind author sourceId source happenedAt private number text score }`
+const extractFields = `{ documentId externalId title url kind author sourceId source happenedAt private from text total next }`
 const dreamFields = `{ id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse strengthened associated rehearsed gaps unknown revised tokens lastError proposals { kind path to reason } }`
 
 // The documents.
@@ -215,6 +273,16 @@ const (
 	DocumentListAgentKnowledgeSources = `query { ListAgentKnowledgeSources ` + sourceFields + ` }`
 	DocumentSaveAgentKnowledgeSource  = `mutation ($sourceId: String, $kind: String, $name: String, $computer: String, $path: String, $format: String, $rootPath: String, $cron: String, $enabled: Boolean, $mailboxId: String) {
 		SaveAgentKnowledgeSource(sourceId: $sourceId, kind: $kind, name: $name, computer: $computer, path: $path, format: $format, rootPath: $rootPath, cron: $cron, enabled: $enabled, mailboxId: $mailboxId) ` + sourceFields + `
+	}`
+	DocumentSearchAgentDocuments = `query ($query: String!, $first: Int, $sourceId: String) {
+		SearchAgentDocuments(query: $query, first: $first, sourceId: $sourceId) {
+			passages ` + passageFields + `
+			definitions { symbol kind line documentId externalId title }
+			meaningful
+		}
+	}`
+	DocumentReadAgentDocument = `query ($documentId: String!, $from: Int, $first: Int) {
+		ReadAgentDocument(documentId: $documentId, from: $from, first: $first) ` + extractFields + `
 	}`
 	DocumentDeleteAgentKnowledgeSource = `mutation ($sourceId: String!) { DeleteAgentKnowledgeSource(sourceId: $sourceId) }`
 	DocumentSyncAgentKnowledgeSource   = `mutation ($sourceId: String!) { SyncAgentKnowledgeSource(sourceId: $sourceId) }`
@@ -388,6 +456,35 @@ func DeleteAgentKnowledgeSource(ctx context.Context, connection *Client, sourceI
 		DeleteAgentKnowledgeSource bool `json:"DeleteAgentKnowledgeSource"`
 	}
 	return connection.Execute(ctx, DocumentDeleteAgentKnowledgeSource, map[string]any{"sourceId": sourceId}, &result)
+}
+
+// SearchAgentDocuments finds passages in what the sources indexed: the
+// same search the agent's own knowledge tool runs.
+func SearchAgentDocuments(ctx context.Context, connection *Client, query string, first int, sourceId string) (*AgentDocumentSearch, error) {
+	var result struct {
+		SearchAgentDocuments *AgentDocumentSearch `json:"SearchAgentDocuments"`
+	}
+	variables := map[string]any{"query": query, "first": first}
+	if sourceId != "" {
+		variables["sourceId"] = sourceId
+	}
+	if err := connection.Execute(ctx, DocumentSearchAgentDocuments, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.SearchAgentDocuments, nil
+}
+
+// ReadAgentDocument reads one indexed document from an offset.
+func ReadAgentDocument(ctx context.Context, connection *Client, documentId string, from, first int) (*AgentDocumentExtract, error) {
+	var result struct {
+		ReadAgentDocument *AgentDocumentExtract `json:"ReadAgentDocument"`
+	}
+	if err := connection.Execute(ctx, DocumentReadAgentDocument, map[string]any{
+		"documentId": documentId, "from": from, "first": first,
+	}, &result); err != nil {
+		return nil, err
+	}
+	return result.ReadAgentDocument, nil
 }
 
 // SyncAgentKnowledgeSource reads one again now.

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent/indexed"
 	"github.com/ziyan/teanode/internal/agent/reading"
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/computer"
@@ -28,15 +29,10 @@ import (
 
 // The bounds.
 const (
-	// searchLimit is how many rows a search answers with, and readSlice
-	// how much of a document one read returns.
-	searchLimit = 12
-	readSlice   = 6000
-
-	// chunkShown is how much of a chunk goes in an answer. Enough to see
-	// whether it is the right one, short enough that twelve of them do
-	// not fill the turn.
-	chunkShown = 700
+	// readSlice is how much of a document one read returns. How many rows
+	// a search answers with is indexed.SearchLimit, shared with the other
+	// surfaces.
+	readSlice = 6000
 )
 
 func init() {
@@ -179,14 +175,13 @@ func runKnowledge(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 }
 
 // searchAction finds passages.
+//
+// The search itself is indexed.Search, which the API and the command line
+// call too; what is left here is how a turn reads it.
 func searchAction(ctx context.Context, run tools.Run, arguments *knowledgeArguments) (*tools.Result, error) {
 	query := strings.TrimSpace(arguments.Query)
 	if query == "" {
 		return nil, fmt.Errorf("search for what? give some words")
-	}
-	limit := arguments.Limit
-	if limit <= 0 {
-		limit = searchLimit
 	}
 	agentId := run.Agent().ID
 
@@ -205,173 +200,47 @@ func searchAction(ctx context.Context, run tools.Run, arguments *knowledgeArgume
 		sourceIds = []string{source.ID}
 	}
 
-	var builder strings.Builder
-
-	// An identifier before anything else. A name pasted out of a log
-	// resolves to a file and a line exactly, where a cosine would put
-	// twenty vaguely related files in front of it.
-	if symbols := lookUpSymbols(ctx, run, query); symbols != "" {
-		builder.WriteString(symbols + "\n")
+	// The run is what knows what a question means, where the deployment
+	// has an embedding model to ask; without one the search is the words.
+	var meaning indexed.Meaning
+	if searcher, ok := run.(tools.KnowledgeSearching); ok {
+		meaning = searcher
 	}
-
-	chunks, meaningful, err := findChunks(ctx, run, sourceIds, query, limit)
-	if err != nil {
+	var found *indexed.Found
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		found, err = indexed.Search(ctx, tx, meaning, agentId, indexed.Query{
+			Words: query, SourceIds: sourceIds, Limit: arguments.Limit,
+		})
+		return err
+	}); err != nil {
 		return nil, err
 	}
-	if len(chunks) == 0 {
+
+	var builder strings.Builder
+	// An identifier before anything else: a name pasted out of a log
+	// resolves to a file and a line exactly.
+	if len(found.Definitions) > 0 {
+		builder.WriteString("Defined in:\n")
+		for _, definition := range found.Definitions {
+			builder.WriteString("  " + definition.Symbol + " (" + definition.Kind + ") — " +
+				definition.ExternalID + ":" + strconv.Itoa(definition.Line) + "  [" + definition.DocumentID + "]\n")
+		}
+		builder.WriteString("\n")
+	}
+	if len(found.Passages) == 0 {
 		if builder.Len() > 0 {
 			return tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), nil
 		}
 		return tools.TextResult("nothing in what they have indexed is about that"), nil
 	}
-
-	documents, err := documentsOf(ctx, run, chunks)
-	if err != nil {
-		return nil, err
+	for _, passage := range found.Passages {
+		builder.WriteString(passage.Cite() + "\n")
+		builder.WriteString(indent(cut(passage.Text, indexed.PassageShown)) + "\n\n")
 	}
-	for _, chunk := range chunks {
-		document := documents[chunk.DocumentID]
-		if document == nil {
-			continue
-		}
-		builder.WriteString(document.Cite())
-		if author := document.Author(); author != "" {
-			builder.WriteString(" — " + author)
-		}
-		if document.HappenedAt != nil {
-			builder.WriteString(" — " + document.HappenedAt.Format("2 Jan 2006"))
-		}
-		builder.WriteString("  [" + document.ID + "#" + strconv.Itoa(chunk.Number) + "]\n")
-		builder.WriteString(indent(cut(chunk.Text, chunkShown)) + "\n\n")
-	}
-	if !meaningful {
+	if !found.Meaningful {
 		builder.WriteString("(found by words alone; this deployment cannot search by meaning)\n")
 	}
 	return tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), nil
-}
-
-// findChunks is the hybrid search: words, and meaning where the
-// deployment can say what a passage means.
-//
-// Where the database can rank vectors itself the two are separate
-// searches fused by rank. Where it cannot, meaning re-ranks what the
-// words found, which is honest and bounded: it finds everything the words
-// find, in a better order, and misses a paraphrase sharing no word.
-func findChunks(ctx context.Context, run tools.Run, sourceIds []string, query string, limit int) ([]*models.AgentChunk, bool, error) {
-	var byWords []*models.AgentChunk
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		byWords, err = tx.SearchAgentChunks(run.Agent().ID, sourceIds, query, limit*4)
-		return err
-	}); err != nil {
-		return nil, false, err
-	}
-	searcher, ok := run.(tools.KnowledgeSearching)
-	if !ok {
-		return cutTo(byWords, limit), false, nil
-	}
-	byMeaning, indexed := searcher.SearchKnowledgeByMeaning(ctx, sourceIds, query, limit*2)
-	if !indexed {
-		// No index: re-rank what the words found, rather than reading a
-		// hundred thousand vectors into memory to sort them.
-		return cutTo(searcher.RankChunksByMeaning(ctx, query, byWords, limit), limit), len(byWords) > 0, nil
-	}
-	return fuse(limit, byMeaning, byWords), true, nil
-}
-
-func cutTo(chunks []*models.AgentChunk, limit int) []*models.AgentChunk {
-	if len(chunks) > limit {
-		return chunks[:limit]
-	}
-	return chunks
-}
-
-// fuse ranks what two searches found by reciprocal rank: position rather
-// than score, because a full-text rank and a cosine are not on one scale.
-func fuse(limit int, lists ...[]*models.AgentChunk) []*models.AgentChunk {
-	const constant = 60
-	scores := map[string]float64{}
-	byId := map[string]*models.AgentChunk{}
-	var order []string
-	for _, list := range lists {
-		for position, chunk := range list {
-			if _, seen := byId[chunk.ID]; !seen {
-				order = append(order, chunk.ID)
-			}
-			scores[chunk.ID] += 1 / float64(constant+position+1)
-			byId[chunk.ID] = chunk
-		}
-	}
-	for index := 0; index < len(order); index++ {
-		for other := index + 1; other < len(order); other++ {
-			if scores[order[other]] > scores[order[index]] {
-				order[index], order[other] = order[other], order[index]
-			}
-		}
-	}
-	ranked := make([]*models.AgentChunk, 0, limit)
-	for _, id := range order {
-		if len(ranked) >= limit {
-			break
-		}
-		ranked = append(ranked, byId[id])
-	}
-	return ranked
-}
-
-// lookUpSymbols answers an identifier exactly.
-func lookUpSymbols(ctx context.Context, run tools.Run, query string) string {
-	var names []string
-	for _, word := range strings.FieldsFunc(query, func(character rune) bool {
-		return character == ' ' || character == ',' || character == '(' || character == ')' || character == '"'
-	}) {
-		word = strings.Trim(word, ".:;")
-		if tools.LooksLikeSymbol(word) {
-			names = append(names, word)
-			// A log line says "mwesexecutor.py:97 ResetPayloadAngularOffset";
-			// both halves are worth asking about.
-			if before, _, found := strings.Cut(word, "."); found && before != "" {
-				names = append(names, before)
-			}
-		}
-	}
-	if len(names) == 0 {
-		return ""
-	}
-	var symbols []*models.AgentSymbol
-	var documents map[string]*models.AgentDocument
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		found, err := tx.LookupAgentSymbols(run.Agent().ID, names, 10)
-		if err != nil || len(found) == 0 {
-			return err
-		}
-		symbols = found
-		ids := make([]string, 0, len(found))
-		for _, symbol := range found {
-			ids = append(ids, symbol.DocumentID)
-		}
-		list, err := tx.GetAgentDocuments(run.Agent().ID, ids)
-		if err != nil {
-			return err
-		}
-		documents = map[string]*models.AgentDocument{}
-		for _, document := range list {
-			documents[document.ID] = document
-		}
-		return nil
-	}); err != nil || len(symbols) == 0 {
-		return ""
-	}
-	var builder strings.Builder
-	builder.WriteString("Defined in:\n")
-	for _, symbol := range symbols {
-		document := documents[symbol.DocumentID]
-		if document == nil {
-			continue
-		}
-		builder.WriteString("  " + symbol.Symbol + " (" + symbol.Kind + ") — " +
-			document.ExternalID + ":" + strconv.Itoa(symbol.Line) + "  [" + document.ID + "]\n")
-	}
-	return builder.String()
 }
 
 // readAction returns a document.
@@ -380,49 +249,28 @@ func readAction(ctx context.Context, run tools.Run, arguments *knowledgeArgument
 	if id == "" {
 		return nil, fmt.Errorf("read which? give the identifier from a search result")
 	}
-	// A search cites "documentId#chunk"; take either.
-	id, _, _ = strings.Cut(id, "#")
-
-	var document *models.AgentDocument
-	var chunks []*models.AgentChunk
+	var extract *indexed.Extract
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		if document, err = tx.GetAgentDocument(run.Agent().ID, id); err != nil || document == nil {
-			return err
-		}
-		chunks, err = tx.ListAgentChunks(run.Agent().ID, document.ID)
+		extract, err = indexed.Read(tx, run.Agent().ID, id, arguments.From, readSlice)
 		return err
 	}); err != nil {
 		return nil, err
 	}
-	if document == nil {
+	if extract == nil {
 		return nil, fmt.Errorf("there is no document %q", id)
-	}
-	var whole strings.Builder
-	for _, chunk := range chunks {
-		whole.WriteString(chunk.Text)
-		whole.WriteByte('\n')
-	}
-	text := whole.String()
-	from := arguments.From
-	if from < 0 || from > len(text) {
-		from = 0
-	}
-	end := from + readSlice
-	if end > len(text) {
-		end = len(text)
 	}
 
 	var builder strings.Builder
-	builder.WriteString(document.Cite() + "\n")
-	if document.URL != "" {
-		builder.WriteString(document.URL + "\n")
+	builder.WriteString(extract.Title + "\n")
+	if extract.URL != "" {
+		builder.WriteString(extract.URL + "\n")
 	}
-	if author := document.Author(); author != "" {
-		builder.WriteString("by " + author + "\n")
+	if extract.Author != "" {
+		builder.WriteString("by " + extract.Author + "\n")
 	}
-	builder.WriteString("\n" + text[from:end])
-	if end < len(text) {
-		fmt.Fprintf(&builder, "\n\n… %d characters more; read again with from: %d", len(text)-end, end)
+	builder.WriteString("\n" + extract.Text)
+	if extract.Next > 0 {
+		fmt.Fprintf(&builder, "\n\n… %d characters more; read again with from: %d", extract.Total-extract.Next, extract.Next)
 	}
 	return tools.TextResult("%s", builder.String()), nil
 }
@@ -761,26 +609,6 @@ func sourceNamed(ctx context.Context, run tools.Run, name string) (*models.Agent
 		return nil, fmt.Errorf("there is no source called %q", name)
 	}
 	return source, nil
-}
-
-// documentsOf is the document each chunk came from.
-func documentsOf(ctx context.Context, run tools.Run, chunks []*models.AgentChunk) (map[string]*models.AgentDocument, error) {
-	ids := make([]string, 0, len(chunks))
-	for _, chunk := range chunks {
-		ids = append(ids, chunk.DocumentID)
-	}
-	var documents []*models.AgentDocument
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		documents, err = tx.GetAgentDocuments(run.Agent().ID, ids)
-		return err
-	}); err != nil {
-		return nil, err
-	}
-	byId := make(map[string]*models.AgentDocument, len(documents))
-	for _, document := range documents {
-		byId[document.ID] = document
-	}
-	return byId, nil
 }
 
 func cut(text string, characters int) string {
