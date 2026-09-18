@@ -412,6 +412,11 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 		} else if released > 0 {
 			log.Noticef("put back %d dream(s) that died", released)
 		}
+		if released, err := tx.ReleaseStaleAgentJobsOfKind(models.AgentJobIngest, now.Add(-ingestLongest-5*time.Minute)); err != nil {
+			log.Warningf("cannot put back an ingest that died: %s", err)
+		} else if released > 0 {
+			log.Noticef("put back %d ingest(s) that died", released)
+		}
 		if released, err := tx.ReleaseStaleAgentJobs(now.Add(-staleClaim)); err != nil {
 			return err
 		} else if released > 0 {

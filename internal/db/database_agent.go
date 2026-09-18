@@ -546,10 +546,13 @@ func (self *transaction) FinishAgentJob(jobId, claimedBy string, status models.A
 }
 
 func (self *transaction) ReleaseStaleAgentJobs(before time.Time) (int64, error) {
-	// Every kind but the night, which has its own bound: a night of forty
-	// minutes was put back at fifteen while still running, and a second
-	// night started beside it.
-	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_at\" < ? AND \"kind\" <> ?", string(models.AgentJobRunning), before, string(models.AgentJobDream)).Updates(map[string]any{
+	// Every kind but the night and the ingest, which have bounds of their
+	// own: a night of forty minutes was put back at fifteen while still
+	// running, and a second night started beside it. An ingest page of
+	// a large source read through a script took twenty-four minutes,
+	// was put back at fifteen, and ran a second time beside the first --
+	// and with both holding a slot the night could not claim one.
+	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_at\" < ? AND \"kind\" NOT IN ?", string(models.AgentJobRunning), before, []string{string(models.AgentJobDream), string(models.AgentJobIngest)}).Updates(map[string]any{
 		"status": string(models.AgentJobQueued), "claimed_at": nil, "claimed_by": "",
 	})
 	return result.RowsAffected, result.Error
