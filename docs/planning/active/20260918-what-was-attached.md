@@ -50,10 +50,10 @@ itself what to read.
 
 ## Progress
 
-- [ ] Milestone 1: a record can name its attachments, and the daemon reports
-      them as documents with their bytes in object storage
-- [ ] Milestone 2: a document's bytes can be fetched back from storage, and a
-      document nobody can read yet says so on the source's page
+- [x] Milestone 1: a record can name its attachments, and the daemon reports
+      them as documents with their bytes in object storage — PR #122
+- [x] Milestone 2: a document's bytes can be fetched back from storage, and a
+      document nobody can read yet says so on the source's page — PR #122
 - [ ] Milestone 3: the night decides whether an attachment is worth reading,
       from what it knows for free
 - [ ] Milestone 4: the night reads a picture with a vision model and files what
@@ -304,6 +304,27 @@ catalogues, and check it in Chrome at both a desktop width and a phone width
 before opening the pull request.
 
 ## Surprises & Discoveries
+
+An attachment with no text would have been offered to the night by
+`ListAgentDocumentsToDigest`, which selects anything not yet marked digested.
+The night would have shown the model a heading and silence, learned nothing, and
+marked the document read — and read is the one state a document must not reach
+without having been read, because nothing goes back for it afterwards. Fifty
+thousand files would have been quietly consumed on the first night after the
+plumbing landed. A file with no passages is now excluded from that query, and
+becomes eligible the moment something gives it passages.
+
+There are already two different limits called an attachment limit. The existing
+`agent.limits.maxAttachmentBytes` bounds what a person uploads to a
+conversation. Reusing it here would have let a number someone chose for their
+own uploads silently bound an unattended archive scan, so scanning has its own,
+`maxScannedAttachmentBytes`, and both comments say why they are apart.
+
+The computer protocol is an exact-match check: a daemon whose number differs is
+refused outright. So a new action cannot come with a protocol bump without
+detaching every daemon that has not been updated. The `blob` action was added
+without one, which is safe because a daemon that does not know it simply never
+reports an attachment to ask about.
 
 The `AgentDocument` type has carried an unused `StorageKey` field and a
 `storage_key` column since the memory graph was built. Nothing has ever set it,
