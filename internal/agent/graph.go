@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -494,7 +496,14 @@ func (self *AskRun) searchGraph(ctx context.Context, words string, limit int) ([
 	}); err != nil {
 		log.Warningf("cannot search the graph of %q: %s", self.settings.Owner.Username, err)
 	}
-	meaningNodes, meaningFacts := self.agent.nearestInGraph(ctx, self.settings.Agent, words, limit)
+	// A turn goes on with whatever it has: the words found what they
+	// found, and half a search is better than none in front of somebody
+	// waiting. Rehearsal is the caller that cannot do this; see
+	// canAnswerFromMemory.
+	meaningNodes, meaningFacts, err := self.agent.nearestInGraph(ctx, self.settings.Agent, words, limit)
+	if err != nil {
+		log.Warningf("cannot rank the graph of %q by meaning: %s", self.settings.Owner.Username, err)
+	}
 
 	return fuseNodes(limit, meaningNodes, wordNodes), fuseFacts(limit, meaningFacts, wordFacts)
 }
@@ -502,7 +511,11 @@ func (self *AskRun) searchGraph(ctx context.Context, words string, limit int) ([
 // SearchGraphByMeaning is what the memory tool's search adds to its own
 // word search. Part of tools.GraphSearching.
 func (self *AskRun) SearchGraphByMeaning(ctx context.Context, words string, limit int) ([]*models.AgentNode, []*models.AgentFact) {
-	return self.agent.nearestInGraph(ctx, self.settings.Agent, words, limit)
+	nodes, facts, err := self.agent.nearestInGraph(ctx, self.settings.Agent, words, limit)
+	if err != nil {
+		log.Warningf("cannot rank the graph of %q by meaning: %s", self.settings.Owner.Username, err)
+	}
+	return nodes, facts
 }
 
 // recalledBlock is one piece of the overlay: the text the next round
@@ -874,11 +887,22 @@ func (self *Agent) embed(ctx context.Context, agentId, kind string, texts []stri
 	return vectors, modelName, len(vectors) > 0
 }
 
-// nearestInGraph is the pages and facts nearest in meaning to some words.
-func (self *Agent) nearestInGraph(ctx context.Context, agent *models.Agent, words string, limit int) ([]*models.AgentNode, []*models.AgentFact) {
+// errNotAskedByMeaning is a search by meaning that did not happen: no
+// embedding model is configured, or the one there is did not answer.
+//
+// It matters that this is not an empty result. Recall can treat the two
+// the same -- a turn with nothing to add carries nothing either way --
+// but rehearsal cannot, because there "the graph was asked and had
+// nothing" is a gap it writes down and "the graph was never asked" is
+// not. Reported as an error so that a caller has to decide which it is.
+var errNotAskedByMeaning = errors.New("the graph could not be asked by meaning")
+
+// nearestInGraph is the pages and facts nearest in meaning to some words,
+// or why it could not look.
+func (self *Agent) nearestInGraph(ctx context.Context, agent *models.Agent, words string, limit int) ([]*models.AgentNode, []*models.AgentFact, error) {
 	vectors, modelName, ok := self.embed(ctx, agent.ID, "recall", []string{cutRunes(words, graphEmbedCharacters)})
 	if !ok {
-		return nil, nil
+		return nil, nil, errNotAskedByMeaning
 	}
 	query := vectors[0]
 	var nodes []*models.AgentNode
@@ -905,10 +929,9 @@ func (self *Agent) nearestInGraph(ctx context.Context, agent *models.Agent, word
 		facts = orderFacts(facts, idsOf(factScores))
 		return nil
 	}); err != nil {
-		log.Warningf("cannot rank the graph by meaning: %s", err)
-		return nil, nil
+		return nil, nil, fmt.Errorf("ranking the graph by meaning: %w", err)
 	}
-	return nodes, facts
+	return nodes, facts, nil
 }
 
 func idsOf(scores []db.Scored) []string {

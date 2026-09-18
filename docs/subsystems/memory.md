@@ -350,10 +350,19 @@ records the ones it cannot answer. Each question ends one of three ways:
 *answered*, when the model names a fact it was shown that answers it;
 *gap*, when the graph was asked and had nothing, which is what the person
 would hear as "I don't know" tomorrow; or *unknown*, when the question
-could not be tried at all — a model that did not answer, an answer with no
-fact behind it. Every failure path is unknown rather than either of the
-others, because a gap that was really a timeout would send the person
-chasing an answer their agent already has. The dream row counts all three,
+could not be tried at all — no embedding model, one that did not answer, a
+database that did not, a model that did not answer, an answer with no fact
+behind it. Every failure path is unknown rather than either of the others,
+because a gap that was really a timeout would send the person chasing an
+answer their agent already has. Only a search that ran and came back
+empty is a gap: the search says so itself now, rather than the phase
+asking afterwards whether an embedding model was configured — a provider
+that timed out was configured, so an outage read as a graph full of holes.
+The judge has to say so too: its answer must carry the field that says
+whether the question was answered, or the verdict is unknown. Read as a
+plain yes-or-no, an absent field was a no, so any object at all that was
+not the one asked for passed for the model having looked and found
+nothing. The dream row counts all three,
 and the Dreams tab reads "12 rehearsed, 3 gaps, 4 unknown". Nobody reads
 the answers; the failures are the point. A gap found at three in the morning costs one model call,
 and the same gap found mid-conversation is the person watching their
@@ -521,8 +530,9 @@ the agent, bootstrap or not.
   And only a fact counts as an answer: a page matching at a quarter's
   similarity says the subject exists, not that the question is answered,
   and counting it made every question answerable. The questions and
-  their verdicts are kept in the dream's notes. Where there is no
-  embedding model there are no gaps rather than all of them.
+  their verdicts are kept in the dream's notes. Where the search cannot
+  be made at all — no embedding model, or one that did not answer —
+  there are no gaps rather than all of them.
 - **The generative half can be wrong.** So a link it writes is stored as
   proposed rather than stated, at half weight, carrying the walk that
   suggested it as its evidence — which is what a person needs to disagree
