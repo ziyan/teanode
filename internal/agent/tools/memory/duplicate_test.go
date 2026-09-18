@@ -197,6 +197,7 @@ func TestReadingTheGraphIsNotAWrite(t *testing.T) {
 		`{"action":"get","path":"self"}`:                   tools.RiskRead,
 		`{"action":"index"}`:                               tools.RiskRead,
 		`{"action":"search","query":"boat"}`:               tools.RiskRead,
+		`{"action":"history","path":"self"}`:               tools.RiskRead,
 		`{"action":"note","path":"self","text":"x"}`:       tools.RiskWrite,
 		`{"action":"forget","path":"self","number":2}`:     tools.RiskWrite,
 		`{"action":"forget","path":"people/alice-chen"}`:   tools.RiskDestructive,
