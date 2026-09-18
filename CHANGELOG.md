@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-09-18
+
+### Added
+
+- A source your agent reads can now read the files you already have, instead of a copy of them. Put an executable named `records` in the folder: asked with no argument it names the files it can produce, and asked for one of those names it prints that file's records. Your agent writes one of these for you when you point it at an archive that is already on your computer, where before it would convert the whole archive into a second copy and leave you to keep the two in step. A folder that already holds records keeps working, and so does a `refresh` script, which is still the right thing when the records have to be fetched from a service rather than read off a disk. (#117)
+
+### Fixed
+
+- Your agent no longer stops reading while it is indexing something large. A pass over a big source could take longer than the server was willing to wait, so it was started a second time beside the first, and between them the two copies used up the workers the nightly reading needed. It now gets the time it actually takes. (#118)
+
 ## [0.34.1] - 2026-09-18
 
 ### Fixed

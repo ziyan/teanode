@@ -169,6 +169,62 @@ pass over a checkout or a chat archive is hours of reading and the
 embeddings that went with it, and there is no way to get them back except
 to pay for them again.
 
+## Sources that are scripts
+
+Most of what a person knows is not in a shape this program has a reader
+for. It is in a drive, a wiki, a tracker, a mailbox behind a command line
+tool, an export somebody downloaded once. So there is one shape that is
+not a reader: a `records` source is a folder on an attached computer
+holding files of JSON lines, one record a line, each saying what it is
+(`kind`), when it happened (`at`), who wrote it (`author`) and what it
+says (`text`). A document-kind record is one document; `chat`-kind
+records are grouped into threads and windows by the same grouping every
+chat goes through. The daemon reads every `.jsonl` and `.ndjson` under
+the folder, in sorted path order, skipping dot-names, so a script may
+keep its state and its downloads beside the records. A document's
+external id is `<file path>#<record id>`, which is why a script that
+keeps its ids keeps its documents.
+
+Two kinds of script fill such a folder, and which one to write is
+decided by where the records are.
+
+An executable named `refresh` in the folder's root is run at the start of
+every pass, before the folder is read, and writes the records. That is
+the shape for records that have to be fetched: a tool asked for what
+changed, an API paged through. Its output goes to `.refresh.log` in the
+folder, truncated each run; a non-zero exit or a timeout fails the pass
+with the last lines of its standard error on the source's page, so a
+source whose token expired says so rather than quietly holding last
+month's documents.
+
+An executable named `records` in the folder's root is the other shape,
+and it writes nothing. Run with no argument it prints the names of its
+files, one a line, in the style of real ones
+(`posts/team/backend.jsonl`); run with one of those names it prints that
+file's records on standard output. The names are files that never exist.
+Everything past the parser is the same code either way, so a virtual file
+files the same documents, under the same ids, with the same hashes, in
+the same order as a real file of that name — which is what lets a source
+stop copying an archive and start reading it in place without a single
+document being filed again. It is read one name at a time, as the pages
+ask for them, and a name that cannot be printed is reported as that
+file's failure the way an unreadable file is. A folder with a `records`
+script needs no `refresh`.
+
+Both run only on the first page of a pass — later pages are the same pass
+still being read, and a script run again under them would move the ground
+the cursor stands on — as the person, with the folder as the working
+directory, in their own environment, with thirty minutes (the server
+waits thirty-five for that first page). Each must be a regular file, not
+a symlink, executable by its owner and owned by that account: a scan is
+the one thing this program does with nobody watching, and the folder
+having been allowed by hand with `teanode computer allow` is the consent
+for what is in it.
+
+The agent writes these scripts. The knowledge tool's `shape` action is
+the record shape and both contracts in words, and asked to index an
+archive that is already on the computer it is told to write a `records`
+script over the files rather than a `refresh` that copies them.
 
 ## Not making the same page twice
 

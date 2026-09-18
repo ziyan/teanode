@@ -121,11 +121,48 @@ agent a question only those documents answer.
     already mid-tree when the upgrade landed. This is what keeps the
     16,000 of 393,000 units whose external ids changed in the conversion
     from staying searchable and dreamed over for ever.
+- [x] (2026-09-18) Milestone 7: a records folder may hold an executable
+  named `records` instead of records, and the files it names are read
+  where the person already keeps them. `records` with no argument prints
+  the names of its files, one a line; `records <name>` prints that file's
+  records. `scanRecords` walks the union of the `.jsonl` files on disk and
+  the names the script lists, a real file winning a clash, and
+  `recordEntries` runs the script for a name that is not on disk.
+  `readRecordsFile` was split so that a file and the script's standard
+  output go through one parser (`readRecords`), which is what makes the
+  ids, the hashes, the chat grouping and the order identical either way;
+  `TestAScriptPagesIdenticallyToTheFilesItReplaces` pages a folder of real
+  files and a folder of a script printing the same content side by side,
+  at one, two and 256 entries a page, and compares every entry and every
+  cursor. The bounds are the refresh's: the same timeout, the same stderr
+  tail on the source's page, a non-zero exit reported as that file's
+  "could not be read", and the one-file cache dropped at the start of each
+  pass because a script's output has no modification time to compare.
+  `recordsFolderLooksReady` and the knowledge tool's guidance accept and
+  now prefer it.
 - [ ] Milestone 5: docs (`docs/subsystems/memory.md`, `docs/reference/command-line.md`,
   `docs/configuration.md` if a setting appears) and the retrospective.
+  `docs/subsystems/memory.md` gained "Sources that are scripts" with
+  Milestone 7, covering the record shape and both script contracts.
 
 ## Surprises & Discoveries
 
+- Observation (2026-09-18): the first shape of a records folder costs a
+  second copy of everything, and for an archive already on the disk that
+  is the wrong trade. The chat export converted to 1.3 GB of records and
+  the Confluence export to 639 MB, both beside originals of 33 GB and
+  their own size, and every nightly refresh rewrote them. The owner:
+  "I'd rather Tea create a script to read my existing files without
+  copying them". Hence the second shape, `records`, in Milestone 7: the
+  script is the folder rather than what fills it, printing the names of
+  its files and then one file's records on demand. It is deliberately not
+  a new format -- the same reader, the same parser, the same cursor -- so
+  that the identity of every document is the identity it would have had
+  as a file, and a source switched from copies to a script re-files
+  nothing. What the shape costs instead is a process per file rather than
+  an open file, which is why the one-file cache matters more here than it
+  did: without it a page that stops mid-file would run the script again
+  for the same file.
 - Observation (2026-09-17 22:20Z): the first pass of any new source failed
   with "the known hashes of this pass are not held here". A source with
   nothing indexed yet sends an empty known map on its first page, and the
@@ -752,6 +789,33 @@ the documents such a source already filed stay searchable, and pointing it
 at a records folder brings it back. The maintainer's is the only such source
 there was, and it was switched to `~/chat-records` and `format: records` at
 01:57Z, before any of this was removed.
+
+## Milestone 7: a folder that reads the files the person already has
+
+At the end of this milestone a records folder need hold no records. An
+executable named `records` in its root is asked two things, and the
+answers are all the daemon needs:
+
+    records                       # the names of its files, one a line
+    records posts/team/dev.jsonl  # that file's records, JSON lines, stdout
+
+The names are relative and in the style of real ones; the daemon sorts
+them with the real files it walked, and a real file of the same name wins.
+Each name is read on demand, once, when a page reaches it. The script runs
+as the person, with the folder as its working directory, in the person's
+environment, under `refreshTimeout`; a non-zero exit, a timeout or a
+failure to start is that file's `could not be read: ...` entry, carrying
+the last lines of the script's standard error (`refreshTail`), except for
+the listing, which fails the pass the way a failed `refresh` does -- a
+folder that cannot say what it holds must not be read as an empty archive
+and swept. `refresh` still runs when a folder has one; a `records` folder
+needs none.
+
+The contract is worth nothing unless the records it prints are
+indistinguishable from records in a file of that name, so `readRecordsFile`
+is now a thin wrapper over `readRecords(relative, io.Reader)` and there is
+one parser. The proof is
+`TestAScriptPagesIdenticallyToTheFilesItReplaces`.
 
 ## Milestone 5: documentation
 
