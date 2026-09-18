@@ -496,8 +496,26 @@ which the unit's participants is built from, so a person's own name here
 is what the nightly write-up recognises as theirs; participants on a chat
 record is ignored.
 
-Lines that are not valid JSON, and records with no id or an empty text,
-are skipped and counted. A file with nothing readable in it is reported
+attachments are the files a record came with: a picture pasted into a
+thread, a document sent with a message.
+
+    "attachments": [{"path": "files/ab12__image.png", "name": "image.png", "contentType": "image/png"}]
+
+path is where the file is on that computer, relative to the records
+folder unless it is absolute; name is what to call it; contentType is
+optional and guessed from the name when it is missing. Each one becomes a
+document of its own, identified by the hash of its bytes, so the same
+picture named by four records is one document. Its bytes are kept in the
+server's store so that something can read them later; nothing reads a
+picture as it is written down here. A file larger than the limit the
+source runs under -- 25 MB unless the operator or the source says
+otherwise -- is named on the source's page as passed over and is not
+kept, and a path outside the directories allowed on that computer is
+refused rather than followed.
+
+Lines that are not valid JSON, and records with no id or with neither
+text nor an attachment, are skipped and counted. A picture posted with
+nothing typed under it is a record worth writing: it keeps the file. A file with nothing readable in it is reported
 as one refused entry, so the source's page shows it rather than silently
 missing it.
 

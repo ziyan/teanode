@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,7 +82,25 @@ const (
 	// refreshTailLines is how many of those last lines the error carries,
 	// which has to be small: it is shown on the source's page.
 	refreshTailLines = 5
+
+	// attachmentSaidRunes is how much of what a record says is kept on
+	// the entry for a file it came with. Where the record is a chat post
+	// this is the message the picture came with, which is the single most
+	// useful thing there is for deciding whether the picture is worth
+	// opening, and a sentence or two of it is all that decision needs.
+	attachmentSaidRunes = 400
 )
+
+// recordAttachment is one file a record came with: a picture pasted into
+// a thread, a document sent with a message. Path is where it is on this
+// machine, relative to the records folder unless it is absolute; Name is
+// what to call it; ContentType is optional and guessed from the name
+// when a script did not say.
+type recordAttachment struct {
+	Path        string `json:"path"`
+	Name        string `json:"name"`
+	ContentType string `json:"contentType,omitempty"`
+}
 
 // record is one line of a records file.
 type record struct {
@@ -97,6 +116,25 @@ type record struct {
 	Channel    string         `json:"channel"`
 	Thread     string         `json:"thread"`
 	Metadata   map[string]any `json:"metadata"`
+
+	// Attachments are the files this record came with. They are not
+	// read here -- nothing in this program can read a picture -- but
+	// they are hashed, measured and named, and their bytes are fetched
+	// afterwards with the blob action.
+	Attachments []recordAttachment `json:"attachments,omitempty"`
+}
+
+// recordsFolder is the folder a pass is reading and the bounds it reads
+// under: where it is, what this machine allows to be read out of it, and
+// how large a file a record came with may be.
+//
+// The parser takes it because an attachment is a path somebody's script
+// wrote, and what a path may reach is not something a line of JSON gets
+// to decide.
+type recordsFolder struct {
+	options            *Options
+	root               string
+	maxAttachmentBytes int64
 }
 
 // scanRecords reads a folder of JSON lines, one record a line, in the
@@ -106,7 +144,11 @@ type record struct {
 // The cursor is a file, meaning the page begins with it, or a file and
 // the last entry sent -- "pages.jsonl" or "pages.jsonl#page:12" -- when a
 // page stopped inside one.
-func scanRecords(root string, arguments *ScanArguments, most int) (*ScanResult, error) {
+func scanRecords(options *Options, root string, arguments *ScanArguments, most int) (*ScanResult, error) {
+	folder := &recordsFolder{
+		options: options, root: root,
+		maxAttachmentBytes: maxAttachmentBytes(arguments.MaxAttachmentBytes),
+	}
 	// Only on the first page of a pass. The later pages are the same
 	// pass still being read, and a script run again under them would
 	// move the ground the cursor stands on.
@@ -196,7 +238,7 @@ func scanRecords(root string, arguments *ScanArguments, most int) (*ScanResult, 
 			result.Next = relative
 			break
 		}
-		entries, err := recordEntries(root, relative, !onDisk[relative])
+		entries, err := recordEntries(folder, relative, !onDisk[relative])
 		if err != nil {
 			// A file this program cannot read is reported as one entry
 			// saying so, rather than silently missing from the folder
@@ -223,6 +265,14 @@ func scanRecords(root string, arguments *ScanArguments, most int) (*ScanResult, 
 				result.Next = result.Entries[len(result.Entries)-1].ExternalID
 				return result, nil
 			}
+			// A file a record came with that this program will not hand
+			// over -- too large, or somewhere the person never allowed --
+			// is one entry saying so, counted the way the walk counts a
+			// file it refused, so the source's page can show what was
+			// passed over rather than leaving the person to wonder.
+			if entry.Refused != "" {
+				result.Refused++
+			}
 			// What the server already holds is named and not sent again.
 			if arguments.Known[entry.ExternalID] == entry.Hash {
 				entry.Unchanged = true
@@ -236,13 +286,13 @@ func scanRecords(root string, arguments *ScanArguments, most int) (*ScanResult, 
 }
 
 // readRecordsFile turns one file into the entries the server files.
-func readRecordsFile(root, relative string) ([]ScanEntry, error) {
-	file, err := os.Open(filepath.Join(root, filepath.FromSlash(relative)))
+func readRecordsFile(folder *recordsFolder, relative string) ([]ScanEntry, error) {
+	file, err := os.Open(filepath.Join(folder.root, filepath.FromSlash(relative)))
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = file.Close() }()
-	return readRecords(relative, file)
+	return readRecords(folder, relative, file)
 }
 
 // readRecords is the parser itself, over anything that reads: a file on
@@ -255,8 +305,15 @@ func readRecordsFile(root, relative string) ([]ScanEntry, error) {
 // documents and re-embeds every one. Everything that decides identity --
 // the external id, the hash, the chat grouping, the order -- is below
 // this line and sees only lines.
-func readRecords(relative string, source io.Reader) ([]ScanEntry, error) {
+func readRecords(folder *recordsFolder, relative string, source io.Reader) ([]ScanEntry, error) {
 	var entries []ScanEntry
+	// A file named twice is a file once. The identity of an attachment
+	// is the hash of its bytes, which is what makes the same screenshot
+	// pasted into four threads one document, and within a file it means
+	// the same picture must not be sent four times: two entries under one
+	// name would be filed twice and a page resumed at whichever of them
+	// sorted first.
+	attached := map[string]bool{}
 	// Chat records are not units on their own, so they are held back and
 	// grouped once the file has been read: per channel, in the order the
 	// channels first appear, so that the entries of a file are in the
@@ -278,14 +335,25 @@ func readRecords(relative string, source io.Reader) ([]ScanEntry, error) {
 			skipped++
 			continue
 		}
-		// A record with no identity cannot be filed, and one with no
-		// words is nothing to read; both are a script's bug, counted so
-		// a file of them is noticed.
-		if one.ID == "" || strings.TrimSpace(one.Text) == "" {
+		// A record with no identity cannot be filed, and one with
+		// neither words nor a file is nothing at all; both are a
+		// script's bug, counted so a file of them is noticed.
+		//
+		// A picture posted with nothing typed under it is not one of
+		// them. Most of what an archive holds beside its messages
+		// arrived that way, and refusing the record would lose the file
+		// as well as the silence.
+		if one.ID == "" || (strings.TrimSpace(one.Text) == "" && len(one.Attachments) == 0) {
 			skipped++
 			continue
 		}
 		read++
+		// Both kinds of record come through here, so a screenshot on a
+		// wiki page and one pasted into a thread are hashed, named and
+		// filed by exactly the same rule. The entry the record itself
+		// produces is made below, or by the grouping at the end for a
+		// chat post; these ride beside it.
+		entries = append(entries, folder.attachmentsOf(relative, &one, attached)...)
 		if strings.EqualFold(strings.TrimSpace(one.Kind), "chat") {
 			if _, seen := posts[one.Channel]; !seen {
 				channels = append(channels, one.Channel)
@@ -437,7 +505,7 @@ func recordTime(value string) *time.Time {
 // folder holding one large file would be read once per page of it.
 // fromScript says the name is one the folder's records script listed
 // rather than a file on disk, and is read by running the script again.
-func recordEntries(root, relative string, fromScript bool) ([]ScanEntry, error) {
+func recordEntries(folder *recordsFolder, relative string, fromScript bool) ([]ScanEntry, error) {
 	// A file is held against its modification time and its size, so a
 	// script rewriting the folder mid-pass is noticed. What the records
 	// script prints has neither: nothing on disk moves when the archive
@@ -446,7 +514,7 @@ func recordEntries(root, relative string, fromScript bool) ([]ScanEntry, error) 
 	var modified time.Time
 	var size int64
 	if !fromScript {
-		information, err := os.Stat(filepath.Join(root, filepath.FromSlash(relative)))
+		information, err := os.Stat(filepath.Join(folder.root, filepath.FromSlash(relative)))
 		if err != nil {
 			return nil, err
 		}
@@ -454,25 +522,30 @@ func recordEntries(root, relative string, fromScript bool) ([]ScanEntry, error) 
 	}
 	recordsCache.mutex.Lock()
 	defer recordsCache.mutex.Unlock()
-	if recordsCache.root == root && recordsCache.name == relative && recordsCache.script == fromScript &&
-		recordsCache.modified.Equal(modified) && recordsCache.size == size {
+	// The limit is part of the key because it is part of the answer: a
+	// server that raised it wants the file it refused last night read
+	// this time, and the pass that asks is not always a new one.
+	if recordsCache.root == folder.root && recordsCache.name == relative && recordsCache.script == fromScript &&
+		recordsCache.modified.Equal(modified) && recordsCache.size == size &&
+		recordsCache.maxAttachmentBytes == folder.maxAttachmentBytes {
 		return recordsCache.entries, nil
 	}
-	entries, err := readRecordsAnywhere(root, relative, fromScript)
+	entries, err := readRecordsAnywhere(folder, relative, fromScript)
 	if err != nil {
 		return nil, err
 	}
-	recordsCache.root, recordsCache.name, recordsCache.script = root, relative, fromScript
+	recordsCache.root, recordsCache.name, recordsCache.script = folder.root, relative, fromScript
 	recordsCache.modified, recordsCache.size, recordsCache.entries = modified, size, entries
+	recordsCache.maxAttachmentBytes = folder.maxAttachmentBytes
 	return entries, nil
 }
 
 // readRecordsAnywhere is the one file, wherever it is kept.
-func readRecordsAnywhere(root, relative string, fromScript bool) ([]ScanEntry, error) {
+func readRecordsAnywhere(folder *recordsFolder, relative string, fromScript bool) ([]ScanEntry, error) {
 	if fromScript {
-		return readRecordsScript(root, relative)
+		return readRecordsScript(folder, relative)
 	}
-	return readRecordsFile(root, relative)
+	return readRecordsFile(folder, relative)
 }
 
 // forgetRecords drops the one-file cache, which a new pass does because
@@ -482,6 +555,7 @@ func forgetRecords() {
 	defer recordsCache.mutex.Unlock()
 	recordsCache.root, recordsCache.name, recordsCache.script = "", "", false
 	recordsCache.modified, recordsCache.size, recordsCache.entries = time.Time{}, 0, nil
+	recordsCache.maxAttachmentBytes = 0
 }
 
 var recordsCache struct {
@@ -494,6 +568,9 @@ var recordsCache struct {
 	modified time.Time
 	size     int64
 	entries  []ScanEntry
+	// maxAttachmentBytes is the bound the entries were read under, since
+	// it decides which of them were refused.
+	maxAttachmentBytes int64
 }
 
 // refreshRecords runs the folder's refresh script, which is what fills
@@ -609,8 +686,8 @@ func recordsScriptFiles(root string) ([]string, error) {
 // readRecordsScript is one of those names, read by asking the script for
 // it. Nothing is written down: the archive it reads from is the
 // person's own, wherever they already keep it.
-func readRecordsScript(root, relative string) ([]ScanEntry, error) {
-	path, err := runnableScript(root, recordsScript)
+func readRecordsScript(folder *recordsFolder, relative string) ([]ScanEntry, error) {
+	path, err := runnableScript(folder.root, recordsScript)
 	if err != nil {
 		return nil, err
 	}
@@ -618,11 +695,11 @@ func readRecordsScript(root, relative string) ([]ScanEntry, error) {
 		// It listed this name a moment ago. Saying so beats answering
 		// with no entries, which a full pass reads as "the archive no
 		// longer holds any of this" and sweeps away.
-		return nil, fmt.Errorf("%s is no longer there", filepath.Join(root, recordsScript))
+		return nil, fmt.Errorf("%s is no longer there", filepath.Join(folder.root, recordsScript))
 	}
 	var entries []ScanEntry
-	err = runRecordsScript(root, []string{relative}, func(output io.Reader) error {
-		read, err := readRecords(relative, output)
+	err = runRecordsScript(folder.root, []string{relative}, func(output io.Reader) error {
+		read, err := readRecords(folder, relative, output)
 		entries = read
 		return err
 	})
@@ -737,4 +814,179 @@ func (self *refreshTail) ending() string {
 		return ""
 	}
 	return ": " + said
+}
+
+// --- what a record came with -----------------------------------------
+
+// attachmentsOf is the files one record named, one entry each: hashed,
+// measured and named, with nothing read.
+//
+// The identity is the hash of the bytes and not the path, so the same
+// screenshot pasted into four threads is one document rather than four,
+// which on the archive this was written for is most of fifty thousand
+// files. The entry carries no text at all -- nothing in this program can
+// read a picture -- and what it carries instead is everything a later
+// decision needs without opening the file: what kind of thing it is, how
+// large, where it came from, and what was said when it arrived.
+//
+// seen is the names already given out for this file, so that a record
+// naming the same picture twice, or two records in one file naming it,
+// produce one entry.
+func (self *recordsFolder) attachmentsOf(relative string, one *record, seen map[string]bool) []ScanEntry {
+	var entries []ScanEntry
+	for index := range one.Attachments {
+		attachment := &one.Attachments[index]
+		name := strings.TrimSpace(attachment.Name)
+		if name == "" {
+			name = filepath.Base(filepath.FromSlash(attachment.Path))
+		}
+		entry := ScanEntry{
+			// A refusal has no hash to be named by, so it is named by
+			// the record and the file: enough to be the same from pass
+			// to pass, which is what the page showing it needs.
+			ExternalID: relative + "#" + one.ID + "#" + name,
+			Kind:       KindAttachment, Title: name,
+			HappenedAt: recordTime(one.At), Private: one.Private,
+		}
+		path, size, err := self.attachmentFile(attachment.Path)
+		if err != nil {
+			entry.Refused = refusalOf(err)
+			entries = append(entries, entry)
+			continue
+		}
+		entry.Size = size
+		if size > self.maxAttachmentBytes {
+			entry.Refused = self.tooLarge(size)
+			entries = append(entries, entry)
+			continue
+		}
+		hash, read, err := hashOfFile(path)
+		if err != nil {
+			entry.Refused = refusalOf(err)
+			entries = append(entries, entry)
+			continue
+		}
+		if read > self.maxAttachmentBytes {
+			// It grew between the two reads. The bound is the bound.
+			entry.Refused = self.tooLarge(read)
+			entries = append(entries, entry)
+			continue
+		}
+		entry.ExternalID = relative + "#" + hash
+		if seen[entry.ExternalID] {
+			continue
+		}
+		seen[entry.ExternalID] = true
+		entry.Hash, entry.Size = hash, read
+		entry.Metadata = self.attachmentMetadata(path, name, attachment.ContentType, one)
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+// tooLarge is the refusal for a file this source will not carry, said so
+// that a person reading the source's page knows both numbers.
+func (self *recordsFolder) tooLarge(size int64) string {
+	return fmt.Sprintf("%s, larger than the %s a file that came with a record may be",
+		describeSize(size), describeSize(self.maxAttachmentBytes))
+}
+
+// attachmentMetadata is what a later decision is made from without
+// opening the file: what it is and where its bytes are, and the record it
+// arrived with -- who wrote it, which thread, which channel, and what
+// they said. Where the record is a chat post, what they said is the
+// message the picture came with, which is the most useful signal there
+// is.
+func (self *recordsFolder) attachmentMetadata(path, name, contentType string, one *record) map[string]any {
+	metadata := map[string]any{"path": path}
+	if contentType = strings.TrimSpace(contentType); contentType == "" {
+		contentType = mime.TypeByExtension(strings.ToLower(filepath.Ext(name)))
+	}
+	for key, value := range map[string]string{
+		"contentType": contentType,
+		"author":      one.Author,
+		"thread":      one.Thread,
+		"channel":     one.Channel,
+		"id":          one.ID,
+		"said":        firstRunes(strings.TrimSpace(one.Text), attachmentSaidRunes),
+	} {
+		if value != "" {
+			metadata[key] = value
+		}
+	}
+	return metadata
+}
+
+// attachmentFile is where a record says its file is, and how large it is:
+// relative to the records folder unless it is absolute, and then only
+// where the person allowed this program to read.
+//
+// Nothing about a folder of records makes what it names safe. The script
+// that wrote them is somebody's and the archive it read is somebody
+// else's, so the roots are checked here exactly as they are checked for
+// the folder itself, and a link out of the folder is followed to where it
+// really goes before they are.
+func (self *recordsFolder) attachmentFile(said string) (string, int64, error) {
+	said = strings.TrimSpace(said)
+	if said == "" {
+		return "", 0, errors.New("it says no path")
+	}
+	path := filepath.FromSlash(said)
+	if filepath.IsAbs(path) || strings.HasPrefix(said, "~") {
+		path = resolve(self.options.Home, said)
+	} else {
+		path = filepath.Join(self.root, path)
+	}
+	path, err := allowedFile(self.options, path)
+	if err != nil {
+		return "", 0, err
+	}
+	information, err := os.Stat(path)
+	if err != nil {
+		return "", 0, err
+	}
+	if !information.Mode().IsRegular() {
+		return "", 0, fmt.Errorf("%s is not a regular file", path)
+	}
+	return path, information.Size(), nil
+}
+
+// hashOfFile is a file's own identity and its size, read in one pass with
+// none of it held: a twenty-five megabyte picture would otherwise be in
+// memory twice before anything had decided it was worth sending.
+func hashOfFile(path string) (string, int64, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", 0, err
+	}
+	defer func() { _ = file.Close() }()
+	hasher := sha256.New()
+	size, err := io.Copy(hasher, file)
+	if err != nil {
+		return "", 0, err
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), size, nil
+}
+
+// refusalOf is why a file was passed over, in the words the source's page
+// shows. A path the person never allowed says so in its own words;
+// anything else reads the way an unreadable file does.
+func refusalOf(err error) string {
+	var refused *RefusedError
+	if errors.As(err, &refused) {
+		return refused.Reason
+	}
+	return "could not be read: " + err.Error()
+}
+
+// describeSize says a size the way a person would, for a refusal they
+// read on the source's page.
+func describeSize(bytes int64) string {
+	switch {
+	case bytes >= 1<<20:
+		return fmt.Sprintf("%.0f MB", float64(bytes)/float64(1<<20))
+	case bytes >= 1<<10:
+		return fmt.Sprintf("%.0f kB", float64(bytes)/float64(1<<10))
+	}
+	return fmt.Sprintf("%d bytes", bytes)
 }

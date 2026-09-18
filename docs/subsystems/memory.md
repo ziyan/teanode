@@ -185,6 +185,20 @@ keep its state and its downloads beside the records. A document's
 external id is `<file path>#<record id>`, which is why a script that
 keeps its ids keeps its documents.
 
+A record may also name the files it came with, in an `attachments` list of
+`{"path", "name", "contentType"}` — a picture pasted into a thread, a
+document sent with a message. The path is relative to the records folder
+unless it is absolute, and is refused if it leads outside the directories
+allowed on that computer. Each attachment becomes a document of its own,
+of kind `attachment`, identified by the hash of its bytes rather than by
+where it sits, so the same screenshot pasted into four threads is one
+document. It has no text: the daemon hashes and measures it, the server
+asks for its bytes with the `blob` action and keeps them in object storage
+under that hash, and reading it is something a later night does. A file
+larger than the limit the source runs under — `agent.limits.maxScannedAttachmentBytes`,
+25 MB by default, or the source's own — is named on the source's page as
+passed over and never uploaded.
+
 Two kinds of script fill such a folder, and which one to write is
 decided by where the records are.
 

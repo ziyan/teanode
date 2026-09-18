@@ -49,6 +49,16 @@ type KnowledgeOperation interface {
 	// either.
 	ListAgentDocumentHashes(sourceId string) (map[string]string, error)
 
+	// AgentDocumentStorageKey is the key some document of this agent
+	// keeps the bytes of this hash under, and "" where none does.
+	//
+	// An attachment is identified by the hash of its bytes, so the same
+	// picture pasted into four threads -- or found again by another
+	// source -- is bytes this server already holds. Asked before the
+	// computer is asked for them, it is what keeps a second pass from
+	// carrying twenty-four gigabytes across the socket again.
+	AgentDocumentStorageKey(agentId, hash string) (string, error)
+
 	// MarkAgentDocumentsSeen says the source still has these, named the
 	// way the source names them. One statement for a whole page of a
 	// scan, because a page of an archive is two thousand names.
@@ -463,6 +473,22 @@ func (self *transaction) GetAgentDocumentByExternal(sourceId, externalId string)
 
 func (self *transaction) DeleteAgentDocument(agentId, documentId string) error {
 	return self.tx.Where(`"agent_id" = ? AND "id" = ?`, agentId, documentId).Delete(&agentDocumentModel{}).Error
+}
+
+func (self *transaction) AgentDocumentStorageKey(agentId, hash string) (string, error) {
+	if agentId == "" || hash == "" {
+		return "", nil
+	}
+	var keys []string
+	if err := self.tx.Raw(`SELECT "storage_key" FROM "agent_document"
+		WHERE "agent_id" = ? AND "hash" = ? AND "storage_key" <> '' LIMIT 1`,
+		agentId, hash).Scan(&keys).Error; err != nil {
+		return "", err
+	}
+	if len(keys) == 0 {
+		return "", nil
+	}
+	return keys[0], nil
 }
 
 func (self *transaction) ListAgentDocumentHashes(sourceId string) (map[string]string, error) {

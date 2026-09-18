@@ -1267,6 +1267,17 @@ is cut with a marker.
 across its files; `25MB` by default. A picture is shown to the model, a
 text file is read to it, and anything else is named.
 
+**`maxScannedAttachmentBytes`** — The largest file a knowledge source
+carries off a person's machine: a picture or a document that a record in a
+`records` folder said it came with, kept in object storage so that
+something can read it later. `25MB` by default, which takes in every
+screenshot and nearly every document while leaving out the videos and disk
+images that would fill a store without teaching the agent anything.
+Anything larger is named on the source's page as passed over, and never
+uploaded. One source may set its own, in bytes, on its specification; this
+is what the rest use. Not to be confused with `maxAttachmentBytes` above,
+which is what a person may hand the agent in a conversation.
+
 **`dailyTokensPerAgent`** — The default budget per person per day, which an
 operator may override for one person. At the limit, processing for that
 person is deferred to the next day with the reason on the run, and

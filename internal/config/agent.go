@@ -471,6 +471,19 @@ type AgentLimits struct {
 	// files it carries.
 	MaxAttachmentBytes ByteSize `yaml:"maxAttachmentBytes"`
 
+	// MaxScannedAttachmentBytes bounds one file a knowledge source
+	// carries off a person's machine: a picture or a document a record
+	// came with, kept in object storage so that something can read it
+	// later. Anything larger is named on the source's page as passed
+	// over and never uploaded. Zero resolves to 25MB.
+	//
+	// Apart from MaxAttachmentBytes above because the two bound
+	// different things: that one is what a person may hand the agent in
+	// a conversation, this one is what an unattended pass may take from
+	// an archive of tens of gigabytes. A source may set its own, and
+	// does so in bytes on its specification.
+	MaxScannedAttachmentBytes ByteSize `yaml:"maxScannedAttachmentBytes,omitempty"`
+
 	// Concurrency is how many runs a worker executes at once.
 	Concurrency int `yaml:"concurrency"`
 }
@@ -693,17 +706,22 @@ func defaultAgent() Agent {
 		Enabled:  false,
 		Currency: DefaultCurrency,
 		Limits: AgentLimits{
-			MaxBodyCharacters:    12000,
-			MaxAttachmentBytes:   25 * 1024 * 1024,
-			DailyTokensPerAgent:  200000,
-			MaxRoundsPerAsk:      40,
-			MaxRoundsPerResearch: 8,
-			MaxRoundsPerReply:    6,
-			MaxRoundsPerTriage:   3,
-			MaxRoundsPerDream:    4,
-			MaxToolCallsPerRun:   60,
-			RequestTimeout:       Duration(60 * time.Second),
-			Concurrency:          2,
+			MaxBodyCharacters:  12000,
+			MaxAttachmentBytes: 25 * 1024 * 1024,
+			// Generous enough for every screenshot and nearly every
+			// document, mean enough to leave out the videos and the disk
+			// images, which are most of the bulk of an archive and teach
+			// the agent nothing.
+			MaxScannedAttachmentBytes: 25 * 1024 * 1024,
+			DailyTokensPerAgent:       200000,
+			MaxRoundsPerAsk:           40,
+			MaxRoundsPerResearch:      8,
+			MaxRoundsPerReply:         6,
+			MaxRoundsPerTriage:        3,
+			MaxRoundsPerDream:         4,
+			MaxToolCallsPerRun:        60,
+			RequestTimeout:            Duration(60 * time.Second),
+			Concurrency:               2,
 		},
 		Retention: AgentRetention{
 			Runs:        Duration(30 * 24 * time.Hour),
