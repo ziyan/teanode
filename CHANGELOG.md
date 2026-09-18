@@ -6,6 +6,30 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-09-18
+
+### Added
+
+- What your agent has read is yours to search. `teanode agent knowledge search
+  "the migration that failed"` finds passages in everything a source indexed —
+  your code, your chat, your notes — and prints each under the document it came
+  from, with the identifier that reads that document back. An identifier out of
+  a log is looked up exactly, so pasting `ResetPayloadAngularOffset` in answers
+  with the file and the line that defines it. `--source` narrows it to one
+  source, `--first` says how many, `--json` prints the rows with their scores.
+  Until now the only thing that could look through your own documents was your
+  agent, which meant asking it and paying for the turn. (#113)
+- `teanode agent knowledge read <document-id>` reads one of those documents,
+  from wherever you like: `--from` is where in the text to start and `--first`
+  how much to print, and a read that does not reach the end prints the command
+  that carries on from where it stopped. (#113)
+- Both are the same search the agent's own knowledge tool runs, through the new
+  `SearchAgentDocuments` and `ReadAgentDocument` queries, so what you find and
+  what it finds cannot drift apart. Where the server has an embedding model
+  configured, your search is ranked by meaning as well as by words, exactly as
+  the agent's is; where it has none, the answer says it found what it found by
+  words alone. (#113)
+
 ## [0.31.0] - 2026-09-18
 
 ### Added
