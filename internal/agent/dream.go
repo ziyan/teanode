@@ -668,15 +668,7 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 			silent = 0
 			record.Digested += len(batch)
 			record.Filed += filed
-			ids := make([]string, 0, len(batch))
-			for _, document := range batch {
-				ids = append(ids, document.ID)
-			}
-			if err := run.Database().TransactionContext(context.WithoutCancel(ctx), func(tx db.Transaction) error {
-				return tx.MarkAgentDocumentsDigested(ids, time.Now())
-			}); err != nil {
-				log.Warningf("cannot mark what was read: %s", err)
-			}
+			markRead(ctx, run, batch)
 		}()
 	}
 	group.Wait()
@@ -746,7 +738,21 @@ func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*model
 	}
 	thinking, err := self.dreamThought(ctx, run, budget, fmt.Sprintf("Read %d documents", len(documents)), prompt, true)
 	if err != nil {
-		// A batch the model's context cannot hold is not going to fit
+		// A batch the model's context cannot hold is cut in two and each
+		// half read on its own. Twenty openings of twelve hundred runes
+		// each are a few hundred tokens over a thirty-two thousand window
+		// when the documents are written in Chinese, where a rune costs
+		// far more tokens than an English one does, and ten halves of
+		// such a batch all fit. Marking the whole batch read instead lost
+		// two hundred and twenty documents in two nights, none of which
+		// would ever have been read again.
+		if llm.IsContextLengthError(err) && len(documents) > 1 {
+			if thinking != nil {
+				self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %d documents: too long for the model, split in two", len(documents)))
+			}
+			return self.digestHalves(ctx, run, documents, budget, coarse)
+		}
+		// One document that on its own does not fit is not going to fit
 		// next time either: it is marked read, and its run says why, so
 		// the reading moves on rather than stopping at it every dream.
 		if llm.IsContextLengthError(err) && thinking != nil {
@@ -797,6 +803,49 @@ func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*model
 			fmt.Sprintf("Read %d documents, filed %d, %s", len(documents), filed.Filed, checked))
 	}
 	return filed.Filed, true
+}
+
+// markRead records that a batch's documents were read, so the reading
+// does not come back to them.
+func markRead(ctx context.Context, run *Run, documents []*models.AgentDocument) {
+	ids := make([]string, 0, len(documents))
+	for _, document := range documents {
+		ids = append(ids, document.ID)
+	}
+	if err := run.Database().TransactionContext(context.WithoutCancel(ctx), func(tx db.Transaction) error {
+		return tx.MarkAgentDocumentsDigested(ids, time.Now())
+	}); err != nil {
+		log.Warningf("cannot mark what was read: %s", err)
+	}
+}
+
+// digestHalves reads a batch the model's context could not hold as two
+// halves, and answers for the batch as a whole: what both halves filed,
+// and answered only where both of them were.
+//
+// A half that was answered is marked read here, as it finishes, so that
+// a half the model never answered leaves only itself for a night that
+// answers: the batch as a whole is not marked read, and what was filed
+// from the first half is not filed again.
+func (self *Agent) digestHalves(ctx context.Context, run *Run, documents []*models.AgentDocument, budget *dreamBudget, coarse bool) (int, bool) {
+	middle := len(documents) / 2
+	total := 0
+	for _, half := range [][]*models.AgentDocument{documents[:middle], documents[middle:]} {
+		// The night's deadline and its allowance are checked before each
+		// half, as the reading checks them before each batch: a half the
+		// night has no time or no tokens for is not read and not marked
+		// read.
+		if ctx.Err() != nil || !budget.left() {
+			return total, false
+		}
+		filed, answered := self.digestBatch(ctx, run, half, budget, coarse)
+		total += filed
+		if !answered {
+			return total, false
+		}
+		markRead(ctx, run, half)
+	}
+	return total, true
 }
 
 // digestObjectFromWords asks once more, with no tools, for the object a
