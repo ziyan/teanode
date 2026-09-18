@@ -6,6 +6,25 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-09-18
+
+### Added
+
+- A place your agent reads can be changed from the dashboard, rather than
+  removed and added again. Edit, on the source's row, opens the same form you
+  added it with, already filled in: what it is called, where on the computer
+  it is, where in its pages what it finds is filed, how often it is read,
+  and — for your own sent mail — which mailbox. What sort of place it is and
+  which computer it is on are shown but fixed, because everything already
+  read came from there. A box you empty keeps what it says rather than
+  clearing it. (#112)
+- The Knowledge page can tell you what a question would carry. "What would it
+  recall?", beside the search, takes a question the way you would put it to
+  your agent and lists the pages that turn would be handed, with the facts
+  from each and a link to every page. It says nothing to a model and marks
+  nothing as used, so you can keep asking while you correct a page — and it
+  is how to see why something plainly written down is never read. (#112)
+
 ## [0.30.0] - 2026-09-18
 
 ### Added
