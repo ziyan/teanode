@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-09-18
+
+### Added
+
+- A picture your agent indexed can now be seen where it belongs. On the Knowledge page a fact read out of a screenshot shows the screenshot itself, sized to the page and opening full size when you click it, with the thread and channel it came from; a file that is not a picture is a link to save. On your agent's Dreams tab each source says what became of the files it carried — how many wait for a decision, how many it decided against opening, and how many it opened and read — and you can see the list of what it passed over with the reason it gave for each. (#126)
+
 ## [0.38.0] - 2026-09-18
 
 ### Added
