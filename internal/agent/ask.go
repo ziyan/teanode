@@ -181,6 +181,15 @@ type AskRun struct {
 	// lookingAt are the pictures tools fetched this round for the model.
 	lookingAt []llm.ContentPart
 
+	// meanings is what this turn has already embedded, by the words that
+	// were embedded. Both halves of recall ask the same question -- the
+	// graph and the documents -- and the tools may ask it again, and an
+	// embedding is an HTTP call to another service made before the model
+	// has said anything. Under its own lock because a round's tools run
+	// together.
+	meaningsMutex sync.Mutex
+	meanings      map[string]*meaning
+
 	// browser is the turn's headless browser, once it opened one.
 	browser *browserRunner
 

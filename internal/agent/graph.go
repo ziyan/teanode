@@ -79,10 +79,11 @@ const (
 	// graphEmbedCharacters is how much of a page or a fact is embedded.
 	graphEmbedCharacters = 4000
 
-	// graphBackfill is how many rows without a vector are given one on a
-	// turn, so an agent that has been learning for months catches up over
-	// a few conversations rather than in one long pause.
-	graphBackfill = 20
+	// turnMeaningsKept is how many different questions one turn keeps the
+	// vector of. A handful: recall asks one question of two stores, and
+	// the tools ask a few more. Bounded so that a model which searched
+	// forty times does not hold forty vectors until the turn ends.
+	turnMeaningsKept = 16
 
 	// recallChunks is how many passages of the person's own files and
 	// chat a turn brings back without being asked, recallChunkCharacters
@@ -362,8 +363,10 @@ const (
 // facts, so that "what does she work on" is answered from the page rather
 // than from one sentence that happened to match.
 //
-// It costs one embedding call and no round trip to the model, which is
-// why it happens every turn rather than being asked for.
+// It costs one embedding call -- one for the turn, shared by the graph
+// and the documents, which used to be one each -- and no round trip to
+// the model, which is why it happens every turn rather than being asked
+// for.
 func (self *AskRun) recallForTurn(ctx context.Context) {
 	// A job's turn is not the person speaking. Its message is a prompt
 	// the code wrote -- a batch of twenty documents, a month's record, a
@@ -376,11 +379,11 @@ func (self *AskRun) recallForTurn(ctx context.Context) {
 	if self.settings.Headless {
 		return
 	}
-	// Anything written before there was an embedding model, or before
-	// this one, catches up a few at a time.
-	if _, err := self.agent.EmbedGraph(ctx, self.settings.Agent, graphBackfill); err != nil {
-		log.Warningf("cannot give the graph of %q its vectors: %s", self.settings.Owner.Username, err)
-	}
+	// What has no vector yet is not given one here. Backfilling on the
+	// interactive path put twenty embedding calls between the person
+	// pressing return and the model being asked anything, for rows the
+	// turn was not going to look at; the night's dreamEmbed stage
+	// backfills two hundred at a time with nobody waiting.
 	words := strings.TrimSpace(self.settings.Message)
 	if words == "" {
 		return
@@ -494,7 +497,7 @@ func (self *AskRun) searchGraph(ctx context.Context, words string, limit int) ([
 	}); err != nil {
 		log.Warningf("cannot search the graph of %q: %s", self.settings.Owner.Username, err)
 	}
-	meaningNodes, meaningFacts := self.agent.nearestInGraph(ctx, self.settings.Agent, words, limit)
+	meaningNodes, meaningFacts := self.agent.nearestInGraphTo(ctx, agentId, self.meaningOfQuestion(ctx, "recall", words), limit)
 
 	return fuseNodes(limit, meaningNodes, wordNodes), fuseFacts(limit, meaningFacts, wordFacts)
 }
@@ -502,7 +505,7 @@ func (self *AskRun) searchGraph(ctx context.Context, words string, limit int) ([
 // SearchGraphByMeaning is what the memory tool's search adds to its own
 // word search. Part of tools.GraphSearching.
 func (self *AskRun) SearchGraphByMeaning(ctx context.Context, words string, limit int) ([]*models.AgentNode, []*models.AgentFact) {
-	return self.agent.nearestInGraph(ctx, self.settings.Agent, words, limit)
+	return self.agent.nearestInGraphTo(ctx, self.settings.Agent.ID, self.meaningOfQuestion(ctx, "recall", words), limit)
 }
 
 // recalledBlock is one piece of the overlay: the text the next round
@@ -874,28 +877,69 @@ func (self *Agent) embed(ctx context.Context, agentId, kind string, texts []stri
 	return vectors, modelName, len(vectors) > 0
 }
 
+// meaningOfQuestion is some words as a vector, worked out at most once a
+// turn.
+//
+// The two halves of recall ask the graph and the documents the same
+// question, and a turn embedded it once for each: two calls to another
+// service, before the model had been asked anything, for one question.
+// The answer is kept by the words it came from, so a tool searching for
+// the same thing later in the turn is free as well. The kind the call is
+// booked under is whoever asked first, which is what the usage rows say.
+func (self *AskRun) meaningOfQuestion(ctx context.Context, kind, words string) *meaning {
+	text := cutRunes(strings.TrimSpace(words), graphEmbedCharacters)
+	if text == "" {
+		return nil
+	}
+	self.meaningsMutex.Lock()
+	remembered, asked := self.meanings[text]
+	self.meaningsMutex.Unlock()
+	if asked {
+		// Including a nil: a deployment with no embedder, or a call that
+		// failed, is not worth asking again this turn.
+		return remembered
+	}
+	found := self.agent.meaningOf(ctx, self.settings.Agent.ID, kind, text)
+	self.meaningsMutex.Lock()
+	defer self.meaningsMutex.Unlock()
+	if self.meanings == nil {
+		self.meanings = make(map[string]*meaning, turnMeaningsKept)
+	}
+	if len(self.meanings) < turnMeaningsKept {
+		self.meanings[text] = found
+	}
+	return found
+}
+
 // nearestInGraph is the pages and facts nearest in meaning to some words.
 func (self *Agent) nearestInGraph(ctx context.Context, agent *models.Agent, words string, limit int) ([]*models.AgentNode, []*models.AgentFact) {
-	vectors, modelName, ok := self.embed(ctx, agent.ID, "recall", []string{cutRunes(words, graphEmbedCharacters)})
-	if !ok {
+	return self.nearestInGraphTo(ctx, agent.ID,
+		self.meaningOf(ctx, agent.ID, "recall", cutRunes(words, graphEmbedCharacters)), limit)
+}
+
+// nearestInGraphTo is nearestInGraph once the words are already a vector,
+// for a turn that embedded its question once and puts the one answer to
+// both stores.
+func (self *Agent) nearestInGraphTo(ctx context.Context, agentId string, question *meaning, limit int) ([]*models.AgentNode, []*models.AgentFact) {
+	if question == nil {
 		return nil, nil
 	}
-	query := vectors[0]
+	modelName, query := question.ModelName, question.Vector
 	var nodes []*models.AgentNode
 	var facts []*models.AgentFact
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		nodeScores, err := tx.Nearest(db.AgentNodeTable, agent.ID, modelName, query, limit, db.VectorQuery{Floor: meaningFloorGraph})
+		nodeScores, err := tx.Nearest(db.AgentNodeTable, agentId, modelName, query, limit, db.VectorQuery{Floor: meaningFloorGraph})
 		if err != nil {
 			return err
 		}
-		factScores, err := tx.Nearest(db.AgentFactTable, agent.ID, modelName, query, limit, db.VectorQuery{Floor: meaningFloorGraph})
+		factScores, err := tx.Nearest(db.AgentFactTable, agentId, modelName, query, limit, db.VectorQuery{Floor: meaningFloorGraph})
 		if err != nil {
 			return err
 		}
-		if nodes, err = tx.GetAgentNodes(agent.ID, idsOf(nodeScores)); err != nil {
+		if nodes, err = tx.GetAgentNodes(agentId, idsOf(nodeScores)); err != nil {
 			return err
 		}
-		facts, err = tx.GetAgentFacts(agent.ID, idsOf(factScores))
+		facts, err = tx.GetAgentFacts(agentId, idsOf(factScores))
 		if err != nil {
 			return err
 		}
@@ -1387,8 +1431,8 @@ func (self *AskRun) SearchKnowledgeByMeaning(ctx context.Context, sourceIds []st
 	if !self.agent.settings.Database.VectorIndexing() {
 		return nil, false
 	}
-	vectors, modelName, ok := self.agent.embed(ctx, self.settings.Agent.ID, "search", []string{cutRunes(words, graphEmbedCharacters)})
-	if !ok {
+	question := self.meaningOfQuestion(ctx, "search", words)
+	if question == nil {
 		return nil, false
 	}
 	narrow := db.VectorQuery{Floor: meaningFloorGraph}
@@ -1398,7 +1442,7 @@ func (self *AskRun) SearchKnowledgeByMeaning(ctx context.Context, sourceIds []st
 	}
 	var chunks []*models.AgentChunk
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		scores, err := tx.Nearest(db.AgentChunkTable, self.settings.Agent.ID, modelName, vectors[0], limit, narrow)
+		scores, err := tx.Nearest(db.AgentChunkTable, self.settings.Agent.ID, question.ModelName, question.Vector, limit, narrow)
 		if err != nil {
 			return err
 		}
@@ -1423,12 +1467,8 @@ func (self *AskRun) RankChunksByMeaning(ctx context.Context, words string, chunk
 	if len(chunks) <= 1 {
 		return chunks
 	}
-	_, _, modelName, _, ok := self.agent.embedderFor()
-	if !ok {
-		return chunks
-	}
-	vectors, _, ok := self.agent.embed(ctx, self.settings.Agent.ID, "search", []string{cutRunes(words, graphEmbedCharacters)})
-	if !ok {
+	question := self.meaningOfQuestion(ctx, "search", words)
+	if question == nil {
 		return chunks
 	}
 	ids := make([]string, 0, len(chunks))
@@ -1437,7 +1477,7 @@ func (self *AskRun) RankChunksByMeaning(ctx context.Context, words string, chunk
 	}
 	var ordered []*models.AgentChunk
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		scores, err := tx.Nearest(db.AgentChunkTable, self.settings.Agent.ID, modelName, vectors[0], limit, db.VectorQuery{
+		scores, err := tx.Nearest(db.AgentChunkTable, self.settings.Agent.ID, question.ModelName, question.Vector, limit, db.VectorQuery{
 			Where:     []string{`"chunk_id" = ANY(?)`},
 			Arguments: []any{pq.Array(ids)},
 			Floor:     meaningFloorGraph,

@@ -444,6 +444,15 @@ without disappearing. There is no minimum word length any more; the
 previous version needed a word of four letters before it would search by
 meaning at all, so "who is he?" recalled nothing.
 
+The question is embedded once for the turn and the vector is kept by the
+words it came from, so the graph and the documents rank against the same
+call and a tool that searches for the same thing later in the turn pays
+nothing. Nothing is backfilled here either: giving twenty vectorless rows
+their vectors, for rows this turn was not going to read, stood between
+the person pressing return and the model being asked anything. The
+night's embedding stage does it, two hundred at a time, with nobody
+waiting.
+
 What counts as used is what was carried. A page's block is built,
 measured against the budget, and only then written and its facts marked —
 the other way round, a page that turned out not to fit still moved
