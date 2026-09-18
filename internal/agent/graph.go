@@ -54,6 +54,19 @@ const (
 	recallFacts = 10
 	pageFacts   = 5
 
+	// recallBlocks is how many lines the overlay carries in all, and
+	// recallGraphBlocks how many of them the graph may fill: the
+	// passages of the person's own files are gathered after the graph is
+	// and take the rest.
+	//
+	// One budget, because two of them disagreed. The chooser offered up
+	// to fifteen blocks -- five pages and ten loose facts -- into an
+	// overlay that kept the last ten lines, so the pages it had ranked
+	// highest were exactly the ones dropped, and every fact on them had
+	// `used_at` moved for a prompt that never carried them.
+	recallBlocks      = 10
+	recallGraphBlocks = recallBlocks - recallChunks
+
 	// meaningFloorGraph is the least similarity worth calling a match.
 	// Embedding models put unrelated text between a tenth and three
 	// tenths apart; a quarter keeps out noise without losing a paraphrase.
@@ -535,7 +548,13 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 	blocks := []*recalledBlock{}
 	pages := 0
 	for _, node := range nodes {
-		if pages >= recallPages || expanded[node.ID] {
+		// The overlay's budget as well as the page count: a block the
+		// overlay would drop is a block whose facts must not be marked
+		// as wanted.
+		if pages >= recallPages || len(blocks) >= recallGraphBlocks {
+			break
+		}
+		if expanded[node.ID] {
 			continue
 		}
 		pageFactsFound, err := tx.ListAgentFacts(agentId, node.ID, false, pageFacts)
@@ -581,7 +600,10 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 	// which the turn's words hit directly.
 	kept := 0
 	for _, fact := range facts {
-		if kept >= recallFacts || shown[fact.ID] {
+		if kept >= recallFacts || len(blocks) >= recallGraphBlocks {
+			break
+		}
+		if shown[fact.ID] {
 			continue
 		}
 		line := fact.Reference(paths[fact.NodeID]) + " " + fact.Line()

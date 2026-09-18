@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -135,6 +136,57 @@ func TestAPageOverTheBudgetIsPassedOver(t *testing.T) {
 	}
 	if count := world.wanted(t, small); count != 1 {
 		t.Fatalf("what was carried is marked as used, and %d was", count)
+	}
+}
+
+// Nothing is marked as used that the overlay does not carry, and the
+// pages the search ranked highest are the ones it carries.
+//
+// The chooser and the overlay used to be bounded separately: the chooser
+// offered up to fifteen blocks, five pages and ten loose facts, and the
+// overlay kept the last ten lines. So a turn with plenty of matches
+// dropped the five page blocks -- the best of what was found -- while
+// `used_at` moved on every fact in them, which feeds importance, decay,
+// and what the index carries tomorrow.
+func TestTheOverlayCarriesEveryBlockThatWasMarkedAsUsed(t *testing.T) {
+	world := newRecallWorld(t)
+
+	// More pages and more loose facts than either bound, all small, so
+	// it is the counting and not the token budget that decides.
+	var nodes []*models.AgentNode
+	for index := 0; index < 8; index++ {
+		nodes = append(nodes, world.page(t,
+			fmt.Sprintf("projects/page-%d", index), fmt.Sprintf("Page %d", index),
+			"A short opening.", fmt.Sprintf("Ships on day %d.", index)))
+	}
+	var loose []*models.AgentFact
+	for index := 0; index < 12; index++ {
+		node := world.page(t, fmt.Sprintf("topics/loose-%d", index), fmt.Sprintf("Loose %d", index), "",
+			fmt.Sprintf("A loose note number %d.", index))
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			facts, err := tx.ListAgentFacts(world.agent.ID, node.ID, false, 10)
+			if err != nil || len(facts) != 1 {
+				t.Fatalf("ListAgentFacts: %v %s", facts, err)
+			}
+			loose = append(loose, facts[0])
+		})
+	}
+
+	world.run.writeRecalled(context.Background(), nodes, loose)
+
+	carried := world.overlay()
+	// The first page the search offered is the one the turn most wants,
+	// so it is the one that must survive the budget.
+	if !strings.Contains(carried, "projects/page-0") {
+		t.Fatalf("the highest ranked page is carried:\n%s", carried)
+	}
+	for _, node := range nodes {
+		if world.wanted(t, node) > 0 && !strings.Contains(carried, node.Path) {
+			t.Fatalf("%q was marked as used and is not in the overlay:\n%s", node.Path, carried)
+		}
+	}
+	if lines := len(world.run.Recalled()); lines > recallBlocks {
+		t.Fatalf("the overlay carries at most %d lines, and carried %d", recallBlocks, lines)
 	}
 }
 
