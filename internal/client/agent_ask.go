@@ -109,11 +109,21 @@ type AgentToolCall struct {
 	Arguments string `json:"arguments"`
 }
 
-// AgentConversationView is a conversation and a page of its messages.
+// AgentTodo is one item of a conversation's task list, as the agent keeps
+// it while it works.
+type AgentTodo struct {
+	ID     string     `json:"id"`
+	Text   string     `json:"text"`
+	DoneAt *time.Time `json:"doneAt"`
+}
+
+// AgentConversationView is a conversation, a page of its messages, and the
+// task list the agent is keeping in it.
 type AgentConversationView struct {
 	Conversation *AgentConversation `json:"conversation"`
 	Messages     []*AgentMessage    `json:"messages"`
 	Total        int                `json:"total"`
+	Todos        []*AgentTodo       `json:"todos"`
 }
 
 // AgentTurn is the run a turn started.
@@ -170,13 +180,14 @@ const (
 	DocumentStopAgentRun            = `mutation ($runId: String!) { StopAgentRun(runId: $runId) }`
 	DocumentListAgentConversations  = `query ($archived: Boolean, $query: String) { ListAgentConversations(archived: $archived, query: $query) ` + conversationFields + ` }`
 	DocumentDeleteAgentConversation = `mutation ($conversationId: String!) { DeleteAgentConversation(conversationId: $conversationId) }`
-	DocumentListAgentRuns           = `query ($first: Int, $offset: Int, $jobId: String) { ListAgentRuns(first: $first, offset: $offset, jobId: $jobId) { total runs ` + runFields + ` } }`
-	DocumentListAllAgentRuns        = `query ($first: Int, $offset: Int, $agentId: String) { ListAllAgentRuns(first: $first, offset: $offset, agentId: $agentId) { total runs ` + runFields + ` } }`
+	DocumentListAgentRuns           = `query ($first: Int, $offset: Int, $jobId: String, $kinds: [String!], $query: String) { ListAgentRuns(first: $first, offset: $offset, jobId: $jobId, kinds: $kinds, query: $query) { total runs ` + runFields + ` } }`
+	DocumentListAllAgentRuns        = `query ($first: Int, $offset: Int, $agentId: String, $kinds: [String!], $query: String) { ListAllAgentRuns(first: $first, offset: $offset, agentId: $agentId, kinds: $kinds, query: $query) { total runs ` + runFields + ` } }`
 	DocumentReadAgentConversation   = `query ($conversationId: String, $first: Int, $offset: Int) {
 		ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
 			conversation ` + conversationFields + `
 			messages { id createdAt role content name toolCallId toolCalls { id name arguments } usage { model kind promptTokens completionTokens } attachments { id name contentType size } references { itemId threadId subject from } }
 			total
+			todos { id text doneAt }
 		}
 	}`
 	DocumentStartAgentConversation  = `mutation ($title: String, $goal: String) { StartAgentConversation(title: $title, goal: $goal) ` + conversationFields + ` }`
@@ -296,9 +307,39 @@ func SearchAgentConversations(ctx context.Context, connection *Client, archived 
 	return result.ListAgentConversations, nil
 }
 
+// AgentRunFilter narrows a listing of runs: to the runs one job made, to
+// some kinds of run, or to the titles carrying some words.
+type AgentRunFilter struct {
+	JobID string
+	Kinds []string
+	Query string
+}
+
+// apply puts the filter's variables on a listing, leaving out what was
+// not asked for: an empty list of kinds is every kind, not none of them.
+func (self *AgentRunFilter) apply(variables map[string]any) {
+	if self == nil {
+		return
+	}
+	if self.JobID != "" {
+		variables["jobId"] = self.JobID
+	}
+	if len(self.Kinds) > 0 {
+		variables["kinds"] = self.Kinds
+	}
+	if self.Query != "" {
+		variables["query"] = self.Query
+	}
+}
+
 // ListAgentRuns is a page of the transcripts of runs, newest first, and
 // how many there are in all.
 func ListAgentRuns(ctx context.Context, connection *Client, first, offset int, jobId string) ([]*AgentRunSummary, int64, error) {
+	return SearchAgentRuns(ctx, connection, first, offset, &AgentRunFilter{JobID: jobId})
+}
+
+// SearchAgentRuns is ListAgentRuns narrowed by a filter.
+func SearchAgentRuns(ctx context.Context, connection *Client, first, offset int, filter *AgentRunFilter) ([]*AgentRunSummary, int64, error) {
 	var result struct {
 		ListAgentRuns struct {
 			Total int64              `json:"total"`
@@ -306,9 +347,7 @@ func ListAgentRuns(ctx context.Context, connection *Client, first, offset int, j
 		} `json:"ListAgentRuns"`
 	}
 	variables := map[string]any{"first": first, "offset": offset}
-	if jobId != "" {
-		variables["jobId"] = jobId
-	}
+	filter.apply(variables)
 	if err := connection.Execute(ctx, DocumentListAgentRuns, variables, &result); err != nil {
 		return nil, 0, err
 	}
@@ -318,6 +357,11 @@ func ListAgentRuns(ctx context.Context, connection *Client, first, offset int, j
 // ListAllAgentRuns is every person's runs, for an operator with agent:act;
 // an agent narrows it to one person's.
 func ListAllAgentRuns(ctx context.Context, connection *Client, first, offset int, agentId string) ([]*AgentRunSummary, int64, error) {
+	return SearchAllAgentRuns(ctx, connection, first, offset, agentId, nil)
+}
+
+// SearchAllAgentRuns is ListAllAgentRuns narrowed by a filter.
+func SearchAllAgentRuns(ctx context.Context, connection *Client, first, offset int, agentId string, filter *AgentRunFilter) ([]*AgentRunSummary, int64, error) {
 	var result struct {
 		ListAllAgentRuns struct {
 			Total int64              `json:"total"`
@@ -328,6 +372,7 @@ func ListAllAgentRuns(ctx context.Context, connection *Client, first, offset int
 	if agentId != "" {
 		variables["agentId"] = agentId
 	}
+	filter.apply(variables)
 	if err := connection.Execute(ctx, DocumentListAllAgentRuns, variables, &result); err != nil {
 		return nil, 0, err
 	}

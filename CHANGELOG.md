@@ -6,6 +6,31 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A conversation can be put away from the command line, the way the drawer
+  does it: `teanode agent conversation archive` and `unarchive`, with
+  `conversation list --archived` to see what is in the archive.
+
+- `teanode agent conversation show` pages back through a long conversation
+  with `--offset`, and prints the agent's task list under the messages with
+  the done ones ticked.
+
+- `teanode agent run list` narrows to some kinds of run with `--kind`, given
+  once per kind or comma-separated, and to what they were about with
+  `--query`.
+
+- `teanode agent run stop` stops a run where it is, for the one that is off
+  doing something you no longer want. What it has already done stands.
+
+- A schedule can be changed instead of removed and written again:
+  `teanode agent schedule set` takes a name, a cron line, a prompt and where
+  the answer goes, and only what you give changes. `schedule enable` and
+  `schedule disable` turn one on and off without losing it.
+
+- `teanode agent memory page --alias` settles the other names a page is known
+  by, so that the words you actually use find it.
+
 ## [0.28.0] - 2026-09-18
 
 ### Added

@@ -57,6 +57,18 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"UpdateRole":               client.DocumentUpdateRole,
 		"DeleteRole":               client.DocumentDeleteRole,
 		"ListAuditEvents":          client.DocumentListAuditEvents,
+
+		// The agent's own documents, which the command line sends for the
+		// same things the drawer and the dashboard do.
+		"ListAgentConversations":  client.DocumentListAgentConversations,
+		"ReadAgentConversation":   client.DocumentReadAgentConversation,
+		"UpdateAgentConversation": client.DocumentUpdateAgentConversation,
+		"ListAgentRuns":           client.DocumentListAgentRuns,
+		"ListAllAgentRuns":        client.DocumentListAllAgentRuns,
+		"StopAgentRun":            client.DocumentStopAgentRun,
+		"ListAgentSchedules":      client.DocumentListAgentSchedules,
+		"SaveAgentSchedule":       client.DocumentSaveAgentSchedule,
+		"SaveAgentNode":           client.DocumentSaveAgentNode,
 	}
 
 	for name, document := range documents {

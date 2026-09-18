@@ -62,6 +62,33 @@ func newAgentScheduleCommand() *cli.Command {
 				Action: runAgentScheduleAdd,
 			},
 			{
+				Name:      "set",
+				Usage:     "change a schedule: only what you give changes",
+				ArgsUsage: "<schedule-id>",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "name", Usage: "what it is called"},
+					&cli.StringFlag{Name: "cron", Usage: "a cron line in your zone, a moment (\"@at 2026-09-12 09:00\"), or a distance from now (\"@in 20m\")"},
+					&cli.StringFlag{Name: "prompt", Usage: "what to do; - reads it from stdin"},
+					&cli.StringFlag{Name: "deliver", Usage: "where the answer goes: drawer (into your conversation) or mail"},
+				},
+				Action: runAgentScheduleSet,
+			},
+			{
+				Name:      "enable",
+				Usage:     "let a schedule run again",
+				ArgsUsage: "<schedule-id>",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runAgentScheduleEnable,
+			},
+			{
+				Name:      "disable",
+				Usage:     "stop a schedule running, keeping it",
+				ArgsUsage: "<schedule-id>",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runAgentScheduleDisable,
+			},
+			{
 				Name:      "remove",
 				Usage:     "remove a schedule",
 				ArgsUsage: "<schedule-id>",
@@ -151,8 +178,83 @@ func runAgentScheduleAdd(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return describeError(command, err)
 	}
+	return printAgentSchedule(command, schedule)
+}
+
+// runAgentScheduleSet changes one schedule, sending only the fields the
+// person gave. The server leaves out what it is not given, so a name
+// changed here does not take the prompt away with it.
+func runAgentScheduleSet(ctx context.Context, command *cli.Command) error {
+	scheduleId := command.Args().First()
+	if scheduleId == "" {
+		return fmt.Errorf("which schedule? give its id")
+	}
+	fields := map[string]any{}
+	if command.IsSet("name") {
+		fields["name"] = command.String("name")
+	}
+	if command.IsSet("cron") {
+		fields["cron"] = command.String("cron")
+	}
+	if command.IsSet("prompt") {
+		prompt, err := readValue(command, command.String("prompt"))
+		if err != nil {
+			return err
+		}
+		fields["prompt"] = prompt
+	}
+	if command.IsSet("deliver") {
+		fields["deliver"] = command.String("deliver")
+	}
+	if len(fields) == 0 {
+		return fmt.Errorf("say what to change: --name, --cron, --prompt or --deliver")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	schedule, err := client.SaveAgentSchedule(ctx, connection, scheduleId, fields)
+	if err != nil {
+		return describeError(command, err)
+	}
+	return printAgentSchedule(command, schedule)
+}
+
+func runAgentScheduleEnable(ctx context.Context, command *cli.Command) error {
+	return setAgentScheduleEnabled(ctx, command, true)
+}
+
+func runAgentScheduleDisable(ctx context.Context, command *cli.Command) error {
+	return setAgentScheduleEnabled(ctx, command, false)
+}
+
+// setAgentScheduleEnabled turns a schedule on or off, keeping it and what
+// it asks for; nothing is thrown away, so neither asks first.
+func setAgentScheduleEnabled(ctx context.Context, command *cli.Command, enabled bool) error {
+	scheduleId := command.Args().First()
+	if scheduleId == "" {
+		return fmt.Errorf("which schedule? give its id")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	schedule, err := client.SaveAgentSchedule(ctx, connection, scheduleId, map[string]any{"enabled": enabled})
+	if err != nil {
+		return describeError(command, err)
+	}
+	return printAgentSchedule(command, schedule)
+}
+
+// printAgentSchedule is one schedule as it reads after it is written:
+// what it is called, whether it runs at all, and when it next does.
+func printAgentSchedule(command *cli.Command, schedule *client.AgentSchedule) error {
 	if command.Bool("json") {
 		return PrintJSON(schedule)
+	}
+	if !schedule.Enabled {
+		_, _ = fmt.Fprintf(command.Writer, "%s: %s, off\n", schedule.ID, schedule.Name)
+		return nil
 	}
 	next := ""
 	if schedule.NextRunAt != nil {
