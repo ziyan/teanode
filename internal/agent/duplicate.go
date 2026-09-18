@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -42,7 +41,10 @@ const (
 // near in meaning. A person and the project they run are talked about in
 // the same words and are not each other, and merging them is the one
 // mistake here that cannot be undone by hand.
-func (self *Agent) findExistingPage(ctx context.Context, tx db.Transaction, agentId, path string, kind models.AgentNodeKind, name string) (*models.AgentNode, error) {
+// The meaning of the name is handed in rather than worked out here: it
+// is an HTTP call to another service, and this runs inside the
+// transaction that writes the fact.
+func (self *Agent) findExistingPage(tx db.Transaction, agentId, path string, kind models.AgentNodeKind, name string, sense *meaning) (*models.AgentNode, error) {
 	// By path. The ordinary case, and free.
 	if node, err := tx.GetAgentNode(agentId, path); err != nil || node != nil {
 		return node, err
@@ -76,14 +78,10 @@ func (self *Agent) findExistingPage(ctx context.Context, tx db.Transaction, agen
 	// By what it means. Catches the case the other two cannot: a page
 	// under a different parent, or called something else for the same
 	// thing -- "the fleet team" and "Fleet".
-	if wanted == "" {
+	if wanted == "" || sense == nil {
 		return nil, nil
 	}
-	vectors, modelName, ok := self.embed(ctx, agentId, "remember", []string{name})
-	if !ok {
-		return nil, nil
-	}
-	scores, err := tx.Nearest(db.AgentNodeTable, agentId, modelName, vectors[0], samePageCandidates, db.VectorQuery{
+	scores, err := tx.Nearest(db.AgentNodeTable, agentId, sense.ModelName, sense.Vector, samePageCandidates, db.VectorQuery{
 		Floor: samePageFloor,
 	})
 	if err != nil {
@@ -111,6 +109,27 @@ func (self *Agent) findExistingPage(ctx context.Context, tx db.Transaction, agen
 	return nil, nil
 }
 
+// pageIdentity is what a writer asked for, normalized: the path, the kind
+// it is if the writer did not say, and the name a new page would take.
+//
+// Worked out before the transaction as well as inside it, because the
+// name is what the search by meaning embeds and that call belongs outside
+// the transaction.
+func pageIdentity(path string, kind models.AgentNodeKind, name string) (string, models.AgentNodeKind, string) {
+	path = models.NormalizePath(path)
+	if path == "" {
+		return "", kind, ""
+	}
+	if !models.IsAgentNodeKind(kind) {
+		kind = kindOfPath(path)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = nameFromSlug(models.LastSegment(path))
+	}
+	return path, kind, name
+}
+
 // hasAlias says whether a page already answers to a name.
 func hasAlias(node *models.AgentNode, name string) bool {
 	for _, alias := range node.Aliases {
@@ -126,18 +145,12 @@ func hasAlias(node *models.AgentNode, name string) bool {
 //
 // Every writer of a fact goes through here rather than calling
 // PutAgentNode, which is what keeps one thing to one page.
-func (self *Agent) resolvePage(ctx context.Context, tx db.Transaction, agentId, path string, kind models.AgentNodeKind, name string) (*models.AgentNode, error) {
-	path = models.NormalizePath(path)
+func (self *Agent) resolvePage(tx db.Transaction, agentId, path string, kind models.AgentNodeKind, name string, sense *meaning) (*models.AgentNode, error) {
+	path, kind, name = pageIdentity(path, kind, name)
 	if path == "" {
 		return nil, nil
 	}
-	if !models.IsAgentNodeKind(kind) {
-		kind = kindOfPath(path)
-	}
-	if strings.TrimSpace(name) == "" {
-		name = nameFromSlug(models.LastSegment(path))
-	}
-	existing, err := self.findExistingPage(ctx, tx, agentId, path, kind, name)
+	existing, err := self.findExistingPage(tx, agentId, path, kind, name, sense)
 	if err != nil {
 		return nil, err
 	}

@@ -817,6 +817,35 @@ func (self *Agent) embedderFor() (embedder llm.Embedder, model, modelName string
 	return found, name, modelName, dimensions, true
 }
 
+// meaning is what a piece of text means: the vector, and the model that
+// read it, which is part of the key every vector is stored under.
+//
+// It exists so that the embedding can be worked out before the
+// transaction that needs it. Embedding is an HTTP call to another
+// service; made with a transaction open it holds a database connection --
+// and whatever rows that transaction has locked -- for as long as the
+// provider takes to answer, which on a bad minute is the whole request
+// timeout, once per fact, on a run that files fifteen of them.
+type meaning struct {
+	ModelName string
+	Vector    []float32
+}
+
+// meaningOf is one embedding call for one piece of text. Nil where there
+// is no embedding model, or the call failed, or there was nothing to
+// embed: every caller reads that as "compare by name alone", which is
+// what a deployment without an embedder has always done.
+func (self *Agent) meaningOf(ctx context.Context, agentId, kind, text string) *meaning {
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	vectors, modelName, ok := self.embed(ctx, agentId, kind, []string{text})
+	if !ok {
+		return nil
+	}
+	return &meaning{ModelName: modelName, Vector: vectors[0]}
+}
+
 // embed is one call to the embedding model, at the configured width.
 func (self *Agent) embed(ctx context.Context, agentId, kind string, texts []string) ([][]float32, string, bool) {
 	embedder, model, modelName, dimensions, ok := self.embedderFor()
@@ -998,7 +1027,13 @@ func (self *AskRun) NoteFact(ctx context.Context, fact *models.AgentFact) []*mod
 // ResolvePage is the page a fact belongs on. Part of tools.Remembering;
 // the work is in duplicate.go.
 func (self *AskRun) ResolvePage(ctx context.Context, tx db.Transaction, path string, kind models.AgentNodeKind, name string) (*models.AgentNode, error) {
-	return self.agent.resolvePage(ctx, tx, self.settings.Agent.ID, path, kind, name)
+	agentId := self.settings.Agent.ID
+	path, kind, name = pageIdentity(path, kind, name)
+	if path == "" {
+		return nil, nil
+	}
+	return self.agent.resolvePage(tx, agentId, path, kind, name,
+		self.agent.meaningOf(ctx, agentId, "remember", name))
 }
 
 // NoteNode gives a page its vector.
