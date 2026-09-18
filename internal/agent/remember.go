@@ -213,7 +213,7 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 		if message.Role == string(llm.RoleUser) {
 			theirWords[message.ID] = true
 		}
-		shown[message.ID] = message.Content
+		shown[message.ID] = shownText(message)
 	}
 	filed, err := self.fileWhatWasLearned(ctx, run, answer, theirWords, models.EvidenceConversation, shown)
 	if err != nil {
@@ -420,10 +420,22 @@ func transcriptFor(messages []*models.AgentMessage) string {
 			who = "you"
 		}
 		builder.WriteString("[" + message.ID + "] " + who + ": ")
-		builder.WriteString(unclosable(cutRunes(message.Content, rememberMessageCharacters)))
+		builder.WriteString(shownText(message))
 		builder.WriteString("\n\n")
 	}
 	return strings.TrimSpace(builder.String())
+}
+
+// shownText is one message as the transcript shows it: cut to the bound,
+// with anything that could close the block said rather than left to close
+// it.
+//
+// One function because two callers need the same answer. What a fact may
+// quote is what the model was shown, and the check held the quote against
+// the whole message instead: words from past the cut, which the run never
+// put in front of the model, passed as something it had been told.
+func shownText(message *models.AgentMessage) string {
+	return unclosable(cutRunes(message.Content, rememberMessageCharacters))
 }
 
 // whatWasFiled is what a filing run kept, and what the evidence check

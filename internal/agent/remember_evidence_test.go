@@ -97,6 +97,61 @@ func TestAFactCitingNothingHasNoEvidence(t *testing.T) {
 	})
 }
 
+// A quote from the part of a message the run cut off is not evidence
+// either.
+//
+// A long message goes into the transcript cut to fifteen hundred
+// characters, and the check held the quote against the whole of it: words
+// from past the cut -- which this run never put in front of the model --
+// were taken as something it had been told, at full confidence, on a page
+// the person reads.
+func TestAQuoteFromPastTheCutIsNotEvidence(t *testing.T) {
+	const beyond = "the mooring fee is 412 euro a month"
+	world := newRememberWorld(t, func(prompt string) string {
+		if !strings.Contains(prompt, "What to file") {
+			return `{"facts":[]}`
+		}
+		for _, said := range theirSentence.FindAllStringSubmatch(prompt, -1) {
+			if !strings.Contains(said[2], "the boat at length") {
+				continue
+			}
+			return fmt.Sprintf(`{"facts":[
+				{"path":"things/kittiwake","node_kind":"thing","node_name":"Kittiwake","kind":"fact",
+				 "text":"The mooring costs 412 euro a month.","quote":%q,"message_id":%q}
+			],"links":[],"supersedes":[]}`, beyond, said[1])
+		}
+		return `{"facts":[]}`
+	})
+
+	// Long enough that the tail is past the transcript's bound.
+	world.say(t, "user", strings.Repeat("we talked about the boat at length. ", 60)+beyond)
+	world.say(t, "assistant", "Noted.")
+	world.remember(t)
+
+	// The prompt is the check on the test itself: the quoted words must
+	// really be out of the model's sight.
+	if strings.Contains(world.promptSaying(t, "What to file"), beyond) {
+		t.Fatalf("the test's own message was not cut, so it proves nothing")
+	}
+
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		node, err := tx.GetAgentNode(world.agent.ID, "things/kittiwake")
+		if err != nil || node == nil {
+			t.Fatalf("the page was made: %v %s", node, err)
+		}
+		facts, err := tx.ListAgentFacts(world.agent.ID, node.ID, false, 10)
+		if err != nil || len(facts) != 1 {
+			t.Fatalf("the fact is kept: %v %s", facts, err)
+		}
+		if facts[0].Evidence[0].Quote != "" {
+			t.Fatalf("words the run never showed are not a quote: %q", facts[0].Evidence[0].Quote)
+		}
+		if !facts[0].Inferred {
+			t.Fatal("so it reads as the agent's own rather than as something said")
+		}
+	})
+}
+
 // The check is about words and not about typography. A transcript is
 // typed by people and rendered by programs, and a model copying a line
 // out of one straightens the quotation marks and folds the line breaks;
