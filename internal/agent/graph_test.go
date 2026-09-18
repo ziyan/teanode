@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -80,22 +81,53 @@ func (self *recallWorld) page(t *testing.T, path, name, summary string, facts ..
 	return node
 }
 
+// factsOf is a page's live facts in the order the store hands them over,
+// which is by number.
+func (self *recallWorld) factsOf(t *testing.T, node *models.AgentNode) []*models.AgentFact {
+	t.Helper()
+	var facts []*models.AgentFact
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		var err error
+		if facts, err = tx.ListAgentFacts(self.agent.ID, node.ID, false, 200); err != nil {
+			t.Fatalf("ListAgentFacts: %s", err)
+		}
+	})
+	return facts
+}
+
+// markedFacts is the facts of a page that have a use recorded against
+// them, in number order.
+func (self *recallWorld) markedFacts(t *testing.T, node *models.AgentNode) []*models.AgentFact {
+	t.Helper()
+	var marked []*models.AgentFact
+	for _, fact := range self.factsOf(t, node) {
+		if fact.UsedAt != nil {
+			marked = append(marked, fact)
+		}
+	}
+	return marked
+}
+
 // wanted is how many of a page's facts have a use recorded against them.
 func (self *recallWorld) wanted(t *testing.T, node *models.AgentNode) int {
 	t.Helper()
-	count := 0
-	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
-		facts, err := tx.ListAgentFacts(self.agent.ID, node.ID, false, 50)
-		if err != nil {
-			t.Fatalf("ListAgentFacts: %s", err)
+	return len(self.markedFacts(t, node))
+}
+
+// numbersShown is the fact numbers an expanded page carries, in the
+// order the block carries them. A loose fact is written with its path in
+// front of the number, so it is not one of these.
+func numbersShown(carried string) []int {
+	var numbers []int
+	for _, field := range strings.Fields(carried) {
+		if !strings.HasPrefix(field, "#") {
+			continue
 		}
-		for _, fact := range facts {
-			if fact.UsedAt != nil {
-				count++
-			}
+		if number, err := strconv.Atoi(field[1:]); err == nil {
+			numbers = append(numbers, number)
 		}
-	})
-	return count
+	}
+	return numbers
 }
 
 // overlay is the whole of what the turn would carry, as one string.
@@ -163,13 +195,11 @@ func TestTheOverlayCarriesEveryBlockThatWasMarkedAsUsed(t *testing.T) {
 	for index := 0; index < 12; index++ {
 		node := world.page(t, fmt.Sprintf("topics/loose-%d", index), fmt.Sprintf("Loose %d", index), "",
 			fmt.Sprintf("A loose note number %d.", index))
-		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-			facts, err := tx.ListAgentFacts(world.agent.ID, node.ID, false, 10)
-			if err != nil || len(facts) != 1 {
-				t.Fatalf("ListAgentFacts: %v %s", facts, err)
-			}
-			loose = append(loose, facts[0])
-		})
+		facts := world.factsOf(t, node)
+		if len(facts) != 1 {
+			t.Fatalf("a loose page has the one fact that was put on it, and has %d", len(facts))
+		}
+		loose = append(loose, facts[0])
 	}
 
 	world.run.writeRecalled(context.Background(), nodes, loose)
@@ -249,5 +279,229 @@ func TestAnIndexedPageStillGetsItsFacts(t *testing.T) {
 	}
 	if count := world.wanted(t, node); count != 1 {
 		t.Fatalf("the fact that was carried is marked as used, and %d was", count)
+	}
+}
+
+// A page of many facts shows the ones the question hit, not the ones
+// that happen to be oldest.
+//
+// The store hands a page's facts over by number and the chooser asked it
+// for five, so an expanded page showed its five oldest whatever had been
+// asked. That was harmless while a page held a handful. On the pages
+// this graph grew into -- fifty to ninety live facts -- the sentence the
+// search had matched was almost never among the first five, and the
+// loose-fact loop that would have carried it afterwards had neither a
+// block nor a token left by then, the page blocks having spent both. The
+// page was carried and the answer was not: the evaluation set read "did
+// not carry work/portal saying August 27" while work/portal was right
+// there in the overlay.
+func TestAnExpandedPageShowsTheFactsTheQuestionHit(t *testing.T) {
+	world := newRecallWorld(t)
+
+	var written []string
+	for number := 1; number <= 12; number++ {
+		written = append(written, fmt.Sprintf("The portal decided thing number %d.", number))
+	}
+	node := world.page(t, "projects/portal", "Portal", "The customer-facing portal.", written...)
+	facts := world.factsOf(t, node)
+	// Late enough on the page that nothing but the search would ever
+	// reach it.
+	hit := facts[9]
+
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, []*models.AgentFact{hit})
+
+	carried := world.overlay()
+	if !strings.Contains(carried, hit.Text) {
+		t.Fatalf("the fact the question hit is carried:\n%s", carried)
+	}
+	// The fifth fact is what the old chooser showed in its place: old
+	// enough to be among the first five by number, and nothing the
+	// question asked about.
+	if strings.Contains(carried, facts[4].Text) {
+		t.Fatalf("and a fact the search did not hit, past the five, is not:\n%s", carried)
+	}
+	if count := strings.Count(carried, hit.Text); count != 1 {
+		t.Fatalf("a fact its page carried is not repeated as a loose fact, and was carried %d times", count)
+	}
+	// Nothing carried is left unmarked and nothing marked is left
+	// uncarried: the overlay and `used_at` are the same list.
+	marked := world.markedFacts(t, node)
+	if len(marked) != pageFacts {
+		t.Fatalf("the page carried %d facts and marked %d", pageFacts, len(marked))
+	}
+	for _, fact := range marked {
+		if !strings.Contains(carried, fact.Text) {
+			t.Fatalf("%q was marked as used and is not in the overlay:\n%s", fact.Text, carried)
+		}
+	}
+	if numbers := numbersShown(carried); len(numbers) != len(marked) {
+		t.Fatalf("the overlay shows %d facts of the page and %d were marked", len(numbers), len(marked))
+	}
+}
+
+// What a page shows is chosen by what the question hit and shown in
+// number order.
+//
+// Selection is by relevance, presentation is by number. A block whose
+// `#n` references jump about stops reading like a page, and those
+// numbers are how the model cites back to the person what it was given.
+func TestAnExpandedPageShowsItsFactsInNumberOrder(t *testing.T) {
+	world := newRecallWorld(t)
+
+	var written []string
+	for number := 1; number <= 12; number++ {
+		written = append(written, fmt.Sprintf("The portal decided thing number %d.", number))
+	}
+	node := world.page(t, "projects/portal", "Portal", "The customer-facing portal.", written...)
+	facts := world.factsOf(t, node)
+	// The search ranked the tenth fact above the seventh. Neither the
+	// ranking nor the page's own numbering is allowed to be lost: the
+	// ranking picks the five, the numbering lays them out.
+	hits := []*models.AgentFact{facts[9], facts[6]}
+
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, hits)
+
+	carried := world.overlay()
+	shown := numbersShown(carried)
+	if want := []int{1, 2, 3, 7, 10}; fmt.Sprint(shown) != fmt.Sprint(want) {
+		t.Fatalf("the page shows %v and should show %v:\n%s", shown, want, carried)
+	}
+}
+
+// A page the search hit no fact on keeps what it always did: its first
+// facts, by number.
+func TestAPageTheSearchDidNotHitShowsItsFirstFacts(t *testing.T) {
+	world := newRecallWorld(t)
+
+	var written []string
+	for number := 1; number <= 12; number++ {
+		written = append(written, fmt.Sprintf("The portal decided thing number %d.", number))
+	}
+	node := world.page(t, "projects/portal", "Portal", "The customer-facing portal.", written...)
+
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, nil)
+
+	carried := world.overlay()
+	shown := numbersShown(carried)
+	if want := []int{1, 2, 3, 4, 5}; fmt.Sprint(shown) != fmt.Sprint(want) {
+		t.Fatalf("the page shows %v and should show %v:\n%s", shown, want, carried)
+	}
+	if count := world.wanted(t, node); count != pageFacts {
+		t.Fatalf("the %d facts it carried are marked as used, and %d were", pageFacts, count)
+	}
+}
+
+// A sentence the page no longer says is not carried, however well it
+// matches the question.
+//
+// A fact keeps its vector when it is struck or superseded: the row stays
+// searchable so that what a page used to say can still be found. The
+// search therefore hands back sentences that have been taken back, and
+// recall is the side that knows to leave them out. Showing one inside a
+// page's block would put words in the page's mouth that a person reading
+// the page would not find there -- and the fact that reads best against
+// a question is often exactly the one that was corrected.
+func TestWhatThePageNoLongerSaysIsNotCarried(t *testing.T) {
+	world := newRecallWorld(t)
+
+	node := world.page(t, "projects/portal", "Portal", "The customer-facing portal.",
+		"Ships on Fridays.", "Runs on the Frankfurt cluster.")
+	facts := world.factsOf(t, node)
+	if len(facts) != 2 {
+		t.Fatalf("two facts to start with, got %d", len(facts))
+	}
+	var struck *models.AgentFact
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		// The row as the search would hand it over: read after the
+		// strike, so it carries the mark the filter reads.
+		if struck, err = tx.StrikeAgentFact(world.agent.ID, facts[0].ID, "the person said it was wrong"); err != nil {
+			t.Fatalf("StrikeAgentFact: %s", err)
+		}
+	})
+	if !struck.Dormant {
+		t.Fatal("striking a fact marks it dormant")
+	}
+
+	// The search found it anyway, which is what its vector still being
+	// there means, and offered it as the page's best match.
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, []*models.AgentFact{struck})
+
+	carried := world.overlay()
+	if strings.Contains(carried, "Ships on Fridays.") {
+		t.Fatalf("a struck fact is not carried:\n%s", carried)
+	}
+	if !strings.Contains(carried, "Runs on the Frankfurt cluster.") {
+		t.Fatalf("and what the page does still say is:\n%s", carried)
+	}
+	for _, fact := range world.markedFacts(t, node) {
+		if fact.ID == struck.ID {
+			t.Fatal("a fact that was not carried is not marked as used")
+		}
+	}
+}
+
+// The fact a question matched outright is carried even when the pages
+// above it would have spent the whole budget.
+//
+// The page search and the fact search are the fuzzy and the precise
+// halves of one answer, and the fuzzy half used to be served first out of
+// a single budget. Once the timeline filled in, a hundred month pages --
+// long, prose, holding every ordinary word a question is made of --
+// ranked above every real page and spent all twelve hundred tokens. The
+// sentence that answered the question sat at the top of the fact search
+// and never reached the prompt.
+func TestAMatchedFactIsCarriedPastPagesThatWouldSpendItAll(t *testing.T) {
+	world := newRecallWorld(t)
+
+	// Pages that each fit and together do not, which is what a month
+	// page is: prose about everything that happened.
+	opening := strings.Repeat("a month of work. ", 12)
+	line := strings.Repeat("what happened, at length. ", 6)
+	var months []*models.AgentNode
+	for index := 0; index < 5; index++ {
+		months = append(months, world.page(t,
+			fmt.Sprintf("time/2019/%02d", index+1), fmt.Sprintf("Month %d", index+1),
+			opening, line, line, line, line, line))
+	}
+
+	answer := world.page(t, "work/webserver", "Webserver", "The web service.",
+		"The API is served on a separate port because port 80 is taken.")
+	matched := world.factsOf(t, answer)
+
+	world.run.writeRecalled(context.Background(), months, matched)
+
+	carried := world.overlay()
+	if !strings.Contains(carried, "a separate port") {
+		t.Fatalf("the fact the question matched is carried:\n%s", carried)
+	}
+	if count := len(world.markedFacts(t, answer)); count != 1 {
+		t.Fatalf("and marked as used, and %d was", count)
+	}
+}
+
+// A fact too long for what is left does not take the facts behind it
+// with it. They are in the order the search ranked them, so what stood
+// behind a long one was still the best of what the search found.
+func TestALongFactDoesNotEndTheFactsBehindIt(t *testing.T) {
+	world := newRecallWorld(t)
+
+	// Long facts, each inside the thousand characters a fact may have,
+	// until between them there is not room for another.
+	long := strings.Repeat("a sentence somebody wrote at length. ", 27)
+	var loose []*models.AgentFact
+	for index := 0; index < 5; index++ {
+		page := world.page(t, fmt.Sprintf("topics/long-%d", index), fmt.Sprintf("Long %d", index), "", long)
+		loose = append(loose, world.factsOf(t, page)...)
+	}
+	answer := world.page(t, "work/webserver", "Webserver", "",
+		"The API is served on a separate port because port 80 is taken.")
+	loose = append(loose, world.factsOf(t, answer)...)
+
+	world.run.writeRecalled(context.Background(), nil, loose)
+
+	carried := world.overlay()
+	if !strings.Contains(carried, "a separate port") {
+		t.Fatalf("the short fact behind the long ones is carried:\n%s", carried)
 	}
 }

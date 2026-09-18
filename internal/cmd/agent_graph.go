@@ -1352,7 +1352,7 @@ func gradeRecall(question evaluationQuestion, carried []*client.AgentRecalledPag
 func carriesClaim(carried []*client.AgentRecalledPage, claim evaluationClaim) bool {
 	path := strings.TrimSpace(claim.Path)
 	for _, page := range carried {
-		if page == nil || !strings.EqualFold(strings.TrimSpace(page.Path), path) {
+		if page == nil || !claimReaches(path, strings.TrimSpace(page.Path)) {
 			continue
 		}
 		for _, fact := range page.Facts {
@@ -1365,6 +1365,21 @@ func carriesClaim(carried []*client.AgentRecalledPage, claim evaluationClaim) bo
 		}
 	}
 	return false
+}
+
+// claimReaches says whether a page answers for a path the question set
+// names: the page itself, or one filed under it.
+//
+// A night divides a page that has grown too long, and what was
+// work/portal#12 becomes work/portal/deployments#3. That is the graph
+// working, not the graph losing the fact -- but a question set written
+// before the division names the parent, and grading on the exact path
+// turned every division into a failed question. Six of twenty failed
+// that way the first afternoon the pages were big enough to divide,
+// which reads as recall regressing and is nothing of the kind.
+func claimReaches(wanted, carried string) bool {
+	return strings.EqualFold(carried, wanted) ||
+		strings.HasPrefix(strings.ToLower(carried), strings.ToLower(wanted)+"/")
 }
 
 // factSays is whether one fact contains every word of a claim.
