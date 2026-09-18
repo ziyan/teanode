@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-09-18
+
+### Added
+
+- A file that came with a message can arrive with its text already. Where your script does not say what a file says, your own machine reads it with what you already have installed — a PDF, a spreadsheet, an office document or a plain text file — so it is searchable the night it is read and costs nothing. Pictures, video and sound still go up as bytes for a later night to look at. (#125)
+
 ## [0.37.0] - 2026-09-18
 
 ### Added
