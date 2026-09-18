@@ -4970,6 +4970,20 @@ label.check-list-item {
   background: var(--bad);
 }
 
+/* The reading's progress in the bootstrap row: the bar, the count and
+   the guess, stacked, where the row's subtitle goes. */
+.agent-reading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.agent-reading .agent-budget-bar {
+  width: 100%;
+  max-width: 28rem;
+}
+
 .agent-drawer-device {
   display: inline-flex;
   align-items: center;

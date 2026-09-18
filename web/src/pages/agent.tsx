@@ -315,10 +315,17 @@ export function AgentPage() {
         <>
           <LearnedCard />
           <CorrectionsCard />
+        </>
+      ) : null}
+      {/* What it reads sits with the night that reads it: the sources
+          are the backlog's shape, and the progress above them is how far
+          through it the night has got. */}
+      {tab === 'dreams' ? (
+        <>
+          <DreamCard agent={agent} busy={busy} onChange={update} onOpenRuns={showRunsOf} />
           <KnowledgeSourcesCard />
         </>
       ) : null}
-      {tab === 'dreams' ? <DreamCard agent={agent} busy={busy} onChange={update} onOpenRuns={showRunsOf} /> : null}
       {tab === 'connections' ? (
         <>
           <SchedulesCard />
@@ -730,6 +737,9 @@ const DREAMS = `
 const DREAM_NOW = `mutation { DreamAgentNow }`
 const DREAM_BOOTSTRAP = `mutation ($on: Boolean!) { DreamAgentNow(bootstrap: $on) }`
 const BOOTSTRAPPING = `query { ReadAgent { agent { dreamBootstrap } } }`
+const READING_PROGRESS = `query { AgentReadingProgress { waiting read perHour hoursLeft bootstrapping } }`
+
+type ReadingProgress = { waiting: number; read: number; perHour: number; hoursLeft: number; bootstrapping: boolean }
 
 type LearnedFact = {
   fact: { id: string; number: number; text: string; inferred: boolean; evidence: { kind: string; quote: string }[] }
@@ -1679,14 +1689,13 @@ function DreamCard({
   onChange: (variables: Record<string, unknown>, done: string) => Promise<void>
   onOpenRuns: (dream: { jobId: string; startedAt: string }) => void
 }) {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const toast = useToast()
-  // Seven at first, and seven more each time the person asks for
-  // earlier ones: a dream log is read from the top, not paged.
-  const [shown, setShown] = useState(7)
+  // A month of nights, as a table the person can sort and filter; a
+  // bootstrapping day makes one every hour.
   const { data, error, loading, reload } = useQuery(
-    () => graphql<{ ListAgentDreams: Dream[] }>(DREAMS, { first: shown }),
-    [shown],
+    () => graphql<{ ListAgentDreams: Dream[] }>(DREAMS, { first: 60 }),
+    [],
     { refresh: false },
   )
   const dreams = data?.ListAgentDreams ?? []
@@ -1700,9 +1709,13 @@ function DreamCard({
     { refresh: false },
   )
   const bootstrap = bootstrapping.data?.ReadAgent.agent.dreamBootstrap ?? false
-  // What waits to be read, from the last dream that finished: a dream
-  // still working has not counted yet, and reads as nothing waiting.
-  const backlog = dreams.find((dream) => dream.finishedAt)?.backlog ?? 0
+  // How far the reading has got, and the pace of the last dreams: the
+  // bar and the guess under it are what "is it done yet" wants answered.
+  const progress = useQuery(() => graphql<{ AgentReadingProgress: ReadingProgress }>(READING_PROGRESS, {}), [], {
+    refresh: false,
+  })
+  const reading = progress.data?.AgentReadingProgress
+  const backlog = reading?.waiting ?? 0
   const setBootstrap = async (on: boolean) => {
     try {
       await graphql(DREAM_BOOTSTRAP, { on })
@@ -1730,6 +1743,65 @@ function DreamCard({
     }
   }
 
+  const dreamColumns: Column<Dream>[] = [
+    { key: 'startedAt', header: t('agent.when'), width: '11rem', value: (dream) => formatTime(dream.startedAt) },
+    {
+      key: 'took',
+      header: t('agent.dreamTook'),
+      width: '6rem',
+      optional: true,
+      value: (dream) => (dream.finishedAt ? String(minutesBetween(dream.startedAt, dream.finishedAt)) : ''),
+      render: (dream) =>
+        dream.finishedAt ? (
+          <span className="muted">
+            {t('agent.dreamMinutes', { count: minutesBetween(dream.startedAt, dream.finishedAt) })}
+          </span>
+        ) : (
+          <Tag value={t('agent.dreamWorking')} tone="good" />
+        ),
+    },
+    {
+      key: 'did',
+      header: t('agent.dreamDid'),
+      truncate: true,
+      value: (dream) => whatItDid(dream, t).join(' · '),
+      render: (dream) => {
+        const did = whatItDid(dream, t)
+        return (
+          <span title={did.join(' · ')}>
+            {did.length > 0
+              ? did.join(' · ')
+              : !dream.finishedAt
+                ? ''
+                : dream.lastError
+                  ? t('agent.dreamCutShort')
+                  : t('agent.dreamNothing')}
+            {dream.lastError ? <span className="muted"> · {dream.lastError}</span> : null}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'backlog',
+      header: t('agent.dreamWaiting'),
+      width: '7rem',
+      optional: true,
+      value: (dream) => String(dream.backlog),
+      render: (dream) => <span className="muted numeric">{dream.backlog > 0 ? formatCount(dream.backlog) : ''}</span>,
+    },
+    {
+      key: 'runs',
+      header: '',
+      width: '6rem',
+      render: (dream) =>
+        dream.jobId ? (
+          <button type="button" onClick={() => onOpenRuns(dream)}>
+            {t('agent.dreamRuns')}
+          </button>
+        ) : null,
+    },
+  ]
+
   return (
     <SettingsSection
       card
@@ -1746,7 +1818,16 @@ function DreamCard({
           under them while they read it. */}
       <SettingsRow
         title={t('agent.bootstrap')}
-        subtitle={backlog > 0 ? t('agent.bootstrapHint', { count: backlog }) : t('agent.bootstrapHintEmpty')}
+        subtitle={
+          reading ? (
+            <ReadingBar
+              reading={reading}
+              hint={backlog > 0 ? t('agent.bootstrapHint', { count: backlog }) : t('agent.bootstrapHintEmpty')}
+            />
+          ) : (
+            t('agent.bootstrapHintEmpty')
+          )
+        }
         badge={bootstrap ? <Tag value={t('agent.bootstrapOn')} tone="good" /> : undefined}
         actions={
           <button type="button" className={bootstrap ? '' : 'primary'} onClick={() => void setBootstrap(!bootstrap)}>
@@ -1788,107 +1869,14 @@ function DreamCard({
       />
       {error ? <ErrorMessage error={error} /> : null}
       {loading && !data ? <Loading /> : null}
-      {data && dreams.length === 0 ? <SettingsEmpty>{t('agent.noDreams')}</SettingsEmpty> : null}
-      {dreams.map((dream) => {
-        const did = [
-          dream.digested > 0 ? t('agent.dreamRead', { count: dream.digested }) : '',
-          dream.filed > 0 ? t('agent.dreamFiled', { count: dream.filed }) : '',
-          dream.rewritten > 0 ? t('agent.dreamRewritten', { count: dream.rewritten }) : '',
-          dream.merged > 0 ? t('agent.dreamMerged', { count: dream.merged }) : '',
-          dream.moved > 0 ? t('agent.dreamMoved', { count: dream.moved }) : '',
-          dream.dormant > 0 ? t('agent.dreamRetired', { count: dream.dormant }) : '',
-          dream.embedded > 0 ? t('agent.dreamEmbedded', { count: dream.embedded }) : '',
-          dream.strengthened > 0 ? t('agent.dreamStrengthened', { count: dream.strengthened }) : '',
-          dream.associated > 0 ? t('agent.dreamAssociated', { count: dream.associated }) : '',
-          // All three, because "12 rehearsed" on its own reads as twelve
-          // questions memory answered, and a night whose model was
-          // unreachable would look like a night with nothing missing.
-          dream.rehearsed > 0 ? t('agent.dreamRehearsed', { count: dream.rehearsed }) : '',
-          dream.rehearsed > 0 ? t('agent.dreamGaps', { count: dream.gaps }) : '',
-          dream.rehearsed > 0 ? t('agent.dreamUnknown', { count: dream.unknown }) : '',
-          dream.revised > 0 ? t('agent.dreamRevised', { count: dream.revised }) : '',
-        ].filter(Boolean)
-        return (
-          <SettingsRow
-            key={dream.id}
-            title={formatTime(dream.startedAt)}
-            badge={dream.coarse ? <Tag value={t('agent.knowledgeReading')} tone="warn" /> : null}
-            actions={
-              dream.jobId ? (
-                <button type="button" onClick={() => onOpenRuns(dream)}>
-                  {t('agent.dreamRuns')}
-                </button>
-              ) : null
-            }
-            subtitle={
-              <>
-                {did.length > 0
-                  ? did.join(' · ')
-                  : !dream.finishedAt
-                    ? t('agent.dreamWorking')
-                    : dream.lastError
-                      ? t('agent.dreamCutShort')
-                      : t('agent.dreamNothing')}
-                {dream.backlog > 0 ? (
-                  <>
-                    <br />
-                    {t('agent.dreamBacklog', {
-                      count: dream.backlog,
-                      dreams: Math.max(1, Math.ceil(dream.backlog / 2000)),
-                    })}
-                  </>
-                ) : null}
-                {dream.coarse ? (
-                  <>
-                    <br />
-                    {t('agent.dreamCoarse')}
-                  </>
-                ) : null}
-                {dream.proposals.map((proposal, index) => (
-                  <span key={`${proposal.kind}-${proposal.path}-${proposal.to}-${index}`}>
-                    <br />
-                    {proposal.kind === 'gap'
-                      ? t('agent.dreamGap', { question: proposal.reason })
-                      : proposal.kind === 'linked'
-                        ? t('agent.dreamLinked', {
-                            path: proposal.path,
-                            to: proposal.to,
-                            reason: proposal.reason,
-                          })
-                        : t('agent.dreamSuggests', { path: proposal.path, under: proposal.to })}
-                  </span>
-                ))}
-                {/* What it asked itself and what it could not answer, in
-                    its own words. Not translated: the dream wrote them,
-                    and it writes in the language the agent is set to. */}
-                {(dream.notes || '')
-                  .split('\n')
-                  .map((line) => line.trim())
-                  .filter(Boolean)
-                  .map((line, index) => (
-                    <span key={`note-${index}`} className="muted">
-                      <br />
-                      {line}
-                    </span>
-                  ))}
-                {dream.lastError ? (
-                  <>
-                    <br />
-                    <span className="muted">{dream.lastError}</span>
-                  </>
-                ) : null}
-              </>
-            }
-          />
-        )
-      })}
-      {dreams.length >= shown ? (
-        <div className="row">
-          <button type="button" onClick={() => setShown(shown + 7)}>
-            {t('agent.earlierDreams')}
-          </button>
-        </div>
-      ) : null}
+      <DataTable
+        columns={dreamColumns}
+        rows={dreams}
+        rowKey={(dream) => dream.id}
+        loading={loading && !data}
+        emptyMessage={t('agent.noDreams')}
+        countLabel={(count) => plural(count, { one: 'agent.dreamsOne', other: 'agent.dreamsOther' })}
+      />
     </SettingsSection>
   )
 }
@@ -2311,6 +2299,74 @@ function ActivityCard({ job, onAll }: { job: { id: string; when: string } | null
         }
       />
     </SettingsSection>
+  )
+}
+
+// whatItDid is a dream's counts in words, the ones that are not zero.
+function whatItDid(dream: Dream, t: ReturnType<typeof useTranslation>['t']): string[] {
+  return [
+    dream.digested > 0 ? t('agent.dreamRead', { count: dream.digested }) : '',
+    dream.filed > 0 ? t('agent.dreamFiled', { count: dream.filed }) : '',
+    dream.rewritten > 0 ? t('agent.dreamRewritten', { count: dream.rewritten }) : '',
+    dream.merged > 0 ? t('agent.dreamMerged', { count: dream.merged }) : '',
+    dream.moved > 0 ? t('agent.dreamMoved', { count: dream.moved }) : '',
+    dream.dormant > 0 ? t('agent.dreamRetired', { count: dream.dormant }) : '',
+    dream.embedded > 0 ? t('agent.dreamEmbedded', { count: dream.embedded }) : '',
+    dream.strengthened > 0 ? t('agent.dreamStrengthened', { count: dream.strengthened }) : '',
+    dream.associated > 0 ? t('agent.dreamAssociated', { count: dream.associated }) : '',
+    // All three, because "12 rehearsed" on its own reads as twelve
+    // questions memory answered, and a night whose model was
+    // unreachable would look like a night with nothing missing.
+    dream.rehearsed > 0 ? t('agent.dreamRehearsed', { count: dream.rehearsed }) : '',
+    dream.rehearsed > 0 ? t('agent.dreamGaps', { count: dream.gaps }) : '',
+    dream.rehearsed > 0 ? t('agent.dreamUnknown', { count: dream.unknown }) : '',
+    dream.revised > 0 ? t('agent.dreamRevised', { count: dream.revised }) : '',
+  ].filter(Boolean)
+}
+
+function minutesBetween(from: string, to: string): number {
+  return Math.max(0, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 60000))
+}
+
+// ReadingBar is how far the night has got through what was indexed: the
+// bar, the count, and the hours the rest takes at the pace of the last
+// dreams. The pace is measured, not assumed; a night on a slow model and
+// a night on a fast one say different things here.
+function ReadingBar({ reading, hint }: { reading: ReadingProgress; hint: string }) {
+  const { t } = useTranslation()
+  const total = reading.read + reading.waiting
+  const fraction = total > 0 ? reading.read / total : 1
+  let left = ''
+  if (reading.waiting > 0 && reading.perHour > 0) {
+    const hours = reading.hoursLeft
+    const span =
+      hours < 1
+        ? t('agent.readingMinutes', { count: Math.max(1, Math.round(hours * 60)) })
+        : hours < 48
+          ? t('agent.readingHours', { count: Math.round(hours) })
+          : t('agent.readingDays', { count: Math.round(hours / 24) })
+    left = t('agent.readingLeft', { span, rate: Math.round(reading.perHour) })
+    if (!reading.bootstrapping) left += ' ' + t('agent.readingIfUnpaused')
+  }
+  return (
+    <span className="agent-reading">
+      <span
+        className="agent-budget-bar"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={reading.read}
+      >
+        <span className="agent-budget-bar-fill good" style={{ width: `${Math.round(fraction * 100)}%` }} />
+      </span>
+      <span>
+        {total > 0
+          ? t('agent.readingProgress', { read: formatCount(reading.read), total: formatCount(total) })
+          : t('agent.readingNothing')}
+        {left ? ` · ${left}` : ''}
+      </span>
+      <span className="muted">{hint}</span>
+    </span>
   )
 }
 
