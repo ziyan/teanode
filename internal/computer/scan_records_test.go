@@ -36,7 +36,12 @@ func recordsIn(t *testing.T, files map[string]string) (string, func(arguments *S
 		if arguments == nil {
 			arguments = &ScanArguments{}
 		}
-		arguments.Root, arguments.Format = root, FormatRecords
+		arguments.Root = root
+		// A test that asks for another format -- the probe, which is how
+		// the tool checks a folder before a source is made -- keeps it.
+		if arguments.Format == "" {
+			arguments.Format = FormatRecords
+		}
 		return RunScan(context.Background(), options, arguments)
 	}
 }
@@ -63,6 +68,46 @@ func writeRefresh(t *testing.T, root, script string) {
 	if err := os.WriteFile(filepath.Join(root, "refresh"), []byte(script), 0o755); err != nil {
 		t.Fatalf("WriteFile: %s", err)
 	}
+}
+
+// writeRecordsScript puts the folder's records script in it: the shape
+// that copies nothing, printing the names of its files with no argument
+// and one file's records when given a name.
+func writeRecordsScript(t *testing.T, root, script string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("a records script here is a shell script")
+	}
+	if err := os.WriteFile(filepath.Join(root, "records"), []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+}
+
+// pagesEverySo walks every page of a folder and answers what it was
+// shown, in order, with the cursor that carried it from page to page.
+func pagesEverySo(t *testing.T, scan func(*ScanArguments) (*ScanResult, error), most int) []string {
+	t.Helper()
+	var shown []string
+	after := ""
+	for page := 0; page < 20; page++ {
+		result, err := scan(&ScanArguments{Most: most, After: after})
+		if err != nil {
+			t.Fatalf("page %d: %s", page, err)
+		}
+		for _, entry := range result.Entries {
+			shown = append(shown, entry.ExternalID+" "+entry.Hash+" "+entry.Title)
+		}
+		if result.Next == "" {
+			return shown
+		}
+		// The cursor itself is part of what has to match: it is a file
+		// name, or a file name and an entry, and both ends of the
+		// comparison must cut the same file in the same place.
+		shown = append(shown, "next "+result.Next)
+		after = result.Next
+	}
+	t.Fatalf("the folder never finished paging")
+	return nil
 }
 
 // A record that is already a unit of meaning -- a wiki page, a mail
@@ -421,5 +466,161 @@ func TestTheKnownHashesAreKeptUnderThePassName(t *testing.T) {
 	// the map again.
 	if _, err := scan(&ScanArguments{Format: FormatRecords, KnownID: "pass-2"}); !errors.Is(err, ErrKnownMissing) {
 		t.Fatalf("a pass not held should be refused with ErrKnownMissing, got %v", err)
+	}
+}
+
+// The whole point of a folder that prints its records rather than
+// writing them: a source switched from copies to a script must file the
+// same documents under the same identifiers with the same hashes, in the
+// same order, page for page, or the switch re-files an archive of
+// hundreds of thousands of documents and re-embeds every one of them.
+//
+// The owner's archives are what asked for this. A refresh that turned a
+// chat export and a wiki export into records left 1.3 GB and 639 MB of
+// second copies on their disk, which is what a script reading the files
+// where they already lie does not do.
+func TestAScriptPagesIdenticallyToTheFilesItReplaces(t *testing.T) {
+	pages := strings.Join([]string{
+		`{"id":"page:1","kind":"page","title":"Deployment runbook","url":"https://wiki.example.com/1","at":"2026-08-14T09:30:00Z","author":"ziyan","text":"Restart the queue consumer first.","metadata":{"space":"DEV"}}`,
+		`{"id":"page:2","kind":"page","title":"On call","at":"2026-08-15T11:00:00Z","author":"alice","text":"Ring the second on call after ten minutes."}`,
+	}, "\n")
+	posts := strings.Join([]string{
+		`{"id":"b1","kind":"chat","channel":"backend","at":"2026-08-14T09:00:00Z","author":"alice","text":"Why is the queue backing up?"}`,
+		`{"id":"b2","kind":"chat","channel":"backend","thread":"b1","at":"2026-08-14T09:01:00Z","author":"bob","text":"The consumer died."}`,
+		`{"id":"b3","kind":"chat","channel":"backend","at":"2026-08-14T11:30:00Z","author":"carol","text":"Restarted it and it held."}`,
+	}, "\n")
+
+	_, copied := recordsIn(t, map[string]string{
+		"pages.jsonl":              pages,
+		"posts/team/backend.jsonl": posts,
+	})
+	printed, script := recordsIn(t, nil)
+	writeRecordsScript(t, printed, `#!/bin/sh
+case "$1" in
+"")
+	echo 'pages.jsonl'
+	echo 'posts/team/backend.jsonl'
+	;;
+pages.jsonl)
+	cat <<'JSON'
+`+pages+`
+JSON
+	;;
+posts/team/backend.jsonl)
+	cat <<'JSON'
+`+posts+`
+JSON
+	;;
+*)
+	echo "no such file: $1" >&2
+	exit 1
+	;;
+esac
+`)
+
+	// One entry a page cuts inside a file, two cut on a file boundary,
+	// and the whole folder at once is the page a real pass takes; a
+	// cursor that means something different on the two sides shows up
+	// in the first of those and nowhere else.
+	for _, most := range []int{1, 2, 256} {
+		fromFiles := pagesEverySo(t, copied, most)
+		fromScript := pagesEverySo(t, script, most)
+		if len(fromFiles) == 0 {
+			t.Fatalf("the folder of files was read as nothing")
+		}
+		if len(fromFiles) != len(fromScript) {
+			t.Fatalf("%d a page: the two folders page differently:\n files  %v\n script %v", most, fromFiles, fromScript)
+		}
+		for index := range fromFiles {
+			if fromFiles[index] != fromScript[index] {
+				t.Fatalf("%d a page, at %d the script differs:\n files  %q\n script %q", most, index, fromFiles[index], fromScript[index])
+			}
+		}
+		if most == 1 {
+			midFile := false
+			for _, line := range fromFiles {
+				if strings.HasPrefix(line, "next ") && strings.Contains(line, "#") {
+					midFile = true
+				}
+			}
+			if !midFile {
+				t.Fatalf("a page of one never stopped inside a file, so the cursor was never compared: %v", fromFiles)
+			}
+		}
+	}
+}
+
+// A script that cannot answer for one of its files marks that file
+// unreadable, exactly as an unreadable file on disk is marked, so the
+// source's page shows it rather than the pass quietly holding one file
+// fewer than the archive has.
+func TestARecordsScriptThatFailsMarksThatFileUnreadable(t *testing.T) {
+	root, scan := recordsIn(t, nil)
+	writeRecordsScript(t, root, `#!/bin/sh
+case "$1" in
+"")
+	echo 'pages.jsonl'
+	;;
+*)
+	echo 'the archive is on a disk that is not mounted' >&2
+	exit 3
+	;;
+esac
+`)
+
+	result, err := scan(nil)
+	if err != nil {
+		t.Fatalf("one file failing is not the pass failing: %s", err)
+	}
+	if len(result.Entries) != 1 || result.Refused != 1 {
+		t.Fatalf("one entry saying so, and counted: %+v %d", result.Entries, result.Refused)
+	}
+	entry := result.Entries[0]
+	if entry.ExternalID != "pages.jsonl" {
+		t.Fatalf("named by the file it could not read: %+v", entry)
+	}
+	if !strings.Contains(entry.Refused, "could not be read") || !strings.Contains(entry.Refused, "exit 3") {
+		t.Fatalf("and how it failed: %q", entry.Refused)
+	}
+	if !strings.Contains(entry.Refused, "the archive is on a disk that is not mounted") {
+		t.Fatalf("carrying what the script said on its standard error: %q", entry.Refused)
+	}
+}
+
+// A folder whose only content is the script is a records folder: the
+// probe the knowledge tool sends before a source is made accepts it, and
+// a scan of it reads what the script prints. Such a folder had nothing
+// in it to read before, and indexed nothing at all.
+func TestAFolderOfOnlyARecordsScriptIsRead(t *testing.T) {
+	root, scan := recordsIn(t, nil)
+	writeRecordsScript(t, root, `#!/bin/sh
+case "$1" in
+"") echo 'pages/DEV.jsonl' ;;
+pages/DEV.jsonl)
+	echo '{"id":"page:1","kind":"page","title":"Deployment runbook","text":"Restart the queue consumer first."}'
+	;;
+esac
+`)
+
+	probed, err := scan(&ScanArguments{Format: FormatProbe, Most: 1})
+	if err != nil {
+		t.Fatalf("the probe accepts a folder with only a script in it: %s", err)
+	}
+	if len(probed.Entries) != 0 {
+		t.Fatalf("a probe reads nothing: %+v", probed.Entries)
+	}
+
+	result, err := scan(nil)
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	if len(result.Entries) != 1 {
+		t.Fatalf("the record the script printed: %+v", result.Entries)
+	}
+	if result.Entries[0].ExternalID != "pages/DEV.jsonl#page:1" {
+		t.Fatalf("filed under a file that does not exist: %+v", result.Entries[0])
+	}
+	if _, err := os.Stat(filepath.Join(root, "pages")); err == nil {
+		t.Fatalf("and nothing was written down")
 	}
 }
