@@ -6,6 +6,20 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-09-18
+
+### Added
+
+- The task list in the agent's drawer is yours to work on too. Each item is a
+  box you tick — and untick, if you ticked it too soon — there is a line at
+  the foot of the list to put something new on it, and each item can be taken
+  off again, with nothing asked first, because it is one line somebody typed.
+  Your agent writes that list while it works through something in several
+  steps and reads it back every round, so a tick of yours is there the next
+  time it looks, and a tick of its own arrives in the drawer without
+  disturbing what you are doing. The list under a run is still only a record
+  of what happened: a run is over by the time you read it. (#114)
+
 ## [0.32.0] - 2026-09-18
 
 ### Added
