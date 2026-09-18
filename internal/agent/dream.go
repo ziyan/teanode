@@ -688,9 +688,14 @@ func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*model
 	}
 	// Evidence points at the document rather than at a conversation:
 	// these facts came from something read, not something said.
-	filed, err := self.fileWhatWasLearned(ctx, run, answer, nil, models.EvidenceDocument, shown)
+	filed, err := self.fileWhatWasLearned(ctx, run, answer, nil, models.EvidenceDocument, shown, nil)
 	if err != nil {
-		log.Debugf("cannot file what a dream's digest found: %s", err)
+		// Not read. A window is written whole or not at all, so a failure
+		// here means nothing of this batch reached a page -- and marking
+		// it read would put what the model found behind a mark that says
+		// it was filed. The reading comes back to it in the next dream.
+		log.Warningf("cannot file what a dream's digest found: %s", err)
+		return 0, false
 	}
 	// A reading that quoted words nobody wrote says so on its own row, so
 	// the night's runs show how often the model invents rather than only

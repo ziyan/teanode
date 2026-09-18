@@ -122,6 +122,20 @@ run kept the *newest* sixty and moved the mark to the end of the whole
 list, so a backlog of two hundred had its first hundred and forty marked
 filed unread, and nothing ever came back for them.
 
+A window lands whole or not at all. The reading and the embeddings happen
+first — they are calls to another service and have no business holding a
+database connection — and then the facts, the links, the strikes that
+supersede what they replace, and the mark itself are one transaction.
+That was the second way the mark lied. A fact whose write failed was
+logged and stepped over while the run reported success, so the mark moved
+past the whole window and those messages were never read again; and the
+strikes ran afterwards, in transactions of their own, so a page could end
+up with its old line struck and nothing standing in its place. Now a
+failure leaves the graph and the mark exactly as they were and the job
+comes round again. The one thing that can outlive a failed window is a
+page opened with no facts on it, which the nightly pass takes away after
+two days.
+
 The same job's shape does the reading of sources: `ingest.go` asks an
 attached computer for a page of a scan, files the documents, and the
 dream turns them into facts. A document a full pass no longer reports is
