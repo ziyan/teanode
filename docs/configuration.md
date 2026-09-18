@@ -1055,6 +1055,16 @@ below.
 **`mcp`** — Servers speaking the Model Context Protocol whose tools join the
 catalog.
 
+**`skipCertificateCheck`** — Hosts whose TLS certificate is not checked,
+by name. A real loss and narrower than it looks: for a host named here,
+anything answering at that address can pretend to be it, so it is only
+for equipment that cannot be verified at all — a controller shipping a
+certificate issued for `127.0.0.1`, which can never be valid for the
+address it is reached at. Only a skill going to the endpoint it declares
+is given this; the remote image proxy, one-click unsubscribe and
+`web_fetch` follow addresses out of somebody else's mail and always
+check.
+
 ### `agent.providers[]`
 
 **`name`** — What `provider:model` names. Any label, and stable: the models
@@ -1091,6 +1101,9 @@ services bill above the input price and report apart from it; left unset it
 costs nothing, which is right for a service that does not charge for it and
 wrong for one that does.
 
+**`model`** — Which model a `modelPricing` entry prices: the name after
+the provider's, matched the way `allow` and `deny` are.
+
 **`modelPricing`** — Prices for particular models of this provider, since
 one service's models rarely cost alike: a small model and a large one behind
 the same key are priced apart. Each entry has a `model` and the same four
@@ -1124,6 +1137,24 @@ memories are re-embedded a few per conversation turn, while mail is only
 re-embedded by a backfill, which runs when a mailbox is granted with sorting
 and its own backfill on. Mail vectors from the old model are left where they
 are; they match nothing, so that mailbox falls back to searching by words.
+
+**`embeddingDimensions`** — How wide a vector to ask the embedding model
+for, where it takes such a request; zero, the default, is the model's own
+width. Worth setting where the knowledge sources are, because that is
+where the vectors are: half a million chunks at 1536 floats is three
+gigabytes of table and index, and at 512 it is one. The models that
+accept this argument are trained so that the first few hundred numbers
+carry nearly all of the meaning, so the search is barely worse and the
+store is a third the size. The width travels with the model's name
+wherever a vector is kept — two widths of one model are two spaces, and
+must never be ranked against each other — so changing it makes the
+existing vectors stale in the same way changing `embedding` does.
+
+**`scan`** — The model for bulk understanding with nobody present: filing
+what a conversation taught, summarizing a document, writing a month's
+page, consolidating a page from its facts. It runs over everything the
+person has, so it should be the cheapest model that can follow an
+instruction. Empty falls back to `fast`, then to `default`.
 
 **`triage`**, **`research`**, **`summarize`**, **`reply`**, **`ask`**,
 **`schedule`** — Overrides per kind of work. Resolution is the override,
@@ -1177,6 +1208,24 @@ talk to their agent's primary conversation.
 **`skills`** — Tools installed from the skill registry. Off here, nothing
 installed is offered and nothing can be installed.
 
+**`remember`** — The run after a conversation that files what it taught
+into the person's pages. Off, the agent keeps only what the person or the
+model explicitly asked it to keep, which is what it did before this
+existed and is measurably almost nothing.
+
+**`knowledge`** — The places a person points their agent at — a checkout,
+a chat archive, a wiki — and searching them. Off, no source is read and
+none can be added.
+
+**`dreaming`** — The nightly run that works through what arrived,
+rewrites the pages it touched and tidies the graph. Off, nothing is filed
+or consolidated while nobody is there; what is already in the graph stays
+and is still read.
+
+**`subagents`** — Letting a turn hand a piece of work to a run of its own.
+It costs what a second run costs, against the same person's budget, so a
+deployment counting tokens may want it off.
+
 ### `agent.skillSecrets`
 
 The values the installed skills need and do not carry. A skill declares the
@@ -1187,6 +1236,14 @@ is waiting for. On a running server the stored configuration is changed
 with `teanode settings set agent 'skillSecrets:=[{"skill":"news","key":"NEWSAPI_KEY","value":"..."}]'`,
 which merges by skill and key; a blank value removes one, and `teanode
 settings show agent` says which are filled in without showing them.
+
+**`skill`** — Which installed skill asked for the value, by its name.
+
+**`key`** — The key that skill asked for it under, as `teanode agent skill
+list` prints it.
+
+**`value`** — The value itself. A secret: sealed with `server.secret`,
+shown redacted, and kept when a settings update leaves it blank.
 
 Only the keys a skill scoped to the operator, which is the default. A key it
 scoped to the person is each person's own: they fill it in on their agent
@@ -1229,6 +1286,28 @@ first stops the day. Zero means no limit of this kind.
 **`monthlyCostPerServer`** — What everybody's agents may cost the deployment
 in a month, beside `monthlyTokensPerServer`, and warned about at 80 % the
 same way. Zero means no cap.
+
+**`embeddingTokensPerDay`** — Meant to bound embedding apart from
+everything else, because the first pass over a person's checkout and chat
+archive is a hundred million tokens at a thousandth of the price of a
+conversation, and counting it against the same daily budget would stop
+the load on its first night and every night after. Zero, the default, is
+no limit. Set, validated and read by nothing so far: embedding is counted
+in `dailyTokensPerAgent` and in the money caps like every other call, and
+this does not yet change that.
+
+**`dreamShare`** — How much of the daily budget one night's run may
+spend, as a fraction, so that a night never eats the day. Zero resolves
+to `0.3`.
+
+**`scanConcurrency`** — How many calls the nightly reading makes at once.
+One for a service metered by the call; as many as it has slots for a
+model of the person's own, where the reading is bound by nothing but the
+machine. Zero and one both mean one at a time.
+
+**`ingestChunksPerRun`** — How many chunks one pass of an ingest job
+embeds before it hands the queue back, so that one enormous source does
+not hold the worker. Zero resolves to `2000`.
 
 **`maxRoundsPerAsk`** — How many times one conversation turn may go back to
 the model.

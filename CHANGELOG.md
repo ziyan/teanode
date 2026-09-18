@@ -35,8 +35,10 @@ Notable changes to TeaNode. The format follows
 - You can point it at what you already have: a checkout on one of your
   computers, a chat archive, your notes. It reads them on the machine they are
   on — the walking, the sniffing and the refusing all happen there, so a secret
-  never crosses the socket — and files what it finds. Directories that look like
-  records about other people are held back until you let them in by name.
+  never crosses the socket — and files what it finds. Every directory is read
+  alike; what refuses a file is the secret filter, which goes by what a file is
+  called and what is in it rather than by the name of the folder above it, and
+  the source's page says how many files it turned away.
 
 - It tidies overnight, in its own hours, which you can now set. It reads what
   arrived, writes up the month, rewrites the pages that changed, strengthens the

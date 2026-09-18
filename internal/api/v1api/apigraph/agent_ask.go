@@ -548,8 +548,7 @@ func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgen
 	}
 	turnsToday := 0
 	if conversation.Goal != "" {
-		local := time.Now().In(agenttools.Location(owner))
-		midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
+		midnight := goalDayBegan(time.Now(), principal.User, owner)
 		counted, err := tx.CountAgentJobs(&db.AgentJobFilter{
 			AgentID:   conversation.AgentID,
 			Kinds:     []models.AgentJobKind{models.AgentJobGoal},
@@ -563,6 +562,25 @@ func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgen
 		turnsToday = int(counted)
 	}
 	return &AgentConversationView{Conversation: conversation, Messages: messages[start:end], Total: total, Todos: todos, ActingAs: actingAs, GoalTurnsToday: turnsToday}, nil
+}
+
+// goalDayBegan is the midnight the day's goal turns are counted from:
+// the agent owner's, in their own zone.
+//
+// Whose day it is has to match the handler that enforces the cap
+// (internal/agent/goal.go), which counts from midnight in the zone of the
+// person whose agent it is. The drawer reads the conversation through
+// conversationFor, which names an owner only when an operator is reading
+// somebody else's; the caller's own conversation comes back with none,
+// and falling back to the server's zone there counted from a different
+// midnight than the cap did. The count then disagreed with what the agent
+// actually had left for as long as the two zones were on different days.
+func goalDayBegan(now time.Time, caller, owner *models.User) time.Time {
+	if owner == nil {
+		owner = caller
+	}
+	local := now.In(agenttools.Location(owner))
+	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
 }
 
 func (self *graph) ListAllAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) (*AgentRunPage, error) {

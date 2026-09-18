@@ -190,10 +190,13 @@ type agentNodeModel struct {
 	CreatedAt  time.Time  `gorm:"column:created_at"`
 	ModifiedAt time.Time  `gorm:"column:modified_at"`
 
-	// NextFactNumber is the high-water mark described in the migration. It
-	// is not on the model: nothing above this package has any business
-	// knowing how a number is chosen.
-	NextFactNumber int `gorm:"column:next_fact_number"`
+	// next_fact_number and next_revision are deliberately absent, the way
+	// next_revision always has been. They are counters this package moves
+	// with one statement that reads and writes them at once; a row struct
+	// carrying them would have Save write back whatever value was read a
+	// moment earlier and undo somebody else's increment. Nothing above
+	// this package has any business knowing how a number is chosen
+	// either.
 }
 
 func (agentNodeModel) TableName() string { return "agent_node" }
@@ -256,8 +259,6 @@ func nodeToModel(node *models.AgentNode) (*agentNodeModel, error) {
 		// first". See migration 0073.
 		Version:   version.Version(),
 		CreatedAt: node.CreatedAt, ModifiedAt: node.ModifiedAt,
-
-		NextFactNumber: 1,
 	}
 	if node.ParentID != "" {
 		parent := node.ParentID
@@ -531,16 +532,11 @@ func (self *transaction) PutAgentNode(node *models.AgentNode) (*models.AgentNode
 		return nil, err
 	}
 	if existing != nil {
-		// Save writes every column, and the fact counter is this
-		// package's, not the caller's: read it back rather than resetting
-		// it to one.
-		var counters []int
-		if err := self.tx.Raw(`SELECT "next_fact_number" FROM "agent_node" WHERE "id" = ?`, written.ID).Scan(&counters).Error; err != nil {
-			return nil, err
-		}
-		if len(counters) > 0 && counters[0] > 0 {
-			row.NextFactNumber = counters[0]
-		}
+		// Save writes every column the row struct carries, which is why
+		// the fact counter is not one of them: reading it here and
+		// writing it back would lose an increment another transaction
+		// made in between, and the next fact filed on this page would
+		// take a number already taken and hit the unique index.
 		if err := self.tx.Save(row).Error; err != nil {
 			return nil, err
 		}
@@ -601,8 +597,29 @@ func (self *transaction) PutAgentNode(node *models.AgentNode) (*models.AgentNode
 // indexNode writes the page's full-text column. Written on the way in
 // rather than by a trigger, which is how mail does it.
 func (self *transaction) indexNode(node *models.AgentNode) error {
-	text := node.Path + " " + node.Name + " " + strings.Join(node.Aliases, " ") + " " + node.Summary
-	return self.tx.Exec(`UPDATE "agent_node" SET "search" = to_tsvector('simple', ?) WHERE "id" = ?`, text, node.ID).Error
+	return self.indexNodesWhere(`"id" = ?`, node.ID)
+}
+
+// indexNodesUnder rewrites the column for a page and everything filed
+// under it, which is what a move needs: moving a page rewrites the path
+// of every row beneath it, and the path is part of what the column is
+// built from, so a descendant left alone goes on being found by where it
+// used to be and never by where it is.
+func (self *transaction) indexNodesUnder(agentId, path string) error {
+	return self.indexNodesWhere(`"agent_id" = ? AND ("path" = ? OR "path" LIKE ?)`,
+		agentId, path, likeEscaped(path)+"/%")
+}
+
+// indexNodesWhere is the one definition of what a page is searchable by.
+// It builds the text from the stored row rather than from a struct, so
+// that a whole subtree is one statement rather than a statement each, and
+// so that a caller holding a stale copy cannot index words the page does
+// not have.
+func (self *transaction) indexNodesWhere(where string, arguments ...any) error {
+	return self.tx.Exec(`UPDATE "agent_node" SET "search" = to_tsvector('simple',
+		"path" || ' ' || "name" || ' ' ||
+		COALESCE((SELECT string_agg("alias", ' ') FROM jsonb_array_elements_text("aliases") AS "alias"), '') ||
+		' ' || "summary") WHERE `+where, arguments...).Error
 }
 
 func (self *transaction) MoveAgentNode(agentId, path, newParentPath string) (*models.AgentNode, error) {
@@ -660,7 +677,7 @@ func (self *transaction) MoveAgentNode(agentId, path, newParentPath string) (*mo
 	if err != nil || moved == nil {
 		return nil, err
 	}
-	if err := self.indexNode(moved); err != nil {
+	if err := self.indexNodesUnder(agentId, target); err != nil {
 		return nil, err
 	}
 	self.note(agentId, moved.ID, models.RevisionMoved,

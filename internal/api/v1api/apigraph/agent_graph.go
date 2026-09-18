@@ -1133,6 +1133,14 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 		source.Specification.Format = arguments.Format
 	}
 	if arguments.MailboxID != "" {
+		// Theirs, and one that exists. A source naming a mailbox is read
+		// by the ingest run with no check of its own -- it opens the Sent
+		// folder of whatever identifier it was handed -- so naming a
+		// stranger's here would file their sent mail into this agent's
+		// pages.
+		if _, err := self.requireMailbox(ctx, models.PermissionMailRead, arguments.MailboxID); err != nil {
+			return nil, err
+		}
 		source.Specification.MailboxID = arguments.MailboxID
 	}
 	if arguments.RootPath != "" {
@@ -1150,7 +1158,12 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 			source.Name = string(source.Kind)
 		}
 	}
-	if source.Cron == "" {
+	// Only when the source is new. An empty cron means "only when they
+	// ask" (migration 0068), and filling it in on every save made that
+	// impossible to keep: pausing a source, resuming it, or renaming it
+	// each handed it a nightly schedule it had been deliberately set
+	// without.
+	if arguments.SourceID == "" && source.Cron == "" {
 		source.Cron = "17 3 * * *"
 	}
 	// Due now when it is new or has just been switched on: the person

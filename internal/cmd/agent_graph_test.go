@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/client"
 )
@@ -204,4 +207,64 @@ func TestTheTotalsAreCountedPerKind(t *testing.T) {
 	if totals[1].Kind != questionAbstain || totals[1].Hits != 1 || totals[1].Asked != 1 {
 		t.Fatalf("abstain is %+v", totals[1])
 	}
+}
+
+// What cannot be undone asks first, and these two did not.
+//
+// `memory forget` with no --number deletes a page and everything filed
+// under it; `knowledge remove` throws away every document and chunk a
+// source ever produced, which for a checkout or a chat archive is hours
+// of reading and the embedding bill that went with it. Both went
+// straight through on a mistyped path or name.
+//
+// The forget is checked by running it. Standard input is not a terminal
+// under `go test`, which is the case confirm refuses outright, so a
+// refusal naming --force proves the question is asked -- and it is asked
+// before any connection is opened, which is why this needs no server.
+func TestForgettingAPageAndRemovingASourceAskFirst(t *testing.T) {
+	t.Parallel()
+
+	forget := commandNamed(t, commandNamed(t, NewAgentCommand(), "memory"), "forget")
+	if flagNamed(forget, "force") == nil {
+		t.Errorf("memory forget offers --force, so a script that has already decided can say so")
+	}
+	remove := commandNamed(t, commandNamed(t, NewAgentCommand(), "knowledge"), "remove")
+	if flagNamed(remove, "force") == nil {
+		t.Errorf("knowledge remove offers --force")
+	}
+
+	err := forget.Run(t.Context(), []string{"forget", "people/alice-chen"})
+	if err == nil {
+		t.Fatalf("forgetting a whole page without confirmation is refused")
+	}
+	if !strings.Contains(err.Error(), "--force") {
+		t.Errorf("the refusal says how to proceed: %s", err)
+	}
+	if !strings.Contains(err.Error(), "people/alice-chen") {
+		t.Errorf("and says what would have gone: %s", err)
+	}
+}
+
+// commandNamed and flagNamed reach into the command tree the way a person
+// reaches the command: by the words they type.
+func commandNamed(t *testing.T, parent *cli.Command, name string) *cli.Command {
+	t.Helper()
+	for _, command := range parent.Commands {
+		if command.Name == name {
+			return command
+		}
+	}
+	t.Fatalf("%s has no %q subcommand", parent.Name, name)
+	return nil
+}
+
+func flagNamed(command *cli.Command, name string) cli.Flag {
+	for _, flag := range command.Flags {
+		for _, named := range flag.Names() {
+			if named == name {
+				return flag
+			}
+		}
+	}
+	return nil
 }
