@@ -2546,6 +2546,7 @@ export const ja: Catalog = {
   'agent.bootstrap': 'ブートストラップ',
   'agent.bootstrapHint':
     '{count} 件の文書が読まれるのを待っています。ブートストラップは、読み終えるまで夢の整理を広い制限で続けて実行します。自分のモデルで読ませるのが最適です。',
+  'agent.dreamFilter': '{when} の夢',
   'agent.dreamTook': '所要時間',
   'agent.dreamMinutes': '{count} 分',
   'agent.dreamDid': '行ったこと',

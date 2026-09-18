@@ -4970,6 +4970,18 @@ label.check-list-item {
   background: var(--bad);
 }
 
+/* A filter the page applied from outside the table, shown as a chip
+   among the table's tools with its own clearing. */
+.table-pinned {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.85em;
+}
+
 /* The reading's progress in the bootstrap row: the bar, the count and
    the guess, stacked, where the row's subtitle goes. */
 .agent-reading {

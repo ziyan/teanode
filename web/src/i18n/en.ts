@@ -2564,6 +2564,7 @@ export const en = {
   'agent.bootstrap': 'Bootstrap',
   'agent.bootstrapHint':
     '{count} documents wait to be read. Bootstrapping dreams again at every tick, with wider limits, until they are read; best with a model of your own doing the reading.',
+  'agent.dreamFilter': 'Dream at {when}',
   'agent.dreamTook': 'Took',
   'agent.dreamMinutes': '{count} min',
   'agent.dreamDid': 'What it did',

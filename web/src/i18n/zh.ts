@@ -2460,6 +2460,7 @@ export const zh: Catalog = {
   'agent.bootstrap': '引导',
   'agent.bootstrapHint':
     '还有 {count} 份文档等待阅读。引导会让梦境整理以更宽的限度一轮接一轮地运行，直到读完；最好用你自己的模型来读。',
+  'agent.dreamFilter': '{when} 的梦',
   'agent.dreamTook': '用时',
   'agent.dreamMinutes': '{count} 分钟',
   'agent.dreamDid': '做了什么',

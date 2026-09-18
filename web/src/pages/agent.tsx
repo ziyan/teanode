@@ -170,10 +170,19 @@ export function AgentPage() {
   // The dream whose runs the activity table is narrowed to, if any. It is
   // held here rather than in the activity tab, so that the dream log's Runs
   // button can set it and then switch tabs without it going with the card.
-  const [runsOf, setRunsOf] = useState<{ id: string; when: string } | null>(null)
+  // It is in the address as well, so the narrowed table can be linked
+  // to, reloaded, and gone back to.
+  const [runsOf, setRunsOf] = useState<{ id: string; when: string } | null>(() => {
+    const params = new URLSearchParams(location.search)
+    const dream = params.get('dream')
+    const at = params.get('at')
+    return dream ? { id: dream, when: at ? formatTime(at) : '' } : null
+  })
   const showRunsOf = (dream: { jobId: string; startedAt: string }) => {
     setRunsOf({ id: dream.jobId, when: formatTime(dream.startedAt) })
-    navigate('/settings/agent/activity')
+    navigate(
+      `/settings/agent/activity?dream=${encodeURIComponent(dream.jobId)}&at=${encodeURIComponent(dream.startedAt)}`,
+    )
     // The dream log is long, and a tab arrived at from half way down it
     // opened below its own heading. The column scrolls, not the window.
     document.querySelector('.content')?.scrollTo({ top: 0 })
@@ -337,7 +346,13 @@ export function AgentPage() {
       ) : null}
       {tab === 'activity' ? (
         <>
-          <ActivityCard job={runsOf} onAll={() => setRunsOf(null)} />
+          <ActivityCard
+            job={runsOf}
+            onAll={() => {
+              setRunsOf(null)
+              navigate('/settings/agent/activity')
+            }}
+          />
           <RepliesCard />
         </>
       ) : null}
@@ -2277,17 +2292,15 @@ function ActivityCard({ job, onAll }: { job: { id: string; when: string } | null
       id="activity"
       title={t('agent.activity')}
       description={job ? t('agent.runsOfDream', { when: job.when }) : t('agent.activityHint')}
-      action={
-        job ? (
-          <button type="button" onClick={onAll}>
-            {t('agent.allRuns')}
-          </button>
-        ) : null
-      }
     >
       <DataTable
         columns={columns}
         rows={runs}
+        pinned={
+          job
+            ? [{ key: 'dream', label: t('agent.dreamFilter', { when: job.when || job.id }), onClear: onAll }]
+            : undefined
+        }
         rowKey={(run) => run.id}
         loading={loading && !data}
         remote={{ total, onRange }}

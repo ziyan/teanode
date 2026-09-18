@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { Key, useTranslation } from '../i18n/i18n'
-import { ChevronRightIcon, FilterIcon, SortIcon } from './icons'
+import { ChevronRightIcon, CloseIcon, FilterIcon, SortIcon } from './icons'
 import { MultiSelectFilter, Option, TextFilter, matchesSelection, matchesText } from './filters'
 import { Select } from './select'
 import { Tooltip } from './tooltip'
@@ -118,6 +118,7 @@ export function DataTable<Row>({
   loading,
   emptyMessage,
   initialFilters,
+  pinned,
   countLabel,
   selected,
   onSelect,
@@ -141,6 +142,12 @@ export function DataTable<Row>({
   // Filters to start with, for a page arrived at from a link that already
   // said what it wanted to see.
   initialFilters?: Record<string, string | string[]>
+
+  // Filters the caller applied from outside the table -- the runs of one
+  // dream, arrived at from the dream's own row -- shown as chips beside
+  // the table's own, each with its clearing, so that a narrowed table
+  // says so where filters are said and not only in a heading.
+  pinned?: { key: string; label: string; onClear: () => void }[]
   // The noun is the caller's: this component does not know whether it is
   // holding messages or deliveries, and English needs to be told which before
   // it can pluralise. `filtering` says whether the count is a subset, so the
@@ -305,14 +312,24 @@ export function DataTable<Row>({
     }
   }, [visible.length])
   const filtering = Object.values(filters).some((filter) => filter.length > 0)
+  const pinnedFilters = pinned ?? []
+  const narrowed = filtering || pinnedFilters.length > 0
   const selecting = onSelect !== undefined
   const chosen = selected ? [...selected] : []
   const filterable = columns.some((column) => column.filter)
 
   return (
     <>
-      {(filterable || chosen.length > 0) && (
+      {(filterable || chosen.length > 0 || pinnedFilters.length > 0) && (
         <div className="table-tools">
+          {pinnedFilters.map((filter) => (
+            <span key={filter.key} className="table-pinned">
+              {filter.label}
+              <button type="button" className="icon-button" aria-label={t('filter.clearAll')} onClick={filter.onClear}>
+                <CloseIcon size={12} />
+              </button>
+            </span>
+          ))}
           {filterable && (
             <>
               <button
@@ -495,7 +512,9 @@ export function DataTable<Row>({
 
       {total > 0 && (
         <div className="table-bar">
-          <span className="muted">{countLabel(total, remote ? filtering : filtered.length !== rows.length)}</span>
+          <span className="muted">
+            {countLabel(total, remote ? narrowed : narrowed || filtered.length !== rows.length)}
+          </span>
 
           {filtering && (
             <button className="link" onClick={() => setFilters({})}>
