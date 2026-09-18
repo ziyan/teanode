@@ -79,16 +79,25 @@ func TestTheDaysDreamSpendIsReadBackByKind(t *testing.T) {
 		}
 		agentId = found.ID
 	})
+	today := DayStart(owner, time.Now())
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		for _, each := range []struct {
 			kind   string
 			at     time.Time
 			tokens uint64
 		}{
-			{string(models.AgentJobDream), time.Now().Add(-time.Hour), 40000},
-			{string(models.AgentJobDream), time.Now().Add(-2 * time.Hour), 5000},
-			{"ask", time.Now().Add(-time.Hour), 90000},
-			{string(models.AgentJobDream), DayStart(owner, time.Now()).Add(-3 * time.Hour), 70000},
+			// Placed against the owner's own day rather than the
+			// clock of whoever runs the test. The owner keeps London
+			// time; a machine in New York is five hours behind it, so
+			// for the two hours after London midnight -- between
+			// seven and nine in the evening there -- an hour ago is
+			// yesterday to the owner, and rows meant for today fell
+			// outside the sum. The test failed for two hours a day
+			// and passed for twenty-two.
+			{string(models.AgentJobDream), today.Add(time.Minute), 40000},
+			{string(models.AgentJobDream), today.Add(2 * time.Minute), 5000},
+			{"ask", today.Add(time.Minute), 90000},
+			{string(models.AgentJobDream), today.Add(-3 * time.Hour), 70000},
 		} {
 			if err := tx.PutAgentUsage(&db.AgentUsage{
 				AgentID: agentId, Model: "fake:thinker", Kind: each.kind, At: each.at,
@@ -97,7 +106,7 @@ func TestTheDaysDreamSpendIsReadBackByKind(t *testing.T) {
 				t.Fatalf("PutAgentUsage: %s", err)
 			}
 		}
-		spent, err := SumSpendOfKind(tx, agentId, string(models.AgentJobDream), DayStart(owner, time.Now()))
+		spent, err := SumSpendOfKind(tx, agentId, string(models.AgentJobDream), today)
 		if err != nil {
 			t.Fatalf("SumSpendOfKind: %s", err)
 		}
