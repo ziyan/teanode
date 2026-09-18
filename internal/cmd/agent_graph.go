@@ -128,6 +128,13 @@ func newAgentGraphCommands() []*cli.Command {
 			Action: runAgentGraphHistory,
 		},
 		{
+			Name:      "recall",
+			Usage:     "what a question would carry into a turn: the pages recall would expand and the facts on each. Nothing is said to a model, and nothing is marked as used",
+			ArgsUsage: "<question>",
+			Flags:     []cli.Flag{JSONFlag()},
+			Action:    runAgentGraphRecall,
+		},
+		{
 			Name:      "evaluate",
 			Usage:     "replay a set of questions through recall and say which ones got the facts they needed",
 			ArgsUsage: "<file>",
@@ -172,6 +179,21 @@ func newAgentKnowledgeCommand() *cli.Command {
 					&cli.StringFlag{Name: "mailbox", Usage: "for a sent source: which mailbox"},
 				},
 				Action: runKnowledgeAdd,
+			},
+			{
+				Name:      "set",
+				Usage:     "change a source that already exists, leaving everything you do not give alone",
+				ArgsUsage: "<source-id-or-name>",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "name", Usage: "what to call it"},
+					&cli.StringFlag{Name: "path", Usage: "the directory it reads"},
+					&cli.StringFlag{Name: "under", Usage: "where in the graph what it finds is filed, such as projects"},
+					&cli.StringFlag{Name: "cron", Usage: "how often to read it, five fields in your zone"},
+					&cli.StringFlag{Name: "format", Usage: "files, journal or records"},
+					&cli.StringFlag{Name: "mailbox", Usage: "for a sent source: which mailbox"},
+				},
+				Action: runKnowledgeSet,
 			},
 			{
 				Name:      "pause",
@@ -751,33 +773,42 @@ func runKnowledgeList(ctx context.Context, command *cli.Command) error {
 	}
 	rows := make([][]string, 0, len(sources))
 	for _, source := range sources {
-		state := "idle"
-		switch {
-		case !source.Enabled:
-			state = "off"
-		case source.More:
-			state = "reading"
-		case source.LastError != "":
-			state = "waiting"
-		}
-		where := source.Specification.Path
-		if source.Specification.Computer != "" {
-			where += " on " + source.Specification.Computer
-		}
-		note := source.LastError
-		// Whose commits it could not place comes first: it is the one
-		// that makes everything downstream quietly empty, and the one a
-		// person can fix in a minute by marking their own card.
-		if note == "" && len(source.UnknownAuthors) > 0 {
-			note = "commits by " + strings.Join(source.UnknownAuthors, ", ") +
-				"; none of them is you — teanode contact me <id>"
-		}
-		rows = append(rows, []string{
-			source.ID, source.Name, source.Kind, where, state,
-			strconv.Itoa(source.DocumentCount), strconv.Itoa(source.ChunkCount), note,
-		})
+		rows = append(rows, knowledgeSourceRow(source))
 	}
-	return printTable([]string{"id", "name", "kind", "where", "state", "documents", "passages", ""}, rows)
+	return printTable(knowledgeSourceHeaders, rows)
+}
+
+var knowledgeSourceHeaders = []string{"id", "name", "kind", "where", "state", "documents", "passages", ""}
+
+// knowledgeSourceRow is one source as the list prints it, so that a
+// source printed on its own after a change reads the same as the line it
+// will be in the list.
+func knowledgeSourceRow(source *client.AgentKnowledgeSource) []string {
+	state := "idle"
+	switch {
+	case !source.Enabled:
+		state = "off"
+	case source.More:
+		state = "reading"
+	case source.LastError != "":
+		state = "waiting"
+	}
+	where := source.Specification.Path
+	if source.Specification.Computer != "" {
+		where += " on " + source.Specification.Computer
+	}
+	note := source.LastError
+	// Whose commits it could not place comes first: it is the one
+	// that makes everything downstream quietly empty, and the one a
+	// person can fix in a minute by marking their own card.
+	if note == "" && len(source.UnknownAuthors) > 0 {
+		note = "commits by " + strings.Join(source.UnknownAuthors, ", ") +
+			"; none of them is you — teanode contact me <id>"
+	}
+	return []string{
+		source.ID, source.Name, source.Kind, where, state,
+		strconv.Itoa(source.DocumentCount), strconv.Itoa(source.ChunkCount), note,
+	}
 }
 
 func runKnowledgeAdd(ctx context.Context, command *cli.Command) error {
@@ -822,6 +853,42 @@ func runKnowledgeAdd(ctx context.Context, command *cli.Command) error {
 		_, _ = fmt.Fprintln(command.Writer, "write records as JSON lines under that folder; a refresh script there runs before each scan (see docs/subsystems/memory.md)")
 	}
 	return nil
+}
+
+// runKnowledgeSet changes a source that already exists.
+//
+// Until now the only way to move a source's directory, file what it finds
+// somewhere else, or read it at another hour was to remove it and add it
+// again -- and removing one forgets every document and chunk it ever
+// produced, which for a checkout or a chat archive is hours of reading
+// and the embedding bill that went with it. Only the flags given are
+// sent, and the API leaves a field it is not given alone, so changing the
+// cron cannot quietly reset where what it finds is filed.
+func runKnowledgeSet(ctx context.Context, command *cli.Command) error {
+	connection, source, err := knowledgeSourceNamed(ctx, command)
+	if err != nil {
+		return err
+	}
+	fields := map[string]any{"sourceId": source.ID}
+	for flag, name := range map[string]string{
+		"name": "name", "path": "path", "under": "rootPath",
+		"cron": "cron", "format": "format", "mailbox": "mailboxId",
+	} {
+		if value := command.String(flag); value != "" {
+			fields[name] = value
+		}
+	}
+	if len(fields) == 1 {
+		return fmt.Errorf("what should change? --name, --path, --under, --cron, --format or --mailbox")
+	}
+	changed, err := client.SaveAgentKnowledgeSource(ctx, connection, fields)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(changed)
+	}
+	return printTable(knowledgeSourceHeaders, [][]string{knowledgeSourceRow(changed)})
 }
 
 func runKnowledgeSync(ctx context.Context, command *cli.Command) error {
@@ -1233,6 +1300,57 @@ func knownQuestionKind(kind string) bool {
 		}
 	}
 	return false
+}
+
+// runAgentGraphRecall is one question through the same recall a turn
+// uses, printed rather than graded.
+//
+// The query behind it was reachable only by writing a question set and
+// running `memory evaluate` over it, which answers hit or miss and not
+// "why did it not know that?". Asking costs nothing -- no model is asked
+// anything, and a page recall expands here is not marked as used, so the
+// same graph answers the same twice and asking does not itself change
+// what tomorrow's night reads.
+func runAgentGraphRecall(ctx context.Context, command *cli.Command) error {
+	question := strings.TrimSpace(strings.Join(command.Args().Slice(), " "))
+	if question == "" {
+		return fmt.Errorf("ask something: teanode agent memory recall \"when does the portal ship?\"")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	recalled, err := client.RecallAgentMemory(ctx, connection, question)
+	if err != nil {
+		return describeError(command, err)
+	}
+	var carried []*client.AgentRecalledPage
+	if recalled != nil {
+		carried = recalled.Pages
+	}
+	if command.Bool("json") {
+		return PrintJSON(carried)
+	}
+	if len(carried) == 0 {
+		_, _ = fmt.Fprintln(command.Writer, "that question carries nothing from the graph")
+		return nil
+	}
+	for index, page := range carried {
+		if page == nil {
+			continue
+		}
+		if index > 0 {
+			_, _ = fmt.Fprintln(command.Writer)
+		}
+		_, _ = fmt.Fprintln(command.Writer, page.Path)
+		for _, fact := range page.Facts {
+			if fact == nil {
+				continue
+			}
+			_, _ = fmt.Fprintf(command.Writer, "#%d %s\n", fact.Number, fact.Text)
+		}
+	}
+	return nil
 }
 
 func runAgentGraphEvaluate(ctx context.Context, command *cli.Command) error {

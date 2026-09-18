@@ -3,13 +3,11 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"github.com/urfave/cli/v3"
+	"github.com/ziyan/teanode/internal/client"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/urfave/cli/v3"
-
-	"github.com/ziyan/teanode/internal/client"
 )
 
 // One set of things a person can do, whichever surface they are on.
@@ -141,5 +139,92 @@ func TestTheTranscriptPrintsTheTaskList(test *testing.T) {
 	}
 	if strings.Index(printed, "where are we?") > strings.Index(printed, "read the lease") {
 		test.Errorf("the task list comes after the messages:\n%s", printed)
+	}
+}
+
+// The task list from a terminal: the verbs, and what each refuses before
+// it opens a connection.
+//
+// A command that asks the server first and complains about its arguments
+// afterwards tells somebody with no profile set up that they cannot reach
+// the server, when what is wrong is that they typed three words. Each of
+// these reads its arguments first, which is also what lets this test run
+// without one.
+func TestTheConversationTodoCommandsAreWired(t *testing.T) {
+	t.Parallel()
+
+	todo := commandNamed(t, commandNamed(t, NewAgentCommand(), "conversation"), "todo")
+	for _, verb := range []string{"list", "add", "done", "reopen", "remove"} {
+		command := commandNamed(t, todo, verb)
+		if flagNamed(command, "json") == nil {
+			t.Errorf("conversation todo %s offers --json, as every other listing does", verb)
+		}
+	}
+
+	// add takes the conversation and the words; the rest take the
+	// conversation and the item. Naming one without the other is the
+	// mistake worth catching, because a conversation identifier and an
+	// item identifier look alike.
+	for _, verb := range []string{"add", "done", "reopen", "remove"} {
+		command := commandNamed(t, todo, verb)
+		err := command.Run(t.Context(), []string{verb, "conversation-id"})
+		if err == nil {
+			t.Errorf("conversation todo %s with nothing but a conversation is refused", verb)
+			continue
+		}
+		if !strings.Contains(err.Error(), "conversation todo "+verb) {
+			t.Errorf("and the refusal shows the whole command: %s", err)
+		}
+	}
+}
+
+// What a question would carry, asked one question at a time.
+//
+// The recall behind it costs nothing -- no model is asked anything, and
+// nothing in the graph is marked as used -- and the command says so,
+// because somebody weighing whether to run it over a hundred questions
+// has no other way of knowing.
+func TestMemoryRecallAsksForAQuestionAndSaysWhatItCosts(t *testing.T) {
+	t.Parallel()
+
+	recall := commandNamed(t, commandNamed(t, NewAgentCommand(), "memory"), "recall")
+	if flagNamed(recall, "json") == nil {
+		t.Errorf("memory recall offers --json, for a script that grades the answer")
+	}
+	usage := strings.ToLower(recall.Usage)
+	if !strings.Contains(usage, "model") || !strings.Contains(usage, "used") {
+		t.Errorf("the usage says nothing is said to a model and nothing is marked as used: %q", recall.Usage)
+	}
+
+	err := recall.Run(t.Context(), []string{"recall"})
+	if err == nil {
+		t.Fatalf("recall with no question is refused")
+	}
+	if !strings.Contains(err.Error(), "memory recall") {
+		t.Errorf("and the refusal shows how to ask one: %s", err)
+	}
+}
+
+// Editing a source in place, rather than removing it and paying for the
+// first pass again.
+//
+// Every field the add takes is settable afterwards; a source that can be
+// made with a root path and no way to change it is the gap this closes.
+func TestKnowledgeSetOffersEveryFieldAndNamesASource(t *testing.T) {
+	t.Parallel()
+
+	set := commandNamed(t, commandNamed(t, NewAgentCommand(), "knowledge"), "set")
+	for _, name := range []string{"json", "name", "path", "under", "cron", "format", "mailbox"} {
+		if flagNamed(set, name) == nil {
+			t.Errorf("knowledge set offers --%s", name)
+		}
+	}
+
+	err := set.Run(t.Context(), []string{"set"})
+	if err == nil {
+		t.Fatalf("knowledge set with no source is refused")
+	}
+	if !strings.Contains(err.Error(), "knowledge list") {
+		t.Errorf("and the refusal says where the sources are listed: %s", err)
 	}
 }
