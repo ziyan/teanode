@@ -572,3 +572,67 @@ func TestANegationIsNeverFolded(t *testing.T) {
 		}
 	})
 }
+
+// A fact the conversation replaced is struck, and a strike is written
+// into the page's history.
+//
+// The handler used to set the row dormant through the ordinary update,
+// which files no revision at all: the line left the page, the person had
+// no way of seeing that it had, and so no way of putting it back.
+func TestSupersedingAFactLeavesARevision(t *testing.T) {
+	world := newRememberWorld(t, func(prompt string) string {
+		if !strings.Contains(prompt, "What to file") {
+			return `{"facts":[]}`
+		}
+		// The second run, which is the one that replaces what the first
+		// filed. Told apart by the words it is reading rather than by a
+		// counter, because the model is asked from several goroutines.
+		if strings.Contains(prompt, "different dentist") {
+			return `{"facts":[],"links":[],"supersedes":[{"path":"people/dr-patel","number":1}]}`
+		}
+		said := theirMessage.FindStringSubmatch(prompt)
+		if len(said) < 2 {
+			return `{"facts":[]}`
+		}
+		return fmt.Sprintf(`{"facts":[
+			{"path":"people/dr-patel","node_kind":"person","node_name":"Dr Patel","kind":"fact",
+			 "text":"Their dentist, on Elm Street.","quote":"My dentist is Dr Patel on Elm Street","message_id":%q}
+		],"links":[],"supersedes":[]}`, said[1])
+	})
+
+	world.remember(t)
+	world.say(t, "user", "I go to a different dentist now.")
+	world.say(t, "assistant", "Noted.")
+	world.rememberAgain(t, time.Now().Add(2*time.Hour))
+
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		node, err := tx.GetAgentNode(world.agent.ID, "people/dr-patel")
+		if err != nil || node == nil {
+			t.Fatalf("Dr Patel has a page: %v %s", node, err)
+		}
+		all, err := tx.ListAgentFacts(world.agent.ID, node.ID, true, 10)
+		if err != nil || len(all) != 1 {
+			t.Fatalf("the row is kept, not deleted: %v %s", all, err)
+		}
+		if !all[0].Dormant {
+			t.Fatalf("what was superseded is off the page: %+v", all[0])
+		}
+		live, err := tx.ListAgentFacts(world.agent.ID, node.ID, false, 10)
+		if err != nil || len(live) != 0 {
+			t.Fatalf("and the page states nothing now: %v %s", live, err)
+		}
+		revisions, err := tx.ListAgentRevisions(world.agent.ID, node.ID, 50)
+		if err != nil {
+			t.Fatalf("ListAgentRevisions: %s", err)
+		}
+		struck := false
+		for _, revision := range revisions {
+			if revision.Kind == models.RevisionFactStruck {
+				struck = true
+			}
+		}
+		if !struck {
+			t.Fatalf("the page's history says the line was struck: %v", revisions)
+		}
+	})
+}

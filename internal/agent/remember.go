@@ -660,10 +660,14 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 			}
 			// Marked, never deleted: what it said is still readable, and
 			// a page that was rewritten can be read back.
-			_, err = tx.UpdateAgentFact(agentId, fact.ID, func(fact *models.AgentFact) error {
-				fact.Dormant = true
-				return nil
-			})
+			//
+			// Struck rather than updated to dormant. An ordinary update
+			// that happens to set dormant files nothing in the page's
+			// history -- that is what the nightly retirement pass wants
+			// -- so a run that took a line off a page this way left no
+			// trace of having done it, and a judgement the person cannot
+			// see is one they cannot undo.
+			_, err = tx.StrikeAgentFact(agentId, fact.ID, "a later conversation replaced it")
 			return err
 		}); err != nil {
 			log.Debugf("cannot supersede %s#%d: %s", path, superseded.Number, err)
