@@ -745,6 +745,24 @@ const SAVE_KNOWLEDGE_SOURCE = `
     SaveAgentKnowledgeSource(sourceId: $sourceId, kind: $kind, name: $name, computer: $computer, path: $path, format: $format, enabled: $enabled, mailboxId: $mailboxId, rootPath: $rootPath, cron: $cron) { id name }
   }`
 
+// What became of the pictures and files each source carried. Counted
+// rather than kept on the source's row, so it is asked for beside the
+// sources rather than with them.
+const SOURCE_ATTACHMENTS = `
+  query {
+    ListAgentSourceAttachments { sourceId undecided declined described }
+  }`
+
+// The files one source's night decided against opening, and why. Asked
+// for only when somebody opens the list: most people never will, and a
+// source may have passed over tens of thousands.
+const DECLINED_ATTACHMENTS = `
+  query ($sourceId: String!) {
+    ListAgentDeclinedAttachments(sourceId: $sourceId, first: 100) {
+      documentId name contentType channel thread path declined
+    }
+  }`
+
 const DELETE_KNOWLEDGE_SOURCE = `mutation ($sourceId: String!) { DeleteAgentKnowledgeSource(sourceId: $sourceId) }`
 const SYNC_KNOWLEDGE_SOURCE = `mutation ($sourceId: String!) { SyncAgentKnowledgeSource(sourceId: $sourceId) }`
 
@@ -789,6 +807,27 @@ type KnowledgeSource = {
   refusedCount: number
   more: boolean
   unknownAuthors: string[]
+}
+
+// What became of one source's files: how many wait for the night to
+// decide about them, how many it decided against, how many it opened and
+// read.
+type SourceAttachments = {
+  sourceId: string
+  undecided: number
+  declined: number
+  described: number
+}
+
+// One file the night decided against opening, with the reason it gave.
+type DeclinedFile = {
+  documentId: string
+  name: string
+  contentType: string
+  channel: string
+  thread: string
+  path: string
+  declined: string
 }
 
 type Dream = {
@@ -1479,6 +1518,16 @@ function KnowledgeSourcesCard() {
     [],
     { refresh: true },
   )
+  // What became of each source's files. Beside the sources rather than
+  // with them: these are counted over the documents, and a source with no
+  // files of its own costs nothing to ask about.
+  const attachments = useQuery(
+    () => graphql<{ ListAgentSourceAttachments: SourceAttachments[] }>(SOURCE_ATTACHMENTS, {}),
+    [],
+    { refresh: true },
+  )
+  const filesOf = (sourceId: string): SourceAttachments | undefined =>
+    attachments.data?.ListAgentSourceAttachments.find((row) => row.sourceId === sourceId)
   const [adding, setAdding] = useState(false)
   // The source the dialog is changing, null while it is adding one.
   // Adding and changing ask the same questions, so they are one form.
@@ -1596,6 +1645,11 @@ function KnowledgeSourcesCard() {
                 <br />
                 {t('agent.knowledgeCounts', { documents: source.documentCount, chunks: source.chunkCount })}
                 {source.refusedCount > 0 ? ` · ${t('agent.knowledgeRefused', { count: source.refusedCount })}` : ''}
+                {/* And what became of the pictures and files it carried,
+                    which is a different question from how much it read:
+                    a file waits for a decision, is decided against, or is
+                    opened and read. */}
+                <SourceFiles sourceId={source.id} files={filesOf(source.id)} />
                 {/* What pausing means, said where the pause is: the
                     index is kept, so resuming does not start the first
                     pass over again. */}
@@ -1805,6 +1859,91 @@ function KnowledgeSourcesCard() {
             })()
           }}
         />
+      ) : null}
+    </>
+  )
+}
+
+// SourceFiles is what became of the pictures and files one source
+// carried, under the counts of what it read.
+//
+// Three numbers rather than one, because "waiting for a decision" and
+// "decided against" and "read" are three different things to be told, and
+// a person looking at a source of fifty thousand screenshots wants to know
+// which of the three they are looking at. What the agent decided against
+// can be opened and read: the decision is its own judgement about
+// somebody's files, and a judgement nobody can see is one nobody can
+// disagree with.
+function SourceFiles({ sourceId, files }: { sourceId: string; files?: SourceAttachments }) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  // Null until the list has been asked for; the list itself once it has,
+  // which is also what says it is open.
+  const [declined, setDeclined] = useState<DeclinedFile[] | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  if (!files || (files.undecided === 0 && files.declined === 0 && files.described === 0)) return null
+
+  const said = [
+    files.undecided > 0 ? t('agent.filesWaiting', { count: formatCount(files.undecided) }) : '',
+    files.declined > 0 ? t('agent.filesDeclined', { count: formatCount(files.declined) }) : '',
+    files.described > 0 ? t('agent.filesRead', { count: formatCount(files.described) }) : '',
+  ].filter((part) => part !== '')
+
+  // Asked for on the click rather than with the sources: a source may
+  // have passed over tens of thousands, and most people never open this.
+  const toggle = async () => {
+    if (declined !== null) {
+      setDeclined(null)
+      return
+    }
+    setLoading(true)
+    try {
+      const answer = await graphql<{ ListAgentDeclinedAttachments: DeclinedFile[] }>(DECLINED_ATTACHMENTS, { sourceId })
+      setDeclined(answer.ListAgentDeclinedAttachments)
+    } catch (caught) {
+      toast.failed(messageOf(caught))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <>
+      <br />
+      <span className="muted">{said.join(' · ')}</span>{' '}
+      {files.declined > 0 ? (
+        <button type="button" className="link" onClick={() => void toggle()}>
+          {declined === null ? t('agent.filesWhich') : t('agent.filesHide')}
+        </button>
+      ) : null}
+      {loading ? <Loading /> : null}
+      {declined !== null ? (
+        declined.length === 0 ? (
+          <SettingsEmpty>{t('agent.filesNoneDeclined')}</SettingsEmpty>
+        ) : (
+          <ul className="agent-declined-files">
+            {declined.map((file) => (
+              <li key={file.documentId}>
+                {/* The file itself where its bytes are here, so a person
+                    who disagrees with the decision can look at what was
+                    passed over. */}
+                {file.path === '' ? (
+                  <span>{file.name}</span>
+                ) : (
+                  <a href={file.path} target="_blank" rel="noreferrer">
+                    {file.name}
+                  </a>
+                )}
+                <span className="muted">
+                  {[file.declined, [file.thread, file.channel].filter((part) => part.trim() !== '').join(' · ')]
+                    .filter((part) => part !== '')
+                    .join(' — ')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )
       ) : null}
     </>
   )

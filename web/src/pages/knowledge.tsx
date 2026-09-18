@@ -50,6 +50,7 @@ const PAGE = `query ($path: String!) {
     facts { id number kind text happenedAt inferred evidence { kind id quote } audiences createdAt }
     folded { into fact { id number text } }
     children { id path kind name summary }
+    attachments { documentId name contentType channel thread path }
     contact { id name emails organization }
   }
 }`
@@ -264,11 +265,25 @@ type DocumentExtract = {
   next: number
 }
 
+// A picture or a file a record came with, cited by a fact on this page:
+// what it is, where it was posted, and where its bytes are served from.
+// The path is empty for a file whose bytes this server does not hold,
+// which is a name with nothing to open behind it.
+type Attachment = {
+  documentId: string
+  name: string
+  contentType: string
+  channel: string
+  thread: string
+  path: string
+}
+
 type Page = {
   node: Node
   facts: Fact[]
   folded: FoldedFact[]
   children: Node[]
+  attachments: Attachment[]
   contact?: { id: string; name: string; emails: string[]; organization: string } | null
 }
 
@@ -1633,7 +1648,7 @@ function PageView({
                 {fact.inferred ? <Tag value={t('knowledge.inferred')} tone="warn" /> : null}
               </>
             }
-            subtitle={<Provenance fact={fact} />}
+            subtitle={<Provenance fact={fact} attachments={page.attachments} />}
             actions={
               <div className="row-actions">
                 <button
@@ -1937,9 +1952,15 @@ function cut(text: string, length = 200): string {
 
 // Provenance says where a fact came from, which is what makes a page
 // worth trusting: a sentence with a quote behind it can be checked.
-function Provenance({ fact }: { fact: Fact }) {
+//
+// Where what it came from is a picture or a file, the thing itself is
+// shown under the quote. A fact read out of a screenshot is worth little
+// to somebody who cannot see the screenshot, and the name of a file in an
+// archive of fifty thousand says nothing on its own.
+function Provenance({ fact, attachments }: { fact: Fact; attachments?: Attachment[] }) {
   const { t } = useTranslation()
   const first = fact.evidence[0]
+  const cited = attachmentsCitedBy(fact, attachments)
   // A citation with no quote on an inferred fact is the write-time check
   // having found the words somewhere other than the message they were
   // said to come from. Saying so is the point: an empty quote looks like
@@ -1953,7 +1974,54 @@ function Provenance({ fact }: { fact: Fact }) {
         {quoteNotFound ? `, ${t('knowledge.quoteNotFound')}` : ''}
         {fact.happenedAt ? ` · ${new Date(fact.happenedAt).toLocaleDateString()}` : ''}
       </span>
+      {cited.map((attachment) => (
+        <AttachmentEvidence key={attachment.documentId} attachment={attachment} />
+      ))}
     </>
+  )
+}
+
+// attachmentsCitedBy is the files one fact's evidence names, in the order
+// the fact cites them. The evidence carries an identifier, which a filing
+// run may have written in brackets, and the page carries the files.
+function attachmentsCitedBy(fact: Fact, attachments?: Attachment[]): Attachment[] {
+  if (!attachments || attachments.length === 0) return []
+  const cited: Attachment[] = []
+  for (const evidence of fact.evidence) {
+    const id = evidence.id.trim().replace(/^\[|\]$/g, '')
+    if (id === '') continue
+    const found = attachments.find((attachment) => attachment.documentId === id)
+    if (found && !cited.includes(found)) cited.push(found)
+  }
+  return cited
+}
+
+// AttachmentEvidence is the file itself under the fact it stands behind:
+// the picture, at a size that leaves the page a page and opens to full
+// size in a tab of its own, or the file's name to save where it is not a
+// picture. Under it, where it was posted, in the muted line the rest of a
+// fact's source is written in.
+function AttachmentEvidence({ attachment }: { attachment: Attachment }) {
+  const { t } = useTranslation()
+  const where = [attachment.thread, attachment.channel].filter((part) => part.trim() !== '').join(' · ')
+  const picture = attachment.contentType.toLowerCase().startsWith('image/')
+  return (
+    <span className="knowledge-attachment">
+      {attachment.path === '' ? (
+        <span className="muted">{t('knowledge.attachmentMissing', { name: attachment.name })}</span>
+      ) : picture ? (
+        <a href={attachment.path} target="_blank" rel="noreferrer" title={t('knowledge.attachmentOpen')}>
+          <img className="knowledge-attachment-image" src={attachment.path} alt={attachment.name} loading="lazy" />
+        </a>
+      ) : (
+        <a className="link" href={attachment.path} download={attachment.name}>
+          {attachment.name}
+        </a>
+      )}
+      <span className="muted">
+        {where === '' ? t('knowledge.attachmentFile') : t('knowledge.attachmentFrom', { where })}
+      </span>
+    </span>
   )
 }
 
