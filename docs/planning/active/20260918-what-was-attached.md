@@ -1,0 +1,353 @@
+# What was attached: the pictures and files in a person's records
+
+This ExecPlan is a living document. The sections `Progress`, `Surprises &
+Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to
+date as work proceeds. `~/.claude/PLAN.md` describes the form this document
+takes; keep it in accordance with that file. It builds on
+`docs/planning/active/20260916-records-from-anywhere.md`, which defines the
+`records` shape this plan extends, and on
+`docs/planning/active/20260915-memory-that-learns-the-person.md`, which defines
+the graph, the knowledge sources and the night. Everything this plan needs from
+either is repeated here, so it can be read on its own.
+
+## Purpose / Big Picture
+
+A person's chat archive is not only what they typed. On the machine this was
+written for, the chat export holds 53,660 files beside the messages — 24
+gigabytes of them — and the graph knows about none of it. Roughly 47,700 are
+pictures, and most of those are screenshots of a terminal, a dashboard, or a
+robot cell, pasted into a thread with a sentence like "look at this". The
+sentence is indexed. The thing it points at is not.
+
+That is the gap this plan closes. After it, a picture or a file attached to a
+record can become a document like any other: the bytes are kept in object
+storage, the agent decides whether it is worth reading, and what it reads
+becomes the document's text, chunked and searchable and quotable as evidence on
+a page. Asked "what went wrong at Carlisle that week", the agent can answer from
+the screenshot somebody pasted, not only from the words around it.
+
+You will know it works when this happens. Index a chat archive that has
+attachments. Wait for a night. Then ask the agent about something that only
+appears inside a screenshot — an error code, a hostname, a value on a dashboard
+— and it answers, citing the attachment as its evidence, with the thread it came
+from. Before this change the same question returns nothing.
+
+Three terms are used throughout and are defined once here.
+
+A **record** is one line of JSON in a file a `records` source reads. It says
+what a thing is, when it happened, who wrote it and what it says. The shape is
+defined in `internal/computer/scan_records.go` in the Go type named `record`.
+
+The **computer daemon** is the program a person runs on their own machine
+(`teanode computer daemon`) so the server can read files there. It reads, it
+never thinks: it has no model and makes no model calls. Its code is
+`internal/computer/`.
+
+The **night**, also called a dream, is the background run that reads whatever
+the sources have indexed and writes what it learned onto pages. Its code is
+`internal/agent/dream.go`. It has a token budget for the day and decides for
+itself what to read.
+
+## Progress
+
+- [ ] Milestone 1: a record can name its attachments, and the daemon reports
+      them as documents with their bytes in object storage
+- [ ] Milestone 2: a document's bytes can be fetched back from storage, and a
+      document nobody can read yet says so on the source's page
+- [ ] Milestone 3: the night decides whether an attachment is worth reading,
+      from what it knows for free
+- [ ] Milestone 4: the night reads a picture with a vision model and files what
+      it saw
+- [ ] Milestone 5: local preparation — the records script extracts what it can
+      without a model, and says what it could not
+- [ ] Milestone 6: the dashboard shows an attachment on the page it belongs to
+
+## What exists today, and where
+
+Read this section before touching anything; it is the map.
+
+`internal/computer/scan_records.go` reads a folder of `.jsonl` files, or runs an
+executable named `records` in that folder which prints the names of virtual
+files and, asked for one, prints its lines. Each line becomes a `record`. A
+record of a document kind becomes one `ScanEntry` through the function
+`documentEntry`; records of kind `chat` are grouped into threads and windows by
+`chatUnitsOf`. A `ScanEntry` is defined in `internal/computer/scan.go` and is
+what the daemon sends the server: an external identifier, a kind, a title, a
+URL, a hash, the text, and some dates.
+
+The `record` type has no field for an attachment. That is the first thing this
+plan changes.
+
+`internal/computer/scan.go` also holds `textOf`, which decides what a file's
+text is: anything that looks like UTF-8 is taken as it stands, a `.pdf` goes
+through the `pdftotext` program, and office documents go through `soffice`. A
+file it cannot read is refused with the error "not text". The function
+`availableExtractors` reports which of those programs exist on the machine, so
+the source's page can say what it cannot read there. Pictures are refused.
+
+`internal/models/knowledge.go` defines `AgentDocument`, which already carries a
+field named `StorageKey`, and `internal/db/database_knowledge.go` reads and
+writes the `storage_key` column. Nothing ever sets it: on the machine this was
+written for, 0 of 588,331 documents have one. The field was reserved by the
+original design for exactly this purpose and is finally used here.
+
+`internal/storage/` is the object store. `storage.go` is the interface,
+`filesystem.go` keeps blobs in a directory, and `s3.go` mirrors them to anything
+that speaks the S3 protocol. It is configured under `storage.s3` in
+`internal/config/config.go`. On the machine this was written for, a MinIO
+service has been running beside the server for weeks and already holds mail.
+
+`internal/agent/dream.go` is the night. The variable `dreamTools` on line 372
+names the tools a night may use, and today it is exactly two: `memory` and
+`knowledge`, both read-only. `digestBatch` shows the model a batch of documents,
+each rendered by `openingOf`, which returns the first 1,200 runes of a
+document's first chunk. A night therefore cannot reach the person's machine and
+cannot see a picture.
+
+`internal/llm/openai.go` and `internal/llm/anthropic.go` can both already send a
+picture to a model — the first as an `image_url` part, the second as a base64
+image block. This is used when a person attaches a picture to a conversation. No
+background run uses it.
+
+`internal/computer/computer.go` is the daemon's side of the connection. Its
+`filesystem` tool already supports `read`, `fetch` (which returns a file's bytes
+and detects its content type), `put` and `write`, and its `shell` tool runs
+commands. These are reached by the agent during a conversation, never by a
+night.
+
+## Milestone 1: a record can name its attachments
+
+At the end of this milestone, a records script can say that a message had files
+with it, the daemon uploads those files to object storage, and each becomes a
+document with an empty text and a storage key. Nothing reads them yet. You will
+see new rows in `agent_document` whose `bytes` is non-zero and whose
+`storage_key` is set, and you will see the objects in the store.
+
+Add to the `record` type in `internal/computer/scan_records.go` a field named
+`Attachments`, a list of a new small type with three parts: a `Path`, which is
+where the file is on this machine, a `Name`, which is what to call it, and an
+optional `ContentType`. A path is resolved relative to the records folder unless
+it is absolute, and an absolute path outside the roots the person allowed is
+refused the way the rest of the daemon refuses them — see `resolve` and the
+allowed-roots check in `internal/computer/computer.go`, and do not weaken it.
+
+For each attachment the daemon makes one `ScanEntry` of a new kind, `attachment`
+(add it beside `DocumentFile` in `internal/models/knowledge.go`). Its external
+identifier must be stable and must not collide across scripts, so use the same
+rule the existing entries use: the virtual file's relative name, a `#`, then the
+attachment's own identity, which is the hash of its bytes. Using the hash means
+the same screenshot pasted into four threads is one document, which is what you
+want.
+
+The entry's hash is the hash of the bytes. Its text is empty. Its title is the
+attachment's name. Its metadata carries the record it came with: the thread, the
+channel, the author, and the identifier of the record itself, so that a later
+milestone can show the model what was said around the picture.
+
+Uploading is the daemon's job because the daemon is the only thing that can see
+the file. Add to the daemon protocol a way to send a blob, next to the existing
+`scan` and `filesystem` actions in `internal/computer/computer.go`, and have the
+server put it in the store through `internal/storage` and record the key on the
+document. Key the object by the hash, so an upload of a file already in the
+store is a no-op and re-scanning costs nothing.
+
+The decision to upload every attachment rather than only the ones that turn out
+to be worth reading was made deliberately; see the Decision Log.
+
+To see it work, on a machine with a chat archive:
+
+    cd ~/chat-records
+    ./records | head -3
+    teanode agent knowledge sync chat
+    teanode agent knowledge list
+
+The source's document count rises by the number of attachments. Then, against
+the server's database:
+
+    select count(*), sum(bytes) from agent_document where kind = 'attachment';
+
+and against the object store, the same number of objects.
+
+## Milestone 2: the bytes can be fetched back, and unread documents say so
+
+At the end of this milestone, the server can read an attachment's bytes out of
+the store without the person's machine being attached, and the dashboard's
+source page says how many documents are waiting for something that can read
+them. This matters because a night runs at three in the morning when a laptop is
+shut.
+
+Add a function to `internal/agent/` that takes a document and returns its bytes
+from `internal/storage`, and a test that writes a blob, records the key, and
+reads it back.
+
+A document with no text is not a failure and must not be reported as one. Extend
+whatever the source's page shows — see `internal/agent/reading/reading.go`,
+which computes what a source has read and what waits — so that documents with no
+text are counted separately and described in plain words, for example "1,020
+files nothing here can read yet". Do not let them count as read, or the reading
+progress will lie.
+
+## Milestone 3: the night decides what is worth reading
+
+At the end of this milestone the night looks at an attachment and decides,
+before spending anything, whether to open it. This is the heart of the plan and
+the reason it is affordable.
+
+The night already walks documents in batches in `digestBatch`. An attachment has
+no text, so `openingOf` returns nothing and the model is shown a heading and
+silence. Change that: for a document of kind `attachment`, show the model what is
+free — the file's name, its size, its content type, the channel and thread it
+came from, and the text of the record it was attached to, which the metadata
+from Milestone 1 carries. Ask, in the same object the digest already returns,
+whether this one is worth opening.
+
+Name the choice in the prompt in plain words, because the model is being asked
+to spend the person's money: a screenshot in a thread about a failure is worth
+opening; an avatar, a logo, a meme in a social channel, or a picture smaller
+than a few kilobytes is not.
+
+Record the answer on the document so it is not asked twice. A document the night
+declined should say so and why, and a person should be able to overrule it
+later, which argues for storing the decision rather than deleting the document.
+
+Acceptance is a test in `internal/agent/` that runs a digest over a batch of
+attachments with a scripted model and asserts that the ones it declined are
+marked declined and cost nothing further.
+
+## Milestone 4: the night reads a picture
+
+At the end of this milestone, an attachment the night chose to open is described
+by a vision model and the description becomes the document's text, chunked and
+searchable like any other.
+
+The model layer can already carry a picture: see the `image_url` part in
+`internal/llm/openai.go` and the base64 image block in
+`internal/llm/anthropic.go`. What does not exist is a caller in a background run.
+Add one, on the scan model, with the cost taken off the night's budget exactly as
+`dreamThought` does, so a night that has spent its allowance stops asking.
+
+The prompt should ask for what a person would want months later: what the
+picture shows, and any text in it that carries meaning — error messages,
+identifiers, values — read out rather than summarised. A sample of this against
+a real screenshot from the archive this plan was written for produced: "The
+meaningful status reads 'Container is empty' with timestamp '2020/10/16 20:26:21
+JST' and scene identifier 'test201016_0004.mujin.dae'." That is the standard to
+aim at.
+
+The description is the document's text. Everything downstream — chunking,
+embedding, the digest that turns documents into facts, the evidence a fact
+quotes — then works unchanged, which is the point of putting it here rather than
+inventing a parallel path.
+
+Guard the size. A four-thousand-pixel screenshot costs several times what a
+thousand-pixel one does for no extra meaning; Milestone 5 provides the
+downscaling, and until it exists this milestone should refuse anything above a
+few megabytes rather than spend the budget on it.
+
+To see it work, after a night:
+
+    teanode agent knowledge search "container is empty"
+
+returns the passage, and `teanode agent knowledge read <document-id>` shows the
+description with the attachment's name and thread.
+
+## Milestone 5: local preparation, without a model
+
+At the end of this milestone the cheap work happens on the person's own machine,
+free, and only what is left goes to a model.
+
+The records script is the right home for this, because it already runs on that
+machine as that person and needs no new privilege. A script can downscale a
+picture before it is uploaded, pull a frame out of a video, convert a
+spreadsheet to comma-separated text, or run a local text recogniser and put what
+it found in the record. Adding a capability then means editing a script rather
+than releasing a version, which is the whole reason the `records` shape exists.
+
+Document this in `docs/subsystems/memory.md` beside the existing description of
+the records shape, and write the example script. On the machine this plan was
+written for, `ffmpeg`, `pdftoppm`, `unzip` and `7z` are installed;
+`tesseract` and ImageMagick are not, and are worth installing for text
+recognition and downscaling respectively.
+
+Where a script has already extracted text, the attachment arrives with text and
+the night has nothing to decide: it reads it like any other document and no
+picture is ever sent to a model. Where the script could not, the document arrives
+empty and Milestones 3 and 4 take over. Make sure both paths are exercised by
+tests.
+
+An alternative was considered and rejected: giving the night the computer tools
+directly, so that it could run a program on the person's machine while they
+slept. See the Decision Log.
+
+## Milestone 6: the dashboard shows what was attached
+
+At the end of this milestone a person can see an attachment where it belongs. On
+the Knowledge page, a fact whose evidence is an attachment shows the picture, or
+the file's name where it is not a picture, with the thread it came from. On the
+agent's Dreams tab, the source's card says how many attachments are waiting, how
+many were read, and how many the agent declined and why.
+
+Follow `docs/coding/frontend-design.md`, keep every string in the three
+catalogues, and check it in Chrome at both a desktop width and a phone width
+before opening the pull request.
+
+## Surprises & Discoveries
+
+The `AgentDocument` type has carried an unused `StorageKey` field and a
+`storage_key` column since the memory graph was built. Nothing has ever set it,
+and on the machine this plan was written for, 0 of 588,331 documents have one.
+The original design reserved a place for document bytes and never filled it;
+this plan fills it rather than inventing something new.
+
+A night cannot reach the person's machine at all. `dreamTools` names exactly two
+tools, `memory` and `knowledge`, and the frame it is given says they are for
+looking. This was not obvious from the outside and it shapes the whole design:
+preparation has to happen during the scan, not during the night.
+
+The model layer has been able to send a picture all along, in both the OpenAI
+and Anthropic paths. The capability was built for conversations, where a person
+attaches something, and no background run has ever used it.
+
+A single real screenshot from the archive, given to the configured model, came
+back with the status line, the timestamp and the scene file identifier read
+correctly out of the image. The quality question is settled; the open questions
+were only ever cost and plumbing.
+
+## Decision Log
+
+**Attachments and vision are one feature, not two.** Carrying attachments
+without being able to read a picture reaches about a ninth of the files in the
+archive this was written for, since 47,700 of 53,660 are images. Reading a
+picture without the attachment plumbing leaves the description with no document
+to belong to and no thread to cite. They ship together.
+
+**The agent decides what is worth reading, per file, before spending.** The
+owner asked for this and it is also what makes the cost bearable. A described
+image costs roughly two thousand input tokens and a hundred output; at the rates
+of the cheap model that is about twenty-seven dollars for all 47,700, and rather
+less once most are declined. The decision belongs in the night because that is
+where the budget and the judgement already are.
+
+**Blobs go in object storage, never in Postgres.** The owner was explicit. The
+store already exists, `StorageKey` already exists, and 24 gigabytes in the
+database would land in every backup of it.
+
+**Every attachment is uploaded, not only the ones that are read.** The owner
+chose this. It costs the space and means a decision the agent got wrong can be
+revisited later without the person's machine being attached again. The opposite
+choice, uploading on demand, keeps the store small but ties the first read to the
+laptop being awake.
+
+**Preparation lives in the records script, not in the night.** The night could
+have been given the computer tools — `shell` and `filesystem` both exist and
+would work. It was rejected because an unattended nightly run that can execute
+programs on a person's machine is a materially different risk from a
+conversation where they are present and watching. The records script runs on the
+same machine, as the same person, and is something they or their agent wrote and
+can read.
+
+## Outcomes & Retrospective
+
+Not yet. Fill this in when the milestones land: what was achieved, what was left
+out, what the costs turned out to be against the estimates above, and what the
+next person should know.
