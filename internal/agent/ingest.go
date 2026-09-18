@@ -1350,6 +1350,16 @@ func (self *Agent) embedChunks(ctx context.Context, agent *models.Agent, most in
 				ChunkID: chunk.ID, SourceID: chunk.SourceID, Model: modelName, Vector: vectors[index],
 			})
 		}
+		// A round that wrote nothing is a round that will write nothing
+		// next time either: the same passages come back from the same
+		// query, and the provider answered -- with empty vectors, which
+		// some do for text they refuse -- so there is no error to stop
+		// on. Without this the loop turned for as long as the job had,
+		// asking the provider for the same batch over and over.
+		if len(writing) == 0 {
+			log.Warningf("the embedding model answered with nothing for %d passage(s) of agent %s", len(chunks), agent.ID)
+			break
+		}
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 			// In a fixed order, because two ingest runs happen at once and
 			// their batches overlap.
@@ -1668,5 +1678,18 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 		}
 		links = append(links, link)
 	}
-	return cutRunes(strings.TrimSpace(answer.Opening), 600), about, links
+	opening := cutRunes(strings.TrimSpace(answer.Opening), 600)
+	// An opening and no facts is an answer, not a failure: a checkout
+	// whose readme says what it is in one line has nothing else to file.
+	// Kept as the one about- line all the same, because those lines are
+	// what says this head has been described -- without it the same
+	// checkout was described again on every pass, a model call per
+	// checkout per night for as long as its head did not move.
+	//
+	// An answer with nothing in it at all leaves no mark and is asked
+	// again, which is what should happen: nothing was learned.
+	if len(about) == 0 && opening != "" {
+		about = []string{opening}
+	}
+	return opening, about, links
 }
