@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from '../i18n/i18n'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
@@ -487,6 +487,15 @@ function Navigator({
   const frame = useRef<HTMLDivElement>(null)
   const entering = useRef<HTMLDivElement>(null)
   const settle = useRef<number | null>(null)
+  // The frame's height as it stood before the slide: once both lists are
+  // lifted out of the flow the frame measures as nothing, so it has to
+  // be remembered from the render before, not read when the slide starts.
+  const standing = useRef(0)
+  useLayoutEffect(() => {
+    if (!leaving && frame.current) {
+      standing.current = frame.current.offsetHeight
+    }
+  })
   useEffect(() => {
     const box = frame.current
     if (!box) return
@@ -507,7 +516,7 @@ function Navigator({
       return
     }
     if (settle.current !== null) window.clearTimeout(settle.current)
-    const from = box.offsetHeight
+    const from = standing.current
     box.style.transition = `height ${SLIDE_MILLISECONDS}ms ease-out`
     box.style.height = `${from}px`
     const watched = entering.current
