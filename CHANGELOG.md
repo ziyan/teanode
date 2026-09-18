@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.28.2] - 2026-09-18
+
+### Fixed
+
+- A message whose text part carried a byte that is not UTF-8 was refused at
+  the SMTP door, because PostgreSQL would not index its search document. What
+  search runs over is now the readable text, and the message is kept. (#104)
+
 ## [0.28.1] - 2026-09-18
 
 ### Fixed
