@@ -2374,7 +2374,20 @@ export const ja: Catalog = {
   'knowledge.moveUnderHint':
     '{path} を収めるフォルダーまたはページ（projects や work/portal など）。配下のものも一緒に移動します。',
   'knowledge.moved': '移動しました',
+  'knowledge.mergePage': '別のページに統合する',
+  'knowledge.mergeInto': '統合先',
+  'knowledge.mergeIntoHint':
+    '{path} を統合する先のページ（people/alice-chen など）。すでに存在している必要があります。',
+  'knowledge.mergeNext': '続ける',
+  'knowledge.merge': '統合',
+  'knowledge.mergeBody':
+    '{path} を {into} に統合します。{facts} 件の事実、つながり、下にある {pages} 件のページはそちらへ移り、{path} はなくなります。',
+  'knowledge.merged': '統合しました',
   'knowledge.name': '名前',
+  'knowledge.aliases': 'ほかの呼び名',
+  'knowledge.aliasesHint':
+    'ほかにどう呼んでいるかを、カンマ区切りで。エージェントはどの呼び名からでもこのページにたどり着くので、会話に出てきた名前が新しいページではなくここに届きます。',
+  'knowledge.alsoCalled': '{names} とも呼ばれます',
   'knowledge.summary': 'このページに書くこと',
   'knowledge.summaryHint':
     '事実を読む前にエージェントが読む書き出しです。夢の整理が事実から書き直しますが、それまではここに書いたものが使われます。',
@@ -2400,6 +2413,14 @@ export const ja: Catalog = {
   'knowledge.factKindLabel': 'どの種類の記述か',
   'knowledge.happened': 'いつのことか',
   'knowledge.happenedHint': '年または月（2023、2023-06 など）。今も当てはまることは空のままで結構です。',
+  'knowledge.factAudiences': 'どの処理が読むか',
+  'knowledge.factAudiencesHint':
+    '会話しているときは、エージェントは必ずこれを読みます。ここで選ぶのは、あなたがいないところで動く処理です。',
+  'knowledge.moveFact': '別のページに移動する',
+  'knowledge.moveFactTo': '移動先',
+  'knowledge.moveFactToHint':
+    'この事実を置くページ（projects/portal など）。すでに存在している必要があります。言葉も出典もそのまま移り、移動先で新しい番号が付きます。',
+  'knowledge.factMoved': '移動しました',
   'knowledge.strike': '忘れる',
   'knowledge.strikeBody': 'これを忘れ、「覚えるべきでない例」としてエージェントに示します：「{text}」',
   'knowledge.struck': '忘れました',

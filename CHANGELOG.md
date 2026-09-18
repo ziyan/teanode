@@ -6,6 +6,28 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The Knowledge page can now do three things only the command line could. A
+  page can be merged into another one, which folds its facts, its links and
+  the pages under it into the page you name and asks you to confirm before it
+  does, since the page it merges away is gone afterwards. A single fact can be
+  moved to another page from its own row, keeping its words and where they came
+  from. And a page's other names — what else you call it, which is how your
+  agent finds it under a name that is not its heading — can be read on the page
+  and edited beside its name.
+
+- The fact editor says which runs read the fact: sorting, replies, research
+  and summaries, each a box to tick. Your agent always reads it when you are
+  talking to it; these are the runs that happen without you.
+
+### Fixed
+
+- Editing a fact in the dashboard no longer narrows who reads it. Correcting
+  the wording of a fact addressed to the sorting run left it addressed to the
+  conversation alone, with nothing on the page to say so. An edit that says
+  nothing about the audiences now keeps the ones the fact has.
+
 ## [0.28.0] - 2026-09-18
 
 ### Added

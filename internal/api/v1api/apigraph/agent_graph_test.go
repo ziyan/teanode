@@ -112,6 +112,114 @@ func TestMoveAgentFactCarriesTheSentenceOverWhole(t *testing.T) {
 	})
 }
 
+// Which runs read a fact is set by whoever addressed it, and correcting
+// the sentence is not an answer to that question. Editing used to
+// rewrite the audiences from the argument every time, so the dashboard's
+// fact editor — which sends the text and nothing else — reset a fact the
+// sorting run had been told to read back to the conversation alone, with
+// nothing on the page to say it had happened.
+func TestEditingAFactKeepsTheAudiencesNobodyChanged(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+
+	var owner *models.User
+	var agent *models.Agent
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if owner, err = tx.CreateUser(&models.User{Username: "fact-editor", Name: "Alice Example"}); err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if agent, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if err = tx.EnsureAgentRoots(agent.ID); err != nil {
+			t.Fatalf("EnsureAgentRoots: %s", err)
+		}
+		if _, err = tx.PutAgentNode(&models.AgentNode{
+			AgentID: agent.ID, Path: "people/alice-chen", Kind: models.NodePerson, Name: "Alice Chen",
+		}); err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+	})
+
+	principal := &api.Principal{
+		User: owner,
+		Permissions: models.NewEffectivePermissions([]models.Grant{
+			{Permission: models.PermissionAgentUse},
+		}),
+	}
+	resolver := &graph{database: database}
+
+	// audiencesOf reads them back in a form a failure can be read from.
+	audiencesOf := func(fact *models.AgentFact) string {
+		names := make([]string, 0, len(fact.Audiences))
+		for _, audience := range fact.Audiences {
+			names = append(names, string(audience))
+		}
+		return strings.Join(names, ",")
+	}
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), principal), tx)
+
+		written, err := resolver.SaveAgentFact(ctx, SaveAgentFactArguments{
+			Path:      "people/alice-chen",
+			Text:      "Alice reads the Friday note before anyone else.",
+			Audiences: []string{"triage", "reply"},
+		})
+		if err != nil {
+			t.Fatalf("SaveAgentFact: %s", err)
+		}
+		if got := audiencesOf(written); got != "ask,triage,reply" {
+			t.Fatalf("a fact is addressed to what it was given, and to the conversation: %q", got)
+		}
+
+		edited, err := resolver.SaveAgentFact(ctx, SaveAgentFactArguments{
+			Path:   "people/alice-chen",
+			Number: written.Number,
+			Text:   "Alice reads the Friday note first.",
+		})
+		if err != nil {
+			t.Fatalf("SaveAgentFact: %s", err)
+		}
+		if edited.Text != "Alice reads the Friday note first." {
+			t.Errorf("the words are the ones typed: %q", edited.Text)
+		}
+		if got := audiencesOf(edited); got != "ask,triage,reply" {
+			t.Errorf("an edit that says nothing about the audiences keeps them: %q", got)
+		}
+
+		addressed, err := resolver.SaveAgentFact(ctx, SaveAgentFactArguments{
+			Path:      "people/alice-chen",
+			Number:    written.Number,
+			Text:      "Alice reads the Friday note first.",
+			Audiences: []string{"summaries"},
+		})
+		if err != nil {
+			t.Fatalf("SaveAgentFact: %s", err)
+		}
+		if got := audiencesOf(addressed); got != "ask,summaries" {
+			t.Errorf("an edit that names audiences sets them: %q", got)
+		}
+
+		// An empty list is a request, not a silence: it takes the fact
+		// away from every unattended run and leaves the conversation.
+		cleared, err := resolver.SaveAgentFact(ctx, SaveAgentFactArguments{
+			Path:      "people/alice-chen",
+			Number:    written.Number,
+			Text:      "Alice reads the Friday note first.",
+			Audiences: []string{},
+		})
+		if err != nil {
+			t.Fatalf("SaveAgentFact: %s", err)
+		}
+		if got := audiencesOf(cleared); got != "ask" {
+			t.Errorf("an empty list clears them: %q", got)
+		}
+	})
+}
+
 // The query behind `teanode agent memory evaluate`: what a turn asking
 // this question would have been carried, without a turn.
 //

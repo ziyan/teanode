@@ -642,6 +642,19 @@ export function LinkIcon(props: IconProps) {
   )
 }
 
+// Merge: two strands that become one, the way every version control
+// program has drawn it, so that "this page joins that one" is read off
+// the glyph rather than learned.
+export function MergeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7 3v6a6 6 0 0 0 6 6h4" />
+      <path d="M7 21v-6" />
+      <path d="m14 12 3 3-3 3" />
+    </Icon>
+  )
+}
+
 export function EraserIcon(props: IconProps) {
   return (
     <Icon {...props}>

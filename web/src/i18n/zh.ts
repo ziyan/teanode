@@ -2297,7 +2297,19 @@ export const zh: Catalog = {
   'knowledge.moveUnderHint':
     '{path} 应当归入的文件夹或页面，例如 projects 或 work/portal。归在它下面的内容会一起移动。',
   'knowledge.moved': '已移动',
+  'knowledge.mergePage': '并入另一个页面',
+  'knowledge.mergeInto': '并入',
+  'knowledge.mergeIntoHint': '{path} 要并入的页面，例如 people/alice-chen。该页面必须已经存在。',
+  'knowledge.mergeNext': '继续',
+  'knowledge.merge': '合并',
+  'knowledge.mergeBody':
+    '把 {path} 并入 {into}。它的 {facts} 条事实、它的关联以及归在它下面的 {pages} 个页面都会转过去，之后 {path} 不再存在。',
+  'knowledge.merged': '已合并',
   'knowledge.name': '名称',
+  'knowledge.aliases': '其他名称',
+  'knowledge.aliasesHint':
+    '你还会怎么称呼它，用逗号分隔。你的助理用其中任何一个名字都能找到这个页面，所以对话里听到的名字会落到这里，而不是另开一个页面。',
+  'knowledge.alsoCalled': '也叫作 {names}',
   'knowledge.summary': '这一页写什么',
   'knowledge.summaryHint': '代理在读事实之前先读的开篇。梦境整理会据事实重写；在那之前以你写的为准。',
   'knowledge.facts': '事实',
@@ -2322,6 +2334,13 @@ export const zh: Catalog = {
   'knowledge.factKindLabel': '属于哪一类',
   'knowledge.happened': '何时为真',
   'knowledge.happenedHint': '年或月，例如 2023 或 2023-06。现在仍然成立的可以留空。',
+  'knowledge.factAudiences': '哪些运行会读到它',
+  'knowledge.factAudiencesHint': '你和助理对话时它总会读到这条。这里选的是没有你参与、自动进行的那些运行。',
+  'knowledge.moveFact': '移动到另一个页面',
+  'knowledge.moveFactTo': '移动到',
+  'knowledge.moveFactToHint':
+    '这条事实该放的页面，例如 projects/portal。该页面必须已经存在。事实会连同它的措辞和出处一起过去，落到新页面后会拿到一个新编号。',
+  'knowledge.factMoved': '已移动',
   'knowledge.strike': '忘掉',
   'knowledge.strikeBody': '忘记这条，并作为「不该记住的例子」给代理看：「{text}」',
   'knowledge.struck': '已忘掉',
