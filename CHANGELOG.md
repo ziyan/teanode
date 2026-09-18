@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-09-18
+
+### Fixed
+
+- A checkout whose description the model answered with nothing was asked to describe it again on every page of the pass. It is asked once per head now. (#103)
+
 ## [0.28.0] - 2026-09-18
 
 ### Added
