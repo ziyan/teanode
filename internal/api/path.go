@@ -29,6 +29,13 @@ const (
 	PathAgentAttachments = Prefix + "/agent/attachments"
 	PathAgentAttachment  = Prefix + "/agent/attachments/{attachmentId}"
 
+	// PathAgentDocumentFile serves the bytes of one thing a knowledge
+	// source indexed: the picture or the file a record came with, kept in
+	// object storage under the document's key. The document itself is
+	// read through the graph; this is the file behind it, so that a page
+	// citing a screenshot can show the screenshot.
+	PathAgentDocumentFile = Prefix + "/agent/documents/{documentId}/file"
+
 	// PathGraphQL is the whole of the management API. POST executes a query
 	// or mutation; GET upgrades to a WebSocket for subscriptions.
 	PathGraphQL = Prefix + "/graphql"
@@ -118,6 +125,12 @@ func BimiLogoPath(fileId string) string {
 // SenderLogoPath is PathSenderLogo with its parameter filled in.
 func SenderLogoPath(domain string) string {
 	return Prefix + "/logo/" + url.PathEscape(domain)
+}
+
+// AgentDocumentFilePath is PathAgentDocumentFile with its parameter filled
+// in: where the bytes of one indexed document are served from.
+func AgentDocumentFilePath(documentId string) string {
+	return Prefix + "/agent/documents/" + url.PathEscape(documentId) + "/file"
 }
 
 // MailAttachmentPath is PathMailAttachment with its parameters filled in.

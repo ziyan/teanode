@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -67,6 +68,15 @@ type AgentGraphQuery interface {
 
 	// The places the person has pointed their agent at. Needs agent:use.
 	ListAgentKnowledgeSources(ctx context.Context) ([]*models.AgentKnowledgeSource, error)
+
+	// What became of the pictures and files each of those places
+	// carried: how many wait for a decision, how many the night decided
+	// against, how many it opened and read. Needs agent:use.
+	ListAgentSourceAttachments(ctx context.Context) ([]*AgentSourceAttachments, error)
+
+	// The files the night decided against opening, newest first, with
+	// the reason each was passed over. Needs agent:use.
+	ListAgentDeclinedAttachments(ctx context.Context, arguments ListAgentDeclinedAttachmentsArguments) ([]*AgentAttachmentFile, error)
 
 	// Passages from what those places indexed, by words: the same search
 	// the agent's knowledge tool runs, so that a person can look through
@@ -384,6 +394,13 @@ type AgentGraphPageResult struct {
 	// merge nobody can disagree with.
 	Folded []*AgentFoldedFact `json:"folded"`
 
+	// Attachments are the pictures and files the facts on this page cite
+	// as evidence, one row per document however many facts cite it. The
+	// evidence itself carries only an identifier, and a fact whose
+	// evidence is a screenshot is worth little to a person who cannot see
+	// the screenshot.
+	Attachments []*AgentAttachmentFile `json:"attachments"`
+
 	// Contact is the address book entry this page is about, for a person.
 	Contact *models.Contact `json:"contact" graphapi:"nullable"`
 }
@@ -420,6 +437,60 @@ type RecalledAgentFact struct {
 type AgentFoldedFact struct {
 	Fact *models.AgentFact `json:"fact"`
 	Into int               `json:"into"`
+}
+
+// AgentAttachmentFile is one picture or file a record came with, as a
+// person sees it rather than as it is stored.
+//
+// One type for both places a person meets these -- the evidence under a
+// fact, and the list of what the night decided against -- because they
+// are the same file and a reader should not have to learn it twice.
+type AgentAttachmentFile struct {
+	DocumentID string `json:"documentId"`
+
+	// Name is what the file was called where it came from, and
+	// ContentType what sort of file it is, which is what decides whether
+	// it is shown or offered to be saved.
+	Name        string `json:"name"`
+	ContentType string `json:"contentType"`
+	Bytes       int64  `json:"bytes"`
+
+	// Channel and Thread are where it was posted, from the record it
+	// arrived with: the two things that tell one screenshot from the
+	// fifty thousand beside it.
+	Channel string `json:"channel"`
+	Thread  string `json:"thread"`
+
+	// Path is where the bytes are served from, ready to put in an
+	// address. Empty for a document whose bytes were never kept, which is
+	// how a reader knows there is nothing to open.
+	Path string `json:"path"`
+
+	// Declined is why the night decided against opening it, and empty
+	// where it did not.
+	Declined string `json:"declined"`
+
+	HappenedAt *time.Time `json:"happenedAt"`
+}
+
+// ListAgentDeclinedAttachmentsArguments names whose files to list.
+type ListAgentDeclinedAttachmentsArguments struct {
+	// SourceID is one source; empty is every source of the agent's.
+	SourceID string `json:"sourceId" graphapi:"nullable"`
+
+	// First is how many, newest first; zero is a hundred.
+	First int `json:"first" graphapi:"nullable"`
+}
+
+// AgentSourceAttachments is what became of one source's files.
+type AgentSourceAttachments struct {
+	SourceID string `json:"sourceId"`
+
+	// Undecided is waiting for the night to decide about it, Declined
+	// was decided against, and Described was opened and read.
+	Undecided int64 `json:"undecided"`
+	Declined  int64 `json:"declined"`
+	Described int64 `json:"described"`
 }
 
 // AgentLearnedFact is a fact with the path of the page it is on, which is
@@ -481,6 +552,9 @@ func (self *graph) AgentGraphPage(ctx context.Context, arguments AgentGraphPageA
 	if result.Edges, err = tx.ListAgentEdges(found.ID, node.ID); err != nil {
 		return nil, err
 	}
+	if result.Attachments, err = self.attachmentsCitedBy(tx, found.ID, result.Facts); err != nil {
+		return nil, err
+	}
 	if result.Children, err = tx.ListAgentNodeChildren(found.ID, node.ID); err != nil {
 		return nil, err
 	}
@@ -504,6 +578,92 @@ func (self *graph) AgentGraphPage(ctx context.Context, arguments AgentGraphPageA
 		}
 	}
 	return result, nil
+}
+
+// citedDocumentsLimit is how many distinct things one page's facts may
+// be looked up for at once.
+const citedDocumentsLimit = 500
+
+// attachmentsCitedBy is the pictures and files the given facts cite as
+// evidence, one row per document.
+//
+// One read for the whole page rather than one per fact: a page of five
+// hundred facts citing the same thread would otherwise be five hundred
+// queries. Everything that is not an attachment is dropped -- a fact
+// citing a chat unit or a conversation has nothing to show.
+func (self *graph) attachmentsCitedBy(tx db.Transaction, agentId string, facts []*models.AgentFact) ([]*AgentAttachmentFile, error) {
+	seen := map[string]bool{}
+	var documentIds []string
+	for _, fact := range facts {
+		for _, evidence := range fact.Evidence {
+			// A filing run writes the identifier as the prompt showed
+			// it, which is in brackets; documentEvidence trims them the
+			// same way.
+			id := strings.Trim(strings.TrimSpace(evidence.ID), "[]")
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			documentIds = append(documentIds, id)
+			// A crowded page may cite thousands of things, and the
+			// reader shows fifty facts at a time. Bounded so that one
+			// page cannot turn into one enormous statement.
+			if len(documentIds) >= citedDocumentsLimit {
+				break
+			}
+		}
+		if len(documentIds) >= citedDocumentsLimit {
+			break
+		}
+	}
+	if len(documentIds) == 0 {
+		return []*AgentAttachmentFile{}, nil
+	}
+	documents, err := tx.GetAgentDocuments(agentId, documentIds)
+	if err != nil {
+		return nil, err
+	}
+	attachments := []*AgentAttachmentFile{}
+	for _, document := range documents {
+		if document.Kind != models.DocumentAttachment {
+			continue
+		}
+		attachments = append(attachments, attachmentFileOf(document))
+	}
+	return attachments, nil
+}
+
+// attachmentFileOf is one attachment document as a person sees it.
+func attachmentFileOf(document *models.AgentDocument) *AgentAttachmentFile {
+	file := &AgentAttachmentFile{
+		DocumentID:  document.ID,
+		Name:        document.Cite(),
+		ContentType: document.ContentType(),
+		Bytes:       document.Bytes,
+		Channel:     documentMetadataText(document, "channel"),
+		Thread:      documentMetadataText(document, "thread"),
+		Declined:    document.Declined(),
+		HappenedAt:  document.HappenedAt,
+	}
+	// An address only where there are bytes behind it: a document filed
+	// while the person's machine was busy has no key until the next pass
+	// of its source fills one in, and a link to nothing is worse than no
+	// link.
+	if document.StorageKey != "" {
+		file.Path = api.AgentDocumentFilePath(document.ID)
+	}
+	return file
+}
+
+// documentMetadataText is one string a scan recorded about a document.
+func documentMetadataText(document *models.AgentDocument, key string) string {
+	if document == nil || document.Metadata == nil {
+		return ""
+	}
+	if value, ok := document.Metadata[key].(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
 }
 
 // foldedOn is the page's facts that stand behind another fact, each with
@@ -880,6 +1040,76 @@ func (self *graph) ListAgentKnowledgeSources(ctx context.Context) ([]*models.Age
 		sources = []*models.AgentKnowledgeSource{}
 	}
 	return sources, nil
+}
+
+// ListAgentSourceAttachments is what became of each source's files.
+//
+// Apart from the source itself because these are counted rather than
+// kept: a night deciding about a file writes the decision on the
+// document, and a number on the source's row would be one more thing to
+// keep right.
+func (self *graph) ListAgentSourceAttachments(ctx context.Context) ([]*AgentSourceAttachments, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := self.transaction(ctx).CountAgentAttachmentsBySource(found.ID)
+	if err != nil {
+		return nil, err
+	}
+	attachments := make([]*AgentSourceAttachments, 0, len(counts))
+	for sourceId, count := range counts {
+		attachments = append(attachments, &AgentSourceAttachments{
+			SourceID:  sourceId,
+			Undecided: count.Undecided,
+			Declined:  count.Declined,
+			Described: count.Described,
+		})
+	}
+	// In a settled order, so that a card refreshing itself does not
+	// reorder rows under somebody reading them.
+	sort.Slice(attachments, func(first, second int) bool {
+		return attachments[first].SourceID < attachments[second].SourceID
+	})
+	return attachments, nil
+}
+
+// ListAgentDeclinedAttachments is what the night passed over, and why.
+//
+// Shown rather than kept quiet: the decision is the agent's own judgement
+// about the person's files, and a judgement nobody can read is one nobody
+// can disagree with.
+func (self *graph) ListAgentDeclinedAttachments(ctx context.Context, arguments ListAgentDeclinedAttachmentsArguments) ([]*AgentAttachmentFile, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	sourceId := strings.TrimSpace(arguments.SourceID)
+	if sourceId != "" {
+		// Their own source, so that an identifier from somewhere else
+		// lists nothing rather than somebody else's files.
+		source, err := tx.GetAgentSource(found.ID, sourceId)
+		if err != nil {
+			return nil, err
+		}
+		if source == nil {
+			return nil, api.ErrNotFound
+		}
+	}
+	limit := arguments.First
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	documents, err := tx.ListAgentAttachmentsDeclined(found.ID, sourceId, limit)
+	if err != nil {
+		return nil, err
+	}
+	files := make([]*AgentAttachmentFile, 0, len(documents))
+	for _, document := range documents {
+		files = append(files, attachmentFileOf(document))
+	}
+	return files, nil
 }
 
 // SearchAgentDocuments is the knowledge tool's search, run for the person

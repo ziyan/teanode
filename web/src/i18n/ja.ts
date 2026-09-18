@@ -2441,6 +2441,10 @@ export const ja: Catalog = {
   'knowledge.struck': '忘れました',
   'knowledge.inferred': '推測されたもの',
   'knowledge.quoteNotFound': '引用は見つかりませんでした',
+  'knowledge.attachmentFrom': '{where} より',
+  'knowledge.attachmentFile': '記録に添えられたファイル',
+  'knowledge.attachmentOpen': '画像を原寸で開く',
+  'knowledge.attachmentMissing': '{name} — ファイル自体はここに保存されていません',
   'knowledge.connections': 'つながり',
   'knowledge.connectionsHint':
     'このページとつながっているページ。ページをクリックするとそのページのつながりが見え、開くと読めます。',
@@ -2584,6 +2588,12 @@ export const ja: Catalog = {
     'ここのコミットは {names} によるもので、どれもあなたではありません。あなたの仕事として数えられません。',
   'agent.knowledgeWhichIsYou': 'どの連絡先があなたかを指定する',
   'agent.knowledgeRefused': '{count} 件がその機械で止められました',
+  'agent.filesWaiting': '{count} 件のファイルが判断待ちです',
+  'agent.filesDeclined': '{count} 件は開かないと判断しました',
+  'agent.filesRead': '{count} 件は開いて読みました',
+  'agent.filesWhich': 'どれですか？',
+  'agent.filesHide': '閉じる',
+  'agent.filesNoneDeclined': 'ここではまだ何も見送っていません。',
   'agent.dream': '夢の整理',
   'agent.dreamHint':
     'あなたが眠っているあいだに、届いたものを読み、その月をまとめ、知っていることを整理します。自分から何かを忘れることはありません。',

@@ -87,6 +87,16 @@ var replyTools = map[string]bool{
 const thinkResultCharacters = 6000
 
 func (self *Agent) think(ctx context.Context, run *Run, title, prompt string, allow map[string]bool, rounds int, kind models.AgentJobKind, work config.AgentWork) (*thought, error) {
+	return self.thinkAbout(ctx, run, title, prompt, nil, allow, rounds, kind, work)
+}
+
+// thinkAbout is think with something to look at: the pictures go into the
+// turn as image parts, exactly as a picture a person attaches to a
+// message does. That path was built for somebody sitting there and had
+// never been used by a run with nobody present; a night describing an
+// attachment is the first, and it goes through the same turn rather than
+// reaching a provider on its own.
+func (self *Agent) thinkAbout(ctx context.Context, run *Run, title, prompt string, pictures []llm.ContentPart, allow map[string]bool, rounds int, kind models.AgentJobKind, work config.AgentWork) (*thought, error) {
 	if self.operations == nil {
 		return nil, fmt.Errorf("no way to act as the person")
 	}
@@ -120,6 +130,7 @@ func (self *Agent) think(ctx context.Context, run *Run, title, prompt string, al
 		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
 		Message: prompt, Surface: string(kind), ReadOnly: true, Short: true,
 		Allow: allow, Headless: true, MaxRounds: rounds, UsageKind: string(kind), Work: work,
+		Pictures:       pictures,
 		ReadThenAnswer: true, ResultCharacters: thinkResultCharacters,
 	})
 	if err != nil {

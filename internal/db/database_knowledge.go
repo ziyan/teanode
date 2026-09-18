@@ -105,6 +105,32 @@ type KnowledgeOperation interface {
 
 	// CountAgentKnowledge is how much there is, per source.
 	CountAgentKnowledge(agentId, sourceId string) (documents, chunks int64, err error)
+
+	// CountAgentAttachmentsBySource is what became of the pictures and
+	// files each source carried, keyed by the source's identifier: how
+	// many wait for the night to decide about them, how many it decided
+	// against opening, and how many it opened and read.
+	//
+	// The same three numbers reading.Progress reports for the whole
+	// agent, cut by source, because a person looking at a card wants to
+	// know which of their sources the fifty thousand screenshots are in.
+	CountAgentAttachmentsBySource(agentId string) (map[string]AgentAttachmentCounts, error)
+
+	// ListAgentAttachmentsDeclined is the files the night decided against
+	// opening, newest first, for one source or for every source when no
+	// source is named. Each carries the reason on its metadata, which is
+	// the whole point of keeping the row rather than deleting the file.
+	ListAgentAttachmentsDeclined(agentId, sourceId string, limit int) ([]*models.AgentDocument, error)
+}
+
+// AgentAttachmentCounts is what became of one source's files.
+type AgentAttachmentCounts struct {
+	// Undecided has not been looked at even from the outside; Declined
+	// was looked at and passed over; Described was opened and made text
+	// of.
+	Undecided int64
+	Declined  int64
+	Described int64
 }
 
 // SourceCounts is what one pass of a source did.
@@ -812,4 +838,54 @@ func (self *transaction) CountAgentKnowledge(agentId, sourceId string) (int64, i
 		return 0, 0, err
 	}
 	return documents, chunks, nil
+}
+
+// CountAgentAttachmentsBySource counts what became of each source's files.
+//
+// The rule is the one CountAgentDocumentsReading uses, so that a card and
+// the reading line never disagree: a file nothing has made text of is set
+// aside, and which of the two kinds of aside it is depends on whether the
+// night has decided about it.
+func (self *transaction) CountAgentAttachmentsBySource(agentId string) (map[string]AgentAttachmentCounts, error) {
+	var rows []struct {
+		SourceID  string
+		Undecided int64
+		Declined  int64
+		Described int64
+	}
+	if err := self.tx.Raw(`SELECT "source_id" AS source_id,
+			count(*) FILTER (WHERE "aside" AND NOT "declined") AS undecided,
+			count(*) FILTER (WHERE "aside" AND "declined") AS declined,
+			count(*) FILTER (WHERE NOT "aside" AND NOT "declined") AS described
+		FROM (
+			SELECT d."source_id" AS "source_id",
+				jsonb_exists(d."metadata", 'declined') AS "declined",
+				NOT EXISTS (
+					SELECT 1 FROM "agent_chunk" WHERE "document_id" = d."id") AS "aside"
+			FROM "agent_document" d
+			WHERE d."agent_id" = ? AND d."kind" = ?) AS "documents"
+		GROUP BY "source_id"`,
+		agentId, string(models.DocumentAttachment)).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	counts := make(map[string]AgentAttachmentCounts, len(rows))
+	for _, row := range rows {
+		counts[row.SourceID] = AgentAttachmentCounts{
+			Undecided: row.Undecided, Declined: row.Declined, Described: row.Described,
+		}
+	}
+	return counts, nil
+}
+
+func (self *transaction) ListAgentAttachmentsDeclined(agentId, sourceId string, limit int) ([]*models.AgentDocument, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	query := self.tx.
+		Where(`"agent_id" = ? AND "kind" = ?`, agentId, string(models.DocumentAttachment)).
+		Where(`jsonb_exists("metadata", 'declined')`)
+	if sourceId != "" {
+		query = query.Where(`"source_id" = ?`, sourceId)
+	}
+	return self.documentsFrom(query.Order(`"happened_at" DESC NULLS LAST`).Limit(limit))
 }
