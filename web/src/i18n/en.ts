@@ -2519,6 +2519,30 @@ export const en = {
   'knowledge.recall.placeholder': 'What is Alice working on?',
   'knowledge.recall.ask': 'Show what it carries',
   'knowledge.recall.nothing': 'That question carries nothing. Your agent would answer it from the conversation alone.',
+  // What the sources actually read, as against what the agent made of it.
+  // The graph is the conclusions and this is the evidence, which is what
+  // somebody disagreeing with a fact needs to see.
+  'knowledge.documents.title': 'Search what it read',
+  'knowledge.documents.hint':
+    'The passages your sources indexed, in the words they were written in: your code, your chat, your notes. ' +
+    'This is the search your agent runs, and nothing here is said to a model.',
+  'knowledge.documents.query': 'Words to look for',
+  'knowledge.documents.placeholder': 'the migration that failed',
+  'knowledge.documents.source': 'Source',
+  'knowledge.documents.anySource': 'Any source',
+  'knowledge.documents.search': 'Search',
+  'knowledge.documents.nothing': 'Nothing that has been indexed is about that.',
+  // An identifier out of a log is looked up exactly, and what it found goes
+  // above the passages: it is an answer where the rest is a ranking.
+  'knowledge.documents.definitions': 'Defined in',
+  'knowledge.documents.read': 'Read',
+  'knowledge.documents.readOne': 'Read {title} from the beginning',
+  'knowledge.documents.readOn': 'Read on',
+  'knowledge.documents.back': 'Back to the results',
+  'knowledge.documents.left': 'There are {count} more characters after this.',
+  'knowledge.documents.blank': 'That document was indexed with no text in it.',
+  'knowledge.documents.gone': 'That document is no longer indexed. Search again for what is.',
+  'knowledge.documents.wordsOnly': 'Found by words alone: this server has no model to search by meaning.',
   // The whole graph, drawn. A page of its own rather than a bigger card: a
   // drawing you pan and zoom wants the window, and the card beside a page is
   // about that page.
