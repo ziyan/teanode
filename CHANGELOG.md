@@ -6,11 +6,11 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-09-18
+
 ### Fixed
 
-- A night's reading no longer skips a batch of documents the model's window
-  could not hold. The batch is read as two halves instead, down to a single
-  document that still does not fit, which is the one thing skipped.
+- A checkout whose description the model answered with nothing was asked to describe it again on every page of the pass. It is asked once per head now. (#103)
 
 ## [0.28.0] - 2026-09-18
 
