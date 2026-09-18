@@ -326,6 +326,13 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 	}
 	budget.digestUntil = partway(ctx, time.Now(), reading)
 	self.dreamDigest(ctx, run, record, budget)
+	// The pictures after the words, and outside the reading's share of
+	// the night: what is decided here is not what to read but what is
+	// worth opening at all, and the reading would otherwise take the
+	// whole share every night on an archive with fifty thousand files in
+	// it and never leave a minute for them. What it opens gets its
+	// passages tonight and is read like anything else tomorrow.
+	self.dreamAttachments(ctx, run, budget)
 	self.dreamTimeline(ctx, run, record, budget)
 	self.dreamConsolidate(ctx, run, record, budget)
 	self.dreamOrganize(ctx, run, record, budget)
@@ -397,6 +404,14 @@ func (self *Agent) dreamThink(ctx context.Context, run *Run, budget *dreamBudget
 // and a model given tools for those spent ten rounds looking instead of
 // answering.
 func (self *Agent) dreamThought(ctx context.Context, run *Run, budget *dreamBudget, title, prompt string, lookups bool) (*thought, error) {
+	return self.dreamThoughtAbout(ctx, run, budget, title, prompt, nil, lookups)
+}
+
+// dreamThoughtAbout is dreamThought with pictures in the turn, for the
+// one phase that has something to look at. The allowance is claimed and
+// settled here exactly as it is for a call in words, which is what makes
+// a night that has spent its share stop looking at pictures too.
+func (self *Agent) dreamThoughtAbout(ctx context.Context, run *Run, budget *dreamBudget, title, prompt string, pictures []llm.ContentPart, lookups bool) (*thought, error) {
 	tools, rounds := noTools, 1
 	if lookups {
 		// Said before the prompt, because the memory tool's own
@@ -413,7 +428,7 @@ func (self *Agent) dreamThought(ctx context.Context, run *Run, budget *dreamBudg
 	if !budget.reserve() {
 		return nil, errNothingLeftToSpend
 	}
-	thinking, err := self.think(ctx, run, title, prompt, tools, rounds, models.AgentJobDream, config.AgentWorkScan)
+	thinking, err := self.thinkAbout(ctx, run, title, prompt, pictures, tools, rounds, models.AgentJobDream, config.AgentWorkScan)
 	usage := llm.Usage{}
 	if thinking != nil {
 		usage = thinking.Usage

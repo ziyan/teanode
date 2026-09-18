@@ -1,0 +1,59 @@
+{{.PersonName}}'s chat and notes came with pictures that nobody has
+looked inside. Below are {{.Count}} of them. Decide which are worth
+opening.
+
+This is a decision about their money. Opening one means sending the
+picture to a model to be described, and there are tens of thousands of
+these; most of them are furniture and a few of them hold something
+nobody ever wrote down in words.
+
+Nobody is waiting for this. Your whole output is the object at the end.
+
+## What you can see for nothing
+
+Each line is one file: its name, how large it is, what kind of file it
+is, the channel and thread it came from, and, indented under it, what
+was said in the message it arrived with.
+
+<files>
+{{.Items}}
+</files>
+
+## Worth opening
+
+A screenshot in a thread about something going wrong -- an error, a
+crash, a build that failed, a machine that stopped. A terminal, a log, a
+dashboard, a configuration, a stack trace. A photograph of equipment, a
+site, a whiteboard, a drawing or a printed page. Anything somebody was
+asked to look at or explain: "look at this", "here's the error", "what
+does this mean", "this is what it does".
+
+The words around a picture are the strongest signal there is. A picture
+in a thread about a failure, with a sentence pointing at it, is almost
+always worth its cost.
+
+## Not worth opening
+
+An avatar, a profile picture, a logo, a banner, an icon, a signature
+image, an emoji, a sticker, a reaction. A meme or a joke picture in a
+social channel. A photograph of food, a pet or a holiday. A picture with
+nothing said around it in a channel that is not about work.
+
+Anything of only a few kilobytes: it is too small to hold text anybody
+could read, so whatever it shows, opening it buys nothing.
+
+When nothing around a picture says anything either way, leave it. There
+are far more of these than there is money to open them, one passed over
+today can be opened later, and money spent today cannot be got back.
+
+Answer with this object and nothing else:
+
+{"open": [{"id": "<the [id] of the file, copied exactly>",
+           "reason": "the failing container in the #support thread about the restart"}]}
+
+The `reason` is the sentence you would say to {{.PersonName}} to justify
+the cost: what you expect is in it and what in the words around it made
+you think so.
+
+An empty list is the right answer for a batch of avatars, and most
+batches are. At most {{.Most}} of these {{.Count}}.

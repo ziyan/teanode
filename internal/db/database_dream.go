@@ -3,6 +3,7 @@ package db
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -26,19 +27,11 @@ type DreamOperation interface {
 	FinishAgentDream(dream *models.AgentDream) error
 	ListAgentDreams(agentId string, limit int) ([]*models.AgentDream, error)
 
-	// CountAgentDocumentsReading is how many documents the night has still
-	// to read, how many it has read, and how many nothing here can read
-	// yet, by the same rule that decides what a night reads: every
-	// document but a chat unit, and a chat unit only when the person was
-	// in it and it was a conversation.
-	//
-	// The third count is apart from the other two because it is neither.
-	// An attachment with no text -- a picture whose bytes are kept and
-	// which nothing has described -- is not waiting for a night that
-	// could do nothing with it, and calling it read would be a lie: a
-	// source of fifty thousand screenshots would say it was all read and
-	// nothing would have been.
-	CountAgentDocumentsReading(agentId string, names []string) (waiting, read, unreadable int64, err error)
+	// CountAgentDocumentsReading is how far the night has got, by the same
+	// rule that decides what a night reads: every document but a chat
+	// unit, and a chat unit only when the person was in it and it was a
+	// conversation.
+	CountAgentDocumentsReading(agentId string, names []string) (*AgentReadingCounts, error)
 
 	// ListAgentDocumentsToDigest is what has been indexed and not yet
 	// read, in the order a night should read it, and how much is waiting
@@ -55,6 +48,23 @@ type DreamOperation interface {
 	// waiting.
 	ListAgentDocumentsToDigest(agentId string, names []string, limit int) ([]*models.AgentDocument, int64, error)
 	MarkAgentDocumentsDigested(documentIds []string, at time.Time) error
+
+	// ListAgentAttachmentsToDecide is the pictures and files a record came
+	// with that nobody has read and the night has not decided about:
+	// newest first, and only the ones whose bytes this server actually
+	// holds, since a file it cannot fetch is not one it can decide to
+	// open.
+	//
+	// Apart from ListAgentDocumentsToDigest because it is the opposite
+	// question. That one asks what to read; this one asks what is worth
+	// opening at all, which is asked of what has no text and therefore
+	// nothing to read.
+	ListAgentAttachmentsToDecide(agentId string, limit int) ([]*models.AgentDocument, error)
+
+	// MarkAgentDocumentsDeclined records that the night decided against
+	// opening these, and why, so that it is not paid for twice.
+	MarkAgentDocumentsDeclined(documentIds []string, reason string, at time.Time) error
+
 	// UnmarkAgentDocumentsDigested puts back into the queue everything
 	// marked read since the given time: for a night that marked what it
 	// never read. Says how many.
@@ -118,6 +128,31 @@ type DreamOperation interface {
 	// MarkAgentFactsSeen stamps rows with the build that has looked at
 	// them, so the same pass does not look again.
 	MarkAgentFactsSeen(agentId string, factIds []string) error
+}
+
+// AgentReadingCounts is how far the night has got through what was
+// indexed, and what became of the pictures and files a record came with.
+//
+// The last three are apart from the first two because two of them are
+// neither waiting nor read. An attachment with no text -- a picture whose
+// bytes are kept and which nothing has described -- is not waiting for a
+// night that could do nothing with it, and calling it read would be a
+// lie: a source of fifty thousand screenshots would say it was all read
+// and nothing would have been.
+type AgentReadingCounts struct {
+	// Waiting has been indexed and not read yet; Read has been.
+	Waiting int64
+	Read    int64
+
+	// Undecided is a file the night has not yet looked at the outside of,
+	// and Declined one it looked at and decided against opening. Described
+	// is one it opened and made text of, which is a document like any
+	// other and is counted in Waiting or Read as well -- it is here so
+	// that a source's page can say how many of its pictures were read
+	// rather than only how many were not.
+	Undecided int64
+	Declined  int64
+	Described int64
 }
 
 type agentDreamModel struct {
@@ -290,40 +325,92 @@ func (self *transaction) ListAgentDocumentsToDigest(agentId string, names []stri
 	return documents, backlog, err
 }
 
-func (self *transaction) CountAgentDocumentsReading(agentId string, names []string) (int64, int64, int64, error) {
+func (self *transaction) CountAgentDocumentsReading(agentId string, names []string) (*AgentReadingCounts, error) {
 	if len(names) == 0 {
 		names = []string{""}
 	}
-	var counts []struct {
-		Waiting    int64 `gorm:"column:waiting"`
-		Read       int64 `gorm:"column:read"`
-		Unreadable int64 `gorm:"column:unreadable"`
-	}
-	// "Nothing can read it yet" is an attachment that has no passages:
+	var counts []AgentReadingCounts
+	// "Nothing has read it yet" is an attachment that has no passages:
 	// its bytes are kept and no text has been made of them. The text of
 	// a document lives in its chunks, so having none is the question, and
 	// asking it of every kind would count the entries a reader refused as
 	// well -- which are refusals, not files waiting for a reader.
+	//
+	// Such a file is set aside, and which of the two kinds of aside it is
+	// depends on whether the night has decided about it. Both are outside
+	// the reading: one waits for the night to look at what it would cost,
+	// the other has been looked at and passed over, and neither moves on
+	// its own.
 	if err := self.tx.Raw(`SELECT
-			count(*) FILTER (WHERE NOT "unread" AND NOT jsonb_exists("metadata", 'digested')) AS waiting,
-			count(*) FILTER (WHERE NOT "unread" AND jsonb_exists("metadata", 'digested')) AS read,
-			count(*) FILTER (WHERE "unread") AS unreadable
+			count(*) FILTER (WHERE NOT "aside" AND NOT jsonb_exists("metadata", 'digested')) AS waiting,
+			count(*) FILTER (WHERE NOT "aside" AND jsonb_exists("metadata", 'digested')) AS read,
+			count(*) FILTER (WHERE "aside" AND NOT "declined") AS undecided,
+			count(*) FILTER (WHERE "aside" AND "declined") AS declined,
+			count(*) FILTER (WHERE "attachment" AND NOT "aside" AND NOT "declined") AS described
 		FROM (
 			SELECT d."metadata" AS "metadata",
+				(d."kind" = ?) AS "attachment",
+				jsonb_exists(d."metadata", 'declined') AS "declined",
 				(d."kind" = ? AND NOT EXISTS (
-					SELECT 1 FROM "agent_chunk" WHERE "document_id" = d."id")) AS "unread"
+					SELECT 1 FROM "agent_chunk" WHERE "document_id" = d."id")) AS "aside"
 			FROM "agent_document" d
 			WHERE d."agent_id" = ?
 			AND (d."kind" <> 'chat' OR (
 				jsonb_exists_any(d."metadata"->'participants', ?::text[])
 				AND coalesce((d."metadata"->>'posts')::int, 0) >= 3))) AS "documents"`,
-		string(models.DocumentAttachment), agentId, pq.Array(names)).Scan(&counts).Error; err != nil {
-		return 0, 0, 0, err
+		string(models.DocumentAttachment), string(models.DocumentAttachment),
+		agentId, pq.Array(names)).Scan(&counts).Error; err != nil {
+		return nil, err
 	}
 	if len(counts) == 0 {
-		return 0, 0, 0, nil
+		return &AgentReadingCounts{}, nil
 	}
-	return counts[0].Waiting, counts[0].Read, counts[0].Unreadable, nil
+	return &counts[0], nil
+}
+
+// ListAgentAttachmentsToDecide is what the night has yet to decide about.
+//
+// Only what this server holds the bytes of. A document filed while the
+// person's machine was busy has no key yet and the next pass of its
+// source fills one in; putting it to a model tonight would buy a decision
+// about a file nothing could then open.
+func (self *transaction) ListAgentAttachmentsToDecide(agentId string, limit int) ([]*models.AgentDocument, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	return self.documentsFrom(self.tx.Raw(`
+		SELECT * FROM "agent_document"
+		WHERE "agent_id" = ? AND "kind" = ? AND "storage_key" <> ''
+		  AND NOT jsonb_exists("metadata", 'declined')
+		  AND NOT jsonb_exists("metadata", 'digested')
+		  AND NOT EXISTS (
+			SELECT 1 FROM "agent_chunk" WHERE "document_id" = "agent_document"."id")
+		ORDER BY "happened_at" DESC NULLS LAST
+		LIMIT ?`, agentId, string(models.DocumentAttachment), limit))
+}
+
+// MarkAgentDocumentsDeclined says the night looked at what these would
+// cost to open and decided against it.
+//
+// In the metadata beside 'digested', and for the same reason: it is a
+// fact about this deployment's nightly run rather than about the
+// document. A separate key rather than the same one, because declined is
+// not read -- nothing has read it -- and a person who disagrees with what
+// the agent passed over should be able to clear this without disturbing
+// what really was read.
+func (self *transaction) MarkAgentDocumentsDeclined(documentIds []string, reason string, at time.Time) error {
+	if len(documentIds) == 0 {
+		return nil
+	}
+	// The reason is most of why the row is kept rather than the file
+	// deleted, so a caller that gives none still leaves something a
+	// person can read and disagree with.
+	if strings.TrimSpace(reason) == "" {
+		reason = "the night decided against opening it"
+	}
+	return self.tx.Exec(
+		`UPDATE "agent_document" SET "metadata" = "metadata" || jsonb_build_object('declined', ?::text, 'declinedAt', ?::text) WHERE "id" = ANY(?)`,
+		reason, at.Format(time.RFC3339), pq.Array(documentIds)).Error
 }
 
 // proseFile is a file somebody wrote to be read: a readme, a note, a

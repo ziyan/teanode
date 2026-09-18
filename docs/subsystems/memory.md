@@ -192,12 +192,35 @@ unless it is absolute, and is refused if it leads outside the directories
 allowed on that computer. Each attachment becomes a document of its own,
 of kind `attachment`, identified by the hash of its bytes rather than by
 where it sits, so the same screenshot pasted into four threads is one
-document. It has no text: the daemon hashes and measures it, the server
-asks for its bytes with the `blob` action and keeps them in object storage
-under that hash, and reading it is something a later night does. A file
-larger than the limit the source runs under — `agent.limits.maxScannedAttachmentBytes`,
-25 MB by default, or the source's own — is named on the source's page as
-passed over and never uploaded.
+document. It arrives with no text: the daemon hashes and measures it, and the
+server asks for its bytes with the `blob` action and keeps them in object
+storage under that hash. A file larger than the limit the source runs
+under — `agent.limits.maxScannedAttachmentBytes`, 25 MB by default, or the
+source's own — is named on the source's page as passed over and never
+uploaded.
+
+The text is made by the night, in two steps, and both are in
+`internal/agent/dream_attachment.go`. First it is shown what is free to
+know about a batch of these files — the name, the size, the kind of file,
+the channel and thread, and the words of the message each arrived with —
+and asked which are worth opening, because there are tens of thousands of
+them and describing one costs money. A screenshot in a thread about
+something going wrong is worth opening; an avatar, a logo, a signature
+image or a meme is not. What it passes over carries the reason on its row,
+in words, and is never asked about again; nothing is deleted, so a person
+who disagrees can read why and put it back. Then what it chose is fetched
+out of the store and sent to the scan model as a picture, with a prompt
+asking for what the picture shows and for any text in it read out word for
+word rather than summarised. What comes back becomes the document's text
+through the ordinary path, so from there the passages, the vectors, the
+reading that turns documents into facts and the evidence a fact quotes all
+work unchanged, and the source's page says how many files are waiting for
+a decision, how many the agent declined and how many it read.
+
+Only a picture is opened, and only one small enough to be worth sending:
+anything else is passed over with its reason, the same way. Both steps
+come off the night's allowance like every other call it makes, so a night
+that has spent its share stops asking and the rest waits for tomorrow.
 
 Two kinds of script fill such a folder, and which one to write is
 decided by where the records are.
