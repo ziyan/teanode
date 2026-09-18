@@ -16,6 +16,7 @@ import {
   TrashIcon,
   SparkIcon,
 } from '../components/icons'
+import { Select } from '../components/select'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { askAgentAbout, graphql } from '../api'
 import { useQuery } from '../components/useQuery'
@@ -75,6 +76,31 @@ const RECALL = `query ($question: String!) {
     pages { path facts { number text } }
   }
 }`
+
+// What the sources indexed, searched the way the agent's own knowledge
+// tool searches it. The graph above is what the agent made of what it
+// read; this is what it read.
+const DOCUMENT_SEARCH = `query ($query: String!, $first: Int, $sourceId: String) {
+  SearchAgentDocuments(query: $query, first: $first, sourceId: $sourceId) {
+    passages { documentId externalId title kind author sourceId source happenedAt number text }
+    definitions { symbol kind line documentId externalId title }
+    meaningful
+  }
+}`
+
+// One document, a slice at a time. A slice rather than the whole of it
+// because a source file or a year of chat is megabytes, and a dialog that
+// waits for all of it before drawing any of it is a dialog that hangs.
+const DOCUMENT_READ = `query ($documentId: String!, $from: Int) {
+  ReadAgentDocument(documentId: $documentId, from: $from) {
+    documentId externalId title kind author source happenedAt from text total next
+  }
+}`
+
+// The places the agent reads, for the box that narrows a search to one of
+// them. Their names only: this is a filter, not the card on the Agent page
+// that manages them.
+const KNOWLEDGE_SOURCES = `query { ListAgentKnowledgeSources { id name } }`
 
 const SAVE_NODE = `mutation ($path: String!, $kind: String, $name: String, $summary: String, $aliases: [String!], $pinned: Boolean) {
   SaveAgentNode(path: $path, kind: $kind, name: $name, summary: $summary, aliases: $aliases, pinned: $pinned) { id path }
@@ -188,6 +214,56 @@ type FoldedFact = { into: number; fact: { id: string; number: number; text: stri
 // being asked is what the model was told.
 type RecalledPage = { path: string; facts: { number: number; text: string }[] }
 
+// One passage a document search found: enough of the document to head it
+// with, and the words that matched. Uncut -- the passage is the answer, and
+// the reader below is for the document around it.
+type Passage = {
+  documentId: string
+  externalId: string
+  title: string
+  kind: string
+  author: string
+  sourceId: string
+  source: string
+  happenedAt?: string | null
+  number: number
+  text: string
+}
+
+// Where an identifier in the words is defined. A name pasted out of a log
+// is looked up exactly, which is the answer where a ranked search would
+// put twenty vaguely related files in front of it.
+type Definition = {
+  symbol: string
+  kind: string
+  line: number
+  documentId: string
+  externalId: string
+  title: string
+}
+
+// What a document search found, and how it found it: Meaningful is false
+// on a deployment with no embedding model, which finds what the words
+// find and misses a paraphrase sharing none of them.
+type FoundDocuments = { passages: Passage[]; definitions: Definition[]; meaningful: boolean }
+
+// A slice of one document: where in the text it starts, how long the whole
+// document is, and where the read that carries on from it begins -- zero
+// where this slice reached the end.
+type DocumentExtract = {
+  documentId: string
+  externalId: string
+  title: string
+  kind: string
+  author: string
+  source: string
+  happenedAt?: string | null
+  from: number
+  text: string
+  total: number
+  next: number
+}
+
 type Page = {
   node: Node
   facts: Fact[]
@@ -200,6 +276,46 @@ type Page = {
 // and a half; a folder of two thousand projects is "show fifty more",
 // not a two-thousand-row scroll.
 const PAGE_SIZE = 50
+
+// DOCUMENT_PASSAGES is how many passages one search asks for. Enough that
+// the question is usually answered from the list, few enough that the
+// dialog is something to scroll rather than something to read.
+const DOCUMENT_PASSAGES = 20
+
+// documentGroups gathers the passages under the document each came from,
+// keeping the order the search ranked them in: a document's best passage
+// decides where it sits, and its other passages follow it rather than
+// scattering down the list under a heading repeated four times.
+function documentGroups(passages: Passage[]): { document: Passage; passages: Passage[] }[] {
+  const groups: { document: Passage; passages: Passage[] }[] = []
+  const byDocument = new Map<string, { document: Passage; passages: Passage[] }>()
+  for (const passage of passages) {
+    const gathered = byDocument.get(passage.documentId)
+    if (gathered) {
+      gathered.passages.push(passage)
+      continue
+    }
+    const group = { document: passage, passages: [passage] }
+    byDocument.set(passage.documentId, group)
+    groups.push(group)
+  }
+  return groups
+}
+
+// documentDetail is the line under a document's title: who wrote it, when
+// it happened, and which source read it. A document that says none of
+// those gets no line rather than a line of separators.
+function documentDetail(document: { author: string; source: string; happenedAt?: string | null }): string {
+  const when = document.happenedAt ? new Date(document.happenedAt).toLocaleDateString() : ''
+  return [document.author, when, document.source].filter((part) => part !== '').join(' · ')
+}
+
+// documentName is what a document is called on screen: its title, and the
+// identifier its source knows it by where it has no title -- a path in a
+// checkout is a name, and an empty heading is not.
+function documentName(document: { title: string; externalId: string }): string {
+  return document.title || document.externalId
+}
 
 // rootOf is the folder a path is filed under: its first segment. The
 // roots are whatever the graph has -- the eight it starts with, and any
@@ -282,6 +398,11 @@ export function KnowledgePage() {
   // in the column: the answer is a list of pages with their facts under
   // them, which is more than fits beside a folder list on a phone.
   const [recalling, setRecalling] = useState(false)
+  // Whether the search over what was read is open. A dialog for the same
+  // reason, and a second one rather than a tab inside the first: recall
+  // answers what a turn would carry, this answers what the sources hold,
+  // and neither is a step on the way to the other.
+  const [searchingDocuments, setSearchingDocuments] = useState(false)
   // The page the navigator is showing the inside of, when the URL alone
   // would have shown the folder it is filed in. A page with children is
   // two things at one address -- something to read and something to walk
@@ -379,6 +500,8 @@ export function KnowledgePage() {
     />
   ) : null
 
+  const documents = searchingDocuments ? <DocumentsDialog onClose={() => setSearchingDocuments(false)} /> : null
+
   // The lookup, and beside it the whole graph drawn. They are the two ways
   // in and they answer different questions -- what is this called, and what
   // does this sit among -- so neither one is behind the other.
@@ -398,6 +521,12 @@ export function KnowledgePage() {
           nothing draws it. */}
       <button type="button" className="knowledge-chip" onClick={() => setRecalling(true)}>
         {t('knowledge.recall.title')}
+      </button>
+      {/* And the fourth: not what the agent made of what it read, but what
+          it read. The graph is the conclusions; this is the evidence, and
+          until now only the agent itself could look through it. */}
+      <button type="button" className="knowledge-chip" onClick={() => setSearchingDocuments(true)}>
+        {t('knowledge.documents.title')}
       </button>
       {/* An icon beside the box, the way the mailbox lays out its
           toolbar: the words are the title and the label. */}
@@ -479,6 +608,7 @@ export function KnowledgePage() {
         {showingDetail ? detail : lookup}
         {showingDetail ? null : <div className="card knowledge-list">{list}</div>}
         {recall}
+        {documents}
       </div>
     )
   }
@@ -491,6 +621,7 @@ export function KnowledgePage() {
       </div>
       <div className="knowledge-column knowledge-page">{detail}</div>
       {recall}
+      {documents}
     </div>
   )
 }
@@ -1002,6 +1133,260 @@ function RecallDialog({ onSelect, onClose }: { onSelect: (path: string) => void;
           </ul>
         )
       ) : null}
+    </FormDialog>
+  )
+}
+
+// DocumentsDialog is what the sources read, searched and then read back.
+//
+// The graph beside it is what the agent made of its reading -- pages,
+// facts, links -- and this is the reading itself: the commit message, the
+// chat post, the file. A person checking a fact wants the sentence it came
+// from, and before this the only way to that sentence was to ask the agent
+// and pay for the turn.
+//
+// Two things in one dialog, because they are one errand. The results are
+// the passages that matched, under the document each came from; Read opens
+// that document from its beginning in the same dialog, a slice at a time,
+// and the way back is the way back to the results rather than out.
+function DocumentsDialog({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation()
+  const [query, setQuery] = useState('')
+  const [sourceId, setSourceId] = useState('')
+  // The search the passages in hand answer -- the words and the source --
+  // so that typing on, or narrowing to another source, puts the old answer
+  // away rather than leaving it under a question it no longer belongs to.
+  const [asked, setAsked] = useState<{ words: string; sourceId: string } | null>(null)
+  const [found, setFound] = useState<FoundDocuments | null>(null)
+  // The document being read, and null while the results are what is shown.
+  const [reading, setReading] = useState<DocumentExtract | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const wanted = query.trim()
+
+  const sources = useQuery(
+    () => graphql<{ ListAgentKnowledgeSources: { id: string; name: string }[] }>(KNOWLEDGE_SOURCES, {}),
+    [],
+    { refresh: false },
+  )
+  const sourceOptions = [
+    { value: '', label: t('knowledge.documents.anySource') },
+    ...(sources.data?.ListAgentKnowledgeSources ?? []).map((source) => ({ value: source.id, label: source.name })),
+  ]
+
+  const search = () => {
+    if (wanted === '' || busy) return
+    setBusy(true)
+    setProblem(null)
+    void (async () => {
+      try {
+        // The source is left out of the variables rather than sent empty:
+        // any source is the absence of a filter, not a filter on nothing.
+        const variables: Record<string, unknown> = { query: wanted, first: DOCUMENT_PASSAGES }
+        if (sourceId !== '') variables.sourceId = sourceId
+        const answer = await graphql<{ SearchAgentDocuments: FoundDocuments }>(DOCUMENT_SEARCH, variables)
+        setFound(answer.SearchAgentDocuments)
+        setAsked({ words: wanted, sourceId })
+      } catch (caught) {
+        setProblem(messageOf(caught))
+        setAsked(null)
+      } finally {
+        setBusy(false)
+      }
+    })()
+  }
+
+  // Opening a document at its beginning rather than at the passage that was
+  // found: the passage is already on screen, and what a person opens the
+  // document for is what is around it.
+  const read = (documentId: string) => {
+    if (busy) return
+    setBusy(true)
+    setProblem(null)
+    void (async () => {
+      try {
+        const answer = await graphql<{ ReadAgentDocument: DocumentExtract | null }>(DOCUMENT_READ, {
+          documentId,
+          from: 0,
+        })
+        if (answer.ReadAgentDocument === null) {
+          setProblem(t('knowledge.documents.gone'))
+          return
+        }
+        setReading(answer.ReadAgentDocument)
+      } catch (caught) {
+        setProblem(messageOf(caught))
+      } finally {
+        setBusy(false)
+      }
+    })()
+  }
+
+  // Reading on appends the following slice to what is already on screen, so
+  // that the way back up a long document is the scroll a reader already has
+  // rather than a button that pages away from what they just read.
+  const readOn = () => {
+    if (reading === null || reading.next <= 0 || busy) return
+    setBusy(true)
+    setProblem(null)
+    const documentId = reading.documentId
+    const from = reading.next
+    void (async () => {
+      try {
+        const answer = await graphql<{ ReadAgentDocument: DocumentExtract | null }>(DOCUMENT_READ, {
+          documentId,
+          from,
+        })
+        const slice = answer.ReadAgentDocument
+        if (slice === null) {
+          setProblem(t('knowledge.documents.gone'))
+          return
+        }
+        setReading((previous) =>
+          previous === null ? slice : { ...slice, from: previous.from, text: previous.text + slice.text },
+        )
+      } catch (caught) {
+        setProblem(messageOf(caught))
+      } finally {
+        setBusy(false)
+      }
+    })()
+  }
+
+  // Coming back to the top of the dialog when the reader opens. The scrim
+  // is what scrolls, so a document opened from the foot of a long list of
+  // results would otherwise start halfway down its own text. A callback ref
+  // fires when the reader is put up and not when a slice is appended to it,
+  // which is exactly the difference wanted: Read starts at the top, Read on
+  // stays where the reader is.
+  const toTheTop = useCallback((element: HTMLDivElement | null) => {
+    element?.closest('.dialog-scrim')?.scrollTo({ top: 0 })
+  }, [])
+
+  // What is shown is only ever the answer to what is typed. An answer to
+  // an older question is kept -- it costs nothing and comes back if the
+  // words come back -- and not drawn under the new one.
+  const showing = asked !== null && asked.words === wanted && asked.sourceId === sourceId ? found : null
+
+  const results = (
+    <>
+      <p className="muted">{t('knowledge.documents.hint')}</p>
+      <label>
+        <span>{t('knowledge.documents.query')}</span>
+        <input
+          value={query}
+          placeholder={t('knowledge.documents.placeholder')}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </label>
+      <label>
+        <span>{t('knowledge.documents.source')}</span>
+        <Select
+          block
+          value={sourceId}
+          label={t('knowledge.documents.source')}
+          options={sourceOptions}
+          onChange={setSourceId}
+        />
+      </label>
+      {showing === null ? null : showing.passages.length === 0 && showing.definitions.length === 0 ? (
+        // Finding nothing is an ordinary answer -- a question about
+        // something no source has read -- so it is said quietly here
+        // rather than raised as a failure.
+        <p className="muted">{t('knowledge.documents.nothing')}</p>
+      ) : (
+        <>
+          {showing.definitions.length > 0 ? (
+            <>
+              <p className="muted document-section">{t('knowledge.documents.definitions')}</p>
+              <ul className="document-definitions">
+                {showing.definitions.map((definition) => (
+                  <li key={`${definition.documentId}:${definition.symbol}:${definition.line}`}>
+                    <span className="mono">{definition.symbol}</span> · {definition.kind} ·{' '}
+                    {documentName({ title: definition.title, externalId: definition.externalId })}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          <ul className="document-hits">
+            {documentGroups(showing.passages).map((group) => {
+              const name = documentName(group.document)
+              const detail = documentDetail(group.document)
+              return (
+                <li key={group.document.documentId}>
+                  <div className="document-hit-heading">
+                    <span className="document-hit-name">{name}</span>
+                    {/* One action on the heading, so it is a word rather
+                        than an icon. The label names the document: "Read"
+                        on its own is the same word six times over to
+                        anybody who cannot see which heading it is under. */}
+                    <button
+                      type="button"
+                      className="link"
+                      aria-label={t('knowledge.documents.readOne', { title: name })}
+                      onClick={() => read(group.document.documentId)}
+                    >
+                      {t('knowledge.documents.read')}
+                    </button>
+                  </div>
+                  {detail === '' ? null : <p className="muted document-hit-detail">{detail}</p>}
+                  {group.passages.map((passage) => (
+                    <p key={passage.number} className="document-hit-text">
+                      {passage.text}
+                    </p>
+                  ))}
+                </li>
+              )
+            })}
+          </ul>
+          {showing.meaningful ? null : <p className="muted document-section">{t('knowledge.documents.wordsOnly')}</p>}
+        </>
+      )}
+    </>
+  )
+
+  const detail = reading === null ? '' : documentDetail(reading)
+  const reader =
+    reading === null ? null : (
+      <div ref={toTheTop} className="document-read">
+        {detail === '' ? null : <p className="muted document-hit-detail">{detail}</p>}
+        {reading.total === 0 ? (
+          <p className="muted">{t('knowledge.documents.blank')}</p>
+        ) : (
+          <div className="document-read-text">{reading.text}</div>
+        )}
+        {reading.next > 0 ? (
+          <p className="muted document-section">
+            {t('knowledge.documents.left', { count: reading.total - reading.next })}
+          </p>
+        ) : null}
+      </div>
+    )
+
+  return (
+    <FormDialog
+      title={reading === null ? t('knowledge.documents.title') : documentName(reading)}
+      submitLabel={reading === null ? t('knowledge.documents.search') : t('knowledge.documents.readOn')}
+      busy={busy}
+      // The sources are only the filter's list, so a failure to read them
+      // says so here and leaves the search itself alone.
+      error={problem ?? (sources.error ? messageOf(sources.error) : null)}
+      canSubmit={reading === null ? wanted !== '' : reading.next > 0}
+      // Nothing is changed by searching or by reading, so the way out is
+      // Close: Cancel would name something that is not being cancelled.
+      closeLabel={t('common.close')}
+      otherAction={
+        reading === null ? undefined : (
+          <button type="button" className="link" onClick={() => setReading(null)}>
+            {t('knowledge.documents.back')}
+          </button>
+        )
+      }
+      onClose={onClose}
+      onSubmit={reading === null ? search : readOn}
+    >
+      {reading === null ? results : reader}
     </FormDialog>
   )
 }

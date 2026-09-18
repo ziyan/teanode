@@ -8627,6 +8627,77 @@ a.knowledge-chip {
   margin-top: 2px;
 }
 
+/* What the sources read, inside the dialog that searches it.
+
+   A passage is somebody's own words -- a commit message, a chat post, a file
+   -- so it keeps the text colour and its own line breaks, and everything
+   around it is muted: the document's title, who wrote it, which source read
+   it. Nothing here is a fixed width or a fixed height. The dialog is already
+   100% of a phone's width up to 420px and scrolls with the scrim, and a
+   passage of prose and a passage of code have to live in the same box. */
+.document-section {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-label);
+}
+
+.document-definitions {
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  font-size: var(--text-label);
+  overflow-wrap: anywhere;
+}
+
+.document-definitions > li + li {
+  margin-top: 2px;
+}
+
+.document-hits {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+}
+
+/* A rule between documents rather than a card around each: inside a dialog
+   a card within a card is a box nobody reads the edges of. */
+.document-hits > li + li {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.document-hit-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+/* The title takes the line and the one action follows it, so that a long
+   path wraps as a path instead of being squeezed to one word a line by a
+   button holding the end of the row. */
+.document-hit-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.document-hit-detail {
+  margin: 2px 0 0;
+  font-size: var(--text-label);
+}
+
+/* The passage itself, and the document in the reader: both are text as it
+   was written, so the line breaks in it are kept and a long unbroken token
+   -- a URL, an identifier -- breaks rather than widening the dialog. */
+.document-hit-text,
+.document-read-text {
+  margin: var(--space-2) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* The whole graph, drawn.
 
    A page rather than a card. A drawing that is panned and dragged wants the
