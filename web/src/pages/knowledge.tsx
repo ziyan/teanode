@@ -478,6 +478,46 @@ function Navigator({
   const { t } = useTranslation()
   const [shown, setShown] = useState(path)
   const [leaving, setLeaving] = useState<{ path: string; deeper: boolean } | null>(null)
+  // The frame's height is animated by hand while a folder slides in. The
+  // folder coming in mounts empty and fills as its rows arrive, and a
+  // frame sized by either list alone either cut the tall one to the short
+  // one's height or collapsed to a loading line and sprang back. Held at
+  // the taller of the two while the slide runs, then eased to the height
+  // of what came in.
+  const frame = useRef<HTMLDivElement>(null)
+  const entering = useRef<HTMLDivElement>(null)
+  const settle = useRef<number | null>(null)
+  useEffect(() => {
+    const box = frame.current
+    if (!box) return
+    if (!leaving) {
+      // The slide is over: ease to the new list's height, then let the
+      // frame size itself again so a list that grows later is not clipped.
+      const target = entering.current?.offsetHeight
+      if (target !== undefined && box.style.height) {
+        box.style.height = `${target}px`
+        settle.current = window.setTimeout(() => {
+          box.style.height = ''
+          box.style.transition = ''
+        }, SLIDE_MILLISECONDS)
+        return () => {
+          if (settle.current !== null) window.clearTimeout(settle.current)
+        }
+      }
+      return
+    }
+    if (settle.current !== null) window.clearTimeout(settle.current)
+    const from = box.offsetHeight
+    box.style.transition = `height ${SLIDE_MILLISECONDS}ms ease-out`
+    box.style.height = `${from}px`
+    const watched = entering.current
+    if (!watched) return
+    const observer = new ResizeObserver(() => {
+      box.style.height = `${Math.max(from, watched.offsetHeight)}px`
+    })
+    observer.observe(watched)
+    return () => observer.disconnect()
+  }, [leaving])
 
   useEffect(() => {
     if (path === null || path === shown) return
@@ -522,9 +562,9 @@ function Navigator({
       {shown === null ? (
         <Loading />
       ) : (
-        <div className="knowledge-navigator-frame">
+        <div className="knowledge-navigator-frame" ref={frame}>
           {panels.map((panel) => (
-            <div key={panel.path} className={panel.className}>
+            <div key={panel.path} className={panel.className} ref={panel.path === (shown ?? '') ? entering : undefined}>
               <NavigatorList path={panel.path} selected={selected} me={me} onOpen={onOpen} onInto={onInto} />
             </div>
           ))}

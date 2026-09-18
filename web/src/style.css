@@ -8136,11 +8136,15 @@ button.with-icon {
    behind a short one was cut to the short one's height and then jumped,
    and a short one sliding in behind a tall one left the tall height
    standing empty under it. */
+.knowledge-navigator-panel.entering,
 .knowledge-navigator-panel.leaving {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
+}
+
+.knowledge-navigator-panel.leaving {
   /* It is already gone as far as the person is concerned; a press that
      landed on it while it slid opened something they had not aimed at. */
   pointer-events: none;
