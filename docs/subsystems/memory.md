@@ -213,6 +213,29 @@ credential is not sent at all, though the bytes still are. Only what
 nothing there can read — a picture, a video, a sound file — arrives with
 no text, and that is what a later night opens with a model.
 
+That night's work is in two steps, and both are in
+`internal/agent/dream_attachment.go`. First it is shown what is free to
+know about a batch of these files — the name, the size, the kind of file,
+the channel and thread, and the words of the message each arrived with —
+and asked which are worth opening, because there are tens of thousands of
+them and describing one costs money. A screenshot in a thread about
+something going wrong is worth opening; an avatar, a logo, a signature
+image or a meme is not. What it passes over carries the reason on its row,
+in words, and is never asked about again; nothing is deleted, so a person
+who disagrees can read why and put it back. Then what it chose is fetched
+out of the store and sent to the scan model as a picture, with a prompt
+asking for what the picture shows and for any text in it read out word for
+word rather than summarised. What comes back becomes the document's text
+through the ordinary path, so from there the passages, the vectors, the
+reading that turns documents into facts and the evidence a fact quotes all
+work unchanged, and the source's page says how many files are waiting for
+a decision, how many the agent declined and how many it read.
+
+Only a picture is opened, and only one small enough to be worth sending:
+anything else is passed over with its reason, the same way. Both steps
+come off the night's allowance like every other call it makes, so a night
+that has spent its share stops asking and the rest waits for tomorrow.
+
 Two kinds of script fill such a folder, and which one to write is
 decided by where the records are.
 

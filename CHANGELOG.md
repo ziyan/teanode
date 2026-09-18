@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-09-18
+
+### Added
+
+- The nightly run now reads the pictures that came with your chat and your notes. It looks first at what it can see for nothing — the file's name, its size, the channel and thread, and the message it arrived with — and decides which are worth opening, because describing a picture costs money and most of them are avatars and logos. What it chooses is sent to a model, and what the model reads out of it, the error on the screen, the identifier, the timestamp, becomes the file's text, searchable and quotable like anything else. What it decides against keeps its bytes and carries the reason in plain words, so you can see what was passed over and why. A source's page now says how many files are waiting for a decision, how many it decided against, and how many it opened and read. (#123)
+
 ## [0.36.0] - 2026-09-18
 
 ### Added

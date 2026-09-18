@@ -214,36 +214,151 @@ func TestCountingWhatIsReadKeepsUnreadableFilesApart(t *testing.T) {
 			t.Fatalf("PutAgentDocument: %s", err)
 		}
 
-		waiting, read, unreadable, err := tx.CountAgentDocumentsReading(source.AgentID, []string{"ziyan"})
+		counts, err := tx.CountAgentDocumentsReading(source.AgentID, []string{"ziyan"})
 		if err != nil {
 			t.Fatalf("CountAgentDocumentsReading: %s", err)
 		}
-		if unreadable != 1 {
-			t.Fatalf("%d files nothing can read yet", unreadable)
+		if counts.Undecided != 1 {
+			t.Fatalf("%d files nothing can read yet", counts.Undecided)
 		}
-		if waiting != 1 || read != 0 {
-			t.Fatalf("%d waiting and %d read beside it", waiting, read)
+		if counts.Waiting != 1 || counts.Read != 0 {
+			t.Fatalf("%d waiting and %d read beside it", counts.Waiting, counts.Read)
+		}
+		if counts.Declined != 0 || counts.Described != 0 {
+			t.Fatalf("and nothing decided about yet: %d declined, %d described", counts.Declined, counts.Described)
 		}
 
 		// And once something has made text of it, it is a document like
-		// any other: waiting, then read.
+		// any other: waiting, then read, and counted as one of the files
+		// the agent opened and read.
 		if err := tx.ReplaceAgentChunks(attachment, []*models.AgentChunk{
 			{Text: "a terminal showing: Container is empty", Segmented: true},
 		}); err != nil {
 			t.Fatalf("ReplaceAgentChunks: %s", err)
 		}
-		waiting, read, unreadable, err = tx.CountAgentDocumentsReading(source.AgentID, []string{"ziyan"})
+		counts, err = tx.CountAgentDocumentsReading(source.AgentID, []string{"ziyan"})
 		if err != nil {
 			t.Fatalf("CountAgentDocumentsReading: %s", err)
 		}
-		if unreadable != 0 || waiting != 2 || read != 0 {
-			t.Fatalf("%d unreadable, %d waiting, %d read once it had text", unreadable, waiting, read)
+		if counts.Undecided != 0 || counts.Waiting != 2 || counts.Read != 0 {
+			t.Fatalf("%d unreadable, %d waiting, %d read once it had text",
+				counts.Undecided, counts.Waiting, counts.Read)
+		}
+		if counts.Described != 1 {
+			t.Fatalf("%d files opened and read", counts.Described)
 		}
 		if err := tx.MarkAgentDocumentsDigested([]string{attachment.ID}, time.Now()); err != nil {
 			t.Fatalf("MarkAgentDocumentsDigested: %s", err)
 		}
-		if _, read, _, err = tx.CountAgentDocumentsReading(source.AgentID, []string{"ziyan"}); err != nil || read != 1 {
-			t.Fatalf("%d read after the night read it: %v", read, err)
+		if counts, err = tx.CountAgentDocumentsReading(source.AgentID, []string{"ziyan"}); err != nil || counts.Read != 1 {
+			t.Fatalf("%d read after the night read it: %v", counts.Read, err)
+		}
+	})
+}
+
+// A file the night decided against is neither waiting, nor read, nor
+// still waiting for something that can read it.
+//
+// It is the fourth state, and it has to be its own: counted as waiting it
+// is work that never moves, counted as read it is a lie, and counted with
+// the ones nothing can read yet it says a reader is still owed for a file
+// the agent has already decided about.
+func TestAFileTheNightDeclinedIsCountedApartFromTheRest(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		source := knowledgeSource(t, tx)
+		attachment, err := tx.PutAgentDocument(&models.AgentDocument{
+			AgentID: source.AgentID, SourceID: source.ID,
+			ExternalID: "posts.jsonl#" + strings.Repeat("d", 64),
+			Kind:       models.DocumentAttachment, Title: "avatar.png",
+			Hash: strings.Repeat("d", 64), Bytes: 3100, StorageKey: strings.Repeat("d", 64),
+		})
+		if err != nil {
+			t.Fatalf("PutAgentDocument: %s", err)
+		}
+
+		waiting, err := tx.ListAgentAttachmentsToDecide(source.AgentID, 10)
+		if err != nil {
+			t.Fatalf("ListAgentAttachmentsToDecide: %s", err)
+		}
+		if len(waiting) != 1 || waiting[0].ID != attachment.ID {
+			t.Fatalf("the file waits for a decision: %d offered", len(waiting))
+		}
+
+		const reason = "an avatar in a social channel, too small to hold readable text"
+		if err := tx.MarkAgentDocumentsDeclined([]string{attachment.ID}, reason, time.Now()); err != nil {
+			t.Fatalf("MarkAgentDocumentsDeclined: %s", err)
+		}
+
+		// Not offered again: the decision was paid for once.
+		waiting, err = tx.ListAgentAttachmentsToDecide(source.AgentID, 10)
+		if err != nil {
+			t.Fatalf("ListAgentAttachmentsToDecide: %s", err)
+		}
+		if len(waiting) != 0 {
+			t.Fatalf("a file that was decided about is not offered again: %d offered", len(waiting))
+		}
+
+		// The reason is on the row, in words, so a person can disagree.
+		found, err := tx.GetAgentDocument(source.AgentID, attachment.ID)
+		if err != nil {
+			t.Fatalf("GetAgentDocument: %s", err)
+		}
+		if found.Declined() != reason {
+			t.Fatalf("the row says why: %q", found.Declined())
+		}
+
+		counts, err := tx.CountAgentDocumentsReading(source.AgentID, []string{"ziyan"})
+		if err != nil {
+			t.Fatalf("CountAgentDocumentsReading: %s", err)
+		}
+		if counts.Declined != 1 {
+			t.Fatalf("%d declined", counts.Declined)
+		}
+		if counts.Undecided != 0 || counts.Waiting != 0 || counts.Read != 0 || counts.Described != 0 {
+			t.Fatalf("and nothing else: %d undecided, %d waiting, %d read, %d described",
+				counts.Undecided, counts.Waiting, counts.Read, counts.Described)
+		}
+
+		// And it is still not something a night would read, because
+		// nothing has read it.
+		documents, backlog, err := tx.ListAgentDocumentsToDigest(source.AgentID, []string{"ziyan"}, 10)
+		if err != nil {
+			t.Fatalf("ListAgentDocumentsToDigest: %s", err)
+		}
+		if len(documents) != 0 || backlog != 0 {
+			t.Fatalf("a declined file is not read either: %d offered, %d waiting", len(documents), backlog)
+		}
+	})
+}
+
+// A file whose bytes never arrived is not put to a model.
+//
+// The decision costs money and is made about a file that can then be
+// opened; a document filed while the person's machine was busy has no key
+// yet, and the next pass of its source fills one in.
+func TestAFileWithNoBytesIsNotOfferedForADecision(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		source := knowledgeSource(t, tx)
+		if _, err := tx.PutAgentDocument(&models.AgentDocument{
+			AgentID: source.AgentID, SourceID: source.ID,
+			ExternalID: "posts.jsonl#" + strings.Repeat("e", 64),
+			Kind:       models.DocumentAttachment, Title: "shot.png",
+			Hash: strings.Repeat("e", 64), Bytes: 40960,
+		}); err != nil {
+			t.Fatalf("PutAgentDocument: %s", err)
+		}
+		waiting, err := tx.ListAgentAttachmentsToDecide(source.AgentID, 10)
+		if err != nil {
+			t.Fatalf("ListAgentAttachmentsToDecide: %s", err)
+		}
+		if len(waiting) != 0 {
+			t.Fatalf("a file with no stored bytes is not offered: %d offered", len(waiting))
 		}
 	})
 }
