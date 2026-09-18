@@ -519,6 +519,7 @@ export const ja: Catalog = {
   'passkeys.removeTitle': 'このパスキーを削除しますか？',
   'passkeys.removeBody':
     '{name} ではサインインできなくなります。パスワードは引き続き使えるので締め出されることはありません。',
+  'passkeys.notAdded': 'パスキーは追加されませんでした。ダイアログが閉じられたか、時間切れか、ブラウザが拒否しました。',
   'passkeys.failed': '失敗しました。',
 
   'passkeyNudge.title': 'パスワードなしでサインイン',

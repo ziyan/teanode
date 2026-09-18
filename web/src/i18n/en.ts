@@ -520,6 +520,7 @@ export const en = {
   'passkeys.removeTitle': 'Remove this passkey?',
   'passkeys.removeBody':
     '{name} stops being able to sign in. Your password still works, so this does not lock you out.',
+  'passkeys.notAdded': 'No passkey was added: the prompt was closed, timed out, or the browser refused it.',
   'passkeys.failed': 'That did not work.',
 
   // The one-line suggestion above the page for an account with no passkey,

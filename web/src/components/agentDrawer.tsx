@@ -248,7 +248,16 @@ interface RunEvent {
 type Line =
   | { kind: 'user'; key: string; text: string; at?: string; attachments?: Attachment[]; references?: AgentReference[] }
   | { kind: 'assistant'; key: string; text: string; at?: string; streaming?: boolean; usage?: Usage | null }
-  | { kind: 'tool'; key: string; tool: string; note: string; done: boolean; arguments?: string; result?: string; at?: string }
+  | {
+      kind: 'tool'
+      key: string
+      tool: string
+      note: string
+      done: boolean
+      arguments?: string
+      result?: string
+      at?: string
+    }
   | {
       kind: 'confirmation'
       key: string
@@ -1013,7 +1022,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   // The bubbles whose time is shown: a tap on a phone, where there is no
   // pointer to hover with.
-  const [timed, setTimed] = useState<Set<string>>(() => new Set())
   const [tab, setTab] = useState<{ attached: boolean; title?: string; url?: string } | null>(null)
   const [computers, setComputers] = useState<string[]>([])
   // The day's tokens against the budget, read with the rest and so kept
@@ -1881,15 +1889,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
   }
 
-  const toggleTimed = (key: string) => {
-    setTimed((previous) => {
-      const next = new Set(previous)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }
-
   const toggleExpanded = (key: string) => {
     setExpanded((previous) => {
       const next = new Set(previous)
@@ -1902,42 +1901,36 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // drawLine is one line of the transcript as the drawer draws it.
   const drawLine = (line: Line) => {
     switch (line.kind) {
+      // When a message was said is a tooltip over the bubble, never a
+      // line inside it: a line that appears on hover changes the bubble's
+      // size under the pointer, and the conversation should read as a
+      // conversation, not as a log.
       case 'user':
         return (
-          <div
-            key={line.key}
-            className={['agent-line user', timed.has(line.key) ? 'timed' : ''].filter(Boolean).join(' ')}
-            title={line.at ? formatTime(line.at) : undefined}
-            onClick={() => toggleTimed(line.key)}
-          >
-            {line.references && line.references.length > 0 && <ReferenceChips references={line.references} />}
-            {line.text}
-            {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
-            {line.at && <div className="agent-line-time">{formatTime(line.at)}</div>}
-          </div>
+          <Tooltip key={line.key} label={line.at ? formatTime(line.at) : ''}>
+            <div className="agent-line user">
+              {line.references && line.references.length > 0 && <ReferenceChips references={line.references} />}
+              {line.text}
+              {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
+            </div>
+          </Tooltip>
         )
       case 'assistant':
         return (
-          <div
-            key={line.key}
-            className={['agent-line assistant', line.streaming ? 'streaming' : '', timed.has(line.key) ? 'timed' : '']
-              .filter(Boolean)
-              .join(' ')}
-            title={line.at ? formatTime(line.at) : undefined}
-            onClick={() => toggleTimed(line.key)}
-          >
-            <Markdown text={line.text} onLeaving={leaving} />
-            {line.at && <div className="agent-line-time">{formatTime(line.at)}</div>}
-            {showUsage && line.usage && (
-              <div className="agent-usage muted">
-                {t('agentDrawer.tokens', {
-                  in: formatCount(line.usage.promptTokens),
-                  out: formatCount(line.usage.completionTokens),
-                })}
-                {line.usage.cost ? ` · ${formatMoney(line.usage.cost, budget?.currency)}` : ''}
-              </div>
-            )}
-          </div>
+          <Tooltip key={line.key} label={line.at ? formatTime(line.at) : ''}>
+            <div className={['agent-line assistant', line.streaming ? 'streaming' : ''].filter(Boolean).join(' ')}>
+              <Markdown text={line.text} onLeaving={leaving} />
+              {showUsage && line.usage && (
+                <div className="agent-usage muted">
+                  {t('agentDrawer.tokens', {
+                    in: formatCount(line.usage.promptTokens),
+                    out: formatCount(line.usage.completionTokens),
+                  })}
+                  {line.usage.cost ? ` · ${formatMoney(line.usage.cost, budget?.currency)}` : ''}
+                </div>
+              )}
+            </div>
+          </Tooltip>
         )
       case 'tool': {
         const artifact = artifactOf(line)
@@ -2307,7 +2300,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           >
             {lines.length === 0 && <p className="muted agent-drawer-empty">{t('agentDrawer.empty')}</p>}
             {total > messages.current.length && (
-              <button type="button" className="agent-drawer-earlier muted" onClick={() => void loadEarlier()} disabled={loadingEarlier}>
+              <button
+                type="button"
+                className="agent-drawer-earlier muted"
+                onClick={() => void loadEarlier()}
+                disabled={loadingEarlier}
+              >
                 {t('agentDrawer.earlier', { count: total - messages.current.length })}
               </button>
             )}

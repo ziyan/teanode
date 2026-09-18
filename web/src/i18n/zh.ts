@@ -505,6 +505,7 @@ export const zh: Catalog = {
   'passkeys.remove': '删除',
   'passkeys.removeTitle': '要删除这个通行密钥吗？',
   'passkeys.removeBody': '{name} 将无法再用于登录。你的密码仍然有效，因此不会被锁在外面。',
+  'passkeys.notAdded': '未添加通行密钥：提示被关闭、超时，或被浏览器拒绝。',
   'passkeys.failed': '操作失败。',
 
   'passkeyNudge.title': '不用密码登录',

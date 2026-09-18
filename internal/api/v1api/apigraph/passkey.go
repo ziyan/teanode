@@ -453,7 +453,7 @@ func (self *graph) webAuthn() (*webauthn.WebAuthn, error) {
 	}
 	origins := settings.Origins
 	if len(origins) == 0 {
-		origins = []string{"https://" + relyingParty}
+		origins = defaultPasskeyOrigins(relyingParty, self.config.Current().Listen.HTTPS)
 	}
 
 	return webauthn.New(&webauthn.Config{
@@ -532,4 +532,21 @@ func protocolTransports(transports []string) []protocol.AuthenticatorTransport {
 		converted = append(converted, protocol.AuthenticatorTransport(transport))
 	}
 	return converted
+}
+
+// defaultPasskeyOrigins is where a ceremony may come from when the operator
+// has not said: the relying party over https, and, when the dashboard is
+// served on a port other than 443, the same name with that port. A browser
+// puts the port in the origin it signs, and a server on :10443 whose only
+// allowed origin had no port refused every passkey it was ever offered,
+// with nothing in its log to say so.
+func defaultPasskeyOrigins(relyingParty, httpsListen string) []string {
+	origins := []string{"https://" + relyingParty}
+	if index := strings.LastIndex(httpsListen, ":"); index >= 0 {
+		port := httpsListen[index+1:]
+		if port != "" && port != "443" {
+			origins = append(origins, "https://"+relyingParty+":"+port)
+		}
+	}
+	return origins
 }

@@ -5703,28 +5703,6 @@ label.check-list-item {
   font-size: 11px;
 }
 
-/* When a message was said: under the pointer, or after a tap where there
-   is no pointer. Folded away otherwise, so the conversation reads as a
-   conversation and not as a log. */
-.agent-line-time {
-  /* Not there rather than folded: a folded line still sets the width of
-     the bubble, and "ok" was drawn as wide as its date. */
-  display: none;
-  margin-top: 4px;
-  font-size: 11px;
-  opacity: 0.7;
-}
-
-.agent-line.timed .agent-line-time {
-  display: block;
-}
-
-@media (hover: hover) {
-  .agent-line:hover .agent-line-time {
-    display: block;
-  }
-}
-
 .agent-drawer-rename input {
   width: 100%;
 }
