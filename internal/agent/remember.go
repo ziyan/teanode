@@ -781,6 +781,11 @@ const evidenceInferredConfidence = 0.5
 // behind it -- kept, searchable, out of the page -- so a fold the person
 // disagrees with is there to be undone. What happened is in the page's
 // history either way.
+//
+// What it will not do is guess. Folding with nobody watching is only
+// safe where the two are the same sentence twice; anything that reads
+// alike but says something different is left standing beside its twin,
+// so that the newer is recalled as well as the older. See whatToFold.
 func (self *Agent) FoldIntoWhatThePageSays(ctx context.Context, tx db.Transaction, written *models.AgentFact, node *models.AgentNode) (*models.AgentFact, error) {
 	if written == nil || node == nil {
 		return written, nil
@@ -808,25 +813,33 @@ func (self *Agent) foldIntoWhatThePageSays(tx db.Transaction, written *models.Ag
 	if twin == nil {
 		return written, nil
 	}
-	// "She prefers tea" and "she no longer prefers tea" share every name
-	// and sit on top of each other in the vector space, so neither the
-	// cosine nor the name check can keep them apart -- and they are the
-	// pair it matters most not to lose one of. Both rows stay, and the
-	// newer statement is the one the page states.
-	if negates(written.Text, twin.Text) {
-		if !laterThan(written, twin) {
-			return written, nil
-		}
+	switch whatToFold(written, twin) {
+	case foldKeepBoth:
+		return written, nil
+
+	case foldTheOlderBehindTheNewer:
 		if _, err := tx.FoldAgentFact(written.AgentID, twin.ID, written.ID,
 			"a later statement of the same thing replaced it"); err != nil {
 			return written, err
 		}
 		return written, nil
 	}
+
 	older, err := tx.UpdateAgentFact(written.AgentID, twin.ID, func(older *models.AgentFact) error {
 		older.Evidence = append(older.Evidence, written.Evidence...)
 		if len(older.Evidence) > models.EvidenceCount {
 			older.Evidence = older.Evidence[:models.EvidenceCount]
+		}
+		// The row that survives is the older one, so where the newer
+		// saying of the same words stood on firmer ground the older
+		// takes that with it. Otherwise re-filing a sentence the person
+		// stated, behind a copy the agent had inferred, would leave the
+		// page saying at half confidence something it had been told.
+		if atLeastAsWellEvidenced(written, older) {
+			older.Inferred = written.Inferred
+			if written.Confidence > older.Confidence {
+				older.Confidence = written.Confidence
+			}
 		}
 		return nil
 	})
@@ -838,6 +851,83 @@ func (self *Agent) foldIntoWhatThePageSays(tx db.Transaction, written *models.Ag
 		return written, err
 	}
 	return older, nil
+}
+
+// foldChoice is what the write boundary does with a new fact and the one
+// already on the page that came back as its twin.
+type foldChoice int
+
+const (
+	// foldKeepBoth leaves both rows on the page, which is the answer
+	// whenever the two are not provably the same statement. It is the
+	// zero value, so a path that does not decide keeps what it has.
+	foldKeepBoth foldChoice = iota
+
+	// foldTheNewerBehindTheOlder is the ordinary fold: the same sentence
+	// filed twice. The older keeps its number, because that is what
+	// anything else cites, and gains the newer's evidence.
+	foldTheNewerBehindTheOlder
+
+	// foldTheOlderBehindTheNewer is a negation: "she prefers tea" and
+	// "she no longer prefers tea". The later statement is what the page
+	// says and the earlier one stays behind it.
+	foldTheOlderBehindTheNewer
+)
+
+// whatToFold decides between a new fact and its twin, and its whole job
+// is to refuse.
+//
+// The twin search is a vector floor and a name check, and it was trusted
+// to mean "these two say the same thing". It does not. "The rent is 4200
+// a month from March" and "the rent is 3100 a month from March" clear
+// both, carry no negation, and before this the newer one went dormant
+// behind the older: the page kept last year's figure, normal recall
+// never carried this year's, and nothing in the conversation said so. A
+// change of amount, date, frequency or who is responsible is exactly the
+// kind of thing a person tells their agent, and exactly the kind the
+// fold was quietly dropping.
+//
+// So an automatic fold now needs the two to be the same sentence written
+// twice -- see saysItInTheSameWords -- where there is provably nothing
+// to lose. A paraphrase is left standing beside its twin; the nightly
+// pass that puts a page to a model (consolidatePage) is where a judgment
+// like that belongs, and until it runs the person hears both rather than
+// only the older.
+func whatToFold(written, twin *models.AgentFact) foldChoice {
+	// "She prefers tea" and "she no longer prefers tea" share every name
+	// and sit on top of each other in the vector space, so neither the
+	// cosine nor the name check can keep them apart -- and they are the
+	// pair it matters most not to lose one of. Both rows stay, and the
+	// newer statement is the one the page states.
+	if negates(written.Text, twin.Text) {
+		if !laterThan(written, twin) {
+			return foldKeepBoth
+		}
+		// And only where the newer one stands on ground at least as firm.
+		// A fact whose quote could not be found in what the run was shown
+		// is marked inferred at half confidence precisely because the
+		// model may have composed it; letting that supersede something
+		// the person said would have the agent's own paraphrase win an
+		// argument with its source, with no one present to object.
+		if !atLeastAsWellEvidenced(written, twin) {
+			return foldKeepBoth
+		}
+		return foldTheOlderBehindTheNewer
+	}
+	if saysItInTheSameWords(written.Text, twin.Text) {
+		return foldTheNewerBehindTheOlder
+	}
+	return foldKeepBoth
+}
+
+// atLeastAsWellEvidenced says whether one fact stands on ground at least
+// as firm as another's: stated where the other is stated, and no less
+// sure of itself.
+func atLeastAsWellEvidenced(fact, than *models.AgentFact) bool {
+	if fact.Inferred && !than.Inferred {
+		return false
+	}
+	return fact.Confidence >= than.Confidence
 }
 
 // laterThan says whether one fact is the later statement of the two: by
@@ -853,8 +943,12 @@ func laterThan(fact, than *models.AgentFact) bool {
 	return fact.CreatedAt.After(than.CreatedAt)
 }
 
-// twinOf is the fact already on this page that says what a new one says,
-// or nil.
+// twinOf is the fact already on this page that a new one may be a second
+// saying of, or nil.
+//
+// A candidate and not a verdict: whether the two are really one
+// statement is whatToFold's to decide, and this only narrows the page
+// down to what is worth asking about.
 //
 // Written after the fact rather than before it so that the vector is the
 // one the store holds, and so that a deployment with no embedding model
@@ -883,9 +977,19 @@ func (self *Agent) twinOf(tx db.Transaction, fact *models.AgentFact, node *model
 	// The page's own name is not evidence either way; see sharesAName.
 	itsOwn := append([]string{node.Name}, node.Aliases...)
 	for _, candidate := range orderFacts(candidates, idsOf(scores)) {
-		if sharesAName(fact.Text, candidate.Text, itsOwn...) {
-			return candidate
+		if !sharesAName(fact.Text, candidate.Text, itsOwn...) {
+			continue
 		}
+		// A line that says a different amount, a different date or a
+		// different how-often is not this one said twice, however near
+		// the two sit: it is the next thing the page has to say, and the
+		// reason the person was talking to their agent at all. Not this
+		// fact's twin, and the search goes on to the next candidate
+		// rather than stopping at it.
+		if differsInQuantity(fact.Text, candidate.Text) {
+			continue
+		}
+		return candidate
 	}
 	return nil
 }
