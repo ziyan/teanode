@@ -1541,6 +1541,9 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 	if profile == nil || profile.Head == "" {
 		return "", nil, nil
 	}
+	// The head this process already asked about, whatever the model said:
+	// the page keeps what it has, and the profile still files.
+	_, askedBefore := self.describedHeads.LoadOrStore(source.ID+"@"+profile.Head, true)
 	// Already said, for this head: what the page has stays. Said for an
 	// older head, it stays too unless a fresh one is written: a call that
 	// failed used to leave the page with nothing, since the pass that
@@ -1620,7 +1623,7 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 	if len(existing) > 0 {
 		return existingOpening, existing, nil
 	}
-	if readme == "" {
+	if askedBefore || readme == "" {
 		return existingOpening, fallback, nil
 	}
 
