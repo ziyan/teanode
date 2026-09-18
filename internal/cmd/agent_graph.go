@@ -82,10 +82,13 @@ func newAgentGraphCommands() []*cli.Command {
 		},
 		{
 			Name:      "forget",
-			Usage:     "forget one fact (with --number) or a whole page and what is under it",
+			Usage:     "forget one fact (with --number) or a whole page and what is under it; a whole page asks first",
 			ArgsUsage: "<path>",
-			Flags:     []cli.Flag{&cli.IntFlag{Name: "number", Usage: "the fact's number on the page"}},
-			Action:    runAgentGraphForget,
+			Flags: []cli.Flag{
+				&cli.IntFlag{Name: "number", Usage: "the fact's number on the page"},
+				ForceFlag(),
+			},
+			Action: runAgentGraphForget,
 		},
 		{
 			Name:      "merge",
@@ -188,8 +191,9 @@ func newAgentKnowledgeCommand() *cli.Command {
 			},
 			{
 				Name:      "remove",
-				Usage:     "stop reading a source, and forget what it found",
+				Usage:     "stop reading a source, and forget what it found; asks first",
 				ArgsUsage: "<source-id-or-name>",
+				Flags:     []cli.Flag{ForceFlag()},
 				Action:    runKnowledgeRemove,
 			},
 		},
@@ -604,13 +608,29 @@ func runAgentGraphForget(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() < 1 {
 		return fmt.Errorf("forget what? teanode agent memory forget people/alice-chen --number 2")
 	}
+	path := command.Args().First()
+	number := int(command.Int("number"))
+	// Without a number the whole subtree goes, and none of it is
+	// recoverable: the page, every fact on it, and whatever was filed
+	// underneath -- which for a root is most of what the agent knows.
+	// One fact is not asked about, because striking one sentence is what
+	// this command is mostly used for and the strike is recorded as
+	// feedback either way.
+	//
+	// Asked before the connection is opened, so that a refusal costs
+	// nothing and a script finds out what it needs from the first line
+	// rather than after authenticating.
+	if number <= 0 {
+		if err := confirm(command, fmt.Sprintf("This forgets %s and every page and fact under it, and cannot be undone.", path)); err != nil {
+			return err
+		}
+	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
-	path := command.Args().First()
-	if number := command.Int("number"); number > 0 {
-		if err := client.DeleteAgentFact(ctx, connection, path, int(number)); err != nil {
+	if number > 0 {
+		if err := client.DeleteAgentFact(ctx, connection, path, number); err != nil {
 			return describeError(command, err)
 		}
 		_, _ = fmt.Fprintf(command.Writer, "forgot %s#%d\n", path, number)
@@ -830,6 +850,13 @@ func setKnowledgeEnabled(ctx context.Context, command *cli.Command, enabled bool
 func runKnowledgeRemove(ctx context.Context, command *cli.Command) error {
 	connection, source, err := knowledgeSourceNamed(ctx, command)
 	if err != nil {
+		return err
+	}
+	// Removing a source throws away every document and chunk it ever
+	// found, which for a checkout or a chat archive is hours of reading
+	// and the embedding bill that went with it. `pause` is what somebody
+	// who only wants it to stop reading is after.
+	if err := confirm(command, fmt.Sprintf("This stops reading %s and forgets everything it found; reading it again costs what the first pass cost. Pause keeps it.", source.Name)); err != nil {
 		return err
 	}
 	if err := client.DeleteAgentKnowledgeSource(ctx, connection, source.ID); err != nil {
