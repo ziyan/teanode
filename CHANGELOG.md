@@ -6,6 +6,15 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.34.1] - 2026-09-18
+
+### Fixed
+
+- A page the night proposed at the root of the graph, beside People and
+  Projects, is filed under the folder its kind belongs to instead. One had
+  been made at "mc", a chat channel's name cut short, where nothing listed
+  it and the dashboard could neither move nor merge it. (#116)
+
 ## [0.34.0] - 2026-09-18
 
 ### Added
