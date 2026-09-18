@@ -10,6 +10,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/ziyan/teanode/internal/agent/reading"
 	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -234,6 +235,12 @@ func newAgentDreamCommand() *cli.Command {
 				Usage:     "switch bootstrapping on or off: a dream at every tick with wider limits until nothing waits to be read, for a first ingest -- best with a model of your own doing the reading",
 				ArgsUsage: "on|off",
 				Action:    runDreamBootstrap,
+			},
+			{
+				Name:   "progress",
+				Usage:  "how far the reading has got: what is read, what waits, and how long the rest takes at the pace of the last dreams",
+				Flags:  []cli.Flag{JSONFlag()},
+				Action: runDreamProgress,
 			},
 		},
 	}
@@ -931,6 +938,22 @@ func runDreamRuns(ctx context.Context, command *cli.Command) error {
 			fmt.Sprintf("%d/%d", run.Usage.PromptTokens+run.Usage.CacheReadTokens, run.Usage.CompletionTokens), fmt.Sprintf("%.4f", run.Usage.Cost), run.Title})
 	}
 	return printTable([]string{"id", "when", "tokens in/out", "cost", "what"}, rows)
+}
+
+func runDreamProgress(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	progress, err := client.ReadAgentReadingProgress(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(progress)
+	}
+	_, _ = fmt.Fprintln(command.Writer, (&reading.Progress{Waiting: progress.Waiting, Read: progress.Read, PerHour: progress.PerHour, HoursLeft: progress.HoursLeft, Bootstrapping: progress.Bootstrapping}).Describe())
+	return nil
 }
 
 func runDreamLog(ctx context.Context, command *cli.Command) error {

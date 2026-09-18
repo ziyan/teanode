@@ -26,6 +26,12 @@ type DreamOperation interface {
 	FinishAgentDream(dream *models.AgentDream) error
 	ListAgentDreams(agentId string, limit int) ([]*models.AgentDream, error)
 
+	// CountAgentDocumentsReading is how many documents the night has still
+	// to read and how many it has read, by the same rule that decides what
+	// a night reads: every document but a chat unit, and a chat unit only
+	// when the person was in it and it was a conversation.
+	CountAgentDocumentsReading(agentId string, names []string) (waiting, read int64, err error)
+
 	// ListAgentDocumentsToDigest is what has been indexed and not yet
 	// read, in the order a night should read it, and how much is waiting
 	// altogether.
@@ -265,6 +271,31 @@ func (self *transaction) ListAgentDocumentsToDigest(agentId string, names []stri
 			"happened_at" DESC NULLS LAST
 		LIMIT ?`, agentId, pq.Array(names), proseFile, limit))
 	return documents, backlog, err
+}
+
+func (self *transaction) CountAgentDocumentsReading(agentId string, names []string) (int64, int64, error) {
+	if len(names) == 0 {
+		names = []string{""}
+	}
+	var counts []struct {
+		Waiting int64 `gorm:"column:waiting"`
+		Read    int64 `gorm:"column:read"`
+	}
+	if err := self.tx.Raw(`SELECT
+			count(*) FILTER (WHERE NOT jsonb_exists("metadata", 'digested')) AS waiting,
+			count(*) FILTER (WHERE jsonb_exists("metadata", 'digested')) AS read
+		FROM "agent_document"
+		WHERE "agent_id" = ?
+		AND ("kind" <> 'chat' OR (
+			jsonb_exists_any("metadata"->'participants', ?::text[])
+			AND coalesce(("metadata"->>'posts')::int, 0) >= 3))`,
+		agentId, pq.Array(names)).Scan(&counts).Error; err != nil {
+		return 0, 0, err
+	}
+	if len(counts) == 0 {
+		return 0, 0, nil
+	}
+	return counts[0].Waiting, counts[0].Read, nil
 }
 
 // proseFile is a file somebody wrote to be read: a readme, a note, a

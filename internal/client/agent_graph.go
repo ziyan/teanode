@@ -223,6 +223,7 @@ const (
 	DocumentLinkAgentNodes             = `mutation ($path: String!, $to: String!, $relation: String!, $note: String) { LinkAgentNodes(path: $path, to: $to, relation: $relation, note: $note) }`
 	DocumentUnlinkAgentNodes           = `mutation ($path: String!, $to: String!, $relation: String!) { UnlinkAgentNodes(path: $path, to: $to, relation: $relation) }`
 	DocumentListAgentDreams            = `query ($first: Int) { ListAgentDreams(first: $first) ` + dreamFields + ` }`
+	DocumentAgentReadingProgress       = `query { AgentReadingProgress { waiting read perHour hoursLeft bootstrapping } }`
 	DocumentListAgentPageHistory       = `query ($path: String!, $first: Int) { ListAgentPageHistory(path: $path, first: $first) ` + revisionFields + ` }`
 )
 
@@ -431,6 +432,27 @@ func ListAgentDreams(ctx context.Context, connection *Client, first int) ([]*Age
 		return nil, err
 	}
 	return result.ListAgentDreams, nil
+}
+
+// AgentReadingProgress is how far the night has got through what was
+// indexed, and how long the rest takes at the pace of the last dreams.
+type AgentReadingProgress struct {
+	Waiting       int64   `json:"waiting"`
+	Read          int64   `json:"read"`
+	PerHour       float64 `json:"perHour"`
+	HoursLeft     float64 `json:"hoursLeft"`
+	Bootstrapping bool    `json:"bootstrapping"`
+}
+
+// ReadAgentReadingProgress asks how far the reading has got.
+func ReadAgentReadingProgress(ctx context.Context, connection *Client) (*AgentReadingProgress, error) {
+	var result struct {
+		AgentReadingProgress *AgentReadingProgress `json:"AgentReadingProgress"`
+	}
+	if err := connection.Execute(ctx, DocumentAgentReadingProgress, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.AgentReadingProgress, nil
 }
 
 // DreamAgentNow asks for the night to run at the next tick. bootstrap,

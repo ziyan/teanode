@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent/reading"
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/db"
@@ -415,8 +416,12 @@ func readAction(ctx context.Context, run tools.Run, arguments *knowledgeArgument
 // sourcesAction lists what is indexed.
 func sourcesAction(ctx context.Context, run tools.Run) (*tools.Result, error) {
 	var sources []*models.AgentKnowledgeSource
+	var progress *reading.Progress
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		sources, err = tx.ListAgentSources(run.Agent().ID)
+		if sources, err = tx.ListAgentSources(run.Agent().ID); err != nil {
+			return err
+		}
+		progress, err = reading.For(tx, run.Agent(), run.Owner())
 		return err
 	}); err != nil {
 		return nil, err
@@ -425,6 +430,9 @@ func sourcesAction(ctx context.Context, run tools.Run) (*tools.Result, error) {
 		return tools.TextResult("nothing is indexed yet. If they ask you to keep up with a directory of theirs, a chat export or their notes, offer to add it."), nil
 	}
 	var builder strings.Builder
+	// How far the night has got, first: "is it done reading yet" is the
+	// question this list is most often asked for.
+	builder.WriteString("Reading: " + progress.Describe() + "\n")
 	for _, source := range sources {
 		builder.WriteString(source.Name + " (" + string(source.Kind) + ") — " + source.Describe())
 		fmt.Fprintf(&builder, "\n  %d documents, %d passages", source.DocumentCount, source.ChunkCount)

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
+	"github.com/ziyan/teanode/internal/agent/reading"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -57,6 +58,10 @@ type AgentGraphQuery interface {
 
 	// What the nightly run did, newest first. Needs agent:use.
 	ListAgentDreams(ctx context.Context, arguments ListAgentDreamsArguments) ([]*models.AgentDream, error)
+	// AgentReadingProgress is how far the night has got through what was
+	// indexed, and how long the rest takes at the pace of the last dreams.
+	// Needs agent:use.
+	AgentReadingProgress(ctx context.Context) (*reading.Progress, error)
 
 	// The places the person has pointed their agent at. Needs agent:use.
 	ListAgentKnowledgeSources(ctx context.Context) ([]*models.AgentKnowledgeSource, error)
@@ -808,6 +813,14 @@ func (self *graph) ListAgentDreams(ctx context.Context, arguments ListAgentDream
 		limit = 14
 	}
 	return self.transaction(ctx).ListAgentDreams(found.ID, limit)
+}
+
+func (self *graph) AgentReadingProgress(ctx context.Context) (*reading.Progress, error) {
+	principal, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return reading.For(self.transaction(ctx), found, principal.User)
 }
 
 func (self *graph) ListAgentKnowledgeSources(ctx context.Context) ([]*models.AgentKnowledgeSource, error) {

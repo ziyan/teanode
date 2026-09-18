@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent/reading"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
@@ -1162,24 +1163,7 @@ func (self *Agent) dreamEmbed(ctx context.Context, run *Run, record *models.Agen
 // username, and each word of their name, in lower case. A thread whose
 // participants include one of these is one they took part in.
 func chatNamesOf(owner *models.User) []string {
-	if owner == nil {
-		return nil
-	}
-	seen := map[string]bool{}
-	var names []string
-	add := func(name string) {
-		name = strings.ToLower(strings.TrimSpace(name))
-		if len(name) < 3 || seen[name] {
-			return
-		}
-		seen[name] = true
-		names = append(names, name)
-	}
-	add(owner.Username)
-	for _, word := range strings.Fields(owner.Name) {
-		add(word)
-	}
-	return names
+	return reading.ChatNamesOf(owner)
 }
 
 // --- split ------------------------------------------------------------
