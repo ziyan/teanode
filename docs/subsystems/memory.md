@@ -33,7 +33,11 @@ wrong name is moved rather than rewritten — the memory tool's `move` with
 a number, `teanode agent memory move --number 3 people/alice-chen
 projects/portal`, the `MoveAgentFact` mutation — which keeps the words it
 came from and the day it was learned, and gives it a new number on the
-page it lands on.
+page it lands on. A sentence that says the wrong thing is corrected where
+it stands for the same reasons — the memory tool's `note` with a number,
+`teanode agent memory note --number 3 people/alice-chen "..."`, the
+`SaveAgentFact` mutation with one — and keeps its number too, so whatever
+cited it still points at it.
 
 A fact carries two dates, because they answer different questions:
 `happened_at` is when it was true and `created_at` is when the agent
@@ -155,6 +159,15 @@ carrying them: for a source of four hundred thousand documents the map is
 fifty megabytes, and sending it with every page of two hundred and fifty
 entries was most of what a page cost. A daemon restarted mid-pass no
 longer holds the map, says so, and is sent it again.
+
+A source is stopped by pausing it, from any of the three surfaces — the
+dashboard, `teanode agent knowledge pause`, and the agent's own knowledge
+tool — which only clears `enabled`, so every document and passage stays
+and resuming carries on from where the last pass got to. Removing a
+source is the other thing, and it takes what it found with it: a first
+pass over a checkout or a chat archive is hours of reading and the
+embeddings that went with it, and there is no way to get them back except
+to pay for them again.
 
 ## Not making the same page twice
 
@@ -452,7 +465,9 @@ edge every dream, and a history full of changes nobody made is a history
 nobody reads.
 
 It is on the page in the dashboard, in `teanode agent memory history
-<path>`, and in the API.
+<path>`, in the API, and in the agent's own memory tool as `history`, so
+the agent can account for a line the person does not recognize instead of
+guessing at where it came from.
 
 ## Vectors
 

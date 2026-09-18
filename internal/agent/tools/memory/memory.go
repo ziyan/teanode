@@ -40,6 +40,13 @@ const (
 	// searchLimit how many rows a search answers with.
 	factsShown  = 60
 	searchLimit = 20
+
+	// historyShown is how many changes a history answers with, and
+	// historyMost the ceiling on asking for more. The same numbers the
+	// API bounds it by, so the same question asked here and on the
+	// command line is answered with the same page of it.
+	historyShown = 50
+	historyMost  = 200
 )
 
 func init() {
@@ -63,14 +70,14 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "memory", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "What you know about the person, kept between conversations as pages with facts on them. Every page has a path: people/alice-chen, projects/portal, self, time/2026/09. A fact on a page is cited as people/alice-chen#3. Your prompt carries the top of the graph and whatever this turn's words touched; `get` a path before telling them you do not know something about them, and `search` when you cannot guess the path. You need not file what you learn -- a run after this conversation does that -- but `note` anything they ask you to remember, and correct a page that is wrong.",
+				Description: "What you know about the person, kept between conversations as pages with facts on them. Every page has a path: people/alice-chen, projects/portal, self, time/2026/09. A fact on a page is cited as people/alice-chen#3. Your prompt carries the top of the graph and whatever this turn's words touched; `get` a path before telling them you do not know something about them, and `search` when you cannot guess the path. You need not file what you learn -- a run after this conversation does that -- but `note` anything they ask you to remember, and correct a page that is wrong: `note` with the fact's number rewrites that one sentence where it stands. `history` says what has happened to a page and who did it, which is how a line nobody recognizes is accounted for.",
 				Parameters: tools.Object(map[string]any{
 					"action": tools.EnumProperty("what to do; move files a page under another, or with number moves one fact onto another page",
-						"index", "get", "search", "note", "page", "link", "unlink", "move", "merge", "forget", "batch"),
+						"index", "get", "search", "note", "page", "history", "link", "unlink", "move", "merge", "forget", "batch"),
 					"path":       tools.StringProperty("the page: a path like people/alice-chen. For note, the page the fact goes on; it is made if it is missing"),
 					"depth":      tools.IntegerProperty("for index: how many levels below the path, 2 by default"),
 					"query":      tools.StringProperty("for search: words"),
-					"text":       tools.StringProperty("for note: the fact, in a sentence or two"),
+					"text":       tools.StringProperty("for note: the fact, in a sentence or two; with number, the whole sentence as it should now read"),
 					"fact_kind":  tools.EnumProperty("for note: what sort of statement it is, 'fact' by default; 'preference' and 'decision' are only for what the person themselves said", factKinds...),
 					"happened":   tools.StringProperty("for note: when it was true, if that is not now -- 2023-06, 2023-06-14, or a date the person gave"),
 					"kind":       tools.EnumProperty("for note and page: what the page is about, needed when the page is new", kinds...),
@@ -81,11 +88,11 @@ func init() {
 					"applies_to": tools.ArrayProperty("for note: which runs besides the conversation read it; any of "+strings.Join(audiences, ", "), tools.StringProperty("an audience")),
 					"to":         tools.StringProperty("for link: the other page's path. For move: the path of the page it goes under, or with number the page the fact goes on. For merge: the page that survives"),
 					"relation":   tools.EnumProperty("for link: what the first page is to the second", relations...),
-					"number":     tools.IntegerProperty("for forget: the fact's number on the page; without it the whole page goes. For move: the fact to move onto the page in to, rather than the page itself"),
-					"limit":      tools.IntegerProperty("for search and index: how many"),
+					"number":     tools.IntegerProperty("for note: the fact to rewrite where it stands, keeping its number, its evidence and the day it was learned, rather than adding another one. For forget: the fact's number on the page; without it the whole page goes. For move: the fact to move onto the page in to, rather than the page itself"),
+					"limit":      tools.IntegerProperty("for search, index and history: how many"),
 					"items":      tools.ArrayProperty("for batch: up to 25 of the above, each with its own action", map[string]any{"type": "object"}),
 				}, "action"),
-				Guidance: "memory: the graph is addressed by path (people/alice-chen, projects/portal, self) and a fact by number (people/alice-chen#3). `self` is the person you are talking to: what is known about them lives there, and a page under people about them is a duplicate to `merge` into self, never the other way round. `get` a path before saying you do not know something about the person; `search` when you cannot guess the path. `note` what they ask you to remember and correct what is wrong; a run after the conversation files the rest. A fact on the wrong page is `move`d with its number rather than forgotten and written again, which would lose the words it came from. A fact addressed to triage changes how mail is sorted from the next message on; one addressed to reply changes how the agent answers for them. Prefer a rule for anything rule-shaped; a fact is for what a rule cannot say.",
+				Guidance: "memory: the graph is addressed by path (people/alice-chen, projects/portal, self) and a fact by number (people/alice-chen#3). `self` is the person you are talking to: what is known about them lives there, and a page under people about them is a duplicate to `merge` into self, never the other way round. `get` a path before saying you do not know something about the person; `search` when you cannot guess the path. `note` what they ask you to remember and correct what is wrong; a run after the conversation files the rest. A fact that says the wrong thing is corrected with `note` and its number, which rewrites that sentence and keeps its number, its evidence and the day it was learned; forgetting it and writing it again loses all three. A fact on the wrong page is `move`d with its number for the same reason. When they ask where something on a page came from, or who changed it, `history` says. A fact addressed to triage changes how mail is sorted from the next message on; one addressed to reply changes how the agent answers for them. Prefer a rule for anything rule-shaped; a fact is for what a rule cannot say.",
 				Preview: tools.PreviewOf(func(call struct {
 					Action string `json:"action"`
 					Path   string `json:"path"`
@@ -102,9 +109,14 @@ func init() {
 					case "search":
 						return "Search what it knows"
 					case "note":
+						if call.Number > 0 {
+							return "Correct one thing it knows about " + page
+						}
 						return "Remember something about " + page
 					case "page":
 						return "Rewrite " + page
+					case "history":
+						return "Look at what has changed on " + page
 					case "link":
 						return "Link " + page + " to " + tools.Named(call.To, "another page")
 					case "unlink":
@@ -144,7 +156,7 @@ func riskOfMemory(arguments json.RawMessage) tools.Risk {
 		return tools.RiskWrite
 	}
 	switch call.Action {
-	case "index", "get", "search":
+	case "index", "get", "search", "history":
 		return tools.RiskRead
 	case "forget":
 		// Forgetting a whole page takes its facts with it.
@@ -159,7 +171,7 @@ func riskOfMemory(arguments json.RawMessage) tools.Risk {
 		risk := tools.RiskRead
 		for _, item := range call.Items {
 			switch item.Action {
-			case "index", "get", "search":
+			case "index", "get", "search", "history":
 			case "forget":
 				if item.Number <= 0 {
 					return tools.RiskDestructive
@@ -227,6 +239,8 @@ func runMemoryItem(ctx context.Context, run tools.Run, call *tools.Call, argumen
 		return noteAction(ctx, run, arguments)
 	case "page":
 		return pageAction(ctx, run, arguments)
+	case "history":
+		return historyAction(ctx, run, arguments)
 	case "link":
 		return linkAction(ctx, run, arguments)
 	case "unlink":
@@ -582,14 +596,70 @@ func mergeFacts(first, second []*models.AgentFact, limit int) []*models.AgentFac
 	return merged
 }
 
+// historyAction is what has happened to a page, newest first.
+//
+// A page a nightly run wrote and a page the person wrote themselves read
+// exactly alike until somebody asks this: it is the only place the graph
+// says where a sentence came from, and it is what the agent needs when
+// the person says "I never said that" or asks why a page changed.
+func historyAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (*tools.Result, error) {
+	path := ownPath(run, arguments.Path)
+	if path == "" {
+		return nil, fmt.Errorf("which page? give a path, like people/alice-chen")
+	}
+	limit := arguments.Limit
+	if limit <= 0 || limit > historyMost {
+		limit = historyShown
+	}
+	agentId := run.Agent().ID
+	var node *models.AgentNode
+	var revisions []*models.AgentRevision
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		if node, err = tx.GetAgentNode(agentId, path); err != nil || node == nil {
+			return err
+		}
+		revisions, err = tx.ListAgentRevisions(agentId, node.ID, limit)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	if node == nil {
+		return notThere(ctx, run, path)
+	}
+	if len(revisions) == 0 {
+		return tools.TextResult("nothing has happened to %s yet", node.Path), nil
+	}
+	location := tools.Location(run.Owner())
+	var builder strings.Builder
+	for _, revision := range revisions {
+		builder.WriteString("#" + strconv.Itoa(revision.Revision) + " " +
+			revision.CreatedAt.In(location).Format("2 Jan 2006 15:04") + " — " + revision.Describe() + "\n")
+		// The words either side, where words moved. A summary rewritten
+		// overnight is the change somebody most often wants back, and a
+		// history that only says "rewrote what this page says" cannot
+		// give it to them.
+		if was := revision.TextBefore(); was != "" {
+			builder.WriteString("  was: " + tools.FirstWords(was, 25) + "\n")
+		}
+		if now := revision.TextAfter(); now != "" {
+			builder.WriteString("  now: " + tools.FirstWords(now, 25) + "\n")
+		}
+	}
+	return tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), nil
+}
+
 // --- writing ----------------------------------------------------------
 
-// noteAction puts a fact on a page, making the page if it is missing.
+// noteAction puts a fact on a page, making the page if it is missing, or
+// with a number rewrites the fact that is already there.
 func noteAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (*tools.Result, error) {
 	path := ownPath(run, arguments.Path)
 	text := strings.TrimSpace(arguments.Text)
 	if text == "" {
 		return nil, fmt.Errorf("note what? give the fact as text")
+	}
+	if arguments.Number > 0 {
+		return editFactAction(ctx, run, arguments, path, text)
 	}
 	if path == "" {
 		// A fact with nowhere to go goes in notes rather than being
@@ -640,10 +710,101 @@ func noteAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 		return nil, err
 	}
 
+	return factWritten(ctx, run, node, fact, "remembered: "+tools.FirstWords(text, 8)), nil
+}
+
+// editFactAction rewrites one fact where it stands.
+//
+// The alternative, and what a model did while this was missing, is to
+// forget the sentence and write it again. That gives it a new number,
+// throws away the words it came from and the day it was learned, and
+// leaves whatever cited the old number pointing at nothing. Correcting it
+// in place keeps all three, and the page's history carries what it used
+// to say, so the correction can be read and undone.
+//
+// The page is not made on the way and the fact is not invented: a number
+// for a fact that is not there is a typo, and answering it by writing a
+// new fact would file the correction of one sentence as a second one.
+func editFactAction(ctx context.Context, run tools.Run, arguments *memoryArguments, path, text string) (*tools.Result, error) {
+	if path == "" {
+		return nil, fmt.Errorf("which fact? give the page's path as well as the number")
+	}
+	// The kind and the date change only where the call gives them. A
+	// correction is nearly always to the words alone, and reading a
+	// missing kind as "fact" and a missing date as "now" would turn a
+	// decision made in June into an undated fact every time a word in
+	// it was fixed.
+	kind := models.AgentFactKind(strings.ToLower(strings.TrimSpace(arguments.FactKind)))
+	if kind != "" && !models.IsAgentFactKind(kind) {
+		return nil, fmt.Errorf("%q is not a kind of fact; use one of %s", arguments.FactKind, joinKinds())
+	}
+	var happened *time.Time
+	if strings.TrimSpace(arguments.Happened) != "" {
+		var err error
+		if happened, err = whenItWasTrue(run, arguments.Happened); err != nil {
+			return nil, err
+		}
+	}
+
+	agentId := run.Agent().ID
+	var node *models.AgentNode
+	var fact *models.AgentFact
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		found, err := tx.GetAgentNode(agentId, path)
+		if err != nil {
+			return err
+		}
+		if found == nil {
+			return fmt.Errorf("there is no page at %s", path)
+		}
+		node = found
+		existing, err := tx.GetAgentFact(agentId, node.ID, arguments.Number)
+		if err != nil {
+			return err
+		}
+		if existing == nil {
+			return fmt.Errorf("there is no %s", path+"#"+strconv.Itoa(arguments.Number))
+		}
+		fact, err = tx.UpdateAgentFact(agentId, existing.ID, func(fact *models.AgentFact) error {
+			fact.Text = text
+			if kind != "" {
+				fact.Kind = kind
+			}
+			if happened != nil {
+				fact.HappenedAt = happened
+			}
+			// Only where this call said who reads it. Audiences are set
+			// once and hardly ever repeated, and a correction that
+			// quietly took a fact out of triage would change how mail is
+			// sorted from the next message on without anybody asking.
+			if len(arguments.AppliesTo) > 0 {
+				fact.Audiences = factAudiences(arguments.AppliesTo)
+			}
+			// Corrected, so it is no longer a guess, and what it was
+			// learned from stays: the correction joins the evidence
+			// rather than replacing it, so the page still says where the
+			// sentence came from originally.
+			fact.Inferred = false
+			fact.Confidence = 1
+			fact.Evidence = append(fact.Evidence, conversationEvidence(run, text))
+			return nil
+		})
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return factWritten(ctx, run, node, fact, "corrected "+fact.Reference(node.Path)), nil
+}
+
+// factWritten is the answer to a fact written or rewritten: the fact as
+// it now reads, and whatever on the same page it turns out to repeat.
+func factWritten(ctx context.Context, run tools.Run, node *models.AgentNode, fact *models.AgentFact, note string) *tools.Result {
 	answer := fact.Reference(node.Path) + " " + fact.Line()
 	// What it means is worked out as it is written, which is how the same
 	// thing written twice is caught. The prompt asks the model to read the
-	// page first; this is for the times it does not.
+	// page first; this is for the times it does not. It is also what gives
+	// an edited fact its vector back, since changing the words throws the
+	// old one away.
 	if twins := noteMeaning(ctx, run, fact); len(twins) > 0 {
 		// An imperative naming both, not a hedge: a warning that
 		// something "may be" a duplicate was read and ignored, and the
@@ -653,8 +814,8 @@ func noteAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 			fact.Reference(node.Path) + ". Do it now, in this turn."
 	}
 	result := tools.TextResult("%s", answer)
-	result.Note = "remembered: " + tools.FirstWords(text, 8)
-	return result, nil
+	result.Note = note
+	return result
 }
 
 // whenItWasTrue reads the date the model gave, in the person's zone.

@@ -6,6 +6,30 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Ask your agent to stop reading one of your sources and it pauses it now,
+  instead of removing it. Pausing keeps every document and passage it found
+  and picks up where it left off when you ask it to start again; removing is
+  still there for somewhere you are done with, and still forgets everything.
+  This is what the dashboard and `teanode agent knowledge pause` have always
+  done, and now the agent does it too.
+
+- Your agent can say where in your pages a new source is filed, and which
+  mailbox to read your sent mail from, when it adds one for you — the two
+  things `--under` and `--mailbox` have always given the command line. A
+  mailbox you have not given it is refused.
+
+- Asked to correct something it knows, your agent rewrites that one sentence
+  where it stands rather than writing a second one beside it. The fact keeps
+  its number, so anything that cited it still points at it, along with the
+  words it was first learned from and the day it learned them.
+
+- Your agent can read a page's history — every change to it, who made it, and
+  what the page used to say — which is what it needs to answer "where did that
+  come from?" instead of guessing. The dashboard and `teanode agent memory
+  history` already showed it.
+
 ## [0.28.0] - 2026-09-18
 
 ### Added
