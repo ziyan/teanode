@@ -23,11 +23,13 @@ import { Tooltip } from './tooltip'
 import { Markdown } from './markdown'
 import { RelativeTime } from './relativeTime'
 import {
+  ArchiveIcon,
   ArrowDownIcon,
   ArrowUpIcon,
   ChevronDownIcon,
   ComputerIcon,
   GlobeIcon,
+  InboxIcon,
   PaperclipIcon,
   PencilIcon,
   StarIcon,
@@ -344,17 +346,19 @@ const STOP = `
     StopAgentRun(runId: $runId)
   }`
 
+// A goal given here starts the conversation already working toward it, so
+// the first turn runs with it rather than being told a moment later.
 const START = `
-  mutation ($title: String) {
-    StartAgentConversation(title: $title) { id kind title summary lastAt archivedAt }
+  mutation ($title: String, $goal: String) {
+    StartAgentConversation(title: $title, goal: $goal) { id kind title summary lastAt archivedAt }
   }`
 
 // A variable left out is a field left alone: renaming sends no goal, and
 // setting a goal sends no title. An empty goal is not nothing — it is the
 // person saying there is no goal any more.
 const UPDATE = `
-  mutation ($conversationId: String!, $title: String, $goal: String) {
-    UpdateAgentConversation(conversationId: $conversationId, title: $title, goal: $goal) { id }
+  mutation ($conversationId: String!, $title: String, $goal: String, $archived: Boolean) {
+    UpdateAgentConversation(conversationId: $conversationId, title: $title, goal: $goal, archived: $archived) { id }
   }`
 
 const DELETE = `
@@ -1014,6 +1018,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const [goalDraft, setGoalDraft] = useState<string | null>(null)
   const [goalBusy, setGoalBusy] = useState(false)
   const [goalTurnsToday, setGoalTurnsToday] = useState(0)
+  // The goal a conversation about to be started is given, or null while
+  // the dialog is shut; an empty string starts one with no goal.
+  const [startingGoal, setStartingGoal] = useState<string | null>(null)
+  const [startingBusy, setStartingBusy] = useState(false)
+  // The conversations that have been put away, and whether the picker is
+  // showing them. Read only when the section is opened: most of the time
+  // nobody looks, and the list is the one the drawer opens to.
+  const [archived, setArchived] = useState<Conversation[]>([])
+  const [showingArchived, setShowingArchived] = useState(false)
   // Whether the bar saying what the agent is waiting for is still up. It
   // comes down when the person sends, because the answer is on its way,
   // and the next read puts it back if the agent is still waiting.
@@ -1086,6 +1099,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     const response = await graphql<{ ListAgentConversations: Conversation[] }>(CONVERSATIONS, { archived: false })
     setConversations(response.ListAgentConversations)
     return response.ListAgentConversations
+  }, [])
+
+  // The archived ones, asked for on their own. The main conversation comes
+  // back in both lists — it is never archived — and is left out here so
+  // that the section holds only what was put away.
+  const loadArchived = useCallback(async () => {
+    const response = await graphql<{ ListAgentConversations: Conversation[] }>(CONVERSATIONS, { archived: true })
+    const put = response.ListAgentConversations.filter((conversation) => conversation.kind !== 'main')
+    setArchived(put)
+    return put
   }, [])
 
   const loadConversation = useCallback(async (id: string) => {
@@ -1219,6 +1242,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     if (!showingList) {
       setSearch('')
       setFound(null)
+      setShowingArchived(false)
       return
     }
     void loadConversations().catch(() => undefined)
@@ -1791,11 +1815,178 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     await readConversation(id, true)
   }
 
-  const startNew = async () => {
+  // A new conversation may be given what it is for before a word is said,
+  // so its first turn already works toward it; left empty it is an
+  // ordinary conversation, which is most of them.
+  const startNew = async (goal: string) => {
+    setStartingBusy(true)
     try {
-      const response = await graphql<{ StartAgentConversation: Conversation }>(START, {})
+      const response = await graphql<{ StartAgentConversation: Conversation }>(START, {
+        goal: goal.trim() || undefined,
+      })
+      setStartingGoal(null)
       await loadConversations()
       await switchTo(response.StartAgentConversation.id)
+      if (goal.trim()) {
+        toast.done(t('agentDrawer.goal.saved'))
+      }
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setStartingBusy(false)
+    }
+  }
+
+  // Putting a conversation away takes it out of the picker and leaves
+  // everything in it; the server refuses to archive the main one, which is
+  // why the action is not offered there.
+  const archiveConversation = async (conversation: Conversation, put: boolean) => {
+    try {
+      await graphql(UPDATE, { conversationId: conversation.id, archived: put })
+      const remaining = await loadConversations()
+      if (showingArchived) {
+        await loadArchived()
+      }
+      toast.done(put ? t('agentDrawer.archivedDone') : t('agentDrawer.unarchivedDone'))
+      if (put && conversation.id === conversationId) {
+        await switchTo(remaining[0]?.id ?? '')
+      }
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    }
+  }
+
+  // One conversation in the picker: the same row wherever it is listed —
+  // among the live ones, among the archived, or among what a search found
+  // — with the actions reading from the conversation itself, so an
+  // archived one found by a search offers to be put back and not put away
+  // again.
+  const conversationRow = (conversation: Conversation) => (
+    <div
+      key={conversation.id}
+      className={[
+        'agent-drawer-list-row',
+        conversation.id === conversationId ? 'active' : '',
+        conversation.kind === 'main' ? 'main' : '',
+        conversation.archivedAt ? 'archived' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {renaming?.id === conversation.id ? (
+        <form
+          className="agent-drawer-rename"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void rename()
+          }}
+        >
+          <input
+            autoFocus
+            value={renaming.title}
+            aria-label={t('agentDrawer.rename')}
+            onChange={(event) => setRenaming({ id: conversation.id, title: event.target.value })}
+            onBlur={() => void rename()}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                setRenaming(null)
+              }
+            }}
+          />
+        </form>
+      ) : (
+        <button
+          type="button"
+          className="agent-drawer-list-title"
+          role="menuitem"
+          title={conversation.summary || undefined}
+          onClick={() => void switchTo(conversation.id)}
+        >
+          <span className="agent-drawer-list-name">
+            {/* A conversation working toward something is
+              marked before its name, in the colour of
+              where it stands: the accent while it works,
+              the warning colour while it waits for the
+              person, muted once it is met. */}
+            {conversation.goal ? (
+              <TargetIcon size={12} className={`agent-drawer-list-goal ${goalStateOf(conversation)}`} />
+            ) : null}
+            {conversation.kind === 'main' ? (
+              <>
+                <StarIcon size={12} /> {t('agentDrawer.main')}
+              </>
+            ) : (
+              conversation.title || t('agentDrawer.untitled')
+            )}
+          </span>
+          {/* When the conversation was last spoken in,
+            which is what tells one of these apart from the
+            next; a goal's note belongs in the dialog, not
+            here in place of the time. The summary is the
+            row's tooltip. */}
+          <span className="agent-drawer-list-summary muted">
+            <RelativeTime value={conversation.lastAt} />
+          </span>
+        </button>
+      )}
+      {conversation.kind !== 'main' && renaming?.id !== conversation.id && (
+        <span className="agent-drawer-list-actions">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={t('agentDrawer.makeMain')}
+            title={t('agentDrawer.makeMain')}
+            onClick={() => void makeMain(conversation.id)}
+          >
+            <StarIcon size={14} />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={t('agentDrawer.rename')}
+            title={t('agentDrawer.rename')}
+            onClick={() => setRenaming({ id: conversation.id, title: conversation.title })}
+          >
+            <PencilIcon size={14} />
+          </button>
+          {/* Not on the main conversation: the server refuses to archive
+              it, and an action that is always refused is worse than none. */}
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={`${conversation.title || t('agentDrawer.untitled')}: ${
+              conversation.archivedAt ? t('agentDrawer.unarchive') : t('agentDrawer.archive')
+            }`}
+            title={conversation.archivedAt ? t('agentDrawer.unarchive') : t('agentDrawer.archive')}
+            onClick={() => void archiveConversation(conversation, !conversation.archivedAt)}
+          >
+            {conversation.archivedAt ? <InboxIcon size={14} /> : <ArchiveIcon size={14} />}
+          </button>
+          <button
+            type="button"
+            className="icon-button danger"
+            aria-label={t('agentDrawer.delete')}
+            title={t('agentDrawer.delete')}
+            onClick={() => setDeleting(conversation)}
+          >
+            <TrashIcon size={14} />
+          </button>
+        </span>
+      )}
+    </div>
+  )
+
+  // The archived section is read when it is opened rather than with the
+  // list: most of the time nobody asks for it.
+  const toggleArchived = async () => {
+    if (showingArchived) {
+      setShowingArchived(false)
+      return
+    }
+    setShowingArchived(true)
+    try {
+      await loadArchived()
     } catch (caught) {
       toast.failed(caught instanceof Error ? caught.message : String(caught))
     }
@@ -2151,7 +2342,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                       type="button"
                       className="agent-drawer-list-row new"
                       role="menuitem"
-                      onClick={() => void startNew()}
+                      onClick={() => {
+                        setShowingList(false)
+                        setStartingGoal('')
+                      }}
                     >
                       <PlusIcon size={14} />
                       <span className="agent-drawer-list-title">{t('agentDrawer.new')}</span>
@@ -2173,107 +2367,36 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                       Number(second.kind === 'main') - Number(first.kind === 'main') ||
                       (second.lastAt ?? '').localeCompare(first.lastAt ?? ''),
                   )
-                  .map((conversation) => (
-                    <div
-                      key={conversation.id}
-                      className={[
-                        'agent-drawer-list-row',
-                        conversation.id === conversationId ? 'active' : '',
-                        conversation.kind === 'main' ? 'main' : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
-                    >
-                      {renaming?.id === conversation.id ? (
-                        <form
-                          className="agent-drawer-rename"
-                          onSubmit={(event) => {
-                            event.preventDefault()
-                            void rename()
-                          }}
-                        >
-                          <input
-                            autoFocus
-                            value={renaming.title}
-                            aria-label={t('agentDrawer.rename')}
-                            onChange={(event) => setRenaming({ id: conversation.id, title: event.target.value })}
-                            onBlur={() => void rename()}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Escape') {
-                                event.preventDefault()
-                                setRenaming(null)
-                              }
-                            }}
-                          />
-                        </form>
-                      ) : (
-                        <button
-                          type="button"
-                          className="agent-drawer-list-title"
-                          role="menuitem"
-                          title={conversation.summary || undefined}
-                          onClick={() => void switchTo(conversation.id)}
-                        >
-                          <span className="agent-drawer-list-name">
-                            {/* A conversation working toward something is
-                              marked before its name, in the colour of
-                              where it stands: the accent while it works,
-                              the warning colour while it waits for the
-                              person, muted once it is met. */}
-                            {conversation.goal ? (
-                              <TargetIcon size={12} className={`agent-drawer-list-goal ${goalStateOf(conversation)}`} />
-                            ) : null}
-                            {conversation.kind === 'main' ? (
-                              <>
-                                <StarIcon size={12} /> {t('agentDrawer.main')}
-                              </>
-                            ) : (
-                              conversation.title || t('agentDrawer.untitled')
-                            )}
-                          </span>
-                          {/* When the conversation was last spoken in,
-                            which is what tells one of these apart from the
-                            next; a goal's note belongs in the dialog, not
-                            here in place of the time. The summary is the
-                            row's tooltip. */}
-                          <span className="agent-drawer-list-summary muted">
-                            <RelativeTime value={conversation.lastAt} />
-                          </span>
-                        </button>
-                      )}
-                      {conversation.kind !== 'main' && renaming?.id !== conversation.id && (
-                        <span className="agent-drawer-list-actions">
-                          <button
-                            type="button"
-                            className="icon-button"
-                            aria-label={t('agentDrawer.makeMain')}
-                            title={t('agentDrawer.makeMain')}
-                            onClick={() => void makeMain(conversation.id)}
-                          >
-                            <StarIcon size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            className="icon-button"
-                            aria-label={t('agentDrawer.rename')}
-                            title={t('agentDrawer.rename')}
-                            onClick={() => setRenaming({ id: conversation.id, title: conversation.title })}
-                          >
-                            <PencilIcon size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            className="icon-button danger"
-                            aria-label={t('agentDrawer.delete')}
-                            title={t('agentDrawer.delete')}
-                            onClick={() => setDeleting(conversation)}
-                          >
-                            <TrashIcon size={14} />
-                          </button>
-                        </span>
-                      )}
-                    </div>
-                  ))}
+                  .map((conversation) => conversationRow(conversation))}
+                {/* What has been put away, under everything else and shut
+                    until it is asked for. */}
+                {found === null && (
+                  <button
+                    type="button"
+                    className="agent-drawer-list-row more"
+                    role="menuitem"
+                    onClick={() => void toggleArchived()}
+                  >
+                    <ArchiveIcon size={14} />
+                    <span className="agent-drawer-list-title">
+                      {showingArchived ? t('agentDrawer.hideArchived') : t('agentDrawer.showArchived')}
+                    </span>
+                  </button>
+                )}
+                {found === null && showingArchived && (
+                  <>
+                    <div className="agent-drawer-list-heading muted">{t('agentDrawer.archivedSection')}</div>
+                    {archived.length === 0 ? (
+                      <div className="agent-drawer-list-row muted">
+                        <span className="agent-drawer-list-title">{t('agentDrawer.noneArchived')}</span>
+                      </div>
+                    ) : (
+                      [...archived]
+                        .sort((first, second) => (second.lastAt ?? '').localeCompare(first.lastAt ?? ''))
+                        .map((conversation) => conversationRow(conversation))
+                    )}
+                  </>
+                )}
               </div>
             </>
           )}
@@ -2507,6 +2630,24 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           {dragging && <div className="agent-drawer-drop">{t('agentDrawer.dropHere')}</div>}
         </aside>
       )}
+      {/* A new conversation, with what it is for if there is one. The same
+          field as the goal dialog, asked before the first word rather than
+          after it, so the first turn already works toward it. */}
+      {startingGoal !== null ? (
+        <FormDialog
+          title={t('agentDrawer.new')}
+          submitLabel={t('agentDrawer.start')}
+          busy={startingBusy}
+          onClose={() => setStartingGoal(null)}
+          onSubmit={() => void startNew(startingGoal)}
+        >
+          <p className="muted">{t('agentDrawer.goal.hint')}</p>
+          <label>
+            <span>{t('agentDrawer.newGoal')}</span>
+            <textarea rows={3} value={startingGoal} onChange={(event) => setStartingGoal(event.target.value)} />
+          </label>
+        </FormDialog>
+      ) : null}
       {goalDraft !== null && current ? (
         <FormDialog
           title={t('agentDrawer.goal.title')}

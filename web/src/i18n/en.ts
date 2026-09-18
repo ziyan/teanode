@@ -1052,6 +1052,15 @@ export const en = {
   'agentDrawer.untitled': 'Untitled',
   'agentDrawer.new': 'New conversation',
   'agentDrawer.archive': 'Archive',
+  'agentDrawer.unarchive': 'Unarchive',
+  'agentDrawer.archivedSection': 'Archived',
+  'agentDrawer.archivedDone': 'Put away. It is under Archived in the list.',
+  'agentDrawer.unarchivedDone': 'Back in the list.',
+  'agentDrawer.showArchived': 'Archived conversations',
+  'agentDrawer.hideArchived': 'Hide the archived ones',
+  'agentDrawer.noneArchived': 'Nothing has been archived.',
+  'agentDrawer.start': 'Start',
+  'agentDrawer.newGoal': 'Goal, if it has one',
   'agentDrawer.empty': 'Ask about your mail, or ask for something to be done. What you have open is what "this" means.',
   'agentDrawer.placeholder': 'Ask your agent…',
   'agentDrawer.placeholderNamed': 'Ask {name} …',
@@ -2546,6 +2555,12 @@ export const en = {
   'agent.knowledgeShape.recordsHint':
     'A folder of JSON-lines records, filled by a refresh script; ask the agent to write one.',
   'agent.knowledgeMailbox': 'Which mailbox',
+  'agent.knowledgeNoMailboxes': 'You have no mailboxes yet.',
+  'agent.knowledgeUnder': 'Where what it finds is filed',
+  'agent.knowledgeUnderHint':
+    'A page in the graph, such as projects. Leave it empty and your agent files what it finds where it thinks it belongs.',
+  'agent.knowledgeCron': 'How often to read it, as a cron line',
+  'agent.knowledgeCronHint': 'Five fields, in your own zone. Leave it empty and it is read once a night.',
   'agent.knowledgeAllowFirst':
     'On that computer, allow it first: teanode computer allow {path}. Nothing is read until you do.',
   'agent.knowledgeUnknownAuthors':
@@ -2591,6 +2606,14 @@ export const en = {
   'agent.allRuns': 'All runs',
   'agent.dreamNow': 'Dream now',
   'agent.dreamNowAsked': "The dream starts within the minute, within your agent's hours.",
+  'agent.reread': 'Re-read…',
+  'agent.rereadTitle': 'Read again what a dream marked read',
+  'agent.rereadHint':
+    'A dream that marked documents read without reading them can be put right: everything it marked in the last so many minutes goes back into the queue.',
+  'agent.rereadMinutes': 'How far back, in minutes',
+  'agent.rereadSubmit': 'Put them back',
+  'agent.rereadDoneOne': '{count} document is waiting to be read again.',
+  'agent.rereadDoneOther': '{count} documents are waiting to be read again.',
   'agent.bootstrap': 'Bootstrap',
   'agent.bootstrapHint':
     '{count} documents wait to be read. Bootstrapping dreams again at every tick, with wider limits, until they are read; best with a model of your own doing the reading.',

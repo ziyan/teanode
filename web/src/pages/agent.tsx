@@ -23,6 +23,7 @@ import { useQuery } from '../components/useQuery'
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { useTranslation } from '../i18n/i18n'
+import { useMailboxes } from '../mailboxes'
 import { Select } from '../components/select'
 import { PolicyTool, ToolPolicyAccordion } from '../components/toolPolicy'
 
@@ -740,8 +741,8 @@ const KNOWLEDGE_SOURCES = `
   }`
 
 const SAVE_KNOWLEDGE_SOURCE = `
-  mutation ($sourceId: String, $kind: String, $name: String, $computer: String, $path: String, $format: String, $enabled: Boolean, $mailboxId: String) {
-    SaveAgentKnowledgeSource(sourceId: $sourceId, kind: $kind, name: $name, computer: $computer, path: $path, format: $format, enabled: $enabled, mailboxId: $mailboxId) { id name }
+  mutation ($sourceId: String, $kind: String, $name: String, $computer: String, $path: String, $format: String, $enabled: Boolean, $mailboxId: String, $rootPath: String, $cron: String) {
+    SaveAgentKnowledgeSource(sourceId: $sourceId, kind: $kind, name: $name, computer: $computer, path: $path, format: $format, enabled: $enabled, mailboxId: $mailboxId, rootPath: $rootPath, cron: $cron) { id name }
   }`
 
 const DELETE_KNOWLEDGE_SOURCE = `mutation ($sourceId: String!) { DeleteAgentKnowledgeSource(sourceId: $sourceId) }`
@@ -755,6 +756,10 @@ const DREAMS = `
       proposals { kind path to reason }
     }
   }`
+
+// Put back what a dream marked read in the last so many minutes, for a
+// dream that marked what it never read.
+const REREAD_DOCUMENTS = `mutation ($minutes: Int!) { RereadAgentDocuments(minutes: $minutes) }`
 
 const DREAM_NOW = `mutation { DreamAgentNow }`
 const DREAM_BOOTSTRAP = `mutation ($on: Boolean!) { DreamAgentNow(bootstrap: $on) }`
@@ -1486,6 +1491,20 @@ function KnowledgeSourcesCard() {
   const { kind, format } = KNOWLEDGE_SHAPES[shape]
   const [computer, setComputer] = useState('')
   const [path, setPath] = useState('')
+  // Where in the graph what it finds is filed, and how often it is read:
+  // both optional, and both what the command line asks for as --under and
+  // --cron. Left empty, the agent files what it finds where it thinks it
+  // belongs and reads the source once a night.
+  const [rootPath, setRootPath] = useState('')
+  const [cron, setCron] = useState('')
+  // Which mailbox a sent source reads. The person's own, from the same
+  // list the rail and the mailbox pages draw. Nothing chosen means the
+  // first of them, which for most people is the only one — and the
+  // mailboxes may not have arrived when the dialog was opened, so the
+  // choice is worked out here rather than kept only in the state.
+  const [mailboxId, setMailboxId] = useState('')
+  const { views } = useMailboxes()
+  const readingMailboxId = mailboxId || views[0]?.mailbox.id || ''
 
   const sources = data?.ListAgentKnowledgeSources ?? []
 
@@ -1521,6 +1540,9 @@ function KnowledgeSourcesCard() {
               setPath('')
               setComputer('')
               setShape('files')
+              setRootPath('')
+              setCron('')
+              setMailboxId('')
               setProblem(null)
               setAdding(true)
             }}
@@ -1627,14 +1649,26 @@ function KnowledgeSourcesCard() {
           submitLabel={t('agent.addKnowledgeSource')}
           busy={busy}
           error={problem}
-          canSubmit={name.trim() !== '' && (kind === 'sent' || (path.trim() !== '' && computer.trim() !== ''))}
+          canSubmit={
+            name.trim() !== '' &&
+            (kind === 'sent' ? readingMailboxId !== '' : path.trim() !== '' && computer.trim() !== '')
+          }
           onClose={() => setAdding(false)}
           onSubmit={() => {
             void (async () => {
               if (
                 await run(
                   SAVE_KNOWLEDGE_SOURCE,
-                  { name: name.trim(), kind, computer: computer.trim(), path: path.trim(), format },
+                  {
+                    name: name.trim(),
+                    kind,
+                    computer: computer.trim(),
+                    path: path.trim(),
+                    format,
+                    rootPath: rootPath.trim() || undefined,
+                    cron: cron.trim() || undefined,
+                    mailboxId: kind === 'sent' ? readingMailboxId : undefined,
+                  },
                   t('agent.knowledgeSaved'),
                 )
               ) {
@@ -1672,7 +1706,31 @@ function KnowledgeSourcesCard() {
               </label>
               <p className="muted">{t('agent.knowledgeAllowFirst', { path: path.trim() || '~/projects' })}</p>
             </>
-          ) : null}
+          ) : (
+            /* A sent source reads one mailbox's Sent folder, and the
+               server refuses one that does not say which. */
+            <label>
+              <span>{t('agent.knowledgeMailbox')}</span>
+              <select value={readingMailboxId} onChange={(event) => setMailboxId(event.target.value)}>
+                {views.length === 0 ? <option value="">{t('agent.knowledgeNoMailboxes')}</option> : null}
+                {views.map((view) => (
+                  <option key={view.mailbox.id} value={view.mailbox.id}>
+                    {view.mailbox.name || view.mailbox.addresses?.[0]?.address || view.mailbox.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label>
+            <span>{t('agent.knowledgeUnder')}</span>
+            <input value={rootPath} placeholder="projects" onChange={(event) => setRootPath(event.target.value)} />
+          </label>
+          <p className="muted">{t('agent.knowledgeUnderHint')}</p>
+          <label>
+            <span>{t('agent.knowledgeCron')}</span>
+            <input value={cron} placeholder="17 3 * * *" onChange={(event) => setCron(event.target.value)} />
+          </label>
+          <p className="muted">{t('agent.knowledgeCronHint')}</p>
         </FormDialog>
       ) : null}
       {removing ? (
@@ -1722,6 +1780,10 @@ function DreamCard({
   )
   const dreams = data?.ListAgentDreams ?? []
   const [starting, setStarting] = useState(false)
+  // How far back the reading goes, while the dialog is open: the window
+  // the command line asks for, in minutes, and null while it is shut.
+  const [rereadMinutes, setRereadMinutes] = useState<string | null>(null)
+  const [rereading, setRereading] = useState(false)
   // Bootstrapping: the night at every tick, with wider limits, until
   // nothing waits to be read. What a first ingest needs, and switched
   // off by the night itself when the backlog is gone.
@@ -1762,6 +1824,24 @@ function DreamCard({
       toast.failed(messageOf(caught))
     } finally {
       setStarting(false)
+    }
+  }
+
+  // A dream that marked documents read without reading them is put right
+  // here: everything it marked in the window goes back into the queue, and
+  // how many that was is the one thing the person wants told.
+  const reread = async (minutes: number) => {
+    setRereading(true)
+    try {
+      const response = await graphql<{ RereadAgentDocuments: number }>(REREAD_DOCUMENTS, { minutes })
+      const put = response.RereadAgentDocuments
+      toast.done(plural(put, { one: 'agent.rereadDoneOne', other: 'agent.rereadDoneOther' }))
+      setRereadMinutes(null)
+      await Promise.all([reload(), progress.reload()])
+    } catch (caught) {
+      toast.failed(messageOf(caught))
+    } finally {
+      setRereading(false)
     }
   }
 
@@ -1830,9 +1910,16 @@ function DreamCard({
       title={t('agent.dream')}
       description={t('agent.dreamHint')}
       action={
-        <button type="button" disabled={starting} onClick={() => void startNow()}>
-          {t('agent.dreamNow')}
-        </button>
+        <>
+          {/* Putting the reading back sits beside asking for a dream: the
+              two are done in the same breath when a dream went wrong. */}
+          <button type="button" disabled={rereading} onClick={() => setRereadMinutes('60')}>
+            {t('agent.reread')}
+          </button>
+          <button type="button" disabled={starting} onClick={() => void startNow()}>
+            {t('agent.dreamNow')}
+          </button>
+        </>
       }
     >
       {/* When it may dream. A person who works at two in the morning
@@ -1899,6 +1986,27 @@ function DreamCard({
         emptyMessage={t('agent.noDreams')}
         countLabel={(count) => plural(count, { one: 'agent.dreamsOne', other: 'agent.dreamsOther' })}
       />
+      {rereadMinutes !== null ? (
+        <FormDialog
+          title={t('agent.rereadTitle')}
+          submitLabel={t('agent.rereadSubmit')}
+          busy={rereading}
+          canSubmit={Number(rereadMinutes) > 0}
+          onClose={() => setRereadMinutes(null)}
+          onSubmit={() => void reread(Number(rereadMinutes))}
+        >
+          <p className="muted">{t('agent.rereadHint')}</p>
+          <label>
+            <span>{t('agent.rereadMinutes')}</span>
+            <input
+              type="number"
+              min={1}
+              value={rereadMinutes}
+              onChange={(event) => setRereadMinutes(event.target.value)}
+            />
+          </label>
+        </FormDialog>
+      ) : null}
     </SettingsSection>
   )
 }
