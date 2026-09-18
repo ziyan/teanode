@@ -214,7 +214,7 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 				// time: a source resumed by hand had More off from the
 				// pass before its pause, lost the computer on its first
 				// page, and sat until its hour with the cursor halfway.
-				midway := cursor["after"] != "" || cursor["before"] != ""
+				midway := partWayThroughTree(cursor)
 				when := self.nextRunOf(source, run.Owner)
 				if source.More || midway {
 					when = time.Now().Add(ingestSoon)
@@ -294,7 +294,7 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 	// minutes, not at the next scheduled hour: the page that failed is
 	// named in the error and the person can see it, and most such
 	// failures -- a deadline, a computer that blinked -- do not repeat.
-	if failure != "" && (cursor["after"] != nil || cursor["before"] != nil) {
+	if failure != "" && partWayThroughTree(cursor) {
 		nextRun = time.Now().Add(ingestRetry)
 		more = true
 	}
@@ -427,6 +427,20 @@ func (self *Agent) sweepUnseen(ctx context.Context, source *models.AgentKnowledg
 		counts.Documents = 0
 	}
 	log.Infof("source %q no longer has %d document(s); removed them with their passages", source.ID, removed)
+}
+
+// partWayThroughTree says whether the cursor stopped in the middle of a
+// tree: a pass with pages read and the end not reached yet.
+//
+// Type-asserted rather than compared against "". The cursor comes back
+// from the database as JSON, so a key no page ever wrote is nil, and nil
+// is not the empty string: every source looked mid-tree, so one whose
+// computer had gone away was made due again in fifteen seconds for ever,
+// whether or not it had anything to resume.
+func partWayThroughTree(cursor map[string]any) bool {
+	after, _ := cursor["after"].(string)
+	before, _ := cursor["before"].(string)
+	return after != "" || before != ""
 }
 
 // countInCursor is a number the cursor is keeping. It comes back from

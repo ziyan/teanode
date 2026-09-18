@@ -123,3 +123,28 @@ func TestACountSurvivesTheCursor(t *testing.T) {
 		t.Fatalf("nothing written down at all: %d", count)
 	}
 }
+
+// A cursor that has never been written is not mid-tree.
+//
+// It used to be compared against the empty string, and a map value that
+// nothing wrote is nil rather than "": every source whose computer was
+// detached was told it had a tree half read, kept "there is more" on its
+// row, and came round again every fifteen seconds until the computer was
+// back -- for a laptop that is closed for the weekend, for days.
+func TestACursorWithNothingInItIsNotMidTree(t *testing.T) {
+	if partWayThroughTree(map[string]any{}) {
+		t.Fatalf("a source that has read nothing is at the beginning, not the middle")
+	}
+	if partWayThroughTree(map[string]any{cursorPassSeen: 12}) {
+		t.Fatalf("what a pass counted says nothing about where it got to")
+	}
+	if partWayThroughTree(map[string]any{"after": ""}) {
+		t.Fatalf("a cursor cleared at the end of the tree is at the beginning again")
+	}
+	if !partWayThroughTree(map[string]any{"after": "posts/dev/general.jsonl"}) {
+		t.Fatalf("a files source that stopped part way down has more to read")
+	}
+	if !partWayThroughTree(map[string]any{"before": "2026-01-01T00:00:00Z"}) {
+		t.Fatalf("and so does a sent source paging back through the years")
+	}
+}
