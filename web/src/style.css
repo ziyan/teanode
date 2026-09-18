@@ -8539,6 +8539,43 @@ a.knowledge-chip {
   text-decoration: none;
 }
 
+/* What a question would carry, inside the dialog that asks it: a page, and
+   under it the facts recall would have put in front of the model. The facts
+   are read rather than aimed at -- they are the answer, not a way anywhere --
+   so they are prose indented under the page's name and not rows of their own,
+   which on a phone would be a list of targets nobody wants to hit. */
+.recall-pages {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+}
+
+.recall-pages > li + li {
+  margin-top: var(--space-3);
+}
+
+/* The page's own name, which is the heading of the facts under it: a link,
+   but read before it is aimed at, so it keeps the text colour rather than
+   the muted one every other text button has. */
+.recall-pages > li > button.link {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* The fact's number is its own marker -- it is how the page cites it, and
+   what the agent says back -- so there is no disc beside it. */
+.recall-facts {
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.recall-facts > li + li {
+  margin-top: 2px;
+}
+
 /* The whole graph, drawn.
 
    A page rather than a card. A drawing that is panned and dragged wants the
