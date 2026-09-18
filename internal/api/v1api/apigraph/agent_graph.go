@@ -959,11 +959,21 @@ func (self *graph) SaveAgentFact(ctx context.Context, arguments SaveAgentFactArg
 			}
 		}
 	}
-	audiences := []models.AgentAudience{models.AudienceAsk}
-	for _, name := range arguments.Audiences {
-		audience := models.AgentAudience(strings.TrimSpace(name))
-		if audience != models.AudienceAsk && models.IsAgentAudience(audience) {
-			audiences = append(audiences, audience)
+	// Nothing said about the audiences and an empty list said on purpose
+	// are two different requests, and they arrive differently: an omitted
+	// argument and an explicit null both reach here as a nil slice, while
+	// an empty list arrives non-nil. Editing a fact used to rewrite its
+	// audiences from the argument either way, so anything that sent the
+	// text alone — the dashboard's fact editor did — quietly narrowed the
+	// fact to the conversation.
+	var audiences []models.AgentAudience
+	if arguments.Audiences != nil {
+		audiences = []models.AgentAudience{models.AudienceAsk}
+		for _, name := range arguments.Audiences {
+			audience := models.AgentAudience(strings.TrimSpace(name))
+			if audience != models.AudienceAsk && models.IsAgentAudience(audience) {
+				audiences = append(audiences, audience)
+			}
 		}
 	}
 
@@ -979,7 +989,9 @@ func (self *graph) SaveAgentFact(ctx context.Context, arguments SaveAgentFactArg
 			fact.Text = text
 			fact.Kind = kind
 			fact.HappenedAt = happened
-			fact.Audiences = audiences
+			if audiences != nil {
+				fact.Audiences = audiences
+			}
 			// Edited by hand, so it is theirs now rather than something
 			// the agent worked out: an inference they corrected is a
 			// fact.
@@ -988,6 +1000,11 @@ func (self *graph) SaveAgentFact(ctx context.Context, arguments SaveAgentFactArg
 			fact.Evidence = append(fact.Evidence, models.Evidence{Kind: models.EvidencePerson})
 			return nil
 		})
+	}
+	// A new fact with nothing said about its audiences is read by the
+	// conversation, which is where every fact starts.
+	if audiences == nil {
+		audiences = []models.AgentAudience{models.AudienceAsk}
 	}
 	written, err := tx.AddAgentFact(&models.AgentFact{
 		AgentID: found.ID, NodeID: node.ID, Kind: kind, Text: text,

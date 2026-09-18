@@ -2386,7 +2386,19 @@ export const en = {
   'knowledge.moveUnderHint':
     'The folder or page {path} should sit inside, such as projects or work/portal. Anything filed under it moves with it.',
   'knowledge.moved': 'Moved',
+  'knowledge.mergePage': 'Merge into another page',
+  'knowledge.mergeInto': 'Merge it into',
+  'knowledge.mergeIntoHint': 'The page {path} becomes part of, such as people/alice-chen. It has to exist already.',
+  'knowledge.mergeNext': 'Continue',
+  'knowledge.merge': 'Merge',
+  'knowledge.mergeBody':
+    'Fold {path} into {into}. Its {facts} fact(s), its links and the {pages} page(s) under it move there, and {path} is gone afterwards.',
+  'knowledge.merged': 'Merged',
   'knowledge.name': 'Name',
+  'knowledge.aliases': 'Other names',
+  'knowledge.aliasesHint':
+    'What else you call it, separated by commas. Your agent finds the page by any of them, so a name it hears in a conversation reaches this page rather than starting a new one.',
+  'knowledge.alsoCalled': 'Also called {names}',
   'knowledge.summary': 'What this page says',
   'knowledge.summaryHint':
     'The opening your agent reads before the facts. A dream rewrites it from them; what you write here stands until then.',
@@ -2413,6 +2425,14 @@ export const en = {
   'knowledge.happened': 'When it was true',
   'knowledge.happenedHint':
     'A year or a month, such as 2023 or 2023-06. Leave it empty for something that is true now.',
+  'knowledge.factAudiences': 'Which runs read it',
+  'knowledge.factAudiencesHint':
+    'Your agent always reads it when you are talking to it. These are the runs that happen without you.',
+  'knowledge.moveFact': 'Move to another page',
+  'knowledge.moveFactTo': 'Move it to',
+  'knowledge.moveFactToHint':
+    'The page this belongs on, such as projects/portal. It has to exist already. The fact keeps its words and where they came from, and takes a new number when it lands.',
+  'knowledge.factMoved': 'Moved',
   'knowledge.strike': 'Forget',
   'knowledge.strikeBody': 'Forget this, and show it to your agent as an example of what not to keep: "{text}"',
   'knowledge.struck': 'Forgotten',

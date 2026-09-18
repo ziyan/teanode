@@ -8,6 +8,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   GraphIcon,
+  MergeIcon,
   MoveIcon,
   PencilIcon,
   PinIcon,
@@ -25,6 +26,10 @@ import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Markdown } from '../components/markdown'
 import { Tooltip } from '../components/tooltip'
 import { GraphExplorer } from '../components/graphExplorer'
+// The set of things to tick, the one the access pages tick roles and
+// permissions with. Four audiences is the short end of what it is for,
+// and it is the only control here that is a list of ticks.
+import { CheckList } from './access/common'
 
 // messageOf is what went wrong, in words a person can act on.
 function messageOf(caught: unknown): string {
@@ -62,12 +67,12 @@ const SEARCH = `query ($query: String!, $first: Int) {
   }
 }`
 
-const SAVE_NODE = `mutation ($path: String!, $kind: String, $name: String, $summary: String, $pinned: Boolean) {
-  SaveAgentNode(path: $path, kind: $kind, name: $name, summary: $summary, pinned: $pinned) { id path }
+const SAVE_NODE = `mutation ($path: String!, $kind: String, $name: String, $summary: String, $aliases: [String!], $pinned: Boolean) {
+  SaveAgentNode(path: $path, kind: $kind, name: $name, summary: $summary, aliases: $aliases, pinned: $pinned) { id path }
 }`
 
-const SAVE_FACT = `mutation ($path: String!, $number: Int, $kind: String, $text: String!, $happened: String) {
-  SaveAgentFact(path: $path, number: $number, kind: $kind, text: $text, happened: $happened) { id number }
+const SAVE_FACT = `mutation ($path: String!, $number: Int, $kind: String, $text: String!, $happened: String, $audiences: [String!]) {
+  SaveAgentFact(path: $path, number: $number, kind: $kind, text: $text, happened: $happened, audiences: $audiences) { id number }
 }`
 
 const HISTORY = `query ($path: String!, $first: Int) {
@@ -78,6 +83,14 @@ const HISTORY = `query ($path: String!, $first: Int) {
 
 const MOVE_NODE = `mutation ($path: String!, $under: String!) {
   MoveAgentNode(path: $path, under: $under) { id path }
+}`
+
+const MERGE_NODES = `mutation ($path: String!, $into: String!) {
+  MergeAgentNodes(path: $path, into: $into) { id path }
+}`
+
+const MOVE_FACT = `mutation ($path: String!, $number: Int!, $to: String!) {
+  MoveAgentFact(path: $path, number: $number, to: $to) { id number }
 }`
 
 const LINK_NODES = `mutation ($path: String!, $to: String!, $relation: String!, $note: String) {
@@ -102,6 +115,18 @@ const RELATIONS = [
   'decided_in',
   'about',
 ]
+
+// The unattended runs a fact can be addressed to, in the order the
+// command line's --applies-to names them. The conversation is not among
+// them: it always reads a fact on a page it is shown, so offering it as
+// something to switch off would be offering something that does not
+// happen.
+const AUDIENCES = ['triage', 'reply', 'research', 'summaries']
+
+// The same four as rows to tick. Made once rather than per render: the
+// list keeps the order it was opened with, and a fresh array every
+// render would have it settle that order again on every keystroke.
+const AUDIENCE_ITEMS = AUDIENCES.map((audience) => ({ id: audience }))
 
 type Node = {
   id: string
@@ -877,6 +902,14 @@ function PageView({
   const [removing, setRemoving] = useState<Fact | null>(null)
   const [removingPage, setRemovingPage] = useState(false)
   const [moving, setMoving] = useState(false)
+  // The fact whose page is being changed, and the page a merge has been
+  // asked for. A merge is asked in two steps -- where to, and then
+  // whether -- because naming the destination is a typing mistake away
+  // from folding this page into the wrong one, and the fold cannot be
+  // taken back.
+  const [movingFact, setMovingFact] = useState<Fact | null>(null)
+  const [merging, setMerging] = useState(false)
+  const [mergingInto, setMergingInto] = useState('')
   // Bumped whenever a link is made from here, which is how the drawing
   // below is told to fetch this page's neighbourhood again. A key would
   // redraw it from scratch and throw away the walk somebody is in the
@@ -930,6 +963,28 @@ function PageView({
     }
   }
 
+  // Merging is not a save either: this page is gone when it is over, and
+  // what is left of it is on the page it was folded into, which is where
+  // the column goes.
+  async function merge(into: string) {
+    setBusy(true)
+    setProblem('')
+    try {
+      const result = await graphql<{ MergeAgentNodes: { id: string; path: string } | null }>(MERGE_NODES, {
+        path: node.path,
+        into,
+      })
+      onDone(t('knowledge.merged'))
+      setMergingInto('')
+      onSelect(result.MergeAgentNodes?.path || into)
+    } catch (caught) {
+      setProblem(messageOf(caught))
+      onFailed(caught)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <>
       <div className="card">
@@ -941,6 +996,12 @@ function PageView({
               <Tag value={t(`knowledge.kind.${node.kind}` as 'knowledge.kind.person')} />
               {node.pinned ? <Tag value={t('knowledge.pinned')} tone="good" /> : null}
             </p>
+            {/* The other names the page answers to, said the way the
+                command line says them, because a page found under a name
+                that is not its heading is otherwise a mystery. */}
+            {node.aliases && node.aliases.length > 0 ? (
+              <p className="muted">{t('knowledge.alsoCalled', { names: node.aliases.join(', ') })}</p>
+            ) : null}
           </div>
           <div className="row-actions">
             <button
@@ -963,6 +1024,20 @@ function PageView({
                 onClick={() => setMoving(true)}
               >
                 <MoveIcon size={16} />
+              </button>
+            ) : null}
+            {/* Merging is refused on a root for the same reason moving
+                one is: a root is where things are filed rather than a
+                page about anything. */}
+            {parentOf(node.path) ? (
+              <button
+                type="button"
+                className="icon-action"
+                title={t('knowledge.mergePage')}
+                aria-label={`${node.path}: ${t('knowledge.mergePage')}`}
+                onClick={() => setMerging(true)}
+              >
+                <MergeIcon size={16} />
               </button>
             ) : null}
             <button
@@ -1058,6 +1133,15 @@ function PageView({
                   onClick={() => setAdding(fact)}
                 >
                   <PencilIcon size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-action"
+                  title={t('knowledge.moveFact')}
+                  aria-label={`#${fact.number}: ${t('knowledge.moveFact')}`}
+                  onClick={() => setMovingFact(fact)}
+                >
+                  <MoveIcon size={16} />
                 </button>
                 <button
                   type="button"
@@ -1179,6 +1263,50 @@ function PageView({
           error={problem}
           onClose={() => setMoving(false)}
           onSubmit={(under) => void move(under)}
+        />
+      ) : null}
+
+      {merging ? (
+        <MergePageDialog
+          node={node}
+          busy={busy}
+          error={problem}
+          onClose={() => setMerging(false)}
+          onSubmit={(into) => {
+            setMerging(false)
+            setMergingInto(into)
+          }}
+        />
+      ) : null}
+
+      {mergingInto ? (
+        <ConfirmDialog
+          title={t('knowledge.mergePage')}
+          body={t('knowledge.mergeBody', {
+            path: node.path,
+            into: mergingInto,
+            facts: page.facts.length,
+            pages: page.children.length,
+          })}
+          confirmLabel={t('knowledge.merge')}
+          busy={busy}
+          error={problem}
+          onClose={() => setMergingInto('')}
+          onConfirm={() => void merge(mergingInto)}
+        />
+      ) : null}
+
+      {movingFact ? (
+        <MoveFactDialog
+          fact={movingFact}
+          path={node.path}
+          busy={busy}
+          error={problem}
+          onClose={() => setMovingFact(null)}
+          onSubmit={async (to) => {
+            if (await run(MOVE_FACT, { path: node.path, number: movingFact.number, to }, t('knowledge.factMoved')))
+              setMovingFact(null)
+          }}
         />
       ) : null}
 
@@ -1334,6 +1462,9 @@ function EditPageDialog({
   const { t } = useTranslation()
   const [name, setName] = useState(node.name)
   const [summary, setSummary] = useState(node.summary)
+  const started = node.aliases ?? []
+  const [aliases, setAliases] = useState(started.join(', '))
+  const named = namesOf(aliases)
 
   return (
     <FormDialog
@@ -1343,12 +1474,26 @@ function EditPageDialog({
       error={error}
       canSubmit={name.trim() !== ''}
       onClose={onClose}
-      onSubmit={() => onSubmit({ name, summary })}
+      onSubmit={() => {
+        const fields: Record<string, unknown> = { name, summary }
+        // Only when they were changed: the server replaces the page's
+        // other names with whatever arrives, so sending the list back
+        // unasked would make every save a rewrite of it -- and a save
+        // from a page whose aliases a dream had just written would undo
+        // that.
+        if (named.join(',') !== started.join(',')) fields.aliases = named
+        onSubmit(fields)
+      }}
     >
       <label>
         <span>{t('knowledge.name')}</span>
         <input value={name} onChange={(event) => setName(event.target.value)} />
       </label>
+      <label>
+        <span>{t('knowledge.aliases')}</span>
+        <input value={aliases} placeholder="alice, ac" onChange={(event) => setAliases(event.target.value)} />
+      </label>
+      <p className="muted">{t('knowledge.aliasesHint')}</p>
       <label>
         <span>{t('knowledge.summary')}</span>
         <textarea rows={8} value={summary} onChange={(event) => setSummary(event.target.value)} />
@@ -1356,6 +1501,15 @@ function EditPageDialog({
       <p className="muted">{t('knowledge.summaryHint')}</p>
     </FormDialog>
   )
+}
+
+// namesOf is a comma-separated line read as a list: trimmed, and with
+// the empties a trailing comma leaves dropped.
+function namesOf(typed: string): string[] {
+  return typed
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name !== '')
 }
 
 // MovePageDialog asks where a page belongs.
@@ -1394,6 +1548,97 @@ function MovePageDialog({
         <input value={under} placeholder="projects" onChange={(event) => setUnder(event.target.value)} />
       </label>
       <p className="muted">{t('knowledge.moveUnderHint', { path: node.path })}</p>
+    </FormDialog>
+  )
+}
+
+// MergePageDialog asks which page this one becomes part of.
+//
+// The same field the move dialog uses, and empty rather than prefilled:
+// a merge has no obvious destination the way a move has the folder it is
+// in already, and a prefilled one on a form whose submit removes this
+// page is an accident waiting for a stray Enter.
+function MergePageDialog({
+  node,
+  busy,
+  error,
+  onClose,
+  onSubmit,
+}: {
+  node: Node
+  busy: boolean
+  error: string
+  onClose: () => void
+  onSubmit: (into: string) => void
+}) {
+  const { t } = useTranslation()
+  const [into, setInto] = useState('')
+  const other = into.trim()
+
+  return (
+    <FormDialog
+      title={t('knowledge.mergePage')}
+      submitLabel={t('knowledge.mergeNext')}
+      busy={busy}
+      error={error}
+      canSubmit={other !== '' && other !== node.path}
+      onClose={onClose}
+      onSubmit={() => onSubmit(other)}
+    >
+      <label>
+        <span>{t('knowledge.mergeInto')}</span>
+        <input
+          autoFocus
+          value={into}
+          placeholder="people/alice-chen"
+          onChange={(event) => setInto(event.target.value)}
+        />
+      </label>
+      <p className="muted">{t('knowledge.mergeIntoHint', { path: node.path })}</p>
+    </FormDialog>
+  )
+}
+
+// MoveFactDialog asks which page a sentence belongs on.
+//
+// The page has to exist: the server refuses to make one on the way,
+// because a mistyped path would file the sentence somewhere nobody
+// reads.
+function MoveFactDialog({
+  fact,
+  path,
+  busy,
+  error,
+  onClose,
+  onSubmit,
+}: {
+  fact: Fact
+  path: string
+  busy: boolean
+  error: string
+  onClose: () => void
+  onSubmit: (to: string) => void
+}) {
+  const { t } = useTranslation()
+  const [to, setTo] = useState('')
+  const other = to.trim()
+
+  return (
+    <FormDialog
+      title={t('knowledge.moveFact')}
+      submitLabel={t('common.move')}
+      busy={busy}
+      error={error}
+      canSubmit={other !== '' && other !== path}
+      onClose={onClose}
+      onSubmit={() => onSubmit(other)}
+    >
+      <p className="knowledge-quote">{cut(fact.text, 200)}</p>
+      <label>
+        <span>{t('knowledge.moveFactTo')}</span>
+        <input autoFocus value={to} placeholder="projects/portal" onChange={(event) => setTo(event.target.value)} />
+      </label>
+      <p className="muted">{t('knowledge.moveFactToHint')}</p>
     </FormDialog>
   )
 }
@@ -1470,6 +1715,11 @@ function EditFactDialog({
   const [text, setText] = useState(fact?.text || '')
   const [kind, setKind] = useState(fact?.kind || 'fact')
   const [happened, setHappened] = useState(fact?.happenedAt ? fact.happenedAt.slice(0, 10) : '')
+  // In the order AUDIENCES names them, on both sides, so that comparing
+  // what was ticked with what the fact arrived with is a comparison of
+  // lists rather than of sets.
+  const started = AUDIENCES.filter((audience) => (fact?.audiences ?? []).includes(audience))
+  const [audiences, setAudiences] = useState<string[]>(started)
 
   return (
     <FormDialog
@@ -1479,7 +1729,15 @@ function EditFactDialog({
       error={error}
       canSubmit={text.trim() !== ''}
       onClose={onClose}
-      onSubmit={() => onSubmit({ text, kind, happened })}
+      onSubmit={() => {
+        const fields: Record<string, unknown> = { text, kind, happened }
+        // Only when they were changed. The server keeps the audiences an
+        // edit says nothing about, and sending them back untouched would
+        // throw away what the agent addressed the fact to the moment
+        // somebody fixed a typo in it.
+        if (audiences.join(',') !== started.join(',')) fields.audiences = audiences
+        onSubmit(fields)
+      }}
     >
       <label>
         <span>{t('knowledge.factText')}</span>
@@ -1505,6 +1763,18 @@ function EditFactDialog({
         />
       </label>
       <p className="muted">{t('knowledge.happenedHint')}</p>
+      <CheckList
+        label={t('knowledge.factAudiences')}
+        hint={t('knowledge.factAudiencesHint')}
+        items={AUDIENCE_ITEMS}
+        selected={audiences}
+        // Back into the order AUDIENCES names them, whatever order they
+        // were ticked in, so that what is sent reads the same way twice
+        // and comparing it with what the fact arrived with is a
+        // comparison of lists.
+        onChange={(chosen) => setAudiences(AUDIENCES.filter((audience) => chosen.includes(audience)))}
+        describe={(item) => t(`agent.audience.${item.id}` as 'agent.audience.triage')}
+      />
     </FormDialog>
   )
 }
