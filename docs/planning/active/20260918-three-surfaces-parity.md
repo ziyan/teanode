@@ -36,8 +36,8 @@ was indexed from anywhere but the agent's own tool, is the last milestone.
 - [x] Milestone 2: the agent's tools (gaps 5, 6, 12, N4) — PR #108
 - [x] Milestone 3: the dashboard (gaps 2, 4, 5, 7, 13, N3, and the archived list of 3) — PRs #109 and #110, checked in Chrome on root@server
 - [x] Milestone 4: a source can be edited, and a question's recall shown (N1, 9) — PRs #111 and #112, checked in Chrome on root@server
-- [ ] Milestone 5: what was indexed can be searched and read from the API, the command line and the dashboard (1)
-- [ ] Milestone 6: todos can be changed by the person (8, N5) — API and command line in PR #111; the drawer's ticking still to do
+- [x] Milestone 5: what was indexed can be searched and read from the API, the command line and the dashboard (1) — PRs #113 and #115; `internal/agent/indexed` is the one search all three call
+- [x] Milestone 6: todos can be changed by the person (8, N5) — API and command line in PR #111, the drawer in PR #114
 
 ## The gaps, as the audit found them
 
@@ -123,4 +123,24 @@ the implementation copies them.
 
 ## Outcomes & Retrospective
 
-Not yet.
+All six milestones are done, in nine pull requests stacked on the plan's
+(#107, #108, #109, #110, #111, #112, #113, #114, #115), each checked in
+Chrome on root@server before it was opened where it changed the
+dashboard, and each tried from the command line against the server where
+it changed that. The deferred document viewer arrived as the smallest
+thing that reads a document: a dialog on the Knowledge page.
+
+What went well: one pull request per surface kept each review short, and
+factoring the document search into `internal/agent/indexed` before adding
+the API meant the three surfaces share one search rather than three that
+would drift. What did not: batches built from `main` rather than from
+each other collided on the same new files, and the second Go batch had to
+be re-based by hand; later batches were told to merge their predecessors
+first. Two resolver habits were found and left alone with a note in the
+dialog rather than changed: a source's fields cannot be cleared, and a
+fact's kind and date are reset by an edit that omits them on the API
+(the tool keeps them).
+
+Left open, and not this plan's: an eslint configuration the pinned
+eslint can read, and a describe test in the server tool that fails in
+every git worktree because it reads Go comments by package path.
