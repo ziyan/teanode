@@ -663,7 +663,7 @@ type RecalledPage struct {
 // is moved and no vectors are backfilled, because an evaluation that
 // changed importance and decay as it ran would be measuring its own last
 // pass.
-func (self *Agent) RecallForQuestion(ctx context.Context, found *models.Agent, owner *models.User, question string) ([]*RecalledPage, error) {
+func (self *Agent) RecallForQuestion(ctx context.Context, tx db.Transaction, found *models.Agent, owner *models.User, question string) ([]*RecalledPage, error) {
 	if self == nil || found == nil || owner == nil {
 		return nil, ErrUnavailable
 	}
@@ -682,10 +682,18 @@ func (self *Agent) RecallForQuestion(ctx context.Context, found *models.Agent, o
 	run.ctx = ctx
 	nodes, facts := run.searchGraph(ctx, words, recallCandidates)
 	var blocks []*recalledBlock
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+	// The caller's transaction when it has one -- a dashboard request
+	// runs whole inside one, and a second opened here would be a second
+	// connection nested in it -- and one of this run's own otherwise.
+	choose := func(tx db.Transaction) (err error) {
 		blocks, err = run.chooseRecalled(tx, nodes, facts)
 		return err
-	}); err != nil {
+	}
+	if tx != nil {
+		if err := choose(tx); err != nil {
+			return nil, err
+		}
+	} else if err := self.settings.Database.TransactionContext(ctx, choose); err != nil {
 		return nil, err
 	}
 	// A loose fact can sit on a page that was expanded too, when it was

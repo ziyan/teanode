@@ -694,7 +694,7 @@ func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentM
 	if question == "" {
 		return &RecallAgentMemoryResult{Pages: []*RecalledAgentPage{}}, nil
 	}
-	recalled, err := worker.RecallForQuestion(ctx, found, principal.User, question)
+	recalled, err := worker.RecallForQuestion(ctx, self.transaction(ctx), found, principal.User, question)
 	if err != nil {
 		return nil, err
 	}
@@ -1007,7 +1007,10 @@ func (self *graph) SaveAgentFact(ctx context.Context, arguments SaveAgentFactArg
 	if worker == nil {
 		return written, nil
 	}
-	folded, err := worker.FoldIntoWhatThePageSays(ctx, tx, written, node)
+	// By words, not by meaning: this request runs whole inside one
+	// transaction and has the page's row lock, and a provider call inside
+	// that held every other writer to the page for as long as it took.
+	folded, err := worker.FoldByWordsIntoWhatThePageSays(tx, written, node)
 	if err != nil {
 		// The fact is written; only the tidying failed.
 		log.Warningf("cannot fold %s#%d into what the page already says: %s", path, written.Number, err)

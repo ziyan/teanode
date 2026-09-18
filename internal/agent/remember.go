@@ -789,6 +789,15 @@ func (self *Agent) FoldIntoWhatThePageSays(ctx context.Context, tx db.Transactio
 		self.meaningOf(ctx, written.AgentID, "remember", factText(written, node.Path, node.Name)))
 }
 
+// FoldByWordsIntoWhatThePageSays is the fold without the fact's meaning:
+// the twin is found by names and words alone. For a caller that is
+// already inside a transaction it cannot leave -- a dashboard request,
+// which runs whole inside one -- and must not hold it, and the page's
+// row lock, through a provider call.
+func (self *Agent) FoldByWordsIntoWhatThePageSays(tx db.Transaction, written *models.AgentFact, node *models.AgentNode) (*models.AgentFact, error) {
+	return self.foldIntoWhatThePageSays(tx, written, node, nil)
+}
+
 // foldIntoWhatThePageSays is the same with the fact's meaning already
 // worked out, for a caller that did it before opening its transaction.
 func (self *Agent) foldIntoWhatThePageSays(tx db.Transaction, written *models.AgentFact, node *models.AgentNode, sense *meaning) (*models.AgentFact, error) {

@@ -203,7 +203,7 @@ func TestRecallingForAQuestionMarksNothingAsUsed(t *testing.T) {
 	node := world.page(t, "projects/portal", "Portal", "The customer-facing portal.",
 		"Runs on the Frankfurt cluster.")
 
-	pages, err := world.run.agent.RecallForQuestion(context.Background(),
+	pages, err := world.run.agent.RecallForQuestion(context.Background(), nil,
 		world.agent, world.run.settings.Owner, "which cluster does the portal run on?")
 	if err != nil {
 		t.Fatalf("RecallForQuestion: %s", err)
