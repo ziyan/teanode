@@ -266,3 +266,91 @@ func TestAKnowledgeSourceTakesOnlyTheCallersOwnMailbox(t *testing.T) {
 		}
 	})
 }
+
+// An empty cron means the source is read only when the person asks for
+// it (migration 0068), and a save that fills one in takes that away.
+//
+// The default belongs to a source being made, where "every night at
+// twenty past three" is the right answer to a question nobody asked. On
+// an update it is an answer to a question nobody asked either, and the
+// wrong one: pausing a source and resuming it -- which is one field, done
+// from a button -- handed it a nightly schedule it had been deliberately
+// set without, and it began reading a checkout every night for ever.
+func TestAPausedSourceKeepsAnEmptyCronEmpty(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+
+	var owner *models.User
+	var sourceId string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if owner, err = tx.CreateUser(&models.User{Username: "cron-owner", Name: "Alice Example"}); err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		agent, err := tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"})
+		if err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		source, err := tx.PutAgentSource(&models.AgentKnowledgeSource{
+			AgentID: agent.ID, Kind: models.SourceComputer, Name: "work", Enabled: true,
+			Specification: models.AgentKnowledgeSpecification{
+				Computer: "laptop", Path: "/srv/work", Format: models.FormatFiles,
+			},
+		})
+		if err != nil {
+			t.Fatalf("PutAgentSource: %s", err)
+		}
+		if source.Cron != "" {
+			t.Fatalf("a source may be stored with no schedule at all, and this one has %q", source.Cron)
+		}
+		sourceId = source.ID
+	})
+
+	principal := &api.Principal{
+		User: owner,
+		Permissions: models.NewEffectivePermissions([]models.Grant{
+			{Permission: models.PermissionAgentUse},
+		}),
+	}
+	resolver := &graph{database: database}
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), principal), tx)
+
+		paused, resumed := false, true
+		for _, step := range []struct {
+			what    string
+			enabled *bool
+		}{
+			{"pausing it", &paused},
+			{"resuming it", &resumed},
+			{"renaming it", nil},
+		} {
+			arguments := SaveAgentKnowledgeSourceArguments{SourceID: sourceId, Enabled: step.enabled}
+			if step.enabled == nil {
+				arguments.Name = "work, the checkout"
+			}
+			saved, err := resolver.SaveAgentKnowledgeSource(ctx, arguments)
+			if err != nil {
+				t.Fatalf("%s: %s", step.what, err)
+			}
+			if saved.Cron != "" {
+				t.Errorf("%s left it reading on %q, and it was read only when asked", step.what, saved.Cron)
+			}
+		}
+
+		// A source being made still gets the nightly default, which is
+		// what the field is for.
+		made, err := resolver.SaveAgentKnowledgeSource(ctx, SaveAgentKnowledgeSourceArguments{
+			Kind: string(models.SourceComputer), Name: "notes",
+			Computer: "laptop", Path: "/srv/notes",
+		})
+		if err != nil {
+			t.Fatalf("SaveAgentKnowledgeSource: %s", err)
+		}
+		if made.Cron == "" {
+			t.Errorf("a new source is read nightly unless the person says otherwise")
+		}
+	})
+}

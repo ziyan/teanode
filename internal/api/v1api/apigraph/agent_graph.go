@@ -1158,7 +1158,12 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 			source.Name = string(source.Kind)
 		}
 	}
-	if source.Cron == "" {
+	// Only when the source is new. An empty cron means "only when they
+	// ask" (migration 0068), and filling it in on every save made that
+	// impossible to keep: pausing a source, resuming it, or renaming it
+	// each handed it a nightly schedule it had been deliberately set
+	// without.
+	if arguments.SourceID == "" && source.Cron == "" {
 		source.Cron = "17 3 * * *"
 	}
 	// Due now when it is new or has just been switched on: the person
