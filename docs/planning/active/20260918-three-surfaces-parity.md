@@ -35,9 +35,9 @@ was indexed from anywhere but the agent's own tool, is the last milestone.
 - [x] Milestone 1: the command line (gaps 3, 8, 10, 11, 14, N2, N3) — PR #107
 - [x] Milestone 2: the agent's tools (gaps 5, 6, 12, N4) — PR #108
 - [x] Milestone 3: the dashboard (gaps 2, 4, 5, 7, 13, N3, and the archived list of 3) — PRs #109 and #110, checked in Chrome on root@server
-- [ ] Milestone 4: a source can be edited, and a question's recall shown (N1, 9)
+- [x] Milestone 4: a source can be edited, and a question's recall shown (N1, 9) — PRs #111 and #112, checked in Chrome on root@server
 - [ ] Milestone 5: what was indexed can be searched and read from the API, the command line and the dashboard (1)
-- [ ] Milestone 6: todos can be changed by the person (8, N5)
+- [ ] Milestone 6: todos can be changed by the person (8, N5) — API and command line in PR #111; the drawer's ticking still to do
 
 ## The gaps, as the audit found them
 
@@ -102,6 +102,15 @@ the implementation copies them.
   typecheck), so nothing noticed. Migrating the config is its own change.
 - The CI lint refuses `/home/<name>/…` in tests and the local one does not;
   the tool batch failed once on it.
+- `SaveAgentKnowledgeSource` changes only the fields that arrive non-empty,
+  so a box the person empties in the edit dialog keeps its old value; the
+  dialog says so rather than pretending. Clearing a field needs a change
+  to the resolver's argument shape and is not in this plan.
+- The Dreams tab's "days left" is measured over the last few finished
+  dreams, and after the model bake-off three of those were trials that
+  read five thousand documents in a quarter hour, so it read "about 3
+  days" while the station model's pace says weeks. It corrects itself as
+  station dreams push the trials out of the window.
 
 ## Decision Log
 
