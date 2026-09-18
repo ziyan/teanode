@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -194,6 +195,74 @@ func TestRecallAgentMemoryAnswersWithWhatATurnWouldCarry(t *testing.T) {
 		}
 		if empty.Pages == nil || len(empty.Pages) != 0 {
 			t.Errorf("a question with no words carries nothing, and carried %v", empty.Pages)
+		}
+	})
+}
+
+// A source that reads a mailbox is the one place in the graph's API where
+// a person names something that is not their own.
+//
+// The ingest run opens the Sent folder of whatever identifier the source
+// carries and makes no check of its own, so the check has to be here. It
+// is the same one every mailbox resolver makes: a mailbox that is not
+// theirs is not found, because whose it is would otherwise be answered by
+// the error.
+func TestAKnowledgeSourceTakesOnlyTheCallersOwnMailbox(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+
+	var owner *models.User
+	var ownMailbox, strangersMailbox *models.Mailbox
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if owner, err = tx.CreateUser(&models.User{Username: "source-owner", Name: "Alice Example"}); err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if _, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if ownMailbox, err = tx.CreateMailbox(&models.Mailbox{UserID: owner.ID, Name: "Personal"}); err != nil {
+			t.Fatalf("CreateMailbox: %s", err)
+		}
+		stranger, err := tx.CreateUser(&models.User{Username: "source-stranger", Name: "Carol Example"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if strangersMailbox, err = tx.CreateMailbox(&models.Mailbox{UserID: stranger.ID, Name: "Personal"}); err != nil {
+			t.Fatalf("CreateMailbox: %s", err)
+		}
+	})
+
+	principal := &api.Principal{
+		User: owner,
+		Permissions: models.NewEffectivePermissions([]models.Grant{
+			{Permission: models.PermissionAgentUse},
+			{Permission: models.PermissionMailRead},
+		}),
+	}
+	resolver := &graph{database: database}
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), principal), tx)
+
+		if _, err := resolver.SaveAgentKnowledgeSource(ctx, SaveAgentKnowledgeSourceArguments{
+			Kind: string(models.SourceSent), Name: "somebody else's sent mail",
+			MailboxID: strangersMailbox.ID,
+		}); err == nil {
+			t.Errorf("a mailbox belonging to somebody else is refused")
+		} else if !errors.Is(err, api.ErrNotFound) {
+			t.Errorf("and refused as not found rather than as forbidden, which would say it exists: %s", err)
+		}
+
+		saved, err := resolver.SaveAgentKnowledgeSource(ctx, SaveAgentKnowledgeSourceArguments{
+			Kind: string(models.SourceSent), Name: "my sent mail", MailboxID: ownMailbox.ID,
+		})
+		if err != nil {
+			t.Fatalf("their own mailbox is taken: %s", err)
+		}
+		if saved.Specification.MailboxID != ownMailbox.ID {
+			t.Errorf("the source reads %q, want %q", saved.Specification.MailboxID, ownMailbox.ID)
 		}
 	})
 }

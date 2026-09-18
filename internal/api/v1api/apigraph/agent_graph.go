@@ -1133,6 +1133,14 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 		source.Specification.Format = arguments.Format
 	}
 	if arguments.MailboxID != "" {
+		// Theirs, and one that exists. A source naming a mailbox is read
+		// by the ingest run with no check of its own -- it opens the Sent
+		// folder of whatever identifier it was handed -- so naming a
+		// stranger's here would file their sent mail into this agent's
+		// pages.
+		if _, err := self.requireMailbox(ctx, models.PermissionMailRead, arguments.MailboxID); err != nil {
+			return nil, err
+		}
 		source.Specification.MailboxID = arguments.MailboxID
 	}
 	if arguments.RootPath != "" {
