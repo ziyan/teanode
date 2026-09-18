@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-09-18
+
+### Added
+
+- A source your agent reads can now say what its records came with. A picture pasted into a thread, or a file sent with a message, becomes something your agent keeps: the bytes go to your object store, the same file shared four times is kept once, and the thread it came from is kept with it. Nothing opens a picture yet, and the source's page tells you how many are waiting for something that can. Files above the limit are named there as passed over rather than stored. The limit is `agent.limits.maxScannedAttachmentBytes`, twenty-five megabytes to begin with, and one source can be given its own. (#122)
+
 ## [0.35.1] - 2026-09-18
 
 ### Fixed
