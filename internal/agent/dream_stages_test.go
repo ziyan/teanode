@@ -69,3 +69,66 @@ func TestRehearsePromptIsAboutThePersonsOwnLife(t *testing.T) {
 		t.Fatalf("a quiet week leaves the heading out:\n%s", quiet)
 	}
 }
+
+// The prompt that decides what is worth opening is spending the person's
+// money, so it has to say so, name what is worth it and what is not, and
+// leave the model a way to answer "none of these" -- which is the right
+// answer for most batches of a chat archive.
+func TestTheAttachmentPromptSaysWhatIsWorthTheMoney(t *testing.T) {
+	prompt, err := render("attachments.txt", map[string]any{
+		"PersonName": "Alice",
+		"Count":      3,
+		"Most":       1,
+		"Items":      "[doc-1] shot.png — 412 kB — image/png — in #support\n    bob: look at this",
+	})
+	if err != nil {
+		t.Fatalf("render: %s", err)
+	}
+	for _, wanted := range []string{
+		"Alice", "shot.png", "#support", "look at this",
+		"their money", "avatar", "logo", "meme", "few kilobytes",
+		`{"open": [{"id":`, "An empty list is the right answer",
+	} {
+		if !strings.Contains(prompt, wanted) {
+			t.Fatalf("the prompt says %q:\n%s", wanted, prompt)
+		}
+	}
+}
+
+// The prompt that reads a picture asks for what a person wants months
+// later: what it shows, and the text in it read out rather than
+// summarised, with the words that carry meaning named one by one.
+func TestThePicturePromptAsksForTheWordsInTheImage(t *testing.T) {
+	prompt, err := render("picture.txt", map[string]any{
+		"PersonName": "Alice",
+		"Name":       "shot.png",
+		"Where":      "in #support, thread the container will not start",
+		"Said":       "look at this, it dies the moment it starts",
+		"Why":        "the failing container in the #support thread",
+	})
+	if err != nil {
+		t.Fatalf("render: %s", err)
+	}
+	for _, wanted := range []string{
+		"Alice", "shot.png", "#support", "look at this",
+		"word for\nword", "do not summarise", "Error messages", "Timestamps",
+		"Container is empty", "Leave out the furniture",
+	} {
+		if !strings.Contains(prompt, wanted) {
+			t.Fatalf("the prompt says %q:\n%s", wanted, prompt)
+		}
+	}
+
+	// With nothing said around the picture, the section is absent rather
+	// than empty: a heading with nothing under it reads as a message that
+	// said nothing rather than as a record that kept nothing.
+	quiet, err := render("picture.txt", map[string]any{
+		"PersonName": "Alice", "Name": "shot.png",
+	})
+	if err != nil {
+		t.Fatalf("render: %s", err)
+	}
+	if strings.Contains(quiet, "What was said in the message") {
+		t.Fatalf("a picture nobody said anything about leaves the heading out:\n%s", quiet)
+	}
+}

@@ -54,3 +54,44 @@ func TestTheReadingStillReadsTheWayItDid(t *testing.T) {
 		}
 	}
 }
+
+// The three things that can become of a file are told apart, and each in
+// its own words.
+//
+// One number for all of them would be the lie the count was split up to
+// avoid: a person shown "1,020 files" cannot tell whether the agent has
+// yet to look at them, has looked and decided against them, or has read
+// them. Each says which it is.
+func TestTheThreeThingsThatBecomeOfAFileAreSaidApart(t *testing.T) {
+	progress := &Progress{Read: 40, Waiting: 10, Unreadable: 1020, Declined: 300, Described: 47}
+	line := progress.Describe()
+	for _, want := range []string{
+		"40 of 50 documents read, 10 waiting",
+		"1,020 files nothing here can read yet",
+		"300 files it decided against opening",
+		"47 files it opened and read",
+	} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("the line lacks %q: %q", want, line)
+		}
+	}
+
+	// One of each, in the singular.
+	one := (&Progress{Read: 1, Unreadable: 1, Declined: 1, Described: 1}).Describe()
+	for _, want := range []string{
+		"1 file nothing here can read yet",
+		"1 file it decided against opening",
+		"1 file it opened and read",
+	} {
+		if !strings.Contains(one, want) {
+			t.Fatalf("the line lacks %q: %q", want, one)
+		}
+	}
+
+	// A source of nothing but files the agent decided against: something
+	// was indexed, so "nothing has been indexed yet" would be wrong.
+	only := (&Progress{Declined: 7}).Describe()
+	if only != "7 files it decided against opening" {
+		t.Fatalf("a source of nothing but declined files: %q", only)
+	}
+}

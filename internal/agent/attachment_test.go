@@ -41,7 +41,7 @@ func TestUserTurnCarriesWhatTheModelCanRead(t *testing.T) {
 		{ID: "vid", Name: "clip.mp4", ContentType: "video/mp4", Size: 1 << 20},
 	}
 	references := []models.AgentReference{{ItemID: "item1", ThreadID: "thread1", Subject: "Thursday?", From: "maria@example.net"}}
-	message := userTurn(context.Background(), store, "What do you make of these?", attachments, references)
+	message := userTurn(context.Background(), store, "What do you make of these?", attachments, nil, references)
 	for _, want := range []string{"<references>", "item_id item1", `subject "Thursday?"`, "What do you make of these?", `<attachment name="notes.txt"`, "hello", "clip.mp4 (video/mp4, 1.0 MB)", "cannot open these kinds of file", "[picture attached: boat.png"} {
 		if !strings.Contains(message.Content, want) {
 			t.Fatalf("the turn lacks %q:\n%s", want, message.Content)
@@ -71,7 +71,7 @@ func TestUserTurnCarriesWhatTheModelCanRead(t *testing.T) {
 
 // A turn without files or references is the words alone.
 func TestUserTurnPlain(t *testing.T) {
-	message := userTurn(context.Background(), nil, "hi", nil, nil)
+	message := userTurn(context.Background(), nil, "hi", nil, nil, nil)
 	if message.Content != "hi" || len(message.Parts) != 0 {
 		t.Fatalf("message %+v", message)
 	}

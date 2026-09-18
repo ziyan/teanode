@@ -50,6 +50,13 @@ type AskSettings struct {
 	Attachments []*models.AgentAttachment
 	References  []models.AgentReference
 
+	// Pictures are images the caller puts in the turn itself rather than
+	// files of the person's: a night looking at an attachment whose bytes
+	// it fetched out of the store. They are shown to the model as the
+	// same image parts a person's own picture is, and they belong to this
+	// turn alone -- nothing stores them, so a later round names nothing.
+	Pictures []llm.ContentPart
+
 	// Surface is where the answer goes: drawer, phone, cli, api or mail.
 	Surface string
 
@@ -624,7 +631,7 @@ func (self *AskRun) turn() error {
 	}); err != nil {
 		return err
 	}
-	history = append(history, userTurn(ctx, self.agent.settings.Storage, settings.Message, settings.Attachments, settings.References))
+	history = append(history, userTurn(ctx, self.agent.settings.Storage, settings.Message, settings.Attachments, settings.Pictures, settings.References))
 	history[len(history)-1].SourceID = savedTurn.ID
 
 	// The catalog as this person sees it, and what the connected servers
