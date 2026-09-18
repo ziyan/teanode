@@ -254,7 +254,7 @@ func fileAttachments(t *testing.T, database db.Database, run *Run, store storage
 				Bytes: size, HappenedAt: &happened,
 				Metadata: map[string]any{
 					"contentType": file.contentType,
-					"path":        "/home/records/" + file.name,
+					"path":        "~/records/" + file.name,
 					"author":      "alice",
 					"channel":     "#support",
 					"thread":      "the container will not start",
