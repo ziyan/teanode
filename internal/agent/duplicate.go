@@ -133,11 +133,40 @@ func pageIdentity(path string, kind models.AgentNodeKind, name string) (string, 
 	if !models.IsAgentNodeKind(kind) {
 		kind = kindOfPath(path)
 	}
+	// The root of the graph is folders and the person's own page. A
+	// model that files a fact at "mc" -- a chat channel's name cut to a
+	// slug -- made a page beside people/ and projects/ that nothing lists
+	// under a folder and the dashboard cannot move or merge, since those
+	// are hidden on a root. It goes under the folder its kind belongs to.
+	if !strings.Contains(path, "/") && path != models.PathSelf && kind != models.NodeFolder {
+		path = models.JoinPath(folderOfKind(kind), path)
+	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = nameFromSlug(models.LastSegment(path))
 	}
 	return path, kind, name
+}
+
+// folderOfKind is the root folder a page of a kind lives under, the
+// inverse of kindOfPath: a topic under topics/, a thing under things/, and
+// what is neither under notes/, where anything with no better home goes.
+func folderOfKind(kind models.AgentNodeKind) string {
+	switch kind {
+	case models.NodePerson:
+		return models.PathPeople
+	case models.NodeProject:
+		return models.PathProjects
+	case models.NodePlace:
+		return models.PathPlaces
+	case models.NodeThing:
+		return models.PathThings
+	case models.NodePeriod:
+		return models.PathTime
+	case models.NodeTopic, models.NodeOrganization:
+		return models.PathTopics
+	}
+	return models.PathNotes
 }
 
 // hasAlias says whether a page already answers to a name.
