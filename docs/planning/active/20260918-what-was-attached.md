@@ -151,6 +151,13 @@ server put it in the store through `internal/storage` and record the key on the
 document. Key the object by the hash, so an upload of a file already in the
 store is a no-op and re-scanning costs nothing.
 
+An attachment larger than twenty-five megabytes is not reported and not
+uploaded. The daemon says so on the source's page, in the same place it says
+what it cannot read, so a person can see what was passed over rather than
+wondering. Twenty-five megabytes takes in every screenshot and nearly every
+document while leaving out the videos and the disk images, which are the things
+that would fill a store without teaching the agent anything.
+
 The decision to upload every attachment rather than only the ones that turn out
 to be worth reading was made deliberately; see the Decision Log.
 
@@ -337,6 +344,11 @@ chose this. It costs the space and means a decision the agent got wrong can be
 revisited later without the person's machine being attached again. The opposite
 choice, uploading on demand, keeps the store small but ties the first read to the
 laptop being awake.
+
+**Twenty-five megabytes is the limit, for now.** The owner set it. It is
+generous enough for screenshots and documents, which is where the meaning is,
+and mean enough to leave out video and archives, which are most of the bulk. It
+is one constant and can be raised.
 
 **Preparation lives in the records script, not in the night.** The night could
 have been given the computer tools — `shell` and `filesystem` both exist and
