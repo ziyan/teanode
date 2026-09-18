@@ -81,7 +81,7 @@ func TestPausingASourceKeepsWhatItFound(t *testing.T) {
 			AgentID: run.agent.ID, Kind: models.SourceComputer, Name: "work",
 			Enabled: true, Cron: "17 3 * * *", NextRunAt: &now,
 			Specification: models.AgentKnowledgeSpecification{
-				Computer: "laptop", Path: "/home/alice/projects", Format: models.FormatFiles,
+				Computer: "laptop", Path: "~/projects", Format: models.FormatFiles,
 			},
 		})
 		if err != nil {
@@ -183,7 +183,7 @@ func TestAddingASourceTakesAPlaceInTheGraphAndAMailbox(t *testing.T) {
 		return result.Content, nil
 	}
 
-	if _, err := call(`{"action":"add","kind":"computer","name":"work","computer":"laptop","path":"/home/bob/projects","rootPath":"projects/portal"}`); err != nil {
+	if _, err := call(`{"action":"add","kind":"computer","name":"work","computer":"laptop","path":"~/projects","rootPath":"projects/portal"}`); err != nil {
 		t.Fatalf("add: %s", err)
 	}
 	if _, err := call(`{"action":"add","kind":"sent","name":"my mail","mailboxId":"Personal","rootPath":"people"}`); err != nil {
