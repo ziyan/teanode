@@ -6,6 +6,81 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-09-18
+
+### Added
+
+- A conversation can be put away from the command line, the way the drawer
+  does it: `teanode agent conversation archive` and `unarchive`, with
+  `conversation list --archived` to see what is in the archive. (#107)
+- `teanode agent conversation show` pages back through a long conversation
+  with `--offset`, and prints the agent's task list under the messages with
+  the done ones ticked. (#107)
+- `teanode agent run list` narrows to some kinds of run with `--kind`, given
+  once per kind or comma-separated, and to what they were about with
+  `--query`. (#107)
+- `teanode agent run stop` stops a run where it is, for the one that is off
+  doing something you no longer want. What it has already done stands. (#107)
+- A schedule can be changed instead of removed and written again:
+  `teanode agent schedule set` takes a name, a cron line, a prompt and where
+  the answer goes, and only what you give changes. `schedule enable` and
+  `schedule disable` turn one on and off without losing it. (#107)
+- `teanode agent memory page --alias` settles the other names a page is known
+  by, so that the words you actually use find it. (#107)
+- Ask your agent to stop reading one of your sources and it pauses it now,
+  instead of removing it. Pausing keeps every document and passage it found
+  and picks up where it left off when you ask it to start again; removing is
+  still there for somewhere you are done with, and still forgets everything.
+  This is what the dashboard and `teanode agent knowledge pause` have always
+  done, and now the agent does it too. (#108)
+- Your agent can say where in your pages a new source is filed, and which
+  mailbox to read your sent mail from, when it adds one for you — the two
+  things `--under` and `--mailbox` have always given the command line. A
+  mailbox you have not given it is refused. (#108)
+- Asked to correct something it knows, your agent rewrites that one sentence
+  where it stands rather than writing a second one beside it. The fact keeps
+  its number, so anything that cited it still points at it, along with the
+  words it was first learned from and the day it learned them. (#108)
+- Your agent can read a page's history — every change to it, who made it, and
+  what the page used to say — which is what it needs to answer "where did that
+  come from?" instead of guessing. The dashboard and `teanode agent memory
+  history` already showed it. (#108)
+- The Knowledge page can now do three things only the command line could. A
+  page can be merged into another one, which folds its facts, its links and
+  the pages under it into the page you name and asks you to confirm before it
+  does, since the page it merges away is gone afterwards. A single fact can be
+  moved to another page from its own row, keeping its words and where they came
+  from. And a page's other names — what else you call it, which is how your
+  agent finds it under a name that is not its heading — can be read on the page
+  and edited beside its name. (#109)
+- The fact editor says which runs read the fact: sorting, replies, research
+  and summaries, each a box to tick. Your agent always reads it when you are
+  talking to it; these are the runs that happen without you. (#109)
+- Adding a place for your agent to read, on the Agent page, now asks the same
+  things the command line does: where in its pages what it finds is filed, how
+  often to read it, and — for your own sent mail — which mailbox to read.
+  Leave the first two empty and nothing changes: it files what it finds where
+  it thinks it belongs and reads the place once a night. (#110)
+- A dream that marked documents read without reading them can be put right
+  from the dashboard. Re-read, beside Dream now, asks how far back to go and
+  says how many documents are waiting to be read again. (#110)
+- A new conversation in the agent drawer can be given what it is for before
+  you say anything, so its first turn already works toward it. The same field
+  as the goal you set on a conversation afterwards. (#110)
+- Conversations you are done with can be archived from the drawer instead of
+  deleted. They leave the list, keep everything in them, and are under
+  Archived at the foot of the picker, where they can be put back. (#110)
+
+### Fixed
+
+- A night's reading no longer skips a batch of documents the model's window
+  could not hold. The batch is read as two halves instead, down to a single
+  document that still does not fit, which is the one thing skipped. (#105)
+- Editing a fact in the dashboard no longer narrows who reads it. Correcting
+  the wording of a fact addressed to the sorting run left it addressed to the
+  conversation alone, with nothing on the page to say so. An edit that says
+  nothing about the audiences now keeps the ones the fact has. (#109)
+
 ## [0.28.2] - 2026-09-18
 
 ### Fixed
