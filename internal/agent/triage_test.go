@@ -66,6 +66,10 @@ func TestTriageThroughTheWorker(t *testing.T) {
 
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
+	// The night is not what this is about, and whether one is due depends
+	// on the wall clock: the tick queued a dream in CI at one in the morning
+	// and the test saw two jobs where it expected one.
+	configuration.Agent.Features.Dreaming = new(bool)
 	configuration.Agent.Providers = []config.AgentProvider{{Name: "fake", Kind: "openai", BaseURL: provider.URL, APIKey: "k"}}
 	configuration.Agent.Models.Default = "fake:sorter"
 	registry, err := llm.Open(&configuration.Agent)
