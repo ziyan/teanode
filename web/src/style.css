@@ -4885,19 +4885,70 @@ label.check-list-item {
   flex-wrap: wrap;
 }
 
+/* The conversation's task list, between the transcript and the box the
+   person types in. The list scrolls when it is long; the line that adds to
+   it does not, so it stays in reach of an item near the top. */
 .agent-drawer-todo {
-  list-style: none;
-  margin: 0;
+  flex: none;
   padding: 6px 12px;
   border-top: 1px solid var(--border);
   font-size: 12.5px;
+}
+
+.agent-drawer-todo ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   max-height: 120px;
   overflow-y: auto;
+}
+
+.agent-drawer-todo li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .agent-drawer-todo li.done {
   color: var(--muted);
   text-decoration: line-through;
+}
+
+/* The box and its words are one target, at the size of the line rather
+   than of a settings form's label. */
+.agent-drawer-todo label.checkbox {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  gap: 6px;
+  font-size: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.agent-drawer-todo label.checkbox input {
+  flex: none;
+}
+
+.agent-drawer-todo .icon-action {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
+.agent-drawer-todo-add {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.agent-drawer-todo-add input {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 3px 6px;
+  font-size: inherit;
 }
 
 /* The marks in the head for what of the person's own is attached. */

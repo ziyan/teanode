@@ -1060,6 +1060,12 @@ export const zh: Catalog = {
   'agentDrawer.uploading': '上传中…',
   'agentDrawer.dropHere': '将文件拖放到这里',
   'agentDrawer.filesOnly': '（文件）',
+  'agentDrawer.todoAdd': '加入清单',
+  'agentDrawer.todoPlaceholder': '要做的事…',
+  'agentDrawer.todoRemove': '从清单移除',
+  'agentDrawer.todoAdded': '已加入清单。',
+  'agentDrawer.todoRemoved': '已从清单移除。',
+  'agentDrawer.todoFailed': '无法修改清单。',
   'agentDrawer.goal.set': '设定目标',
   'agentDrawer.goal.hint':
     '助手应持续努力的方向，一句话。它会自行进行回合，直到达成或你清除为止；也可以直接在对话中告诉它。',
