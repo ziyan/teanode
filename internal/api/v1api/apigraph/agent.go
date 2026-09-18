@@ -200,9 +200,30 @@ type UpdateAgentArguments struct {
 	Confirm       *[]string                  `json:"confirm"`
 	AskModel      *string                    `json:"askModel"`
 
+	// DreamFrom and DreamUntil are the hours of this person's night, as
+	// "HH:MM" in their own zone. The nightly run happens between them and
+	// nowhere else, so a person who works at two in the morning can move
+	// it rather than have their agent rewrite a page they are reading.
+	DreamFrom  *string `json:"dreamFrom"`
+	DreamUntil *string `json:"dreamUntil"`
+
 	// Forget deletes the agent and everything it holds; the other fields
 	// are ignored when it is set.
 	Forget *bool `json:"forget"`
+}
+
+// clockTime reads an hour of the day as "HH:MM", or empty for the
+// default. Anything else is refused rather than quietly ignored: a
+// window nobody can read is a night that never happens.
+func clockTime(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	if _, err := time.Parse("15:04", trimmed); err != nil {
+		return "", fmt.Errorf("%q is not an hour of the day; write it as 01:00", trimmed)
+	}
+	return trimmed, nil
 }
 
 // GrantAgentMailboxArguments name the mailbox and its policy.
@@ -493,6 +514,20 @@ func (self *graph) UpdateAgent(ctx context.Context, arguments UpdateAgentArgumen
 				return fmt.Errorf("%q is not one of the models the operator offers", choice)
 			}
 			agent.AskModel = choice
+		}
+		if arguments.DreamFrom != nil {
+			from, err := clockTime(*arguments.DreamFrom)
+			if err != nil {
+				return err
+			}
+			agent.DreamFrom = from
+		}
+		if arguments.DreamUntil != nil {
+			until, err := clockTime(*arguments.DreamUntil)
+			if err != nil {
+				return err
+			}
+			agent.DreamUntil = until
 		}
 		return nil
 	})

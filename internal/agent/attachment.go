@@ -142,6 +142,16 @@ func referenceLines(references []models.AgentReference) string {
 		if reference.From != "" {
 			parts = append(parts, "from "+reference.From)
 		}
+		if reference.Path != "" {
+			// A page of memory, not a message: the tool that reads and
+			// changes it is named, since that is what the person points
+			// at a page for.
+			line := "memory page " + reference.Path
+			if reference.Name != "" {
+				line += fmt.Sprintf(" (%s)", reference.Name)
+			}
+			parts = append(parts, line+": read it whole with the memory tool (get) before answering, and change it with the same tool if asked -- its opening, its facts, its links")
+		}
 		if len(parts) > 0 {
 			lines = append(lines, "- "+strings.Join(parts, ", "))
 		}

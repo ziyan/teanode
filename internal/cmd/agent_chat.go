@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/urfave/cli/v3"
 
@@ -71,8 +72,15 @@ func newAgentConversationCommand() *cli.Command {
 				Name:      "new",
 				Usage:     "start a named conversation",
 				ArgsUsage: "[title]",
-				Flags:     []cli.Flag{JSONFlag()},
+				Flags:     []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "goal", Usage: "a goal for the agent to keep working toward in it"}},
 				Action:    runAgentConversationNew,
+			},
+			{
+				Name:      "goal",
+				Usage:     "what the agent keeps working toward in a conversation: set it, clear it, or list the conversations that have one",
+				ArgsUsage: "[conversation-id] [goal]",
+				Flags:     []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "clear", Usage: "drop the goal and stop the turn it was taking"}},
+				Action:    runAgentConversationGoal,
 			},
 			{
 				Name:      "rename",
@@ -105,9 +113,11 @@ func newAgentRunCommand() *cli.Command {
 		Usage: "what the agent did on its own: the transcripts of its runs",
 		Commands: []*cli.Command{
 			{
-				Name:   "list",
-				Usage:  "recent runs, newest first",
-				Flags:  []cli.Flag{JSONFlag(), &cli.IntFlag{Name: "first", Usage: "how many", Value: 50}},
+				Name:  "list",
+				Usage: "recent runs, newest first",
+				Flags: []cli.Flag{JSONFlag(), &cli.IntFlag{Name: "first", Usage: "how many", Value: 50}, &cli.IntFlag{Name: "offset", Usage: "how many to skip, for the next page"},
+					&cli.BoolFlag{Name: "all", Usage: "every person's runs, for an operator with agent:act"},
+					&cli.StringFlag{Name: "agent", Usage: "one person's runs by their agent id, for an operator with agent:act"}},
 				Action: runAgentRunList,
 			},
 			{
@@ -156,7 +166,7 @@ func runAgentAsk(ctx context.Context, command *cli.Command) error {
 	}
 	conversationId := command.String("conversation")
 	if command.Bool("new") {
-		conversation, err := client.StartAgentConversation(ctx, connection, "")
+		conversation, err := client.StartAgentConversation(ctx, connection, "", "")
 		if err != nil {
 			return describeError(command, err)
 		}
@@ -253,7 +263,7 @@ func askQuestion(command *cli.Command, question, choices string) (string, error)
 		}
 	}
 	_, _ = fmt.Fprint(command.Writer, "> ")
-	reader := bufio.NewReader(command.Reader)
+	reader := readerOf(command.Reader)
 	line, err := reader.ReadString('\n')
 	if err != nil && line == "" {
 		return "", nil
@@ -268,7 +278,7 @@ func askConfirmation(command *cli.Command, summary, risk string) (bool, error) {
 		_, _ = fmt.Fprintln(command.Writer, "This cannot be undone.")
 	}
 	_, _ = fmt.Fprint(command.Writer, "Allow it? [y/N] ")
-	reader := bufio.NewReader(command.Reader)
+	reader := readerOf(command.Reader)
 	line, err := reader.ReadString('\n')
 	if err != nil && line == "" {
 		return false, nil
@@ -284,14 +294,14 @@ func runAgentChat(ctx context.Context, command *cli.Command) error {
 	}
 	conversationId := command.String("conversation")
 	if command.Bool("new") {
-		conversation, err := client.StartAgentConversation(ctx, connection, "")
+		conversation, err := client.StartAgentConversation(ctx, connection, "", "")
 		if err != nil {
 			return describeError(command, err)
 		}
 		conversationId = conversation.ID
 	}
 	_, _ = fmt.Fprintln(command.Writer, "Talk to your agent; an empty line or Ctrl-D leaves.")
-	reader := bufio.NewReader(command.Reader)
+	reader := readerOf(command.Reader)
 	for {
 		_, _ = fmt.Fprint(command.Writer, "> ")
 		line, err := reader.ReadString('\n')
@@ -358,7 +368,11 @@ func printTranscript(command *cli.Command, view *client.AgentConversationView) e
 	if view.Conversation.Kind == "main" {
 		title = "the main conversation"
 	}
-	_, _ = fmt.Fprintf(command.Writer, "%s (%s), %d message(s)\n\n", title, view.Conversation.ID, view.Total)
+	_, _ = fmt.Fprintf(command.Writer, "%s (%s), %d message(s)\n", title, view.Conversation.ID, view.Total)
+	if view.Conversation.Goal != "" {
+		_, _ = fmt.Fprintf(command.Writer, "%s\n", goalLine(view.Conversation))
+	}
+	_, _ = fmt.Fprintln(command.Writer)
 	for _, message := range view.Messages {
 		when := message.CreatedAt.Local().Format("15:04")
 		switch message.Role {
@@ -393,7 +407,7 @@ func runAgentConversationNew(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	conversation, err := client.StartAgentConversation(ctx, connection, strings.Join(command.Args().Slice(), " "))
+	conversation, err := client.StartAgentConversation(ctx, connection, strings.Join(command.Args().Slice(), " "), command.String("goal"))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -404,6 +418,73 @@ func runAgentConversationNew(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
+// runAgentConversationGoal sets, clears, or lists the goals. With no
+// conversation it lists the ones that have a goal, which is the question
+// somebody asks when they want to know what their agent is off doing.
+func runAgentConversationGoal(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	conversationId := command.Args().First()
+	if conversationId == "" {
+		if command.Bool("clear") {
+			return fmt.Errorf("which conversation? give its id")
+		}
+		conversations, err := client.SearchAgentConversations(ctx, connection, false, "")
+		if err != nil {
+			return describeError(command, err)
+		}
+		withGoals := make([]*client.AgentConversation, 0, len(conversations))
+		for _, conversation := range conversations {
+			if conversation.Goal != "" {
+				withGoals = append(withGoals, conversation)
+			}
+		}
+		if command.Bool("json") {
+			return PrintJSON(withGoals)
+		}
+		rows := make([][]string, 0, len(withGoals))
+		for _, conversation := range withGoals {
+			next := ""
+			if conversation.GoalNextAt != nil {
+				next = conversation.GoalNextAt.Local().Format("2006-01-02 15:04")
+			}
+			rows = append(rows, []string{conversation.ID, conversation.GoalState, conversation.Goal, conversation.GoalNote, next})
+		}
+		return printTable([]string{"id", "state", "goal", "note", "next"}, rows)
+	}
+	goal := strings.TrimSpace(strings.Join(command.Args().Slice()[1:], " "))
+	if command.Bool("clear") {
+		goal = ""
+	} else if goal == "" {
+		return fmt.Errorf("say what to work toward, or --clear to drop the goal")
+	}
+	conversation, err := client.UpdateAgentConversation(ctx, connection, conversationId, "", nil, &goal)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(conversation)
+	}
+	if conversation.Goal == "" {
+		_, _ = fmt.Fprintf(command.Writer, "%s: the goal is cleared\n", conversation.ID)
+		return nil
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s\n", goalLine(conversation))
+	return nil
+}
+
+// goalLine is how a goal reads in a terminal, under the conversation it is
+// on: the words, the state, and the note when there is one.
+func goalLine(conversation *client.AgentConversation) string {
+	line := fmt.Sprintf("goal: %s (%s)", conversation.Goal, conversation.GoalState)
+	if conversation.GoalNote != "" {
+		line += "\n  " + conversation.GoalNote
+	}
+	return line
+}
+
 func runAgentConversationRename(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() < 2 {
 		return fmt.Errorf("give the conversation id and the new title")
@@ -412,7 +493,7 @@ func runAgentConversationRename(ctx context.Context, command *cli.Command) error
 	if err != nil {
 		return err
 	}
-	conversation, err := client.UpdateAgentConversation(ctx, connection, command.Args().First(), strings.Join(command.Args().Slice()[1:], " "), nil)
+	conversation, err := client.UpdateAgentConversation(ctx, connection, command.Args().First(), strings.Join(command.Args().Slice()[1:], " "), nil, nil)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -465,18 +546,32 @@ func runAgentRunList(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	runs, err := client.ListAgentRuns(ctx, connection, int(command.Int("first")))
+	first, offset := int(command.Int("first")), int(command.Int("offset"))
+	var runs []*client.AgentRunSummary
+	var total int64
+	if command.Bool("all") || command.String("agent") != "" {
+		runs, total, err = client.ListAllAgentRuns(ctx, connection, first, offset, command.String("agent"))
+	} else {
+		runs, total, err = client.ListAgentRuns(ctx, connection, first, offset, "")
+	}
 	if err != nil {
 		return describeError(command, err)
 	}
 	if command.Bool("json") {
-		return PrintJSON(runs)
+		return PrintJSON(map[string]any{"total": total, "runs": runs})
 	}
 	rows := make([][]string, 0, len(runs))
 	for _, run := range runs {
-		rows = append(rows, []string{run.ID, run.JobKind, run.LastAt.Local().Format("2006-01-02 15:04"), run.Title})
+		rows = append(rows, []string{run.ID, run.JobKind, run.LastAt.Local().Format("2006-01-02 15:04"),
+			fmt.Sprintf("%d/%d", run.Usage.PromptTokens+run.Usage.CacheReadTokens, run.Usage.CompletionTokens), fmt.Sprintf("%.4f", run.Usage.Cost), run.Title})
 	}
-	return printTable([]string{"id", "kind", "when", "what"}, rows)
+	if err := printTable([]string{"id", "kind", "when", "tokens in/out", "cost", "what"}, rows); err != nil {
+		return err
+	}
+	if int64(offset+len(runs)) < total {
+		_, _ = fmt.Fprintf(command.Writer, "%d of %d; --offset %d for the next\n", offset+len(runs), total, offset+len(runs))
+	}
+	return nil
 }
 
 func runAgentRunShow(ctx context.Context, command *cli.Command) error {
@@ -531,3 +626,25 @@ func toolLine(text string) string {
 	}
 	return text
 }
+
+// readerOf is one buffered reader per input for the life of the program.
+//
+// A buffered reader takes more than a line from what it is given, so one
+// made afresh for each confirmation card kept the rest of a piped stdin
+// and the next card read end-of-file, which declines: every card after the
+// first said no with the person's yes still in the buffer.
+func readerOf(input io.Reader) *bufio.Reader {
+	readersMutex.Lock()
+	defer readersMutex.Unlock()
+	if reader, ok := readers[input]; ok {
+		return reader
+	}
+	reader := bufio.NewReader(input)
+	readers[input] = reader
+	return reader
+}
+
+var (
+	readers      = map[io.Reader]*bufio.Reader{}
+	readersMutex sync.Mutex
+)

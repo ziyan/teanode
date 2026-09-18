@@ -105,6 +105,13 @@ type Database interface {
 	// must not be able to hold a delivery's transaction open.
 	SpamOperation
 
+	// VectorIndexing says whether the database ranks vectors itself, and
+	// EnsureVectorIndex builds the index one table needs for one model.
+	// Both are outside any transaction: the first is asked once at start,
+	// the second is DDL. See database_vector.go.
+	VectorIndexing() bool
+	EnsureVectorIndex(table VectorTable, model string, dimension int) error
+
 	// migrate database schema
 	Migrate() error
 	UnknownMigrations() ([]string, error)
@@ -144,6 +151,11 @@ type Transaction interface {
 	AttachmentOperation
 	ReplyOperation
 	EmbeddingOperation
+	VectorOperation
+	GraphOperation
+	KnowledgeOperation
+	DreamOperation
+	RevisionOperation
 	MemoryOperation
 	ConnectionOperation
 	ChannelOperation

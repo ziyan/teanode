@@ -1,0 +1,20 @@
+-- How many of the questions a night asked itself it could not try.
+--
+-- Rehearsal used to answer yes or no, and every way of failing -- no
+-- budget left, no embedding model, a model that did not answer, an answer
+-- that did not parse -- came back as yes, because reporting every
+-- question as a gap would have been worse than reporting none. The effect
+-- was that a night whose model was unreachable read as a night with
+-- nothing missing, which is the opposite of what rehearsal is for.
+--
+-- So there are three outcomes now, and this is the third. A gap is the
+-- graph having been asked and having nothing; this is the graph never
+-- having been asked, and it is counted rather than hidden in either of
+-- the other two.
+--
+-- This was written before 0085, which was left free for the edge status
+-- of Milestone 5 of the same plan and has since been filled. A hole in
+-- the numbering costs nothing -- the runner applies what it finds, in
+-- order -- and renumbering a migration somebody's database has already
+-- applied costs a great deal, so one was left rather than taken.
+ALTER TABLE "agent_dream" ADD COLUMN "unknown" integer NOT NULL DEFAULT 0;

@@ -1,0 +1,67 @@
+Write up {{.Month}} for {{.PersonName}}, from the record of what they did.
+
+This is their own page for that month, in their agent's notes. They will
+read it; nobody else will. It should be the page they would have written
+if they had kept a diary, and it is rewritten every night as the month
+goes on, so write the month as it stands today rather than as a report
+that is finished.
+
+{{if .Existing}}## What the page says now
+
+Rewrite this, keeping what is still right and adding what is new. Do not
+start again from nothing.
+
+<page>
+{{.Existing}}
+</page>
+
+{{end}}## The record
+
+<digest>
+{{.Digest}}
+</digest>
+
+## How to write it
+
+Group by theme, not by repository or by day: two to five themes with a
+`##` heading each, then a short "Also" list for the rest. A theme is
+something they were doing -- getting a robot to report its own logs,
+making the queue survive a restart -- not a place they were doing it.
+
+Say why, not only what. "A conveyor was an external device; this month it
+became something the bridge tracks itself" is worth more than a list of
+commit subjects.
+
+Name the specific thing: the bug that was actually found, the constraint
+that forced the design, the vendor quirk that had to be worked around.
+
+Every claim comes from the record above. Where the record does not say
+why something was done, say what was done and stop. Do not invent a
+reason, a person or a date.
+
+Much of the record is counts: threads in a channel, commits in a
+repository. A count is a count. "The Amiens channel had 359 threads" may
+be said once, and nothing follows from it -- not what the work was, not
+how it went, not what it means. Never write "suggests", "likely",
+"indicates", "probably", "presumably" or "must have": a sentence that
+needs one of those is a guess, and a guess on this page reads as memory.
+A thin record makes a short page; a month of counts and titles is a few
+lines, not four themes.
+
+What is already known comes with the page each fact is on. Facts on
+different pages are different things: a network on one project's page
+and an error on another's do not become one story because they share a
+month. Say each under what it is about, or leave it out.
+
+{{if .Style}}## How {{.PersonName}} writes
+
+{{.Style}}
+{{end}}{{if .Instructions}}
+Their standing instructions, which apply here too:
+
+<instructions>
+{{.Instructions}}
+</instructions>
+{{end}}
+Answer with the page itself, in Markdown, and nothing else. No preamble,
+no "here is the page". Under 800 words.

@@ -66,6 +66,16 @@ export const SETTINGS_SURFACES: SettingsSurface[] = [
     description: 'settings.agent.description',
     category: 'account',
   },
+  // What the agent knows, as pages the person can read and correct. Its
+  // own surface rather than a card on the agent page: it is a place
+  // somebody browses, and a browser inside a settings form is neither.
+  {
+    segment: 'knowledge',
+    path: '/settings/knowledge',
+    label: 'knowledge.title',
+    description: 'settings.knowledge.description',
+    category: 'account',
+  },
   {
     segment: 'password',
     path: '/settings/password',

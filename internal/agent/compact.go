@@ -160,6 +160,20 @@ func chunkHistory(history []llm.ChatMessage, tokens int) [][]llm.ChatMessage {
 	return chunks
 }
 
+// compactWork is the kind of work a compaction is: the operator's compact
+// model when one is set, else the work of the turn being compacted, so a
+// dream's history is folded by the scan model that wrote it and a chat's
+// by the chat's own, rather than every one by the fast model.
+func compactWork(configuration *config.Configuration, turn config.AgentWork) config.AgentWork {
+	if strings.TrimSpace(configuration.Agent.Models.Compact) != "" {
+		return config.AgentWorkCompact
+	}
+	if turn != "" {
+		return turn
+	}
+	return config.AgentWorkAsk
+}
+
 // compact writes a note for the history before the cut, stores it with
 // where the transcript resumes, and returns the note with the tail. The
 // history comes back unchanged when there is nothing stored to stand in
@@ -176,27 +190,21 @@ func (self *AskRun) compact(ctx context.Context, provider llm.Provider, model, m
 	if through == "" {
 		return history, nil
 	}
-	registry := self.agent.settings.Registry
-	compactProvider, compactModel, err := registry.ForWork(config.AgentWorkCompact)
-	if err != nil {
-		compactProvider, compactModel = provider, model
-	}
+	// Each chunk's note is a run of its own, on the compact model: a turn
+	// inside a turn, with no tools and one round, that the person can
+	// open like any other.
 	note := ""
 	for _, chunk := range chunkHistory(older, compactChunkTokens) {
 		prompt, err := render("compact.txt", map[string]any{"Previous": note, "Conversation": renderMessages(chunk, compactMessageCharacters)})
 		if err != nil {
 			return nil, err
 		}
-		callContext, cancel := context.WithTimeout(ctx, self.agent.settings.Configuration().Agent.Limits.RequestTimeout.Duration())
-		response, err := compactProvider.Chat(callContext, &llm.ChatRequest{Model: compactModel, Messages: []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}}, MaxTokens: 800})
-		cancel()
-		if response != nil {
-			RecordUsage(self.agent.settings.Database, self.settings.Agent.ID, "", modelName, "compact", response.Usage)
-		}
+		thinking, err := self.agent.oneShot(ctx, self.agent.runFor(self.settings.Agent, self.settings.Owner, nil, self.settings.Conversation.ID),
+			"Compacted the earlier part of a conversation", prompt, models.AgentJobCompact, compactWork(self.agent.settings.Configuration(), self.settings.Work))
 		if err != nil {
 			return nil, err
 		}
-		note = strings.TrimSpace(response.Message.Content)
+		note = thinking.Text
 		if note == "" {
 			return nil, errors.New("the model wrote no note")
 		}

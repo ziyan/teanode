@@ -115,7 +115,7 @@ export function PasskeyNudge({ username }: { username: string }) {
         </Link>
         <button
           type="button"
-          className="link"
+          className="button"
           onClick={() => {
             rememberDismissal(username)
             setDismissed(true)

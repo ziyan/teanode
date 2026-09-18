@@ -158,11 +158,7 @@ export function DomainsPage() {
         >
           <label>
             <span>{t('domains.add')}</span>
-            <input
-              value={domain}
-              onChange={(event) => setDomain(event.target.value)}
-              placeholder="example.com"
-            />
+            <input value={domain} onChange={(event) => setDomain(event.target.value)} placeholder="example.com" />
           </label>
         </FormDialog>
       )}

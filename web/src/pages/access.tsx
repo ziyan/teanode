@@ -36,7 +36,9 @@ export function AccessPage() {
   const navigate = useNavigate()
   const session = useSession()
 
-  const permitted = TABS.filter((candidate) => candidate.permissions.some((key) => hasPermission(session.permissions, key)))
+  const permitted = TABS.filter((candidate) =>
+    candidate.permissions.some((key) => hasPermission(session.permissions, key)),
+  )
   if (permitted.length === 0) {
     return <Navigate to="/" replace />
   }

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -69,6 +70,10 @@ func newDeviceLink(what string, connection DeviceConnection) *deviceLink {
 	return &deviceLink{what: what, connection: connection, attachedAt: time.Now(), pending: map[int64]chan deviceAnswer{}}
 }
 
+// ErrDeviceDetached is the computer leaving while a question was open.
+// A caller that can wait treats it like the computer not being there.
+var ErrDeviceDetached = errors.New("was detached")
+
 // Ask sends an action to the device and waits a minute for its answer.
 func (self *deviceLink) Ask(ctx context.Context, action string, args any) (json.RawMessage, error) {
 	return self.AskFor(ctx, action, args, deviceAnswerWait)
@@ -106,7 +111,7 @@ func (self *deviceLink) AskFor(ctx context.Context, action string, args any, wai
 	select {
 	case answer, ok := <-channel:
 		if !ok {
-			return nil, fmt.Errorf("%s was detached", self.what)
+			return nil, fmt.Errorf("%s: %w", self.what, ErrDeviceDetached)
 		}
 		if !answer.OK {
 			return nil, fmt.Errorf("%s refused: %s", self.what, answer.Error)

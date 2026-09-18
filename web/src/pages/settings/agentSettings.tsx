@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { graphql } from '../../api'
-import { SaveRow } from '../../components/common'
+import { SaveRow, announceSaved } from '../../components/common'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { PencilIcon, TrashIcon } from '../../components/icons'
 import { Select } from '../../components/select'
@@ -92,6 +92,8 @@ export type Agent = {
     ask: string
     schedule: string
     compact: string
+    scan: string
+    embeddingDimensions: number
     choices: string[]
   }
   features: Record<string, boolean>
@@ -107,6 +109,11 @@ export type Agent = {
     maxToolCallsPerRun: number
     requestTimeout: string
     concurrency: number
+    maxRoundsPerDream: number
+    scanConcurrency: number
+    dreamShare: number
+    ingestChunksPerRun: number
+    embeddingTokensPerDay: number
   }
   retention: { runs: string; corrections: string }
   currency: string
@@ -129,9 +136,9 @@ export type Agent = {
 export const AGENT_SELECTION = `agent {
   enabled instructions allowPrivateAddresses skipCertificateCheck
   providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
-  models { default fast embedding triage research summarize reply ask schedule compact choices }
-  features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents }
-  limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxToolCallsPerRun requestTimeout concurrency }
+  models { default fast embedding triage research summarize reply ask schedule compact scan embeddingDimensions choices }
+  features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
+  limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay }
   retention { runs corrections }
   currency
   search { kind hasApiKey }
@@ -159,10 +166,13 @@ const FEATURES = [
   'chatApps',
   'skills',
   'subagents',
+  'remember',
+  'knowledge',
+  'dreaming',
 ] as const
 
 const BASE_MODELS = ['default', 'fast', 'embedding'] as const
-const WORK_MODELS = ['triage', 'research', 'summarize', 'reply', 'ask', 'schedule', 'compact'] as const
+const WORK_MODELS = ['triage', 'research', 'summarize', 'reply', 'ask', 'schedule', 'compact', 'scan'] as const
 
 function list(values: string[]): string {
   return values.join(', ')
@@ -190,7 +200,7 @@ function useSectionSave(onSaved: () => Promise<unknown> | unknown) {
     setBusy(true)
     try {
       await graphql(UPDATE, { agent: values })
-      toast.done(t('integrations.savedNeedsRestart'))
+      await announceSaved(toast, t)
       await onSaved()
       return true
     } catch (caught) {
@@ -205,7 +215,10 @@ function useSectionSave(onSaved: () => Promise<unknown> | unknown) {
 
 type Props = { settings: Agent; onSaved: () => Promise<unknown> | unknown }
 
-export function AgentForm({ settings, onSaved }: Props) {
+import { AgentPart } from './agentParts'
+export type { AgentPart } from './agentParts'
+
+export function AgentForm({ settings, onSaved, part }: Props & { part?: AgentPart }) {
   const [known, setKnown] = useState<string[]>([])
 
   // The model pickers are fed by what the enabled providers offer, read
@@ -224,22 +237,31 @@ export function AgentForm({ settings, onSaved }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(settings.providers)])
 
+  const shows = (candidate: AgentPart) => !part || part === candidate
   return (
     <>
-      <GeneralForm settings={settings} onSaved={onSaved} />
-      <ProvidersSection
-        settings={settings}
-        onSaved={onSaved}
-        onModels={(names) => setKnown((previous) => Array.from(new Set([...previous, ...names])).sort())}
-      />
-      <ModelsForm settings={settings} onSaved={onSaved} known={known} />
-      <FeaturesForm settings={settings} onSaved={onSaved} />
-      <LimitsForm settings={settings} onSaved={onSaved} />
-      <ToolsForm settings={settings} onSaved={onSaved} />
-      <SearchForm settings={settings} onSaved={onSaved} />
-      <BrowserForm settings={settings} onSaved={onSaved} />
-      <ServersSection settings={settings} onSaved={onSaved} />
-      <SkillsSection />
+      {shows('general') ? <GeneralForm settings={settings} onSaved={onSaved} /> : null}
+      {shows('models') ? (
+        <>
+          <ProvidersSection
+            settings={settings}
+            onSaved={onSaved}
+            onModels={(names) => setKnown((previous) => Array.from(new Set([...previous, ...names])).sort())}
+          />
+          <ModelsForm settings={settings} onSaved={onSaved} known={known} />
+          <FeaturesForm settings={settings} onSaved={onSaved} />
+          <LimitsForm settings={settings} onSaved={onSaved} />
+        </>
+      ) : null}
+      {shows('tools') ? (
+        <>
+          <ToolsForm settings={settings} onSaved={onSaved} />
+          <SearchForm settings={settings} onSaved={onSaved} />
+          <BrowserForm settings={settings} onSaved={onSaved} />
+          <ServersSection settings={settings} onSaved={onSaved} />
+        </>
+      ) : null}
+      {shows('skills') ? <SkillsSection /> : null}
     </>
   )
 }
@@ -318,7 +340,7 @@ function GeneralForm({ settings, onSaved }: Props) {
         />
       </label>
       <p className="muted field-hint">{t('agentSettings.skipCertificatesHint')}</p>
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -917,7 +939,7 @@ function ModelsForm({ settings, onSaved, known }: Props & { known: string[] }) {
           </>
         ) : null}
       </div>
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -951,7 +973,7 @@ function FeaturesForm({ settings, onSaved }: Props) {
           {t(`agentSettings.feature.${feature}`)}
         </label>
       ))}
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -979,6 +1001,11 @@ function limitFields(settings: Agent) {
     maxToolCallsPerRun: String(settings.limits.maxToolCallsPerRun),
     requestTimeout: settings.limits.requestTimeout,
     concurrency: String(settings.limits.concurrency),
+    maxRoundsPerDream: String(settings.limits.maxRoundsPerDream),
+    scanConcurrency: String(settings.limits.scanConcurrency),
+    dreamShare: String(settings.limits.dreamShare),
+    ingestChunksPerRun: String(settings.limits.ingestChunksPerRun),
+    embeddingTokensPerDay: String(settings.limits.embeddingTokensPerDay),
   }
 }
 
@@ -1026,6 +1053,11 @@ function LimitsForm({ settings, onSaved }: Props) {
               maxToolCallsPerRun: number(limits.maxToolCallsPerRun),
               requestTimeout: limits.requestTimeout,
               concurrency: number(limits.concurrency),
+              maxRoundsPerDream: number(limits.maxRoundsPerDream),
+              scanConcurrency: number(limits.scanConcurrency),
+              dreamShare: Number(limits.dreamShare) || 0,
+              ingestChunksPerRun: number(limits.ingestChunksPerRun),
+              embeddingTokensPerDay: number(limits.embeddingTokensPerDay),
             },
             retention,
             currency,
@@ -1053,6 +1085,10 @@ function LimitsForm({ settings, onSaved }: Props) {
       <div className="row">
         {(['maxRoundsPerAsk', 'maxRoundsPerResearch', 'maxRoundsPerReply', 'maxToolCallsPerRun'] as const).map(numeric)}
       </div>
+      {/* The night and the ingest: what the reading may spend and how
+          wide it runs, beside the caps a conversation lives under. */}
+      <div className="row">{(['maxRoundsPerDream', 'scanConcurrency', 'dreamShare'] as const).map(numeric)}</div>
+      <div className="row">{(['ingestChunksPerRun', 'embeddingTokensPerDay'] as const).map(numeric)}</div>
       <div className="row">
         {(['requestTimeout', 'concurrency'] as const).map(numeric)}
         <label className="shrink">
@@ -1070,7 +1106,7 @@ function LimitsForm({ settings, onSaved }: Props) {
           />
         </label>
       </div>
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -1130,7 +1166,7 @@ function ToolsForm({ settings, onSaved }: Props) {
         defaultWord="allow"
         onChange={(name, word) => setPolicy({ ...policy, [name]: word })}
       />
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -1184,7 +1220,7 @@ function SearchForm({ settings, onSaved }: Props) {
           />
         </label>
       </div>
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -1268,7 +1304,7 @@ function BrowserForm({ settings, onSaved }: Props) {
         />
         {t('agentSettings.browserAttachTabs')}
       </label>
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }

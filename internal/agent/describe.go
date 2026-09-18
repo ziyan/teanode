@@ -144,27 +144,32 @@ func (self *Agent) describeConversation(ctx context.Context, conversation *model
 		transcript = transcript[len(transcript)-describeCharacters:]
 	}
 
-	registry := self.settings.Registry
-	provider, model, err := registry.ForWork(config.AgentWorkCompact)
-	if err != nil {
-		if provider, model, err = registry.ForWork(config.AgentWorkAsk); err != nil {
-			return "", err
+	// Whose conversation it is: a run acts as the person, even one that
+	// only names what they talked about.
+	var agent *models.Agent
+	var owner *models.User
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		if agent, err = tx.GetAgent(conversation.AgentID); err != nil || agent == nil {
+			return err
 		}
+		owner, err = tx.GetUser(agent.UserID)
+		return err
+	}); err != nil {
+		return "", err
 	}
-	callContext, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	response, err := provider.Chat(callContext, &llm.ChatRequest{Model: model, MaxTokens: 120, JSONObject: true, Messages: []llm.ChatMessage{
-		{Role: llm.RoleUser, Content: "This is the recent part of a conversation between a person and their assistant. Answer with JSON only: {\"title\": a name for the conversation of at most five words, no quotes and no full stop; \"summary\": one sentence on what it is about now}. Write both in the language the person writes in — English when they write English.\n\n" + transcript},
-	}})
-	if response != nil {
-		RecordUsage(self.settings.Database, conversation.AgentID, "", registry.Configuration().Models.ForWork(config.AgentWorkCompact), "compact", response.Usage)
+	if agent == nil || owner == nil {
+		return mark("", "")
 	}
+	prompt := "This is the recent part of a conversation between a person and their assistant. Answer with JSON only: {\"title\": a name for the conversation of at most five words, no quotes and no full stop; \"summary\": one sentence on what it is about now}. Write both in the language the person writes in — English when they write English.\n\n" + transcript
+	// Titled by the compact model when one is set, else by the model the
+	// conversation itself is held with.
+	thinking, err := self.oneShot(ctx, self.runFor(agent, owner, nil, conversation.ID), "Named a conversation", prompt, models.AgentJobDescribe, compactWork(self.settings.Configuration(), config.AgentWorkAsk))
 	if err != nil {
 		// The provider was not there: nothing is marked, and the next
 		// look tries again.
 		return "", fmt.Errorf("asking the model: %w", err)
 	}
-	answer, err := llm.Extract[describeAnswer](response.Message.Content)
+	answer, err := llm.Extract[describeAnswer](thinking.Text)
 	if err != nil {
 		_, markErr := mark("", "")
 		if markErr != nil {
@@ -174,11 +179,14 @@ func (self *Agent) describeConversation(ctx context.Context, conversation *model
 	}
 	title := strings.Trim(strings.TrimSpace(strings.Split(answer.Title, "\n")[0]), `"'. `)
 	if len(title) > 80 {
-		title = title[:80]
+		// By character. A title cut at the 80th byte can end in the middle
+		// of one, and PostgreSQL refuses the whole statement rather than
+		// storing half a character.
+		title = cutRunes(title, 80)
 	}
 	summary := strings.TrimSpace(answer.Summary)
 	if len(summary) > 300 {
-		summary = summary[:300]
+		summary = cutRunes(summary, 300)
 	}
 	return mark(title, summary)
 }

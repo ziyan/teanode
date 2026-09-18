@@ -5,9 +5,11 @@ One turn of a conversation, from what a person said to what the agent answers.
 
 ## Starting a turn
 
-`Agent.Ask(settings)` refuses unless the agent feature `ask` is on for the
-deployment and a model registry exists, and unless it is given an agent, an
-owner, an `Operations`, a conversation and a non-blank message. It builds an
+`Agent.Ask(settings)` refuses unless a model registry exists and, for a turn
+somebody typed, unless the agent feature `ask` is on for the deployment; a
+headless turn is gated by the feature that owns its work, which its caller
+checked. It refuses too unless it is given an agent, an owner, an
+`Operations`, a conversation and a non-blank message. It builds an
 `AskRun` with a ULID, registers it, and returns immediately — the turn runs in
 a goroutine of its own. The caller gets a handle it can subscribe to, stop, or
 answer a card on.
@@ -44,7 +46,16 @@ by `settings.MaxRounds`. Each round:
    error event instead. Two shapes for one condition; see the caveats.)
 2. **Compaction**, if the rendered history is over `askHistoryTokens` (30000
    estimated tokens) and no compaction has already failed this turn. See
-   `context.md`.
+   `context.md`. A run whose settings say `ReadThenAnswer` (every headless
+   run made by `think`: a dream reading a batch, an ingest describing a
+   checkout) is never compacted: a compaction note would stand in for the
+   very documents it was given, and the run would file nothing. Such a run
+   is told to answer now instead, the way the last round is, once its
+   history passes `askReadThenAnswerTokens` (24000, lower than the
+   compaction line because the prompt and the tool definitions ride
+   beside the history), and each of its lookups is cut at
+   `ResultCharacters` (6000) rather than the usual 24000 so one long page
+   cannot fill the window.
 3. **Short or long.** A second, lower gate at `askHistoryTokens/2` (15000)
    sets `compact`, which switches the prompt to its short variant *and* forces
    tool deferral.
@@ -76,10 +87,10 @@ may take`.
 - **Confirmation.** `NeedsConfirmation` is true when the risk for these
   arguments is `destructive` or `outward`, or when the operator's policy or
   the person's own `confirm` list names the tool or its family. A run with
-  nobody present — headless, or a surface of `mail`, `schedule` or `research`
-  — cannot confirm, and the tool answers `needs_confirmation: nobody is
-  present…` so the model says what it would have done. Otherwise the person
-  sees a card and the run waits up to ten minutes. A decline answers
+  nobody present — headless, or a surface of `mail`, `schedule`, `goal` or
+  `research` — cannot confirm, and the tool answers `needs_confirmation:
+  nobody is present…` so the model says what it would have done. Otherwise
+  the person sees a card and the run waits up to ten minutes. A decline answers
   `{"declined": true, …}`; an approval sets `Confirmed` on the call, which the
   tool itself can read.
 - **Run it**, then shape the answer: cut at `ResultCharacters` (24000), wrap in
@@ -116,6 +127,20 @@ own agent and compares. When the run is on another instance, the answer
 travels as a command over PostgreSQL and is applied where the run lives
 (`streaming-and-instances.md`).
 
+## A turn nobody started
+
+Most headless turns run in a `run` conversation of their own. One does not:
+a turn toward a conversation's **goal** runs in the person's own
+conversation, with the surface `goal`, so that it reads everything said
+before it and they read it where they read everything else. It arrives as a
+user message opening with `models.GoalCheckInMarker`, and being headless it
+can confirm nothing — a goal that needs something sent says so and waits.
+See `jobs-and-schedules.md`.
+
+The loop's one part in this: after a person's own turn ends, a goal on that
+conversation that was `waiting` for them goes back to working, a minute out.
+The agent's own turns never resume anything.
+
 ## Ending
 
 Every path emits `done` last. A stop writes `stopped` into the transcript so a
@@ -124,6 +149,19 @@ rather than thrown away. `finish()` closes the run's browser context first, so
 watchers see the turn end with the context already gone, then closes every
 subscriber, confirmation and question channel. The run stays findable for ten
 minutes, so a drawer that reconnects late can still replay it.
+
+## Every model call is a turn
+
+Nothing in the agent asks a model except through this loop. A job's work,
+the dream's phases, the description of a checkout, a conversation's title,
+the compaction note and the composer's draft all go through `think` in
+`internal/agent/thinking.go`: a headless, read-only turn in a run
+conversation of its own, with a named set of tools and a cap on rounds.
+`AskSettings.Work` names the kind of work, which chooses the model
+(`Models.ForWork`) and the name on the usage rows; a call that needs no
+tools passes an empty allow set and one round, which is `oneShot`. The
+transcript is then the prompt, the answer and its usage — the same rows a
+person's turn writes — and the person can open it.
 
 ## What is written down
 
@@ -155,7 +193,9 @@ deliberately absent.
 - **`self.offered` is computed once per turn.** A computer or a tab attached
   mid-turn is not reachable until the next one.
 - **The overflow retry does not count a round**, by design: the round that was
-  refused for its size is tried once more after compacting hard.
+  refused for its size is tried once more after compacting hard. A
+  `ReadThenAnswer` run is not retried: its caller (the dream) marks the batch
+  too long and goes on.
 - **A turn has no wall clock of its own.** The request timeout bounds each
   model call; a job-driven turn is bounded by its job's ten minutes, and a
   person's turn only by the rounds.

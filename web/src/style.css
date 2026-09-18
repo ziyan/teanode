@@ -600,6 +600,9 @@ a.tile:hover strong {
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
+  /* Centred on the row: the icons at the other end are shorter than the
+     buttons, and sat on the row's top edge. */
+  align-items: center;
   gap: var(--space-2);
   margin-top: var(--space-4);
   /* Where the dialog is taller than the screen, Cancel and Save stay on it:
@@ -621,8 +624,25 @@ a.tile:hover strong {
    pressing it by accident is not the same size of mistake. */
 .dialog-actions-other {
   margin-right: auto;
+  /* More than one button on the far side keeps the row's own spacing. */
+  display: flex;
+  gap: var(--space-2);
 }
 
+/* The explorer's far-side actions are icons as tall as the buttons beside
+   them, with a border so they read as buttons. */
+.graph-explore-dialog-action {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+/* A button keeps its word whole; the icons beside it are narrow enough
+   that the row fits a phone. */
+.dialog-actions button {
+  white-space: nowrap;
+}
 
 /* --- the rail ------------------------------------------------------------- */
 /* The product, at the top of its own rail. */
@@ -2162,7 +2182,6 @@ pre.message-text {
     min-width: 40px;
     min-height: 40px;
   }
-
 
   /* iOS zooms the whole page in when a field smaller than 16px takes focus,
      and does not zoom back out. Sizing the fields at 16px is the only way to
@@ -4951,6 +4970,32 @@ label.check-list-item {
   background: var(--bad);
 }
 
+/* A filter the page applied from outside the table, shown as a chip
+   among the table's tools with its own clearing. */
+.table-pinned {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.85em;
+}
+
+/* The reading's progress in the bootstrap row: the bar, the count and
+   the guess, stacked, where the row's subtitle goes. */
+.agent-reading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.agent-reading .agent-budget-bar {
+  width: 100%;
+  max-width: 28rem;
+}
+
 .agent-drawer-device {
   display: inline-flex;
   align-items: center;
@@ -5117,6 +5162,107 @@ label.check-list-item {
   flex: 0 0 auto;
 }
 
+/* The goal on the head of the drawer: one icon whatever the state,
+   because the head has the conversation's name, the attached marks and
+   the budget ring on it and no room for words. The colour is the state
+   -- muted with none, the accent while the agent works, the warning
+   colour while it waits for the person, muted again once the goal is
+   met -- and the dialog behind it says the rest. */
+.agent-drawer-goal {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.agent-drawer-goal.working {
+  color: var(--accent);
+}
+
+.agent-drawer-goal.waiting {
+  color: var(--warn);
+}
+
+.agent-drawer-goal.met {
+  color: var(--muted);
+}
+
+/* A check-in line is a button, and the words the turn was given open
+   under it in the transcript's own type, wrapped, never wider than the
+   drawer. */
+.agent-checkin-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.agent-checkin-toggle:hover {
+  color: var(--text);
+}
+
+.agent-checkin-prompt {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--border);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: var(--text-label);
+}
+
+/* Where the goal stands, in the dialog: a term and its value a line. */
+.agent-drawer-goal-status {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px var(--space-3);
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-label);
+}
+
+.agent-drawer-goal-status dt {
+  color: var(--muted);
+}
+
+.agent-drawer-goal-status dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.agent-drawer-list-goal {
+  flex: 0 0 auto;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
+/* The main conversation's name is a flex row with a gap of its own, and
+   the margin on top of it read as a gap twice as wide as the others. */
+.agent-drawer-list-row.main .agent-drawer-list-goal {
+  margin-right: 0;
+}
+
+.agent-drawer-list-goal.working {
+  color: var(--accent);
+}
+
+.agent-drawer-list-goal.waiting {
+  color: var(--warn);
+}
+
+.agent-drawer-list-goal.met {
+  color: var(--muted);
+}
+
+/* Where the agent has got to, under the goal in the dialog: read, not
+   edited, so it is prose rather than a field. */
+.agent-drawer-goal-said {
+  margin-top: var(--space-2);
+  font-size: 12px;
+}
+
 /* The conversations, hanging from the title like a menu: a row each, the
    open one marked, its actions appearing under the pointer, and a first
    row for starting another. */
@@ -5269,6 +5415,22 @@ label.check-list-item {
   line-height: 1.5;
 }
 
+/* The way back to what the drawer did not load: one line at the top of
+   the transcript, styled as the divider is, gone once everything is in. */
+.agent-drawer-earlier {
+  align-self: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85em;
+  padding: 6px 10px;
+}
+
+.agent-drawer-earlier:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
 .agent-drawer-empty {
   margin: auto 0;
   text-align: center;
@@ -5317,6 +5479,25 @@ label.check-list-item {
   color: var(--muted);
 }
 
+/* A turn the agent took toward the goal on its own. The message that
+   opens it is framing written for the model, not a person's words, so it
+   is one quiet line where their bubble would be. */
+.agent-line.checkin {
+  /* A column: the line, and under it, when opened, the words the turn
+     was given. In a row the words squeezed the line into a strip. */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.agent-line.checkin > .agent-checkin-prompt {
+  align-self: stretch;
+}
+
 .agent-line.confirmation {
   border: 1px solid var(--warn);
   background: var(--field);
@@ -5337,12 +5518,39 @@ label.check-list-item {
   font-size: 12px;
 }
 
+/* What the agent is waiting for, directly above the box: what it needs
+   is read where the person is about to give it, rather than somewhere up
+   the transcript they would have to scroll back for. It goes as soon as
+   they send. */
+.agent-drawer-goal-waiting {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--field);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.agent-drawer-goal-waiting > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--warn);
+}
+
 .agent-drawer-input {
   display: flex;
   gap: 8px;
   align-items: flex-end;
   padding: 10px;
   border-top: 1px solid var(--border);
+}
+
+/* The bar and the box read as one composer, so the rule between them
+   goes the way it does for the files waiting to be sent. */
+.agent-drawer-goal-waiting ~ .agent-drawer-input {
+  border-top: 0;
 }
 
 /* One row, everything in it 36px tall: the paperclip, the box on one
@@ -5519,28 +5727,6 @@ label.check-list-item {
 .agent-usage {
   margin-top: 6px;
   font-size: 11px;
-}
-
-/* When a message was said: under the pointer, or after a tap where there
-   is no pointer. Folded away otherwise, so the conversation reads as a
-   conversation and not as a log. */
-.agent-line-time {
-  /* Not there rather than folded: a folded line still sets the width of
-     the bubble, and "ok" was drawn as wide as its date. */
-  display: none;
-  margin-top: 4px;
-  font-size: 11px;
-  opacity: 0.7;
-}
-
-.agent-line.timed .agent-line-time {
-  display: block;
-}
-
-@media (hover: hover) {
-  .agent-line:hover .agent-line-time {
-    display: block;
-  }
 }
 
 .agent-drawer-rename input {
@@ -6771,7 +6957,6 @@ p.notice.domain-logo-note {
   background: #ffffff;
 }
 
-
 .agent-artifact-body {
   padding: 10px 12px;
   max-height: 320px;
@@ -6798,7 +6983,6 @@ p.notice.domain-logo-note {
   font-size: 12px;
   color: var(--muted);
 }
-
 
 .agent-code-language {
   position: absolute;
@@ -7307,8 +7491,6 @@ button.with-icon {
   flex: none;
 }
 
-
-
 /* A title too long for its box is cut rather than wrapped, so a day with one
    long title stays the height of a day with one short one. */
 .calendar-entry-title {
@@ -7801,13 +7983,13 @@ button.with-icon {
 
   /* One guest a line, so a long list reads as a list rather than as a
    paragraph of names. */
-.invitation-who {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
+  .invitation-who {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
 
-.invitation-answers {
+  .invitation-answers {
     flex-wrap: wrap;
   }
 }
@@ -7841,4 +8023,991 @@ button.with-icon {
   label:has(> input[type='radio']) > input {
     font-size: 16px;
   }
+}
+
+/* What the agent knows.
+
+   Two columns on a wide window: the navigator, which is one folder of
+   the hierarchy at a time, and the page it is showing. On a phone they
+   show one at a time, the navigator first, because choosing what to read
+   comes before reading it. The navigator scrolls inside its own panel so
+   that a folder of six hundred pages does not make the whole page a
+   kilometre long. */
+.knowledge-columns {
+  display: grid;
+  /* The page column has a real minimum: below it a paragraph turns into
+     one word per line, which is what happened when the last column was
+     left to take whatever was over. */
+  grid-template-columns: minmax(260px, 360px) minmax(360px, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+  min-width: 0;
+}
+
+.knowledge-chip {
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font: inherit;
+  font-size: var(--text-label);
+  cursor: pointer;
+}
+
+.knowledge-chip:hover:not(:disabled) {
+  background: var(--field);
+  color: var(--text);
+}
+
+.knowledge-column {
+  min-width: 0;
+}
+
+.knowledge-column-navigator {
+  position: sticky;
+  top: var(--space-4);
+}
+
+.knowledge-list {
+  max-height: calc(100vh - var(--space-6) * 3);
+  overflow: auto;
+  padding: var(--space-2);
+}
+
+.knowledge-page {
+  min-width: 0;
+}
+
+/* The lookup is the way in; the lists are for when you do not know the
+   name yet. */
+.knowledge-lookup {
+  width: 100%;
+  margin-bottom: var(--space-3);
+}
+
+/* The hierarchy, one folder at a time.
+
+   The header says which folder is open and is the way out of it; the
+   frame below holds the list. A tree of no fixed depth cannot be a
+   column per level -- the window runs out at three -- so it is one
+   column walked into, and the slide is what says which way you went. */
+.knowledge-navigator {
+  min-width: 0;
+}
+
+.knowledge-navigator-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  /* Level with the rows below it, which are inset by the row's own
+     padding, so the folder's name and its pages line up. */
+  padding: 0 var(--space-3) var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* The back button is where the chevron on the row that led here was, so
+   the two read as the same door from both sides. */
+.knowledge-navigator-header .icon-action {
+  margin-left: calc(var(--space-2) * -1);
+}
+
+.knowledge-navigator-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Two lists live here while one is replacing the other. The one arriving
+   is the one taken out of the flow, so the panel keeps the height of the
+   list being left until the slide is over: the other way round, a list
+   that had not answered yet collapsed the card to the height of the word
+   "loading" and grew it back a tenth of a second later. */
+.knowledge-navigator-frame {
+  position: relative;
+  overflow: hidden;
+}
+
+/* The list coming in is the one in the flow, so the frame is its height
+   from the first frame of the slide; the list going out is lifted over
+   it. It used to be the other way round, and a tall folder sliding in
+   behind a short one was cut to the short one's height and then jumped,
+   and a short one sliding in behind a tall one left the tall height
+   standing empty under it. */
+.knowledge-navigator-panel.entering,
+.knowledge-navigator-panel.leaving {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.knowledge-navigator-panel.leaving {
+  /* It is already gone as far as the person is concerned; a press that
+     landed on it while it slid opened something they had not aimed at. */
+  pointer-events: none;
+}
+
+/* Animations rather than transitions: a list that has just been mounted
+   has no previous position to transition from, and the two frames of
+   nothing that a transition needs to be given one showed as a flicker. */
+.knowledge-navigator-panel.entering.deeper {
+  animation: knowledge-slide-in-right 200ms ease-out;
+}
+
+.knowledge-navigator-panel.leaving.deeper {
+  animation: knowledge-slide-out-left 200ms ease-out both;
+}
+
+.knowledge-navigator-panel.entering.back {
+  animation: knowledge-slide-in-left 200ms ease-out;
+}
+
+.knowledge-navigator-panel.leaving.back {
+  animation: knowledge-slide-out-right 200ms ease-out both;
+}
+
+@keyframes knowledge-slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes knowledge-slide-out-left {
+  to {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+}
+
+@keyframes knowledge-slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes knowledge-slide-out-right {
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+.knowledge-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* A row is a name, one line to tell it from the row above, and a count
+   or a chevron on the right. Whole row lights up; nothing underlined. */
+.knowledge-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-2);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  /* A row is pressed, not read: a second click on it selected its count. */
+  user-select: none;
+}
+
+.knowledge-row:hover:not(:disabled),
+.knowledge-row.selected {
+  background: var(--field);
+}
+
+.knowledge-row.selected .knowledge-row-name {
+  font-weight: 600;
+}
+
+/* In the navigator the row is not one button but two: the name opens the
+   page, the chevron walks into what is filed under it. They share the
+   row's own lit-up background, so it still reads as one row. */
+/* The row's padding belongs to its buttons, not to the row: with it on
+   the row, a tap on the row's edge landed on nothing, and the ripple showed
+   the button ending a finger short of where the row did. */
+.knowledge-row:has(.knowledge-row-open) {
+  padding: 0;
+  gap: 0;
+}
+
+.knowledge-row-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-2);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.knowledge-row-into {
+  flex: none;
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  /* As tall as the row and as wide as a finger: the chevron's target is
+     the whole right edge, not the glyph. */
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-2);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.knowledge-row-into:hover {
+  color: var(--text);
+}
+
+.knowledge-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.knowledge-row-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
+.knowledge-row-hint {
+  color: var(--muted);
+  font-size: var(--text-label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-row-count {
+  margin-left: auto;
+  padding-right: var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.knowledge-row > svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.knowledge-list-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.knowledge-more {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+/* A fact the agent folded into another. Greyed rather than hidden: it is
+   still there, and the number beside it is where its words went. */
+.knowledge-folded {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.knowledge-folded-into {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* One column at a time on a phone. The way back is a real navigation --
+   it changes the URL -- so the browser's Back does the same thing. */
+.knowledge-phone .knowledge-list {
+  max-height: none;
+}
+
+/* A path is one word to the browser -- projects/210236-aeonglobalscm-
+   shikoku-single-sku-depalletize-to-convey -- and a tag does not wrap,
+   so a long one ran out of the card. It breaks wherever it has to. */
+.knowledge-path {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
+.knowledge-page h3,
+.page-heading,
+.breadcrumb .crumb {
+  overflow-wrap: anywhere;
+}
+
+/* A page is prose the nightly run wrote, so it is read rather than
+   scanned: the measure is capped where the panel is not. */
+.knowledge-summary {
+  max-width: 68ch;
+  overflow-wrap: break-word;
+}
+
+/* The words a fact came from, shown under it. Quiet, because the fact is
+   what is being read and this is why it can be believed. */
+.knowledge-quote {
+  display: block;
+  color: var(--muted);
+  font-style: italic;
+  margin-bottom: 2px;
+}
+
+/* The pages around one page, drawn.
+
+   The box is laid out in the pixels it is drawn in -- the viewBox is the
+   element's own width and height, measured -- so a label is twelve real
+   pixels wide on a phone and on a laptop. A fixed viewBox scaled to fit
+   made the names on a narrow column too small to read, which is the one
+   thing this panel exists to show. */
+.graph-explorer-canvas {
+  display: block;
+  width: 100%;
+  height: 360px;
+  /* A node is tapped, and a double tap on it opens the page. Without this
+     the browser spends its own 300ms deciding whether the first tap was a
+     zoom. */
+  touch-action: manipulation;
+}
+
+.graph-explorer-edge {
+  stroke: var(--border-strong);
+  fill: none;
+}
+
+/* A link the nightly walk guessed rather than one somebody stated.
+   Dashed, so a guess is not drawn as a fact; the word "proposed" sits
+   beside the relation for anybody who does not read the dashes. */
+.graph-explorer-edge.proposed {
+  stroke-dasharray: 7 4;
+}
+
+.graph-explorer-arrow {
+  fill: var(--border-strong);
+  stroke: none;
+}
+
+/* The relation, on the line it belongs to. The line runs under the word,
+   so the word is drawn with the panel's own colour around it rather than
+   on top of the stroke. */
+.graph-explorer-relation {
+  fill: var(--muted);
+  font-size: 11px;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.graph-explorer-node circle {
+  fill: var(--field);
+  stroke: var(--border-strong);
+}
+
+.graph-explorer-node text {
+  fill: var(--text);
+  font-size: 12px;
+}
+
+.graph-explorer-node.centre circle {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 2px;
+}
+
+/* Filed under it, as a count rather than as pages: dashed, because it is
+   not one page and cannot be walked onto. */
+.graph-explorer-node.children circle {
+  fill: none;
+  stroke-dasharray: 3 3;
+}
+
+/* A page walked through earlier. Quiet: it is where you have been, not
+   what the page in the middle says. */
+.graph-explorer-node.seen circle {
+  fill: none;
+  stroke: var(--border);
+}
+
+.graph-explorer-node.seen text {
+  fill: var(--muted);
+}
+
+.graph-explorer-node[role='button'] {
+  cursor: pointer;
+}
+
+.graph-explorer-node[role='button']:hover circle,
+.graph-explorer-node[role='button']:focus-visible circle {
+  stroke: var(--accent);
+}
+
+.graph-explorer-node:focus {
+  outline: none;
+}
+
+.graph-explorer-node:focus-visible circle {
+  stroke: var(--accent);
+  stroke-width: 2px;
+}
+
+/* The way back, and the way in: which page the drawing is showing now,
+   and the one action that leaves the page being read. */
+.graph-explorer-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.graph-explorer-here {
+  font-size: var(--text-label);
+  overflow-wrap: anywhere;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The fields that make a link, under the drawing they change. Flush
+   against it they read as part of the picture rather than as the way to
+   add to it. */
+.graph-explorer + .row {
+  margin-top: var(--space-4);
+}
+
+@media (max-width: 600px) {
+  .graph-explorer-canvas {
+    height: 300px;
+  }
+}
+
+/* The lookup, and beside it the way into the drawing. It wraps rather than
+   squeezing: in the folders column there is room for one of them on a line
+   and no more. */
+.knowledge-lookup-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.knowledge-lookup-row .knowledge-lookup {
+  flex: 1 1 140px;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.knowledge-lookup-row .knowledge-chip {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* A chip that leads somewhere is an anchor, and an anchor in this dashboard
+   is underlined unless the thing it is drawn as says otherwise. */
+a.knowledge-chip {
+  display: inline-block;
+  text-decoration: none;
+}
+
+/* The whole graph, drawn.
+
+   A page rather than a card. A drawing that is panned and dragged wants the
+   window, and it must not be inside anything that scrolls: a drag that the
+   page also reads is a drag that scrolls the page out from under the finger.
+   So the box takes exactly the room left under the heading — measured, in
+   the component, against the scrolling area's own padding — and the controls
+   float over the canvas instead of sitting above it, where they would take
+   back the height they are there to save. */
+.graph-explore {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  /* Nothing here is text to select, and a drag that starts on a name should
+     move the drawing rather than highlight the name. */
+  user-select: none;
+}
+
+/* The browser's fullscreen: the frame is the screen, whatever height the
+   page had measured for it, and the border is gone. */
+.graph-explore:fullscreen {
+  height: 100vh !important;
+  border: 0;
+  border-radius: 0;
+}
+
+.graph-explore-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Every gesture on the canvas is one this page handles: one finger pans
+     and two zoom, so the browser must not also scroll or zoom. */
+  touch-action: none;
+  cursor: grab;
+}
+
+/* The colours a kind is drawn in.
+
+   Here rather than in tokens.css: the rest of the dashboard is deliberately
+   almost colourless, and this is one page's palette rather than a set of
+   chrome tokens anything else should reach for. Nine hues that stay apart at
+   the size of a circle, lifted for dark where the light ones go muddy. */
+:root {
+  --graph-self: #5468d4;
+  --graph-person: #2f80c8;
+  --graph-organization: #16867a;
+  --graph-project: #c1543f;
+  --graph-topic: #8a5cc2;
+  --graph-place: #3d8f4f;
+  --graph-thing: #b06f2a;
+  --graph-period: #7a8b2b;
+  --graph-folder: #8e949c;
+  /* A kind the server grew after this was written. It is drawn, quietly,
+     rather than left invisible. */
+  --graph-other: #9aa0a6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --graph-self: #8b9bf0;
+    --graph-person: #6db0e8;
+    --graph-organization: #4fc0b0;
+    --graph-project: #e5836e;
+    --graph-topic: #b58ce0;
+    --graph-place: #72c98a;
+    --graph-thing: #dda05e;
+    --graph-period: #b4c464;
+    --graph-folder: #9ba1a9;
+    --graph-other: #a0a0a8;
+  }
+}
+
+:root[data-theme='dark'] {
+  --graph-self: #8b9bf0;
+  --graph-person: #6db0e8;
+  --graph-organization: #4fc0b0;
+  --graph-project: #e5836e;
+  --graph-topic: #b58ce0;
+  --graph-place: #72c98a;
+  --graph-thing: #dda05e;
+  --graph-period: #b4c464;
+  --graph-folder: #9ba1a9;
+  --graph-other: #a0a0a8;
+}
+
+.graph-explore-kind-self {
+  --graph-kind: var(--graph-self);
+}
+.graph-explore-kind-person {
+  --graph-kind: var(--graph-person);
+}
+.graph-explore-kind-organization {
+  --graph-kind: var(--graph-organization);
+}
+.graph-explore-kind-project {
+  --graph-kind: var(--graph-project);
+}
+.graph-explore-kind-topic {
+  --graph-kind: var(--graph-topic);
+}
+.graph-explore-kind-place {
+  --graph-kind: var(--graph-place);
+}
+.graph-explore-kind-thing {
+  --graph-kind: var(--graph-thing);
+}
+.graph-explore-kind-period {
+  --graph-kind: var(--graph-period);
+}
+.graph-explore-kind-folder {
+  --graph-kind: var(--graph-folder);
+}
+
+.graph-explore-node {
+  cursor: pointer;
+}
+
+/* The child combinator, not a descendant: the badge in the corner is a
+   circle too, and it is not the page. */
+.graph-explore-node > circle {
+  fill: var(--graph-kind, var(--graph-other));
+  stroke: var(--surface);
+  stroke-width: 1.5px;
+}
+
+/* A ring on a page whose neighbourhood has been fetched, so that the edge of
+   what is drawn is visible: everything without one may have more behind it. */
+.graph-explore-node.expanded > circle {
+  stroke: var(--text);
+  stroke-opacity: 0.35;
+  stroke-width: 2px;
+}
+
+.graph-explore-node.selected > circle {
+  stroke: var(--accent);
+  stroke-opacity: 1;
+  stroke-width: 2.5px;
+}
+
+/* More behind it than is drawn: pages filed under it, or a page nobody has
+   opened yet. */
+.graph-explore-more circle {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+  stroke-width: 1px;
+}
+
+.graph-explore-more path {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.4px;
+  stroke-linecap: round;
+}
+
+/* The names are inside the group that carries the zoom, so their size is
+   divided by it as it is drawn — which is what keeps a name twelve real
+   pixels tall however far in or out the drawing is. Below half scale they
+   are closer together than they are tall and are not drawn at all. */
+.graph-explore-name {
+  fill: var(--text);
+  font-size: var(--graph-explore-label, 12px);
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+  display: none;
+}
+
+.graph-explore-canvas.names .graph-explore-name {
+  display: block;
+}
+
+.graph-explore-edge line {
+  fill: none;
+  stroke: var(--border-strong);
+}
+
+/* Where a page is filed rather than something somebody stated about it:
+   thinner, dashed, and no arrow. The hierarchy is already in the path. */
+.graph-explore-edge.under line {
+  stroke: var(--border);
+  stroke-dasharray: 3 4;
+}
+
+/* A link the nightly walk guessed. Dashed like the line above but with
+   longer dashes, so the two do not read as the same thing, and it keeps
+   its arrow: it is still a relation, only an unconfirmed one. */
+.graph-explore-edge.proposed line {
+  stroke-dasharray: 7 4;
+}
+
+.graph-explore-arrow {
+  fill: var(--border-strong);
+  stroke: none;
+}
+
+/* The relation, on the line. Only once the line is long enough on screen to
+   hold the word; until then it is on the line's tooltip. */
+.graph-explore-relation {
+  fill: var(--muted);
+  font-size: calc(var(--graph-explore-label, 12px) * 0.85);
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  pointer-events: none;
+  display: none;
+}
+
+.graph-explore-canvas.relations .graph-explore-relation {
+  display: block;
+}
+
+.graph-explore-lookup {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  width: min(280px, calc(100% - var(--space-6)));
+}
+
+.graph-explore-lookup input {
+  width: 100%;
+  background: var(--surface);
+}
+
+.graph-explore-found {
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1);
+  max-height: 320px;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-floating);
+}
+
+.graph-explore-found li {
+  padding: 0;
+}
+
+.graph-explore-found li.muted {
+  padding: var(--space-2);
+  font-size: var(--text-label);
+}
+
+.graph-explore-found button {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius-1);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.graph-explore-found button:hover {
+  background: var(--field);
+}
+
+.graph-explore-found button .muted {
+  font-size: var(--text-label);
+  overflow-wrap: anywhere;
+}
+
+.graph-explore-zoom {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Over a drawing rather than on a toolbar, so these carry their own outline:
+   a borderless button on a canvas full of circles is not a button. */
+.graph-explore-zoom .icon-button,
+.graph-explore-zoom .knowledge-chip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.graph-explore-zoom .icon-button {
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.graph-explore-legend {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  max-width: min(560px, calc(100% - 180px));
+  /* A legend is read, not pressed, and a drag that starts on it should pan
+     the drawing behind it. */
+  pointer-events: none;
+}
+
+.graph-explore-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.graph-explore-swatch i {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-round);
+  background: var(--graph-kind, var(--graph-other));
+}
+
+.graph-explore-hint {
+  flex-basis: 100%;
+  font-size: var(--text-label);
+}
+
+.graph-explore-nothing {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  pointer-events: none;
+}
+
+/* What one page says, beside the drawing rather than instead of it: reading
+   a page is a click away, and choosing one on the canvas should not take the
+   canvas away. */
+
+.graph-explore-facts {
+  margin-top: var(--space-3);
+  max-height: 40vh;
+  overflow: auto;
+}
+
+/* On a phone the dialog is the screen, and the facts are what the screen
+   is for: the list takes every line the opening and the buttons leave,
+   and scrolls inside, rather than stopping at a third of the height with
+   the rest of the screen empty under the buttons. */
+@media (max-width: 640px) {
+  .dialog:has(.graph-explore-facts) {
+    display: flex;
+    flex-direction: column;
+  }
+  .dialog:has(.graph-explore-facts) .dialog-actions {
+    margin-top: auto;
+  }
+  .graph-explore-facts {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
+.graph-explore-fact {
+  padding: var(--space-1) 0;
+  border-top: 1px solid var(--border);
+  font-size: var(--text-label);
+  line-height: 1.4;
+}
+
+.graph-explore-opening {
+  font-size: var(--text-body);
+  overflow-wrap: break-word;
+}
+
+.graph-explore-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* On a phone the panel is a sheet across the foot of the screen. A 300px
+   card floating over a 390px window is the window. */
+
+@media (max-width: 600px) {
+  /* Full width, no side frame, the same way a card gives up its own at this
+     size: every pixel of a drawing is the drawing. */
+  .graph-explore {
+    margin-left: calc(var(--space-3) * -1);
+    margin-right: calc(var(--space-3) * -1);
+    width: auto;
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+  }
+
+  /* The sheet covers the foot of the canvas, so the legend goes up out of
+     its way and the sentence about dragging goes: the gestures are the ones
+     the phone already teaches. */
+  .graph-explore-legend {
+    max-width: calc(100% - 140px);
+  }
+
+  .graph-explore-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .knowledge-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Stacked, the tree is as wide as the screen and scrolls inside
+     itself; the page below it wraps. */
+  .knowledge-tree-table {
+    min-width: 0;
+  }
+
+  /* Stacked, the tree is a list above the page rather than a sidebar
+     beside it: sticky and full height would take the whole screen. */
+  .knowledge-tree {
+    position: static;
+    max-height: 40vh;
+  }
+}
+
+/* The hours a dream may start: two clocks in the row that explains them,
+   each with a word before it, on one line while there is room. */
+.hours {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+.hours label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+.hours label > span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* The contact that is the person: a filled mark in the accent, so the state
+   is visible without the tooltip. */
+.row-actions button.marked {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* A search box as a section's action keeps to its own width and the head
+   wraps under it on a phone, rather than the box taking the row and the
+   title breaking into one word per line beside it. */
+.settings-section-head {
+  flex-wrap: wrap;
+}
+.settings-section-head > input[type='search'] {
+  flex: 0 1 16rem;
+  min-width: 10rem;
 }

@@ -5,6 +5,8 @@ import (
 	"embed"
 	"fmt"
 	"reflect"
+	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -55,7 +57,47 @@ func RenderConduct(configuration *config.Configuration, agent *models.Agent, own
 // is written by somebody other than this server, and each is placed between
 // one of these pairs so the model reads it as something to consider rather
 // than as something to do.
-var blockTags = []string{"</message>", "</summary>", "</notes>", "</guidance>"}
+//
+// Read out of the prompts rather than listed here by hand. The hand list
+// had four tags on it and the prompts went on to open a dozen: a document
+// carrying </items>, a page carrying </facts>, a conversation carrying
+// </conversation> could each close its own block and have the rest read
+// as the prompt's own words. A list that has to be kept up to date by
+// somebody remembering to is a list that will be out of date.
+var blockTags = closingTagsInPrompts()
+
+// closingTagsInPrompts is every closing tag the shipped prompts use.
+//
+// Sorted, so that what the escaping does is the same on every build. No
+// tag here can be part of another -- they all begin "</" and end ">" --
+// so the order they are applied in does not matter.
+func closingTagsInPrompts() []string {
+	entries, err := promptFiles.ReadDir("prompts")
+	if err != nil {
+		// The prompts are embedded in the binary, so this cannot happen
+		// at run time; a build that broke them should not start.
+		panic(fmt.Sprintf("agent: reading the prompts: %s", err))
+	}
+	found := map[string]bool{}
+	for _, entry := range entries {
+		content, err := promptFiles.ReadFile("prompts/" + entry.Name())
+		if err != nil {
+			panic(fmt.Sprintf("agent: reading the prompt %s: %s", entry.Name(), err))
+		}
+		for _, tag := range closingTag.FindAllString(string(content), -1) {
+			found[tag] = true
+		}
+	}
+	tags := make([]string, 0, len(found))
+	for tag := range found {
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+	return tags
+}
+
+// closingTag matches the end of a block a prompt opened.
+var closingTag = regexp.MustCompile(`</[a-zA-Z][a-zA-Z0-9_-]*>`)
 
 // unclosable is text that cannot end the block it is put in.
 //

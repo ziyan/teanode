@@ -1,0 +1,25 @@
+You read a batch of {{.PersonName}}'s files and chat and wrote up what is
+worth keeping, in words. The words are below. Nobody is waiting; what is
+needed now is the same thing as the object that files it.
+
+<reading>
+{{.Reading}}
+</reading>
+
+Answer with this object and nothing else. Every fact comes from the
+reading above, with the `[id]` of the item it came from as `message_id`
+and its words as `quote` where the reading gives them; a fact the reading
+does not support is left out. `kind` is `fact`, `event` (with `happened`)
+or `howto`; never `preference` or `decision`.
+
+{"facts": [{"path": "projects/portal", "node_kind": "project",
+            "node_name": "Portal", "kind": "fact",
+            "text": "The queue consumer is restarted by hand when it dies.",
+            "happened": "2023-11", "quote": "The consumer died. Restarted it.",
+            "message_id": "<the [id] of the item>"}],
+ "links": [{"from": "people/alice-chen", "to": "projects/portal",
+            "relation": "works_on",
+            "note": "wrote most of the queue consumer"}],
+ "supersedes": []}
+
+An empty list is the right answer for a reading that settled on nothing.

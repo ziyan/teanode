@@ -11,6 +11,7 @@ import (
 	"github.com/graphql-go/graphql"
 
 	"github.com/ziyan/teanode/internal/agent"
+	agenttools "github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -46,7 +47,10 @@ type AgentAskQuery interface {
 
 	// The transcripts of the agent's runs — sorting, summaries, replies —
 	// newest first: what it did while nobody was there. Needs agent:use.
-	ListAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) ([]*models.AgentConversation, error)
+	ListAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) (*AgentRunPage, error)
+	// ListAllAgentRuns is every person's runs, for an operator with
+	// agent:act: what every agent on the server did, openable.
+	ListAllAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) (*AgentRunPage, error)
 }
 
 // AgentAskMutation is a turn, its confirmations, and the conversations.
@@ -62,12 +66,13 @@ type AgentAskMutation interface {
 	// Stop a turn where it is. Needs agent:use.
 	StopAgentRun(ctx context.Context, arguments StopAgentRunArguments) (bool, error)
 
-	// Start a named conversation, kept apart from the main one. Needs
-	// agent:use.
+	// Start a named conversation, kept apart from the main one, with a
+	// goal on it if one is given. Needs agent:use.
 	StartAgentConversation(ctx context.Context, arguments StartAgentConversationArguments) (*models.AgentConversation, error)
 
-	// Rename a conversation, or archive and unarchive it. The main
-	// conversation is never archived. Needs agent:use.
+	// Rename a conversation, archive and unarchive it, or set the goal it
+	// works toward — an empty goal clears it and stops the turn it was
+	// taking. The main conversation is never archived. Needs agent:use.
 	UpdateAgentConversation(ctx context.Context, arguments UpdateAgentConversationArguments) (*models.AgentConversation, error)
 	DeleteAgentConversation(ctx context.Context, arguments DeleteAgentConversationArguments) (bool, error)
 
@@ -131,6 +136,14 @@ type AgentConversationView struct {
 	Messages     []*models.AgentMessage    `json:"messages"`
 	Total        int                       `json:"total"`
 	Todos        []*models.AgentTodo       `json:"todos"`
+	// ActingAs is the person whose agent this is, when it is not the
+	// caller's own: an operator reading it, and speaking into it, does so
+	// as that person, and the drawer says so.
+	ActingAs string `json:"actingAs,omitempty"`
+	// GoalTurnsToday is how many turns the agent has taken on its own
+	// toward the conversation's goal since the person's local midnight,
+	// counted from the job rows the way the goal job counts its cap.
+	GoalTurnsToday int `json:"goalTurnsToday"`
 }
 
 // ReadAgentRunArguments name a run and where to read from.
@@ -198,15 +211,23 @@ type StopAgentRunArguments struct {
 }
 
 // StartAgentConversationArguments may name it; the model does otherwise.
+// A goal set here starts the conversation already working toward it.
 type StartAgentConversationArguments struct {
 	Title string `json:"title" graphapi:"nullable"`
+	Goal  string `json:"goal" graphapi:"nullable"`
 }
 
-// UpdateAgentConversationArguments rename or archive.
+// UpdateAgentConversationArguments rename, archive, or set the goal.
 type UpdateAgentConversationArguments struct {
 	ConversationID string `json:"conversationId"`
 	Title          string `json:"title" graphapi:"nullable"`
 	Archived       *bool  `json:"archived" graphapi:"nullable"`
+
+	// Goal is the standing instruction to work toward; the empty string
+	// clears it. A pointer, because "leave the goal alone" and "there is
+	// no goal any more" are different answers and a plain string cannot
+	// tell them apart.
+	Goal *string `json:"goal" graphapi:"nullable"`
 }
 
 // asJSONValues is what a map of variables looks like once it has been through
@@ -341,16 +362,94 @@ func (self *graph) ownConversation(tx db.Transaction, found *models.Agent, conve
 	return conversation, nil
 }
 
-// ListAgentRunsArguments bound the listing.
-type ListAgentRunsArguments struct {
-	First int `json:"first" graphapi:"nullable"`
+// conversationFor is the conversation the caller may read or speak into:
+// their own agent's, or -- with agent:act -- any agent's, handed back with
+// that agent and its person so the caller acts as them. The agent and
+// person are nil for the caller's own.
+func (self *graph) conversationFor(tx db.Transaction, principal *api.Principal, found *models.Agent, conversationId string, readingRuns bool) (*models.AgentConversation, *models.Agent, *models.User, error) {
+	conversation, err := self.ownConversation(tx, found, conversationId, readingRuns)
+	if err == nil || !errors.Is(err, api.ErrNotFound) || !principal.Permissions.Has(models.PermissionAgentAct) {
+		return conversation, nil, nil, err
+	}
+	conversation, err = tx.GetAgentConversation(conversationId)
+	if err != nil || conversation == nil {
+		return nil, nil, nil, api.ErrNotFound
+	}
+	other, err := tx.GetAgent(conversation.AgentID)
+	if err != nil || other == nil {
+		return nil, nil, nil, api.ErrNotFound
+	}
+	owner, err := tx.GetUser(other.UserID)
+	if err != nil || owner == nil {
+		return nil, nil, nil, api.ErrNotFound
+	}
+	return conversation, other, owner, nil
 }
 
-func (self *graph) ListAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) ([]*models.AgentConversation, error) {
+// ListAgentRunsArguments bound the listing.
+type ListAgentRunsArguments struct {
+	First  int `json:"first" graphapi:"nullable"`
+	Offset int `json:"offset" graphapi:"nullable"`
+	// AgentID, for ListAllAgentRuns, narrows the operator's listing to one
+	// person's agent; empty is everybody's.
+	AgentID string `json:"agentId" graphapi:"nullable"`
+	// JobID narrows the listing to the runs one job made: a dream's, by
+	// the job on its record. Kinds narrows it to some kinds of run, and
+	// Query to titles carrying the words.
+	JobID string   `json:"jobId" graphapi:"nullable"`
+	Kinds []string `json:"kinds" graphapi:"nullable"`
+	Query string   `json:"query" graphapi:"nullable"`
+}
+
+// AgentRunPage is a page of runs and how many there are in all, each with
+// what it cost.
+type AgentRunPage struct {
+	Runs  []*AgentRunSummary `json:"runs"`
+	Total int64              `json:"total"`
+}
+
+// AgentRunSummary is one run as a list shows it: the conversation's
+// fields a list needs, and what every call in it cost added up.
+type AgentRunSummary struct {
+	ID        string                `json:"id"`
+	AgentID   string                `json:"agentId"`
+	Kind      string                `json:"kind"`
+	Title     string                `json:"title"`
+	Summary   string                `json:"summary,omitempty"`
+	JobID     string                `json:"jobId,omitempty"`
+	JobKind   string                `json:"jobKind,omitempty"`
+	SubjectID string                `json:"subjectId,omitempty"`
+	Surface   string                `json:"surface,omitempty"`
+	LastAt    time.Time             `json:"lastAt"`
+	Usage     models.AgentUsageNote `json:"usage"`
+}
+
+// runSummaries is the runs with their usage attached.
+func runSummaries(tx db.Transaction, runs []*models.AgentConversation) ([]*AgentRunSummary, error) {
+	ids := make([]string, 0, len(runs))
+	for _, run := range runs {
+		ids = append(ids, run.ID)
+	}
+	totals, err := tx.SumAgentRunUsage(ids)
+	if err != nil {
+		return nil, err
+	}
+	summaries := make([]*AgentRunSummary, 0, len(runs))
+	for _, run := range runs {
+		summaries = append(summaries, &AgentRunSummary{
+			ID: run.ID, AgentID: run.AgentID, Kind: string(run.Kind), Title: run.Title, Summary: run.Summary,
+			JobID: run.JobID, JobKind: run.JobKind, SubjectID: run.SubjectID, Surface: run.Surface, LastAt: run.LastAt,
+			Usage: totals[run.ID],
+		})
+	}
+	return summaries, nil
+}
+
+func (self *graph) ListAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) (*AgentRunPage, error) {
 	_, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		if errors.Is(err, agent.ErrUnavailable) {
-			return []*models.AgentConversation{}, nil
+			return &AgentRunPage{Runs: []*AgentRunSummary{}}, nil
 		}
 		return nil, err
 	}
@@ -358,7 +457,25 @@ func (self *graph) ListAgentRuns(ctx context.Context, arguments ListAgentRunsArg
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	return self.transaction(ctx).ListAgentConversations(found.ID, []models.AgentConversationKind{models.AgentConversationRun}, &db.Options{Limit: uint64(limit)})
+	offset := arguments.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	filter := &db.AgentRunFilter{JobID: arguments.JobID, Kinds: arguments.Kinds, Query: arguments.Query}
+	tx := self.transaction(ctx)
+	runs, err := tx.ListAgentRuns(found.ID, filter, &db.Options{Limit: uint64(limit), Offset: uint64(offset)})
+	if err != nil {
+		return nil, err
+	}
+	total, err := tx.CountAgentRuns(found.ID, filter)
+	if err != nil {
+		return nil, err
+	}
+	summaries, err := runSummaries(tx, runs)
+	if err != nil {
+		return nil, err
+	}
+	return &AgentRunPage{Runs: summaries, Total: total}, nil
 }
 
 func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAgentConversationsArguments) ([]*models.AgentConversation, error) {
@@ -391,14 +508,19 @@ func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAge
 }
 
 func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgentConversationArguments) (*AgentConversationView, error) {
-	_, found, err := self.requireAgentPerson(ctx)
+	principal, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
 	tx := self.transaction(ctx)
-	conversation, err := self.ownConversation(tx, found, arguments.ConversationID, true)
+	conversation, other, owner, err := self.conversationFor(tx, principal, found, arguments.ConversationID, true)
 	if err != nil {
 		return nil, err
+	}
+	actingAs := ""
+	if other != nil {
+		actingAs = owner.Username
+		log.Noticef("%s read a conversation of %s's agent", operatorName(ctx), owner.Username)
 	}
 	messages, err := tx.ListAgentMessages(conversation.ID, nil)
 	if err != nil {
@@ -424,7 +546,67 @@ func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgen
 	if err != nil {
 		return nil, err
 	}
-	return &AgentConversationView{Conversation: conversation, Messages: messages[start:end], Total: total, Todos: todos}, nil
+	turnsToday := 0
+	if conversation.Goal != "" {
+		midnight := goalDayBegan(time.Now(), principal.User, owner)
+		counted, err := tx.CountAgentJobs(&db.AgentJobFilter{
+			AgentID:   conversation.AgentID,
+			Kinds:     []models.AgentJobKind{models.AgentJobGoal},
+			Statuses:  []models.AgentJobStatus{models.AgentJobDone},
+			SubjectID: conversation.ID,
+			Since:     midnight,
+		})
+		if err != nil {
+			return nil, err
+		}
+		turnsToday = int(counted)
+	}
+	return &AgentConversationView{Conversation: conversation, Messages: messages[start:end], Total: total, Todos: todos, ActingAs: actingAs, GoalTurnsToday: turnsToday}, nil
+}
+
+// goalDayBegan is the midnight the day's goal turns are counted from:
+// the agent owner's, in their own zone.
+//
+// Whose day it is has to match the handler that enforces the cap
+// (internal/agent/goal.go), which counts from midnight in the zone of the
+// person whose agent it is. The drawer reads the conversation through
+// conversationFor, which names an owner only when an operator is reading
+// somebody else's; the caller's own conversation comes back with none,
+// and falling back to the server's zone there counted from a different
+// midnight than the cap did. The count then disagreed with what the agent
+// actually had left for as long as the two zones were on different days.
+func goalDayBegan(now time.Time, caller, owner *models.User) time.Time {
+	if owner == nil {
+		owner = caller
+	}
+	local := now.In(agenttools.Location(owner))
+	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
+}
+
+func (self *graph) ListAllAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) (*AgentRunPage, error) {
+	if _, err := self.requirePermission(ctx, models.PermissionAgentAct); err != nil {
+		return nil, err
+	}
+	limit := arguments.First
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := max(arguments.Offset, 0)
+	filter := &db.AgentRunFilter{JobID: arguments.JobID, Kinds: arguments.Kinds, Query: arguments.Query}
+	tx := self.transaction(ctx)
+	runs, err := tx.ListAgentRuns(arguments.AgentID, filter, &db.Options{Limit: uint64(limit), Offset: uint64(offset)})
+	if err != nil {
+		return nil, err
+	}
+	total, err := tx.CountAgentRuns(arguments.AgentID, filter)
+	if err != nil {
+		return nil, err
+	}
+	summaries, err := runSummaries(tx, runs)
+	if err != nil {
+		return nil, err
+	}
+	return &AgentRunPage{Runs: summaries, Total: total}, nil
 }
 
 func (self *graph) ReadAgentRun(ctx context.Context, arguments ReadAgentRunArguments) (*AgentRunView, error) {
@@ -529,9 +711,22 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 	// A run's transcript can be talked into: the person reading what the
 	// agent did on its own — sorted a message, wrote a reply — asks about
 	// it right there, with the message and the decision as the history.
-	conversation, err := self.ownConversation(tx, found, arguments.ConversationID, true)
+	//
+	// An operator with agent:act may speak into another person's
+	// conversation, and does so as that person: their agent, their
+	// permissions, their tools. It is said in the log every time.
+	conversation, other, owner, err := self.conversationFor(tx, principal, found, arguments.ConversationID, true)
 	if err != nil {
 		return nil, err
+	}
+	asking, person := found, principal.User
+	var operations agent.Operations = &agentOperations{graph: self, user: principal.User, permissions: principal.Permissions}
+	if other != nil {
+		asking, person = other, owner
+		if operations, err = worker.OperationsFor(ctx, owner); err != nil {
+			return nil, err
+		}
+		log.Noticef("%s spoke to %s's agent as them", operatorName(ctx), owner.Username)
 	}
 	surface := strings.TrimSpace(arguments.Surface)
 	if surface == "" {
@@ -547,14 +742,14 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 		return nil, fmt.Errorf("%w: an attachment is missing", api.ErrInvalidArguments)
 	}
 	for _, attachment := range attachments {
-		if attachment.AgentID != found.ID || (attachment.MessageID != "" && attachment.ConversationID != conversation.ID) {
+		if attachment.AgentID != asking.ID || (attachment.MessageID != "" && attachment.ConversationID != conversation.ID) {
 			return nil, api.ErrNotFound
 		}
 	}
 	run, err := worker.Ask(&agent.AskSettings{
-		Agent:        found,
-		Owner:        principal.User,
-		Operations:   &agentOperations{graph: self, user: principal.User, permissions: principal.Permissions},
+		Agent:        asking,
+		Owner:        person,
+		Operations:   operations,
 		Conversation: conversation,
 		Message:      arguments.Message,
 		Viewing:      arguments.Viewing,
@@ -628,9 +823,19 @@ func (self *graph) StartAgentConversation(ctx context.Context, arguments StartAg
 		return nil, err
 	}
 	tx := self.transaction(ctx)
-	conversation, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: found.ID, Kind: models.AgentConversationNamed, Title: strings.TrimSpace(arguments.Title), LastAt: time.Now()})
+	starting := &models.AgentConversation{AgentID: found.ID, Kind: models.AgentConversationNamed, Title: strings.TrimSpace(arguments.Title), LastAt: time.Now()}
+	if goal := strings.TrimSpace(arguments.Goal); goal != "" {
+		now := time.Now()
+		starting.Goal, starting.GoalState, starting.GoalNextAt, starting.GoalSetAt = goal, models.GoalWorking, &now, &now
+	}
+	conversation, err := tx.CreateAgentConversation(starting)
 	if err != nil {
 		return nil, translateError(err)
+	}
+	if note := models.GoalChangeNote(nil, conversation); note != "" {
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: models.AgentMessageNote, Content: note}); err != nil {
+			return nil, translateError(err)
+		}
 	}
 	return conversation, nil
 }
@@ -731,6 +936,7 @@ func (self *graph) UpdateAgentConversation(ctx context.Context, arguments Update
 	if err != nil {
 		return nil, err
 	}
+	cleared := false
 	updated, err := tx.UpdateAgentConversation(conversation.ID, func(conversation *models.AgentConversation) error {
 		if title := strings.TrimSpace(arguments.Title); title != "" {
 			// Named by the person: the model stops renaming it.
@@ -748,10 +954,38 @@ func (self *graph) UpdateAgentConversation(ctx context.Context, arguments Update
 				conversation.ArchivedAt = nil
 			}
 		}
+		if arguments.Goal != nil {
+			goal := strings.TrimSpace(*arguments.Goal)
+			cleared = goal == ""
+			if cleared {
+				conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt, conversation.GoalSetAt = "", "", "", nil, nil
+			} else {
+				// A goal set again -- changed, or set on a conversation
+				// whose goal was met -- starts working from now, and the
+				// note from the goal before it goes with it.
+				now := time.Now()
+				conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt, conversation.GoalSetAt = goal, models.GoalWorking, "", &now, &now
+			}
+		}
 		return nil
 	})
 	if err != nil {
 		return nil, translateError(err)
+	}
+	// The goal's beginning and end, in the transcript where they
+	// happened; the chip beside it shows only where it stands now.
+	if note := models.GoalChangeNote(conversation, updated); note != "" {
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: models.AgentMessageNote, Content: note}); err != nil {
+			return nil, translateError(err)
+		}
+	}
+	// Clearing the goal stops the turn it was taking. Left running, the
+	// agent would go on working toward something the person has just said
+	// they no longer want, and say so in their conversation.
+	if cleared {
+		if worker := self.agentWorker(); worker != nil {
+			worker.StopConversation(conversation.ID)
+		}
 	}
 	return updated, nil
 }
@@ -810,20 +1044,16 @@ func (self *graph) AgentRunEvents(ctx context.Context, arguments ReadAgentRunArg
 
 func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAgentConversationEventsArguments) (<-chan *agent.Event, error) {
 	// The lookup needs a transaction of its own, as AgentRunEvents does.
-	var found *models.Agent
 	var conversation *models.AgentConversation
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		var err error
-		if _, found, err = self.requireAgentPerson(api.ContextWithTransaction(ctx, tx)); err != nil {
+		principal, found, err := self.requireAgentPerson(api.ContextWithTransaction(ctx, tx))
+		if err != nil {
 			return err
 		}
-		conversation, err = tx.GetAgentConversation(arguments.ConversationID)
+		conversation, _, _, err = self.conversationFor(tx, principal, found, arguments.ConversationID, true)
 		return err
 	}); err != nil {
 		return nil, err
-	}
-	if conversation == nil || conversation.AgentID != found.ID {
-		return nil, api.ErrNotFound
 	}
 	worker := self.agentWorker()
 	if worker == nil {

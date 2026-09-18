@@ -36,6 +36,35 @@ function rangeOver(element: Element): Range {
   return range
 }
 
+// visiblePart is the box clipped to every scrolling ancestor and to the
+// window: the rectangle of it a person can actually see.
+function visiblePart(box: DOMRect, element: Element): DOMRect {
+  let top = box.top
+  let bottom = box.bottom
+  let left = box.left
+  let right = box.right
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    const style = window.getComputedStyle(parent)
+    const clips = /(auto|scroll|hidden)/.test(style.overflowY + style.overflowX + style.overflow)
+    if (!clips) {
+      continue
+    }
+    const frame = parent.getBoundingClientRect()
+    top = Math.max(top, frame.top)
+    bottom = Math.min(bottom, frame.bottom)
+    left = Math.max(left, frame.left)
+    right = Math.min(right, frame.right)
+  }
+  top = Math.max(top, 0)
+  bottom = Math.min(bottom, window.innerHeight)
+  left = Math.max(left, 0)
+  right = Math.min(right, window.innerWidth)
+  if (bottom < top || right < left) {
+    return box
+  }
+  return new DOMRect(left, top, right - left, bottom - top)
+}
+
 export function Tooltip({ label, children }: { label: string; children: React.ReactNode }) {
   const anchor = useRef<HTMLSpanElement>(null)
   const timer = useRef<number | null>(null)
@@ -64,9 +93,14 @@ export function Tooltip({ label, children }: { label: string; children: React.Re
     // measuring it put every tooltip in the top left corner of the window,
     // half of it off the edge. A range covers the case where what is wrapped
     // is text rather than an element.
-    const box = element.firstElementChild
+    const whole = element.firstElementChild
       ? element.firstElementChild.getBoundingClientRect()
       : rangeOver(element).getBoundingClientRect()
+    // Only the part of it that can be seen. A tall bubble in a scrolling
+    // transcript has a top far above the box that clips it, and a tooltip
+    // placed from that top was drawn out over the page, nowhere near the
+    // words under the pointer.
+    const box = visiblePart(whole, element)
     // Above by default, because the thing being described is usually at the
     // end of a row and the pointer is coming from the left.
     const below = box.top < 40

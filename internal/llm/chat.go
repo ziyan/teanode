@@ -91,6 +91,11 @@ type ChatRequest struct {
 	// supports asking. The prompt must still say so; this only removes the
 	// fences.
 	JSONObject bool
+
+	// ToolChoice is "none" to keep the tools in the prompt but refuse a
+	// call this round, for the round that has to end in words; empty
+	// leaves the choice to the model.
+	ToolChoice string
 }
 
 // ChatResponse is what the model answered.

@@ -55,7 +55,7 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
   if (!user) {
     // A server with no accounts, reached over a socket that needs none. There
     // is no profile to edit, and saying so beats an empty form.
-    return <p className='muted'>{t('profile.noAccount')}</p>
+    return <p className="muted">{t('profile.noAccount')}</p>
   }
 
   const name = editedName ?? user.name ?? ''
@@ -117,7 +117,7 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
           narrow box alone at the left of the page — the one settings page
           that did not look like the others. */}
       <form
-        className='card'
+        className="card"
         onSubmit={(event) => {
           event.preventDefault()
           if (!ready) {
@@ -134,9 +134,9 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
         }}
       >
         <h3>{t('profile.title')}</h3>
-        <p className='muted'>{t('settings.profile.description')}</p>
+        <p className="muted">{t('settings.profile.description')}</p>
 
-        <div className='form-narrow'>
+        <div className="form-narrow">
           <label>
             <span>{t('profile.name')}</span>
             <input
@@ -145,36 +145,36 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
               placeholder={t('profile.namePlaceholder')}
               onChange={(event) => {
                 setEditedName(event.target.value)
-                          }}
+              }}
             />
           </label>
-          <p className='muted field-hint'>{t('profile.nameHint')}</p>
+          <p className="muted field-hint">{t('profile.nameHint')}</p>
 
           <label>
             <span>{t('profile.username')}</span>
             <input
               value={username}
               maxLength={64}
-              autoComplete='username'
+              autoComplete="username"
               onChange={(event) => {
                 setEditedUsername(event.target.value)
-                          }}
+              }}
             />
           </label>
-          <p className='muted field-hint'>{t('profile.usernameHint')}</p>
+          <p className="muted field-hint">{t('profile.usernameHint')}</p>
 
           <label>
             <span>{t('profile.email')}</span>
             <input
-              type='email'
+              type="email"
               value={email}
               placeholder={t('profile.emailPlaceholder')}
               onChange={(event) => {
                 setEditedEmail(event.target.value)
-                          }}
+              }}
             />
           </label>
-          <p className='muted field-hint'>{t('profile.emailHint')}</p>
+          <p className="muted field-hint">{t('profile.emailHint')}</p>
 
           <label>
             <span>{t('profile.timezone')}</span>
@@ -196,19 +196,19 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
           </label>
           {timezoneMode === 'fixed' ? (
             <input
-              className='field-standalone'
+              className="field-standalone"
               aria-label={t('profile.timezone')}
               value={timezone}
-              placeholder='Europe/Berlin'
+              placeholder="Europe/Berlin"
               onChange={(event) => {
                 setEditedTimezone(event.target.value)
               }}
             />
           ) : null}
-          <p className='muted field-hint'>{t('profile.timezoneHint')}</p>
+          <p className="muted field-hint">{t('profile.timezoneHint')}</p>
         </div>
 
-        <button className='primary' type='submit' disabled={!ready}>
+        <button className="primary" type="submit" disabled={!ready}>
           {t('common.save')}
         </button>
       </form>

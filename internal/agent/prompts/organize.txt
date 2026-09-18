@@ -1,0 +1,32 @@
+These pages in {{.PersonName}}'s agent's notes were filed under `notes`,
+which is where something goes when nobody knew where it belonged. Say
+where each one should live.
+
+## Where things live now
+
+{{range .Index}}{{.}}
+{{end}}
+
+## The ones with no home
+
+{{range .Orphans}}{{.}}
+{{end}}
+
+## What to answer
+
+For each one you are confident about, the page and the path it should go
+under. Use a path from the list above wherever one fits: `people`,
+`projects`, `things`, `places`, `topics`, or something more specific that
+already exists.
+
+Where the right home does not exist yet, say the path you would make. It
+will be shown to {{.PersonName}} to approve rather than made, because a
+hierarchy invented while nobody is watching is one they will not
+recognize.
+
+Leave out anything you are unsure of. A page in `notes` is not a problem;
+a page filed wrongly is.
+
+Answer with this object and nothing else:
+
+{"moves": [{"path": "notes/kittiwake", "under": "things", "reason": "a boat"}]}

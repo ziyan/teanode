@@ -21,6 +21,11 @@ func TestDeliveryHookAndWorker(t *testing.T) {
 
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
+	// No dream: a tick queues whatever is due, and whether a dream
+	// is due depends on the hour the test happens to run at. See
+	// schedule_run_test.go for what that cost once.
+	dreamingOff := false
+	configuration.Agent.Features.Dreaming = &dreamingOff
 	configuration.Agent.Providers = []config.AgentProvider{{Name: "p", Kind: "openai", APIKey: "k"}}
 	configuration.Agent.Models.Default = "p:m"
 

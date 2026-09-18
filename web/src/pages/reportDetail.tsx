@@ -58,10 +58,7 @@ export function ReportDetailPage() {
     <>
       {/* What this report says, in one line, before the mechanics of it. */}
       <div className="verdict">
-        <Tag
-          value={aligned ? t('reports.oneAligned') : t('reports.neitherAligned')}
-          tone={aligned ? 'good' : 'bad'}
-        />
+        <Tag value={aligned ? t('reports.oneAligned') : t('reports.neitherAligned')} tone={aligned ? 'good' : 'bad'} />
         <Tag value={report.disposition || t('common.none')} tone={toneFor(report.disposition)} />
         <span className="muted">
           {plural(
@@ -79,9 +76,7 @@ export function ReportDetailPage() {
             <Field label={t('reportDetail.reporter')}>
               {feedback?.organizationName}
               {feedback?.email ? <div className="muted">{feedback.email}</div> : null}
-              {feedback?.extraContactInfo ? (
-                <div className="muted wrap">{feedback.extraContactInfo}</div>
-              ) : null}
+              {feedback?.extraContactInfo ? <div className="muted wrap">{feedback.extraContactInfo}</div> : null}
             </Field>
             <Field label={t('reportDetail.reportId')} mono>
               {feedback?.reportId}
@@ -119,9 +114,7 @@ export function ReportDetailPage() {
                 {[
                   feedback.policy ? `p=${feedback.policy}` : '',
                   feedback.subdomainPolicy ? `sp=${feedback.subdomainPolicy}` : '',
-                  feedback.percent !== undefined && feedback.percent !== 100
-                    ? `pct=${feedback.percent}`
-                    : '',
+                  feedback.percent !== undefined && feedback.percent !== 100 ? `pct=${feedback.percent}` : '',
                   feedback.failureOptions ? `fo=${feedback.failureOptions}` : '',
                 ]
                   .filter(Boolean)
@@ -178,10 +171,7 @@ function Record({ record }: { record: FeedbackRecord }) {
       <table className="detail">
         <tbody>
           <Field label={t('reportDetail.evaluated')}>
-            {[
-              record.dkim ? `DKIM ${record.dkim}` : '',
-              record.spf ? `SPF ${record.spf}` : '',
-            ]
+            {[record.dkim ? `DKIM ${record.dkim}` : '', record.spf ? `SPF ${record.spf}` : '']
               .filter(Boolean)
               .join(' · ')}
           </Field>
@@ -205,9 +195,7 @@ function Record({ record }: { record: FeedbackRecord }) {
           {(record.dkims ?? []).map((dkim, index) => (
             <Field key={`dkim-${index}`} label={`DKIM ${dkim.result ?? ''}`}>
               <span className="mono">
-                {dkim.selector && dkim.domain
-                  ? `${dkim.selector}._domainkey.${dkim.domain}`
-                  : dkim.domain}
+                {dkim.selector && dkim.domain ? `${dkim.selector}._domainkey.${dkim.domain}` : dkim.domain}
               </span>
               {dkim.humanResult ? <div className="muted wrap">{dkim.humanResult}</div> : null}
             </Field>
@@ -223,7 +211,10 @@ function Record({ record }: { record: FeedbackRecord }) {
   )
 }
 
-function alignment(t: (key: 'mailDetail.alignmentStrict' | 'mailDetail.alignmentRelaxed') => string, mode?: string): string {
+function alignment(
+  t: (key: 'mailDetail.alignmentStrict' | 'mailDetail.alignmentRelaxed') => string,
+  mode?: string,
+): string {
   return mode === 's' ? t('mailDetail.alignmentStrict') : t('mailDetail.alignmentRelaxed')
 }
 

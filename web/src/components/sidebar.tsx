@@ -22,6 +22,7 @@ import {
   ListIcon,
   UserIcon,
   SparkIcon,
+  GridIcon,
 } from './icons'
 import { Logo } from './logo'
 import { matchSettingsSurface, surfacesByCategory } from '../pages/settings/nav'
@@ -51,6 +52,7 @@ const SERVER_ICONS: Record<string, React.ReactNode> = {
 const ACCOUNT_ICONS: Record<string, React.ReactNode> = {
   preference: <UserIcon />,
   agent: <SparkIcon />,
+  knowledge: <GridIcon />,
   password: <KeyIcon />,
   passkeys: <ShieldIcon />,
   tokens: <TerminalIcon />,
@@ -113,6 +115,7 @@ const GROUPS: Group[] = [
         icon: SERVER_ICONS[surface.segment],
         anyOf: ['server:manage'],
       })),
+      { label: 'nav.agentAdmin', to: '/agent', icon: <SparkIcon />, anyOf: ['agent:audit', 'agent:act'] },
     ],
   },
 ]
@@ -348,7 +351,10 @@ export function Sidebar({
                       </span>
                       <span className="sidebar-label">{t('mailbox.folder.starred')}</span>
                       {current.starredUnread > 0 && (
-                        <span className="sidebar-count" aria-label={t('mailbox.unreadCount', { count: current.starredUnread })}>
+                        <span
+                          className="sidebar-count"
+                          aria-label={t('mailbox.unreadCount', { count: current.starredUnread })}
+                        >
                           {current.starredUnread}
                         </span>
                       )}
@@ -367,7 +373,10 @@ export function Sidebar({
                         </span>
                         <span className="sidebar-label">{t('mailbox.folder.priority')}</span>
                         {current.priorityUnread > 0 && (
-                          <span className="sidebar-count" aria-label={t('mailbox.unreadCount', { count: current.priorityUnread })}>
+                          <span
+                            className="sidebar-count"
+                            aria-label={t('mailbox.unreadCount', { count: current.priorityUnread })}
+                          >
                             {current.priorityUnread}
                           </span>
                         )}

@@ -3,9 +3,11 @@ package agent_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,33 +23,53 @@ import (
 // A triage job, end to end through the worker: the stored message is
 // reduced and sent to a fake provider, the answer becomes an insight, the
 // tokens are recorded against the agent, and the run leaves a transcript.
+//
+// The sorting run is a turn of the conversation loop, so the provider is
+// asked with stream on and answers in server-sent events; the object it
+// ends with is what becomes the insight.
 func TestTriageThroughTheWorker(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
+	sorted, err := json.Marshal(`{"category":"club","priority":"high","needs_reply":true,"research":false,"summary":"Maria asks whether Thursday at 3 works and wants the key back.","action_items":["Confirm Thursday at 3","Return the key"]}`)
+	if err != nil {
+		t.Fatalf("json.Marshal: %s", err)
+	}
+	var mutex sync.Mutex
 	var prompts []string
 	provider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var body struct {
+			Stream   bool `json:"stream"`
 			Messages []struct {
 				Role    string `json:"role"`
 				Content string `json:"content"`
 			} `json:"messages"`
-			ResponseFormat map[string]any `json:"response_format"`
 		}
 		_ = json.NewDecoder(request.Body).Decode(&body)
+		mutex.Lock()
 		for _, message := range body.Messages {
 			prompts = append(prompts, message.Content)
 		}
-		if body.ResponseFormat["type"] != "json_object" {
-			writer.WriteHeader(400)
+		mutex.Unlock()
+		if !body.Stream {
+			// Every round of the loop streams; nothing else should be
+			// asked of the model in a sorting run.
+			writer.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		_, _ = writer.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{\"category\":\"club\",\"priority\":\"high\",\"needs_reply\":true,\"research\":false,\"summary\":\"Maria asks whether Thursday at 3 works and wants the key back.\",\"action_items\":[\"Confirm Thursday at 3\",\"Return the key\"]}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":120,"completion_tokens":40}}`))
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprintf(writer,
+			"data: {\"id\":\"s1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":%s},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":120,\"completion_tokens\":40}}\n\ndata: [DONE]\n\n",
+			sorted)
 	}))
 	defer provider.Close()
 
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
+	// The night is not what this is about, and whether one is due depends
+	// on the wall clock: the tick queued a dream in CI at one in the morning
+	// and the test saw two jobs where it expected one.
+	configuration.Agent.Features.Dreaming = new(bool)
 	configuration.Agent.Providers = []config.AgentProvider{{Name: "fake", Kind: "openai", BaseURL: provider.URL, APIKey: "k"}}
 	configuration.Agent.Models.Default = "fake:sorter"
 	registry, err := llm.Open(&configuration.Agent)
@@ -67,6 +89,10 @@ func TestTriageThroughTheWorker(t *testing.T) {
 		Instance:      "test",
 		Tick:          time.Hour,
 	})
+	// A turn of the loop acts as the person, so it needs somebody to act
+	// as; sorting reads mail and nothing else.
+	operations := &fakeOperations{permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailRead}})}
+	worker.SetOperationsFactory(func(context.Context, *models.User) (agent.Operations, error) { return operations, nil })
 
 	var owner *models.User
 	var mailbox *models.Mailbox
@@ -127,8 +153,12 @@ func TestTriageThroughTheWorker(t *testing.T) {
 			t.Fatalf("run transcript %+v", runs)
 		}
 		messages, _ := tx.ListAgentMessages(runs[0].ID, nil)
-		if len(messages) < 2 {
-			t.Fatalf("the transcript should hold the prompt and the answer, got %d", len(messages))
+		roles := make([]string, 0, len(messages))
+		for _, message := range messages {
+			roles = append(roles, message.Role)
+		}
+		if strings.Join(roles, " ") != "user assistant" {
+			t.Fatalf("the transcript should hold the prompt and the answer, got %v", roles)
 		}
 	})
 

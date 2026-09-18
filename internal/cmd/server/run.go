@@ -987,16 +987,20 @@ func startupOnly(configuration *config.Configuration) map[string]any {
 		// The model registry and the agent worker are built once from
 		// these; a provider, a key or a model changed on the settings page
 		// waits for a restart, and the page says so.
-		"agent.enabled":        configuration.Agent.Enabled,
-		"agent.providers":      configuration.Agent.Providers,
-		"agent.models":         configuration.Agent.Models,
-		"tls":                  configuration.TLS,
-		"smtp.relay":           configuration.SMTP.Relay,
-		"storage":              configuration.Storage,
-		"server.dataDirectory": configuration.Server.DataDirectory,
-		"antivirus":            configuration.Antivirus,
-		"antispam":             configuration.Antispam,
-		"geoip":                configuration.GeoIP,
+		"agent.enabled":   configuration.Agent.Enabled,
+		"agent.providers": configuration.Agent.Providers,
+		"agent.models":    configuration.Agent.Models,
+		// The worker sizes its slots once, when it starts. Raising the
+		// number to let an ingest run beside a dream did nothing until a
+		// restart, and the status line said none was owed.
+		"agent.limits.concurrency": configuration.Agent.Limits.Concurrency,
+		"tls":                      configuration.TLS,
+		"smtp.relay":               configuration.SMTP.Relay,
+		"storage":                  configuration.Storage,
+		"server.dataDirectory":     configuration.Server.DataDirectory,
+		"antivirus":                configuration.Antivirus,
+		"antispam":                 configuration.Antispam,
+		"geoip":                    configuration.GeoIP,
 		// Read once when the checker is built. Enabled, automatic and window
 		// are re-read every time the loop wakes and are deliberately not
 		// here: changing those takes effect without a restart, and listing

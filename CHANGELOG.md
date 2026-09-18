@@ -6,6 +6,117 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Your agent keeps what it knows as pages rather than as a list. A page is a
+  person, a project, a place, a thing or a stretch of time; it lives at a path
+  like `people/alice-chen`, and each fact on it is numbered, carries the words
+  it came from, and can be cited as `people/alice-chen#3`. Pages are joined by
+  links that say how — who works on what, who knows whom — and the dashboard's
+  Knowledge page, under Settings, is where you read and correct all of it: the
+  folders, the pages in one, and the page itself, side by side where there is
+  room and one at a time where there is not, with the breadcrumb as the way
+  back. Each page's Connections is a drawing of what it is linked to that you
+  walk by clicking, and each page's URL is its path,
+  `/settings/knowledge/work/portal`. `teanode agent dream now` runs the
+  night at the next tick instead of waiting for its turn, and `agent dream
+  log` says what it did. Everything the agent's memory tool can do, you can
+  do too, from the dashboard and the command line: move a page, link two
+  pages and unlink them, pause and resume a source, run the night now.
+
+- It writes what it learns without being asked. A job runs after a conversation
+  goes quiet and files what the conversation taught, so what you told it on
+  Tuesday is there on Wednesday. Before this the model had to decide to write
+  during a turn, and given a task and a memory tool it did the task. A
+  conversation with more in it than one run can read is read oldest first,
+  sixty messages at a time, over as many runs as it takes, so a long thread
+  you left running has nothing in it quietly skipped.
+
+- You can point it at what you already have: a checkout on one of your
+  computers, a chat archive, your notes. It reads them on the machine they are
+  on — the walking, the sniffing and the refusing all happen there, so a secret
+  never crosses the socket — and files what it finds. Every directory is read
+  alike; what refuses a file is the secret filter, which goes by what a file is
+  called and what is in it rather than by the name of the folder above it, and
+  the source's page says how many files it turned away.
+
+- It tidies overnight, in its own hours, which you can now set. It reads what
+  arrived, writes up the month, rewrites the pages that changed, strengthens the
+  links between pages you used together, lets what nothing has wanted sink out
+  of the way, and walks the graph looking for connections nobody wrote down.
+  Then it asks itself the questions you are likely to ask tomorrow and writes
+  down the ones it could not answer. It never deletes anything: a line it
+  decides repeats another goes dormant behind that one instead, and the page
+  lists what was folded under its facts, greyed, each saying which number
+  absorbed it. A correction is not a repetition — where one of two sentences
+  says "no longer" or "never" and the other does not, both are kept and the
+  page states the later one. Only your own "forget this" removes a row, and
+  what it removes is written into the page's history first. A connection it
+  worked out for itself overnight is kept apart from one you stated: it is
+  drawn as a dashed line marked "proposed" in the drawings, and the agent
+  says "perhaps" about it rather than stating it. Making the same link
+  yourself is what confirms it; unlinking it is what drops it. Connections
+  earlier nights guessed are found on upgrade, from what was written down at
+  the time, and marked as guesses too — except where you have since made the
+  same link yourself, or where nothing says where the link came from.
+
+- A project's page is an orientation, not a history: where the checkout
+  is and on which computer, its remote, what it calls itself, what it is
+  written in (languages, not file extensions — one page had said "written
+  mostly in gitignore"), its top-level directories, and how much of its
+  history is yours. Its opening is what the README says the thing is,
+  with the markdown taken off, rather than the README. That is enough for
+  the agent to know where to dig with the tools it already has, and it is
+  recomputed onto the same numbered facts each pass, so a fact cited in a
+  conversation last week still points at the same line.
+
+- `teanode agent knowledge pause` and `resume` stop reading a source and
+  start again without forgetting anything it found. Before, the only way
+  to stop one was to remove it.
+
+- `teanode contact me <id>` says which contact is you, and `teanode
+  contact me` says who it thinks you are. Your agent reads that card's
+  addresses as your own, which is how it tells your commits, your
+  messages and your mail from anybody else's; the dashboard has had a
+  button for it and the command line had nothing. A source that finds
+  commits by addresses it cannot place now lists them and points at the
+  address book, instead of quietly attributing none of your work to you.
+
+- `teanode agent memory evaluate questions.json` says whether its memory is
+  getting better or worse, in numbers. It replays a set of questions through
+  the same recall a conversation uses and prints, for each one, whether the
+  facts that question needs would have been put in front of the model, with
+  totals by kind of question and a non-zero exit when anything missed. It asks
+  no model anything and changes nothing, so it costs nothing to run and can be
+  run either side of a night to see what the night was worth. The shape of the
+  file, and a starter set to replace with questions from your own graph, are in
+  `docs/evaluation/`.
+
+- Every change to a page is kept: what changed, who changed it — you, the
+  agent, the nightly run, a source being read — and what was there before. It is
+  on the page in the dashboard and in `teanode agent memory history <path>`.
+
+- Where the `pgvector` extension is present, searching by meaning uses it. Where
+  it is not, everything still works exactly as before. The compose file now uses
+  an image that has it.
+
+### Fixed
+
+- Marking a contact as yourself, or binding a person's page to their
+  card, failed for any card that came from a phone. The column was sized
+  for identifiers this program generates; a CardDAV client brings its own,
+  which are longer. The refusal surfaced as an HTTP 500 with nothing in
+  the log to say why.
+
+### Changed
+
+- What the agent knows is no longer a flat list of memories. What was in that
+  list is moved onto the pages the first time they are touched, and the old
+  commands and API queries keep working for one release.
+
+- Recall no longer needs a word of four letters before it will search by
+  meaning, so "who is he?" finds something.
+
 ## [0.27.2] - 2026-09-15
 
 ### Security

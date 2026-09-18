@@ -23,15 +23,19 @@ import (
 // tools and a cap on how many turns they may take -- the shape research has
 // used since it was written. What is different about these two is that their
 // answer is a JSON object rather than prose, so each of them reads the last
-// thing the loop said and falls back to the single call it used to make when
-// that turns out not to be an object. A model good enough to end with clean
-// JSON gets the tools; one that is not still sorts the mail.
+// thing the loop said. There is no other way to ask: every model call in
+// this program is a run of the loop, one round and no tools where that is
+// all it needs, so that every one of them is a transcript the person can
+// open.
 
 // thought is what a thinking run produced: the last thing it said, and the
 // transcript to point the insight or the reply at.
 type thought struct {
 	Conversation *models.AgentConversation
 	Text         string
+	// Usage is what the turn cost, every round added up, for a caller
+	// that keeps a budget of its own.
+	Usage llm.Usage
 }
 
 // triageTools is what a sorting run may reach.
@@ -66,13 +70,25 @@ var replyTools = map[string]bool{
 // stranger's message deciding what happens to a mailbox. The loop strips
 // every tool that changes anything and refuses any call whose action turns
 // out not to be a read, which is what lets the calendar be in the set at all.
-func (self *Agent) think(ctx context.Context, run *Run, title, prompt string, allow map[string]bool, rounds int, kind models.AgentJobKind) (*thought, error) {
+//
+// This is the one way any headless work asks a model anything. A call
+// that needs no tools passes an empty allow set and one round, and gets a
+// transcript of its prompt, its answer and what it cost, like every other
+// run; the kind of work chooses the model, so the dream runs on the scan
+// model and sorting on the triage one. The ask feature, which is the
+// person's own chat, does not gate this: the feature that owns the work
+// does, and the caller has checked it.
+// thinkResultCharacters bounds what one lookup brings back into a
+// headless run. A page of a hundred facts is twenty thousand characters,
+// and a run given twenty documents to read that fetched three such pages
+// overflowed a small model's window and lost the documents to the
+// compaction; a lookup is for checking what is known, and this much of a
+// page says it.
+const thinkResultCharacters = 6000
+
+func (self *Agent) think(ctx context.Context, run *Run, title, prompt string, allow map[string]bool, rounds int, kind models.AgentJobKind, work config.AgentWork) (*thought, error) {
 	if self.operations == nil {
 		return nil, fmt.Errorf("no way to act as the person")
-	}
-	configuration := run.Configuration()
-	if !FeatureAllowed(configuration, "ask") {
-		return nil, fmt.Errorf("the conversation loop is off on this server")
 	}
 	var conversation *models.AgentConversation
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
@@ -81,9 +97,15 @@ func (self *Agent) think(ctx context.Context, run *Run, title, prompt string, al
 		if run.Mailbox != nil {
 			mailboxId = run.Mailbox.ID
 		}
+		// A run made in a request or inside a turn has no job; its kind
+		// still names it in the activity table.
+		jobId, subjectId := "", run.Subject
+		if run.Job != nil {
+			jobId, subjectId = run.Job.ID, run.Job.SubjectID
+		}
 		conversation, err = tx.CreateAgentConversation(&models.AgentConversation{
 			AgentID: run.Agent.ID, MailboxID: mailboxId, Kind: models.AgentConversationRun,
-			Title: title, JobID: run.Job.ID, JobKind: string(kind), SubjectID: run.Job.SubjectID,
+			Title: title, JobID: jobId, JobKind: string(kind), SubjectID: subjectId,
 			Surface: string(kind), LastAt: time.Now(),
 		})
 		return err
@@ -97,7 +119,8 @@ func (self *Agent) think(ctx context.Context, run *Run, title, prompt string, al
 	turn, err := self.Ask(&AskSettings{
 		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
 		Message: prompt, Surface: string(kind), ReadOnly: true, Short: true,
-		Allow: allow, Headless: true, MaxRounds: rounds, UsageKind: string(kind),
+		Allow: allow, Headless: true, MaxRounds: rounds, UsageKind: string(kind), Work: work,
+		ReadThenAnswer: true, ResultCharacters: thinkResultCharacters,
 	})
 	if err != nil {
 		return nil, err
@@ -120,9 +143,11 @@ func (self *Agent) think(ctx context.Context, run *Run, title, prompt string, al
 		}
 	}
 	if failure != "" {
-		return nil, fmt.Errorf("the %s turn failed: %s", kind, failure)
+		// The run comes back with the error, so a caller can say on its
+		// transcript what became of it.
+		return &thought{Conversation: conversation, Usage: turn.Usage()}, fmt.Errorf("the %s turn failed: %s", kind, failure)
 	}
-	return &thought{Conversation: conversation, Text: strings.TrimSpace(said)}, nil
+	return &thought{Conversation: conversation, Text: strings.TrimSpace(said), Usage: turn.Usage()}, nil
 }
 
 // retitle says what the run turned out to be, now that it is over. The
@@ -158,23 +183,59 @@ func roundsFor(configuration *config.Configuration, kind models.AgentJobKind) in
 			return limits.MaxRoundsPerReply
 		}
 		return 6
+	case models.AgentJobDream, models.AgentJobIngest:
+		if limits.MaxRoundsPerDream > 0 {
+			return limits.MaxRoundsPerDream
+		}
+		return 4
 	}
 	return 4
 }
 
-// canThink says whether a run may use the loop at all: somebody to act as,
-// and the loop switched on for this deployment.
+// noTools is the allow set of a call that needs none: one round, one
+// answer, and the transcript a run gets.
+var noTools = map[string]bool{}
+
+// oneShot is a run that needs no tools: one round, one answer, and the
+// transcript every run gets -- the prompt, the answer and what it cost.
+func (self *Agent) oneShot(ctx context.Context, run *Run, title, prompt string, kind models.AgentJobKind, work config.AgentWork) (*thought, error) {
+	return self.think(ctx, run, title, prompt, noTools, 1, kind, work)
+}
+
+// runFor is a run for work that no job queued: a draft asked for from the
+// composer, a conversation being titled, a turn compacting its history.
+func (self *Agent) runFor(agent *models.Agent, owner *models.User, mailbox *models.Mailbox, subject string) *Run {
+	return &Run{Agent: agent, Owner: owner, Mailbox: mailbox, Subject: subject, Now: time.Now(), settings: self.settings}
+}
+
+// noteRun is a run that made no call at all, kept for what it says: a
+// reply that was refused before any model was asked has a line in the
+// activity table saying why.
+func noteRun(tx db.Transaction, run *Run, note string) (*models.AgentConversation, error) {
+	conversation, err := tx.CreateAgentConversation(&models.AgentConversation{
+		AgentID: run.Agent.ID, MailboxID: run.Job.MailboxID, Kind: models.AgentConversationRun,
+		Title: note, JobID: run.Job.ID, JobKind: string(run.Job.Kind), SubjectID: run.Job.SubjectID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: models.AgentMessageNote, Content: note}); err != nil {
+		return nil, err
+	}
+	return conversation, nil
+}
+
+// canThink says whether a run may use the loop at all: somebody to act as.
 func (self *Agent) canThink(configuration *config.Configuration) bool {
-	return self.operations != nil && FeatureAllowed(configuration, "ask")
+	return self.operations != nil
 }
 
 // sortWithTools is the sorting run as a turn of the loop. It answers with the
 // insight, or with nothing at all when the model did not end with the object
-// the prompt asked for -- and then the single call sorts the message, which
-// is what keeps a small model usable here.
+// the prompt asked for.
 func (self *Agent) sortWithTools(ctx context.Context, run *Run, mail *models.Mail, prompt string) (*models.MailInsight, func(db.Transaction) (string, error), error) {
 	thinking, err := self.think(ctx, run, fmt.Sprintf("Sorting %q", mail.Subject), prompt,
-		triageTools, roundsFor(run.Configuration(), models.AgentJobTriage), models.AgentJobTriage)
+		triageTools, roundsFor(run.Configuration(), models.AgentJobTriage), models.AgentJobTriage, config.AgentWorkTriage)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -199,11 +260,10 @@ func (self *Agent) sortWithTools(ctx context.Context, run *Run, mail *models.Mai
 // look the sender up and open the diary first.
 //
 // It hands back the answer and a way to record the run, or nothing at all
-// when the model ended with something other than the object -- and then the
-// single call writes the draft, as it did before any of this.
+// when the model ended with something other than the object.
 func (self *Agent) draftWithTools(ctx context.Context, run *Run, mail *models.Mail, prompt string) (*ReplyAnswer, func(db.Transaction, string) (string, error), error) {
 	thinking, err := self.think(ctx, run, fmt.Sprintf("Answering %q", mail.Subject), prompt,
-		replyTools, roundsFor(run.Configuration(), models.AgentJobReply), models.AgentJobReply)
+		replyTools, roundsFor(run.Configuration(), models.AgentJobReply), models.AgentJobReply, config.AgentWorkReply)
 	if err != nil {
 		return nil, nil, err
 	}

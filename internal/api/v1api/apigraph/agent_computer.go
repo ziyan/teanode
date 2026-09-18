@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/ziyan/teanode/internal/agent"
+	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -18,8 +19,22 @@ import (
 // signed in with. The server carries the agent's shell and filesystem
 // requests across and the program's answers back.
 
-// computerProtocol is the version the program must speak.
-const computerProtocol = 1
+// computerAnswerSize bounds one message from an attached computer.
+//
+// Larger than a GraphQL request body because this socket carries a page
+// of a scan: the program bounds a page at a few megabytes of text, and
+// this is that with room for the JSON around it -- and room for a
+// program that bounds less well than this one, since a page over the
+// limit closes the socket and fails every scan open on that computer,
+// and an older program repeated that on the same file every time. A
+// limit at all because the library's default is none, and this socket
+// is reached before the sender has said who they are.
+const computerAnswerSize = 512 << 20
+
+// computerProtocol is the version the program must speak. It is
+// internal/computer's Protocol, and the two move together: 2 added
+// `scan`, which is what lets a source be read with nobody watching.
+const computerProtocol = computer.Protocol
 
 // AgentComputerQuery says which computers are attached.
 type AgentComputerQuery interface {
@@ -69,10 +84,7 @@ func (self *graph) computerView(response http.ResponseWriter, request *http.Requ
 	if err != nil {
 		return
 	}
-	// A size limit as well as the deadline below: the library's default is
-	// no limit at all, and this socket is reached before the sender has
-	// said who they are.
-	conn.SetReadLimit(maximumRequestSize)
+	conn.SetReadLimit(computerAnswerSize)
 	defer func() { _ = conn.Close() }()
 	socket := &tabSocket{conn: conn}
 	refuse := func(reason string) {
@@ -96,6 +108,12 @@ func (self *graph) computerView(response http.ResponseWriter, request *http.Requ
 		}
 		_, data, err := conn.ReadMessage()
 		if err != nil {
+			// Why matters: a computer that leaves every hundred seconds
+			// is a program that crashed, a socket a proxy cut, or a
+			// message too big, and the three are told apart only here.
+			if attached {
+				log.Noticef("the computer %q of %s stopped answering: %s", name, username, err)
+			}
 			return
 		}
 		var message struct {

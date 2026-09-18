@@ -78,8 +78,17 @@ const AccessPage = lazyPage(async () => ({
 const ServerPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "server" */ './pages/server')).ServerPage,
 }))
+const AgentAdminPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "server" */ './pages/agentAdmin')).AgentAdminPage,
+}))
 const AgentPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/agent')).AgentPage,
+}))
+const KnowledgePage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/knowledge')).KnowledgePage,
+}))
+const KnowledgeExplorePage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/knowledgeExplore')).KnowledgeExplorePage,
 }))
 const ProfilePage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/settings/profile')).ProfilePage,
@@ -312,9 +321,6 @@ export function App() {
                     <Route path="/mailbox/subscriptions/:key" element={<MailboxSubscriptionsPage />} />
                     <Route path="/mailbox/settings" element={<MailboxSettingsPage />} />
                     <Route path="/mailbox/settings/:tab" element={<MailboxSettingsPage />} />
-                    {/* The agent's page moved under the account's settings,
-                      where the rest of what is the person's own lives. */}
-                    <Route path="/agent" element={<Navigate to="/settings/agent" replace />} />
                     <Route path="/mailbox/:folderId" element={<MailboxPage />} />
                     <Route path="/mailbox/:folderId/:itemId" element={<MailboxPage />} />
                     {/* The operator's view of every message needs mail:audit;
@@ -361,13 +367,25 @@ export function App() {
                     <Route path="/access/:tab/:selected" element={<AccessPage />} />
                     <Route path="/server" element={<ServerPage />} />
                     <Route path="/server/:tab" element={<ServerPage />} />
+                    {/* Everyone's agents: their own row in the rail, with tabs,
+                      rather than one long tab of the server page. */}
+                    <Route path="/agent" element={<AgentAdminPage />} />
+                    <Route path="/agent/:tab" element={<AgentAdminPage />} />
 
                     {/* What configures the person signed in, which is a place you
                   go into from your own name at the foot of the rail. */}
                     <Route path="/settings" element={<Navigate to={SETTINGS_LANDING} replace />} />
                     <Route path="/settings/preference" element={<ProfilePage onSaved={refresh} />} />
                     <Route path="/settings/profile" element={<Navigate to="/settings/preference" replace />} />
+                    {/* The person's own agent, in tabs of its own: a link that
+                      names no tab is answered by the page with the first. */}
                     <Route path="/settings/agent" element={<AgentPage />} />
+                    <Route path="/settings/agent/:tab" element={<AgentPage />} />
+                    {/* Before the graph's own paths below: "explore" is the
+                      drawing of the whole graph, not a folder in it, and the
+                      splat route would read it as one. */}
+                    <Route path="/settings/knowledge/explore" element={<KnowledgeExplorePage />} />
+                    <Route path="/settings/knowledge/*" element={<KnowledgePage />} />
                     <Route path="/settings/password" element={<ChangePasswordPage username={session.username} />} />
                     <Route path="/settings/passkeys" element={<PasskeysPage />} />
                     <Route path="/settings/tokens" element={<TokensPage />} />

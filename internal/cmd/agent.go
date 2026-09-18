@@ -13,6 +13,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // NewAgentCommand builds "teanode agent": a person's own agent — turning it
@@ -34,6 +35,8 @@ func NewAgentCommand() *cli.Command {
 			newAgentMemoryCommand(),
 			newAgentSkillCommand(),
 			newAgentScheduleCommand(),
+			newAgentKnowledgeCommand(),
+			newAgentDreamCommand(),
 			newAgentFeedbackCommand(),
 			newAgentMCPCommand(),
 			newAgentChannelCommand(),
@@ -173,6 +176,7 @@ func newAgentSettingsCommand() *cli.Command {
 				Usage:     "change your agent; turns it on the first time",
 				ArgsUsage: "key=value [key=value ...]",
 				Description: "Keys: enabled, name, instructions, language, ask-model, confirm (comma list),\n" +
+					"dream-from, dream-until (HH:MM in your zone: when it may dream),\n" +
 					"voice.tone (formal|neutral|casual), voice.length (short|medium|long), voice.greeting,\n" +
 					"voice.signoff, notify.held-reply, notify.high-priority, notify.run-failed (off|dashboard|mail).\n" +
 					"A value of \"-\" reads standard input.\n\n" +
@@ -506,6 +510,9 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 		Instructions       string     `json:"instructions"`
 		Language           string     `json:"language"`
 		AskModel           string     `json:"askModel"`
+		DreamFrom          string     `json:"dreamFrom"`
+		DreamUntil         string     `json:"dreamUntil"`
+		DreamedAt          *time.Time `json:"dreamedAt"`
 		DailyTokens        int64      `json:"dailyTokens"`
 		DailyCost          float64    `json:"dailyCost"`
 		OperatorDisabledAt *time.Time `json:"operatorDisabledAt"`
@@ -529,6 +536,21 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 	if agent.AskModel != "" {
 		fields = append(fields, [2]string{"model for conversations", agent.AskModel})
 	}
+	// The hours the nightly run may work. Shown even when unset, because
+	// the default is a decision somebody should be able to see and
+	// disagree with.
+	from, until := agent.DreamFrom, agent.DreamUntil
+	if from == "" {
+		from = models.DreamFromDefault
+	}
+	if until == "" {
+		until = models.DreamUntilDefault
+	}
+	hours := from + " to " + until
+	if agent.DreamedAt != nil {
+		hours += ", last ran " + formatTime(agent.DreamedAt)
+	}
+	fields = append(fields, [2]string{"dreams", hours})
 	if view.Budget != nil {
 		limit := "unlimited"
 		if view.Budget.Limit > 0 {
@@ -594,6 +616,10 @@ func runAgentSettingsSet(ctx context.Context, command *cli.Command) error {
 			variables[key] = value
 		case "ask-model":
 			variables["askModel"] = value
+		case "dream-from":
+			variables["dreamFrom"] = value
+		case "dream-until":
+			variables["dreamUntil"] = value
 		case "confirm":
 			variables["confirm"] = commaList(value)
 		case "voice.tone", "voice.length", "voice.greeting", "voice.signoff":

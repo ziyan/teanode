@@ -127,6 +127,12 @@ A feature has to pass all three:
    mailbox and talk to it; it is on the Member role by default. `agent:audit`
    is the operator's view of everybody's agents — state, usage, limits, the
    switch-off — and never their content. It is on the Operator role.
+   `agent:act` is content: every person's runs and conversations, openable,
+   and a word with their agent as them — the same tools, the same
+   permissions, logged each time as the operator speaking as that person.
+   It is on the Administrator role only, for the operator of a private
+   server debugging what an agent did. The `/agent` page in the rail has
+   the tabs: agents, use and cost, every run, jobs given up on.
 3. **The person.** Their agent's own switch, and the policy on each source.
 
 An operator can also switch one person's agent off (`OperatorDisabledAt`),
@@ -164,10 +170,25 @@ permission. `docs/subsystems/the-ask-loop.md` is the whole of it.
 
 **A job** is work nobody is watching: a row in `agent_job` claimed by one
 instance and run to completion. The kinds are `triage`, `research`,
-`summarize`, `embed`, `reply`, `send`, `schedule`, `backfill` and `noop`.
-`docs/subsystems/jobs-and-schedules.md` covers the queue, and the transcript
-each job leaves is a conversation of kind `run`
-(`docs/subsystems/conversations.md`).
+`summarize`, `embed`, `reply`, `send`, `schedule`, `backfill`, `remember`,
+`ingest`, `dream` and `noop`. `docs/subsystems/jobs-and-schedules.md` covers
+the queue.
+
+There is no third shape. **Every model call is a turn of the same loop**, in
+a conversation of kind `run` (`docs/subsystems/conversations.md`): a job's
+calls, the dream's hundred and fifty calls a night, the description of a
+checkout, the title a conversation is given, the note a long conversation is
+compacted into, the draft the composer asks for. A call that needs no tools
+is a turn with none and one round, and its transcript is the prompt, the
+answer and what it cost. The kind of work chooses the model — the dream and
+the ingest run on the `scan` model, sorting on `triage` — and the feature
+that owns the work gates it; the `ask` feature gates only the person's own
+chat. What this buys is that the person can open anything the agent did:
+the activity table on the agent page and `teanode agent run list` show every
+run, tagged by kind, and a dream's runs are found from its line in the dream
+log. It also means the sorting run and the answering run have no single-call
+fallback any more: a model that ends a turn in prose has not sorted the
+message, and the job says so.
 
 A job is queued inside the transaction that delivered the mail — the delivery
 hook `Agent.OnMailboxDelivery` does nothing else. **No model is ever called

@@ -22,9 +22,23 @@ import { useResolvedTheme } from './theme'
 import { Tooltip } from './tooltip'
 import { Markdown } from './markdown'
 import { RelativeTime } from './relativeTime'
-import { ArrowDownIcon, ArrowUpIcon, ChevronDownIcon, ComputerIcon, GlobeIcon, PaperclipIcon, PencilIcon, StarIcon, PlusIcon, SparkIcon, TrashIcon, ExternalIcon } from './icons'
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  ChevronDownIcon,
+  ComputerIcon,
+  GlobeIcon,
+  PaperclipIcon,
+  PencilIcon,
+  StarIcon,
+  PlusIcon,
+  SparkIcon,
+  TargetIcon,
+  TrashIcon,
+  ExternalIcon,
+} from './icons'
 import { CodeBlock } from './codeBlock'
-import { ConfirmDialog } from './dialog'
+import { ConfirmDialog, FormDialog } from './dialog'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
 import { useTranslation } from '../i18n/i18n'
@@ -46,6 +60,10 @@ const DEVICES_EVERY = 10_000
 // person never waits to type; files come with a turn, and a thread can be
 // pointed at from the reader.
 
+// Where a conversation's goal stands, as the server writes it. Empty is
+// the fourth answer and the commonest one: there is no goal.
+type GoalState = 'working' | 'waiting' | 'met'
+
 interface Conversation {
   id: string
   kind: 'main' | 'named' | 'run'
@@ -53,7 +71,21 @@ interface Conversation {
   summary?: string
   lastAt: string
   archivedAt?: string | null
+  // The standing instruction this conversation carries, if any: what the
+  // agent keeps working toward across turns of its own. goalNote is its
+  // last word on where it is, and goalNextAt when it looks again.
+  goal?: string
+  goalState?: GoalState | ''
+  goalNote?: string
+  goalNextAt?: string | null
+  goalSetAt?: string | null
 }
+
+// The marker a turn of the agent's own begins with, which is
+// models.GoalCheckInMarker on the server. A user message starting with it
+// is the agent checking in against the goal, not the person, and the
+// transcript draws it as a line rather than as their bubble.
+const GOAL_CHECK_IN_MARKER = '[goal check-in]'
 
 interface Artifact {
   artifact_id: string
@@ -142,7 +174,6 @@ function drawable(file: Partial<SharedFile> | null | undefined): file is SharedF
 
 const ATTACHMENT_PATH = '/api/v1/agent/attachments/'
 
-
 // Today's spend against the day's budget, in tokens and in money. A
 // limit of zero is no limit of that kind; where both are set, whichever
 // runs out first stops the day, and the ring shows that one.
@@ -162,7 +193,12 @@ function budgetShown(budget: Budget): { used: string; limit: string; fraction: n
   const money = budget.costLimit > 0 ? budget.cost / budget.costLimit : -1
   if (tokens < 0 && money < 0) return null
   if (money >= tokens) {
-    return { used: formatMoney(budget.cost, budget.currency), limit: formatMoney(budget.costLimit, budget.currency), fraction: money, money: true }
+    return {
+      used: formatMoney(budget.cost, budget.currency),
+      limit: formatMoney(budget.costLimit, budget.currency),
+      fraction: money,
+      money: true,
+    }
   }
   return { used: formatCount(budget.used), limit: formatCount(budget.limit), fraction: tokens, money: false }
 }
@@ -194,7 +230,8 @@ interface StoredMessage {
 }
 
 interface RunEvent {
-  kind: 'asked' | 'text' | 'message' | 'tool_call' | 'tool_result' | 'confirmation' | 'question' | 'note' | 'done' | 'error'
+  kind:
+    'asked' | 'text' | 'message' | 'tool_call' | 'tool_result' | 'confirmation' | 'question' | 'note' | 'done' | 'error'
   runId: string
   sequence: number
   at?: string
@@ -211,7 +248,16 @@ interface RunEvent {
 type Line =
   | { kind: 'user'; key: string; text: string; at?: string; attachments?: Attachment[]; references?: AgentReference[] }
   | { kind: 'assistant'; key: string; text: string; at?: string; streaming?: boolean; usage?: Usage | null }
-  | { kind: 'tool'; key: string; tool: string; note: string; done: boolean; arguments?: string; result?: string }
+  | {
+      kind: 'tool'
+      key: string
+      tool: string
+      note: string
+      done: boolean
+      arguments?: string
+      result?: string
+      at?: string
+    }
   | {
       kind: 'confirmation'
       key: string
@@ -231,8 +277,11 @@ type Line =
       choices: string[]
       answered?: string
     }
-  | { kind: 'note'; key: string; text: string }
+  | { kind: 'note'; key: string; text: string; at?: string }
   | { kind: 'error'; key: string; text: string }
+  // A turn the agent started against the goal. Its words are framing for
+  // the model and were never the person's, so only the hour is drawn.
+  | { kind: 'checkin'; key: string; at?: string; text: string }
 
 const AGENT = `
   query {
@@ -248,13 +297,17 @@ const TAB = `
 
 const CONVERSATIONS = `
   query ($archived: Boolean, $query: String) {
-    ListAgentConversations(archived: $archived, query: $query) { id kind title summary lastAt archivedAt }
+    ListAgentConversations(archived: $archived, query: $query) {
+      id kind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt
+    }
   }`
 
 const CONVERSATION = `
-  query ($conversationId: String, $first: Int) {
-    ReadAgentConversation(conversationId: $conversationId, first: $first) {
-      conversation { id kind title summary lastAt archivedAt }
+  query ($conversationId: String, $first: Int, $offset: Int) {
+    ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
+      conversation { id kind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt }
+      actingAs
+      goalTurnsToday
       messages {
         id createdAt role content name toolCallId toolCalls { id name arguments }
         usage { promptTokens completionTokens cost }
@@ -296,9 +349,12 @@ const START = `
     StartAgentConversation(title: $title) { id kind title summary lastAt archivedAt }
   }`
 
+// A variable left out is a field left alone: renaming sends no goal, and
+// setting a goal sends no title. An empty goal is not nothing — it is the
+// person saying there is no goal any more.
 const UPDATE = `
-  mutation ($conversationId: String!, $title: String) {
-    UpdateAgentConversation(conversationId: $conversationId, title: $title) { id }
+  mutation ($conversationId: String!, $title: String, $goal: String) {
+    UpdateAgentConversation(conversationId: $conversationId, title: $title, goal: $goal) { id }
   }`
 
 const DELETE = `
@@ -314,15 +370,7 @@ const MAKE_MAIN = `
 // The tools after which what the mailbox shows may have changed. The rules
 // and the folders are one tool each now, whatever action they were asked
 // for: a list is a read and refreshing after one costs nothing.
-const MAIL_TOOLS = new Set([
-  'mail_act',
-  'mail_draft',
-  'mail_send',
-  'folder',
-  'rule',
-  'mailbox_settings',
-  'reply_queue',
-])
+const MAIL_TOOLS = new Set(['mail_act', 'mail_draft', 'mail_send', 'folder', 'rule', 'mailbox_settings', 'reply_queue'])
 
 const OPEN_KEY = 'teanode.agent.drawer'
 const CONVERSATION_KEY = 'teanode.agent.conversation'
@@ -367,6 +415,17 @@ function dayLabel(at: string, today: string, yesterday: string): string {
   before.setDate(now.getDate() - 1)
   if (day === dayOf(before.toISOString())) return yesterday
   return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+// clockTime is the hour and minute a moment falls on, in the reader's own
+// zone. Used where the day is already known -- the dividers say it, and a
+// goal's next look is always today or tomorrow -- so the date would be
+// noise on a line that is meant to be read past.
+function clockTime(at?: string): string {
+  if (!at) return ''
+  const moment = new Date(at)
+  if (Number.isNaN(moment.getTime())) return ''
+  return moment.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 }
 
 function draftKey(conversationId: string): string {
@@ -456,9 +515,32 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
       results.set(message.toolCallId, message.content)
     }
   }
+  // What a turn cost is what every round of it cost: the rounds that
+  // only called tools have usage and no words, and the answer at the end
+  // used to show its own round alone, which for a turn of six rounds
+  // was a sixth of the truth. Added up from the person's message on, and
+  // shown once, on the turn's last answer.
+  const running: { turn: Usage | null; lastAnswer: number } = { turn: null, lastAnswer: -1 }
+  const closeTurn = () => {
+    if (running.lastAnswer >= 0 && running.turn) {
+      const answer = lines[running.lastAnswer]
+      if (answer.kind === 'assistant') {
+        lines[running.lastAnswer] = { ...answer, usage: running.turn }
+      }
+    }
+    running.turn = null
+    running.lastAnswer = -1
+  }
   for (const message of messages) {
     switch (message.role) {
       case 'user':
+        closeTurn()
+        // A check-in is a user message only because that is the shape a
+        // turn starts in. Nobody typed it, so none of it is shown.
+        if (message.content.startsWith(GOAL_CHECK_IN_MARKER)) {
+          lines.push({ kind: 'checkin', key: message.id, at: message.createdAt, text: message.content })
+          break
+        }
         lines.push({
           kind: 'user',
           key: message.id,
@@ -469,8 +551,21 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
         })
         break
       case 'assistant':
+        if (message.usage) {
+          running.turn = {
+            promptTokens: (running.turn?.promptTokens ?? 0) + message.usage.promptTokens,
+            completionTokens: (running.turn?.completionTokens ?? 0) + message.usage.completionTokens,
+            cost: (running.turn?.cost ?? 0) + (message.usage.cost ?? 0),
+          }
+        }
         if (message.content.trim()) {
-          lines.push({ kind: 'assistant', key: message.id, text: message.content, at: message.createdAt, usage: message.usage })
+          lines.push({
+            kind: 'assistant',
+            key: message.id,
+            text: message.content,
+            at: message.createdAt,
+          })
+          running.lastAnswer = lines.length - 1
         }
         for (const call of message.toolCalls ?? []) {
           lines.push({
@@ -481,6 +576,9 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
             done: true,
             arguments: call.arguments,
             result: results.get(call.id),
+            // Timed like every other line, so the day divider does not
+            // land under the tool calls that open a day.
+            at: message.createdAt,
           })
         }
         break
@@ -488,12 +586,21 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
         lines.push({ kind: 'note', key: message.id, text: '' })
         break
       case 'note':
-        lines.push({ kind: 'note', key: message.id, text: message.content === 'stopped' ? t('agentDrawer.stopped') : message.content })
+        // Timed, so that the day divider counts a note that opens a day
+        // -- "Goal set" is the first line of a fresh conversation -- and
+        // does not land under it.
+        lines.push({
+          kind: 'note',
+          key: message.id,
+          text: message.content === 'stopped' ? t('agentDrawer.stopped') : message.content,
+          at: message.createdAt,
+        })
         break
       default:
         break
     }
   }
+  closeTurn()
   return lines
 }
 
@@ -560,7 +667,13 @@ function AttachmentChips({ attachments }: { attachments: Attachment[] }) {
         ) : isImage(attachment.contentType) ? (
           <AttachedPicture key={attachment.id} attachment={attachment} />
         ) : (
-          <a key={attachment.id} href={attachmentHref(attachment)} className="agent-attachment-chip" download={attachment.name} onClick={openAttachment}>
+          <a
+            key={attachment.id}
+            href={attachmentHref(attachment)}
+            className="agent-attachment-chip"
+            download={attachment.name}
+            onClick={openAttachment}
+          >
             <PaperclipIcon size={12} /> {attachment.name} <span className="muted">{formatBytes(attachment.size)}</span>
           </a>
         ),
@@ -569,13 +682,24 @@ function AttachmentChips({ attachments }: { attachments: Attachment[] }) {
   )
 }
 
-function ReferenceChips({ references, onRemove }: { references: AgentReference[]; onRemove?: (index: number) => void }) {
+function ReferenceChips({
+  references,
+  onRemove,
+}: {
+  references: AgentReference[]
+  onRemove?: (index: number) => void
+}) {
   const { t } = useTranslation()
   return (
     <div className="agent-references">
       {references.map((reference, index) => (
-        <span key={`${reference.itemId ?? ''}-${index}`} className="agent-reference-chip" title={reference.from ?? ''}>
-          <SparkIcon size={11} /> {reference.subject || reference.itemId || reference.threadId}
+        <span
+          key={`${reference.itemId ?? reference.path ?? ''}-${index}`}
+          className="agent-reference-chip"
+          title={reference.from ?? reference.path ?? ''}
+        >
+          <SparkIcon size={11} />{' '}
+          {reference.subject || reference.name || reference.path || reference.itemId || reference.threadId}
           {onRemove && (
             <button type="button" className="link" aria-label={t('agentDrawer.remove')} onClick={() => onRemove(index)}>
               ×
@@ -641,7 +765,9 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
         </a>
       </div>
       {artifact.kind === 'markdown' ? (
-        <div className="agent-artifact-body">{markdown === null ? <span className="muted">…</span> : <Markdown text={markdown} />}</div>
+        <div className="agent-artifact-body">
+          {markdown === null ? <span className="muted">…</span> : <Markdown text={markdown} />}
+        </div>
       ) : framed ? (
         <iframe
           ref={frame}
@@ -698,7 +824,17 @@ function FileCard({ file }: { file: SharedFile }) {
 // of the budget has gone, coloured by how near the end of it the day is,
 // with the numbers and the hour it resets on hover, and the agent's own
 // page a click away. Nothing is drawn where there is no limit to be near.
-function BudgetRing({ budget, zone, framed, onLeaving }: { budget: Budget; zone: string; framed: boolean; onLeaving: () => void }) {
+function BudgetRing({
+  budget,
+  zone,
+  framed,
+  onLeaving,
+}: {
+  budget: Budget
+  zone: string
+  framed: boolean
+  onLeaving: () => void
+}) {
   const { t } = useTranslation()
   const shown = budgetShown(budget)
   if (!shown) return null
@@ -709,7 +845,9 @@ function BudgetRing({ budget, zone, framed, onLeaving }: { budget: Budget; zone:
   const round = 2 * Math.PI * radius
   // Said in whichever the budget is counted in, and what it came to in
   // money when that is not the same thing.
-  const spent = shown.money ? '' : ` ${t('agentDrawer.budgetSpent', { spent: formatMoney(budget.cost, budget.currency) })}`
+  const spent = shown.money
+    ? ''
+    : ` ${t('agentDrawer.budgetSpent', { spent: formatMoney(budget.cost, budget.currency) })}`
   const label = `${t('agentDrawer.budget', { used: shown.used, limit: shown.limit, percent: String(percent) })}${spent} ${t(
     'agentDrawer.budgetResets',
     { at: formatClock(budget.resetsAt, zone) },
@@ -732,7 +870,13 @@ function BudgetRing({ budget, zone, framed, onLeaving }: { budget: Budget; zone:
       {framed ? (
         // Framed into another site, the drawer sends the person to the
         // dashboard itself rather than drawing a settings page in here.
-        <a className="agent-drawer-budget" href={`${window.location.origin}/settings/agent`} target="_blank" rel="noreferrer" aria-label={label}>
+        <a
+          className="agent-drawer-budget"
+          href={`${window.location.origin}/settings/agent`}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={label}
+        >
           {ring}
         </a>
       ) : (
@@ -740,6 +884,69 @@ function BudgetRing({ budget, zone, framed, onLeaving }: { budget: Budget; zone:
           {ring}
         </Link>
       )}
+    </Tooltip>
+  )
+}
+
+// goalStateOf is the state to draw a conversation's goal in. A goal with
+// no state is one the server has not written a state for yet, and it is
+// working: that is what setting one does.
+function goalStateOf(conversation: Conversation): GoalState {
+  return conversation.goalState || 'working'
+}
+
+// goalStateKey is what a state is called, as a key of the catalogue.
+function goalStateKey(state: GoalState): `agentDrawer.goal.${GoalState}` {
+  return `agentDrawer.goal.${state}`
+}
+
+// The goal control in the drawer's head: a target to press when the
+// conversation is working toward nothing, and a chip carrying the state
+// when it has a goal. Either one opens the same dialog.
+//
+// Narrow, the chip is the mark alone in the state's colour and the state
+// word moves into the tooltip: there is no room beside a title on a phone
+// for "waiting for you · next look 10:42", and the mark's colour already
+// says which of the three it is to anyone who has seen it once.
+// CheckInLine is one turn of the agent's own toward the goal, as a line
+// rather than a bubble; pressing it shows the words the turn was given,
+// because a person watching a goal wants to know what the agent was
+// told as much as what it did.
+function CheckInLine({ at, text }: { at?: string; text: string }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="agent-line checkin muted">
+      <button
+        type="button"
+        className="agent-checkin-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((before) => !before)}
+      >
+        <TargetIcon size={12} />
+        {t('agentDrawer.goal.checkIn')}
+        {at ? ` · ${clockTime(at)}` : ''}
+      </button>
+      {open ? <pre className="agent-checkin-prompt">{text}</pre> : null}
+    </div>
+  )
+}
+
+function GoalChip({ conversation, onOpen }: { conversation: Conversation; onOpen: () => void }) {
+  const { t } = useTranslation()
+  // One icon, whatever the state: the head has the conversation's name,
+  // the attached marks and the budget ring on it, and there is no room
+  // for words. With a goal the icon takes the state's colour and the
+  // tooltip says the state and the goal; the dialog behind it says the
+  // rest.
+  const goal = conversation.goal?.trim() ?? ''
+  const state = goal ? goalStateOf(conversation) : ''
+  const label = goal ? `${t(goalStateKey(state as GoalState))} · ${goal}` : t('agentDrawer.goal.set')
+  return (
+    <Tooltip label={label}>
+      <button type="button" className={`icon-button agent-drawer-goal ${state}`} aria-label={label} onClick={onOpen}>
+        <TargetIcon size={16} />
+      </button>
     </Tooltip>
   )
 }
@@ -780,7 +987,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // The conversation as loaded, which the list does not always hold: a
   // run's transcript is opened from the agent page and is not in it.
   const [loaded, setLoaded] = useState<Conversation | null>(null)
+  // Whose conversation this is, when it is not the person's own: an
+  // operator reading another person's agent speaks to it as them, and
+  // must be told so every time the drawer is open on it.
+  const [actingAs, setActingAs] = useState<string | null>(null)
   const [lines, setLines] = useState<Line[]>([])
+  // The messages behind the lines, oldest first, and how many the
+  // conversation holds: a drawer opens on the newest hundred, and the
+  // difference is what "earlier messages" fetches.
+  const messages = useRef<StoredMessage[]>([])
+  const [total, setTotal] = useState(0)
+  const [loadingEarlier, setLoadingEarlier] = useState(false)
   const [todos, setTodos] = useState<{ id: string; text: string; doneAt?: string | null }[]>([])
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState<File[]>([])
@@ -792,11 +1009,19 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const [runs, setRuns] = useState<string[]>([])
   const [showingList, setShowingList] = useState(false)
   const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null)
+  // The goal being typed, or null while the dialog is shut. An empty
+  // string is a dialog open on a conversation that has no goal yet.
+  const [goalDraft, setGoalDraft] = useState<string | null>(null)
+  const [goalBusy, setGoalBusy] = useState(false)
+  const [goalTurnsToday, setGoalTurnsToday] = useState(0)
+  // Whether the bar saying what the agent is waiting for is still up. It
+  // comes down when the person sends, because the answer is on its way,
+  // and the next read puts it back if the agent is still waiting.
+  const [showingGoalNote, setShowingGoalNote] = useState(true)
   const [{ showTools, showUsage }] = useAgentPreferences()
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   // The bubbles whose time is shown: a tap on a phone, where there is no
   // pointer to hover with.
-  const [timed, setTimed] = useState<Set<string>>(() => new Set())
   const [tab, setTab] = useState<{ attached: boolean; title?: string; url?: string } | null>(null)
   const [computers, setComputers] = useState<string[]>([])
   // The day's tokens against the budget, read with the rest and so kept
@@ -867,7 +1092,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     const response = await graphql<{
       ReadAgentConversation: {
         conversation: Conversation
+        actingAs?: string | null
+        goalTurnsToday?: number
         messages: StoredMessage[]
+        total?: number
         todos: { id: string; text: string; doneAt?: string | null }[]
       }
     }>(CONVERSATION, {
@@ -876,8 +1104,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     })
     setConversationId(response.ReadAgentConversation.conversation.id)
     setLoaded(response.ReadAgentConversation.conversation)
+    setActingAs(response.ReadAgentConversation.actingAs ?? null)
+    setGoalTurnsToday(response.ReadAgentConversation.goalTurnsToday ?? 0)
     remember(CONVERSATION_KEY, response.ReadAgentConversation.conversation.id)
+    messages.current = response.ReadAgentConversation.messages
+    setTotal(response.ReadAgentConversation.total ?? response.ReadAgentConversation.messages.length)
     setLines(linesOf(response.ReadAgentConversation.messages, t))
+    setShowingGoalNote(true)
     setTodos(response.ReadAgentConversation.todos ?? [])
     setDraft(remembered(draftKey(response.ReadAgentConversation.conversation.id)))
     draftLoadedFor.current = response.ReadAgentConversation.conversation.id
@@ -1189,7 +1422,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       if (!available || !detail) return
       detail.handled = true
       setReferences((previous) =>
-        previous.some((reference) => reference.itemId === detail.reference.itemId) ? previous : [...previous, detail.reference],
+        previous.some(
+          (reference) =>
+            (reference.itemId && reference.itemId === detail.reference.itemId) ||
+            (reference.path && reference.path === detail.reference.path),
+        )
+          ? previous
+          : [...previous, detail.reference],
       )
       setOpen(true)
       remember(OPEN_KEY, '1')
@@ -1282,7 +1521,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const applyEvent = (event: RunEvent) => {
     // What an event does beyond the transcript happens here, once: the
     // updater below may run twice under StrictMode.
-    if (event.kind === 'tool_result' && event.tool && MAIL_TOOLS.has(event.tool) && !(event.text ?? '').startsWith('{"error"')) {
+    if (
+      event.kind === 'tool_result' &&
+      event.tool &&
+      MAIL_TOOLS.has(event.tool) &&
+      !(event.text ?? '').startsWith('{"error"')
+    ) {
       announceMailChanged()
     }
     if (event.kind === 'error') {
@@ -1320,6 +1564,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             note: '',
             done: false,
             arguments: event.arguments,
+            at: event.at,
           })
           return next
         case 'tool_result': {
@@ -1382,6 +1627,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const asked = (event: RunEvent) => {
     setRuns((previous) => (previous.includes(event.runId) ? previous : [...previous, event.runId]))
     if (sending.current > 0 && event.note === surface()) return
+    // A turn of the agent's own, arriving live: the line, not the bubble,
+    // and nothing here to have said it twice.
+    if ((event.text ?? '').startsWith(GOAL_CHECK_IN_MARKER)) {
+      setLines((previous) => [
+        ...previous,
+        { kind: 'checkin', key: `${event.runId}-asked`, at: event.at, text: event.text ?? '' },
+      ])
+      return
+    }
     setLines((previous) => {
       let kept = previous
       for (let index = previous.length - 1; index >= 0; index--) {
@@ -1423,6 +1677,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // being read, it goes back to its end for the turn that follows.
     sticking.current = true
     setAtBottom(true)
+    // What the agent was waiting for has been answered, as far as this
+    // person is concerned; the bar asking for it has served.
+    setShowingGoalNote(false)
     const key = `user-${Date.now()}`
     setLines((previous) => [
       ...previous,
@@ -1432,7 +1689,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         text: message,
         at: new Date().toISOString(),
         references: pointed.length > 0 ? pointed : undefined,
-        attachments: files.map((file, index) => ({ id: `pending-${index}`, name: file.name, contentType: file.type, size: file.size })),
+        attachments: files.map((file, index) => ({
+          id: `pending-${index}`,
+          name: file.name,
+          contentType: file.type,
+          size: file.size,
+        })),
       },
     ])
     try {
@@ -1450,7 +1712,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           setUploading(false)
         }
         setLines((previous) =>
-          previous.map((line) => (line.key === key && line.kind === 'user' ? { ...line, attachments: uploaded } : line)),
+          previous.map((line) =>
+            line.key === key && line.kind === 'user' ? { ...line, attachments: uploaded } : line,
+          ),
         )
       }
       sending.current += 1
@@ -1578,13 +1842,51 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
   }
 
-  const toggleTimed = (key: string) => {
-    setTimed((previous) => {
-      const next = new Set(previous)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+  // Save and Clear in the goal dialog are the same write: the sentence the
+  // person typed, or the empty string, which the server reads as "there is
+  // no goal any more" and which also stops the turn under way. The dialog
+  // keeps what was typed when the write fails, so nothing is retyped.
+  const saveGoal = async (goal: string) => {
+    if (!conversationId) return
+    setGoalBusy(true)
+    try {
+      await graphql(UPDATE, { conversationId, goal })
+      setGoalDraft(null)
+      await loadConversations()
+      await readConversation(conversationId)
+      toast.done(goal ? t('agentDrawer.goal.saved') : t('agentDrawer.goal.cleared'))
+    } catch (caught) {
+      toast.failure(caught, t('agentDrawer.goal.clearFailed'))
+    } finally {
+      setGoalBusy(false)
+    }
+  }
+
+  // The hundred before the oldest loaded, put in front of what is shown,
+  // with the transcript held where the person was reading: the new
+  // lines add height above, so the scroll moves down by exactly that.
+  const loadEarlier = async () => {
+    if (!conversationId || loadingEarlier) return
+    setLoadingEarlier(true)
+    const element = transcript.current
+    const heightBefore = element?.scrollHeight ?? 0
+    try {
+      const response = await graphql<{
+        ReadAgentConversation: { messages: StoredMessage[]; total?: number }
+      }>(CONVERSATION, { conversationId, first: 100, offset: messages.current.length })
+      const earlier = response.ReadAgentConversation.messages
+      messages.current = [...earlier, ...messages.current]
+      setTotal(response.ReadAgentConversation.total ?? messages.current.length)
+      sticking.current = false
+      setLines(linesOf(messages.current, t))
+      requestAnimationFrame(() => {
+        if (element) element.scrollTop += element.scrollHeight - heightBefore
+      })
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setLoadingEarlier(false)
+    }
   }
 
   const toggleExpanded = (key: string) => {
@@ -1599,42 +1901,36 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // drawLine is one line of the transcript as the drawer draws it.
   const drawLine = (line: Line) => {
     switch (line.kind) {
+      // When a message was said is a tooltip over the bubble, never a
+      // line inside it: a line that appears on hover changes the bubble's
+      // size under the pointer, and the conversation should read as a
+      // conversation, not as a log.
       case 'user':
         return (
-          <div
-  key={line.key}
-  className={['agent-line user', timed.has(line.key) ? 'timed' : ''].filter(Boolean).join(' ')}
-  title={line.at ? formatTime(line.at) : undefined}
-  onClick={() => toggleTimed(line.key)}
-          >
-  {line.references && line.references.length > 0 && <ReferenceChips references={line.references} />}
-  {line.text}
-  {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
-  {line.at && <div className="agent-line-time">{formatTime(line.at)}</div>}
-          </div>
+          <Tooltip key={line.key} label={line.at ? formatTime(line.at) : ''}>
+            <div className="agent-line user">
+              {line.references && line.references.length > 0 && <ReferenceChips references={line.references} />}
+              {line.text}
+              {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
+            </div>
+          </Tooltip>
         )
       case 'assistant':
         return (
-          <div
-  key={line.key}
-  className={['agent-line assistant', line.streaming ? 'streaming' : '', timed.has(line.key) ? 'timed' : '']
-    .filter(Boolean)
-    .join(' ')}
-  title={line.at ? formatTime(line.at) : undefined}
-  onClick={() => toggleTimed(line.key)}
-          >
-  <Markdown text={line.text} onLeaving={leaving} />
-  {line.at && <div className="agent-line-time">{formatTime(line.at)}</div>}
-  {showUsage && line.usage && (
-    <div className="agent-usage muted">
-      {t('agentDrawer.tokens', {
-        in: formatCount(line.usage.promptTokens),
-        out: formatCount(line.usage.completionTokens),
-      })}
-      {line.usage.cost ? ` · ${formatMoney(line.usage.cost, budget?.currency)}` : ''}
-    </div>
-  )}
-          </div>
+          <Tooltip key={line.key} label={line.at ? formatTime(line.at) : ''}>
+            <div className={['agent-line assistant', line.streaming ? 'streaming' : ''].filter(Boolean).join(' ')}>
+              <Markdown text={line.text} onLeaving={leaving} />
+              {showUsage && line.usage && (
+                <div className="agent-usage muted">
+                  {t('agentDrawer.tokens', {
+                    in: formatCount(line.usage.promptTokens),
+                    out: formatCount(line.usage.completionTokens),
+                  })}
+                  {line.usage.cost ? ` · ${formatMoney(line.usage.cost, budget?.currency)}` : ''}
+                </div>
+              )}
+            </div>
+          </Tooltip>
         )
       case 'tool': {
         const artifact = artifactOf(line)
@@ -1651,64 +1947,66 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         }
         return (
           <div
-  key={line.key}
-  className={['agent-line tool', line.done ? 'done' : '', expanded.has(line.key) ? 'open' : '']
-    .filter(Boolean)
-    .join(' ')}
+            key={line.key}
+            className={['agent-line tool', line.done ? 'done' : '', expanded.has(line.key) ? 'open' : '']
+              .filter(Boolean)
+              .join(' ')}
           >
-  <button type="button" className="agent-tool-toggle" onClick={() => toggleExpanded(line.key)}>
-    {line.done ? '✓' : '…'} {line.tool}
-    {line.note ? <span className="muted"> · {line.note}</span> : null}
-  </button>
-  {expanded.has(line.key) && (
-    <div className="agent-tool-detail">
-      {line.arguments && <CodeBlock text={line.arguments} tidy />}
-      {line.result && <CodeBlock text={line.result} tidy />}
-    </div>
-  )}
-  {artifact ? <ArtifactCard artifact={artifact} /> : null}
-  {shared.map((file) => (
-    <FileCard key={file.attachment_id} file={file} />
-  ))}
+            <button type="button" className="agent-tool-toggle" onClick={() => toggleExpanded(line.key)}>
+              {line.done ? '✓' : '…'} {line.tool}
+              {line.note ? <span className="muted"> · {line.note}</span> : null}
+            </button>
+            {expanded.has(line.key) && (
+              <div className="agent-tool-detail">
+                {line.arguments && <CodeBlock text={line.arguments} tidy />}
+                {line.result && <CodeBlock text={line.result} tidy />}
+              </div>
+            )}
+            {artifact ? <ArtifactCard artifact={artifact} /> : null}
+            {shared.map((file) => (
+              <FileCard key={file.attachment_id} file={file} />
+            ))}
           </div>
         )
       }
       case 'confirmation':
         return (
           <div key={line.key} className={['agent-line confirmation', line.risk].filter(Boolean).join(' ')}>
-  <p>{line.summary}</p>
-  {line.resolved ? (
-    <p className="muted">
-      {line.resolved === 'approved' ? t('agentDrawer.approved') : t('agentDrawer.declined')}
-    </p>
-  ) : (
-    <div className="row">
-      <button
-        type="button"
-        className={line.risk === 'destructive' ? 'danger' : 'primary'}
-        onClick={() => void resolve(line, true)}
-      >
-        {t('agentDrawer.approve')}
-      </button>
-      <button type="button" onClick={() => void resolve(line, false)}>
-        {t('agentDrawer.decline')}
-      </button>
-    </div>
-  )}
+            <p>{line.summary}</p>
+            {line.resolved ? (
+              <p className="muted">
+                {line.resolved === 'approved' ? t('agentDrawer.approved') : t('agentDrawer.declined')}
+              </p>
+            ) : (
+              <div className="row">
+                <button
+                  type="button"
+                  className={line.risk === 'destructive' ? 'danger' : 'primary'}
+                  onClick={() => void resolve(line, true)}
+                >
+                  {t('agentDrawer.approve')}
+                </button>
+                <button type="button" onClick={() => void resolve(line, false)}>
+                  {t('agentDrawer.decline')}
+                </button>
+              </div>
+            )}
           </div>
         )
       case 'question':
         return <QuestionCard key={line.key} line={line} onAnswer={(text) => void answer(line, text)} />
+      case 'checkin':
+        return <CheckInLine key={line.key} at={line.at} text={line.text} />
       case 'note':
         return (
           <div key={line.key} className="agent-line note muted">
-  {line.text || t('agentDrawer.compacted')}
+            {line.text || t('agentDrawer.compacted')}
           </div>
         )
       case 'error':
         return (
           <div key={line.key} className="agent-line error">
-  {line.text}
+            {line.text}
           </div>
         )
       default:
@@ -1731,6 +2029,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const isRun = current?.kind === 'run'
   const running = runs.length > 0
   const canSend = (draft.trim().length > 0 || pending.length > 0) && !uploading
+  // What the agent said it needs, while it is still waiting for it and
+  // the person has not yet written back.
+  const waitingNote = showingGoalNote && current?.goalState === 'waiting' ? (current.goalNote ?? '').trim() : ''
 
   return (
     <>
@@ -1747,7 +2048,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       )}
       {open && (
         <aside
-          className={['agent-drawer', dragging ? 'dragging' : '', standalone ? 'standalone' : ''].filter(Boolean).join(' ')}
+          className={['agent-drawer', dragging ? 'dragging' : '', standalone ? 'standalone' : '']
+            .filter(Boolean)
+            .join(' ')}
           aria-label={agentName || t('agent.title')}
           onDragOver={(event) => {
             if (event.dataTransfer.types.includes('Files')) {
@@ -1775,30 +2078,45 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               <span className="agent-drawer-title">{title}</span>
               <ChevronDownIcon size={14} className="chevron" />
             </button>
+            {/* What this conversation is working toward, set and cleared
+                here. A run has no goal: nobody talks it into one, and it
+                is over by the time it is read. */}
+            {current && conversationId && !isRun && (
+              <GoalChip conversation={current} onOpen={() => setGoalDraft(current.goal ?? '')} />
+            )}
             {/* What of the person's own is attached, as a mark with the
                 details on hover: the transcript is for the conversation. */}
             {tab?.attached && (
               <Tooltip label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}>
-                <span className="agent-drawer-device" aria-label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}>
+                <span
+                  className="agent-drawer-device"
+                  aria-label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}
+                >
                   <GlobeIcon size={14} />
                 </span>
               </Tooltip>
             )}
             {computers.length > 0 && (
-              <Tooltip label={computers.length === 1 ? t('agentDrawer.computerAttached', { name: computers[0] }) : t('agentDrawer.computersAttached', { names: computers.join(', ') })}>
-                <span className="agent-drawer-device" aria-label={computers.length === 1 ? t('agentDrawer.computerAttached', { name: computers[0] }) : t('agentDrawer.computersAttached', { names: computers.join(', ') })}>
+              <Tooltip
+                label={
+                  computers.length === 1
+                    ? t('agentDrawer.computerAttached', { name: computers[0] })
+                    : t('agentDrawer.computersAttached', { names: computers.join(', ') })
+                }
+              >
+                <span
+                  className="agent-drawer-device"
+                  aria-label={
+                    computers.length === 1
+                      ? t('agentDrawer.computerAttached', { name: computers[0] })
+                      : t('agentDrawer.computersAttached', { names: computers.join(', ') })
+                  }
+                >
                   <ComputerIcon size={14} />
                 </span>
               </Tooltip>
             )}
-            {budget && (
-              <BudgetRing
-                budget={budget}
-                zone={agentZone}
-                framed={standalone}
-                onLeaving={leaving}
-              />
-            )}
+            {budget && <BudgetRing budget={budget} zone={agentZone} framed={standalone} onLeaving={leaving} />}
             {/* Framed by the extension, the panel around this has a bar
                 of its own with the close on it; two of them, one under
                 the other, is one too many. */}
@@ -1829,7 +2147,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 />
                 {found === null && (
                   <>
-                    <button type="button" className="agent-drawer-list-row new" role="menuitem" onClick={() => void startNew()}>
+                    <button
+                      type="button"
+                      className="agent-drawer-list-row new"
+                      role="menuitem"
+                      onClick={() => void startNew()}
+                    >
                       <PlusIcon size={14} />
                       <span className="agent-drawer-list-title">{t('agentDrawer.new')}</span>
                     </button>
@@ -1851,96 +2174,106 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                       (second.lastAt ?? '').localeCompare(first.lastAt ?? ''),
                   )
                   .map((conversation) => (
-                  <div
-                    key={conversation.id}
-                    className={[
-                      'agent-drawer-list-row',
-                      conversation.id === conversationId ? 'active' : '',
-                      conversation.kind === 'main' ? 'main' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                  >
-                    {renaming?.id === conversation.id ? (
-                      <form
-                        className="agent-drawer-rename"
-                        onSubmit={(event) => {
-                          event.preventDefault()
-                          void rename()
-                        }}
-                      >
-                        <input
-                          autoFocus
-                          value={renaming.title}
-                          aria-label={t('agentDrawer.rename')}
-                          onChange={(event) => setRenaming({ id: conversation.id, title: event.target.value })}
-                          onBlur={() => void rename()}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Escape') {
-                              event.preventDefault()
-                              setRenaming(null)
-                            }
+                    <div
+                      key={conversation.id}
+                      className={[
+                        'agent-drawer-list-row',
+                        conversation.id === conversationId ? 'active' : '',
+                        conversation.kind === 'main' ? 'main' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                    >
+                      {renaming?.id === conversation.id ? (
+                        <form
+                          className="agent-drawer-rename"
+                          onSubmit={(event) => {
+                            event.preventDefault()
+                            void rename()
                           }}
-                        />
-                      </form>
-                    ) : (
-                      <button
-                        type="button"
-                        className="agent-drawer-list-title"
-                        role="menuitem"
-                        title={conversation.summary || undefined}
-                        onClick={() => void switchTo(conversation.id)}
-                      >
-                        <span className="agent-drawer-list-name">
-                          {conversation.kind === 'main' ? (
-                            <>
-                              <StarIcon size={12} /> {t('agentDrawer.main')}
-                            </>
-                          ) : (
-                            conversation.title || t('agentDrawer.untitled')
-                          )}
+                        >
+                          <input
+                            autoFocus
+                            value={renaming.title}
+                            aria-label={t('agentDrawer.rename')}
+                            onChange={(event) => setRenaming({ id: conversation.id, title: event.target.value })}
+                            onBlur={() => void rename()}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Escape') {
+                                event.preventDefault()
+                                setRenaming(null)
+                              }
+                            }}
+                          />
+                        </form>
+                      ) : (
+                        <button
+                          type="button"
+                          className="agent-drawer-list-title"
+                          role="menuitem"
+                          title={conversation.summary || undefined}
+                          onClick={() => void switchTo(conversation.id)}
+                        >
+                          <span className="agent-drawer-list-name">
+                            {/* A conversation working toward something is
+                              marked before its name, in the colour of
+                              where it stands: the accent while it works,
+                              the warning colour while it waits for the
+                              person, muted once it is met. */}
+                            {conversation.goal ? (
+                              <TargetIcon size={12} className={`agent-drawer-list-goal ${goalStateOf(conversation)}`} />
+                            ) : null}
+                            {conversation.kind === 'main' ? (
+                              <>
+                                <StarIcon size={12} /> {t('agentDrawer.main')}
+                              </>
+                            ) : (
+                              conversation.title || t('agentDrawer.untitled')
+                            )}
+                          </span>
+                          {/* When the conversation was last spoken in,
+                            which is what tells one of these apart from the
+                            next; a goal's note belongs in the dialog, not
+                            here in place of the time. The summary is the
+                            row's tooltip. */}
+                          <span className="agent-drawer-list-summary muted">
+                            <RelativeTime value={conversation.lastAt} />
+                          </span>
+                        </button>
+                      )}
+                      {conversation.kind !== 'main' && renaming?.id !== conversation.id && (
+                        <span className="agent-drawer-list-actions">
+                          <button
+                            type="button"
+                            className="icon-button"
+                            aria-label={t('agentDrawer.makeMain')}
+                            title={t('agentDrawer.makeMain')}
+                            onClick={() => void makeMain(conversation.id)}
+                          >
+                            <StarIcon size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-button"
+                            aria-label={t('agentDrawer.rename')}
+                            title={t('agentDrawer.rename')}
+                            onClick={() => setRenaming({ id: conversation.id, title: conversation.title })}
+                          >
+                            <PencilIcon size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-button danger"
+                            aria-label={t('agentDrawer.delete')}
+                            title={t('agentDrawer.delete')}
+                            onClick={() => setDeleting(conversation)}
+                          >
+                            <TrashIcon size={14} />
+                          </button>
                         </span>
-                        {/* When it was last spoken in, which is what
-                            tells one of these apart from the next; the
-                            summary is the row's tooltip. */}
-                        <span className="agent-drawer-list-summary muted">
-                          <RelativeTime value={conversation.lastAt} />
-                        </span>
-                      </button>
-                    )}
-                    {conversation.kind !== 'main' && renaming?.id !== conversation.id && (
-                      <span className="agent-drawer-list-actions">
-                        <button
-                          type="button"
-                          className="icon-button"
-                          aria-label={t('agentDrawer.makeMain')}
-                          title={t('agentDrawer.makeMain')}
-                          onClick={() => void makeMain(conversation.id)}
-                        >
-                          <StarIcon size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-button"
-                          aria-label={t('agentDrawer.rename')}
-                          title={t('agentDrawer.rename')}
-                          onClick={() => setRenaming({ id: conversation.id, title: conversation.title })}
-                        >
-                          <PencilIcon size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-button danger"
-                          aria-label={t('agentDrawer.delete')}
-                          title={t('agentDrawer.delete')}
-                          onClick={() => setDeleting(conversation)}
-                        >
-                          <TrashIcon size={14} />
-                        </button>
-                      </span>
-                    )}
-                  </div>
-                ))}
+                      )}
+                    </div>
+                  ))}
               </div>
             </>
           )}
@@ -1966,6 +2299,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             }}
           >
             {lines.length === 0 && <p className="muted agent-drawer-empty">{t('agentDrawer.empty')}</p>}
+            {total > messages.current.length && (
+              <button
+                type="button"
+                className="agent-drawer-earlier muted"
+                onClick={() => void loadEarlier()}
+                disabled={loadingEarlier}
+              >
+                {t('agentDrawer.earlier', { count: total - messages.current.length })}
+              </button>
+            )}
             {lines.map((line, index) => {
               // A divider where the day changes.
               const at = 'at' in line ? line.at : undefined
@@ -1993,15 +2336,23 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 drawn
               )
             })}
-            {running && !(lines[lines.length - 1]?.kind === 'assistant' && (lines[lines.length - 1] as { streaming?: boolean }).streaming) && (
-              <div className="agent-line thinking" aria-label={t('agentDrawer.thinking')} title={t('agentDrawer.thinking')}>
-                <span className="agent-dots" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-              </div>
-            )}
+            {running &&
+              !(
+                lines[lines.length - 1]?.kind === 'assistant' &&
+                (lines[lines.length - 1] as { streaming?: boolean }).streaming
+              ) && (
+                <div
+                  className="agent-line thinking"
+                  aria-label={t('agentDrawer.thinking')}
+                  title={t('agentDrawer.thinking')}
+                >
+                  <span className="agent-dots" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                </div>
+              )}
           </div>
           {!atBottom && lines.length > 0 && (
             <button
@@ -2055,12 +2406,24 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               )}
             </div>
           )}
+          {actingAs ? (
+            <div className="agent-drawer-readonly notice">{t('agentDrawer.actingAs', { name: actingAs })}</div>
+          ) : null}
           {isRun ? (
             <div className="agent-drawer-readonly muted">
               {t('agentDrawer.runTranscript')}{' '}
               <button type="button" className="agent-artifact-action" onClick={() => void switchTo('')}>
                 {t('agentDrawer.backToConversation')}
               </button>
+            </div>
+          ) : null}
+          {/* What the agent needs before it can go on, said where the
+              person is about to type rather than somewhere up the
+              transcript they would have to scroll back to. */}
+          {waitingNote ? (
+            <div className="agent-drawer-goal-waiting">
+              <TargetIcon size={12} />
+              <span>{waitingNote}</span>
             </div>
           ) : null}
           <form
@@ -2144,6 +2507,58 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           {dragging && <div className="agent-drawer-drop">{t('agentDrawer.dropHere')}</div>}
         </aside>
       )}
+      {goalDraft !== null && current ? (
+        <FormDialog
+          title={t('agentDrawer.goal.title')}
+          submitLabel={t('common.save')}
+          busy={goalBusy}
+          canSubmit={goalDraft.trim() !== '' && goalDraft.trim() !== (current.goal ?? '')}
+          otherAction={
+            current.goal ? (
+              <button type="button" className="danger" disabled={goalBusy} onClick={() => void saveGoal('')}>
+                {t('agentDrawer.goal.clear')}
+              </button>
+            ) : undefined
+          }
+          onClose={() => setGoalDraft(null)}
+          onSubmit={() => void saveGoal(goalDraft.trim())}
+        >
+          <p className="muted">{t('agentDrawer.goal.hint')}</p>
+          <label>
+            <span>{t('agentDrawer.goal.label')}</span>
+            <textarea rows={3} value={goalDraft} onChange={(event) => setGoalDraft(event.target.value)} />
+          </label>
+          {/* Where the goal stands, as the row says it: the state, since
+              when, when the agent looks again, how many turns it has
+              taken today, and its last word. Read, not edited. */}
+          {current.goal ? (
+            <dl className="agent-drawer-goal-status">
+              <dt>{t('agentDrawer.goal.state')}</dt>
+              <dd>{t(goalStateKey(goalStateOf(current)))}</dd>
+              {current.goalSetAt ? (
+                <>
+                  <dt>{t('agentDrawer.goal.since')}</dt>
+                  <dd>{formatTime(current.goalSetAt)}</dd>
+                </>
+              ) : null}
+              {goalStateOf(current) === 'working' && current.goalNextAt ? (
+                <>
+                  <dt>{t('agentDrawer.goal.next')}</dt>
+                  <dd>{formatTime(current.goalNextAt)}</dd>
+                </>
+              ) : null}
+              <dt>{t('agentDrawer.goal.turnsToday')}</dt>
+              <dd>{goalTurnsToday}</dd>
+              {current.goalNote ? (
+                <>
+                  <dt>{t('agentDrawer.goal.lastNote')}</dt>
+                  <dd>{current.goalNote}</dd>
+                </>
+              ) : null}
+            </dl>
+          ) : null}
+        </FormDialog>
+      ) : null}
       {deleting ? (
         <ConfirmDialog
           title={t('agentDrawer.delete')}

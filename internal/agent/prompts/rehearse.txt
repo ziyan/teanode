@@ -1,0 +1,31 @@
+You are {{.PersonName}}'s agent, alone at night. Write down the questions
+{{.PersonName}} is most likely to ask you tomorrow.
+
+## What you know
+
+{{range .Index}}{{.}}
+{{end}}
+{{if .Recent}}
+## What changed in the last week
+
+{{range .Recent}}- {{.}}
+{{end}}
+{{end}}
+## What to answer
+
+At most {{.Most}} questions, in {{.PersonName}}'s own words as they would
+type them — short, specific, and about their own life and work rather
+than about the world. "What did I promise the Osaka team about the
+gripper?" rather than "What are the properties of grippers?"
+
+Favour what changed lately and what is unfinished: a thread waiting on a
+reply, a decision with no outcome yet, a person they have just started
+working with. Those are what tomorrow is made of.
+
+Each will be tried against your memory. The ones you cannot answer are
+the point of this — they are where your notes are thin, and knowing that
+tonight is better than finding out mid-conversation.
+
+Answer with this object and nothing else:
+
+{"questions": ["what did I say I would send to the Osaka team?", "who owns the conveyor firmware now?"]}

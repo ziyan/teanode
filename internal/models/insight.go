@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // MailInsight is what the agent worked out about one message for one
 // mailbox: its category and priority, whether it needs an answer, a line
@@ -143,6 +146,13 @@ type AgentConversation struct {
 	// described again.
 	DescribedAt *time.Time `json:"describedAt,omitempty"`
 
+	// RememberedThrough is the last message a run that files what the
+	// conversation taught has read, and RememberedAt when it last ran.
+	// The identifier rather than the time, so a run that dies re-reads
+	// from where it was rather than skipping what arrived meanwhile.
+	RememberedThrough string     `json:"-"`
+	RememberedAt      *time.Time `json:"rememberedAt,omitempty"`
+
 	// JobID, JobKind and SubjectID say which run this is the record of.
 	JobID     string `json:"jobId,omitempty"`
 	JobKind   string `json:"jobKind,omitempty"`
@@ -158,6 +168,87 @@ type AgentConversation struct {
 	// stands in for; the verbatim transcript resumes after it. The note
 	// itself is a later message with the compaction role.
 	CompactedThrough string `json:"compactedThrough,omitempty"`
+
+	// Goal is the standing instruction on this conversation, in the
+	// person's words: what the agent keeps working toward across turns of
+	// its own until it is met or they clear it. Empty means there is
+	// none, and GoalState is empty with it.
+	//
+	// GoalNote is the agent's last word on where it is -- a sentence or
+	// two, shown beside the conversation and, while it waits, above the
+	// composer. GoalNextAt is when the agent takes its next turn on its
+	// own; nothing is scheduled while it waits for the person or once the
+	// goal is met.
+	Goal       string         `json:"goal,omitempty"`
+	GoalState  AgentGoalState `json:"goalState,omitempty"`
+	GoalNote   string         `json:"goalNote,omitempty"`
+	GoalNextAt *time.Time     `json:"goalNextAt,omitempty"`
+	// GoalSetAt is when the goal was set, for the panel that says since
+	// when the agent has been at it.
+	GoalSetAt *time.Time `json:"goalSetAt,omitempty"`
+}
+
+// AgentGoalState is where a conversation's goal stands.
+type AgentGoalState string
+
+// The three states a goal is in. A goal that is working takes turns of the
+// agent's own; one that is waiting takes none until the person writes
+// again, and their next turn puts it back to working; one that is met is
+// done, and its text stays on the conversation until they clear it.
+const (
+	GoalWorking AgentGoalState = "working"
+	GoalWaiting AgentGoalState = "waiting"
+	GoalMet     AgentGoalState = "met"
+)
+
+// GoalCheckInMarker begins the message a goal turn is given, so that
+// everything reading the transcript can tell the agent's own check-in from
+// the person's words: the dashboard draws such a message as a muted line
+// rather than as a person's bubble.
+//
+// Named here rather than in the agent package because the API hands the
+// same transcript to the dashboard, and a marker only one side knows is a
+// marker that drifts.
+const GoalCheckInMarker = "[goal check-in]"
+
+// GoalChangeNote is the line the conversation gets when its goal changes
+// hands: set, changed, cleared, or met. Empty when nothing worth a line
+// happened -- a check-in that only moved the next time, or the same goal
+// saved again unchanged.
+//
+// A goal lives beside the conversation, in a dialog and a chip, and a
+// person reading the transcript later would not see it begin or end. The
+// note puts those moments in the flow where they happened, in the words
+// the goal was given in, the way a schedule's run says which schedule.
+func GoalChangeNote(before, after *AgentConversation) string {
+	var was, now string
+	var wasState AgentGoalState
+	if before != nil {
+		was, wasState = before.Goal, before.GoalState
+	}
+	if after != nil {
+		now = after.Goal
+	}
+	switch {
+	case now == "" && was == "":
+		return ""
+	case now == "":
+		return "Goal cleared: " + was
+	case was == "", now != was && wasState == GoalMet:
+		// A goal after one that was met is a new goal, not a change
+		// to the old one.
+		return "Goal set: " + now
+	case now != was:
+		return "Goal changed: " + now
+	case after.GoalState == GoalMet && wasState != GoalMet:
+		if note := strings.TrimSpace(after.GoalNote); note != "" {
+			return "Goal met: " + note
+		}
+		return "Goal met: " + now
+	case after.GoalState == GoalWorking && wasState == GoalMet:
+		return "Goal set again: " + now
+	}
+	return ""
 }
 
 // AgentMessage is one turn, tool call or result in a conversation.
@@ -202,6 +293,12 @@ type AgentReference struct {
 	ThreadID string `json:"threadId,omitempty" graphapi:"nullable"`
 	Subject  string `json:"subject,omitempty" graphapi:"nullable"`
 	From     string `json:"from,omitempty" graphapi:"nullable"`
+
+	// Path and Name point at a page of the agent's own memory instead of
+	// a message: the person pressed Ask on a page of the graph, and wants
+	// the agent to dig into it, or to change what it says and links to.
+	Path string `json:"path,omitempty" graphapi:"nullable"`
+	Name string `json:"name,omitempty" graphapi:"nullable"`
 }
 
 // AgentToolCall is a tool the model asked for, as recorded.

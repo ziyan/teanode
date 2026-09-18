@@ -37,9 +37,10 @@ const settingsSelection = `{
 	agent {
 		enabled instructions currency allowPrivateAddresses skipCertificateCheck
 		providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
-		models { default fast embedding triage research summarize reply ask schedule compact choices }
-		features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers }
-		limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxToolCallsPerRun requestTimeout concurrency }
+		skillSecrets { skill key hasValue }
+		models { default fast embedding triage research summarize reply ask schedule compact choices scan embeddingDimensions }
+		features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
+		limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency embeddingTokensPerDay dreamShare ingestChunksPerRun }
 		retention { runs corrections }
 		search { kind hasApiKey }
 		tools { disabled confirm }

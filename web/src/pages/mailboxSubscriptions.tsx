@@ -296,8 +296,7 @@ export function MailboxSubscriptionsPage() {
   // own rather than waiting for the reader to page down to it.
   const [fetched, setFetched] = useState<Subscription | null>(null)
   const reading =
-    subscriptions.find((subscription) => subscription.id === readingId) ??
-    (fetched?.id === readingId ? fetched : null)
+    subscriptions.find((subscription) => subscription.id === readingId) ?? (fetched?.id === readingId ? fetched : null)
 
   // The list open here is what "this" means to the agent.
   useEffect(() => {
@@ -521,7 +520,9 @@ export function MailboxSubscriptionsPage() {
                           { one: 'subscriptions.messageCountOne', other: 'subscriptions.messageCountOther' },
                           { count: subscription.count },
                         )}
-                        {subscription.unread > 0 ? ` · ${t('subscriptions.unread', { count: subscription.unread })}` : ''}
+                        {subscription.unread > 0
+                          ? ` · ${t('subscriptions.unread', { count: subscription.unread })}`
+                          : ''}
                         {subscription.mutedAt ? ` · ${t('subscriptions.muted')}` : ''}
                       </span>
                       {subscription.requestedAt ? (
@@ -556,9 +557,7 @@ export function MailboxSubscriptionsPage() {
                 and said nothing. */}
             {query.data && subscriptions.length > 0 && (
               <div className="mailbox-foot">
-                <span>
-                  {paging ? t('common.loading') : t('mailbox.count', { shown: subscriptions.length, total })}
-                </span>
+                <span>{paging ? t('common.loading') : t('mailbox.count', { shown: subscriptions.length, total })}</span>
                 {subscriptions.length < total && !paging && (
                   <button type="button" className="link" onClick={() => void loadMore()}>
                     {t('mailbox.loadMore')}
@@ -702,8 +701,7 @@ function SubscriptionReader({
 
   // How many messages an action is about, which is what the sentence needs:
   // acting on a whole list is not the same size of act as acting on one.
-  const many = (one: Key, other: Key) =>
-    plural(acting.length, { one, other }, { count: acting.length })
+  const many = (one: Key, other: Key) => plural(acting.length, { one, other }, { count: acting.length })
   // Which messages are open, and which have been read here: the same two
   // things a conversation tracks, for the same reasons. Decided once from what
   // arrived — the newest, and anything unread — and then it is the reader's,
@@ -774,7 +772,9 @@ function SubscriptionReader({
           onClick={() =>
             void run(
               () => graphql(SET_FLAGS, { itemIds: acting, seen: anyUnread }),
-              anyUnread ? many('mailbox.saidReadOne', 'mailbox.saidReadOther') : many('mailbox.saidUnreadOne', 'mailbox.saidUnreadOther'),
+              anyUnread
+                ? many('mailbox.saidReadOne', 'mailbox.saidReadOther')
+                : many('mailbox.saidUnreadOne', 'mailbox.saidUnreadOther'),
             )
           }
         />
@@ -798,7 +798,9 @@ function SubscriptionReader({
           onClick={() =>
             void run(
               () => graphql(REPORT_JUNK, { itemIds: acting, notJunk: inJunk }),
-              inJunk ? many('mailbox.saidNotJunkOne', 'mailbox.saidNotJunkOther') : many('mailbox.saidJunkOne', 'mailbox.saidJunkOther'),
+              inJunk
+                ? many('mailbox.saidNotJunkOne', 'mailbox.saidNotJunkOther')
+                : many('mailbox.saidJunkOne', 'mailbox.saidJunkOther'),
             )
           }
         />
@@ -833,13 +835,8 @@ function SubscriptionReader({
           disabled={busy}
           onClick={() => void onMute(!subscription.mutedAt)}
         />
-        <IconAction
-          label={t('subscriptions.leave')}
-          icon={<BellOffIcon size={16} />}
-          onClick={onLeave}
-        />
+        <IconAction label={t('subscriptions.leave')} icon={<BellOffIcon size={16} />} onClick={onLeave} />
       </div>
-
 
       <ErrorMessage error={problem} />
 

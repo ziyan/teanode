@@ -32,6 +32,7 @@ const (
 	PermissionContactsUse     Permission = "contacts:use"  // keep an address book, and sync it to a device
 	PermissionCalendarUse     Permission = "calendar:use"  // keep a calendar, and sync it to a device
 	PermissionAgentAudit      Permission = "agent:audit"   // every person's agent state and usage, limits, switch-off; never content
+	PermissionAgentAct        Permission = "agent:act"     // every person's agent conversations and runs, and a word with their agent as them; content, for the operator of a private server
 )
 
 // PermissionKind is where a permission applies, declared with the vocabulary:
@@ -76,6 +77,7 @@ var permissionKinds = []struct {
 	{PermissionContactsUse, PermissionKindServer, ""},
 	{PermissionCalendarUse, PermissionKindServer, ""},
 	{PermissionAgentAudit, PermissionKindServer, ""},
+	{PermissionAgentAct, PermissionKindServer, ""},
 }
 
 // Permissions lists the whole vocabulary, in the order the role editor shows

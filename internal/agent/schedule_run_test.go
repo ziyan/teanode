@@ -30,6 +30,14 @@ func TestScheduleRunsAndDeliversToTheConversation(t *testing.T) {
 	configuration.Agent.Enabled = true
 	configuration.Agent.Providers = []config.AgentProvider{{Name: "fake", Kind: "openai", BaseURL: model.URL, APIKey: "k"}}
 	configuration.Agent.Models.Default = "fake:thinker"
+	// No nightly run in a test about schedules. A tick queues everything
+	// that is due, and whether a night is due depends on the wall clock
+	// -- the default window is one in the morning to six, in the person's
+	// zone, and this person is in Berlin. Left on, this test rewrote the
+	// pinned page's summary with the fake model's canned answer and
+	// failed, but only when it was run between those hours.
+	off := false
+	configuration.Agent.Features.Dreaming = &off
 	registry, err := llm.Open(&configuration.Agent)
 	if err != nil {
 		t.Fatalf("llm.Open: %s", err)
@@ -54,8 +62,20 @@ func TestScheduleRunsAndDeliversToTheConversation(t *testing.T) {
 		if found, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true}); err != nil {
 			t.Fatalf("CreateAgent: %s", err)
 		}
-		if _, err := tx.CreateAgentMemory(&models.AgentMemory{AgentID: found.ID, Title: "The accountant", Content: "Maria does the books.", AppliesTo: []models.AgentAudience{models.AudienceAsk}, Pinned: true}); err != nil {
-			t.Fatalf("CreateAgentMemory: %s", err)
+		// A page the prompt's index must carry: pinned, so it is first
+		// whatever the nightly importance says.
+		page, err := tx.PutAgentNode(&models.AgentNode{
+			AgentID: found.ID, Path: "people/maria", Kind: models.NodePerson,
+			Name: "Maria", Summary: "Maria does the books.", Pinned: true,
+		})
+		if err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+		if _, err := tx.AddAgentFact(&models.AgentFact{
+			AgentID: found.ID, NodeID: page.ID, Kind: models.FactPlain,
+			Text: "The accountant.", Audiences: []models.AgentAudience{models.AudienceAsk},
+		}); err != nil {
+			t.Fatalf("AddAgentFact: %s", err)
 		}
 		if schedule, err = tx.CreateAgentSchedule(&models.AgentSchedule{AgentID: found.ID, Name: "Morning", Cron: "0 8 * * 1-5", Prompt: "What needs me today?", Deliver: "drawer", Enabled: true, NextRunAt: &past}); err != nil {
 			t.Fatalf("CreateAgentSchedule: %s", err)
@@ -107,8 +127,8 @@ func TestScheduleRunsAndDeliversToTheConversation(t *testing.T) {
 		}
 	})
 	system := (*requests)[0]["messages"].([]any)[0].(map[string]any)["content"].(string)
-	if !strings.Contains(system, "Maria does the books") {
-		t.Fatal("the pinned memory should be in the prompt")
+	if !strings.Contains(system, "people/maria") || !strings.Contains(system, "Maria does the books") {
+		t.Fatal("the pinned page should be in the prompt's index")
 	}
 	if tools, _ := (*requests)[0]["tools"].([]any); len(tools) == 0 {
 		t.Fatal("the scheduled turn should have its tools")

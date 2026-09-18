@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { Passkey, PasskeyCeremony, PasskeyPolicy, graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
@@ -53,6 +53,12 @@ export function PasskeysPage() {
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
+  // The ceremony the server began when the dialog opened, so that the
+  // browser is asked the moment the person presses Continue: Safari, and
+  // Chrome in places, refuse a credential request that waits on a network
+  // round trip first, with the same error as a closed prompt.
+  const ceremony = useRef<Promise<PasskeyCeremony> | null>(null)
+
   async function run(work: () => Promise<unknown>) {
     setBusy(true)
     setProblem(null)
@@ -60,23 +66,34 @@ export function PasskeysPage() {
       await work()
       await reload()
     } catch (caught) {
-      if (!canceled(caught)) {
+      if (canceled(caught)) {
+        // Closed, timed out, or refused by the browser: the same error
+        // for all three, so it is said in a line under the list rather
+        // than as a failure toast, and never swallowed -- a passkey that
+        // was not added with nothing said looks like one that was.
+        setProblem(t('passkeys.notAdded'))
+      } else {
         setProblem(caught instanceof Error ? caught.message : t('passkeys.failed'))
-      toast.failure(caught, t('passkeys.failed'))
+        toast.failure(caught, t('passkeys.failed'))
       }
     } finally {
       setBusy(false)
     }
   }
 
+  function beginCeremony() {
+    ceremony.current = graphql<{ BeginPasskeyRegistration: PasskeyCeremony }>(BEGIN).then(
+      (answer) => answer.BeginPasskeyRegistration,
+    )
+    ceremony.current.catch(() => undefined)
+  }
+
   async function register(chosen: string) {
-    const ceremony = await graphql<{ BeginPasskeyRegistration: PasskeyCeremony }>(BEGIN)
-    const response = await createCredential(ceremony.BeginPasskeyRegistration.options)
-    await graphql(FINISH, {
-      ceremonyId: ceremony.BeginPasskeyRegistration.ceremonyId,
-      response,
-      name: chosen,
-    })
+    const begun = await (ceremony.current ??
+      graphql<{ BeginPasskeyRegistration: PasskeyCeremony }>(BEGIN).then((answer) => answer.BeginPasskeyRegistration))
+    ceremony.current = null
+    const response = await createCredential(begun.options)
+    await graphql(FINISH, { ceremonyId: begun.ceremonyId, response, name: chosen })
   }
 
   if (loading && !data) {
@@ -101,6 +118,8 @@ export function PasskeysPage() {
             disabled={busy || !supported || !policy?.enabled || full}
             onClick={() => {
               setName('')
+              setProblem(null)
+              beginCeremony()
               setNaming(true)
             }}
           >
@@ -116,6 +135,7 @@ export function PasskeysPage() {
         {policy?.enabled && supported && full && (
           <p className="muted">{t('passkeys.full', { count: policy.maximumPerUser })}</p>
         )}
+        {problem && !naming && <p className="muted">{problem}</p>}
 
         {passkeys.length === 0 ? (
           <SettingsEmpty>{t('passkeys.empty')}</SettingsEmpty>
@@ -129,11 +149,7 @@ export function PasskeysPage() {
                 // is the difference between a passkey in a password manager
                 // and one on a single security key — and decides what losing
                 // the device costs.
-                passkey.backupState ? (
-                  <Tag value={t('passkeys.synced')} />
-                ) : (
-                  <Tag value={t('passkeys.thisDevice')} />
-                )
+                passkey.backupState ? <Tag value={t('passkeys.synced')} /> : <Tag value={t('passkeys.thisDevice')} />
               }
               subtitle={
                 <>

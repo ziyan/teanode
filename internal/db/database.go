@@ -12,6 +12,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/aggregate"
 )
 
@@ -51,6 +52,11 @@ type database struct {
 	// first run's brief window.
 	sealerMutex sync.RWMutex
 	sealer      *sealer
+
+	// vectorIndexing says whether this database can rank vectors itself,
+	// settled once by asking for the extension. See database_vector.go.
+	vectorOnce     sync.Once
+	vectorIndexing bool
 }
 
 // Open database.
@@ -209,6 +215,10 @@ type transaction struct {
 
 	// ctx carries who is acting, for the audit rows the writes produce.
 	ctx context.Context
+
+	// actor is who the graph writes in this transaction are by, for the
+	// history a page keeps. See database_revision.go.
+	actor models.RevisionActor
 }
 
 func (self *database) Transaction(f func(Transaction) error) error {

@@ -14,40 +14,20 @@ import (
 // What the agent keeps: memories, the corrections it learned from, and
 // its schedules, from a terminal.
 
+// newAgentMemoryCommand is the graph: pages addressed by path, with the
+// facts on them.
+//
+// The flat list of memories this replaced is gone from here. It still
+// exists in the database and in the API for one release, and an agent's
+// own migration moves what was in it onto the graph the first time the
+// graph is touched -- but showing two different lists of "what your agent
+// remembers" from one command is how a person ends up editing the one
+// nothing reads.
 func newAgentMemoryCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "memory",
-		Usage: "what your agent remembers about you",
-		Commands: []*cli.Command{
-			{
-				Name:  "list",
-				Usage: "the memories, pinned first; --query searches them",
-				Flags: []cli.Flag{
-					JSONFlag(),
-					&cli.StringFlag{Name: "query", Usage: "words to search for"},
-					&cli.StringFlag{Name: "audience", Usage: "only memories addressed to ask, triage, research, reply or summaries"},
-				},
-				Action: runAgentMemoryList,
-			},
-			{
-				Name:      "add",
-				Usage:     "remember something: a title and the fact; - reads the fact from stdin",
-				ArgsUsage: "<title> <content | ->",
-				Flags: []cli.Flag{
-					JSONFlag(),
-					&cli.StringFlag{Name: "applies-to", Usage: "which runs read it, comma-separated: ask, triage, research, reply, summaries"},
-					&cli.StringFlag{Name: "tags", Usage: "words to find it by, comma-separated"},
-					&cli.BoolFlag{Name: "pinned", Usage: "always in the prompt"},
-				},
-				Action: runAgentMemoryAdd,
-			},
-			{
-				Name:      "remove",
-				Usage:     "forget a memory",
-				ArgsUsage: "<memory-id>",
-				Action:    runAgentMemoryRemove,
-			},
-		},
+		Name:     "memory",
+		Usage:    "what your agent knows about you: pages, each with a path, and the facts on them",
+		Commands: newAgentGraphCommands(),
 	}
 }
 
@@ -106,75 +86,6 @@ func readValue(command *cli.Command, value string) (string, error) {
 		return strings.TrimSpace(string(content)), nil
 	}
 	return value, nil
-}
-
-func runAgentMemoryList(ctx context.Context, command *cli.Command) error {
-	connection, err := openClient(command)
-	if err != nil {
-		return err
-	}
-	memories, err := client.ListAgentMemories(ctx, connection, command.String("audience"), command.String("query"), 200)
-	if err != nil {
-		return describeError(command, err)
-	}
-	if command.Bool("json") {
-		return PrintJSON(memories)
-	}
-	rows := make([][]string, 0, len(memories))
-	for _, memory := range memories {
-		pinned := ""
-		if memory.Pinned {
-			pinned = "pinned"
-		}
-		rows = append(rows, []string{memory.ID, memory.Title, memory.Content, strings.Join(memory.AppliesTo, ","), pinned})
-	}
-	return printTable([]string{"id", "title", "content", "applies to", ""}, rows)
-}
-
-func runAgentMemoryAdd(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() < 2 {
-		return fmt.Errorf("give a title and the fact: teanode agent memory add \"The accountant\" \"Maria does the books; send her the receipts\"")
-	}
-	content, err := readValue(command, strings.Join(command.Args().Slice()[1:], " "))
-	if err != nil {
-		return err
-	}
-	connection, err := openClient(command)
-	if err != nil {
-		return err
-	}
-	fields := map[string]any{"title": command.Args().First(), "content": content, "pinned": command.Bool("pinned")}
-	if value := command.String("applies-to"); value != "" {
-		fields["appliesTo"] = commaList(value)
-	}
-	if value := command.String("tags"); value != "" {
-		fields["tags"] = commaList(value)
-	}
-	memory, err := client.SaveAgentMemory(ctx, connection, "", fields)
-	if err != nil {
-		return describeError(command, err)
-	}
-	if command.Bool("json") {
-		return PrintJSON(memory)
-	}
-	_, _ = fmt.Fprintf(command.Writer, "%s: %s\n", memory.ID, memory.Title)
-	return nil
-}
-
-func runAgentMemoryRemove(ctx context.Context, command *cli.Command) error {
-	memoryId := command.Args().First()
-	if memoryId == "" {
-		return fmt.Errorf("which memory? give its id")
-	}
-	connection, err := openClient(command)
-	if err != nil {
-		return err
-	}
-	if err := client.DeleteAgentMemory(ctx, connection, memoryId); err != nil {
-		return describeError(command, err)
-	}
-	_, _ = fmt.Fprintln(command.Writer, "forgotten")
-	return nil
 }
 
 func runAgentFeedbackList(ctx context.Context, command *cli.Command) error {

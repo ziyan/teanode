@@ -379,7 +379,10 @@ export function ComposePage() {
                   block
                   label={t('compose.template')}
                   value={templateId}
-                  options={templates.map((each) => ({ value: each.id, label: each.comment ? `${each.name} — ${each.comment}` : each.name }))}
+                  options={templates.map((each) => ({
+                    value: each.id,
+                    label: each.comment ? `${each.name} — ${each.comment}` : each.name,
+                  }))}
                   onChange={(value) => {
                     setTemplateId(value)
                     setValues({})
@@ -394,8 +397,16 @@ export function ComposePage() {
                   label={t('compose.locale')}
                   value={locale}
                   options={[
-                    { value: '', label: template?.locale ? t('locale.defaultNamed', { locale: template.locale }) : t('locale.default') },
-                    ...(template?.translations ?? []).map((translation) => ({ value: translation.locale, label: translation.locale })),
+                    {
+                      value: '',
+                      label: template?.locale
+                        ? t('locale.defaultNamed', { locale: template.locale })
+                        : t('locale.default'),
+                    },
+                    ...(template?.translations ?? []).map((translation) => ({
+                      value: translation.locale,
+                      label: translation.locale,
+                    })),
                   ]}
                   onChange={setLocale}
                 />
@@ -513,11 +524,7 @@ export function ComposePage() {
       {mode === 'template' && (
         <div className="card editor-preview">
           <h3>{t('editor.preview')}</h3>
-          {rendered?.locale && (
-            <p className="muted">
-              {t('compose.renderedIn', { locale: rendered.locale })}
-            </p>
-          )}
+          {rendered?.locale && <p className="muted">{t('compose.renderedIn', { locale: rendered.locale })}</p>}
           <RenderedPreview rendered={rendered} error={renderProblem} />
         </div>
       )}

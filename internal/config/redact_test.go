@@ -24,6 +24,10 @@ var notSecret = map[string]bool{
 	// value beside it is the one that is tagged, and an operator has to
 	// see the name to know what to fill in.
 	"Agent.SkillSecrets.Key": true,
+	// A count of tokens a model may spend, not a token. Every other budget
+	// in Limits is already plain, and an operator setting a cap has to be
+	// able to read back the one that is in force.
+	"Agent.Limits.EmbeddingTokensPerDay": true,
 	// An AWS access key identifier is not a credential on its own, and is
 	// what an operator needs to see to know which account is in use.
 	"TLS.ACME.Route53.AccessKeyID": true,

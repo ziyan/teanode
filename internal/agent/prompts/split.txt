@@ -1,0 +1,32 @@
+This page in {{.PersonName}}'s agent's notes has grown past what one
+page should hold. Say how to divide it.
+
+## The page
+
+{{.Path}} — {{.Name}} ({{.Kind}})
+
+{{if .Opening}}{{.Opening}}
+
+{{end}}## Its facts
+
+<facts>
+{{range .Facts}}{{.}}
+{{end}}</facts>
+
+## What to answer
+
+Three to eight groups, each a theme a reader would look for by name:
+one part of the thing, one period of its life, one kind of concern. Each
+group gets a short name, a slug for its path (lower-case words joined by
+dashes), and the numbers of the facts that belong in it. A fact that fits
+nowhere stays where it is: leave it out. Every group needs at least three
+facts, or it is not a page.
+
+{{if .Self}}This is {{.PersonName}}'s own page. Who they are, what they
+prefer and how they work stay here; what belongs on a group is the
+particular -- their finances, their health, one project's worth of
+detail.
+
+{{end}}Answer with this object and nothing else:
+
+{"groups": [{"name": "WES configuration", "slug": "wes-configuration", "facts": [4, 7, 12]}]}

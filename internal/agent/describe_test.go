@@ -14,6 +14,10 @@ import (
 	"github.com/ziyan/teanode/internal/storage"
 )
 
+// describedRound is the one round a titling turn takes: the name and the
+// sentence, as the JSON the prompt asks for.
+const describedRound = `{"id":"s1","model":"m","choices":[{"delta":{"content":"{\"title\":\"The plumber\",\"summary\":\"Finding the plumber's invoice.\"}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":40,"completion_tokens":12}}`
+
 // A conversation is described once it has been quiet for a few minutes
 // with something said since it was last described; one still moving, or
 // already described since its last message, is left alone.
@@ -21,10 +25,16 @@ func TestQuietConversationsAreDescribed(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
-	model, _ := fakeModel(t, []string{answerRound})
+	// Titling is a turn of the loop now, so the answer is streamed like
+	// any other round rather than fetched on its own.
+	model, _ := fakeModel(t, []string{describedRound})
 	defer model.Close()
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
+	// The night is not what this is about, and whether one is due depends
+	// on the wall clock: the tick queued a dream in CI at one in the morning
+	// and the test saw two jobs where it expected one.
+	configuration.Agent.Features.Dreaming = new(bool)
 	configuration.Agent.Providers = []config.AgentProvider{{Name: "fake", Kind: "openai", BaseURL: model.URL, APIKey: "k"}}
 	configuration.Agent.Models.Default = "fake:thinker"
 	registry, err := llm.Open(&configuration.Agent)
@@ -36,6 +46,10 @@ func TestQuietConversationsAreDescribed(t *testing.T) {
 		t.Fatalf("storage.Open: %s", err)
 	}
 	worker := agent.New(&agent.Settings{Database: database, Storage: store, Registry: registry, Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour})
+	// Titling acts as the person, like every other run of the loop, and so
+	// needs somebody to act as.
+	operations := &fakeOperations{permissions: models.NewEffectivePermissions(nil)}
+	worker.SetOperationsFactory(func(context.Context, *models.User) (agent.Operations, error) { return operations, nil })
 
 	var quiet, busy, named *models.AgentConversation
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {

@@ -1,0 +1,19 @@
+-- Whether somebody stated this link or the night guessed it.
+--
+-- A link the person drew from the Link dialog, one the extraction read
+-- out of a message, and one the nightly walk invented because two pages
+-- were two steps apart were all the same row. The agent then spoke of
+-- all three the same way, which made a guess sound like something it had
+-- been told.
+--
+-- 'stated' is the default because every writer but the walk states: the
+-- memory tool's link, the ingest's derived links, the dashboard's Link
+-- dialog. The walk writes 'proposed', and a proposed link stays out of
+-- the index a prompt carries, reads as "perhaps" on a page, and is drawn
+-- dashed in the explorer. Confirming one is making the same link again
+-- from the dialog, which writes 'stated' over it; dropping one is the
+-- unlink that was already there.
+--
+-- Nothing promotes a link on its own: a guess nobody confirms stays a
+-- guess, which is what it is.
+ALTER TABLE "agent_edge" ADD COLUMN "status" text NOT NULL DEFAULT 'stated';

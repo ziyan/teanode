@@ -32,7 +32,7 @@ func init() {
 					"timeout":     tools.IntegerProperty("seconds before it is stopped, 120 by default, 600 at most"),
 					"environment": map[string]any{"type": "object", "description": "extra environment variables, by name", "additionalProperties": map[string]any{"type": "string"}},
 				}, "command"),
-				Guidance: "shell: one command per call, and read its output before the next; prefer a listing or a dry run before a change; never put a secret on a command line.",
+				Guidance: "shell: one command per call, and read its output before the next; prefer a listing or a dry run before a change; never put a secret on a command line. This is the tool for a command that runs and ends, which is nearly every command; the terminal is for a program that keeps running or asks questions.",
 				Preview: func(arguments json.RawMessage) string {
 					var call shellArguments
 					_ = json.Unmarshal(arguments, &call)

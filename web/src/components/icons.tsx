@@ -216,6 +216,18 @@ export function StarIcon(props: IconProps) {
   )
 }
 
+// TargetIcon marks what a conversation is being aimed at: the goal the
+// agent keeps working toward until it is met or the person clears it.
+export function TargetIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="5" />
+      <circle cx="12" cy="12" r="1" />
+    </Icon>
+  )
+}
+
 // PriorityIcon marks the view of what the agent said matters today.
 export function PriorityIcon(props: IconProps) {
   return (
@@ -652,6 +664,17 @@ export function PictureIcon(props: IconProps) {
 }
 
 // Back: an arrow pointing at where you came from.
+// Unlink: the two links of LinkIcon with a stroke through them.
+export function UnlinkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5" />
+      <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5" />
+      <path d="M4 4l16 16" />
+    </Icon>
+  )
+}
+
 export function ArrowLeftIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -737,6 +760,27 @@ export function BellOffIcon(props: IconProps) {
       <path d="M6 9v2c0 2-1 3-1 3h11" />
       <path d="M10.3 21a2 2 0 0 0 3.4 0" />
       <path d="M2 2l20 20" />
+    </Icon>
+  )
+}
+
+// GraphIcon is three pages and the lines between them: the graph explorer.
+export function GraphIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="6" cy="6" r="2.5" />
+      <circle cx="18" cy="8" r="2.5" />
+      <circle cx="10" cy="18" r="2.5" />
+      <path d="M8.3 7.1 15.7 8.6M7.2 8.2l1.9 7.6M12.3 17l4.6-6.6" />
+    </Icon>
+  )
+}
+
+// MinusIcon is the one line: less, fold away.
+export function MinusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 12h14" />
     </Icon>
   )
 }

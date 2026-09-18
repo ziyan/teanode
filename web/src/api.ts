@@ -1010,6 +1010,9 @@ export interface AgentReference {
   threadId?: string
   subject?: string
   from?: string
+  // A page of the agent's memory rather than a message.
+  path?: string
+  name?: string
 }
 
 export interface AgentAskDetail {

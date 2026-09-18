@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/mailer"
@@ -34,12 +33,18 @@ type replyData struct {
 	Language    string
 	Guidance    string
 	Memories    []string
+	Exemplars   []string
 	Corrections []string
 	Summary     string
 	Notes       string
 	Earlier     []string
 	Message     string
 }
+
+// replyExemplars is how many of the person's own past messages a reply is
+// shown. Five is enough to show a shape and few enough to leave room for
+// the message being answered.
+const replyExemplars = 5
 
 // ReplyPrompt builds the messages for one auto-reply call. The draft
 // input carries everything but the guidance, which is the policy's.
@@ -57,6 +62,7 @@ func ReplyPrompt(input *DraftInput, guidance string) ([]llm.ChatMessage, error) 
 		Language:    languageName(Language(input.Agent, input.Owner)),
 		Guidance:    strings.TrimSpace(guidance),
 		Memories:    input.Memories,
+		Exemplars:   input.Exemplars,
 		Corrections: input.Corrections,
 		Summary:     strings.TrimSpace(input.Summary),
 		Notes:       strings.TrimSpace(input.Notes),
@@ -300,9 +306,8 @@ func (self *Agent) runReply(ctx context.Context, run *Run) error {
 	if registry == nil || self.settings.Mailer == nil {
 		return fmt.Errorf("no model registry or mailer")
 	}
-	provider, model, err := registry.ForWork(config.AgentWorkReply)
-	if err != nil {
-		return err
+	if !self.canThink(configuration) {
+		return fmt.Errorf("no way to act as the person")
 	}
 	policy := run.Source.AutoReply
 	mailbox := run.Mailbox
@@ -419,54 +424,23 @@ func (self *Agent) runReply(ctx context.Context, run *Run) error {
 		Notes:         notes,
 		Memories:      memories,
 		Corrections:   corrections,
+		Exemplars:     self.exemplarsFor(ctx, run.Agent, message, replyExemplars),
 	}, policy.Guidance)
 	if err != nil {
 		return err
 	}
-	modelName := registry.Configuration().Models.ForWork(config.AgentWorkReply)
-
 	// A draft that can look things up. "Are you free Thursday" cannot be
 	// answered from the message alone, and neither can "what did we agree
-	// last time": both are in the mailbox and in the diary, and until now
-	// the drafting run could reach neither. It answers with the same object,
-	// and when it does not, the single call below writes the draft.
-	var answer ReplyAnswer
-	var transcript func(db.Transaction, string) (string, error)
-	if self.canThink(configuration) {
-		if written, record, err := self.draftWithTools(ctx, run, mail, messages[1].Content); err != nil {
-			log.Warningf("drafting an answer to %q with tools failed, asking once instead: %s", mail.ID, err)
-		} else if record != nil {
-			answer, transcript = *written, record
-		}
+	// last time": both are in the mailbox and in the diary. It answers
+	// with the object, and a model that ended in prose has not answered.
+	written, transcript, err := self.draftWithTools(ctx, run, mail, messages[1].Content)
+	if err != nil {
+		return err
 	}
 	if transcript == nil {
-		callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
-		defer cancel()
-		response, err := provider.Chat(callContext, &llm.ChatRequest{
-			Model:      model,
-			Messages:   messages,
-			MaxTokens:  1200,
-			JSONObject: true,
-		})
-		if response != nil {
-			RecordUsage(run.Database(), run.Agent.ID, mailbox.ID, modelName, string(models.AgentJobReply), response.Usage)
-		}
-		if err != nil {
-			return fmt.Errorf("asking the model: %w", err)
-		}
-		written, err := llm.Extract[ReplyAnswer](response.Message.Content)
-		if err != nil {
-			return err
-		}
-		answer = written
-		transcript = func(tx db.Transaction, note string) (string, error) {
-			recorded, err := self.recordRun(tx, run, note, messages[1].Content, response, modelName)
-			if err != nil {
-				return "", err
-			}
-			return recorded.ID, nil
-		}
+		return fmt.Errorf("the answering run for %q did not end with the object", mail.ID)
 	}
+	answer := *written
 	text := ""
 	if answer.Reply != nil {
 		text = strings.TrimSpace(*answer.Reply)
@@ -554,7 +528,7 @@ func threadIdOf(mail *models.Mail) string {
 // see it in the agent's activity rather than wonder.
 func (self *Agent) recordRefusal(ctx context.Context, run *Run, mail *models.Mail, reason string) error {
 	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		transcript, err := self.recordRun(tx, run, fmt.Sprintf("Did not answer %q: %s", mail.Subject, reason), "", nil, "")
+		transcript, err := noteRun(tx, run, fmt.Sprintf("Did not answer %q: %s", mail.Subject, reason))
 		if err != nil {
 			return err
 		}

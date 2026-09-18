@@ -22,6 +22,11 @@ type openAI struct {
 
 	mu          sync.Mutex
 	noReasoning map[string]bool
+	// systemFirst is the models whose chat template takes one system
+	// message and only at the front: llama.cpp with a Qwen template
+	// answers 500 to a second one, and the loop sends what is true now
+	// as a second one after the history so the first can be cached.
+	systemFirst map[string]bool
 }
 
 const openAIDefaultBaseURL = "https://api.openai.com/v1"
@@ -72,6 +77,7 @@ type openAIRequest struct {
 	Model               string          `json:"model"`
 	Messages            []openAIMessage `json:"messages"`
 	Tools               []any           `json:"tools,omitempty"`
+	ToolChoice          string          `json:"tool_choice,omitempty"`
 	MaxTokens           int             `json:"max_tokens,omitempty"`
 	MaxCompletionTokens int             `json:"max_completion_tokens,omitempty"`
 	Temperature         *float64        `json:"temperature,omitempty"`
@@ -99,6 +105,50 @@ func (self *openAI) refusesReasoning(model string) bool {
 	return self.noReasoning[model]
 }
 
+// systemRefused says the template refused a system message anywhere but
+// first. The words are llama.cpp's, raised from the Qwen template.
+func systemRefused(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "System message must be at the beginning")
+}
+
+func (self *openAI) wantsSystemFirst(model string) bool {
+	self.mu.Lock()
+	defer self.mu.Unlock()
+	return self.systemFirst[model]
+}
+
+func (self *openAI) rememberSystemFirst(model string) {
+	self.mu.Lock()
+	defer self.mu.Unlock()
+	if self.systemFirst == nil {
+		self.systemFirst = map[string]bool{}
+	}
+	self.systemFirst[model] = true
+}
+
+// systemsMerged is the request with every system message folded into the
+// first, in order, for a template that takes one. The later ones lose
+// their place after the history, which is where they were put so the
+// first could be cached; a template that refuses them cached nothing
+// anyway.
+func systemsMerged(request *ChatRequest) *ChatRequest {
+	merged := *request
+	var system []string
+	kept := make([]ChatMessage, 0, len(request.Messages))
+	for _, message := range request.Messages {
+		if message.Role == RoleSystem {
+			system = append(system, message.Content)
+			continue
+		}
+		kept = append(kept, message)
+	}
+	if len(system) <= 1 {
+		return request
+	}
+	merged.Messages = append([]ChatMessage{{Role: RoleSystem, Content: strings.Join(system, "\n\n"), CacheBreakpoint: true}}, kept...)
+	return &merged
+}
+
 func (self *openAI) rememberRefusal(model string) {
 	self.mu.Lock()
 	defer self.mu.Unlock()
@@ -109,7 +159,7 @@ func (self *openAI) rememberRefusal(model string) {
 }
 
 func (self *openAI) encode(request *ChatRequest, stream bool) *openAIRequest {
-	body := &openAIRequest{Model: request.Model, Temperature: request.Temperature}
+	body := &openAIRequest{Model: request.Model, Temperature: request.Temperature, ToolChoice: request.ToolChoice}
 	for _, message := range request.Messages {
 		encoded := openAIMessage{Role: string(message.Role), ToolCallID: message.ToolCallID, Name: message.Name}
 		if len(message.Parts) > 0 {
@@ -208,6 +258,9 @@ type openAIResponse struct {
 
 func (self *openAI) Chat(ctx context.Context, request *ChatRequest) (*ChatResponse, error) {
 	var response openAIResponse
+	if self.wantsSystemFirst(request.Model) {
+		request = systemsMerged(request)
+	}
 	body := self.encode(request, false)
 	if len(body.Tools) > 0 && self.refusesReasoning(request.Model) {
 		body.ReasoningEffort = "none"
@@ -216,6 +269,14 @@ func (self *openAI) Chat(ctx context.Context, request *ChatRequest) (*ChatRespon
 	if err != nil && len(body.Tools) > 0 && body.ReasoningEffort == "" && reasoningRefused(err) {
 		self.rememberRefusal(request.Model)
 		body.ReasoningEffort = "none"
+		err = doJSON(ctx, self.client, http.MethodPost, self.baseUrl+"/chat/completions", self.headers(), body, &response)
+	}
+	if err != nil && systemRefused(err) {
+		self.rememberSystemFirst(request.Model)
+		body = self.encode(systemsMerged(request), false)
+		if len(body.Tools) > 0 && self.refusesReasoning(request.Model) {
+			body.ReasoningEffort = "none"
+		}
 		err = doJSON(ctx, self.client, http.MethodPost, self.baseUrl+"/chat/completions", self.headers(), body, &response)
 	}
 	if err != nil {
@@ -232,6 +293,13 @@ func (self *openAI) Chat(ctx context.Context, request *ChatRequest) (*ChatRespon
 	}
 	for _, call := range choice.Message.ToolCalls {
 		result.Message.ToolCalls = append(result.Message.ToolCalls, ToolCall{ID: call.ID, Name: call.Function.Name, Arguments: call.Function.Arguments})
+	}
+	// A call the server did not parse is read from the words.
+	if len(result.Message.ToolCalls) == 0 && len(request.Tools) > 0 {
+		if textual, rest := TextualToolCalls(result.Message.Content); len(textual) > 0 {
+			result.Message.Content = rest
+			result.Message.ToolCalls = textual
+		}
 	}
 	if len(result.Message.ToolCalls) > 0 {
 		result.FinishReason = "tool_calls"
@@ -280,6 +348,9 @@ type openAIChunk struct {
 }
 
 func (self *openAI) ChatStream(ctx context.Context, request *ChatRequest) (<-chan StreamEvent, error) {
+	if self.wantsSystemFirst(request.Model) {
+		request = systemsMerged(request)
+	}
 	encoded := self.encode(request, true)
 	if len(encoded.Tools) > 0 && self.refusesReasoning(request.Model) {
 		encoded.ReasoningEffort = "none"
@@ -288,6 +359,14 @@ func (self *openAI) ChatStream(ctx context.Context, request *ChatRequest) (<-cha
 	if err != nil && len(encoded.Tools) > 0 && encoded.ReasoningEffort == "" && reasoningRefused(err) {
 		self.rememberRefusal(request.Model)
 		encoded.ReasoningEffort = "none"
+		body, err = openStream(ctx, self.client, self.baseUrl+"/chat/completions", self.headers(), encoded)
+	}
+	if err != nil && systemRefused(err) {
+		self.rememberSystemFirst(request.Model)
+		encoded = self.encode(systemsMerged(request), true)
+		if len(encoded.Tools) > 0 && self.refusesReasoning(request.Model) {
+			encoded.ReasoningEffort = "none"
+		}
 		body, err = openStream(ctx, self.client, self.baseUrl+"/chat/completions", self.headers(), encoded)
 	}
 	if err != nil {
@@ -364,6 +443,15 @@ func (self *openAI) ChatStream(ctx context.Context, request *ChatRequest) (<-cha
 			return
 		}
 		response.Message.Content = text.String()
+		// A call the server did not parse is read from the words.
+		if len(calls) == 0 && len(request.Tools) > 0 {
+			if textual, rest := TextualToolCalls(response.Message.Content); len(textual) > 0 {
+				response.Message.Content = rest
+				for index := range textual {
+					calls[index] = &textual[index]
+				}
+			}
+		}
 		indexes := make([]int, 0, len(calls))
 		for index := range calls {
 			indexes = append(indexes, index)
@@ -415,7 +503,7 @@ func (self *openAI) ListModels(ctx context.Context) ([]ModelInformation, error) 
 	return models, nil
 }
 
-func (self *openAI) Embed(ctx context.Context, model string, inputs []string) ([][]float32, Usage, error) {
+func (self *openAI) Embed(ctx context.Context, request EmbedRequest) ([][]float32, Usage, error) {
 	var response struct {
 		Data []struct {
 			Index     int       `json:"index"`
@@ -423,11 +511,14 @@ func (self *openAI) Embed(ctx context.Context, model string, inputs []string) ([
 		} `json:"data"`
 		Usage *openAIUsage `json:"usage"`
 	}
-	body := map[string]any{"model": model, "input": inputs}
+	body := map[string]any{"model": request.Model, "input": request.Inputs}
+	if request.Dimensions > 0 {
+		body["dimensions"] = request.Dimensions
+	}
 	if err := doJSON(ctx, self.client, http.MethodPost, self.baseUrl+"/embeddings", self.headers(), body, &response); err != nil {
 		return nil, Usage{}, err
 	}
-	vectors := make([][]float32, len(inputs))
+	vectors := make([][]float32, len(request.Inputs))
 	for _, item := range response.Data {
 		if item.Index >= 0 && item.Index < len(vectors) {
 			vectors[item.Index] = item.Embedding

@@ -111,3 +111,24 @@ func TestTheAllowListSaysWhatCannotBeUsed(t *testing.T) {
 		}
 	}
 }
+
+// A model used at a width is the same model at the same price. Matching
+// the whole name missed it, and every embedding was charged at the chat
+// rate: a day the provider billed six dollars showed as forty-seven.
+func TestPricingForIgnoresTheWidthSuffix(t *testing.T) {
+	provider := AgentProvider{
+		Pricing: AgentPricing{Input: 0.15, Output: 0.6},
+		ModelPricing: []AgentModelPricing{
+			{Model: "text-embedding-3-small", Input: 0.02},
+		},
+	}
+	if got := provider.PricingFor("text-embedding-3-small@512").Input; got != 0.02 {
+		t.Fatalf("the embedding model at 512 wide is priced as itself, not %v", got)
+	}
+	if got := provider.PricingFor("text-embedding-3-small").Input; got != 0.02 {
+		t.Fatalf("and plain, %v", got)
+	}
+	if got := provider.PricingFor("gpt-x").Input; got != 0.15 {
+		t.Fatalf("an unpriced model falls back to the provider's rate, not %v", got)
+	}
+}

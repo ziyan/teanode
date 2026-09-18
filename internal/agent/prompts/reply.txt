@@ -16,6 +16,12 @@ The policy, in {{.PersonName}}'s words:
 {{if .Memories}}
 What {{.PersonName}} has told you about replying:
 {{range .Memories}}- {{.}}
+{{end}}{{end}}{{if .Exemplars}}
+How {{.PersonName}} has written to people about things like this. These are their own past messages: match the length, the opening, the amount of explanation and the sign-off. Do not copy their content.
+
+{{range .Exemplars}}<example>
+{{.}}
+</example>
 {{end}}{{end}}{{if .Corrections}}
 Replies you wrote that {{.PersonName}} would not let go -- do not write another like these:
 {{range .Corrections}}- {{.}}

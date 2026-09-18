@@ -87,6 +87,9 @@ type Agent struct {
 	operations   OperationsFactory
 	lastScavenge time.Time
 	lastDescribe time.Time
+	lastRemember time.Time
+	lastIngest   time.Time
+	lastDream    time.Time
 	describing   atomic.Bool
 
 	// connections are the sessions with connected servers, per server and
@@ -102,6 +105,12 @@ type Agent struct {
 	// headless browser contexts in use under the operator's cap.
 	tabsMutex sync.Mutex
 	tabs      map[string]*attachedTab
+
+	// computersBusy is which source each attached computer is reading
+	// for right now, by computer name. One at a time: two big scans at
+	// once on one laptop took it down every hundred seconds.
+	readingMutex  sync.Mutex
+	computersBusy map[string]string
 	// feeds are the subscribers to each conversation's events, by
 	// conversation; the relay queue is what this instance's runs emitted
 	// and the others have not heard yet.
@@ -146,6 +155,11 @@ type Run struct {
 	// hold or a deferral is judged against the same clock that claimed it.
 	Now time.Time
 
+	// Subject is what a run no job queued is about -- the message a draft
+	// answers, the conversation being titled or compacted -- so that its
+	// transcript names it as a job's would.
+	Subject string
+
 	settings *Settings
 }
 
@@ -184,8 +198,12 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobSend, self.runSend)
 	self.Register(models.AgentJobEmbed, self.runEmbed)
 	self.Register(models.AgentJobSchedule, self.runSchedule)
+	self.Register(models.AgentJobGoal, self.runGoal)
 	self.Register(models.AgentJobResearch, self.runResearch)
 	self.Register(models.AgentJobExtract, self.runExtract)
+	self.Register(models.AgentJobRemember, self.runRemember)
+	self.Register(models.AgentJobIngest, self.runIngest)
+	self.Register(models.AgentJobDream, self.runDream)
 	self.catalog = FullCatalog()
 	return self
 }
@@ -217,6 +235,27 @@ func (self *Agent) Register(kind models.AgentJobKind, handler Handler) {
 
 // Start begins claiming work.
 func (self *Agent) Start() {
+	// The vector indexes before anything else writes a vector. Building
+	// one over a corpus that has already arrived wants more memory than a
+	// small server has; maintaining one as the rows come in costs a tenth
+	// of a millisecond each. So the order matters, and this is where it
+	// is settled.
+	if err := self.EnsureVectorIndexes(self.ctx); err != nil {
+		log.Warningf("cannot build the vector indexes: %s", err)
+	}
+	// What this instance held when it last stopped is not running now.
+	// Left to the stale-claim rule it would sit a quarter of an hour,
+	// which every deployment paid: two reading passes stood still while
+	// their sources showed "reading".
+	if err := self.settings.Database.TransactionContext(self.ctx, func(tx db.Transaction) error {
+		released, err := tx.ReleaseAgentJobsClaimedBy(self.settings.Instance)
+		if released > 0 {
+			log.Noticef("put back %d job(s) this instance held before it restarted", released)
+		}
+		return err
+	}); err != nil {
+		log.Warningf("cannot put back the jobs held before the restart: %s", err)
+	}
 	self.worker = periodic.New(self.ctx, &self.waitGroup, self.tick, &periodic.Settings{
 		Interval: self.settings.Tick,
 		Name:     "agent:worker",
@@ -328,19 +367,42 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	if !configuration.Agent.Enabled {
 		return nil
 	}
+	// Queueing first, and whether or not there is a slot free.
+	//
+	// These write rows; they do not take a slot. Returning early when
+	// every slot was busy meant a worker with a long backlog stopped
+	// noticing that anything else was due at all -- no conversation was
+	// filed, no schedule ran and no night happened for as long as the
+	// backlog lasted, which on a first ingest is days. The queue is what
+	// decides the order; a full queue is not a reason to stop looking.
+	if err := self.dueSchedules(ctx, now); err != nil {
+		log.Warningf("cannot queue the schedules that are due: %s", err)
+	}
+	if err := self.dueGoals(ctx, now); err != nil {
+		log.Warningf("cannot queue the goals that are due: %s", err)
+	}
+	self.scavenge(ctx, now)
+	self.describeInBackground(ctx, now)
+	self.queueRemembering(ctx, now)
+	self.queueIngestion(ctx, now)
+	self.queueDreaming(ctx, now)
+	self.sweepBrowsers()
+	self.sweepSessions()
+
 	free := cap(self.slots) - len(self.slots)
 	if free <= 0 {
 		return nil
 	}
-	if err := self.dueSchedules(ctx, now); err != nil {
-		log.Warningf("cannot queue the schedules that are due: %s", err)
-	}
-	self.scavenge(ctx, now)
-	self.describeInBackground(ctx, now)
-	self.sweepBrowsers()
-	self.sweepSessions()
 	var jobs []*models.AgentJob
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		// The night has its own bound (see jobTimeout): released at the
+		// general fifteen minutes it was started a second time beside
+		// itself.
+		if released, err := tx.ReleaseStaleAgentJobsOfKind(models.AgentJobDream, now.Add(-dreamLongest-5*time.Minute)); err != nil {
+			log.Warningf("cannot put back a dream that died: %s", err)
+		} else if released > 0 {
+			log.Noticef("put back %d dream(s) that died", released)
+		}
 		if released, err := tx.ReleaseStaleAgentJobs(now.Add(-staleClaim)); err != nil {
 			return err
 		} else if released > 0 {
@@ -376,9 +438,29 @@ func (self *Deferral) Error() string {
 	return fmt.Sprintf("deferred until %s: %s", self.Until.Format(time.RFC3339), self.Reason)
 }
 
+// jobTimeout is how long one job may run. Ten minutes for a job that
+// answers somebody; the night is a job too, and ten minutes of reading
+// four hundred chat days left nothing for the phases after it -- the
+// night finished on the deadline every time with its tidying undone.
+//
+// An ingest job gets longer again. The first page of a records source
+// runs the folder's refresh script on the person's machine and waits
+// ingestRefreshWait for it, and ten minutes here made that wait
+// unreachable: the scan was abandoned on the deadline every time, so a
+// source whose refresh takes half an hour never got past its first page.
+func jobTimeout(kind models.AgentJobKind) time.Duration {
+	switch kind {
+	case models.AgentJobDream:
+		return dreamLongest
+	case models.AgentJobIngest:
+		return ingestLongest
+	}
+	return 10 * time.Minute
+}
+
 // execute runs one claimed job and records how it ended.
 func (self *Agent) execute(job *models.AgentJob, now time.Time) {
-	ctx, cancel := context.WithTimeout(self.ctx, 10*time.Minute)
+	ctx, cancel := context.WithTimeout(self.ctx, jobTimeout(job.Kind))
 	defer cancel()
 
 	run, err := self.resolve(ctx, job)

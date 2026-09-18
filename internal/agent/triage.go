@@ -128,7 +128,7 @@ func InterpretTriage(answer *TriageAnswer, agent *models.Agent) (*models.MailIns
 	}
 	summary := strings.TrimSpace(answer.Summary)
 	if len(summary) > 300 {
-		summary = summary[:300]
+		summary = cutRunes(summary, 300)
 	}
 	// A notification, a newsletter, a receipt, a promotion or a social
 	// network's digest never needs a reply, whatever the model said: on a
@@ -160,13 +160,8 @@ func (self *Agent) runTriage(ctx context.Context, run *Run) error {
 	if !FeatureAllowed(configuration, "triage") {
 		return nil
 	}
-	registry := run.Registry()
-	if registry == nil {
-		return fmt.Errorf("no model registry")
-	}
-	provider, model, err := registry.ForWork(config.AgentWorkTriage)
-	if err != nil {
-		return err
+	if !self.canThink(configuration) {
+		return fmt.Errorf("no way to act as the person")
 	}
 
 	var mail *models.Mail
@@ -222,57 +217,25 @@ func (self *Agent) runTriage(ctx context.Context, run *Run) error {
 		Memories:      memories,
 		Corrections:   corrections,
 		ResearchNotes: researchNotes,
-		Tools:         self.canThink(configuration),
+		Tools:         true,
 	}
 	messages, err := TriagePrompt(input)
 	if err != nil {
 		return err
 	}
 
-	// With tools, when the loop is there to be used: the sorting run may
-	// ask whether this sender has written before, read the rest of the
-	// conversation, or glance at the day the message names. It answers with
-	// the same object, and when it does not -- a small model talked into
-	// prose -- the single call below is what sorts the mail.
-	if input.Tools {
-		if insight, transcript, err := self.sortWithTools(ctx, run, mail, messages[1].Content); err != nil {
-			log.Warningf("sorting %q with tools failed, asking once instead: %s", mail.ID, err)
-		} else if insight != nil {
-			return self.fileInsight(ctx, run, mail, insight, transcript)
-		}
-	}
-
-	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
-	defer cancel()
-	response, err := provider.Chat(callContext, &llm.ChatRequest{
-		Model:      model,
-		Messages:   messages,
-		MaxTokens:  600,
-		JSONObject: true,
-	})
-	modelName := registry.Configuration().Models.ForWork(config.AgentWorkTriage)
-	if response != nil {
-		RecordUsage(run.Database(), run.Agent.ID, run.Mailbox.ID, modelName, string(models.AgentJobTriage), response.Usage)
-	}
-	if err != nil {
-		return fmt.Errorf("asking the model: %w", err)
-	}
-	answer, err := llm.Extract[TriageAnswer](response.Message.Content)
+	// The sorting run is a turn of the loop: it may ask whether this sender
+	// has written before, read the rest of the conversation, or glance at
+	// the day the message names, and it ends with the object. A model
+	// talked into prose has not sorted the message, and the job says so.
+	insight, transcript, err := self.sortWithTools(ctx, run, mail, messages[1].Content)
 	if err != nil {
 		return err
 	}
-	insight, err := InterpretTriage(&answer, run.Agent)
-	if err != nil {
-		return err
+	if insight == nil {
+		return fmt.Errorf("the sorting run for %q did not end with the object", mail.ID)
 	}
-	insight.Model = modelName
-	return self.fileInsight(ctx, run, mail, insight, func(tx db.Transaction) (string, error) {
-		transcript, err := self.recordRun(tx, run, sortingNote(mail, insight), messages[1].Content, response, modelName)
-		if err != nil {
-			return "", err
-		}
-		return transcript.ID, nil
-	})
+	return self.fileInsight(ctx, run, mail, insight, transcript)
 }
 
 // sortingNote is what the run is called in the activity view.
@@ -366,77 +329,6 @@ func (self *Agent) fileInsight(ctx context.Context, run *Run, mail *models.Mail,
 		}
 		return nil
 	})
-}
-
-// recordRun writes a run's transcript: a note saying what it did, the
-// prompt it sent, and the answer it got, with the tokens on the answer.
-func (self *Agent) recordRun(tx db.Transaction, run *Run, note, prompt string, response *llm.ChatResponse, modelName string) (*models.AgentConversation, error) {
-	return recordCall(tx, &callRecord{
-		AgentID:   run.Agent.ID,
-		MailboxID: run.Job.MailboxID,
-		JobID:     run.Job.ID,
-		Kind:      string(run.Job.Kind),
-		SubjectID: run.Job.SubjectID,
-		Note:      note,
-		Prompt:    prompt,
-		Response:  response,
-		Model:     modelName,
-	})
-}
-
-// callRecord is one model call as the transcript records it: the run it
-// belonged to, what was asked, what came back.
-type callRecord struct {
-	AgentID   string
-	MailboxID string
-	JobID     string
-	Kind      string
-	SubjectID string
-	Note      string
-	Prompt    string
-	Response  *llm.ChatResponse
-	Model     string
-}
-
-// recordCall writes a run transcript: a note saying what was done, the
-// prompt, and the answer with what it cost.
-func recordCall(tx db.Transaction, record *callRecord) (*models.AgentConversation, error) {
-	conversation, err := tx.CreateAgentConversation(&models.AgentConversation{
-		AgentID:   record.AgentID,
-		MailboxID: record.MailboxID,
-		Kind:      models.AgentConversationRun,
-		Title:     record.Note,
-		JobID:     record.JobID,
-		JobKind:   record.Kind,
-		SubjectID: record.SubjectID,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: models.AgentMessageNote, Content: record.Note}); err != nil {
-		return nil, err
-	}
-	if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: string(llm.RoleUser), Content: record.Prompt}); err != nil {
-		return nil, err
-	}
-	if record.Response != nil {
-		if _, err := tx.AppendAgentMessage(&models.AgentMessage{
-			ConversationID: conversation.ID,
-			Role:           string(llm.RoleAssistant),
-			Content:        record.Response.Message.Content,
-			Usage: &models.AgentUsageNote{
-				Model:            record.Model,
-				Kind:             record.Kind,
-				PromptTokens:     record.Response.Usage.PromptTokens,
-				CompletionTokens: record.Response.Usage.CompletionTokens,
-				CacheReadTokens:  record.Response.Usage.CacheReadTokens,
-				CacheWriteTokens: record.Response.Usage.CacheWriteTokens,
-			},
-		}); err != nil {
-			return nil, err
-		}
-	}
-	return conversation, nil
 }
 
 // backfillBatch is how many messages one backfill job queues; the job

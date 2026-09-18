@@ -6,6 +6,7 @@ import { Select } from '../../components/select'
 import { useQuery } from '../../components/useQuery'
 import { Key, useTranslation } from '../../i18n/i18n'
 import { AGENT_SELECTION, Agent, AgentForm } from './agentSettings'
+import type { AgentPart } from './agentParts'
 import {
   GeoIPForm,
   IdentityForm,
@@ -255,7 +256,6 @@ export const INTEGRATION_SECTIONS: { id: Section; label: Key }[] = [
   { id: 'spam', label: 'integrations.tabSpam' },
   { id: 'sessions', label: 'serverSettings.tabSessions' },
   { id: 'sso', label: 'integrations.tabSso' },
-  { id: 'agent', label: 'server.tabAgents' },
 ]
 
 // IntegrationsSection edits one group of the optional services: how outgoing
@@ -270,12 +270,9 @@ export const INTEGRATION_SECTIONS: { id: Section; label: Key }[] = [
 // of the Server page now rather than a page of their own, because what a
 // server sends mail through and where it keeps messages are the same subject
 // as which version it is running.
-export function IntegrationsSection({ section }: { section: Section }) {
+export function IntegrationsSection({ section, part }: { section: Section; part?: AgentPart }) {
   const { t } = useTranslation()
-  const { data, error, loading, reload } = useQuery(
-    () => graphql<{ GetSettings: Settings }>(SETTINGS),
-    [],
-  )
+  const { data, error, loading, reload } = useQuery(() => graphql<{ GetSettings: Settings }>(SETTINGS), [])
 
   if (loading && !data) {
     return <Loading />
@@ -290,7 +287,6 @@ export function IntegrationsSection({ section }: { section: Section }) {
 
   return (
     <>
-
       {section === 'sso' && <SSOForm settings={settings.sso} onSaved={reload} />}
       {section === 'sending' && (
         <>
@@ -333,7 +329,7 @@ export function IntegrationsSection({ section }: { section: Section }) {
         </>
       )}
       {section === 'spam' && <AntispamForm settings={settings.antispam} onSaved={reload} />}
-      {section === 'agent' && <AgentForm settings={settings.agent} onSaved={reload} />}
+      {section === 'agent' && <AgentForm settings={settings.agent} onSaved={reload} part={part} />}
     </>
   )
 }
@@ -470,9 +466,7 @@ function RelayForm({ settings, onSaved }: { settings: Relay; onSaved: () => void
       }}
     >
       <h3>{t('integrations.relay')}</h3>
-      <p className="muted">
-        {t('integrations.relayDescription')}
-      </p>
+      <p className="muted">{t('integrations.relayDescription')}</p>
 
       <label>
         <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />{' '}
@@ -547,7 +541,7 @@ function RelayForm({ settings, onSaved }: { settings: Relay; onSaved: () => void
         />
       </div>
 
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -597,9 +591,7 @@ function ObjectStoreForm({ settings, onSaved }: { settings: S3; onSaved: () => v
       }}
     >
       <h3>{t('integrations.objectStore')}</h3>
-      <p className="muted">
-        {t('integrations.objectStoreDescription')}
-      </p>
+      <p className="muted">{t('integrations.objectStoreDescription')}</p>
 
       <label>
         <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />{' '}
@@ -628,11 +620,7 @@ function ObjectStoreForm({ settings, onSaved }: { settings: S3; onSaved: () => v
       </label>
 
       <label>
-        <input
-          type="checkbox"
-          checked={pathStyle}
-          onChange={(event) => setPathStyle(event.target.checked)}
-        />{' '}
+        <input type="checkbox" checked={pathStyle} onChange={(event) => setPathStyle(event.target.checked)} />{' '}
         {t('integrations.pathStyle')}
       </label>
 
@@ -655,7 +643,7 @@ function ObjectStoreForm({ settings, onSaved }: { settings: S3; onSaved: () => v
         hasKeys={Boolean(settings.accessKeyId) || settings.hasSecretAccessKey}
       />
 
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -734,9 +722,7 @@ function CertificateForm({ settings, onSaved }: { settings: Certificates; onSave
       }}
     >
       <h3>{t('integrations.certificatesTitle')}</h3>
-      <p className="muted">
-        {t('integrations.certificatesIntro', { hosts: (settings.hosts ?? []).join(', ') })}
-      </p>
+      <p className="muted">{t('integrations.certificatesIntro', { hosts: (settings.hosts ?? []).join(', ') })}</p>
 
       <div className="form-narrow">
         <label>
@@ -807,7 +793,7 @@ function CertificateForm({ settings, onSaved }: { settings: Certificates; onSave
         <p className="muted field-hint">{t('serverSettings.privateKeyFileHint')}</p>
       </div>
 
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -849,9 +835,7 @@ function Route53Form({ settings, onSaved }: { settings: Route53; onSaved: () => 
       }}
     >
       <h3>{t('integrations.route53')}</h3>
-      <p className="muted">
-        {t('integrations.route53Description')}
-      </p>
+      <p className="muted">{t('integrations.route53Description')}</p>
 
       <label>
         <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />{' '}
@@ -888,7 +872,7 @@ function Route53Form({ settings, onSaved }: { settings: Route53; onSaved: () => 
         hasKeys={Boolean(settings.accessKeyId) || settings.hasSecretAccessKey}
       />
 
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -922,21 +906,15 @@ function ProxyForm({ settings, onSaved }: { settings: Proxy; onSaved: () => void
       }}
     >
       <h3>{t('integrations.proxy')}</h3>
-      <p className="muted">
-        {t('integrations.proxyDescription')}
-      </p>
+      <p className="muted">{t('integrations.proxyDescription')}</p>
 
       <label>
         <span>{t('integrations.proxySocks5')}</span>
-        <input
-          value={socks5}
-          placeholder="127.0.0.1:1080"
-          onChange={(event) => setSocks5(event.target.value)}
-        />
+        <input value={socks5} placeholder="127.0.0.1:1080" onChange={(event) => setSocks5(event.target.value)} />
       </label>
       <p className="muted field-hint">{t('integrations.proxyHelp')}</p>
 
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -976,9 +954,7 @@ function ServiceForm({
       }}
     >
       <h3>{title}</h3>
-      <p className="muted">
-        {description}
-      </p>
+      <p className="muted">{description}</p>
 
       <label>
         <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />{' '}
@@ -1000,7 +976,7 @@ function ServiceForm({
         </label>
       </div>
 
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -1064,9 +1040,7 @@ function AntispamForm({ settings, onSaved }: { settings: Antispam; onSaved: () =
       }}
     >
       <h3>{t('integrations.antispam')}</h3>
-      <p className="muted">
-        {t('integrations.antispamDescription')}
-      </p>
+      <p className="muted">{t('integrations.antispamDescription')}</p>
 
       <label>
         <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />{' '}
@@ -1118,11 +1092,7 @@ function AntispamForm({ settings, onSaved }: { settings: Antispam; onSaved: () =
             {t('integrations.antispamDns')}
           </label>
           <label>
-            <input
-              type="checkbox"
-              checked={bayesEnabled}
-              onChange={(event) => setBayesEnabled(event.target.checked)}
-            />{' '}
+            <input type="checkbox" checked={bayesEnabled} onChange={(event) => setBayesEnabled(event.target.checked)} />{' '}
             {t('integrations.antispamBayes')}
             <span className="muted">
               {' '}
@@ -1140,17 +1110,13 @@ function AntispamForm({ settings, onSaved }: { settings: Antispam; onSaved: () =
             />
           </label>
           <label>
-            <input
-              type="checkbox"
-              checked={rulesEnabled}
-              onChange={(event) => setRulesEnabled(event.target.checked)}
-            />{' '}
+            <input type="checkbox" checked={rulesEnabled} onChange={(event) => setRulesEnabled(event.target.checked)} />{' '}
             {t('integrations.antispamRules')}
           </label>
         </>
       )}
 
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('integrations.savedNeedsRestart')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -1179,7 +1145,7 @@ function SSOForm({ settings, onSaved }: { settings: SSOSettings; onSaved: () => 
   const { busy, problem, saved, save } = useSaver(onSaved)
   // This form lays its own buttons out rather than using SaveRow, so it says
   // the same thing the same way for itself.
-  useSaySaved(saved, t('common.saved'))
+  useSaySaved(saved)
   const [providers, setProviders] = useState<EditedProvider[]>(() =>
     settings.providers.map((provider) => ({ ...provider, clientSecret: '' })),
   )
@@ -1223,7 +1189,13 @@ function SSOForm({ settings, onSaved }: { settings: SSOSettings; onSaved: () => 
         <div className="card sso-provider" key={index}>
           <label>
             <span>{t('integrations.ssoId')}</span>
-            <input className="mono" value={provider.id} onChange={(event) => update(index, { id: event.target.value })} placeholder="okta" required />
+            <input
+              className="mono"
+              value={provider.id}
+              onChange={(event) => update(index, { id: event.target.value })}
+              placeholder="okta"
+              required
+            />
           </label>
           <label>
             <span>{t('integrations.ssoName')}</span>
@@ -1241,7 +1213,12 @@ function SSOForm({ settings, onSaved }: { settings: SSOSettings; onSaved: () => 
           </label>
           <label>
             <span>{t('integrations.ssoClientId')}</span>
-            <input className="mono" value={provider.clientId} onChange={(event) => update(index, { clientId: event.target.value })} required />
+            <input
+              className="mono"
+              value={provider.clientId}
+              onChange={(event) => update(index, { clientId: event.target.value })}
+              required
+            />
           </label>
           <label>
             <span>{t('integrations.ssoClientSecret')}</span>
@@ -1264,14 +1241,22 @@ function SSOForm({ settings, onSaved }: { settings: SSOSettings; onSaved: () => 
             />
           </label>
           <label className="checkbox">
-            <input type="checkbox" checked={provider.createUsers} onChange={(event) => update(index, { createUsers: event.target.checked })} />
+            <input
+              type="checkbox"
+              checked={provider.createUsers}
+              onChange={(event) => update(index, { createUsers: event.target.checked })}
+            />
             {t('integrations.ssoCreateUsers')}
           </label>
           <p className="muted field-hint">
             {t('integrations.ssoRedirect')} <code>{`${origin}/api/v1/sso/${provider.id.trim() || 'id'}/callback`}</code>
           </p>
           <div className="row-actions">
-            <button type="button" className="link danger" onClick={() => setProviders((previous) => previous.filter((_, at) => at !== index))}>
+            <button
+              type="button"
+              className="link danger"
+              onClick={() => setProviders((previous) => previous.filter((_, at) => at !== index))}
+            >
               {t('common.remove')}
             </button>
           </div>
@@ -1284,7 +1269,16 @@ function SSOForm({ settings, onSaved }: { settings: SSOSettings; onSaved: () => 
           onClick={() =>
             setProviders((previous) => [
               ...previous,
-              { id: '', name: '', issuer: '', clientId: '', clientSecret: '', hasClientSecret: false, groupsClaim: '', createUsers: false },
+              {
+                id: '',
+                name: '',
+                issuer: '',
+                clientId: '',
+                clientSecret: '',
+                hasClientSecret: false,
+                groupsClaim: '',
+                createUsers: false,
+              },
             ])
           }
         >

@@ -166,12 +166,40 @@ func TestOpenAIListModelsAndEmbed(t *testing.T) {
 	if len(models) != 2 || models[0].ID != "alpha" || models[1].ID != "zeta" {
 		t.Fatalf("models %+v", models)
 	}
-	vectors, usage, err := provider.(Embedder).Embed(context.Background(), "e", []string{"a", "b"})
+	vectors, usage, err := provider.(Embedder).Embed(context.Background(), EmbedRequest{Model: "e", Inputs: []string{"a", "b"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(vectors) != 2 || vectors[0][0] != 1 || vectors[1][0] != 0.5 || usage.PromptTokens != 7 {
 		t.Fatalf("vectors %v usage %+v", vectors, usage)
+	}
+}
+
+// A narrower vector is asked for by passing the width through; a provider
+// that does not understand it answers at its own, which is why the width
+// travels with the model's name wherever a vector is kept.
+func TestEmbeddingAsksForAWidthWhenOneIsWanted(t *testing.T) {
+	var requests []map[string]any
+	server := fakeOpenAI(t, &requests)
+	defer server.Close()
+	provider, _ := NewProvider("openai", server.URL+"/v1", "key-1", time.Second)
+	if _, _, err := provider.(Embedder).Embed(context.Background(), EmbedRequest{
+		Model: "e", Inputs: []string{"a"}, Dimensions: 512,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	last := requests[len(requests)-1]
+	if last["dimensions"] != float64(512) {
+		t.Fatalf("the width should be asked for: %+v", last)
+	}
+	if _, _, err := provider.(Embedder).Embed(context.Background(), EmbedRequest{
+		Model: "e", Inputs: []string{"a"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	last = requests[len(requests)-1]
+	if _, asked := last["dimensions"]; asked {
+		t.Fatalf("and left out when nobody asked: %+v", last)
 	}
 }
 
@@ -452,5 +480,53 @@ func TestOpenAIRetriesWithReasoningOffWhenToolsRefused(t *testing.T) {
 	}
 	if len(bodies) != 3 || bodies[2]["reasoning_effort"] != "none" {
 		t.Fatalf("the model should be remembered as refusing, got %d calls", len(bodies))
+	}
+}
+
+// A template that takes one system message, at the front, refuses the
+// second one the loop sends after the history. The provider folds them
+// into one and asks again, and from then on sends them folded first time.
+func TestOpenAIFoldsSystemMessagesForATemplateThatWantsOne(t *testing.T) {
+	var systems []int
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var body struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		count := 0
+		for index, message := range body.Messages {
+			if message.Role == "system" {
+				count++
+				if index > 0 {
+					writer.WriteHeader(http.StatusInternalServerError)
+					_, _ = writer.Write([]byte(`{"error":{"code":500,"message":"raise_exception('System message must be at the beginning')"}}`))
+					return
+				}
+			}
+		}
+		systems = append(systems, count)
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"id":"c","model":"m","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
+	}))
+	defer server.Close()
+	provider, _ := NewProvider("openai", server.URL+"/v1", "k", time.Second)
+	request := &ChatRequest{Model: "m", Messages: []ChatMessage{
+		{Role: RoleSystem, Content: "You are helpful."},
+		{Role: RoleUser, Content: "hi"},
+		{Role: RoleSystem, Content: "It is Tuesday."},
+	}}
+	for round := 0; round < 2; round++ {
+		response, err := provider.Chat(context.Background(), request)
+		if err != nil || response.Message.Content != "ok" {
+			t.Fatalf("round %d: %v %+v", round, err, response)
+		}
+	}
+	// One answered call per round, each with one system message; the
+	// refusal on the first round is not in the list.
+	if len(systems) != 2 || systems[0] != 1 || systems[1] != 1 {
+		t.Fatalf("system messages per answered call: %v", systems)
 	}
 }

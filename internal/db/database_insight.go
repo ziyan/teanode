@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -49,15 +50,38 @@ type InsightOperation interface {
 	GetAgentConversation(conversationId string) (*models.AgentConversation, error)
 	UpdateAgentConversation(conversationId string, modify func(*models.AgentConversation) error) (*models.AgentConversation, error)
 	ListAgentConversations(agentId string, kinds []models.AgentConversationKind, options *Options) ([]*models.AgentConversation, error)
+
+	// ListAgentRuns is the runs, newest first, narrowed by the filter and
+	// paged by the options; CountAgentRuns is how many the filter leaves.
+	// An empty agent is every agent's, for an operator.
+	ListAgentRuns(agentId string, filter *AgentRunFilter, options *Options) ([]*models.AgentConversation, error)
+	CountAgentRuns(agentId string, filter *AgentRunFilter) (int64, error)
+
+	// SumAgentRunUsage is what each of these conversations cost: every
+	// message's usage added up, keyed by conversation.
+	SumAgentRunUsage(conversationIds []string) (map[string]models.AgentUsageNote, error)
 	DeleteAgentConversation(conversationId string) error
 
 	// SearchAgentConversations finds a person's conversations by words in
 	// the title or in what was said, newest first, archived ones included.
 	SearchAgentConversations(agentId, query string, limit int) ([]*models.AgentConversation, error)
 
+	// ListAgentConversationsToRemember is every conversation with
+	// something said in it that no remember run has read yet, quiet since
+	// the moment given so that one still being typed into is left alone.
+	ListAgentConversationsToRemember(quietSince time.Time, limit int) ([]*models.AgentConversation, error)
+
+	// MarkAgentConversationRemembered records how far a remember run got.
+	// Called in the same transaction as the facts it wrote.
+	MarkAgentConversationRemembered(conversationId, messageId string, at time.Time) error
+
 	// ListAgentConversationsToDescribe is every conversation quiet since
 	// the given time with something said since it was last described.
 	ListAgentConversationsToDescribe(quietSince time.Time, limit int) ([]*models.AgentConversation, error)
+
+	// ListDueAgentGoals is every conversation whose goal is working and
+	// whose next turn is due.
+	ListDueAgentGoals(now time.Time, limit int) ([]*models.AgentConversation, error)
 
 	// ScavengeAgentConversations removes run transcripts older than the
 	// given time.
@@ -65,6 +89,14 @@ type InsightOperation interface {
 
 	AppendAgentMessage(message *models.AgentMessage) (*models.AgentMessage, error)
 	ListAgentMessages(conversationId string, options *Options) ([]*models.AgentMessage, error)
+	// LastAgentPersonMessageAt is when the person last wrote in the
+	// conversation: their own words, not a goal check-in the agent was
+	// handed as a user turn. Nil when they never have.
+	LastAgentPersonMessageAt(conversationId string) (*time.Time, error)
+	// LastAgentPersonWordAt is when the person last wrote to this agent in
+	// any of their own conversations: their words, not a goal check-in.
+	// Nil when they never have.
+	LastAgentPersonWordAt(agentId string) (*time.Time, error)
 }
 
 type mailInsightModel struct {
@@ -106,6 +138,18 @@ type agentConversationModel struct {
 	ArchivedAt       *time.Time `gorm:"column:archived_at"`
 	LastAt           time.Time  `gorm:"column:last_at"`
 	CompactedThrough string     `gorm:"column:compacted_through"`
+
+	// How far a remember run has read. See migration 0067.
+	RememberedThrough string     `gorm:"column:remembered_through"`
+	RememberedAt      *time.Time `gorm:"column:remembered_at"`
+
+	// The goal the agent keeps working toward in this conversation. See
+	// migration 0083.
+	Goal       string     `gorm:"column:goal"`
+	GoalState  string     `gorm:"column:goal_state"`
+	GoalNote   string     `gorm:"column:goal_note"`
+	GoalNextAt *time.Time `gorm:"column:goal_next_at"`
+	GoalSetAt  *time.Time `gorm:"column:goal_set_at"`
 }
 
 func (agentConversationModel) TableName() string { return "agent_conversation" }
@@ -321,21 +365,37 @@ func (self *transaction) DeleteMailInsights(mailboxId string) (int64, error) {
 
 func conversationFromModel(model *agentConversationModel) *models.AgentConversation {
 	conversation := &models.AgentConversation{
-		ID:               model.ID,
-		CreatedAt:        model.CreatedAt.In(time.Local),
-		ModifiedAt:       model.ModifiedAt.In(time.Local),
-		AgentID:          model.AgentID,
-		MailboxID:        model.MailboxID,
-		Kind:             models.AgentConversationKind(model.Kind),
-		Title:            model.Title,
-		Summary:          model.Summary,
-		TitledBy:         model.TitledBy,
-		JobID:            model.JobID,
-		JobKind:          model.JobKind,
-		SubjectID:        model.SubjectID,
-		Surface:          model.Surface,
-		LastAt:           model.LastAt.In(time.Local),
-		CompactedThrough: model.CompactedThrough,
+		ID:                model.ID,
+		CreatedAt:         model.CreatedAt.In(time.Local),
+		ModifiedAt:        model.ModifiedAt.In(time.Local),
+		AgentID:           model.AgentID,
+		MailboxID:         model.MailboxID,
+		Kind:              models.AgentConversationKind(model.Kind),
+		Title:             model.Title,
+		Summary:           model.Summary,
+		TitledBy:          model.TitledBy,
+		JobID:             model.JobID,
+		JobKind:           model.JobKind,
+		SubjectID:         model.SubjectID,
+		Surface:           model.Surface,
+		LastAt:            model.LastAt.In(time.Local),
+		CompactedThrough:  model.CompactedThrough,
+		RememberedThrough: model.RememberedThrough,
+		Goal:              model.Goal,
+		GoalState:         models.AgentGoalState(model.GoalState),
+		GoalNote:          model.GoalNote,
+	}
+	if model.GoalNextAt != nil {
+		at := model.GoalNextAt.In(time.Local)
+		conversation.GoalNextAt = &at
+	}
+	if model.GoalSetAt != nil {
+		at := model.GoalSetAt.In(time.Local)
+		conversation.GoalSetAt = &at
+	}
+	if model.RememberedAt != nil {
+		at := model.RememberedAt.In(time.Local)
+		conversation.RememberedAt = &at
 	}
 	if model.ArchivedAt != nil {
 		at := model.ArchivedAt.In(time.Local)
@@ -366,6 +426,11 @@ func (self *transaction) CreateAgentConversation(conversation *models.AgentConve
 		SubjectID:  conversation.SubjectID,
 		Surface:    conversation.Surface,
 		LastAt:     now,
+		Goal:       conversation.Goal,
+		GoalState:  string(conversation.GoalState),
+		GoalNote:   conversation.GoalNote,
+		GoalNextAt: conversation.GoalNextAt,
+		GoalSetAt:  conversation.GoalSetAt,
 	}
 	if err := self.tx.Create(model).Error; err != nil {
 		return nil, err
@@ -403,10 +468,102 @@ func (self *transaction) UpdateAgentConversation(conversationId string, modify f
 	if err := self.tx.Model(&agentConversationModel{}).Where("\"id\" = ?", conversationId).Updates(map[string]any{
 		"modified_at": time.Now(), "kind": string(after.Kind), "title": truncateRunes(after.Title, 200), "summary": truncateRunes(after.Summary, 1000), "titled_by": after.TitledBy, "archived_at": after.ArchivedAt, "described_at": after.DescribedAt,
 		"last_at": after.LastAt, "compacted_through": after.CompactedThrough, "surface": after.Surface,
+		"goal": after.Goal, "goal_state": string(after.GoalState), "goal_note": truncateRunes(after.GoalNote, 1000), "goal_next_at": after.GoalNextAt, "goal_set_at": after.GoalSetAt,
 	}).Error; err != nil {
 		return nil, err
 	}
 	return self.GetAgentConversation(conversationId)
+}
+
+// AgentRunFilter narrows a listing of runs: to one job's (a dream makes
+// many, one per call), to some kinds, to titles carrying some words.
+type AgentRunFilter struct {
+	JobID string
+	Kinds []string
+	Query string
+}
+
+func (self *transaction) agentRunQuery(agentId string, filter *AgentRunFilter) *gorm.DB {
+	query := self.tx.Model(&agentConversationModel{}).Where("\"kind\" = ?", string(models.AgentConversationRun))
+	// No agent means every agent's: the operator's view.
+	if agentId != "" {
+		query = query.Where("\"agent_id\" = ?", agentId)
+	}
+	if filter == nil {
+		return query
+	}
+	if filter.JobID != "" {
+		query = query.Where("\"job_id\" = ?", filter.JobID)
+	}
+	if len(filter.Kinds) > 0 {
+		query = query.Where("\"job_kind\" IN ?", filter.Kinds)
+	}
+	if words := strings.TrimSpace(filter.Query); words != "" {
+		query = query.Where("\"title\" ILIKE ?", "%"+escapeLike(words)+"%")
+	}
+	return query
+}
+
+// ListAgentRuns is the runs, newest first, as the activity table shows
+// them: a page at a time, because a bootstrapping dream makes hundreds a
+// night and the table is meant to page through all of them.
+func (self *transaction) ListAgentRuns(agentId string, filter *AgentRunFilter, options *Options) ([]*models.AgentConversation, error) {
+	query := self.agentRunQuery(agentId, filter).Order("\"last_at\" DESC")
+	if options != nil && options.Limit > 0 {
+		query = query.Limit(int(options.Limit)).Offset(int(options.Offset))
+	}
+	var rows []agentConversationModel
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	conversations := make([]*models.AgentConversation, 0, len(rows))
+	for index := range rows {
+		conversations = append(conversations, conversationFromModel(&rows[index]))
+	}
+	return conversations, nil
+}
+
+// SumAgentRunUsage adds up the usage on every message of each conversation,
+// so a list of runs can say what each cost without reading its transcript.
+func (self *transaction) SumAgentRunUsage(conversationIds []string) (map[string]models.AgentUsageNote, error) {
+	totals := map[string]models.AgentUsageNote{}
+	if len(conversationIds) == 0 {
+		return totals, nil
+	}
+	var rows []struct {
+		ConversationID   string
+		PromptTokens     int
+		CompletionTokens int
+		CacheReadTokens  int
+		CacheWriteTokens int
+		Cost             float64
+	}
+	if err := self.tx.Raw(`
+		SELECT "conversation_id",
+		       coalesce(sum(("usage"->>'promptTokens')::bigint), 0) AS prompt_tokens,
+		       coalesce(sum(("usage"->>'completionTokens')::bigint), 0) AS completion_tokens,
+		       coalesce(sum(("usage"->>'cacheReadTokens')::bigint), 0) AS cache_read_tokens,
+		       coalesce(sum(("usage"->>'cacheWriteTokens')::bigint), 0) AS cache_write_tokens,
+		       coalesce(sum(("usage"->>'cost')::double precision), 0) AS cost
+		FROM "agent_message"
+		WHERE "conversation_id" = ANY(?) AND "usage" IS NOT NULL
+		GROUP BY "conversation_id"`, pq.Array(conversationIds)).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		totals[row.ConversationID] = models.AgentUsageNote{
+			PromptTokens: row.PromptTokens, CompletionTokens: row.CompletionTokens,
+			CacheReadTokens: row.CacheReadTokens, CacheWriteTokens: row.CacheWriteTokens, Cost: row.Cost,
+		}
+	}
+	return totals, nil
+}
+
+// CountAgentRuns is how many runs the filter leaves, for the pager.
+func (self *transaction) CountAgentRuns(agentId string, filter *AgentRunFilter) (int64, error) {
+	var total int64
+	err := self.agentRunQuery(agentId, filter).Count(&total).Error
+	return total, err
 }
 
 func (self *transaction) ListAgentConversations(agentId string, kinds []models.AgentConversationKind, options *Options) ([]*models.AgentConversation, error) {
@@ -468,6 +625,68 @@ func (self *transaction) ListAgentConversationsToDescribe(quietSince time.Time, 
 	return conversations, nil
 }
 
+// ListDueAgentGoals is the conversations the agent owes a turn of its own:
+// a goal that is working, with its next time passed.
+//
+// A goal that is waiting for the person or already met has no next time,
+// so this is the whole of the sweep's question; the partial index of
+// migration 0083 answers it out of the few rows that have a goal running.
+func (self *transaction) ListDueAgentGoals(now time.Time, limit int) ([]*models.AgentConversation, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	var found []agentConversationModel
+	if err := self.tx.Where("\"goal_state\" = ? AND \"goal_next_at\" IS NOT NULL AND \"goal_next_at\" <= ?",
+		string(models.GoalWorking), now,
+	).Order("\"goal_next_at\" ASC").Limit(limit).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	conversations := make([]*models.AgentConversation, 0, len(found))
+	for index := range found {
+		conversations = append(conversations, conversationFromModel(&found[index]))
+	}
+	return conversations, nil
+}
+
+// ListAgentConversationsToRemember is the conversations with something in
+// them the agent has not filed.
+//
+// "Not filed" is a message newer than the one the last run stopped at,
+// which is a different question from "changed since we last looked": a run
+// that failed leaves the mark where it was, so the work comes back round
+// rather than being lost.
+func (self *transaction) ListAgentConversationsToRemember(quietSince time.Time, limit int) ([]*models.AgentConversation, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	var found []agentConversationModel
+	if err := self.tx.Raw(`
+		SELECT c.* FROM "agent_conversation" c
+		WHERE c."kind" IN ('main', 'named') AND c."last_at" < ?
+		  AND EXISTS (
+			SELECT 1 FROM "agent_message" m
+			WHERE m."conversation_id" = c."id"
+			  AND m."role" IN ('user', 'assistant')
+			  AND (c."remembered_through" = '' OR m."id" > c."remembered_through")
+		  )
+		ORDER BY c."last_at" ASC LIMIT ?`, quietSince, limit).Scan(&found).Error; err != nil {
+		return nil, err
+	}
+	conversations := make([]*models.AgentConversation, 0, len(found))
+	for index := range found {
+		conversations = append(conversations, conversationFromModel(&found[index]))
+	}
+	return conversations, nil
+}
+
+func (self *transaction) MarkAgentConversationRemembered(conversationId, messageId string, at time.Time) error {
+	if conversationId == "" {
+		return fmt.Errorf("db: marking a conversation filed needs the conversation")
+	}
+	return self.tx.Model(&agentConversationModel{}).Where(`"id" = ?`, conversationId).
+		Updates(map[string]any{"remembered_through": messageId, "remembered_at": at}).Error
+}
+
 func (self *transaction) DeleteAgentConversation(conversationId string) error {
 	return self.tx.Where("\"id\" = ?", conversationId).Delete(&agentConversationModel{}).Error
 }
@@ -481,12 +700,15 @@ func (self *transaction) AppendAgentMessage(message *models.AgentMessage) (*mode
 	if message.ConversationID == "" || message.Role == "" {
 		return nil, fmt.Errorf("db: a message needs a conversation and a role")
 	}
+	// A message is text. A prompt that quotes a file read from disk may
+	// carry bytes that are not, and PostgreSQL refuses the row for one of
+	// them; the replacement character keeps the row and marks the spot.
 	model := &agentMessageModel{
 		ID:             newID(),
 		CreatedAt:      time.Now(),
 		ConversationID: message.ConversationID,
 		Role:           message.Role,
-		Content:        message.Content,
+		Content:        strings.ToValidUTF8(message.Content, "\uFFFD"),
 		ToolCallID:     message.ToolCallID,
 		Name:           message.Name,
 	}
@@ -563,6 +785,34 @@ func (self *transaction) ListAgentMessages(conversationId string, options *Optio
 		messages = append(messages, message)
 	}
 	return messages, nil
+}
+
+func (self *transaction) LastAgentPersonMessageAt(conversationId string) (*time.Time, error) {
+	var last []time.Time
+	if err := self.tx.Model(&agentMessageModel{}).
+		Where("\"conversation_id\" = ? AND \"role\" = ? AND \"content\" NOT LIKE ?", conversationId, "user", models.GoalCheckInMarker+"%").
+		Order("\"created_at\" DESC").Limit(1).Pluck("created_at", &last).Error; err != nil {
+		return nil, err
+	}
+	if len(last) == 0 {
+		return nil, nil
+	}
+	return &last[0], nil
+}
+
+func (self *transaction) LastAgentPersonWordAt(agentId string) (*time.Time, error) {
+	var last []time.Time
+	if err := self.tx.Model(&agentMessageModel{}).
+		Joins("JOIN \"agent_conversation\" ON \"agent_conversation\".\"id\" = \"agent_message\".\"conversation_id\"").
+		Where("\"agent_conversation\".\"agent_id\" = ? AND \"agent_conversation\".\"kind\" IN ? AND \"agent_message\".\"role\" = ? AND \"agent_message\".\"content\" NOT LIKE ?",
+			agentId, []string{string(models.AgentConversationMain), string(models.AgentConversationNamed)}, "user", models.GoalCheckInMarker+"%").
+		Order("\"agent_message\".\"created_at\" DESC").Limit(1).Pluck("\"agent_message\".\"created_at\"", &last).Error; err != nil {
+		return nil, err
+	}
+	if len(last) == 0 {
+		return nil, nil
+	}
+	return &last[0], nil
 }
 
 var _ = gorm.ErrRecordNotFound

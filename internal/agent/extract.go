@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
@@ -117,7 +118,7 @@ func (self *Agent) runExtract(ctx context.Context, run *Run) error {
 		return err
 	}
 	thinking, err := self.think(ctx, run, fmt.Sprintf("Read %q for what it carries", mail.Subject), prompt,
-		extractTools, roundsFor(configuration, models.AgentJobExtract), models.AgentJobExtract)
+		extractTools, roundsFor(configuration, models.AgentJobExtract), models.AgentJobExtract, config.AgentWorkTriage)
 	if err != nil {
 		return err
 	}

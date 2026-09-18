@@ -99,7 +99,8 @@ type AgentJob struct {
 }
 
 const agentViewSelection = `{
-	agent { id name enabled instructions language askModel dailyTokens dailyCost operatorDisabledAt confirm
+	agent { id name enabled instructions language askModel dreamFrom dreamUntil dreamedAt
+		dailyTokens dailyCost operatorDisabledAt confirm
 		voice { tone length greeting signoff }
 		categories { name description }
 		notifications { heldReply highPriority runFailed } }
@@ -127,10 +128,11 @@ const (
 
 	DocumentUpdateAgent = `mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String,
 		$voice: AgentVoiceInput, $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput,
-		$confirm: [String!], $askModel: String, $forget: Boolean) {
+		$confirm: [String!], $askModel: String, $dreamFrom: String, $dreamUntil: String,
+		$forget: Boolean) {
 		UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language,
 			voice: $voice, categories: $categories, notifications: $notifications, confirm: $confirm,
-			askModel: $askModel, forget: $forget) ` + agentViewSelection + `
+			askModel: $askModel, dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, forget: $forget) ` + agentViewSelection + `
 	}`
 
 	DocumentGrantAgentMailbox = `mutation ($mailboxId: String!, $policy: AgentMailboxInput) {

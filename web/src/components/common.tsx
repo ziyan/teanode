@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { CheckIcon, CopyIcon, ShieldIcon } from './icons'
 import { Tooltip } from './tooltip'
 import { useToast } from './toast'
-import { Mail } from '../api'
+import { Mail, graphql } from '../api'
 import { Key, useTranslation } from '../i18n/i18n'
 
 export function Tag({ value, tone }: { value: string; tone?: 'good' | 'bad' | 'warn' }) {
@@ -250,34 +250,73 @@ export function ErrorMessage({ error }: { error: unknown }) {
 // Only on the change from not-saved to saved, because the form above this
 // renders again for every keystroke, and a toast per keystroke is not a thing
 // anybody wants.
-export function useSaySaved(saved: boolean, note: string) {
+// What a save means is the server's to say. Most settings are in use the
+// moment they are stored; some are read once at startup, and the server
+// keeps the names of those that changed since it started. Every save toast
+// used to say "takes effect when this instance restarts", which was true of
+// a provider key and false of a limit, and nobody could tell which.
+const PENDING_RESTART = `{ GetServerStatus { pendingRestart } }`
+let lastPending: string[] | null = null
+
+async function readPendingRestart(): Promise<string[]> {
+  try {
+    const answer = await graphql<{ GetServerStatus: { pendingRestart: string[] } }>(PENDING_RESTART, {})
+    return answer.GetServerStatus?.pendingRestart ?? []
+  } catch {
+    return lastPending ?? []
+  }
+}
+
+// announceSaved says what a save did: in effect now, or waiting for a
+// restart, naming what waits. Judged by what the server reports as pending
+// after the save against what it reported before.
+export async function announceSaved(toast: ReturnType<typeof useToast>, t: ReturnType<typeof useTranslation>['t']) {
+  const before = lastPending ?? []
+  const after = await readPendingRestart()
+  lastPending = after
+  const added = after.filter((name) => !before.includes(name))
+  if (added.length > 0) {
+    toast.done(t('common.savedPending', { settings: added.join(', ') }))
+  } else {
+    toast.done(t('common.savedLive'))
+  }
+}
+
+export function useSaySaved(saved: boolean) {
   const toast = useToast()
+  const { t } = useTranslation()
   const said = useRef(false)
+  // Primed once, so the first save has something to compare against.
+  useEffect(() => {
+    if (lastPending === null) {
+      void readPendingRestart().then((pending) => {
+        lastPending = pending
+      })
+    }
+  }, [])
   useEffect(() => {
     if (saved && !said.current) {
-      toast.done(note)
+      void announceSaved(toast, t)
     }
     said.current = saved
-  }, [saved, note, toast])
+  }, [saved, toast, t])
 }
 
 export function SaveRow({
   busy,
   saved,
   problem,
-  note,
   canSave = true,
 }: {
   busy: boolean
   saved: boolean
   problem?: unknown
-  note: string
   // False while there is nothing to save — nothing changed, or a field is
   // still empty.
   canSave?: boolean
 }) {
   const { t } = useTranslation()
-  useSaySaved(saved, note)
+  useSaySaved(saved)
 
   return (
     <>

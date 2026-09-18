@@ -103,9 +103,7 @@ export function SetupPage() {
 
       <ServerAddressCard addresses={data?.GetServerAddresses} />
       <OutgoingIdentityCard identity={data?.GetOutgoingIdentity} />
-      {data?.GetSettings?.submission && (
-        <SubmissionCard submission={data.GetSettings.submission} onSaved={reload} />
-      )}
+      {data?.GetSettings?.submission && <SubmissionCard submission={data.GetSettings.submission} onSaved={reload} />}
       {data?.GetSettings?.imap && <MailProgramCard imap={data.GetSettings.imap} onSaved={reload} />}
     </>
   )
@@ -135,9 +133,7 @@ function OutgoingIdentityCard({ identity }: { identity?: OutgoingIdentity }) {
     return (
       <div className="card">
         <h3>{t('setup.outgoingTitle')}</h3>
-        <p className="muted">
-          {identity.unknown}
-        </p>
+        <p className="muted">{identity.unknown}</p>
       </div>
     )
   }
@@ -185,9 +181,7 @@ function OutgoingIdentityCard({ identity }: { identity?: OutgoingIdentity }) {
   return (
     <div className="card">
       <h3>{t('setup.outgoingTitle')}</h3>
-      <p className="muted">
-        {identity.via === 'proxy' ? t('setup.outgoingIntroProxy') : t('setup.outgoingIntro')}
-      </p>
+      <p className="muted">{identity.via === 'proxy' ? t('setup.outgoingIntroProxy') : t('setup.outgoingIntro')}</p>
       <table>
         <tbody>
           {rows.map((row) => (
@@ -230,9 +224,7 @@ function ServerAddressCard({ addresses }: { addresses?: ServerAddresses }) {
   return (
     <div className="card">
       <h3>{t('setup.addressTitle')}</h3>
-      <p className="muted">
-        {t('setup.addressIntro')}
-      </p>
+      <p className="muted">{t('setup.addressIntro')}</p>
       <table>
         <tbody>
           {addresses.ipv4 && (
@@ -249,11 +241,7 @@ function ServerAddressCard({ addresses }: { addresses?: ServerAddresses }) {
           )}
         </tbody>
       </table>
-      {!addresses.ipv6 && (
-        <p className="muted">
-          {t('setup.noIPv6')}
-        </p>
-      )}
+      {!addresses.ipv6 && <p className="muted">{t('setup.noIPv6')}</p>}
     </div>
   )
 }
@@ -306,9 +294,7 @@ function MailProgramCard({ imap, onSaved }: { imap: IMAPAccess; onSaved: () => v
       }}
     >
       <h3>{t('setup.imapTitle')}</h3>
-      <p className="muted">
-        {t('setup.imapIntro')}
-      </p>
+      <p className="muted">{t('setup.imapIntro')}</p>
 
       <p>
         <span className="mono">
@@ -343,7 +329,7 @@ function MailProgramCard({ imap, onSaved }: { imap: IMAPAccess; onSaved: () => v
       </div>
       <p className="muted">{t('setup.imapHelp')}</p>
 
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('setup.imapSaved')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }
@@ -389,9 +375,7 @@ function SubmissionCard({ submission, onSaved }: { submission: Submission; onSav
       }}
     >
       <h3>{t('setup.submissionTitle')}</h3>
-      <p className="muted">
-        {t('setup.submissionIntro')}
-      </p>
+      <p className="muted">{t('setup.submissionIntro')}</p>
 
       <p>
         <span className="mono">
@@ -421,7 +405,7 @@ function SubmissionCard({ submission, onSaved }: { submission: Submission; onSav
       </div>
       <p className="muted">{t('setup.submissionHelp')}</p>
 
-      <SaveRow busy={busy} saved={saved} problem={problem} note={t('setup.submissionSaved')} />
+      <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>
   )
 }

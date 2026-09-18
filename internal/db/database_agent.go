@@ -39,6 +39,15 @@ type AgentOperation interface {
 	// whose instance never finished them.
 	ReleaseStaleAgentJobs(before time.Time) (int64, error)
 
+	// ReleaseStaleAgentJobsOfKind is the same for one kind of job with
+	// its own idea of how long is too long: the night may take an hour.
+	ReleaseStaleAgentJobsOfKind(kind models.AgentJobKind, before time.Time) (int64, error)
+
+	// ReleaseAgentJobsClaimedBy puts back every job an instance holds:
+	// for that instance's own start-up, when whatever it held before is
+	// certainly not running any more.
+	ReleaseAgentJobsClaimedBy(instance string) (int64, error)
+
 	// CancelAgentJobs cancels what is queued for an agent, or for one of its
 	// mailboxes when mailboxId is given.
 	CancelAgentJobs(agentId, mailboxId string) (int64, error)
@@ -82,6 +91,13 @@ type AgentJobFilter struct {
 	AgentID  string
 	Statuses []models.AgentJobStatus
 	Kinds    []models.AgentJobKind
+
+	// SubjectID is what the jobs are about: one message, one schedule,
+	// one conversation. Since counts only the jobs made from that moment
+	// on, which is how a goal knows how many turns it has taken today
+	// without a column of its own.
+	SubjectID string
+	Since     time.Time
 }
 
 // AgentUsage is one addition to the usage rows.
@@ -111,6 +127,15 @@ type agentModel struct {
 	DailyTokens        int64      `gorm:"column:daily_tokens"`
 	DailyCost          float64    `gorm:"column:daily_cost"`
 	OperatorDisabledAt *time.Time `gorm:"column:operator_disabled_at"`
+
+	// When the person's night is, and when the nightly run last finished.
+	DreamFrom      string     `gorm:"column:dream_from"`
+	DreamUntil     string     `gorm:"column:dream_until"`
+	DreamedAt      *time.Time `gorm:"column:dreamed_at"`
+	DreamBootstrap bool       `gorm:"column:dream_bootstrap"`
+
+	// When the links were last faded. See migration 0084.
+	DecayedAt *time.Time `gorm:"column:decayed_at"`
 }
 
 func (agentModel) TableName() string { return "agent" }
@@ -148,19 +173,30 @@ func (agentUsageModel) TableName() string { return "agent_usage" }
 
 func agentFromModel(model *agentModel) (*models.Agent, error) {
 	agent := &models.Agent{
-		ID:           model.ID,
-		CreatedAt:    model.CreatedAt.In(time.Local),
-		ModifiedAt:   model.ModifiedAt.In(time.Local),
-		UserID:       model.UserID,
-		Name:         model.Name,
-		Enabled:      model.Enabled,
-		Instructions: model.Instructions,
-		Language:     model.Language,
-		Categories:   []models.AgentCategory{},
-		Confirm:      []string{},
-		AskModel:     model.AskModel,
-		DailyTokens:  model.DailyTokens,
-		DailyCost:    model.DailyCost,
+		ID:             model.ID,
+		CreatedAt:      model.CreatedAt.In(time.Local),
+		ModifiedAt:     model.ModifiedAt.In(time.Local),
+		UserID:         model.UserID,
+		Name:           model.Name,
+		Enabled:        model.Enabled,
+		Instructions:   model.Instructions,
+		Language:       model.Language,
+		Categories:     []models.AgentCategory{},
+		Confirm:        []string{},
+		AskModel:       model.AskModel,
+		DailyTokens:    model.DailyTokens,
+		DailyCost:      model.DailyCost,
+		DreamFrom:      model.DreamFrom,
+		DreamUntil:     model.DreamUntil,
+		DreamBootstrap: model.DreamBootstrap,
+	}
+	if model.DreamedAt != nil {
+		at := model.DreamedAt.In(time.Local)
+		agent.DreamedAt = &at
+	}
+	if model.DecayedAt != nil {
+		at := model.DecayedAt.In(time.Local)
+		agent.DecayedAt = &at
 	}
 	if model.OperatorDisabledAt != nil {
 		at := model.OperatorDisabledAt.In(time.Local)
@@ -201,6 +237,11 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		DailyTokens:        agent.DailyTokens,
 		DailyCost:          agent.DailyCost,
 		OperatorDisabledAt: agent.OperatorDisabledAt,
+		DreamFrom:          agent.DreamFrom,
+		DreamUntil:         agent.DreamUntil,
+		DreamedAt:          agent.DreamedAt,
+		DreamBootstrap:     agent.DreamBootstrap,
+		DecayedAt:          agent.DecayedAt,
 	}
 	var err error
 	if model.Voice, err = encodeJSON(agent.Voice); err != nil {
@@ -364,6 +405,10 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 			"voice": model.Voice, "categories": model.Categories, "notifications": model.Notifications,
 			"confirm": model.Confirm, "ask_model": model.AskModel, "daily_tokens": model.DailyTokens, "daily_cost": model.DailyCost,
 			"operator_disabled_at": model.OperatorDisabledAt,
+			"dream_from":           model.DreamFrom, "dream_until": model.DreamUntil,
+			"dreamed_at":      model.DreamedAt,
+			"dream_bootstrap": model.DreamBootstrap,
+			"decayed_at":      model.DecayedAt,
 		}).Error
 	}); err != nil {
 		return nil, err
@@ -501,7 +546,27 @@ func (self *transaction) FinishAgentJob(jobId, claimedBy string, status models.A
 }
 
 func (self *transaction) ReleaseStaleAgentJobs(before time.Time) (int64, error) {
-	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_at\" < ?", string(models.AgentJobRunning), before).Updates(map[string]any{
+	// Every kind but the night, which has its own bound: a night of forty
+	// minutes was put back at fifteen while still running, and a second
+	// night started beside it.
+	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_at\" < ? AND \"kind\" <> ?", string(models.AgentJobRunning), before, string(models.AgentJobDream)).Updates(map[string]any{
+		"status": string(models.AgentJobQueued), "claimed_at": nil, "claimed_by": "",
+	})
+	return result.RowsAffected, result.Error
+}
+
+func (self *transaction) ReleaseStaleAgentJobsOfKind(kind models.AgentJobKind, before time.Time) (int64, error) {
+	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_at\" < ? AND \"kind\" = ?", string(models.AgentJobRunning), before, string(kind)).Updates(map[string]any{
+		"status": string(models.AgentJobQueued), "claimed_at": nil, "claimed_by": "",
+	})
+	return result.RowsAffected, result.Error
+}
+
+func (self *transaction) ReleaseAgentJobsClaimedBy(instance string) (int64, error) {
+	if instance == "" {
+		return 0, nil
+	}
+	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_by\" = ?", string(models.AgentJobRunning), instance).Updates(map[string]any{
 		"status": string(models.AgentJobQueued), "claimed_at": nil, "claimed_by": "",
 	})
 	return result.RowsAffected, result.Error
@@ -549,6 +614,12 @@ func (self *transaction) agentJobQuery(filter *AgentJobFilter) *gorm.DB {
 			kinds = append(kinds, string(kind))
 		}
 		query = query.Where("\"kind\" IN ?", kinds)
+	}
+	if filter.SubjectID != "" {
+		query = query.Where("\"subject_id\" = ?", filter.SubjectID)
+	}
+	if !filter.Since.IsZero() {
+		query = query.Where("\"created_at\" >= ?", filter.Since)
 	}
 	return query
 }

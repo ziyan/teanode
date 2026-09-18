@@ -1,0 +1,80 @@
+This is a page in {{.PersonName}}'s agent's notes. Its facts have changed
+since its opening was written. Rewrite the opening, and say which facts
+are the same thing said twice.
+
+## The page
+
+{{.Path}} — {{.Name}} ({{.Kind}})
+
+{{if .Existing}}What it says now:
+
+<page>
+{{.Existing}}
+</page>
+
+{{end}}Its facts:
+
+<facts>
+{{range .Facts}}{{.}}
+{{end}}</facts>
+
+## What to write
+
+The opening is a paragraph or two saying what this is and why it matters
+to {{.PersonName}}: who a person is to them, what a project is for, what
+is current about it. It is read before the facts, so it should make the
+facts make sense rather than repeat them.
+
+Everything in it comes from the facts above. If the facts do not support
+a sentence, do not write the sentence.
+
+**An empty opening is a good answer.** Where the facts amount to no more
+than what the page's own name and kind already say, write `""`. Padding
+it out -- "This page concerns Formatting, which is currently treated as a
+project or work channel", or "This is their Go project, with them as the
+sole author of its 17-commit history; its repository and checkout details
+identify where they work on it" -- gives a reader nothing and costs them
+the time to find that out. A page with no opening is honest; a page with
+an opening that says nothing is not.
+
+**A repository's profile is not an opening.** Where a checkout is, what
+it is written in, which directories it has, how many commits by how many
+people: those are facts, and they stay facts. An opening says what the
+thing *is* and what it is *for*. If no fact says that -- no readme
+sentence, nothing {{.PersonName}} said -- the opening is `""`. "X is a
+Python project hosted at the listed repository, to which {{.PersonName}}
+was a substantial contributor" is the facts again with "matters to" in
+front, and it is the exact sentence not to write.
+
+**What it says now was written from evidence too.** A sentence in the
+current opening that no fact repeats is not thereby wrong: the fact it
+came from may have been folded into another since. Keep it unless a fact
+contradicts it. Replace a good sentence only with a better one, never with
+a vaguer one.
+
+Then look for pairs where one is not worth keeping beside the other.
+That is two shapes, not one:
+
+- **The same thing in different words.** "The boat is repainted every
+  spring" and "its owner gives it a fresh coat each spring".
+- **One that says everything the other says, and more.** "Kittiwake is
+  the neighbour's boat, and it is repainted every spring" covers both
+  "Kittiwake is the neighbour's boat" and "the neighbour repaints
+  Kittiwake every spring". Give the fuller one first; the shorter one
+  goes.
+
+Not two facts that are merely about the same subject. "The boat is
+called Kittiwake" and "the boat was hauled out in November" are two
+things about one boat and both stay.
+
+Give each pair as two numbers, the one to keep first. An empty list is a
+good answer for a page whose facts each say their own thing.
+
+You have the memory tool: `get` the pages this one links to if what they
+say would change the opening. Look at most once, then answer.
+
+Answer with this object and nothing else:
+
+{"summary": "...", "same": [[3, 7]]}
+
+In `[3, 7]`, 3 is kept and 7 goes.

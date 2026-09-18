@@ -65,6 +65,22 @@ type AskSettings struct {
 	MaxRounds int
 	UsageKind string
 
+	// Work is the kind of work this turn is, which chooses the model: a
+	// dream runs on the operator's scan model, sorting on the triage one.
+	// Empty means the person's own choice, or the ask model, which is
+	// what a turn somebody typed gets.
+	Work config.AgentWork
+
+	// ReadThenAnswer is a run that looks things up and then answers once:
+	// a dream reading a batch, an ingest describing a checkout. Its
+	// history is never compacted, because a compaction note would stand
+	// in for the very documents it was given to read; when the history
+	// fills, the run is told to answer now instead. ResultCharacters
+	// bounds each lookup's answer for such a run, so a long page does not
+	// fill the window by itself; zero means the usual bound.
+	ReadThenAnswer   bool
+	ResultCharacters int
+
 	// confirmVia is the turn a subagent's confirmation cards are shown in,
 	// which is the turn that started it. A subagent has the tools its
 	// parent has, and some of those ask before they act -- so the card has
@@ -157,13 +173,22 @@ type AskRun struct {
 	questions map[string]chan string
 
 	// recalled is what memory searches found this turn, for the overlay;
-	// promptMemories are the ones the prompt already carries, which the
+	// promptMemories are the pages the prompt already carries, which the
 	// turn's own recall does not repeat.
 	recalled       []string
 	promptMemories map[string]bool
 
 	// lookingAt are the pictures tools fetched this round for the model.
 	lookingAt []llm.ContentPart
+
+	// meanings is what this turn has already embedded, by the words that
+	// were embedded. Both halves of recall ask the same question -- the
+	// graph and the documents -- and the tools may ask it again, and an
+	// embedding is an HTTP call to another service made before the model
+	// has said anything. Under its own lock because a round's tools run
+	// together.
+	meaningsMutex sync.Mutex
+	meanings      map[string]*meaning
 
 	// browser is the turn's headless browser, once it opened one.
 	browser *browserRunner
@@ -194,6 +219,13 @@ const (
 	// leaves room for the prompt, the tools and the answer.
 	askHistoryTokens = 30000
 
+	// askReadThenAnswerTokens is the history at which a read-then-answer
+	// run is told to answer. Lower than the compaction line, because the
+	// history is not the whole request: the prompt and the tool
+	// definitions ride beside it, and a run that answered at thirty
+	// thousand sent thirty-three to a window of thirty-two.
+	askReadThenAnswerTokens = 24000
+
 	// askTailMessages is how many recent messages stay verbatim through a
 	// compaction.
 	askTailMessages = 12
@@ -208,7 +240,14 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 		return nil, ErrUnavailable
 	}
 	configuration := self.settings.Configuration()
-	if !FeatureAllowed(configuration, "ask") || self.settings.Registry == nil {
+	if self.settings.Registry == nil {
+		return nil, ErrUnavailable
+	}
+	// The ask feature is the person's own chat. A headless run is gated by
+	// the feature that owns its work -- sorting, dreaming, research --
+	// which its caller checked; every model call is a turn of this loop,
+	// so gating them all here would make "ask" the switch for everything.
+	if (settings == nil || !settings.Headless) && !FeatureAllowed(configuration, "ask") {
 		return nil, ErrUnavailable
 	}
 	if settings == nil || settings.Agent == nil || settings.Owner == nil || settings.Operations == nil || settings.Conversation == nil {
@@ -355,11 +394,22 @@ func (self *AskRun) Database() db.Database                { return self.agent.se
 func (self *AskRun) Configuration() *config.Configuration { return self.agent.settings.Configuration() }
 func (self *AskRun) Surface() string                      { return self.settings.Surface }
 func (self *AskRun) Headless() bool                       { return self.settings.Headless }
-func (self *AskRun) ReadOnly() bool                       { return self.settings.ReadOnly }
-func (self *AskRun) Offered() []*tools.Tool               { return self.offered }
-func (self *AskRun) Loaded() map[string]bool              { return self.loaded }
-func (self *AskRun) Load(name string)                     { self.loaded[name] = true }
-func (self *AskRun) Storage() storage.Storage             { return self.agent.settings.Storage }
+
+// resultCharacters is how much of a tool's answer the history keeps.
+func (self *AskRun) resultCharacters() int {
+	if self.settings.ResultCharacters > 0 {
+		return self.settings.ResultCharacters
+	}
+	return askResultCharacters
+}
+func (self *AskRun) ReadOnly() bool { return self.settings.ReadOnly }
+
+// Usage is what the turn has spent so far, every round added up.
+func (self *AskRun) Usage() llm.Usage         { return self.usage }
+func (self *AskRun) Offered() []*tools.Tool   { return self.offered }
+func (self *AskRun) Loaded() map[string]bool  { return self.loaded }
+func (self *AskRun) Load(name string)         { self.loaded[name] = true }
+func (self *AskRun) Storage() storage.Storage { return self.agent.settings.Storage }
 func (self *AskRun) Recalled() []string {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
@@ -505,10 +555,20 @@ func (self *AskRun) loop() {
 			})
 			self.emit(Event{Kind: EventNote, Note: "stopped"})
 		} else {
+			// In the transcript too: a run that failed used to hold its
+			// prompt and nothing else, and the reason was in the server
+			// log where the person never looks.
 			log.Warningf("the agent of %q failed a turn: %s", self.settings.Owner.Username, err)
+			_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
+				_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: self.settings.Conversation.ID, Role: models.AgentMessageNote, Content: "failed: " + err.Error()})
+				return err
+			})
 			self.emit(Event{Kind: EventError, Error: err.Error()})
 		}
 	}
+	// A goal that was waiting for the person has had its answer: it goes
+	// back to work a minute from now, whether the turn ended well or not.
+	self.resumeGoalAfterPerson()
 	self.emit(Event{Kind: EventDone})
 }
 
@@ -522,7 +582,10 @@ func (self *AskRun) turn() error {
 		return err
 	}
 	modelName := registry.Configuration().Models.ForWork(config.AgentWorkAsk)
-	if settings.Agent.AskModel != "" {
+	switch {
+	case settings.Work != "":
+		modelName = registry.Configuration().Models.ForWork(settings.Work)
+	case settings.Agent.AskModel != "":
 		modelName = settings.Agent.AskModel
 	}
 
@@ -687,13 +750,23 @@ func (self *AskRun) turn() error {
 				return nil
 			}
 		}
-		if !compactFailed && llm.EstimateTokens(renderHistory(history)) > askHistoryTokens {
-			compacted, err := self.compact(ctx, provider, model, modelName, history, askTailMessages)
-			if err != nil {
-				log.Warningf("cannot compact the conversation %q: %s", settings.Conversation.ID, err)
-				compactFailed = true
-			} else {
-				history = compacted
+		// A run that reads and then answers is told to answer once its
+		// history fills; anything else has its older turns compacted.
+		answerNow := false
+		historyTokens := llm.EstimateTokens(renderHistory(history))
+		if settings.ReadThenAnswer && historyTokens > askReadThenAnswerTokens {
+			answerNow = true
+		} else if historyTokens > askHistoryTokens {
+			if settings.ReadThenAnswer {
+				answerNow = true
+			} else if !compactFailed {
+				compacted, err := self.compact(ctx, provider, model, modelName, history, askTailMessages)
+				if err != nil {
+					log.Warningf("cannot compact the conversation %q: %s", settings.Conversation.ID, err)
+					compactFailed = true
+				} else {
+					history = compacted
+				}
 			}
 		}
 		compact := settings.Short || llm.EstimateTokens(renderHistory(history)) > askHistoryTokens/2
@@ -720,14 +793,25 @@ func (self *AskRun) turn() error {
 		for _, tool := range sent {
 			definitions = append(definitions, tool.Definition())
 		}
+		// The last round is told it is the last, so that it answers. A
+		// model that spent every round looking things up ended with a
+		// tool result and no answer at all. Told instead of stripped of
+		// its tools: without the definitions a model trained on them
+		// writes the call out as words, which the server then mangles,
+		// and the answer is neither a call nor an answer.
+		toolChoice := ""
+		if (round == maximumRounds-1 || answerNow) && len(definitions) > 0 {
+			messages = append(messages, llm.ChatMessage{Role: llm.RoleUser, Content: lastRoundNotice})
+			toolChoice = "none"
+		}
 
-		response, err := self.chat(ctx, provider, &llm.ChatRequest{Model: model, Messages: messages, Tools: definitions, MaxTokens: 4000})
+		response, err := self.chat(ctx, provider, &llm.ChatRequest{Model: model, Messages: messages, Tools: definitions, MaxTokens: 4000, ToolChoice: toolChoice})
 		if response != nil {
 			self.usage = self.usage.Add(response.Usage)
 			RecordUsage(self.agent.settings.Database, settings.Agent.ID, "", modelName, usageKind, response.Usage)
 		}
 		if err != nil {
-			if llm.IsContextLengthError(err) && !overflowed {
+			if llm.IsContextLengthError(err) && !overflowed && !settings.ReadThenAnswer {
 				overflowed = true
 				compacted, compactErr := self.compact(ctx, provider, model, modelName, history, compactOverflowTail)
 				if compactErr != nil {
@@ -771,6 +855,20 @@ func (self *AskRun) turn() error {
 		}
 		if strings.TrimSpace(answer.Content) != "" {
 			self.emit(Event{Kind: EventMessage, Text: answer.Content})
+		}
+		if len(answer.ToolCalls) == 0 && textualToolCall(answer.Content) && round < maximumRounds-1 {
+			// A tool call written out as words is one the server could not
+			// read: a local model's template asks for XML the server parses
+			// only when it is well formed, and two calls in one breath, or
+			// one cut short, come back as mangled text with no call in it.
+			// Told, and asked again, rather than taken as the answer.
+			self.emit(Event{Kind: EventNote, Note: "a tool call the server could not read; asked again"})
+			_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
+				_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: settings.Conversation.ID, Role: models.AgentMessageNote, Content: "a tool call the server could not read; asked again"})
+				return err
+			})
+			history = append(history, llm.ChatMessage{Role: llm.RoleUser, Content: unreadableCallNotice})
+			continue
 		}
 		if len(answer.ToolCalls) == 0 {
 			// A new named conversation is titled now, so the picker has a
@@ -840,9 +938,13 @@ func (self *AskRun) turn() error {
 	return nil
 }
 
-// chooseModel is the provider and model for this person's Ask: their own
-// choice when the operator offers choices, else the one for ask work.
+// chooseModel is the provider and model for this turn: the one for its
+// kind of work when the turn is a job's, else the person's own choice
+// when the operator offers choices, else the one for ask work.
 func (self *AskRun) chooseModel(configuration *config.Configuration, registry *llm.Registry) (llm.Provider, string, error) {
+	if self.settings.Work != "" {
+		return registry.ForWork(self.settings.Work)
+	}
 	if chosen := strings.TrimSpace(self.settings.Agent.AskModel); chosen != "" {
 		for _, choice := range configuration.Agent.Models.Choices {
 			if choice == chosen {
@@ -852,6 +954,20 @@ func (self *AskRun) chooseModel(configuration *config.Configuration, registry *l
 	}
 	return registry.ForWork(config.AgentWorkAsk)
 }
+
+// unreadableCallNotice is what a round is told when its tool call came
+// back as words. Sent, not stored as the person's.
+const unreadableCallNotice = "That tool call could not be read. Call one tool at a time, with its arguments exactly as its definition asks, or answer in words with what was asked for."
+
+// textualToolCall says whether an answer is a tool call written out rather
+// than made: the markers the Qwen family's templates use.
+func textualToolCall(content string) bool {
+	return strings.Contains(content, "<tool_call>") || strings.Contains(content, "<function=")
+}
+
+// lastRoundNotice is what the final round is told. Sent, not stored: it is
+// the loop's word, not the person's, and the transcript is theirs.
+const lastRoundNotice = "This is the last round: no tool can be called now. Answer in words, with the object that was asked for, from what you have."
 
 // chat streams when the provider can, so the drawer sees the words as they
 // come, and falls back to one call when it cannot.
@@ -962,14 +1078,14 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 		// and unmarked, a hostile endpoint could answer with instructions
 		// and have them read as the tool's own words.
 		said := err.Error()
-		if len(said) > askResultCharacters {
-			said = said[:askResultCharacters] + "\n[cut here: it went on]"
+		if len(said) > self.resultCharacters() {
+			said = said[:self.resultCharacters()] + "\n[cut here: it went on]"
 		}
 		return self.toolAnswer(toolCall, fenced(fmt.Sprintf(`{"error": %q}`, said)))
 	}
 	content := result.Content
-	if len(content) > askResultCharacters {
-		content = content[:askResultCharacters] + "\n[cut here: the result goes on]"
+	if len(content) > self.resultCharacters() {
+		content = content[:self.resultCharacters()] + "\n[cut here: the result goes on]"
 	}
 	if result.Untrusted {
 		content = fenced(content)
@@ -1113,9 +1229,13 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 		"HouseInstructions": strings.TrimSpace(configuration.Agent.Instructions),
 		"Situation":         self.situation(ctx, configuration),
 		"Instructions":      strings.TrimSpace(settings.Agent.Instructions),
-		"Memories":          self.memories(ctx),
-		"Guidance":          guidance,
-		"Deferred":          deferredLines,
+		"Knowledge":         self.carryIndex(ctx, indexTokens),
+		// The month as a path, so the prompt can say where this month's
+		// page is without the clock itself going into the cacheable part.
+		"ThisMonth": time.Now().In(tools.Location(settings.Owner)).Format("2006/01"),
+		"Self":      self.agent.selfLines(ctx, settings.Agent, settings.Owner),
+		"Guidance":  guidance,
+		"Deferred":  deferredLines,
 	})
 }
 
@@ -1168,7 +1288,34 @@ func (self *AskRun) situation(ctx context.Context, configuration *config.Configu
 	if settings.Surface != "" {
 		lines = append(lines, "You are talking through the "+settings.Surface+".")
 	}
+	// The goal on this conversation, where there is one. Rebuilt each
+	// round from the row rather than from the conversation the turn
+	// started with, because the goal tool writes that row mid-turn and a
+	// prompt still saying "working" after the model said it was done
+	// invites it to say so again.
+	lines = append(lines, self.goalLines(ctx)...)
 	return strings.Join(lines, "\n")
+}
+
+// goalLines are what the prompt says about the goal on this conversation:
+// the words of it, where it stands, and the agent's own last note.
+func (self *AskRun) goalLines(ctx context.Context) []string {
+	var conversation *models.AgentConversation
+	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		conversation, err = tx.GetAgentConversation(self.settings.Conversation.ID)
+		return err
+	}); err != nil {
+		log.Debugf("cannot read the goal of conversation %q for the prompt: %s", self.settings.Conversation.ID, err)
+		return nil
+	}
+	if conversation == nil || conversation.Goal == "" {
+		return nil
+	}
+	lines := []string{fmt.Sprintf("This conversation has a goal on it, which you work toward across turns of your own: %q. It is %s.", conversation.Goal, conversation.GoalState)}
+	if note := strings.TrimSpace(conversation.GoalNote); note != "" {
+		lines = append(lines, "Your last word on it: "+note)
+	}
+	return lines
 }
 
 // collections is the calendars and address books the agent may read, said in
@@ -1385,7 +1532,9 @@ func (self *AskRun) Recall(line string) {
 		}
 	}
 	self.recalled = append(self.recalled, line)
-	if len(self.recalled) > 10 {
-		self.recalled = self.recalled[len(self.recalled)-10:]
+	// The same budget the chooser works to, so nothing it ranked and
+	// marked as wanted is dropped here on its way into the prompt.
+	if len(self.recalled) > recallBlocks {
+		self.recalled = self.recalled[len(self.recalled)-recallBlocks:]
 	}
 }

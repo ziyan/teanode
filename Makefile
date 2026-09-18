@@ -12,6 +12,11 @@ BINARY ?= $(BUILD_DIR)/teanode
 SERVER_BINARY ?= $(BUILD_DIR)/teanode-server
 DOCKER_TAG ?= teanode:latest
 DEV_COMPOSE ?= docker compose -f deploy/docker-compose.dev.yml
+
+# The image the test database runs. The pgvector image is the stock one
+# with the extension added; set TEST_POSTGRES_IMAGE=postgres:17 to prove the
+# server still works where the extension is missing.
+TEST_POSTGRES_IMAGE ?= pgvector/pgvector:pg17
 DEV_ENVIRONMENT ?= dev/.env
 GOLANGCI_LINT ?= golangci-lint
 
@@ -110,7 +115,7 @@ test: generate ## Run tests under the race detector (starts a PostgreSQL contain
 			-e POSTGRES_USER=teanode \
 			-e POSTGRES_PASSWORD=teanode \
 			-e POSTGRES_HOST_AUTH_METHOD=trust \
-			postgres)"; \
+			$(TEST_POSTGRES_IMAGE))"; \
 		trap "docker kill $${POSTGRES_CONTAINER} >/dev/null 2>&1" EXIT; \
 		until docker exec $${POSTGRES_CONTAINER} pg_isready >/dev/null 2>&1; do sleep 1; done; \
 		export TEANODE_TEST_DATABASE_HOST="$$(docker inspect --format '{{ range .NetworkSettings.Networks }}{{ .IPAddress }}{{ end }}' $${POSTGRES_CONTAINER})"; \

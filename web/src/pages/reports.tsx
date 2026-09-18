@@ -38,10 +38,7 @@ export function ReportsPage() {
   )
   const domainQuery = useQuery(() => graphql<{ ListDomains: Domain[] }>(DOMAINS), [])
   const domains = domainQuery.data?.ListDomains ?? []
-  const domainNames = useMemo(
-    () => new Map(domains.map((domain) => [domain.id, domain.domain])),
-    [domains],
-  )
+  const domainNames = useMemo(() => new Map(domains.map((domain) => [domain.id, domain.domain])), [domains])
 
   const columns = useMemo<Column<Report>[]>(
     () => [
@@ -53,9 +50,7 @@ export function ReportsPage() {
         options: domains.map((domain) => ({ value: domain.domain, label: domain.domain })),
         value: (report) => domainNames.get(report.domainId ?? ''),
         sort: (first, second) =>
-          (domainNames.get(first.domainId ?? '') ?? '').localeCompare(
-            domainNames.get(second.domainId ?? '') ?? '',
-          ),
+          (domainNames.get(first.domainId ?? '') ?? '').localeCompare(domainNames.get(second.domainId ?? '') ?? ''),
         render: (report) => <DomainLink domainId={report.domainId} names={domainNames} />,
       },
       {
@@ -81,9 +76,7 @@ export function ReportsPage() {
         render: (report) => (
           <>
             <div className="mono">{report.ip}</div>
-            {report.rdns && (
-              <div className="muted wrap">{report.rdns.replace(/\.$/, '')}</div>
-            )}
+            {report.rdns && <div className="muted wrap">{report.rdns.replace(/\.$/, '')}</div>}
           </>
         ),
       },
@@ -122,9 +115,7 @@ export function ReportsPage() {
         width: '8rem',
         filter: 'select',
         value: (report) => report.disposition ?? '',
-        render: (report) => (
-          <Tag value={report.disposition ?? t('common.none')} tone={toneFor(report.disposition)} />
-        ),
+        render: (report) => <Tag value={report.disposition ?? t('common.none')} tone={toneFor(report.disposition)} />,
       },
       {
         key: 'count',
