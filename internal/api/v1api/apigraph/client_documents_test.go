@@ -58,10 +58,19 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"DeleteRole":               client.DocumentDeleteRole,
 		"ListAuditEvents":          client.DocumentListAuditEvents,
 
+		// The agent's own, which the three surfaces reach the same way:
+		// what a source is, what a question would carry, and the task
+		// list a conversation keeps.
+		"ListAgentKnowledgeSources": client.DocumentListAgentKnowledgeSources,
+		"SaveAgentKnowledgeSource":  client.DocumentSaveAgentKnowledgeSource,
+		"RecallAgentMemory":         client.DocumentRecallAgentMemory,
+		"ReadAgentConversation":     client.DocumentReadAgentConversation,
+		"AddAgentTodo":              client.DocumentAddAgentTodo,
+		"SetAgentTodo":              client.DocumentSetAgentTodo,
+		"RemoveAgentTodo":           client.DocumentRemoveAgentTodo,
 		// The agent's own documents, which the command line sends for the
 		// same things the drawer and the dashboard do.
 		"ListAgentConversations":  client.DocumentListAgentConversations,
-		"ReadAgentConversation":   client.DocumentReadAgentConversation,
 		"UpdateAgentConversation": client.DocumentUpdateAgentConversation,
 		"ListAgentRuns":           client.DocumentListAgentRuns,
 		"ListAllAgentRuns":        client.DocumentListAllAgentRuns,

@@ -109,14 +109,6 @@ type AgentToolCall struct {
 	Arguments string `json:"arguments"`
 }
 
-// AgentTodo is one item of a conversation's task list, as the agent keeps
-// it while it works.
-type AgentTodo struct {
-	ID     string     `json:"id"`
-	Text   string     `json:"text"`
-	DoneAt *time.Time `json:"doneAt"`
-}
-
 // AgentConversationView is a conversation, a page of its messages, and the
 // task list the agent is keeping in it.
 type AgentConversationView struct {
@@ -124,6 +116,15 @@ type AgentConversationView struct {
 	Messages     []*AgentMessage    `json:"messages"`
 	Total        int                `json:"total"`
 	Todos        []*AgentTodo       `json:"todos"`
+}
+
+// AgentTodo is one item of a conversation's task list.
+type AgentTodo struct {
+	ID             string     `json:"id"`
+	ConversationID string     `json:"conversationId"`
+	Text           string     `json:"text"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	DoneAt         *time.Time `json:"doneAt"`
 }
 
 // AgentTurn is the run a turn started.
@@ -166,6 +167,8 @@ type AgentTool struct {
 
 const conversationFields = `{ id kind title summary jobKind subjectId surface lastAt archivedAt compactedThrough goal goalState goalNote goalNextAt goalSetAt }`
 
+const todoFields = `{ id conversationId text createdAt doneAt }`
+
 // The documents.
 const (
 	DocumentAskAgent = `mutation ($conversationId: String, $message: String!, $surface: String, $readOnly: Boolean, $attachmentIds: [String!], $references: [AgentReferenceInput!]) {
@@ -187,7 +190,7 @@ const (
 			conversation ` + conversationFields + `
 			messages { id createdAt role content name toolCallId toolCalls { id name arguments } usage { model kind promptTokens completionTokens } attachments { id name contentType size } references { itemId threadId subject from } }
 			total
-			todos { id text doneAt }
+			todos ` + todoFields + `
 		}
 	}`
 	DocumentStartAgentConversation  = `mutation ($title: String, $goal: String) { StartAgentConversation(title: $title, goal: $goal) ` + conversationFields + ` }`
@@ -198,6 +201,15 @@ const (
 		SetAgentMainConversation(conversationId: $conversationId) ` + conversationFields + `
 	}`
 	DocumentListAgentTools = `query { ListAgentTools { name family risk description confirms core } }`
+	DocumentAddAgentTodo   = `mutation ($conversationId: String!, $text: String!) {
+		AddAgentTodo(conversationId: $conversationId, text: $text) ` + todoFields + `
+	}`
+	DocumentSetAgentTodo = `mutation ($conversationId: String!, $todoId: String!, $text: String, $done: Boolean) {
+		SetAgentTodo(conversationId: $conversationId, todoId: $todoId, text: $text, done: $done) ` + todoFields + `
+	}`
+	DocumentRemoveAgentTodo = `mutation ($conversationId: String!, $todoId: String!) {
+		RemoveAgentTodo(conversationId: $conversationId, todoId: $todoId)
+	}`
 )
 
 // AskAgent says something to the agent and returns the run to follow. A
@@ -459,6 +471,44 @@ func UpdateAgentConversation(ctx context.Context, connection *Client, conversati
 		return nil, err
 	}
 	return result.UpdateAgentConversation, nil
+}
+
+// AddAgentTodo puts an item on a conversation's task list.
+func AddAgentTodo(ctx context.Context, connection *Client, conversationId, text string) (*AgentTodo, error) {
+	var result struct {
+		AddAgentTodo *AgentTodo `json:"AddAgentTodo"`
+	}
+	if err := connection.Execute(ctx, DocumentAddAgentTodo, map[string]any{"conversationId": conversationId, "text": text}, &result); err != nil {
+		return nil, err
+	}
+	return result.AddAgentTodo, nil
+}
+
+// SetAgentTodo marks one done or open again, or rewrites its words.
+// Nothing given leaves the item as it stands.
+func SetAgentTodo(ctx context.Context, connection *Client, conversationId, todoId, text string, done *bool) (*AgentTodo, error) {
+	var result struct {
+		SetAgentTodo *AgentTodo `json:"SetAgentTodo"`
+	}
+	variables := map[string]any{"conversationId": conversationId, "todoId": todoId}
+	if text != "" {
+		variables["text"] = text
+	}
+	if done != nil {
+		variables["done"] = *done
+	}
+	if err := connection.Execute(ctx, DocumentSetAgentTodo, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.SetAgentTodo, nil
+}
+
+// RemoveAgentTodo takes an item off the list.
+func RemoveAgentTodo(ctx context.Context, connection *Client, conversationId, todoId string) error {
+	var result struct {
+		RemoveAgentTodo bool `json:"RemoveAgentTodo"`
+	}
+	return connection.Execute(ctx, DocumentRemoveAgentTodo, map[string]any{"conversationId": conversationId, "todoId": todoId}, &result)
 }
 
 // ListAgentTools is the catalog as the caller sees it.
