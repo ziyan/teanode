@@ -92,6 +92,8 @@ export type Agent = {
     ask: string
     schedule: string
     compact: string
+    scan: string
+    embeddingDimensions: number
     choices: string[]
   }
   features: Record<string, boolean>
@@ -107,6 +109,11 @@ export type Agent = {
     maxToolCallsPerRun: number
     requestTimeout: string
     concurrency: number
+    maxRoundsPerDream: number
+    scanConcurrency: number
+    dreamShare: number
+    ingestChunksPerRun: number
+    embeddingTokensPerDay: number
   }
   retention: { runs: string; corrections: string }
   currency: string
@@ -129,9 +136,9 @@ export type Agent = {
 export const AGENT_SELECTION = `agent {
   enabled instructions allowPrivateAddresses skipCertificateCheck
   providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
-  models { default fast embedding triage research summarize reply ask schedule compact choices }
-  features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents }
-  limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxToolCallsPerRun requestTimeout concurrency }
+  models { default fast embedding triage research summarize reply ask schedule compact scan embeddingDimensions choices }
+  features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
+  limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay }
   retention { runs corrections }
   currency
   search { kind hasApiKey }
@@ -159,10 +166,13 @@ const FEATURES = [
   'chatApps',
   'skills',
   'subagents',
+  'remember',
+  'knowledge',
+  'dreaming',
 ] as const
 
 const BASE_MODELS = ['default', 'fast', 'embedding'] as const
-const WORK_MODELS = ['triage', 'research', 'summarize', 'reply', 'ask', 'schedule', 'compact'] as const
+const WORK_MODELS = ['triage', 'research', 'summarize', 'reply', 'ask', 'schedule', 'compact', 'scan'] as const
 
 function list(values: string[]): string {
   return values.join(', ')
@@ -991,6 +1001,11 @@ function limitFields(settings: Agent) {
     maxToolCallsPerRun: String(settings.limits.maxToolCallsPerRun),
     requestTimeout: settings.limits.requestTimeout,
     concurrency: String(settings.limits.concurrency),
+    maxRoundsPerDream: String(settings.limits.maxRoundsPerDream),
+    scanConcurrency: String(settings.limits.scanConcurrency),
+    dreamShare: String(settings.limits.dreamShare),
+    ingestChunksPerRun: String(settings.limits.ingestChunksPerRun),
+    embeddingTokensPerDay: String(settings.limits.embeddingTokensPerDay),
   }
 }
 
@@ -1038,6 +1053,11 @@ function LimitsForm({ settings, onSaved }: Props) {
               maxToolCallsPerRun: number(limits.maxToolCallsPerRun),
               requestTimeout: limits.requestTimeout,
               concurrency: number(limits.concurrency),
+              maxRoundsPerDream: number(limits.maxRoundsPerDream),
+              scanConcurrency: number(limits.scanConcurrency),
+              dreamShare: Number(limits.dreamShare) || 0,
+              ingestChunksPerRun: number(limits.ingestChunksPerRun),
+              embeddingTokensPerDay: number(limits.embeddingTokensPerDay),
             },
             retention,
             currency,
@@ -1065,6 +1085,10 @@ function LimitsForm({ settings, onSaved }: Props) {
       <div className="row">
         {(['maxRoundsPerAsk', 'maxRoundsPerResearch', 'maxRoundsPerReply', 'maxToolCallsPerRun'] as const).map(numeric)}
       </div>
+      {/* The night and the ingest: what the reading may spend and how
+          wide it runs, beside the caps a conversation lives under. */}
+      <div className="row">{(['maxRoundsPerDream', 'scanConcurrency', 'dreamShare'] as const).map(numeric)}</div>
+      <div className="row">{(['ingestChunksPerRun', 'embeddingTokensPerDay'] as const).map(numeric)}</div>
       <div className="row">
         {(['requestTimeout', 'concurrency'] as const).map(numeric)}
         <label className="shrink">
