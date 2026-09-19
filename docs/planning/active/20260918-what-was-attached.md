@@ -422,6 +422,17 @@ back with the status line, the timestamp and the scene file identifier read
 correctly out of the image. The quality question is settled; the open questions
 were only ever cost and plumbing.
 
+A picture costs about four times what this plan estimated, and the estimate
+survived anyway. Measured on the configured model at $0.20 per million input and
+$1.20 per million output: reading one picture is about 5,400 input and 870 output
+tokens, or $0.0021, against the $0.00056 the plan assumed. Deciding about one
+file, without opening it, is about $0.000075 — small enough to ignore. The
+estimate held only because it also left out the cap: the model may name at most a
+quarter of a batch, so at most a quarter of the pictures are ever opened. All
+47,700 come to roughly thirty dollars rather than the twenty-seven guessed, and
+the two errors happen to cancel. The number to watch if the cap is ever raised is
+the per-picture one, which is the one that was wrong.
+
 ## Decision Log
 
 **Attachments and vision are one feature, not two.** Carrying attachments
