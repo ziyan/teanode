@@ -2554,7 +2554,8 @@ export const zh: Catalog = {
   'agent.dreamNowAsked': '梦境整理会在一分钟内开始，且只在你的助手的时段之内。',
   'agent.reread': '重新读取…',
   'agent.rereadTitle': '重新读取梦境标记为已读的文档',
-  'agent.rereadHint': '如果某次梦境把文档标记为已读却并未读过，可以在这里纠正：最近这些分钟内被标记的文档会重新回到队列。',
+  'agent.rereadHint':
+    '如果某次梦境把文档标记为已读却并未读过，可以在这里纠正：最近这些分钟内被标记的文档会重新回到队列。',
   'agent.rereadMinutes': '回溯多少分钟',
   'agent.rereadSubmit': '放回队列',
   'agent.rereadDoneOne': '{count} 份文档正在等待重新读取。',
@@ -2590,4 +2591,12 @@ export const zh: Catalog = {
   'agent.myContactClear': '不是我',
   'agent.myContactSaved': '已保存',
   'settings.knowledge.description': '代理为你保存的页面，以及它所知道的每件事的来源。',
+
+  'lightbox.from': '来自 {where}',
+  'lightbox.openRaw': '在新标签页打开文件本身',
+  'lightbox.zoomIn': '放大',
+  'lightbox.zoomOut': '缩小',
+  'lightbox.fit': '适应窗口',
+  'lightbox.scale': '{percent}%',
+  'lightbox.hint': '滚动或双指缩放，拖动可平移。',
 }

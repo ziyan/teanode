@@ -17,6 +17,7 @@ import {
   SparkIcon,
 } from '../components/icons'
 import { Select } from '../components/select'
+import { ZoomablePicture } from '../components/lightbox'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { askAgentAbout, graphql } from '../api'
 import { useQuery } from '../components/useQuery'
@@ -2003,10 +2004,10 @@ function attachmentsCitedBy(fact: Fact, attachments?: Attachment[]): Attachment[
 }
 
 // AttachmentEvidence is the file itself under the fact it stands behind:
-// the picture, at a size that leaves the page a page and opens to full
-// size in a tab of its own, or the file's name to save where it is not a
-// picture. Under it, where it was posted, in the muted line the rest of a
-// fact's source is written in.
+// the picture, at a size that leaves the page a page and opens into the
+// lightbox to be looked at closely, or the file's name to save where it is
+// not a picture. Under it, where it was posted, in the muted line the rest
+// of a fact's source is written in.
 function AttachmentEvidence({ attachment }: { attachment: Attachment }) {
   const { t } = useTranslation()
   const where = [attachment.thread, attachment.channel].filter((part) => part.trim() !== '').join(' · ')
@@ -2016,18 +2017,13 @@ function AttachmentEvidence({ attachment }: { attachment: Attachment }) {
       {attachment.path === '' ? (
         <span className="muted">{t('knowledge.attachmentMissing', { name: attachment.name })}</span>
       ) : picture ? (
-        <a href={attachment.path} target="_blank" rel="noreferrer" title={t('knowledge.attachmentOpen')}>
-          {/* Loaded at once rather than lazily. A lazy picture is only
-              fetched when its box comes into view, and this box has no
-              size until the picture is in it: width and height are auto
-              under a max, so before the bytes arrive the element is three
-              pixels square, never intersects anything, and the picture is
-              never asked for. The result was a page of facts with a blank
-              where every screenshot should be. A page holds a bounded
-              number of facts, each with at most one picture drawn no
-              larger than 320 by 200, so there is little here to defer. */}
-          <img className="knowledge-attachment-image" src={attachment.path} alt={attachment.name} />
-        </a>
+        <ZoomablePicture
+          source={attachment.path}
+          name={attachment.name}
+          where={where}
+          imageClassName="knowledge-attachment-image"
+          openTitle={t('knowledge.attachmentOpen')}
+        />
       ) : (
         <a className="link" href={attachment.path} download={attachment.name}>
           {attachment.name}

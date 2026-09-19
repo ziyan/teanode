@@ -41,6 +41,7 @@ import {
 } from './icons'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog, FormDialog } from './dialog'
+import { ZoomablePicture } from './lightbox'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
 import { useTranslation } from '../i18n/i18n'
@@ -593,14 +594,22 @@ function openAttachment(event: React.MouseEvent<HTMLAnchorElement>) {
 
 // AttachedPicture is a picture somebody handed the agent, shown where they
 // sent it. Its address is signed when the drawer is framed elsewhere, so
-// there is a moment before there is anything to show.
+// there is a moment before there is anything to show -- and the lightbox is
+// given that same signed address, because it is the only one that loads
+// from inside another site's page.
+//
+// Nothing here says where it came from: a file handed to the agent came
+// from the person reading this, in the turn it is drawn under.
 function AttachedPicture({ attachment }: { attachment: Attachment }) {
   const href = useFileHref(attachmentHref(attachment))
   if (!href) return null
   return (
-    <a href={href} target="_blank" rel="noreferrer" title={attachment.name}>
-      <img src={href} alt={attachment.name} className="agent-attachment-image" />
-    </a>
+    <ZoomablePicture
+      source={href}
+      name={attachment.name}
+      imageClassName="agent-attachment-image"
+      openTitle={attachment.name}
+    />
   )
 }
 
@@ -940,15 +949,16 @@ function CitedEvidence({ files }: { files: CitedFile[] }) {
   )
 }
 
-// CitedPicture is one of those files: the picture, or the name where it
-// is not one.
+// CitedPicture is one of those files: the picture, which opens into the
+// lightbox, or the name where it is not one.
 //
-// Framed into another site the picture is a name too. The drawer is on
-// the dashboard's own origin there, but a third-party cookie is not sent
-// with it, and an indexed file has no signed address the way a file of
-// the conversation has -- so drawing an img would draw a broken one. A
-// link opened in a tab of its own is a top-level request, which carries
-// the session and works from either place.
+// Framed into another site the picture is a name too, and no lightbox. The
+// drawer is on the dashboard's own origin there, but a third-party cookie
+// is not sent with it, and an indexed file has no signed address the way a
+// file of the conversation has -- so drawing an img would draw a broken
+// one, in the lightbox as much as in the transcript. A link opened in a tab
+// of its own is a top-level request, which carries the session and works
+// from either place.
 function CitedPicture({ file }: { file: CitedFile }) {
   const { t } = useTranslation()
   const where = [file.thread, file.channel].filter((part) => part.trim() !== '').join(' · ')
@@ -956,16 +966,13 @@ function CitedPicture({ file }: { file: CitedFile }) {
   return (
     <span className="agent-cited-file">
       {isImage(file.contentType) && !framedDrawer ? (
-        <a href={file.path} target="_blank" rel="noreferrer" title={t('agentDrawer.citedOpen')}>
-          {/* Loaded at once rather than lazily. A lazy picture is only
-              fetched when its box comes into view, and this box has no
-              size until the picture is in it: width and height are auto
-              under a max, so before the bytes arrive the element is three
-              pixels square, never intersects anything, and the picture is
-              never asked for. That shipped once already, on the page of
-              facts, and left a blank where every screenshot should be. */}
-          <img className="agent-cited-image" src={file.path} alt={file.name} />
-        </a>
+        <ZoomablePicture
+          source={file.path}
+          name={file.name}
+          where={where}
+          imageClassName="agent-cited-image"
+          openTitle={t('agentDrawer.citedOpen')}
+        />
       ) : (
         <a className="link" href={file.path} target="_blank" rel="noreferrer">
           {file.name}

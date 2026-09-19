@@ -2643,7 +2643,8 @@ export const ja: Catalog = {
   'agent.dreamNowAsked': '夢は 1 分以内に、エージェントの時間帯の中で始まります。',
   'agent.reread': '読み直す…',
   'agent.rereadTitle': '夢が既読にしたものを読み直す',
-  'agent.rereadHint': '読まずに既読と記録した夢は直せます。指定した分数のあいだに記録されたドキュメントがキューに戻ります。',
+  'agent.rereadHint':
+    '読まずに既読と記録した夢は直せます。指定した分数のあいだに記録されたドキュメントがキューに戻ります。',
   'agent.rereadMinutes': '何分前までさかのぼるか',
   'agent.rereadSubmit': 'キューに戻す',
   'agent.rereadDoneOne': '{count} 件のドキュメントが読み直しを待っています。',
@@ -2680,4 +2681,12 @@ export const ja: Catalog = {
   'agent.myContactClear': '私ではない',
   'agent.myContactSaved': '保存しました',
   'settings.knowledge.description': 'エージェントがあなたについて保っているページと、知っていることの出どころ。',
+
+  'lightbox.from': '{where} より',
+  'lightbox.openRaw': 'ファイル本体を新しいタブで開く',
+  'lightbox.zoomIn': '拡大',
+  'lightbox.zoomOut': '縮小',
+  'lightbox.fit': '全体',
+  'lightbox.scale': '{percent}%',
+  'lightbox.hint': 'ホイールまたはピンチで拡大縮小、ドラッグで移動します。',
 }
