@@ -6,6 +6,15 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.39.5] - 2026-09-19
+
+### Changed
+
+- A command sent to your computer runs as you wrote it. The rule that
+  guessed which commands were dangerous and asked first is gone; moving and
+  deleting a file still ask, and what your agent may reach is still only
+  the directories you allowed. (#133)
+
 ## [0.39.4] - 2026-09-19
 
 ### Fixed
