@@ -246,16 +246,7 @@ func TestTheNightCanRunSomethingOnTheMachine(t *testing.T) {
 
 	// And what it printed is in the transcript, where the person can read
 	// what their agent did while they slept.
-	var said string
-	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		messages, err := tx.ListAgentMessages(thinking.Conversation.ID, nil)
-		if err != nil {
-			t.Fatalf("ListAgentMessages: %s", err)
-		}
-		for _, message := range messages {
-			said += message.Content
-		}
-	})
+	said := transcriptOf(t, database, thinking.Conversation)
 	if !strings.Contains(said, "402 records/posts.jsonl") {
 		t.Fatalf("what the machine printed belongs in the transcript: %q", said)
 	}
@@ -303,9 +294,19 @@ func TestTheNightIsRefusedWhatLeavesTheServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dreamThought: %s", err)
 	}
+	said := transcriptOf(t, database, thinking.Conversation)
+	if !strings.Contains(said, "needs_confirmation") || !strings.Contains(said, "nobody is present") {
+		t.Fatalf("sending should come back refused: %q", said)
+	}
+}
+
+// transcriptOf is everything said in a conversation, run together: what the
+// model said, and what each tool answered it.
+func transcriptOf(t *testing.T, database db.Database, conversation *models.AgentConversation) string {
+	t.Helper()
 	var said string
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		messages, err := tx.ListAgentMessages(thinking.Conversation.ID, nil)
+		messages, err := tx.ListAgentMessages(conversation.ID, nil)
 		if err != nil {
 			t.Fatalf("ListAgentMessages: %s", err)
 		}
@@ -313,7 +314,173 @@ func TestTheNightIsRefusedWhatLeavesTheServer(t *testing.T) {
 			said += message.Content
 		}
 	})
-	if !strings.Contains(said, "needs_confirmation") || !strings.Contains(said, "nobody is present") {
-		t.Fatalf("sending should come back refused: %q", said)
+	return said
+}
+
+// The night may not write to the graph by hand, and is told what to do
+// instead.
+//
+// This is the half of the old read-only turn that had to survive it. The
+// night files what it learned by ending its call with an object, which is
+// what attaches a fact to the evidence it came from and leaves a move a
+// proposal; a `note` made with the tool has neither. While the whole turn
+// was read-only the tool refused it for free, and giving the night the
+// person's computer took that away. Nothing but this check stands between
+// a model that has read the memory tool's own description -- which invites
+// it to note what it learns -- and a graph written to unattended.
+func TestTheNightIsRefusedAChangeToTheGraph(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	provider := scriptedProvider([]string{
+		`{"id":"s1","model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"memory","arguments":"{\"action\":\"note\",\"path\":\"projects/portal\",\"text\":\"The portal is written in Go.\"}"}}]},"finish_reason":"tool_calls"}]}
+{"id":"s1","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":1}}`,
+		`{"id":"s2","model":"m","choices":[{"delta":{"content":"{}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":1}}`,
+	})
+	defer provider.Close()
+	worker, run := digestSplitWorld(t, database, provider.URL)
+
+	budget := newDreamBudget(run.Configuration(), run.Agent, 1, 0)
+	thinking, err := worker.dreamThought(context.Background(), run, budget, "Read a batch", "Answer with {}.", true)
+	if err != nil {
+		t.Fatalf("dreamThought: %s", err)
+	}
+	said := transcriptOf(t, database, thinking.Conversation)
+	if !strings.Contains(said, "for looking things up in this run") {
+		t.Fatalf("noting a fact by hand should come back refused: %q", said)
+	}
+	// Refused is not enough on its own: a run told only that it may not do
+	// something looks for another way to do it. The refusal has to point
+	// at the one route that files a fact properly.
+	if !strings.Contains(said, "the object you end with") {
+		t.Fatalf("the refusal should say where the change belongs: %q", said)
+	}
+	// And nothing was written on the way to being refused: `note` makes
+	// the page it is given when it is missing, so a page that now exists
+	// is a fact filed without its evidence.
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		page, err := tx.GetAgentNode(run.Agent.ID, "projects/portal")
+		if err != nil {
+			t.Fatalf("GetAgentNode: %s", err)
+		}
+		if page != nil {
+			t.Fatal("the refused call should have made no page")
+		}
+	})
+}
+
+// Looking is exactly what the pair is still for.
+//
+// The cheap way to stop the night writing to the graph would be to take
+// the two tools away, and it would cost the night the lookup it does
+// before it files anything -- which is how a fact ends up on a second page
+// for a person who already has one.
+func TestTheNightMayStillLookInTheGraph(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	provider := scriptedProvider([]string{
+		`{"id":"s1","model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"memory","arguments":"{\"action\":\"index\",\"path\":\"projects\"}"}}]},"finish_reason":"tool_calls"}]}
+{"id":"s1","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":1}}`,
+		`{"id":"s2","model":"m","choices":[{"delta":{"content":"{}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":1}}`,
+	})
+	defer provider.Close()
+	worker, run := digestSplitWorld(t, database, provider.URL)
+
+	budget := newDreamBudget(run.Configuration(), run.Agent, 1, 0)
+	thinking, err := worker.dreamThought(context.Background(), run, budget, "Read a batch", "Answer with {}.", true)
+	if err != nil {
+		t.Fatalf("dreamThought: %s", err)
+	}
+	said := transcriptOf(t, database, thinking.Conversation)
+	if strings.Contains(said, "for looking things up in this run") {
+		t.Fatalf("looking is what the tool is for here: %q", said)
+	}
+	if strings.Contains(said, "may only read") {
+		t.Fatalf("the whole turn is not read-only any more: %q", said)
+	}
+}
+
+// Holding the graph to reading did not quietly hold everything else.
+//
+// A blanket read-only would have been the short way to stop the night
+// writing facts by hand, and it would have taken the person's computer
+// back off it -- the very thing the change before this one was for. So the
+// check is by name, and the machine is the test of that: a command that
+// changes something on it runs, in the same kind of run where `note` comes
+// back refused.
+func TestTheNightsMachineIsNotHeldToReading(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	provider := scriptedProvider([]string{
+		`{"id":"s1","model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"shell","arguments":"{\"command\":\"sort -o records/posts.jsonl records/posts.jsonl\"}"}}]},"finish_reason":"tool_calls"}]}
+{"id":"s1","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":1}}`,
+		`{"id":"s2","model":"m","choices":[{"delta":{"content":"{}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":1}}`,
+	})
+	defer provider.Close()
+	worker, run := digestSplitWorld(t, database, provider.URL)
+
+	var mutex sync.Mutex
+	var commands []string
+	laptop := &fakeComputer{agent: worker, agentId: run.Agent.ID, answers: func(action string, arguments json.RawMessage) (bool, string) {
+		var asked struct {
+			Command string `json:"command"`
+		}
+		_ = json.Unmarshal(arguments, &asked)
+		mutex.Lock()
+		commands = append(commands, action+": "+asked.Command)
+		mutex.Unlock()
+		return true, `{"stdout":"","stderr":"","exitCode":0}`
+	}}
+	worker.AttachComputer(run.Agent.ID, laptop, "laptop", "linux", "~", "")
+
+	budget := newDreamBudget(run.Configuration(), run.Agent, 1, 0)
+	thinking, err := worker.dreamThought(context.Background(), run, budget, "Read a batch", "Answer with {}.", true)
+	if err != nil {
+		t.Fatalf("dreamThought: %s", err)
+	}
+
+	mutex.Lock()
+	ran := append([]string(nil), commands...)
+	mutex.Unlock()
+	if len(ran) != 1 || ran[0] != "shell: sort -o records/posts.jsonl records/posts.jsonl" {
+		t.Fatalf("a command that rewrites a file should still reach the machine: %v", ran)
+	}
+	said := transcriptOf(t, database, thinking.Conversation)
+	if strings.Contains(said, "for looking things up in this run") || strings.Contains(said, "may only read") {
+		t.Fatalf("nothing about the graph should have touched the shell: %q", said)
+	}
+}
+
+// Describing a checkout is refused the way it always was.
+//
+// It passes the lookup pair and a read-only turn, which is the shape every
+// headless call but the night has. Nothing here should have moved: the
+// refusal it gets is the turn's, not the night's, and a reader who sees
+// the new wording in an ingest knows the two have been confused again.
+func TestDescribingACheckoutIsRefusedByTheWholeTurn(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	provider := scriptedProvider([]string{
+		`{"id":"s1","model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"memory","arguments":"{\"action\":\"note\",\"path\":\"projects/portal\",\"text\":\"The portal is written in Go.\"}"}}]},"finish_reason":"tool_calls"}]}
+{"id":"s1","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":1}}`,
+		`{"id":"s2","model":"m","choices":[{"delta":{"content":"{}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":1}}`,
+	})
+	defer provider.Close()
+	worker, run := digestSplitWorld(t, database, provider.URL)
+
+	thinking, err := worker.think(context.Background(), run, "Described the checkout ~/src/portal", "Answer with {}.",
+		lookupTools, roundsFor(run.Configuration(), models.AgentJobIngest), models.AgentJobIngest, config.AgentWorkScan)
+	if err != nil {
+		t.Fatalf("think: %s", err)
+	}
+	said := transcriptOf(t, database, thinking.Conversation)
+	if !strings.Contains(said, "may only read") {
+		t.Fatalf("an ingest is read-only from end to end: %q", said)
+	}
+	if strings.Contains(said, "for looking things up in this run") {
+		t.Fatalf("the night's refusal has no business in an ingest: %q", said)
 	}
 }

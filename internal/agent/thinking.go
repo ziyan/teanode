@@ -100,7 +100,7 @@ func (self *Agent) think(ctx context.Context, run *Run, title, prompt string, al
 // attachment is the first, and it goes through the same turn rather than
 // reaching a provider on its own.
 func (self *Agent) thinkAbout(ctx context.Context, run *Run, title, prompt string, pictures []llm.ContentPart, allow map[string]bool, rounds int, kind models.AgentJobKind, work config.AgentWork) (*thought, error) {
-	return self.thinking(ctx, run, title, prompt, pictures, allow, rounds, kind, work, true)
+	return self.thinking(ctx, run, title, prompt, pictures, allow, rounds, kind, work, true, nil)
 }
 
 // thinkAboutFreely is thinkAbout for a run that may change something: the
@@ -114,13 +114,21 @@ func (self *Agent) thinkAbout(ctx context.Context, run *Run, title, prompt strin
 // something over it and look at what came back. What it must still ask
 // for, it is still refused: a call that raises a confirmation card cannot
 // be confirmed with nobody present.
+//
+// The graph is the exception, and it is not a permission: memory and
+// knowledge may only be looked in here, because a change said in the
+// object the call ends with is filed by code with the evidence it came
+// from, and one made by hand with the memory tool is not. The pair is
+// named here rather than passed in, so that both halves of thinking keep
+// the one signature a caller picks between.
 func (self *Agent) thinkAboutFreely(ctx context.Context, run *Run, title, prompt string, pictures []llm.ContentPart, allow map[string]bool, rounds int, kind models.AgentJobKind, work config.AgentWork) (*thought, error) {
-	return self.thinking(ctx, run, title, prompt, pictures, allow, rounds, kind, work, false)
+	return self.thinking(ctx, run, title, prompt, pictures, allow, rounds, kind, work, false, lookupTools)
 }
 
 // thinking is the body of both: one headless turn in a run conversation of
-// its own, which readOnly says may only read.
-func (self *Agent) thinking(ctx context.Context, run *Run, title, prompt string, pictures []llm.ContentPart, allow map[string]bool, rounds int, kind models.AgentJobKind, work config.AgentWork, readOnly bool) (*thought, error) {
+// its own, which readOnly says may only read, and readOnlyTools holds to
+// reading by name when the rest of the turn may act.
+func (self *Agent) thinking(ctx context.Context, run *Run, title, prompt string, pictures []llm.ContentPart, allow map[string]bool, rounds int, kind models.AgentJobKind, work config.AgentWork, readOnly bool, readOnlyTools map[string]bool) (*thought, error) {
 	if self.operations == nil {
 		return nil, fmt.Errorf("no way to act as the person")
 	}
@@ -152,7 +160,7 @@ func (self *Agent) thinking(ctx context.Context, run *Run, title, prompt string,
 	}
 	turn, err := self.Ask(&AskSettings{
 		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
-		Message: prompt, Surface: string(kind), ReadOnly: readOnly, Short: true,
+		Message: prompt, Surface: string(kind), ReadOnly: readOnly, ReadOnlyTools: readOnlyTools, Short: true,
 		Allow: allow, Headless: true, MaxRounds: rounds, UsageKind: string(kind), Work: work,
 		Pictures:       pictures,
 		ReadThenAnswer: true, ResultCharacters: thinkResultCharacters,

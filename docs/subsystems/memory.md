@@ -358,7 +358,15 @@ server — is refused, and the night is asked to say what it would have
 done. What it changes in the graph it still changes through the object it
 ends with, which the code files with its evidence: not a permission it
 lacks, but the only filing that keeps a fact attached to its source and a
-move a proposal. `limits.maxRoundsPerDream` (twelve by default, because
+move a proposal. That one is enforced rather than asked for. The `memory`
+and `knowledge` tools are the two the night may only look in: `get`,
+`search`, `index`, `history`, `read`, `sources` and `shape` go through,
+and a call that would change something — `note`, `page`, `link`, `move`,
+`merge`, `forget`, adding or syncing a source — comes back refused,
+telling the model to say the change in the object it ends with. Each call
+is judged as it is made (`AskSettings.ReadOnlyTools`), so the half that
+reads is kept rather than the tools being taken away.
+`limits.maxRoundsPerDream` (twelve by default, because
 finding a file, running something over it and answering is three rounds
 before the answer) is how many times one call may go back to the model.
 The dream log's Open

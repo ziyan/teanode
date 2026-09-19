@@ -64,6 +64,21 @@ type AskSettings struct {
 	// read-only credential.
 	ReadOnly bool
 
+	// ReadOnlyTools names the tools this turn may only look with, while
+	// the rest of its kit acts as usual. Each call to one of them is
+	// judged as it is made, so a tool whose actions differ -- memory,
+	// which both reads a page and rewrites one -- keeps the half that
+	// reads instead of going altogether.
+	//
+	// The night is what this is for: it has the person's whole kit, and
+	// its changes to the graph are still said in the object it ends with
+	// so that code files them with their evidence. That was enforced by
+	// the whole turn being read-only until the turn stopped being
+	// read-only, and a rule the frame merely asks for is a rule only
+	// until a model reads the memory tool's description and takes it at
+	// its word.
+	ReadOnlyTools map[string]bool
+
 	// Allow, when set, is the only tools offered by name; Headless adds
 	// the remote tools marked for runs with nobody present. MaxRounds
 	// overrides the limit; UsageKind names the usage rows.
@@ -1083,6 +1098,12 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 	call := &Call{ID: toolCall.ID, Arguments: json.RawMessage(toolCall.Arguments)}
 	if self.settings.ReadOnly && tool.RiskFor(call.Arguments) != RiskRead {
 		return self.toolAnswer(toolCall, `{"error": "this conversation may only read; the call would change something"}`)
+	}
+	// One named tool held to reading while the rest of the kit acts. The
+	// call is judged, not the tool, so `get` and `search` go through and
+	// only what would change something is turned back.
+	if self.settings.ReadOnlyTools[tool.Name] && tool.RiskFor(call.Arguments) != RiskRead {
+		return self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "%s is for looking things up in this run; say the change you want in the object you end with, and it will be filed with its evidence"}`, tool.Name))
 	}
 	if NeedsConfirmation(tool, call.Arguments, &configuration.Agent.Tools, self.settings.Agent) {
 		if self.settings.Headless || self.settings.Surface == "mail" || self.settings.Surface == "schedule" || self.settings.Surface == "research" {

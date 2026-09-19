@@ -380,6 +380,11 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 // This is what describing a checkout gets. The night itself gets
 // everyTool; the two are named apart so that a call site says which it
 // is asking for.
+//
+// It is the same pair twice over: what a lookup is given, and what the
+// night -- which is given everything -- may only look with, as
+// AskSettings.ReadOnlyTools. Naming it once is what keeps a tool added to
+// the graph from arriving in one place and not the other.
 var lookupTools = map[string]bool{"memory": true, "knowledge": true}
 
 // everyTool is what a call of the night reaches: all of them, including
@@ -402,12 +407,19 @@ var lookupTools = map[string]bool{"memory": true, "knowledge": true}
 var everyTool map[string]bool
 
 // dreamFrame is what every call of a dream is told first: it has the
-// person's tools and may use them, and the one thing it still does not do
-// by hand is change the graph -- not because it lacks the permission, but
+// person's tools and may use them, and the one thing it does not do by
+// hand is change the graph -- not because it lacks the permission, but
 // because a change made through the object the call ends with is filed by
 // code together with the evidence it came from, which is what keeps a
 // fact attached to its source and a move a proposal the person can refuse.
-const dreamFrame = "You are working through your own memory with nobody present. You have the person's own tools here, their computer among them where they have attached one: read a file, run something over it, look at what came back, the same as you would in a conversation with them. Nobody is there to be asked, so a call that would need their word comes back refused; say in your answer what you would have done rather than looking for another way to do it. Changes to the graph are the one thing you never make by hand: not `note`, `page`, `link`, `move`, `merge` or `forget`. Every change you want is said in the object you end with, and code files it with the evidence it came from, so that a fact keeps its source and a move stays a proposal the person can refuse. Use `get` and `search` freely to look a page up first, and when several need looking up, look them all up in one `batch` call of up to eight items rather than one call at a time. Then answer with the object."
+//
+// Said as a fact about the run rather than as a request, because it is
+// one: the two tools are held to reading by AskSettings.ReadOnlyTools, so
+// a call that would change something comes back refused whatever the
+// frame says. Telling the model what will happen saves it the round it
+// would spend finding out, and the memory tool's own description, which
+// invites it to note what it learns, is right there arguing the other way.
+const dreamFrame = "You are working through your own memory with nobody present. You have the person's own tools here, their computer among them where they have attached one: read a file, run something over it, look at what came back, the same as you would in a conversation with them. Nobody is there to be asked, so a call that would need their word comes back refused; say in your answer what you would have done rather than looking for another way to do it. The memory and knowledge tools are for looking in this run: `index`, `get`, `search`, `history`, `read`, `sources` and `shape` go through, and anything that would change something -- `note`, `page`, `link`, `unlink`, `move`, `merge`, `forget`, or adding or syncing a source -- comes back refused, inside a `batch` call as well as on its own. That is not a permission you are missing. Every change you want is said in the object you end with, and code files it with the evidence it came from, so that a fact keeps its source and a move stays a proposal the person can refuse; said any other way it is refused and nothing is filed. Use `get` and `search` freely to look a page up first, and when several need looking up, look them all up in one `batch` call of up to eight items rather than one call at a time. Then answer with the object."
 
 // dreamThink is one call of a dream as a run of the loop, titled by what
 // it is doing, on the scan model, with what it cost taken off the

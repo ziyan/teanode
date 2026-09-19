@@ -367,9 +367,10 @@ tools, `memory` and `knowledge`, and the frame it is given says they are for
 looking. This was not obvious from the outside and it shapes the whole design:
 preparation has to happen during the scan, not during the night. *(That was
 true when this was surveyed, and the design above was built on it. The owner
-has since reversed it — see the Decision Log — and a night now has every tool.
-Nothing in the milestones depends on the old answer; it only means preparation
-has a second place it can happen.)*
+has since reversed it — see the Decision Log — and a night now has every tool,
+with the graph held to reading because a fact is filed from the object a call
+ends with. Nothing in the milestones depends on the old answer; it only means
+preparation has a second place it can happen.)*
 
 The model layer has been able to send a picture all along, in both the OpenAI
 and Anthropic paths. The capability was built for conversations, where a person
@@ -445,10 +446,28 @@ leaves the server, anything that hands out a way in — is refused outright,
 because there is nobody there to be shown the card; the night is told to say
 what it would have done instead of looking for another route. And changes to
 the graph are still made from the object a call ends with rather than by hand
-with the memory tool. That second one is not a permission any more, and the
-frame says so in as many words: it is how filing works here, and it is what
-keeps a fact attached to the evidence it came from and a move a proposal the
-person can still refuse.
+with the memory tool: it is how filing works here, and it is what keeps a
+fact attached to the evidence it came from and a move a proposal the person
+can still refuse.
+
+**The graph is held to reading, by name, rather than the whole night being
+held to it.** Widening the night to every tool meant the turn could no longer
+be read-only, and read-only was the only thing that had been stopping the
+model writing to the graph by hand; the frame asked it not to, and a frame is
+an instruction a model weighs against the memory tool's own description,
+which invites it to note what it learns. The owner asked for the rule back:
+"sure you can block fact writing via tool and only allow it to spit it out at
+the end." So a turn can now name the tools it may only look with, and the
+night names the two that hold the graph. Each call is judged as it is made,
+not the tool, which is what keeps looking a page up — the thing the night
+needs most — while the writing is refused; and the refusal says where the
+change belongs, so a run that tried is not left hunting for another route.
+The alternative, leaving the pair out of the catalogue altogether, was
+rejected: these are tools whose actions differ in what they cost, so
+dropping the tool drops the reading with the writing, and there is no way to
+show a model half a tool. The frame still says all this, as a description of
+the run rather than a request, because a model told what will happen does not
+spend a round finding out.
 
 ## Outcomes & Retrospective
 
