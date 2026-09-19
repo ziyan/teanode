@@ -59,7 +59,7 @@ func find(t *testing.T, name string) *tools.Tool {
 	return nil
 }
 
-func TestShellReachesTheComputerAndRefusesWhatWouldDestroyIt(t *testing.T) {
+func TestShellReachesTheComputerAndRunsWhatItIsGiven(t *testing.T) {
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
 	shell := find(t, "shell")
@@ -74,11 +74,13 @@ func TestShellReachesTheComputerAndRefusesWhatWouldDestroyIt(t *testing.T) {
 	if len(attached.asked) != 1 || !strings.HasPrefix(attached.asked[0], "shell ") {
 		t.Fatalf("asked %v", attached.asked)
 	}
-	if shell.RiskOf(json.RawMessage(`{"command":"ls"}`)) != tools.RiskWrite || shell.RiskOf(json.RawMessage(`{"command":"rm x"}`)) != tools.RiskDestructive || shell.RiskOf(json.RawMessage(`{"command":"rm -rf /"}`)) != tools.RiskDestructive {
-		t.Fatal("a listing runs, a removal asks, and so does the gravest")
+	// No call is judged by what the command looks like: the tool is a
+	// write and every command is one.
+	if shell.RiskOf != nil {
+		t.Fatal("a command is not classified by its shape")
 	}
-	if preview := shell.Preview(json.RawMessage(`{"command":"apt-get install jq"}`)); !strings.Contains(preview, "installs or removes software") {
-		t.Fatalf("the card says why: %s", preview)
+	if preview := shell.Preview(json.RawMessage(`{"command":"apt-get install jq"}`)); !strings.Contains(preview, "apt-get install jq") {
+		t.Fatalf("the card says what will run: %s", preview)
 	}
 
 	// Nobody present, or nothing attached: said, not tried.
@@ -102,8 +104,13 @@ func TestFilesystemRisksByAction(t *testing.T) {
 			t.Errorf("%s: %s, want %s", action, got, want)
 		}
 	}
-	if filesystem.RiskOf(json.RawMessage(`{"action":"append","path":"~/.bashrc"}`)) != tools.RiskDestructive || filesystem.RiskOf(json.RawMessage(`{"action":"write","path":"~/.ssh/authorized_keys"}`)) != tools.RiskDestructive {
-		t.Fatal("a write into what the machine runs on its own asks first")
+	// The action decides, and the path never does. A list of paths worth
+	// asking about was tried and removed: naming some of the dangerous
+	// places reads as though it names them all.
+	for _, path := range []string{"~/.bashrc", "~/.ssh/authorized_keys", "/etc/passwd"} {
+		if got := filesystem.RiskOf(json.RawMessage(`{"action":"write","path":"` + path + `"}`)); got != tools.RiskWrite {
+			t.Errorf("writing %s is an ordinary write, got %s", path, got)
+		}
 	}
 	attached := &fakeComputer{}
 	ctx := tools.WithRun(context.Background(), &fakeRun{computer: attached, config: configuration})
@@ -116,34 +123,5 @@ func TestFilesystemRisksByAction(t *testing.T) {
 	}
 	if _, err := filesystem.Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"action":"burn","path":"a"}`)}); err == nil {
 		t.Fatal("an unknown action is refused")
-	}
-}
-
-// A copy is classified by the path it writes, not the one it reads.
-//
-// PathAsks was asked about call.Path, which for every action but this one is
-// the path being written. For a copy the written path is the destination, so
-// copying a harmless file over a shell's startup file or over
-// ~/.ssh/authorized_keys went through with no card, while writing the same
-// bytes to the same place asked.
-func TestACopyIsJudgedByWhereItLands(t *testing.T) {
-	t.Parallel()
-
-	filesystem := find(t, "filesystem")
-	risk := func(arguments string) tools.Risk { return filesystem.RiskOf(json.RawMessage(arguments)) }
-
-	for _, destination := range []string{"~/.ssh/authorized_keys", "~/.bashrc", "/etc/cron.d/x"} {
-		arguments := `{"action":"copy","path":"~/notes.txt","destination":"` + destination + `"}`
-		if got := risk(arguments); got != tools.RiskDestructive {
-			t.Errorf("copy onto %s should be destructive, got %v", destination, got)
-		}
-	}
-	// Somewhere ordinary is still an ordinary write.
-	if got := risk(`{"action":"copy","path":"~/notes.txt","destination":"~/copy.txt"}`); got != tools.RiskWrite {
-		t.Errorf("an ordinary copy stays a write, got %v", got)
-	}
-	// And the source is still asked about, which it already was.
-	if got := risk(`{"action":"copy","path":"~/.ssh/authorized_keys","destination":"~/out.txt"}`); got != tools.RiskDestructive {
-		t.Errorf("copying out of a key file still asks, got %v", got)
 	}
 }

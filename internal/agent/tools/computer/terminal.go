@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
-	"github.com/ziyan/teanode/internal/computer"
 )
 
 // A terminal the agent drives.
@@ -70,18 +68,6 @@ func init() {
 					}
 					return ""
 				},
-				// Opening a terminal runs a program on the person's machine, and
-				// that is the moment they are asked -- not every keystroke after.
-				// A card in front of each key is a card nobody reads, and the
-				// program they said yes to is what the keys go to.
-				RiskOf: func(arguments json.RawMessage) tools.Risk {
-					var call terminalArguments
-					_ = json.Unmarshal(arguments, &call)
-					if strings.EqualFold(strings.TrimSpace(call.Action), "start") {
-						return startRisk(&call)
-					}
-					return tools.RiskWrite
-				},
 				Preview: func(arguments json.RawMessage) string {
 					var call terminalArguments
 					_ = json.Unmarshal(arguments, &call)
@@ -113,55 +99,6 @@ func init() {
 			},
 		}
 	})
-}
-
-// startRisk is what opening a terminal is worth asking about: the same
-// judgment the shell tool makes of a command line. A program named with
-// its arguments is classified as the shell tool would classify it, and a
-// shell handed a script with -c is judged by the script, so a listing or
-// a build opens without a card; a bare shell, which the model then types
-// anything into, asks, because the keys after the card never do.
-func startRisk(call *terminalArguments) tools.Risk {
-	program := strings.TrimSpace(call.Command)
-	if program == "" {
-		return tools.RiskDestructive
-	}
-	line := program
-	if len(call.Arguments) > 0 {
-		line += " " + strings.Join(call.Arguments, " ")
-	}
-	if script, ok := shellScriptOf(program, call.Arguments); ok {
-		line = script
-	} else if isShell(program) && len(call.Arguments) == 0 {
-		return tools.RiskDestructive
-	}
-	if computer.Classify(line).Action == computer.ActionAllow {
-		return tools.RiskWrite
-	}
-	return tools.RiskDestructive
-}
-
-// shellScriptOf is the script a shell was handed with -c, when the
-// program is a shell and one of its arguments is -c (or -lc and the like)
-// followed by the script.
-func shellScriptOf(program string, arguments []string) (string, bool) {
-	if !isShell(program) {
-		return "", false
-	}
-	for index, argument := range arguments {
-		if strings.HasPrefix(argument, "-") && strings.Contains(argument, "c") && index+1 < len(arguments) {
-			return arguments[index+1], true
-		}
-	}
-	return "", false
-}
-
-func isShell(program string) bool {
-	switch strings.ToLower(filepath.Base(program)) {
-	case "sh", "bash", "zsh", "dash", "fish", "ksh", "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh":
-		return true
-	}
-	return false
 }
 
 type terminalArguments struct {
