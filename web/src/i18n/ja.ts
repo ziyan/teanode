@@ -2388,6 +2388,11 @@ export const ja: Catalog = {
     '{path} と、その {facts} 件の事実、および配下の {pages} ページを忘れます。エージェントはこれらを知らなくなります。',
   'knowledge.forgotten': '忘れました',
   'knowledge.pageSaved': '保存しました',
+  'knowledge.pageSearchPlaceholder': 'ページを探すか、パスを入力',
+  'knowledge.pageSearchResults': '見つかったページ',
+  'knowledge.pageSearchLooking': '検索中…',
+  'knowledge.pageSearchNone': '「{words}」に一致するページはありません。パスをそのまま入力しても構いません。',
+  'knowledge.pageSearchFailed': 'いまはページを検索できませんでした。',
   'knowledge.movePage': 'このページを移動',
   'knowledge.moveUnder': '移動先',
   'knowledge.moveUnderHint':

@@ -16,6 +16,7 @@ import {
   TrashIcon,
   SparkIcon,
 } from '../components/icons'
+import { PagePicker } from '../components/pagePicker'
 import { Select } from '../components/select'
 import { ZoomablePicture } from '../components/lightbox'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
@@ -2107,6 +2108,9 @@ function namesOf(typed: string): string[] {
 // The field is the folder or page it is filed under, prefilled with the
 // one it is under now, because most moves are a page in the wrong
 // project rather than a page with no home at all.
+//
+// It finds that folder by name, like every other field here that names a
+// page: see PagePicker.
 function MovePageDialog({
   node,
   busy,
@@ -2135,7 +2139,7 @@ function MovePageDialog({
     >
       <label>
         <span>{t('knowledge.moveUnder')}</span>
-        <input value={under} placeholder="projects" onChange={(event) => setUnder(event.target.value)} />
+        <PagePicker value={under} onChange={setUnder} label={t('knowledge.moveUnder')} exclude={node.path} />
       </label>
       <p className="muted">{t('knowledge.moveUnderHint', { path: node.path })}</p>
     </FormDialog>
@@ -2177,12 +2181,7 @@ function MergePageDialog({
     >
       <label>
         <span>{t('knowledge.mergeInto')}</span>
-        <input
-          autoFocus
-          value={into}
-          placeholder="people/alice-chen"
-          onChange={(event) => setInto(event.target.value)}
-        />
+        <PagePicker autoFocus value={into} onChange={setInto} label={t('knowledge.mergeInto')} exclude={node.path} />
       </label>
       <p className="muted">{t('knowledge.mergeIntoHint', { path: node.path })}</p>
     </FormDialog>
@@ -2226,7 +2225,7 @@ function MoveFactDialog({
       <p className="knowledge-quote">{cut(fact.text, 200)}</p>
       <label>
         <span>{t('knowledge.moveFactTo')}</span>
-        <input autoFocus value={to} placeholder="projects/portal" onChange={(event) => setTo(event.target.value)} />
+        <PagePicker autoFocus value={to} onChange={setTo} label={t('knowledge.moveFactTo')} exclude={path} />
       </label>
       <p className="muted">{t('knowledge.moveFactToHint')}</p>
     </FormDialog>
@@ -2268,7 +2267,7 @@ function LinkDialog({
     >
       <label>
         <span>{t('knowledge.linkTo')}</span>
-        <input autoFocus value={to} placeholder="people/alice-chen" onChange={(event) => setTo(event.target.value)} />
+        <PagePicker autoFocus value={to} onChange={setTo} label={t('knowledge.linkTo')} exclude={path} />
       </label>
       <label>
         <span>{t('knowledge.linkRelation')}</span>

@@ -67,6 +67,18 @@ const (
 	// dreamBatch is how many items go into one call of the digest phase.
 	dreamBatch = 20
 
+	// digestFacts is how many facts one batch may file.
+	//
+	// A quarter of the batch, while a fact was only ever about a subject.
+	// The reading is now told that the author of every item earns a page
+	// and the one line the item shows about them, so a batch of twenty
+	// commits brings up to twenty people along with whatever they were
+	// working on -- and five between them left the people and the
+	// projects competing for the same five, which is a bar on the pages
+	// by another name. Half the batch, still under rememberFacts, the
+	// hard bound the filing itself enforces.
+	digestFacts = dreamBatch / 2
+
 	// digestSmallest is how much a document must hold to be worth a
 	// share of a call: about two short lines. See markTinyRead for what
 	// is measured against it.
@@ -786,8 +798,13 @@ func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*model
 	shown := make(map[string]string, len(documents))
 	for _, document := range documents {
 		heading := document.Cite()
+		// "by" rather than another dash. A heading is a title, a name and
+		// a date joined by the same mark, and the reading is now told
+		// that the author of an item earns a page under people/ -- a rule
+		// it cannot apply if it has to guess which of the three parts is
+		// the person.
 		if author := document.Author(); author != "" {
-			heading += " — " + author
+			heading += " — by " + author
 		}
 		if document.HappenedAt != nil {
 			heading += " — " + document.HappenedAt.Format("2 Jan 2006")
@@ -823,7 +840,7 @@ func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*model
 		"PersonName": personName(run.Owner),
 		"Index":      index,
 		"Items":      builder.String(),
-		"Most":       dreamBatch / 4,
+		"Most":       digestFacts,
 		"Coarse":     coarse,
 	})
 	if err != nil {

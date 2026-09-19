@@ -537,6 +537,12 @@ type preparedFact struct {
 	Quote     string
 	Happened  *time.Time
 
+	// AskedPath is the path the writer actually wrote, before this was
+	// tidied into PagePath. A link in the same answer names a page by
+	// that path rather than by whatever tidying it went through, so it is
+	// kept to join the two.
+	AskedPath string
+
 	// The page this belongs on, as it would be called, and what that name
 	// means -- which is how a page already there under another name is
 	// found rather than a second one made beside it.
@@ -632,7 +638,8 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 			models.AgentNodeKind(strings.ToLower(strings.TrimSpace(wanted.NodeKind))),
 			strings.TrimSpace(wanted.NodeName))
 		prepared = append(prepared, &preparedFact{
-			Text: text, Kind: kind,
+			AskedPath: models.NormalizePath(wanted.Path),
+			Text:      text, Kind: kind,
 			// The digest marks each item "[id]", and a model that copies
 			// the marker whole is answering as asked.
 			MessageID: strings.Trim(strings.TrimSpace(wanted.MessageID), "[]"),
@@ -676,6 +683,24 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 		return nil
 	}); err != nil {
 		return tally, err
+	}
+
+	// The pages this answer opened, under every path that names them, so
+	// that a link in the same answer lands on the page its fact did.
+	// Without this the links quietly halve: the page a fact asked for is
+	// not always the page it got -- the owner's own name routes to
+	// `self`, a bare path gains the folder its kind lives under, and a
+	// page already there under another name keeps the path it has -- and
+	// a link naming the path the writer wrote found nothing at it and was
+	// dropped in silence. That is most of an authorship map, since most
+	// of what a person's own checkouts contain was written by them.
+	opened := make(map[string]*models.AgentNode, 2*len(prepared))
+	for _, ready := range prepared {
+		if ready.Node == nil {
+			continue
+		}
+		opened[ready.AskedPath] = ready.Node
+		opened[ready.PagePath] = ready.Node
 	}
 
 	// The rows themselves, with their evidence checked and their meaning
@@ -750,7 +775,7 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 				return fmt.Errorf("folding %q into the page: %w", ready.Text, err)
 			}
 		}
-		if err := linkWhatWasLearned(tx, agentId, answer.Links); err != nil {
+		if err := linkWhatWasLearned(tx, agentId, answer.Links, opened, run.Owner, selfPage); err != nil {
 			return err
 		}
 		if err := supersedeWhatWasReplaced(tx, agentId, answer.Supersedes); err != nil {
@@ -769,23 +794,36 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 // linkWhatWasLearned draws the links an answer asked for. A link whose
 // either end is not a page the agent has is not a failure: the model
 // named something it did not file, and there is nothing to join.
-func linkWhatWasLearned(tx db.Transaction, agentId string, links []RememberedLink) error {
+//
+// opened is the pages this same answer just made, by every path that
+// names them, because a link names a page the way its fact did and the
+// fact does not always end up at the path it asked for.
+func linkWhatWasLearned(tx db.Transaction, agentId string, links []RememberedLink, opened map[string]*models.AgentNode, owner *models.User, selfPage *models.AgentNode) error {
 	for _, link := range links {
-		from := models.NormalizePath(link.From)
-		to := models.NormalizePath(link.To)
+		from := pathOfLinkEnd(link.From, owner, selfPage)
+		to := pathOfLinkEnd(link.To, owner, selfPage)
 		relation := models.AgentEdgeRelation(strings.ToLower(strings.TrimSpace(link.Relation)))
 		if from == "" || to == "" || !models.IsAgentEdgeRelation(relation) {
 			continue
 		}
-		fromNode, err := tx.GetAgentNode(agentId, from)
+		fromNode, err := pageOfLinkEnd(tx, agentId, from, opened)
 		if err != nil {
 			return fmt.Errorf("reading %q: %w", from, err)
 		}
-		toNode, err := tx.GetAgentNode(agentId, to)
+		toNode, err := pageOfLinkEnd(tx, agentId, to, opened)
 		if err != nil {
 			return fmt.Errorf("reading %q: %w", to, err)
 		}
 		if fromNode == nil || toNode == nil {
+			continue
+		}
+		// A page joined to itself, which PutAgentEdge refuses with an
+		// error rather than a shrug -- and an error here loses the whole
+		// window, since everything a run learned is written in one
+		// transaction. Two ends that are two spellings of the person now
+		// both route to `self`, so this is reachable in a way it was not
+		// when an unfound page simply meant no link.
+		if fromNode.ID == toNode.ID {
 			continue
 		}
 		if err := tx.PutAgentEdge(&models.AgentEdge{
@@ -796,6 +834,28 @@ func linkWhatWasLearned(tx db.Transaction, agentId string, links []RememberedLin
 		}
 	}
 	return nil
+}
+
+// pathOfLinkEnd is one end of a link as a path: cleaned, and routed to
+// `self` where it names the person whose agent this is. The same routing
+// a fact's path gets, for the same reason -- what the agent knows about
+// them lives on one page, and a link to a second page for them joins
+// nothing to nothing.
+func pathOfLinkEnd(path string, owner *models.User, selfPage *models.AgentNode) string {
+	path = models.NormalizePath(path)
+	if models.IsThePerson(path, owner, selfPage) {
+		return models.PathSelf
+	}
+	return path
+}
+
+// pageOfLinkEnd is the page one end of a link names: the one this answer
+// just opened under that path, or the one already there.
+func pageOfLinkEnd(tx db.Transaction, agentId, path string, opened map[string]*models.AgentNode) (*models.AgentNode, error) {
+	if node := opened[path]; node != nil {
+		return node, nil
+	}
+	return tx.GetAgentNode(agentId, path)
 }
 
 // supersedeWhatWasReplaced strikes the facts an answer says it has
