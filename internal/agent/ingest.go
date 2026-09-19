@@ -593,6 +593,11 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 			// checkouts under it that nobody here ever committed to.
 			OwnAddresses:      own,
 			ReadEveryCheckout: source.Specification.ReadEveryCheckout,
+			// How much of the history one pass over this tree carries,
+			// told to the daemon for the same reason: a tree of a
+			// hundred checkouts and a third of a million commits is
+			// paced by what the person set here.
+			CommitsPerPass: source.Specification.CommitsPerPass,
 		}, wait)
 	}
 	answer, err := ask(known)
