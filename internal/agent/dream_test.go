@@ -289,13 +289,14 @@ func TestDreamingRunsEveryPhase(t *testing.T) {
 	_ = gripper
 }
 
-// A newer build goes back over what an older one wrote.
+// A newer build goes back over what an older one wrote, rewords what it
+// can, and leaves the rest where it is.
 //
-// This is what the version on a row is for. The first real ingest filed
-// twenty-eight lines saying no more than "X is a project", because the
-// prompt of the day invited them; fixing the prompt does nothing about
-// what is already on the pages, and nothing could find them except
-// knowing which build had written them.
+// This is what the version on a row is for: a line an early build worded
+// badly is still on the page years later, and nothing can find it except
+// by knowing which build wrote it. Going over a row is not a reason to
+// take it off the page. A pass here once struck whatever a list of words
+// called empty, and took real lines with it without telling anybody.
 func TestDreamingRevisesWhatAnOlderBuildWrote(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
@@ -381,53 +382,35 @@ func TestDreamingRevisesWhatAnOlderBuildWrote(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListAgentFacts: %s", err)
 		}
-		if len(facts) != 1 {
+		if len(facts) != 3 {
 			lines := make([]string, 0, len(facts))
 			for _, fact := range facts {
 				lines = append(lines, fact.Text)
 			}
-			t.Fatalf("the two that say nothing are off the page and the one that says something stays:\n%s",
+			t.Fatalf("the night reads the page and states all three of them, not:\n%s",
 				strings.Join(lines, "\n"))
 		}
-		if !strings.Contains(facts[0].Text, "fails the build") {
-			t.Fatalf("and it is the one about the thing, not %q", facts[0].Text)
+		for _, fact := range facts {
+			// Marked as this build's, so tomorrow night looks elsewhere.
+			if fact.Version == "0.0.1-old" || fact.Version == "" {
+				t.Fatalf("what was looked at carries the build that looked, not %q", fact.Version)
+			}
 		}
-		// Marked as this build's, so tomorrow night looks elsewhere.
-		if facts[0].Version == "0.0.1-old" || facts[0].Version == "" {
-			t.Fatalf("what was looked at carries the build that looked, not %q", facts[0].Version)
-		}
-		// Struck, not deleted: both rows are still there, out of what the
-		// page states and readable by anybody who wants to know what the
-		// dream decided.
-		all, err := tx.ListAgentFacts(found.ID, page.ID, true, 50)
-		if err != nil {
-			t.Fatalf("ListAgentFacts: %s", err)
-		}
-		if len(all) != 3 {
-			t.Fatalf("nothing was deleted, so the page still holds three rows, not %d", len(all))
-		}
-		// And the striking is in the page's history, so it can be undone.
+		// And the night took nothing off the page while nobody was
+		// watching: a thin line is still a line the person's agent was
+		// told, and striking one silently is how a person loses something
+		// they never knew had gone.
 		revisions, err := tx.ListAgentRevisions(found.ID, page.ID, 50)
 		if err != nil {
 			t.Fatalf("ListAgentRevisions: %s", err)
 		}
-		struck := 0
 		for _, revision := range revisions {
 			if revision.Actor != models.ActorDream {
 				continue
 			}
-			if revision.Kind == models.RevisionFactGone {
-				t.Fatalf("a dream deletes nothing, so it leaves no %q", models.RevisionFactGone)
+			if revision.Kind == models.RevisionFactGone || revision.Kind == models.RevisionFactStruck {
+				t.Fatalf("the night left the page as it found it, and did not leave a %q", revision.Kind)
 			}
-			if revision.Kind == models.RevisionFactStruck {
-				struck++
-				if revision.TextBefore() == "" {
-					t.Fatalf("with what the line used to say")
-				}
-			}
-		}
-		if struck != 2 {
-			t.Fatalf("two strikings in the history, not %d", struck)
 		}
 	})
 }

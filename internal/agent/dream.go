@@ -990,6 +990,13 @@ const (
 	// before it is worth a page.
 	timelineBackfill = 6
 	timelineLeast    = 5
+
+	// guessedPattern is a PostgreSQL regular expression for a page that
+	// guesses: the words a model reaches for when the record is a count
+	// and the page is meant to be a story. A month page that matches is
+	// written again from its record, which costs a model call and loses
+	// nothing -- the record it was written from is still there.
+	guessedPattern = `\m(suggests?|suggesting|likely|indicates?|indicating|probably|presumably|must have|seems? to)\M`
 )
 
 // writeMonth writes or rewrites one month's page from its record, and
@@ -1033,9 +1040,13 @@ func (self *Agent) writeMonth(ctx context.Context, run *Run, record *models.Agen
 		log.Debugf("cannot write up the month: %s", err)
 		return
 	}
-	// What the model guessed comes out here, not in the prompt: told not
-	// to, it guesses anyway, and a page that guesses is owed again.
-	text := dropGuesses(strings.TrimSpace(said))
+	// A list of hedging words stood here, and every sentence of the page
+	// that contained one was cut out before the page was stored. It could
+	// not name every way a model hedges, and each time it was wrong the
+	// person lost a sentence nobody ever showed them. The page is kept as
+	// it was written; a month that reads like a guess is owed its page
+	// again, and written from the record.
+	text := strings.TrimSpace(said)
 	if text == "" {
 		return
 	}

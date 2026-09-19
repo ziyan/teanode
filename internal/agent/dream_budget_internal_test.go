@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -158,5 +159,17 @@ func TestConcurrentCallsCannotEachSpendTheRemainder(t *testing.T) {
 	}
 	if !budget.left() {
 		t.Fatal("and the night reads on")
+	}
+}
+
+func TestHalfwayIsHalfOfWhatIsLeft(t *testing.T) {
+	now := time.Date(2026, time.September, 15, 23, 0, 0, 0, time.UTC)
+	if got := halfway(context.Background(), now); !got.IsZero() {
+		t.Fatalf("no deadline: %v", got)
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), now.Add(40*time.Minute))
+	defer cancel()
+	if got := halfway(ctx, now); got != now.Add(20*time.Minute) {
+		t.Fatalf("half of forty minutes: %v", got)
 	}
 }
