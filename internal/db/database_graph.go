@@ -718,7 +718,14 @@ func (self *transaction) ListAgentNodeChildrenPage(agentId, nodeId string, limit
 	// hundred projects wants them where they expect them. The person's
 	// own page leads the roots.
 	nodes, err := self.nodesFrom(where.
-		Order(`"pinned" DESC, ("kind" = 'self') DESC, lower("name") ASC, "path" ASC`).Limit(limit).Offset(offset))
+		// Newest first, not alphabetical. A folder of four hundred pages
+		// sorted by name puts whatever begins with A in front of whatever
+		// the agent learned this morning, and the second is what somebody
+		// opening a folder came to see. Pinned pages and the person's own
+		// still lead, because those were chosen rather than dated, and the
+		// name breaks a tie so the order is stable between passes.
+		Order(`"pinned" DESC, ("kind" = 'self') DESC, "modified_at" DESC NULLS LAST, lower("name") ASC`).
+		Limit(limit).Offset(offset))
 	return nodes, total, err
 }
 
