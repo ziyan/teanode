@@ -5733,6 +5733,41 @@ label.check-list-item {
   object-fit: cover;
 }
 
+/* What an answer was read from, under the answer: the picture itself, or
+   the file's name where it is not a picture, with where it was posted.
+   Small enough that a transcript is still a transcript -- the picture
+   opens full size in a tab of its own -- and never wider than the bubble
+   it sits in, which on a phone is most of the screen. */
+.agent-cited {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.agent-cited-file {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.agent-cited-file .muted {
+  display: block;
+  font-size: var(--text-label);
+}
+
+.agent-cited-image {
+  display: block;
+  max-width: min(260px, 100%);
+  max-height: 180px;
+  width: auto;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field);
+}
+
 /* A tool line opens to what was asked and what came back. */
 .agent-tool-toggle {
   padding: 0;

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
@@ -57,15 +58,10 @@ const (
 	picturesANight    = 100
 
 	// pictureLargest is the largest picture the night sends to a model.
-	//
-	// Smaller than the twenty-five megabytes a scan will carry off a
-	// person's machine, because carrying a file and paying to look at it
-	// are different questions: a four-thousand-pixel screenshot costs
-	// several times what a thousand-pixel one does and says the same
-	// thing. Until the records script can downscale before it uploads,
-	// anything above this is passed over with its reason rather than
-	// spent on.
-	pictureLargest = 8 << 20
+	// The same number the memory tool's `look` holds the person's own
+	// question to, so that what the night would not open is not opened
+	// for them either; tools.PictureLargest says why.
+	pictureLargest = tools.PictureLargest
 )
 
 // attachmentsMost is how many of a batch of this size the night will
@@ -405,10 +401,10 @@ func attachmentLine(document *models.AgentDocument) string {
 // use: the channel and the thread the record it arrived with was in.
 func attachmentWhere(document *models.AgentDocument) string {
 	var parts []string
-	if channel := metadataText(document, "channel"); channel != "" {
+	if channel := document.Channel(); channel != "" {
 		parts = append(parts, "in "+channel)
 	}
-	if thread := metadataText(document, "thread"); thread != "" {
+	if thread := document.Thread(); thread != "" {
 		parts = append(parts, "thread "+thread)
 	}
 	return strings.Join(parts, ", ")

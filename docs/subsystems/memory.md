@@ -236,6 +236,28 @@ anything else is passed over with its reason, the same way. Both steps
 come off the night's allowance like every other call it makes, so a night
 that has spent its share stops asking and the rest waits for tomorrow.
 
+The picture can be looked at again, in the conversation. Recall carries
+text into a turn, so a fact read out of a screenshot arrives as the
+sentence the night wrote about it, which answers nothing the night did not
+happen to write down — and there is no going back for the rest. The memory
+tool's `look` goes back for it: given a page and a fact's number, or a
+file's document identifier, it fetches the bytes out of the store and puts
+them in the turn the way a person's own attachment is put there, so the
+agent answers from the picture. It is a read, so a run held to reading may
+use it; it costs what the night's look costs, bounded by the same number
+of bytes, and a file with nothing kept, one that is not a picture, or one
+too large says so in plain words rather than failing.
+
+A person sees the same evidence in the drawer. An assistant's line carries
+text and nothing else — only a person's own message may carry a file — so
+the model is never taught to attach anything. It already cites what it
+used, as `work/mcx#3`, and the drawer reads those citations back: each
+resolves to its fact and from there to the file behind it, and where that
+file is a picture this server still holds, the picture is drawn under the
+message, with the thread and channel it was posted in. A file that is not
+a picture is its name, to open. Nothing the model does changes, and it
+works for every citation already written.
+
 Two kinds of script fill such a folder, and which one to write is
 decided by where the records are.
 
