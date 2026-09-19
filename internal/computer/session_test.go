@@ -167,8 +167,26 @@ func TestATerminalIsReadAsAScreen(t *testing.T) {
 		t.Fatalf("the size asked for: %dx%d", screen.Columns, screen.Rows)
 	}
 	// Read again with nothing new, and it says so.
-	if again, _ := held.readScreen(&SessionReadArguments{Session: "term"}); again.Changed {
-		t.Fatalf("a second read with nothing drawn since is unchanged")
+	//
+	// The screen has to have stopped first. A shell that has just answered
+	// is often still drawing -- a prompt, the cursor moved back -- and a
+	// read taken in the middle of that says, correctly, that something
+	// changed. Reading until two in a row agree is what "nothing new"
+	// means; asserting it against a shell still settling is what made this
+	// fail on a busy machine and nowhere else.
+	settled := time.Now().Add(30 * time.Second)
+	for {
+		again, err := held.readScreen(&SessionReadArguments{Session: "term"})
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		if !again.Changed {
+			break
+		}
+		if time.Now().After(settled) {
+			t.Fatalf("the screen never stopped changing:\n%s", again.Text)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	// Resizing is one request too, and the screen follows.
