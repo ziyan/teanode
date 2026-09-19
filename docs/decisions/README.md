@@ -74,3 +74,7 @@ those checkouts reach the graph: in the same sequence of pages as the
 files, from every checkout that is the person's own work, and bounded per
 pass at a pace the source sets, because a commit is the only document
 that says who wrote something and there are a third of a million of them.
+`20260919-a-share-of-the-history-on-every-page.md` amends it with when
+within a pass that happens: a fixed share of every page, taken before the
+files, because a pass over a real tree is hundreds of pages and never
+reached the end where the history used to wait.

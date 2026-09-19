@@ -90,6 +90,25 @@ const (
 	scanCommitsPerPass = 2000
 	scanDiffBytes      = 4000
 
+	// scanCommitShare is how much of a page the history has: one entry
+	// in every eight, so a page is mostly files with a few commits
+	// beside them.
+	//
+	// A share of the page and not the room the files leave over. The
+	// files leave none -- a page of source fills its byte budget every
+	// time -- which is how the commits were lost twice over: first to
+	// the leftovers of the last page of a pass, then to the leftovers
+	// of a page that never came. Forty pages into the tree this was
+	// written for, 9,522 files in, the cursor was still inside one
+	// checkout's source and the pass had offered no commit at all.
+	//
+	// An eighth rather than an even spread over the tree. A budget of
+	// two thousand is then spent inside the first sixty or so pages
+	// instead of trickling out over the nine hundred a large tree
+	// takes, and a night that ends early still ends with an authorship
+	// map.
+	scanCommitShare = 8
+
 	// scanCommitBytes is the largest a commit's document is: its
 	// subject, its body and the files it touched. The commit that drops
 	// a vendored tree into a checkout touches tens of thousands of
@@ -622,28 +641,50 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 	paths, result.FilesKeptToProfile = withoutTheFilesOf(paths, cloned, profiles)
 	result.CheckoutsKeptToProfile = len(cloned)
 
-	started := arguments.After == ""
+	where := cursorOfPass(arguments.After)
 	// carried is how much text this page holds so far. One large file
 	// does go over -- a page is never empty, because a page that refused
 	// to carry the file in front of it would never get past it.
 	carried := 0
-	// A pass reads the files of the tree and then its history, in one
-	// sequence of pages: past the files the cursor names a commit
-	// instead of a path, and the files are not walked again.
-	if !pastTheFiles(arguments.After) {
-		for index, relative := range paths {
+
+	// The history first, and only its share of the page.
+	//
+	// First because a page's files fill it: the commits used to come
+	// after them, out of whatever room was left, and a page of source
+	// never leaves any. Its share because they must not come instead of
+	// the files either -- the tree is what the source is for, and a
+	// pass still has to walk all of it.
+	moreHistory := false
+	if !where.HistoryDone {
+		commits, stoppedAt, more := readCommits(ctx, root, arguments, profiles, cloned, where.Commit, roomForHistory(most, where), carried)
+		for _, entry := range commits {
+			if entry.Refused != "" {
+				result.Refused++
+			}
+			carried += len(entry.Text)
+		}
+		result.Entries = append(result.Entries, commits...)
+		where.Commit, where.HistoryDone, moreHistory = stoppedAt, !more, more
+	}
+
+	// Then the files, from where the last page stopped.
+	started, sent, moreFiles := where.File == "", where.File, false
+	if !where.PastTheFiles {
+		for _, relative := range paths {
 			if !started {
-				if relative == arguments.After {
+				if relative == where.File {
 					started = true
 				}
 				continue
 			}
 			if len(result.Entries) >= most || carried >= scanPageBytes {
-				// The cursor names the last file sent, not the one there was
-				// no room for: the next page begins after the cursor, and for
-				// a while it named the unsent file, which was then skipped --
-				// one file lost on every page boundary, on every pass.
-				result.Next = paths[index-1]
+				// Out of room, and the cursor is left naming the last
+				// file sent rather than this one, which there was none
+				// for: the next page begins after the cursor, and for a
+				// while it named the unsent file, which was then
+				// skipped -- one file lost on every page boundary, on
+				// every pass.
+				moreFiles = true
 				break
 			}
 			entry := readOneFile(ctx, root, relative, arguments.Known)
@@ -653,26 +694,12 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 			// The profile rides on its own entry above, not on a file's.
 			carried += len(entry.Text)
 			result.Entries = append(result.Entries, entry)
+			sent = relative
 		}
 	}
-
-	// The history, once the files are done and before the pass ends.
-	//
-	// Every pass offers it, and it is paged like everything else. Both
-	// halves of that matter. A commit offered only by a pass that
-	// happened to reach the end of the tree in one go was a commit no
-	// tree of any size ever offered; and a commit squeezed into whatever
-	// room the last page had left over was a handful at best, out of a
-	// third of a million.
-	if result.Next == "" {
-		commits, next := readCommits(ctx, root, arguments, profiles, cloned, most-len(result.Entries), carried)
-		for _, entry := range commits {
-			if entry.Refused != "" {
-				result.Refused++
-			}
-		}
-		result.Entries = append(result.Entries, commits...)
-		result.Next = next
+	where.File, where.PastTheFiles = sent, where.PastTheFiles || !moreFiles
+	if moreFiles || moreHistory {
+		result.Next = where.next()
 	}
 
 	// A repository's own entry carries its profile even though there is no
@@ -1357,22 +1384,123 @@ func repositoryProfile(ctx context.Context, directory string, tracked []string) 
 }
 
 // commitMark opens the identifier of a commit, and is what the cursor
-// of a pass says once it is past the files and working through the
-// history. On its own it means the history from the newest commit; with
-// a hash after it, the commit the last page stopped on.
+// of a pass says once the files are done and the history is all that is
+// left. On its own it means the history from the newest commit; with a
+// hash after it, the commit the last page stopped on.
 const commitMark = "commit:"
 
-// pastTheFiles says whether a cursor has left the files behind and is
-// in the history.
+// historyMark joins the two halves of a cursor that is in both at once.
+// A unit separator, because the half in front of it is a path and a path
+// may hold a colon, a space or a newline, and the two have to come apart
+// again exactly where they were joined.
+const historyMark = "\x1f" + commitMark
+
+// historyDone is what stands where the commit would, once the history
+// of a pass is all offered and the files are not.
 //
-// What follows the mark has to be a commit hash or nothing. A cursor is
-// a path while the pass is in the files, and a file may be called
-// anything at all: `commit:notes` is a name somebody may have given a
-// file, and read as a place in the history it would skip every file of
-// the tree.
+// Said rather than worked out again. Without it every one of the
+// hundreds of pages left in the pass would ask git for the history
+// once per checkout only to find it had already sent all of it, which
+// on a tree of five hundred checkouts is an hour of a night spent
+// learning nothing.
+const historyDone = "done"
+
+// scanCursor is where a pass is, which is two places and not one: a
+// page carries a share of the history beside its files, so a page that
+// stopped in the middle of the tree stopped in the middle of the
+// history too.
+//
+// An older build wrote one place, and both of the shapes it wrote are
+// read here as it meant them. A path alone was the files part way with
+// the history not begun, which is this with an empty Commit; and
+// `commit:<hash>` was the files done with the history part way, which
+// is this with PastTheFiles. So a pass that began under that build and
+// goes on under this one resumes where it stopped and still offers the
+// whole of what a pass offers -- which is what the sweep at the end of
+// it requires, since what a finished pass was not shown is taken as
+// gone.
+type scanCursor struct {
+	// File is the last file the pass sent; empty is the start of them.
+	File string
+
+	// PastTheFiles says every file has been offered and only the
+	// history is left.
+	PastTheFiles bool
+
+	// Commit is the last commit the pass sent; empty is the newest.
+	Commit string
+
+	// HistoryDone says this pass has offered the whole of the history
+	// it is going to, which is not the same as having offered none of
+	// it yet.
+	HistoryDone bool
+}
+
+// cursorOfPass reads what the last page wrote.
+func cursorOfPass(after string) scanCursor {
+	if after == "" {
+		return scanCursor{}
+	}
+	if pastTheFiles(after) {
+		return scanCursor{PastTheFiles: true, Commit: strings.TrimPrefix(after, commitMark)}
+	}
+	if file, commit, found := strings.Cut(after, historyMark); found {
+		if commit == historyDone {
+			return scanCursor{File: file, HistoryDone: true}
+		}
+		if isCommitPlace(commit) {
+			return scanCursor{File: file, Commit: commit}
+		}
+	}
+	return scanCursor{File: after}
+}
+
+// next is that cursor written down for the page after this one.
+func (self scanCursor) next() string {
+	if self.PastTheFiles {
+		return commitMark + self.Commit
+	}
+	if self.HistoryDone {
+		return self.File + historyMark + historyDone
+	}
+	if self.Commit == "" {
+		return self.File
+	}
+	return self.File + historyMark + self.Commit
+}
+
+// pastTheFiles says whether a cursor has left the files behind and is
+// in the history alone.
 func pastTheFiles(after string) bool {
 	hash, found := strings.CutPrefix(after, commitMark)
-	return found && (hash == "" || len(hash) == 40)
+	return found && isCommitPlace(hash)
+}
+
+// isCommitPlace says whether what follows a mark is a place in a history
+// rather than part of somebody's file name.
+//
+// Nothing is the newest commit, and anything else has to be a hash. A
+// file may be called anything at all: `commit:notes` is a name somebody
+// may have given one, and read as a place in the history it would skip
+// every file of the tree.
+func isCommitPlace(hash string) bool {
+	return hash == "" || len(hash) == 40
+}
+
+// roomForHistory is how many of a page's entries the history may have.
+//
+// Never the whole of a page. A page of commits alone would leave the
+// cursor naming no file, and one file a page is also what keeps the
+// cursor readable by an older build for as long as possible: its file
+// half is a path that build understands, and only the half after the
+// mark is new. Past the files there is nothing to keep room for, and
+// the whole page is the history's -- the cursor is `commit:<hash>`
+// there, and the share does not come into it.
+func roomForHistory(most int, where scanCursor) int {
+	if where.PastTheFiles {
+		return most
+	}
+	return min(max(1, most/scanCommitShare), most-1)
 }
 
 // commitShare is how much of a pass's history budget one checkout has.
@@ -1476,54 +1604,57 @@ func shareOfCommits(profiles map[string]*RepositoryProfile, cloned map[string]bo
 // the next slice of history instead would file a slice and have the
 // following pass delete it.
 //
-// It answers with the page and where the page stopped: empty when the
-// history is done, and a commit's identifier when there is more.
-func readCommits(ctx context.Context, root string, arguments *ScanArguments, profiles map[string]*RepositoryProfile, cloned map[string]bool, room, carried int) ([]ScanEntry, string) {
+// It answers with the page, where in the history the page stopped, and
+// whether anything is left -- the last two being what the cursor
+// carries beside the file the page stopped at.
+func readCommits(ctx context.Context, root string, arguments *ScanArguments, profiles map[string]*RepositoryProfile, cloned map[string]bool, after string, room, carried int) ([]ScanEntry, string, bool) {
 	shares := shareOfCommits(profiles, cloned, commitBudget(arguments))
 	if len(shares) == 0 {
-		return nil, ""
-	}
-	after := ""
-	if pastTheFiles(arguments.After) {
-		after = strings.TrimPrefix(arguments.After, commitMark)
+		return nil, after, false
 	}
 	if room <= 0 || carried >= scanPageBytes {
-		// The files filled this page to the last entry. The cursor keeps
-		// the place so that the next page begins the history, rather
-		// than the pass ending here with the history unoffered -- which
-		// is the whole of what went wrong before.
-		return nil, commitMark + after
+		// No room on this page. The place is kept and the history is
+		// still unfinished, so the pass carries on rather than ending
+		// with it unoffered -- which is the whole of what went wrong
+		// before.
+		return nil, after, true
 	}
 
 	records := commitsOfTree(ctx, root, shares)
-	from := 0
-	if after != "" {
-		from = len(records)
+	from, found := 0, after == ""
+	if !found {
 		for index, record := range records {
 			if record.Hash == after {
-				from = index + 1
+				from, found = index+1, true
 				break
 			}
 		}
-		if from >= len(records) {
-			// The commit the last page stopped on is no longer in the
-			// window -- somebody committed while the pass was reading,
-			// and it fell off the end. Beginning again costs a page
-			// already seen; going on from nowhere would end the pass
-			// with the history unseen, and the sweep would take it.
-			from = 0
-		}
 	}
+	if !found {
+		// The commit the last page stopped on is no longer in the
+		// window -- somebody committed while the pass was reading, and
+		// it fell off the end. Beginning again costs a page already
+		// seen; going on from nowhere would end the pass with the rest
+		// of the history unseen, and the sweep would take it.
+		from = 0
+	}
+	if from >= len(records) {
+		// The history is done: the cursor names the last commit of it,
+		// which is found at the end and leaves nothing after itself.
+		return nil, after, false
+	}
+	stopped := after
 	entries := make([]ScanEntry, 0, min(room, len(records)-from))
 	for _, record := range records[from:] {
 		if len(entries) >= room || carried >= scanPageBytes {
-			return entries, commitMark + records[from+len(entries)-1].Hash
+			return entries, stopped, true
 		}
 		entry := entryOfCommit(root, record, arguments.Known)
 		carried += len(entry.Text)
 		entries = append(entries, entry)
+		stopped = record.Hash
 	}
-	return entries, ""
+	return entries, stopped, false
 }
 
 // commitsOfTree is the commits a pass offers, in the order it offers
