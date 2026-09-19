@@ -64,6 +64,21 @@ type AskSettings struct {
 	// read-only credential.
 	ReadOnly bool
 
+	// ReadOnlyTools names the tools this turn may only look with, while
+	// the rest of its kit acts as usual. Each call to one of them is
+	// judged as it is made, so a tool whose actions differ -- memory,
+	// which both reads a page and rewrites one -- keeps the half that
+	// reads instead of going altogether.
+	//
+	// The night is what this is for: it has the person's whole kit, and
+	// its changes to the graph are still said in the object it ends with
+	// so that code files them with their evidence. That was enforced by
+	// the whole turn being read-only until the turn stopped being
+	// read-only, and a rule the frame merely asks for is a rule only
+	// until a model reads the memory tool's description and takes it at
+	// its word.
+	ReadOnlyTools map[string]bool
+
 	// Allow, when set, is the only tools offered by name; Headless adds
 	// the remote tools marked for runs with nobody present. MaxRounds
 	// overrides the limit; UsageKind names the usage rows.
@@ -449,6 +464,19 @@ func (self *AskRun) AttachedComputers() []tools.Computer {
 func (self *AskRun) ComputersAllowed() bool {
 	return FeatureAllowed(self.agent.settings.Configuration(), "computer")
 }
+
+// ComputersUnattended is the night, and nothing else.
+//
+// Every other run with nobody present is refused the machine, because the
+// confirmation card is what stands between the agent and the shapes that
+// cannot be taken back, and a card cannot be shown to an empty room. The
+// owner read that reasoning and accepted the risk for the night alone, so
+// it is named here rather than inferred from the shape of the settings:
+// widening it to scheduled turns or goals is a decision somebody should
+// have to make on purpose.
+func (self *AskRun) ComputersUnattended() bool {
+	return self.settings.Surface == string(models.AgentJobDream)
+}
 func (self *AskRun) DraftReply(ctx context.Context, request *models.AgentDraftRequest) (*models.AgentDraft, error) {
 	return self.agent.DraftReply(ctx, request)
 }
@@ -685,6 +713,13 @@ func (self *AskRun) turn() error {
 	// a switched-off family is not in the catalog the model is shown. And
 	// while a computer is attached they are in the round from the start,
 	// not behind tool_search: the person attached it to be used.
+	//
+	// A run with nobody present gets them from the start too, but only
+	// where it was given every tool -- an Allow of nil. A headless run
+	// handed a named set never had the computer in the first place, so
+	// nothing is loosened for it; the night, which now has everything,
+	// would otherwise spend one of its rounds discovering through
+	// tool_search that a machine it may use is attached.
 	if !FeatureAllowed(configuration, "computer") {
 		withoutComputer := self.offered[:0:0]
 		for _, tool := range self.offered {
@@ -693,7 +728,7 @@ func (self *AskRun) turn() error {
 			}
 		}
 		self.offered = withoutComputer
-	} else if len(self.AttachedComputers()) > 0 && !settings.Headless {
+	} else if len(self.AttachedComputers()) > 0 && (!settings.Headless || settings.Allow == nil) {
 		for _, tool := range self.offered {
 			if tool.Family == FamilyComputer {
 				self.loaded[tool.Name] = true
@@ -1063,6 +1098,12 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 	call := &Call{ID: toolCall.ID, Arguments: json.RawMessage(toolCall.Arguments)}
 	if self.settings.ReadOnly && tool.RiskFor(call.Arguments) != RiskRead {
 		return self.toolAnswer(toolCall, `{"error": "this conversation may only read; the call would change something"}`)
+	}
+	// One named tool held to reading while the rest of the kit acts. The
+	// call is judged, not the tool, so `get` and `search` go through and
+	// only what would change something is turned back.
+	if self.settings.ReadOnlyTools[tool.Name] && tool.RiskFor(call.Arguments) != RiskRead {
+		return self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "%s is for looking things up in this run; say the change you want in the object you end with, and it will be filed with its evidence"}`, tool.Name))
 	}
 	if NeedsConfirmation(tool, call.Arguments, &configuration.Agent.Tools, self.settings.Agent) {
 		if self.settings.Headless || self.settings.Surface == "mail" || self.settings.Surface == "schedule" || self.settings.Surface == "research" {
