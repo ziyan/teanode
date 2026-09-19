@@ -138,9 +138,14 @@ no answer to who wrote a piece of code. They used to be offered only by a
 pass that reached the end of the tree in a single page and only out of
 whatever room that page had left over, and only from a root that was
 itself a checkout: a folder of checkouts is neither, and on one
-deployment 553,185 documents held not one commit. The history now follows
-the files in the same sequence of pages — past the files the cursor names
-a commit instead of a path — and it comes from every checkout in the tree
+deployment 553,185 documents held not one commit. They then followed the
+files in the same sequence of pages, which on a real tree is the same as
+never: forty pages and 9,522 files into one, the cursor was still inside
+a single checkout's source and no commit had been offered. A fixed share
+of every page — one entry in eight, taken before the page's files,
+because a page of source leaves no room after them — is now the
+history's, so a night that stops part way through a tree stops with the
+authorship map already in it. It comes from every checkout in the tree
 that is the person's own work, the rule above keeping somebody else's
 history out as it keeps their files out. What one pass carries is bounded
 and shared out among those checkouts, each newest first: one tree of 137

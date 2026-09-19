@@ -3,6 +3,10 @@
 - Status: accepted
 - Date: 2026-09-18
 - Deciders: Ziyan Zhou
+- Amended by: `20260919-a-share-of-the-history-on-every-page.md`, which
+  moves the history off the end of a pass and gives it a share of every
+  page. What a pass offers, and that every pass offers the same, is as
+  written below.
 
 ## Context
 

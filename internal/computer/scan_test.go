@@ -1231,6 +1231,25 @@ func TestACheckoutsProfileIsOfferedOnceAPass(t *testing.T) {
 	}
 }
 
+// treeOfFilesAndHistory is one checkout of the person's with more files
+// than a few pages hold and a short history behind them, which is the
+// shape of a tree of somebody's work: the files are many and the
+// commits are few.
+func treeOfFilesAndHistory(t *testing.T, notes, changes int) string {
+	t.Helper()
+	root := t.TempDir()
+	files := map[string]string{"README.md": "The portal.\n"}
+	for index := range notes {
+		files[fmt.Sprintf("notes/%02d.md", index)] = "a sentence about the work.\n"
+	}
+	checkoutBy(t, root, "alice@example.com", files)
+	for index := range changes {
+		commitTo(t, root, "alice@example.com", fmt.Sprintf("the %d change", index),
+			map[string]string{fmt.Sprintf("later%02d.md", index): "a later sentence.\n"})
+	}
+	return root
+}
+
 // treeOfHistories is a folder of checkouts with histories in them: two
 // the person works in and one they only cloned, each with `each`
 // commits after the one that made it.
@@ -1257,13 +1276,19 @@ func treeOfHistories(t *testing.T, each int) string {
 // that took.
 func passOverTree(t *testing.T, root string, arguments *ScanArguments) ([]ScanEntry, int) {
 	t.Helper()
+	return passOverTreeFrom(t, root, arguments, "")
+}
+
+// passOverTreeFrom is the same, taking up a pass at the cursor a page
+// before it left off.
+func passOverTreeFrom(t *testing.T, root string, arguments *ScanArguments, after string) ([]ScanEntry, int) {
+	t.Helper()
 	home := t.TempDir()
 	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
 	if _, err := AllowScanRoot(options, root); err != nil {
 		t.Fatalf("AllowScanRoot: %s", err)
 	}
 	var offered []ScanEntry
-	after := ""
 	for page := range 200 {
 		asked := *arguments
 		asked.Root, asked.After = root, after
@@ -1380,41 +1405,145 @@ func TestTheCommitsOfAPassAreOfferedByTheNextOne(t *testing.T) {
 	}
 }
 
-// A page the files fill to its last entry still leaves the history to
-// the page after it.
+// The history comes with the files, from the first page of a pass, and
+// not once the files are done.
 //
-// This is where the commits went. They were offered out of the room the
-// last page had left over, and a tree of any size leaves none: the
-// cursor now says the files are done and the history begins, so what a
-// pass carries does not depend on where its pages happened to land.
-func TestTheHistoryFollowsAPageTheFilesFilled(t *testing.T) {
-	root := t.TempDir()
-	checkoutBy(t, root, "alice@example.com", map[string]string{
-		"README.md": "The portal.\n", "main.go": "package main\n",
-		"one.md": "one\n", "two.md": "two\n", "three.md": "three\n",
-	})
+// The files are never done. Forty pages into the tree this was written
+// for -- 256 entries a page, 9,522 files read -- the cursor was still
+// inside one checkout's source with hundreds of pages ahead of it, and
+// not one commit had been offered: the history was kept for the page
+// that ended the pass, and no night ever reached one. A commit is the
+// only document that carries an author, so what sat behind all those
+// files was the whole of the answer to who wrote any of it.
+func TestTheHistoryComesWithTheFilesAndNotAfterThem(t *testing.T) {
+	root := treeOfFilesAndHistory(t, 60, 5)
 	home := t.TempDir()
 	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
 	if _, err := AllowScanRoot(options, root); err != nil {
 		t.Fatalf("AllowScanRoot: %s", err)
 	}
-	// Exactly as many entries as the tree has files.
-	result, err := RunScan(context.Background(), options, &ScanArguments{Root: root, Most: 5})
-	if err != nil {
-		t.Fatalf("RunScan: %s", err)
+	var offered []ScanEntry
+	after := ""
+	for range 3 {
+		result, err := RunScan(context.Background(), options, &ScanArguments{
+			Root: root, After: after, Most: 8, OwnAddresses: []string{"alice@example.com"},
+		})
+		if err != nil {
+			t.Fatalf("RunScan: %s", err)
+		}
+		offered = append(offered, result.Entries...)
+		after = result.Next
+		if after == "" {
+			t.Fatalf("this tree was read to the end in three pages, which is not the case this is about")
+		}
 	}
-	if len(commitsOffered(result.Entries)) != 0 {
-		t.Fatalf("this page had no room for a commit: %d entries", len(result.Entries))
+	// Interrupted here, which is what a night that runs out of time is.
+	if strings.HasPrefix(after, "commit:") {
+		t.Fatalf("the files are not done after three pages of eight; the cursor says %q", after)
 	}
-	if result.Next != "commit:" {
-		t.Fatalf("so the cursor says the history is next, not %q", result.Next)
+	commits := commitsOffered(offered)
+	if len(commits) < 3 {
+		t.Fatalf("a pass stopped in the middle of the files offered %d commits, want one a page: %v", len(commits), commits)
 	}
-	result, err = RunScan(context.Background(), options, &ScanArguments{Root: root, Most: 5, After: result.Next})
-	if err != nil {
-		t.Fatalf("RunScan: %s", err)
+	for _, entry := range commits {
+		if entry.Metadata["author"] == nil {
+			t.Errorf("a commit is offered for its author above all, and %q has none: %+v", entry.Title, entry.Metadata)
+		}
 	}
-	if len(commitsOffered(result.Entries)) != 1 {
-		t.Fatalf("and the page after it carries the history: %+v", result.Entries)
+	if len(offered)-len(commits) < 15 {
+		t.Errorf("and the page is still mostly files: %d of %d entries", len(offered)-len(commits), len(offered))
+	}
+}
+
+// The history is offered once over a pass, and the pages after it are
+// the files' again.
+//
+// A tree of somebody's work is many files and few commits, so the
+// history of one runs out long before the tree does. What a pass
+// carries is fixed, and offering it twice would be one document
+// written twice a page for the rest of the night; offering it from the
+// top again and never reaching its end would be the older half of it
+// swept away by the pass that finished.
+func TestTheHistoryIsOfferedOnceAndThenTheFilesHaveThePage(t *testing.T) {
+	// Six commits at one a page, and nine pages of files to fit them in.
+	root := treeOfFilesAndHistory(t, 60, 5)
+	offered, pages := passOverTree(t, root, &ScanArguments{Most: 8, OwnAddresses: []string{"alice@example.com"}})
+	if pages < 8 {
+		t.Fatalf("the tree was read in %d page(s), so the history never ran out before it", pages)
+	}
+	times := map[string]int{}
+	for _, entry := range offered {
+		if entry.Kind == "commit" {
+			times[entry.ExternalID]++
+		}
+	}
+	if len(times) != 6 {
+		t.Fatalf("a pass offered %d of the checkout's six commits: %v", len(times), times)
+	}
+	for identifier, count := range times {
+		if count != 1 {
+			t.Errorf("%q was offered %d times in one pass, want once", identifier, count)
+		}
+	}
+}
+
+// A pass begun by the build before this one goes on from where it
+// stopped, and still offers the whole of what a pass offers.
+//
+// Both of the shapes that build wrote have to keep their meaning. A
+// path alone was the files part way with the history not begun; this
+// build reads it as that and offers the history alongside the rest of
+// the files, rather than taking the pass as having offered it already
+// and letting the sweep at the end take every commit an earlier pass
+// filed.
+func TestACursorFromTheBuildBeforeThisOneCarriesOn(t *testing.T) {
+	root := treeOfHistories(t, 3)
+	own := []string{"alice@example.com"}
+	whole, _ := passOverTree(t, root, &ScanArguments{Most: 4, OwnAddresses: own})
+	wanted := commitsOffered(whole)
+	if len(wanted) == 0 {
+		t.Fatalf("the tree offered no commits at all")
+	}
+	var files []string
+	for _, entry := range whole {
+		if entry.Kind == "file" {
+			files = append(files, entry.ExternalID)
+		}
+	}
+	if len(files) < 6 {
+		t.Fatalf("this tree has too few files to stop in the middle of: %v", files)
+	}
+
+	// The cursor that build wrote in the middle of the files: a path,
+	// and nothing about the history.
+	offered, _ := passOverTreeFrom(t, root, &ScanArguments{Most: 4, OwnAddresses: own}, files[2])
+	got := commitsOffered(offered)
+	for subject := range wanted {
+		if _, found := got[subject]; !found {
+			t.Errorf("a pass taken up at an older cursor did not offer %q, so the sweep would take it", subject)
+		}
+	}
+	for _, entry := range offered {
+		if entry.Kind == "file" && entry.ExternalID == files[0] {
+			t.Errorf("and it does not walk the files again from the top: %q", entry.ExternalID)
+		}
+	}
+
+	// And the other shape: the files done, the history part way. It
+	// means what it meant, so the pass carries on through the history
+	// and reads no file.
+	entry := got["portal: the 2 change"]
+	if entry.Hash == "" {
+		t.Fatalf("the newest commit of a checkout was not offered: %v", got)
+	}
+	offered, _ = passOverTreeFrom(t, root, &ScanArguments{Most: 4, OwnAddresses: own}, "commit:"+entry.Hash)
+	for _, offeredEntry := range offered {
+		if offeredEntry.Kind == "file" {
+			t.Errorf("a cursor past the files reads no more of them, and it read %q", offeredEntry.ExternalID)
+		}
+	}
+	if len(commitsOffered(offered)) == 0 {
+		t.Fatalf("and it goes on through the history: %+v", offered)
 	}
 }
 
