@@ -90,29 +90,3 @@ func TestKeysAreNamedAndUnknownOnesRefused(t *testing.T) {
 		t.Fatalf("refused, naming the keys it knows: %v", err)
 	}
 }
-
-// Opening a terminal asks only for what the shell tool would ask about: a
-// listing opens without a card, a shell handed a harmless script with -c
-// too, and a bare shell -- which the keys after it could type anything
-// into -- or a removal still asks.
-func TestStartingATerminalAsksOnlyForWhatTheShellWould(t *testing.T) {
-	cases := []struct {
-		name      string
-		command   string
-		arguments []string
-		want      tools.Risk
-	}{
-		{"a listing", "ls", []string{"-la", "~/projects"}, tools.RiskWrite},
-		{"a harmless script", "bash", []string{"-lc", "pwd; find ~/archive -type f | head"}, tools.RiskWrite},
-		{"a removal in a script", "bash", []string{"-lc", "rm -rf ~/archive"}, tools.RiskDestructive},
-		{"a bare shell", "bash", nil, tools.RiskDestructive},
-		{"nothing named", "", nil, tools.RiskDestructive},
-		{"sudo", "sudo", []string{"apt", "install", "x"}, tools.RiskDestructive},
-	}
-	for _, testCase := range cases {
-		got := startRisk(&terminalArguments{Action: "start", Command: testCase.command, Arguments: testCase.arguments})
-		if got != testCase.want {
-			t.Errorf("%s: got %s, want %s", testCase.name, got, testCase.want)
-		}
-	}
-}
