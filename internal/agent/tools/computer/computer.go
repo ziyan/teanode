@@ -169,12 +169,15 @@ func computerOf(run tools.Run, name string) (tools.Computer, error) {
 // Of is the attached computer a tool means, for the tools outside this
 // package that reach one.
 func Of(run tools.Run, name string) (tools.Computer, error) {
-	if run.Headless() {
-		return nil, fmt.Errorf("the computer is not reached by a run with nobody present")
-	}
 	computing, ok := run.(tools.Computing)
 	if !ok || !computing.ComputersAllowed() || !tools.FeatureAllowed(run.Configuration(), "computer") {
 		return nil, fmt.Errorf("attaching a computer is off on this server")
+	}
+	// A run with nobody present is refused the machine unless it is one
+	// the owner said may have it. The card is not a boundary for such a
+	// run -- nobody is there to be shown one -- so the boundary is here.
+	if run.Headless() && !computing.ComputersUnattended() {
+		return nil, fmt.Errorf("the computer is not reached by a run with nobody present")
 	}
 	attached := computing.AttachedComputers()
 	if len(attached) == 0 {
@@ -348,11 +351,13 @@ func putOnComputer(ctx context.Context, run tools.Run, attached tools.Computer, 
 // computerOverlay says which computers are attached, when any is.
 func computerOverlay(ctx context.Context) string {
 	run := tools.MustRun(ctx)
-	if run.Headless() {
-		return ""
-	}
 	computing, ok := run.(tools.Computing)
 	if !ok || !computing.ComputersAllowed() {
+		return ""
+	}
+	// A run that cannot reach a computer is not told one is attached: it
+	// would only spend a call finding out it may not.
+	if run.Headless() && !computing.ComputersUnattended() {
 		return ""
 	}
 	attached := computing.AttachedComputers()

@@ -346,12 +346,22 @@ only thing it removes is a page that never said anything at all.
 Every call a dream makes to a model is a turn of the conversation loop
 (`docs/subsystems/the-ask-loop.md`), in a run conversation of its own,
 tagged with the dream's job: a batch of documents read, a month written up,
-a page divided, a walk judged. The turn is read-only and may reach the
-`memory` and `knowledge` tools, so the model can look a page up before it
-files to it or read a document whole when its first passage is not enough;
-what it changes it changes through the object it ends with, which the code
-files with its evidence. `limits.maxRoundsPerDream` (three by default) is
-how many times one call may go back to the model. The dream log's Open
+a page divided, a walk judged. A call that has to decide where something
+goes — the reading, and the filing of orphans — is given every tool the
+person has, their attached computer among them, so it can look a page up,
+read a document whole, or find a file and run something over it before it
+answers; the owner accepted the risk that carries for a run nobody is
+watching. A call that answers from its prompt is given none, and stays
+read-only. Nobody is there to confirm anything, so a call that would raise
+a confirmation card — anything destructive, anything that leaves the
+server — is refused, and the night is asked to say what it would have
+done. What it changes in the graph it still changes through the object it
+ends with, which the code files with its evidence: not a permission it
+lacks, but the only filing that keeps a fact attached to its source and a
+move a proposal. `limits.maxRoundsPerDream` (twelve by default, because
+finding a file, running something over it and answering is three rounds
+before the answer) is how many times one call may go back to the model.
+The dream log's Open
 button on the agent page shows that dream's runs in the activity table, and
 `teanode agent dream runs <id>` lists them for `teanode agent run show`.
 

@@ -371,16 +371,43 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 	})
 }
 
-// dreamTools is what one call of a dream may reach: the graph, to look a
-// page up before filing to it, and the sources, to read a document whole
-// when its first passage is not enough. Read-only: what a dream changes
-// it changes in code, from the object the call ends with, so that every
-// fact keeps its evidence and every move stays a proposal.
-var dreamTools = map[string]bool{"memory": true, "knowledge": true}
+// lookupTools is the pair a call reaches when all it needs is to look
+// something up: the graph, to find a page before filing to it, and the
+// sources, to read a document whole when its first passage is not enough.
+// Nothing here changes anything, which is why a call given this set can
+// be read-only as well.
+//
+// This is what describing a checkout gets. The night itself gets
+// everyTool; the two are named apart so that a call site says which it
+// is asking for.
+var lookupTools = map[string]bool{"memory": true, "knowledge": true}
 
-// dreamFrame is what every call of a dream is told first: the tools are
-// for looking, and what should change goes in the object at the end.
-const dreamFrame = "You are working through your own memory with nobody present. The memory and knowledge tools are read-only in this run: use `get` and `search` to look a page up, never `note`, `page`, `link`, `move`, `merge` or `forget` -- every change you want is said in the object you end with, and code makes it with its evidence. When several pages need looking up, look them all up in one `batch` call of up to eight `get` and `search` items rather than one call at a time; one such call, at most two, then answer with the object."
+// everyTool is what a call of the night reaches: all of them, including
+// the person's own computer where they have attached one.
+//
+// Nil is how the loop is told not to filter by name (see AskSettings.Allow),
+// so this is a nil map rather than a list that would have to be kept in
+// step with the catalog.
+//
+// The night was refused `shell` and `filesystem` when the devices were
+// first wired up, on the grounds that an unattended run which can execute
+// programs on somebody's machine is a different risk from a conversation
+// they are watching. That reasoning is in
+// docs/planning/active/20260918-what-was-attached.md and it still holds;
+// the owner read it and accepted the risk, so preparation no longer has to
+// happen in a records script before the night can use what it prepared.
+// What still stands between the night and the grave shapes is the
+// confirmation card: a call that needs the person's word is refused
+// outright when nobody is there to give it.
+var everyTool map[string]bool
+
+// dreamFrame is what every call of a dream is told first: it has the
+// person's tools and may use them, and the one thing it still does not do
+// by hand is change the graph -- not because it lacks the permission, but
+// because a change made through the object the call ends with is filed by
+// code together with the evidence it came from, which is what keeps a
+// fact attached to its source and a move a proposal the person can refuse.
+const dreamFrame = "You are working through your own memory with nobody present. You have the person's own tools here, their computer among them where they have attached one: read a file, run something over it, look at what came back, the same as you would in a conversation with them. Nobody is there to be asked, so a call that would need their word comes back refused; say in your answer what you would have done rather than looking for another way to do it. Changes to the graph are the one thing you never make by hand: not `note`, `page`, `link`, `move`, `merge` or `forget`. Every change you want is said in the object you end with, and code files it with the evidence it came from, so that a fact keeps its source and a move stays a proposal the person can refuse. Use `get` and `search` freely to look a page up first, and when several need looking up, look them all up in one `batch` call of up to eight items rather than one call at a time. Then answer with the object."
 
 // dreamThink is one call of a dream as a run of the loop, titled by what
 // it is doing, on the scan model, with what it cost taken off the
@@ -412,13 +439,16 @@ func (self *Agent) dreamThought(ctx context.Context, run *Run, budget *dreamBudg
 // settled here exactly as it is for a call in words, which is what makes
 // a night that has spent its share stop looking at pictures too.
 func (self *Agent) dreamThoughtAbout(ctx context.Context, run *Run, budget *dreamBudget, title, prompt string, pictures []llm.ContentPart, lookups bool) (*thought, error) {
-	tools, rounds := noTools, 1
+	// A call with nothing to look up answers from its prompt, so it keeps
+	// the read-only turn it always had; there is nothing for a tool to do
+	// in it and no reason to offer one.
+	tools, rounds, think := noTools, 1, self.thinkAbout
 	if lookups {
 		// Said before the prompt, because the memory tool's own
 		// description invites the model to note what it learns, and a
 		// dream that tried to note ran out of rounds refused and never
 		// answered.
-		tools, rounds = dreamTools, roundsFor(run.Configuration(), models.AgentJobDream)
+		tools, rounds, think = everyTool, roundsFor(run.Configuration(), models.AgentJobDream), self.thinkAboutFreely
 		prompt = dreamFrame + "\n\n" + prompt
 	}
 	// Claimed before the call and settled after. A check that stands on
@@ -428,7 +458,7 @@ func (self *Agent) dreamThoughtAbout(ctx context.Context, run *Run, budget *drea
 	if !budget.reserve() {
 		return nil, errNothingLeftToSpend
 	}
-	thinking, err := self.thinkAbout(ctx, run, title, prompt, pictures, tools, rounds, models.AgentJobDream, config.AgentWorkScan)
+	thinking, err := think(ctx, run, title, prompt, pictures, tools, rounds, models.AgentJobDream, config.AgentWorkScan)
 	usage := llm.Usage{}
 	if thinking != nil {
 		usage = thinking.Usage

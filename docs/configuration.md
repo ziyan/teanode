@@ -1327,9 +1327,14 @@ the model.
 
 **`maxRoundsPerDream`** — How many turns one call of a dream may take: a
 batch of documents read, a month written up, a page divided. Each is a run
-of the conversation loop that may look a page up with the memory tool before
-it answers; four by default, the last of which is told it is the last and
-must answer.
+of the conversation loop, and the ones that decide where something goes have
+every tool the person has — including their attached computer — so a call may
+look a page up, find a file and run something over it before it answers.
+Twelve by default, the last of which is told it is the last and must answer.
+It was four while a night could only look a page up; four left nothing for
+the answer once the smallest useful errand on a machine took three rounds.
+Setting it puts the pacing back wherever an operator wants it, and it also
+bounds the call that describes an indexed checkout.
 
 **`maxRoundsPerReply`** — How many turns a drafting run may take. A reply is a
 run of the conversation loop now, with the thread, the mailbox, the address

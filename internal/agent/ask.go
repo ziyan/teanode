@@ -449,6 +449,19 @@ func (self *AskRun) AttachedComputers() []tools.Computer {
 func (self *AskRun) ComputersAllowed() bool {
 	return FeatureAllowed(self.agent.settings.Configuration(), "computer")
 }
+
+// ComputersUnattended is the night, and nothing else.
+//
+// Every other run with nobody present is refused the machine, because the
+// confirmation card is what stands between the agent and the shapes that
+// cannot be taken back, and a card cannot be shown to an empty room. The
+// owner read that reasoning and accepted the risk for the night alone, so
+// it is named here rather than inferred from the shape of the settings:
+// widening it to scheduled turns or goals is a decision somebody should
+// have to make on purpose.
+func (self *AskRun) ComputersUnattended() bool {
+	return self.settings.Surface == string(models.AgentJobDream)
+}
 func (self *AskRun) DraftReply(ctx context.Context, request *models.AgentDraftRequest) (*models.AgentDraft, error) {
 	return self.agent.DraftReply(ctx, request)
 }
@@ -685,6 +698,13 @@ func (self *AskRun) turn() error {
 	// a switched-off family is not in the catalog the model is shown. And
 	// while a computer is attached they are in the round from the start,
 	// not behind tool_search: the person attached it to be used.
+	//
+	// A run with nobody present gets them from the start too, but only
+	// where it was given every tool -- an Allow of nil. A headless run
+	// handed a named set never had the computer in the first place, so
+	// nothing is loosened for it; the night, which now has everything,
+	// would otherwise spend one of its rounds discovering through
+	// tool_search that a machine it may use is attached.
 	if !FeatureAllowed(configuration, "computer") {
 		withoutComputer := self.offered[:0:0]
 		for _, tool := range self.offered {
@@ -693,7 +713,7 @@ func (self *AskRun) turn() error {
 			}
 		}
 		self.offered = withoutComputer
-	} else if len(self.AttachedComputers()) > 0 && !settings.Headless {
+	} else if len(self.AttachedComputers()) > 0 && (!settings.Headless || settings.Allow == nil) {
 		for _, tool := range self.offered {
 			if tool.Family == FamilyComputer {
 				self.loaded[tool.Name] = true

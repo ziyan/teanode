@@ -157,6 +157,11 @@ the dream's phases, the description of a checkout, a conversation's title,
 the compaction note and the composer's draft all go through `think` in
 `internal/agent/thinking.go`: a headless, read-only turn in a run
 conversation of its own, with a named set of tools and a cap on rounds.
+The night is the one exception, through `thinkAboutFreely`: its reading and
+its filing of orphans get every tool and may change things, which the owner
+decided on. Read-only is still the rule for everything else here, and
+nothing unattended can be confirmed, so a call that would raise a card is
+refused whichever way it was asked for.
 `AskSettings.Work` names the kind of work, which chooses the model
 (`Models.ForWork`) and the name on the usage rows; a call that needs no
 tools passes an empty allow set and one round, which is `oneShot`. The

@@ -17,6 +17,13 @@ type Computing interface {
 	// ComputersAllowed says whether the operator lets people attach a
 	// computer.
 	ComputersAllowed() bool
+
+	// ComputersUnattended says a run with nobody present may reach one
+	// anyway. It is false for almost everything: the confirmation card is
+	// what stands between the agent and the grave shapes, and a run
+	// nobody is watching cannot be shown one. The night is the exception
+	// the owner decided on.
+	ComputersUnattended() bool
 }
 
 // Computer is the attached computer as a tool reaches it: a request sent

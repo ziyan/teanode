@@ -16,8 +16,11 @@ import (
 type fakeRun struct {
 	tools.Run
 	headless bool
-	computer tools.Computer
-	config   *config.Configuration
+	// unattended is a run with nobody present that may reach the machine
+	// anyway: the night, which the owner decided should have it.
+	unattended bool
+	computer   tools.Computer
+	config     *config.Configuration
 }
 
 func (self *fakeRun) AttachedComputers() []tools.Computer {
@@ -30,6 +33,7 @@ func (self *fakeRun) AttachedComputers() []tools.Computer {
 func (self *fakeRun) Headless() bool                       { return self.headless }
 func (self *fakeRun) Configuration() *config.Configuration { return self.config }
 func (self *fakeRun) ComputersAllowed() bool               { return true }
+func (self *fakeRun) ComputersUnattended() bool            { return self.unattended }
 func (self *fakeRun) Offered() []*tools.Tool               { return nil }
 
 type fakeComputer struct {
@@ -87,6 +91,17 @@ func TestShellReachesTheComputerAndRefusesWhatWouldDestroyIt(t *testing.T) {
 	}
 	if _, err := shell.Run(tools.WithRun(context.Background(), &fakeRun{config: configuration}), &tools.Call{Arguments: json.RawMessage(`{"command":"ls"}`)}); err == nil || !strings.Contains(err.Error(), "teanode computer start") {
 		t.Fatalf("none attached: %v", err)
+	}
+	// Except for the run the owner said may: the night runs with nobody
+	// present and reaches the machine anyway, and the overlay tells it
+	// which machine it has.
+	night := &fakeRun{headless: true, unattended: true, computer: attached, config: configuration}
+	nightly := tools.WithRun(context.Background(), night)
+	if result, err := shell.Run(nightly, &tools.Call{Arguments: json.RawMessage(`{"command":"echo hi"}`)}); err != nil || !strings.Contains(result.Content, "hi") {
+		t.Fatalf("the night reaches it: %+v %v", result, err)
+	}
+	if overlay := shell.Overlay(nightly); !strings.Contains(overlay, `"laptop" (linux)`) {
+		t.Fatalf("and is told what is attached: %q", overlay)
 	}
 	if overlay := shell.Overlay(ctx); !strings.Contains(overlay, `"laptop" (linux)`) || !strings.Contains(overlay, "/home/alice") {
 		t.Fatalf("overlay %q", overlay)
