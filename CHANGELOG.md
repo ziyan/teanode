@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.40.8] - 2026-09-19
+
+### Changed
+
+- The Knowledge page's search box and the three ways into what your agent
+  knows share one row, the way the mail list does. (#146)
+
 ## [0.40.7] - 2026-09-19
 
 ### Changed
