@@ -1585,3 +1585,207 @@ func TestThePaceOfTheHistoryIsTheSourcesToChoose(t *testing.T) {
 		t.Errorf("and the oldest waits for a later pass: %v", commits)
 	}
 }
+
+// One commit is a visit and not authorship. A checkout whose history is
+// somebody else's, with one fix of the person's in it, is somebody
+// else's checkout and its files are not read; a small repository that is
+// genuinely theirs still is.
+//
+// The rule used to be any commit at all, and one drive-by commit
+// defeated it. Over the tree it was measured on, 59 checkouts holding
+// exactly one commit of the person's admitted 129,306 files, 39% of
+// everything the source read, the largest of them a fork of linux-stable
+// admitting 70,766 files on the strength of one.
+func TestOneCommitInSomebodyElsesHistoryIsNotTheirWork(t *testing.T) {
+	root := t.TempDir()
+	// Theirs: small, and every commit in it is their own.
+	portal := filepath.Join(root, "portal")
+	checkoutBy(t, portal, "alice@example.com", map[string]string{
+		"main.go":   "package main\n",
+		"README.md": "A management plane for the machines in the workshop.\n",
+	})
+	commitTo(t, portal, "alice@example.com", "the second", map[string]string{"serve.go": "package main\n"})
+	commitTo(t, portal, "alice@example.com", "the third", map[string]string{"serve_test.go": "package main\n"})
+
+	// Somebody else's, with one fix of theirs in it.
+	engine := filepath.Join(root, "engine")
+	checkoutBy(t, engine, "somebody@example.net", map[string]string{
+		"engine.c":  "int main(void) { return 0; }\n",
+		"README.md": "An engine somebody else wrote, cloned to build once.\n",
+	})
+	for _, message := range []string{"the second", "the third", "the fourth"} {
+		commitTo(t, engine, "somebody@example.net", message,
+			map[string]string{"render.c": "void render(void) {} // " + message + "\n"})
+	}
+	commitTo(t, engine, "alice@example.com", "fix the one line that would not build",
+		map[string]string{"engine.c": "int main(void) { return 1; }\n"})
+
+	files, checkouts, result := scanOfTree(t, root, &ScanArguments{OwnAddresses: []string{"alice@example.com"}})
+
+	for _, name := range []string{"portal/main.go", "portal/serve.go", "portal/serve_test.go"} {
+		if !files[name] {
+			t.Fatalf("%q is in a small repository of theirs and was not offered: %v", name, files)
+		}
+	}
+	for name := range files {
+		if strings.HasPrefix(name, "engine/") {
+			t.Fatalf("%q is somebody else's source, on the strength of one commit, and was offered: %v", name, files)
+		}
+	}
+	if profile := checkouts["engine"]; profile == nil || profile.Commits == 0 {
+		t.Fatalf("the checkout is still offered with what git says about it: %+v", profile)
+	}
+	if result.CheckoutsKeptToProfile != 1 {
+		t.Fatalf("one checkout was kept to its profile, not %d", result.CheckoutsKeptToProfile)
+	}
+}
+
+// What it takes for a checkout to be theirs, over histories too long to
+// build a commit at a time.
+//
+// The profile is what the walk would have handed over, so the bar itself
+// is what is under test here and not git: a fork of linux-stable really
+// does hold one and a half million commits, and a test that made them
+// would be a test of nothing.
+func TestWhatItTakesForACheckoutToBeTheirs(t *testing.T) {
+	alice := func(commits int) ScanAuthor {
+		return ScanAuthor{Name: "Alice", Address: "alice@example.com", Commits: commits}
+	}
+	aliceAtWork := func(commits int) ScanAuthor {
+		return ScanAuthor{Name: "Alice", Address: "alice@example.net", Commits: commits}
+	}
+	somebody := func(commits int) ScanAuthor {
+		return ScanAuthor{Name: "Somebody", Address: "somebody@example.net", Commits: commits}
+	}
+	for _, item := range []struct {
+		what    string
+		profile RepositoryProfile
+		atLeast int
+		theirs  bool
+	}{{
+		what:    "a fork of linux-stable with one drive-by fix of theirs in it",
+		profile: RepositoryProfile{Commits: 1445801, Authors: []ScanAuthor{somebody(1445800), alice(1)}},
+	}, {
+		what:    "a fork of opencv parked in a build tree, with four of theirs in it",
+		profile: RepositoryProfile{Commits: 23428, Authors: []ScanAuthor{somebody(23424), alice(4)}},
+	}, {
+		what:    "a checkout they have never committed to at all",
+		profile: RepositoryProfile{Commits: 900, Authors: []ScanAuthor{somebody(900)}},
+	}, {
+		what:    "a repository of theirs with three commits in it",
+		profile: RepositoryProfile{Commits: 3, Authors: []ScanAuthor{alice(3)}},
+		theirs:  true,
+	}, {
+		what:    "a repository of three commits they wrote two of",
+		profile: RepositoryProfile{Commits: 3, Authors: []ScanAuthor{alice(2), somebody(1)}},
+		theirs:  true,
+	}, {
+		what:    "a project started last week, initialized and committed once",
+		profile: RepositoryProfile{Commits: 1, Authors: []ScanAuthor{alice(1)}},
+		theirs:  true,
+	}, {
+		what:    "a monorepo they are one of three hundred people on",
+		profile: RepositoryProfile{Commits: 50000, Authors: []ScanAuthor{somebody(49600), alice(400)}},
+		theirs:  true,
+	}, {
+		what:    "a history they committed to from two machines under two addresses",
+		profile: RepositoryProfile{Commits: 10, Authors: []ScanAuthor{somebody(8), alice(1), aliceAtWork(1)}},
+		theirs:  true,
+	}, {
+		what:    "a checkout git could not read, which is not the same as somebody else's",
+		profile: RepositoryProfile{},
+		theirs:  true,
+	}, {
+		what:    "the source asking for the rule this replaced: any commit at all",
+		profile: RepositoryProfile{Commits: 1445801, Authors: []ScanAuthor{somebody(1445800), alice(1)}},
+		atLeast: 1,
+		theirs:  true,
+	}, {
+		what:    "and the source asking for more than the program would",
+		profile: RepositoryProfile{Commits: 30, Authors: []ScanAuthor{somebody(25), alice(5)}},
+		atLeast: 10,
+	}, {
+		what:    "which still cannot ask for more commits than the history holds",
+		profile: RepositoryProfile{Commits: 3, Authors: []ScanAuthor{alice(3)}},
+		atLeast: 10,
+		theirs:  true,
+	}} {
+		profile := item.profile
+		cloned := checkoutsNotTheirs(
+			map[string]*RepositoryProfile{"checkout": &profile},
+			&ScanArguments{
+				OwnAddresses:      []string{"alice@example.com", "alice@example.net"},
+				OwnCommitsAtLeast: item.atLeast,
+			})
+		if theirs := !cloned["checkout"]; theirs != item.theirs {
+			t.Errorf("%s: theirs=%t, wanted %t (the bar was %d commits)",
+				item.what, theirs, item.theirs, ownCommitsNeeded(profile.Commits, item.atLeast))
+		}
+	}
+}
+
+// A file deleted between two pages does not take the rest of the tree
+// with it.
+//
+// The cursor names the last file a page sent, and the page after it used
+// to look for that file and start once it had found it. A person goes on
+// working while a pass runs: they delete the file, the next page never
+// finds it, offers nothing, and comes back with no cursor -- which the
+// server reads as a pass that finished. The sweep that follows a
+// finished pass deletes every document the pass did not name, so one
+// `git rm` between two pages deleted every document sorting after that
+// path.
+func TestAFileDeletedBetweenPagesDoesNotEndThePass(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	for index := 0; index < 8; index++ {
+		name := fmt.Sprintf("note%d.txt", index)
+		if err := os.WriteFile(filepath.Join(root, name), []byte("note number "+name), 0o600); err != nil {
+			t.Fatalf("WriteFile: %s", err)
+		}
+	}
+	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
+	if _, err := AllowScanRoot(options, root); err != nil {
+		t.Fatalf("AllowScanRoot: %s", err)
+	}
+
+	seen := map[string]int{}
+	after, deleted := "", ""
+	for page := 0; page < 50; page++ {
+		result, err := RunScan(context.Background(), options, &ScanArguments{Root: root, Most: 2, After: after})
+		if err != nil {
+			t.Fatalf("RunScan: %s", err)
+		}
+		for _, entry := range result.Entries {
+			seen[entry.ExternalID]++
+		}
+		if result.Next == "" {
+			break
+		}
+		after = result.Next
+		if deleted == "" {
+			// The file the cursor names is gone by the time the next
+			// page asks for it, which is the whole of the bug.
+			deleted = cursorOfPass(after).File
+			if deleted == "" {
+				t.Fatalf("the first page left a cursor naming a file: %q", after)
+			}
+			if err := os.Remove(filepath.Join(root, deleted)); err != nil {
+				t.Fatalf("Remove: %s", err)
+			}
+		}
+	}
+	if deleted == "" {
+		t.Fatalf("the tree was meant to take more than one page")
+	}
+	for index := 0; index < 8; index++ {
+		name := fmt.Sprintf("note%d.txt", index)
+		if name == deleted {
+			continue
+		}
+		if seen[name] != 1 {
+			t.Fatalf("%s was offered %d times and not once, so the pass that finished would have swept it: %v",
+				name, seen[name], seen)
+		}
+	}
+}

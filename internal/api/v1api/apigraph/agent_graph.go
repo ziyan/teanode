@@ -324,14 +324,20 @@ type SaveAgentKnowledgeSourceArguments struct {
 	MaxAttachmentBytes *int64 `json:"maxAttachmentBytes" graphapi:"nullable"`
 
 	// ReadEveryCheckout reads the files of every checkout under this
-	// source, including the ones the person has never committed to. Not
-	// given leaves it alone.
+	// source, including the ones barely any of whose history is the
+	// person's own work. Not given leaves it alone.
 	ReadEveryCheckout *bool `json:"readEveryCheckout" graphapi:"nullable"`
 
 	// CommitsPerPass is how many commits one pass over this source's
 	// tree carries. Not given leaves it alone; zero puts it back to the
 	// pace the program on the machine reads at.
 	CommitsPerPass *int `json:"commitsPerPass" graphapi:"nullable"`
+
+	// OwnCommitsAtLeast is the fewest commits of the person's own a
+	// checkout under this source must hold before its files are read.
+	// Not given leaves it alone; zero puts it back to the floor the
+	// program on the machine reads at.
+	OwnCommitsAtLeast *int `json:"ownCommitsAtLeast" graphapi:"nullable"`
 }
 
 type DeleteAgentKnowledgeSourceArguments struct {
@@ -1680,6 +1686,12 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 			return nil, fmt.Errorf("the commits one pass carries cannot be negative; zero is the pace the program on the machine reads at")
 		}
 		source.Specification.CommitsPerPass = *arguments.CommitsPerPass
+	}
+	if arguments.OwnCommitsAtLeast != nil {
+		if *arguments.OwnCommitsAtLeast < 0 {
+			return nil, fmt.Errorf("the commits of your own a checkout needs cannot be negative; zero is the floor the program on the machine reads at")
+		}
+		source.Specification.OwnCommitsAtLeast = *arguments.OwnCommitsAtLeast
 	}
 	if arguments.RootPath != "" {
 		source.RootPath = models.NormalizePath(arguments.RootPath)

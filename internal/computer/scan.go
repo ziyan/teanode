@@ -90,6 +90,37 @@ const (
 	scanCommitsPerPass = 2000
 	scanDiffBytes      = 4000
 
+	// scanOwnCommitsAtLeast, scanOwnCommitsOneIn and scanOwnCommitsEnough
+	// are the bar a checkout's history has to clear before its files are
+	// read: at least this many commits of the person's own, and at least
+	// one commit in this many of the log, up to a number of commits that
+	// is their work whatever the log's length. ownCommitsNeeded puts the
+	// three together.
+	//
+	// The bar used to be a single commit. That is not authorship, it is
+	// a visit, and it let back in exactly what the rule was written to
+	// keep out: over the tree this was measured on, 59 checkouts holding
+	// one commit of the person's admitted 129,306 files, 39% of
+	// everything read. The largest was a fork of linux-stable -- 70,766
+	// files on the strength of one commit -- and after it a fork of
+	// opencv at 7,236, also one. 72% of all the files read sat in a
+	// directory no commit of theirs had ever touched.
+	//
+	// A share and not just a count, because two or three commits in a
+	// kernel is the same visit twice. A count and not just a share,
+	// because a repository of theirs with three commits in it is
+	// theirs -- and because somebody on a large team owns their
+	// monorepo at half a percent of its log. So the share is capped:
+	// past scanOwnCommitsEnough commits of their own, how long the log
+	// is stops mattering.
+	//
+	// The bar is never more than the whole history either, so a
+	// checkout every commit of which is theirs always clears it. See
+	// ownCommitsNeeded, which is where the three meet.
+	scanOwnCommitsAtLeast = 2
+	scanOwnCommitsOneIn   = 50
+	scanOwnCommitsEnough  = 25
+
 	// scanCommitShare is how much of a page the history has: one entry
 	// in every eight, so a page is mostly files with a few commits
 	// beside them.
@@ -203,6 +234,18 @@ type ScanArguments struct {
 	// source's own setting, for somebody who does want a dependency's
 	// source read.
 	ReadEveryCheckout bool `json:"readEveryCheckout,omitempty"`
+
+	// OwnCommitsAtLeast is how many commits of the person's own a
+	// checkout's history must hold before its files are read, whatever
+	// the length of that history. Zero -- an older server, or a source
+	// that says nothing -- is the bar ownCommitsNeeded works out, which
+	// climbs with the log.
+	//
+	// Said by the server, for the same reason as the bound above: what
+	// counts as somebody's own work is an argument to have on the
+	// source, not one settled by which release of this program they
+	// happen to be running.
+	OwnCommitsAtLeast int `json:"ownCommitsAtLeast,omitempty"`
 
 	// CommitsPerPass is how many commits one pass over this tree
 	// offers, over all the checkouts in it. Zero -- an older server,
@@ -668,15 +711,9 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 	}
 
 	// Then the files, from where the last page stopped.
-	started, sent, moreFiles := where.File == "", where.File, false
+	sent, moreFiles := where.File, false
 	if !where.PastTheFiles {
-		for _, relative := range paths {
-			if !started {
-				if relative == where.File {
-					started = true
-				}
-				continue
-			}
+		for _, relative := range paths[afterTheCursor(paths, where.File):] {
 			if len(result.Entries) >= most || carried >= scanPageBytes {
 				// Out of room, and the cursor is left naming the last
 				// file sent rather than this one, which there was none
@@ -788,20 +825,68 @@ func withoutIgnoredDirectories(paths []string) []string {
 	return kept
 }
 
+// ownCommitsNeeded is how many commits of the person's own a checkout
+// whose history is this long must hold for its files to be read.
+//
+// One number carrying the whole bar, so that the setting on the source
+// is one number too. Left to itself it is two until the log is long
+// enough that a fiftieth of it is more, and it stops climbing at
+// scanOwnCommitsEnough: past that many commits of their own, the length
+// of the log does not come into it, because somebody on a large team
+// owns their monorepo at half a percent of its history.
+//
+// Never more than the history itself. A checkout every commit of which
+// is theirs is theirs, and the count does not come into that either: a
+// project started last week, initialized and committed once, is not
+// somebody else's code because it has been committed to once. Five such
+// checkouts on the tree this was measured on -- 638 files of nobody
+// else's work -- would have gone out with the bathwater otherwise.
+//
+// What the rest of that tree says: a repository of theirs with three
+// commits needs two and is theirs; a fork of linux-stable with a million
+// commits needs twenty-five, and one drive-by fix does not buy its
+// 70,766 files; a fork of opencv parked in the same build tree, four
+// commits of theirs in twenty-three thousand, needs twenty-five and does
+// not buy its 7,236 either.
+//
+// What the source says, it says outright. A number set there is the bar,
+// flat, with no share added to it -- otherwise it would not be a
+// setting, it would be a suggestion the program could overrule on any
+// checkout long enough. One is then the rule this replaced, exactly: any
+// commit at all, and the files are read.
+func ownCommitsNeeded(commits, said int) int {
+	needed := said
+	if needed <= 0 {
+		needed = max(min(commits/scanOwnCommitsOneIn, scanOwnCommitsEnough), scanOwnCommitsAtLeast)
+	}
+	return min(needed, commits)
+}
+
 // checkoutsNotTheirs is the directories of this tree holding a checkout
-// the person has never committed to: somebody else's code, sitting
-// wherever they happened to park it.
+// that is not the person's work: somebody else's code, sitting wherever
+// they happened to park it.
 //
 // The evidence is what the scan already gathers. A profile carries every
-// address in a checkout's history, and the server says which addresses
-// are the person's; a history with none of them in it is not their work,
-// whatever the directory is called and whatever the thing is. There is no
-// list of names here, of projects or of directories, and there must not
-// be one: such a list can only hold the cases somebody thought of, and
-// the ones it misses are exactly the ones that cost -- on one deployment
-// a single source held 32,535 files of which more than half were under
-// three checkouts nobody there had ever committed to, and the agent spent
-// its nights learning somebody else's source line by line.
+// address in a checkout's history and how many commits each one has, and
+// the server says which addresses are the person's; a history that holds
+// too few of theirs to be their work is not their work, whatever the
+// directory is called and whatever the thing is. There is no list of
+// names here, of projects or of directories, and there must not be one:
+// such a list can only hold the cases somebody thought of, and the ones
+// it misses are exactly the ones that cost -- on one deployment a single
+// source held 32,535 files of which more than half were under three
+// checkouts nobody there had ever committed to, and the agent spent its
+// nights learning somebody else's source line by line.
+//
+// How few is too few is ownCommitsNeeded. It was one commit, and one
+// commit is a visit: the same tree that this rule cleared of the
+// checkouts nobody had touched was still reading a whole kernel on the
+// strength of a single drive-by fix.
+//
+// Every address of theirs in the history counts towards the same total.
+// A person commits from a laptop and from a work machine under two
+// addresses, both on the card they marked as themselves, and their work
+// is the sum of the two and not the larger half of it.
 //
 // Not knowing keeps the files. No addresses from the server, a checkout
 // git cannot read, a checkout with no commits in it at all: every one of
@@ -825,14 +910,13 @@ func checkoutsNotTheirs(profiles map[string]*RepositoryProfile, arguments *ScanA
 		if profile == nil || len(profile.Authors) == 0 {
 			continue
 		}
-		theirs := false
+		theirs := 0
 		for _, author := range profile.Authors {
-			if own[strings.ToLower(strings.TrimSpace(author.Address))] {
-				theirs = true
-				break
+			if own[strings.ToLower(strings.TrimSpace(author.Address))] && author.Commits > 0 {
+				theirs += author.Commits
 			}
 		}
-		if !theirs {
+		if theirs < ownCommitsNeeded(profile.Commits, arguments.OwnCommitsAtLeast) {
 			cloned[directory] = true
 		}
 	}
@@ -1469,6 +1553,30 @@ func (self scanCursor) next() string {
 	return self.File + historyMark + self.Commit
 }
 
+// afterTheCursor is where in a sorted manifest the next page begins: the
+// first path sorting after the one the last page named.
+//
+// The first path *after* it, and not the cursor itself. The cursor names
+// a file that was read on the last page, and between two pages a person
+// goes on working: the file is renamed, or moved, or deleted. A resume
+// that looked for the cursor and started once it had found it never
+// started at all when it was gone -- the page offered nothing, Next came
+// back empty, and the pass therefore "finished". The sweep that follows
+// a finished pass takes everything the pass did not name as gone, so one
+// file deleted between two pages deleted every document sorting after it
+// on the way out. A whole tree could go for one `git rm`.
+//
+// A search and not a walk. The manifest is sorted, and a tree of three
+// hundred thousand files is paged a couple of hundred at a time, so
+// scanning up to the cursor is a walk over the whole manifest on every
+// one of the fifteen hundred pages a pass takes.
+func afterTheCursor(paths []string, cursor string) int {
+	if cursor == "" {
+		return 0
+	}
+	return sort.Search(len(paths), func(index int) bool { return paths[index] > cursor })
+}
+
 // pastTheFiles says whether a cursor has left the files behind and is
 // in the history alone.
 func pastTheFiles(after string) bool {
@@ -1546,7 +1654,7 @@ func commitBudget(arguments *ScanArguments) int {
 //
 // Somebody else's checkout gets nothing. Its history is their work as
 // much as its files are, which is what
-// docs/decisions/20260918-a-checkout-with-none-of-your-commits-is-somebody-elses.md
+// docs/decisions/20260918-a-checkout-that-is-barely-yours-is-somebody-elses.md
 // settled; until now that held only because nothing read a nested
 // checkout's history at all.
 //

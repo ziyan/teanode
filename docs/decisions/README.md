@@ -62,12 +62,13 @@ own computer beside the attached tab: reached through a program they run,
 signed in as them, only while they talk. Its narrative is
 `docs/planning/active/20260911-personal-devices.md`.
 
-`20260918-a-checkout-with-none-of-your-commits-is-somebody-elses.md` says
-what a source reads of a folder of checkouts: the ones the person has
-committed to, in full, and the ones they only cloned as a profile and
-nothing more. It also says why that is decided from whose commits are in a
-checkout rather than from a list of names, and why the device applies it
-while the server supplies it.
+`20260918-a-checkout-that-is-barely-yours-is-somebody-elses.md` says
+what a source reads of a folder of checkouts: the ones a share of whose
+history is the person's own, in full, and the rest as a profile and
+nothing more. It also says why that is decided from how much of a
+checkout's history is theirs rather than from a list of names, why one
+commit is not enough of it, and why the device applies the rule while the
+server supplies it.
 
 `20260918-the-history-is-part-of-the-manifest.md` says how the commits of
 those checkouts reach the graph: in the same sequence of pages as the

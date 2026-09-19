@@ -215,8 +215,9 @@ func newAgentKnowledgeCommand() *cli.Command {
 					&cli.StringFlag{Name: "cron", Usage: "how often to read it, five fields in your zone"},
 					&cli.StringFlag{Name: "format", Usage: "files, journal or records"},
 					&cli.StringFlag{Name: "mailbox", Usage: "for a sent source: which mailbox"},
-					&cli.BoolFlag{Name: "read-every-checkout", Usage: "read the files of checkouts you have never committed to, not only their profile"},
+					&cli.BoolFlag{Name: "read-every-checkout", Usage: "read the files of checkouts barely any of which is your work, not only their profile"},
 					&cli.IntFlag{Name: "commits-per-pass", Usage: "how many commits one pass over the tree carries, shared among its checkouts; 0 is the program's own pace"},
+					&cli.IntFlag{Name: "own-commits-at-least", Usage: "how many commits of your own a checkout needs before its files are read, however long its history; 0 lets the program work it out, which asks more of a long one"},
 				},
 				Action: runKnowledgeSet,
 			},
@@ -831,15 +832,15 @@ func knowledgeSourceRow(source *client.AgentKnowledgeSource) []string {
 			"; none of them is you — teanode contact me <id>"
 	}
 	// Then what it read less of than the path it was given: the checkouts
-	// under it nobody here has ever committed to, kept to what git says
-	// about them. Said with the way to disagree, because a program that
-	// quietly reads less than it was pointed at is one nobody can argue
-	// with.
+	// under it too little of whose history is the person's own, kept to
+	// what git says about them. Said with the way to disagree, because a
+	// program that quietly reads less than it was pointed at is one
+	// nobody can argue with.
 	if note == "" && source.CheckoutsKeptToProfile > 0 {
 		note = plural(source.CheckoutsKeptToProfile, "checkout", "checkouts") +
-			" you have never committed to: kept to their profile, " +
+			" barely any of which is your work: kept to their profile, " +
 			plural(source.FilesKeptToProfile, "file", "files") +
-			" not read — set --read-every-checkout to read them"
+			" not read — --own-commits-at-least sets the bar, --read-every-checkout removes it"
 	}
 	return []string{
 		source.ID, source.Name, source.Kind, where, state,
@@ -1034,8 +1035,11 @@ func runKnowledgeSet(ctx context.Context, command *cli.Command) error {
 	if command.IsSet("commits-per-pass") {
 		fields["commitsPerPass"] = command.Int("commits-per-pass")
 	}
+	if command.IsSet("own-commits-at-least") {
+		fields["ownCommitsAtLeast"] = command.Int("own-commits-at-least")
+	}
 	if len(fields) == 1 {
-		return fmt.Errorf("what should change? --name, --path, --under, --cron, --format, --mailbox, --read-every-checkout or --commits-per-pass")
+		return fmt.Errorf("what should change? --name, --path, --under, --cron, --format, --mailbox, --read-every-checkout, --commits-per-pass or --own-commits-at-least")
 	}
 	changed, err := client.SaveAgentKnowledgeSource(ctx, connection, fields)
 	if err != nil {

@@ -42,7 +42,7 @@ pass does not have to reach the end in one page to offer any.
 Commits come from **every** checkout in the tree that is the person's own
 work, not from the outermost alone. An authorship map covering one
 repository is not a map. A checkout that
-`20260918-a-checkout-with-none-of-your-commits-is-somebody-elses.md`
+`20260918-a-checkout-that-is-barely-yours-is-somebody-elses.md`
 keeps to its profile gives no commits either: its history is somebody
 else's work as much as its files are.
 
