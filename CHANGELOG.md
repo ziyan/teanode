@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.39.1] - 2026-09-19
+
+### Fixed
+
+- A file your agent passed over at night now says so honestly. When the night can only open a few of the files it is shown at once and its list comes back full, the ones left over say that they were passed over rather than judged, and how many the night could take. They used to say the agent had weighed each one's name, size, kind and the words it came with and found it not worth opening, which had not happened. (#127)
+
 ## [0.39.0] - 2026-09-18
 
 ### Added
