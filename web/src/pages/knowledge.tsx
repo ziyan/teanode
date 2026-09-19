@@ -2011,7 +2011,16 @@ function AttachmentEvidence({ attachment }: { attachment: Attachment }) {
         <span className="muted">{t('knowledge.attachmentMissing', { name: attachment.name })}</span>
       ) : picture ? (
         <a href={attachment.path} target="_blank" rel="noreferrer" title={t('knowledge.attachmentOpen')}>
-          <img className="knowledge-attachment-image" src={attachment.path} alt={attachment.name} loading="lazy" />
+          {/* Loaded at once rather than lazily. A lazy picture is only
+              fetched when its box comes into view, and this box has no
+              size until the picture is in it: width and height are auto
+              under a max, so before the bytes arrive the element is three
+              pixels square, never intersects anything, and the picture is
+              never asked for. The result was a page of facts with a blank
+              where every screenshot should be. A page holds a bounded
+              number of facts, each with at most one picture drawn no
+              larger than 320 by 200, so there is little here to defer. */}
+          <img className="knowledge-attachment-image" src={attachment.path} alt={attachment.name} />
         </a>
       ) : (
         <a className="link" href={attachment.path} download={attachment.name}>
