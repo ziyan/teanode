@@ -332,8 +332,8 @@ type ScanResult struct {
 	// CheckoutsKeptToProfile is how many checkouts in this tree were kept
 	// to what git says about them, their files left unread, and
 	// FilesKeptToProfile how many files that was. Counted over the whole
-	// tree and said the same on every page, because the manifest is
-	// worked out afresh for each one.
+	// tree when the pass built its manifest, and said the same on every
+	// page of that pass.
 	//
 	// Reported rather than silent: this is the program declining to read
 	// something the person allowed it to read, and a person who disagrees
@@ -669,20 +669,18 @@ func ListScanRoots(options *Options) ([]string, error) {
 // checkout and reading its build output: on the maintainer's machine one
 // directory is seventy-two gigabytes of build trees around two
 // repositories whose sources are a few hundred megabytes.
+//
+// The manifest belongs to the pass and not to this page; see
+// scan_manifest.go for what that costs and what it saves.
 func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most int) (*ScanResult, error) {
 	result := &ScanResult{Extractors: availableExtractors()}
-	paths, profiles, err := listTree(ctx, root, arguments)
+	manifest, err := manifestOfPass(ctx, root, arguments)
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(paths)
-
-	// The checkouts here that are somebody else's work. Their profiles
-	// are still offered below -- the graph should know the checkout is
-	// there and roughly what it is -- and their files are not read.
-	cloned := checkoutsNotTheirs(profiles, arguments)
-	paths, result.FilesKeptToProfile = withoutTheFilesOf(paths, cloned, profiles)
-	result.CheckoutsKeptToProfile = len(cloned)
+	paths := manifest.Paths
+	result.FilesKeptToProfile = manifest.FilesKeptToProfile
+	result.CheckoutsKeptToProfile = manifest.CheckoutsKeptToProfile
 
 	where := cursorOfPass(arguments.After)
 	// carried is how much text this page holds so far. One large file
@@ -699,7 +697,7 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 	// pass still has to walk all of it.
 	moreHistory := false
 	if !where.HistoryDone {
-		commits, stoppedAt, more := readCommits(ctx, root, arguments, profiles, cloned, where.Commit, roomForHistory(most, where), carried)
+		commits, stoppedAt, more := readCommits(ctx, root, arguments, manifest, where.Commit, roomForHistory(most, where), carried)
 		for _, entry := range commits {
 			if entry.Refused != "" {
 				result.Refused++
@@ -708,6 +706,12 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 		}
 		result.Entries = append(result.Entries, commits...)
 		where.Commit, where.HistoryDone, moreHistory = stoppedAt, !more, more
+		if !more {
+			// The pass has offered all the history it is going to, and
+			// the hundreds of pages left are files: the commits it was
+			// holding are of no use to any of them.
+			manifest.forgetHistory()
+		}
 	}
 
 	// Then the files, from where the last page stopped.
@@ -763,8 +767,8 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 	// taken as gone, and a profile sent only at the start of a pass that
 	// then resumed from a cursor would be swept by the pass that finished.
 	if result.Next == "" {
-		names := make([]string, 0, len(profiles))
-		for relative := range profiles {
+		names := make([]string, 0, len(manifest.Profiles))
+		for relative := range manifest.Profiles {
 			names = append(names, relative)
 		}
 		sort.Strings(names)
@@ -775,7 +779,7 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 			}
 			result.Entries = append(result.Entries, ScanEntry{
 				ExternalID: identifier, Kind: "repository", Title: title,
-				Repository: profiles[relative],
+				Repository: manifest.Profiles[relative],
 			})
 		}
 	}
@@ -1715,8 +1719,8 @@ func shareOfCommits(profiles map[string]*RepositoryProfile, cloned map[string]bo
 // It answers with the page, where in the history the page stopped, and
 // whether anything is left -- the last two being what the cursor
 // carries beside the file the page stopped at.
-func readCommits(ctx context.Context, root string, arguments *ScanArguments, profiles map[string]*RepositoryProfile, cloned map[string]bool, after string, room, carried int) ([]ScanEntry, string, bool) {
-	shares := shareOfCommits(profiles, cloned, commitBudget(arguments))
+func readCommits(ctx context.Context, root string, arguments *ScanArguments, manifest *passManifest, after string, room, carried int) ([]ScanEntry, string, bool) {
+	shares := shareOfCommits(manifest.Profiles, manifest.Cloned, commitBudget(arguments))
 	if len(shares) == 0 {
 		return nil, after, false
 	}
@@ -1728,7 +1732,7 @@ func readCommits(ctx context.Context, root string, arguments *ScanArguments, pro
 		return nil, after, true
 	}
 
-	records := commitsOfTree(ctx, root, shares)
+	records := manifest.historyOfPass(ctx, root, shares)
 	from, found := 0, after == ""
 	if !found {
 		for index, record := range records {
@@ -1739,11 +1743,13 @@ func readCommits(ctx context.Context, root string, arguments *ScanArguments, pro
 		}
 	}
 	if !found {
-		// The commit the last page stopped on is no longer in the
-		// window -- somebody committed while the pass was reading, and
-		// it fell off the end. Beginning again costs a page already
-		// seen; going on from nowhere would end the pass with the rest
-		// of the history unseen, and the sweep would take it.
+		// The commit the last page stopped on is not in this list at
+		// all, which a pass reading the history it began with does not
+		// meet -- only one resumed onto a list read afresh, where
+		// somebody's commit has pushed the oldest off the end.
+		// Beginning again costs a page already seen; going on from
+		// nowhere would end the pass with the rest of the history
+		// unseen, and the sweep would take it.
 		from = 0
 	}
 	if from >= len(records) {
@@ -1768,10 +1774,10 @@ func readCommits(ctx context.Context, root string, arguments *ScanArguments, pro
 // commitsOfTree is the commits a pass offers, in the order it offers
 // them: the checkouts by where they are, each newest first.
 //
-// The whole list on every page of the history rather than the slice the
-// page wants, because a page resumes by finding its cursor in it. Git is
-// asked for no more than the share, so the list is the budget and not
-// the tree's whole history.
+// The whole list rather than the slice one page wants, because a page
+// resumes by finding its cursor in it. Git is asked for no more than the
+// share, so the list is the budget and not the tree's whole history --
+// and it is asked once a pass, not once a page: see historyOfPass.
 func commitsOfTree(ctx context.Context, root string, shares []commitShare) []commitRecord {
 	var records []commitRecord
 	// A commit met once. Two checkouts of the same repository are
