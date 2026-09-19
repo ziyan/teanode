@@ -413,7 +413,7 @@ export function MailboxSubscriptionsPage() {
             {/* Before the switch, because it narrows both sides of it: the
                 counts on the switch are counts of what was asked for. */}
             <form
-              className="mailbox-toolbar"
+              className="list-toolbar"
               onSubmit={(event) => {
                 event.preventDefault()
                 look(typed)

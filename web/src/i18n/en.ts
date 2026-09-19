@@ -2377,6 +2377,7 @@ export const en = {
   'knowledge.intro':
     'Everything your agent has learned about you, as pages. Each has a path, and each fact on it says where it came from. Correct anything that is wrong; what you strike is shown to it as an example of what not to keep. {pages} pages.',
   'knowledge.find': 'Search the pages',
+  'knowledge.waysIn': 'Ways in',
   'knowledge.root': 'Knowledge',
   'knowledge.back': 'Back',
   'knowledge.into': 'What is inside {name}',

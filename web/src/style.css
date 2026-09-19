@@ -3558,7 +3558,12 @@ a.button.primary:hover {
   overflow: hidden;
 }
 
-.segmented button {
+/* A segment is usually a button and sometimes a link: one of the ways into
+   the knowledge graph is a page of its own, and a link is what survives a
+   middle click. An anchor in this dashboard is underlined unless the thing
+   it is drawn as says otherwise, so this says otherwise. */
+.segmented button,
+.segmented a {
   border: none;
   border-radius: 0;
   background: transparent;
@@ -3569,11 +3574,18 @@ a.button.primary:hover {
   line-height: 1.5;
 }
 
-.segmented button + button {
+.segmented a {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.segmented > * + * {
   border-left: 1px solid var(--border);
 }
 
-.segmented button:hover:not(:disabled):not(.active) {
+.segmented button:hover:not(:disabled):not(.active),
+.segmented a:hover:not(.active) {
   color: var(--text);
   background: var(--sidebar-hover);
 }
@@ -3886,7 +3898,12 @@ label.check-list-item {
   flex-direction: column;
   min-width: 0;
 }
-.mailbox-toolbar {
+/* The strip across the top of a list: the box that searches it, and beside
+   or under that the control that narrows it. Named for the shape rather than
+   for the mailbox it was first written for -- the knowledge navigator is the
+   same strip above the same kind of list, and a page should not have to wear
+   another page's name to be drawn like it. */
+.list-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -3894,12 +3911,13 @@ label.check-list-item {
   padding: 8px;
   border-bottom: 1px solid var(--border);
 }
-.mailbox-toolbar input[type='search'] {
+.list-toolbar input[type='search'] {
   flex: 1 1 140px;
   min-width: 0;
   font-size: 13px;
 }
-.mailbox-toolbar .segmented button {
+.list-toolbar .segmented button,
+.list-toolbar .segmented a {
   font-size: 12px;
   padding: 4px 8px;
 }
@@ -8149,7 +8167,7 @@ button.with-icon {
   .select,
   .select-search,
   .agent-drawer-input textarea,
-  .mailbox-toolbar input[type='search'],
+  .list-toolbar input[type='search'],
   .mailbox-actions select,
   .mailbox-pane-actions select,
   .mailbox-narrowing select,
@@ -8177,22 +8195,6 @@ button.with-icon {
   min-width: 0;
 }
 
-.knowledge-chip {
-  border: 1px solid var(--border);
-  background: none;
-  color: var(--muted);
-  border-radius: 999px;
-  padding: 2px 10px;
-  font: inherit;
-  font-size: var(--text-label);
-  cursor: pointer;
-}
-
-.knowledge-chip:hover:not(:disabled) {
-  background: var(--field);
-  color: var(--text);
-}
-
 .knowledge-column {
   min-width: 0;
 }
@@ -8202,21 +8204,32 @@ button.with-icon {
   top: var(--space-4);
 }
 
+/* The navigator column is the same pane the mail list is: the lookup is a
+   toolbar across the top of it and the rows scroll underneath it, so walking
+   down a long folder does not carry the search box away with it. */
 .knowledge-list {
+  display: flex;
+  flex-direction: column;
   max-height: calc(100vh - var(--space-6) * 3);
+  overflow: hidden;
+  padding: 0;
+}
+
+.knowledge-list-rows {
   overflow: auto;
   padding: var(--space-2);
 }
 
-.knowledge-page {
-  min-width: 0;
+/* The box takes the toolbar's first row and the three ways in sit under it
+   as one set. Sharing a row meant the box swallowed the width of a column
+   this narrow and the ways broke wherever they happened to land, so three
+   things that answer the same kind of question looked like three accidents. */
+.knowledge-list .list-toolbar input[type='search'] {
+  flex: 1 1 100%;
 }
 
-/* The lookup is the way in; the lists are for when you do not know the
-   name yet. */
-.knowledge-lookup {
-  width: 100%;
-  margin-bottom: var(--space-3);
+.knowledge-page {
+  min-width: 0;
 }
 
 /* The hierarchy, one folder at a time.
@@ -8455,12 +8468,6 @@ button.with-icon {
   letter-spacing: 0.04em;
 }
 
-.knowledge-more {
-  display: block;
-  width: 100%;
-  margin-top: var(--space-2);
-}
-
 /* A fact the agent folded into another. Greyed rather than hidden: it is
    still there, and the number beside it is where its words went. */
 .knowledge-folded {
@@ -8502,7 +8509,7 @@ button.with-icon {
 /* A page is prose the nightly run wrote, so it is read rather than
    scanned: the measure is capped where the panel is not. */
 .knowledge-summary {
-  max-width: 68ch;
+  max-width: var(--measure);
   overflow-wrap: break-word;
 }
 
@@ -8666,46 +8673,6 @@ button.with-icon {
   .graph-explorer-canvas {
     height: 300px;
   }
-}
-
-/* The lookup, and beside it the way into the drawing. It wraps rather than
-   squeezing: in the folders column there is room for one of them on a line
-   and no more. */
-.knowledge-lookup-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-
-/* The box takes the row, and the ways in sit under it as one set.
-   Sharing a row meant the box swallowed the width and the chips broke
-   across two lines wherever they happened to land, so three things that
-   answer the same kind of question looked like three accidents. */
-.knowledge-lookup-row .knowledge-lookup {
-  flex: 1 1 100%;
-  min-width: 0;
-  margin-bottom: 0;
-}
-
-.knowledge-lookup-ways {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.knowledge-lookup-row .knowledge-chip {
-  flex: none;
-  white-space: nowrap;
-}
-
-/* A chip that leads somewhere is an anchor, and an anchor in this dashboard
-   is underlined unless the thing it is drawn as says otherwise. */
-a.knowledge-chip {
-  display: inline-block;
-  text-decoration: none;
 }
 
 /* What a question would carry, inside the dialog that asks it: a page, and
@@ -9099,15 +9066,16 @@ a.knowledge-chip {
   gap: var(--space-1);
 }
 
-/* Over a drawing rather than on a toolbar, so these carry their own outline:
-   a borderless button on a canvas full of circles is not a button. */
-.graph-explore-zoom .icon-button,
-.graph-explore-zoom .knowledge-chip {
+/* Over a drawing rather than on a toolbar, so these carry their own ground:
+   a transparent button on a canvas full of circles is not a button. The
+   segmented pair brings its own outline; an icon button is given one. */
+.graph-explore-zoom .segmented {
   background: var(--surface);
-  border: 1px solid var(--border);
 }
 
 .graph-explore-zoom .icon-button {
+  background: var(--surface);
+  border: 1px solid var(--border);
   font: inherit;
   font-size: 17px;
   line-height: 1;
@@ -9230,25 +9198,6 @@ a.knowledge-chip {
 
   .graph-explore-hint {
     display: none;
-  }
-}
-
-@media (max-width: 900px) {
-  .knowledge-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  /* Stacked, the tree is as wide as the screen and scrolls inside
-     itself; the page below it wraps. */
-  .knowledge-tree-table {
-    min-width: 0;
-  }
-
-  /* Stacked, the tree is a list above the page rather than a sidebar
-     beside it: sticky and full height would take the whole screen. */
-  .knowledge-tree {
-    position: static;
-    max-height: 40vh;
   }
 }
 
