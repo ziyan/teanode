@@ -1676,8 +1676,10 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 		return existingOpening, fallback, nil
 	}
 	// A run of the loop, like every call: it may look the graph up for
-	// the pages a link could point at before it answers.
-	thinking, err := self.think(ctx, run, "Described the checkout "+path, prompt, dreamTools,
+	// the pages a link could point at before it answers, and nothing
+	// else. Describing a checkout is not the night, and was never given
+	// the night's reach.
+	thinking, err := self.think(ctx, run, "Described the checkout "+path, prompt, lookupTools,
 		roundsFor(run.Configuration(), models.AgentJobIngest), models.AgentJobIngest, config.AgentWorkScan)
 	if err != nil {
 		log.Debugf("cannot ask what %q is: %s", path, err)
