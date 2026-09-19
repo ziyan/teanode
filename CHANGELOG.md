@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.39.7] - 2026-09-19
+
+### Changed
+
+- The agent no longer filters what it writes through lists of English words. A
+  page keeps the sentences it was written with, including ones that hedge; a
+  fact that reads thin is filed rather than dropped in silence; a commit whose
+  subject begins like a version bump still reaches the month's page. The
+  nightly run also stops striking facts an older build filed. (#134)
+
 ## [0.39.6] - 2026-09-19
 
 ### Changed
