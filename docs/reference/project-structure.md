@@ -216,11 +216,11 @@ data. Tests speak to in-process servers.
 **`internal/computer`** — the person's own computer as their agent reaches
 it: the program `teanode computer` runs there, which signs in with the
 person's token, keeps a websocket to the server and answers the shell and
-filesystem tools' requests as that person, anywhere on the machine; and the
-rule the server applies, which asks the person first for what changes the
-machine or reaches off it and refuses nothing outright. The rule is the
-server's alone: the program runs what it is sent, the way a terminal does
-what the person at it types. It is their own
+filesystem tools' requests as that person, anywhere on the machine; The server applies no rule over what a
+command looks like: a list of dangerous-looking shapes was tried here and
+removed, because it could not name everything dangerous and read as a
+promise that it did. The program runs what it is sent, the way a terminal
+does what the person at it types. It is their own
 assistant on their own computer, so it is not confined to a sandbox; the
 guard is the card they answer, not a directory. Tests speak to a fake
 connection. `docs/subsystems/devices.md` has the protocol and the rules.

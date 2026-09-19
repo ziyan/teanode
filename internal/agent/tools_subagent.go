@@ -120,9 +120,13 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 		Message:      prompt,
 		Surface:      "subagent",
 		ReadOnly:     parent.settings.ReadOnly,
-		Allow:        allowed,
-		MaxRounds:    subagentRounds,
-		UsageKind:    "subagent",
+		// Held to reading wherever the parent is. A night that may only
+		// look in the graph and could hand the writing to a run of its
+		// own would not be held to anything.
+		ReadOnlyTools: parent.settings.ReadOnlyTools,
+		Allow:         allowed,
+		MaxRounds:     subagentRounds,
+		UsageKind:     "subagent",
 		// Not headless: somebody is present, at the other end of the turn
 		// that started this. Which is what makes the next line work.
 		confirmVia:    parent,

@@ -80,12 +80,6 @@ type DreamOperation interface {
 	// time. The roots and the period pages are never among them.
 	ListAgentNodesEmpty(agentId string, before time.Time, limit int) ([]*models.AgentNode, error)
 
-	// ListAgentNodesWithOpeningWrittenBefore is the pages whose opening
-	// some other build of this program wrote, and MarkAgentNodesSeen
-	// says this one has been over them.
-	ListAgentNodesWithOpeningWrittenBefore(agentId, version string, limit int) ([]*models.AgentNode, error)
-	MarkAgentNodesSeen(agentId string, nodeIds []string) error
-
 	// ListAgentMonthsToWriteUp is the months that hold at least so much of
 	// the person's own record -- facts placed in them, their commits,
 	// threads they took part in -- and have no page yet, or a page that
@@ -766,25 +760,6 @@ func (self *transaction) ListAgentFactsSaidTwice(agentId string, limit int) ([]*
 		  )
 		ORDER BY f."created_at"
 		LIMIT ?`, agentId, limit))
-}
-
-func (self *transaction) ListAgentNodesWithOpeningWrittenBefore(agentId, version string, limit int) ([]*models.AgentNode, error) {
-	if limit <= 0 {
-		limit = 200
-	}
-	return self.nodesFrom(self.tx.Raw(`
-		SELECT * FROM "agent_node"
-		WHERE "agent_id" = ? AND "version" <> ? AND btrim("summary") <> ''
-		ORDER BY "created_at" ASC LIMIT ?`, agentId, version, limit))
-}
-
-func (self *transaction) MarkAgentNodesSeen(agentId string, nodeIds []string) error {
-	if len(nodeIds) == 0 {
-		return nil
-	}
-	return self.tx.Exec(
-		`UPDATE "agent_node" SET "version" = ? WHERE "agent_id" = ? AND "id" = ANY(?)`,
-		version.Version(), agentId, pq.Array(nodeIds)).Error
 }
 
 func (self *transaction) ListAgentNodesCrowded(agentId string, above, limit int) ([]*models.AgentNode, error) {

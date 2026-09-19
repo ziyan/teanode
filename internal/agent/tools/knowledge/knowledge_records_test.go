@@ -47,6 +47,7 @@ type listingRun struct {
 
 func (self *listingRun) AttachedComputers() []tools.Computer { return []tools.Computer{self.computer} }
 func (self *listingRun) ComputersAllowed() bool              { return true }
+func (self *listingRun) ComputersUnattended() bool           { return false }
 
 // listingComputer answers the probe with an empty page, the way a daemon
 // over an allowed folder does, and the listing with whatever the folder

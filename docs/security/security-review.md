@@ -1686,6 +1686,16 @@ What that rejection surfaced is worth more than the claim: **`Classify` is
 trivially evadable**, and that is a weakness in the existing control rather
 than in the session layer. It deserves its own pass.
 
+**Resolved by removal, 2026-09-18.** The owner reached the same conclusion
+from the other end and asked for the rule to go: a list of shapes will never
+name everything dangerous, and carrying one costs the codebase its weight
+while telling everybody who reads it that the dangerous cases are covered.
+`internal/computer/policy.go` and every use of it are gone. A shell command
+now runs as it was written. The filesystem still asks before a move or a
+delete, judged by the action the call names rather than by a guess about the
+path. What bounds a computer is what it always bounded: the directories the
+person allowed, enforced on their own machine, and their yes.
+
 ## What this pass did not do
 
 No fuzzing, no penetration test, no run against a live model, and nothing

@@ -604,7 +604,7 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 			break
 		}
 		text := strings.TrimSpace(wanted.Text)
-		if text == "" || isPromptExample(text) || isPromptExample(wanted.Quote) {
+		if text == "" {
 			continue
 		}
 		kind := models.AgentFactKind(strings.ToLower(strings.TrimSpace(wanted.Kind)))
@@ -679,12 +679,17 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 	}
 
 	// The rows themselves, with their evidence checked and their meaning
-	// worked out. A line that only says what the page is says nothing:
-	// the page already says it, and a page whose one fact is "X is a
-	// project" reads like something was learned. See vacuous.go for how
-	// much of a real graph this was.
+	// worked out.
+	//
+	// A word list stood here, of the words a sentence saying only that a
+	// page exists is made of, and a fact left with nothing else was
+	// refused. It refused real ones too -- "This project is private" is
+	// four words that were all on the list -- and a refusal was silent,
+	// so nobody ever saw what the person's agent had been told and did
+	// not keep. A dull line is cheaper: the nightly run merges it or it
+	// sinks.
 	for _, ready := range prepared {
-		if ready.Node == nil || !saysSomethingNew(ready.Text, ready.Node, run.Owner) {
+		if ready.Node == nil {
 			continue
 		}
 		ready.Fact = &models.AgentFact{
@@ -769,7 +774,7 @@ func linkWhatWasLearned(tx db.Transaction, agentId string, links []RememberedLin
 		from := models.NormalizePath(link.From)
 		to := models.NormalizePath(link.To)
 		relation := models.AgentEdgeRelation(strings.ToLower(strings.TrimSpace(link.Relation)))
-		if from == "" || to == "" || !models.IsAgentEdgeRelation(relation) || isPromptExample(link.Note) {
+		if from == "" || to == "" || !models.IsAgentEdgeRelation(relation) {
 			continue
 		}
 		fromNode, err := tx.GetAgentNode(agentId, from)

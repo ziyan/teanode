@@ -411,7 +411,12 @@ this plan fills it rather than inventing something new.
 A night cannot reach the person's machine at all. `dreamTools` names exactly two
 tools, `memory` and `knowledge`, and the frame it is given says they are for
 looking. This was not obvious from the outside and it shapes the whole design:
-preparation has to happen during the scan, not during the night.
+preparation has to happen during the scan, not during the night. *(That was
+true when this was surveyed, and the design above was built on it. The owner
+has since reversed it — see the Decision Log — and a night now has every tool,
+with the graph held to reading because a fact is filed from the object a call
+ends with. Nothing in the milestones depends on the old answer; it only means
+preparation has a second place it can happen.)*
 
 The model layer has been able to send a picture all along, in both the OpenAI
 and Anthropic paths. The capability was built for conversations, where a person
@@ -473,6 +478,53 @@ programs on a person's machine is a materially different risk from a
 conversation where they are present and watching. The records script runs on the
 same machine, as the same person, and is something they or their agent wrote and
 can read.
+
+*Reversed by the owner, after reading the above.* The risk is real and the
+owner accepted it: "I accept this risk, allow dream to use all tools." The
+night is no longer given a named pair of tools. It is given the whole kit —
+everything an attached conversation has, the person's own computer among it —
+and the computer's tools are in its first round rather than behind a search,
+so it does not spend a round of its allowance finding out that a machine is
+attached. Its budget is unchanged; what it may spend in a night is what it
+could spend before.
+
+What this opens is that preparation no longer has to happen ahead of the
+night. A records script is still the right place for records that have to be
+fetched on a schedule, and nothing about it changes; but a night that finds a
+file it cannot read, or a question it could answer by running something, can
+now do that in the night rather than leaving a note asking for a script to be
+written. The reading and the filing of orphans — the two calls that decide
+where things go — are the calls that have it; a call that answers from its
+prompt still gets no tools at all.
+
+Two things still stand in the night's way, and both are deliberate. A call
+that would raise a confirmation card — anything destructive, anything that
+leaves the server, anything that hands out a way in — is refused outright,
+because there is nobody there to be shown the card; the night is told to say
+what it would have done instead of looking for another route. And changes to
+the graph are still made from the object a call ends with rather than by hand
+with the memory tool: it is how filing works here, and it is what keeps a
+fact attached to the evidence it came from and a move a proposal the person
+can still refuse.
+
+**The graph is held to reading, by name, rather than the whole night being
+held to it.** Widening the night to every tool meant the turn could no longer
+be read-only, and read-only was the only thing that had been stopping the
+model writing to the graph by hand; the frame asked it not to, and a frame is
+an instruction a model weighs against the memory tool's own description,
+which invites it to note what it learns. The owner asked for the rule back:
+"sure you can block fact writing via tool and only allow it to spit it out at
+the end." So a turn can now name the tools it may only look with, and the
+night names the two that hold the graph. Each call is judged as it is made,
+not the tool, which is what keeps looking a page up — the thing the night
+needs most — while the writing is refused; and the refusal says where the
+change belongs, so a run that tried is not left hunting for another route.
+The alternative, leaving the pair out of the catalogue altogether, was
+rejected: these are tools whose actions differ in what they cost, so
+dropping the tool drops the reading with the writing, and there is no way to
+show a model half a tool. The frame still says all this, as a description of
+the run rather than a request, because a model told what will happen does not
+spend a round finding out.
 
 ## Outcomes & Retrospective
 

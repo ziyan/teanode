@@ -26,12 +26,16 @@ present in, with its refusals enforced on the device.
 The program acts as the person, anywhere on the machine, the way a
 terminal of theirs would: nothing is confined and nothing is refused on
 their behalf. What stands between the agent and a dangerous command is
-the person's yes. One rule over commands (`internal/computer/policy.go`)
-says which shapes ask first — removing, moving, installing, sudo,
-pushing, ssh, changing what runs on its own, and the graver ones that
-take the machine itself, each with its reason on the card — and the rest
-run. The filesystem reads freely, writes as a write, deletes only after a
-yes. The operator can keep computers off for the whole server.
+the person's yes, and nothing else. There was once a rule over commands
+that matched a command line against a list of dangerous-looking shapes and
+put those on a card. It was removed. A list of shapes can never name
+everything dangerous, a wrapper script walks straight past it, and the real
+cost was the promise: a control that catches some of the bad commands reads
+to everybody, including the person, as one that catches them. The owner's
+own security review had already found it trivially evadable. The filesystem
+reads freely, writes as a write, deletes and moves only after a yes, judged
+by the action asked for rather than by a guess about the path. The operator
+can keep computers off for the whole server.
 
 ## Consequences
 

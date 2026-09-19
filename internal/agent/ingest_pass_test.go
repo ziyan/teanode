@@ -166,3 +166,15 @@ func TestACursorWithNothingInItIsNotMidTree(t *testing.T) {
 		t.Fatalf("and so does a sent source paging back through the years")
 	}
 }
+
+func TestMonthSpanSaysOneMonthOnce(t *testing.T) {
+	july := time.Date(2026, time.July, 3, 0, 0, 0, 0, time.UTC)
+	later := time.Date(2026, time.July, 28, 0, 0, 0, 0, time.UTC)
+	if got := monthSpan(&july, &later); got != "July 2026" {
+		t.Fatalf("one month: %q", got)
+	}
+	march := time.Date(2024, time.March, 1, 0, 0, 0, 0, time.UTC)
+	if got := monthSpan(&march, &later); got != "March 2024 to July 2026" {
+		t.Fatalf("two months: %q", got)
+	}
+}
