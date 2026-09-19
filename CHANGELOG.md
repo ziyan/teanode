@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-09-19
+
+### Added
+
+- The agent can look again at a picture it learned something from. Ask it
+  what an error in a screenshot said and it opens the screenshot rather than
+  answering from the note it made about it months ago, and says plainly when
+  a file is one it cannot open. (#136)
+- An answer in the agent drawer now shows the picture it was read from,
+  under the message, with the thread and channel it was posted in — so the
+  evidence is there to look at rather than something to take on trust. (#136)
+
 ## [0.39.7] - 2026-09-19
 
 ### Changed
