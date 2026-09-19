@@ -556,6 +556,7 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 			self.releaseComputer(name, source.ID)
 		}
 	}
+	mostAttachmentBytes := maxAttachmentBytes(run.Configuration(), source)
 	ask := func(known map[string]string) (json.RawMessage, error) {
 		return device.Ask(ctx, "scan", &computer.ScanArguments{
 			Root:    source.Specification.Path,
@@ -566,6 +567,11 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 			KnownID: knownId,
 			After:   after,
 			Most:    most,
+			// The daemon is told the bound rather than knowing it, so
+			// that an operator raising it -- or one source that needs
+			// more than the rest -- is a setting here and not a release
+			// everybody has to install.
+			MaxAttachmentBytes: mostAttachmentBytes,
 		}, wait)
 	}
 	answer, err := ask(known)
@@ -628,6 +634,23 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 		if entry.Repository != nil {
 			self.fileRepository(ctx, run, source, entry)
 		}
+		// Before the unchanged check and before the empty-text one,
+		// both of which an attachment would fall through: it has no text
+		// by design, and whether it has changed says nothing about
+		// whether its bytes ever reached the store.
+		if entry.Kind == computer.KindAttachment {
+			filed, err := self.fileAttachment(ctx, run, source, entry,
+				blobFrom(device, entry, mostAttachmentBytes))
+			if err != nil {
+				log.Warningf("cannot keep %q of source %q: %s", entry.ExternalID, source.ID, err)
+			}
+			if filed {
+				counts.Documents++
+			} else {
+				named = append(named, entry.ExternalID)
+			}
+			continue
+		}
 		if entry.Unchanged {
 			named = append(named, entry.ExternalID)
 			continue
@@ -636,7 +659,7 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 			named = append(named, entry.ExternalID)
 			continue
 		}
-		chunks, err := self.fileDocument(ctx, run, source, entry)
+		chunks, err := self.fileDocument(ctx, run, source, entry, "")
 		if err != nil {
 			log.Warningf("cannot keep %q of source %q: %s", entry.ExternalID, source.ID, err)
 			named = append(named, entry.ExternalID)
@@ -711,7 +734,12 @@ func (self *Agent) notedUnknownAuthors(ctx context.Context, source *models.Agent
 }
 
 // fileDocument writes one thing and its chunks.
-func (self *Agent) fileDocument(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, entry computer.ScanEntry) (int, error) {
+//
+// storageKey is where the thing's own bytes are kept, which is empty for
+// everything that is only its text: an attachment is the one kind whose
+// meaning is in the bytes, and it is the first thing ever to fill the
+// column the original design reserved for them.
+func (self *Agent) fileDocument(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, entry computer.ScanEntry, storageKey string) (int, error) {
 	chunks := chunkText(entry.Text)
 	written := 0
 	err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
@@ -724,7 +752,8 @@ func (self *Agent) fileDocument(ctx context.Context, run *Run, source *models.Ag
 			AgentID: source.AgentID, SourceID: source.ID, ExternalID: entry.ExternalID,
 			Kind: documentKindOf(entry.Kind), Title: entry.Title, URL: entry.URL,
 			HappenedAt: entry.HappenedAt, ModifiedAt: entry.ModifiedAt,
-			Hash: entry.Hash, Bytes: entry.Size, Metadata: metadata, Private: entry.Private,
+			Hash: entry.Hash, Bytes: entry.Size, StorageKey: storageKey,
+			Metadata: metadata, Private: entry.Private,
 		})
 		if err != nil {
 			return err
@@ -774,6 +803,8 @@ func documentKindOf(kind string) models.AgentDocumentKind {
 		return models.DocumentPost
 	case "file":
 		return models.DocumentFile
+	case computer.KindAttachment:
+		return models.DocumentAttachment
 	}
 	return models.DocumentFile
 }
@@ -1254,7 +1285,7 @@ func (self *Agent) readSentMail(ctx context.Context, run *Run, source *models.Ag
 				"to": message.To, "subject": message.Subject, "author": "them",
 			},
 		}
-		written, err := self.fileDocument(ctx, run, source, entry)
+		written, err := self.fileDocument(ctx, run, source, entry, "")
 		if err != nil {
 			continue
 		}

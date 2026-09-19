@@ -73,7 +73,23 @@ const (
 	// scanExtractTimeout bounds one call to an outside extractor. A PDF
 	// that takes longer than this is one nobody is waiting for.
 	scanExtractTimeout = 30 * time.Second
+
+	// DefaultMaxAttachmentBytes is the largest file a record's
+	// attachment may be for this program to hash it and hand it over.
+	//
+	// The server says what the limit is, per source, and this is what a
+	// request that does not say falls back to -- an older server, or the
+	// probe. It is a fallback and not a floor: a server asking for less
+	// gets less, and a server asking for more gets more.
+	DefaultMaxAttachmentBytes = 25 << 20
 )
+
+// KindAttachment is what an entry for a file a record came with is
+// called. Its bytes are fetched afterwards with the blob action, which is
+// why it is a kind of its own rather than a file. Its text is what the
+// record said it says, or what a reader on this machine made of it, and
+// is empty for a picture, which is a later night's work.
+const KindAttachment = "attachment"
 
 // ScanArguments is what the server asks for.
 type ScanArguments struct {
@@ -113,6 +129,22 @@ type ScanArguments struct {
 
 	// Most is how many entries to answer with.
 	Most int `json:"most,omitempty"`
+
+	// MaxAttachmentBytes is the largest file a record's attachment may
+	// be. The server resolves it from the source and the configuration
+	// and says it here, so that an operator can raise it without every
+	// person on the deployment updating this program. Zero -- an older
+	// server, which says nothing -- is DefaultMaxAttachmentBytes, never
+	// no limit at all.
+	MaxAttachmentBytes int64 `json:"maxAttachmentBytes,omitempty"`
+}
+
+// maxAttachmentBytes is the limit a request runs under.
+func maxAttachmentBytes(asked int64) int64 {
+	if asked <= 0 {
+		return DefaultMaxAttachmentBytes
+	}
+	return asked
 }
 
 // ScanEntry is one thing found.
@@ -292,7 +324,7 @@ func RunScan(ctx context.Context, options *Options, arguments *ScanArguments) (*
 	case FormatJournal:
 		return scanJournal(root, arguments, most)
 	case FormatRecords:
-		return scanRecords(root, arguments, most)
+		return scanRecords(ctx, options, root, arguments, most)
 	}
 	return nil, fmt.Errorf("%q is not a shape this program can read", arguments.Format)
 }
@@ -342,6 +374,48 @@ func allowedRoot(options *Options, asked string) (string, error) {
 		}
 	}
 	return "", &RefusedError{Reason: fmt.Sprintf("%s is not one of the directories allowed for scanning on this computer", asked)}
+}
+
+// allowedFile is a file this program may read for a scan: inside a
+// directory the person allowed, and still inside one once every link on
+// the way to it has been followed. It answers where the file really is.
+//
+// Following the links is the point. A record may name any path on the
+// machine, and a folder of records is often a folder somebody else's
+// program filled, so a link dropped in it must not carry a scan into
+// ~/.ssh. The allowed roots are followed too, because a root may itself
+// be reached through one -- /tmp on a Mac is a link to /private/tmp --
+// and comparing a followed file against an unfollowed root would refuse
+// everything under it.
+func allowedFile(options *Options, path string) (string, error) {
+	resolved, err := allowedRoot(options, path)
+	if err != nil {
+		return "", err
+	}
+	followed, err := filepath.EvalSymlinks(resolved)
+	if err != nil {
+		return "", err
+	}
+	if followed == resolved {
+		return followed, nil
+	}
+	if _, err := allowedRoot(options, followed); err == nil {
+		return followed, nil
+	}
+	roots, err := scanRoots(options)
+	if err != nil {
+		return "", err
+	}
+	for _, root := range roots {
+		root, err := filepath.EvalSymlinks(root)
+		if err != nil {
+			continue
+		}
+		if followed == root || strings.HasPrefix(followed, root+string(filepath.Separator)) {
+			return followed, nil
+		}
+	}
+	return "", &RefusedError{Reason: fmt.Sprintf("%s leads to %s, which is not one of the directories allowed for scanning on this computer", path, followed)}
 }
 
 // resolveIn is a path of the person's as an absolute one, and an error

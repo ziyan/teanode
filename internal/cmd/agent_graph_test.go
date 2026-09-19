@@ -142,6 +142,36 @@ func TestGradingAQuestionSet(t *testing.T) {
 			carried: nil,
 			hit:     true,
 		},
+		// A night divides a page that has grown too long, and the fact
+		// the question is about moves to a page under it. The question
+		// set names the parent, because it was written before the
+		// division; the fact has not been lost and the question has not
+		// failed.
+		"underAPageTheNightDivided": {
+			question: evaluationQuestion{ID: "d4", Kind: questionDirect, Question: "which cluster?",
+				Expects: []evaluationClaim{{Path: "projects/portal", Words: []string{"frankfurt"}}}},
+			carried: carriedFor(recalledPage("projects/portal/deployments",
+				recalledFact(3, "Runs on the Frankfurt cluster"))),
+			hit: true,
+		},
+		// A page whose path merely begins with the same letters is not
+		// under it: projects/portal-old is another project.
+		"besideAPageIsNotUnderIt": {
+			question: evaluationQuestion{ID: "d5", Kind: questionDirect, Question: "which cluster?",
+				Expects: []evaluationClaim{{Path: "projects/portal", Words: []string{"frankfurt"}}}},
+			carried: carriedFor(recalledPage("projects/portal-old",
+				recalledFact(3, "Runs on the Frankfurt cluster"))),
+			failed: `did not carry projects/portal saying "frankfurt"`,
+		},
+		// The same reach on the negative side: an abstain question is
+		// answered anyway if the page it forbids was divided.
+		"abstainAnsweredFromUnderThePage": {
+			question: evaluationQuestion{ID: "a5", Kind: questionAbstain, Question: "what is Alice's brother called?",
+				Forbids: []evaluationClaim{{Path: "people/alice-chen"}}},
+			carried: carriedFor(recalledPage("people/alice-chen/family",
+				recalledFact(1, "Her brother is called Tom"))),
+			failed: "carried anything on people/alice-chen",
+		},
 		// A set whose abstain question expects something is a mistake in
 		// the file, and saying so beats grading it.
 		"abstainThatExpects": {

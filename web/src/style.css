@@ -5047,6 +5047,29 @@ label.check-list-item {
   max-width: 28rem;
 }
 
+/* The files a night decided against opening, under the source that
+   carried them: the name, and the reason on its own line so a long one
+   does not push the name off a phone. */
+.agent-declined-files {
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.agent-declined-files li {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.agent-declined-files .muted {
+  font-size: var(--text-label);
+}
+
 .agent-drawer-device {
   display: inline-flex;
   align-items: center;
@@ -8431,6 +8454,31 @@ button.with-icon {
   color: var(--muted);
   font-style: italic;
   margin-bottom: 2px;
+}
+
+/* A picture or a file a fact was read out of, under the fact. Small
+   enough that a page of facts is still a page of facts -- the picture
+   opens full size in a tab of its own -- and narrow enough on a phone
+   that it never widens the card. */
+.knowledge-attachment {
+  display: block;
+  margin-top: var(--space-1);
+}
+
+.knowledge-attachment .muted {
+  display: block;
+  font-size: var(--text-label);
+}
+
+.knowledge-attachment-image {
+  display: block;
+  max-width: min(320px, 100%);
+  max-height: 200px;
+  width: auto;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--field);
 }
 
 /* The pages around one page, drawn.

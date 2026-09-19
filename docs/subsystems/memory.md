@@ -185,6 +185,57 @@ keep its state and its downloads beside the records. A document's
 external id is `<file path>#<record id>`, which is why a script that
 keeps its ids keeps its documents.
 
+A record may also name the files it came with, in an `attachments` list of
+`{"path", "name", "contentType", "text"}` — a picture pasted into a
+thread, a document sent with a message. The path is relative to the
+records folder unless it is absolute, and is refused if it leads outside
+the directories allowed on that computer. Each attachment becomes a
+document of its own, of kind `attachment`, identified by the hash of its
+bytes rather than by where it sits, so the same screenshot pasted into
+four threads is one document. The daemon hashes and measures it, the
+server asks for its bytes with the `blob` action and keeps them in object
+storage under that hash. A file larger than the limit the source runs
+under — `agent.limits.maxScannedAttachmentBytes`, 25 MB by default, or
+the source's own — is named on the source's page as passed over and never
+uploaded.
+
+`text` is what the file says, where the script already knows. A file that
+arrives with text is a document like any other — chunked, embedded,
+searchable the same night — and is never offered to a night to be read by
+a model; its bytes are still fetched and kept, because the original is
+what somebody opens later. Where the script says nothing, the daemon
+reads the file itself if anything on that machine can: a PDF through
+`pdftotext`, an office document or a spreadsheet through `soffice`, and a
+file that is simply UTF-8 text as itself. Text longer than 512 kB is sent
+as its first 64 kB, marked `truncated` in the document's metadata, the
+same as a large file in a tree; text carrying something that looks like a
+credential is not sent at all, though the bytes still are. Only what
+nothing there can read — a picture, a video, a sound file — arrives with
+no text, and that is what a later night opens with a model.
+
+That night's work is in two steps, and both are in
+`internal/agent/dream_attachment.go`. First it is shown what is free to
+know about a batch of these files — the name, the size, the kind of file,
+the channel and thread, and the words of the message each arrived with —
+and asked which are worth opening, because there are tens of thousands of
+them and describing one costs money. A screenshot in a thread about
+something going wrong is worth opening; an avatar, a logo, a signature
+image or a meme is not. What it passes over carries the reason on its row,
+in words, and is never asked about again; nothing is deleted, so a person
+who disagrees can read why and put it back. Then what it chose is fetched
+out of the store and sent to the scan model as a picture, with a prompt
+asking for what the picture shows and for any text in it read out word for
+word rather than summarised. What comes back becomes the document's text
+through the ordinary path, so from there the passages, the vectors, the
+reading that turns documents into facts and the evidence a fact quotes all
+work unchanged, and the source's page says how many files are waiting for
+a decision, how many the agent declined and how many it read.
+
+Only a picture is opened, and only one small enough to be worth sending:
+anything else is passed over with its reason, the same way. Both steps
+come off the night's allowance like every other call it makes, so a night
+that has spent its share stops asking and the rest waits for tomorrow.
+
 Two kinds of script fill such a folder, and which one to write is
 decided by where the records are.
 
@@ -224,7 +275,12 @@ for what is in it.
 The agent writes these scripts. The knowledge tool's `shape` action is
 the record shape and both contracts in words, and asked to index an
 archive that is already on the computer it is told to write a `records`
-script over the files rather than a `refresh` that copies them.
+script over the files rather than a `refresh` that copies them. It is
+also told to do on that machine whatever the machine can already do — a
+frame out of a video, a picture shrunk to what a reader needs, a text
+recogniser over a scan, a sheet converted to comma-separated text — and
+to put the result in `text`, because anything the computer can read for
+nothing is better read there than paid for later.
 
 ## Not making the same page twice
 
@@ -571,6 +627,20 @@ their vectors, for rows this turn was not going to read, stood between
 the person pressing return and the model being asked anything. The
 night's embedding stage does it, two hundred at a time, with nobody
 waiting.
+
+An expanded page shows the facts the question hit, not the facts that
+happen to be oldest. The store hands a page's facts over by number, which
+was the whole page while a page held a handful; on a page of fifty to
+ninety it meant the five oldest sentences whatever had been asked, and
+the matched sentence was left to the loose-fact loop, which by then had
+neither a block nor a token to spare. So sixty are read and five are
+shown: the ones the search matched first, in the order it ranked them,
+then the rest by number. What is shown is laid out by number all the
+same, so the block still reads as a page and its `#n` references climb.
+A fact keeps its vector when it is struck, folded away or superseded, so
+that what a page used to say can still be found; recall is the side that
+leaves those out, since a sentence the page has taken back is not one to
+put back in its mouth.
 
 What counts as used is what was carried. A page's block is built,
 measured against the budget, and only then written and its facts marked —

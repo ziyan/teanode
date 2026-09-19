@@ -165,7 +165,12 @@ func referenceLines(references []models.AgentReference) string {
 // userTurn is the person's message as the model is given it in the turn it
 // was said: the references, the text, the text files read out, the files
 // it cannot open named, and the pictures as image parts.
-func userTurn(ctx context.Context, store storage.Storage, text string, attachments []*models.AgentAttachment, references []models.AgentReference) llm.ChatMessage {
+//
+// pictures are images the caller carries itself rather than files of the
+// person's, and they are put in the same place by the same rules: a night
+// that has fetched an attachment's bytes out of the store hands them here
+// instead of building a message of its own.
+func userTurn(ctx context.Context, store storage.Storage, text string, attachments []*models.AgentAttachment, pictures []llm.ContentPart, references []models.AgentReference) llm.ChatMessage {
 	var blocks []string
 	if lines := referenceLines(references); lines != "" {
 		blocks = append(blocks, lines)
@@ -192,6 +197,10 @@ func userTurn(ctx context.Context, store storage.Storage, text string, attachmen
 	if len(named) > 0 {
 		blocks = append(blocks, attachmentLines(named)+"\nYou cannot open these kinds of file; if what is in one matters, ask the person.")
 	}
+	// After the person's own, and outside the count above: the caller
+	// bounded these itself, and what it passes is never what somebody
+	// uploaded.
+	images = append(images, pictures...)
 	message := llm.ChatMessage{Role: llm.RoleUser, Content: strings.Join(blocks, "\n\n")}
 	if len(images) > 0 {
 		message.Parts = append([]llm.ContentPart{{Type: "text", Text: message.Content}}, images...)

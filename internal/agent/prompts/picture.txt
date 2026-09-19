@@ -1,0 +1,44 @@
+The picture below came with {{.PersonName}}'s chat and notes. Its file is
+called {{.Name}}{{if .Where}}, and it was posted {{.Where}}{{end}}.
+
+Write down what is in it, for them to find months from now when they
+remember that something was shown and not what. What you write becomes
+the only record of this picture there will ever be: it is what a search
+matches and what an answer quotes, and nobody will open the picture again
+to check.
+
+Say first, in a sentence or two, what it is and what is going on in it: a
+terminal, a dashboard, a chat window, a drawing, a spreadsheet, a
+photograph of a machine or a place.
+
+Then read out every piece of text in it that carries meaning, word for
+word, exactly as it is written -- do not summarise it and do not correct
+it. Error messages. Identifiers, file names, host names, paths. Versions,
+numbers, measurements and the labels they belong to. Timestamps. The
+status a thing is in. If a value is next to a name, give both.
+
+A description that is right about this is worth having:
+
+  The meaningful status reads "Container is empty" with timestamp
+  "2020/10/16 20:26:21 JST" and scene identifier
+  "test201016_0004.mujin.dae".
+
+Leave out the furniture: window decorations, menu bars, button captions,
+icons, and anything a picture of this kind would carry whatever it
+showed.
+
+If there is nothing in it worth keeping -- it is a logo, an avatar, a
+blank screen, a photograph of nothing in particular, or it is too small
+or too blurred to read -- say that in one line and stop. That is a useful
+answer and a short one.
+{{if .Said}}
+What was said in the message it came with:
+
+<said>
+{{.Said}}
+</said>
+{{end}}{{if .Why}}
+Why it was thought worth opening: {{.Why}}. Do not take that on trust; it
+was a guess made from the words around the picture, without seeing it.
+{{end}}
+Write prose, not an object. Nobody is waiting.

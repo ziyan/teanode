@@ -2,7 +2,10 @@ package computer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -622,5 +625,445 @@ esac
 	}
 	if _, err := os.Stat(filepath.Join(root, "pages")); err == nil {
 		t.Fatalf("and nothing was written down")
+	}
+}
+
+// --- what a record came with -----------------------------------------
+
+// entriesOfKind is the entries of one kind, by their identifier, so a
+// test says what it means rather than counting positions in a page.
+func entriesOfKind(entries []ScanEntry, kind string) map[string]ScanEntry {
+	found := map[string]ScanEntry{}
+	for _, entry := range entries {
+		if entry.Kind == kind {
+			found[entry.ExternalID] = entry
+		}
+	}
+	return found
+}
+
+// countOfKind is how many entries of a kind a page carried, which is not
+// the size of the map above when two of them share an identifier.
+func countOfKind(entries []ScanEntry, kind string) int {
+	count := 0
+	for _, entry := range entries {
+		if entry.Kind == kind {
+			count++
+		}
+	}
+	return count
+}
+
+// hashOfBytes is what the daemon will have called a file.
+func hashOfBytes(content []byte) string {
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])
+}
+
+// A record may say what came with it, and each file becomes an entry of
+// its own: named by the hash of its bytes, carrying no text, and carrying
+// instead everything a later decision needs without opening it -- what it
+// is, where its bytes are, and what was said when it arrived. Both kinds
+// of record do it, the wiki page and the chat post, and a folder that
+// prints its records rather than writing them does it too.
+func TestARecordCarriesTheFilesItCameWith(t *testing.T) {
+	picture := []byte("\x89PNG\r\n\x1a\nthis is a screenshot of a failing cell")
+	diagram := []byte("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>")
+	root, scan := recordsIn(t, map[string]string{
+		"files/shot.png":    string(picture),
+		"files/diagram.svg": string(diagram),
+	})
+	writeRecordsScript(t, root, `#!/bin/sh
+if [ -z "$1" ]; then echo posts.jsonl; exit 0; fi
+cat <<'RECORDS'
+{"id":"post:1","kind":"chat","channel":"ops","thread":"post:0","at":"2026-08-14T09:30:00Z","author":"ziyan","text":"look at this, the cell stopped again","attachments":[{"path":"files/shot.png","name":"shot.png","contentType":"image/png"}]}
+{"id":"post:2","kind":"chat","channel":"ops","thread":"post:0","at":"2026-08-14T09:31:00Z","author":"maria","text":"the same picture again","attachments":[{"path":"files/shot.png","name":"shot.png","contentType":"image/png"}]}
+{"id":"page:7","kind":"page","title":"Runbook","at":"2026-08-01T09:00:00Z","author":"ziyan","text":"Restart the consumer.","attachments":[{"path":"files/diagram.svg","name":"diagram.svg"}]}
+RECORDS
+`)
+
+	result, err := scan(nil)
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	// Two files, three mentions of them: the identity is the hash of the
+	// bytes, so the picture two posts name is one document.
+	if count := countOfKind(result.Entries, KindAttachment); count != 2 {
+		t.Fatalf("two files, however often they are named: %d", count)
+	}
+	attachments := entriesOfKind(result.Entries, KindAttachment)
+	shot, found := attachments["posts.jsonl#"+hashOfBytes(picture)]
+	if !found {
+		t.Fatalf("the picture is named by the hash of its bytes: %+v", attachments)
+	}
+	if shot.Title != "shot.png" || shot.Text != "" || shot.Hash != hashOfBytes(picture) {
+		t.Fatalf("named, hashed, and read by nothing: %+v", shot)
+	}
+	if shot.Size != int64(len(picture)) {
+		t.Fatalf("measured %d bytes, not %d", shot.Size, len(picture))
+	}
+	if shot.HappenedAt == nil || shot.HappenedAt.UTC().Format(time.RFC3339) != "2026-08-14T09:30:00Z" {
+		t.Fatalf("when it arrived: %+v", shot.HappenedAt)
+	}
+	path, _ := shot.Metadata["path"].(string)
+	if !filepath.IsAbs(path) || !strings.HasSuffix(path, filepath.FromSlash("files/shot.png")) {
+		t.Fatalf("the server has to be able to ask for the bytes: %q", path)
+	}
+	for key, want := range map[string]string{
+		"contentType": "image/png",
+		"author":      "ziyan",
+		"thread":      "post:0",
+		"channel":     "ops",
+		"id":          "post:1",
+		"said":        "look at this, the cell stopped again",
+	} {
+		if got, _ := shot.Metadata[key].(string); got != want {
+			t.Fatalf("metadata %q is %q, not %q", key, got, want)
+		}
+	}
+
+	// The document path as well as the chat path, with the type guessed
+	// from the name where the script did not say one.
+	drawing, found := attachments["posts.jsonl#"+hashOfBytes(diagram)]
+	if !found {
+		t.Fatalf("a file that came with a page: %+v", attachments)
+	}
+	if got, _ := drawing.Metadata["contentType"].(string); !strings.HasPrefix(got, "image/svg") {
+		t.Fatalf("the type is guessed from the name: %q", got)
+	}
+	if got, _ := drawing.Metadata["channel"].(string); got != "" {
+		t.Fatalf("a page is in no channel: %q", got)
+	}
+	if got, _ := drawing.Metadata["id"].(string); got != "page:7" {
+		t.Fatalf("the record it came with: %q", got)
+	}
+
+	// And the whole folder pages the same way twice, which is what a
+	// cursor standing in the middle of it depends on.
+	first := pagesEverySo(t, scan, 2)
+	second := pagesEverySo(t, scan, 2)
+	if len(first) == 0 || strings.Join(first, "\n") != strings.Join(second, "\n") {
+		t.Fatalf("the same folder paged differently:\n%s\n---\n%s",
+			strings.Join(first, "\n"), strings.Join(second, "\n"))
+	}
+}
+
+// A file larger than this source carries is named, counted and passed
+// over: the person sees what was left behind rather than wondering, and
+// nothing of it is sent. The bound is the server's to set, and a request
+// that says nothing falls back to the twenty-five megabytes this program
+// was written with rather than to no bound at all.
+func TestAnAttachmentTooLargeIsRefusedWithAReason(t *testing.T) {
+	small := []byte("small enough")
+	large := strings.Repeat("x", 4096)
+	root, scan := recordsIn(t, map[string]string{
+		"files/video.mp4": large,
+		"files/note.txt":  string(small),
+	})
+	if err := os.WriteFile(filepath.Join(root, "posts.jsonl"), []byte(
+		`{"id":"post:1","kind":"chat","channel":"ops","at":"2026-08-14T09:30:00Z","author":"ziyan","text":"here","attachments":[`+
+			`{"path":"files/video.mp4","name":"video.mp4"},{"path":"files/note.txt","name":"note.txt"}]}`+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+
+	result, err := scan(&ScanArguments{MaxAttachmentBytes: 1024})
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	attachments := entriesOfKind(result.Entries, KindAttachment)
+	if _, found := attachments["posts.jsonl#"+hashOfBytes([]byte(large))]; found {
+		t.Fatalf("the large file was reported: %+v", attachments)
+	}
+	if _, found := attachments["posts.jsonl#"+hashOfBytes(small)]; !found {
+		t.Fatalf("the small one beside it was not: %+v", attachments)
+	}
+	refused, found := attachments["posts.jsonl#post:1#video.mp4"]
+	if !found {
+		t.Fatalf("nothing said the large file had been passed over: %+v", attachments)
+	}
+	if !strings.Contains(refused.Refused, "4 kB") || !strings.Contains(refused.Refused, "1 kB") {
+		t.Fatalf("the reason says neither size: %q", refused.Refused)
+	}
+	if refused.Hash != "" || refused.Text != "" {
+		t.Fatalf("something of the refused file was sent: %+v", refused)
+	}
+	if result.Refused != 1 {
+		t.Fatalf("the page refused %d", result.Refused)
+	}
+
+	// The same folder, with no bound said, keeps both.
+	again, err := scan(&ScanArguments{})
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	if again.Refused != 0 {
+		t.Fatalf("with no bound said, the page refused %d", again.Refused)
+	}
+	if count := countOfKind(again.Entries, KindAttachment); count != 2 {
+		t.Fatalf("both files: %d", count)
+	}
+}
+
+// A path out of the folder is refused rather than followed, whether a
+// script wrote it or a link in the folder leads there. The folder is what
+// the person allowed; the rest of their disk is not, and a script that
+// read somebody else's archive does not get to decide otherwise.
+func TestAnAttachmentOutsideTheAllowedRootsIsRefused(t *testing.T) {
+	elsewhere := t.TempDir()
+	secret := filepath.Join(elsewhere, "id_rsa")
+	if err := os.WriteFile(secret, []byte("somewhere nobody allowed"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+	root, scan := recordsIn(t, nil)
+	names := []string{"absolute", "climbed"}
+	links := ""
+	if runtime.GOOS != "windows" {
+		if err := os.Symlink(secret, filepath.Join(root, "linked")); err != nil {
+			t.Fatalf("Symlink: %s", err)
+		}
+		links = `,{"path":"linked","name":"linked"}`
+		names = append(names, "linked")
+	}
+	if err := os.WriteFile(filepath.Join(root, "posts.jsonl"), []byte(
+		`{"id":"post:1","kind":"chat","channel":"ops","at":"2026-08-14T09:30:00Z","author":"ziyan","text":"here","attachments":[`+
+			`{"path":"`+filepath.ToSlash(secret)+`","name":"absolute"},`+
+			`{"path":"../elsewhere/id_rsa","name":"climbed"}`+links+`]}`+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+
+	result, err := scan(nil)
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	attachments := entriesOfKind(result.Entries, KindAttachment)
+	for _, name := range names {
+		entry, found := attachments["posts.jsonl#post:1#"+name]
+		if !found {
+			t.Fatalf("%s was not reported at all: %+v", name, attachments)
+		}
+		if entry.Refused == "" || entry.Hash != "" {
+			t.Fatalf("%s was not refused: %+v", name, entry)
+		}
+	}
+	for _, entry := range attachments {
+		if entry.Refused == "" {
+			t.Fatalf("something outside the folder was carried: %+v", entry)
+		}
+	}
+	if result.Refused != len(names) {
+		t.Fatalf("%d refusals, not %d", result.Refused, len(names))
+	}
+}
+
+// installedExtractor says whether one of the outside readers this program
+// calls is on the machine running the test. A build host without poppler
+// is not a broken change, so the test that needs one steps aside.
+func installedExtractor(name string) bool {
+	for _, found := range availableExtractors() {
+		if found == name {
+			return true
+		}
+	}
+	return false
+}
+
+// pdfSaying is the smallest PDF that says something, built here rather
+// than kept as a fixture so that the test reads as what it is.
+//
+// It opens with the binary comment every real generator writes, and that
+// is the part that matters: a file whose first pages decode as UTF-8 is
+// text whatever it is called, so an all-ASCII PDF would arrive as its own
+// source rather than through pdftotext, and the test would pass without
+// the extractor ever having run.
+func pdfSaying(said string) []byte {
+	content := fmt.Sprintf("BT /F1 24 Tf 72 700 Td (%s) Tj ET\n", said)
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+		fmt.Sprintf("<< /Length %d >>\nstream\n%sendstream", len(content), content),
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+	}
+	file := []byte("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+	offsets := make([]int, 0, len(objects))
+	for index, object := range objects {
+		offsets = append(offsets, len(file))
+		file = append(file, fmt.Sprintf("%d 0 obj\n%s\nendobj\n", index+1, object)...)
+	}
+	start := len(file)
+	file = append(file, fmt.Sprintf("xref\n0 %d\n0000000000 65535 f \n", len(objects)+1)...)
+	for _, offset := range offsets {
+		file = append(file, fmt.Sprintf("%010d 00000 n \n", offset)...)
+	}
+	file = append(file, fmt.Sprintf("trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n",
+		len(objects)+1, start)...)
+	return file
+}
+
+// A record may say what its file says, and then nothing has to guess: the
+// entry carries that text, so it is chunked and searched like any other
+// document rather than waiting for a night to open it with a model. The
+// bytes still go, because the original is what somebody asks for later.
+func TestAnAttachmentCarriesTheTextARecordGaveIt(t *testing.T) {
+	// Bytes nothing on this machine can read, so that text on the entry
+	// can only have come from the record.
+	sheet := []byte("\x00\x01PK a spreadsheet nobody here can open")
+	said := "quarter,revenue\nQ1,1200\nQ2,1450"
+	root, scan := recordsIn(t, map[string]string{"files/figures.xlsx": string(sheet)})
+	if err := os.WriteFile(filepath.Join(root, "posts.jsonl"), []byte(
+		`{"id":"post:1","kind":"chat","channel":"ops","at":"2026-08-14T09:30:00Z","author":"ziyan","text":"the numbers",`+
+			`"attachments":[{"path":"files/figures.xlsx","name":"figures.xlsx","text":"quarter,revenue\nQ1,1200\nQ2,1450"}]}`+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+
+	result, err := scan(nil)
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	attachments := entriesOfKind(result.Entries, KindAttachment)
+	entry, found := attachments["posts.jsonl#"+hashOfBytes(sheet)]
+	if !found {
+		t.Fatalf("the file is named by the hash of its bytes: %+v", attachments)
+	}
+	if entry.Text != said {
+		t.Fatalf("the text the record gave is %q, not %q", entry.Text, said)
+	}
+	if entry.Refused != "" {
+		t.Fatalf("a file with text was refused: %+v", entry)
+	}
+	// Still a file whose bytes are wanted: the hash they are stored
+	// under, how large they are, and where to ask for them.
+	if entry.Hash != hashOfBytes(sheet) || entry.Size != int64(len(sheet)) {
+		t.Fatalf("hashed and measured as the file it is: %+v", entry)
+	}
+	path, _ := entry.Metadata["path"].(string)
+	if !filepath.IsAbs(path) || !strings.HasSuffix(path, filepath.FromSlash("files/figures.xlsx")) {
+		t.Fatalf("the server has to be able to ask for the bytes: %q", path)
+	}
+}
+
+// A PDF that came with a message is read here, by the reader already
+// installed on the person's own machine, and costs nothing. Before this
+// it went up with no text at all and waited for a night to decide it was
+// not a picture.
+func TestAPdfThatCameWithARecordIsReadHere(t *testing.T) {
+	if !installedExtractor("pdftotext") {
+		t.Skip("pdftotext is not installed here, and it is what reads a PDF")
+	}
+	report := pdfSaying("the quarterly figures are in the appendix")
+	root, scan := recordsIn(t, map[string]string{"files/report.pdf": string(report)})
+	if err := os.WriteFile(filepath.Join(root, "posts.jsonl"), []byte(
+		`{"id":"post:1","kind":"chat","channel":"ops","at":"2026-08-14T09:30:00Z","author":"ziyan","text":"last quarter",`+
+			`"attachments":[{"path":"files/report.pdf","name":"report.pdf","contentType":"application/pdf"}]}`+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+
+	result, err := scan(nil)
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	attachments := entriesOfKind(result.Entries, KindAttachment)
+	entry, found := attachments["posts.jsonl#"+hashOfBytes(report)]
+	if !found {
+		t.Fatalf("the PDF is named by the hash of its bytes: %+v", attachments)
+	}
+	if !strings.Contains(entry.Text, "the quarterly figures are in the appendix") {
+		t.Fatalf("nothing read the PDF: %q", entry.Text)
+	}
+	if entry.Hash != hashOfBytes(report) || entry.Size != int64(len(report)) {
+		t.Fatalf("its bytes are still the identity: %+v", entry)
+	}
+}
+
+// A file that is simply text needs no reader at all, and a log somebody
+// dropped into a thread arrives with what it says.
+func TestAPlainFileThatCameWithARecordArrivesWithItsContents(t *testing.T) {
+	note := "2026-08-14 09:30:01 consumer stopped: the broker was unreachable\n"
+	root, scan := recordsIn(t, map[string]string{"files/consumer.log": note})
+	if err := os.WriteFile(filepath.Join(root, "posts.jsonl"), []byte(
+		`{"id":"post:1","kind":"chat","channel":"ops","at":"2026-08-14T09:30:00Z","author":"ziyan","text":"the log",`+
+			`"attachments":[{"path":"files/consumer.log","name":"consumer.log"}]}`+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+
+	result, err := scan(nil)
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	attachments := entriesOfKind(result.Entries, KindAttachment)
+	entry, found := attachments["posts.jsonl#"+hashOfBytes([]byte(note))]
+	if !found {
+		t.Fatalf("the log is named by the hash of its bytes: %+v", attachments)
+	}
+	if entry.Text != note {
+		t.Fatalf("the log says %q, and the entry says %q", note, entry.Text)
+	}
+}
+
+// And a file nothing here can read is exactly what it was before any of
+// this: reported, hashed, with no text, for a night to decide about. A
+// reader that failed is not the pass failing, and not the file being
+// passed over.
+func TestAnAttachmentNothingHereCanReadArrivesWithoutText(t *testing.T) {
+	picture := []byte("\x89PNG\r\n\x1a\nthis is a screenshot of a failing cell")
+	broken := []byte("%PDF-1.4\n%\xe2\xe3\xcf\xd3\nnothing in here is a PDF\n")
+	root, scan := recordsIn(t, map[string]string{
+		"files/shot.png":   string(picture),
+		"files/broken.pdf": string(broken),
+	})
+	if err := os.WriteFile(filepath.Join(root, "posts.jsonl"), []byte(
+		`{"id":"post:1","kind":"chat","channel":"ops","at":"2026-08-14T09:30:00Z","author":"ziyan","text":"here",`+
+			`"attachments":[{"path":"files/shot.png","name":"shot.png"},{"path":"files/broken.pdf","name":"broken.pdf"}]}`+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+
+	result, err := scan(nil)
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	attachments := entriesOfKind(result.Entries, KindAttachment)
+	for name, content := range map[string][]byte{"shot.png": picture, "broken.pdf": broken} {
+		entry, found := attachments["posts.jsonl#"+hashOfBytes(content)]
+		if !found {
+			t.Fatalf("%s was not reported at all: %+v", name, attachments)
+		}
+		if entry.Text != "" {
+			t.Fatalf("%s came back with text: %q", name, entry.Text)
+		}
+		if entry.Refused != "" || entry.Hash != hashOfBytes(content) {
+			t.Fatalf("%s was passed over rather than kept: %+v", name, entry)
+		}
+	}
+	if result.Refused != 0 {
+		t.Fatalf("the page refused %d", result.Refused)
+	}
+}
+
+// A picture is not read to find out it is not text.
+//
+// Nine files in ten of the archive this was written for are screenshots.
+// Sniffing each one to learn what its name already said would read the
+// whole twenty-four gigabytes a second time on every pass, and find
+// nothing every time.
+func TestAPictureIsNotReadToLearnItIsNotText(t *testing.T) {
+	t.Parallel()
+
+	for _, trial := range []struct {
+		name        string
+		contentType string
+		skipped     bool
+	}{
+		{"shot.png", "image/png", true},
+		{"shot.png", "", true},
+		{"clip.mp4", "video/mp4", true},
+		{"voice.ogg", "audio/ogg", true},
+		{"notes.txt", "text/plain", false},
+		{"report.pdf", "application/pdf", false},
+		{"mystery", "", false},
+	} {
+		attachment := &recordAttachment{Name: trial.name, ContentType: trial.contentType}
+		if skipped := neverText(attachment, trial.name); skipped != trial.skipped {
+			t.Errorf("%s (%q): opened=%v, wanted opened=%v", trial.name, trial.contentType, !skipped, !trial.skipped)
+		}
 	}
 }

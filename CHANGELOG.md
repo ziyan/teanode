@@ -6,6 +6,37 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-09-18
+
+### Added
+
+- A picture your agent indexed can now be seen where it belongs. On the Knowledge page a fact read out of a screenshot shows the screenshot itself, sized to the page and opening full size when you click it, with the thread and channel it came from; a file that is not a picture is a link to save. On your agent's Dreams tab each source says what became of the files it carried — how many wait for a decision, how many it decided against opening, and how many it opened and read — and you can see the list of what it passed over with the reason it gave for each. (#126)
+
+## [0.38.0] - 2026-09-18
+
+### Added
+
+- A file that came with a message can arrive with its text already. Where your script does not say what a file says, your own machine reads it with what you already have installed — a PDF, a spreadsheet, an office document or a plain text file — so it is searchable the night it is read and costs nothing. Pictures, video and sound still go up as bytes for a later night to look at. (#125)
+
+## [0.37.0] - 2026-09-18
+
+### Added
+
+- The nightly run now reads the pictures that came with your chat and your notes. It looks first at what it can see for nothing — the file's name, its size, the channel and thread, and the message it arrived with — and decides which are worth opening, because describing a picture costs money and most of them are avatars and logos. What it chooses is sent to a model, and what the model reads out of it, the error on the screen, the identifier, the timestamp, becomes the file's text, searchable and quotable like anything else. What it decides against keeps its bytes and carries the reason in plain words, so you can see what was passed over and why. A source's page now says how many files are waiting for a decision, how many it decided against, and how many it opened and read. (#123)
+
+## [0.36.0] - 2026-09-18
+
+### Added
+
+- A source your agent reads can now say what its records came with. A picture pasted into a thread, or a file sent with a message, becomes something your agent keeps: the bytes go to your object store, the same file shared four times is kept once, and the thread it came from is kept with it. Nothing opens a picture yet, and the source's page tells you how many are waiting for something that can. Files above the limit are named there as passed over rather than stored. The limit is `agent.limits.maxScannedAttachmentBytes`, twenty-five megabytes to begin with, and one source can be given its own. (#122)
+
+## [0.35.1] - 2026-09-18
+
+### Fixed
+
+- Your agent can answer questions about a busy page again. When it recalled a page with many things written on it, it showed the five oldest, whatever you had asked about, so it would pull up the right project and then not know the one detail you wanted. It now shows the sentences that match your question, and a long one no longer crowds out the better answers behind it. (#119)
+- Something your agent has been told is wrong, or has replaced with a newer statement, is no longer quoted back to you as though the page still said it. (#119)
+
 ## [0.35.0] - 2026-09-18
 
 ### Added

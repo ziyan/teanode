@@ -114,6 +114,13 @@ type AgentKnowledgeSpecification struct {
 
 	// MailboxID is which mailbox a sent source reads.
 	MailboxID string `json:"mailboxId,omitempty"`
+
+	// MaxAttachmentBytes is the largest file this source carries off the
+	// person's machine, in bytes. Zero means the server's own limit,
+	// agent.limits.maxScannedAttachmentBytes, which is what nearly every
+	// source wants; it is here for the one archive whose pictures are
+	// bigger than everybody else's.
+	MaxAttachmentBytes int64 `json:"maxAttachmentBytes,omitempty"`
 }
 
 // AgentKnowledgeSource is one standing grant of reach.
@@ -231,14 +238,20 @@ type AgentDocumentKind string
 
 // The kinds of document.
 const (
-	DocumentFile    AgentDocumentKind = "file"
-	DocumentPage    AgentDocumentKind = "page"
-	DocumentPost    AgentDocumentKind = "post"
-	DocumentMessage AgentDocumentKind = "message"
-	DocumentCommit  AgentDocumentKind = "commit"
-	DocumentChat    AgentDocumentKind = "chat"
-	DocumentRequest AgentDocumentKind = "request"
-	DocumentJournal AgentDocumentKind = "journal"
+	DocumentFile AgentDocumentKind = "file"
+
+	// DocumentAttachment is a picture or a file a record came with: a
+	// document whose meaning is in its bytes rather than in its text,
+	// kept in object storage under its hash and read, if anything here
+	// can read it, later.
+	DocumentAttachment AgentDocumentKind = "attachment"
+	DocumentPage       AgentDocumentKind = "page"
+	DocumentPost       AgentDocumentKind = "post"
+	DocumentMessage    AgentDocumentKind = "message"
+	DocumentCommit     AgentDocumentKind = "commit"
+	DocumentChat       AgentDocumentKind = "chat"
+	DocumentRequest    AgentDocumentKind = "request"
+	DocumentJournal    AgentDocumentKind = "journal"
 )
 
 // AgentDocument is one thing read from a source.
@@ -285,11 +298,37 @@ func (self *AgentDocument) Cite() string {
 
 // Author is who wrote it, where the document says.
 func (self *AgentDocument) Author() string {
+	return self.metadataText("author")
+}
+
+// ContentType is what kind of file this is, where the source said: the
+// media type without whatever parameters came with it, lowered, because
+// what asks is code deciding whether anything here can open it.
+func (self *AgentDocument) ContentType() string {
+	value := self.metadataText("contentType")
+	if index := strings.Index(value, ";"); index >= 0 {
+		value = value[:index]
+	}
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+// Declined is why the night decided against opening this, and "" where it
+// has not decided or decided to.
+//
+// Kept rather than acted on, so that a person who disagrees with what the
+// agent passed over can read the reason and put the file back. Declined
+// is not read: nothing has read it, and the two are separate marks so
+// that clearing one leaves the other alone.
+func (self *AgentDocument) Declined() string {
+	return self.metadataText("declined")
+}
+
+func (self *AgentDocument) metadataText(key string) string {
 	if self.Metadata == nil {
 		return ""
 	}
-	if author, ok := self.Metadata["author"].(string); ok {
-		return author
+	if value, ok := self.Metadata[key].(string); ok {
+		return value
 	}
 	return ""
 }

@@ -1,0 +1,18 @@
+You were shown a batch of the pictures that came with {{.PersonName}}'s
+chat and notes and asked which are worth opening, and you answered in
+words. The words are below. Nobody is waiting; what is needed now is the
+same answer as the object that acts on it.
+
+<choice>
+{{.Reading}}
+</choice>
+
+Answer with this object and nothing else. Every entry is a file the words
+above decided to open, with the `[id]` it was listed under copied exactly
+and the reason the words gave for it; a file the words did not settle on
+is left out.
+
+{"open": [{"id": "<the [id] of the file>",
+           "reason": "the failing container in the #support thread about the restart"}]}
+
+An empty list is the right answer for words that settled on nothing.

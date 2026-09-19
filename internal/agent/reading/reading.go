@@ -5,6 +5,7 @@ package reading
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +19,28 @@ type Progress struct {
 	// Waiting is what has been indexed and not yet read; Read is what has.
 	Waiting int64 `json:"waiting"`
 	Read    int64 `json:"read"`
+
+	// Unreadable is what nothing here can read yet: a picture or a file
+	// that came with a record, whose bytes are kept and of which no text
+	// has been made, and which the night has not yet decided about. It is
+	// neither waiting nor read -- a night could do nothing with it today
+	// -- so it is counted apart and said in its own words, rather than
+	// sitting in the waiting count as work that never moves.
+	Unreadable int64 `json:"unreadable"`
+
+	// Declined is what the night looked at the outside of -- the name,
+	// the size, the kind of file, the words it came with -- and decided
+	// was not worth the cost of opening. Described is what it did open
+	// and made text of.
+	//
+	// Three numbers for the files rather than one, because "1,020 files
+	// nothing here can read yet" is a different thing to be told from
+	// "1,020 the agent decided against" and from "1,020 it read", and a
+	// person looking at a source's page wants to know which of the three
+	// they are looking at. A described file is a document like any other
+	// and is in Waiting or Read as well; these two never are.
+	Declined  int64 `json:"declined"`
+	Described int64 `json:"described"`
 
 	// PerHour is how many documents the last dreams read in an hour of
 	// dreaming, and HoursLeft is Waiting at that pace. Zero when no dream
@@ -37,11 +60,15 @@ const readingPaceDreams = 12
 
 // For measures the night's progress for one agent.
 func For(tx db.Transaction, agent *models.Agent, owner *models.User) (*Progress, error) {
-	waiting, read, err := tx.CountAgentDocumentsReading(agent.ID, ChatNamesOf(owner))
+	counts, err := tx.CountAgentDocumentsReading(agent.ID, ChatNamesOf(owner))
 	if err != nil {
 		return nil, err
 	}
-	progress := &Progress{Waiting: waiting, Read: read, Bootstrapping: agent.DreamBootstrap}
+	progress := &Progress{
+		Waiting: counts.Waiting, Read: counts.Read, Unreadable: counts.Undecided,
+		Declined: counts.Declined, Described: counts.Described,
+		Bootstrapping: agent.DreamBootstrap,
+	}
 	dreams, err := tx.ListAgentDreams(agent.ID, 40)
 	if err != nil {
 		return nil, err
@@ -66,7 +93,7 @@ func For(tx db.Transaction, agent *models.Agent, owner *models.User) (*Progress,
 	}
 	if documents > 0 && spent > 0 {
 		progress.PerHour = float64(documents) / spent.Hours()
-		progress.HoursLeft = float64(waiting) / progress.PerHour
+		progress.HoursLeft = float64(progress.Waiting) / progress.PerHour
 	}
 	return progress, nil
 }
@@ -76,19 +103,76 @@ func For(tx db.Transaction, agent *models.Agent, owner *models.User) (*Progress,
 func (self *Progress) Describe() string {
 	total := self.Read + self.Waiting
 	if total == 0 {
+		if files := self.describeFiles(); files != "" {
+			return files
+		}
 		return "nothing has been indexed yet"
 	}
-	if self.Waiting == 0 {
-		return fmt.Sprintf("all %d documents read", self.Read)
-	}
 	line := fmt.Sprintf("%d of %d documents read, %d waiting", self.Read, total, self.Waiting)
-	if self.PerHour > 0 {
+	if self.Waiting == 0 {
+		line = fmt.Sprintf("all %d documents read", self.Read)
+	} else if self.PerHour > 0 {
 		line += fmt.Sprintf("; about %s left at %.0f an hour", describeHours(self.HoursLeft), self.PerHour)
 		if !self.Bootstrapping {
 			line += ", if it dreamed without pause"
 		}
 	}
+	// After the pace rather than inside it: these are not waiting for a
+	// night, they are waiting for something that can read them, and a
+	// person told "1,020 waiting" about pictures nothing opens would
+	// watch that number never move.
+	if files := self.describeFiles(); files != "" {
+		line += "; " + files
+	}
 	return line
+}
+
+// describeFiles is what became of the pictures and files a record came
+// with, in the words a person would use for them: the ones still waiting
+// for the night to look at them, the ones it decided against opening, and
+// the ones it opened and read.
+//
+// Each clause appears only when there is one, so that a source with no
+// such files reads exactly as it did before there were any.
+func (self *Progress) describeFiles() string {
+	var parts []string
+	if self.Unreadable > 0 {
+		parts = append(parts, fmt.Sprintf("%s %s nothing here can read yet",
+			describeCount(self.Unreadable), pluralFiles(self.Unreadable)))
+	}
+	if self.Declined > 0 {
+		parts = append(parts, fmt.Sprintf("%s %s it decided against opening",
+			describeCount(self.Declined), pluralFiles(self.Declined)))
+	}
+	if self.Described > 0 {
+		parts = append(parts, fmt.Sprintf("%s %s it opened and read",
+			describeCount(self.Described), pluralFiles(self.Described)))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func pluralFiles(count int64) string {
+	if count == 1 {
+		return "file"
+	}
+	return "files"
+}
+
+// describeCount groups a number the way a person writing it down would,
+// because these run to tens of thousands and "1020" is read twice.
+func describeCount(count int64) string {
+	digits := strconv.FormatInt(count, 10)
+	if len(digits) <= 3 {
+		return digits
+	}
+	var grouped strings.Builder
+	for index, digit := range digits {
+		if index > 0 && (len(digits)-index)%3 == 0 {
+			grouped.WriteByte(',')
+		}
+		grouped.WriteRune(digit)
+	}
+	return grouped.String()
 }
 
 // describeHours says a span in the unit a person would use for it.
