@@ -6,6 +6,19 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.40.12] - 2026-09-19
+
+### Fixed
+
+- The nightly reading no longer takes commits for empty documents and
+  marks them read without reading them. It judged a document by a size
+  that only files have, so every commit an agent had indexed was filed as
+  read without ever being put to a model — which is also why an agent
+  could say nothing about who wrote what, commits being the only records
+  that carry an author. If yours has already read an archive this way,
+  `teanode agent dream reread --minutes N` puts back everything marked
+  read in that window so the next nights read it properly. (#151)
+
 ## [0.40.11] - 2026-09-19
 
 ### Changed
