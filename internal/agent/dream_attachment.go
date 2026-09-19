@@ -68,11 +68,35 @@ const (
 	pictureLargest = 8 << 20
 )
 
+// attachmentsMost is how many of a batch of this size the night will
+// open. A quarter, because the archive holds far more pictures than
+// there is money to look at them, and a cap makes the decision a
+// comparative one: the model has to rank what it was shown and name only
+// the best of it rather than everything it could argue for.
+//
+// One function so that the number the prompt is rendered with and the
+// number the answer is measured against cannot drift apart. They must
+// agree, because a list that came back full means something different
+// from one that did not -- see declinedWhenFull.
+func attachmentsMost(count int) int { return max(1, count/4) }
+
 // declinedByDefault is what is recorded against a file the model was
-// shown and did not choose. It is written in the person's words rather
-// than the model's because the model said nothing about this one; what it
-// said was which others it wanted.
+// shown, had room to choose, and did not choose. It is written in the
+// person's words rather than the model's because the model said nothing
+// about this one; what it said was which others it wanted.
 const declinedByDefault = "the agent looked at its name, size, kind and the words it came with, and judged it not worth opening"
+
+// declinedWhenFull is what is recorded instead against a file left over
+// from a batch whose list came back full. The model named as many files
+// as it was allowed to name, so this one was never weighed against the
+// ones it named, and declinedByDefault would tell a person that a
+// judgement was made about it that was not. All this row can honestly
+// say is how many the night could take and that this was not among them.
+func declinedWhenFull(count int) string {
+	return fmt.Sprintf("the agent could choose at most %d of the %d files it was shown at once, "+
+		"the %d it chose were others, and this one was passed over rather than judged",
+		attachmentsMost(count), count, attachmentsMost(count))
+}
 
 // dreamAttachments decides which of the files a record came with are
 // worth opening, and opens them.
@@ -159,7 +183,19 @@ func (self *Agent) dreamAttachments(ctx context.Context, run *Run, budget *dream
 				opened++
 			}
 		}
-		declineAttachments(ctx, run, declined, declinedByDefault)
+		// A list that came back full is not the same answer as a list
+		// with room left in it. When the model named as many as it was
+		// allowed to, the rest of the batch never got a judgement, so the
+		// row says that instead of claiming one. They are declined either
+		// way, deliberately: ListAgentAttachmentsToDecide orders by
+		// happened_at and passes over what is already declined, so a file
+		// left undecided would be put to every night forever and the ones
+		// behind it would never be reached at all.
+		reason := declinedByDefault
+		if len(chosen) >= attachmentsMost(len(batch)) {
+			reason = declinedWhenFull(len(batch))
+		}
+		declineAttachments(ctx, run, declined, reason)
 	}
 }
 
@@ -194,7 +230,7 @@ func (self *Agent) chooseAttachments(ctx context.Context, run *Run, documents []
 	prompt, err := render("attachments.txt", map[string]any{
 		"PersonName": personName(run.Owner),
 		"Count":      len(documents),
-		"Most":       max(1, len(documents)/4),
+		"Most":       attachmentsMost(len(documents)),
 		"Items":      builder.String(),
 	})
 	if err != nil {
