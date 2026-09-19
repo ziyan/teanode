@@ -593,7 +593,7 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 	// are still offered below -- the graph should know the checkout is
 	// there and roughly what it is -- and their files are not read.
 	cloned := checkoutsNotTheirs(profiles, arguments)
-	paths, result.FilesKeptToProfile = withoutTheFilesOf(paths, cloned)
+	paths, result.FilesKeptToProfile = withoutTheFilesOf(paths, cloned, profiles)
 	result.CheckoutsKeptToProfile = len(cloned)
 
 	started := arguments.After == ""
@@ -759,14 +759,14 @@ func checkoutsNotTheirs(profiles map[string]*RepositoryProfile, arguments *ScanA
 
 // withoutTheFilesOf drops the files of those checkouts from a manifest,
 // and says how many it dropped.
-func withoutTheFilesOf(paths []string, checkouts map[string]bool) ([]string, int) {
-	if len(checkouts) == 0 {
+func withoutTheFilesOf(paths []string, cloned map[string]bool, profiles map[string]*RepositoryProfile) ([]string, int) {
+	if len(cloned) == 0 {
 		return paths, 0
 	}
 	kept := make([]string, 0, len(paths))
 	held := 0
 	for _, path := range paths {
-		if inACheckout(path, checkouts) {
+		if inAClonedCheckout(path, cloned, profiles) {
 			held++
 			continue
 		}
@@ -775,40 +775,56 @@ func withoutTheFilesOf(paths []string, checkouts map[string]bool) ([]string, int
 	return kept, held
 }
 
-// inACheckout says whether a path lies in one of them, by walking up its
-// directories rather than across the checkouts: a tree of checkouts is
-// deep in neither direction, but it is wide in files.
+// inAClonedCheckout says whether a path lies in one of them, by walking
+// up its directories rather than across the checkouts: a tree of
+// checkouts is deep in neither direction, but it is wide in files.
+//
+// The checkout nearest above the file decides, and it decides alone.
+// Checkouts nest -- a build tool clones what it depends on into the
+// project -- so the answer for a file is whose work the checkout holding
+// it is, and one of the person's own inside one they only cloned is
+// still theirs.
 //
 // The empty key is the scanned tree itself, which is a checkout when the
 // source points straight at one.
-func inACheckout(path string, checkouts map[string]bool) bool {
+func inAClonedCheckout(path string, cloned map[string]bool, profiles map[string]*RepositoryProfile) bool {
 	directory := path
 	for {
 		cut := strings.LastIndex(directory, "/")
 		if cut < 0 {
-			return checkouts[""]
+			return cloned[""]
 		}
 		directory = directory[:cut]
-		if checkouts[directory] {
-			return true
+		if _, found := profiles[directory]; found {
+			return cloned[directory]
 		}
 	}
 }
 
 // listTree is every file worth offering, relative to the root, and the
 // profile of each repository found on the way.
+//
+// One walk over the tree, and every checkout met on the way hands over
+// its own list of files. The walk used to stop at a checkout, because a
+// checkout's files are git's answer and not the walk's -- so a checkout
+// inside another checkout's working tree was never reached. That layout
+// is ordinary: a build tool that clones what it depends on into a
+// directory of the project, a folder of checkouts kept inside one. On
+// the deployment this was written for it was 324 checkouts holding the
+// person's actual working code, and the scan indexed two files out of
+// all of them.
+//
+// The two ways of listing must not both list the same file. A checkout
+// that gave its files is authoritative for everything under it, so the
+// walk offers nothing of its own there; it goes on descending all the
+// same, because a checkout deeper down is its own work and lists itself.
 func listTree(ctx context.Context, root string, arguments *ScanArguments) ([]string, map[string]*RepositoryProfile, error) {
 	profiles := map[string]*RepositoryProfile{}
-	if isRepository(root) {
-		profiles[""] = repositoryProfile(ctx, root)
-		tracked, err := trackedFiles(ctx, root)
-		if err == nil {
-			return keepWanted(withoutIgnoredDirectories(tracked), arguments), profiles, nil
-		}
-		// A repository git cannot read is walked like any other tree,
-		// which is the right answer rather than an error: the files are
-		// still there.
-	}
+	// Every checkout met, by its directory, and whether git gave its
+	// files. A checkout git cannot read is walked like any other
+	// directory, which is the right answer rather than an error: the
+	// files are still there.
+	checkouts := map[string]bool{}
 	var paths []string
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -817,39 +833,91 @@ func listTree(ctx context.Context, root string, arguments *ScanArguments) ([]str
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		name := entry.Name()
+		relative := ""
+		if path != root {
+			// The ignore list and the dotted-directory rule are about
+			// what a tree holds, not about what somebody allowed: a
+			// source pointed straight at one of those directories is
+			// read.
+			name := entry.Name()
+			if entry.IsDir() && (isIgnoredDirectory(name) || strings.HasPrefix(name, ".")) {
+				return filepath.SkipDir
+			}
+			relativePath, err := filepath.Rel(root, path)
+			if err != nil {
+				return nil
+			}
+			relative = filepath.ToSlash(relativePath)
+		}
 		if entry.IsDir() {
-			if isIgnoredDirectory(name) {
-				return filepath.SkipDir
+			if !isRepository(path) {
+				return nil
 			}
-			if strings.HasPrefix(name, ".") && path != root {
-				return filepath.SkipDir
+			// Once per checkout, and no more: git is the cost of this
+			// walk, and a tree of three hundred checkouts pays it three
+			// hundred times over. The profile is handed the files rather
+			// than fetching them again for itself.
+			tracked, err := trackedFiles(ctx, path)
+			profiles[relative] = repositoryProfile(ctx, path, tracked)
+			checkouts[relative] = err == nil
+			if err != nil {
+				return nil
 			}
-			// A repository inside the tree is read as a repository.
-			if path != root && isRepository(path) {
-				relative, _ := filepath.Rel(root, path)
-				profiles[filepath.ToSlash(relative)] = repositoryProfile(ctx, path)
-				tracked, err := trackedFiles(ctx, path)
-				if err == nil {
-					for _, file := range withoutIgnoredDirectories(tracked) {
-						paths = append(paths, filepath.ToSlash(filepath.Join(relative, file)))
-					}
-					return filepath.SkipDir
-				}
+			for _, file := range withoutIgnoredDirectories(tracked) {
+				paths = append(paths, filepath.ToSlash(filepath.Join(relative, file)))
 			}
 			return nil
 		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
+		if listedByItsCheckout(relative, checkouts) {
 			return nil
 		}
-		paths = append(paths, filepath.ToSlash(relative))
+		paths = append(paths, relative)
 		return nil
 	})
 	if err != nil {
 		return nil, nil, err
 	}
-	return keepWanted(paths, arguments), profiles, nil
+	return keepWanted(withoutTheCheckoutsThemselves(paths, profiles), arguments), profiles, nil
+}
+
+// listedByItsCheckout says whether the checkout nearest above a file has
+// already given its own list of files, in which case the walk must leave
+// the file alone: git's answer is the whole of that checkout's, and it
+// is the answer the ignore rule was applied to.
+//
+// Nearest, not any. A checkout git could not read gives no list, and its
+// files are walked as before even when it sits inside one that did.
+func listedByItsCheckout(relative string, checkouts map[string]bool) bool {
+	directory := relative
+	for {
+		cut := strings.LastIndex(directory, "/")
+		if cut < 0 {
+			return checkouts[""]
+		}
+		directory = directory[:cut]
+		if listed, found := checkouts[directory]; found {
+			return listed
+		}
+	}
+}
+
+// withoutTheCheckoutsThemselves drops the paths that name a checkout
+// rather than a file in one.
+//
+// To the outer checkout's git a nested one is a path and not a tree:
+// `git ls-files` gives a submodule, or anything else committed as a
+// gitlink, as its directory alone. That directory is already offered
+// under the same identifier as the checkout it is, so left in, one thing
+// arrived twice -- as a checkout, and as a file that could not be read.
+func withoutTheCheckoutsThemselves(paths []string, profiles map[string]*RepositoryProfile) []string {
+	kept := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if _, found := profiles[strings.TrimSuffix(path, "/")]; found {
+			continue
+		}
+		kept = append(kept, path)
+	}
+	return kept
 }
 
 // keepWanted narrows a manifest by the source's globs.
@@ -1110,9 +1178,16 @@ func trackedFiles(ctx context.Context, directory string) ([]string, error) {
 	}
 	// What is new and not ignored: work in progress is what somebody is
 	// most likely to ask about.
+	//
+	// Git collapses a new directory to its own name, `notes/`, and that
+	// is not a file: offered as one it came back refused, "cannot be
+	// read", once per directory. It is how a checkout inside this one
+	// appears here as well, and that one is offered under the same
+	// identifier as the checkout it is -- so a name ending in a slash is
+	// a directory and is left to the walk.
 	if status, err := git(ctx, directory, "status", "--porcelain", "-z", "--untracked-files=normal"); err == nil {
 		for _, line := range strings.Split(status, "\x00") {
-			if len(line) > 3 && strings.HasPrefix(line, "?? ") {
+			if len(line) > 3 && strings.HasPrefix(line, "?? ") && !strings.HasSuffix(line, "/") {
 				paths = append(paths, line[3:])
 			}
 		}
@@ -1121,7 +1196,11 @@ func trackedFiles(ctx context.Context, directory string) ([]string, error) {
 }
 
 // repositoryProfile is what git says about a checkout, in one pass.
-func repositoryProfile(ctx context.Context, directory string) *RepositoryProfile {
+//
+// The checkout's files are handed in rather than asked for again: the
+// caller has just listed them, git is what a walk over a tree of
+// checkouts spends its time on, and this used to double the bill.
+func repositoryProfile(ctx context.Context, directory string, tracked []string) *RepositoryProfile {
 	profile := &RepositoryProfile{Languages: map[string]int{}}
 	if head, err := git(ctx, directory, "rev-parse", "HEAD"); err == nil {
 		profile.Head = strings.TrimSpace(head)
@@ -1154,23 +1233,21 @@ func repositoryProfile(ctx context.Context, directory string) *RepositoryProfile
 		}
 	}
 	profile.Module = manifestName(directory)
-	if tracked, err := trackedFiles(ctx, directory); err == nil {
-		top := map[string]bool{}
-		for _, path := range tracked {
-			if extension := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), "."); extension != "" {
-				profile.Languages[extension]++
-			}
-			// The first segment of a path that has one is a top-level
-			// directory; a dotted one is tooling, not a module.
-			if first, _, found := strings.Cut(filepath.ToSlash(path), "/"); found && !strings.HasPrefix(first, ".") {
-				top[first] = true
-			}
+	top := map[string]bool{}
+	for _, path := range tracked {
+		if extension := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), "."); extension != "" {
+			profile.Languages[extension]++
 		}
-		for name := range top {
-			profile.Directories = append(profile.Directories, name)
+		// The first segment of a path that has one is a top-level
+		// directory; a dotted one is tooling, not a module.
+		if first, _, found := strings.Cut(filepath.ToSlash(path), "/"); found && !strings.HasPrefix(first, ".") {
+			top[first] = true
 		}
-		sort.Strings(profile.Directories)
 	}
+	for name := range top {
+		profile.Directories = append(profile.Directories, name)
+	}
+	sort.Strings(profile.Directories)
 	// Everyone who has committed, with how much and when. Which of them
 	// the person actually worked with is the server's judgment; this is
 	// the evidence for it.

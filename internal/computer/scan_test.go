@@ -826,6 +826,174 @@ func TestVendoredFilesAreNotOfferedByARepository(t *testing.T) {
 	}
 }
 
+// A checkout inside another checkout's working tree is a checkout: it is
+// offered as one, with its profile, and its files are read.
+//
+// The walk used to stop at the outer one, because a checkout's files are
+// git's answer rather than the walk's. The layout it stopped at is
+// ordinary -- a build tool that clones what it depends on into the
+// project, a folder of checkouts kept inside one -- and on the
+// deployment this was written for the directory below the outer checkout
+// held 324 further checkouts, the person's actual working code. Two
+// files were indexed out of all of them.
+func TestACheckoutInsideACheckoutIsFound(t *testing.T) {
+	root := t.TempDir()
+	checkoutWith(t, root, map[string]string{
+		"main.go":       "package main\n",
+		".gitignore":    "checkouts/\n",
+		"docs/notes.md": "What the thing is.\n",
+	})
+	checkoutWith(t, filepath.Join(root, "checkouts", "gripper"), map[string]string{
+		"arm.py":                   "def grip(): pass\n",
+		"vendor/left-pad/index.js": "module.exports = 1\n",
+	})
+	checkoutWith(t, filepath.Join(root, "checkouts", "portal", "web"), map[string]string{
+		"app.tsx": "export const App = () => null\n",
+	})
+
+	files, checkouts, _ := scanOfTree(t, root, &ScanArguments{})
+
+	for _, name := range []string{"main.go", "docs/notes.md", "checkouts/gripper/arm.py", "checkouts/portal/web/app.tsx"} {
+		if !files[name] {
+			t.Fatalf("%q is a file in a checkout in this tree and was not offered: %v", name, files)
+		}
+	}
+	// The scanned tree is itself a checkout, and is called ".".
+	for _, name := range []string{".", "checkouts/gripper", "checkouts/portal/web"} {
+		profile := checkouts[name]
+		if profile == nil {
+			t.Fatalf("the checkout at %q was not offered as one: %v", name, checkouts)
+		}
+		if profile.Commits == 0 || len(profile.Authors) == 0 {
+			t.Fatalf("with what git says about it: %+v", profile)
+		}
+	}
+	// The ignore rule holds at every level, not only the outermost: a
+	// nested checkout lists its own files through git, which lists what
+	// it has committed under vendor/ along with everything else.
+	for name := range files {
+		if inIgnoredDirectory(name) {
+			t.Fatalf("%q is under a directory the walk skips and was offered: %v", name, files)
+		}
+	}
+}
+
+// Nothing is offered twice. A checkout's files come from git and the
+// files under it are not walked as well; the checkout itself is a
+// repository and never also a file, though its parent's git calls it an
+// untracked directory.
+func TestANestedCheckoutIsOfferedOnce(t *testing.T) {
+	root := t.TempDir()
+	checkoutWith(t, root, map[string]string{"main.go": "package main\n"})
+	checkoutWith(t, filepath.Join(root, "checkouts", "gripper"), map[string]string{"arm.py": "def grip(): pass\n"})
+	// Committed into the outer checkout as well, which is what a
+	// submodule is and what `git add` makes of any checkout inside
+	// another: the outer one's git then gives the directory as though it
+	// were a file of its own.
+	checkoutWith(t, root, nil)
+	// A file the outer checkout ignores is still not read: git's list is
+	// the whole of what that checkout offers.
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("built/\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "built"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %s", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "built", "teanode"), []byte("binary\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+
+	home := t.TempDir()
+	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
+	if _, err := AllowScanRoot(options, root); err != nil {
+		t.Fatalf("AllowScanRoot: %s", err)
+	}
+	result, err := RunScan(context.Background(), options, &ScanArguments{Root: root})
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	seen := map[string]int{}
+	for _, entry := range result.Entries {
+		if entry.Kind == "file" || entry.Kind == "repository" {
+			seen[entry.ExternalID]++
+		}
+	}
+	for identifier, times := range seen {
+		if times > 1 {
+			t.Fatalf("%q was offered %d times: %v", identifier, times, seen)
+		}
+	}
+	if seen["checkouts/gripper"] != 1 || seen["checkouts/gripper/arm.py"] != 1 {
+		t.Fatalf("the nested checkout is offered, once, and so are its files: %v", seen)
+	}
+	for _, entry := range result.Entries {
+		if entry.ExternalID == "checkouts/gripper" && entry.Kind != "repository" {
+			t.Fatalf("and it is offered as the checkout it is, not as a %q", entry.Kind)
+		}
+	}
+	if seen["built/teanode"] != 0 {
+		t.Fatalf("what the outer checkout ignores is not walked in behind its back: %v", seen)
+	}
+}
+
+// The rule about whose work a checkout is holds inside another checkout.
+// A dependency cloned into the project is kept to its profile like any
+// other, and counts where the source says how much was.
+func TestANestedCheckoutTheyNeverCommittedToKeepsOnlyItsProfile(t *testing.T) {
+	root := t.TempDir()
+	checkoutBy(t, root, "alice@example.com", map[string]string{"main.go": "package main\n"})
+	checkoutBy(t, filepath.Join(root, "checkouts", "renderer"), "somebody@example.net", map[string]string{
+		"engine.c":  "int main(void) { return 0; }\n",
+		"render.c":  "void render(void) {}\n",
+		"README.md": "A renderer somebody else wrote, cloned in by the build.\n",
+	})
+
+	files, checkouts, result := scanOfTree(t, root, &ScanArguments{OwnAddresses: []string{"alice@example.com"}})
+
+	for name := range files {
+		if strings.HasPrefix(name, "checkouts/renderer/") {
+			t.Fatalf("%q is somebody else's source, cloned in, and was offered: %v", name, files)
+		}
+	}
+	profile := checkouts["checkouts/renderer"]
+	if profile == nil {
+		t.Fatalf("the checkout itself is still offered: %v", checkouts)
+	}
+	if profile.Description == "" {
+		t.Fatalf("with what git says about it: %+v", profile)
+	}
+	if !files["main.go"] {
+		t.Fatalf("and the checkout around it is theirs and is read: %v", files)
+	}
+	if result.CheckoutsKeptToProfile != 1 || result.FilesKeptToProfile != 3 {
+		t.Fatalf("one checkout kept to its profile and three files unread, not %d and %d",
+			result.CheckoutsKeptToProfile, result.FilesKeptToProfile)
+	}
+}
+
+// And the other way up. The checkout nearest above a file decides whose
+// work it is, so the person's own checkout inside one they only cloned
+// is still read.
+func TestTheirOwnCheckoutInsideSomebodyElsesIsRead(t *testing.T) {
+	root := t.TempDir()
+	checkoutBy(t, root, "somebody@example.net", map[string]string{"engine.c": "int main(void) { return 0; }\n"})
+	checkoutBy(t, filepath.Join(root, "plugins", "gripper"), "alice@example.com", map[string]string{
+		"arm.py": "def grip(): pass\n",
+	})
+
+	files, _, result := scanOfTree(t, root, &ScanArguments{OwnAddresses: []string{"alice@example.com"}})
+	if !files["plugins/gripper/arm.py"] {
+		t.Fatalf("the checkout they work in is read wherever it sits: %v", files)
+	}
+	if files["engine.c"] {
+		t.Fatalf("and the one around it is not: %v", files)
+	}
+	if result.CheckoutsKeptToProfile != 1 || result.FilesKeptToProfile != 1 {
+		t.Fatalf("one checkout kept to its profile and one file unread, not %d and %d",
+			result.CheckoutsKeptToProfile, result.FilesKeptToProfile)
+	}
+}
+
 // The ignore list is one list, whichever way a tree is read. A path is
 // ignored for any segment, not only its first: a vendored tree sits
 // several directories down.
