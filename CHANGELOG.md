@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.40.9] - 2026-09-19
+
+### Fixed
+
+- A knowledge source reading a folder of checkouts now files their commits.
+  They were offered only on the page that finished a pass over the tree, and a
+  tree of any size takes hundreds of pages, so on a large one no commit was
+  ever offered and the agent had no answer to who wrote a piece of code. Each
+  page of a pass now carries a share of the history beside its files. A pass
+  begun by an older daemon carries on correctly after the upgrade. (#147)
+
 ## [0.40.8] - 2026-09-19
 
 ### Changed
