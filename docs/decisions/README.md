@@ -68,3 +68,9 @@ committed to, in full, and the ones they only cloned as a profile and
 nothing more. It also says why that is decided from whose commits are in a
 checkout rather than from a list of names, and why the device applies it
 while the server supplies it.
+
+`20260918-the-history-is-part-of-the-manifest.md` says how the commits of
+those checkouts reach the graph: in the same sequence of pages as the
+files, from every checkout that is the person's own work, and bounded per
+pass at a pace the source sets, because a commit is the only document
+that says who wrote something and there are a third of a million of them.

@@ -327,6 +327,11 @@ type SaveAgentKnowledgeSourceArguments struct {
 	// source, including the ones the person has never committed to. Not
 	// given leaves it alone.
 	ReadEveryCheckout *bool `json:"readEveryCheckout" graphapi:"nullable"`
+
+	// CommitsPerPass is how many commits one pass over this source's
+	// tree carries. Not given leaves it alone; zero puts it back to the
+	// pace the program on the machine reads at.
+	CommitsPerPass *int `json:"commitsPerPass" graphapi:"nullable"`
 }
 
 type DeleteAgentKnowledgeSourceArguments struct {
@@ -1669,6 +1674,12 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 	}
 	if arguments.ReadEveryCheckout != nil {
 		source.Specification.ReadEveryCheckout = *arguments.ReadEveryCheckout
+	}
+	if arguments.CommitsPerPass != nil {
+		if *arguments.CommitsPerPass < 0 {
+			return nil, fmt.Errorf("the commits one pass carries cannot be negative; zero is the pace the program on the machine reads at")
+		}
+		source.Specification.CommitsPerPass = *arguments.CommitsPerPass
 	}
 	if arguments.RootPath != "" {
 		source.RootPath = models.NormalizePath(arguments.RootPath)
