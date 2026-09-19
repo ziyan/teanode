@@ -518,9 +518,15 @@ export function KnowledgePage() {
   const documents = searchingDocuments ? <DocumentsDialog onClose={() => setSearchingDocuments(false)} /> : null
 
   // The toolbar above the list, the one the mail list has: the box that
-  // searches the pages by name, and under it the ways in that are not about
-  // a name. A div rather than a form because this filters as it is typed --
+  // searches the pages by name, beside the ways in that are not about a
+  // name. A div rather than a form because this filters as it is typed --
   // there is nothing for Enter to submit.
+  //
+  // One row, as the mail list has it. The labels are a word each for that
+  // reason: as a question and a phrase they were 323 pixels of a 359 pixel
+  // toolbar, which left nowhere for the box and forced the two apart. The
+  // long wording is still what each dialog is titled, where there is room
+  // for it and where a sentence reads better than a noun.
   const lookup = (
     <div className="list-toolbar">
       <input
@@ -536,11 +542,11 @@ export function KnowledgePage() {
           among. One segmented control because they are one set, the same
           control the mail list narrows itself with. */}
       <div className="segmented" role="group" aria-label={t('knowledge.waysIn')}>
-        <button type="button" onClick={() => setRecalling(true)}>
-          {t('knowledge.recall.title')}
+        <button type="button" onClick={() => setRecalling(true)} title={t('knowledge.recall.title')}>
+          {t('knowledge.recall.button')}
         </button>
-        <button type="button" onClick={() => setSearchingDocuments(true)}>
-          {t('knowledge.documents.title')}
+        <button type="button" onClick={() => setSearchingDocuments(true)} title={t('knowledge.documents.title')}>
+          {t('knowledge.documents.button')}
         </button>
         <Link to="/settings/knowledge/explore" title={t('knowledge.explore.go')}>
           {t('knowledge.explore.title')}

@@ -8220,13 +8220,14 @@ button.with-icon {
   padding: var(--space-2);
 }
 
-/* The box takes the toolbar's first row and the three ways in sit under it
-   as one set. Sharing a row meant the box swallowed the width of a column
-   this narrow and the ways broke wherever they happened to land, so three
-   things that answer the same kind of question looked like three accidents. */
-.knowledge-list .list-toolbar input[type='search'] {
-  flex: 1 1 100%;
-}
+/* Nothing of its own: the box and the ways in share a row, which is what
+   the mail list does and what the shared toolbar already arranges. The box
+   took a row to itself for a while, because as a question and a phrase the
+   ways in filled the toolbar and left nowhere for it. The labels are a word
+   each now, so there is room and no override is needed.
+
+   If a label ever grows back, the toolbar wraps rather than overflowing,
+   and the fix is the wording, not a rule here. */
 
 .knowledge-page {
   min-width: 0;
