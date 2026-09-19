@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.40.5] - 2026-09-19
+
+### Fixed
+
+- The reading progress on the agent's Dreams tab shows exact counts and the
+  share reached, and no longer rounds itself to finished while documents
+  are still waiting. (#142)
+
 ## [0.40.4] - 2026-09-19
 
 ### Changed
