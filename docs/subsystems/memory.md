@@ -173,6 +173,32 @@ commit the graph already holds is offered again on every pass with its
 text left out, for the same reason a profile goes on the last page: what
 a finished pass was not shown is swept as gone.
 
+Reading a commit is where its author becomes a person. The reading is
+shown each item's heading — its title, who wrote it after `by`, and its
+date — and told outright that the author earns a page under `people/` and
+a `works_on` link to what they worked on, since one commit is evidence
+enough that they wrote it. That used to be left to the model's judgement,
+against an instruction to leave out any link it would not defend, and the
+judgement went the other way: in three hours it read 1,781 commits, filed
+162 facts from them and drew two links, while 139 distinct authors sat in
+document metadata against 29 people in the graph. Expect well over a
+hundred pages, most of them a line or two, and a contact card each, since
+a page about a person is somebody the address book should know. An author
+whose name reads as something that runs rather than as somebody who types
+— a bot, a build account, a word with a number stuck on the end of it —
+gets neither, by a rule the reading applies to the name rather than by a
+list of accounts somebody has to keep up to date. A batch of twenty items
+may now file ten facts rather than five, because five between them left
+the people and the projects competing for the same five, which is a bar
+on the pages by another name.
+
+Their own commits land on `self`, as a fact filed under their own name
+does. The two are routed the same way on purpose: a link names the page
+its fact asked for, the fact does not always end up at the path it asked
+for, and a link whose end was looked up literally found nothing and was
+dropped without a word — which on a person's own checkouts is most of the
+authorship map, because most of what is in them was written by them.
+
 What the tree holds is worked out once a pass, on its first page, and
 lent to every page after it. It used to be worked out for each page of
 256 entries: the walk, and then `git ls-files`, `git status`, and a whole
