@@ -62,8 +62,8 @@ itself what to read.
       daemon reads what it can here — PR #125
 - [x] Milestone 6: the dashboard shows an attachment on the page it belongs to
       — PR #126
-- [ ] Milestone 7: a file reaches the conversation — the agent can look at one
-      again, and a person can see the one an answer rests on
+- [x] Milestone 7: a file reaches the conversation — the agent can look at one
+      again, and a person can see the one an answer rests on — PR #PULL
 - [ ] Milestone 8: the attached computer prepares what no model can read, so a
       file whose meaning is not in words still reaches the graph
 
@@ -432,6 +432,30 @@ quarter of a batch, so at most a quarter of the pictures are ever opened. All
 47,700 come to roughly thirty dollars rather than the twenty-seven guessed, and
 the two errors happen to cancel. The number to watch if the cap is ever raised is
 the per-picture one, which is the one that was wrong.
+
+A tool cannot import the package the night lives in. The bound on a
+picture and the function that reads a document's bytes were both in
+`internal/agent`, and the memory tool needs both; a tool package imports
+`internal/agent/tools` and nothing above it, so they moved down to that
+package and the night now names them there. That is the same shape
+`IsImage` already had, and it is the general rule for anything a
+background run and a tool both have to agree about: it has to live at the
+tools level or the two will end up with a number each.
+
+The two ends of a citation were already written down and never joined.
+The agent has cited its own pages as `work/mcx#3` since the graph was
+built, and the resolution from a fact's evidence to the file behind it was
+built for the page of facts one milestone earlier. Reading the citations
+out of an answer's own words was all that was missing, which is why this
+half needed no change to the model, the prompt, or anything a run does —
+and why it works for every answer already in every transcript.
+
+A citation is read out of prose, so the pattern has to be strict about
+what is *not* one. A path is slugs joined by slashes and a number after a
+hash, and the character in front is consumed and refused where it is part
+of a word or an address: otherwise the fragment on the end of a link and
+the "issue#3" in a sentence would both be looked up. Anything that gets
+through and means nothing costs one lookup and resolves to nothing.
 
 ## Decision Log
 

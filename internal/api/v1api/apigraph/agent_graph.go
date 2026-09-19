@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,6 +66,11 @@ type AgentGraphQuery interface {
 	// indexed, and how long the rest takes at the pace of the last dreams.
 	// Needs agent:use.
 	AgentReadingProgress(ctx context.Context) (*reading.Progress, error)
+
+	// The pictures and files behind citations the agent has already
+	// written -- "work/mcx#3" -- so that a conversation can show the
+	// evidence an answer rests on. Needs agent:use.
+	AgentCitedAttachments(ctx context.Context, arguments AgentCitedAttachmentsArguments) ([]*AgentCitedAttachment, error)
 
 	// The places the person has pointed their agent at. Needs agent:use.
 	ListAgentKnowledgeSources(ctx context.Context) ([]*models.AgentKnowledgeSource, error)
@@ -473,6 +479,24 @@ type AgentAttachmentFile struct {
 	HappenedAt *time.Time `json:"happenedAt"`
 }
 
+// AgentCitedAttachmentsArguments names the citations to resolve.
+type AgentCitedAttachmentsArguments struct {
+	// Citations are references as the agent writes them into an answer:
+	// a page's path, a hash, and the fact's number, as in work/mcx#3.
+	Citations []string `json:"citations"`
+}
+
+// AgentCitedAttachment is one citation and the files the fact behind it
+// was read from.
+//
+// Only the citations that have one are answered for. A conversation cites
+// far more than it was read out of pictures, and a row per citation
+// saying "nothing" would be most of the answer.
+type AgentCitedAttachment struct {
+	Citation string                 `json:"citation"`
+	Files    []*AgentAttachmentFile `json:"files"`
+}
+
 // ListAgentDeclinedAttachmentsArguments names whose files to list.
 type ListAgentDeclinedAttachmentsArguments struct {
 	// SourceID is one source; empty is every source of the agent's.
@@ -592,13 +616,30 @@ const citedDocumentsLimit = 500
 // queries. Everything that is not an attachment is dropped -- a fact
 // citing a chat unit or a conversation has nothing to show.
 func (self *graph) attachmentsCitedBy(tx db.Transaction, agentId string, facts []*models.AgentFact) ([]*AgentAttachmentFile, error) {
+	documentIds := citedDocumentIds(facts)
+	files, err := attachmentFilesOf(tx, agentId, documentIds)
+	if err != nil {
+		return nil, err
+	}
+	attachments := []*AgentAttachmentFile{}
+	for _, documentId := range documentIds {
+		if file := files[documentId]; file != nil {
+			attachments = append(attachments, file)
+		}
+	}
+	return attachments, nil
+}
+
+// citedDocumentIds is what a set of facts name as evidence, in the order
+// they name them and without repeats.
+//
+// A filing run writes the identifier as the prompt showed it, which is in
+// brackets; documentEvidence trims them the same way.
+func citedDocumentIds(facts []*models.AgentFact) []string {
 	seen := map[string]bool{}
 	var documentIds []string
 	for _, fact := range facts {
 		for _, evidence := range fact.Evidence {
-			// A filing run writes the identifier as the prompt showed
-			// it, which is in brackets; documentEvidence trims them the
-			// same way.
 			id := strings.Trim(strings.TrimSpace(evidence.ID), "[]")
 			if id == "" || seen[id] {
 				continue
@@ -609,28 +650,32 @@ func (self *graph) attachmentsCitedBy(tx db.Transaction, agentId string, facts [
 			// reader shows fifty facts at a time. Bounded so that one
 			// page cannot turn into one enormous statement.
 			if len(documentIds) >= citedDocumentsLimit {
-				break
+				return documentIds
 			}
 		}
-		if len(documentIds) >= citedDocumentsLimit {
-			break
-		}
 	}
+	return documentIds
+}
+
+// attachmentFilesOf is the files among these documents, as a person sees
+// them, by identifier. Anything that is not an attachment is left out: a
+// chat unit or a commit has nothing to show.
+func attachmentFilesOf(tx db.Transaction, agentId string, documentIds []string) (map[string]*AgentAttachmentFile, error) {
+	files := map[string]*AgentAttachmentFile{}
 	if len(documentIds) == 0 {
-		return []*AgentAttachmentFile{}, nil
+		return files, nil
 	}
 	documents, err := tx.GetAgentDocuments(agentId, documentIds)
 	if err != nil {
 		return nil, err
 	}
-	attachments := []*AgentAttachmentFile{}
 	for _, document := range documents {
 		if document.Kind != models.DocumentAttachment {
 			continue
 		}
-		attachments = append(attachments, attachmentFileOf(document))
+		files[document.ID] = attachmentFileOf(document)
 	}
-	return attachments, nil
+	return files, nil
 }
 
 // attachmentFileOf is one attachment document as a person sees it.
@@ -640,8 +685,8 @@ func attachmentFileOf(document *models.AgentDocument) *AgentAttachmentFile {
 		Name:        document.Cite(),
 		ContentType: document.ContentType(),
 		Bytes:       document.Bytes,
-		Channel:     documentMetadataText(document, "channel"),
-		Thread:      documentMetadataText(document, "thread"),
+		Channel:     document.Channel(),
+		Thread:      document.Thread(),
 		Declined:    document.Declined(),
 		HappenedAt:  document.HappenedAt,
 	}
@@ -653,17 +698,6 @@ func attachmentFileOf(document *models.AgentDocument) *AgentAttachmentFile {
 		file.Path = api.AgentDocumentFilePath(document.ID)
 	}
 	return file
-}
-
-// documentMetadataText is one string a scan recorded about a document.
-func documentMetadataText(document *models.AgentDocument, key string) string {
-	if document == nil || document.Metadata == nil {
-		return ""
-	}
-	if value, ok := document.Metadata[key].(string); ok {
-		return strings.TrimSpace(value)
-	}
-	return ""
 }
 
 // foldedOn is the page's facts that stand behind another fact, each with
@@ -1040,6 +1074,107 @@ func (self *graph) ListAgentKnowledgeSources(ctx context.Context) ([]*models.Age
 		sources = []*models.AgentKnowledgeSource{}
 	}
 	return sources, nil
+}
+
+// citationsResolved is how many citations one call may look up.
+//
+// A conversation shown in the drawer is a page of messages at a time and
+// an answer cites a handful, so this is well clear of a real transcript
+// and stops a caller from asking for a thousand page reads in one
+// statement.
+const citationsResolved = 200
+
+// AgentCitedAttachments is the files behind citations an answer made.
+//
+// An assistant's line carries text and nothing else -- only a person's own
+// message may carry a file -- so an answer read out of a screenshot cannot
+// show the screenshot. It does not have to: the agent already cites what
+// it used, and has since the graph was built. This resolves those
+// citations the way the Knowledge page resolves a fact's evidence, so the
+// conversation can show the thing itself under the message. Nothing the
+// model does has to change, and it works for every citation already
+// written.
+func (self *graph) AgentCitedAttachments(ctx context.Context, arguments AgentCitedAttachmentsArguments) ([]*AgentCitedAttachment, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	cited := []*AgentCitedAttachment{}
+	// One read per distinct page and per fact, and one for all the
+	// documents at the end: a transcript citing the same page twenty
+	// times is one page read, not twenty.
+	nodes := map[string]*models.AgentNode{}
+	facts := map[string][]*models.AgentFact{}
+	var order []string
+	var all []*models.AgentFact
+	for _, citation := range arguments.Citations {
+		if len(order) >= citationsResolved {
+			break
+		}
+		path, number := splitCitation(citation)
+		if path == "" {
+			continue
+		}
+		if _, asked := facts[citation]; asked {
+			continue
+		}
+		facts[citation] = nil
+		node, known := nodes[path]
+		if !known {
+			if node, err = tx.GetAgentNode(found.ID, path); err != nil {
+				return nil, err
+			}
+			nodes[path] = node
+		}
+		if node == nil {
+			continue
+		}
+		// The caller's own agent throughout, so a path copied from
+		// somewhere else reads their own graph or nothing.
+		fact, err := tx.GetAgentFact(found.ID, node.ID, number)
+		if err != nil {
+			return nil, err
+		}
+		if fact == nil {
+			continue
+		}
+		facts[citation] = []*models.AgentFact{fact}
+		order = append(order, citation)
+		all = append(all, fact)
+	}
+	files, err := attachmentFilesOf(tx, found.ID, citedDocumentIds(all))
+	if err != nil {
+		return nil, err
+	}
+	for _, citation := range order {
+		var behind []*AgentAttachmentFile
+		for _, documentId := range citedDocumentIds(facts[citation]) {
+			if file := files[documentId]; file != nil {
+				behind = append(behind, file)
+			}
+		}
+		if len(behind) == 0 {
+			continue
+		}
+		cited = append(cited, &AgentCitedAttachment{Citation: citation, Files: behind})
+	}
+	return cited, nil
+}
+
+// splitCitation reads a citation the way the agent writes one: the page's
+// path, then the fact's number after a hash. Anything else is nothing.
+func splitCitation(citation string) (string, int) {
+	citation = strings.TrimSpace(citation)
+	hash := strings.LastIndex(citation, "#")
+	if hash <= 0 {
+		return "", 0
+	}
+	number, err := strconv.Atoi(strings.TrimSpace(citation[hash+1:]))
+	if err != nil || number <= 0 {
+		return "", 0
+	}
+	return models.NormalizePath(citation[:hash]), number
 }
 
 // ListAgentSourceAttachments is what became of each source's files.

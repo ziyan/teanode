@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
@@ -111,23 +112,12 @@ func keepAttachmentBytes(ctx context.Context, files storage.Files, hash, stored 
 
 // DocumentBytes is an attachment document's bytes, out of the store.
 //
-// The whole reason the bytes are kept rather than fetched when they are
-// wanted: this answers with the laptop they came from shut and the person
-// asleep, which is when the reading happens.
+// The work is in the tools package, because the memory tool's `look` reads
+// the same bytes for the person and a tool cannot import this one. Kept
+// here as well so that every caller in this package and in the API says
+// the same name for the same thing.
 func DocumentBytes(ctx context.Context, files storage.Files, document *models.AgentDocument) ([]byte, error) {
-	if document == nil {
-		return nil, errors.New("there is no document to read")
-	}
-	if document.StorageKey == "" {
-		// Not a failure of this call, and said so rather than answered
-		// with nothing: a pass that could not reach the computer files
-		// the document without a key and the next one fills it in.
-		return nil, fmt.Errorf("%s has no stored bytes", document.Cite())
-	}
-	if files == nil {
-		return nil, errors.New("this server has nowhere to keep a file")
-	}
-	return files.GetFile(ctx, document.StorageKey)
+	return tools.DocumentBytes(ctx, files, document)
 }
 
 // fileAttachment writes one attachment down and keeps its bytes.

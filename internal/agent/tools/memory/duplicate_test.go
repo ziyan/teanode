@@ -12,6 +12,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/storage"
 )
 
 // fakeRun knows what a fact means, as a run with an embedding model does:
@@ -19,6 +20,7 @@ import (
 type fakeRun struct {
 	tools.Run
 	database     db.Database
+	store        storage.Storage
 	owner        *models.User
 	agent        *models.Agent
 	conversation *models.AgentConversation
@@ -27,6 +29,7 @@ type fakeRun struct {
 }
 
 func (self *fakeRun) Database() db.Database                   { return self.database }
+func (self *fakeRun) Storage() storage.Storage                { return self.store }
 func (self *fakeRun) Agent() *models.Agent                    { return self.agent }
 func (self *fakeRun) Owner() *models.User                     { return self.owner }
 func (self *fakeRun) Conversation() *models.AgentConversation { return self.conversation }
