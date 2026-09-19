@@ -16,10 +16,11 @@ import (
 //
 // Generalized from a survey the maintainer had already built by hand for
 // eleven years of their own work: collect the commits and the requests
-// and the messages, drop the noise, group by repository and by month, and
-// read the result while writing the month up. The collecting and the
-// dropping are arithmetic, so they are done here; only the writing up
-// needs a model, and that is the timeline phase of the nightly run.
+// and the messages, say what was said twice once, group by repository and
+// by month, and read the result while writing the month up. The
+// collecting and the grouping are arithmetic, so they are done here; only
+// the writing up needs a model, and that is the timeline phase of the
+// nightly run.
 //
 // Nothing here costs anything, which is why a period page can be rebuilt
 // whenever it is wrong.
@@ -96,7 +97,8 @@ func (self *Agent) Digest(ctx context.Context, agent *models.Agent, owner *model
 	var builder strings.Builder
 	theirs := self.ownAddresses(ctx, owner)
 
-	// Commits, by repository, with the noise dropped.
+	// Commits, by repository, with a subject repeated through a month
+	// given once.
 	commits := byRepository(documents, models.DocumentCommit, theirs)
 	if len(commits) > 0 {
 		builder.WriteString("## commits\n\n")
@@ -108,7 +110,7 @@ func (self *Agent) Digest(ctx context.Context, agent *models.Agent, owner *model
 			return len(commits[names[left]]) > len(commits[names[right]])
 		})
 		for _, name := range names {
-			subjects := dropNoise(commits[name])
+			subjects := dropRepeats(commits[name])
 			fmt.Fprintf(&builder, "- %s (%d commits)", name, len(commits[name]))
 			if len(subjects) > 0 {
 				if len(subjects) > digestSubjects {
@@ -296,18 +298,21 @@ func titlesOf(documents []*models.AgentDocument, kind models.AgentDocumentKind, 
 	return titles
 }
 
-// dropNoise removes the commit subjects that say nothing and the ones
-// that say the same thing twice.
+// dropRepeats gives a commit subject once, however often a month said it.
 //
-// The list is the maintainer's, from a survey they wrote by hand over
-// eleven years of their own history, and it generalizes: every
-// repository has "Update.", "WIP" and a version bump.
-func dropNoise(subjects []string) []string {
+// A list of about thirty-five openings -- "update", "wip", "merge ",
+// "chore(release)" -- stood here, and a subject beginning with one was
+// left out of the digest. It could not tell a bump from a sentence that
+// starts like one, and two of its entries ignored the length guard
+// altogether, so "Merge the three mailbox tables into one" was thrown
+// away whole. A dull subject in the digest costs a few tokens; a real
+// one missing from it costs the month's page the thing that happened.
+func dropRepeats(subjects []string) []string {
 	kept := make([]string, 0, len(subjects))
 	seen := map[string]bool{}
 	for _, subject := range subjects {
 		trimmed := strings.TrimSpace(subject)
-		if trimmed == "" || isNoise(trimmed) {
+		if trimmed == "" {
 			continue
 		}
 		lowered := strings.ToLower(trimmed)
@@ -320,37 +325,6 @@ func dropNoise(subjects []string) []string {
 		kept = append(kept, cutRunes(trimmed, 120))
 	}
 	return kept
-}
-
-// noisePrefixes are the openings of a subject that says nothing.
-var noisePrefixes = []string{
-	"update.", "update", "updated.", "updated", "wip", "fix typo", "fix.", "fix",
-	"fixed.", "fixed", "fix merge", "fix bad merge", "minor fix", "small fix",
-	"bug fix", "clean up", "cleanup", "cleanup.", "bump version", "backup.",
-	"merge ", "revert \"updated", "update branch", "update branches",
-	"update file", "upgrade.", "chore(release)", "chore: automatically bump version",
-	"update readme", "formatting", "format.", "style: ", "update jhbuild",
-	"update submodule", "updated submodule", "...", "..",
-}
-
-// isNoise says whether a commit subject is worth reading.
-func isNoise(subject string) bool {
-	lowered := strings.ToLower(strings.TrimSpace(subject))
-	if lowered == "" {
-		return true
-	}
-	for _, prefix := range noisePrefixes {
-		if lowered == strings.TrimSpace(prefix) || strings.HasPrefix(lowered, prefix) {
-			// "fix" alone is noise; "fix the conveyor deadlock" is not.
-			if len(lowered) <= len(strings.TrimSpace(prefix))+3 {
-				return true
-			}
-			if prefix == "merge " || prefix == "chore(release)" || prefix == "chore: automatically bump version" {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // PeriodPath is where a month or a year lives in the graph.

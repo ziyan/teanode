@@ -70,6 +70,9 @@ var replyTools = map[string]bool{
 // stranger's message deciding what happens to a mailbox. The loop strips
 // every tool that changes anything and refuses any call whose action turns
 // out not to be a read, which is what lets the calendar be in the set at all.
+// The night is the one run that asks for the other thing, through
+// thinkAboutFreely, because the owner decided it should have the person's
+// tools; everything else here reads and answers.
 //
 // This is the one way any headless work asks a model anything. A call
 // that needs no tools passes an empty allow set and one round, and gets a
@@ -97,6 +100,35 @@ func (self *Agent) think(ctx context.Context, run *Run, title, prompt string, al
 // attachment is the first, and it goes through the same turn rather than
 // reaching a provider on its own.
 func (self *Agent) thinkAbout(ctx context.Context, run *Run, title, prompt string, pictures []llm.ContentPart, allow map[string]bool, rounds int, kind models.AgentJobKind, work config.AgentWork) (*thought, error) {
+	return self.thinking(ctx, run, title, prompt, pictures, allow, rounds, kind, work, true, nil)
+}
+
+// thinkAboutFreely is thinkAbout for a run that may change something: the
+// night, and nothing else so far.
+//
+// Read-only is what every other headless run wants, and saying so twice --
+// in the tools it is offered and again in the check each call passes --
+// is what keeps a sorting run from acting on a stranger's message. The
+// night is not that: it is the person's own agent working on the person's
+// own things, and the owner decided it should be able to read a file, run
+// something over it and look at what came back. What it must still ask
+// for, it is still refused: a call that raises a confirmation card cannot
+// be confirmed with nobody present.
+//
+// The graph is the exception, and it is not a permission: memory and
+// knowledge may only be looked in here, because a change said in the
+// object the call ends with is filed by code with the evidence it came
+// from, and one made by hand with the memory tool is not. The pair is
+// named here rather than passed in, so that both halves of thinking keep
+// the one signature a caller picks between.
+func (self *Agent) thinkAboutFreely(ctx context.Context, run *Run, title, prompt string, pictures []llm.ContentPart, allow map[string]bool, rounds int, kind models.AgentJobKind, work config.AgentWork) (*thought, error) {
+	return self.thinking(ctx, run, title, prompt, pictures, allow, rounds, kind, work, false, lookupTools)
+}
+
+// thinking is the body of both: one headless turn in a run conversation of
+// its own, which readOnly says may only read, and readOnlyTools holds to
+// reading by name when the rest of the turn may act.
+func (self *Agent) thinking(ctx context.Context, run *Run, title, prompt string, pictures []llm.ContentPart, allow map[string]bool, rounds int, kind models.AgentJobKind, work config.AgentWork, readOnly bool, readOnlyTools map[string]bool) (*thought, error) {
 	if self.operations == nil {
 		return nil, fmt.Errorf("no way to act as the person")
 	}
@@ -128,7 +160,7 @@ func (self *Agent) thinkAbout(ctx context.Context, run *Run, title, prompt strin
 	}
 	turn, err := self.Ask(&AskSettings{
 		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
-		Message: prompt, Surface: string(kind), ReadOnly: true, Short: true,
+		Message: prompt, Surface: string(kind), ReadOnly: readOnly, ReadOnlyTools: readOnlyTools, Short: true,
 		Allow: allow, Headless: true, MaxRounds: rounds, UsageKind: string(kind), Work: work,
 		Pictures:       pictures,
 		ReadThenAnswer: true, ResultCharacters: thinkResultCharacters,
@@ -198,7 +230,15 @@ func roundsFor(configuration *config.Configuration, kind models.AgentJobKind) in
 		if limits.MaxRoundsPerDream > 0 {
 			return limits.MaxRoundsPerDream
 		}
-		return 4
+		// Four was right while a night could only look a page up: one
+		// call to find what it needed, one to answer. A night with the
+		// person's computer spends three rounds on the smallest useful
+		// errand -- find the file, run something over it, read what came
+		// back -- and had nothing left to answer with. Twelve leaves room
+		// for that and for the lookup either side of it, and the last
+		// round is still told it is the last. An operator who wants the
+		// old pacing sets maxRoundsPerDream.
+		return 12
 	}
 	return 4
 }

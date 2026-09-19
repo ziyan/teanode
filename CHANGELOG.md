@@ -6,6 +6,63 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.40.1] - 2026-09-19
+
+### Fixed
+
+- A page is no longer filed under the same folder twice, which split one
+  person's facts across two pages. (#137)
+
+## [0.40.0] - 2026-09-19
+
+### Added
+
+- The agent can look again at a picture it learned something from. Ask it
+  what an error in a screenshot said and it opens the screenshot rather than
+  answering from the note it made about it months ago, and says plainly when
+  a file is one it cannot open. (#136)
+- An answer in the agent drawer now shows the picture it was read from,
+  under the message, with the thread and channel it was posted in — so the
+  evidence is there to look at rather than something to take on trust. (#136)
+
+## [0.39.7] - 2026-09-19
+
+### Changed
+
+- The agent no longer filters what it writes through lists of English words. A
+  page keeps the sentences it was written with, including ones that hedge; a
+  fact that reads thin is filed rather than dropped in silence; a commit whose
+  subject begins like a version bump still reaches the month's page. The
+  nightly run also stops striking facts an older build filed. (#134)
+
+## [0.39.6] - 2026-09-19
+
+### Changed
+
+- The nightly run now has the agent's full tool kit, including any computer
+  attached to that agent, rather than read-only access to memory and knowledge.
+  It can read and write files and run commands on that machine while nobody is
+  watching. Anything that would normally ask the person first — deleting,
+  moving, installing, sending mail, anything leaving the server — is still
+  refused during a night, because there is nobody there to confirm it. If you
+  do not want this, detach the computer, switch the `computer` tool family off,
+  or turn dreaming off for that agent. The exception is the memory graph: a
+  night may look in it but not change it by hand, as before, because what it
+  learns is filed from the object each call ends with, together with the
+  evidence it came from. (#131)
+- `maxRoundsPerDream` now defaults to twelve instead of four, because a night
+  that finds a file and runs something over it needs three rounds before it has
+  anything to answer with. Set it to go back to the old pacing. (#131)
+
+## [0.39.5] - 2026-09-19
+
+### Changed
+
+- A command sent to your computer runs as you wrote it. The rule that
+  guessed which commands were dangerous and asked first is gone; moving and
+  deleting a file still ask, and what your agent may reach is still only
+  the directories you allowed. (#133)
+
 ## [0.39.4] - 2026-09-19
 
 ### Fixed

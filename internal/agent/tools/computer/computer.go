@@ -1,8 +1,13 @@
 // Package computer is the person's own computer, when they attached one
 // with `teanode computer`: a shell to run a command in, and its files to
 // read, write, list and search, as the person, anywhere on it. The program
-// on the computer does the work; the server carries the request across and
-// asks the person first for anything that changes the machine.
+// on the computer does the work; the server carries the request across.
+//
+// What may be reached is bounded by the directories the person allowed,
+// which the program on their machine enforces. What may be run is not
+// guessed at here: a list of dangerous-looking commands was tried and
+// removed, because it could never name everything dangerous and read as a
+// promise it could not keep.
 package computer
 
 import (
@@ -14,7 +19,6 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
-	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -24,7 +28,7 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "shell", Family: tools.FamilyComputer, Risk: tools.RiskWrite,
-				Description: "Run a command on the person's own computer, when they have attached it with `teanode computer`: through their shell, in a directory of theirs, with a timeout. The answer carries what it printed and its exit code; a non-zero code is an answer, not a failure. It runs as the person, anywhere on their machine. What changes the machine or reaches out of it — removing, moving, installing, sudo, pushing, ssh — asks the person first. Without an attached computer the tool says so.",
+				Description: "Run a command on the person's own computer, when they have attached it with `teanode computer`: through their shell, in a directory of theirs, with a timeout. The answer carries what it printed and its exit code; a non-zero code is an answer, not a failure. It runs as the person, anywhere on their machine, and does what it says: nothing here second-guesses a command. Without an attached computer the tool says so.",
 				Parameters: tools.Object(map[string]any{
 					"computer":    tools.StringProperty("which of their computers, by name, when more than one is attached"),
 					"command":     tools.StringProperty("the command line, as typed into their shell"),
@@ -36,19 +40,7 @@ func init() {
 				Preview: func(arguments json.RawMessage) string {
 					var call shellArguments
 					_ = json.Unmarshal(arguments, &call)
-					decision := computer.Classify(call.Command)
-					if decision.Reason != "" {
-						return fmt.Sprintf("Run on your computer (%s): %s", decision.Reason, tools.FirstWords(call.Command, 16))
-					}
 					return "Run on your computer: " + tools.FirstWords(call.Command, 16)
-				},
-				RiskOf: func(arguments json.RawMessage) tools.Risk {
-					var call shellArguments
-					_ = json.Unmarshal(arguments, &call)
-					if computer.Classify(call.Command).Action == computer.ActionAllow {
-						return tools.RiskWrite
-					}
-					return tools.RiskDestructive
 				},
 				Run:     runShell,
 				Overlay: computerOverlay,
@@ -112,21 +104,11 @@ func init() {
 					case "delete", "move":
 						return tools.RiskDestructive
 					}
-					// A write into what the machine runs on its own — a
-					// shell's startup file, keys, autostart — asks the way
-					// the shell's rule asks for the same.
-					//
-					// Both paths, not just the one named path. For every
-					// action but one the path written is call.Path; for a
-					// copy it is call.Destination, and asking about the
-					// source instead meant copying a file over
-					// ~/.ssh/authorized_keys went through silently while
-					// writing the same bytes to the same place asked. The
-					// gate fired on reading the key and stayed quiet on
-					// replacing it.
-					if computer.PathAsks(call.Path) || computer.PathAsks(call.Destination) {
-						return tools.RiskDestructive
-					}
+					// Which action it is, and nothing about which path.
+					// A list of paths worth asking about was tried here and
+					// removed with the command list it matched: the same
+					// objection applies, and a guess that names some of the
+					// dangerous places reads as though it names them all.
 					return tools.RiskWrite
 				},
 				Run: runFilesystem,
@@ -169,12 +151,15 @@ func computerOf(run tools.Run, name string) (tools.Computer, error) {
 // Of is the attached computer a tool means, for the tools outside this
 // package that reach one.
 func Of(run tools.Run, name string) (tools.Computer, error) {
-	if run.Headless() {
-		return nil, fmt.Errorf("the computer is not reached by a run with nobody present")
-	}
 	computing, ok := run.(tools.Computing)
 	if !ok || !computing.ComputersAllowed() || !tools.FeatureAllowed(run.Configuration(), "computer") {
 		return nil, fmt.Errorf("attaching a computer is off on this server")
+	}
+	// A run with nobody present is refused the machine unless it is one
+	// the owner said may have it. The card is not a boundary for such a
+	// run -- nobody is there to be shown one -- so the boundary is here.
+	if run.Headless() && !computing.ComputersUnattended() {
+		return nil, fmt.Errorf("the computer is not reached by a run with nobody present")
 	}
 	attached := computing.AttachedComputers()
 	if len(attached) == 0 {
@@ -348,11 +333,13 @@ func putOnComputer(ctx context.Context, run tools.Run, attached tools.Computer, 
 // computerOverlay says which computers are attached, when any is.
 func computerOverlay(ctx context.Context) string {
 	run := tools.MustRun(ctx)
-	if run.Headless() {
-		return ""
-	}
 	computing, ok := run.(tools.Computing)
 	if !ok || !computing.ComputersAllowed() {
+		return ""
+	}
+	// A run that cannot reach a computer is not told one is attached: it
+	// would only spend a call finding out it may not.
+	if run.Headless() && !computing.ComputersUnattended() {
 		return ""
 	}
 	attached := computing.AttachedComputers()

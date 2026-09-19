@@ -222,6 +222,19 @@ interface Attachment {
   size: number
 }
 
+// CitedFile is one picture or file the fact behind a citation was read
+// from: what it is, where it was posted, and where its bytes are served
+// from. The path is empty for a file this server no longer holds the
+// bytes of, which is a name with nothing to open behind it.
+interface CitedFile {
+  documentId: string
+  name: string
+  contentType: string
+  channel: string
+  thread: string
+  path: string
+}
+
 interface Usage {
   promptTokens: number
   completionTokens: number
@@ -328,6 +341,20 @@ const CONVERSATION = `
       }
       total
       todos { id text doneAt }
+    }
+  }`
+
+// The files behind the citations an answer made. An assistant's line
+// carries text and nothing else -- only a person's own message may carry
+// a file -- so a screenshot an answer was read out of can only be reached
+// through what the answer already says: the agent cites what it used, as
+// "work/mcx#3", and this resolves those citations to the fact and from
+// there to the file. Nothing the model does has to change.
+const CITED = `
+  query ($citations: [String!]!) {
+    AgentCitedAttachments(citations: $citations) {
+      citation
+      files { documentId name contentType channel thread path }
     }
   }`
 
@@ -469,6 +496,44 @@ function draftKey(conversationId: string): string {
 
 function isImage(contentType: string): boolean {
   return /^image\/(png|jpeg|gif|webp)/i.test(contentType)
+}
+
+// A reference to one thing the agent knows, as it writes one into an
+// answer: a page's path and the fact's number after a hash --
+// "work/mcx#3", "people/alice-chen#12", "self#4". A path is slugs joined
+// by slashes, so the pattern is that and nothing else.
+//
+// The character before is consumed and refused where it is part of a word
+// or an address, so that the fragment on the end of a link and the
+// "issue#3" in a sentence are not read as citations. Anything that gets
+// through and means nothing resolves to nothing, which costs one lookup.
+const CITATION = /(?:^|[^\w#/-])([a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*#\d{1,6})(?![\w-])/g
+
+// citationsIn is the references one answer makes, in the order it makes
+// them and without repeats.
+function citationsIn(text: string): string[] {
+  const found: string[] = []
+  for (const match of text.matchAll(CITATION)) {
+    if (!found.includes(match[1])) found.push(match[1])
+  }
+  return found
+}
+
+// citedIn is the files one answer's citations resolved to, in the order
+// the answer cites them, with each file named once however many of its
+// citations point at it.
+function citedIn(text: string, resolved: Record<string, CitedFile[]>): CitedFile[] {
+  const files: CitedFile[] = []
+  // Nothing resolved, nothing to look for. This is drawn on every render
+  // of every answer, a transcript is redrawn on every token of a turn in
+  // flight, and most conversations cite nothing with a file behind it.
+  if (Object.keys(resolved).length === 0) return files
+  for (const citation of citationsIn(text)) {
+    for (const file of resolved[citation] ?? []) {
+      if (!files.some((already) => already.documentId === file.documentId)) files.push(file)
+    }
+  }
+  return files
 }
 
 function attachmentHref(attachment: Attachment): string {
@@ -855,6 +920,62 @@ function FileCard({ file }: { file: SharedFile }) {
   )
 }
 
+// CitedEvidence is what an answer was read from, under the answer: the
+// picture itself, or the file's name where it is not a picture, with
+// where it was posted.
+//
+// The agent is not taught to attach anything. It cites what it used, as
+// it always has, and this follows the citation back to the file -- so a
+// person sees the screenshot the answer rests on rather than being asked
+// to take the sentence on trust.
+function CitedEvidence({ files }: { files: CitedFile[] }) {
+  const shown = files.filter((file) => file.path !== '')
+  if (shown.length === 0) return null
+  return (
+    <div className="agent-cited">
+      {shown.map((file) => (
+        <CitedPicture key={file.documentId} file={file} />
+      ))}
+    </div>
+  )
+}
+
+// CitedPicture is one of those files: the picture, or the name where it
+// is not one.
+//
+// Framed into another site the picture is a name too. The drawer is on
+// the dashboard's own origin there, but a third-party cookie is not sent
+// with it, and an indexed file has no signed address the way a file of
+// the conversation has -- so drawing an img would draw a broken one. A
+// link opened in a tab of its own is a top-level request, which carries
+// the session and works from either place.
+function CitedPicture({ file }: { file: CitedFile }) {
+  const { t } = useTranslation()
+  const where = [file.thread, file.channel].filter((part) => part.trim() !== '').join(' · ')
+  const said = where === '' ? t('agentDrawer.citedFile') : t('agentDrawer.citedFrom', { where })
+  return (
+    <span className="agent-cited-file">
+      {isImage(file.contentType) && !framedDrawer ? (
+        <a href={file.path} target="_blank" rel="noreferrer" title={t('agentDrawer.citedOpen')}>
+          {/* Loaded at once rather than lazily. A lazy picture is only
+              fetched when its box comes into view, and this box has no
+              size until the picture is in it: width and height are auto
+              under a max, so before the bytes arrive the element is three
+              pixels square, never intersects anything, and the picture is
+              never asked for. That shipped once already, on the page of
+              facts, and left a blank where every screenshot should be. */}
+          <img className="agent-cited-image" src={file.path} alt={file.name} />
+        </a>
+      ) : (
+        <a className="link" href={file.path} target="_blank" rel="noreferrer">
+          {file.name}
+        </a>
+      )}
+      <span className="muted">{said}</span>
+    </span>
+  )
+}
+
 // BudgetRing is the day's tokens as a ring in the drawer's head: how much
 // of the budget has gone, coloured by how near the end of it the day is,
 // with the numbers and the hour it resets on hover, and the agent's own
@@ -1027,6 +1148,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // must be told so every time the drawer is open on it.
   const [actingAs, setActingAs] = useState<string | null>(null)
   const [lines, setLines] = useState<Line[]>([])
+  // The files behind the citations the agent's answers have made, by
+  // citation, and which citations have already been asked about. Asked
+  // once each: a transcript is read many times over and the answer does
+  // not change, and a citation that resolves to nothing is still a
+  // citation that resolves to nothing.
+  const [citedFiles, setCitedFiles] = useState<Record<string, CitedFile[]>>({})
+  const citationsAsked = useRef<Set<string>>(new Set())
   // The messages behind the lines, oldest first, and how many the
   // conversation holds: a drawer opens on the newest hundred, and the
   // difference is what "earlier messages" fetches.
@@ -1142,6 +1270,44 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       cancelled = true
     }
   }, [])
+
+  // The files behind whatever the agent's answers have cited, fetched as
+  // the transcript settles. A line still streaming is left alone: its
+  // last citation is half-written, and "work/mcx#3" on the way to
+  // "work/mcx#31" would be asked about and then wrong.
+  useEffect(() => {
+    // Not while an answer is still arriving. This runs on every token, and
+    // the walk below is over the whole transcript; the last line is the
+    // only one that ever streams, so waiting for it costs one look.
+    const last = lines[lines.length - 1]
+    if (last && last.kind === 'assistant' && last.streaming) return
+    const wanted: string[] = []
+    for (const line of lines) {
+      if (line.kind !== 'assistant' || line.streaming) continue
+      for (const citation of citationsIn(line.text)) {
+        if (citationsAsked.current.has(citation) || wanted.includes(citation)) continue
+        wanted.push(citation)
+      }
+    }
+    if (wanted.length === 0) return
+    for (const citation of wanted) citationsAsked.current.add(citation)
+    let cancelled = false
+    graphql<{ AgentCitedAttachments: { citation: string; files: CitedFile[] }[] }>(CITED, { citations: wanted })
+      .then((response) => {
+        if (cancelled) return
+        const found: Record<string, CitedFile[]> = {}
+        for (const row of response.AgentCitedAttachments ?? []) found[row.citation] = row.files
+        if (Object.keys(found).length > 0) setCitedFiles((previous) => ({ ...previous, ...found }))
+      })
+      .catch(() => {
+        // Evidence nobody can resolve is not worth a failure in the
+        // transcript. The answer still reads; it is only the picture
+        // under it that is missing.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [lines])
 
   const loadConversations = useCallback(async () => {
     const response = await graphql<{ ListAgentConversations: Conversation[] }>(CONVERSATIONS, { archived: false })
@@ -2238,6 +2404,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           <Tooltip key={line.key} label={line.at ? formatTime(line.at) : ''}>
             <div className={['agent-line assistant', line.streaming ? 'streaming' : ''].filter(Boolean).join(' ')}>
               <Markdown text={line.text} onLeaving={leaving} />
+              <CitedEvidence files={citedIn(line.text, citedFiles)} />
               {showUsage && line.usage && (
                 <div className="agent-usage muted">
                   {t('agentDrawer.tokens', {

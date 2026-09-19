@@ -70,13 +70,14 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "memory", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "What you know about the person, kept between conversations as pages with facts on them. Every page has a path: people/alice-chen, projects/portal, self, time/2026/09. A fact on a page is cited as people/alice-chen#3. Your prompt carries the top of the graph and whatever this turn's words touched; `get` a path before telling them you do not know something about them, and `search` when you cannot guess the path. You need not file what you learn -- a run after this conversation does that -- but `note` anything they ask you to remember, and correct a page that is wrong: `note` with the fact's number rewrites that one sentence where it stands. `history` says what has happened to a page and who did it, which is how a line nobody recognizes is accounted for.",
+				Description: "What you know about the person, kept between conversations as pages with facts on them. Every page has a path: people/alice-chen, projects/portal, self, time/2026/09. A fact on a page is cited as people/alice-chen#3. Your prompt carries the top of the graph and whatever this turn's words touched; `get` a path before telling them you do not know something about them, and `search` when you cannot guess the path. You need not file what you learn -- a run after this conversation does that -- but `note` anything they ask you to remember, and correct a page that is wrong: `note` with the fact's number rewrites that one sentence where it stands. `history` says what has happened to a page and who did it, which is how a line nobody recognizes is accounted for. `look` shows you the picture a fact was read out of, when the answer is in the screenshot rather than in the sentence about it.",
 				Parameters: tools.Object(map[string]any{
 					"action": tools.EnumProperty("what to do; move files a page under another, or with number moves one fact onto another page",
-						"index", "get", "search", "note", "page", "history", "link", "unlink", "move", "merge", "forget", "batch"),
+						"index", "get", "search", "look", "note", "page", "history", "link", "unlink", "move", "merge", "forget", "batch"),
 					"path":       tools.StringProperty("the page: a path like people/alice-chen. For note, the page the fact goes on; it is made if it is missing"),
 					"depth":      tools.IntegerProperty("for index: how many levels below the path, 2 by default"),
 					"query":      tools.StringProperty("for search: words"),
+					"document":   tools.StringProperty("for look: one file on its own, by the document identifier knowledge search and read give; not needed when you give path and number"),
 					"text":       tools.StringProperty("for note: the fact, in a sentence or two; with number, the whole sentence as it should now read"),
 					"fact_kind":  tools.EnumProperty("for note: what sort of statement it is, 'fact' by default; 'preference' and 'decision' are only for what the person themselves said", factKinds...),
 					"happened":   tools.StringProperty("for note: when it was true, if that is not now -- 2023-06, 2023-06-14, or a date the person gave"),
@@ -88,11 +89,11 @@ func init() {
 					"applies_to": tools.ArrayProperty("for note: which runs besides the conversation read it; any of "+strings.Join(audiences, ", "), tools.StringProperty("an audience")),
 					"to":         tools.StringProperty("for link: the other page's path. For move: the path of the page it goes under, or with number the page the fact goes on. For merge: the page that survives"),
 					"relation":   tools.EnumProperty("for link: what the first page is to the second", relations...),
-					"number":     tools.IntegerProperty("for note: the fact to rewrite where it stands, keeping its number, its evidence and the day it was learned, rather than adding another one. For forget: the fact's number on the page; without it the whole page goes. For move: the fact to move onto the page in to, rather than the page itself"),
+					"number":     tools.IntegerProperty("for note: the fact to rewrite where it stands, keeping its number, its evidence and the day it was learned, rather than adding another one. For forget: the fact's number on the page; without it the whole page goes. For move: the fact to move onto the page in to, rather than the page itself. For look: the fact whose picture to show you"),
 					"limit":      tools.IntegerProperty("for search, index and history: how many"),
 					"items":      tools.ArrayProperty("for batch: up to 25 of the above, each with its own action", map[string]any{"type": "object"}),
 				}, "action"),
-				Guidance: "memory: the graph is addressed by path (people/alice-chen, projects/portal, self) and a fact by number (people/alice-chen#3). `self` is the person you are talking to: what is known about them lives there, and a page under people about them is a duplicate to `merge` into self, never the other way round. `get` a path before saying you do not know something about the person; `search` when you cannot guess the path. `note` what they ask you to remember and correct what is wrong; a run after the conversation files the rest. A fact that says the wrong thing is corrected with `note` and its number, which rewrites that sentence and keeps its number, its evidence and the day it was learned; forgetting it and writing it again loses all three. A fact on the wrong page is `move`d with its number for the same reason. When they ask where something on a page came from, or who changed it, `history` says. A fact addressed to triage changes how mail is sorted from the next message on; one addressed to reply changes how the agent answers for them. Prefer a rule for anything rule-shaped; a fact is for what a rule cannot say.",
+				Guidance: "memory: the graph is addressed by path (people/alice-chen, projects/portal, self) and a fact by number (people/alice-chen#3). `self` is the person you are talking to: what is known about them lives there, and a page under people about them is a duplicate to `merge` into self, never the other way round. `get` a path before saying you do not know something about the person; `search` when you cannot guess the path. `note` what they ask you to remember and correct what is wrong; a run after the conversation files the rest. A fact that says the wrong thing is corrected with `note` and its number, which rewrites that sentence and keeps its number, its evidence and the day it was learned; forgetting it and writing it again loses all three. A fact on the wrong page is `move`d with its number for the same reason. When they ask where something on a page came from, or who changed it, `history` says. When a fact was read out of a picture -- a screenshot of an error, a dashboard, a whiteboard -- `look` at it with the page and the fact's number before answering from the sentence alone: the sentence is what somebody wrote down about the picture months ago, and the picture is still there. A fact addressed to triage changes how mail is sorted from the next message on; one addressed to reply changes how the agent answers for them. Prefer a rule for anything rule-shaped; a fact is for what a rule cannot say.",
 				Preview: tools.PreviewOf(func(call struct {
 					Action string `json:"action"`
 					Path   string `json:"path"`
@@ -108,6 +109,11 @@ func init() {
 						return "Read " + page
 					case "search":
 						return "Search what it knows"
+					case "look":
+						if call.Number > 0 {
+							return "Look at the picture behind one thing it knows about " + page
+						}
+						return "Look at a picture it has kept"
 					case "note":
 						if call.Number > 0 {
 							return "Correct one thing it knows about " + page
@@ -156,7 +162,7 @@ func riskOfMemory(arguments json.RawMessage) tools.Risk {
 		return tools.RiskWrite
 	}
 	switch call.Action {
-	case "index", "get", "search", "history":
+	case "index", "get", "search", "look", "history":
 		return tools.RiskRead
 	case "forget":
 		// Forgetting a whole page takes its facts with it.
@@ -171,7 +177,7 @@ func riskOfMemory(arguments json.RawMessage) tools.Risk {
 		risk := tools.RiskRead
 		for _, item := range call.Items {
 			switch item.Action {
-			case "index", "get", "search", "history":
+			case "index", "get", "search", "look", "history":
 			case "forget":
 				if item.Number <= 0 {
 					return tools.RiskDestructive
@@ -208,6 +214,10 @@ type memoryItem struct {
 	Query string `json:"query"`
 	Depth int    `json:"depth"`
 	Limit int    `json:"limit"`
+
+	// Document is one file on its own, for look: the identifier the
+	// knowledge tool answers a search and a read with.
+	Document string `json:"document"`
 }
 
 type memoryArguments struct {
@@ -235,6 +245,8 @@ func runMemoryItem(ctx context.Context, run tools.Run, call *tools.Call, argumen
 		return getAction(ctx, run, arguments)
 	case "search":
 		return searchAction(ctx, run, arguments)
+	case "look":
+		return lookAction(ctx, run, arguments)
 	case "note":
 		return noteAction(ctx, run, arguments)
 	case "page":

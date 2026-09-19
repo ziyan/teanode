@@ -394,13 +394,12 @@ agent has two more tools — `shell`, which runs a command here, and
 `filesystem`, which reads, edits, writes, copies, lists, searches and greps your files —
 as you, anywhere on the machine, the way a terminal of yours would. Only a
 conversation you are present in may use them: a scheduled run, a sorting
-run, anything with nobody watching, never sees your computer. A command
-that changes the machine or reaches out of it (removing, moving,
-installing, sudo, pushing, ssh, and the graver shapes) asks you first, on
-the card in the drawer or on the terminal, and so do a file moved or
-deleted and a write into what the machine runs on its own (a shell's
-startup file, keys, autostart); nothing is refused on your behalf — your
-yes is the last word. The card is the server's: the program runs what
+run, anything with nobody watching, never sees your computer. A command runs as you
+typed it: nothing here reads it first and decides whether it looks
+dangerous. A file moved or deleted asks you first, on the card in the
+drawer or on the terminal, because that is the action you asked for rather
+than a guess about it. Nothing is refused on your behalf — your yes is the
+last word. The card is the server's: the program runs what
 the server sends, so it trusts the server the way a terminal trusts the
 person at it. The program signs in as you, with the active profile's
 token, never as the server. Several computers can be attached at once,

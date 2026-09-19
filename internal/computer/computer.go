@@ -1,3 +1,15 @@
+// Package computer is the person's own computer as their agent reaches it:
+// the program `teanode computer` runs there, answering the agent's requests
+// over a websocket to the server, as the person, anywhere on the machine,
+// and running what the server sends.
+//
+// Nothing here decides whether a command looks dangerous. A rule that
+// matched a command line against a list of dangerous-looking shapes lived
+// in this package and was removed: it could not name everything dangerous,
+// a wrapper script walked past it, and a control that catches some of the
+// bad cases reads as one that catches them all. What bounds the program is
+// the directories the person allowed, enforced here on their machine, and
+// their yes.
 package computer
 
 import (

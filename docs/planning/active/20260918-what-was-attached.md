@@ -62,8 +62,8 @@ itself what to read.
       daemon reads what it can here — PR #125
 - [x] Milestone 6: the dashboard shows an attachment on the page it belongs to
       — PR #126
-- [ ] Milestone 7: a file reaches the conversation — the agent can look at one
-      again, and a person can see the one an answer rests on
+- [x] Milestone 7: a file reaches the conversation — the agent can look at one
+      again, and a person can see the one an answer rests on — PR #136
 - [ ] Milestone 8: the attached computer prepares what no model can read, so a
       file whose meaning is not in words still reaches the graph
 
@@ -411,7 +411,12 @@ this plan fills it rather than inventing something new.
 A night cannot reach the person's machine at all. `dreamTools` names exactly two
 tools, `memory` and `knowledge`, and the frame it is given says they are for
 looking. This was not obvious from the outside and it shapes the whole design:
-preparation has to happen during the scan, not during the night.
+preparation has to happen during the scan, not during the night. *(That was
+true when this was surveyed, and the design above was built on it. The owner
+has since reversed it — see the Decision Log — and a night now has every tool,
+with the graph held to reading because a fact is filed from the object a call
+ends with. Nothing in the milestones depends on the old answer; it only means
+preparation has a second place it can happen.)*
 
 The model layer has been able to send a picture all along, in both the OpenAI
 and Anthropic paths. The capability was built for conversations, where a person
@@ -432,6 +437,30 @@ quarter of a batch, so at most a quarter of the pictures are ever opened. All
 47,700 come to roughly thirty dollars rather than the twenty-seven guessed, and
 the two errors happen to cancel. The number to watch if the cap is ever raised is
 the per-picture one, which is the one that was wrong.
+
+A tool cannot import the package the night lives in. The bound on a
+picture and the function that reads a document's bytes were both in
+`internal/agent`, and the memory tool needs both; a tool package imports
+`internal/agent/tools` and nothing above it, so they moved down to that
+package and the night now names them there. That is the same shape
+`IsImage` already had, and it is the general rule for anything a
+background run and a tool both have to agree about: it has to live at the
+tools level or the two will end up with a number each.
+
+The two ends of a citation were already written down and never joined.
+The agent has cited its own pages as `work/mcx#3` since the graph was
+built, and the resolution from a fact's evidence to the file behind it was
+built for the page of facts one milestone earlier. Reading the citations
+out of an answer's own words was all that was missing, which is why this
+half needed no change to the model, the prompt, or anything a run does —
+and why it works for every answer already in every transcript.
+
+A citation is read out of prose, so the pattern has to be strict about
+what is *not* one. A path is slugs joined by slashes and a number after a
+hash, and the character in front is consumed and refused where it is part
+of a word or an address: otherwise the fragment on the end of a link and
+the "issue#3" in a sentence would both be looked up. Anything that gets
+through and means nothing costs one lookup and resolves to nothing.
 
 ## Decision Log
 
@@ -473,6 +502,53 @@ programs on a person's machine is a materially different risk from a
 conversation where they are present and watching. The records script runs on the
 same machine, as the same person, and is something they or their agent wrote and
 can read.
+
+*Reversed by the owner, after reading the above.* The risk is real and the
+owner accepted it: "I accept this risk, allow dream to use all tools." The
+night is no longer given a named pair of tools. It is given the whole kit —
+everything an attached conversation has, the person's own computer among it —
+and the computer's tools are in its first round rather than behind a search,
+so it does not spend a round of its allowance finding out that a machine is
+attached. Its budget is unchanged; what it may spend in a night is what it
+could spend before.
+
+What this opens is that preparation no longer has to happen ahead of the
+night. A records script is still the right place for records that have to be
+fetched on a schedule, and nothing about it changes; but a night that finds a
+file it cannot read, or a question it could answer by running something, can
+now do that in the night rather than leaving a note asking for a script to be
+written. The reading and the filing of orphans — the two calls that decide
+where things go — are the calls that have it; a call that answers from its
+prompt still gets no tools at all.
+
+Two things still stand in the night's way, and both are deliberate. A call
+that would raise a confirmation card — anything destructive, anything that
+leaves the server, anything that hands out a way in — is refused outright,
+because there is nobody there to be shown the card; the night is told to say
+what it would have done instead of looking for another route. And changes to
+the graph are still made from the object a call ends with rather than by hand
+with the memory tool: it is how filing works here, and it is what keeps a
+fact attached to the evidence it came from and a move a proposal the person
+can still refuse.
+
+**The graph is held to reading, by name, rather than the whole night being
+held to it.** Widening the night to every tool meant the turn could no longer
+be read-only, and read-only was the only thing that had been stopping the
+model writing to the graph by hand; the frame asked it not to, and a frame is
+an instruction a model weighs against the memory tool's own description,
+which invites it to note what it learns. The owner asked for the rule back:
+"sure you can block fact writing via tool and only allow it to spit it out at
+the end." So a turn can now name the tools it may only look with, and the
+night names the two that hold the graph. Each call is judged as it is made,
+not the tool, which is what keeps looking a page up — the thing the night
+needs most — while the writing is refused; and the refusal says where the
+change belongs, so a run that tried is not left hunting for another route.
+The alternative, leaving the pair out of the catalogue altogether, was
+rejected: these are tools whose actions differ in what they cost, so
+dropping the tool drops the reading with the writing, and there is no way to
+show a model half a tool. The frame still says all this, as a description of
+the run rather than a request, because a model told what will happen does not
+spend a round finding out.
 
 ## Outcomes & Retrospective
 
