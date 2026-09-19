@@ -116,14 +116,15 @@ type AgentKnowledgeSpecification struct {
 	MailboxID string `json:"mailboxId,omitempty"`
 
 	// ReadEveryCheckout reads the files of every checkout under this
-	// source's path, including the ones the person has never committed
-	// to.
+	// source's path, including the ones barely any of whose history is
+	// the person's own work.
 	//
 	// Off by default, which is what stops a folder of clones being read
-	// as though it were the person's own work: a checkout with none of
-	// their commits in it is kept to its profile -- what it is, where it
-	// lives, what git says about it -- and its files are left where they
-	// are. On for somebody who does want a dependency's source read.
+	// as though it were the person's own work: a checkout too little of
+	// whose history is theirs -- OwnCommitsAtLeast below says how little
+	// that is -- is kept to its profile, what it is, where it lives and
+	// what git says about it, and its files are left where they are. On
+	// for somebody who does want a dependency's source read.
 	ReadEveryCheckout bool `json:"readEveryCheckout,omitempty"`
 
 	// CommitsPerPass is how many commits one pass over this source's
@@ -138,6 +139,24 @@ type AgentKnowledgeSpecification struct {
 	// somebody chose, and the graph fills at that pace. Raise it for a
 	// tree whose history matters more than its files.
 	CommitsPerPass int `json:"commitsPerPass,omitempty"`
+
+	// OwnCommitsAtLeast is how many commits of the person's own a
+	// checkout under this source must hold before its files are read,
+	// whatever the length of its history. Zero is the bar the program on
+	// the machine works out for itself, which is two for a short history
+	// and climbs with a long one -- a fiftieth of the log, up to
+	// twenty-five commits.
+	//
+	// That climb is why the setting is here. One commit is a visit and
+	// not authorship: on the tree this was written for, 59 checkouts
+	// holding a single commit of the person's were admitting 129,306
+	// files, 39% of everything read, and the largest of them was a fork
+	// of linux-stable admitting 70,766 files on the strength of one.
+	// Raise it for a tree where a handful of commits still is not yours;
+	// set it to one for a tree where every visit is worth reading, which
+	// is the rule this replaced; and readEveryCheckout for a tree where
+	// even the checkouts you have never touched are.
+	OwnCommitsAtLeast int `json:"ownCommitsAtLeast,omitempty"`
 
 	// MaxAttachmentBytes is the largest file this source carries off the
 	// person's machine, in bytes. Zero means the server's own limit,

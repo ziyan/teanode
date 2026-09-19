@@ -2621,8 +2621,8 @@ export const en = {
   'agent.knowledgeWhichIsYou': 'Say which contact is you',
   'agent.knowledgeRefused': '{count} held back on the machine',
   'agent.knowledgeKeptToProfile':
-    '{checkouts} checkouts here have none of your commits in them, so they are kept to their profile — what they are and where they live — and {files} files in them are left unread.',
-  'agent.knowledgeReadEveryCheckout': 'Read the files of every checkout, including ones you have never committed to',
+    '{checkouts} checkouts here hold too few of your commits to be your work, so they are kept to their profile — what they are and where they live — and {files} files in them are left unread.',
+  'agent.knowledgeReadEveryCheckout': 'Read the files of every checkout, including the ones barely any of which is your work',
   'agent.filesWaiting': '{count} files waiting for a decision',
   'agent.filesDeclined': '{count} it decided against opening',
   'agent.filesRead': '{count} it opened and read',

@@ -104,17 +104,32 @@ at the folder they keep their checkouts in is pointing it at other
 people's work as much as their own, and a first pass used to index every
 line of it — on one deployment, of 32,535 files in a single source more
 than half were under three checkouts nobody there had ever committed to.
-So a checkout whose history holds none of the person's addresses is kept
-to its **profile**: the page still says what it is, what its readme calls
-it, where it lives and what its newest tag is, so "what was that thing I
-cloned" still has an answer. What stops is reading the source line by
-line. The device decides it, because a file that is not going to be filed
-should not be read, hashed and sent first, and the server says who the
-person is on every request, because that lives on their card and changes
-there. Nothing here is a list of project or directory names: such a list
-can only hold the cases somebody thought of. Not knowing keeps the files
-— no addresses, a checkout git cannot read, a checkout with no commits —
-and a source that wants a dependency's source read says so with
+So a checkout whose history holds too few of the person's commits to be
+their work is kept to its **profile**: the page still says what it is,
+what its readme calls it, where it lives and what its newest tag is, so
+"what was that thing I cloned" still has an answer. What stops is reading
+the source line by line.
+
+How few is too few is a share of the history and not a single commit. The
+bar was one commit at first, and one commit is a visit: the same tree that
+the rule cleared of the checkouts nobody had touched went on reading a
+whole kernel on the strength of one drive-by fix. A checkout needs **two
+commits of the person's own, or a fiftieth of its log, whichever is more,
+up to twenty-five** — past twenty-five the length of the log stops
+mattering, because somebody on a large team owns their monorepo at half a
+percent of its history. The bar is never more than the history itself, so
+a project initialized and committed once is theirs. A source may say
+otherwise with `specification.ownCommitsAtLeast`, or `teanode agent
+knowledge set <source> --own-commits-at-least`, which is that number flat,
+with no share added to it: one there is the old rule, any commit at all.
+
+The device decides it, because a file that is not going to be filed should
+not be read, hashed and sent first, and the server says who the person is
+on every request, because that lives on their card and changes there.
+Nothing here is a list of project or directory names: such a list can only
+hold the cases somebody thought of. Not knowing keeps the files — no
+addresses, a checkout git cannot read, a checkout with no commits — and a
+source that wants a dependency's source read says so with
 `specification.readEveryCheckout`. How many checkouts were kept to their
 profile, and how many files that was, is on the source wherever the
 source is shown.

@@ -593,6 +593,10 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 			// checkouts under it that nobody here ever committed to.
 			OwnAddresses:      own,
 			ReadEveryCheckout: source.Specification.ReadEveryCheckout,
+			// And how much of a checkout's history has to be theirs
+			// before its files are read, which is the same argument as
+			// the one above and belongs in the same place.
+			OwnCommitsAtLeast: source.Specification.OwnCommitsAtLeast,
 			// How much of the history one pass over this tree carries,
 			// told to the daemon for the same reason: a tree of a
 			// hundred checkouts and a third of a million commits is
