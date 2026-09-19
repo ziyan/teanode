@@ -1698,7 +1698,7 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 	var about []string
 	for _, text := range answer.Facts {
 		text = strings.TrimSpace(text)
-		if text == "" || isPromptExample(text) || len(about) >= 5 {
+		if text == "" || len(about) >= 5 {
 			continue
 		}
 		about = append(about, cutRunes(text, 400))
@@ -1707,7 +1707,7 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 	for _, link := range answer.Links {
 		link.To = models.NormalizePath(link.To)
 		link.Relation = strings.ToLower(strings.TrimSpace(link.Relation))
-		if link.To == "" || link.To == path || !models.IsAgentEdgeRelation(models.AgentEdgeRelation(link.Relation)) || isPromptExample(link.Note) {
+		if link.To == "" || link.To == path || !models.IsAgentEdgeRelation(models.AgentEdgeRelation(link.Relation)) {
 			continue
 		}
 		links = append(links, link)
