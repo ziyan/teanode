@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -611,6 +612,49 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 	return result, nil
 }
 
+// ignoredDirectories are the directories whose contents are nobody's
+// work: a checkout's own bookkeeping, and the dependencies somebody else
+// wrote.
+var ignoredDirectories = []string{".git", "node_modules", "vendor", "__pycache__"}
+
+// isIgnoredDirectory says whether a directory's own name is one of them.
+func isIgnoredDirectory(name string) bool {
+	return slices.Contains(ignoredDirectories, name)
+}
+
+// inIgnoredDirectory says whether any segment of a slash-separated
+// relative path is an ignored directory.
+func inIgnoredDirectory(relative string) bool {
+	for _, segment := range strings.Split(relative, "/") {
+		if isIgnoredDirectory(segment) {
+			return true
+		}
+	}
+	return false
+}
+
+// withoutIgnoredDirectories drops from a repository's tracked files the
+// ones under a directory the walk would have skipped.
+//
+// A repository's tracked files are not the same set as the files worth
+// reading, and the difference is exactly the dependencies somebody else
+// wrote: vendored and generated trees are committed, so git lists them.
+// Reading a checkout through git rather than walking it therefore used
+// to bring in everything the walk was careful to leave out -- on one
+// deployment 34,279 of 86,911 file documents were under vendor/,
+// node_modules/ or __pycache__/, and half of what the agent learned was
+// about Go's vendored golang.org/x/sys rather than about the person.
+func withoutIgnoredDirectories(paths []string) []string {
+	kept := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if inIgnoredDirectory(filepath.ToSlash(path)) {
+			continue
+		}
+		kept = append(kept, path)
+	}
+	return kept
+}
+
 // listTree is every file worth offering, relative to the root, and the
 // profile of each repository found on the way.
 func listTree(ctx context.Context, root string, arguments *ScanArguments) ([]string, map[string]*RepositoryProfile, error) {
@@ -619,7 +663,7 @@ func listTree(ctx context.Context, root string, arguments *ScanArguments) ([]str
 		profiles[""] = repositoryProfile(ctx, root)
 		tracked, err := trackedFiles(ctx, root)
 		if err == nil {
-			return keepWanted(tracked, arguments), profiles, nil
+			return keepWanted(withoutIgnoredDirectories(tracked), arguments), profiles, nil
 		}
 		// A repository git cannot read is walked like any other tree,
 		// which is the right answer rather than an error: the files are
@@ -635,7 +679,7 @@ func listTree(ctx context.Context, root string, arguments *ScanArguments) ([]str
 		}
 		name := entry.Name()
 		if entry.IsDir() {
-			if name == ".git" || name == "node_modules" || name == "vendor" || name == "__pycache__" {
+			if isIgnoredDirectory(name) {
 				return filepath.SkipDir
 			}
 			if strings.HasPrefix(name, ".") && path != root {
@@ -647,7 +691,7 @@ func listTree(ctx context.Context, root string, arguments *ScanArguments) ([]str
 				profiles[filepath.ToSlash(relative)] = repositoryProfile(ctx, path)
 				tracked, err := trackedFiles(ctx, path)
 				if err == nil {
-					for _, file := range tracked {
+					for _, file := range withoutIgnoredDirectories(tracked) {
 						paths = append(paths, filepath.ToSlash(filepath.Join(relative, file)))
 					}
 					return filepath.SkipDir
