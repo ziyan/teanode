@@ -459,8 +459,11 @@ type AgentLimits struct {
 	MaxRoundsPerTriage int `yaml:"maxRoundsPerTriage"`
 
 	// MaxRoundsPerDream is how many turns one call of a dream may take:
-	// a reading batch, a month written up, a page divided. Each may look
-	// a page up before it answers, and few need to more than twice.
+	// a reading batch, a month written up, a page divided. A night has
+	// the person's own tools now, their computer among them, so a call
+	// may spend three rounds finding a file and running something over it
+	// before it has anything to answer with; the default is twelve rather
+	// than the four that was enough for looking a page up.
 	MaxRoundsPerDream  int `yaml:"maxRoundsPerDream"`
 	MaxToolCallsPerRun int `yaml:"maxToolCallsPerRun"`
 

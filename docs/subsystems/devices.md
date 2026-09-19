@@ -80,8 +80,17 @@ of the shapes that change what runs
 or who may get in: shell startup files, `.ssh`, `.gnupg`, autostart and service
 directories, `/etc`, git hooks, the password files.
 
-A run with nobody present cannot reach a computer at all, so the card is never
-the thing standing between a scheduled run and the machine.
+A run with nobody present cannot reach a computer, with one exception: the
+nightly run. The owner read the case against it — an unattended run that can
+execute programs on somebody's machine is a different risk from a conversation
+they are watching — and accepted it, so the night has the whole tool kit and
+the machine with it. Everything else unattended is still turned away here: a
+scheduled turn, a goal, a sorting run. For the night, the card is not what
+stands between it and the machine, because a card cannot be shown to an empty
+room; what stands there instead is the refusal a call gets when it needs the
+person's word. Anything the rule above classifies as asking is therefore not
+merely delayed for a night, it is refused, and the night is told to say what
+it would have done.
 
 **The rule is the server's alone.** The program runs what it is sent. An
 attached computer trusts its server the way a terminal trusts the person at it.

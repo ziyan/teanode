@@ -60,6 +60,12 @@ const (
 	// rememberPages is how many of the pages the conversation already
 	// touched are shown in full.
 	rememberPages = 6
+
+	// alreadySaidCandidates is how much of a page is read back to see
+	// whether it already states a sentence. The same bound the nightly
+	// pass reads a page with (firstSayingIt), because the two are asking
+	// the same question at either end of the night.
+	alreadySaidCandidates = 500
 )
 
 // RememberAnswer is what the run answers with.
@@ -598,7 +604,7 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 			break
 		}
 		text := strings.TrimSpace(wanted.Text)
-		if text == "" || isPromptExample(text) || isPromptExample(wanted.Quote) {
+		if text == "" {
 			continue
 		}
 		kind := models.AgentFactKind(strings.ToLower(strings.TrimSpace(wanted.Kind)))
@@ -673,12 +679,17 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 	}
 
 	// The rows themselves, with their evidence checked and their meaning
-	// worked out. A line that only says what the page is says nothing:
-	// the page already says it, and a page whose one fact is "X is a
-	// project" reads like something was learned. See vacuous.go for how
-	// much of a real graph this was.
+	// worked out.
+	//
+	// A word list stood here, of the words a sentence saying only that a
+	// page exists is made of, and a fact left with nothing else was
+	// refused. It refused real ones too -- "This project is private" is
+	// four words that were all on the list -- and a refusal was silent,
+	// so nobody ever saw what the person's agent had been told and did
+	// not keep. A dull line is cheaper: the nightly run merges it or it
+	// sinks.
 	for _, ready := range prepared {
-		if ready.Node == nil || !saysSomethingNew(ready.Text, ready.Node, run.Owner) {
+		if ready.Node == nil {
 			continue
 		}
 		ready.Fact = &models.AgentFact{
@@ -716,6 +727,21 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 			if ready.Fact == nil {
 				continue
 			}
+			// A sentence the page already states does not go on it
+			// again. What the second saying brought that the first did
+			// not is its evidence, and that goes on the fact that is
+			// there. See whatThePageAlreadySays for why this is asked
+			// before the row is written rather than after.
+			standing, err := whatThePageAlreadySays(tx, agentId, ready.Node, ready.Fact.Text)
+			if err != nil {
+				return fmt.Errorf("reading what %q already says: %w", ready.Node.Path, err)
+			}
+			if standing != nil {
+				if _, err := takeTheEvidenceOf(tx, standing, ready.Fact); err != nil {
+					return fmt.Errorf("giving what %q brought to the fact that says it: %w", ready.Text, err)
+				}
+				continue
+			}
 			written, err := tx.AddAgentFact(ready.Fact)
 			if err != nil {
 				return fmt.Errorf("filing %q: %w", ready.Text, err)
@@ -748,7 +774,7 @@ func linkWhatWasLearned(tx db.Transaction, agentId string, links []RememberedLin
 		from := models.NormalizePath(link.From)
 		to := models.NormalizePath(link.To)
 		relation := models.AgentEdgeRelation(strings.ToLower(strings.TrimSpace(link.Relation)))
-		if from == "" || to == "" || !models.IsAgentEdgeRelation(relation) || isPromptExample(link.Note) {
+		if from == "" || to == "" || !models.IsAgentEdgeRelation(relation) {
 			continue
 		}
 		fromNode, err := tx.GetAgentNode(agentId, from)
@@ -932,24 +958,7 @@ func (self *Agent) foldIntoWhatThePageSays(tx db.Transaction, written *models.Ag
 		return written, nil
 	}
 
-	older, err := tx.UpdateAgentFact(written.AgentID, twin.ID, func(older *models.AgentFact) error {
-		older.Evidence = append(older.Evidence, written.Evidence...)
-		if len(older.Evidence) > models.EvidenceCount {
-			older.Evidence = older.Evidence[:models.EvidenceCount]
-		}
-		// The row that survives is the older one, so where the newer
-		// saying of the same words stood on firmer ground the older
-		// takes that with it. Otherwise re-filing a sentence the person
-		// stated, behind a copy the agent had inferred, would leave the
-		// page saying at half confidence something it had been told.
-		if atLeastAsWellEvidenced(written, older) {
-			older.Inferred = written.Inferred
-			if written.Confidence > older.Confidence {
-				older.Confidence = written.Confidence
-			}
-		}
-		return nil
-	})
+	older, err := takeTheEvidenceOf(tx, twin, written)
 	if err != nil {
 		return written, err
 	}
@@ -958,6 +967,74 @@ func (self *Agent) foldIntoWhatThePageSays(tx db.Transaction, written *models.Ag
 		return written, err
 	}
 	return older, nil
+}
+
+// whatThePageAlreadySays is the fact the page states in these very
+// words, or nil.
+//
+// Asked before a fact is written, where the fold behind it is asked
+// after. The fold does the same job and cannot do it any earlier: the
+// row has to exist before it can be put behind another one. So a
+// re-statement cost a row and a number even when the words were
+// identical -- AddAgentFact takes the page's next number, writes the
+// line, and the fold puts it straight back. On the live graph that is
+// 3,427 rows filed and folded in the same breath, one page reaching
+// number 104 in two days with thirteen rows saying one sentence, and a
+// page history that is mostly the record of undoing this.
+//
+// Nothing is lost by not writing it. A second saying of a sentence
+// carries exactly one thing the first does not -- where it was read --
+// and that is evidence, which goes on the fact that is already there;
+// the fold's own surviving branch does no more than that.
+//
+// Held to the same words, exactly as the fold is (see whatToFold): a
+// rewording may be this sentence again or may be the next thing the page
+// has to say, and telling those apart is a judgement, which belongs to
+// the nightly pass that asks a model. And held to what the page still
+// states: a line struck or folded away is not something the page says,
+// so a run that reads it again is learning it rather than repeating it.
+func whatThePageAlreadySays(tx db.Transaction, agentId string, node *models.AgentNode, text string) (*models.AgentFact, error) {
+	if node == nil || strings.TrimSpace(text) == "" {
+		return nil, nil
+	}
+	facts, err := tx.ListAgentFacts(agentId, node.ID, false, alreadySaidCandidates)
+	if err != nil {
+		return nil, err
+	}
+	// By number ascending, which is what ListAgentFacts gives: the lowest
+	// number wins, because that is the one anything else cites and the
+	// one the fold would have kept.
+	for _, fact := range facts {
+		if saysItInTheSameWords(fact.Text, text) {
+			return fact, nil
+		}
+	}
+	return nil, nil
+}
+
+// takeTheEvidenceOf puts what a second saying of a sentence brought onto
+// the fact that already says it, and answers with that fact as it now
+// stands.
+//
+// The fact that survives is the one already on the page, so where the
+// second saying stood on firmer ground the first takes that with it.
+// Otherwise re-filing a sentence the person stated, over a copy the
+// agent had inferred, would leave the page saying at half confidence
+// something it had been told.
+func takeTheEvidenceOf(tx db.Transaction, standing, said *models.AgentFact) (*models.AgentFact, error) {
+	return tx.UpdateAgentFact(standing.AgentID, standing.ID, func(older *models.AgentFact) error {
+		older.Evidence = append(older.Evidence, said.Evidence...)
+		if len(older.Evidence) > models.EvidenceCount {
+			older.Evidence = older.Evidence[:models.EvidenceCount]
+		}
+		if atLeastAsWellEvidenced(said, older) {
+			older.Inferred = said.Inferred
+			if said.Confidence > older.Confidence {
+				older.Confidence = said.Confidence
+			}
+		}
+		return nil
+	})
 }
 
 // foldChoice is what the write boundary does with a new fact and the one

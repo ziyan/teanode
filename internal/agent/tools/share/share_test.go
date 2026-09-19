@@ -38,6 +38,7 @@ func (self *fakeRun) Configuration() *config.Configuration {
 	return configuration
 }
 func (self *fakeRun) ComputersAllowed() bool              { return true }
+func (self *fakeRun) ComputersUnattended() bool           { return false }
 func (self *fakeRun) AttachedComputers() []tools.Computer { return []tools.Computer{self.computer} }
 func (self *fakeRun) Offered() []*tools.Tool              { return nil }
 

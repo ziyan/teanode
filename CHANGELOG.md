@@ -6,6 +6,56 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.39.7] - 2026-09-19
+
+### Changed
+
+- The agent no longer filters what it writes through lists of English words. A
+  page keeps the sentences it was written with, including ones that hedge; a
+  fact that reads thin is filed rather than dropped in silence; a commit whose
+  subject begins like a version bump still reaches the month's page. The
+  nightly run also stops striking facts an older build filed. (#134)
+
+## [0.39.6] - 2026-09-19
+
+### Changed
+
+- The nightly run now has the agent's full tool kit, including any computer
+  attached to that agent, rather than read-only access to memory and knowledge.
+  It can read and write files and run commands on that machine while nobody is
+  watching. Anything that would normally ask the person first — deleting,
+  moving, installing, sending mail, anything leaving the server — is still
+  refused during a night, because there is nobody there to confirm it. If you
+  do not want this, detach the computer, switch the `computer` tool family off,
+  or turn dreaming off for that agent. The exception is the memory graph: a
+  night may look in it but not change it by hand, as before, because what it
+  learns is filed from the object each call ends with, together with the
+  evidence it came from. (#131)
+- `maxRoundsPerDream` now defaults to twelve instead of four, because a night
+  that finds a file and runs something over it needs three rounds before it has
+  anything to answer with. Set it to go back to the old pacing. (#131)
+
+## [0.39.5] - 2026-09-19
+
+### Changed
+
+- A command sent to your computer runs as you wrote it. The rule that
+  guessed which commands were dangerous and asked first is gone; moving and
+  deleting a file still ask, and what your agent may reach is still only
+  the directories you allowed. (#133)
+
+## [0.39.4] - 2026-09-19
+
+### Fixed
+
+- A fact the agent had already written on a page is no longer written onto
+  it a second time and then hidden. The page said the right thing either
+  way, but every re-reading of a document left another buried copy behind
+  it and spent another fact number, so pages that are re-read often had
+  numbering far ahead of what they say and a history of nothing but
+  merges. What a second reading adds — where it was read — now goes onto
+  the fact that is already there. Existing buried copies are left alone. (#132)
+
 ## [0.39.3] - 2026-09-19
 
 ### Fixed
