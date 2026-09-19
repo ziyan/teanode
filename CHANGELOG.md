@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-09-19
+
+### Added
+
+- A picture opens over the page with zoom and pan, instead of opening the
+  raw file in another tab. (#154)
+
 ## [0.40.14] - 2026-09-19
 
 ### Changed
