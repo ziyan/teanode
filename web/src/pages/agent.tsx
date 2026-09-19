@@ -2710,20 +2710,34 @@ function ReadingBar({ reading, hint }: { reading: ReadingProgress; hint: string 
     left = t('agent.readingLeft', { span, rate: Math.round(reading.perHour) })
     if (!reading.bootstrapping) left += ' ' + t('agent.readingIfUnpaused')
   }
+  // Never a hundred while something waits. The share is rounded down and
+  // held at ninety-nine until the last document is read, because a bar
+  // that says it is finished beside a line saying seven hundred are left
+  // is the reading of the two that a person believes.
+  const percent = total === 0 ? 0 : reading.waiting === 0 ? 100 : Math.min(99, Math.floor(fraction * 100))
   return (
     <span className="agent-reading">
-      <span
-        className="agent-budget-bar"
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={total}
-        aria-valuenow={reading.read}
-      >
-        <span className="agent-budget-bar-fill good" style={{ width: `${Math.round(fraction * 100)}%` }} />
+      <span className="agent-reading-track">
+        <span
+          className="agent-budget-bar"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={total}
+          aria-valuenow={reading.read}
+        >
+          <span className="agent-budget-bar-fill good" style={{ width: `${percent}%` }} />
+        </span>
+        <span className="agent-reading-percent">{percent}%</span>
       </span>
       <span>
+        {/* Counted exactly rather than shortened. Rounding both to three
+            figures read "186k of 186k" while seven hundred still waited,
+            which is the one number on this card a person checks. */}
         {total > 0
-          ? t('agent.readingProgress', { read: formatCount(reading.read), total: formatCount(total) })
+          ? t('agent.readingProgress', {
+              read: reading.read.toLocaleString(),
+              total: total.toLocaleString(),
+            })
           : t('agent.readingNothing')}
         {left ? ` · ${left}` : ''}
       </span>
