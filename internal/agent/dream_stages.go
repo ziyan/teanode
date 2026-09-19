@@ -560,23 +560,22 @@ func rehearsalVerdict(said string, shown int) rehearsalOutcome {
 // dreamRevise goes back over what an older build of this program filed
 // and applies what this one knows.
 //
-// A graph outlives the code that fills it. The first real ingest of a
-// person's own machines filed twenty-eight facts of the shape "X is a
-// project or work channel" -- true, worthless, and indistinguishable
-// from knowledge at a glance -- because the prompt of the day invited
-// them. The prompt is fixed and the rule is in code now, but that does
-// nothing about what is already on the pages, and there is no way to
-// find it except by knowing which build wrote it.
+// A graph outlives the code that fills it. A line an early build worded
+// badly -- "1 commits by 1 people, July 2026 to July 2026" -- is still
+// on the page years later, and there is no way to find it except by
+// knowing which build wrote it. So every row carries the build that
+// wrote it, and this pass offers each one to the rules as they stand.
 //
-// So every row carries the build that wrote it, and this pass offers
-// each one to the rules as they stand. What fails them is struck, which
-// is a change like any other: the page's history says the nightly run
-// did it and what the line used to say, so a person who disagrees can
-// put it back.
+// Nothing here deletes. A row is reworded or its evidence re-kinded,
+// which the page's history records like any other change, and a row this
+// build has no opinion about is stamped and left alone. A pass that
+// struck what a word list called empty stood here, and took real lines
+// with it, unannounced; judging what a person's agent already filed is
+// not work to do unattended.
 //
-// No model runs here. A rule worth applying to a graph unattended is one
-// that can be stated in code; anything needing judgement belongs in the
-// phase that asks.
+// No model runs here either. A rule worth applying to a graph unattended
+// is one that can be stated in code; anything needing judgement belongs
+// in the phase that asks.
 func (self *Agent) dreamRevise(ctx context.Context, run *Run, record *models.AgentDream) {
 	build := version.Version()
 	var facts []*models.AgentFact
@@ -633,34 +632,12 @@ func (self *Agent) dreamRevise(ctx context.Context, run *Run, record *models.Age
 				record.Revised++
 				return nil
 			}
-			if saysSomethingNew(fact.Text, node, run.Owner) {
-				return nil
-			}
-			// Dormant, not gone. The rule that struck this is code, and
-			// code the graph outlives: a line struck by a rule that
-			// turns out to be too eager has to be readable afterwards,
-			// or the only record of what the agent decided is that
-			// something used to be here.
-			if _, err := tx.StrikeAgentFact(run.Agent.ID, fact.ID,
-				"it only said what the page already says"); err != nil {
-				return err
-			}
-			record.Revised++
-			// A page's opening is written from its facts. With the last
-			// of them off the page there is nothing left for it to have
-			// come from, and what is up there was written about lines
-			// the page no longer states -- so it goes too, in the page's
-			// history like any other change.
-			left, err := tx.ListAgentFacts(run.Agent.ID, node.ID, false, 1)
-			if err != nil {
-				return err
-			}
-			if len(left) == 0 && strings.TrimSpace(node.Summary) != "" {
-				node.Summary = ""
-				if _, err := tx.PutAgentNode(node); err != nil {
-					return err
-				}
-			}
+			// A word list stood here, of the words that say only what a
+			// page is, and a fact left with nothing else was struck
+			// from the page it was on. It could not tell a thin line
+			// from a plain one -- "This project is private" is all
+			// list words -- and a struck line is one a person was never
+			// told had gone. What an older build filed stays filed.
 			return nil
 		}); err != nil {
 			log.Debugf("cannot go back over %s: %s", fact.ID, err)
@@ -682,7 +659,6 @@ func (self *Agent) dreamRevise(ctx context.Context, run *Run, record *models.Age
 	self.dreamMergeThePerson(ctx, run, record)
 	self.dreamForgetSaidTwice(ctx, run, record)
 	self.dreamForgetEmptyPages(ctx, run, record)
-	self.dreamClearPaddedOpenings(ctx, run, record)
 }
 
 // dreamMergeThePerson folds a page under people that names the person
@@ -718,52 +694,6 @@ func (self *Agent) dreamMergeThePerson(ctx context.Context, run *Run, record *mo
 		}
 		log.Noticef("folded %q into self: it was the person", node.Path)
 		record.Merged++
-	}
-}
-
-// dreamClearPaddedOpenings takes the opening off a page where it only
-// says the page matters, and makes the page due a fresh one. Every page
-// whose opening another build wrote is looked at once and stamped.
-func (self *Agent) dreamClearPaddedOpenings(ctx context.Context, run *Run, record *models.AgentDream) {
-	build := version.Version()
-	var nodes []*models.AgentNode
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		nodes, err = tx.ListAgentNodesWithOpeningWrittenBefore(run.Agent.ID, build, reviseBatch)
-		return err
-	}); err != nil {
-		log.Warningf("cannot list the openings an older build wrote: %s", err)
-		return
-	}
-	seen := make([]string, 0, len(nodes))
-	for _, node := range nodes {
-		// Out of the loop, not out of the phase: the pages gone over so
-		// far are still marked below, so a night that ran out of time
-		// starts from where this one stopped rather than from the same
-		// batch again, night after night.
-		if ctx.Err() != nil {
-			break
-		}
-		seen = append(seen, node.ID)
-		if !saysNothingOpening(node.Summary) {
-			continue
-		}
-		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-			tx.AsActor(models.ActorDream)
-			node.Summary = ""
-			if _, err := tx.PutAgentNode(node); err != nil {
-				return err
-			}
-			return tx.MarkAgentNodeConsolidated(node.ID, time.Time{})
-		}); err != nil {
-			log.Warningf("cannot clear the opening of %q: %s", node.Path, err)
-			continue
-		}
-		record.Revised++
-	}
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		return tx.MarkAgentNodesSeen(run.Agent.ID, seen)
-	}); err != nil {
-		log.Warningf("cannot record which openings were gone over: %s", err)
 	}
 }
 

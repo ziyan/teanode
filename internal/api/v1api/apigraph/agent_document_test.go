@@ -217,6 +217,102 @@ func TestAPageCarriesTheFilesItsFactsWereReadFrom(test *testing.T) {
 	})
 }
 
+// An answer in the drawer carries text and nothing else, so a screenshot
+// it was read out of cannot be attached to it. It does not have to: the
+// agent cites what it used, as "projects/carlisle#1", and a citation
+// resolves to its fact and from there to the file behind it. That is what
+// lets the conversation show the evidence rather than ask for it to be
+// taken on trust.
+func TestACitationResolvesToTheFileTheFactWasReadFrom(test *testing.T) {
+	test.Parallel()
+	database, release := dbtest.AcquireDatabase(test)
+	defer release()
+
+	var owner, stranger *models.User
+	var screenshot *models.AgentDocument
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		var ownersAgent *models.Agent
+		var source *models.AgentKnowledgeSource
+		owner, ownersAgent, source = anAgentWithASource(test, tx, "citation-owner", "Alice Example")
+		screenshot = anAttachment(test, tx, ownersAgent, source, "cell-stopped.png", "hash-of-the-screenshot", map[string]any{
+			"contentType": "image/png", "channel": "#support", "thread": "the cell stopped again",
+		})
+		if err := tx.EnsureAgentRoots(ownersAgent.ID); err != nil {
+			test.Fatalf("EnsureAgentRoots: %s", err)
+		}
+		node, err := tx.PutAgentNode(&models.AgentNode{
+			AgentID: ownersAgent.ID, Path: "projects/carlisle", Kind: models.NodeProject, Name: "Carlisle",
+		})
+		if err != nil {
+			test.Fatalf("PutAgentNode: %s", err)
+		}
+		if _, err := tx.AddAgentFact(&models.AgentFact{
+			AgentID: ownersAgent.ID, NodeID: node.ID, Kind: models.FactPlain,
+			Text:     "The cell stopped with the container empty on 16 October.",
+			Evidence: []models.Evidence{{Kind: models.EvidenceDocument, ID: "[" + screenshot.ID + "]"}},
+		}); err != nil {
+			test.Fatalf("AddAgentFact: %s", err)
+		}
+		// A second fact, read out of words rather than out of a picture.
+		if _, err := tx.AddAgentFact(&models.AgentFact{
+			AgentID: ownersAgent.ID, NodeID: node.ID, Kind: models.FactPlain,
+			Text:     "The shift changed at six.",
+			Evidence: []models.Evidence{{Kind: models.EvidenceConversation, ID: "a-conversation"}},
+		}); err != nil {
+			test.Fatalf("AddAgentFact: %s", err)
+		}
+		stranger, _, _ = anAgentWithASource(test, tx, "citation-stranger", "Carol Example")
+	})
+
+	resolver := &graph{database: database}
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), asAgentPerson(owner)), tx)
+		cited, err := resolver.AgentCitedAttachments(ctx, AgentCitedAttachmentsArguments{Citations: []string{
+			"projects/carlisle#1",
+			// The same one again, a fact read out of words, a fact that
+			// is not there, a page that is not there, and something that
+			// is not a citation at all: none of them is an answer, and
+			// none of them is a failure.
+			"projects/carlisle#1",
+			"projects/carlisle#2",
+			"projects/carlisle#99",
+			"projects/nowhere#1",
+			"not a citation",
+		}})
+		if err != nil {
+			test.Fatalf("AgentCitedAttachments: %s", err)
+		}
+		if len(cited) != 1 {
+			test.Fatalf("one citation has a file behind it, and the answer is %+v", cited)
+		}
+		switch {
+		case cited[0].Citation != "projects/carlisle#1":
+			test.Errorf("the answer says which citation it is for: %q", cited[0].Citation)
+		case len(cited[0].Files) != 1:
+			test.Fatalf("the citation has one file behind it: %+v", cited[0].Files)
+		case cited[0].Files[0].DocumentID != screenshot.ID:
+			test.Errorf("the file behind it is %q", cited[0].Files[0].DocumentID)
+		case cited[0].Files[0].Name != "cell-stopped.png":
+			test.Errorf("the file is named %q", cited[0].Files[0].Name)
+		case cited[0].Files[0].Thread != "the cell stopped again":
+			test.Errorf("the file says where it came from: %+v", cited[0].Files[0])
+		case cited[0].Files[0].Path != api.AgentDocumentFilePath(screenshot.ID):
+			test.Errorf("the file is fetched from %q", cited[0].Files[0].Path)
+		}
+
+		// Somebody else's citation reads their own graph, which has no
+		// such page: a path out of another person's conversation is not a
+		// way into their files.
+		strangersContext := api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), asAgentPerson(stranger)), tx)
+		theirs, err := resolver.AgentCitedAttachments(strangersContext, AgentCitedAttachmentsArguments{
+			Citations: []string{"projects/carlisle#1"},
+		})
+		if err != nil || len(theirs) != 0 {
+			test.Errorf("another person's citation resolved to %+v: %v", theirs, err)
+		}
+	})
+}
+
 // What the night decided against opening is kept rather than deleted, so
 // that a person who disagrees can read the reason. This is the two
 // answers the Dreams tab asks for: how many of each source's files became

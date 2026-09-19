@@ -312,6 +312,23 @@ func (self *AgentDocument) ContentType() string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
+// Channel is where the record this file came with was posted, and Thread
+// is which conversation in it, where the source said.
+//
+// The two things that tell one screenshot from the fifty thousand beside
+// it, so they are asked for in three places -- the night deciding what to
+// open, the page showing a fact's evidence, and the agent looking at a
+// picture again -- and are read off the document here rather than spelled
+// out at each of them.
+func (self *AgentDocument) Channel() string {
+	return strings.TrimSpace(self.metadataText("channel"))
+}
+
+// Thread is which conversation in the channel this came from.
+func (self *AgentDocument) Thread() string {
+	return strings.TrimSpace(self.metadataText("thread"))
+}
+
 // Declined is why the night decided against opening this, and "" where it
 // has not decided or decided to.
 //
