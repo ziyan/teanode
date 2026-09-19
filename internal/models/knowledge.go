@@ -126,6 +126,19 @@ type AgentKnowledgeSpecification struct {
 	// are. On for somebody who does want a dependency's source read.
 	ReadEveryCheckout bool `json:"readEveryCheckout,omitempty"`
 
+	// CommitsPerPass is how many commits one pass over this source's
+	// tree carries, over all the checkouts in it. Zero is the daemon's
+	// own pace, which is two thousand.
+	//
+	// The history is what says who wrote a piece of code, and it is
+	// deep: one tree of a hundred and thirty-seven checkouts holds on
+	// the order of three hundred and forty thousand commits, which
+	// filed in one night would bury the graph and the person's
+	// embedding budget. So a pass takes the newest of them, at a pace
+	// somebody chose, and the graph fills at that pace. Raise it for a
+	// tree whose history matters more than its files.
+	CommitsPerPass int `json:"commitsPerPass,omitempty"`
+
 	// MaxAttachmentBytes is the largest file this source carries off the
 	// person's machine, in bytes. Zero means the server's own limit,
 	// agent.limits.maxScannedAttachmentBytes, which is what nearly every
