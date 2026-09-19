@@ -79,3 +79,9 @@ that says who wrote something and there are a third of a million of them.
 within a pass that happens: a fixed share of every page, taken before the
 files, because a pass over a real tree is hundreds of pages and never
 reached the end where the history used to wait.
+
+`20260919-the-manifest-belongs-to-the-pass.md` says when the tree a pass
+offers is worked out: once, on the pass's first page, rather than on
+every page of it. It also says what that buys — a page of a real tree
+cost twelve seconds of git before a file was read — and what it costs,
+which is that a pass sees the tree as it was when the pass began.

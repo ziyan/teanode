@@ -173,6 +173,18 @@ commit the graph already holds is offered again on every pass with its
 text left out, for the same reason a profile goes on the last page: what
 a finished pass was not shown is swept as gone.
 
+What the tree holds is worked out once a pass, on its first page, and
+lent to every page after it. It used to be worked out for each page of
+256 entries: the walk, and then `git ls-files`, `git status`, and a whole
+`git log` for the authors of every checkout met on the way. On a tree of
+1,122 checkouts that was twelve seconds of git before a file had been
+read, on each of the hundreds of pages a pass takes — more of the night
+than the reading. So a pass now sees the tree as it was when the pass
+began. A file written while a pass is running waits for the next pass,
+which on a source with more to read is twenty seconds away; in exchange a
+pass offers one set of documents rather than a different one on every
+page, which is what the sweep that follows a finished pass assumes.
+
 **A document** is something read from somewhere else: a file in a
 checkout, a commit, a chat thread, a note, a message. Documents are not
 facts; they are what facts get made out of, and they live beside the
