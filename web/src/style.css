@@ -1468,6 +1468,22 @@ button.primary.danger:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--bad) 85%, black);
 }
 
+/* Asking for more of a list is a button, not a sentence to click.
+   It was drawn as an underlined link, which reads as a footnote rather
+   than as the control that loads the next page. Quiet, because it sits
+   under a list and is not the thing to do first, but a button. */
+.show-more {
+  align-self: flex-start;
+  margin-top: var(--space-2);
+  padding: 4px 12px;
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+
+.show-more:hover:not(:disabled) {
+  color: var(--text);
+}
+
 button.link {
   border: none;
   background: none;
