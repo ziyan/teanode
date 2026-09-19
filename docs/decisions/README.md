@@ -61,3 +61,10 @@ it is `docs/planning/active/20260910-personal-agents-roadmap.md`.
 own computer beside the attached tab: reached through a program they run,
 signed in as them, only while they talk. Its narrative is
 `docs/planning/active/20260911-personal-devices.md`.
+
+`20260918-a-checkout-with-none-of-your-commits-is-somebody-elses.md` says
+what a source reads of a folder of checkouts: the ones the person has
+committed to, in full, and the ones they only cloned as a profile and
+nothing more. It also says why that is decided from whose commits are in a
+checkout rather than from a list of names, and why the device applies it
+while the server supplies it.

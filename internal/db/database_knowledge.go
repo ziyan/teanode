@@ -145,6 +145,16 @@ type SourceCounts struct {
 	// than having been handed an empty answer by a folder nothing had
 	// mounted.
 	Seen int
+
+	// CheckoutsKeptToProfile is how many checkouts the pass kept to what
+	// git says about them, their files left unread, and
+	// FilesKeptToProfile how many files that was.
+	//
+	// Both are counted over the whole tree by whoever walked it, so a
+	// page carries the same numbers as the page before it: they are
+	// written down as they arrive rather than added up.
+	CheckoutsKeptToProfile int
+	FilesKeptToProfile     int
 }
 
 // --- rows -------------------------------------------------------------
@@ -170,6 +180,9 @@ type agentSourceModel struct {
 	RefusedCount   int        `gorm:"column:refused_count"`
 	More           bool       `gorm:"column:more"`
 	UnknownAuthors []byte     `gorm:"column:unknown_authors;type:jsonb"`
+
+	CheckoutsKeptToProfile int `gorm:"column:checkouts_kept_to_profile"`
+	FilesKeptToProfile     int `gorm:"column:files_kept_to_profile"`
 }
 
 func (agentSourceModel) TableName() string { return "agent_source" }
@@ -256,7 +269,9 @@ func (self *transaction) PutAgentSource(source *models.AgentKnowledgeSource) (*m
 		LastRunAt: written.LastRunAt, NextRunAt: written.NextRunAt, LastError: written.LastError,
 		DocumentCount: written.DocumentCount, ChunkCount: written.ChunkCount,
 		RefusedCount: written.RefusedCount, More: written.More,
-		UnknownAuthors: unknownAuthors,
+		CheckoutsKeptToProfile: written.CheckoutsKeptToProfile,
+		FilesKeptToProfile:     written.FilesKeptToProfile,
+		UnknownAuthors:         unknownAuthors,
 	}
 	if create {
 		if err := self.tx.Create(row).Error; err != nil {
@@ -290,7 +305,9 @@ func (self *agentSourceModel) toModel() (*models.AgentKnowledgeSource, error) {
 		LastRunAt: self.LastRunAt, NextRunAt: self.NextRunAt, LastError: self.LastError,
 		DocumentCount: self.DocumentCount, ChunkCount: self.ChunkCount,
 		RefusedCount: self.RefusedCount, More: self.More,
-		Cursor: map[string]any{}, UnknownAuthors: []string{},
+		CheckoutsKeptToProfile: self.CheckoutsKeptToProfile,
+		FilesKeptToProfile:     self.FilesKeptToProfile,
+		Cursor:                 map[string]any{}, UnknownAuthors: []string{},
 	}
 	if len(self.Specification) > 0 {
 		if err := json.Unmarshal(self.Specification, &source.Specification); err != nil {
@@ -379,7 +396,9 @@ func (self *transaction) MarkAgentSourceRun(sourceId string, cursor map[string]a
 		"cursor": encoded, "last_run_at": now, "next_run_at": nextRun,
 		"last_error": lastError, "more": more, "modified_at": now,
 		"document_count": counts.Documents, "chunk_count": counts.Chunks,
-		"refused_count": counts.Refused,
+		"refused_count":             counts.Refused,
+		"checkouts_kept_to_profile": counts.CheckoutsKeptToProfile,
+		"files_kept_to_profile":     counts.FilesKeptToProfile,
 	}).Error
 }
 

@@ -717,8 +717,14 @@ func TestTheProbeAsksOnlyWhetherARootIsAllowed(t *testing.T) {
 }
 
 // checkoutWith makes a git repository at a path, holding the given
-// files, and commits all of them.
+// files, and commits all of them as the person themselves.
 func checkoutWith(t *testing.T, where string, files map[string]string) {
+	t.Helper()
+	checkoutBy(t, where, "alice@example.com", files)
+}
+
+// checkoutBy is the same, committed by whoever is named.
+func checkoutBy(t *testing.T, where, address string, files map[string]string) {
 	t.Helper()
 	for name, content := range files {
 		path := filepath.Join(where, filepath.FromSlash(name))
@@ -735,8 +741,8 @@ func checkoutWith(t *testing.T, where string, files map[string]string) {
 		command := exec.Command("git", arguments...)
 		command.Dir = where
 		command.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=Alice", "GIT_AUTHOR_EMAIL=alice@example.com",
-			"GIT_COMMITTER_NAME=Alice", "GIT_COMMITTER_EMAIL=alice@example.com",
+			"GIT_AUTHOR_NAME=Somebody", "GIT_AUTHOR_EMAIL="+address,
+			"GIT_COMMITTER_NAME=Somebody", "GIT_COMMITTER_EMAIL="+address,
 			"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Skipf("git is not usable here: %s: %s", err, output)
@@ -843,5 +849,140 @@ func TestTheIgnoredDirectoriesAreMatchedBySegment(t *testing.T) {
 		if inIgnoredDirectory(path) {
 			t.Fatalf("%q is the person's own work and was taken for somebody else's", path)
 		}
+	}
+}
+
+// scanOfTree is one page of a scan over a small tree: what it offered as
+// files, what it offered as checkouts, and the page itself.
+//
+// One page on purpose. These trees are a handful of files, and a scan
+// that needed a second page would mean the tree grew rather than that
+// the rule under test changed.
+func scanOfTree(t *testing.T, root string, arguments *ScanArguments) (map[string]bool, map[string]*RepositoryProfile, *ScanResult) {
+	t.Helper()
+	home := t.TempDir()
+	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
+	if _, err := AllowScanRoot(options, root); err != nil {
+		t.Fatalf("AllowScanRoot: %s", err)
+	}
+	arguments.Root = root
+	result, err := RunScan(context.Background(), options, arguments)
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	if result.Next != "" {
+		t.Fatalf("the tree took more than one page, which these tests do not expect")
+	}
+	files := map[string]bool{}
+	checkouts := map[string]*RepositoryProfile{}
+	for _, entry := range result.Entries {
+		switch {
+		case entry.Kind == "file":
+			files[entry.ExternalID] = true
+		case entry.Kind == "repository" && entry.Repository != nil:
+			checkouts[entry.ExternalID] = entry.Repository
+		}
+	}
+	return files, checkouts, result
+}
+
+// treeOfCheckouts is a directory with one checkout the person works in
+// and one they only cloned, which is what a folder of checkouts is.
+func treeOfCheckouts(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	checkoutBy(t, filepath.Join(root, "portal"), "alice@example.com", map[string]string{
+		"main.go":   "package main\n",
+		"README.md": "A management plane for the machines in the workshop.\n",
+	})
+	checkoutBy(t, filepath.Join(root, "cloned"), "somebody@example.net", map[string]string{
+		"engine.c":  "int main(void) { return 0; }\n",
+		"render.c":  "void render(void) {}\n",
+		"README.md": "A renderer somebody else wrote, cloned to read on a train.\n",
+	})
+	return root
+}
+
+// A checkout the person has committed to is their own work, and every
+// file in it is read.
+func TestACheckoutTheyCommittedToIsRead(t *testing.T) {
+	files, _, _ := scanOfTree(t, treeOfCheckouts(t), &ScanArguments{OwnAddresses: []string{"Alice@Example.com"}})
+	for _, name := range []string{"portal/main.go", "portal/README.md"} {
+		if !files[name] {
+			t.Fatalf("%q is in a checkout they commit to and was not offered: %v", name, files)
+		}
+	}
+}
+
+// A checkout they have never committed to is somebody else's code. It
+// keeps its profile -- so the graph still knows the checkout is there,
+// what it is and where it lives, and "what was that thing I cloned" has
+// an answer -- and its files are not offered at all.
+//
+// This is the larger version of the vendored-directory problem above,
+// and it cannot be solved the same way. A list of names, of projects or
+// of directories can only hold the cases somebody thought of; whose
+// commits are in a checkout is evidence the scan already gathers. On one
+// deployment a single source held 32,535 files, more than half of them
+// under three checkouts nobody there had ever committed to.
+func TestACheckoutTheyNeverCommittedToKeepsOnlyItsProfile(t *testing.T) {
+	files, checkouts, result := scanOfTree(t, treeOfCheckouts(t),
+		&ScanArguments{OwnAddresses: []string{"alice@example.com"}})
+
+	for name := range files {
+		if strings.HasPrefix(name, "cloned/") {
+			t.Fatalf("%q is somebody else's source and was offered: %v", name, files)
+		}
+	}
+	profile := checkouts["cloned"]
+	if profile == nil {
+		t.Fatalf("the checkout itself is still offered: %v", checkouts)
+	}
+	if profile.Commits == 0 || len(profile.Authors) == 0 || profile.Description == "" {
+		t.Fatalf("with what git says about it: %+v", profile)
+	}
+	if result.CheckoutsKeptToProfile != 1 {
+		t.Fatalf("one checkout was kept to its profile, not %d", result.CheckoutsKeptToProfile)
+	}
+	if result.FilesKeptToProfile != 3 {
+		t.Fatalf("and the three files in it were left unread, not %d", result.FilesKeptToProfile)
+	}
+}
+
+// The source can say to read them anyway, for somebody who does want a
+// dependency's source read; and a server that says nothing about who the
+// person is reads everything, because not knowing who they are must
+// never come out as "none of this is theirs".
+func TestReadingEveryCheckoutIsTheSourcesToChoose(t *testing.T) {
+	root := treeOfCheckouts(t)
+	for _, arguments := range []*ScanArguments{
+		{OwnAddresses: []string{"alice@example.com"}, ReadEveryCheckout: true},
+		{},
+	} {
+		files, _, result := scanOfTree(t, root, arguments)
+		for _, name := range []string{"cloned/engine.c", "portal/main.go"} {
+			if !files[name] {
+				t.Fatalf("every checkout is read here (%+v) and %q was not offered: %v", arguments, name, files)
+			}
+		}
+		if result.CheckoutsKeptToProfile != 0 || result.FilesKeptToProfile != 0 {
+			t.Fatalf("nothing was kept to a profile, not %d checkout(s) and %d file(s)",
+				result.CheckoutsKeptToProfile, result.FilesKeptToProfile)
+		}
+	}
+}
+
+// And the whole tree is read as before when it is the person's own
+// checkout that was scanned: the rule is about whose work a checkout is,
+// not about how many of them there are.
+func TestTheirOwnCheckoutScannedOnItsOwnIsRead(t *testing.T) {
+	root := t.TempDir()
+	checkoutBy(t, root, "alice@example.com", map[string]string{"main.go": "package main\n"})
+	files, _, result := scanOfTree(t, root, &ScanArguments{OwnAddresses: []string{"alice@example.com"}})
+	if !files["main.go"] {
+		t.Fatalf("their own checkout is read: %v", files)
+	}
+	if result.CheckoutsKeptToProfile != 0 {
+		t.Fatalf("and nothing was kept to a profile: %d", result.CheckoutsKeptToProfile)
 	}
 }

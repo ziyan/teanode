@@ -36,6 +36,16 @@ import (
 // source; a server that asks for anything outside them is refused. So a
 // server that is taken over cannot read `~/.ssh` through a scan the way
 // it could through `shell` while somebody is present.
+//
+// Which checkouts are read at all is decided here too, from what the
+// server says. Every request carries the addresses that are the person,
+// and a checkout none of them has ever committed to is kept to its
+// profile: the graph still learns that the checkout is there and what it
+// is, and nobody's night is spent reading source the person only cloned.
+// The policy belongs to the server, because who somebody is lives on the
+// card they keep and changes there; the deciding belongs here, because a
+// file that is not going to be filed should not be read, hashed and sent
+// across a socket first.
 
 // The bounds of one scan.
 const (
@@ -138,6 +148,26 @@ type ScanArguments struct {
 	// server, which says nothing -- is DefaultMaxAttachmentBytes, never
 	// no limit at all.
 	MaxAttachmentBytes int64 `json:"maxAttachmentBytes,omitempty"`
+
+	// OwnAddresses are the addresses that are the person: their account's
+	// own, and every one on the card they marked as themselves. A
+	// checkout whose history holds none of them is one they cloned, and
+	// its files stay here.
+	//
+	// Said by the server on every request rather than known here,
+	// for the same reason as the bound above: who somebody is lives on
+	// the card they keep, it changes there, and a copy kept on this
+	// machine would go stale without anybody being able to see that it
+	// had. Empty -- an older server, or a person with no card yet --
+	// leaves every checkout read, because silence must not empty a
+	// source.
+	OwnAddresses []string `json:"ownAddresses,omitempty"`
+
+	// ReadEveryCheckout reads the files of every checkout in the tree,
+	// including the ones nobody here ever committed to. It is the
+	// source's own setting, for somebody who does want a dependency's
+	// source read.
+	ReadEveryCheckout bool `json:"readEveryCheckout,omitempty"`
 }
 
 // maxAttachmentBytes is the limit a request runs under.
@@ -210,6 +240,18 @@ type ScanResult struct {
 	// Extractors says which outside readers were found, so the source's
 	// page can say what it cannot read here.
 	Extractors []string `json:"extractors,omitempty"`
+
+	// CheckoutsKeptToProfile is how many checkouts in this tree were kept
+	// to what git says about them, their files left unread, and
+	// FilesKeptToProfile how many files that was. Counted over the whole
+	// tree and said the same on every page, because the manifest is
+	// worked out afresh for each one.
+	//
+	// Reported rather than silent: this is the program declining to read
+	// something the person allowed it to read, and a person who disagrees
+	// has to be able to see it first.
+	CheckoutsKeptToProfile int `json:"checkoutsKeptToProfile,omitempty"`
+	FilesKeptToProfile     int `json:"filesKeptToProfile,omitempty"`
 }
 
 // RepositoryProfile is what git says about a checkout: the first facts of
@@ -547,6 +589,13 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 	}
 	sort.Strings(paths)
 
+	// The checkouts here that are somebody else's work. Their profiles
+	// are still offered below -- the graph should know the checkout is
+	// there and roughly what it is -- and their files are not read.
+	cloned := checkoutsNotTheirs(profiles, arguments)
+	paths, result.FilesKeptToProfile = withoutTheFilesOf(paths, cloned)
+	result.CheckoutsKeptToProfile = len(cloned)
+
 	started := arguments.After == ""
 	// carried is how much text this page holds so far. One large file
 	// does go over -- a page is never empty, because a page that refused
@@ -603,7 +652,9 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 	}
 
 	// Commits, after the files, so a first pass shows something quickly.
-	if result.Next == "" && len(result.Entries) < most {
+	// Not for a checkout that was kept to its profile: its history is
+	// the same somebody else's work as its files, read line by line.
+	if result.Next == "" && len(result.Entries) < most && !cloned[""] {
 		commits, err := readCommits(ctx, root, arguments, most-len(result.Entries))
 		if err == nil {
 			result.Entries = append(result.Entries, commits...)
@@ -653,6 +704,95 @@ func withoutIgnoredDirectories(paths []string) []string {
 		kept = append(kept, path)
 	}
 	return kept
+}
+
+// checkoutsNotTheirs is the directories of this tree holding a checkout
+// the person has never committed to: somebody else's code, sitting
+// wherever they happened to park it.
+//
+// The evidence is what the scan already gathers. A profile carries every
+// address in a checkout's history, and the server says which addresses
+// are the person's; a history with none of them in it is not their work,
+// whatever the directory is called and whatever the thing is. There is no
+// list of names here, of projects or of directories, and there must not
+// be one: such a list can only hold the cases somebody thought of, and
+// the ones it misses are exactly the ones that cost -- on one deployment
+// a single source held 32,535 files of which more than half were under
+// three checkouts nobody there had ever committed to, and the agent spent
+// its nights learning somebody else's source line by line.
+//
+// Not knowing keeps the files. No addresses from the server, a checkout
+// git cannot read, a checkout with no commits in it at all: every one of
+// those is read as before, because "nothing is known about this" must
+// never come out as "this is somebody else's".
+func checkoutsNotTheirs(profiles map[string]*RepositoryProfile, arguments *ScanArguments) map[string]bool {
+	if arguments.ReadEveryCheckout || len(arguments.OwnAddresses) == 0 {
+		return nil
+	}
+	own := make(map[string]bool, len(arguments.OwnAddresses))
+	for _, address := range arguments.OwnAddresses {
+		if address = strings.ToLower(strings.TrimSpace(address)); address != "" {
+			own[address] = true
+		}
+	}
+	if len(own) == 0 {
+		return nil
+	}
+	cloned := map[string]bool{}
+	for directory, profile := range profiles {
+		if profile == nil || len(profile.Authors) == 0 {
+			continue
+		}
+		theirs := false
+		for _, author := range profile.Authors {
+			if own[strings.ToLower(strings.TrimSpace(author.Address))] {
+				theirs = true
+				break
+			}
+		}
+		if !theirs {
+			cloned[directory] = true
+		}
+	}
+	return cloned
+}
+
+// withoutTheFilesOf drops the files of those checkouts from a manifest,
+// and says how many it dropped.
+func withoutTheFilesOf(paths []string, checkouts map[string]bool) ([]string, int) {
+	if len(checkouts) == 0 {
+		return paths, 0
+	}
+	kept := make([]string, 0, len(paths))
+	held := 0
+	for _, path := range paths {
+		if inACheckout(path, checkouts) {
+			held++
+			continue
+		}
+		kept = append(kept, path)
+	}
+	return kept, held
+}
+
+// inACheckout says whether a path lies in one of them, by walking up its
+// directories rather than across the checkouts: a tree of checkouts is
+// deep in neither direction, but it is wide in files.
+//
+// The empty key is the scanned tree itself, which is a checkout when the
+// source points straight at one.
+func inACheckout(path string, checkouts map[string]bool) bool {
+	directory := path
+	for {
+		cut := strings.LastIndex(directory, "/")
+		if cut < 0 {
+			return checkouts[""]
+		}
+		directory = directory[:cut]
+		if checkouts[directory] {
+			return true
+		}
+	}
 }
 
 // listTree is every file worth offering, relative to the root, and the

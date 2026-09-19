@@ -99,6 +99,26 @@ span as its sentence. That matters more than it looks — until something
 draws the first edges the graph is a list of pages, and the half of the
 dream that looks for connections has nothing to look at.
 
+That same match decides what is read at all. A person who points a source
+at the folder they keep their checkouts in is pointing it at other
+people's work as much as their own, and a first pass used to index every
+line of it — on one deployment, of 32,535 files in a single source more
+than half were under three checkouts nobody there had ever committed to.
+So a checkout whose history holds none of the person's addresses is kept
+to its **profile**: the page still says what it is, what its readme calls
+it, where it lives and what its newest tag is, so "what was that thing I
+cloned" still has an answer. What stops is reading the source line by
+line. The device decides it, because a file that is not going to be filed
+should not be read, hashed and sent first, and the server says who the
+person is on every request, because that lives on their card and changes
+there. Nothing here is a list of project or directory names: such a list
+can only hold the cases somebody thought of. Not knowing keeps the files
+— no addresses, a checkout git cannot read, a checkout with no commits —
+and a source that wants a dependency's source read says so with
+`specification.readEveryCheckout`. How many checkouts were kept to their
+profile, and how many files that was, is on the source wherever the
+source is shown.
+
 **A document** is something read from somewhere else: a file in a
 checkout, a commit, a chat thread, a note, a message. Documents are not
 facts; they are what facts get made out of, and they live beside the

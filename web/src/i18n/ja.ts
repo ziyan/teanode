@@ -2588,6 +2588,9 @@ export const ja: Catalog = {
     'ここのコミットは {names} によるもので、どれもあなたではありません。あなたの仕事として数えられません。',
   'agent.knowledgeWhichIsYou': 'どの連絡先があなたかを指定する',
   'agent.knowledgeRefused': '{count} 件がその機械で止められました',
+  'agent.knowledgeKeptToProfile':
+    'ここの {checkouts} 件のチェックアウトにはあなたのコミットが一つもないため、何でありどこにあるかという概要だけを残し、その中の {files} 件のファイルは読んでいません。',
+  'agent.knowledgeReadEveryCheckout': 'コミットしたことのないものも含め、すべてのチェックアウトのファイルを読む',
   'agent.filesWaiting': '{count} 件のファイルが判断待ちです',
   'agent.filesDeclined': '{count} 件は開かないと判断しました',
   'agent.filesRead': '{count} 件は開いて読みました',

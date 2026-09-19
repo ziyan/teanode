@@ -183,6 +183,11 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 		Documents: source.DocumentCount,
 		Chunks:    source.ChunkCount,
 		Refused:   source.RefusedCount,
+		// Carried from the row so that a job that never got a page --
+		// the computer is not attached -- writes back what the source
+		// already said rather than zero.
+		CheckoutsKeptToProfile: source.CheckoutsKeptToProfile,
+		FilesKeptToProfile:     source.FilesKeptToProfile,
 	}
 	cursor := source.Cursor
 	if cursor == nil {
@@ -204,6 +209,12 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 		counts.Documents += passCounts.Documents
 		counts.Chunks += passCounts.Chunks
 		counts.Refused += passCounts.Refused
+		if err == nil {
+			// Not added up: what the page says is what the whole tree
+			// holds, counted afresh by the walk behind it.
+			counts.CheckoutsKeptToProfile = passCounts.CheckoutsKeptToProfile
+			counts.FilesKeptToProfile = passCounts.FilesKeptToProfile
+		}
 		if !startedPass.IsZero() {
 			cursor[cursorPassSeen] = countInCursor(cursor, cursorPassSeen) + passCounts.Seen
 			cursor[cursorPassRefused] = countInCursor(cursor, cursorPassRefused) + passCounts.Refused
@@ -557,6 +568,12 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 		}
 	}
 	mostAttachmentBytes := maxAttachmentBytes(run.Configuration(), source)
+	// Who the person is, so that the device can tell the checkouts they
+	// work in from the ones they cloned. Sent with every page rather than
+	// held over there: an address added to their card takes effect on the
+	// next page, and a device that keeps nothing about them cannot get it
+	// wrong later.
+	own := addressList(self.ownAddresses(ctx, run.Owner))
 	ask := func(known map[string]string) (json.RawMessage, error) {
 		return device.Ask(ctx, "scan", &computer.ScanArguments{
 			Root:    source.Specification.Path,
@@ -572,6 +589,10 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 			// more than the rest -- is a setting here and not a release
 			// everybody has to install.
 			MaxAttachmentBytes: mostAttachmentBytes,
+			// And who they are, with what this source says about the
+			// checkouts under it that nobody here ever committed to.
+			OwnAddresses:      own,
+			ReadEveryCheckout: source.Specification.ReadEveryCheckout,
 		}, wait)
 	}
 	answer, err := ask(known)
@@ -607,6 +628,12 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 	if err := json.Unmarshal(answer, &result); err != nil {
 		return "", counts, fmt.Errorf("the computer's answer is not readable: %w", err)
 	}
+	// What the device left where it was: the checkouts under this source
+	// nobody here has ever committed to, kept to their profile. Whole-tree
+	// numbers, the same on every page, so they are carried rather than
+	// counted up.
+	counts.CheckoutsKeptToProfile = result.CheckoutsKeptToProfile
+	counts.FilesKeptToProfile = result.FilesKeptToProfile
 
 	// What the source named but this pass did not file: the unchanged,
 	// the refused, and the ones nothing could be made of. Their documents
@@ -1149,6 +1176,17 @@ func (self *Agent) ownAddresses(ctx context.Context, owner *models.User) map[str
 		log.Debugf("cannot read the addresses of %q: %s", owner.Username, err)
 	}
 	return addresses
+}
+
+// addressList is those addresses in a fixed order, for a request that is
+// built again for every page and should not differ between them.
+func addressList(addresses map[string]bool) []string {
+	listed := make([]string, 0, len(addresses))
+	for address := range addresses {
+		listed = append(listed, address)
+	}
+	sort.Strings(listed)
+	return listed
 }
 
 // languageNames is the language a file extension means, for the ones
