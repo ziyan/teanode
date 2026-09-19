@@ -6,6 +6,15 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.40.10] - 2026-09-19
+
+### Fixed
+
+- A checkout you barely touched is no longer read in full. One commit in
+  somebody else's repository used to admit every file in it. (#149)
+- A file deleted while a source was being read can no longer cause the rest
+  of that source to be forgotten. (#149)
+
 ## [0.40.9] - 2026-09-19
 
 ### Fixed
