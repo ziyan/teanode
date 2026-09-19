@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.39.3] - 2026-09-19
+
+### Fixed
+
+- A picture on the Knowledge page is drawn instead of left blank. (#130)
+
 ## [0.39.2] - 2026-09-19
 
 ### Fixed
