@@ -119,6 +119,18 @@ and a source that wants a dependency's source read says so with
 profile, and how many files that was, is on the source wherever the
 source is shown.
 
+Checkouts nest, and every one of them is found. A build tool that clones
+what it depends on into the project, or a folder of checkouts kept inside
+one, leaves a checkout inside another checkout's working tree; the walk
+used to stop at the outer one, so on one deployment a source whose tree
+held 324 further checkouts — the person's own working code — indexed two
+files. A checkout's files still come from its own `git ls-files`, which
+is the whole of what it offers, and the walk goes on past it to find the
+checkouts below. The checkout nearest above a file is the one that
+decides whose work it is, so a dependency cloned into a project of yours
+is kept to its profile, and a project of yours inside somebody else's
+checkout is read.
+
 **A document** is something read from somewhere else: a file in a
 checkout, a commit, a chat thread, a note, a message. Documents are not
 facts; they are what facts get made out of, and they live beside the
