@@ -530,29 +530,24 @@ export function KnowledgePage() {
         aria-label={t('knowledge.find')}
         onChange={(event) => setFilter(event.target.value)}
       />
-      {/* The third question the column answers: not what a page is
-          called, nor what it sits among, but what a question would
-          actually carry into a turn. A word rather than an icon, because
-          nothing draws it. */}
-      <button type="button" className="knowledge-chip" onClick={() => setRecalling(true)}>
-        {t('knowledge.recall.title')}
-      </button>
-      {/* And the fourth: not what the agent made of what it read, but what
-          it read. The graph is the conclusions; this is the evidence, and
-          until now only the agent itself could look through it. */}
-      <button type="button" className="knowledge-chip" onClick={() => setSearchingDocuments(true)}>
-        {t('knowledge.documents.title')}
-      </button>
-      {/* An icon beside the box, the way the mailbox lays out its
-          toolbar: the words are the title and the label. */}
-      <Link
-        className="icon-action knowledge-lookup-action"
-        to="/settings/knowledge/explore"
-        title={t('knowledge.explore.go')}
-        aria-label={t('knowledge.explore.go')}
-      >
-        <GraphIcon size={18} />
-      </Link>
+      {/* The other three questions the column answers, drawn alike
+          because they are alike: not what a page is called, but what a
+          question would carry into a turn, what the agent read to get
+          there, and what a page sits among. Two of them used to be words
+          and the third an icon, one because nothing drew it and one
+          because the mailbox lays out a toolbar that way, which left a
+          row of three that looked like three unrelated things. */}
+      <div className="knowledge-lookup-ways">
+        <button type="button" className="knowledge-chip" onClick={() => setRecalling(true)}>
+          {t('knowledge.recall.title')}
+        </button>
+        <button type="button" className="knowledge-chip" onClick={() => setSearchingDocuments(true)}>
+          {t('knowledge.documents.title')}
+        </button>
+        <Link className="knowledge-chip" to="/settings/knowledge/explore" title={t('knowledge.explore.go')}>
+          {t('knowledge.explore.title')}
+        </Link>
+      </div>
     </div>
   )
 
