@@ -950,7 +950,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
             </button>
           </div>
           <form
-            className="mailbox-toolbar"
+            className="list-toolbar"
             onSubmit={(event) => {
               event.preventDefault()
               applyFilters({ q: search.trim(), narrowing })

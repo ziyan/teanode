@@ -1224,14 +1224,19 @@ export function KnowledgeExplorePage() {
         >
           −
         </button>
-        <button type="button" className="knowledge-chip" onClick={fit}>
-          {t('knowledge.explore.fit')}
-        </button>
-        {document.fullscreenEnabled ? (
-          <button type="button" className="knowledge-chip" onClick={toggleFullscreen}>
-            {t('knowledge.explore.fullscreen')}
+        {/* Fitting the drawing and filling the screen are two ways of framing
+            the same picture, so they are one set, drawn as the dashboard
+            draws a set of related buttons everywhere else. */}
+        <div className="segmented" role="group">
+          <button type="button" onClick={fit}>
+            {t('knowledge.explore.fit')}
           </button>
-        ) : null}
+          {document.fullscreenEnabled ? (
+            <button type="button" onClick={toggleFullscreen}>
+              {t('knowledge.explore.fullscreen')}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="graph-explore-legend">

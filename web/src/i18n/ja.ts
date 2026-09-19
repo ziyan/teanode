@@ -2365,6 +2365,7 @@ export const ja: Catalog = {
   'knowledge.intro':
     'エージェントがあなたについて学んだことすべてを、ページとしてまとめたものです。各ページにはパスがあり、各事実には出どころが記されています。誤りは直してください。取り消したものは「覚えるべきでない例」として示されます。{pages} ページ。',
   'knowledge.find': 'ページを検索',
+  'knowledge.waysIn': '入り口',
   'knowledge.root': 'ナレッジ',
   'knowledge.back': '戻る',
   'knowledge.into': '{name} の中身',

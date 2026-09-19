@@ -517,34 +517,32 @@ export function KnowledgePage() {
 
   const documents = searchingDocuments ? <DocumentsDialog onClose={() => setSearchingDocuments(false)} /> : null
 
-  // The lookup, and beside it the whole graph drawn. They are the two ways
-  // in and they answer different questions -- what is this called, and what
-  // does this sit among -- so neither one is behind the other.
+  // The toolbar above the list, the one the mail list has: the box that
+  // searches the pages by name, and under it the ways in that are not about
+  // a name. A div rather than a form because this filters as it is typed --
+  // there is nothing for Enter to submit.
   const lookup = (
-    <div className="knowledge-lookup-row">
+    <div className="list-toolbar">
       <input
         type="search"
-        className="knowledge-lookup"
         value={filter}
         placeholder={t('knowledge.find')}
         aria-label={t('knowledge.find')}
         onChange={(event) => setFilter(event.target.value)}
       />
-      {/* The other three questions the column answers, drawn alike
-          because they are alike: not what a page is called, but what a
-          question would carry into a turn, what the agent read to get
-          there, and what a page sits among. Two of them used to be words
-          and the third an icon, one because nothing drew it and one
-          because the mailbox lays out a toolbar that way, which left a
-          row of three that looked like three unrelated things. */}
-      <div className="knowledge-lookup-ways">
-        <button type="button" className="knowledge-chip" onClick={() => setRecalling(true)}>
+      {/* The other three questions the column answers, and they are alike:
+          not what a page is called, but what a question would carry into a
+          turn, what the agent read to get there, and what a page sits
+          among. One segmented control because they are one set, the same
+          control the mail list narrows itself with. */}
+      <div className="segmented" role="group" aria-label={t('knowledge.waysIn')}>
+        <button type="button" onClick={() => setRecalling(true)}>
           {t('knowledge.recall.title')}
         </button>
-        <button type="button" className="knowledge-chip" onClick={() => setSearchingDocuments(true)}>
+        <button type="button" onClick={() => setSearchingDocuments(true)}>
           {t('knowledge.documents.title')}
         </button>
-        <Link className="knowledge-chip" to="/settings/knowledge/explore" title={t('knowledge.explore.go')}>
+        <Link to="/settings/knowledge/explore" title={t('knowledge.explore.go')}>
           {t('knowledge.explore.title')}
         </Link>
       </div>
@@ -610,13 +608,21 @@ export function KnowledgePage() {
     </>
   ) : null
 
+  // The toolbar is inside the panel rather than above it, so it stays put
+  // while the rows under it scroll.
+  const column = (
+    <div className="card knowledge-list">
+      {lookup}
+      <div className="knowledge-list-rows">{list}</div>
+    </div>
+  )
+
   if (onePane) {
     // One column at a time. Which one is in the URL, so Back is Back,
     // and the breadcrumb on the bar is the way up out of the navigator.
     return (
       <div ref={setFrameElement} className="knowledge-phone">
-        {showingDetail ? detail : lookup}
-        {showingDetail ? null : <div className="card knowledge-list">{list}</div>}
+        {showingDetail ? detail : column}
         {recall}
         {documents}
       </div>
@@ -625,10 +631,7 @@ export function KnowledgePage() {
 
   return (
     <div ref={setFrameElement} className="knowledge-columns">
-      <div className="knowledge-column knowledge-column-navigator">
-        {lookup}
-        <div className="card knowledge-list">{list}</div>
-      </div>
+      <div className="knowledge-column knowledge-column-navigator">{column}</div>
       <div className="knowledge-column knowledge-page">{detail}</div>
       {recall}
       {documents}
@@ -876,7 +879,7 @@ function NavigatorList({
         ))}
       </ul>
       {rows.length < total ? (
-        <button type="button" className="knowledge-more" disabled={loading} onClick={() => void load(rows.length)}>
+        <button type="button" className="link" disabled={loading} onClick={() => void load(rows.length)}>
           {t('knowledge.showMore', { count: Math.min(PAGE_SIZE, total - rows.length) })}
         </button>
       ) : null}
@@ -1508,22 +1511,17 @@ function PageView({
 
   return (
     <>
-      <div className="card">
-        <div className="knowledge-heading">
-          <div>
-            <h3>{node.path === 'self' && me ? me : node.name || node.path}</h3>
-            <p className="muted">
-              <code className="tag knowledge-path">{node.path}</code>{' '}
-              <Tag value={t(`knowledge.kind.${node.kind}` as 'knowledge.kind.person')} />
-              {node.pinned ? <Tag value={t('knowledge.pinned')} tone="good" /> : null}
-            </p>
-            {/* The other names the page answers to, said the way the
-                command line says them, because a page found under a name
-                that is not its heading is otherwise a mystery. */}
-            {node.aliases && node.aliases.length > 0 ? (
-              <p className="muted">{t('knowledge.alsoCalled', { names: node.aliases.join(', ') })}</p>
-            ) : null}
-          </div>
+      <SettingsSection
+        card
+        title={node.path === 'self' && me ? me : node.name || node.path}
+        description={
+          <>
+            <code className="tag knowledge-path">{node.path}</code>{' '}
+            <Tag value={t(`knowledge.kind.${node.kind}` as 'knowledge.kind.person')} />
+            {node.pinned ? <Tag value={t('knowledge.pinned')} tone="good" /> : null}
+          </>
+        }
+        action={
           <div className="row-actions">
             <button
               type="button"
@@ -1602,7 +1600,14 @@ function PageView({
               <TrashIcon size={16} />
             </button>
           </div>
-        </div>
+        }
+      >
+        {/* The other names the page answers to, said the way the command
+            line says them, because a page found under a name that is not
+            its heading is otherwise a mystery. */}
+        {node.aliases && node.aliases.length > 0 ? (
+          <p className="muted">{t('knowledge.alsoCalled', { names: node.aliases.join(', ') })}</p>
+        ) : null}
         {page.contact ? (
           <p className="muted">
             {t('knowledge.contact', {
@@ -1618,7 +1623,7 @@ function PageView({
         ) : (
           <SettingsEmpty>{t('knowledge.noSummary')}</SettingsEmpty>
         )}
-      </div>
+      </SettingsSection>
 
       <SettingsSection
         card
@@ -1678,7 +1683,7 @@ function PageView({
           />
         ))}
         {page.facts.length > factsShown ? (
-          <button type="button" className="knowledge-more" onClick={() => setFactsShown((count) => count + PAGE_SIZE)}>
+          <button type="button" className="link" onClick={() => setFactsShown((count) => count + PAGE_SIZE)}>
             {t('knowledge.showMore', { count: Math.min(PAGE_SIZE, page.facts.length - factsShown) })}
           </button>
         ) : null}
