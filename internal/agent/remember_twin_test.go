@@ -38,7 +38,7 @@ func TestRememberingTheSameThingTwiceKeepsItOnce(t *testing.T) {
 	// where there is provably nothing to lose, and that is this: a
 	// rewording may be the same statement or may be the next thing the
 	// page has to say, and the nightly pass that asks a model decides.
-	facts := rememberOnTwoDays(t, []string{
+	facts, everyRow := rememberOnTwoDays(t, []string{
 		"Kittiwake is the neighbour's boat, and they repaint it every spring.",
 		"Kittiwake is the neighbour's boat, and they repaint it every spring.",
 	})
@@ -53,6 +53,33 @@ func TestRememberingTheSameThingTwiceKeepsItOnce(t *testing.T) {
 	if len(facts[0].Evidence) < 2 {
 		t.Fatalf("and gains what the second day brought: %v", facts[0].Evidence)
 	}
+	// And Wednesday never wrote a row at all. The page said it already,
+	// so there was nothing to write and nothing to put behind anything:
+	// a fold leaves a dormant copy and spends a number, and a graph that
+	// reads the same document every night accumulates one of each per
+	// night per sentence.
+	if len(everyRow) != 1 {
+		t.Fatalf("one row was ever written, not %d:\n%s", len(everyRow), linesOf(everyRow))
+	}
+}
+
+// Two different sentences about one thing are two facts.
+//
+// The guard against filing a sentence twice has to refuse exactly the
+// sentence and nothing else. Read too broadly it becomes the worse
+// failure -- the second thing the person said about the boat never
+// reaching the page, with nothing anywhere to say it was dropped.
+func TestRememberingTwoDifferentThingsKeepsBoth(t *testing.T) {
+	facts, everyRow := rememberOnTwoDays(t, []string{
+		"Kittiwake is the neighbour's boat, and they repaint it every spring.",
+		"Kittiwake is moored at the pier at the end of the towpath.",
+	})
+	if len(facts) != 2 {
+		t.Fatalf("the page says both, not %d:\n%s", len(facts), linesOf(facts))
+	}
+	if len(everyRow) != 2 {
+		t.Fatalf("a row each, not %d:\n%s", len(everyRow), linesOf(everyRow))
+	}
 }
 
 // A figure that changed is not the same thing said twice.
@@ -63,7 +90,7 @@ func TestRememberingTheSameThingTwiceKeepsItOnce(t *testing.T) {
 // recall never carried 3100, and nothing anywhere said that a decision
 // had been made. Both stand now.
 func TestRememberingAChangedAmountKeepsBoth(t *testing.T) {
-	facts := rememberOnTwoDays(t, []string{
+	facts, _ := rememberOnTwoDays(t, []string{
 		"Kittiwake costs the neighbours 4200 a year to keep afloat.",
 		"Kittiwake costs the neighbours 3100 a year to keep afloat.",
 	})
@@ -84,8 +111,13 @@ func linesOf(facts []*models.AgentFact) string {
 // rememberOnTwoDays files one sentence a day through the whole path a
 // conversation takes -- a filing run, the evidence check, the page
 // resolver and the fold -- and hands back what the boat's page ends up
-// saying.
-func rememberOnTwoDays(t *testing.T, said []string) []*models.AgentFact {
+// saying, and every row that was ever written on it.
+//
+// The second answer is the one that tells a page saying something once
+// from a page that wrote it twice and put the second copy away: both
+// read the same to anybody asking the page, and only the second spends a
+// number and a row a night.
+func rememberOnTwoDays(t *testing.T, said []string) ([]*models.AgentFact, []*models.AgentFact) {
 	t.Helper()
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
@@ -212,7 +244,7 @@ func rememberOnTwoDays(t *testing.T, said []string) []*models.AgentFact {
 		worker.Wait()
 	}
 
-	var facts []*models.AgentFact
+	var facts, everyRow []*models.AgentFact
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		node, err := tx.GetAgentNode(found.ID, "things/kittiwake")
 		if err != nil || node == nil {
@@ -221,8 +253,11 @@ func rememberOnTwoDays(t *testing.T, said []string) []*models.AgentFact {
 		if facts, err = tx.ListAgentFacts(found.ID, node.ID, false, 50); err != nil {
 			t.Fatalf("ListAgentFacts: %s", err)
 		}
+		if everyRow, err = tx.ListAgentFacts(found.ID, node.ID, true, 50); err != nil {
+			t.Fatalf("ListAgentFacts: %s", err)
+		}
 	})
-	return facts
+	return facts, everyRow
 }
 
 // writeMeaning answers an embedding request with a vector that depends
