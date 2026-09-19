@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.40.13] - 2026-09-19
+
+### Changed
+
+- The nightly reading now gives the author of a commit a page of their own
+  under `people/` and a link to what they worked on, rather than leaving
+  it to the model to decide whether one commit is reason enough. A person's
+  own tree will produce a page for most of the people who have committed to
+  it, and a contact for each. Build bots and other machine accounts are left
+  out. (#152)
+
 ## [0.40.12] - 2026-09-19
 
 ### Fixed

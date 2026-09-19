@@ -91,8 +91,40 @@ organization, anything else is `related_to`. Both ends must be paths you
 are filing to or that the index above already has, and the `note` is the
 sentence you would say to {{.PersonName}} to justify it.
 
+**The author of an item gets a page.** Each item's heading names who
+wrote it, after `by`. That person goes under `people/`: file the page,
+and a `works_on` link from it to the project, repository or channel the
+item belongs to. Do this for somebody you have never seen before and
+will not see again -- one item is reason enough, because the item is the
+evidence that they wrote it. A hundred people with a line each is the
+map {{.PersonName}} wants, and an author with no page is somebody their
+agent cannot be asked about at all.
+
+A heading gives an author as a name and an address, and the page is for
+the person: `Ran Liao <ran.liao@example.net>` is a page called Ran Liao
+at `people/ran-liao`, with the address in neither its name nor its path.
+Where the heading gives an address and no name at all, the part in front
+of the @ is the name.
+
+Give that page the one thing the item shows about them: what they worked
+on and which part of it, with the item's `[id]` and its words as the
+evidence. Where the item carries only its title there is nothing to say
+yet, and the page and the link stand on their own until a pass that can
+read it.
+
+This is the **author** in the heading and nobody else. Somebody an item
+merely names in passing is filed the way anything else is, only where
+there is something to say about them.
+
+An author that is a machine is not a person. Where the name reads as
+something that runs rather than somebody who types -- bot, ci, build,
+jenkins, deploy, release, noreply, automation, service, or a word with a
+number stuck on the end of it -- open no page and draw no link. Where it
+reads like a person's name, it is a person's.
+
 One link between two pages is enough for ever; drawing it again costs
-nothing but says nothing either. Leave out any you would not defend.
+nothing but says nothing either. Leave out any you would not defend --
+except the author's, which the heading has already defended.
 
 The relations are: part_of, works_on, member_of, knows, owns, uses,
 located_in, related_to, decided_in, about.
