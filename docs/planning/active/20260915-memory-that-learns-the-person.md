@@ -173,6 +173,12 @@ anticipated.
   is a request and the same request will be made of a different model
   next year.
 
+  *Later: `saysSomethingNew` was removed on 2026-09-18. It refused a fact
+  by subtracting about a hundred common English words from it, which
+  refused "This project is private" and left a fact written in any other
+  language untouched. A list of words in one language cannot stand in for
+  the judgement, and this graph is read from sources in more than one.*
+
 - The maintainer's own suggestion, which is the part that generalizes:
   "node version can help with rewriting and fixing memory created by
   older version of teanode". Every page, fact and revision now carries
@@ -805,6 +811,10 @@ the numbers converged. What it found, and what was done:
   profile is not an opening; the revise pass clears an opening made of
   those phrases (`saysNothingOpening`) once per build and makes the page
   due. After one night: zero padded openings, honest empty ones.
+
+  *Later: `saysNothingOpening` and the pass that called it were removed on
+  2026-09-18, for the same reason as `saysSomethingNew` above. The prompt's
+  half of the fix stays.*
 - **A readme's sentence was lost.** Ingest put it in the opening and
   nowhere else; the night writes openings from the facts alone and
   threw it away. It is a keyed fact now (`Its readme says: …`).
