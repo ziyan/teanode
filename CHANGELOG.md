@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.40.3] - 2026-09-19
+
+### Fixed
+
+- A checkout inside another checkout is found and read, instead of being
+  skipped with everything under it. (#140)
+- A checkout's details are sent once a pass rather than once a page. (#140)
+
 ## [0.40.2] - 2026-09-19
 
 ### Changed
