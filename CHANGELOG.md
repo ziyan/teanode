@@ -6,6 +6,50 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.39.5] - 2026-09-19
+
+### Changed
+
+- A command sent to your computer runs as you wrote it. The rule that
+  guessed which commands were dangerous and asked first is gone; moving and
+  deleting a file still ask, and what your agent may reach is still only
+  the directories you allowed. (#133)
+
+## [0.39.4] - 2026-09-19
+
+### Fixed
+
+- A fact the agent had already written on a page is no longer written onto
+  it a second time and then hidden. The page said the right thing either
+  way, but every re-reading of a document left another buried copy behind
+  it and spent another fact number, so pages that are re-read often had
+  numbering far ahead of what they say and a history of nothing but
+  merges. What a second reading adds — where it was read — now goes onto
+  the fact that is already there. Existing buried copies are left alone. (#132)
+
+## [0.39.3] - 2026-09-19
+
+### Fixed
+
+- A picture on the Knowledge page is drawn instead of left blank. (#130)
+
+## [0.39.2] - 2026-09-19
+
+### Fixed
+
+- A folder of code no longer indexes the dependencies inside it. Vendored and
+  generated directories (`vendor`, `node_modules`, `__pycache__`) were skipped
+  when a folder was walked but not when it was read as a git checkout, so on a
+  large source most of what the agent learned was about somebody else's library
+  rather than about your work. Existing documents under those directories are
+  removed on each source's next complete pass. (#129)
+
+## [0.39.1] - 2026-09-19
+
+### Fixed
+
+- A file your agent passed over at night now says so honestly. When the night can only open a few of the files it is shown at once and its list comes back full, the ones left over say that they were passed over rather than judged, and how many the night could take. They used to say the agent had weighed each one's name, size, kind and the words it came with and found it not worth opening, which had not happened. (#127)
+
 ## [0.39.0] - 2026-09-18
 
 ### Added

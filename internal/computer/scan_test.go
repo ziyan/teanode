@@ -715,3 +715,133 @@ func TestTheProbeAsksOnlyWhetherARootIsAllowed(t *testing.T) {
 		t.Fatalf("a root not allowed probes to the refusal: %v", err)
 	}
 }
+
+// checkoutWith makes a git repository at a path, holding the given
+// files, and commits all of them.
+func checkoutWith(t *testing.T, where string, files map[string]string) {
+	t.Helper()
+	for name, content := range files {
+		path := filepath.Join(where, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll: %s", err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("WriteFile: %s", err)
+		}
+	}
+	for _, arguments := range [][]string{
+		{"init", "-q", "-b", "main"}, {"add", "-A"}, {"commit", "-q", "-m", "first"},
+	} {
+		command := exec.Command("git", arguments...)
+		command.Dir = where
+		command.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=Alice", "GIT_AUTHOR_EMAIL=alice@example.com",
+			"GIT_COMMITTER_NAME=Alice", "GIT_COMMITTER_EMAIL=alice@example.com",
+			"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Skipf("git is not usable here: %s: %s", err, output)
+		}
+	}
+}
+
+// filesOfScan is every file a scan offered, by its identifier.
+func filesOfScan(t *testing.T, root string) map[string]bool {
+	t.Helper()
+	home := t.TempDir()
+	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
+	if _, err := AllowScanRoot(options, root); err != nil {
+		t.Fatalf("AllowScanRoot: %s", err)
+	}
+	offered := map[string]bool{}
+	after := ""
+	for page := 0; page < 50; page++ {
+		result, err := RunScan(context.Background(), options, &ScanArguments{Root: root, After: after})
+		if err != nil {
+			t.Fatalf("RunScan: %s", err)
+		}
+		for _, entry := range result.Entries {
+			if entry.Kind == "file" {
+				offered[entry.ExternalID] = true
+			}
+		}
+		if result.Next == "" {
+			return offered
+		}
+		after = result.Next
+	}
+	t.Fatalf("the pages never ended")
+	return nil
+}
+
+// A checkout's tracked files are not the files worth reading, and the
+// difference is the dependencies somebody else wrote. The walk skips
+// vendor/ and its kind; git lists them, because they are committed. A
+// repository read through git therefore filed every one of them: on one
+// deployment 34,279 of 86,911 file documents were under those
+// directories, and half of what the agent had learned was about Go's
+// vendored golang.org/x/sys.
+func TestVendoredFilesAreNotOfferedByARepository(t *testing.T) {
+	committed := map[string]string{
+		"arm.py":                                "def grip(): pass\n",
+		"vendor/golang.org/x/sys/unix/types.go": "package unix\n",
+		"node_modules/left-pad/index.js":        "module.exports = 1\n",
+		"__pycache__/arm.cpython.pyc":           "cached\n",
+	}
+
+	// The root is itself a checkout.
+	root := t.TempDir()
+	checkoutWith(t, root, committed)
+	offered := filesOfScan(t, root)
+	if !offered["arm.py"] {
+		t.Fatalf("the person's own file is offered: %v", offered)
+	}
+	for name := range offered {
+		if inIgnoredDirectory(name) {
+			t.Fatalf("%q is somebody else's code and was offered: %v", name, offered)
+		}
+	}
+
+	// And a checkout inside a tree that is not one, which is the shape
+	// of a person who points their agent at ~/projects.
+	outer := t.TempDir()
+	inner := filepath.Join(outer, "gripper")
+	if err := os.MkdirAll(inner, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %s", err)
+	}
+	checkoutWith(t, inner, committed)
+	offered = filesOfScan(t, outer)
+	if !offered["gripper/arm.py"] {
+		t.Fatalf("the nested checkout's own file is offered: %v", offered)
+	}
+	for name := range offered {
+		if inIgnoredDirectory(name) {
+			t.Fatalf("%q is somebody else's code and was offered: %v", name, offered)
+		}
+	}
+}
+
+// The ignore list is one list, whichever way a tree is read. A path is
+// ignored for any segment, not only its first: a vendored tree sits
+// several directories down.
+func TestTheIgnoredDirectoriesAreMatchedBySegment(t *testing.T) {
+	for _, path := range []string{
+		"vendor/golang.org/x/sys/unix/types.go",
+		"gripper/vendor/left-pad/index.js",
+		"web/node_modules/react/index.js",
+		"tools/__pycache__/arm.cpython.pyc",
+	} {
+		if !inIgnoredDirectory(path) {
+			t.Fatalf("%q is under a directory the walk skips", path)
+		}
+	}
+	for _, path := range []string{
+		"arm.py",
+		"vendored/notes.md",
+		"internal/vendorstore/store.go",
+		"docs/node_modules.md",
+	} {
+		if inIgnoredDirectory(path) {
+			t.Fatalf("%q is the person's own work and was taken for somebody else's", path)
+		}
+	}
+}
