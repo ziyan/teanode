@@ -63,7 +63,7 @@ itself what to read.
 - [x] Milestone 6: the dashboard shows an attachment on the page it belongs to
       — PR #126
 - [x] Milestone 7: a file reaches the conversation — the agent can look at one
-      again, and a person can see the one an answer rests on — PR #PULL
+      again, and a person can see the one an answer rests on — PR #136
 - [ ] Milestone 8: the attached computer prepares what no model can read, so a
       file whose meaning is not in words still reaches the graph
 
