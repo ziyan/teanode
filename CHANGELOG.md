@@ -6,6 +6,25 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.39.6] - 2026-09-19
+
+### Changed
+
+- The nightly run now has the agent's full tool kit, including any computer
+  attached to that agent, rather than read-only access to memory and knowledge.
+  It can read and write files and run commands on that machine while nobody is
+  watching. Anything that would normally ask the person first — deleting,
+  moving, installing, sending mail, anything leaving the server — is still
+  refused during a night, because there is nobody there to confirm it. If you
+  do not want this, detach the computer, switch the `computer` tool family off,
+  or turn dreaming off for that agent. The exception is the memory graph: a
+  night may look in it but not change it by hand, as before, because what it
+  learns is filed from the object each call ends with, together with the
+  evidence it came from. (#131)
+- `maxRoundsPerDream` now defaults to twelve instead of four, because a night
+  that finds a file and runs something over it needs three rounds before it has
+  anything to answer with. Set it to go back to the old pacing. (#131)
+
 ## [0.39.5] - 2026-09-19
 
 ### Changed
