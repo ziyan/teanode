@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.40.1] - 2026-09-19
+
+### Fixed
+
+- A page is no longer filed under the same folder twice, which split one
+  person's facts across two pages. (#137)
+
 ## [0.40.0] - 2026-09-19
 
 ### Added
