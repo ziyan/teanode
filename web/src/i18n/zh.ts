@@ -2507,8 +2507,8 @@ export const zh: Catalog = {
   'agent.knowledgeWhichIsYou': '指定哪个联系人是你',
   'agent.knowledgeRefused': '有 {count} 项在本机被拦下',
   'agent.knowledgeKeptToProfile':
-    '这里有 {checkouts} 个检出没有你的任何提交，因此只保留它们的概要——是什么、在哪里——其中 {files} 个文件未被读取。',
-  'agent.knowledgeReadEveryCheckout': '读取每个检出的文件，包括你从未提交过的那些',
+    '这里有 {checkouts} 个检出中属于你的提交太少，算不上你的工作，因此只保留它们的概要——是什么、在哪里——其中 {files} 个文件未被读取。',
+  'agent.knowledgeReadEveryCheckout': '读取每个检出的文件，包括几乎不属于你的工作的那些',
   'agent.filesWaiting': '有 {count} 个文件等待判断',
   'agent.filesDeclined': '有 {count} 个它决定不打开',
   'agent.filesRead': '有 {count} 个它已打开并读过',
