@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.40.11] - 2026-09-19
+
+### Changed
+
+- Reading a tree from a computer is much faster on a machine with many checkouts in it. The list of what a pass will read is worked out once when the pass starts instead of being rebuilt, git command by git command, for every page of 256 files. Over a folder of 414 checkouts, four pages took 2m21 before and 36s after. One consequence: a pass now reads the tree as it was when it began, so a file written or deleted while a pass is running is picked up by the next pass rather than the one in flight. (#150)
+
 ## [0.40.10] - 2026-09-19
 
 ### Fixed
