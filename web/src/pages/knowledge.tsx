@@ -887,7 +887,7 @@ function NavigatorList({
         ))}
       </ul>
       {rows.length < total ? (
-        <button type="button" className="link" disabled={loading} onClick={() => void load(rows.length)}>
+        <button type="button" className="show-more" disabled={loading} onClick={() => void load(rows.length)}>
           {t('knowledge.showMore', { count: Math.min(PAGE_SIZE, total - rows.length) })}
         </button>
       ) : null}
@@ -1691,7 +1691,7 @@ function PageView({
           />
         ))}
         {page.facts.length > factsShown ? (
-          <button type="button" className="link" onClick={() => setFactsShown((count) => count + PAGE_SIZE)}>
+          <button type="button" className="show-more" onClick={() => setFactsShown((count) => count + PAGE_SIZE)}>
             {t('knowledge.showMore', { count: Math.min(PAGE_SIZE, page.facts.length - factsShown) })}
           </button>
         ) : null}
