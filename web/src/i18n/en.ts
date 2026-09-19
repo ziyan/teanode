@@ -2400,6 +2400,14 @@ export const en = {
     'Forget {path}, its {facts} fact(s) and the {pages} page(s) under it. Your agent will no longer know any of it.',
   'knowledge.forgotten': 'Forgotten',
   'knowledge.pageSaved': 'Saved',
+  // The box every dialog here names another page with. One set of words,
+  // because it is one control: what it says when it finds nothing should
+  // not depend on which dialog it was opened from.
+  'knowledge.pageSearchPlaceholder': 'Find a page, or type its path',
+  'knowledge.pageSearchResults': 'Pages found',
+  'knowledge.pageSearchLooking': 'Looking…',
+  'knowledge.pageSearchNone': 'No page matches “{words}”. A path typed in full still works.',
+  'knowledge.pageSearchFailed': 'The pages could not be searched just now.',
   'knowledge.movePage': 'Move this page',
   'knowledge.moveUnder': 'File it under',
   'knowledge.moveUnderHint':

@@ -4160,6 +4160,34 @@ label.check-list-item {
   font-size: 13px;
 }
 
+/* The list under the box that finds a page in the graph. Its rows are the
+   select's rows, two lines instead of one: two pages can be called the same
+   thing and only the path tells them apart, so the path is drawn under the
+   name rather than left to be guessed at. */
+/* Named through the list it sits in, because the rule it has to beat —
+   the one that makes an ordinary option a single line — is written that
+   way too, and a bare class loses to it however late it appears. */
+.select-list .page-picker-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* Both lines are cut rather than wrapped. A path is one long word with
+   nowhere to break, and letting it wrap would make one row as tall as three
+   and the list a different height every time it is typed into. */
+.page-picker-name,
+.page-picker-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-picker-path {
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
 .select-value {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4196,9 +4224,14 @@ label.check-list-item {
 }
 
 /* The row under the pointer and the row the keyboard is on are the same
-   thing, so they look the same. */
+   thing, so they look the same.
+
+   The page's own background was the wrong surface to mark it with: in light
+   it is the same white as the list it is drawn on, so the mark was invisible
+   and the arrow keys moved nothing anybody could see. This is the token
+   every other floating list here marks a row with. */
 .select-list button.active {
-  background: var(--background);
+  background: var(--sidebar-hover);
 }
 
 .select-list button[aria-selected='true'] {
