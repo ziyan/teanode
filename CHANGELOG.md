@@ -6,6 +6,15 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.40.7] - 2026-09-19
+
+### Changed
+
+- The Knowledge page is laid out like the mail pages. The search box and the
+  three ways into the graph are the same toolbar and the same control the
+  mailbox uses, the search box stays in place while a long folder scrolls under
+  it, and a page's actions sit beside its heading rather than under it. (#145)
+
 ## [0.40.6] - 2026-09-19
 
 ### Fixed
