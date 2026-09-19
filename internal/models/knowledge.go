@@ -115,6 +115,17 @@ type AgentKnowledgeSpecification struct {
 	// MailboxID is which mailbox a sent source reads.
 	MailboxID string `json:"mailboxId,omitempty"`
 
+	// ReadEveryCheckout reads the files of every checkout under this
+	// source's path, including the ones the person has never committed
+	// to.
+	//
+	// Off by default, which is what stops a folder of clones being read
+	// as though it were the person's own work: a checkout with none of
+	// their commits in it is kept to its profile -- what it is, where it
+	// lives, what git says about it -- and its files are left where they
+	// are. On for somebody who does want a dependency's source read.
+	ReadEveryCheckout bool `json:"readEveryCheckout,omitempty"`
+
 	// MaxAttachmentBytes is the largest file this source carries off the
 	// person's machine, in bytes. Zero means the server's own limit,
 	// agent.limits.maxScannedAttachmentBytes, which is what nearly every
@@ -154,6 +165,18 @@ type AgentKnowledgeSource struct {
 	DocumentCount int `json:"documentCount"`
 	ChunkCount    int `json:"chunkCount"`
 	RefusedCount  int `json:"refusedCount"`
+
+	// CheckoutsKeptToProfile is how many checkouts under this source's
+	// path were kept to what git says about them, their files left
+	// unread, and FilesKeptToProfile how many files that was. Both are
+	// what the last pass found over the whole tree, not a running total.
+	//
+	// Shown wherever the source is shown. A program that quietly reads
+	// less than it was pointed at is one nobody can argue with, and the
+	// argument -- specification.readEveryCheckout -- is only worth having
+	// if the person can see there is something to argue about.
+	CheckoutsKeptToProfile int `json:"checkoutsKeptToProfile"`
+	FilesKeptToProfile     int `json:"filesKeptToProfile"`
 
 	// More says the last pass left work behind and wants another.
 	More bool `json:"more"`

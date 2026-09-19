@@ -301,6 +301,13 @@ func sourcesAction(ctx context.Context, run tools.Run) (*tools.Result, error) {
 		if source.RefusedCount > 0 {
 			fmt.Fprintf(&builder, ", %d held back", source.RefusedCount)
 		}
+		// So that "why do you not know that code" has an answer here as
+		// well: a checkout with none of their commits in it is kept to
+		// what git says about it, and its files are never read.
+		if source.CheckoutsKeptToProfile > 0 {
+			fmt.Fprintf(&builder, ", %d checkout(s) kept to their profile with %d file(s) unread",
+				source.CheckoutsKeptToProfile, source.FilesKeptToProfile)
+		}
 		if source.More {
 			builder.WriteString(", still reading")
 		}

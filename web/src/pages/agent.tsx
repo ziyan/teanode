@@ -734,15 +734,15 @@ const STRIKE_FACT = `
 const KNOWLEDGE_SOURCES = `
   query {
     ListAgentKnowledgeSources {
-      id kind name specification { computer path format mailboxId }
+      id kind name specification { computer path format mailboxId readEveryCheckout }
       rootPath enabled cron lastRunAt lastError documentCount chunkCount refusedCount more
-      unknownAuthors
+      unknownAuthors checkoutsKeptToProfile filesKeptToProfile
     }
   }`
 
 const SAVE_KNOWLEDGE_SOURCE = `
-  mutation ($sourceId: String, $kind: String, $name: String, $computer: String, $path: String, $format: String, $enabled: Boolean, $mailboxId: String, $rootPath: String, $cron: String) {
-    SaveAgentKnowledgeSource(sourceId: $sourceId, kind: $kind, name: $name, computer: $computer, path: $path, format: $format, enabled: $enabled, mailboxId: $mailboxId, rootPath: $rootPath, cron: $cron) { id name }
+  mutation ($sourceId: String, $kind: String, $name: String, $computer: String, $path: String, $format: String, $enabled: Boolean, $mailboxId: String, $rootPath: String, $cron: String, $readEveryCheckout: Boolean) {
+    SaveAgentKnowledgeSource(sourceId: $sourceId, kind: $kind, name: $name, computer: $computer, path: $path, format: $format, enabled: $enabled, mailboxId: $mailboxId, rootPath: $rootPath, cron: $cron, readEveryCheckout: $readEveryCheckout) { id name }
   }`
 
 // What became of the pictures and files each source carried. Counted
@@ -796,7 +796,7 @@ type KnowledgeSource = {
   id: string
   kind: string
   name: string
-  specification: { computer: string; path: string; format: string; mailboxId: string }
+  specification: { computer: string; path: string; format: string; mailboxId: string; readEveryCheckout: boolean }
   rootPath: string
   enabled: boolean
   cron: string
@@ -807,6 +807,10 @@ type KnowledgeSource = {
   refusedCount: number
   more: boolean
   unknownAuthors: string[]
+  // The checkouts under this source that hold none of the person's
+  // commits: kept to what git says about them, their files left unread.
+  checkoutsKeptToProfile: number
+  filesKeptToProfile: number
 }
 
 // What became of one source's files: how many wait for the night to
@@ -1561,6 +1565,10 @@ function KnowledgeSourcesCard() {
   // mailboxes may not have arrived when the dialog was opened, so the
   // choice is worked out here rather than kept only in the state.
   const [mailboxId, setMailboxId] = useState('')
+  // Whether the files of every checkout under the path are read, the
+  // person's own and the ones they only cloned alike. Off is the
+  // ordinary answer, and the row above says what that left unread.
+  const [readEveryCheckout, setReadEveryCheckout] = useState(false)
   const { views } = useMailboxes()
   const readingMailboxId = mailboxId || views[0]?.mailbox.id || ''
 
@@ -1576,6 +1584,7 @@ function KnowledgeSourcesCard() {
     setRootPath(source.rootPath)
     setCron(source.cron)
     setMailboxId(source.specification.mailboxId)
+    setReadEveryCheckout(source.specification.readEveryCheckout)
     setProblem(null)
     setEditing(source)
   }
@@ -1615,6 +1624,7 @@ function KnowledgeSourcesCard() {
               setRootPath('')
               setCron('')
               setMailboxId('')
+              setReadEveryCheckout(false)
               setProblem(null)
               setEditing(null)
               setAdding(true)
@@ -1650,6 +1660,22 @@ function KnowledgeSourcesCard() {
                     a file waits for a decision, is decided against, or is
                     opened and read. */}
                 <SourceFiles sourceId={source.id} files={filesOf(source.id)} />
+                {/* And what it read less of than the path it was given:
+                    the checkouts under it with none of the person's
+                    commits in them, kept to what git says about them.
+                    Said where the counts are, because reading less than
+                    somebody asked for is not something to do quietly. */}
+                {source.checkoutsKeptToProfile > 0 ? (
+                  <>
+                    <br />
+                    <span className="muted">
+                      {t('agent.knowledgeKeptToProfile', {
+                        checkouts: formatCount(source.checkoutsKeptToProfile),
+                        files: formatCount(source.filesKeptToProfile),
+                      })}
+                    </span>
+                  </>
+                ) : null}
                 {/* What pausing means, said where the pause is: the
                     index is kept, so resuming does not start the first
                     pass over again. */}
@@ -1766,6 +1792,7 @@ function KnowledgeSourcesCard() {
                     rootPath: rootPath.trim() || undefined,
                     cron: cron.trim() || undefined,
                     mailboxId: kind === 'sent' ? readingMailboxId : undefined,
+                    readEveryCheckout: shape === 'files' ? readEveryCheckout : undefined,
                     // Not whether it is paused. That is the row's own
                     // action, and a save carrying it would put a source
                     // that was merely renamed back at the front of the
@@ -1816,6 +1843,16 @@ function KnowledgeSourcesCard() {
                 <input value={path} placeholder="~/projects" onChange={(event) => setPath(event.target.value)} />
               </label>
               <p className="muted">{t('agent.knowledgeAllowFirst', { path: path.trim() || '~/projects' })}</p>
+              {/* A tree of checkouts is mostly other people's work, so a
+                  checkout with none of the person's commits in it is kept
+                  to its profile. This is how they disagree. */}
+              {shape === 'files' ? (
+                <Check
+                  checked={readEveryCheckout}
+                  label={t('agent.knowledgeReadEveryCheckout')}
+                  onChange={setReadEveryCheckout}
+                />
+              ) : null}
             </>
           ) : (
             /* A sent source reads one mailbox's Sent folder, and the

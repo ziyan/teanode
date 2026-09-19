@@ -215,6 +215,7 @@ func newAgentKnowledgeCommand() *cli.Command {
 					&cli.StringFlag{Name: "cron", Usage: "how often to read it, five fields in your zone"},
 					&cli.StringFlag{Name: "format", Usage: "files, journal or records"},
 					&cli.StringFlag{Name: "mailbox", Usage: "for a sent source: which mailbox"},
+					&cli.BoolFlag{Name: "read-every-checkout", Usage: "read the files of checkouts you have never committed to, not only their profile"},
 				},
 				Action: runKnowledgeSet,
 			},
@@ -828,6 +829,17 @@ func knowledgeSourceRow(source *client.AgentKnowledgeSource) []string {
 		note = "commits by " + strings.Join(source.UnknownAuthors, ", ") +
 			"; none of them is you — teanode contact me <id>"
 	}
+	// Then what it read less of than the path it was given: the checkouts
+	// under it nobody here has ever committed to, kept to what git says
+	// about them. Said with the way to disagree, because a program that
+	// quietly reads less than it was pointed at is one nobody can argue
+	// with.
+	if note == "" && source.CheckoutsKeptToProfile > 0 {
+		note = plural(source.CheckoutsKeptToProfile, "checkout", "checkouts") +
+			" you have never committed to: kept to their profile, " +
+			plural(source.FilesKeptToProfile, "file", "files") +
+			" not read — set --read-every-checkout to read them"
+	}
 	return []string{
 		source.ID, source.Name, source.Kind, where, state,
 		strconv.Itoa(source.DocumentCount), strconv.Itoa(source.ChunkCount), note,
@@ -1009,8 +1021,14 @@ func runKnowledgeSet(ctx context.Context, command *cli.Command) error {
 			fields[name] = value
 		}
 	}
+	// A flag that is a yes or a no cannot be told apart from one nobody
+	// gave by its value, so it is sent only when it was actually typed:
+	// otherwise `set work --cron ...` would quietly turn this off.
+	if command.IsSet("read-every-checkout") {
+		fields["readEveryCheckout"] = command.Bool("read-every-checkout")
+	}
 	if len(fields) == 1 {
-		return fmt.Errorf("what should change? --name, --path, --under, --cron, --format or --mailbox")
+		return fmt.Errorf("what should change? --name, --path, --under, --cron, --format, --mailbox or --read-every-checkout")
 	}
 	changed, err := client.SaveAgentKnowledgeSource(ctx, connection, fields)
 	if err != nil {

@@ -322,6 +322,11 @@ type SaveAgentKnowledgeSourceArguments struct {
 	// person's machine. Not given leaves it alone; zero puts it back to
 	// the server's own limit, which is what nearly every source wants.
 	MaxAttachmentBytes *int64 `json:"maxAttachmentBytes" graphapi:"nullable"`
+
+	// ReadEveryCheckout reads the files of every checkout under this
+	// source, including the ones the person has never committed to. Not
+	// given leaves it alone.
+	ReadEveryCheckout *bool `json:"readEveryCheckout" graphapi:"nullable"`
 }
 
 type DeleteAgentKnowledgeSourceArguments struct {
@@ -1661,6 +1666,9 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 			return nil, fmt.Errorf("the largest file this source may carry cannot be negative; zero is the server's own limit")
 		}
 		source.Specification.MaxAttachmentBytes = *arguments.MaxAttachmentBytes
+	}
+	if arguments.ReadEveryCheckout != nil {
+		source.Specification.ReadEveryCheckout = *arguments.ReadEveryCheckout
 	}
 	if arguments.RootPath != "" {
 		source.RootPath = models.NormalizePath(arguments.RootPath)
