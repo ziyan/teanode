@@ -1154,3 +1154,55 @@ func TestTheirOwnCheckoutScannedOnItsOwnIsRead(t *testing.T) {
 		t.Fatalf("and nothing was kept to a profile: %d", result.CheckoutsKeptToProfile)
 	}
 }
+
+// A checkout's profile is offered once in a pass, not once a page.
+//
+// The profiles describe the whole tree; a page is a slice of it. Sending
+// them with every page sent each profile, readme and all, as many times
+// as the tree had pages. They go on the last page, which is the one the
+// sweep runs after.
+func TestACheckoutsProfileIsOfferedOnceAPass(t *testing.T) {
+	root := t.TempDir()
+	// More files than one page may carry, so the pass has to page.
+	files := map[string]string{}
+	for index := range 30 {
+		files[fmt.Sprintf("notes/%02d.md", index)] = "a sentence about the work.\n"
+	}
+	checkoutWith(t, root, files)
+	checkoutWith(t, filepath.Join(root, "checkouts", "gripper"), map[string]string{"main.go": "package main\n"})
+
+	home := t.TempDir()
+	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
+	if _, err := AllowScanRoot(options, root); err != nil {
+		t.Fatalf("AllowScanRoot: %s", err)
+	}
+	profilesOn := map[int]int{}
+	pages, after := 0, ""
+	for page := range 50 {
+		result, err := RunScan(context.Background(), options, &ScanArguments{Root: root, After: after, Most: 8})
+		if err != nil {
+			t.Fatalf("RunScan: %s", err)
+		}
+		pages = page + 1
+		for _, entry := range result.Entries {
+			if entry.Kind == "repository" {
+				profilesOn[page]++
+			}
+		}
+		if result.Next == "" {
+			break
+		}
+		after = result.Next
+	}
+	if pages < 2 {
+		t.Fatalf("the tree did not page, so this proves nothing: %d page", pages)
+	}
+	for page, count := range profilesOn {
+		if page != pages-1 && count > 0 {
+			t.Errorf("page %d of %d carried %d profiles; they belong on the last page alone", page, pages, count)
+		}
+	}
+	if profilesOn[pages-1] != 2 {
+		t.Errorf("the last page carried %d profiles, want 2 (the root and the checkout inside it)", profilesOn[pages-1])
+	}
+}

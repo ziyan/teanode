@@ -635,20 +635,33 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 	// who points their agent at ~/projects got forty project pages with
 	// nothing on them, no "worked on" links, and no idea why. Only a
 	// source whose own root was a checkout ever worked.
-	names := make([]string, 0, len(profiles))
-	for relative := range profiles {
-		names = append(names, relative)
-	}
-	sort.Strings(names)
-	for _, relative := range names {
-		identifier, title := ".", filepath.Base(root)
-		if relative != "" {
-			identifier, title = relative, filepath.Base(relative)
+	// Once a pass, on the last page, the way the commits below are. The
+	// profiles are of the whole tree and a page is a slice of it, so
+	// sending them with every page sent each one as many times as the
+	// tree has pages. A tree of three hundred checkouts read over a
+	// hundred pages sent thirty thousand of them, each carrying its
+	// readme, for the hundred that were wanted.
+	//
+	// The last page rather than the first, because that is the one the
+	// sweep runs after: an entry no pass has seen since the pass began is
+	// taken as gone, and a profile sent only at the start of a pass that
+	// then resumed from a cursor would be swept by the pass that finished.
+	if result.Next == "" {
+		names := make([]string, 0, len(profiles))
+		for relative := range profiles {
+			names = append(names, relative)
 		}
-		result.Entries = append(result.Entries, ScanEntry{
-			ExternalID: identifier, Kind: "repository", Title: title,
-			Repository: profiles[relative],
-		})
+		sort.Strings(names)
+		for _, relative := range names {
+			identifier, title := ".", filepath.Base(root)
+			if relative != "" {
+				identifier, title = relative, filepath.Base(relative)
+			}
+			result.Entries = append(result.Entries, ScanEntry{
+				ExternalID: identifier, Kind: "repository", Title: title,
+				Repository: profiles[relative],
+			})
+		}
 	}
 
 	// Commits, after the files, so a first pass shows something quickly.
