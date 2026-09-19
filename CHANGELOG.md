@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.39.4] - 2026-09-19
+
+### Fixed
+
+- A fact the agent had already written on a page is no longer written onto
+  it a second time and then hidden. The page said the right thing either
+  way, but every re-reading of a document left another buried copy behind
+  it and spent another fact number, so pages that are re-read often had
+  numbering far ahead of what they say and a history of nothing but
+  merges. What a second reading adds — where it was read — now goes onto
+  the fact that is already there. Existing buried copies are left alone. (#132)
+
 ## [0.39.3] - 2026-09-19
 
 ### Fixed
