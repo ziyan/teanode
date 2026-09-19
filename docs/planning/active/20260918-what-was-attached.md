@@ -64,6 +64,8 @@ itself what to read.
       — PR #126
 - [ ] Milestone 7: a file reaches the conversation — the agent can look at one
       again, and a person can see the one an answer rests on
+- [ ] Milestone 8: the attached computer prepares what no model can read, so a
+      file whose meaning is not in words still reaches the graph
 
 ## What exists today, and where
 
@@ -279,10 +281,9 @@ it found in the record. Adding a capability then means editing a script rather
 than releasing a version, which is the whole reason the `records` shape exists.
 
 Document this in `docs/subsystems/memory.md` beside the existing description of
-the records shape, and write the example script. On the machine this plan was
-written for, `ffmpeg`, `pdftoppm`, `unzip` and `7z` are installed;
-`tesseract` and ImageMagick are not, and are worth installing for text
-recognition and downscaling respectively.
+the records shape, and write the example script. What a script can do depends on
+what the person has installed on the computer it runs on, which is theirs to
+decide and not something this program should assume or require.
 
 Where a script has already extracted text, the attachment arrives with text and
 the night has nothing to decide: it reads it like any other document and no
@@ -332,6 +333,51 @@ the fact behind one was read from a file that is still kept, show it: a
 thumbnail under the message, the file's name where it is not a picture. Nothing
 the model does has to change, it works for every citation already written, and
 a person sees the evidence rather than being asked to take it on trust.
+
+## Milestone 8: the attached computer prepares what no model can read
+
+At the end of this milestone a file whose kind no model can read arrives with
+something that can be read beside it, prepared on the person's own machine
+before anything leaves it.
+
+Milestone 5 put preparation in the records script and stopped at text, which
+covers a file that is already words. It leaves out everything whose meaning is
+in pixels or inside a container: a screen recording, a scanned page, a drawing
+exported from a design tool, a set of files inside an archive. Today the night
+looks at such a file, sees that it is not a picture, and passes it over. The
+reason it records is true and useless: nothing here can read one, so nothing
+here ever will.
+
+The fix needs no new privilege, no new tool for the night, and no new server
+code. The records script already runs on the person's own machine as that
+person, and the computer it runs on has whatever they have installed on it. A
+script can reduce a moving picture to a sheet of stills, render a page that
+exists only as an image, put a recogniser over a photograph of text, or list
+and extract what is inside a container, and then name what it made beside the
+original as an ordinary attachment. From there nothing new is needed: the night
+decides whether the prepared file is worth opening exactly as it decides about
+a screenshot, and what it says about the prepared file becomes what is known
+about the original.
+
+This is also the answer to a file too large to carry. Preparation happens before
+the size limit applies, so something far above the limit can still be
+represented by a small file that is well under it. The limit stops bytes
+crossing the wire; it should not stop the meaning.
+
+Two parts belong in the program rather than in a script:
+
+- A prepared file should say on its row what it was made from, so a person
+  reading a description can get back to the original, and so the same original
+  is not prepared twice under two names.
+- A file a script tried and failed to prepare should say so, in the same place a
+  declined file says why. Right now it is indistinguishable from one nobody
+  tried.
+
+Document the pattern in `docs/subsystems/memory.md` beside the records shape,
+with worked examples, and say plainly that what is possible depends on what is
+installed on the computer the script runs on. Name no particular program: the
+point of putting this in a script is that the list is the person's to change
+without a release.
 
 ## Surprises & Discoveries
 
