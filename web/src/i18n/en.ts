@@ -2630,7 +2630,8 @@ export const en = {
   'agent.knowledgeRefused': '{count} held back on the machine',
   'agent.knowledgeKeptToProfile':
     '{checkouts} checkouts here hold too few of your commits to be your work, so they are kept to their profile — what they are and where they live — and {files} files in them are left unread.',
-  'agent.knowledgeReadEveryCheckout': 'Read the files of every checkout, including the ones barely any of which is your work',
+  'agent.knowledgeReadEveryCheckout':
+    'Read the files of every checkout, including the ones barely any of which is your work',
   'agent.filesWaiting': '{count} files waiting for a decision',
   'agent.filesDeclined': '{count} it decided against opening',
   'agent.filesRead': '{count} it opened and read',
@@ -2718,4 +2719,13 @@ export const en = {
   'agent.myContactClear': 'Not me',
   'agent.myContactSaved': 'Saved',
   'settings.knowledge.description': 'The pages your agent keeps about you, and where each thing it knows came from.',
+
+  // A picture opened over the page, to be looked at closely.
+  'lightbox.from': 'from {where}',
+  'lightbox.openRaw': 'Open the file itself in a new tab',
+  'lightbox.zoomIn': 'Zoom in',
+  'lightbox.zoomOut': 'Zoom out',
+  'lightbox.fit': 'Fit',
+  'lightbox.scale': '{percent}%',
+  'lightbox.hint': 'Scroll or pinch to zoom, drag to move.',
 }

@@ -48,6 +48,10 @@ const SAME_ON_PURPOSE = new Set([
   'editor.html',
   'compose.carbonCopy',
   'compose.blindCarbonCopy',
+  // How far the lightbox has zoomed in: a number and a percent sign, which
+  // all three of these languages write the same way. It is a key rather than
+  // a literal so that a language that does not can still be given one.
+  'lightbox.scale',
 ])
 
 // entries pulls "key: value" pairs out of a catalogue.

@@ -644,6 +644,140 @@ a.tile:hover strong {
   white-space: nowrap;
 }
 
+/* --- a picture, over the page ---------------------------------------------
+   Clicking a picture used to leave for a tab of raw bytes. It opens here
+   instead: the dialogs' own scrim, with a stage in place of a form, and the
+   picture on it to be zoomed and moved around. The address is still on the
+   anchor underneath, so a middle click goes to the file the way it did. */
+.picture-opener {
+  /* Block, and no wider than the picture in it, so that the anchor is the
+     picture rather than the whole line the picture sits on -- and so that
+     an inline anchor's baseline no longer leaves a gap under it. */
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  cursor: zoom-in;
+}
+
+.lightbox-scrim {
+  /* The stage answers what does not fit by moving the picture, so the scrim
+     itself never scrolls: a pinch that zooms the picture and scrolls what is
+     under it at the same time is neither gesture. */
+  overflow: hidden;
+  /* Darker than a dialog's. Here the page behind is not context, it is the
+     thing competing with what is being looked at. */
+  background: rgb(0 0 0 / 78%);
+}
+
+.lightbox {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  max-width: 1100px;
+  overflow: hidden;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-floating);
+}
+
+.lightbox-head,
+.lightbox-foot {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.lightbox-head {
+  border-bottom: 1px solid var(--border);
+}
+
+.lightbox-foot {
+  border-top: 1px solid var(--border);
+}
+
+/* What the picture is, and under it where it was posted. A file name can be
+   longer than the row, so it is cut rather than allowed to push the way out
+   off the end. */
+.lightbox-name {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.lightbox-name strong,
+.lightbox-name .muted {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lightbox-name strong {
+  font-size: var(--text-body);
+}
+
+.lightbox-name .muted {
+  font-size: var(--text-label);
+}
+
+/* The ground the picture moves over. touch-action is none because every
+   touch landing here is the lightbox's own: left alone, the browser reads
+   the pinch as a page zoom and the drag as a scroll, and the picture does
+   neither. */
+.lightbox-stage {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--field);
+  touch-action: none;
+  cursor: grab;
+}
+
+.lightbox-stage.dragging {
+  cursor: grabbing;
+}
+
+.lightbox-picture {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  /* The middle, which is what the arithmetic behind the gesture measures
+     from and where a zoom with no pointer in it should stay. */
+  transform-origin: center;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* Wide enough for three digits and the sign, so the buttons on either side
+   of the number do not step sideways as it grows. */
+.lightbox-scale {
+  min-width: 5ch;
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.lightbox-hint {
+  margin-left: auto;
+  font-size: var(--text-label);
+}
+
+@media (max-width: 600px) {
+  /* No room for a sentence beside the controls, and a finger finds the
+     pinch without being told about it. */
+  .lightbox-hint {
+    display: none;
+  }
+}
+
 /* --- the rail ------------------------------------------------------------- */
 /* The product, at the top of its own rail. */
 .sidebar-brand {
@@ -5811,8 +5945,8 @@ label.check-list-item {
 /* What an answer was read from, under the answer: the picture itself, or
    the file's name where it is not a picture, with where it was posted.
    Small enough that a transcript is still a transcript -- the picture
-   opens full size in a tab of its own -- and never wider than the bubble
-   it sits in, which on a phone is most of the screen. */
+   opens into the lightbox to be looked at closely -- and never wider than
+   the bubble it sits in, which on a phone is most of the screen. */
 .agent-cited {
   display: flex;
   flex-direction: column;
@@ -8558,8 +8692,8 @@ button.with-icon {
 
 /* A picture or a file a fact was read out of, under the fact. Small
    enough that a page of facts is still a page of facts -- the picture
-   opens full size in a tab of its own -- and narrow enough on a phone
-   that it never widens the card. */
+   opens into the lightbox to be looked at closely -- and narrow enough on
+   a phone that it never widens the card. */
 .knowledge-attachment {
   display: block;
   margin-top: var(--space-1);
