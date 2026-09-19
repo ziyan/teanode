@@ -6,6 +6,20 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.40.14] - 2026-09-19
+
+### Changed
+
+- The Knowledge dialogs that ask for another page — merging a page into
+  another, filing one under a folder, moving a fact, linking two pages —
+  now find that page as you type part of its name or its path, and show
+  the name and the path of each match. Typing a path in full still works
+  and is still the fastest way in when you know it. (#153)
+- A row under the pointer, or under the keyboard, in any of the
+  dashboard's own dropdown lists is now visible in the light theme. It was
+  being marked with the page's background color, which in light is the same
+  white as the list it is drawn on. (#153)
+
 ## [0.40.13] - 2026-09-19
 
 ### Changed
