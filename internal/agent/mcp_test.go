@@ -207,16 +207,45 @@ func TestResearchWritesNotesOnTheInsight(t *testing.T) {
 			t.Fatalf("the notes should be on the insight with the run: %+v", insights[mail.ID])
 		}
 	})
-	first := (*requests)[0]
-	tools, _ := first["tools"].([]any)
+	// The turn about this message, found by what it says rather than by
+	// being first. A tick runs whatever is due, so another run's call can
+	// be recorded ahead of this one; taking [0] failed on a loaded machine
+	// and passed everywhere else.
+	var researched map[string]any
+	var prompt string
+	for _, request := range *requests {
+		messages, _ := request["messages"].([]any)
+		if len(messages) < 2 {
+			continue
+		}
+		said, _ := messages[1].(map[string]any)["content"].(string)
+		if strings.Contains(said, "Parcel 42 has shipped") {
+			researched, prompt = request, said
+			break
+		}
+	}
+	if researched == nil {
+		var said []string
+		for _, request := range *requests {
+			messages, _ := request["messages"].([]any)
+			if len(messages) > 1 {
+				content, _ := messages[1].(map[string]any)["content"].(string)
+				if len(content) > 120 {
+					content = content[:120]
+				}
+				said = append(said, content)
+			}
+		}
+		t.Fatalf("no turn carried the message; %d were made: %s", len(*requests), strings.Join(said, " || "))
+	}
+	tools, _ := researched["tools"].([]any)
 	for _, entry := range tools {
 		name := entry.(map[string]any)["function"].(map[string]any)["name"]
 		if name == "mail_act" || name == "mail_send" || name == "mail_draft" {
 			t.Fatalf("a research turn may only read, but was offered %v", name)
 		}
 	}
-	prompt := first["messages"].([]any)[1].(map[string]any)["content"].(string)
-	if !strings.Contains(prompt, "Parcel 42 has shipped") || !strings.Contains(prompt, "Track parcel 42") {
-		t.Fatalf("the research prompt lacks the message or the action items: %s", prompt)
+	if !strings.Contains(prompt, "Track parcel 42") {
+		t.Fatalf("the research prompt lacks the action items: %s", prompt)
 	}
 }

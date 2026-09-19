@@ -141,7 +141,12 @@ func TestATerminalIsReadAsAScreen(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	// Generous on purpose. This starts a real shell in a pseudo-terminal
+	// and waits for it to echo, which on a loaded machine is not a
+	// five-second job: the test failed that way on a CI runner while
+	// passing every time by hand. A slow machine should make this test
+	// slow, not red.
+	deadline := time.Now().Add(30 * time.Second)
 	var screen *SessionScreen
 	for {
 		var err error
