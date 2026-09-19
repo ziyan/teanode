@@ -22,4 +22,12 @@ or `howto`; never `preference` or `decision`.
             "note": "wrote most of the queue consumer"}],
  "supersedes": []}
 
+Where the reading names who wrote something, that person is a page under
+`people/` and a `works_on` link from it to the project, repository or
+channel they wrote it for, even where the reading concluded nothing else
+about them: the item is the evidence that they wrote it. An author whose
+name reads as a machine rather than as somebody who types -- bot, ci,
+build, jenkins, deploy, noreply, automation, or a word with a number
+stuck on the end of it -- gets neither.
+
 An empty list is the right answer for a reading that settled on nothing.
