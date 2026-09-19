@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.39.2] - 2026-09-19
+
+### Fixed
+
+- A folder of code no longer indexes the dependencies inside it. Vendored and
+  generated directories (`vendor`, `node_modules`, `__pycache__`) were skipped
+  when a folder was walked but not when it was read as a git checkout, so on a
+  large source most of what the agent learned was about somebody else's library
+  rather than about your work. Existing documents under those directories are
+  removed on each source's next complete pass. (#129)
+
 ## [0.39.1] - 2026-09-19
 
 ### Fixed
