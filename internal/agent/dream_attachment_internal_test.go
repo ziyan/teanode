@@ -568,3 +568,83 @@ func TestANightWithNothingLeftToSpendOpensNothing(t *testing.T) {
 		}
 	}
 }
+
+// A file left over from a full list says the cap bound, not that it lost.
+//
+// The night shows a batch and takes at most a quarter of it. When the
+// model names its whole allowance, everything else in the batch is left
+// without ever having been weighed against what it named, and the row
+// has to say so: the old sentence claimed a judgement of the name, the
+// size, the kind and the words, and on a full list no such judgement
+// happened.
+func TestAFileLeftOverFromAFullListSaysItWasPassedOver(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	provider, _ := attachmentProvider(
+		map[string]string{"shot.png": "the failing container in the #support thread"},
+		"a terminal window", false)
+	defer provider.Close()
+
+	worker, run, store := attachmentWorld(t, database, provider.URL)
+	documents := fileAttachments(t, database, run, store, []attachmentFile{
+		{name: "shot.png", contentType: "image/png", bytes: 412000,
+			said: "look at this, it dies the moment it starts"},
+		{name: "board.png", contentType: "image/png", bytes: 380000, said: "the whiteboard from monday"},
+		{name: "trace.png", contentType: "image/png", bytes: 290000, said: "and the stack trace"},
+		{name: "avatar.png", contentType: "image/png", bytes: 3100, said: "new profile picture"},
+	})
+
+	// Four files, so the night could take one, and the model took one.
+	if attachmentsMost(4) != 1 {
+		t.Fatalf("this test is about a list that comes back full: %d", attachmentsMost(4))
+	}
+
+	worker.dreamAttachments(context.Background(), run, &dreamBudget{})
+
+	for _, name := range []string{"board.png", "trace.png", "avatar.png"} {
+		reason := declinedReason(t, database, documents[name])
+		if reason == declinedByDefault {
+			t.Fatalf("%s was never judged, so its row must not say it was: %q", name, reason)
+		}
+		if reason != declinedWhenFull(4) {
+			t.Fatalf("%s says how many the night could take and that it was passed over: %q", name, reason)
+		}
+	}
+	if reason := declinedReason(t, database, documents["shot.png"]); reason != "" {
+		t.Fatalf("the one it chose is not declined at all: %q", reason)
+	}
+}
+
+// A file left over from a list with room in it did lose on its merits.
+//
+// Nothing stopped the model naming this one, and it named nothing, so
+// the sentence about the name, the size, the kind and the words is the
+// true one and is what the row keeps.
+func TestAFileLeftWhileThereWasRoomSaysItWasJudged(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	provider, calls := attachmentProvider(map[string]string{}, "", false)
+	defer provider.Close()
+
+	worker, run, store := attachmentWorld(t, database, provider.URL)
+	documents := fileAttachments(t, database, run, store, []attachmentFile{
+		{name: "avatar.png", contentType: "image/png", bytes: 3100, said: "new profile picture"},
+		{name: "logo.png", contentType: "image/png", bytes: 2400, said: "the new logo"},
+		{name: "cat.png", contentType: "image/png", bytes: 90000, said: "look at him go"},
+	})
+
+	worker.dreamAttachments(context.Background(), run, &dreamBudget{})
+
+	// The model was allowed one and asked for none, so the cap bound
+	// nothing here.
+	if len(calls().offered) != 3 {
+		t.Fatalf("all three were put to the one decision: %v", calls().offeredNames())
+	}
+	for _, name := range []string{"avatar.png", "logo.png", "cat.png"} {
+		if reason := declinedReason(t, database, documents[name]); reason != declinedByDefault {
+			t.Fatalf("%s was judged and not chosen, and its row says that: %q", name, reason)
+		}
+	}
+}
