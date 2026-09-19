@@ -141,11 +141,54 @@ func pageIdentity(path string, kind models.AgentNodeKind, name string) (string, 
 	if !strings.Contains(path, "/") && path != models.PathSelf && kind != models.NodeFolder {
 		path = models.JoinPath(folderOfKind(kind), path)
 	}
+	// A root folder said twice. A model reading a directory of people, in
+	// a source that keeps them under a folder of its own, files the first
+	// one at "people/people/ran-liao": the prompt's rule and the
+	// document's own shelf, one after the other. Nine pages arrived that
+	// way in one night, three of them a second copy of somebody who
+	// already had a page, so their facts stood apart and a question about
+	// either found half of them. The segments after the first are the
+	// person's to arrange, so only the repeat at the front is taken.
+	path = withoutTheRepeatedFolder(path)
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = nameFromSlug(models.LastSegment(path))
 	}
 	return path, kind, name
+}
+
+// withoutTheRepeatedFolder is a path whose first segment is a root folder
+// and whose second is the same folder, with the repeat taken out.
+//
+// Only the front, and only an exact repeat: "people/people/ran-liao"
+// becomes "people/ran-liao", while "people/ran-liao/people" is left as it
+// is, because a page named for a folder deeper down is somebody's own
+// arrangement and not this mistake.
+func withoutTheRepeatedFolder(path string) string {
+	first, rest, found := strings.Cut(path, "/")
+	if !found || !isRootFolder(first) {
+		return path
+	}
+	second, under, found := strings.Cut(rest, "/")
+	if second != first {
+		return path
+	}
+	if !found {
+		return first
+	}
+	return models.JoinPath(first, under)
+}
+
+// isRootFolder says whether a segment names one of the folders the graph
+// is arranged under, which is the closed set kindOfPath reads.
+func isRootFolder(segment string) bool {
+	switch segment {
+	case models.PathPeople, models.PathProjects, models.PathPlaces,
+		models.PathThings, models.PathTime, models.PathTopics,
+		models.PathNotes, "organizations":
+		return true
+	}
+	return false
 }
 
 // folderOfKind is the root folder a page of a kind lives under, the
