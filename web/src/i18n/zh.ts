@@ -2423,6 +2423,7 @@ export const zh: Catalog = {
   'knowledge.relation.decided_in': '决定于',
   'knowledge.relation.about': '关于',
   'knowledge.recall.title': '它会想起什么？',
+  'knowledge.recall.button': '想起',
   'knowledge.recall.hint':
     '照你平时问助手的方式写。这里会列出这个问题会带进对话的页面和事实；不会向模型发送任何内容，也不会把任何内容标记为已使用。',
   'knowledge.recall.question': '问题',
@@ -2430,6 +2431,7 @@ export const zh: Catalog = {
   'knowledge.recall.ask': '看看会带上什么',
   'knowledge.recall.nothing': '这个问题什么都带不上。你的助手只能凭对话本身来回答它。',
   'knowledge.documents.title': '搜索它读过的内容',
+  'knowledge.documents.button': '文档',
   'knowledge.documents.hint':
     '各个知识来源收录的原文段落：你的代码、你的聊天记录、你的笔记，一字不改。这与你的助手自己所用的搜索是同一个，这里的任何内容都不会发送给模型。',
   'knowledge.documents.query': '要查找的词',

@@ -2505,6 +2505,7 @@ export const ja: Catalog = {
   'knowledge.relation.decided_in': 'で決まった',
   'knowledge.relation.about': 'について',
   'knowledge.recall.title': '何を思い出しますか？',
+  'knowledge.recall.button': '想起',
   'knowledge.recall.hint':
     'エージェントに尋ねるときと同じように書いてください。その質問が対話に持ち込むページと事実を表示します。モデルには何も送らず、使用済みの印も付けません。',
   'knowledge.recall.question': '質問',
@@ -2512,6 +2513,7 @@ export const ja: Catalog = {
   'knowledge.recall.ask': '持ち込む内容を見る',
   'knowledge.recall.nothing': 'この質問は何も持ち込みません。エージェントは会話だけを頼りに答えることになります。',
   'knowledge.documents.title': '読んだ内容を検索',
+  'knowledge.documents.button': '文書',
   'knowledge.documents.hint':
     '各ソースが取り込んだ文章を、書かれたままの形で検索します。コードも、チャットも、メモも同じです。エージェント自身が使う検索と同じもので、ここでの操作はモデルには何も伝えません。',
   'knowledge.documents.query': '探したい言葉',

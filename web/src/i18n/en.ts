@@ -2520,6 +2520,7 @@ export const en = {
   // read", which is a different question and the one behind most of "why
   // did it not know that".
   'knowledge.recall.title': 'What would it recall?',
+  'knowledge.recall.button': 'Recall',
   'knowledge.recall.hint':
     'Ask it the way you would ask your agent. This shows the pages and facts that question would carry into the ' +
     'turn; nothing is said to a model, and nothing is marked as used.',
@@ -2531,6 +2532,7 @@ export const en = {
   // The graph is the conclusions and this is the evidence, which is what
   // somebody disagreeing with a fact needs to see.
   'knowledge.documents.title': 'Search what it read',
+  'knowledge.documents.button': 'Documents',
   'knowledge.documents.hint':
     'The passages your sources indexed, in the words they were written in: your code, your chat, your notes. ' +
     'This is the search your agent runs, and nothing here is said to a model.',
