@@ -67,8 +67,9 @@ const (
 	// dreamBatch is how many items go into one call of the digest phase.
 	dreamBatch = 20
 
-	// digestSmallest is the size below which a document is not worth a
-	// share of a call: about two short lines.
+	// digestSmallest is how much a document must hold to be worth a
+	// share of a call: about two short lines. See markTinyRead for what
+	// is measured against it.
 	digestSmallest = 160
 
 	// dreamShareDefault is how much of the day's budget a night may
@@ -632,27 +633,7 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 	// night, in full, in the order that matters.
 	record.Coarse = false
 
-	// A document too small to say anything -- a channel-day that is one
-	// person joining, a file of twenty bytes -- is marked read without a
-	// call. Four hundred of them a night, forty to a call, filed three
-	// facts; the calls are better spent on the ones with words in them.
-	var tiny []string
-	kept := waiting[:0]
-	for _, document := range waiting {
-		if document.Bytes < digestSmallest {
-			tiny = append(tiny, document.ID)
-			continue
-		}
-		kept = append(kept, document)
-	}
-	waiting = kept
-	if len(tiny) > 0 {
-		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-			return tx.MarkAgentDocumentsDigested(tiny, time.Now())
-		}); err != nil {
-			log.Warningf("cannot mark the small ones as read: %s", err)
-		}
-	}
+	waiting = self.markTinyRead(ctx, run, waiting)
 
 	// Batches go to the model a few at a time where it has the slots: a
 	// service metered by the call gets one, a model of the person's own
@@ -729,6 +710,61 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 		}()
 	}
 	group.Wait()
+}
+
+// markTinyRead marks read, without a call, the documents that say too
+// little to be worth a share of one, and answers with the rest.
+//
+// A channel-day that is one person joining, a file of twenty bytes: four
+// hundred of them a night, forty to a call, filed three facts, and the
+// calls are better spent on the ones with words in them.
+//
+// How much a document says is the larger of the size its source recorded
+// and the text its passages hold, because neither measure on its own is
+// one every document has. A commit is not a file and nothing ever stated
+// a size for one, so a rule that read the size alone took every commit
+// in an archive for empty -- one thousand eight hundred and seventy-four
+// of them stamped read in a single minute, the only documents that carry
+// an author and so the only ones an authorship map can be built from --
+// and read is the one state a document must not reach without having
+// been read, because nothing goes back for it. It happens the other way
+// round as well: a file whose text nothing could extract has a size and
+// no passages. Only a document that both measures call empty is set
+// aside.
+func (self *Agent) markTinyRead(ctx context.Context, run *Run, waiting []*models.AgentDocument) []*models.AgentDocument {
+	documentIds := make([]string, 0, len(waiting))
+	for _, document := range waiting {
+		documentIds = append(documentIds, document.ID)
+	}
+	var characters map[string]int64
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		characters, err = tx.MeasureAgentDocuments(run.Agent.ID, documentIds)
+		return err
+	}); err != nil {
+		// A measurement that did not happen is not evidence that
+		// anything is empty. Reading them all costs calls; marking them
+		// read on a query that failed costs the documents themselves.
+		log.Warningf("cannot measure what is waiting to be read: %s", err)
+		return waiting
+	}
+
+	var tiny []string
+	kept := waiting[:0]
+	for _, document := range waiting {
+		if max(document.Bytes, characters[document.ID]) < digestSmallest {
+			tiny = append(tiny, document.ID)
+			continue
+		}
+		kept = append(kept, document)
+	}
+	if len(tiny) > 0 {
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			return tx.MarkAgentDocumentsDigested(tiny, time.Now())
+		}); err != nil {
+			log.Warningf("cannot mark the small ones as read: %s", err)
+		}
+	}
+	return kept
 }
 
 // digestBatch reads a handful of documents and files what they taught.

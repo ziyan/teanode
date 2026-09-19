@@ -1366,6 +1366,33 @@ func TestAPassOffersTheCommitsOfEveryCheckoutOfTheirs(t *testing.T) {
 	}
 }
 
+// A commit carries the size of what it says.
+//
+// A commit is not a file, so nothing stats one and for years every commit
+// was filed with a size of zero. Anything downstream that asks how much a
+// document holds reads that as a document holding nothing: the night's
+// reading skips those without a model call and marks them read, and read
+// is the one state a document must not reach without having been read.
+// On the deployment this was written for, 1,874 commits -- the only
+// documents that carry an author -- went that way in a single minute.
+func TestACommitCarriesTheSizeOfWhatItSays(t *testing.T) {
+	root := treeOfHistories(t, 3)
+	offered, _ := passOverTree(t, root, &ScanArguments{Most: 4, OwnAddresses: []string{"alice@example.com"}})
+	commits := commitsOffered(offered)
+	if len(commits) == 0 {
+		t.Fatalf("the pass offered no commits at all")
+	}
+	for subject, entry := range commits {
+		if entry.Size == 0 {
+			t.Errorf("the commit %q was filed as holding nothing, though it says %q", subject, entry.Text)
+		}
+		if entry.Size != int64(len(entry.Text)) {
+			t.Errorf("the commit %q says it is %d bytes and carries %d of text",
+				subject, entry.Size, len(entry.Text))
+		}
+	}
+}
+
 // The pass after it offers them again, so the sweep does not take them.
 //
 // Every entry a pass is shown has its seen time written, and a document

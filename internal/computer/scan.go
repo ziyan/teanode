@@ -1904,6 +1904,13 @@ func entryOfCommit(root string, record commitRecord, known map[string]string) Sc
 		entry.Metadata["truncated"] = true
 	}
 	entry.Text = text
+	// A commit is not a file, so nothing stats it and for years it was
+	// filed with no size at all. Anything downstream that asked how much
+	// a document held read that zero as an empty document: the night's
+	// reading took every commit in an archive for a thing with nothing
+	// in it and marked the lot read without ever showing one to a model.
+	// The size of a commit is the size of what is sent as its text.
+	entry.Size = int64(len(text))
 	if record.Directory != "" {
 		// Which checkout of the tree it came from, so that two
 		// repositories with the same last name are still two.

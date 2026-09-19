@@ -1328,6 +1328,10 @@ func (self *Agent) readSentMail(ctx context.Context, run *Run, source *models.Ag
 			HappenedAt: &happened,
 			Hash:       mail.ID,
 			Text:       message.Text,
+			// As with a commit: a message is not a file on anybody's
+			// disk, and an entry with text and no size is filed as a
+			// document that appears to hold nothing.
+			Size: int64(len(message.Text)),
 			Metadata: map[string]any{
 				"to": message.To, "subject": message.Subject, "author": "them",
 			},

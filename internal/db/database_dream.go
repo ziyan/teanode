@@ -49,6 +49,18 @@ type DreamOperation interface {
 	ListAgentDocumentsToDigest(agentId string, names []string, limit int) ([]*models.AgentDocument, int64, error)
 	MarkAgentDocumentsDigested(documentIds []string, at time.Time) error
 
+	// MeasureAgentDocuments is how many characters of text each of these
+	// documents actually holds, by id, leaving out the ones that hold
+	// none.
+	//
+	// The night asks before deciding that something is too slight to be
+	// worth a call. A document's recorded size is the size of a file on
+	// somebody's disk, and the kinds that are not files -- a commit, a
+	// message -- never had one, so a night that read the size took them
+	// all for empty. The text is in the passages, so the passages are
+	// what is measured.
+	MeasureAgentDocuments(agentId string, documentIds []string) (map[string]int64, error)
+
 	// ListAgentAttachmentsToDecide is the pictures and files a record came
 	// with that nobody has read and the night has not decided about:
 	// newest first, and only the ones whose bytes this server actually
@@ -317,6 +329,36 @@ func (self *transaction) ListAgentDocumentsToDigest(agentId string, names []stri
 			"happened_at" DESC NULLS LAST
 		LIMIT ?`, agentId, pq.Array(names), proseFile, limit))
 	return documents, backlog, err
+}
+
+// MeasureAgentDocuments is how much text each of these documents holds.
+//
+// One query for the whole night's list rather than one per document:
+// this is asked of everything waiting, which on a first ingest is
+// thousands of rows.
+func (self *transaction) MeasureAgentDocuments(agentId string, documentIds []string) (map[string]int64, error) {
+	measured := map[string]int64{}
+	if len(documentIds) == 0 {
+		return measured, nil
+	}
+	var rows []struct {
+		DocumentID string `gorm:"column:document_id"`
+		Characters int64  `gorm:"column:characters"`
+	}
+	// char_length rather than octet_length: what the model is shown is
+	// runes, and a page of Chinese counted in bytes is three times the
+	// text it is.
+	if err := self.tx.Raw(`
+		SELECT "document_id", sum(char_length("text")) AS "characters"
+		FROM "agent_chunk"
+		WHERE "agent_id" = ? AND "document_id" = ANY(?)
+		GROUP BY "document_id"`, agentId, pq.Array(documentIds)).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		measured[row.DocumentID] = row.Characters
+	}
+	return measured, nil
 }
 
 func (self *transaction) CountAgentDocumentsReading(agentId string, names []string) (*AgentReadingCounts, error) {
