@@ -216,6 +216,7 @@ func newAgentKnowledgeCommand() *cli.Command {
 					&cli.StringFlag{Name: "format", Usage: "files, journal or records"},
 					&cli.StringFlag{Name: "mailbox", Usage: "for a sent source: which mailbox"},
 					&cli.BoolFlag{Name: "read-every-checkout", Usage: "read the files of checkouts you have never committed to, not only their profile"},
+					&cli.IntFlag{Name: "commits-per-pass", Usage: "how many commits one pass over the tree carries, shared among its checkouts; 0 is the program's own pace"},
 				},
 				Action: runKnowledgeSet,
 			},
@@ -1027,8 +1028,14 @@ func runKnowledgeSet(ctx context.Context, command *cli.Command) error {
 	if command.IsSet("read-every-checkout") {
 		fields["readEveryCheckout"] = command.Bool("read-every-checkout")
 	}
+	// The same, for a number whose zero means something: nobody typing
+	// --name should have the pace of the history put back to the
+	// program's own.
+	if command.IsSet("commits-per-pass") {
+		fields["commitsPerPass"] = command.Int("commits-per-pass")
+	}
 	if len(fields) == 1 {
-		return fmt.Errorf("what should change? --name, --path, --under, --cron, --format, --mailbox or --read-every-checkout")
+		return fmt.Errorf("what should change? --name, --path, --under, --cron, --format, --mailbox, --read-every-checkout or --commits-per-pass")
 	}
 	changed, err := client.SaveAgentKnowledgeSource(ctx, connection, fields)
 	if err != nil {

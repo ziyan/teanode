@@ -6,6 +6,27 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.40.6] - 2026-09-19
+
+### Fixed
+
+- Commits now reach the knowledge graph. A source pointed at a folder of
+  checkouts indexed none of them before — the one document that says who wrote
+  a piece of code — and one that did get in was removed again by the next
+  pass. The history of every checkout you have committed to is now read, the
+  newest first, and how much of it one pass carries is yours to set with
+  `teanode agent knowledge set <source> --commits-per-pass` (two thousand by
+  default). A checkout you have never committed to still gives neither its
+  files nor its history. (#144)
+
+## [0.40.5] - 2026-09-19
+
+### Fixed
+
+- The reading progress on the agent's Dreams tab shows exact counts and the
+  share reached, and no longer rounds itself to finished while documents
+  are still waiting. (#142)
+
 ## [0.40.4] - 2026-09-19
 
 ### Changed

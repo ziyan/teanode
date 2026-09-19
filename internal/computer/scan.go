@@ -76,10 +76,26 @@ const (
 	// scanFileBytes is the largest file read for any purpose.
 	scanFileBytes = 32 << 20
 
-	// scanCommits is how many commits one pass reads, and scanDiffBytes
-	// how much of one commit's diff is kept.
-	scanCommits   = 2000
-	scanDiffBytes = 4000
+	// scanCommitsPerPass is how many commits one pass over a tree
+	// offers when the server does not say, shared out among the
+	// checkouts in it; scanDiffBytes is how much of one commit's diff is
+	// kept.
+	//
+	// A bound on the pass and not on the page. Commits used to be
+	// offered only on the last page of a pass and only out of whatever
+	// room that page had left over, which for a tree of any size is
+	// none: on the deployment this was written for, 553,185 documents
+	// held not one commit. What a pass offers is now a number somebody
+	// chose, here or on the source.
+	scanCommitsPerPass = 2000
+	scanDiffBytes      = 4000
+
+	// scanCommitBytes is the largest a commit's document is: its
+	// subject, its body and the files it touched. The commit that drops
+	// a vendored tree into a checkout touches tens of thousands of
+	// files, and the list of them alone is megabytes -- more than a
+	// whole page is allowed to carry, for one entry.
+	scanCommitBytes = 16 << 10
 
 	// scanExtractTimeout bounds one call to an outside extractor. A PDF
 	// that takes longer than this is one nobody is waiting for.
@@ -168,6 +184,16 @@ type ScanArguments struct {
 	// source's own setting, for somebody who does want a dependency's
 	// source read.
 	ReadEveryCheckout bool `json:"readEveryCheckout,omitempty"`
+
+	// CommitsPerPass is how many commits one pass over this tree
+	// offers, over all the checkouts in it. Zero -- an older server,
+	// which says nothing -- is scanCommitsPerPass.
+	//
+	// Said by the server, for the same reason as the attachment bound
+	// above: a tree of a hundred checkouts and a third of a million
+	// commits is paced by what the person set on the source, not by a
+	// release everybody has to install.
+	CommitsPerPass int `json:"commitsPerPass,omitempty"`
 }
 
 // maxAttachmentBytes is the limit a request runs under.
@@ -601,29 +627,54 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 	// does go over -- a page is never empty, because a page that refused
 	// to carry the file in front of it would never get past it.
 	carried := 0
-	for index, relative := range paths {
-		if !started {
-			if relative == arguments.After {
-				started = true
+	// A pass reads the files of the tree and then its history, in one
+	// sequence of pages: past the files the cursor names a commit
+	// instead of a path, and the files are not walked again.
+	if !pastTheFiles(arguments.After) {
+		for index, relative := range paths {
+			if !started {
+				if relative == arguments.After {
+					started = true
+				}
+				continue
 			}
-			continue
+			if len(result.Entries) >= most || carried >= scanPageBytes {
+				// The cursor names the last file sent, not the one there was
+				// no room for: the next page begins after the cursor, and for
+				// a while it named the unsent file, which was then skipped --
+				// one file lost on every page boundary, on every pass.
+				result.Next = paths[index-1]
+				break
+			}
+			entry := readOneFile(ctx, root, relative, arguments.Known)
+			if entry.Refused != "" {
+				result.Refused++
+			}
+			// The profile rides on its own entry above, not on a file's.
+			carried += len(entry.Text)
+			result.Entries = append(result.Entries, entry)
 		}
-		if len(result.Entries) >= most || carried >= scanPageBytes {
-			// The cursor names the last file sent, not the one there was
-			// no room for: the next page begins after the cursor, and for
-			// a while it named the unsent file, which was then skipped --
-			// one file lost on every page boundary, on every pass.
-			result.Next = paths[index-1]
-			break
-		}
-		entry := readOneFile(ctx, root, relative, arguments.Known)
-		if entry.Refused != "" {
-			result.Refused++
-		}
-		// The profile rides on its own entry above, not on a file's.
-		carried += len(entry.Text)
-		result.Entries = append(result.Entries, entry)
 	}
+
+	// The history, once the files are done and before the pass ends.
+	//
+	// Every pass offers it, and it is paged like everything else. Both
+	// halves of that matter. A commit offered only by a pass that
+	// happened to reach the end of the tree in one go was a commit no
+	// tree of any size ever offered; and a commit squeezed into whatever
+	// room the last page had left over was a handful at best, out of a
+	// third of a million.
+	if result.Next == "" {
+		commits, next := readCommits(ctx, root, arguments, profiles, cloned, most-len(result.Entries), carried)
+		for _, entry := range commits {
+			if entry.Refused != "" {
+				result.Refused++
+			}
+		}
+		result.Entries = append(result.Entries, commits...)
+		result.Next = next
+	}
+
 	// A repository's own entry carries its profile even though there is no
 	// file at its root -- and there is one per checkout found, not just
 	// for the tree that was scanned.
@@ -635,12 +686,13 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 	// who points their agent at ~/projects got forty project pages with
 	// nothing on them, no "worked on" links, and no idea why. Only a
 	// source whose own root was a checkout ever worked.
-	// Once a pass, on the last page, the way the commits below are. The
-	// profiles are of the whole tree and a page is a slice of it, so
-	// sending them with every page sent each one as many times as the
-	// tree has pages. A tree of three hundred checkouts read over a
-	// hundred pages sent thirty thousand of them, each carrying its
-	// readme, for the hundred that were wanted.
+	//
+	// Once a pass, on its last page. The profiles are of the whole tree
+	// and a page is a slice of it, so sending them with every page sent
+	// each one as many times as the tree has pages. A tree of three
+	// hundred checkouts read over a hundred pages sent thirty thousand
+	// of them, each carrying its readme, for the hundred that were
+	// wanted.
 	//
 	// The last page rather than the first, because that is the one the
 	// sweep runs after: an entry no pass has seen since the pass began is
@@ -661,16 +713,6 @@ func scanFiles(ctx context.Context, root string, arguments *ScanArguments, most 
 				ExternalID: identifier, Kind: "repository", Title: title,
 				Repository: profiles[relative],
 			})
-		}
-	}
-
-	// Commits, after the files, so a first pass shows something quickly.
-	// Not for a checkout that was kept to its profile: its history is
-	// the same somebody else's work as its files, read line by line.
-	if result.Next == "" && len(result.Entries) < most && !cloned[""] {
-		commits, err := readCommits(ctx, root, arguments, most-len(result.Entries))
-		if err == nil {
-			result.Entries = append(result.Entries, commits...)
 		}
 	}
 	return result, nil
@@ -1314,18 +1356,215 @@ func repositoryProfile(ctx context.Context, directory string, tracked []string) 
 	return profile
 }
 
-// readCommits is a repository's commits as documents.
+// commitMark opens the identifier of a commit, and is what the cursor
+// of a pass says once it is past the files and working through the
+// history. On its own it means the history from the newest commit; with
+// a hash after it, the commit the last page stopped on.
+const commitMark = "commit:"
+
+// pastTheFiles says whether a cursor has left the files behind and is
+// in the history.
+//
+// What follows the mark has to be a commit hash or nothing. A cursor is
+// a path while the pass is in the files, and a file may be called
+// anything at all: `commit:notes` is a name somebody may have given a
+// file, and read as a place in the history it would skip every file of
+// the tree.
+func pastTheFiles(after string) bool {
+	hash, found := strings.CutPrefix(after, commitMark)
+	return found && (hash == "" || len(hash) == 40)
+}
+
+// commitShare is how much of a pass's history budget one checkout has.
+type commitShare struct {
+	// Directory is where the checkout is, relative to the root, and is
+	// empty for a root that is itself a checkout.
+	Directory string
+
+	// Has is how many commits the checkout holds, and Most how many of
+	// them this pass offers.
+	Has  int
+	Most int
+}
+
+// commitRecord is one commit as git gave it, before it is an entry.
+type commitRecord struct {
+	Directory string
+	Hash      string
+	Name      string
+	Address   string
+	Happened  time.Time
+	Subject   string
+	Body      string
+	Files     []string
+}
+
+// commitBudget is how many commits this pass offers over the whole tree.
+func commitBudget(arguments *ScanArguments) int {
+	if arguments.CommitsPerPass > 0 {
+		return arguments.CommitsPerPass
+	}
+	return scanCommitsPerPass
+}
+
+// shareOfCommits divides that budget among the checkouts of the tree.
+//
+// Every checkout, not only the one at the root. A tree of a hundred and
+// thirty-seven checkouts is what a person's working directory looks
+// like, and a history read from the outermost of them alone -- which
+// for such a tree is no checkout at all -- says nothing about who wrote
+// what. Commits are the one document that carries an author, so an
+// authorship map that covers one repository is not a map.
+//
+// Somebody else's checkout gets nothing. Its history is their work as
+// much as its files are, which is what
+// docs/decisions/20260918-a-checkout-with-none-of-your-commits-is-somebody-elses.md
+// settled; until now that held only because nothing read a nested
+// checkout's history at all.
+//
+// Evenly, and what a checkout cannot use it gives back: the checkouts
+// are taken shortest history first and each takes the lesser of what it
+// has and an equal cut of what is left. A budget of two thousand over
+// that tree is the newest fourteen or so commits of each, rather than
+// two thousand from whichever sorted first and none from the rest.
+func shareOfCommits(profiles map[string]*RepositoryProfile, cloned map[string]bool, budget int) []commitShare {
+	shares := make([]commitShare, 0, len(profiles))
+	for directory, profile := range profiles {
+		if profile == nil || profile.Commits <= 0 || cloned[directory] {
+			continue
+		}
+		shares = append(shares, commitShare{Directory: directory, Has: profile.Commits})
+	}
+	sort.Slice(shares, func(left, right int) bool {
+		if shares[left].Has != shares[right].Has {
+			return shares[left].Has < shares[right].Has
+		}
+		return shares[left].Directory < shares[right].Directory
+	})
+	left := budget
+	for index := range shares {
+		shares[index].Most = min(shares[index].Has, left/(len(shares)-index))
+		left -= shares[index].Most
+	}
+	kept := make([]commitShare, 0, len(shares))
+	for _, share := range shares {
+		if share.Most > 0 {
+			kept = append(kept, share)
+		}
+	}
+	// Back into the order the pages walk them in, which is by where the
+	// checkout is. A cursor is resumed by walking this order again, so it
+	// must not depend on how many commits a checkout has: one commit made
+	// while a pass was halfway through would have reordered the rest of
+	// the history under it.
+	sort.Slice(kept, func(left, right int) bool { return kept[left].Directory < kept[right].Directory })
+	return kept
+}
+
+// readCommits is the tree's history as documents, one page of it.
 //
 // The answer to "who wrote this" is in git and in nothing else, so a
 // commit is a document like a file: its subject and body, who wrote it
-// and when, what it touched, and a bounded slice of what it added.
-func readCommits(ctx context.Context, root string, arguments *ScanArguments, most int) ([]ScanEntry, error) {
-	if !isRepository(root) {
-		return nil, nil
+// and when, and what it touched. It is what makes the graph able to say
+// that a person worked on a piece of code, because a file says only
+// that the code exists.
+//
+// What a pass offers is the newest commits of each checkout, up to the
+// budget, and the same set on every pass. That is what keeps them:
+// every entry a pass is shown has its seen time written, and what a
+// completed pass was not shown is swept as gone. A pass that offered
+// the next slice of history instead would file a slice and have the
+// following pass delete it.
+//
+// It answers with the page and where the page stopped: empty when the
+// history is done, and a commit's identifier when there is more.
+func readCommits(ctx context.Context, root string, arguments *ScanArguments, profiles map[string]*RepositoryProfile, cloned map[string]bool, room, carried int) ([]ScanEntry, string) {
+	shares := shareOfCommits(profiles, cloned, commitBudget(arguments))
+	if len(shares) == 0 {
+		return nil, ""
 	}
-	since := ""
-	if after, found := strings.CutPrefix(arguments.After, "commit:"); found {
-		since = after
+	after := ""
+	if pastTheFiles(arguments.After) {
+		after = strings.TrimPrefix(arguments.After, commitMark)
+	}
+	if room <= 0 || carried >= scanPageBytes {
+		// The files filled this page to the last entry. The cursor keeps
+		// the place so that the next page begins the history, rather
+		// than the pass ending here with the history unoffered -- which
+		// is the whole of what went wrong before.
+		return nil, commitMark + after
+	}
+
+	records := commitsOfTree(ctx, root, shares)
+	from := 0
+	if after != "" {
+		from = len(records)
+		for index, record := range records {
+			if record.Hash == after {
+				from = index + 1
+				break
+			}
+		}
+		if from >= len(records) {
+			// The commit the last page stopped on is no longer in the
+			// window -- somebody committed while the pass was reading,
+			// and it fell off the end. Beginning again costs a page
+			// already seen; going on from nowhere would end the pass
+			// with the history unseen, and the sweep would take it.
+			from = 0
+		}
+	}
+	entries := make([]ScanEntry, 0, min(room, len(records)-from))
+	for _, record := range records[from:] {
+		if len(entries) >= room || carried >= scanPageBytes {
+			return entries, commitMark + records[from+len(entries)-1].Hash
+		}
+		entry := entryOfCommit(root, record, arguments.Known)
+		carried += len(entry.Text)
+		entries = append(entries, entry)
+	}
+	return entries, ""
+}
+
+// commitsOfTree is the commits a pass offers, in the order it offers
+// them: the checkouts by where they are, each newest first.
+//
+// The whole list on every page of the history rather than the slice the
+// page wants, because a page resumes by finding its cursor in it. Git is
+// asked for no more than the share, so the list is the budget and not
+// the tree's whole history.
+func commitsOfTree(ctx context.Context, root string, shares []commitShare) []commitRecord {
+	var records []commitRecord
+	// A commit met once. Two checkouts of the same repository are
+	// ordinary -- a worktree, a fork, a clone kept to build an old
+	// release -- and they share a history; filed twice it is one
+	// document written twice, and a cursor that names it is ambiguous.
+	seen := make(map[string]bool)
+	for _, share := range shares {
+		directory := root
+		if share.Directory != "" {
+			directory = filepath.Join(root, filepath.FromSlash(share.Directory))
+		}
+		for _, record := range commitsOf(ctx, directory, share.Directory, share.Most) {
+			if seen[record.Hash] {
+				continue
+			}
+			seen[record.Hash] = true
+			records = append(records, record)
+		}
+	}
+	return records
+}
+
+// commitsOf is the newest commits of one checkout.
+//
+// A checkout git cannot read answers with nothing rather than an error:
+// the rest of the tree's history is still worth having, and a pass that
+// failed here would leave every other checkout's commits unoffered and
+// the sweep would take them.
+func commitsOf(ctx context.Context, directory, relative string, most int) []commitRecord {
+	if most <= 0 {
+		return nil
 	}
 	// The record separator opens the record rather than closing it.
 	// `--name-only` prints a commit's file names *after* its format, so a
@@ -1335,15 +1574,11 @@ func readCommits(ctx context.Context, root string, arguments *ScanArguments, mos
 	// ingest tried to file a document whose identifier was twenty-one
 	// paths, and PostgreSQL refused it at 64 characters.
 	format := "--format=%x1e%H%x1f%aN%x1f%aE%x1f%aI%x1f%s%x1f%b"
-	gitArguments := []string{"log", "--no-merges", format, "--name-only", "-n", strconv.Itoa(min(most*4, scanCommits))}
-	if since != "" {
-		gitArguments = append(gitArguments, since+"..HEAD")
-	}
-	output, err := git(ctx, root, gitArguments...)
+	output, err := git(ctx, directory, "log", "--no-merges", format, "--name-only", "-n", strconv.Itoa(most))
 	if err != nil {
-		return nil, err
+		return nil
 	}
-	var entries []ScanEntry
+	records := make([]commitRecord, 0, most)
 	for _, record := range strings.Split(output, "\x1e") {
 		record = strings.TrimSpace(record)
 		if record == "" {
@@ -1365,37 +1600,71 @@ func readCommits(ctx context.Context, root string, arguments *ScanArguments, mos
 		if err != nil {
 			continue
 		}
-		if arguments.Known["commit:"+hash] != "" {
-			continue
-		}
-		text := subject
-		if trimmed := strings.TrimSpace(body); trimmed != "" {
-			text += "\n\n" + trimmed
-		}
-		touched := strings.Fields(files)
-		if len(touched) > 0 {
-			text += "\n\nFiles: " + strings.Join(touched, " ")
-		}
-		if secret, _ := SecretContent(text); secret {
-			continue
-		}
-		entries = append(entries, ScanEntry{
-			ExternalID: "commit:" + hash,
-			Kind:       "commit",
-			Title:      subject,
-			HappenedAt: &happened,
-			Hash:       hash,
-			Text:       text,
-			Metadata: map[string]any{
-				"author": name, "address": strings.ToLower(address),
-				"repository": filepath.Base(root), "commit": hash,
-			},
+		records = append(records, commitRecord{
+			Directory: relative, Hash: hash, Name: name,
+			Address: strings.ToLower(address), Happened: happened,
+			Subject: subject, Body: strings.TrimSpace(body),
+			Files: strings.Fields(files),
 		})
-		if len(entries) >= most {
-			break
-		}
 	}
-	return entries, nil
+	return records
+}
+
+// entryOfCommit is one commit as the entry the server files.
+func entryOfCommit(root string, record commitRecord, known map[string]string) ScanEntry {
+	happened := record.Happened
+	entry := ScanEntry{
+		ExternalID: commitMark + record.Hash,
+		Kind:       "commit",
+		Title:      record.Subject,
+		Hash:       record.Hash,
+		HappenedAt: &happened,
+	}
+	if known[entry.ExternalID] != "" {
+		// Named, and its text left out, the way an unchanged file is --
+		// and not left out of the page altogether, which is what used to
+		// happen. A commit the page does not name is a commit the pass
+		// was not shown, and the sweep at the end of a pass deletes what
+		// it was not shown: the commits one pass filed were taken away
+		// by the next.
+		entry.Unchanged = true
+		return entry
+	}
+	text := record.Subject
+	if record.Body != "" {
+		text += "\n\n" + record.Body
+	}
+	if len(record.Files) > 0 {
+		text += "\n\nFiles: " + strings.Join(record.Files, " ")
+	}
+	if secret, what := SecretContent(text); secret {
+		// Refused rather than dropped, for the same reason: a refusal is
+		// something the source holds and could not send, the server
+		// counts it and writes its seen time, and silence would have the
+		// sweep take a document filed before this program learned to
+		// refuse it.
+		entry.Refused = "carries " + what
+		return entry
+	}
+	where := root
+	if record.Directory != "" {
+		where = record.Directory
+	}
+	entry.Metadata = map[string]any{
+		"author": record.Name, "address": record.Address,
+		"repository": filepath.Base(where), "commit": record.Hash,
+	}
+	if len(text) > scanCommitBytes {
+		text = firstRunes(text, scanCommitBytes)
+		entry.Metadata["truncated"] = true
+	}
+	entry.Text = text
+	if record.Directory != "" {
+		// Which checkout of the tree it came from, so that two
+		// repositories with the same last name are still two.
+		entry.Metadata["checkout"] = record.Directory
+	}
+	return entry
 }
 
 // --- journal ----------------------------------------------------------

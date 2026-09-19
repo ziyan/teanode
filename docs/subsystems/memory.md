@@ -131,6 +131,28 @@ decides whose work it is, so a dependency cloned into a project of yours
 is kept to its profile, and a project of yours inside somebody else's
 checkout is read.
 
+The history is read the same way. A commit is a document like a file —
+its subject and body, who wrote it and when, and what it touched — and it
+is the only kind that carries an author, so without commits the graph has
+no answer to who wrote a piece of code. They used to be offered only by a
+pass that reached the end of the tree in a single page and only out of
+whatever room that page had left over, and only from a root that was
+itself a checkout: a folder of checkouts is neither, and on one
+deployment 553,185 documents held not one commit. The history now follows
+the files in the same sequence of pages — past the files the cursor names
+a commit instead of a path — and it comes from every checkout in the tree
+that is the person's own work, the rule above keeping somebody else's
+history out as it keeps their files out. What one pass carries is bounded
+and shared out among those checkouts, each newest first: one tree of 137
+checkouts holds on the order of 340,000 commits, and read all at once
+that is a graph and an embedding bill nobody asked for. The bound is two
+thousand a pass unless the source says otherwise —
+`specification.commitsPerPass`, or `teanode agent knowledge set <source>
+--commits-per-pass` — so a history fills at a pace somebody chose. A
+commit the graph already holds is offered again on every pass with its
+text left out, for the same reason a profile goes on the last page: what
+a finished pass was not shown is swept as gone.
+
 **A document** is something read from somewhere else: a file in a
 checkout, a commit, a chat thread, a note, a message. Documents are not
 facts; they are what facts get made out of, and they live beside the

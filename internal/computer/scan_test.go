@@ -738,15 +738,39 @@ func checkoutBy(t *testing.T, where, address string, files map[string]string) {
 	for _, arguments := range [][]string{
 		{"init", "-q", "-b", "main"}, {"add", "-A"}, {"commit", "-q", "-m", "first"},
 	} {
-		command := exec.Command("git", arguments...)
-		command.Dir = where
-		command.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=Somebody", "GIT_AUTHOR_EMAIL="+address,
-			"GIT_COMMITTER_NAME=Somebody", "GIT_COMMITTER_EMAIL="+address,
-			"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Skipf("git is not usable here: %s: %s", err, output)
+		runGitAs(t, where, address, arguments...)
+	}
+}
+
+// commitTo writes more files into a checkout that exists and commits
+// them as whoever is named.
+func commitTo(t *testing.T, where, address, message string, files map[string]string) {
+	t.Helper()
+	for name, content := range files {
+		path := filepath.Join(where, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll: %s", err)
 		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("WriteFile: %s", err)
+		}
+	}
+	runGitAs(t, where, address, "add", "-A")
+	runGitAs(t, where, address, "commit", "-q", "-m", message)
+}
+
+// runGitAs runs one git command in a checkout as whoever is named, and
+// skips the test where git cannot be used at all.
+func runGitAs(t *testing.T, where, address string, arguments ...string) {
+	t.Helper()
+	command := exec.Command("git", arguments...)
+	command.Dir = where
+	command.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=Somebody", "GIT_AUTHOR_EMAIL="+address,
+		"GIT_COMMITTER_NAME=Somebody", "GIT_COMMITTER_EMAIL="+address,
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Skipf("git is not usable here: %s: %s", err, output)
 	}
 }
 
@@ -1204,5 +1228,231 @@ func TestACheckoutsProfileIsOfferedOnceAPass(t *testing.T) {
 	}
 	if profilesOn[pages-1] != 2 {
 		t.Errorf("the last page carried %d profiles, want 2 (the root and the checkout inside it)", profilesOn[pages-1])
+	}
+}
+
+// treeOfHistories is a folder of checkouts with histories in them: two
+// the person works in and one they only cloned, each with `each`
+// commits after the one that made it.
+func treeOfHistories(t *testing.T, each int) string {
+	t.Helper()
+	root := t.TempDir()
+	for _, name := range []string{"portal", "tools", "cloned"} {
+		address := "alice@example.com"
+		if name == "cloned" {
+			address = "somebody@example.net"
+		}
+		where := filepath.Join(root, name)
+		checkoutBy(t, where, address, map[string]string{"README.md": "The " + name + ".\n"})
+		for index := range each {
+			commitTo(t, where, address, fmt.Sprintf("%s: the %d change", name, index),
+				map[string]string{fmt.Sprintf("%s/note%02d.md", name, index): "a sentence about the work.\n"})
+		}
+	}
+	return root
+}
+
+// passOverTree reads a tree to the end of its pages, the way a source
+// does, and answers with everything it was offered and how many pages
+// that took.
+func passOverTree(t *testing.T, root string, arguments *ScanArguments) ([]ScanEntry, int) {
+	t.Helper()
+	home := t.TempDir()
+	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
+	if _, err := AllowScanRoot(options, root); err != nil {
+		t.Fatalf("AllowScanRoot: %s", err)
+	}
+	var offered []ScanEntry
+	after := ""
+	for page := range 200 {
+		asked := *arguments
+		asked.Root, asked.After = root, after
+		result, err := RunScan(context.Background(), options, &asked)
+		if err != nil {
+			t.Fatalf("RunScan: %s", err)
+		}
+		offered = append(offered, result.Entries...)
+		if result.Next == "" {
+			return offered, page + 1
+		}
+		after = result.Next
+	}
+	t.Fatalf("the pages never ended")
+	return nil, 0
+}
+
+// commitsOffered is the commits in a page of entries, by their subject.
+func commitsOffered(offered []ScanEntry) map[string]ScanEntry {
+	commits := map[string]ScanEntry{}
+	for _, entry := range offered {
+		if entry.Kind == "commit" {
+			commits[entry.Title] = entry
+		}
+	}
+	return commits
+}
+
+// A pass offers the history of every checkout it reads, however its
+// pages happen to fall.
+//
+// Commits used to be offered only when a pass reached the end of the
+// tree in one page and that page had room left over, and only from a
+// root that was itself a checkout. A folder of checkouts is neither, so
+// on the deployment this was written for the graph held 553,185
+// documents and not one commit -- and a commit is the only document
+// that carries an author, so there was no answer at all to who wrote
+// any of it.
+func TestAPassOffersTheCommitsOfEveryCheckoutOfTheirs(t *testing.T) {
+	root := treeOfHistories(t, 5)
+	offered, pages := passOverTree(t, root, &ScanArguments{Most: 4, OwnAddresses: []string{"alice@example.com"}})
+	if pages < 3 {
+		t.Fatalf("the tree was read in %d page(s), so the paging is not under test here", pages)
+	}
+	checkouts := map[string]int{}
+	for _, entry := range offered {
+		if entry.Kind != "commit" {
+			continue
+		}
+		if address, _ := entry.Metadata["address"].(string); address == "somebody@example.net" {
+			t.Fatalf("the history of a checkout they only cloned is their work as much as its files: %q", entry.Title)
+		}
+		checkout, _ := entry.Metadata["checkout"].(string)
+		checkouts[checkout]++
+	}
+	// Six each: the commit that made the checkout, and the five after it.
+	for _, name := range []string{"portal", "tools"} {
+		if checkouts[name] != 6 {
+			t.Errorf("the checkout %q offered %d commits, want 6: %v", name, checkouts[name], checkouts)
+		}
+	}
+	if checkouts["cloned"] != 0 {
+		t.Errorf("the checkout they cloned offered %d commits, want none", checkouts["cloned"])
+	}
+	commits := commitsOffered(offered)
+	entry := commits["portal: the 4 change"]
+	if entry.ExternalID == "" {
+		t.Fatalf("the newest commit of a checkout was not offered: %v", commits)
+	}
+	if !strings.Contains(entry.Text, "Files: portal/note04.md") {
+		t.Errorf("a commit carries what it touched, not %q", entry.Text)
+	}
+	if entry.Metadata["repository"] != "portal" || entry.Metadata["author"] != "Somebody" {
+		t.Errorf("and which checkout it was in and who wrote it: %v", entry.Metadata)
+	}
+}
+
+// The pass after it offers them again, so the sweep does not take them.
+//
+// Every entry a pass is shown has its seen time written, and a document
+// no completed pass has seen since the pass began is taken as gone. A
+// commit the server already held used to be left out of the page
+// altogether, which meant every commit one pass filed was deleted by
+// the next -- the other half of why there were none.
+func TestTheCommitsOfAPassAreOfferedByTheNextOne(t *testing.T) {
+	root := treeOfHistories(t, 4)
+	own := []string{"alice@example.com"}
+	first, _ := passOverTree(t, root, &ScanArguments{Most: 4, OwnAddresses: own})
+	held := map[string]string{}
+	for _, entry := range first {
+		if entry.Kind == "commit" {
+			held[entry.ExternalID] = entry.Hash
+		}
+	}
+	if len(held) == 0 {
+		t.Fatalf("the first pass offered no commits at all")
+	}
+
+	second, _ := passOverTree(t, root, &ScanArguments{Most: 4, OwnAddresses: own, Known: held})
+	offered := map[string]bool{}
+	for _, entry := range second {
+		if entry.Kind != "commit" {
+			continue
+		}
+		offered[entry.ExternalID] = true
+		if !entry.Unchanged || entry.Text != "" {
+			t.Errorf("a commit the server holds is named with its text left out, not %+v", entry)
+		}
+	}
+	for identifier := range held {
+		if !offered[identifier] {
+			t.Fatalf("%q was filed by one pass and not offered by the next, so the sweep would take it", identifier)
+		}
+	}
+}
+
+// A page the files fill to its last entry still leaves the history to
+// the page after it.
+//
+// This is where the commits went. They were offered out of the room the
+// last page had left over, and a tree of any size leaves none: the
+// cursor now says the files are done and the history begins, so what a
+// pass carries does not depend on where its pages happened to land.
+func TestTheHistoryFollowsAPageTheFilesFilled(t *testing.T) {
+	root := t.TempDir()
+	checkoutBy(t, root, "alice@example.com", map[string]string{
+		"README.md": "The portal.\n", "main.go": "package main\n",
+		"one.md": "one\n", "two.md": "two\n", "three.md": "three\n",
+	})
+	home := t.TempDir()
+	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
+	if _, err := AllowScanRoot(options, root); err != nil {
+		t.Fatalf("AllowScanRoot: %s", err)
+	}
+	// Exactly as many entries as the tree has files.
+	result, err := RunScan(context.Background(), options, &ScanArguments{Root: root, Most: 5})
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	if len(commitsOffered(result.Entries)) != 0 {
+		t.Fatalf("this page had no room for a commit: %d entries", len(result.Entries))
+	}
+	if result.Next != "commit:" {
+		t.Fatalf("so the cursor says the history is next, not %q", result.Next)
+	}
+	result, err = RunScan(context.Background(), options, &ScanArguments{Root: root, Most: 5, After: result.Next})
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	if len(commitsOffered(result.Entries)) != 1 {
+		t.Fatalf("and the page after it carries the history: %+v", result.Entries)
+	}
+}
+
+// How much of a history one pass carries is a number somebody chose,
+// and it is shared out among the checkouts of the tree.
+//
+// One tree of a hundred and thirty-seven checkouts holds on the order
+// of three hundred and forty thousand commits. Read at whatever pace
+// the code felt like, that is a graph and an embedding bill nobody
+// asked for; read at none, it is an agent that cannot say who wrote
+// anything. So the source says, and a pass holds to it.
+func TestThePaceOfTheHistoryIsTheSourcesToChoose(t *testing.T) {
+	root := treeOfHistories(t, 9)
+	offered, _ := passOverTree(t, root, &ScanArguments{
+		Most: 4, CommitsPerPass: 6, OwnAddresses: []string{"alice@example.com"},
+	})
+	checkouts := map[string]int{}
+	for _, entry := range offered {
+		if entry.Kind == "commit" {
+			checkout, _ := entry.Metadata["checkout"].(string)
+			checkouts[checkout]++
+		}
+	}
+	if checkouts["portal"]+checkouts["tools"] != 6 {
+		t.Fatalf("a pass carries the six commits it was told to, not %v", checkouts)
+	}
+	if checkouts["portal"] != 3 || checkouts["tools"] != 3 {
+		t.Errorf("shared between the checkouts rather than spent on the first: %v", checkouts)
+	}
+	// The newest of each, which is what a person is most likely to be
+	// asked about; the rest follow as the budget lets them.
+	commits := commitsOffered(offered)
+	for _, subject := range []string{"portal: the 8 change", "tools: the 8 change"} {
+		if _, found := commits[subject]; !found {
+			t.Errorf("the newest commits come first, and %q was not offered: %v", subject, commits)
+		}
+	}
+	if _, found := commits["portal: the 0 change"]; found {
+		t.Errorf("and the oldest waits for a later pass: %v", commits)
 	}
 }
