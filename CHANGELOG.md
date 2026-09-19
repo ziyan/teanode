@@ -6,6 +6,25 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.40.2] - 2026-09-19
+
+### Changed
+
+- Your agent no longer indexes the source of checkouts you have never
+  committed to. If you point a source at the folder you keep your work in,
+  the projects you work on are read as before, and the ones you only cloned
+  are kept to their profile — what the project is, where it lives, what its
+  readme calls it — with their files and commits left unread. The source now
+  says how many checkouts that was and how many files, in `teanode agent
+  knowledge list`, on the Knowledge tab and when your agent lists its
+  sources; `teanode agent knowledge set <source> --read-every-checkout` reads
+  all of them. On the next full pass of a source like that, the files it
+  should never have indexed are removed with their passages, which on a large
+  folder of checkouts can be tens of thousands of documents; facts already
+  learned from them stay until you strike them. A checkout git cannot read,
+  one with no commits, and any source on a computer whose `teanode computer`
+  has not been updated are all read exactly as before. (#138)
+
 ## [0.40.1] - 2026-09-19
 
 ### Fixed
