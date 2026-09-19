@@ -138,3 +138,31 @@ func TestAPageProposedAtTheRootGoesUnderItsKindsFolder(t *testing.T) {
 		}
 	}
 }
+
+// A root folder said twice is said once.
+//
+// A model reading a directory of people files the first at
+// "people/people/ran-liao": the prompt's rule and the document's own
+// shelf, one after the other. Nine pages arrived that way in one night,
+// three of them a second copy of somebody who already had a page.
+func TestARootFolderSaidTwiceIsSaidOnce(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		name  string
+		given string
+		want  string
+	}{
+		{"a person under the folder twice", "people/people/ran-liao", "people/ran-liao"},
+		{"the folder twice and nothing else", "people/people", "people"},
+		{"a project under the folder twice", "projects/projects/portal", "projects/portal"},
+		{"said once, left alone", "people/ran-liao", "people/ran-liao"},
+		{"a folder's name deeper down is theirs", "people/ran-liao/people", "people/ran-liao/people"},
+		{"two segments that are not a root folder", "work/work/mc", "work/work/mc"},
+	} {
+		got, _, _ := pageIdentity(testCase.given, models.NodePerson, "Somebody")
+		if got != testCase.want {
+			t.Errorf("%s: got %q, want %q", testCase.name, got, testCase.want)
+		}
+	}
+}
