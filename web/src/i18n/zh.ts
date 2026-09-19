@@ -2311,6 +2311,11 @@ export const zh: Catalog = {
   'knowledge.forgetPageBody': '忘记 {path}、其 {facts} 条事实以及下属 {pages} 个页面。代理将不再知道这些。',
   'knowledge.forgotten': '已忘记',
   'knowledge.pageSaved': '已保存',
+  'knowledge.pageSearchPlaceholder': '查找页面，或直接输入路径',
+  'knowledge.pageSearchResults': '找到的页面',
+  'knowledge.pageSearchLooking': '正在查找…',
+  'knowledge.pageSearchNone': '没有与“{words}”匹配的页面。你也可以直接输入完整路径。',
+  'knowledge.pageSearchFailed': '暂时无法搜索页面。',
   'knowledge.movePage': '移动此页',
   'knowledge.moveUnder': '归入',
   'knowledge.moveUnderHint':

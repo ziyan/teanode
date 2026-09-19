@@ -19,6 +19,7 @@ one of them gets the fix.
 | Make or change one thing | `FormDialog` in `components/dialog.tsx` |
 | Ask before something irreversible | `ConfirmDialog` in `components/dialog.tsx` |
 | A long list that is sorted, filtered or paged | `DataTable` in `components/dataTable.tsx` |
+| A field naming one of the agent's pages | `PagePicker` in `components/pagePicker.tsx` |
 | The foot of a settings form | `SaveRow` in `components/common.tsx` |
 | A row of a key/value table | `Field` in `components/common.tsx` |
 | Waiting, and failing | `Loading`, `ErrorMessage` in `components/common.tsx` |
