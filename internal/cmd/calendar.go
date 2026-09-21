@@ -83,7 +83,7 @@ func NewCalendarCommand() *cli.Command {
 				Aliases:   []string{"delete"},
 				Usage:     "take an event out; the people coming are told, if you called it",
 				ArgsUsage: "<id>",
-				Flags:     []cli.Flag{ForceFlag()},
+				Flags:     []cli.Flag{ForceFlag(), &cli.StringFlag{Name: "request-id", Usage: "reuse this identifier to resolve an uncertain deletion"}},
 				Action:    runCalendarRemove,
 			},
 			{
@@ -519,6 +519,20 @@ func runCalendarRemove(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	requestId := command.String("request-id")
+	if requestId != "" {
+		receipt, err := client.GetCalendarRequest(ctx, connection, requestId)
+		if err != nil {
+			return describeError(command, err)
+		}
+		if receipt != nil {
+			if receipt.Operation != "delete" || receipt.ObjectID != command.Args().First() {
+				return fmt.Errorf("that request identifier belongs to a different calendar change")
+			}
+			fmt.Println("removed")
+			return nil
+		}
+	}
 	kept, err := theCalendar(ctx, connection)
 	if err != nil {
 		return describeError(command, err)
@@ -547,8 +561,12 @@ func runCalendarRemove(ctx context.Context, command *cli.Command) error {
 			return err
 		}
 	}
-	if err := client.DeleteCalendarEvent(ctx, connection, kept.ID, id); err != nil {
-		return describeError(command, err)
+	if requestId == "" {
+		requestId = security.NewULID()
+	}
+	fmt.Fprintf(os.Stderr, "calendar request %s\n", requestId)
+	if err := client.DeleteCalendarEventWithRequest(ctx, connection, kept.ID, id, requestId); err != nil {
+		return fmt.Errorf("calendar removal failed; look up 'teanode calendar request %s' or retry the same event with --request-id %s: %w", requestId, requestId, err)
 	}
 	fmt.Println("removed")
 	return nil
@@ -733,7 +751,7 @@ func runCalendarRequest(ctx context.Context, command *cli.Command) error {
 	}
 	fmt.Printf("completed %s: calendar %s, event %s\n", receipt.RequestID, receipt.CalendarID, receipt.ObjectID)
 	if receipt.IsMissing {
-		fmt.Println("the event has since been deleted")
+		fmt.Println("the event no longer exists")
 	}
 	return nil
 }

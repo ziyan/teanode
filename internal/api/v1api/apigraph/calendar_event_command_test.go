@@ -116,7 +116,7 @@ func TestCalendarCancellationRollsBackWhenDeletionFails(test *testing.T) {
 	dbtest.Exec(test, database, `CREATE TRIGGER refuse_event_delete BEFORE DELETE ON calendar_object FOR EACH ROW EXECUTE FUNCTION refuse_event_delete()`)
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(test.Context(), principal), transaction)
-		if removed, err := resolver.DeleteCalendarEvent(ctx, CalendarEventArguments{CalendarID: arguments.CalendarID, ID: saved.ID}); err == nil || removed {
+		if removed, err := resolver.DeleteCalendarEvent(ctx, DeleteCalendarEventArguments{CalendarID: arguments.CalendarID, ID: saved.ID}); err == nil || removed {
 			test.Fatalf("delete=%v, %v", removed, err)
 		}
 	})
@@ -126,7 +126,7 @@ func TestCalendarCancellationRollsBackWhenDeletionFails(test *testing.T) {
 	dbtest.Exec(test, database, `DROP TRIGGER refuse_event_delete ON calendar_object`)
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(test.Context(), principal), transaction)
-		if removed, err := resolver.DeleteCalendarEvent(ctx, CalendarEventArguments{CalendarID: arguments.CalendarID, ID: saved.ID}); err != nil || !removed {
+		if removed, err := resolver.DeleteCalendarEvent(ctx, DeleteCalendarEventArguments{CalendarID: arguments.CalendarID, ID: saved.ID}); err != nil || !removed {
 			test.Fatalf("delete=%v, %v", removed, err)
 		}
 	})

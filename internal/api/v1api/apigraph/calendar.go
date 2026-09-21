@@ -52,7 +52,7 @@ type CalendarMutation interface {
 	SaveCalendarEvent(ctx context.Context, arguments SaveCalendarEventArguments) (*CalendarEventView, error)
 
 	// Take one away. Needs calendar:use.
-	DeleteCalendarEvent(ctx context.Context, arguments CalendarEventArguments) (bool, error)
+	DeleteCalendarEvent(ctx context.Context, arguments DeleteCalendarEventArguments) (bool, error)
 
 	// Rename a calendar, or change how it is shown. Needs calendar:use.
 	SaveCalendar(ctx context.Context, arguments SaveCalendarArguments) (*CalendarView, error)
@@ -132,6 +132,12 @@ type ListCalendarEventsArguments struct {
 type CalendarEventArguments struct {
 	CalendarID string `json:"calendarId"`
 	ID         string `json:"id"`
+}
+
+type DeleteCalendarEventArguments struct {
+	CalendarID string `json:"calendarId"`
+	ID         string `json:"id"`
+	RequestID  string `json:"requestId" graphapi:"nullable"`
 }
 
 type SaveCalendarEventArguments struct {
@@ -651,18 +657,35 @@ func moment(value *string, which string) (*time.Time, error) {
 	return &at, nil
 }
 
-func (self *graph) DeleteCalendarEvent(ctx context.Context, arguments CalendarEventArguments) (bool, error) {
+func (self *graph) DeleteCalendarEvent(ctx context.Context, arguments DeleteCalendarEventArguments) (bool, error) {
 	principal, err := self.requireCalendarPerson(ctx)
 	if err != nil {
 		return false, err
 	}
-	organizer, err := self.organizerFor(ctx)
-	if err != nil {
-		return false, err
+	removeEvent := func(ctx context.Context, transaction db.Transaction) (calendarcommands.RequestResult, error) {
+		ctx = api.ContextWithTransaction(ctx, transaction)
+		organizer, err := self.organizerFor(ctx)
+		if err != nil {
+			return calendarcommands.RequestResult{}, err
+		}
+		isMailSendRequired := false
+		err = calendarcommands.New(transaction).DeleteEvent(ctx, principal, calendarcommands.EventRequest{CalendarID: arguments.CalendarID, ID: arguments.ID}, func(ctx context.Context, transaction db.Transaction, _ *models.CalendarObject, object *models.CalendarObject) error {
+			var err error
+			isMailSendRequired, err = self.callOff(api.ContextWithTransaction(ctx, transaction), object, organizer)
+			return err
+		})
+		return calendarcommands.RequestResult{ObjectID: arguments.ID, IsMailSendRequired: isMailSendRequired}, err
 	}
-	err = calendarcommands.New(self.transaction(ctx)).DeleteEvent(ctx, principal, calendarcommands.EventRequest{CalendarID: arguments.CalendarID, ID: arguments.ID}, func(ctx context.Context, transaction db.Transaction, _ *models.CalendarObject, object *models.CalendarObject) error {
-		return self.callOff(api.ContextWithTransaction(ctx, transaction), object, organizer)
-	})
+	if arguments.RequestID == "" {
+		_, err = removeEvent(ctx, self.transaction(ctx))
+	} else {
+		var requestContent []byte
+		requestContent, err = json.Marshal(arguments)
+		if err != nil {
+			return false, err
+		}
+		_, err = calendarcommands.New(self.transaction(ctx)).ExecuteRequest(ctx, principal, calendarcommands.RequestIdentity{RequestID: arguments.RequestID, CalendarID: arguments.CalendarID, Operation: "delete", Content: requestContent}, removeEvent)
+	}
 	if err != nil {
 		return false, translateError(err)
 	}
@@ -674,22 +697,22 @@ func (self *graph) DeleteCalendarEvent(ctx context.Context, arguments CalendarEv
 // Only when this person is the one who called it. Deleting an event somebody
 // else organized is leaving their meeting, not cancelling it, and sending a
 // cancellation would take it out of everybody else's calendar too.
-func (self *graph) callOff(ctx context.Context, object *models.CalendarObject, organizer string) error {
+func (self *graph) callOff(ctx context.Context, object *models.CalendarObject, organizer string) (bool, error) {
 	if object == nil || organizer == "" {
-		return nil
+		return false, nil
 	}
 	parsed, err := calendar.Parse([]byte(object.Data))
 	if err != nil || len(parsed.Attendees) == 0 {
-		return nil
+		return false, nil
 	}
 	if !strings.EqualFold(strings.TrimSpace(parsed.Organizer), organizer) {
-		return nil
+		return false, nil
 	}
 	// The same ceiling as inviting: an event whose guest list came from
 	// somewhere else is not a mail run waiting for somebody to press
 	// delete either.
 	if len(parsed.Attendees) > calendar.MaximumGuests {
-		return fmt.Errorf("%w: this event asks more than %d people, which is more than this server will write to at once",
+		return false, fmt.Errorf("%w: this event asks more than %d people, which is more than this server will write to at once",
 			api.ErrInvalidArguments, calendar.MaximumGuests)
 	}
 	asked := make([]string, 0, len(parsed.Attendees))
@@ -700,13 +723,13 @@ func (self *graph) callOff(ctx context.Context, object *models.CalendarObject, o
 		asked = append(asked, attendee.Address)
 	}
 	if len(asked) == 0 {
-		return nil
+		return false, nil
 	}
 	written, err := calendar.CallOff([]byte(object.Data), organizer)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return self.sendCalendarMessage(ctx, organizer, asked, object, written, "CANCEL")
+	return true, self.sendCalendarMessage(ctx, organizer, asked, object, written, "CANCEL")
 }
 
 func (self *graph) SaveCalendar(ctx context.Context, arguments SaveCalendarArguments) (*CalendarView, error) {

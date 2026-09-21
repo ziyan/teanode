@@ -134,6 +134,8 @@ func TestCalendarRequestSchemaSupportsLegacyAndIdentifiedSave(test *testing.T) {
 		client.DocumentSaveCalendarEvent,
 		client.DocumentSaveCalendarEventWithRequest,
 		client.DocumentGetCalendarRequest,
+		client.DocumentDeleteCalendarEvent,
+		client.DocumentDeleteCalendarEventWithRequest,
 	} {
 		if _, rejected := resolver.prepareGraphRequest(&graphRequest{Query: document}); rejected != nil {
 			test.Fatalf("schema rejected request: %+v", rejected)

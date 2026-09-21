@@ -105,6 +105,10 @@ const (
   DeleteCalendarEvent(calendarId: $calendarId, id: $id)
 }`
 
+	DocumentDeleteCalendarEventWithRequest = `mutation ($calendarId: String!, $id: String!, $requestId: String!) {
+  DeleteCalendarEvent(calendarId: $calendarId, id: $id, requestId: $requestId)
+ }`
+
 	DocumentSaveCalendar = `mutation ($id: String!, $name: String, $description: String,
     $colour: String, $timezone: String, $weekStart: String) {
   SaveCalendar(id: $id, name: $name, description: $description,
@@ -259,4 +263,13 @@ func GetCalendarRequest(ctx context.Context, connection *Client, requestId strin
 		return nil, err
 	}
 	return response.GetCalendarRequest, nil
+}
+
+// DeleteCalendarEventWithRequest retains a deletion identity across explicit retries.
+func DeleteCalendarEventWithRequest(ctx context.Context, connection *Client, calendarId, id, requestId string) error {
+	var response struct {
+		DeleteCalendarEvent bool `json:"DeleteCalendarEvent"`
+	}
+	return connection.Execute(ctx, DocumentDeleteCalendarEventWithRequest,
+		map[string]any{"calendarId": calendarId, "id": id, "requestId": requestId}, &response)
 }

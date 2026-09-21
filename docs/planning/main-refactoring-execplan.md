@@ -35,7 +35,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
-- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, dashboard/agent event-create retries and deletion retry integration, contact protocol adapters, knowledge-source and rule-update commands remain.
+- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, dashboard/agent calendar mutation retries, contact protocol adapters, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
@@ -194,6 +194,13 @@ a milestone fixing behavior that is already correct.
 
 ## Decision Log
 
+Calendar deletion now uses optional retained request IDs and the same atomic
+receipt as saves and answers. The receipt remembers whether cancellation required
+mail-send permission, which replay checks even after the calendar is gone. The
+CLI remove command checks a supplied request ID before reading calendars or the
+event, and verifies that the receipt names a deletion of the requested event.
+This lets accepted deletion recovery succeed without recreating a default
+calendar or requiring an event that was already removed.
 RSVP request recovery uses the same calendar receipt transaction as event saves.
 The invitation adapter still verifies access to the current mailbox item before
 replay, and checks calendar-use and mail-send. Receipt lookup for answer operations
@@ -1751,3 +1758,29 @@ builds, repository lint, gogolint and both Go binary builds pass. The final Chro
 run after review again records one send across reload and retry, without runtime
 exceptions. An earlier harness retry checked document.body during navigation;
 the harness now waits safely for the new document before inspecting the card.
+
+
+DeleteCalendarEvent accepts optional requestId without changing legacy callers.
+The command removes the event, accepts cancellation mail when needed, and records
+completion in one transaction. A repeated request returns true without touching
+organizer resolution, event content or notification acceptance. Changed targets
+conflict. Tests cover replay before and after calendar deletion, revoked send
+permission, personal deletion without mail-send, and receipt insert failure that
+restores both event and mail. Existing cancellation/delete-failure coverage remains.
+The Go client keeps its legacy document and adds an identified delete method.
+CLI remove prints its generated identity before mutation; explicit retry looks
+up completion before any calendar/event reads. A lost-response transport fixture
+proves one mutation and one calendar read across the original removal and retry.
+
+Remaining calendar work includes dashboard save/delete recovery, agent caller
+identities, and durable cancellation of pending requests that cannot complete.
+The latter must not discard an uncertain ID while a concurrent original request
+can still commit. Full protocol parity and final deployment verification remain
+required alongside the other unfinished milestones.
+
+
+Deletion validation: all 369 affected calendar, API, client and CLI tests pass
+under the race detector. The lost-response CLI regression passes again after
+making its synthetic server's captured identifier explicitly synchronized.
+Repository lint, gogolint and both binary builds pass. The preceding full suite
+remains 1,946 standard-PostgreSQL tests with two skips; this step changes no UI.
