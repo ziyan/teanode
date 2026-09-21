@@ -1,13 +1,32 @@
 package apigraph
 
 import (
+	"math"
 	"strings"
 	"testing"
 
 	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/graphql/language/ast"
 
 	"github.com/ziyan/teanode/internal/config"
 )
+
+func TestGraphPageSizeBoundsIntegerConversion(test *testing.T) {
+	schema := graphWorkSchema(test)
+	field := schema.QueryType().Fields()["items"]
+	selected := &ast.Field{Arguments: []*ast.Argument{{
+		Name:  &ast.Name{Value: "first"},
+		Value: &ast.Variable{Name: &ast.Name{Value: "size"}},
+	}}}
+	for _, pageSize := range []interface{}{int64(math.MaxInt32) + 1, float64(math.MaxInt32) + 1, int64(math.MaxInt64)} {
+		if _, err := graphPageSize(field, selected, map[string]interface{}{"size": pageSize}, math.MaxInt); err == nil {
+			test.Errorf("accepted oversized page %v", pageSize)
+		}
+	}
+	if pageSize, err := graphPageSize(field, selected, map[string]interface{}{"size": int64(math.MaxInt32)}, math.MaxInt); err != nil || pageSize != math.MaxInt32 {
+		test.Fatalf("maximum signed 32-bit page = %d, %v", pageSize, err)
+	}
+}
 
 func graphWorkSchema(test *testing.T) graphql.Schema {
 	test.Helper()
