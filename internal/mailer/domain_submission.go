@@ -28,15 +28,9 @@ type DomainSubmissionPreparer func(context.Context, db.Transaction, *models.Doma
 // SubmitDomain accepts once for an account or the console, under domain-manage
 // permission. Unlike mailbox sends, it has no later mailbox work to reconcile.
 func (self *SubmissionCoordinator) SubmitDomain(ctx context.Context, principal *access.Principal, request DomainSubmissionRequest, prepare DomainSubmissionPreparer) (*models.DomainSubmission, error) {
-	if principal == nil || principal.Permissions == nil || !principal.Permissions.HasOverDomain(models.PermissionDomainManage, request.DomainID) {
-		return nil, db.ErrNotFound
-	}
-	principalId := "console"
-	if !principal.Console {
-		if principal.User == nil || principal.User.ID == "" {
-			return nil, db.ErrNotFound
-		}
-		principalId = "user:" + principal.User.ID
+	principalId, err := domainSubmissionPrincipal(principal, request.DomainID)
+	if err != nil {
+		return nil, err
 	}
 	if len(request.RequestContent) == 0 {
 		return nil, fmt.Errorf("%w: submission content is required", db.ErrInvalidArguments)
@@ -49,7 +43,7 @@ func (self *SubmissionCoordinator) SubmitDomain(ctx context.Context, principal *
 	_, _ = digest.Write(request.RequestContent)
 	requestDigest := hex.EncodeToString(digest.Sum(nil))
 	var accepted *models.DomainSubmission
-	err := self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
+	err = self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
 		domain, err := transaction.GetDomain(request.DomainID)
 		if err != nil {
 			return err
@@ -97,4 +91,45 @@ func (self *SubmissionCoordinator) SubmitDomain(ctx context.Context, principal *
 		return nil, err
 	}
 	return accepted, nil
+}
+
+// GetDomainSubmission reads only this principal's acceptance in an authorized domain.
+// A missing result is not cancellation: an in-flight send may still commit.
+func (self *SubmissionCoordinator) GetDomainSubmission(ctx context.Context, principal *access.Principal, domainId, submissionId string) (*models.DomainSubmission, error) {
+	principalId, err := domainSubmissionPrincipal(principal, domainId)
+	if err != nil {
+		return nil, err
+	}
+	var accepted *models.DomainSubmission
+	err = self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
+		domain, err := transaction.GetDomain(domainId)
+		if err != nil {
+			return err
+		}
+		if domain == nil {
+			return db.ErrNotFound
+		}
+		stored, err := transaction.GetDomainSubmission(principalId, submissionId)
+		if err != nil {
+			return err
+		}
+		if stored != nil && stored.DomainID == domainId {
+			accepted = stored
+		}
+		return nil
+	})
+	return accepted, err
+}
+
+func domainSubmissionPrincipal(principal *access.Principal, domainId string) (string, error) {
+	if principal == nil || principal.Permissions == nil || !principal.Permissions.HasOverDomain(models.PermissionDomainManage, domainId) {
+		return "", db.ErrNotFound
+	}
+	if principal.Console {
+		return "console", nil
+	}
+	if principal.User == nil || principal.User.ID == "" {
+		return "", db.ErrNotFound
+	}
+	return "user:" + principal.User.ID, nil
 }

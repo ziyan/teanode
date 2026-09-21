@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/mail"
 	"strings"
+	"time"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
@@ -16,6 +17,39 @@ import (
 	"github.com/ziyan/teanode/internal/util/mailparse"
 	"github.com/ziyan/teanode/internal/util/templating"
 )
+
+// SendQuery exposes the caller's domain send acceptance.
+type SendQuery interface {
+	GetDomainSubmission(ctx context.Context, arguments GetDomainSubmissionArguments) (*DomainSubmission, error)
+}
+
+// GetDomainSubmissionArguments identifies an account or console send.
+type GetDomainSubmissionArguments struct {
+	DomainID     string `json:"domainId"`
+	SubmissionID string `json:"submissionId"`
+}
+
+// DomainSubmission survives retention of the message itself.
+type DomainSubmission struct {
+	SubmissionID string    `json:"submissionId"`
+	MailID       string    `json:"mailId"`
+	AcceptedAt   time.Time `json:"acceptedAt"`
+}
+
+// GetDomainSubmission returns no message content or request parameters.
+func (self *graph) GetDomainSubmission(ctx context.Context, arguments GetDomainSubmissionArguments) (*DomainSubmission, error) {
+	if _, err := self.requireDomainPermission(ctx, models.PermissionDomainManage, arguments.DomainID); err != nil {
+		return nil, err
+	}
+	accepted, err := mailer.NewSubmissionCoordinator(self.transaction(ctx), self.mailer).GetDomainSubmission(ctx, api.ContextPrincipal(ctx), arguments.DomainID, arguments.SubmissionID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	if accepted == nil {
+		return nil, nil
+	}
+	return &DomainSubmission{SubmissionID: accepted.SubmissionID, MailID: accepted.MailID, AcceptedAt: accepted.AcceptedAt}, nil
+}
 
 type SendMutation interface {
 	// Send a message as an address at a Domain: a Template rendered with variables, or content written by hand

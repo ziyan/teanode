@@ -36,8 +36,19 @@ func (self *transaction) LockDomainSubmission(principalId, submissionId string) 
 	if err := self.tx.Exec("SELECT pg_advisory_xact_lock(?)", lockKey).Error; err != nil {
 		return nil, err
 	}
+	return readDomainSubmission(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}), principalId, submissionId)
+}
+
+func (self *transaction) GetDomainSubmission(principalId, submissionId string) (*models.DomainSubmission, error) {
+	if err := validateDomainSubmissionIdentity(principalId, submissionId); err != nil {
+		return nil, err
+	}
+	return readDomainSubmission(self.tx, principalId, submissionId)
+}
+
+func readDomainSubmission(query *gorm.DB, principalId, submissionId string) (*models.DomainSubmission, error) {
 	var stored domainSubmissionModel
-	err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("principal_id = ? AND submission_id = ?", principalId, submissionId).Take(&stored).Error
+	err := query.Where("principal_id = ? AND submission_id = ?", principalId, submissionId).Take(&stored).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}

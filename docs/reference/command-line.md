@@ -272,6 +272,13 @@ console, so retry with the same identity. This protects local acceptance, not
 exactly-once remote SMTP delivery. The identified command requires a server that
 supports `SendMail`'s `submissionId` argument.
 
+Use `mail submission <domain> <submission-id>` to check acceptance without the
+original files or template. It returns the accepted mail identifier even after
+mail retention removes the stored copy. Run it as the same account or console
+that sent the message. With `--json`, it returns the acceptance object or `null`.
+A missing result means no acceptance is recorded yet; an in-flight request may
+still commit, so retry with the same identifier and unchanged content.
+
 ### From a script, or an agent
 
 The same commands serve a script, with three differences that matter when

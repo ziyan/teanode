@@ -64,6 +64,10 @@ func TestDomainSendReplaysBeforeTemplateReadsAndPreservesAcceptanceAfterRetentio
 		if err != nil || replay == nil || replay.Mail != nil || replay.MailID != original.MailID || replay.SubmissionID != arguments.SubmissionID || sender.acceptCount != 1 {
 			test.Fatalf("replay=%+v, %v", replay, err)
 		}
+		lookup, err := resolver.GetDomainSubmission(ctx, GetDomainSubmissionArguments{DomainID: arguments.DomainID, SubmissionID: arguments.SubmissionID})
+		if err != nil || lookup == nil || lookup.MailID != original.MailID {
+			test.Fatalf("lookup after retention=%+v, %v", lookup, err)
+		}
 		arguments.MessageParameters.Subject = "Changed"
 		if _, err := resolver.SendMail(ctx, arguments); !errors.Is(err, api.ErrInvalidArguments) {
 			test.Fatalf("changed request=%v", err)
@@ -74,6 +78,7 @@ func TestDomainSendReplaysBeforeTemplateReadsAndPreservesAcceptanceAfterRetentio
 func TestDomainSendSchemaSupportsLegacyAndIdentifiedRequests(test *testing.T) {
 	resolver := &graph{schema: buildSchemaForValidation(test)}
 	for _, document := range []string{
+		`query ($domainId: String!, $submissionId: String!) { GetDomainSubmission(domainId: $domainId, submissionId: $submissionId) { submissionId mailId acceptedAt } }`,
 		`mutation ($domainId: String!, $messageParameters: MessageParametersInput!) { SendMail(domainId: $domainId, messageParameters: $messageParameters) { mail { id } } }`,
 		`mutation ($domainId: String!, $submissionId: String, $messageParameters: MessageParametersInput!) { SendMail(domainId: $domainId, submissionId: $submissionId, messageParameters: $messageParameters) { submissionId mailId mail { id } } }`,
 	} {

@@ -268,3 +268,25 @@ func SendMailWithSubmission(ctx context.Context, connection *Client, domainId, s
 	}
 	return response.SendMail, nil
 }
+
+// DomainSubmission identifies locally accepted mail after the stored copy expires.
+type DomainSubmission struct {
+	SubmissionID string    `json:"submissionId"`
+	MailID       string    `json:"mailId"`
+	AcceptedAt   time.Time `json:"acceptedAt"`
+}
+
+// GetDomainSubmission checks this account's send without reading or sending content.
+// A nil result does not prevent an in-flight send from committing later.
+func GetDomainSubmission(ctx context.Context, connection *Client, domainId, submissionId string) (*DomainSubmission, error) {
+	var response struct {
+		GetDomainSubmission *DomainSubmission `json:"GetDomainSubmission"`
+	}
+	query := `query ($domainId: String!, $submissionId: String!) {
+		GetDomainSubmission(domainId: $domainId, submissionId: $submissionId) { submissionId mailId acceptedAt }
+	}`
+	if err := connection.Execute(ctx, query, map[string]any{"domainId": domainId, "submissionId": submissionId}, &response); err != nil {
+		return nil, err
+	}
+	return response.GetDomainSubmission, nil
+}

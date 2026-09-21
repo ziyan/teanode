@@ -82,3 +82,42 @@ func TestMailSendRetainsAnIdentifierForExplicitRetries(test *testing.T) {
 		})
 	}
 }
+
+func TestMailSubmissionChecksAcceptanceWithoutMessageInputs(test *testing.T) {
+	for _, result := range []string{`null`, `{"submissionId":"fixture-request","mailId":"accepted-mail","acceptedAt":"2020-01-01T00:00:00Z"}`} {
+		test.Run(result, func(test *testing.T) {
+			var lookupCount atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				var document struct {
+					Query     string         `json:"query"`
+					Variables map[string]any `json:"variables"`
+				}
+				if err := json.NewDecoder(request.Body).Decode(&document); err != nil {
+					test.Error(err)
+					response.WriteHeader(400)
+					return
+				}
+				response.Header().Set("Content-Type", "application/json")
+				if strings.Contains(document.Query, "ListDomains") {
+					_, _ = response.Write([]byte(`{"data":{"ListDomains":[{"id":"domain-fixture","domain":"example.com"}]}}`))
+					return
+				}
+				if !strings.Contains(document.Query, "GetDomainSubmission") || strings.Contains(document.Query, "mutation") || document.Variables["domainId"] != "domain-fixture" || document.Variables["submissionId"] != "fixture-request" {
+					test.Errorf("unexpected operation: %+v", document)
+					response.WriteHeader(400)
+					return
+				}
+				lookupCount.Add(1)
+				_, _ = response.Write([]byte(`{"data":{"GetDomainSubmission":` + result + `}}`))
+			}))
+			defer server.Close()
+			command := &cli.Command{Name: "fixture", Flags: []cli.Flag{&cli.StringFlag{Name: "url", Value: server.URL}, &cli.StringFlag{Name: "token", Value: "fixture-token"}}, Commands: []*cli.Command{NewMailCommand()}}
+			if err := command.Run(test.Context(), []string{"fixture", "mail", "submission", "example.com", "fixture-request", "--json"}); err != nil {
+				test.Fatal(err)
+			}
+			if lookupCount.Load() != 1 {
+				test.Fatalf("lookup count=%d", lookupCount.Load())
+			}
+		})
+	}
+}

@@ -28,6 +28,13 @@ func NewMailCommand() *cli.Command {
 		Usage: "the messages this server has handled, and sending one",
 		Commands: []*cli.Command{
 			{
+				Name:      "submission",
+				Usage:     "check whether this account's send was accepted",
+				ArgsUsage: "<domain> <submission-id>",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runMailSubmission,
+			},
+			{
 				Name:  "list",
 				Usage: "list handled mail, newest first",
 				Description: "Every filter narrows the list in the database, so the numbers describe\n" +
@@ -660,4 +667,31 @@ func readFileOrStdin(file string) ([]byte, error) {
 		return nil, fmt.Errorf("cannot read %s: %w", file, err)
 	}
 	return content, nil
+}
+
+func runMailSubmission(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 2 {
+		return usage("usage: teanode mail submission <domain> <submission-id>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	domain, err := requireDomain(ctx, command, connection, command.Args().First())
+	if err != nil {
+		return err
+	}
+	accepted, err := client.GetDomainSubmission(ctx, connection, domain.ID, command.Args().Get(1))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(accepted)
+	}
+	if accepted == nil {
+		fmt.Println("no acceptance recorded yet; an in-flight send may still complete. Retry only with the same submission ID and unchanged content")
+		return nil
+	}
+	fmt.Printf("accepted %s at %s; 'teanode mail get %s' follows its delivery while the stored copy remains available\n", accepted.MailID, formatTime(&accepted.AcceptedAt), accepted.MailID)
+	return nil
 }

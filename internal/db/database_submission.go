@@ -19,6 +19,8 @@ import (
 // SubmissionOperation keeps local acceptance and later mailbox reconciliation
 // in the same database as mail. Callers must bind a retry to its request digest.
 type SubmissionOperation interface {
+	// GetDomainSubmission reads acceptance without waiting for an in-flight send.
+	GetDomainSubmission(principalId, submissionId string) (*models.DomainSubmission, error)
 	// LockDomainSubmission serializes an account or console identity until commit.
 	LockDomainSubmission(principalId, submissionId string) (*models.DomainSubmission, error)
 	CreateDomainSubmission(submission *models.DomainSubmission) error

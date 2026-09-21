@@ -10,6 +10,7 @@ package apigraph
 
 // Query is every read operation.
 type Query interface {
+	SendQuery
 	DomainQuery
 	AliasQuery
 	UserQuery

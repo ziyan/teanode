@@ -33,7 +33,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities; deployment gates and cross-adapter review remain.
+- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
@@ -186,6 +186,13 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: expose domain acceptance as a read-only query and a separate CLI
+`mail submission` command. Do not silently turn a retry with changed content
+into a lookup success. Retain principal and domain authorization, and explain
+that an absent record cannot cancel an in-flight send. Rationale: recovery
+must work without original input files while keeping retry conflicts visible.
+Date: 2026-09-21.
 
 Decision: store domain submissions separately in migration 0094 and add
 `SubmissionCoordinator.SubmitDomain`. Preserve domain-manage authorization and
@@ -1354,3 +1361,34 @@ CLI and exchange tests pass, as do lint and gogolint. The legacy client wire-sha
 regression is verified separately after review restored that compatibility.
 Full deployment, domain identity-only lookup, remaining application commands and
 the other open milestones remain required; this does not close Milestone 4.
+
+
+Revision note: domain acceptance now has a read-only lookup shared by the API and
+CLI. `GetDomainSubmission` checks the current domain-manage permission and the
+same account/console namespace used by acceptance, returns only the submission,
+mail identifier and acceptance time, and does not expose request content. It
+continues to work after stored mail or templates have been removed. Database
+reads do not acquire the submission advisory lock; an uncommitted send is absent
+from the result and may still commit. Lookup is not cancellation.
+
+The separate `mail submission <domain> <submission-id>` command requires no
+message inputs and never sends. Keeping lookup separate preserves digest checks
+on `mail send --submission-id` even if the caller changes content after a lost
+response. JSON output is the acceptance object or null; human output explicitly
+explains that a missing result does not rule out an in-flight acceptance. This
+closes the domain identity-only recovery gap recorded above, while full
+cross-adapter and deployment validation remain open.
+
+Tests cover lookup after retention, other-account and console isolation, another
+authorized domain, revoked permissions, an unknown identity and a concurrent
+uncommitted send. The GraphQL shape and CLI query-only path are tested with no
+message inputs. During validation a timestamp formatting type mismatch was
+caught at compile time and fixed to match the existing formatter signature.
+
+
+Validation update: the complete standard-PostgreSQL race suite passes with 1,897
+tests and two expected skips. Focused acceptance/lookup race tests, both binary
+builds, CLI help, repository lint and gogolint pass. Lint was rerun successfully
+after restoring the installed Node executable to the shell path. No dashboard
+behavior changed in this lookup increment; the earlier focused Chrome evidence
+still applies, and the full disposable-server audit remains outstanding.

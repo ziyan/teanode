@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/access"
 	"github.com/ziyan/teanode/internal/db"
@@ -136,5 +137,81 @@ func TestDomainSubmissionSeparatesConsoleAndAccountsAndChecksPermissions(test *t
 		return &mailparse.Envelope{DomainID: "other-domain"}, &Message{}, nil
 	}); !errors.Is(err, db.ErrInvalidArguments) {
 		test.Fatalf("foreign domain=%v", err)
+	}
+}
+
+func TestDomainSubmissionLookupScopesIdentityAndSurvivesRetention(test *testing.T) {
+	database, principal, request, acceptor := domainSubmissionFixture(test)
+	coordinator := NewSubmissionCoordinator(database, acceptor)
+	original, err := coordinator.SubmitDomain(test.Context(), principal, request, prepareDomainFixture)
+	if err != nil {
+		test.Fatal(err)
+	}
+	otherDomainId := ""
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if err := transaction.DeleteMail(original.MailID, nil); err != nil {
+			test.Fatal(err)
+		}
+		domain, err := transaction.CreateDomain(&models.Domain{Domain: "example.net"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		otherDomainId = domain.ID
+	})
+	accepted, err := coordinator.GetDomainSubmission(test.Context(), principal, request.DomainID, request.SubmissionID)
+	if err != nil || accepted == nil || accepted.MailID != original.MailID {
+		test.Fatalf("lookup=%+v, %v", accepted, err)
+	}
+	for _, actor := range []*access.Principal{
+		{Console: true, Permissions: principal.Permissions},
+		{User: &models.User{ID: "different-account"}, Permissions: principal.Permissions},
+	} {
+		accepted, err := coordinator.GetDomainSubmission(test.Context(), actor, request.DomainID, request.SubmissionID)
+		if err != nil || accepted != nil {
+			test.Fatalf("other principal saw acceptance: %+v, %v", accepted, err)
+		}
+	}
+	denied := &access.Principal{User: principal.User, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailSend}})}
+	if _, err := coordinator.GetDomainSubmission(test.Context(), denied, request.DomainID, request.SubmissionID); !errors.Is(err, db.ErrNotFound) {
+		test.Fatalf("permission=%v", err)
+	}
+	otherDomainPrincipal := &access.Principal{User: principal.User, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionDomainManage, DomainID: otherDomainId}})}
+	if accepted, err := coordinator.GetDomainSubmission(test.Context(), otherDomainPrincipal, otherDomainId, request.SubmissionID); err != nil || accepted != nil {
+		test.Fatalf("other domain saw acceptance: %+v, %v", accepted, err)
+	}
+	if accepted, err := coordinator.GetDomainSubmission(test.Context(), principal, request.DomainID, "missing"); err != nil || accepted != nil {
+		test.Fatalf("missing=%+v, %v", accepted, err)
+	}
+}
+
+func TestDomainSubmissionLookupDoesNotWaitForUncommittedAcceptance(test *testing.T) {
+	database, principal, request, acceptor := domainSubmissionFixture(test)
+	isPrepared := make(chan struct{})
+	canCommit := make(chan struct{})
+	completed := make(chan error, 1)
+	go func() {
+		completed <- database.TransactionContext(test.Context(), func(transaction db.Transaction) error {
+			_, err := NewSubmissionCoordinator(transaction, acceptor).SubmitDomain(test.Context(), principal, request, prepareDomainFixture)
+			close(isPrepared)
+			<-canCommit
+			return err
+		})
+	}()
+	defer func() {
+		close(canCommit)
+		if err := <-completed; err != nil {
+			test.Error(err)
+		}
+	}()
+	select {
+	case <-isPrepared:
+	case <-time.After(5 * time.Second):
+		test.Fatal("acceptance did not prepare")
+	}
+	ctx, cancel := context.WithTimeout(test.Context(), 2*time.Second)
+	defer cancel()
+	accepted, err := NewSubmissionCoordinator(database, acceptor).GetDomainSubmission(ctx, principal, request.DomainID, request.SubmissionID)
+	if err != nil || accepted != nil {
+		test.Fatalf("uncommitted lookup=%+v, %v", accepted, err)
 	}
 }
