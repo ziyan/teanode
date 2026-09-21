@@ -163,6 +163,7 @@ func TestDomainSubmissionQueuesWithoutAMailbox(test *testing.T) {
 			if err != nil {
 				test.Fatal(err)
 			}
+			test.Cleanup(func() { _ = spool.Close() })
 			exchange, _ := submissionExchange(test, database, spool)
 			exchange.deliveryWake = make(chan struct{}, 1)
 			injectedErr := errors.New("parent rollback")

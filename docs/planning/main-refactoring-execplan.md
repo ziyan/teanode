@@ -1392,3 +1392,34 @@ builds, CLI help, repository lint and gogolint pass. Lint was rerun successfully
 after restoring the installed Node executable to the shell path. No dashboard
 behavior changed in this lookup increment; the earlier focused Chrome evidence
 still applies, and the full disposable-server audit remains outstanding.
+
+
+Revision note: the shared-storage acceptance gate now uses a local HTTP object
+store with two independently constructed S3 clients and two independent database
+pools. One exchange accepts and queues mail; the second resolves committed mail
+metadata through its own pool and fetches the exact body through its own client,
+with no local spool. A denied mandatory object write leaves no mail, Sent item,
+queued delivery or commit wakeup even when the outer transaction commits. After
+the object store recovers, acceptance creates one object and one wakeup. This
+extends the existing injected-storage test to cover actual SDK configuration and
+HTTP serialization. It does not claim a full two-process deployment audit.
+
+Review also found an unclosed test spool in the domain acceptance fixture; its
+cleanup now stops the retention lifecycle. Lint caught a copied synchronization
+map in the initial two-instance fixture, fixed by constructing a fresh directory
+around the common configuration source. The exchanges do not start external mail
+delivery, and all object-store traffic stays inside the local integration fixture.
+
+
+Validation update: focused shared-storage, domain acceptance and storage-mode
+regressions pass under the race detector, and repository lint including gogolint
+passes. The preceding complete suite remains 1,897 tests on standard PostgreSQL;
+the new integration test was verified separately against the disposable database.
+The full process-level deployment and Chrome gates are still open.
+
+Next command-boundary finding: draft save still calls Mailer.Compose, which
+opens and commits its own database transaction, before storing the draft in the
+resolver transaction. Draft composition can create media rows. The draft command
+must bind composition, new mail/item/search rows and replacement cleanup to one
+command scope so a late failure cannot leave committed composition metadata.
+The multipart upload adapter shares this path and must retain its behavior.
