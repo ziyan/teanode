@@ -33,7 +33,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; domain send adapters and deployment gates remain.
+- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
@@ -41,6 +41,16 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+The domain send endpoint called legacy Mailer.Send and then searched by envelope
+identifier after that independent transaction committed. Its authorization is
+domain management, including a host console with no account or mailbox, so routing
+it through the owned-mailbox coordinator would remove existing capabilities.
+Domain acceptance now shares transactional composition and queued dispatch but
+records a separate principal-scoped identity. Template rendering happens only
+for a new request, so retry does not depend on a template that has since changed
+or been removed. The declared domain is checked against composition before an
+envelope can reach acceptance.
 
 The composer could resume autosave after a lost send response, rewriting the
 draft identifier referenced by a retry. It now persists the exact request before
@@ -176,6 +186,17 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: store domain submissions separately in migration 0094 and add
+`SubmissionCoordinator.SubmitDomain`. Preserve domain-manage authorization and
+separate the console identity from user identifiers. Domain requests have no
+Sent-folder cleanup or reply flags, so they do not join mailbox reconciliation.
+An optional API identifier keeps old calls valid; the CLI generates or accepts
+one and prints it before the request, then includes it in failure guidance.
+Keep the existing Go client's SendMail wire shape for older servers and expose
+SendMailWithSubmission for identified calls. Rationale: domain operators need
+retry protection without becoming mailbox owners or weakening permissions.
+Date: 2026-09-21.
 
 Decision: retain one unresolved mailbox send per account in the current tab's
 session storage, including its identifier, exact API parameters and attachment
@@ -1297,3 +1318,39 @@ against a running server and is not part of the build; run it during the pending
 disposable deployment gate. Do not interpret the synthetic Chrome fixture as
 schema validation. The server's existing schema tests cover the send, lookup and
 cancellation operation shapes used by the new hook.
+
+Revision note: the domain SendMail resolver now hashes typed request parameters,
+uses the shared coordinator's domain command, prepares templates and attachments
+inside that command and returns the accepted mail identifier directly. It no
+longer dispatches through an independent legacy transaction or searches afterward
+by envelope identifier. Domain identity records survive mail retention. The
+transactional mailer and exchange now accept an explicitly authorized domain
+without a mailbox, and composition cannot replace that domain. Committed queued
+deliveries use the existing bounded worker and commit wakeup.
+
+The CLI's `--submission-id` flag and identified client method carry the same
+request across retries. A generated identifier is printed to standard error
+before sending and included in errors. Existing JSON output remains the Mail
+shape, and the legacy Go client method keeps its prior wire shape. The API also
+returns stable submissionId and mailId when mail retention leaves Mail null.
+CLI retries require unchanged local files, stdin content and template resolution;
+the server's retained acceptance does not itself preserve those client inputs.
+A separate identity-only domain lookup would improve recovery when such inputs
+are unavailable and remains part of cross-adapter review before closing this
+milestone.
+
+Tests cover concurrent domain acceptance once, replay after retention without
+preparation, changed content refusal, console/account separation, current domain
+permission checks, rollback after a real final SQL constraint failure, template
+deletion before API replay, legacy and identified GraphQL shapes, declared-domain
+composition checks, queued domain delivery without a mailbox and rollback before
+dispatch. A local HTTP CLI test loses the first response and verifies that explicit
+and generated identifiers produce identical retry parameters. Reverse migration
+testing proves that acceptance records are removed while stored mail survives.
+
+Validation update: the complete vector-enabled race suite passes with 1,891
+tests and one expected browser integration skip. Focused domain, API, migration,
+CLI and exchange tests pass, as do lint and gogolint. The legacy client wire-shape
+regression is verified separately after review restored that compatibility.
+Full deployment, domain identity-only lookup, remaining application commands and
+the other open milestones remain required; this does not close Milestone 4.

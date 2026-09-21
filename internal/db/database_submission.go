@@ -19,6 +19,9 @@ import (
 // SubmissionOperation keeps local acceptance and later mailbox reconciliation
 // in the same database as mail. Callers must bind a retry to its request digest.
 type SubmissionOperation interface {
+	// LockDomainSubmission serializes an account or console identity until commit.
+	LockDomainSubmission(principalId, submissionId string) (*models.DomainSubmission, error)
+	CreateDomainSubmission(submission *models.DomainSubmission) error
 	// GetSubmission reads a committed acceptance without claiming or locking it.
 	GetSubmission(ownerId, submissionId string) (*models.Submission, error)
 	// LockSubmission serializes this owner's identifier through transaction end,

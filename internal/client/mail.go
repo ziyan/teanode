@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -227,20 +228,43 @@ type MessageParameters struct {
 	Attachments []*AttachmentParameters `json:"attachments,omitempty"`
 }
 
-// SendMail sends a message as an address at a domain, and returns it as
-// stored, or nil when it was sent but not found afterwards.
+// MailSubmission names durable acceptance even when the stored mail has expired.
+type MailSubmission struct {
+	SubmissionID string `json:"submissionId"`
+	MailID       string `json:"mailId"`
+	Mail         *Mail  `json:"mail"`
+}
+
+// SendMail sends a fresh message using the legacy wire shape. Use
+// SendMailWithSubmission when the caller retains an identifier for retries.
 func SendMail(ctx context.Context, connection *Client, domainId string, message *MessageParameters) (*Mail, error) {
-	var result struct {
+	var response struct {
 		SendMail struct {
 			Mail *Mail `json:"mail"`
 		} `json:"SendMail"`
 	}
 	query := `mutation ($domainId: String!, $messageParameters: MessageParametersInput!) {
-		SendMail(domainId: $domainId, messageParameters: $messageParameters) { mail ` + mailFields + ` }
-	}`
-	variables := map[string]any{"domainId": domainId, "messageParameters": message}
-	if err := connection.Execute(ctx, query, variables, &result); err != nil {
+  SendMail(domainId: $domainId, messageParameters: $messageParameters) { mail ` + mailFields + ` }
+ }`
+	if err := connection.Execute(ctx, query, map[string]any{"domainId": domainId, "messageParameters": message}, &response); err != nil {
 		return nil, err
 	}
-	return result.SendMail.Mail, nil
+	return response.SendMail.Mail, nil
+}
+
+// SendMailWithSubmission reuses one identifier and unchanged parameters on retry.
+func SendMailWithSubmission(ctx context.Context, connection *Client, domainId, submissionId string, message *MessageParameters) (*MailSubmission, error) {
+	var response struct {
+		SendMail *MailSubmission `json:"SendMail"`
+	}
+	query := `mutation ($domainId: String!, $submissionId: String, $messageParameters: MessageParametersInput!) {
+  SendMail(domainId: $domainId, submissionId: $submissionId, messageParameters: $messageParameters) { submissionId mailId mail ` + mailFields + ` }
+ }`
+	if err := connection.Execute(ctx, query, map[string]any{"domainId": domainId, "submissionId": submissionId, "messageParameters": message}, &response); err != nil {
+		return nil, err
+	}
+	if response.SendMail == nil {
+		return nil, fmt.Errorf("server returned no submission")
+	}
+	return response.SendMail, nil
 }

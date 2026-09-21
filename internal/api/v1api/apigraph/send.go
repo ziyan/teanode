@@ -2,6 +2,8 @@ package apigraph
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/mail"
@@ -11,7 +13,6 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
-	"github.com/ziyan/teanode/internal/util/aggregate"
 	"github.com/ziyan/teanode/internal/util/mailparse"
 	"github.com/ziyan/teanode/internal/util/templating"
 )
@@ -74,6 +75,8 @@ type MessageParameters struct {
 }
 
 type SendMailArguments struct {
+	// SubmissionID identifies one request across retries; omit for a fresh send.
+	SubmissionID string `json:"submissionId" graphapi:"nullable"`
 	// ID of the Domain to send as
 	DomainID string `json:"domainId"`
 
@@ -81,6 +84,8 @@ type SendMailArguments struct {
 }
 
 type SendMailReturnValue struct {
+	SubmissionID string `json:"submissionId"`
+	MailID       string `json:"mailId"`
 	// The message as stored, once it has been accepted
 	Mail *models.Mail `json:"mail"`
 }
@@ -93,18 +98,37 @@ func (self *graph) SendMail(ctx context.Context, arguments SendMailArguments) (*
 	if err != nil {
 		return nil, err
 	}
-	tx := api.ContextTransaction(ctx)
-	parameters := &arguments.MessageParameters
+	requestContent, err := json.Marshal(arguments.MessageParameters)
+	if err != nil {
+		return nil, err
+	}
+	accepted, err := mailer.NewSubmissionCoordinator(self.transaction(ctx), self.mailer).SubmitDomain(ctx, api.ContextPrincipal(ctx), mailer.DomainSubmissionRequest{SubmissionID: arguments.SubmissionID, DomainID: domain.ID, RequestContent: requestContent}, func(ctx context.Context, transaction db.Transaction, domain *models.Domain) (*mailparse.Envelope, *mailer.Message, error) {
+		return self.prepareDomainSubmission(ctx, transaction, domain, &arguments.MessageParameters)
+	})
+	if errors.Is(err, mailer.ErrSubmissionConflict) {
+		return nil, fmt.Errorf("%w: submission identifier already used for different content", api.ErrInvalidArguments)
+	}
+	if err != nil {
+		return nil, translateError(err)
+	}
+	stored, err := self.transaction(ctx).GetMail(accepted.MailID, &db.Options{Columns: mailColumns})
+	if err != nil {
+		return nil, err
+	}
+	return &SendMailReturnValue{SubmissionID: accepted.SubmissionID, MailID: accepted.MailID, Mail: stored}, nil
+}
+
+func (self *graph) prepareDomainSubmission(ctx context.Context, transaction db.Transaction, domain *models.Domain, parameters *MessageParameters) (*mailparse.Envelope, *mailer.Message, error) {
 
 	// The sender is an address at this domain. Anything else would be
 	// signed with a key for a domain it does not belong to, which receivers
 	// rightly refuse.
 	fromAddress, err := mail.ParseAddress(parameters.From)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %q is not an address", api.ErrInvalidArguments, parameters.From)
+		return nil, nil, fmt.Errorf("%w: %q is not an address", api.ErrInvalidArguments, parameters.From)
 	}
 	if _, fromDomain := mailparse.SplitAddress(fromAddress.Address); fromDomain != domain.Domain {
-		return nil, fmt.Errorf("%w: the sender has to be an address at %s", api.ErrInvalidArguments, domain.Domain)
+		return nil, nil, fmt.Errorf("%w: the sender has to be an address at %s", api.ErrInvalidArguments, domain.Domain)
 	}
 	fromName := parameters.FromName
 	if fromName == "" {
@@ -113,22 +137,22 @@ func (self *graph) SendMail(ctx context.Context, arguments SendMailArguments) (*
 
 	to, err := parseAddresses(parameters.To)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	cc, err := parseAddresses(parameters.Cc)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	bcc, err := parseAddresses(parameters.Bcc)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(to)+len(cc)+len(bcc) == 0 {
-		return nil, fmt.Errorf("%w: a message needs a recipient", api.ErrInvalidArguments)
+		return nil, nil, fmt.Errorf("%w: a message needs a recipient", api.ErrInvalidArguments)
 	}
 
 	if parameters.Locale != "" && !templating.ValidLocale(parameters.Locale) {
-		return nil, fmt.Errorf("%w: %q is not a language tag such as en or zh-CN", api.ErrInvalidArguments, parameters.Locale)
+		return nil, nil, fmt.Errorf("%w: %q is not a language tag such as en or zh-CN", api.ErrInvalidArguments, parameters.Locale)
 	}
 
 	// The same limit the SMTP listener applies, so what can be sent from
@@ -141,11 +165,11 @@ func (self *graph) SendMail(ctx context.Context, arguments SendMailArguments) (*
 			continue
 		}
 		if strings.TrimSpace(attachment.Filename) == "" {
-			return nil, fmt.Errorf("%w: an attachment needs a filename", api.ErrInvalidArguments)
+			return nil, nil, fmt.Errorf("%w: an attachment needs a filename", api.ErrInvalidArguments)
 		}
 		total += uint64(len(attachment.Content))
 		if limit > 0 && total > limit {
-			return nil, fmt.Errorf("%w: the attachments come to more than the %d bytes a message may be", api.ErrInvalidArguments, limit)
+			return nil, nil, fmt.Errorf("%w: the attachments come to more than the %d bytes a message may be", api.ErrInvalidArguments, limit)
 		}
 		attachments = append(attachments, &mailparse.Attachment{
 			Filename:    attachment.Filename,
@@ -166,20 +190,20 @@ func (self *graph) SendMail(ctx context.Context, arguments SendMailArguments) (*
 	}
 
 	if parameters.TemplateID != "" {
-		template, err := tx.GetTemplate(parameters.TemplateID, nil)
+		template, err := transaction.GetTemplate(parameters.TemplateID, nil)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if template == nil || template.DomainID != domain.ID {
-			return nil, fmt.Errorf("%w: no such template", api.ErrNotFound)
+			return nil, nil, fmt.Errorf("%w: no such template", api.ErrNotFound)
 		}
-		layout, err := self.requireLayoutOfDomain(tx, domain.ID, template.LayoutID)
+		layout, err := self.requireLayoutOfDomain(transaction, domain.ID, template.LayoutID)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		rendered, err := mailer.Render(template, layout, parameters.Locale, parameters.Variables)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+			return nil, nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 		}
 		if message.Subject == "" {
 			message.Subject = rendered.Subject
@@ -191,11 +215,11 @@ func (self *graph) SendMail(ctx context.Context, arguments SendMailArguments) (*
 		message.Text = parameters.TextContent
 		message.HTML = parameters.HTMLContent
 		if strings.TrimSpace(message.Text) == "" && strings.TrimSpace(message.HTML) == "" && len(attachments) == 0 {
-			return nil, fmt.Errorf("%w: a message needs a body or an attachment", api.ErrInvalidArguments)
+			return nil, nil, fmt.Errorf("%w: a message needs a body or an attachment", api.ErrInvalidArguments)
 		}
 	}
 
-	envelope := &mailparse.Envelope{}
+	envelope := &mailparse.Envelope{DomainID: domain.ID}
 	if request := api.ContextRequest(ctx); request != nil {
 		host, _, err := net.SplitHostPort(request.RemoteAddr)
 		if err != nil {
@@ -206,31 +230,7 @@ func (self *graph) SendMail(ctx context.Context, arguments SendMailArguments) (*
 		envelope.TLS = request.TLS
 	}
 
-	if err := self.mailer.Send(ctx, envelope, message); err != nil {
-		return nil, err
-	}
-
-	// The exchange stored it under its own transaction. Find it by the
-	// envelope, which is the one identifier both sides hold.
-	mails, err := tx.ListMails(domain.ID, &db.Options{
-		Limit:   1,
-		Columns: mailColumns,
-		Aggregations: aggregate.Pipeline{{Match: &aggregate.Filter{
-			Operation: aggregate.OperationEqual,
-			Field:     "envelopeId",
-			Value:     &envelope.ID,
-		}}},
-	})
-	if err != nil {
-		return nil, err
-	}
-	if len(mails) == 0 {
-		// Sent, but not where the dashboard can show it. Saying so is
-		// better than failing what has already gone.
-		log.Warningf("sent envelope %q but found no stored mail for it", envelope.ID)
-		return &SendMailReturnValue{}, nil
-	}
-	return &SendMailReturnValue{Mail: mails[0]}, nil
+	return envelope, message, nil
 }
 
 // parseAddresses accepts each entry as an address or "Name <address>" and

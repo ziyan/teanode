@@ -109,3 +109,29 @@ func TestSubmissionCompositionUsesCallerTransactionForMedia(test *testing.T) {
 		})
 	}
 }
+
+func TestDomainAcceptanceCannotChangeTheAuthorizedDomain(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	var authorized *models.Domain
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		var err error
+		authorized, err = transaction.CreateDomain(&models.Domain{Domain: "example.com"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.CreateDomain(&models.Domain{Domain: "example.net"}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	exchange := &recordingSubmissionExchange{}
+	sender := &mailer{database: database, config: config.NewMemoryStore(config.Default()), exchange: exchange}
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if _, err := sender.AcceptSubmission(context.Background(), transaction, &mailparse.Envelope{DomainID: authorized.ID}, &Message{From: "sender@example.net", To: []string{"recipient@example.org"}, Text: "Fixture"}); err == nil {
+			test.Fatal("composition replaced the authorized domain")
+		}
+	})
+	if exchange.mailId != "" {
+		test.Fatal("another domain reached acceptance")
+	}
+}

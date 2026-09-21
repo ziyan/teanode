@@ -18,3 +18,14 @@ type Submission struct {
 	ReconciledAt   *time.Time
 	ReconcileAfter *time.Time
 }
+
+// DomainSubmission is acceptance by a domain operator or the host console.
+// PrincipalID separates account identifiers from the console's identity.
+type DomainSubmission struct {
+	PrincipalID   string
+	SubmissionID  string
+	DomainID      string
+	RequestDigest string
+	MailID        string
+	AcceptedAt    time.Time
+}

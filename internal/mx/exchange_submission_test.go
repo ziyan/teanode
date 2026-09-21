@@ -3,6 +3,7 @@ package mx
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -148,6 +149,56 @@ func TestSubmissionStorageAndSQLAcceptanceAreAtomic(test *testing.T) {
 			})
 			if (len(exchange.domainUsagesMap) > 0) != hasAccepted {
 				test.Fatalf("usage survived rolled-back acceptance: %+v", exchange.domainUsagesMap)
+			}
+		})
+	}
+}
+
+func TestDomainSubmissionQueuesWithoutAMailbox(test *testing.T) {
+	for _, shouldRollback := range []bool{false, true} {
+		test.Run(fmt.Sprint(shouldRollback), func(test *testing.T) {
+			database, closeDatabase := dbtest.AcquireDatabase(test)
+			defer closeDatabase()
+			spool, err := storage.Open(&storage.Settings{Directory: test.TempDir()})
+			if err != nil {
+				test.Fatal(err)
+			}
+			exchange, _ := submissionExchange(test, database, spool)
+			exchange.deliveryWake = make(chan struct{}, 1)
+			injectedErr := errors.New("parent rollback")
+			err = database.TransactionContext(context.Background(), func(transaction db.Transaction) error {
+				domain, err := transaction.GetDomainByName("example.com")
+				if err != nil {
+					return err
+				}
+				envelope := &mailparse.Envelope{ID: "domain-envelope", DomainID: domain.ID, Sender: "sender@example.com", Recipients: []string{"recipient@example.net"}, IP: net.IPv4(127, 0, 0, 1), ReceivedAt: time.Now(), Headers: []string{"From: sender@example.com\r\n", "To: recipient@example.net\r\n", "Message-ID: <domain-fixture@example.com>\r\n", "Content-Type: text/plain\r\n"}, Body: []byte("Fixture\r\n"), Size: 128}
+				accepted, err := exchange.AcceptSubmission(context.Background(), transaction, envelope)
+				if err != nil || accepted == nil {
+					test.Fatalf("domain acceptance=%+v, %v", accepted, err)
+				}
+				if len(exchange.deliveryWake) != 0 {
+					test.Fatal("dispatch woke before commit")
+				}
+				if shouldRollback {
+					return injectedErr
+				}
+				return nil
+			})
+			if shouldRollback && !errors.Is(err, injectedErr) || !shouldRollback && err != nil {
+				test.Fatal(err)
+			}
+			wanted := "1"
+			if shouldRollback {
+				wanted = "0"
+			}
+			if count := dbtest.QueryString(test, database, `SELECT count(*)::text FROM delivery WHERE retry_at IS NOT NULL`); count != wanted {
+				test.Fatalf("queued deliveries=%s", count)
+			}
+			if count := dbtest.QueryString(test, database, `SELECT count(*)::text FROM mail`); count != wanted {
+				test.Fatalf("accepted mail=%s", count)
+			}
+			if (len(exchange.deliveryWake) > 0) == shouldRollback {
+				test.Fatal("wake does not match commit")
 			}
 		})
 	}

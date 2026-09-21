@@ -261,6 +261,17 @@ count --by` is checked by the server, which knows every field. A list that
 stopped at `--first` says so on standard error, so a page is never mistaken
 for the whole.
 
+`mail send` prints its submission identifier on standard error before sending.
+If the response is lost, repeat the command with `--submission-id` set to that
+identifier and the same content, attachments, template and variables. The server
+returns the original acceptance instead of accepting another message. Reusing an
+identifier with changed parameters is refused; use a new identifier for a new
+message. Keep input files unchanged for the retry, including content originally
+read from standard input. The identifier is scoped to the account or the local
+console, so retry with the same identity. This protects local acceptance, not
+exactly-once remote SMTP delivery. The identified command requires a server that
+supports `SendMail`'s `submissionId` argument.
+
 ### From a script, or an agent
 
 The same commands serve a script, with three differences that matter when

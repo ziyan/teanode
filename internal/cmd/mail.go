@@ -17,6 +17,7 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/security"
 )
 
 // NewMailCommand builds "teanode mail": the messages this server has handled,
@@ -113,6 +114,7 @@ func NewMailCommand() *cli.Command {
 					"      --template welcome --variable name=Ann --locale en\n\n" +
 					"A file of \"-\" is read from standard input.",
 				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "submission-id", Usage: "reuse this identifier and unchanged message for a retry"},
 					&cli.StringFlag{Name: "from", Usage: "address to send as; has to be at the domain", Required: true},
 					&cli.StringFlag{Name: "from-name", Usage: "display name beside the address"},
 					&cli.StringSliceFlag{Name: "to", Usage: "recipient, an address or \"Name <address>\"; repeatable"},
@@ -593,15 +595,21 @@ func runMailSend(ctx context.Context, command *cli.Command) error {
 		return usage("what should it say? pass --text or --html with a file, or --template")
 	}
 
-	sent, err := client.SendMail(ctx, connection, domain.ID, message)
-	if err != nil {
-		return err
+	submissionId := command.String("submission-id")
+	if submissionId == "" {
+		submissionId = security.NewULID()
 	}
+	fmt.Fprintf(os.Stderr, "submission %s\n", submissionId)
+	accepted, err := client.SendMailWithSubmission(ctx, connection, domain.ID, submissionId, message)
+	if err != nil {
+		return fmt.Errorf("send failed; retry unchanged content with --submission-id %s: %w", submissionId, err)
+	}
+	sent := accepted.Mail
 	if command.Bool("json") {
 		return PrintJSON(sent)
 	}
 	if sent == nil {
-		fmt.Println("sent, but the stored copy could not be found afterwards")
+		fmt.Printf("accepted %s; the stored copy is no longer available\n", accepted.MailID)
 		return nil
 	}
 	fmt.Printf("sent %s to %s; 'teanode mail get %s' follows its delivery\n", sent.ID, strings.Join(message.To, ", "), sent.ID)

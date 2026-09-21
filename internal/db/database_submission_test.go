@@ -285,3 +285,38 @@ func TestSubmissionCancellationMigrationReversesAndReapplies(test *testing.T) {
 	}
 	test.Fatal("cancellation migration is missing")
 }
+
+func TestDomainSubmissionMigrationPreservesMailOnReverse(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	var mailId string
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		mail, err := transaction.CreateMail(&models.Mail{Subject: "Retained fixture"}, nil)
+		if err != nil {
+			test.Fatal(err)
+		}
+		mailId = mail.ID
+		if err := transaction.CreateDomainSubmission(&models.DomainSubmission{PrincipalID: "console", SubmissionID: "fixture", DomainID: "fixture-domain", RequestDigest: strings.Repeat("a", 64), MailID: mailId, AcceptedAt: time.Now()}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	for _, migration := range migrations.Migrations() {
+		if migration.ID != "0094_domain_submission" {
+			continue
+		}
+		dbtest.Exec(test, database, migration.ReverseSQL)
+		dbtest.Exec(test, database, migration.SQL)
+		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+			mail, err := transaction.GetMail(mailId, nil)
+			if err != nil || mail == nil {
+				test.Fatalf("mail after reverse=%+v, %v", mail, err)
+			}
+			accepted, err := transaction.LockDomainSubmission("console", "fixture")
+			if err != nil || accepted != nil {
+				test.Fatalf("recreated identity=%+v, %v", accepted, err)
+			}
+		})
+		return
+	}
+	test.Fatal("domain submission migration is missing")
+}

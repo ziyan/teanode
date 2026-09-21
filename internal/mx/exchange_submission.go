@@ -11,8 +11,8 @@ import (
 )
 
 func (self *exchange) AcceptSubmission(ctx context.Context, transaction db.Transaction, envelope *mailparse.Envelope) (*models.Mail, error) {
-	if envelope == nil || envelope.MailboxID == "" || envelope.SpecialPrefix != "" {
-		return nil, fmt.Errorf("submission must name a mailbox")
+	if envelope == nil || (envelope.MailboxID == "" && envelope.DomainID == "") || envelope.SpecialPrefix != "" {
+		return nil, fmt.Errorf("submission must name a mailbox or domain")
 	}
 	var accepted *models.Mail
 	err := transaction.TransactionContext(ctx, func(command db.Transaction) error {

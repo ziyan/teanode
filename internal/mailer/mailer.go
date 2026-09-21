@@ -94,7 +94,7 @@ type Mailer interface {
 	// credential — and comes back filled in.
 	Send(ctx context.Context, envelope *mailparse.Envelope, message *Message) error
 
-	// AcceptSubmission composes and prepares mailbox acceptance on the caller's
+	// AcceptSubmission composes and prepares mailbox or domain acceptance on the caller's
 	// transaction. Nothing is dispatched until its queued deliveries commit.
 	AcceptSubmission(ctx context.Context, transaction db.Transaction, envelope *mailparse.Envelope, message *Message) (*models.Mail, error)
 
