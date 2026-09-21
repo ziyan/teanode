@@ -140,10 +140,14 @@ transactions. This extraction preserves that boundary and does not claim that
 all graph effects from a memory run roll back together.
 
 
-Graph extraction leaves two adapter findings open. AskRun.ResolvePage accepts a
-transaction and obtains an embedding before resolvePage uses it. The memory
-tool caller therefore can hold its transaction across model work. RecallForQuestion
-accepts a caller transaction for block selection, but carryIndex and searchGraph
-open separate reads and can call the embedding provider. These need prepared
-inputs or changed transaction ownership; moving functions to separate files
-does not remove those waits or extra connections.
+Memory-tool notes now prepare their optional page embedding before opening the
+write transaction. AskRun.PreparePage returns a PreparedPage resolver that uses
+the caller's transaction for alias resolution and page creation, so the page and
+fact still commit together. Provider failure preserves word-based resolution.
+A local-provider regression checks that embedding calls see no active transaction
+and that a rejected fact write leaves no newly created page.
+
+RecallForQuestion still accepts a caller transaction for block selection while
+carryIndex and searchGraph open separate reads and can call the embedding
+provider. That path still needs changed transaction ownership; the memory-tool
+fix does not remove those waits or extra connections.

@@ -46,20 +46,21 @@ func (self *fakeRun) NoteFact(_ context.Context, fact *models.AgentFact) []*mode
 
 func (self *fakeRun) NoteNode(context.Context, *models.AgentNode) {}
 
-// ResolvePage is where a fact belongs. The real one looks for a page that
-// already exists under any of its names; this one takes the path as given.
-func (self *fakeRun) ResolvePage(_ context.Context, tx db.Transaction, path string, kind models.AgentNodeKind, name string) (*models.AgentNode, error) {
-	existing, err := tx.GetAgentNode(self.agent.ID, path)
-	if err != nil || existing != nil {
-		return existing, err
+// PreparePage uses the requested path without calling an embedding provider.
+func (self *fakeRun) PreparePage(_ context.Context, path string, kind models.AgentNodeKind, name string) tools.PreparedPage {
+	return func(tx db.Transaction) (*models.AgentNode, error) {
+		existing, err := tx.GetAgentNode(self.agent.ID, path)
+		if err != nil || existing != nil {
+			return existing, err
+		}
+		if !models.IsAgentNodeKind(kind) {
+			kind = models.NodeTopic
+		}
+		if name == "" {
+			name = path
+		}
+		return tx.PutAgentNode(&models.AgentNode{AgentID: self.agent.ID, Path: path, Kind: kind, Name: name})
 	}
-	if !models.IsAgentNodeKind(kind) {
-		kind = models.NodeTopic
-	}
-	if name == "" {
-		name = path
-	}
-	return tx.PutAgentNode(&models.AgentNode{AgentID: self.agent.ID, Path: path, Kind: kind, Name: name})
 }
 
 func find(t *testing.T, name string) *tools.Tool {

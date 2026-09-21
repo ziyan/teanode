@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -68,16 +69,19 @@ func (self *AskRun) NoteFact(ctx context.Context, fact *models.AgentFact) []*mod
 	return twins
 }
 
-// ResolvePage is the page a fact belongs on. Part of tools.Remembering;
-// the work is in duplicate.go.
-func (self *AskRun) ResolvePage(ctx context.Context, tx db.Transaction, path string, kind models.AgentNodeKind, name string) (*models.AgentNode, error) {
+// PreparePage obtains a page-name embedding before the caller opens its write
+// transaction. The returned resolver keeps alias matching and page creation
+// in that transaction, using the prepared vector or the existing word fallback.
+func (self *AskRun) PreparePage(ctx context.Context, path string, kind models.AgentNodeKind, name string) tools.PreparedPage {
 	agentId := self.settings.Agent.ID
 	path, kind, name = pageIdentity(path, kind, name)
 	if path == "" {
-		return nil, nil
+		return func(db.Transaction) (*models.AgentNode, error) { return nil, nil }
 	}
-	return self.agent.resolvePage(tx, agentId, path, kind, name,
-		self.agent.meaningOf(ctx, agentId, "remember", name))
+	sense := self.agent.meaningOf(ctx, agentId, "remember", name)
+	return func(tx db.Transaction) (*models.AgentNode, error) {
+		return self.agent.resolvePage(tx, agentId, path, kind, name, sense)
+	}
 }
 
 // NoteNode gives a page its vector.

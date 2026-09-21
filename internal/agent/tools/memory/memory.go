@@ -691,6 +691,9 @@ func noteAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 		return nil, err
 	}
 
+	preparedPage := preparePage(ctx, run, path,
+		models.AgentNodeKind(strings.ToLower(strings.TrimSpace(arguments.Kind))),
+		strings.TrimSpace(arguments.Name))
 	agentId := run.Agent().ID
 	var node *models.AgentNode
 	var fact *models.AgentFact
@@ -698,12 +701,7 @@ func noteAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 		if err := tx.EnsureAgentRoots(agentId); err != nil {
 			return err
 		}
-		// The page already there under any of its names, rather than a
-		// second one beside it: a model files "people/alice" one day and
-		// "people/alice-chen" the next, and both mean her.
-		existing, err := resolvePage(ctx, run, tx, path,
-			models.AgentNodeKind(strings.ToLower(strings.TrimSpace(arguments.Kind))),
-			strings.TrimSpace(arguments.Name))
+		existing, err := preparedPage(tx)
 		if err != nil {
 			return err
 		}
@@ -1197,23 +1195,24 @@ func batchAction(ctx context.Context, run tools.Run, call *tools.Call, arguments
 
 // --- meaning ----------------------------------------------------------
 
-// resolvePage asks the run which page this belongs on, where the run can
-// say; otherwise the path is taken at face value.
-func resolvePage(ctx context.Context, run tools.Run, tx db.Transaction, path string, kind models.AgentNodeKind, name string) (*models.AgentNode, error) {
+// preparePage keeps model work outside the transaction that files the fact.
+func preparePage(ctx context.Context, run tools.Run, path string, kind models.AgentNodeKind, name string) tools.PreparedPage {
 	if remembering, ok := run.(tools.Remembering); ok {
-		return remembering.ResolvePage(ctx, tx, path, kind, name)
+		return remembering.PreparePage(ctx, path, kind, name)
 	}
-	existing, err := tx.GetAgentNode(run.Agent().ID, path)
-	if err != nil || existing != nil {
-		return existing, err
+	return func(tx db.Transaction) (*models.AgentNode, error) {
+		existing, err := tx.GetAgentNode(run.Agent().ID, path)
+		if err != nil || existing != nil {
+			return existing, err
+		}
+		if !models.IsAgentNodeKind(kind) {
+			kind = kindFromPath(path)
+		}
+		if name == "" {
+			name = titleFromSlug(models.LastSegment(path))
+		}
+		return tx.PutAgentNode(&models.AgentNode{AgentID: run.Agent().ID, Path: path, Kind: kind, Name: name})
 	}
-	if !models.IsAgentNodeKind(kind) {
-		kind = kindFromPath(path)
-	}
-	if name == "" {
-		name = titleFromSlug(models.LastSegment(path))
-	}
-	return tx.PutAgentNode(&models.AgentNode{AgentID: run.Agent().ID, Path: path, Kind: kind, Name: name})
 }
 
 // noteMeaning gives a fact its vector and names whatever on the same page

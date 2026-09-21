@@ -26,16 +26,13 @@ type Remembering interface {
 	// NoteNode gives a page its vector when its words change.
 	NoteNode(ctx context.Context, node *models.AgentNode)
 
-	// ResolvePage is the page a fact belongs on: the one already there
-	// under any of its names, or a new one.
-	//
-	// Every writer goes through this rather than making a page directly,
-	// which is what keeps one thing to one page. A model asked to file
-	// something about Alice will write "people/alice" one day and
-	// "people/alice-chen" the next, and both should land on the page that
-	// exists.
-	ResolvePage(ctx context.Context, tx db.Transaction, path string, kind models.AgentNodeKind, name string) (*models.AgentNode, error)
+	// PreparePage obtains any model input before a write transaction begins.
+	// The returned resolver only reads or writes through the supplied transaction.
+	PreparePage(ctx context.Context, path string, kind models.AgentNodeKind, name string) PreparedPage
 }
+
+// PreparedPage resolves a page using model input prepared before the transaction.
+type PreparedPage func(tx db.Transaction) (*models.AgentNode, error)
 
 // GraphSearching is finding a page or a fact by what it means rather than
 // by the words it happens to use. A person asking about "the boat" means
