@@ -23,11 +23,9 @@ func (self *Agent) readSentMail(ctx context.Context, run *Run, source *models.Ag
 	if mailboxId == "" {
 		return "", counts, fmt.Errorf("which mailbox?")
 	}
-	before := time.Now()
-	if said, ok := cursor["before"].(string); ok && said != "" {
-		if parsed, err := time.Parse(time.RFC3339, said); err == nil {
-			before = parsed
-		}
+	position, err := readSentCursor(cursor, time.Now())
+	if err != nil {
+		return "", counts, err
 	}
 
 	var folder *models.MailboxFolder
@@ -41,7 +39,7 @@ func (self *Agent) readSentMail(ctx context.Context, run *Run, source *models.Ag
 			return err
 		}
 		items, err = tx.ListItems(folder.ID, &db.ItemOptions{
-			Before: before, Limit: ingestEntries, ByReceived: true,
+			Before: position.ReceivedAt, BeforeItemID: position.ItemID, Limit: ingestEntries, ByReceived: true,
 		})
 		return err
 	}); err != nil {
@@ -54,7 +52,7 @@ func (self *Agent) readSentMail(ctx context.Context, run *Run, source *models.Ag
 		return "", counts, nil
 	}
 
-	oldest := before
+	var last *sentIngestCursor
 	for _, item := range items {
 		if err := self.checkSourceRead(ctx, source); err != nil {
 			return "", counts, err
@@ -70,19 +68,23 @@ func (self *Agent) readSentMail(ctx context.Context, run *Run, source *models.Ag
 			}
 			mail = found[0]
 			return nil
-		}); err != nil || mail == nil {
+		}); err != nil {
+			return "", counts, err
+		}
+		if mail == nil {
 			continue
 		}
-		if mail.ReceivedAt.Before(oldest) {
-			oldest = mail.ReceivedAt
-		}
+		last = &sentIngestCursor{ReceivedAt: mail.ReceivedAt, ItemID: item.ID}
 		if known[mail.ID] != "" {
 			continue
 		}
 		// Without the quoted reply underneath: what they wrote is the
 		// example, and the message they were answering is not.
 		message, err := BuildMessageContext(ctx, run.Storage(), mail, sentCharacters, false)
-		if err != nil || strings.TrimSpace(message.Text) == "" {
+		if err != nil {
+			return "", counts, err
+		}
+		if strings.TrimSpace(message.Text) == "" {
 			continue
 		}
 		happened := mail.ReceivedAt
@@ -103,15 +105,16 @@ func (self *Agent) readSentMail(ctx context.Context, run *Run, source *models.Ag
 		}
 		written, err := self.fileDocument(ctx, run, source, entry, "")
 		if err != nil {
-			continue
+			return "", counts, err
 		}
 		counts.Documents++
 		counts.Chunks += written
 	}
 	// Backwards through time: the newest are the best examples, and a
 	// pass that stops halfway has the useful half.
-	if oldest.Before(before) {
-		return oldest.Format(time.RFC3339), counts, nil
+	if last != nil {
+		next, err := last.encode()
+		return next, counts, err
 	}
 	return "", counts, nil
 }

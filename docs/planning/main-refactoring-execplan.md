@@ -2027,3 +2027,34 @@ zero-page regressions pass. Both binaries, repository lint and gogolint pass.
 No wire-format or dashboard presentation change is introduced. The last full
 standard-PostgreSQL suite remains 1,987 tests with two expected skips; this
 checkpoint adds boundary coverage and keeps the remaining milestone gates open.
+
+
+Sent-mail paging now uses a typed timestamp/item-ID cursor encoded under a
+versioned prefix inside the existing before string. Legacy RFC 3339 timestamps
+still parse at the boundary. New cursors retain subsecond precision and use the
+same timestamp/item ordering as the mailbox query, so more than one page of
+messages with identical times cannot be skipped. Invalid persisted cursors fail
+explicitly instead of silently restarting at the current time. No database
+migration or device wire change is needed.
+
+Sent-mail read, context-building and document-write errors now fail the page
+rather than advancing beyond unrecorded messages. Removed messages and valid
+empty bodies keep their existing skip behavior. Regressions cover 258 messages
+sharing one timestamp, legacy cursor input, precise round trips, malformed state,
+and storage/database failure followed by a successful retry.
+
+The shared message-context builder still represents retained metadata without
+body bytes as a placeholder. Whether sent-source indexing should skip that
+placeholder requires follow-up; this change preserves the existing policy.
+Persisted device cursor adaptation and atomic page completion remain open.
+
+Downgrade note: older readers do not understand the versioned sent cursor and
+restart from their current-time default. Existing source/external document
+identities prevent duplicate documents, but a downgrade can repeat scan work.
+The new reader never silently discards an invalid saved position.
+
+Sent-cursor validation: database, all agent packages, GraphQL API, IMAP and DAV
+pass with the race detector against the disposable vector database. Focused
+paging and failure-retry tests, both binaries, repository lint and gogolint pass.
+Privacy checks include the new cursor and synthetic mailbox fixtures. This adds
+sent-source cursor safety without completing the remaining ingestion milestone.

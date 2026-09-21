@@ -174,6 +174,8 @@ type ItemOptions struct {
 	// Since and Before bound when the message was received.
 	Since  time.Time
 	Before time.Time
+	// BeforeItemID breaks received-time ties when ByReceived is set.
+	BeforeItemID string
 
 	// HasAttachment, when set, only messages with or without one.
 	HasAttachment *bool
@@ -1025,7 +1027,11 @@ func (self *transaction) itemQuery(folderId string, options *ItemOptions) *gorm.
 			query = query.Where("\"mail\".\"received_at\" >= ?", options.Since)
 		}
 		if !options.Before.IsZero() {
-			query = query.Where("\"mail\".\"received_at\" < ?", options.Before)
+			if options.ByReceived && options.BeforeItemID != "" {
+				query = query.Where(`("mail"."received_at", "mailbox_item"."id") < (?, ?)`, options.Before, options.BeforeItemID)
+			} else {
+				query = query.Where("\"mail\".\"received_at\" < ?", options.Before)
+			}
 		}
 		if options.HasAttachment != nil {
 			if *options.HasAttachment {
