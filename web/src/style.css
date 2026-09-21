@@ -8528,9 +8528,11 @@ button.with-icon {
      six hundred pages does not make the whole page a kilometre long. */
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: var(--space-2);
-  /* A row scrolled to by the keyboard stops clear of the toolbar. */
-  scroll-padding-block: var(--space-2);
+  /* No padding of its own. It had some, and with the toolbar's padding above
+     it and the row's own inside it, three of them stacked into a finger's
+     width of nothing between the trail and the first row. The mail list has
+     none here for the same reason. */
+  padding: 0;
   /* The page behind does not start moving when this list reaches its end,
      which on a phone took the whole screen with it. */
   overscroll-behavior: contain;
@@ -8590,9 +8592,10 @@ button.with-icon {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  /* Level with the rows under it, which the scrolling area insets by its
-     own padding, so the folder's name and its pages line up. */
-  padding: 0 calc(var(--space-2) + var(--space-3)) var(--space-2);
+  /* The toolbar's own padding, since it stands in the toolbar's place and
+     carries the same rule underneath. It used to add a bottom pad on top of
+     that, which was half the gap between the trail and the first row. */
+  padding: var(--space-2);
   color: var(--muted);
   font-size: var(--text-label);
   text-transform: uppercase;
@@ -8757,13 +8760,22 @@ button.with-icon {
   text-align: left;
   padding: var(--space-2) var(--space-3);
   border: none;
-  border-radius: var(--radius-2);
+  /* Divided from the row under it rather than rounded and spaced away from
+     it, which is how the mail list reads and why it can be dense without
+     looking crowded. */
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
   background: none;
   color: var(--text);
   font: inherit;
   cursor: pointer;
   /* A row is pressed, not read: a second click on it selected its count. */
   user-select: none;
+}
+
+/* Nothing under the last one: the frame's own edge is there. */
+.knowledge-row:last-child {
+  border-bottom: 0;
 }
 
 .knowledge-row:hover:not(:disabled),
@@ -8794,7 +8806,7 @@ button.with-icon {
   align-items: center;
   padding: var(--space-2) var(--space-3);
   border: none;
-  border-radius: var(--radius-2);
+  border-radius: 0;
   background: none;
   color: inherit;
   font: inherit;
@@ -8811,7 +8823,7 @@ button.with-icon {
      the whole right edge, not the glyph. */
   padding: 0 var(--space-3);
   border: none;
-  border-radius: var(--radius-2);
+  border-radius: 0;
   background: none;
   color: var(--muted);
   cursor: pointer;
