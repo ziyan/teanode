@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.4] - 2026-09-21
+
+### Fixed
+
+- Catching up on a backlog no longer switches itself off when the model
+  provider refused every call, which left the remaining documents unread and
+  scheduled no further attempt. (#103)
+
 ## [0.47.3] - 2026-09-21
 
 ### Fixed
