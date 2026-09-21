@@ -33,7 +33,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; dashboard retry retention and schedule/domain send adapters remain.
+- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; dashboard retry retention and domain send adapters remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
@@ -41,6 +41,15 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+Scheduled answers and goal notifications used the same legacy mail send path.
+A scheduled retry could generate a different answer and send it again after
+acceptance committed but job completion did not. Their shared notification
+command now locks a submission identity derived from the job identifier, accepts
+mail through the coordinator and marks its bookkeeping complete in the same
+transaction. Recovery returns the first accepted outcome before considering new
+content or changed notification settings. Schedule retries check this record
+before constructing another model turn.
 
 Provider tool-call identifiers are not unique send identities. Direct tool calls
 reuse a fixed identifier, and model providers may reuse their call identifiers.
@@ -149,6 +158,14 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: identify an agent mail notification by owner and job, not generated
+answer content or the schedule identifier. Each schedule occurrence and goal
+continuation has a distinct job. The first accepted notification is final for
+that job, even if another execution generates different text. Use the shared
+submission coordinator after checking the owned job and currently granted
+sender mailbox. Notifications have no draft or flags requiring later recovery,
+so mark them reconciled in the acceptance transaction. Date: 2026-09-21.
 
 Decision: expose an owner-scoped `GetMailboxSubmission` query requiring mail-send
 permission and mailbox ownership. It returns durable acceptance identifiers,
@@ -1148,3 +1165,25 @@ acceptance during draft reads; the API regression covers ownership, permissions,
 mailbox separation and retention. Dashboard request retention, scheduled and
 domain-scoped sends, alternate draft-reference deduplication, and final visual
 and deployment checks remain open. This revision does not complete Milestone 4.
+
+Revision note: extracted notification acceptance into
+`internal/agent/mail_notice.go` and migrated both scheduled mail and goal notices
+from legacy Mailer.Send to the shared coordinator. The outer identity lock
+serializes competing executions before message preparation; the acceptance
+record and reconciled timestamp commit with the mail. A schedule replay checks
+its accepted notification before creating a conversation or invoking a model.
+Goal notifications retain their existing best-effort behavior on initial failure.
+
+Regressions verify worker restart and replay after mail retention, changed
+content and missing notification address after acceptance, distinct schedule
+occurrences, concurrent retries, rollback on an actual final SQL constraint
+failure, retry after that failure, and refusal of a foreign job or ungranted
+mailbox. Existing goal and scheduled-conversation integration tests still pass.
+Scheduled conversation delivery and effects inside the model turn are not made
+idempotent by this change. Dashboard request retention, domain-scoped sends and
+the remaining full-plan gates are still required.
+
+Validation update: the full vector-enabled race suite passes with 1,872 tests
+and one expected browser integration skip. Focused notification, schedule and
+goal tests pass, as do lint and gogolint. No dashboard code changed in this
+revision; full Chrome and deployment acceptance remain open.

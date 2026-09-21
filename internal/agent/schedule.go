@@ -7,9 +7,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
-	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
-	"github.com/ziyan/teanode/internal/util/mailparse"
 )
 
 // A schedule is a prompt the agent runs at times the person chose — "every
@@ -100,6 +98,11 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 	configuration := run.Configuration()
 	if !FeatureAllowed(configuration, "schedules") || !FeatureAllowed(configuration, "ask") {
 		return nil
+	}
+	// A crash after acceptance must not run another model turn or mail another
+	// answer when the worker retries this same schedule occurrence.
+	if hasAccepted, err := self.hasAcceptedNotice(ctx, run); err != nil || hasAccepted {
+		return err
 	}
 	if self.operations == nil {
 		return fmt.Errorf("no way to act as the person")
@@ -219,43 +222,6 @@ func (self *Agent) deliverSchedule(ctx context.Context, run *Run, schedule *mode
 			return nil
 		})
 		return err
-	})
-}
-
-// mailToPerson puts something the agent did in front of the person when
-// they are not reading the conversation: mail from a granted mailbox to
-// the account's notification address.
-//
-// The one delivery this program has. A schedule's answer goes out this
-// way, and so does a goal that has stopped and needs them; anything more
-// -- a push, a badge, a digest -- is its own piece of work.
-func (self *Agent) mailToPerson(ctx context.Context, run *Run, subject, body string) error {
-	if run.Owner.Email == "" || self.settings.Mailer == nil {
-		return fmt.Errorf("the account has no notification address to mail the answer to")
-	}
-	var from string
-	var mailboxId string
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		mailboxes, err := tx.ListMailboxes(run.Owner.ID)
-		if err != nil {
-			return err
-		}
-		for _, mailbox := range mailboxes {
-			if mailbox.Agent != nil && mailbox.Agent.Granted && len(mailbox.Addresses) > 0 {
-				from, mailboxId = mailbox.Addresses[0].Address, mailbox.ID
-				return nil
-			}
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-	if from == "" {
-		return fmt.Errorf("no granted mailbox has an address to send from")
-	}
-	return self.settings.Mailer.Send(ctx, &mailparse.Envelope{MailboxID: mailboxId}, &mailer.Message{
-		From: from, FromName: run.Agent.DisplayName(), To: []string{run.Owner.Email}, Subject: subject, Text: body,
-		Headers: []string{mailparse.UnsplitHeader("Auto-Submitted", "auto-generated"), mailparse.UnsplitHeader("X-Auto-Response-Suppress", "All")},
 	})
 }
 

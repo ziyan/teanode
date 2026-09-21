@@ -150,6 +150,17 @@ outward call is refused with an explanation rather than performed. The answer
 goes into the main conversation, or out as mail whose subject is the first line
 when that line is short enough.
 
+Mail notifications use the job identifier as a durable submission identity.
+Acceptance, Sent filing and the submission record commit in one transaction;
+a failure of the final SQL write rolls all of them back. A retry returns the
+existing acceptance even if the generated answer or notification address changed.
+The same schedule's next occurrence has a new job and may send a new answer.
+Before another scheduled model turn starts, the worker checks whether that job's
+mail was already accepted. This record survives message retention. Goal notices
+use the same acceptance path but remain best effort when the first attempt fails.
+This does not make every tool effect or conversation insertion within a scheduled
+turn idempotent, and it does not guarantee exactly one remote SMTP delivery.
+
 ## Goals, and how they differ from a schedule
 
 A schedule is a clock with a prompt. A **goal** is a sentence on a
