@@ -129,3 +129,12 @@ effects still require review. Source controls now lock before saving and advance
 a persisted generation; older readers cannot file or clear a newly reset pass,
 even after the configuration is restored. Author observations and pass progress
 use field-specific updates without changing that generation.
+
+
+Conversation memory now separates retrieval, model preparation and application.
+The application helper receives the transaction that also records the run title
+and conversation read marker, so facts, links and replacements commit with them.
+Page creation and contact binding retain their earlier transaction and can remain
+after a later application failure. Embeddings are prepared outside both write
+transactions. This extraction preserves that boundary and does not claim that
+all graph effects from a memory run roll back together.
