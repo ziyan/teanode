@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.45.2] - 2026-09-21
+
+### Changed
+
+- The reading line on the agent page now says how many dreams its estimate
+  and its cost were measured over, instead of referring to "the dreams
+  behind that pace" without saying how many that was. (#83)
+
 ## [0.45.1] - 2026-09-21
 
 ### Fixed
