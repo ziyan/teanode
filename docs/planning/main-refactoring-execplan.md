@@ -36,10 +36,16 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 4 (in progress): disable automatic mutation retries; durable submission identity, recovery and storage guarantees remain.
 - [ ] Milestone 5: extract shared application commands from transport adapters.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
-- [ ] Milestone 7: separate dashboard request state from presentation.
+- [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+Conversation refreshes restored the saved draft on every read, even while the
+person was editing the current conversation. Restore only on a conversation
+change. Pagination responses also need to match both the selected conversation
+and the message array they were requested against, or an old page can prepend
+itself to a different transcript.
 
 The dashboard fetch wrapper retried every operation after a lost response,
 including mutations that send mail or start agent work. A failed connection
@@ -65,6 +71,13 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: the conversation hook owns both the displayed conversation identity
+and a synchronous selection reference. A deliberate switch changes the reference
+immediately; reconnects can only refresh that selection. Only the current read
+may update the displayed identity or apply its snapshot. Abort stale requests,
+but also check request identity because an aborted transport may still settle.
+A failed switch retains the previously displayed conversation.
 
 Decision: automatically retry only documents starting with the GraphQL query
 keyword or anonymous query selection. The dashboard sends no operation name;
@@ -590,3 +603,14 @@ when a response is lost. Ten transport regression cases cover mutation and
 unknown-operation refusal, query retry, its single-attempt limit, cancellation,
 and HTTP failures. All thirteen dashboard behavior tests, typechecking and lint
 pass. This is a prerequisite to Milestone 4, not its durable acceptance contract.
+
+Revision note: the first conversation extraction moves selection, pending reads,
+cancellation, loading and read failures into `web/src/hooks/useAgentConversation.ts`.
+Seven hook regression tests pass, bringing the dashboard behavior suite to twenty
+cases. Frontend lint and typechecking pass. The production dashboard and extension
+builds pass. A Chrome audit of the built framed drawer used synthetic HTTP and
+subscription responses: rapid switching retained the newest conversation, a
+completion refresh retained a typed draft, and desktop and narrow screenshots
+showed readable controls without horizontal overflow or JavaScript exceptions.
+This focused audit does not replace the later full-server deployment smoke test
+or the broader dashboard audit after all extractions.

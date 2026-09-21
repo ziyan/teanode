@@ -17,6 +17,7 @@ import {
   sharedAttachment,
 } from '../api'
 import { uploadFiles } from '../upload'
+import { useAgentConversation } from '../hooks/useAgentConversation'
 import { budgetNearness, formatClock, formatCount, formatMoney, formatTime } from './common'
 import { useResolvedTheme } from './theme'
 import { Tooltip } from './tooltip'
@@ -1121,6 +1122,20 @@ function GoalChip({ conversation, onOpen }: { conversation: Conversation; onOpen
   )
 }
 
+async function readConversationSnapshot(conversationId: string, signal: AbortSignal) {
+  const response = await graphql<{
+    ReadAgentConversation: {
+      conversation: Conversation
+      actingAs?: string | null
+      goalTurnsToday?: number
+      messages: StoredMessage[]
+      total?: number
+      todos: Todo[]
+    }
+  }>(CONVERSATION, { conversationId: conversationId || undefined, first: 100 }, signal)
+  return response.ReadAgentConversation
+}
+
 // standalone is the drawer as a page of its own, framed by the browser
 // extension into another site: always open, filling its frame, and its
 // close mark telling the framing page to hide it.
@@ -1146,14 +1161,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // Whether the transcript is scrolled to its end. New words keep it
   // there; a person who scrolled up to read is left where they are.
   const [atBottom, setAtBottom] = useState(true)
-  const [conversationId, setConversationId] = useState(() => remembered(CONVERSATION_KEY))
-  // The conversation on screen, readable from a closure that was made for
-  // an earlier one: a subscription's handler has to be able to tell that
-  // it is no longer the one being read.
-  const conversationRef = useRef(conversationId)
-  useEffect(() => {
-    conversationRef.current = conversationId
-  }, [conversationId])
+  const [initialConversationId] = useState(() => remembered(CONVERSATION_KEY))
   // The conversation as loaded, which the list does not always hold: a
   // run's transcript is opened from the agent page and is not in it.
   const [loaded, setLoaded] = useState<Conversation | null>(null)
@@ -1237,9 +1245,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // of: the feed's "asked" for one of those is the drawer's own words,
   // already on the page.
   const sending = useRef(0)
-  // The transcript being read, so that the feed's first start waits for
-  // it rather than reading it again.
-  const loading = useRef<Promise<void> | null>(null)
   const transcript = useRef<HTMLDivElement>(null)
   // The transcript as state as well as a ref, so what watches it is set
   // up when the element appears rather than when the drawer is opened.
@@ -1339,78 +1344,70 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     return put
   }, [])
 
-  const loadConversation = useCallback(async (id: string) => {
-    const askedAt = Date.now()
-    const response = await graphql<{
-      ReadAgentConversation: {
-        conversation: Conversation
-        actingAs?: string | null
-        goalTurnsToday?: number
-        messages: StoredMessage[]
-        total?: number
-        todos: Todo[]
+  const applyConversationSnapshot = useCallback(
+    (snapshot: Awaited<ReturnType<typeof readConversationSnapshot>>, askedAt: number) => {
+      setLoaded(snapshot.conversation)
+      setActingAs(snapshot.actingAs ?? null)
+      setGoalTurnsToday(snapshot.goalTurnsToday ?? 0)
+      remember(CONVERSATION_KEY, snapshot.conversation.id)
+      messages.current = snapshot.messages
+      setTotal(snapshot.total ?? snapshot.messages.length)
+      setLines(linesOf(snapshot.messages, t))
+      setShowingGoalNote(true)
+      // This read is how a tick the agent made during its turn reaches the
+      // list; a tick of the person's own is already there, set from the
+      // answer their own mutation gave, and is the newer of the two. A
+      // conversation being opened is another list entirely, and takes what
+      // the server says whatever was written to the one before it.
+      const sameList = todosLoadedFor.current === snapshot.conversation.id
+      if (!sameList) {
+        todosLoadedFor.current = snapshot.conversation.id
+        setTodoDraft('')
+        setTodosTouched(false)
       }
-    }>(CONVERSATION, {
-      conversationId: id || undefined,
-      first: 100,
-    })
-    setConversationId(response.ReadAgentConversation.conversation.id)
-    setLoaded(response.ReadAgentConversation.conversation)
-    setActingAs(response.ReadAgentConversation.actingAs ?? null)
-    setGoalTurnsToday(response.ReadAgentConversation.goalTurnsToday ?? 0)
-    remember(CONVERSATION_KEY, response.ReadAgentConversation.conversation.id)
-    messages.current = response.ReadAgentConversation.messages
-    setTotal(response.ReadAgentConversation.total ?? response.ReadAgentConversation.messages.length)
-    setLines(linesOf(response.ReadAgentConversation.messages, t))
-    setShowingGoalNote(true)
-    // This read is how a tick the agent made during its turn reaches the
-    // list; a tick of the person's own is already there, set from the
-    // answer their own mutation gave, and is the newer of the two. A
-    // conversation being opened is another list entirely, and takes what
-    // the server says whatever was written to the one before it.
-    const sameList = todosLoadedFor.current === response.ReadAgentConversation.conversation.id
-    if (!sameList) {
-      todosLoadedFor.current = response.ReadAgentConversation.conversation.id
-      setTodoDraft('')
-      setTodosTouched(false)
-    }
-    if (!sameList || todoWrittenAt.current < askedAt) {
-      setTodos(response.ReadAgentConversation.todos ?? [])
-    }
-    setDraft(remembered(draftKey(response.ReadAgentConversation.conversation.id)))
-    draftLoadedFor.current = response.ReadAgentConversation.conversation.id
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+      if (!sameList || todoWrittenAt.current < askedAt) {
+        setTodos(snapshot.todos ?? [])
+      }
+      if (draftLoadedFor.current !== snapshot.conversation.id) {
+        setDraft(remembered(draftKey(snapshot.conversation.id)))
+        draftLoadedFor.current = snapshot.conversation.id
+      }
+    },
+    [t],
+  )
 
-  // readConversation is loadConversation with the promise kept, so the
-  // feed's first start can wait for it. Reading is not by itself a
-  // reason to follow the end again: a turn finishing and a socket coming
-  // back both read, and a person who scrolled up to read stays where
-  // they are through either. Opening a conversation is a deliberate act,
-  // and says so.
+  const {
+    conversationId,
+    selectedConversation: conversationRef,
+    currentRead: loading,
+    isLoading: isReadingConversation,
+    readConversation: requestConversation,
+    adoptConversation,
+  } = useAgentConversation(initialConversationId, readConversationSnapshot, applyConversationSnapshot)
+
   const readConversation = useCallback(
-    (id: string, deliberate = false) => {
-      if (deliberate) {
+    (conversationId: string, isSelection = false) => {
+      if (isSelection) {
         sticking.current = true
         setAtBottom(true)
       }
-      const reading = loadConversation(id).finally(() => {
-        if (loading.current === reading) loading.current = null
-      })
-      loading.current = reading
-      return reading
+      return requestConversation(conversationId, isSelection)
     },
-    [loadConversation],
+    [requestConversation],
   )
 
   useEffect(() => {
     if (!open || !available) return
     void loadConversations().catch((caught) => toast.failed(caught instanceof Error ? caught.message : String(caught)))
-    void readConversation(conversationId, true).catch((caught) =>
+    void readConversation(conversationRef.current, true).catch((caught) =>
       toast.failed(caught instanceof Error ? caught.message : String(caught)),
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, available])
+
+  useEffect(() => {
+    if (!open) adoptConversation(conversationId)
+  }, [open, conversationId, adoptConversation])
 
   // The conversation's events while the drawer is open — every turn,
   // wherever it was started: here, a phone, a terminal, a chat app. The
@@ -1537,10 +1534,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       const detail = (event as CustomEvent<AgentOpenDetail>).detail
       if (!available || !detail?.conversationId) return
       detail.handled = true
-      // The id first, so that opening the drawer loads this conversation
-      // and not the one it remembers.
-      setConversationId(detail.conversationId)
-      remember(CONVERSATION_KEY, detail.conversationId)
       setOpen(true)
       remember(OPEN_KEY, '1')
       void switchTo(detail.conversationId)
@@ -1933,7 +1926,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     const message = draft.trim()
     const files = pending
     const pointed = references
-    if ((!message && files.length === 0) || uploading) return
+    if ((!message && files.length === 0) || uploading || loading.current) return
+    const sendingConversationId = conversationRef.current
     setDraft('')
     remember(draftKey(conversationId), '')
     setPending([])
@@ -1997,9 +1991,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       } finally {
         sending.current -= 1
       }
+      if (conversationRef.current !== sendingConversationId) return
       if (!conversationId) {
         const conversation = response.AskAgent.conversationId
-        setConversationId(conversation)
+        adoptConversation(conversation)
         remember(CONVERSATION_KEY, conversation)
       }
       follow(response.AskAgent.runId)
@@ -2054,7 +2049,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const switchTo = async (id: string) => {
     setShowingList(false)
     setRuns([])
-    await readConversation(id, true)
+    try {
+      await readConversation(id, true)
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    }
   }
 
   // A new conversation may be given what it is for before a word is said,
@@ -2368,17 +2367,21 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     setLoadingEarlier(true)
     const element = transcript.current
     const heightBefore = element?.scrollHeight ?? 0
+    const loadedMessages = messages.current
     try {
       const response = await graphql<{
         ReadAgentConversation: { messages: StoredMessage[]; total?: number }
       }>(CONVERSATION, { conversationId, first: 100, offset: messages.current.length })
+      if (conversationRef.current !== conversationId || messages.current !== loadedMessages) return
       const earlier = response.ReadAgentConversation.messages
       messages.current = [...earlier, ...messages.current]
       setTotal(response.ReadAgentConversation.total ?? messages.current.length)
       sticking.current = false
       setLines(linesOf(messages.current, t))
       requestAnimationFrame(() => {
-        if (element) element.scrollTop += element.scrollHeight - heightBefore
+        if (element && conversationRef.current === conversationId) {
+          element.scrollTop += element.scrollHeight - heightBefore
+        }
       })
     } catch (caught) {
       toast.failed(caught instanceof Error ? caught.message : String(caught))
@@ -2993,7 +2996,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               className="icon-button agent-send"
               aria-label={t('agentDrawer.send')}
               title={t('agentDrawer.send')}
-              disabled={!canSend}
+              disabled={!canSend || isReadingConversation}
             >
               <ArrowUpIcon size={16} />
             </button>
