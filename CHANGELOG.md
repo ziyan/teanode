@@ -6,6 +6,30 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.45.4] - 2026-09-21
+
+### Changed
+
+- The reading line on the agent page now says how many days the daily budget
+  spreads the remaining reading over, where what is left costs more than one
+  day of it. Before, it gave an hours estimate that assumed the agent would
+  read without pause, which an agent with a budget does not do. (#90)
+
+### Fixed
+
+- `teanode agent memory index` now says when it has shown only part of the
+  graph, and takes `--first` to show more. It previously stopped part way
+  through without saying so, and asking for more pages than the maximum
+  returned fewer than asking for none. (#91)
+- The agent no longer adds a contact to your address book for every person
+  it reads about. It was filing a card for anybody who appeared in a commit
+  log or a chat channel, including release bots, and those cards stayed
+  behind when the pages they came from were merged or removed. (#94)
+- Facts merged away by a page rewrite are no longer sent to the embedding
+  model, counted among a page's facts, or read back into a month's page.
+  They were left in a state that several queries did not recognise as
+  superseded, which cost embedding calls for rows nothing would return. (#92)
+
 ## [0.45.3] - 2026-09-21
 
 ### Fixed
