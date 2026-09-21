@@ -161,8 +161,13 @@ moves contribute to its count, including earlier groups when a later one rolls
 back. Duplicate model-selected fact numbers are counted once and cannot satisfy
 the minimum group size by repetition. A trigger-based regression rejects the
 child's consolidation update after fact moves and checks that the failed group
-leaves neither its child nor its fact moves. Dream digest bookkeeping still has
-separate document/read and progress writes; their atomicity remains open. All
-five detached dream writes now use a ten-second completion deadline, including
-attachment decisions and picture descriptions. Canceled-parent persistence and
-stalled-acquisition regressions cover each operation.
+leaves neither its child nor its fact moves. Dream digest now commits facts, document read markers and additive progress
+through the fact writer's completion callback. Counts in memory change after
+commit. Recursive halves complete independently, so a failed sibling does not
+lose or duplicate earlier progress. Accepted no-fact outcomes use a bounded
+completion transaction. The former snapshot progress method is removed. Detached
+dream writes retain a ten-second completion deadline, including attachment
+decisions and picture descriptions. Canceled-parent persistence, stalled
+acquisition, concurrent completion and trigger-based rollback regressions cover
+these boundaries. Page preparation still precedes fact filing, and small-document
+filtering retains its separate transaction.

@@ -68,6 +68,7 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 		return waiting[left].SourceID < waiting[right].SourceID
 	})
 	var mutex sync.Mutex
+	complete := dreamDigestCompletion(record, budget, &mutex)
 	var group sync.WaitGroup
 	slots := make(chan struct{}, concurrency)
 	stopped := false
@@ -96,7 +97,7 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 		go func() {
 			defer group.Done()
 			defer func() { <-slots }()
-			filed, answered := self.digestBatch(ctx, run, batch, budget, record.Coarse)
+			_, answered := self.digestBatch(ctx, run, batch, budget, record.Coarse, complete)
 			mutex.Lock()
 			defer mutex.Unlock()
 			if !answered {
@@ -118,26 +119,6 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 				return
 			}
 			silent = 0
-			record.Digested += len(batch)
-			record.Filed += filed
-			markRead(ctx, run, batch)
-			// And written down, not only counted.
-			//
-			// These were held in memory and written once, when the night
-			// ended. A server that restarted under a dream -- a deploy,
-			// an upgrade, a machine rebooting -- therefore lost the count
-			// of everything it had read, and the row the person is shown
-			// said "Cut short" and nothing else. The documents were
-			// marked read a line above this and the facts were on their
-			// pages: the work survived, and only the account of it did
-			// not. One small update a batch, against a batch that just
-			// cost a model call, is nothing to pay for a night that can
-			// say what it did.
-			progress := *record
-			progress.Tokens = budget.spentSoFar()
-			if err := noteDreamProgress(ctx, run, &progress); err != nil {
-				log.Debugf("could not write down what the dream has read: %s", err)
-			}
 		}()
 	}
 	group.Wait()
@@ -199,7 +180,7 @@ func (self *Agent) markTinyRead(ctx context.Context, run *Run, waiting []*models
 }
 
 // digestBatch reads a handful of documents and files what they taught.
-func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*models.AgentDocument, budget *dreamBudget, coarse bool) (int, bool) {
+func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*models.AgentDocument, budget *dreamBudget, coarse bool, complete digestCompletion) (int, bool) {
 	var index []string
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		lines, err := memoryLines(tx, run.Agent.ID, models.AudienceAsk, 10, false)
@@ -275,14 +256,14 @@ func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*model
 			if thinking != nil {
 				self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %d documents: too long for the model, split in two", len(documents)))
 			}
-			return self.digestHalves(ctx, run, documents, budget, coarse)
+			return self.digestHalves(ctx, run, documents, budget, coarse, complete)
 		}
 		// One document that on its own does not fit is not going to fit
 		// next time either: it is marked read, and its run says why, so
 		// the reading moves on rather than stopping at it every dream.
 		if llm.IsContextLengthError(err) && thinking != nil {
 			self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %d documents: too long for the model, skipped", len(documents)))
-			return 0, true
+			return 0, completeDigestWithoutFacts(ctx, run, documents, complete)
 		}
 		// Not read: a batch the model never answered is not marked as
 		// read. Four thousand documents were, in ten minutes, while the
@@ -302,16 +283,21 @@ func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*model
 	}
 	if err != nil {
 		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %d documents, and answered with no object", len(documents)))
-		return 0, self.givingUpOn(ctx, run, documents)
+		return 0, self.givingUpOn(ctx, run, documents) && completeDigestWithoutFacts(ctx, run, documents, complete)
 	}
 	answer := &RememberAnswer{}
 	if err := json.Unmarshal([]byte(extracted), answer); err != nil {
 		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %d documents, and answered with no object", len(documents)))
-		return 0, self.givingUpOn(ctx, run, documents)
+		return 0, self.givingUpOn(ctx, run, documents) && completeDigestWithoutFacts(ctx, run, documents, complete)
 	}
 	// Evidence points at the document rather than at a conversation:
 	// these facts came from something read, not something said.
-	filed, err := self.fileWhatWasLearned(ctx, run, answer, nil, models.EvidenceDocument, shown, nil)
+	filed, err := self.fileWhatWasLearned(ctx, run, answer, nil, models.EvidenceDocument, shown, func(transaction db.Transaction, filed whatWasFiled) error {
+		if complete == nil {
+			return nil
+		}
+		return complete(transaction, documents, filed.Filed)
+	})
 	if err != nil {
 		// Leave the batch unread when fact filing fails. Page preparation
 		// can have committed already, but the facts still need a retry.
@@ -399,7 +385,7 @@ func markRead(ctx context.Context, run *Run, documents []*models.AgentDocument) 
 // a half the model never answered leaves only itself for a night that
 // answers: the batch as a whole is not marked read, and what was filed
 // from the first half is not filed again.
-func (self *Agent) digestHalves(ctx context.Context, run *Run, documents []*models.AgentDocument, budget *dreamBudget, coarse bool) (int, bool) {
+func (self *Agent) digestHalves(ctx context.Context, run *Run, documents []*models.AgentDocument, budget *dreamBudget, coarse bool, complete digestCompletion) (int, bool) {
 	middle := len(documents) / 2
 	total := 0
 	for _, half := range [][]*models.AgentDocument{documents[:middle], documents[middle:]} {
@@ -410,12 +396,14 @@ func (self *Agent) digestHalves(ctx context.Context, run *Run, documents []*mode
 		if ctx.Err() != nil || !budget.left() {
 			return total, false
 		}
-		filed, answered := self.digestBatch(ctx, run, half, budget, coarse)
+		filed, answered := self.digestBatch(ctx, run, half, budget, coarse, complete)
 		total += filed
 		if !answered {
 			return total, false
 		}
-		markRead(ctx, run, half)
+		if complete == nil {
+			markRead(ctx, run, half)
+		}
 	}
 	return total, true
 }

@@ -36,7 +36,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries using either the stable draft key or its source item identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, agent calendar mutation retries, contact proposal acceptance and protocol adapters, knowledge-source and rule-update commands remain.
-- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; graph prompt context, recall, ranking, embedding, retrieval, indexing and note updates now live in separate files; dream scheduling, budget, requests, digest, timeline, consolidation, organization and splitting now have separate files; memory-tool page preparation now happens before its write transaction; HTTP recall now owns short read phases outside model calls; detached dream bookkeeping now has a completion deadline; remaining job/model adapters and benchmarks remain.
+- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; graph prompt context, recall, ranking, embedding, retrieval, indexing and note updates now live in separate files; dream scheduling, budget, requests, digest, timeline, consolidation, organization and splitting now have separate files; memory-tool page preparation now happens before its write transaction; HTTP recall now owns short read phases outside model calls; detached dream bookkeeping now has a completion deadline and digest fact writes, read markers and progress commit together; remaining job/model adapters and benchmarks remain.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
@@ -209,6 +209,13 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+- Decision: commit each completed digest leaf's facts, read markers and additive
+  progress in the fact writer's transaction; publish memory counts after commit.
+  Rationale: separate writes can leave facts without a read marker or a completed
+  half without progress, while snapshot writes can overwrite another batch.
+  Accepted no-fact outcomes use the bounded bookkeeping transaction.
+  Date/Author: 2026-09-21, implementation review.
 
 HTTP query root resolvers now own their transactions; mutations keep their
 request transaction. Schema construction installs the query wrappers once.
@@ -2405,3 +2412,44 @@ text. Temporarily replacing the completion timeout with an unbounded detached
 context makes all five stalled-acquisition cases fail immediately for the missing
 deadline; the bounded implementation was restored and byte-compared with the
 verified source. No dashboard rendering changes in this step.
+
+Digest completion will use fileWhatWasLearned's existing finish callback to
+commit fact changes, document read markers and dream progress together. SQL
+progress updates will add each completed leaf batch rather than overwrite a
+snapshot from another concurrent batch. In-memory counters will change in an
+AfterCommit callback. Recursive context-size splitting will complete each leaf
+once, preserving a successful half when another half fails. Accepted no-fact
+outcomes will use the bounded bookkeeping transaction. Page preparation remains
+an earlier phase and is not included in the atomic fact-write promise.
+
+Digest completion now commits fact changes, document read markers and additive
+dream progress through the same transaction. The earlier snapshot progress
+method and its detached agent wrapper are removed. The phase updates in-memory
+counts only after commit, so failed writes cannot inflate them. Each successful
+recursive half completes independently, including when its sibling fails; the
+parent does not count or mark those documents again. Accepted oversized or
+repeated-malformed outcomes record no-fact completion through the bounded
+bookkeeping helper. Page creation/contact preparation may still precede the fact
+transaction. Small-document filtering keeps its previous separate semantics.
+
+Tests exercise the real digest phase with a scripted provider, reject either
+read markers or progress with SQL triggers, and verify facts, read markers and
+counts roll back together before a successful retry. Other regressions cover
+partial recursive completion and retry, overlapping concurrent completions,
+no-fact outcomes and cancellation. SQL adds counts while retaining the greatest
+observed token total; a missing persisted dream row rejects completion.
+The isolated database regression also verifies that progress leaves the dream
+unfinished and that an older token snapshot cannot lower committed usage.
+
+Atomic digest validation passes: both full PostgreSQL suites run 2,054 tests,
+with two standard-image skips and one vector-image skip; aggregate coverage is
+42.5% on each. Focused completion, concurrency, cancellation and whole-dream
+race tests pass. Both binaries build, repository lint and gogolint pass, and
+privacy review finds only a reserved example-domain fixture address.
+
+Temporarily moving completion into a second transaction made both read-marker
+and progress-failure regressions fail: each retained two facts after failed
+completion. The atomic implementation was restored and byte-compared with the
+verified source. This confirms that the tests detect partial commits, rather
+than merely exercising the successful path. No dashboard rendering changes in
+this step; the remaining extraction, measurements and deployment gates stay open.

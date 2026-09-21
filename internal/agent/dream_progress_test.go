@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -58,8 +59,8 @@ func TestDreamBookkeepingBoundsAStalledDatabase(test *testing.T) {
 					test.Errorf("picture error = %v", err)
 				}
 			case "progress":
-				if err := noteDreamProgress(ctx, run, &models.AgentDream{}); !errors.Is(err, context.DeadlineExceeded) {
-					test.Errorf("progress error = %v", err)
+				if completeDigestWithoutFacts(ctx, run, nil, func(db.Transaction, []*models.AgentDocument, int) error { return nil }) {
+					test.Error("failed progress write completed the batch")
 				}
 			}
 			if !database.hasWaited {
@@ -96,14 +97,13 @@ func TestDreamBookkeepingPersistsAfterCancellation(test *testing.T) {
 	if !worker.givingUpOn(ctx, run, documents) {
 		test.Fatal("second malformed answer was not recorded")
 	}
-	markRead(ctx, run, documents)
 	declineAttachments(ctx, run, []string{document.ID}, "fixture decision")
 	if err := keepDreamPicture(ctx, run, document, "Fixture picture description."); err != nil {
 		test.Fatal(err)
 	}
-	record.Digested = 1
-	if err := noteDreamProgress(ctx, run, record); err != nil {
-		test.Fatal(err)
+	var mutex sync.Mutex
+	if !completeDigestWithoutFacts(ctx, run, documents, dreamDigestCompletion(record, &dreamBudget{}, &mutex)) {
+		test.Fatal("completed batch did not persist after cancellation")
 	}
 	if readCount := dbtest.QueryString(test, database, `SELECT count(*)::text FROM agent_document WHERE metadata ? 'digested'`); readCount != "1" {
 		test.Fatalf("read documents = %s", readCount)
