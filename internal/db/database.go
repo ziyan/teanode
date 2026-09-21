@@ -219,6 +219,9 @@ type transaction struct {
 	// actor is who the graph writes in this transaction are by, for the
 	// history a page keeps. See database_revision.go.
 	actor models.RevisionActor
+
+	isNested    bool
+	rollbackErr error
 }
 
 func (self *database) Transaction(f func(Transaction) error) error {
@@ -254,6 +257,9 @@ func (self *transaction) begin() error {
 }
 
 func (self *transaction) commit() error {
+	if self.rollbackErr != nil {
+		return self.rollbackErr
+	}
 	if err := self.tx.Commit().Error; err != nil {
 		return err
 	}
@@ -268,6 +274,9 @@ func (self *transaction) rollback() {
 }
 
 func (self *transaction) Commit() error {
+	if self.isNested {
+		return fmt.Errorf("cannot commit a nested command transaction")
+	}
 	if err := self.commit(); err != nil {
 		return err
 	}

@@ -131,6 +131,11 @@ type Database interface {
 type Transaction interface {
 	Commit() error
 
+	// TransactionContext runs one command under a savepoint on this connection.
+	// A failure rolls back only that command; success remains subject to the
+	// outer transaction's commit. The nested transaction cannot commit early.
+	TransactionContext(ctx context.Context, function func(Transaction) error) error
+
 	// TryAdvisoryLock takes an advisory lock for the rest of the
 	// transaction, or says another transaction holds it.
 	TryAdvisoryLock(key int64) (bool, error)
