@@ -9,6 +9,8 @@ import (
 // notSecret names the fields whose names read like a secret but are not, so
 // that the check below can be strict about everything else.
 var notSecret = map[string]bool{
+	// A lexical token budget for GraphQL parsing, not an authentication token.
+	"GraphQL.MaximumTokenCount": true,
 	// Paths to secrets, not the secrets themselves. Showing where a key is
 	// kept is how an operator finds it.
 	"TLS.PrivateKeyFile":               true,

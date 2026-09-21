@@ -307,6 +307,10 @@ func (self *agentOperations) Execute(ctx context.Context, document string, varia
 	if err != nil {
 		return err
 	}
+	prepared, rejected := self.graph.prepareGraphRequest(&graphRequest{Query: document, Variables: variables})
+	if rejected != nil {
+		return errors.New(rejected.Errors[0].Message)
+	}
 	ctx = api.ContextWithAuthenticatedUsername(ctx, self.user.Username)
 	ctx = db.ContextWithAuditPrincipal(ctx, db.AuditPrincipal{ActorKind: models.AuditActorAgent, UserID: self.user.ID})
 	var outcome *graphql.Result
@@ -320,12 +324,8 @@ func (self *agentOperations) Execute(ctx context.Context, document string, varia
 			return api.ErrNotLoggedIn
 		}
 		ctx = api.ContextWithPrincipal(ctx, principal)
-		outcome = graphql.Do(graphql.Params{
-			Schema:         self.graph.schema,
-			RequestString:  document,
-			VariableValues: variables,
-			Context:        ctx,
-		})
+		prepared.Context = ctx
+		outcome = graphql.Execute(prepared)
 		if len(outcome.Errors) > 0 {
 			// A failed operation must not leave half of itself behind.
 			return errors.New(outcome.Errors[0].Message)
@@ -1130,9 +1130,8 @@ func (self *graph) RemoveAgentTodo(ctx context.Context, arguments RemoveAgentTod
 
 // AgentRunEvents follows a run over the websocket.
 func (self *graph) AgentRunEvents(ctx context.Context, arguments ReadAgentRunArguments) (<-chan *agent.Event, error) {
-	// A subscription resolves in a goroutine of its own, after the
-	// transaction the socket opened for it has been committed, so the
-	// lookup needs a transaction of its own.
+	// The socket resolves the principal before starting the stream. This
+	// lookup has its own short transaction; the stream holds no SQL connection.
 	var found *models.Agent
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		var err error

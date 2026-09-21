@@ -31,7 +31,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Draft milestones, compatibility constraints, rollback procedures and acceptance gates.
 - [x] (2026-09-20) Record baseline checks and their limits.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
-- [ ] Milestone 2 (in progress): SQL cancellation and its regressions pass; GraphQL preparation, command atomicity and bounded cleanup remain.
+- [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document limits pass; list-work bounds, command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
 - [ ] Milestone 4 (in progress): disable automatic mutation retries; durable submission identity, recovery and storage guarantees remain.
 - [ ] Milestone 5: extract shared application commands from transport adapters.
@@ -40,6 +40,13 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+GraphQL document preparation needs a separate fragment-cycle validation pass
+before the validator rules that compare expanded selections. Parser nesting and
+expanded-selection limits must run before those rules as well. Subscription
+handlers already open their own short lookup transactions; the websocket should
+finish principal resolution before launching them, without putting the completed
+transaction into their long-lived context.
 
 Conversation refreshes restored the saved draft on every read, even while the
 person was editing the current conversation. Restore only on a conversation
@@ -71,6 +78,14 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: keep GraphQL response formatting and operation-selection errors
+compatible while preparing the syntax tree outside SQL. Apply the same helper
+to HTTP, agent and websocket requests. Store document limits in the existing
+configuration store under `graphql`, with defaults of 32 nesting levels, 20,000
+tokens and 5,000 expanded selections. Checked-in CLI and agent documents pass
+these limits. Pagination-weighted execution work is a separate remaining bound;
+do not describe document limits as a result-row limit.
 
 Decision: the conversation hook owns both the displayed conversation identity
 and a synchronous selection reference. A deliberate switch changes the reference
@@ -614,3 +629,15 @@ completion refresh retained a typed draft, and desktop and narrow screenshots
 showed readable controls without horizontal overflow or JavaScript exceptions.
 This focused audit does not replace the later full-server deployment smoke test
 or the broader dashboard audit after all extractions.
+
+Revision note: GraphQL parsing, document validation and operation selection now
+precede database work. Regression tests exercise malformed and invalid documents
+through all three entry points with no database supplied, preserve query variables
+and operation names, and reject excessive nesting, token counts, fragment
+expansion and cycles. Subscriptions start after principal resolution commits.
+API and configuration tests pass under race detection after classifying the new
+lexical token count correctly in the configuration redaction guard. The full
+vector-enabled suite reports 1,771 tests with one Chrome-proxy integration skip;
+the embedded dashboard test now runs after the production build. Go lint and
+`gogolint` pass. List-work limits, broader query headroom measurement and command
+failure semantics remain open within Milestone 2.

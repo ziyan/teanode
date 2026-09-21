@@ -30,6 +30,9 @@ type Configuration struct {
 	// Addresses to listen on
 	Listen Listen `yaml:"listen"`
 
+	// Bounds on GraphQL document preparation before database work.
+	GraphQL GraphQL `yaml:"graphql"`
+
 	// What a mail program is told to connect to for reading mail, when that
 	// is not what this server listens on
 	IMAP IMAPAccess `yaml:"imap"`
@@ -901,4 +904,11 @@ type S3 struct {
 	// CredentialsFile is an AWS shared credentials file, as an alternative to
 	// the two fields above.
 	CredentialsFile string `yaml:"credentialsFile,omitempty"`
+}
+
+// GraphQL limits document parsing and expanded selection work.
+type GraphQL struct {
+	MaximumDepth          int `yaml:"maximumDepth"`
+	MaximumTokenCount     int `yaml:"maximumTokenCount"`
+	MaximumSelectionCount int `yaml:"maximumSelectionCount"`
 }

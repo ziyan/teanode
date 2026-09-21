@@ -54,6 +54,15 @@ func (self *Configuration) Validate() error {
 	validator := &validator{}
 
 	self.validateServer(validator)
+	if self.GraphQL.MaximumDepth < 1 || self.GraphQL.MaximumDepth > 256 {
+		validator.add("graphql.maximumDepth", "must be between 1 and 256")
+	}
+	if self.GraphQL.MaximumTokenCount < 1 || self.GraphQL.MaximumTokenCount > 1000000 {
+		validator.add("graphql.maximumTokenCount", "must be between 1 and 1000000")
+	}
+	if self.GraphQL.MaximumSelectionCount < 1 || self.GraphQL.MaximumSelectionCount > 100000 {
+		validator.add("graphql.maximumSelectionCount", "must be between 1 and 100000")
+	}
 	self.validateListen(validator)
 	self.validateTls(validator)
 	self.validateDatabase(validator)

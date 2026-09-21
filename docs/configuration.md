@@ -309,6 +309,24 @@ they sign in: no password, an identity bound to the provider, a Personal
 mailbox, and the groups their claims name. Off, only people whose account
 already has an identity at this provider may sign in through it.
 
+### `graphql`
+
+Document limits apply before SQL work on HTTP requests, agent operations and
+websocket subscriptions. Changes take effect on the next request.
+
+**`maximumDepth`** (default `32`, range `1` to `256`): maximum delimiter nesting
+before parsing, and maximum selection depth after expanding fragments. Strings
+and comments do not add nesting.
+
+**`maximumTokenCount`** (default `20000`, range `1` to `1000000`): maximum lexical
+tokens in one document. A quoted string is one token; the document also has a
+one-megabyte byte limit.
+
+**`maximumSelectionCount`** (default `5000`, range `1` to `100000`): maximum total
+selections visited across operations and fragment definitions, including repeated
+fragment expansion and aliases. This is a document-work limit, not a result-row
+limit; individual resolvers retain their pagination bounds.
+
 ### `listen`
 
 **`smtpIncoming`** — SMTPIncoming receives mail from the internet. Port 25 in
