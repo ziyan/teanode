@@ -13,6 +13,16 @@ import (
 // and items moved out of the mailbox are left alone. Stored bytes follow normal
 // retention so rolling back this command restores a readable draft.
 func RemoveDraft(ctx context.Context, transaction db.Transaction, mailboxId, itemId string) error {
+	return changeDraft(ctx, transaction, mailboxId, itemId, true)
+}
+
+// TakeOverDraft cancels a held automatic reply before accepting a person's send.
+// The draft item remains available until accepted-send reconciliation removes it.
+func TakeOverDraft(ctx context.Context, transaction db.Transaction, mailboxId, itemId string) error {
+	return changeDraft(ctx, transaction, mailboxId, itemId, false)
+}
+
+func changeDraft(ctx context.Context, transaction db.Transaction, mailboxId, itemId string, shouldRemove bool) error {
 	return transaction.TransactionContext(ctx, func(command db.Transaction) error {
 		item, err := command.LockItem(itemId)
 		if err != nil || item == nil {
@@ -50,7 +60,9 @@ func RemoveDraft(ctx context.Context, transaction db.Transaction, mailboxId, ite
 				}
 			}
 		}
-		_, err = command.DeleteItems([]string{item.ID})
+		if shouldRemove {
+			_, err = command.DeleteItems([]string{item.ID})
+		}
 		return err
 	})
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/access"
 	"github.com/ziyan/teanode/internal/db"
+	mailboxcommands "github.com/ziyan/teanode/internal/mailbox"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/mx"
 	"github.com/ziyan/teanode/internal/util/mailparse"
@@ -114,6 +115,11 @@ func (self *SubmissionCoordinator) Submit(ctx context.Context, principal *access
 		}
 		if err := validateSubmissionItems(transaction, request); err != nil {
 			return err
+		}
+		if request.DraftItemID != "" {
+			if err := mailboxcommands.TakeOverDraft(ctx, transaction, mailbox.ID, request.DraftItemID); err != nil {
+				return err
+			}
 		}
 		if prepare == nil {
 			return fmt.Errorf("%w: submission preparation is required", db.ErrInvalidArguments)

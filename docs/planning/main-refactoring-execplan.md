@@ -33,7 +33,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; client retry identities and remaining send adapters remain.
+- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; client retry identities and schedule/domain send adapters remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
@@ -41,6 +41,14 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+The automatic reply worker checked Held before its policy ladder, then later
+wrote Sending without checking the locked row. Human cancellation could be
+replaced by that stale write. Acceptance now locks draft then reply and commits
+the mail, reply's Sent state, quota and cleanup together. The cancellation API
+had the inverse race and also recorded two corrections by going through generic
+draft takeover first; it now guards its own cancellation and records one
+correction in the same command scope.
 
 Recovery must not let permanently failing records occupy every oldest slot. Its
 pending query now orders by an indexed due time and failed commands persist a
@@ -131,6 +139,17 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: automatic replies use their existing durable reply identifier and Sent
+state as the acceptance identity, rather than a separate submission record. The
+mail, reply state and mailbox changes commit together using `AcceptSubmission`;
+a repeated job cannot accept again, and a failed final SQL write rolls acceptance
+back. Manual submissions must cancel a held automatic reply before acceptance,
+not leave that eligibility change to delayed reconciliation. Rationale: a person
+and the auto-reply worker must serialize on the same held reply, and automatic
+completion must not record human takeover feedback. Legacy persisted Sending
+rows remain ambiguous and retain the prior refusal-to-resend behavior. Date:
+2026-09-21.
 
 Decision: the mailbox send resolver accepts an optional `submissionId`, serializes
 its typed message parameters on the server and delegates acceptance to the shared
@@ -1057,3 +1076,40 @@ mailbox send adapter, 1,851 tests and two expected skips. Focused API, coordinat
 and persistence regressions pass. Lint and `gogolint` pass. Client identity
 retention, held-reply transition correctness, the remaining send paths and the
 final visual/deployment gates are still required.
+
+Revision note: automatic reply sending now calls transactional mail acceptance
+while holding the draft and reply locks, and commits the accepted mail identity,
+Sent state, hourly quota, answered flag and draft removal together. The Sent row
+is the durable identity across job retries. A changed Held snapshot is deferred
+for fresh policy/content reads; a cancelled or already accepted reply is left
+alone. Final failure classification uses FailureCount instead of claim Attempts,
+and refusal/failure settlement uses bounded SQL after caller cancellation. Both
+settlement and acceptance guard stale reply state. Agent cleanup now preserves
+items converted from drafts to regular mail.
+
+Manual submission acceptance calls `mailbox.TakeOverDraft` before composition
+and exchange acceptance. It cancels a held automatic reply and records one
+correction transactionally, leaving the draft item for reconciliation. Failure
+of acceptance rolls back the cancellation and correction. `CancelAgentReply`
+likewise guards Held under lock, does not overwrite Sent, and rolls draft removal,
+state and feedback back together on a feedback SQL failure. Its former duplicate
+correction through generic draft takeover is removed.
+
+Regressions cover concurrent acceptance committing once, rollback after a real
+constraint failure on the final Sent write including quota and commit callbacks,
+stale send after takeover, changed held content deferral, hourly quota refusal,
+preserving converted drafts, takeover rollback on acceptance failure and takeover
+remaining cancelled while reconciliation is pending. API tests cover cancellation
+feedback failure, exactly one correction across repeated calls, and a stale Held
+read followed by an already committed Sent state. The existing automatic-reply
+worker integration test now uses transactional acceptance and still verifies its
+policy, hold, content, threading and automatic headers.
+
+These changes close the held-reply race noted above. Client retry request retention,
+the direct domain/CLI send path, scheduled mail and the agent mail-send tool still
+need integration. The full refactoring and final visual/deployment checks remain
+open; this revision does not mark Milestone 4 complete.
+
+Validation update: the full vector-enabled race suite passes after automatic
+reply acceptance and cancellation changes, with 1,862 tests and one expected
+skip. Focused agent, mailer and API regressions, lint and `gogolint` pass.

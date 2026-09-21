@@ -45,8 +45,24 @@ type fakeMailer struct {
 }
 
 func (self *fakeMailer) Close() error { return nil }
-func (self *fakeMailer) AcceptSubmission(context.Context, db.Transaction, *mailparse.Envelope, *mailer.Message) (*models.Mail, error) {
-	return nil, fmt.Errorf("transactional acceptance is not configured in this fixture")
+func (self *fakeMailer) AcceptSubmission(_ context.Context, transaction db.Transaction, envelope *mailparse.Envelope, message *mailer.Message) (*models.Mail, error) {
+	accepted, err := transaction.CreateMail(&models.Mail{Subject: message.Subject}, nil)
+	if err != nil {
+		return nil, err
+	}
+	sent, err := transaction.GetFolderByKind(envelope.MailboxID, models.MailboxFolderKindSent)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := transaction.AddItem(sent.ID, accepted.ID, "", models.MailboxItemFlags{}); err != nil {
+		return nil, err
+	}
+	transaction.AfterCommit(func() {
+		self.mutex.Lock()
+		defer self.mutex.Unlock()
+		self.sent = append(self.sent, message)
+	})
+	return accepted, nil
 }
 func (self *fakeMailer) Send(ctx context.Context, envelope *mailparse.Envelope, message *mailer.Message) error {
 	self.mutex.Lock()

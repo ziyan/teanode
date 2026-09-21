@@ -109,11 +109,21 @@ What passes is written as an ordinary draft in Drafts, held for a number of
 minutes the person set, and a send job is queued for when the hold ends.
 
 At send time the ladder runs again, and so do fresh checks: the draft still
-exists, the message is still in the Inbox, answering is still switched on. A
-reply is marked *sending* before the mailer is called, so a crash between
-sending and recording is settled as failed with a note to look in Sent rather
-than sent twice. The sender is marked replied to only after it has gone, so a
-retry is not refused by its own first try.
+exists, the message is still in the Inbox, answering is still switched on. The
+sender then locks the draft and reply, verifies the reply is still held and
+unchanged, and accepts the mail in the same transaction as its Sent state,
+hourly count, answered flag and draft removal. Delivery starts after commit.
+A repeated job finds the committed reply state and does not accept another
+message. Failure before commit restores the held reply and its draft; changed
+held content is retried from a fresh snapshot.
+
+A person's takeover cancels a held reply as part of accepting their message,
+even if later draft cleanup needs recovery. Cancellation rechecks the reply
+under its lock and cannot change an already accepted reply back to Cancelled.
+The status called *sending* is now only an intermediate uncommitted state for
+new sends. A persisted Sending record from an older release still means its
+outcome is unknown and is marked failed with a note to check Sent. Stop older
+send workers before upgrading; their acceptance path cannot join this boundary.
 
 The mail goes out as the person, marked in the audit trail as the agent's
 doing, carrying `Auto-Submitted: auto-replied`.

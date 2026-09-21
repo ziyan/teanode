@@ -1020,27 +1020,40 @@ func (self *graph) CancelAgentReply(ctx context.Context, arguments CancelAgentRe
 	if reply.Status != models.AgentReplyHeld {
 		return reply, nil // nothing to cancel; say where it stands
 	}
-	mailbox, err := tx.GetMailbox(reply.MailboxID)
-	if err != nil {
-		return nil, err
-	}
-	if mailbox != nil && reply.DraftItemID != "" {
-		if err := self.removeDraft(ctx, tx, mailbox, reply.DraftItemID); err != nil && !errors.Is(err, api.ErrNotFound) {
-			return nil, err
+	noLongerHeld := errors.New("reply is no longer held")
+	var updated *models.AgentReply
+	err = tx.TransactionContext(ctx, func(command db.Transaction) error {
+		if _, err := command.LockItem(reply.DraftItemID); err != nil {
+			return err
 		}
-	}
-	updated, err := tx.UpdateAgentReply(reply.ID, func(reply *models.AgentReply) error {
-		reply.Status = models.AgentReplyCancelled
-		reply.Reason = "cancelled by the person"
-		reply.DraftItemID = ""
-		return nil
+		var err error
+		updated, err = command.UpdateAgentReply(reply.ID, func(current *models.AgentReply) error {
+			if current.Status != models.AgentReplyHeld {
+				return noLongerHeld
+			}
+			if current.DraftItemID != reply.DraftItemID {
+				return fmt.Errorf("%w: the draft changed; retry cancellation", api.ErrInvalidArguments)
+			}
+			current.Status = models.AgentReplyCancelled
+			current.Reason = "cancelled by the person"
+			current.DraftItemID = ""
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := command.DeleteItems([]string{reply.DraftItemID}); err != nil {
+			return err
+		}
+		return agent.RecordReplyDeclined(command, updated, "cancelled by the person before it went")
 	})
+	if errors.Is(err, noLongerHeld) {
+		return tx.GetAgentReply(reply.ID)
+	}
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := agent.RecordReplyDeclined(tx, reply, "cancelled by the person before it went"); err != nil {
-		log.Warningf("cannot record the correction for reply %q: %s", reply.ID, err)
-	}
+
 	log.Noticef("%s cancelled the reply their agent held for %q", operatorName(ctx), reply.Subject)
 	return updated, nil
 }

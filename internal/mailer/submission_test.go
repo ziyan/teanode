@@ -224,3 +224,69 @@ func TestSubmissionWithoutIdentifierRemainsANewSendEachTime(test *testing.T) {
 		test.Fatal("unidentified calls were incorrectly deduplicated")
 	}
 }
+
+func TestSubmissionTakeoverRollsBackWithFailedAcceptance(test *testing.T) {
+	database, principal, mailbox, acceptor := coordinatorFixture(test)
+	var held *models.AgentReply
+	request := SubmissionRequest{SubmissionID: "takeover-request", MailboxID: mailbox.ID, RequestContent: []byte(`{"subject":"Fixture"}`)}
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		ownerAgent, err := transaction.CreateAgent(&models.Agent{UserID: principal.User.ID, Name: "Fixture agent"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		mail, err := transaction.CreateMail(&models.Mail{Kind: models.MailKindDraft}, nil)
+		if err != nil {
+			test.Fatal(err)
+		}
+		drafts, err := transaction.GetFolderByKind(mailbox.ID, models.MailboxFolderKindDrafts)
+		if err != nil {
+			test.Fatal(err)
+		}
+		draft, err := transaction.AddItem(drafts.ID, mail.ID, "", models.MailboxItemFlags{Draft: new(true)})
+		if err != nil {
+			test.Fatal(err)
+		}
+		request.DraftItemID = draft.ID
+		held, err = transaction.CreateAgentReply(&models.AgentReply{AgentID: ownerAgent.ID, MailboxID: mailbox.ID, MailID: mail.ID, DraftItemID: draft.ID, Status: models.AgentReplyHeld, To: "recipient@example.net", Subject: "Fixture", Text: "Held text"})
+		if err != nil {
+			test.Fatal(err)
+		}
+	})
+	acceptor.acceptError = errors.New("acceptance failed")
+	coordinator := NewSubmissionCoordinator(database, acceptor)
+	if _, err := coordinator.Submit(context.Background(), principal, request, prepareSubmissionFixture); err == nil {
+		test.Fatal("expected failed acceptance")
+	}
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		reply, err := transaction.GetAgentReply(held.ID)
+		if err != nil || reply == nil || reply.Status != models.AgentReplyHeld || reply.DraftItemID != request.DraftItemID {
+			test.Fatalf("failed acceptance cancelled reply: %+v, %v", reply, err)
+		}
+		corrections, err := transaction.ListAgentFeedback(held.AgentID, nil, 10)
+		if err != nil || len(corrections) != 0 {
+			test.Fatalf("failed acceptance recorded correction: %d, %v", len(corrections), err)
+		}
+	})
+	acceptor.acceptError = nil
+	if _, err := coordinator.Submit(context.Background(), principal, request, prepareSubmissionFixture); err != nil {
+		test.Fatal(err)
+	}
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		accepted, err := transaction.LockSubmission(principal.User.ID, request.SubmissionID)
+		if err != nil || accepted == nil || accepted.ReconciledAt != nil {
+			test.Fatalf("acceptance = %+v, %v", accepted, err)
+		}
+		reply, err := transaction.GetAgentReply(held.ID)
+		if err != nil || reply == nil || reply.Status != models.AgentReplyCancelled || reply.DraftItemID != "" {
+			test.Fatalf("accepted takeover left reply eligible: %+v, %v", reply, err)
+		}
+		draft, err := transaction.GetItem(request.DraftItemID)
+		if err != nil || draft == nil {
+			test.Fatalf("takeover removed draft before reconciliation: %+v, %v", draft, err)
+		}
+		corrections, err := transaction.ListAgentFeedback(held.AgentID, nil, 10)
+		if err != nil || len(corrections) != 1 {
+			test.Fatalf("accepted takeover corrections = %d, %v", len(corrections), err)
+		}
+	})
+}

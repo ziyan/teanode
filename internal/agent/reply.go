@@ -606,7 +606,11 @@ func (self *Agent) discardDraft(ctx context.Context, tx db.Transaction, itemId s
 		return nil
 	}
 	return tx.TransactionContext(ctx, func(command db.Transaction) error {
-		_, err := command.DeleteItems([]string{itemId})
+		item, err := command.LockItem(itemId)
+		if err != nil || item == nil || !item.Draft {
+			return err
+		}
+		_, err = command.DeleteItems([]string{itemId})
 		return err
 	})
 }
