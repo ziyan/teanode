@@ -3,6 +3,7 @@ package mailsend
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -23,11 +24,7 @@ func init() {
 				Parameters: tools.Object(map[string]any{
 					"draft_id": tools.StringProperty("the draft, from mail_draft"),
 				}, "draft_id"),
-				// The card is read by somebody deciding whether a message
-				// leaves the building, so it says the message: who it goes
-				// to and what it is called. It used to print the call --
-				// "Send the draft {\"draft_id\":\"01m2ep00bed1yyxq763yn865wq\"}"
-				// -- which asks a person to approve an identifier.
+				// Approval shows the recipients and subject of the outward message.
 				PreviewIn: func(ctx context.Context, arguments json.RawMessage) string {
 					var call mailSendArguments
 					if err := json.Unmarshal(arguments, &call); err != nil || call.DraftID == "" {
@@ -114,13 +111,23 @@ func runMailSend(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if recovered, err := acceptedDraft(ctx, operations, views, arguments.DraftID); err != nil || recovered != nil {
+		return recovered, err
+	}
+	recoverRead := func(readError error) (*tools.Result, error) {
+		// Acceptance may commit while a draft read is in flight.
+		if recovered, err := acceptedDraft(ctx, operations, views, arguments.DraftID); err != nil || recovered != nil {
+			return recovered, err
+		}
+		return nil, readError
+	}
 	// The draft wherever it is now. What was confirmed is "send this
 	// draft", and between the card being shown and the person pressing it
 	// the draft may have been saved again -- opening it in the composer is
 	// enough -- which leaves the item id it was called with naming nothing.
 	view, found, err := findDraft(ctx, operations, views, arguments.DraftID)
 	if err != nil {
-		return nil, err
+		return recoverRead(err)
 	}
 	itemId := found.ItemID
 	var draft struct {
@@ -141,10 +148,10 @@ func runMailSend(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		} `json:"GetMailboxDraft"`
 	}
 	if err := operations.Execute(ctx, `query ($itemId: String!) { GetMailboxDraft(itemId: $itemId) { from fromName to cc bcc subject text html replyToItemId forwardItemId attachments { index } } }`, map[string]any{"itemId": itemId}, &draft); err != nil {
-		return nil, err
+		return recoverRead(err)
 	}
 	if draft.GetMailboxDraft == nil {
-		return nil, fmt.Errorf("there is no draft %q", arguments.DraftID)
+		return recoverRead(fmt.Errorf("there is no draft %q", arguments.DraftID))
 	}
 	stored := draft.GetMailboxDraft
 	keep := make([]int, 0, len(stored.Attachments))
@@ -165,7 +172,7 @@ func runMailSend(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			} `json:"mail"`
 		} `json:"SendMailboxMessage"`
 	}
-	if err := operations.Execute(ctx, `mutation ($mailboxId: String!, $message: MailboxMessageParametersInput!) { SendMailboxMessage(mailboxId: $mailboxId, message: $message) { mail { id } } }`, map[string]any{"mailboxId": view.Mailbox.ID, "message": message}, &result); err != nil {
+	if err := operations.Execute(ctx, `mutation ($mailboxId: String!, $message: MailboxMessageParametersInput!, $submissionId: String!) { SendMailboxMessage(mailboxId: $mailboxId, message: $message, submissionId: $submissionId) { mail { id } } }`, map[string]any{"mailboxId": view.Mailbox.ID, "message": message, "submissionId": draftSubmissionId(view.Mailbox.ID, arguments.DraftID)}, &result); err != nil {
 		return nil, err
 	}
 	sent := ""
@@ -178,4 +185,34 @@ func runMailSend(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	}
 	answer.Note = fmt.Sprintf("sent %q to %s", stored.Subject, strings.Join(stored.To, ", "))
 	return answer, nil
+}
+
+// Retries of the same draft identifier reuse acceptance, including from the
+// direct CLI and after conversation retries. Provider call IDs may repeat, so they cannot
+// name the send. A new message gets a new draft key from the draft creator.
+func draftSubmissionId(mailboxId, draftId string) string {
+	encoded, _ := json.Marshal([]string{"mail_send", mailboxId, strings.TrimSpace(draftId)})
+	return fmt.Sprintf("draft-%x", sha256.Sum256(encoded))
+}
+
+func acceptedDraft(ctx context.Context, operations tools.Operations, views []*mailbox.MailboxView, draftId string) (*tools.Result, error) {
+	for _, view := range views {
+		var response struct {
+			GetMailboxSubmission *struct {
+				MailID string `json:"mailId"`
+			} `json:"GetMailboxSubmission"`
+		}
+		if err := operations.Execute(ctx, `query ($mailboxId: String!, $submissionId: String!) { GetMailboxSubmission(mailboxId: $mailboxId, submissionId: $submissionId) { mailId } }`, map[string]any{"mailboxId": view.Mailbox.ID, "submissionId": draftSubmissionId(view.Mailbox.ID, draftId)}, &response); err != nil {
+			return nil, err
+		}
+		if response.GetMailboxSubmission != nil {
+			answer, err := tools.JSONResult(map[string]any{"sent": true, "mail_id": response.GetMailboxSubmission.MailID, "is_replay": true})
+			if err != nil {
+				return nil, err
+			}
+			answer.Note = "this draft was already accepted for delivery"
+			return answer, nil
+		}
+	}
+	return nil, nil
 }

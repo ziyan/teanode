@@ -19,6 +19,8 @@ import (
 // SubmissionOperation keeps local acceptance and later mailbox reconciliation
 // in the same database as mail. Callers must bind a retry to its request digest.
 type SubmissionOperation interface {
+	// GetSubmission reads a committed acceptance without claiming or locking it.
+	GetSubmission(ownerId, submissionId string) (*models.Submission, error)
 	// LockSubmission serializes this owner's identifier through transaction end,
 	// including when no record exists. A nil result allows initial acceptance.
 	LockSubmission(ownerId, submissionId string) (*models.Submission, error)
@@ -52,8 +54,19 @@ func (self *transaction) LockSubmission(ownerId, submissionId string) (*models.S
 	if err := self.tx.Exec("SELECT pg_advisory_xact_lock(?)", lockKey).Error; err != nil {
 		return nil, err
 	}
+	return readSubmission(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}), ownerId, submissionId)
+}
+
+func (self *transaction) GetSubmission(ownerId, submissionId string) (*models.Submission, error) {
+	if err := validateSubmissionIdentity(ownerId, submissionId); err != nil {
+		return nil, err
+	}
+	return readSubmission(self.tx, ownerId, submissionId)
+}
+
+func readSubmission(query *gorm.DB, ownerId, submissionId string) (*models.Submission, error) {
 	var stored submissionModel
-	err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("owner_id = ? AND submission_id = ?", ownerId, submissionId).Take(&stored).Error
+	err := query.Where("owner_id = ? AND submission_id = ?", ownerId, submissionId).Take(&stored).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}

@@ -33,7 +33,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; client retry identities and schedule/domain send adapters remain.
+- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; dashboard retry retention and schedule/domain send adapters remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
@@ -41,6 +41,16 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+Provider tool-call identifiers are not unique send identities. Direct tool calls
+reuse a fixed identifier, and model providers may reuse their call identifiers.
+The mail-send tool now derives its submission identifier from the mailbox and
+supplied draft identifier. Acceptance lookup precedes draft reads, so a response
+lost after committed acceptance remains recoverable after draft removal. A
+second lookup handles acceptance committed while a draft read was in flight.
+This guarantee covers retries of the same supplied draft identifier; switching
+between a logical draft key and an item identifier is a different identity and
+is not claimed as deduplicated by this adapter.
 
 The automatic reply worker checked Held before its policy ladder, then later
 wrote Sending without checking the locked row. Human cancellation could be
@@ -139,6 +149,15 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: expose an owner-scoped `GetMailboxSubmission` query requiring mail-send
+permission and mailbox ownership. It returns durable acceptance identifiers,
+including after message retention, without claiming recovery work or exposing
+request contents. The mail-send tool checks currently granted mailboxes before
+reading its draft and stops if lookup is unavailable. Rationale: recovery must
+not require the draft or message bytes that acceptance cleanup can remove.
+Provider call identifiers cannot distinguish independent direct sends. Date:
+2026-09-21.
 
 Decision: automatic replies use their existing durable reply identifier and Sent
 state as the acceptance identity, rather than a separate submission record. The
@@ -1113,3 +1132,19 @@ open; this revision does not mark Milestone 4 complete.
 Validation update: the full vector-enabled race suite passes after automatic
 reply acceptance and cancellation changes, with 1,862 tests and one expected
 skip. Focused agent, mailer and API regressions, lint and `gogolint` pass.
+
+Revision note: the mail-send agent tool now supplies a stable submission identity
+for retries of the same mailbox and draft identifier, including direct tool
+calls. Acceptance lookup recovers the original mail identifier without reading a
+removed draft and is retried when a draft read loses a race with acceptance.
+Confirmation and current mailbox grants are still required. The new API query
+checks ownership and mail-send permission, returns no result for a different
+owned mailbox, and preserves acceptance identifiers after mail deletion.
+
+Validation: the complete standard PostgreSQL race suite passes with 1,868 tests
+and two expected skips. Lint and gogolint pass. Five tool regressions cover lost
+responses, unavailable lookup, repeated provider identifiers, confirmation and
+acceptance during draft reads; the API regression covers ownership, permissions,
+mailbox separation and retention. Dashboard request retention, scheduled and
+domain-scoped sends, alternate draft-reference deduplication, and final visual
+and deployment checks remain open. This revision does not complete Milestone 4.

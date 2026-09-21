@@ -32,6 +32,9 @@ import (
 // added by the exchange in the transaction that records it.
 
 type MailboxComposeQuery interface {
+	// Recover a previously accepted send, including after its message was deleted.
+	GetMailboxSubmission(ctx context.Context, arguments GetMailboxSubmissionArguments) (*MailboxSubmission, error)
+
 	// Read a draft back into the compose page
 	GetMailboxDraft(ctx context.Context, arguments GetMailboxDraftArguments) (*MailboxDraft, error)
 
@@ -88,6 +91,37 @@ type MailboxMessageParameters struct {
 	// given -- without the bytes passing through the model or through a
 	// second upload.
 	InlineImages []string `json:"inlineImages" graphapi:"nullable"`
+}
+
+// GetMailboxSubmissionArguments identifies a send within an owned mailbox.
+type GetMailboxSubmissionArguments struct {
+	MailboxID    string `json:"mailboxId"`
+	SubmissionID string `json:"submissionId"`
+}
+
+// MailboxSubmission is the durable local acceptance, not remote delivery status.
+type MailboxSubmission struct {
+	SubmissionID string    `json:"submissionId"`
+	MailID       string    `json:"mailId"`
+	SentItemID   string    `json:"sentItemId"`
+	AcceptedAt   time.Time `json:"acceptedAt"`
+	IsReconciled bool      `json:"isReconciled"`
+}
+
+// GetMailboxSubmission exposes only the caller's accepted send identities.
+func (self *graph) GetMailboxSubmission(ctx context.Context, arguments GetMailboxSubmissionArguments) (*MailboxSubmission, error) {
+	mailbox, err := self.requireMailbox(ctx, models.PermissionMailSend, arguments.MailboxID)
+	if err != nil {
+		return nil, err
+	}
+	accepted, err := self.transaction(ctx).GetSubmission(mailbox.UserID, arguments.SubmissionID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	if accepted == nil || accepted.MailboxID != mailbox.ID {
+		return nil, nil
+	}
+	return &MailboxSubmission{SubmissionID: accepted.SubmissionID, MailID: accepted.MailID, SentItemID: accepted.SentItemID, AcceptedAt: accepted.AcceptedAt, IsReconciled: accepted.ReconciledAt != nil}, nil
 }
 
 type SendMailboxMessageArguments struct {

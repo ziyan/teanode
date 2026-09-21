@@ -196,6 +196,7 @@ func TestMailboxSendRejectsInvalidIdentityBeforeAcceptance(test *testing.T) {
 func TestMailboxSendSchemaAcceptsLegacyAndIdentifiedRequests(test *testing.T) {
 	resolver := &graph{schema: buildSchemaForValidation(test)}
 	for _, document := range []string{
+		`query ($mailboxId: String!, $submissionId: String!) { GetMailboxSubmission(mailboxId: $mailboxId, submissionId: $submissionId) { submissionId mailId sentItemId acceptedAt isReconciled } }`,
 		`mutation ($mailboxId: String!, $message: MailboxMessageParametersInput!) { SendMailboxMessage(mailboxId: $mailboxId, message: $message) { mail { id } item { id } } }`,
 		`mutation ($mailboxId: String!, $message: MailboxMessageParametersInput!, $submissionId: String) { SendMailboxMessage(mailboxId: $mailboxId, message: $message, submissionId: $submissionId) { mail { id } item { id } } }`,
 	} {
@@ -203,4 +204,51 @@ func TestMailboxSendSchemaAcceptsLegacyAndIdentifiedRequests(test *testing.T) {
 			test.Fatalf("send schema rejected document: %v", rejected.Errors)
 		}
 	}
+}
+
+func TestMailboxSubmissionLookupPreservesIdentityAndEnforcesOwnership(test *testing.T) {
+	database, resolver, principal, arguments, _ := submissionAPIFixture(test)
+	var mailId, sentItemId, otherMailboxId string
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), principal), transaction)
+		response, err := resolver.SendMailboxMessage(ctx, arguments)
+		if err != nil {
+			test.Fatal(err)
+		}
+		mailId, sentItemId = response.Mail.ID, response.Item.ID
+		otherMailbox, err := transaction.CreateMailbox(&models.Mailbox{UserID: principal.User.ID, Name: "Other mailbox"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		otherMailboxId = otherMailbox.ID
+		if err := transaction.DeleteMail(mailId, nil); err != nil {
+			test.Fatal(err)
+		}
+	})
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), principal), transaction)
+		query := GetMailboxSubmissionArguments{MailboxID: arguments.MailboxID, SubmissionID: arguments.SubmissionID}
+		accepted, err := resolver.GetMailboxSubmission(ctx, query)
+		if err != nil || accepted == nil || accepted.MailID != mailId || accepted.SentItemID != sentItemId || !accepted.IsReconciled || accepted.AcceptedAt.IsZero() {
+			test.Fatalf("retained identity = %+v, %v", accepted, err)
+		}
+		query.MailboxID = otherMailboxId
+		if accepted, err := resolver.GetMailboxSubmission(ctx, query); err != nil || accepted != nil {
+			test.Fatalf("wrong mailbox returned identity: %+v, %v", accepted, err)
+		}
+		query.MailboxID = arguments.MailboxID
+		stranger := &api.Principal{User: &models.User{ID: "other-owner"}, Permissions: principal.Permissions}
+		strangersContext := api.ContextWithPrincipal(ctx, stranger)
+		if _, err := resolver.GetMailboxSubmission(strangersContext, query); !errors.Is(err, api.ErrNotFound) {
+			test.Fatalf("other owner lookup = %v", err)
+		}
+		reader := &api.Principal{User: principal.User, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailRead}})}
+		if _, err := resolver.GetMailboxSubmission(api.ContextWithPrincipal(ctx, reader), query); !errors.Is(err, api.ErrNotFound) {
+			test.Fatalf("lookup without send permission = %v", err)
+		}
+		query.SubmissionID = "unknown-request"
+		if accepted, err := resolver.GetMailboxSubmission(ctx, query); err != nil || accepted != nil {
+			test.Fatalf("unknown identity = %+v, %v", accepted, err)
+		}
+	})
 }
