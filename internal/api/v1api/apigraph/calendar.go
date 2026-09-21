@@ -407,120 +407,28 @@ func eventView(object *models.CalendarObject, whole bool) (*CalendarEventView, e
 }
 
 func (self *graph) SaveCalendarEvent(ctx context.Context, arguments SaveCalendarEventArguments) (*CalendarEventView, error) {
-	found, err := self.requireOwnCalendar(ctx, arguments.CalendarID)
+	principal, err := self.requireCalendarPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// Who would be asking, if anybody is asked. Looked up before the write
-	// so that the event carries it from the first version: an invitation
-	// with no organizer is one nobody can answer.
 	organizer, err := self.organizerFor(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	// What the guest list was before, so that afterwards it is possible to
-	// tell who is newly asked from who was already coming.
-	var before *models.CalendarObject
-	if named := strings.TrimSpace(arguments.ID); named != "" {
-		if before, err = self.transaction(ctx).GetCalendarObject(found.ID, named); err != nil {
-			return nil, err
-		}
-	}
-
-	var kept *models.CalendarObject
-	var refused error
-	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		// Read inside the transaction that writes, and held. The form
-		// sends the boxes it showed and the server merges them onto the
-		// file it holds; reading that outside the write -- or inside it
-		// without the lock, which is the same thing under this database's
-		// ordinary isolation -- would let a phone's change arriving in
-		// between be merged away without a word.
-		var existing *models.CalendarObject
-		if named := strings.TrimSpace(arguments.ID); named != "" {
-			if existing, err = tx.LockCalendarObject(found.ID, named); err != nil {
-				return err
-			}
-			if existing == nil {
-				return api.ErrNotFound
-			}
-		}
+	kept, err := calendarcommands.New(self.transaction(ctx)).SaveEvent(ctx, principal, calendarcommands.EventRequest{CalendarID: arguments.CalendarID, ID: arguments.ID}, func(ctx context.Context, transaction db.Transaction, existing *models.CalendarObject) (*calendar.Parsed, error) {
 		parsed, err := buildSaved(&arguments, existing, organizer)
 		if err != nil {
-			refused = fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
-			return refused
+			return nil, fmt.Errorf("%w: %s", db.ErrInvalidArguments, err)
 		}
-		object := &models.CalendarObject{
-			CalendarID: found.ID, UID: parsed.UID, ETag: calendar.ETag(parsed.Data),
-			Data: string(parsed.Data), Summary: parsed.Summary, Location: parsed.Location,
-			StartsAt: parsed.StartsAt, EndsAt: parsed.EndsAt,
-			AllDay: parsed.AllDay, Recurring: parsed.Recurring, Status: parsed.Status,
-		}
-		if existing != nil {
-			object.ID = existing.ID
-			object.CreatedAt = existing.CreatedAt
-		}
-		// The same ceiling the CalDAV side enforces. A listing is the
-		// whole calendar in one answer, and a client reads an event
-		// missing from it as deleted, so a calendar that grew past what
-		// can be listed would tell a phone to forget what it could not
-		// see.
-		if existing == nil {
-			held, err := tx.CountCalendarObjects(found.ID)
-			if err != nil {
-				return err
-			}
-			if held >= db.ObjectsPerCalendar {
-				refused = fmt.Errorf("%w: this calendar already holds %d events, which is as many as this server keeps",
-					api.ErrInvalidArguments, db.ObjectsPerCalendar)
-				return refused
-			}
-		}
-		// The file's own identifier decides which event this is. Two
-		// devices adding an appointment at the same time pick different
-		// file names but agree on the identifier, and the second must
-		// land on the first rather than making a second copy of it.
-		//
-		// When an event is already named, a file carrying somebody else's
-		// identifier is refused instead. Leaving that to the unique index
-		// gave whoever asked a 500 carrying the index's name.
-		twin, err := tx.GetCalendarObjectByUID(found.ID, object.UID)
-		if err != nil {
-			return err
-		}
-		if twin != nil {
-			if object.ID == "" {
-				object.ID = twin.ID
-				object.CreatedAt = twin.CreatedAt
-			} else if twin.ID != object.ID {
-				refused = fmt.Errorf("%w: another event in this calendar already has that identifier",
-					api.ErrInvalidArguments)
-				return refused
-			}
-		}
-		occurrences, indexedUntil, err := occurrencesOf(parsed)
-		if err != nil {
-			refused = fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
-			return refused
-		}
-		object.IndexedUntil = &indexedUntil
-		indexedAt := time.Now().UTC()
-		object.IndexedAt = &indexedAt
-		kept, err = tx.PutCalendarObject(object, occurrences)
-		return err
-	}); err != nil {
-		if refused != nil {
-			return nil, refused
-		}
-		return nil, translateError(err)
+		return parsed, nil
+	}, func(ctx context.Context, transaction db.Transaction, kept, before *models.CalendarObject) error {
+		return self.inviteTo(api.ContextWithTransaction(ctx, transaction), kept, before, organizer)
+	})
+	if errors.Is(err, db.ErrInvalidArguments) {
+		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
-
-	// Sent after the write, never before. An invitation that goes out and
-	// is then not saved is a meeting everybody has been asked to that the
-	// person who called it cannot see.
-	if err := self.inviteTo(ctx, kept, before, organizer); err != nil {
-		return nil, fmt.Errorf("the event is saved, but the invitations could not be sent: %w", err)
+	if err != nil {
+		return nil, translateError(err)
 	}
 	return eventView(kept, true)
 }
@@ -712,31 +620,19 @@ func moment(value *string, which string) (*time.Time, error) {
 }
 
 func (self *graph) DeleteCalendarEvent(ctx context.Context, arguments CalendarEventArguments) (bool, error) {
-	found, err := self.requireOwnCalendar(ctx, arguments.CalendarID)
+	principal, err := self.requireCalendarPerson(ctx)
 	if err != nil {
 		return false, err
 	}
-	object, err := self.transaction(ctx).GetCalendarObject(found.ID, strings.TrimSpace(arguments.ID))
-	if err != nil {
-		return false, err
-	}
-	if object == nil {
-		return false, api.ErrNotFound
-	}
-	// Told before it goes, not after. Once it is deleted there is nothing
-	// left to write the cancellation from, and the people who were coming
-	// would simply never hear.
 	organizer, err := self.organizerFor(ctx)
 	if err != nil {
 		return false, err
 	}
-	if err := self.callOff(ctx, object, organizer); err != nil {
-		return false, fmt.Errorf("the event is still here: the people coming could not be told: %w", err)
-	}
-	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		return tx.DeleteCalendarObject(found.ID, object.ID)
-	}); err != nil {
-		return false, err
+	err = calendarcommands.New(self.transaction(ctx)).DeleteEvent(ctx, principal, calendarcommands.EventRequest{CalendarID: arguments.CalendarID, ID: arguments.ID}, func(ctx context.Context, transaction db.Transaction, _ *models.CalendarObject, object *models.CalendarObject) error {
+		return self.callOff(api.ContextWithTransaction(ctx, transaction), object, organizer)
+	})
+	if err != nil {
+		return false, translateError(err)
 	}
 	return true, nil
 }
@@ -865,7 +761,30 @@ func (self *graph) sendCalendarMessage(ctx context.Context, organizer string, as
 			Content:     written,
 		}},
 	}
-	envelope := &mailparse.Envelope{}
+	principal := api.ContextPrincipal(ctx)
+	if principal == nil || principal.User == nil {
+		return api.ErrNotFound
+	}
+	mailboxes, err := self.transaction(ctx).ListMailboxes(principal.User.ID)
+	if err != nil {
+		return err
+	}
+	mailboxId := ""
+	for _, mailbox := range mailboxes {
+		for _, address := range mailbox.Addresses {
+			if strings.EqualFold(strings.TrimSpace(address.Address), organizer) {
+				mailboxId = mailbox.ID
+				break
+			}
+		}
+		if mailboxId != "" {
+			break
+		}
+	}
+	if mailboxId == "" {
+		return api.ErrNotFound
+	}
+	envelope := &mailparse.Envelope{MailboxID: mailboxId}
 	if request := api.ContextRequest(ctx); request != nil {
 		host, _, err := net.SplitHostPort(request.RemoteAddr)
 		if err != nil {
@@ -875,7 +794,8 @@ func (self *graph) sendCalendarMessage(ctx context.Context, organizer string, as
 		envelope.Location = self.locator.Locate(envelope.IP)
 		envelope.TLS = request.TLS
 	}
-	return self.mailer.Send(ctx, envelope, message)
+	_, err = self.mailer.AcceptSubmission(ctx, self.transaction(ctx), envelope, message)
+	return err
 }
 
 // noReplyAddress is an address that says it does not take mail. The same

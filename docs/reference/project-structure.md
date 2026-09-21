@@ -60,9 +60,10 @@ the vCard side it uses the vendored encoder as it stands, which was measured
 against the cases that destroy a vCard and survives them; what it adds is line
 folding, which the library does not do.
 
-**`internal/calendar/commands`** owns authorized calendar metadata changes,
-validation and transaction scopes. It preserves agent sharing while metadata
-changes and keeps format handling in the parent calendar package.
+**`internal/calendar/commands`** owns authorized calendar metadata and event
+changes with command rollback. It preserves agent sharing during metadata
+changes and joins event persistence to notification acceptance. Format handling
+stays in the parent calendar package.
 
 **`internal/dav`** — a person's address book and their calendar to their phone
 and their desktop, over CardDAV and CalDAV. Signs in with a mailbox address and

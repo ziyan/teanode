@@ -42,7 +42,7 @@ type UpdateOutcome struct {
 
 // Update authorizes, validates and locks metadata before preserving unedited fields.
 func (self *Commands) Update(ctx context.Context, principal *access.Principal, request UpdateRequest) (*UpdateOutcome, error) {
-	if principal == nil || principal.User == nil || principal.Permissions == nil || !principal.Permissions.Has(models.PermissionCalendarUse) {
+	if !canUseCalendar(principal) {
 		return nil, db.ErrNotFound
 	}
 	var outcome *UpdateOutcome

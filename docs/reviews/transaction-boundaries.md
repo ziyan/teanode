@@ -106,7 +106,9 @@ preparation remains in the API adapter pending further command extraction.
 
 Calendar metadata now uses `internal/calendar/commands.Update` on the caller
 transaction. Its row lock also guards the agent grant adapter, preserving the
-other operation's fields during concurrent changes. Event save/delete and
-invitation mail retain their existing separate boundaries and remain part of
-the application-command extraction; metadata rollback does not prove event or
-invitation atomicity.
+other operation's fields during concurrent changes. Event save/delete now use
+command savepoints that include the occurrence index and invitation/cancellation
+acceptance. Mail dispatch runs from committed delivery rows. The prior guest
+list comes from the locked event rather than an earlier API read. RSVP replies
+still use the legacy separate mail path, and new field-based event creation does
+not yet retain an identity across a lost response.

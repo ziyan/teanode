@@ -35,7 +35,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
-- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; content preparation, remaining send adapters, calendar events/invitations, contact protocol adapters, knowledge-source and rule-update commands remain.
+- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete now commit notification acceptance with event/index changes; content preparation, remaining send adapters, event-create retry identity and RSVP responses, contact protocol adapters, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
@@ -186,6 +186,14 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: accept event invitation and cancellation mail in the same command
+transaction as the event and its occurrence index, using the existing durable
+delivery queue. Resolve the owned sending mailbox and require mail-send permission.
+Compare invitations against the event read under its row lock, including UID
+matches. Rationale: separate event and mail commits leave partial changes or
+cancellations for events that still exist; another outbox is unnecessary when
+mail acceptance already persists dispatch work. Date: 2026-09-21.
 
 Decision: put calendar metadata commands in internal/calendar/commands so the
 parent package remains the iCalendar format implementation. Metadata validation,
@@ -1560,3 +1568,43 @@ builds pass. The preceding full-suite evidence remains 1,911 tests; this increme
 was verified against the affected subsystem suites rather than relabeling that
 older result as a new whole-repository run. Final deployment and visual gates
 remain outstanding.
+
+
+Revision note: SaveEvent and DeleteEvent now live in calendar commands with
+calendar-use/ownership checks and command savepoints. Save locks the calendar
+and current event, prepares and indexes the event, then accepts its invitations
+on the same transaction. Deletion accepts cancellations before removing the
+locked event, but neither becomes durable until the command commits. The API
+uses its current transaction and only adapts fields, presentation and scheduling
+message content. Mail uses the organizer's currently owned mailbox and the
+transactional acceptance path; its Sent copy and queued deliveries commit with
+the event. Mandatory storage failure therefore rolls back the event too.
+
+The invitation comparison now receives the actual locked prior event. A whole
+file that matches an existing UID also uses that event as its prior state, so an
+unchanged import does not invite the same guests again. A matching UID is an
+update for the event-count ceiling. Mail-send permission remains required only
+when invitation/cancellation mail is needed; personal events still work with
+calendar-use alone. No-reply filtering, organizer checks and guest limits remain.
+
+Failure regressions inject acceptance failure after a mail row is written,
+parent rollback after successful preparation, and a real SQL deletion failure
+after cancellation preparation. They prove that event, mail and commit callbacks
+move together. Other regressions cover unchanged edits, UID replay and refusing
+outward mail without mail-send permission while accepting a personal event.
+These tests use a transactional acceptance fake, while exchange storage/queue
+semantics have separate real-database integration coverage.
+
+This does not yet give a new field-based event a caller-retained identity after
+a lost create response; such retries can generate another UID. Calendar RSVP
+responses still use their legacy send path, and CalDAV/incoming scheduling have
+separate adapters. Those recovery and command-parity gates remain open, as do
+further extraction of content validation and the full deployment/visual audit.
+
+
+Validation update: the complete standard-PostgreSQL race suite passes with 1,921
+tests and two expected skips. Focused event failure, invitation replay and
+permission regressions pass, as do lint including gogolint and both binary
+builds. No external SMTP transport runs in these tests. New-event response
+recovery, RSVP transactions, protocol parity and final deployment/Chrome gates
+remain required.
