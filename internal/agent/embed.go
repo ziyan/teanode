@@ -5,11 +5,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
-
-	"github.com/ziyan/teanode/internal/config"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
@@ -52,14 +49,14 @@ func (self *Agent) runEmbed(ctx context.Context, run *Run) error {
 		return nil
 	}
 	configuration := run.Configuration()
-	if !FeatureAllowed(configuration, "search") || configuration.Agent.Models.Embedding == "" {
+	if !FeatureAllowed(configuration, "search") {
 		return nil
 	}
 	registry := run.Registry()
-	if registry == nil {
-		return fmt.Errorf("no model registry")
+	if !registry.HasEmbedding() {
+		return nil
 	}
-	embedder, model, err := registry.Embedding()
+	selection, err := registry.Embedding()
 	if err != nil {
 		return err
 	}
@@ -88,11 +85,11 @@ func (self *Agent) runEmbed(ctx context.Context, run *Run) error {
 	}
 	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
 	defer cancel()
-	vectors, usage, err := embedder.Embed(callContext, llm.EmbedRequest{
-		Model: model, Inputs: []string{embedText(message)},
-		Dimensions: configuration.Agent.Models.EmbeddingDimensions,
+	vectors, usage, err := selection.Embedder.Embed(callContext, llm.EmbedRequest{
+		Model: selection.Model, Inputs: []string{embedText(message)},
+		Dimensions: selection.Dimensions,
 	})
-	modelName := embeddingModelName(configuration)
+	modelName := selection.Name
 	RecordUsage(run.Database(), run.Agent.ID, run.Mailbox.ID, modelName, string(models.AgentJobEmbed), usage)
 	if err != nil {
 		return fmt.Errorf("embedding: %w", err)
@@ -109,11 +106,19 @@ func (self *Agent) runEmbed(ctx context.Context, run *Run) error {
 // when the mailbox searches by meaning.
 func (self *Agent) backfillEmbeddings(ctx context.Context, run *Run) error {
 	configuration := run.Configuration()
-	if !run.Source.Search || !FeatureAllowed(configuration, "search") || configuration.Agent.Models.Embedding == "" {
+	if !run.Source.Search || !FeatureAllowed(configuration, "search") {
 		return nil
 	}
+	registry := run.Registry()
+	if !registry.HasEmbedding() {
+		return nil
+	}
+	selection, err := registry.Embedding()
+	if err != nil {
+		return err
+	}
 	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		ids, err := tx.ListMailWithoutEmbedding(run.Mailbox.ID, configuration.Agent.Models.Embedding, embedBackfill)
+		ids, err := tx.ListMailWithoutEmbedding(run.Mailbox.ID, selection.Name, embedBackfill)
 		if err != nil {
 			return err
 		}
@@ -130,14 +135,14 @@ func (self *Agent) backfillEmbeddings(ctx context.Context, run *Run) error {
 // closest, best first. Nil when the mailbox has no vectors.
 func (self *Agent) meaningSearch(ctx context.Context, agent *models.Agent, mailboxId, query string, limit int) ([]string, error) {
 	configuration := self.settings.Configuration()
-	if self.settings.Registry == nil || configuration.Agent.Models.Embedding == "" || !FeatureAllowed(configuration, "search") {
+	if !self.settings.Registry.HasEmbedding() || !FeatureAllowed(configuration, "search") {
 		return nil, nil
 	}
-	embedder, model, err := self.settings.Registry.Embedding()
+	selection, err := self.settings.Registry.Embedding()
 	if err != nil {
 		return nil, err
 	}
-	modelName := embeddingModelName(configuration)
+	modelName := selection.Name
 	var candidates []*db.MailEmbedding
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		candidates, err = tx.ListMailEmbeddings(mailboxId, modelName, embedCandidates)
@@ -150,9 +155,9 @@ func (self *Agent) meaningSearch(ctx context.Context, agent *models.Agent, mailb
 	}
 	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
 	defer cancel()
-	vectors, usage, err := embedder.Embed(callContext, llm.EmbedRequest{
-		Model: model, Inputs: []string{strings.TrimSpace(query)},
-		Dimensions: configuration.Agent.Models.EmbeddingDimensions,
+	vectors, usage, err := selection.Embedder.Embed(callContext, llm.EmbedRequest{
+		Model: selection.Model, Inputs: []string{strings.TrimSpace(query)},
+		Dimensions: selection.Dimensions,
 	})
 	if agent != nil {
 		RecordUsage(self.settings.Database, agent.ID, mailboxId, modelName, "search", usage)
@@ -208,17 +213,6 @@ func rankByCosine(query []float32, candidates []*db.MailEmbedding, limit int) []
 		ids = append(ids, entry.id)
 	}
 	return ids
-}
-
-// embeddingModelName is the model a vector is stored under: its name, and
-// the width where one was asked for. Two widths of one model are two
-// spaces, so the width has to be part of what a vector says it is.
-func embeddingModelName(configuration *config.Configuration) string {
-	name := configuration.Agent.Models.Embedding
-	if dimensions := configuration.Agent.Models.EmbeddingDimensions; dimensions > 0 {
-		name += "@" + strconv.Itoa(dimensions)
-	}
-	return name
 }
 
 // meaningFloor is the least similarity a message needs to count as found.

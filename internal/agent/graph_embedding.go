@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"strconv"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/llm"
@@ -16,21 +15,15 @@ import (
 // of one model are two spaces: a vector written at 512 must never be
 // ranked against one the same model wrote at 1536.
 func (self *Agent) embedderFor() (embedder llm.Embedder, model, modelName string, dimensions int, ok bool) {
-	configuration := self.settings.Configuration()
-	if self.settings.Registry == nil || configuration.Agent.Models.Embedding == "" {
+	if !self.settings.Registry.HasEmbedding() {
 		return nil, "", "", 0, false
 	}
-	found, name, err := self.settings.Registry.Embedding()
+	selection, err := self.settings.Registry.Embedding()
 	if err != nil {
 		log.Warningf("no embedding model for the graph: %s", err)
 		return nil, "", "", 0, false
 	}
-	modelName = configuration.Agent.Models.Embedding
-	dimensions = configuration.Agent.Models.EmbeddingDimensions
-	if dimensions > 0 {
-		modelName += "@" + strconv.Itoa(dimensions)
-	}
-	return found, name, modelName, dimensions, true
+	return selection.Embedder, selection.Model, selection.Name, selection.Dimensions, true
 }
 
 // meaning is what a piece of text means: the vector, and the model that
