@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.2] - 2026-09-21
+
+### Fixed
+
+- Release runs no longer overlap, so the image tagged `latest` is always the
+  newest release rather than whichever run happened to finish last. (#100)
+
 ## [0.47.1] - 2026-09-21
 
 ### Fixed
