@@ -135,9 +135,7 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 			// say what it did.
 			progress := *record
 			progress.Tokens = budget.spentSoFar()
-			if err := run.Database().Transaction(func(tx db.Transaction) error {
-				return tx.NoteAgentDreamProgress(&progress)
-			}); err != nil {
+			if err := noteDreamProgress(ctx, run, &progress); err != nil {
 				log.Debugf("could not write down what the dream has read: %s", err)
 			}
 		}()
@@ -355,7 +353,7 @@ func (self *Agent) givingUpOn(ctx context.Context, run *Run, documents []*models
 		ids = append(ids, document.ID)
 	}
 	given := map[string]int{}
-	if err := run.Database().TransactionContext(context.WithoutCancel(ctx), func(tx db.Transaction) error {
+	if err := dreamBookkeeping(ctx, run, func(tx db.Transaction) error {
 		found, err := tx.AgentDocumentsGivenUpOn(ids)
 		if err != nil {
 			return err
@@ -386,7 +384,7 @@ func markRead(ctx context.Context, run *Run, documents []*models.AgentDocument) 
 	for _, document := range documents {
 		ids = append(ids, document.ID)
 	}
-	if err := run.Database().TransactionContext(context.WithoutCancel(ctx), func(tx db.Transaction) error {
+	if err := dreamBookkeeping(ctx, run, func(tx db.Transaction) error {
 		return tx.MarkAgentDocumentsDigested(ids, time.Now())
 	}); err != nil {
 		log.Warningf("cannot mark what was read: %s", err)

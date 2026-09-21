@@ -162,5 +162,7 @@ back. Duplicate model-selected fact numbers are counted once and cannot satisfy
 the minimum group size by repetition. A trigger-based regression rejects the
 child's consolidation update after fact moves and checks that the failed group
 leaves neither its child nor its fact moves. Dream digest bookkeeping still has
-separate document/read and progress writes, including detached calls without an
-explicit deadline; those remain open for review.
+separate document/read and progress writes; their atomicity remains open. All
+five detached dream writes now use a ten-second completion deadline, including
+attachment decisions and picture descriptions. Canceled-parent persistence and
+stalled-acquisition regressions cover each operation.
