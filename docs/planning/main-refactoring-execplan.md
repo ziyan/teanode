@@ -32,7 +32,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Record baseline checks and their limits.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation and its regressions pass; GraphQL preparation, command atomicity and bounded cleanup remain.
-- [ ] Milestone 3: separate job deferrals from failures and strengthen claim identity.
+- [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
 - [ ] Milestone 4: make mail submission retries and storage guarantees explicit.
 - [ ] Milestone 5: extract shared application commands from transport adapters.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
@@ -559,3 +559,17 @@ Decision: use Node 22.13 or newer on the 22.x line, or Node 24 or newer for dash
 development. The restored ESLint already requires that baseline, the new behavior
 test runner supports it, and the container/CI dashboard uses Node 22. Existing
 operator binaries and runtime deployment requirements are unchanged.
+
+Implementation evidence: job retry, stale-claim and shutdown regressions pass,
+including late completion on the same instance and on another instance. Migration
+0090 reverses and reapplies while retaining the queued job. The full race suite
+passes with vector indexing required: 1,759 tests reported, two environment skips.
+Go lint and gogolint pass. CI also exposed an npm lockfile incompatibility;
+regenerating with the CI npm major version and testing `npm ci` fixed it. The
+clean installation, frontend lint, typechecking and behavior tests now pass.
+
+Decision: the claim-identity upgrade requires draining all old workers rather
+than supporting mixed workers with a temporary missing-identity bypass. The
+forward and reverse migrations requeue interrupted claims, and the operating
+procedure is documented in the jobs subsystem. This preserves the completion
+check throughout the new worker's lifetime.

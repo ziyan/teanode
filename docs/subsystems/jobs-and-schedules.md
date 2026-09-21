@@ -18,27 +18,26 @@ partial unique index makes that safe when two deliveries race. The mailbox is
 not part of that key, so the same message queued from two mailboxes of one
 agent coalesces into the first.
 
-**Claiming is `FOR UPDATE SKIP LOCKED`**, oldest first, as many as there are
-free slots, and each claimed row is marked running with this instance's name
-and its attempt count raised. A claim that has gone quiet for fifteen minutes
-is put back. Finishing a job is guarded by the claimant, so an instance whose
-claim lapsed cannot overwrite whoever holds it now.
+**Claiming is `FOR UPDATE SKIP LOCKED`**: foreground work first, then ingest,
+dream and backfill, oldest first within each group. Each claim receives a unique
+identifier as well as the instance name. The attempt count records every claim;
+the failure count records only errors that need retries. Finishing requires the
+same running claim identifier, so even a late worker on the same instance cannot
+finish a replacement claim.
 
 ## The tick
 
-Every five seconds, while the agent feature is on and a slot is free: queue any
-due schedules and any due goals, sweep once an hour, describe conversations
-that have gone quiet, sweep idle browser contexts, release stale claims, and
-claim what is due. Each
-job runs in its own goroutine under a **ten-minute** deadline, five minutes
-inside the stale-claim window.
-
-Because the tick returns early when every slot is busy, a deployment with one
-slot and one long run does none of the housekeeping until it finishes.
+Every five seconds while the agent feature is on, the worker queues due work and
+runs housekeeping, even when all execution slots are occupied. If a slot is free
+it releases stale claims and claims more work. Ordinary jobs have a ten-minute
+deadline; ingest and dream use the longer bounds in `job_policy.go`. A claim
+expires five minutes after its kind's work deadline. Recording an outcome has a
+separate ten-second context so cancellation cannot strand an otherwise finished
+job or hang shutdown indefinitely.
 
 ## Failure, retry, and giving up
 
-| Attempt | Then |
+| Failure | Then |
 | --- | --- |
 | 1 | try again in 1 minute |
 | 2 | 5 minutes |
@@ -47,13 +46,27 @@ slot and one long run does none of the housekeeping until it finishes.
 | 5 | 4 hours |
 | 6 | dead |
 
-Six attempts, about five and a half hours. A dead job keeps its error and is
+Six failures, about five and a half hours. A dead job keeps its error and is
 listed for an operator, who can put it back by hand.
 
 A *deferral* is not a failure: the job returns to the queue with the time it may
 run again. A budget that has run out and a reply still inside its hold window
-both defer. Attempts are counted at claim time and never reset, so a job
-deferred five times dead-letters on its first real failure.
+both defer. Neither a deferral nor a shutdown cancellation consumes the failure
+allowance. A manual retry of a dead or cancelled job clears its failure count
+and terminal timestamp, while retaining the claim attempt count for diagnostics.
+
+### Upgrading claim tracking
+
+Migration `0090_agent_job_claims` adds failure counts and individual claim
+identifiers. Stop and drain every old worker before starting the new binary;
+old and new workers must not share the queue during this upgrade. Existing
+running rows return to the queue, and historical attempts are retained. Their
+failure counts start at zero because historical attempts also included waits.
+
+Before a downgrade, stop every new worker and back up the database. The reverse
+migration requeues unfinished work and drops the new columns. The older binary
+cannot retain the separate failure allowance or claim-identity protection.
+
 
 ## The kinds
 

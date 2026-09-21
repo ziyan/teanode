@@ -863,8 +863,10 @@ func (self *graph) RetryAgentJob(ctx context.Context, arguments RetryAgentJobArg
 	if job.Status != models.AgentJobDead && job.Status != models.AgentJobCancelled {
 		return nil, api.ErrInvalidArguments
 	}
-	if err := tx.FinishAgentJob(job.ID, "", models.AgentJobQueued, "", nil); err != nil {
+	if hasRetried, err := tx.RetryAgentJob(job.ID); err != nil {
 		return nil, err
+	} else if !hasRetried {
+		return nil, api.ErrInvalidArguments
 	}
 	return tx.GetAgentJob(job.ID)
 }

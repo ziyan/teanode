@@ -31,9 +31,12 @@ type AgentOperation interface {
 	// any another instance has locked, and marks them running.
 	ClaimAgentJobs(instance string, limit int, now time.Time) ([]*models.AgentJob, error)
 
-	// FinishAgentJob records how a run ended. A retry is status queued with
-	// a not_before; anything else is final.
-	FinishAgentJob(jobId, claimedBy string, status models.AgentJobStatus, errorMessage string, notBefore *time.Time) error
+	// FinishAgentJob changes only the running claim named by claimId.
+	// False means that claim was released or replaced while its worker ran.
+	FinishAgentJob(jobId, claimId string, outcome *AgentJobOutcome) (bool, error)
+
+	// RetryAgentJob returns a terminal job to the queue with a fresh failure allowance.
+	RetryAgentJob(jobId string) (bool, error)
 
 	// ReleaseStaleAgentJobs puts back jobs claimed before the given time
 	// whose instance never finished them.
@@ -140,20 +143,31 @@ type agentModel struct {
 
 func (agentModel) TableName() string { return "agent" }
 
+// AgentJobOutcome records progress separately from retryable failures.
+type AgentJobOutcome struct {
+	JobStatus    models.AgentJobStatus
+	ErrorMessage string
+	NotBefore    *time.Time
+	FailureCount int
+	FinishedAt   time.Time
+}
+
 type agentJobModel struct {
-	ID         string     `gorm:"column:id;primaryKey"`
-	CreatedAt  time.Time  `gorm:"column:created_at"`
-	AgentID    string     `gorm:"column:agent_id"`
-	MailboxID  string     `gorm:"column:mailbox_id"`
-	Kind       string     `gorm:"column:kind"`
-	SubjectID  string     `gorm:"column:subject_id"`
-	Status     string     `gorm:"column:status"`
-	Attempts   int        `gorm:"column:attempts"`
-	NotBefore  *time.Time `gorm:"column:not_before"`
-	ClaimedAt  *time.Time `gorm:"column:claimed_at"`
-	ClaimedBy  string     `gorm:"column:claimed_by"`
-	Error      string     `gorm:"column:error"`
-	FinishedAt *time.Time `gorm:"column:finished_at"`
+	ID           string     `gorm:"column:id;primaryKey"`
+	CreatedAt    time.Time  `gorm:"column:created_at"`
+	AgentID      string     `gorm:"column:agent_id"`
+	MailboxID    string     `gorm:"column:mailbox_id"`
+	Kind         string     `gorm:"column:kind"`
+	SubjectID    string     `gorm:"column:subject_id"`
+	Status       string     `gorm:"column:status"`
+	Attempts     int        `gorm:"column:attempts"`
+	FailureCount int        `gorm:"column:failure_count"`
+	ClaimID      string     `gorm:"column:claim_id"`
+	NotBefore    *time.Time `gorm:"column:not_before"`
+	ClaimedAt    *time.Time `gorm:"column:claimed_at"`
+	ClaimedBy    string     `gorm:"column:claimed_by"`
+	Error        string     `gorm:"column:error"`
+	FinishedAt   *time.Time `gorm:"column:finished_at"`
 }
 
 func (agentJobModel) TableName() string { return "agent_job" }
@@ -293,16 +307,18 @@ func encodeJSON(value any) ([]byte, error) {
 
 func agentJobFromModel(model *agentJobModel) *models.AgentJob {
 	job := &models.AgentJob{
-		ID:        model.ID,
-		CreatedAt: model.CreatedAt.In(time.Local),
-		AgentID:   model.AgentID,
-		MailboxID: model.MailboxID,
-		Kind:      models.AgentJobKind(model.Kind),
-		SubjectID: model.SubjectID,
-		Status:    models.AgentJobStatus(model.Status),
-		Attempts:  model.Attempts,
-		ClaimedBy: model.ClaimedBy,
-		Error:     model.Error,
+		ID:           model.ID,
+		CreatedAt:    model.CreatedAt.In(time.Local),
+		AgentID:      model.AgentID,
+		MailboxID:    model.MailboxID,
+		Kind:         models.AgentJobKind(model.Kind),
+		SubjectID:    model.SubjectID,
+		Status:       models.AgentJobStatus(model.Status),
+		Attempts:     model.Attempts,
+		FailureCount: model.FailureCount,
+		ClaimID:      model.ClaimID,
+		ClaimedBy:    model.ClaimedBy,
+		Error:        model.Error,
 	}
 	for source, target := range map[*time.Time]**time.Time{model.NotBefore: &job.NotBefore, model.ClaimedAt: &job.ClaimedAt, model.FinishedAt: &job.FinishedAt} {
 		if source != nil {
@@ -530,8 +546,9 @@ func (self *transaction) ClaimAgentJobs(instance string, limit int, now time.Tim
 	}
 	jobs := make([]*models.AgentJob, 0, len(due))
 	for index := range due {
+		due[index].ClaimID = newID()
 		if err := self.tx.Model(&agentJobModel{}).Where("\"id\" = ?", due[index].ID).Updates(map[string]any{
-			"status": string(models.AgentJobRunning), "claimed_at": now, "claimed_by": instance, "attempts": gorm.Expr("\"attempts\" + 1"),
+			"status": string(models.AgentJobRunning), "claimed_at": now, "claimed_by": instance, "claim_id": due[index].ClaimID, "finished_at": nil, "attempts": gorm.Expr("\"attempts\" + 1"),
 		}).Error; err != nil {
 			return nil, err
 		}
@@ -544,22 +561,39 @@ func (self *transaction) ClaimAgentJobs(instance string, limit int, now time.Tim
 	return jobs, nil
 }
 
-func (self *transaction) FinishAgentJob(jobId, claimedBy string, status models.AgentJobStatus, errorMessage string, notBefore *time.Time) error {
-	updates := map[string]any{"status": string(status), "error": errorMessage, "not_before": notBefore}
-	if status == models.AgentJobQueued {
+func (self *transaction) FinishAgentJob(jobId, claimId string, outcome *AgentJobOutcome) (bool, error) {
+	if claimId == "" || outcome == nil || outcome.FailureCount < 0 {
+		return false, ErrInvalidArguments
+	}
+	switch outcome.JobStatus {
+	case models.AgentJobQueued, models.AgentJobDone, models.AgentJobDead, models.AgentJobCancelled:
+	default:
+		return false, ErrInvalidArguments
+	}
+	updates := map[string]any{
+		"status": string(outcome.JobStatus), "error": outcome.ErrorMessage,
+		"not_before": outcome.NotBefore, "failure_count": outcome.FailureCount,
+		"claim_id": "", "finished_at": outcome.FinishedAt,
+	}
+	if outcome.JobStatus == models.AgentJobQueued {
 		updates["claimed_at"] = nil
 		updates["claimed_by"] = ""
-	} else {
-		updates["finished_at"] = time.Now()
+		updates["finished_at"] = nil
 	}
-	// Only the instance that holds the job finishes it: a run that outlived
-	// its claim and was handed to another instance must not overwrite what
-	// that instance is doing. An empty claimant is a retry by hand.
-	query := self.tx.Model(&agentJobModel{}).Where("\"id\" = ?", jobId)
-	if claimedBy != "" {
-		query = query.Where("\"status\" = ? AND \"claimed_by\" = ?", string(models.AgentJobRunning), claimedBy)
-	}
-	return query.Updates(updates).Error
+	updated := self.tx.Model(&agentJobModel{}).
+		Where("id = ? AND status = ? AND claim_id = ?", jobId, string(models.AgentJobRunning), claimId).
+		Updates(updates)
+	return updated.RowsAffected == 1, updated.Error
+}
+
+func (self *transaction) RetryAgentJob(jobId string) (bool, error) {
+	updated := self.tx.Model(&agentJobModel{}).
+		Where("id = ? AND status IN ?", jobId, []string{string(models.AgentJobDead), string(models.AgentJobCancelled)}).
+		Updates(map[string]any{
+			"status": string(models.AgentJobQueued), "error": "", "not_before": nil,
+			"failure_count": 0, "claim_id": "", "claimed_at": nil, "claimed_by": "", "finished_at": nil,
+		})
+	return updated.RowsAffected == 1, updated.Error
 }
 
 func (self *transaction) ReleaseStaleAgentJobs(before time.Time) (int64, error) {
@@ -570,14 +604,14 @@ func (self *transaction) ReleaseStaleAgentJobs(before time.Time) (int64, error) 
 	// was put back at fifteen, and ran a second time beside the first --
 	// and with both holding a slot the night could not claim one.
 	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_at\" < ? AND \"kind\" NOT IN ?", string(models.AgentJobRunning), before, []string{string(models.AgentJobDream), string(models.AgentJobIngest)}).Updates(map[string]any{
-		"status": string(models.AgentJobQueued), "claimed_at": nil, "claimed_by": "",
+		"status": string(models.AgentJobQueued), "claimed_at": nil, "claimed_by": "", "claim_id": "",
 	})
 	return result.RowsAffected, result.Error
 }
 
 func (self *transaction) ReleaseStaleAgentJobsOfKind(kind models.AgentJobKind, before time.Time) (int64, error) {
 	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_at\" < ? AND \"kind\" = ?", string(models.AgentJobRunning), before, string(kind)).Updates(map[string]any{
-		"status": string(models.AgentJobQueued), "claimed_at": nil, "claimed_by": "",
+		"status": string(models.AgentJobQueued), "claimed_at": nil, "claimed_by": "", "claim_id": "",
 	})
 	return result.RowsAffected, result.Error
 }
@@ -587,7 +621,7 @@ func (self *transaction) ReleaseAgentJobsClaimedBy(instance string) (int64, erro
 		return 0, nil
 	}
 	result := self.tx.Model(&agentJobModel{}).Where("\"status\" = ? AND \"claimed_by\" = ?", string(models.AgentJobRunning), instance).Updates(map[string]any{
-		"status": string(models.AgentJobQueued), "claimed_at": nil, "claimed_by": "",
+		"status": string(models.AgentJobQueued), "claimed_at": nil, "claimed_by": "", "claim_id": "",
 	})
 	return result.RowsAffected, result.Error
 }
