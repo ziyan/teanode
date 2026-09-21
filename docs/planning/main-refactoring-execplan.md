@@ -812,3 +812,11 @@ rollback/cancellation and manual commit/reopen. The stock PostgreSQL race suite
 reports 1,821 tests with two expected skips. An additional focused mail-path
 regression verifies that alias counters exclude a rolled-back delivery and count
 the successful retry once. Lint and `gogolint` pass.
+
+Revision note: CI continued to flag the page-size conversion through float64
+despite the explicit range guard. Integer inputs now remain integers through
+their final bound check; floating-point variables receive separate finite,
+integral and range validation before conversion. This also rejects negative
+infinity and negative fractions instead of treating them as default page sizes.
+The focused GraphQL race tests and lint pass; the next CI run must confirm the
+conversion annotation is gone.

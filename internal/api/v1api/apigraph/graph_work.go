@@ -122,14 +122,22 @@ func graphPageSize(field *graphql.FieldDefinition, selected *ast.Field, variable
 			pagination, _ := argumentValue.(map[string]interface{})
 			argumentValue = pagination["first"]
 		}
-		pageSize := float64(api.MaximumPageSize)
+		pageSize := int64(api.MaximumPageSize)
 		switch requested := argumentValue.(type) {
 		case float64:
-			pageSize = requested
+			if math.IsNaN(requested) || math.IsInf(requested, 0) || math.Trunc(requested) != requested {
+				return 0, fmt.Errorf("GraphQL page size must be an integer")
+			}
+			if requested > math.MaxInt32 {
+				return 0, fmt.Errorf("GraphQL page size exceeds maximum list item count")
+			}
+			if requested > 0 {
+				pageSize = int64(requested)
+			}
 		case int64:
-			pageSize = float64(requested)
+			pageSize = requested
 		case int:
-			pageSize = float64(requested)
+			pageSize = int64(requested)
 		case nil:
 		default:
 			return 0, fmt.Errorf("GraphQL page size must be an integer")
@@ -139,12 +147,9 @@ func graphPageSize(field *graphql.FieldDefinition, selected *ast.Field, variable
 		if pageSize <= 0 {
 			pageSize = api.MaximumPageSize
 		}
-		if math.IsNaN(pageSize) || math.IsInf(pageSize, 0) || math.Trunc(pageSize) != pageSize {
-			return 0, fmt.Errorf("GraphQL page size must be an integer")
-		}
 		// GraphQL Int is signed 32-bit, also the narrowest supported Go int.
 		// Keep the conversion safe even if the caller bypassed config validation.
-		if pageSize > math.MaxInt32 || pageSize > float64(maximumListItemCount) {
+		if pageSize > math.MaxInt32 || pageSize > int64(maximumListItemCount) {
 			return 0, fmt.Errorf("GraphQL page size exceeds maximum list item count")
 		}
 		return int(pageSize), nil

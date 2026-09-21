@@ -18,9 +18,12 @@ func TestGraphPageSizeBoundsIntegerConversion(test *testing.T) {
 		Name:  &ast.Name{Value: "first"},
 		Value: &ast.Variable{Name: &ast.Name{Value: "size"}},
 	}}}
-	for _, pageSize := range []interface{}{int64(math.MaxInt32) + 1, float64(math.MaxInt32) + 1, int64(math.MaxInt64)} {
+	for _, pageSize := range []interface{}{
+		int64(math.MaxInt32) + 1, float64(math.MaxInt32) + 1, int64(math.MaxInt64),
+		math.NaN(), math.Inf(1), math.Inf(-1), 1.5, -1.5,
+	} {
 		if _, err := graphPageSize(field, selected, map[string]interface{}{"size": pageSize}, math.MaxInt); err == nil {
-			test.Errorf("accepted oversized page %v", pageSize)
+			test.Errorf("accepted invalid page %v", pageSize)
 		}
 	}
 	if pageSize, err := graphPageSize(field, selected, map[string]interface{}{"size": int64(math.MaxInt32)}, math.MaxInt); err != nil || pageSize != math.MaxInt32 {
