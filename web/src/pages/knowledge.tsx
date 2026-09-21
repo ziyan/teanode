@@ -26,6 +26,7 @@ import { useToast } from '../components/toast'
 import { useIsDesktop } from '../components/sidebar'
 import { useSession } from '../session'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
+import { MenuButton } from '../components/menuButton'
 import { Markdown } from '../components/markdown'
 import { Tooltip } from '../components/tooltip'
 import { GraphExplorer } from '../components/graphExplorer'
@@ -625,10 +626,27 @@ export function KnowledgePage() {
   //
   // The name of the top is a way back to it once there is more than one
   // level to climb, since the chevron only ever goes up by one.
-  const climbing = folder ? folder.split('/').filter(Boolean).length : 0
+  // The levels above, in a menu, and the folder open written out.
+  //
+  // Spelling the path across the row cannot work here whatever the width.
+  // Folders in a real graph nest four deep and are named in full -- sixty
+  // five characters is an ordinary one -- so a trail of them is two hundred
+  // characters, which wraps four times on a phone and still pushes the rows
+  // off the screen. Collapsing the middle does not save it either: two of
+  // those names is already more than a phone has.
+  //
+  // So the row costs the same at any depth. The chevron goes up one, the
+  // menu holds every level above with the nearest first and is the way to
+  // any of them in one go, and the name of the folder you are in gets the
+  // rest of the room, since that is the one a person is reading.
+  const segments = folder ? folder.split('/').filter(Boolean) : []
+  const ancestors = segments.slice(0, -1).map((segment, index) => ({
+    path: segments.slice(0, index + 1).join('/'),
+    label: segment,
+  }))
   const trail =
     !search && folder ? (
-      <div className="knowledge-trail">
+      <div className="knowledge-trail list-toolbar">
         <button
           type="button"
           className="icon-action"
@@ -638,44 +656,69 @@ export function KnowledgePage() {
         >
           <ChevronLeftIcon size={16} />
         </button>
-        {climbing > 1 ? (
-          <>
-            <button type="button" className="knowledge-trail-root" onClick={() => goTo('', true)}>
-              {t('knowledge.root')}
-            </button>
-            <span aria-hidden="true">/</span>
-          </>
+        {ancestors.length > 0 ? (
+          <MenuButton
+            label={t('knowledge.levels')}
+            className="knowledge-trail-levels"
+            icon={<span aria-hidden="true">…</span>}
+            render={(close) =>
+              // Nearest first: climbing is nearly always one or two levels,
+              // and the top of the tree is the least likely thing wanted.
+              [...ancestors].reverse().map((step) => (
+                <button
+                  key={step.path}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    close()
+                    goTo(step.path, true)
+                  }}
+                >
+                  {step.label}
+                </button>
+              ))
+            }
+          />
         ) : null}
-        <span className="knowledge-trail-name">{folderLabel}</span>
+        <span className="knowledge-trail-name" aria-current="page">
+          {folderLabel}
+        </span>
       </div>
     ) : null
 
   // The toolbar is inside the panel rather than above it, so it stays put
   // while the rows under it scroll.
+  // One row above the rows, not two. The search box and the ways in belong
+  // to the whole graph, and inside a folder the thing wanted at the top of
+  // the column is the way out of it: the trail took a second row to say so,
+  // which on a phone is a row of chrome over a list that then had nowhere
+  // to go. In a folder the trail is that row; at the top, where there is no
+  // folder to leave, it is the search box and the ways in.
   const column = (
-    <div className="card knowledge-list">
-      {lookup}
-      {trail}
-      <div className="knowledge-list-rows">{list}</div>
+    <div className="knowledge-list">
+      {trail ?? lookup}
+      <div className="knowledge-list-rows">
+        {list}
+      </div>
     </div>
   )
 
-  if (onePane) {
-    // One column at a time. Which one is in the URL, so Back is Back,
-    // and the breadcrumb on the bar is the way up out of the navigator.
-    return (
-      <div ref={setFrameElement} className="knowledge-phone">
-        {showingDetail ? detail : column}
-        {recall}
-        {documents}
-      </div>
-    )
-  }
-
+  // The same frame the mail list and its reading pane are drawn in: one
+  // bordered box with the list down the left and what is open beside it,
+  // divided by a line rather than by a gap between two rounded cards. This
+  // page invented its own pair of cards, which made a list of pages and a
+  // page look like two unrelated panels on a page that is one thing.
+  //
+  // Which pane shows on a narrow window is the frame's own business, as it
+  // is there: `reading` says something is open, and the container query
+  // below hides whichever of the two is not wanted. One column at a time,
+  // and which one is in the URL, so Back is Back.
   return (
-    <div ref={setFrameElement} className="knowledge-columns">
-      <div className="knowledge-column knowledge-column-navigator">{column}</div>
-      <div className="knowledge-column knowledge-page">{detail}</div>
+    <div ref={setFrameElement} className="knowledge-frame">
+      <div className={['knowledge-split', showingDetail ? 'reading' : ''].filter(Boolean).join(' ')}>
+        {column}
+        <div className="knowledge-pane knowledge-page">{detail}</div>
+      </div>
       {recall}
       {documents}
     </div>
@@ -1360,7 +1403,7 @@ function DocumentsDialog({ onClose }: { onClose: () => void }) {
                         anybody who cannot see which heading it is under. */}
                     <button
                       type="button"
-                      className="link"
+                      className="button-quiet"
                       aria-label={t('knowledge.documents.readOne', { title: name })}
                       onClick={() => read(group.document.documentId)}
                     >
@@ -1415,7 +1458,7 @@ function DocumentsDialog({ onClose }: { onClose: () => void }) {
       closeLabel={t('common.close')}
       otherAction={
         reading === null ? undefined : (
-          <button type="button" className="link" onClick={() => setReading(null)}>
+          <button type="button" className="button-quiet" onClick={() => setReading(null)}>
             {t('knowledge.documents.back')}
           </button>
         )

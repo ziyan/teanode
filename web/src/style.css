@@ -1506,6 +1506,13 @@ button.primary.danger:hover:not(:disabled) {
   color: var(--text);
 }
 
+/* A word in a sentence that does something: "Remote content blocked. Show
+   images." It is drawn as an anchor because in a line of prose that is what
+   it reads as, and a box around it would break the line.
+   
+   A control standing on its own is not this. It is `.button-quiet` below,
+   because underlined text with no padding gave a control that acts on the
+   page the same paint as one that leaves it, and no target worth tapping. */
 button.link {
   border: none;
   background: none;
@@ -1517,6 +1524,30 @@ button.link {
 
 button.link:hover:not(:disabled) {
   background: none;
+  color: var(--text);
+}
+
+/* A control that stands on its own, quiet. The settled version of what
+   `.show-more` says: not the thing to do first, so muted and unbordered
+   until it is pointed at, but padded and shaped like the button it is. */
+.button-quiet {
+  /* A border at rest, not only under the pointer. Quiet is muted colour and
+     a light edge; invisible is not quiet, it is a control nobody can find,
+     and on a touch screen there is no hover to discover it with. */
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--muted);
+  padding: 2px 8px;
+  border-radius: var(--radius-2);
+  font: inherit;
+  font-weight: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button-quiet:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--sidebar-hover);
   color: var(--text);
 }
 
@@ -8456,41 +8487,83 @@ button.with-icon {
    comes before reading it. The navigator scrolls inside its own panel so
    that a folder of six hundred pages does not make the whole page a
    kilometre long. */
-.knowledge-columns {
+.knowledge-frame {
+  container-type: inline-size;
+  container-name: knowledge;
+}
+
+/* The same frame the mail list and its reading pane are drawn in, because it
+   is the same thing: a list down one side and what is open beside it. It was
+   two rounded cards with a gap between them, which read as two unrelated
+   panels on a page that is one thing, and meant a second set of rules for a
+   layout the mailbox already had. */
+.knowledge-split {
   display: grid;
-  /* The page column has a real minimum: below it a paragraph turns into
-     one word per line, which is what happened when the last column was
-     left to take whatever was over. */
-  grid-template-columns: minmax(260px, 360px) minmax(360px, 1fr);
-  gap: var(--space-4);
-  align-items: start;
-  min-width: 0;
+  /* The page beside it has a real minimum: below it a paragraph turns into
+     one word per line, which is what happened when the last column was left
+     to take whatever was over. */
+  grid-template-columns: minmax(280px, 380px) minmax(360px, 1fr);
+  gap: 0;
+  min-height: 60vh;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
 }
 
-.knowledge-column {
-  min-width: 0;
-}
-
-.knowledge-column-navigator {
-  position: sticky;
-  top: var(--space-4);
-}
-
-/* The navigator column is the same pane the mail list is: the lookup is a
-   toolbar across the top of it and the rows scroll underneath it, so walking
-   down a long folder does not carry the search box away with it. */
+/* The list down the left: a toolbar across the top of it and the rows
+   scrolling underneath, so walking down a long folder does not carry the
+   search box away with it. */
 .knowledge-list {
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - var(--space-6) * 3);
-  overflow: hidden;
-  padding: 0;
+  min-width: 0;
+  border-right: 1px solid var(--border);
 }
 
 .knowledge-list-rows {
-  overflow: auto;
-  padding: var(--space-2);
+  /* Between the toolbar's own rule above and the frame's edge below, which
+     is where the lines come from now. The rows used to be cut square through
+     whatever one met the edge of a card, with nothing saying there was more.
+
+     It takes the height left over, as the mail rows do, so the list scrolls
+     inside the frame while the toolbar above it stays put, and a folder of
+     six hundred pages does not make the whole page a kilometre long. */
+  flex: 1 1 auto;
+  overflow-y: auto;
+  /* No padding of its own. It had some, and with the toolbar's padding above
+     it and the row's own inside it, three of them stacked into a finger's
+     width of nothing between the trail and the first row. The mail list has
+     none here for the same reason. */
+  padding: 0;
+  /* The page behind does not start moving when this list reaches its end,
+     which on a phone took the whole screen with it. */
+  overscroll-behavior: contain;
 }
+
+.knowledge-pane {
+  min-width: 0;
+  overflow: auto;
+  padding: var(--space-4);
+}
+
+/* One column at a time once there is not room for two, which is the frame's
+   own business rather than something to measure in script. */
+@container knowledge (max-width: 860px) {
+  .knowledge-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .knowledge-split .knowledge-list {
+    border-right: 0;
+  }
+  .knowledge-split.reading .knowledge-list {
+    display: none;
+  }
+  .knowledge-split:not(.reading) .knowledge-pane {
+    display: none;
+  }
+}
+
 
 /* Nothing of its own: the box and the ways in share a row, which is what
    the mail list does and what the shared toolbar already arranges. The box
@@ -8522,14 +8595,38 @@ button.with-icon {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  /* Level with the rows under it, which the scrolling area insets by its
-     own padding, so the folder's name and its pages line up. */
-  padding: 0 calc(var(--space-2) + var(--space-3)) var(--space-2);
+  /* The toolbar's own padding, since it stands in the toolbar's place and
+     carries the same rule underneath. It used to add a bottom pad on top of
+     that, which was half the gap between the trail and the first row. */
+  padding: var(--space-2);
   color: var(--muted);
   font-size: var(--text-label);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* It stands where the toolbar stands when it is the row in its place, so
+   the column's first row is the same height whichever of the two is in it
+   and the list below does not move as you walk in and out of folders. */
+.knowledge-trail.list-toolbar {
+  min-height: var(--space-7);
+  /* Not wrapped. The chevron and the levels are small and fixed, and the
+     name is the only thing that can be long: letting the row wrap put the
+     name on a line of its own and left the first line holding two glyphs
+     and a gap. It wraps inside its own box instead, which is what
+     overflow-wrap on the name is for. */
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+
+/* The two controls keep their place beside a name that has wrapped, rather
+   than stretching down the side of it. */
+.knowledge-trail.list-toolbar > .icon-action,
+.knowledge-trail-levels {
+  flex: none;
+  align-self: flex-start;
+}
+
 
 /* The back button is where the chevron on the row that led here was, so
    the two read as the same door from both sides. */
@@ -8537,31 +8634,40 @@ button.with-icon {
   margin-left: calc(var(--space-2) * -1);
 }
 
-/* The top of the tree, for climbing out of somewhere deep in one step.
-   Drawn as the rest of the line is, since it is part of a trail and not a
-   control in its own right; it is a button because it does something. */
-.knowledge-trail-root {
+/* The levels above the one open. An ellipsis and nothing else, because the
+   row has to cost the same whether the folder is one deep or four: the names
+   in it run to sixty five characters, so four levels written out is two
+   hundred, which no width has room for and a phone least of all. Every level
+   is in the menu behind it. */
+.knowledge-trail-levels {
+  flex: none;
+  /* The same box the chevron beside it has, so the two sit level. An
+     ellipsis is a baseline glyph and sat low against an icon that is
+     centred in its own square. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
   border: none;
   background: none;
-  padding: 0;
-  font: inherit;
-  letter-spacing: inherit;
-  /* A button does not take the row's capitals by itself: the browser's own
-     stylesheet sets text-transform on form controls, so the shorthand above
-     leaves the one word in the trail that is a control reading differently
-     from the rest of it. */
-  text-transform: inherit;
+  padding: 0 var(--space-1);
   color: var(--muted);
+  font: inherit;
+  line-height: 1;
   cursor: pointer;
 }
 
-.knowledge-trail-root:hover {
+.knowledge-trail-levels:hover {
   color: var(--text);
 }
 
+/* The folder you are in, with the rest of the row to itself. It is the one
+   name here worth the width, so it wraps rather than being cut. */
 .knowledge-trail-name {
+  flex: 1 1 auto;
   min-width: 0;
   overflow-wrap: anywhere;
+  color: var(--text);
 }
 
 /* Two lists live here while one is replacing the other. The one arriving
@@ -8655,13 +8761,22 @@ button.with-icon {
   text-align: left;
   padding: var(--space-2) var(--space-3);
   border: none;
-  border-radius: var(--radius-2);
+  /* Divided from the row under it rather than rounded and spaced away from
+     it, which is how the mail list reads and why it can be dense without
+     looking crowded. */
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
   background: none;
   color: var(--text);
   font: inherit;
   cursor: pointer;
   /* A row is pressed, not read: a second click on it selected its count. */
   user-select: none;
+}
+
+/* Nothing under the last one: the frame's own edge is there. */
+.knowledge-row:last-child {
+  border-bottom: 0;
 }
 
 .knowledge-row:hover:not(:disabled),
@@ -8692,7 +8807,7 @@ button.with-icon {
   align-items: center;
   padding: var(--space-2) var(--space-3);
   border: none;
-  border-radius: var(--radius-2);
+  border-radius: 0;
   background: none;
   color: inherit;
   font: inherit;
@@ -8709,7 +8824,7 @@ button.with-icon {
      the whole right edge, not the glyph. */
   padding: 0 var(--space-3);
   border: none;
-  border-radius: var(--radius-2);
+  border-radius: 0;
   background: none;
   color: var(--muted);
   cursor: pointer;
@@ -8785,10 +8900,6 @@ button.with-icon {
 
 /* One column at a time on a phone. The way back is a real navigation --
    it changes the URL -- so the browser's Back does the same thing. */
-.knowledge-phone .knowledge-list {
-  max-height: none;
-}
-
 /* A path is one word to the browser -- projects/210236-a-long-project-slug
    eastvale-single-sku-unstack-to-convey -- and a tag does not wrap,
    so a long one ran out of the card. It breaks wherever it has to. */
