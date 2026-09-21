@@ -6,6 +6,15 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.45.5] - 2026-09-21
+
+### Fixed
+
+- A fact a page already states in the same words is now folded into the
+  earlier one on pages holding more than five hundred facts. It was found
+  and reported as merged every night without being folded, so the same
+  duplicates were counted again and again and never went away. (#93)
+
 ## [0.45.4] - 2026-09-21
 
 ### Changed
