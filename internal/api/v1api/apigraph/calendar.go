@@ -547,24 +547,6 @@ func guestsToInvite(parsed, before *calendar.Parsed, organizer string) ([]string
 	return asked, nil
 }
 
-func occurrencesOf(parsed *calendar.Parsed) ([]models.Occurrence, time.Time, error) {
-	// The horizon lives in the calendar package, because CalDAV indexes
-	// what it writes too and two doors that disagreed about how far ahead
-	// to look would give a calendar whose contents depended on which one
-	// last touched it.
-	occurrences, indexedUntil, err := calendar.Indexed(parsed)
-	if err != nil {
-		return nil, time.Time{}, err
-	}
-	rows := make([]models.Occurrence, 0, len(occurrences))
-	for _, occurrence := range occurrences {
-		rows = append(rows, models.Occurrence{
-			StartsAt: occurrence.StartsAt, EndsAt: occurrence.EndsAt, AllDay: occurrence.AllDay,
-		})
-	}
-	return rows, indexedUntil, nil
-}
-
 // buildSaved turns what was sent into a file: whole iCalendar text when a
 // program sent one, otherwise the filled-in fields applied to whatever is
 // already kept.
@@ -761,13 +743,24 @@ func (self *graph) sendCalendarMessage(ctx context.Context, organizer string, as
 			Content:     written,
 		}},
 	}
+	envelope, err := self.calendarEnvelope(ctx, organizer)
+	if err != nil {
+		return err
+	}
+
+	_, err = self.mailer.AcceptSubmission(ctx, self.transaction(ctx), envelope, message)
+	return err
+}
+
+// calendarEnvelope resolves a currently owned sender for transactional calendar mail.
+func (self *graph) calendarEnvelope(ctx context.Context, organizer string) (*mailparse.Envelope, error) {
 	principal := api.ContextPrincipal(ctx)
 	if principal == nil || principal.User == nil {
-		return api.ErrNotFound
+		return nil, api.ErrNotFound
 	}
 	mailboxes, err := self.transaction(ctx).ListMailboxes(principal.User.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	mailboxId := ""
 	for _, mailbox := range mailboxes {
@@ -782,7 +775,7 @@ func (self *graph) sendCalendarMessage(ctx context.Context, organizer string, as
 		}
 	}
 	if mailboxId == "" {
-		return api.ErrNotFound
+		return nil, api.ErrNotFound
 	}
 	envelope := &mailparse.Envelope{MailboxID: mailboxId}
 	if request := api.ContextRequest(ctx); request != nil {
@@ -794,8 +787,7 @@ func (self *graph) sendCalendarMessage(ctx context.Context, organizer string, as
 		envelope.Location = self.locator.Locate(envelope.IP)
 		envelope.TLS = request.TLS
 	}
-	_, err = self.mailer.AcceptSubmission(ctx, self.transaction(ctx), envelope, message)
-	return err
+	return envelope, nil
 }
 
 // noReplyAddress is an address that says it does not take mail. The same

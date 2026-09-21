@@ -35,7 +35,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
-- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete now commit notification acceptance with event/index changes; content preparation, remaining send adapters, event-create retry identity and RSVP responses, contact protocol adapters, knowledge-source and rule-update commands remain.
+- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, event-create and RSVP retry identities, contact protocol adapters, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
@@ -186,6 +186,13 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: route RSVP participation changes through the locked calendar event
+command, with transactional reply acceptance and shared owned-sender resolution.
+Rationale: separately committing participation before a legacy mail send leaves
+an unanswered organizer after failure; independently sending first risks the
+opposite inconsistency. Reuse event/index persistence instead of copying it into
+the invitation adapter. Date: 2026-09-21.
 
 Decision: accept event invitation and cancellation mail in the same command
 transaction as the event and its occurrence index, using the existing durable
@@ -1608,3 +1615,29 @@ permission regressions pass, as do lint including gogolint and both binary
 builds. No external SMTP transport runs in these tests. New-event response
 recovery, RSVP transactions, protocol parity and final deployment/Chrome gates
 remain required.
+
+
+Revision note: AnswerMailInvitation now joins the caller transaction through the
+calendar SaveEvent command. It changes participation against the locked event
+and accepts the REPLY message before the command can commit. A failed reply
+acceptance, missing mail-send permission or caller rollback restores the original
+calendar data and leaves no accepted reply or dispatch wakeup. Success retains
+the existing mailbox-read/calendar-use/mail-send checks and records the reply in
+the speaking address's owned mailbox. Invitations and replies share one sender
+resolution helper, and the now-unused API occurrence-index helper was removed.
+
+The regression fixture records a received invitation and injects acceptance
+failure after writing mail, parent rollback and denied send permission. It checks
+calendar bytes, mail count and commit callbacks together, and verifies that a
+successful response shows the new participation. These are atomicity guarantees,
+not replay identity: repeating an RSVP after a lost success response can still
+send another reply. Explicit request identity remains part of the open recovery
+work, along with new-event creation and the protocol/deployment gates.
+
+
+Validation update: all 539 calendar, calendar-command, scheduling, DAV, API and
+agent tests pass under the race detector. The RSVP fixture passes again after
+removing the unused index helper; final lint including gogolint and both binary
+builds pass. The preceding whole-repository result remains 1,921 tests with two
+skips. Retry identities, protocol parity and final deployment/visual verification
+are still open.

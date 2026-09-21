@@ -109,6 +109,7 @@ transaction. Its row lock also guards the agent grant adapter, preserving the
 other operation's fields during concurrent changes. Event save/delete now use
 command savepoints that include the occurrence index and invitation/cancellation
 acceptance. Mail dispatch runs from committed delivery rows. The prior guest
-list comes from the locked event rather than an earlier API read. RSVP replies
-still use the legacy separate mail path, and new field-based event creation does
-not yet retain an identity across a lost response.
+list comes from the locked event rather than an earlier API read. RSVP responses
+now update participation and accept reply mail through the same event command.
+New field-based event creation and RSVP requests do not yet retain a caller
+identity across a lost response.
