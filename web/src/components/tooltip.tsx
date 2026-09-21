@@ -1,0 +1,198 @@
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+
+// A tooltip the dashboard draws itself, rather than the browser's.
+//
+// The native `title` attribute is what every one of these used to be, and it
+// has three problems that matter here: it waits about a second before it
+// appears, it is drawn in the operating system's colors rather than the
+// page's, and its text cannot wrap or be styled — a timestamp with a zone
+// name in it comes out as one long line in a font nobody chose.
+//
+// It is deliberately small. There is no arrow, no rich content and no click
+// behavior: it says one line about the thing under the pointer.
+
+// How long the pointer has to rest before it appears. Long enough that
+// running the pointer down a list of fifty rows shows nothing, short enough
+// that stopping on one feels answered rather than delayed.
+const DELAY = 350
+
+// Room kept between the tooltip and the edge of the window, and between it
+// and the thing it describes.
+// The widest a tooltip is drawn, matching .tooltip in the stylesheet, and the
+// gap kept between it and the edge of the window.
+const MAXIMUM_WIDTH = 280
+const EDGE = 8
+
+const MARGIN = 8
+
+type Position = { top: number; left: number; below: boolean }
+
+// Where a run of text is, for an anchor that wraps words rather than a
+// button.
+function rangeOver(element: Element): Range {
+  const range = document.createRange()
+  range.selectNodeContents(element)
+  return range
+}
+
+// visiblePart is the box clipped to every scrolling ancestor and to the
+// window: the rectangle of it a person can actually see.
+function visiblePart(box: DOMRect, element: Element): DOMRect {
+  let top = box.top
+  let bottom = box.bottom
+  let left = box.left
+  let right = box.right
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    const style = window.getComputedStyle(parent)
+    const clips = /(auto|scroll|hidden)/.test(style.overflowY + style.overflowX + style.overflow)
+    if (!clips) {
+      continue
+    }
+    const frame = parent.getBoundingClientRect()
+    top = Math.max(top, frame.top)
+    bottom = Math.min(bottom, frame.bottom)
+    left = Math.max(left, frame.left)
+    right = Math.min(right, frame.right)
+  }
+  top = Math.max(top, 0)
+  bottom = Math.min(bottom, window.innerHeight)
+  left = Math.max(left, 0)
+  right = Math.min(right, window.innerWidth)
+  if (bottom < top || right < left) {
+    return box
+  }
+  return new DOMRect(left, top, right - left, bottom - top)
+}
+
+export function Tooltip({ label, children }: { label: string; children: React.ReactNode }) {
+  const anchor = useRef<HTMLSpanElement>(null)
+  const timer = useRef<number | null>(null)
+  const [position, setPosition] = useState<Position | null>(null)
+  const id = useId()
+
+  const hide = useCallback(() => {
+    if (timer.current !== null) {
+      window.clearTimeout(timer.current)
+      timer.current = null
+    }
+    setPosition(null)
+  }, [])
+
+  // Measured from the anchor rather than positioned relative to it, and
+  // rendered into the body: a tooltip inside the mailbox list would be
+  // clipped by the scrolling box that holds the rows.
+  const place = useCallback(() => {
+    const element = anchor.current
+    if (!element) {
+      return
+    }
+    // What is being described, which is not the anchor. The anchor is
+    // display: contents so that it does not become a flex item of the row it
+    // sits in — and an element with no box of its own measures as zeros, so
+    // measuring it put every tooltip in the top left corner of the window,
+    // half of it off the edge. A range covers the case where what is wrapped
+    // is text rather than an element.
+    const whole = element.firstElementChild
+      ? element.firstElementChild.getBoundingClientRect()
+      : rangeOver(element).getBoundingClientRect()
+    // Only the part of it that can be seen. A tall bubble in a scrolling
+    // transcript has a top far above the box that clips it, and a tooltip
+    // placed from that top was drawn out over the page, nowhere near the
+    // words under the pointer.
+    const box = visiblePart(whole, element)
+    // Above by default, because the thing being described is usually at the
+    // end of a row and the pointer is coming from the left.
+    const below = box.top < 40
+    // Kept on screen. The box is centred on this point, so the half-width is
+    // what can hang off either side; a label at the end of a row would
+    // otherwise be drawn partly past the edge of the window.
+    const half = Math.min(MAXIMUM_WIDTH, window.innerWidth - EDGE * 2) / 2
+    const centre = box.left + box.width / 2
+    setPosition({
+      top: below ? box.bottom + MARGIN : box.top - MARGIN,
+      left: Math.min(Math.max(centre, EDGE + half), window.innerWidth - EDGE - half),
+      below,
+    })
+  }, [])
+
+  // Nothing to say, nothing to show. A caller that has a label only
+  // sometimes — a tab that carries an explanation, a control that says why it
+  // is disabled — passes the empty string the rest of the time, and an empty
+  // grey box on hover is worse than no tooltip.
+  const silent = label.trim() === ''
+
+  const show = useCallback(() => {
+    if (timer.current !== null) {
+      window.clearTimeout(timer.current)
+    }
+    timer.current = window.setTimeout(() => {
+      timer.current = null
+      place()
+    }, DELAY)
+  }, [place])
+
+  useEffect(() => hide, [hide])
+
+  // A page that scrolls or resizes under an open tooltip leaves it pointing
+  // at nothing, and there is no cheap way to keep it attached, so it goes.
+  useEffect(() => {
+    if (!position) {
+      return
+    }
+    window.addEventListener('scroll', hide, true)
+    window.addEventListener('resize', hide)
+    return () => {
+      window.removeEventListener('scroll', hide, true)
+      window.removeEventListener('resize', hide)
+    }
+  }, [position, hide])
+
+  return (
+    <>
+      <span
+        ref={anchor}
+        className="tooltip-anchor"
+        // Described rather than labelled: the tooltip adds to what the
+        // element says, it does not replace it.
+        aria-describedby={position ? id : undefined}
+        // Pointer rather than mouse, so a finger can be told from a mouse.
+        // A tap emulates a hover, and the tooltip arrived a third of a second
+        // after the button had done its job — a box over the menu that had
+        // just opened, describing the button underneath it.
+        onPointerEnter={(event) => {
+          if (!silent && event.pointerType !== 'touch') {
+            show()
+          }
+        }}
+        onPointerLeave={hide}
+        // Pressing it is an answer: whatever the button does is what was
+        // wanted, and the tooltip has nothing left to say.
+        onPointerDown={hide}
+        onFocus={(event) => {
+          // Only focus that came from the keyboard. A tap focuses the button
+          // too, which is the other half of the same problem.
+          if (!silent && (event.target as HTMLElement).matches?.(':focus-visible')) {
+            place()
+          }
+        }}
+        onBlur={hide}
+      >
+        {children}
+      </span>
+      {!silent &&
+        position &&
+        createPortal(
+          <span
+            id={id}
+            role="tooltip"
+            className={position.below ? 'tooltip below' : 'tooltip'}
+            style={{ top: position.top, left: position.left }}
+          >
+            {label}
+          </span>,
+          document.body,
+        )}
+    </>
+  )
+}

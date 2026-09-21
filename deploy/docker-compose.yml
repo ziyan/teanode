@@ -1,0 +1,363 @@
+# A complete TeaNode deployment: the server plus everything it can optionally
+# use.
+#
+#     teanode-server config env --output .env     # then edit it
+#     docker compose up -d
+#
+# Configuration lives in PostgreSQL, not in a file. The .env beside this file
+# says how to reach that database, and — on the very first start, against an
+# empty one — what kind of server to create. After that the dashboard is where
+# settings change, and the variables marked "first run only" are ignored; the
+# server says so in its log if it finds one that disagrees.
+#
+# The server uses host networking so that it sees the real client address of a
+# connecting mail server. SPF checks the connecting address, so behind a bridge
+# network every sender would appear to come from the Docker gateway and SPF
+# would be meaningless.
+#
+# Running more than one instance against this database works, and is what the
+# object store and the Redis below are for: they share the configuration
+# through PostgreSQL, the stored messages through MinIO, and half-finished
+# passkey sign-ins through Redis. Give each one its own TEANODE_INSTANCE_ID.
+services:
+  # A certificate for PostgreSQL, so the server's connection to it is
+  # encrypted. Generated once, here, because the official postgres image ships
+  # with ssl off and no certificate: without this the only honest setting is
+  # sslmode=disable, and the database password and every message crosses the
+  # Docker network in the clear.
+  #
+  # It is self-signed and its own authority, with the name "postgres" — the
+  # service name the server dials — so the server can verify it with
+  # sslmode=verify-full rather than merely encrypting. Ten years, because
+  # nobody wants their mail server to stop on a morning they had forgotten
+  # about; it protects one hop on a private network.
+  #
+  # Uses the postgres image because it already has openssl, and the file has
+  # to be owned by the uid postgres runs as or the server refuses to start.
+  postgres-certs:
+    image: postgres:17
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -f /certs/server.key ]; then
+          openssl req -new -x509 -days 3650 -nodes \
+            -subj "/CN=postgres" -addext "subjectAltName=DNS:postgres" \
+            -out /certs/server.crt -keyout /certs/server.key
+        fi
+        chown 999:999 /certs/server.key /certs/server.crt
+        chmod 600 /certs/server.key
+        chmod 644 /certs/server.crt
+    volumes:
+      - ./data/certs:/certs
+
+  postgres:
+    # The pgvector image is the stock PostgreSQL image with one extension
+    # added: same major version, same data directory, so an existing
+    # deployment changes this line and keeps its data. The extension is
+    # what lets the agent's knowledge be searched by meaning at the size a
+    # code checkout or a chat archive reaches; without it the server ranks
+    # in its own memory over a bounded set, which is right for a mailbox
+    # and not for a corpus. See
+    # docs/decisions/20260915-pgvector-when-present-never-required.md
+    image: pgvector/pgvector:pg17
+    restart: always
+    depends_on:
+      postgres-certs:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_DB: teanode
+      POSTGRES_USER: teanode
+      # From the .env beside this file, which "teanode-server config env"
+      # generates along with the connection string that uses it. The word
+      # "teanode" is what it used to be, which is a password every reader of
+      # this repository knows; it is still the fallback so that a deployment
+      # created before this change keeps starting, and rotating it is in
+      # docs/reference/deployment.md.
+      #
+      # It is only read when the database is first created. Changing it
+      # afterwards changes nothing about the database itself.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-teanode}
+    # Serve TLS. The connection string in .env asks for it and verifies the
+    # certificate, so turning this off means the server can no longer connect.
+    #
+    # The memory settings below are for the vector indexes. PostgreSQL's
+    # defaults assume it shares a small machine: 128 MB of cache and 64 MB
+    # to build an index in. An index over a few hundred thousand vectors
+    # wants more than that to build at speed, and the whole point of the
+    # index is that a search does not read the table. These are modest for
+    # a host running a mail server and nothing else; a host with less
+    # memory should lower them, and a database that is not this container
+    # is the operator's to tune. See docs/reference/deployment.md.
+    command:
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/certs/server.crt
+      - -c
+      - ssl_key_file=/certs/server.key
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-2GB}
+      - -c
+      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-2GB}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:-32MB}
+      # Storage is a solid-state disk on every host this is deployed to;
+      # the default of 4 tells the planner a random read costs four times a
+      # sequential one, which was true of spinning disks and makes it
+      # refuse an index scan it should take.
+      - -c
+      - random_page_cost=1.1
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./data/certs:/certs:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teanode"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      options:
+        max-size: 50M
+        max-file: "10"
+
+  # Only needed for more than one instance: where the raw messages go, so
+  # that every instance can read a message any of them handled. With one
+  # instance the local spool is enough.
+  #
+  #     docker compose --profile cluster up -d
+  #
+  # Uncomment the TEANODE_S3_* block in .env at the same time; the credentials
+  # here are the same ones, because the server is the thing connecting.
+  #
+  # MinIO is used because it needs no account anywhere. Any S3-compatible
+  # store works, including S3 itself: drop the endpoint and the path style,
+  # and give it a region and credentials.
+  minio:
+    image: minio/minio:latest
+    profiles: [cluster]
+    restart: always
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${TEANODE_S3_ACCESS_KEY_ID:-teanode}
+      MINIO_ROOT_PASSWORD: ${TEANODE_S3_SECRET_ACCESS_KEY:-}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - ./data/minio:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      options:
+        max-size: 50M
+        max-file: "10"
+
+  # Creates the bucket and exits. MinIO cannot declare one at startup, and a
+  # server that finds no bucket cannot store a message.
+  minio-bucket:
+    image: minio/mc:latest
+    profiles: [cluster]
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        mc mb --ignore-existing local/"$${BUCKET}"
+    environment:
+      MINIO_ROOT_USER: ${TEANODE_S3_ACCESS_KEY_ID:-teanode}
+      MINIO_ROOT_PASSWORD: ${TEANODE_S3_SECRET_ACCESS_KEY:-}
+      BUCKET: ${TEANODE_S3_BUCKET:-teanode}
+
+  # Only needed for more than one instance, and only when passkeys are on.
+  #
+  #     docker compose --profile cluster up -d
+  #
+  # A WebAuthn sign-in is two requests, and behind a load balancer the browser
+  # has no reason to come back to the instance it started with. The challenge
+  # minted by the first request has to be somewhere the second one can find
+  # it, and that is all this holds: keys that expire in five minutes and are
+  # deleted as they are read. Losing the lot costs one retry, which is why
+  # there is no volume here and no persistence configured.
+  #
+  # With one instance it is not needed at all — leave passkey.redis.address
+  # empty and the challenges stay in the process.
+  redis:
+    image: redis:8-alpine
+    profiles: [cluster]
+    restart: always
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      options:
+        max-size: 50M
+        max-file: "10"
+
+  # Optional. Remove this service and set antivirus.enabled to false if you do
+  # not want virus scanning; it wants about 2GB of memory for its signatures.
+  clamav:
+    image: clamav/clamav:stable
+    restart: always
+    ports:
+      - "127.0.0.1:3310:3310"
+    volumes:
+      - ./data/clamav:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
+      interval: 60s
+      retries: 3
+      start_period: 120s
+    logging:
+      options:
+        max-size: 50M
+        max-file: "10"
+
+  # Not started by default, and not needed by default.
+  #
+  # Mail is scored by the filter inside the server, so there is nothing here
+  # to run. This service exists for a deployment that would rather use an
+  # external SpamAssassin daemon, which is what antispam.engine = "spamd"
+  # selects:
+  #
+  #     docker compose --profile spamd up -d
+  #
+  # It is behind a profile for a reason worth knowing. The image this file
+  # used to name was deleted from Docker Hub by its author, and because
+  # compose pulls every service before it starts any of them, a missing image
+  # for the optional spam scanner stopped the whole mail server from coming
+  # up. Nothing in the default path now depends on somebody else's image
+  # continuing to exist.
+  #
+  # There is no official SpamAssassin image, so the tag here is pinned and
+  # worth checking when you upgrade. The volume holds the rules sa-update
+  # fetches; the image refreshes them daily on its own.
+  spamassassin:
+    image: instantlinux/spamassassin:4.0.2-3
+    profiles: [spamd]
+    restart: always
+    ports:
+      - "127.0.0.1:783:783"
+    volumes:
+      - ./data/spamassassin:/var/lib/spamassassin
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    logging:
+      options:
+        max-size: 50M
+        max-file: "10"
+
+  # Creates the data directory and gives it to the uid the server runs as.
+  #
+  # Docker creates a missing bind-mount source itself, owned by root, and the
+  # server runs as 65532 — so without this a first "docker compose up -d"
+  # starts, opens its listeners, and then cannot write a message:
+  #
+  #     storage: cannot create /var/lib/teanode/mail: permission denied
+  #
+  # It also covers the other direction: a directory left by a version that ran
+  # as root is chowned once, here, rather than by hand.
+  # The chown is skipped when it has already been done, because this runs on
+  # every "up" and the directory holds the mail archive — walking millions of
+  # files to change nothing is a slow way to start a mail server.
+  teanode-data:
+    image: alpine:3.23
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /data/upgrade
+        [ "$$(stat -c %u /data)" = 65532 ] || chown -R 65532:65532 /data
+    volumes:
+      - ./data/teanode:/data
+
+
+  # A Chrome for the agent's headless browser, under the browser profile.
+  # Reached only from inside the compose network; set agent.browser.cdpEndpoint
+  # to http://chrome:9222 in the dashboard's Agent settings and switch the
+  # browser on there.
+  chrome:
+    image: chromedp/headless-shell:latest
+    profiles: [browser]
+    restart: unless-stopped
+    command: ["--no-sandbox", "--disable-gpu", "--remote-debugging-address=0.0.0.0", "--remote-debugging-port=9222", "--disable-dev-shm-usage", "--hide-scrollbars"]
+    shm_size: 512m
+
+  teanode:
+    # The published image, so "docker compose up -d" pulls rather than builds.
+    # Pin the version rather than following latest on a mail server somebody
+    # depends on: an upgrade should be a thing you did, on a day you chose.
+    image: ghcr.io/ziyan/teanode:latest
+    # Pull it. A service with a build section resolves a missing image by
+    # building, and for anybody who copied this one file out of the repository
+    # the context below is not there — so "docker compose up -d" failed
+    # instead of pulling the image this line names.
+    pull_policy: missing
+    # Kept, so that "docker compose build" still builds this checkout — which
+    # is what you want when the change you are running is the one you just
+    # made.
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      teanode-data:
+        condition: service_completed_successfully
+      # Not depended on: MinIO is in a profile, and a dependency on a service
+      # that is not started would stop the default single-instance stack from
+      # coming up at all.
+    network_mode: host
+    # The image runs as uid 65532. This is the one privilege it still needs:
+    # binding 25, 80, 443 and 587, all below 1024. Everything else root was
+    # carrying along with it is gone.
+    #
+    # The mounted directory has to be readable and writable by that uid, which
+    # is what the teanode-data service above arranges.
+    cap_add:
+      - NET_BIND_SERVICE
+    env_file:
+      - .env
+    environment:
+      # Where an upgrade installed from the dashboard puts the new binary.
+      #
+      # It is on the volume rather than in the image because the image is
+      # thrown away by the next "docker compose up": a binary written inside
+      # the container would run until the container was recreated and then
+      # silently be the old one again. And it comes from the environment
+      # rather than from the settings because the next start has to find it
+      # before it opens the database, which is where the settings are.
+      #
+      # Removing this line does not break anything; it turns off upgrading
+      # from the dashboard, and "docker compose pull" remains the way.
+      TEANODE_UPGRADE_DIRECTORY: /var/lib/teanode/upgrade
+    volumes:
+      - ./data/teanode:/var/lib/teanode:rw
+      # The certificate PostgreSQL serves, so sslmode=verify-full can check it.
+      - ./data/certs:/certs:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/ssl:/etc/ssl:ro
+    command: ["run"]
+    logging:
+      options:
+        max-size: 50M
+        max-file: "20"

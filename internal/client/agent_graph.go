@@ -1,0 +1,626 @@
+package client
+
+import (
+	"context"
+	"time"
+)
+
+// The graph from a terminal: pages addressed by path, the facts on them,
+// what the nightly run did, and the sources the agent reads.
+
+// AgentNode is one page of the graph.
+type AgentNode struct {
+	ID         string     `json:"id"`
+	Path       string     `json:"path"`
+	Kind       string     `json:"kind"`
+	Name       string     `json:"name"`
+	Aliases    []string   `json:"aliases"`
+	Summary    string     `json:"summary"`
+	ContactID  string     `json:"contactId"`
+	Pinned     bool       `json:"pinned"`
+	Importance float32    `json:"importance"`
+	Dormant    bool       `json:"dormant"`
+	UsedAt     *time.Time `json:"usedAt"`
+	ModifiedAt time.Time  `json:"modifiedAt"`
+}
+
+// AgentFact is one sentence on a page.
+type AgentFact struct {
+	ID         string          `json:"id"`
+	Number     int             `json:"number"`
+	Kind       string          `json:"kind"`
+	Text       string          `json:"text"`
+	HappenedAt *time.Time      `json:"happenedAt"`
+	Confidence float32         `json:"confidence"`
+	Inferred   bool            `json:"inferred"`
+	Evidence   []AgentEvidence `json:"evidence"`
+	Audiences  []string        `json:"audiences"`
+	Dormant    bool            `json:"dormant"`
+	CreatedAt  time.Time       `json:"createdAt"`
+}
+
+// AgentEvidence is where a fact came from.
+type AgentEvidence struct {
+	Kind  string `json:"kind"`
+	ID    string `json:"id"`
+	Quote string `json:"quote"`
+}
+
+// AgentEdge joins two pages. Status is "stated" or "proposed": a link
+// the nightly walk guessed is read as a guess and not as a fact.
+type AgentEdge struct {
+	Relation string `json:"relation"`
+	Status   string `json:"status"`
+	FromPath string `json:"fromPath"`
+	ToPath   string `json:"toPath"`
+}
+
+// AgentGraphPage is a page and everything a reader of it wants.
+type AgentGraphPage struct {
+	Node     *AgentNode   `json:"node"`
+	Facts    []*AgentFact `json:"facts"`
+	Edges    []*AgentEdge `json:"edges"`
+	Children []*AgentNode `json:"children"`
+	Contact  *Contact     `json:"contact"`
+}
+
+// AgentLearnedFact is a fact with the page it sits on.
+type AgentLearnedFact struct {
+	Fact *AgentFact `json:"fact"`
+	Path string     `json:"path"`
+	Name string     `json:"name"`
+}
+
+// AgentGraphSearch is what words found.
+type AgentGraphSearch struct {
+	Nodes []*AgentNode        `json:"nodes"`
+	Facts []*AgentLearnedFact `json:"facts"`
+}
+
+// AgentRecall is what a turn asking a question would have been carried
+// from the graph: the pages, each with the facts recall would have put in
+// front of the model.
+type AgentRecall struct {
+	Pages []*AgentRecalledPage `json:"pages"`
+}
+
+// AgentRecalledPage is one of those pages.
+type AgentRecalledPage struct {
+	Path  string               `json:"path"`
+	Facts []*AgentRecalledFact `json:"facts"`
+}
+
+// AgentRecalledFact is a fact as the page cites it.
+type AgentRecalledFact struct {
+	Number int    `json:"number"`
+	Text   string `json:"text"`
+}
+
+// AgentKnowledgeSource is a place the agent reads.
+type AgentKnowledgeSource struct {
+	ID             string                      `json:"id"`
+	Kind           string                      `json:"kind"`
+	Name           string                      `json:"name"`
+	Specification  AgentKnowledgeSpecification `json:"specification"`
+	RootPath       string                      `json:"rootPath"`
+	Enabled        bool                        `json:"enabled"`
+	Cron           string                      `json:"cron"`
+	LastRunAt      *time.Time                  `json:"lastRunAt"`
+	NextRunAt      *time.Time                  `json:"nextRunAt"`
+	LastError      string                      `json:"lastError"`
+	DocumentCount  int                         `json:"documentCount"`
+	ChunkCount     int                         `json:"chunkCount"`
+	RefusedCount   int                         `json:"refusedCount"`
+	More           bool                        `json:"more"`
+	UnknownAuthors []string                    `json:"unknownAuthors"`
+
+	// CheckoutsKeptToProfile is how many checkouts under this source were
+	// kept to what git says about them, and FilesKeptToProfile how many
+	// files that was.
+	CheckoutsKeptToProfile int `json:"checkoutsKeptToProfile"`
+	FilesKeptToProfile     int `json:"filesKeptToProfile"`
+}
+
+// AgentKnowledgeSpecification says what a source reads.
+type AgentKnowledgeSpecification struct {
+	Computer  string   `json:"computer"`
+	Path      string   `json:"path"`
+	Format    string   `json:"format"`
+	Include   []string `json:"include"`
+	Exclude   []string `json:"exclude"`
+	Tool      string   `json:"tool"`
+	Start     string   `json:"start"`
+	Depth     int      `json:"depth"`
+	MailboxID string   `json:"mailboxId"`
+
+	// ReadEveryCheckout reads the files of every checkout under this
+	// source, the person's own and the ones they cloned alike.
+	ReadEveryCheckout bool `json:"readEveryCheckout"`
+
+	// CommitsPerPass is how many commits one pass over this source's
+	// tree carries; zero is the pace the program on the machine reads
+	// at.
+	CommitsPerPass int `json:"commitsPerPass"`
+
+	// OwnCommitsAtLeast is the fewest commits of the person's own a
+	// checkout under this source must hold before its files are read;
+	// zero is the floor the program on the machine reads at.
+	OwnCommitsAtLeast int `json:"ownCommitsAtLeast"`
+}
+
+// AgentPassage is one passage a search of what was indexed found, with
+// enough of the document it came from to cite it.
+type AgentPassage struct {
+	DocumentID string     `json:"documentId"`
+	ExternalID string     `json:"externalId"`
+	Title      string     `json:"title"`
+	URL        string     `json:"url"`
+	Kind       string     `json:"kind"`
+	Author     string     `json:"author"`
+	SourceID   string     `json:"sourceId"`
+	Source     string     `json:"source"`
+	HappenedAt *time.Time `json:"happenedAt"`
+	Private    bool       `json:"private"`
+	Number     int        `json:"number"`
+	Text       string     `json:"text"`
+	Score      float64    `json:"score"`
+}
+
+// AgentDefinition is one place an identifier in the words is defined.
+type AgentDefinition struct {
+	Symbol     string `json:"symbol"`
+	Kind       string `json:"kind"`
+	Line       int    `json:"line"`
+	DocumentID string `json:"documentId"`
+	ExternalID string `json:"externalId"`
+	Title      string `json:"title"`
+}
+
+// AgentDocumentSearch is what a search of what was indexed found.
+// Meaningful is false where the deployment can only search by words.
+type AgentDocumentSearch struct {
+	Passages    []*AgentPassage    `json:"passages"`
+	Definitions []*AgentDefinition `json:"definitions"`
+	Meaningful  bool               `json:"meaningful"`
+}
+
+// AgentDocumentExtract is a document and a slice of its text. Next is
+// where the read that carries on from this one starts, and zero at the
+// end of the document.
+type AgentDocumentExtract struct {
+	DocumentID string     `json:"documentId"`
+	ExternalID string     `json:"externalId"`
+	Title      string     `json:"title"`
+	URL        string     `json:"url"`
+	Kind       string     `json:"kind"`
+	Author     string     `json:"author"`
+	SourceID   string     `json:"sourceId"`
+	Source     string     `json:"source"`
+	HappenedAt *time.Time `json:"happenedAt"`
+	Private    bool       `json:"private"`
+	From       int        `json:"from"`
+	Text       string     `json:"text"`
+	Total      int        `json:"total"`
+	Next       int        `json:"next"`
+}
+
+// AgentDream is what the nightly run did.
+type AgentDream struct {
+	ID         string     `json:"id"`
+	JobID      string     `json:"jobId"`
+	StartedAt  time.Time  `json:"startedAt"`
+	FinishedAt *time.Time `json:"finishedAt"`
+	Digested   int        `json:"digested"`
+	Filed      int        `json:"filed"`
+	Merged     int        `json:"merged"`
+	Rewritten  int        `json:"rewritten"`
+	Moved      int        `json:"moved"`
+	Dormant    int        `json:"dormant"`
+	Embedded   int        `json:"embedded"`
+	Backlog    int        `json:"backlog"`
+	Coarse     bool       `json:"coarse"`
+
+	Revised      int `json:"revised"`
+	Strengthened int `json:"strengthened"`
+	Associated   int `json:"associated"`
+	Rehearsed    int `json:"rehearsed"`
+	Gaps         int `json:"gaps"`
+	Unknown      int `json:"unknown"`
+
+	Tokens    int64  `json:"tokens"`
+	LastError string `json:"lastError"`
+	Proposals []struct {
+		Kind   string `json:"kind"`
+		Path   string `json:"path"`
+		To     string `json:"to"`
+		Reason string `json:"reason"`
+	} `json:"proposals"`
+}
+
+const nodeFields = `{ id path kind name aliases summary contactId pinned importance dormant usedAt modifiedAt }`
+const factFields = `{ id number kind text happenedAt confidence inferred evidence { kind id quote } audiences dormant createdAt }`
+const sourceFields = `{ id kind name specification { computer path format include exclude tool start depth mailboxId readEveryCheckout commitsPerPass ownCommitsAtLeast } rootPath enabled cron lastRunAt nextRunAt lastError documentCount chunkCount refusedCount more unknownAuthors checkoutsKeptToProfile filesKeptToProfile }`
+const revisionFields = `{ revision kind actor summary change before after path reason createdAt }`
+const passageFields = `{ documentId externalId title url kind author sourceId source happenedAt private number text score }`
+const extractFields = `{ documentId externalId title url kind author sourceId source happenedAt private from text total next }`
+const dreamFields = `{ id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse strengthened associated rehearsed gaps unknown revised tokens lastError proposals { kind path to reason } }`
+
+// The documents.
+const (
+	DocumentAgentGraphIndex = `query ($under: String, $first: Int) {
+		AgentGraphIndex(under: $under, first: $first) ` + nodeFields + `
+	}`
+	DocumentAgentGraphPage = `query ($path: String!) {
+		AgentGraphPage(path: $path) {
+			node ` + nodeFields + `
+			facts ` + factFields + `
+			edges { relation status fromPath toPath }
+			children ` + nodeFields + `
+			contact { id name emails phones organization }
+		}
+	}`
+	DocumentSearchAgentGraph = `query ($query: String!, $first: Int) {
+		SearchAgentGraph(query: $query, first: $first) {
+			nodes ` + nodeFields + `
+			facts { fact ` + factFields + ` path name }
+		}
+	}`
+	DocumentRecallAgentMemory = `query ($question: String!) {
+		RecallAgentMemory(question: $question) {
+			pages { path facts { number text } }
+		}
+	}`
+	DocumentListAgentLearned = `query ($days: Int, $first: Int) {
+		ListAgentLearned(days: $days, first: $first) { fact ` + factFields + ` path name }
+	}`
+	DocumentSaveAgentNode = `mutation ($path: String!, $kind: String, $name: String, $summary: String, $aliases: [String!], $pinned: Boolean) {
+		SaveAgentNode(path: $path, kind: $kind, name: $name, summary: $summary, aliases: $aliases, pinned: $pinned) ` + nodeFields + `
+	}`
+	DocumentMergeAgentNodes = `mutation ($path: String!, $into: String!) { MergeAgentNodes(path: $path, into: $into) { id path name } }`
+	DocumentMoveAgentNode   = `mutation ($path: String!, $under: String!) {
+		MoveAgentNode(path: $path, under: $under) ` + nodeFields + `
+	}`
+	DocumentDeleteAgentNode = `mutation ($path: String!) { DeleteAgentNode(path: $path) }`
+	DocumentSaveAgentFact   = `mutation ($path: String!, $number: Int, $kind: String, $text: String!, $happened: String, $audiences: [String!]) {
+		SaveAgentFact(path: $path, number: $number, kind: $kind, text: $text, happened: $happened, audiences: $audiences) ` + factFields + `
+	}`
+	DocumentMoveAgentFact = `mutation ($path: String!, $number: Int!, $to: String!) {
+		MoveAgentFact(path: $path, number: $number, to: $to) ` + factFields + `
+	}`
+	DocumentDeleteAgentFact = `mutation ($path: String!, $number: Int!) { DeleteAgentFact(path: $path, number: $number) }`
+	DocumentSetMyContact    = `mutation ($contactId: String) { SetMyContact(contactId: $contactId) }`
+
+	DocumentListAgentKnowledgeSources = `query { ListAgentKnowledgeSources ` + sourceFields + ` }`
+	DocumentSaveAgentKnowledgeSource  = `mutation ($sourceId: String, $kind: String, $name: String, $computer: String, $path: String, $format: String, $rootPath: String, $cron: String, $enabled: Boolean, $mailboxId: String, $readEveryCheckout: Boolean, $commitsPerPass: Int, $ownCommitsAtLeast: Int) {
+		SaveAgentKnowledgeSource(sourceId: $sourceId, kind: $kind, name: $name, computer: $computer, path: $path, format: $format, rootPath: $rootPath, cron: $cron, enabled: $enabled, mailboxId: $mailboxId, readEveryCheckout: $readEveryCheckout, commitsPerPass: $commitsPerPass, ownCommitsAtLeast: $ownCommitsAtLeast) ` + sourceFields + `
+	}`
+	DocumentSearchAgentDocuments = `query ($query: String!, $first: Int, $sourceId: String) {
+		SearchAgentDocuments(query: $query, first: $first, sourceId: $sourceId) {
+			passages ` + passageFields + `
+			definitions { symbol kind line documentId externalId title }
+			meaningful
+		}
+	}`
+	DocumentReadAgentDocument = `query ($documentId: String!, $from: Int, $first: Int) {
+		ReadAgentDocument(documentId: $documentId, from: $from, first: $first) ` + extractFields + `
+	}`
+	DocumentDeleteAgentKnowledgeSource = `mutation ($sourceId: String!) { DeleteAgentKnowledgeSource(sourceId: $sourceId) }`
+	DocumentSyncAgentKnowledgeSource   = `mutation ($sourceId: String!) { SyncAgentKnowledgeSource(sourceId: $sourceId) }`
+	DocumentDreamAgentNow              = `mutation ($bootstrap: Boolean) { DreamAgentNow(bootstrap: $bootstrap) }`
+	DocumentRereadAgentDocuments       = `mutation ($minutes: Int!) { RereadAgentDocuments(minutes: $minutes) }`
+	DocumentLinkAgentNodes             = `mutation ($path: String!, $to: String!, $relation: String!, $note: String) { LinkAgentNodes(path: $path, to: $to, relation: $relation, note: $note) }`
+	DocumentUnlinkAgentNodes           = `mutation ($path: String!, $to: String!, $relation: String!) { UnlinkAgentNodes(path: $path, to: $to, relation: $relation) }`
+	DocumentListAgentDreams            = `query ($first: Int) { ListAgentDreams(first: $first) ` + dreamFields + ` }`
+	DocumentAgentReadingProgress       = `query { AgentReadingProgress { waiting read perHour hoursLeft bootstrapping } }`
+	DocumentListAgentPageHistory       = `query ($path: String!, $first: Int) { ListAgentPageHistory(path: $path, first: $first) ` + revisionFields + ` }`
+)
+
+// AgentGraphIndex is the pages, under a path or the whole graph.
+func AgentGraphIndex(ctx context.Context, connection *Client, under string, first int) ([]*AgentNode, error) {
+	var result struct {
+		AgentGraphIndex []*AgentNode `json:"AgentGraphIndex"`
+	}
+	variables := map[string]any{"first": first}
+	if under != "" {
+		variables["under"] = under
+	}
+	if err := connection.Execute(ctx, DocumentAgentGraphIndex, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.AgentGraphIndex, nil
+}
+
+// AgentGraphPageOf is one page with its facts and links.
+func AgentGraphPageOf(ctx context.Context, connection *Client, path string) (*AgentGraphPage, error) {
+	var result struct {
+		AgentGraphPage *AgentGraphPage `json:"AgentGraphPage"`
+	}
+	if err := connection.Execute(ctx, DocumentAgentGraphPage, map[string]any{"path": path}, &result); err != nil {
+		return nil, err
+	}
+	return result.AgentGraphPage, nil
+}
+
+// SearchAgentGraph finds pages and facts by words.
+func SearchAgentGraph(ctx context.Context, connection *Client, query string, first int) (*AgentGraphSearch, error) {
+	var result struct {
+		SearchAgentGraph *AgentGraphSearch `json:"SearchAgentGraph"`
+	}
+	if err := connection.Execute(ctx, DocumentSearchAgentGraph, map[string]any{"query": query, "first": first}, &result); err != nil {
+		return nil, err
+	}
+	return result.SearchAgentGraph, nil
+}
+
+// RecallAgentMemory is what a turn asking this question would have been
+// carried from the graph. It asks nothing of a model and changes nothing.
+func RecallAgentMemory(ctx context.Context, connection *Client, question string) (*AgentRecall, error) {
+	var result struct {
+		RecallAgentMemory *AgentRecall `json:"RecallAgentMemory"`
+	}
+	if err := connection.Execute(ctx, DocumentRecallAgentMemory, map[string]any{"question": question}, &result); err != nil {
+		return nil, err
+	}
+	return result.RecallAgentMemory, nil
+}
+
+// ListAgentLearned is what has been filed lately.
+func ListAgentLearned(ctx context.Context, connection *Client, days, first int) ([]*AgentLearnedFact, error) {
+	var result struct {
+		ListAgentLearned []*AgentLearnedFact `json:"ListAgentLearned"`
+	}
+	if err := connection.Execute(ctx, DocumentListAgentLearned, map[string]any{"days": days, "first": first}, &result); err != nil {
+		return nil, err
+	}
+	return result.ListAgentLearned, nil
+}
+
+// SaveAgentNode writes a page.
+func SaveAgentNode(ctx context.Context, connection *Client, fields map[string]any) (*AgentNode, error) {
+	var result struct {
+		SaveAgentNode *AgentNode `json:"SaveAgentNode"`
+	}
+	if err := connection.Execute(ctx, DocumentSaveAgentNode, fields, &result); err != nil {
+		return nil, err
+	}
+	return result.SaveAgentNode, nil
+}
+
+// MoveAgentNode files a page under another.
+func MoveAgentNode(ctx context.Context, connection *Client, path, under string) (*AgentNode, error) {
+	var result struct {
+		MoveAgentNode *AgentNode `json:"MoveAgentNode"`
+	}
+	if err := connection.Execute(ctx, DocumentMoveAgentNode, map[string]any{"path": path, "under": under}, &result); err != nil {
+		return nil, err
+	}
+	return result.MoveAgentNode, nil
+}
+
+// DeleteAgentNode removes a page and what is under it.
+func DeleteAgentNode(ctx context.Context, connection *Client, path string) error {
+	var result struct {
+		DeleteAgentNode bool `json:"DeleteAgentNode"`
+	}
+	return connection.Execute(ctx, DocumentDeleteAgentNode, map[string]any{"path": path}, &result)
+}
+
+// SaveAgentFact puts a fact on a page, or changes one.
+func SaveAgentFact(ctx context.Context, connection *Client, fields map[string]any) (*AgentFact, error) {
+	var result struct {
+		SaveAgentFact *AgentFact `json:"SaveAgentFact"`
+	}
+	if err := connection.Execute(ctx, DocumentSaveAgentFact, fields, &result); err != nil {
+		return nil, err
+	}
+	return result.SaveAgentFact, nil
+}
+
+// MoveAgentFact puts one fact on another page, where it takes a new
+// number.
+func MoveAgentFact(ctx context.Context, connection *Client, path string, number int, to string) (*AgentFact, error) {
+	var result struct {
+		MoveAgentFact *AgentFact `json:"MoveAgentFact"`
+	}
+	if err := connection.Execute(ctx, DocumentMoveAgentFact, map[string]any{"path": path, "number": number, "to": to}, &result); err != nil {
+		return nil, err
+	}
+	return result.MoveAgentFact, nil
+}
+
+// DeleteAgentFact strikes one.
+func DeleteAgentFact(ctx context.Context, connection *Client, path string, number int) error {
+	var result struct {
+		DeleteAgentFact bool `json:"DeleteAgentFact"`
+	}
+	return connection.Execute(ctx, DocumentDeleteAgentFact, map[string]any{"path": path, "number": number}, &result)
+}
+
+// SetMyContact names the contact that is the caller.
+func SetMyContact(ctx context.Context, connection *Client, contactId string) error {
+	var result struct {
+		SetMyContact bool `json:"SetMyContact"`
+	}
+	variables := map[string]any{}
+	if contactId != "" {
+		variables["contactId"] = contactId
+	}
+	return connection.Execute(ctx, DocumentSetMyContact, variables, &result)
+}
+
+// ListAgentKnowledgeSources is what the agent reads.
+func ListAgentKnowledgeSources(ctx context.Context, connection *Client) ([]*AgentKnowledgeSource, error) {
+	var result struct {
+		ListAgentKnowledgeSources []*AgentKnowledgeSource `json:"ListAgentKnowledgeSources"`
+	}
+	if err := connection.Execute(ctx, DocumentListAgentKnowledgeSources, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.ListAgentKnowledgeSources, nil
+}
+
+// SaveAgentKnowledgeSource adds one, or changes one.
+func SaveAgentKnowledgeSource(ctx context.Context, connection *Client, fields map[string]any) (*AgentKnowledgeSource, error) {
+	var result struct {
+		SaveAgentKnowledgeSource *AgentKnowledgeSource `json:"SaveAgentKnowledgeSource"`
+	}
+	if err := connection.Execute(ctx, DocumentSaveAgentKnowledgeSource, fields, &result); err != nil {
+		return nil, err
+	}
+	return result.SaveAgentKnowledgeSource, nil
+}
+
+// DeleteAgentKnowledgeSource stops one and forgets what it found.
+func DeleteAgentKnowledgeSource(ctx context.Context, connection *Client, sourceId string) error {
+	var result struct {
+		DeleteAgentKnowledgeSource bool `json:"DeleteAgentKnowledgeSource"`
+	}
+	return connection.Execute(ctx, DocumentDeleteAgentKnowledgeSource, map[string]any{"sourceId": sourceId}, &result)
+}
+
+// SearchAgentDocuments finds passages in what the sources indexed: the
+// same search the agent's own knowledge tool runs.
+func SearchAgentDocuments(ctx context.Context, connection *Client, query string, first int, sourceId string) (*AgentDocumentSearch, error) {
+	var result struct {
+		SearchAgentDocuments *AgentDocumentSearch `json:"SearchAgentDocuments"`
+	}
+	variables := map[string]any{"query": query, "first": first}
+	if sourceId != "" {
+		variables["sourceId"] = sourceId
+	}
+	if err := connection.Execute(ctx, DocumentSearchAgentDocuments, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.SearchAgentDocuments, nil
+}
+
+// ReadAgentDocument reads one indexed document from an offset.
+func ReadAgentDocument(ctx context.Context, connection *Client, documentId string, from, first int) (*AgentDocumentExtract, error) {
+	var result struct {
+		ReadAgentDocument *AgentDocumentExtract `json:"ReadAgentDocument"`
+	}
+	if err := connection.Execute(ctx, DocumentReadAgentDocument, map[string]any{
+		"documentId": documentId, "from": from, "first": first,
+	}, &result); err != nil {
+		return nil, err
+	}
+	return result.ReadAgentDocument, nil
+}
+
+// SyncAgentKnowledgeSource reads one again now.
+func SyncAgentKnowledgeSource(ctx context.Context, connection *Client, sourceId string) error {
+	var result struct {
+		SyncAgentKnowledgeSource bool `json:"SyncAgentKnowledgeSource"`
+	}
+	return connection.Execute(ctx, DocumentSyncAgentKnowledgeSource, map[string]any{"sourceId": sourceId}, &result)
+}
+
+// AgentPageRevision is one change to a page.
+type AgentPageRevision struct {
+	Revision  int       `json:"revision"`
+	Kind      string    `json:"kind"`
+	Actor     string    `json:"actor"`
+	Summary   string    `json:"summary"`
+	Change    string    `json:"change"`
+	Before    string    `json:"before"`
+	After     string    `json:"after"`
+	Path      string    `json:"path"`
+	Reason    string    `json:"reason"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// ListAgentPageHistory is what has happened to one page, newest first.
+func ListAgentPageHistory(ctx context.Context, connection *Client, path string, first int) ([]*AgentPageRevision, error) {
+	var result struct {
+		ListAgentPageHistory []*AgentPageRevision `json:"ListAgentPageHistory"`
+	}
+	if err := connection.Execute(ctx, DocumentListAgentPageHistory, map[string]any{"path": path, "first": first}, &result); err != nil {
+		return nil, err
+	}
+	return result.ListAgentPageHistory, nil
+}
+
+// ListAgentDreams is what the nightly run did, newest first.
+func ListAgentDreams(ctx context.Context, connection *Client, first int) ([]*AgentDream, error) {
+	var result struct {
+		ListAgentDreams []*AgentDream `json:"ListAgentDreams"`
+	}
+	if err := connection.Execute(ctx, DocumentListAgentDreams, map[string]any{"first": first}, &result); err != nil {
+		return nil, err
+	}
+	return result.ListAgentDreams, nil
+}
+
+// AgentReadingProgress is how far the night has got through what was
+// indexed, and how long the rest takes at the pace of the last dreams.
+type AgentReadingProgress struct {
+	Waiting       int64   `json:"waiting"`
+	Read          int64   `json:"read"`
+	PerHour       float64 `json:"perHour"`
+	HoursLeft     float64 `json:"hoursLeft"`
+	Bootstrapping bool    `json:"bootstrapping"`
+}
+
+// ReadAgentReadingProgress asks how far the reading has got.
+func ReadAgentReadingProgress(ctx context.Context, connection *Client) (*AgentReadingProgress, error) {
+	var result struct {
+		AgentReadingProgress *AgentReadingProgress `json:"AgentReadingProgress"`
+	}
+	if err := connection.Execute(ctx, DocumentAgentReadingProgress, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.AgentReadingProgress, nil
+}
+
+// DreamAgentNow asks for the night to run at the next tick. bootstrap,
+// when given, switches bootstrapping on or off: the night at every tick
+// with wider limits until nothing waits to be read.
+func DreamAgentNow(ctx context.Context, connection *Client, bootstrap *bool) error {
+	var result struct {
+		DreamAgentNow bool `json:"DreamAgentNow"`
+	}
+	variables := map[string]any{}
+	if bootstrap != nil {
+		variables["bootstrap"] = *bootstrap
+	}
+	return connection.Execute(ctx, DocumentDreamAgentNow, variables, &result)
+}
+
+// LinkAgentNodes joins two pages.
+func LinkAgentNodes(ctx context.Context, connection *Client, path, to, relation, note string) error {
+	var result struct {
+		LinkAgentNodes bool `json:"LinkAgentNodes"`
+	}
+	return connection.Execute(ctx, DocumentLinkAgentNodes, map[string]any{"path": path, "to": to, "relation": relation, "note": note}, &result)
+}
+
+// UnlinkAgentNodes takes a join away.
+func UnlinkAgentNodes(ctx context.Context, connection *Client, path, to, relation string) error {
+	var result struct {
+		UnlinkAgentNodes bool `json:"UnlinkAgentNodes"`
+	}
+	return connection.Execute(ctx, DocumentUnlinkAgentNodes, map[string]any{"path": path, "to": to, "relation": relation}, &result)
+}
+
+// MergeAgentNodes folds one page into another.
+func MergeAgentNodes(ctx context.Context, connection *Client, path, into string) (*AgentNode, error) {
+	var result struct {
+		MergeAgentNodes *AgentNode `json:"MergeAgentNodes"`
+	}
+	if err := connection.Execute(ctx, DocumentMergeAgentNodes, map[string]any{"path": path, "into": into}, &result); err != nil {
+		return nil, err
+	}
+	return result.MergeAgentNodes, nil
+}
+
+// RereadAgentDocuments puts back what a night marked read in the last so
+// many minutes.
+func RereadAgentDocuments(ctx context.Context, connection *Client, minutes int) (int, error) {
+	var result struct {
+		RereadAgentDocuments int `json:"RereadAgentDocuments"`
+	}
+	if err := connection.Execute(ctx, DocumentRereadAgentDocuments, map[string]any{"minutes": minutes}, &result); err != nil {
+		return 0, err
+	}
+	return result.RereadAgentDocuments, nil
+}

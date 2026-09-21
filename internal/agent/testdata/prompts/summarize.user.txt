@@ -1,0 +1,23 @@
+Summarize the conversation "Thursday?" in Alice Example's mailbox "Personal", for Alice Example, in English. Write a short paragraph of what has been said and decided so far, then one line per open question or thing Alice Example still has to do. Say who said what, by name. Do not quote, do not greet, do not describe the messages one by one, do not add headings. Plain text only.
+
+What Alice Example has told you about summaries:
+- Keep summaries of club mail to one line.
+
+The summary so far, which covers the earlier messages. Rewrite it to take in what follows; do not append to it:
+
+<previous-summary>
+Maria asked whether Thursday works; Alice has not answered.
+</previous-summary>
+
+The messages since then, oldest first:
+
+<message>
+From: Maria <maria@example.net>
+To: alice@example.com
+Date: 2026-09-10 09:00 UTC
+Subject: Thursday?
+Attachments: plan.pdf (application/pdf)
+Server facts: SPF: pass; DKIM: pass
+
+Can you do Thursday at 3? I need the key back too.
+</message>

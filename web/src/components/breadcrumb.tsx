@@ -1,0 +1,323 @@
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import { useMailboxes } from '../mailboxes'
+
+import { Key, useTranslation } from '../i18n/i18n'
+import { matchSettingsSurface } from '../pages/settings/nav'
+import { ChevronRightIcon } from './icons'
+import { useIsDesktop } from './sidebar'
+
+// The section a path belongs to. Derived from the route rather than declared
+// by each page, so a new page cannot forget to say where it is — the only
+// thing a page supplies is the name of the thing it is showing, which is the
+// one part the route cannot know.
+//
+// Longest prefix first, so /settings/password does not match a shorter entry.
+// The trail for a path. Matched longest prefix first, so /settings/password
+// wins over /settings, and derived from the route rather than declared by each
+// page: a new page cannot forget to say where it is. The only thing a page
+// supplies is the name of the thing it is showing, which is the one part the
+// route cannot know.
+//
+// A crumb with no `to` is a grouping rather than a place. Every one of them
+// has somewhere to go today, but the shape allows for one that does not.
+type Crumb = { label: Key; to?: string }
+
+const TRAILS: { prefix: string; trail: Crumb[] }[] = [
+  { prefix: '/domains', trail: [{ label: 'nav.domains', to: '/domains' }] },
+  { prefix: '/access', trail: [{ label: 'nav.access', to: '/access' }] },
+  { prefix: '/agent', trail: [{ label: 'nav.agentAdmin', to: '/agent' }] },
+  // No entry for /settings: every page under it names itself from
+  // SETTINGS_SURFACES below, and there is no page above them to go back
+  // to. /settings is a redirect to the first of them, so a "Settings"
+  // crumb linked to Preferences from every other settings page, and on a
+  // wide screen it sat alone above the heading, a trail of one word
+  // leading somewhere it did not name. The rail beside the page is the
+  // menu of these pages; the trail only needs to carry a page's own
+  // ancestors, which a knowledge page has and the others do not.
+  { prefix: '/mailbox', trail: [{ label: 'nav.mailbox', to: '/mailbox' }] },
+  { prefix: '/mail', trail: [{ label: 'nav.mail', to: '/mail' }] },
+  { prefix: '/queue', trail: [{ label: 'nav.queue', to: '/queue' }] },
+  { prefix: '/reports', trail: [{ label: 'nav.reports', to: '/reports' }] },
+]
+
+// A domain's own pages — its DNS, its aliases, its templates — used to add a
+// crumb each, because each was a page of its own two levels down. They are
+// tabs of one page now, and the tab row says which one you are on: a crumb
+// saying it as well was the same word twice, and the trail ends at the domain.
+
+// A page belonging to one thing of a domain — a template, a layout — is
+// three levels down: the domain, the list it is in, then the thing itself.
+// The thing's name is the page's second detail.
+const DOMAIN_ITEM_PAGES: { prefix: string; label: Key; list: string }[] = [
+  { prefix: '/templates/', label: 'templates.title', list: '/templates' },
+  { prefix: '/layouts/', label: 'templates.title', list: '/templates' },
+]
+
+// A page under a section that is a page of its own rather than a thing in
+// the section: writing a message is under Mail, and is not a message.
+const SECTION_PAGES: { path: string; label: Key }[] = [
+  { path: '/mail/compose', label: 'nav.compose' },
+  { path: '/mailbox/settings', label: 'nav.mailboxSettings' },
+  { path: '/mailbox/contacts', label: 'nav.contacts' },
+  { path: '/mailbox/calendar', label: 'nav.calendar' },
+  { path: '/mailbox/compose', label: 'nav.compose' },
+  // Missing, so this page fell back to the section it is in and called
+  // itself Mailbox — in the trail, in the heading, and in the tab.
+  { path: '/mailbox/subscriptions', label: 'nav.subscriptions' },
+]
+
+const SetDetailContext = createContext<((details: string[]) => void) | null>(null)
+const DetailContext = createContext<string[]>([])
+
+export function BreadcrumbProvider({ children }: { children: React.ReactNode }) {
+  const [detail, setDetail] = useState<string[]>([])
+  return (
+    <SetDetailContext.Provider value={setDetail}>
+      <DetailContext.Provider value={detail}>
+        <DocumentTitle />
+        {children}
+      </DetailContext.Provider>
+    </SetDetailContext.Provider>
+  )
+}
+
+// useBreadcrumbDetail names the thing the page is showing — a domain, a
+// subject line — so the trail reads "Domains / example.com" rather than
+// "Domains / 01m0b8...".
+//
+// Passing null, which is what a page does while it is still loading, leaves
+// the trail at the section on its own rather than flashing a placeholder.
+//
+// A second detail names the thing inside the first: a template within its
+// domain. It is used only by the pages whose route has a place for it.
+export function useBreadcrumbDetail(detail: string | null | undefined, item?: string | null) {
+  const setDetail = useContext(SetDetailContext)
+  useEffect(() => {
+    setDetail?.(detail ? (item ? [detail, item] : [detail]) : [])
+    return () => setDetail?.([])
+  }, [setDetail, detail, item])
+}
+
+// useTrail is where the breadcrumb and the document title agree. Two places
+// computing "where am I" separately is two places to drift.
+function useTrail(): { label: string; to?: string }[] {
+  const { t } = useTranslation()
+  const location = useLocation()
+  const details = useContext(DetailContext)
+  const desktop = useIsDesktop()
+  const detail = details[0] ?? null
+  const item = details[1] ?? null
+
+  return useMemo(() => {
+    const matched = TRAILS.find((candidate) => location.pathname.startsWith(candidate.prefix))
+    const crumbs = (matched?.trail ?? []).map((crumb) => ({ label: t(crumb.label), to: crumb.to }))
+
+    // A settings page names itself from the same list the hub renders, rather
+    // than each page remembering to. They did not remember: of the six only
+    // one did, and the rest read as a bare "Settings".
+    const surface = matchSettingsSurface(location.pathname)
+    if (surface) {
+      crumbs.push({ label: t(surface.label), to: surface.path })
+    }
+    const sectionPage = SECTION_PAGES.find(
+      (candidate) => candidate.path === location.pathname || location.pathname.startsWith(candidate.path + '/'),
+    )
+    // Only when the page has no name of its own to give. The composer's name
+    // says which kind of message is being written — a reply, a forward — and
+    // "Compose" in front of it was the same word twice, which on a phone bar
+    // is three crumbs for two words of information.
+    if (sectionPage && !detail) {
+      crumbs.push({ label: t(sectionPage.label), to: undefined })
+    }
+
+    // The mailbox is its folders. /mailbox is whichever folder you are in, so
+    // a "Mailbox" crumb above the folder's own name was a link to the page it
+    // was already on, and the trail read "Mailbox > Inbox" — one place, named
+    // twice. The folder is the top of the trail here.
+    //
+    // A message opened inside a folder is the step below it, and only on a
+    // phone: there the message takes the screen the list had, so the folder
+    // crumb is the way back to the list — the one thing the trail was not
+    // saying. On a wide screen the message is beside the list rather than
+    // instead of it, and the page is still the folder.
+    //
+    // The search the list was narrowed to is in the address, so the way back
+    // carries it: returning to the folder means returning to the list that
+    // was there, not to all of it.
+    const [, section, folderId, itemId] = location.pathname.split('/')
+    if (section === 'mailbox' && !sectionPage && detail) {
+      if (itemId && !desktop) {
+        const list = (folderId ? `/mailbox/${folderId}` : '/mailbox') + location.search
+        return [{ label: detail, to: list }, { label: item ?? '…' }]
+      }
+      return [{ label: detail }]
+    }
+
+    // Knowledge shown one column at a time is a folder, then a page in
+    // it, and the trail is the way back up: the page names its folder as
+    // the detail and itself as the item. Side by side, the page is still
+    // Knowledge and names nothing.
+    if (section === 'settings' && folderId === 'knowledge' && detail) {
+      // The folder is the whole path but the last segment, not its first
+      // segment: the graph nests as deep as it likes, and a page four
+      // levels down whose way back was its root came back to the wrong
+      // list.
+      const under = location.pathname.split('/').slice(3).filter(Boolean).slice(0, -1).join('/')
+      if (item) {
+        return [...crumbs, { label: detail, to: '/settings/knowledge' + (under ? '/' + under : '') }, { label: item }]
+      }
+      return [...crumbs, { label: detail }]
+    }
+
+    if (detail) {
+      const owner = /^\/domains\/([^/]+)(\/[^?#]*)?$/.exec(location.pathname)
+      const rest = owner?.[2] ?? ''
+      const itemPage = owner && DOMAIN_ITEM_PAGES.find((candidate) => rest.startsWith(candidate.prefix))
+      if (owner && itemPage) {
+        return [
+          ...crumbs,
+          { label: detail, to: `/domains/${owner[1]}` },
+          { label: t(itemPage.label), to: `/domains/${owner[1]}${itemPage.list}` },
+          { label: item ?? '…' },
+        ]
+      }
+      return [...crumbs, { label: detail }]
+    }
+
+    // A page about one domain is named after that domain, and the name
+    // arrives with the data rather than with the route. Until it does the
+    // heading is blank, not the section's own name: falling back to the
+    // crumbs alone put "Domains" in the page heading for as long as the query
+    // took, and every navigation between two of a domain's pages — the
+    // template editor back to the list, say — cleared the detail and flashed
+    // it. A blank says "still coming"; the wrong word in 30px does not.
+    if (/^\/domains\/[^/]+(\/|$)/.test(location.pathname)) {
+      return [...crumbs, { label: '' }]
+    }
+    return crumbs
+  }, [location.pathname, location.search, desktop, detail, item, t])
+}
+
+// DocumentTitle keeps the tab label in step with the breadcrumb, most specific
+// first: a row of tabs is read left to right and truncated from the right, so
+// the part that tells them apart has to come before the part they share.
+function DocumentTitle() {
+  const { t } = useTranslation()
+  const trail = useTrail()
+
+  // The number in front of the title, which has to be counting the same
+  // thing the title names. The rest of it is where you are — "Drafts ·
+  // Mailbox" — so a count of the Inbox in front of the word Drafts is two
+  // statements about two different places sitting next to each other.
+  //
+  // So: the folder being read, when a folder is being read. Everywhere else
+  // — another page, or the mailbox before a folder is chosen — it is what is
+  // unread across every mailbox, which is the one number a tab can show from
+  // behind another tab.
+  const { views } = useMailboxes()
+  const location = useLocation()
+  const unread = useMemo(() => {
+    const [, section, folderId] = location.pathname.split('/')
+    if (section === 'mailbox' && folderId) {
+      const folder = views.flatMap((view) => view.folders).find((candidate) => candidate.id === folderId)
+      // Not every path under /mailbox names a folder — contacts and
+      // subscriptions live there too, and Starred is a view over all of
+      // them. Those fall through to the count across every mailbox.
+      if (folder) {
+        // The Archive keeps what was put aside to read later; its count is
+        // not news, so the tab does not carry it.
+        return folder.kind === 'archive' ? 0 : folder.unread
+      }
+      // The two views that are not folders carry their own counts.
+      if (folderId === 'starred') {
+        return views.reduce((sum, view) => sum + (view.starredUnread ?? 0), 0)
+      }
+      if (folderId === 'priority') {
+        return views.reduce((sum, view) => sum + (view.priorityUnread ?? 0), 0)
+      }
+    }
+    return views.reduce((sum, view) => sum + view.unread, 0)
+  }, [location.pathname, views])
+
+  useEffect(() => {
+    // Reversed: a row of tabs is read left to right and truncated from the
+    // right, so the part that tells them apart has to come before the part
+    // they share.
+    const parts = trail
+      .map((crumb) => crumb.label)
+      .filter((label) => label !== '')
+      .reverse()
+    const title = [...parts, t('app.name')].join(' · ')
+    document.title = unread > 0 ? `(${unread}) ${title}` : title
+  }, [trail, t, unread])
+
+  return null
+}
+
+// PageHeading is the name of what you are looking at, at the top of it.
+//
+// The same trail the breadcrumb reads, ending at the same place — so there is
+// one answer to "where am I" and two ways of showing it: the crumbs on the bar
+// say how you got here, and this says what it is. A page with nothing above
+// the content reads as a fragment of an application rather than a page of one.
+export function PageHeading() {
+  const trail = useTrail()
+  const last = trail[trail.length - 1]
+
+  if (!last) {
+    return null
+  }
+
+  // A non-breaking space rather than nothing: an empty h1 collapses to no
+  // height, and the page below it would jump up and back down as the name
+  // arrives.
+  return <h1 className="page-heading">{last.label || '\u00a0'}</h1>
+}
+
+// Breadcrumb is the way back up.
+//
+// current says to keep the page's own name on the end of the trail and mark
+// it. That is for the phone bar, where the trail stands in for the heading
+// instead of sitting above it: there the name has to be there, because
+// nothing else on the screen says what you are looking at.
+export function Breadcrumb({ current }: { current?: boolean } = {}) {
+  const full = useTrail()
+
+  // Ancestors only, and every one of them a link. The page's own name is the
+  // heading right below, in 30px; saying it again immediately above is the
+  // same word twice, and on a top-level page it was the only crumb — a trail
+  // that went nowhere. What is left is the way back up, which is the part a
+  // trail is for.
+  const trail = current ? full : full.slice(0, -1)
+  if (trail.length === 0) {
+    return null
+  }
+
+  return (
+    <nav className="breadcrumb" aria-label="breadcrumb">
+      {trail.map((crumb, index) => (
+        <span
+          className={index === trail.length - 1 && current ? 'crumb current' : 'crumb'}
+          key={index}
+          aria-current={index === trail.length - 1 && current ? 'page' : undefined}
+        >
+          {index > 0 && (
+            <span className="separator" aria-hidden="true">
+              <ChevronRightIcon size={16} />
+            </span>
+          )}
+          {/* A grouping with no page behind it is not a link — and neither is
+              the page you are on: on the phone bar the trail keeps its own
+              name on the end, and every top-level page was a single crumb
+              linking to itself. */}
+          {crumb.to && !(current && index === trail.length - 1) ? (
+            <Link to={crumb.to}>{crumb.label}</Link>
+          ) : (
+            <span>{crumb.label}</span>
+          )}
+        </span>
+      ))}
+    </nav>
+  )
+}

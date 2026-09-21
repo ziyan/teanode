@@ -1,0 +1,7 @@
+# vendor/ is deliberately NOT excluded: the build uses -mod=vendor and would
+# otherwise have to reach the network to fetch dependencies.
+/.git
+/build
+/dev
+/web/node_modules
+/internal/frontend/static

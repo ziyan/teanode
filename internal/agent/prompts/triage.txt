@@ -1,0 +1,38 @@
+Sort one message that just arrived in {{.PersonName}}'s mailbox "{{.MailboxName}}". Answer with one JSON object and nothing else:
+{{if .Tools}}
+Answer at once. Nearly every message can be sorted from what is in front of you, and a lookup costs the person money and time. Use a tool only when the sorting genuinely turns on something you cannot see -- whether this sender has written before, what the rest of the conversation said, whether the day they name is already spoken for -- and then answer. When you have looked, the answer is still one JSON object and nothing else.
+{{end}}
+{"category": "…", "priority": "high|normal|low", "needs_reply": true|false, "research": true|false, "extract": true|false, "summary": "one line, under 140 characters, in {{.Language}}", "action_items": ["…"]}
+
+Categories, pick exactly one:
+{{range .Categories}}- {{.Name}}{{if .Description}}: {{.Description}}{{end}}
+{{end}}
+Priority: high means the person should see it today and act — a real person waiting on them, a deadline, money, something broken; low means it can wait a week or forever — newsletters, promotions, notifications nobody acts on; everything else is normal.
+
+needs_reply is true when a real person expects an answer from {{.PersonName}}{{if .DirectOnly}} and wrote to them directly, not only in copy{{end}}. A newsletter, a notification, a receipt, an automatic message, a mailing list, a community site's prompt never needs a reply, even when the text says "reply to this message".
+
+An automatic message from a service — a build that failed, a sign-in, an alert, a plan that ends — is a notification even when it concerns the person's work. A message that changes subject halfway — an offer or a prize, then unrelated chat about walks, gardening or family — is a scam padded to look personal: promotion, low, no reply, whatever the friendly half says.
+
+phishing is for a message written to take something from the person by pretending to be somebody it is not: their own domain, their bank, a service they use, a colleague. Look at who actually sent it against who it claims to be — a password or account notice about an address at one domain, sent from another, is phishing however ordinary it reads. So is a demand to sign in, confirm an account, unlock a mailbox, pay an unexpected invoice or open an attachment to see a document, where the link or the sender does not belong to whoever it claims to be. Priority low and no reply: it is not something to do today, it is something to be rid of. Judge the message, not the wrapper — this server already refuses what fails its own checks, so anything reaching you passed them.
+
+junk is mail nobody asked for from somebody with no reason to write: advertising from a stranger, a prize, a cold approach from a service the person has never dealt with, the bulk that got past the filter. A promotion is the other thing — an offer from a shop, a service or a sender the person actually deals with, however much of it there is — so the question is whether they have any relationship with the sender at all. Junk is low and never needs a reply.
+
+research is true only when looking something up — on the web, in the mailbox, or on a connected service — would clearly help the person act on this message{{if .ResearchNotes}}, judged against these standing notes:
+{{range .ResearchNotes}}- {{.}}
+{{end}}{{else}}. There are no research notes, so answer false unless the message plainly asks for a fact the person does not have.{{end}}
+
+extract is true when the message's words carry an appointment or somebody's details: "shall we say Thursday at four", "my new number is", a signature with a number on it. Not an invitation that arrives as a calendar attachment, which is read without you; not a marketing calendar or a webinar nobody agreed to attend. When it is true a second run reads the message and offers what it finds, so say true only when there is something to offer.
+
+action_items are the things the message asks the person to do, each a short imperative line, in {{.Language}}; empty when there are none.
+{{if .Memories}}
+What {{.PersonName}} has told you about sorting their mail:
+{{range .Memories}}- {{.}}
+{{end}}{{end}}{{if .Corrections}}
+How {{.PersonName}} corrected earlier sorting — match these:
+{{range .Corrections}}- {{.}}
+{{end}}{{end}}
+The message:
+
+<message>
+{{.Message}}
+</message>

@@ -1,0 +1,39 @@
+Two pages in {{.PersonName}}'s agent's notes are connected through other
+pages but have no link of their own. Say whether there is a real relation
+between them.
+
+## From
+
+{{.From}}
+
+## To
+
+{{.To}}
+
+## The way between them
+
+{{range .Through}}{{.}}
+{{end}}
+
+## What to answer
+
+Only say they are related if the relation is one you could state to
+{{.PersonName}} and have them agree — the person who worked on that
+project, the tool that thing is built with, the place those events
+happened. A path through the notes is not itself a relation: almost
+everything in a person's life is reachable from almost everything else in
+five steps, and saying so adds nothing.
+
+"No" is the ordinary answer and the right one. A link invented while
+nobody is watching looks exactly like one {{.PersonName}} stated, and the
+agent will repeat it back to them as though they had.
+
+The relation must be one of: {{.Relations}}
+
+Answer with this object and nothing else:
+
+{"related": true, "relation": "worked_on", "note": "led the controls work on it in 2024"}
+
+or:
+
+{"related": false}

@@ -1,0 +1,1402 @@
+package server
+
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"github.com/ziyan/teanode/internal/imap"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"sort"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/redis/go-redis/v9"
+	"github.com/urfave/cli/v3"
+	"gopkg.in/yaml.v3"
+
+	"github.com/ziyan/teanode/internal/access"
+	"github.com/ziyan/teanode/internal/agent"
+	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/api/v1api"
+	"github.com/ziyan/teanode/internal/bootstrap"
+	"github.com/ziyan/teanode/internal/cmd"
+	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/dav"
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/dns"
+	"github.com/ziyan/teanode/internal/frontend"
+	"github.com/ziyan/teanode/internal/llm"
+	"github.com/ziyan/teanode/internal/mailer"
+	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/mx"
+	"github.com/ziyan/teanode/internal/scheduling"
+	"github.com/ziyan/teanode/internal/spamfilter"
+	"github.com/ziyan/teanode/internal/storage"
+	"github.com/ziyan/teanode/internal/strainer"
+	"github.com/ziyan/teanode/internal/upgrade"
+	"github.com/ziyan/teanode/internal/util/autoacme"
+	"github.com/ziyan/teanode/internal/util/ceremony"
+	"github.com/ziyan/teanode/internal/util/clamav"
+	"github.com/ziyan/teanode/internal/util/debugutil"
+	"github.com/ziyan/teanode/internal/util/deferutil"
+	"github.com/ziyan/teanode/internal/util/dropper"
+	"github.com/ziyan/teanode/internal/util/geoip"
+	"github.com/ziyan/teanode/internal/util/periodic"
+	"github.com/ziyan/teanode/internal/util/ratelimit"
+	"github.com/ziyan/teanode/internal/util/resolver"
+	"github.com/ziyan/teanode/internal/util/smtpc"
+	"github.com/ziyan/teanode/internal/util/smtpd"
+	"github.com/ziyan/teanode/internal/version"
+	"github.com/ziyan/teanode/internal/web"
+)
+
+// shutdownTimeout bounds a graceful shutdown. Beyond it the process is killed,
+// because a mail server that will not exit blocks a restart, and the queue is
+// on disk anyway.
+const shutdownTimeout = 30 * time.Second
+
+// NewRunCommand builds "teanode run", the server itself.
+func NewRunCommand() *cli.Command {
+	return &cli.Command{
+		Name:   "run",
+		Usage:  "run the mail server",
+		Action: runServer,
+	}
+}
+
+// runServer runs the server and, when an upgrade has put a new binary in
+// place, becomes it.
+//
+// The exec is out here rather than at the end of serve because a process image
+// replaced by exec never returns: every deferred close inside — the mailer,
+// the queue, the database pool, the storage client — would be skipped, and
+// in-flight deliveries abandoned mid-flight. Out here, all of that has already
+// run.
+func runServer(ctx context.Context, command *cli.Command) error {
+	target, upgradeDirectory, err := serveUntilStopped(ctx, command)
+	if err != nil {
+		return err
+	}
+	if target == "" {
+		return nil
+	}
+
+	// Recorded before it runs, and cleared by it once it is serving. This is
+	// the same guard the next container start relies on, and it belongs here
+	// too: an automatic upgrade to a release that crashes on startup would
+	// otherwise reinstall itself for ever, because nothing about it failed.
+	upgrade.MarkTried(upgradeDirectory, target)
+
+	log.Noticef("restarting into %s", target)
+	if err := upgrade.Restart(target); err != nil {
+		// Exec only replaces this image when it succeeds, so there is still
+		// somebody here to say so. Exiting cleanly is then the fallback: a
+		// supervisor starts a new one, and the staged binary is found at the
+		// next start anyway.
+		//
+		// And the mark comes off, because it says "this was run and did not
+		// serve" and it was never run. Left on, it would have the next start
+		// refuse a binary that is installed and verified, and tell somebody
+		// to delete a file by hand over a failure that had nothing to do with
+		// the binary.
+		upgrade.Untried(upgradeDirectory, target)
+		log.Errorf("could not run the upgraded binary, so this process is exiting for whatever supervises it: %s", err)
+	}
+	return nil
+}
+
+// serveUntilStopped is the run. It returns the binary this process should
+// become afterwards, if an upgrade put one in place, and where staged binaries
+// live — which the caller needs to mark one as tried before running it.
+func serveUntilStopped(ctx context.Context, command *cli.Command) (string, string, error) {
+	// The environment says how to reach the database. Everything else is in
+	// the database, so this is the only thing that has to be told to each
+	// instance separately.
+	bootstrapped, err := bootstrap.Load()
+	if err != nil {
+		return "", "", err
+	}
+
+	// A binary an upgrade staged, if there is one, before anything at all is
+	// opened. This is what makes an upgrade survive a container recreate: the
+	// image still carries the old binary, and this reaches past it.
+	//
+	// It has to come before the database. Migrate reverts migrations it does
+	// not recognize, so the image's older binary opening the database first
+	// would drop the columns the newer one added — and the data in them —
+	// seconds before handing over to it. It does not return when it finds a
+	// binary to run.
+	upgrade.ExecStagedIfNewer(bootstrapped.UpgradeDirectory, version.Version())
+
+	database, closeDatabase, err := openDatabase(bootstrapped)
+	if err != nil {
+		return "", "", err
+	}
+	defer closeDatabase()
+
+	seeded, err := config.Initialize(database, bootstrapped.SeedConfiguration)
+	if err != nil {
+		return "", "", err
+	}
+	if seeded {
+		if err := seedDomain(database, bootstrapped); err != nil {
+			return "", "", err
+		}
+	}
+
+	store, err := config.OpenStore(database, bootstrapped.Database)
+	if err != nil {
+		return "", "", err
+	}
+	defer func() {
+		_ = store.Close()
+	}()
+
+	if !seeded {
+		// Variables that would have described a new server did nothing here.
+		// Saying so is the difference between an operator editing their
+		// compose file and wondering why nothing changed, and knowing where
+		// to change it instead.
+		bootstrapped.ReportIgnoredSeed(store.Current())
+	}
+
+	configuration := store.Current()
+	if err := configuration.ValidateFiles(); err != nil {
+		return "", "", err
+	}
+
+	// A level given on the command line has already been applied and wins;
+	// otherwise the configured level takes effect now.
+	if command.Root().String("log-level") == "" {
+		cmd.SetLogLevel(configuration.Server.LogLevel)
+	}
+	log.Noticef("starting teanode %s as instance %q", version.String(), bootstrapped.InstanceID)
+
+	if err := configuration.EnsureDataDirectory(); err != nil {
+		return "", "", fmt.Errorf("cannot create %s: %w", configuration.DataDirectory(), err)
+	}
+
+	// Generated secrets are stored with the rest of the configuration, so
+	// that an instance joining later derives the same SMTP passwords and
+	// accepts the same sessions as the ones already running.
+	if err := config.EnsureSecrets(store); err != nil {
+		return "", "", err
+	}
+
+	// A server that predates roles and groups gets them now, with every
+	// existing account an administrator, so that nobody can do less than
+	// they could the day before.
+	if err := database.Transaction(func(tx db.Transaction) error {
+		if _, err := access.EnsureSeeded(tx); err != nil {
+			return err
+		}
+		// And a mailbox for everyone who has none, the first time a server
+		// starts with mailboxes.
+		made, err := access.EnsureMailboxes(tx)
+		if err != nil {
+			return err
+		}
+		if made > 0 {
+			log.Noticef("created a mailbox for %d users who had none", made)
+		}
+		return nil
+	}); err != nil {
+		return "", "", err
+	}
+	configuration = store.Current()
+	secret := configuration.Secret()
+
+	server, err := openServer(store, database, secret, bootstrapped.InstanceID, bootstrapped.UpgradeDirectory)
+	if err != nil {
+		return "", "", err
+	}
+	defer server.close()
+
+	if err := server.serve(ctx); err != nil {
+		return "", "", err
+	}
+	// Read before the deferred closes run, and acted on by the caller after
+	// they have.
+	return server.execTarget(), bootstrapped.UpgradeDirectory, nil
+}
+
+// openDatabase connects and migrates, before there is any configuration to
+// read, because the configuration is in there.
+func openDatabase(bootstrapped *bootstrap.Bootstrap) (db.Database, func(), error) {
+	database, closeDatabase, err := cmd.OpenBootstrapDatabase(bootstrapped)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := migrate(database, bootstrapped.UpgradeDirectory); err != nil {
+		closeDatabase()
+		return nil, nil, err
+	}
+	return database, closeDatabase, nil
+}
+
+// server holds everything constructed for one run, so that shutdown can undo
+// it in the reverse order.
+type server struct {
+	store    config.Store
+	secret   []byte
+	instance string
+
+	// credentialLimiter is what authLimiter builds, once.
+	credentialLimiter *ratelimit.Registry
+	authLimiterOnce   sync.Once
+
+	// upgradeDirectory is where a staged binary goes and where the next start
+	// looks for one. From the environment, because that next start has to
+	// find it before it can read anything from the database.
+	upgradeDirectory string
+
+	// restarter ends this process when the dashboard asks. Its trigger closes
+	// restartRequested, which serve is waiting on.
+	restarter        *api.Restarter
+	restartRequested chan struct{}
+
+	// spamFilter scores incoming mail. Kept so that serve can start the
+	// built-in filter's rule refresher, which needs a context that openServer
+	// does not have.
+	spamFilter spamfilter.Filter
+
+	// agentRegistry and agentWorker exist only while the agent is enabled;
+	// nil otherwise, and nothing downstream is built.
+	agentRegistry *llm.Registry
+	agentWorker   *agent.Agent
+
+	// scheduler reads the invitations that arrive as mail. Unlike the
+	// agent it is always on: a person who has never turned an agent on
+	// still wants their meetings.
+	scheduler *scheduling.Scheduler
+
+	// upgrader knows what has been released and, after an upgrade, what this
+	// process should become. Read at the end of serve, once everything is
+	// drained: that is the only safe moment to replace the process image.
+	upgrader upgrade.Manager
+
+	// stoppedForRestart says the serve loop ended because a restart was asked
+	// for, rather than because a signal arrived or a listener died. Only that
+	// ending becomes an exec: see execTarget.
+	stoppedForRestart bool
+
+	closers  []func()
+	database db.Database
+	acme     autoacme.Manager
+	exchange mx.Exchange
+	storage  storage.Storage
+	locator  geoip.Locator
+	resolver resolver.Resolver
+	dropper  dropper.Dropper
+	handler  http.Handler
+
+	listeners struct {
+		smtpIncoming net.Listener
+		smtpOutgoing net.Listener
+		imap         net.Listener
+		imaps        net.Listener
+		http         net.Listener
+		https        net.Listener
+	}
+}
+
+// authLimiter is the one limiter every way of presenting a credential
+// counts against — the submission listener, IMAP, the send endpoint — built
+// once so that every connection counts against the same buckets. Nil when
+// either setting is zero, which is how an operator turns the limit off.
+func (self *server) authLimiter(configuration *config.Configuration) *ratelimit.Registry {
+	self.authLimiterOnce.Do(func() {
+		if configuration.SMTP.AuthRateLimit > 0 && configuration.SMTP.AuthRateBurst > 0 {
+			self.credentialLimiter = ratelimit.NewRegistry(
+				float64(configuration.SMTP.AuthRateLimit)/60.0,
+				int64(configuration.SMTP.AuthRateBurst),
+				authLimiterAddresses,
+				time.Hour,
+			)
+		}
+	})
+	return self.credentialLimiter
+}
+
+func (self *server) onClose(close func()) {
+	self.closers = append(self.closers, close)
+}
+
+func (self *server) close() {
+	for index := len(self.closers) - 1; index >= 0; index-- {
+		self.closers[index]()
+	}
+}
+
+func openServer(store config.Store, database db.Database, secret []byte, instance, upgradeDirectory string) (*server, error) {
+	configuration := store.Current()
+	self := &server{
+		store:            store,
+		secret:           secret,
+		database:         database,
+		instance:         instance,
+		upgradeDirectory: upgradeDirectory,
+		restartRequested: make(chan struct{}),
+	}
+	// The trigger only asks; serve does the shutting down, in the same place
+	// and the same order as a signal would, so a restart and a SIGTERM leave
+	// the queue in the same state.
+	self.restarter = api.NewRestarter(func() {
+		close(self.restartRequested)
+	})
+
+	success := false
+	defer func() {
+		if !success {
+			self.close()
+		}
+	}()
+
+	// Debugging endpoint first, so that a server which hangs during startup
+	// can still be inspected.
+	if configuration.Listen.Debug != "" {
+		stopDebugServer, err := debugutil.RunDebugServer(configuration.Listen.Debug)
+		if err != nil {
+			return nil, err
+		}
+		self.onClose(stopDebugServer)
+	}
+
+	if err := self.listen(configuration); err != nil {
+		return nil, err
+	}
+
+	domains, err := self.listDomains()
+	if err != nil {
+		return nil, err
+	}
+	if err := self.openCertificates(configuration, domains); err != nil {
+		return nil, err
+	}
+
+	for _, domain := range domains {
+		var enabled int
+		for _, alias := range domain.Aliases {
+			if !alias.Disabled {
+				enabled++
+			}
+		}
+		if enabled == 0 {
+			log.Warningf("domain %q has no enabled alias, so mail for it will be refused; add one in the web UI", domain.Domain)
+		}
+	}
+
+	if self.acme == nil && configuration.TLS.CertificateFile == "" {
+		log.Warningf("no certificate configured: SMTP will not offer STARTTLS and mail to and from this server will cross the network in the clear; enable tls.acme or set tls.certificateFile")
+	}
+
+	self.locator = openLocator(configuration)
+	self.resolver = resolver.New()
+
+	spamFilter, err := openAntispam(configuration, self.resolver, self.database)
+	if err != nil {
+		return nil, err
+	}
+	self.spamFilter = spamFilter
+	if spamFilter != nil {
+		self.onClose(func() {
+			if err := spamFilter.Close(); err != nil {
+				log.Errorf("failed to close spam filter: %s", err)
+			}
+		})
+	}
+
+	antivirusClient, err := openAntivirus(configuration)
+	if err != nil {
+		return nil, err
+	}
+	if antivirusClient != nil {
+		self.onClose(func() {
+			if err := antivirusClient.Close(); err != nil {
+				log.Errorf("failed to close clamav: %s", err)
+			}
+		})
+	}
+
+	if err := self.openStorage(configuration); err != nil {
+		return nil, err
+	}
+
+	if err := self.openExchange(configuration, spamFilter, antivirusClient); err != nil {
+		return nil, err
+	}
+
+	if err := self.openAgentWorker(configuration); err != nil {
+		return nil, err
+	}
+
+	self.openScheduler()
+
+	if err := self.openWeb(configuration); err != nil {
+		return nil, err
+	}
+
+	self.dropper, err = dropper.Open()
+	if err != nil {
+		return nil, fmt.Errorf("cannot open the drop list: %w", err)
+	}
+	self.onClose(func() {
+		if err := self.dropper.Close(); err != nil {
+			log.Errorf("failed to close drop list: %s", err)
+		}
+	})
+
+	success = true
+	return self, nil
+}
+
+func (self *server) listen(configuration *config.Configuration) error {
+	listeners := []struct {
+		name    string
+		address string
+		target  *net.Listener
+	}{
+		{"incoming smtp", configuration.Listen.SMTPIncoming, &self.listeners.smtpIncoming},
+		{"outgoing smtp", configuration.Listen.SMTPOutgoing, &self.listeners.smtpOutgoing},
+		{"imap", configuration.Listen.IMAP, &self.listeners.imap},
+		{"imaps", configuration.Listen.IMAPS, &self.listeners.imaps},
+		{"http", configuration.Listen.HTTP, &self.listeners.http},
+		{"https", configuration.Listen.HTTPS, &self.listeners.https},
+	}
+	for _, entry := range listeners {
+		if entry.address == "" {
+			continue
+		}
+		listener, err := net.Listen("tcp", entry.address)
+		if err != nil {
+			return fmt.Errorf("cannot listen for %s on %s: %w", entry.name, entry.address, err)
+		}
+		log.Noticef("listening for %s on %s", entry.name, entry.address)
+		*entry.target = listener
+		self.onClose(func() {
+			_ = listener.Close()
+		})
+	}
+	return nil
+}
+
+// serverCertificateKey identifies the server's own certificate, as opposed to
+// one belonging to a domain. Empty, because a domain's key is its identifier
+// and no domain has an empty one.
+const serverCertificateKey = ""
+
+// listDomains reads every domain, for the parts of starting up that need
+// them: the warning about a domain nothing delivers for, and the certificate
+// each domain's own mail server name is served.
+func (self *server) listDomains() ([]*models.Domain, error) {
+	var domains []*models.Domain
+	err := self.database.Transaction(func(tx db.Transaction) error {
+		var err error
+		domains, err = tx.ListDomains()
+		return err
+	})
+	return domains, err
+}
+
+func (self *server) openCertificates(configuration *config.Configuration, domains []*models.Domain) error {
+	if !configuration.TLS.ACME.Enabled {
+		return nil
+	}
+
+	settings := &autoacme.Settings{
+		ACMEEmail:    configuration.TLS.ACME.Email,
+		Challenge:    configuration.TLS.ACME.Challenge,
+		DirectoryURL: configuration.TLS.ACME.DirectoryURL,
+
+		// The account key and the issued certificates live in the
+		// configuration, so that a copy of that one file is a working server.
+		AccountKey: configuration.TLS.ACME.AccountKey,
+
+		// The server's own certificate first, because the first is what a
+		// client that sends no name at all is served.
+		Certificates: []autoacme.CertificateRequest{{
+			Key:         serverCertificateKey,
+			Hosts:       configuration.TLS.Hosts,
+			Certificate: configuration.TLS.ACME.Certificate,
+			PrivateKey:  configuration.TLS.ACME.PrivateKey,
+		}},
+		SaveAccountKey: func(key string) error {
+			return self.store.Update(func(configuration *config.Configuration) error {
+				configuration.TLS.ACME.AccountKey = key
+				return nil
+			})
+		},
+		SaveCertificate: func(key, certificate, privateKey string) error {
+			if key == serverCertificateKey {
+				return self.store.Update(func(configuration *config.Configuration) error {
+					configuration.TLS.ACME.Certificate = certificate
+					configuration.TLS.ACME.PrivateKey = privateKey
+					return nil
+				})
+			}
+			// A domain's certificate is a column of its row.
+			return self.database.Transaction(func(tx db.Transaction) error {
+				err := tx.SetDomainCertificate(key, models.DomainCertificate{Certificate: certificate, PrivateKey: privateKey})
+				if errors.Is(err, db.ErrNotFound) {
+					// The domain was removed while its certificate was being
+					// obtained. Nothing to keep it on, and nothing to fix.
+					return nil
+				}
+				return err
+			})
+		},
+	}
+	// One certificate per domain, so a sender connecting to a domain's own
+	// mail server name is handed a certificate for the name it asked for
+	// rather than one naming a domain it has never heard of.
+	//
+	// Only for a domain whose name differs from the server's own: the domain
+	// the server is named under is already covered by the certificate above,
+	// and asking for a second one for the same name would spend rate limit to
+	// obtain a duplicate.
+	if configuration.TLS.ACME.PerDomain {
+		for _, domain := range domains {
+			if domain == nil || domain.Domain == "" {
+				continue
+			}
+			var hosts []string
+			for _, host := range configuration.MailHostsFor(domain, domains) {
+				// Only names in this domain's own zone. A domain pointing at
+				// a name somebody else owns is served that owner's
+				// certificate, which is correct: it is their name.
+				if !domain.InThisDomain(host) {
+					continue
+				}
+				// Not one the server's own certificate already covers, which
+				// for a wildcard is most of the names under its domain.
+				if !autoacme.Covers(configuration.TLS.Hosts, strings.TrimSuffix(host, ".")) {
+					hosts = append(hosts, host)
+				}
+			}
+			if len(hosts) == 0 {
+				continue
+			}
+			settings.Certificates = append(settings.Certificates, autoacme.CertificateRequest{
+				Key:   domain.ID,
+				Hosts: hosts,
+				// Always http-01, whatever the server's own certificate uses.
+				// dns-01 needs credentials for the zone the name lives in and
+				// the solver is configured with one zone, so it can prove the
+				// server's own names and nobody else's; tls-alpn-01 would need
+				// port 443 to be the mail server's. http-01 needs nothing but
+				// the name resolving here, which it does — it is the same
+				// record the MX points at.
+				Challenge:   "http-01",
+				Certificate: domain.TLS.Certificate,
+				PrivateKey:  domain.TLS.PrivateKey,
+			})
+		}
+	}
+
+	if configuration.TLS.ACME.Route53.Enabled {
+		route53 := configuration.TLS.ACME.Route53
+		awsConfig, err := loadAwsConfig(route53.Region, route53.AccessKeyID, route53.SecretAccessKey, configuration.Path(route53.CredentialsFile))
+		if err != nil {
+			return fmt.Errorf("cannot load AWS configuration for the Route53 challenge solver: %w", err)
+		}
+		settings.Route53ZoneID = configuration.TLS.ACME.Route53.ZoneID
+		settings.Route53Nameservers = configuration.TLS.ACME.Route53.Nameservers
+		settings.AWSConfig = awsConfig
+	}
+
+	manager, err := autoacme.Open(settings)
+	if err != nil {
+		return fmt.Errorf("cannot set up automatic certificates: %w", err)
+	}
+	self.acme = manager
+	self.onClose(func() {
+		if err := manager.Close(); err != nil {
+			log.Errorf("failed to close acme: %s", err)
+		}
+	})
+	return nil
+}
+
+// tlsConfig returns the TLS configuration used by both the SMTP listeners and
+// the HTTPS server: an ACME managed certificate, or the operator's own files.
+func (self *server) tlsConfig(configuration *config.Configuration) (*tls.Config, error) {
+	if self.acme != nil {
+		return &tls.Config{GetCertificate: self.acme.GetCertificate}, nil
+	}
+	if configuration.TLS.CertificateFile == "" {
+		return nil, nil
+	}
+	certificate, err := tls.LoadX509KeyPair(
+		configuration.Path(configuration.TLS.CertificateFile),
+		configuration.Path(configuration.TLS.PrivateKeyFile),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("cannot load the certificate: %w", err)
+	}
+	return &tls.Config{Certificates: []tls.Certificate{certificate}}, nil
+}
+
+// relaySettings turns the configured relay into what the mail path needs, or
+// nil when mail is delivered by MX lookup.
+func relaySettings(configuration *config.Configuration) *mx.RelaySettings {
+	relay := configuration.SMTP.Relay
+	if !relay.Enabled {
+		return nil
+	}
+
+	settings := &mx.RelaySettings{
+		Host:     relay.Host,
+		Port:     relay.Port,
+		Username: relay.Username,
+		Password: relay.Password,
+	}
+	switch relay.Security {
+	case config.RelaySecurityTLS:
+		settings.TLS = smtpc.TLSImplicit
+	case config.RelaySecurityNone:
+		settings.TLS = smtpc.TLSOpportunistic
+	default:
+		settings.TLS = smtpc.TLSRequired
+	}
+
+	log.Noticef("outgoing mail is relayed through %s (%s), not delivered by MX lookup",
+		settings.Address(), relay.Security)
+	return settings
+}
+
+func (self *server) openStorage(configuration *config.Configuration) error {
+	settings := &storage.Settings{
+		Directory: configuration.Path(configuration.Storage.Directory),
+		Retention: configuration.Storage.SpoolRetention.Duration(),
+		// A message a mailbox still holds outlives the retention: the row
+		// says whether one does, and the sweep in the exchange is what
+		// removes the row and the file together once nothing does.
+		Keep: func(_ context.Context, id string) (bool, error) {
+			return self.database.MailExists(id)
+		},
+	}
+	if configuration.Storage.S3.Enabled {
+		settings.S3 = &storage.S3Settings{
+			Bucket:          configuration.Storage.S3.Bucket,
+			Region:          configuration.Storage.S3.Region,
+			AccessKeyID:     configuration.Storage.S3.AccessKeyID,
+			SecretAccessKey: configuration.Storage.S3.SecretAccessKey,
+			CredentialsFile: configuration.Path(configuration.Storage.S3.CredentialsFile),
+			Endpoint:        configuration.Storage.S3.Endpoint,
+			PathStyle:       configuration.Storage.S3.PathStyle,
+		}
+	}
+
+	opened, err := storage.Open(settings)
+	if err != nil {
+		return err
+	}
+	self.storage = opened
+	self.onClose(func() {
+		if err := opened.Close(); err != nil {
+			log.Errorf("failed to close storage: %s", err)
+		}
+	})
+	return nil
+}
+
+func (self *server) openExchange(configuration *config.Configuration, spamFilter spamfilter.Filter, antivirusClient clamav.Client) error {
+	settings := &mx.Settings{
+		Server:          configuration.Server.Name,
+		Service:         fmt.Sprintf("teanode/%s", version.Version()),
+		MailServers:     configuration.MailServers(),
+		Secret:          self.secret,
+		SOCKS5Proxy:     configuration.SMTP.SOCKS5Proxy,
+		DisableSendMail: configuration.SMTP.DisableSend,
+		Relay:           relaySettings(configuration),
+	}
+	exchange, err := mx.Open(self.database, self.store, self.storage, self.resolver, spamFilter, antivirusClient, self.locator, settings)
+	if err != nil {
+		return err
+	}
+	self.exchange = exchange
+	self.onClose(func() {
+		if err := exchange.Close(); err != nil {
+			log.Warningf("failed to close exchange: %s", err)
+		}
+	})
+	return nil
+}
+
+func (self *server) openWeb(configuration *config.Configuration) error {
+	if count, err := self.database.CountUsers(); err != nil {
+		return err
+	} else if count == 0 {
+		log.Warningf("this server has no account yet, so anyone who can reach the web UI can claim it; open it and create one, or bind listen.http and listen.https to 127.0.0.1")
+	}
+
+	mailerComponent, err := mailer.New(self.database, self.store, self.exchange, nil)
+	if err == nil && self.agentWorker != nil {
+		self.agentWorker.SetMailer(mailerComponent)
+	}
+	if err != nil {
+		return fmt.Errorf("cannot create the mailer: %w", err)
+	}
+	self.onClose(func() {
+		if err := mailerComponent.Close(); err != nil {
+			log.Errorf("failed to close mailer: %s", err)
+		}
+	})
+
+	verifier, err := dns.Open(self.store, self.database, &dns.Settings{
+		Nameserver:    configuration.DNS.Nameserver,
+		CheckInterval: configuration.DNS.CheckInterval.Duration(),
+		// A BIMI record naming a logo this server hosts is checked by reading
+		// the file rather than by fetching our own address: that fetch
+		// refuses anything but a public address, and this server's own name
+		// often resolves inside the network it runs in.
+		PublishedLogo: func(ctx context.Context, fileId string) ([]byte, error) {
+			return self.storage.GetFile(ctx, fileId)
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("cannot create the DNS verifier: %w", err)
+	}
+	self.onClose(func() {
+		if err := verifier.Close(); err != nil {
+			log.Errorf("failed to close dns verifier: %s", err)
+		}
+	})
+
+	authenticator, err := web.NewAuthenticator(self.store, self.database)
+	if err != nil {
+		return fmt.Errorf("cannot set up dashboard authentication: %w", err)
+	}
+
+	// Sessions and tokens expire and are revoked; without a sweep the rows
+	// stay forever. Hourly, because what it removes is measured in days.
+	scavengeContext, stopScavenging := context.WithCancel(context.Background())
+	var scavengeGroup sync.WaitGroup
+	scavenger := periodic.New(scavengeContext, &scavengeGroup, func(context.Context) error {
+		return authenticator.Scavenge()
+	}, &periodic.Settings{
+		Interval: time.Hour,
+		Name:     "web:scavenge",
+	})
+	scavenger.Start()
+	self.onClose(func() {
+		scavenger.Stop()
+		stopScavenging()
+		scavengeGroup.Wait()
+	})
+
+	// The list headers of mail that arrived before this server read them.
+	// Every message in a mailbox is examined once, in batches, and a pass
+	// that finds nothing costs one query — so this quietly finishes and then
+	// stays out of the way. Two minutes apart, because the mail it is
+	// catching up on has been waiting for months and the reads are somebody
+	// else's storage.
+	listBackfill := periodic.New(scavengeContext, &scavengeGroup, func(ctx context.Context) error {
+		_, err := backfillMailLists(ctx, self.database, self.storage)
+		return err
+	}, &periodic.Settings{
+		Interval: 2 * time.Minute,
+		Name:     "mailbox:lists",
+	})
+	listBackfill.Start()
+	self.onClose(listBackfill.Stop)
+
+	// The logos sending domains publish for their mail. Fetched here, once
+	// per domain per day, so that showing one does not tell the sender which
+	// address opened which message at what moment.
+	logoFetch := periodic.New(scavengeContext, &scavengeGroup, func(ctx context.Context) error {
+		_, err := fetchSenderLogos(ctx, self.database, configuration.DNS.Nameserver)
+		return err
+	}, &periodic.Settings{
+		Interval: 10 * time.Minute,
+		Name:     "mailbox:logos",
+	})
+	logoFetch.Start()
+	self.onClose(logoFetch.Stop)
+
+	// Half-finished WebAuthn challenges. In this process unless a Redis is
+	// configured: one instance is the ordinary case, and a challenge that does
+	// not survive a restart costs one retry. Behind a load balancer it has to
+	// be shared, because WebAuthn is two requests and the browser has no
+	// reason to come back to the instance it started with.
+	ceremonies := ceremony.NewMemoryStore()
+	if address := strings.TrimSpace(configuration.Passkey.Redis.Address); address != "" {
+		client := redis.NewClient(&redis.Options{
+			Addr:     address,
+			Username: configuration.Passkey.Redis.Username,
+			Password: configuration.Passkey.Redis.Password,
+			DB:       configuration.Passkey.Redis.Database,
+		})
+		self.onClose(func() {
+			if err := client.Close(); err != nil {
+				log.Errorf("failed to close the redis connection: %s", err)
+			}
+		})
+		ceremonies = ceremony.NewRedisStore(client)
+		log.Noticef("parking passkey ceremonies in redis at %s", address)
+	}
+
+	// What has been released since this was built, and — if it is turned on
+	// and this deployment can — installing it. Built after the restarter,
+	// because an upgrade ends in a restart and a manager with nothing to ask
+	// for one would swap a binary and leave the old one running.
+	upgrader, err := upgrade.New(self.store, self.restarter, self.upgradeDirectory)
+	if err != nil {
+		return err
+	}
+	self.upgrader = upgrader
+	self.onClose(func() {
+		if err := upgrader.Close(); err != nil {
+			log.Errorf("failed to stop the upgrade checker: %s", err)
+		}
+	})
+
+	apiComponent, err := v1api.New(self.database, self.store, self.storage, self.locator, verifier, mailerComponent, upgrader, authenticator, ceremonies, &api.Settings{
+		Secret: self.secret,
+		// The instance, not the server name: the name is the same on every
+		// instance sharing this database, and this is the field that says
+		// which process you are talking to.
+		BackendID:   self.instance,
+		Restarter:   self.restarter,
+		AuthLimiter: self.authLimiter(configuration),
+		Agent:       self.agentService(),
+	})
+	if err != nil {
+		return fmt.Errorf("cannot create the API: %w", err)
+	}
+
+	// Contacts over CardDAV, mounted before the dashboard's catch-all so
+	// that /dav and /.well-known/carddav reach it rather than the page a
+	// browser would be given.
+	davComponent, err := dav.New(self.database, self.store, self.authLimiter(configuration))
+	if err != nil {
+		return fmt.Errorf("cannot create the DAV service: %w", err)
+	}
+
+	webServer, err := web.NewServer(self.database, &web.Settings{}, []web.Component{
+		apiComponent,
+		davComponent,
+		web.NewStaticComponent(frontend.Handler()),
+	})
+	if err != nil {
+		return fmt.Errorf("cannot create the web server: %w", err)
+	}
+
+	// Order matters. Authentication runs before the routes it protects, and
+	// the ACME challenge path is exempt inside it because a certificate
+	// authority arrives with no session.
+	self.handler = web.ApplyMiddlewares(webServer,
+		web.MakeServerNameMiddleware(fmt.Sprintf("teanode/%s", version.Version())),
+		web.MakeSecurityHeadersMiddleware(frontend.InlineScriptHashes(),
+			func() []string { return self.store.Current().Server.TrustedProxies }),
+		web.MakeAuthenticationMiddleware(authenticator, autoacme.ChallengePath),
+		web.NoStoreMiddleware,
+		web.LoggingMiddleware,
+		web.CompressionMiddleware,
+	)
+	return nil
+}
+
+// withChallengeHandler puts the ACME http-01 handler in front of everything
+// else on the plain HTTP listener. It has to come first: the certificate
+// authority fetches the challenge over plain HTTP with no credentials, so it
+// must not meet a redirect to HTTPS, authentication, or the dashboard's
+// catch-all route.
+//
+// When a different challenge type is configured this returns the handler
+// unchanged, and when the dashboard is disabled it returns a handler that
+// serves only challenges.
+// Bounds on an HTTP connection, on both listeners. Anyone can open one;
+// without these a client that sends its request a byte a minute, or a
+// header without end, holds a connection and its buffers for as long as it
+// likes.
+const (
+	httpReadHeaderTimeout = 10 * time.Second
+	httpReadTimeout       = 5 * time.Minute
+	httpIdleTimeout       = 2 * time.Minute
+	httpMaxHeaderBytes    = 64 * 1024
+)
+
+// withChallengeHandler is the plain HTTP listener's handler: ACME
+// challenges first, then — when this process serves HTTPS itself — a
+// redirect there for everything else, and otherwise the handler as it is,
+// for a deployment whose TLS ends at a proxy in front.
+func withChallengeHandler(handler http.Handler, manager autoacme.Manager, redirectToTLS bool) http.Handler {
+	var challengeHandler http.Handler
+	if manager != nil {
+		challengeHandler = manager.HTTPHandler()
+	}
+	if challengeHandler == nil && !redirectToTLS {
+		return handler
+	}
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if challengeHandler != nil && strings.HasPrefix(request.URL.Path, autoacme.ChallengePath) {
+			challengeHandler.ServeHTTP(response, request)
+			return
+		}
+		if redirectToTLS && request.TLS == nil {
+			target := "https://" + request.Host + request.URL.RequestURI()
+			http.Redirect(response, request, target, http.StatusPermanentRedirect)
+			return
+		}
+		if handler == nil {
+			http.NotFound(response, request)
+			return
+		}
+		handler.ServeHTTP(response, request)
+	})
+}
+
+// smtpConnectionsAtOnce bounds how many SMTP connections each listener
+// serves at once. Each holds a goroutine and, once it sends DATA, a buffer
+// the size of the largest message allowed, for up to an hour; a thousand of
+// them is what a busy server sees and what this process can hold.
+// mailProgramConnectionsAtOnce bounds the IMAP listeners, for the reason the
+// mail listeners are bounded: every accepted connection is a goroutine with
+// its buffers, a bare NOOP resets the read deadline, and both ports are open
+// to anybody.
+const mailProgramConnectionsAtOnce = 1000
+
+const smtpConnectionsAtOnce = 1000
+
+// authLimiterAddresses caps how many addresses the submission limiter keeps
+// buckets for at once. Bounded because the key is a remote address and there
+// are more of those than there is memory.
+const authLimiterAddresses = 8192
+
+// startupOnly names the parts of the configuration that are read once, when
+// the process builds what it needs, and are not re-read afterwards. Changing
+// one takes a restart.
+//
+// Watched rather than assumed, because the configuration is shared now: it
+// can change while this process is running, from the dashboard or from
+// another instance, and a setting that appears to save and does nothing is
+// worth an hour of somebody's afternoon.
+func startupOnly(configuration *config.Configuration) map[string]any {
+	return map[string]any{
+		"listen": configuration.Listen,
+		// The model registry and the agent worker are built once from
+		// these; a provider, a key or a model changed on the settings page
+		// waits for a restart, and the page says so.
+		"agent.enabled":   configuration.Agent.Enabled,
+		"agent.providers": configuration.Agent.Providers,
+		"agent.models":    configuration.Agent.Models,
+		// The worker sizes its slots once, when it starts. Raising the
+		// number to let an ingest run beside a dream did nothing until a
+		// restart, and the status line said none was owed.
+		"agent.limits.concurrency": configuration.Agent.Limits.Concurrency,
+		"tls":                      configuration.TLS,
+		"smtp.relay":               configuration.SMTP.Relay,
+		"storage":                  configuration.Storage,
+		"server.dataDirectory":     configuration.Server.DataDirectory,
+		"antivirus":                configuration.Antivirus,
+		"antispam":                 configuration.Antispam,
+		"geoip":                    configuration.GeoIP,
+		// Read once when the checker is built. Enabled, automatic and window
+		// are re-read every time the loop wakes and are deliberately not
+		// here: changing those takes effect without a restart, and listing
+		// one would ask for a restart that is not needed — and never stop
+		// asking, because the pending list is only ever appended to.
+		"upgrade.checkInterval": configuration.Upgrade.CheckInterval,
+	}
+}
+
+// warnOnStartupOnlyChanges says which of those changed, once per change.
+func (self *server) warnOnStartupOnlyChanges() func() {
+	running := encodeSections(startupOnly(self.store.Current()))
+
+	return self.store.Subscribe(func(configuration *config.Configuration) {
+		current := encodeSections(startupOnly(configuration))
+
+		var changed []string
+		for name, encoded := range current {
+			if running[name] != encoded {
+				changed = append(changed, name)
+			}
+		}
+		if len(changed) == 0 {
+			return
+		}
+		sort.Strings(changed)
+
+		// The new values are adopted as the ones to compare against, so that
+		// this is said once for a change rather than on every reload
+		// afterwards.
+		running = current
+		self.restarter.AddPending(changed...)
+		log.Warningf("%s changed, and %s only read at startup; restart this instance to pick %s up",
+			strings.Join(changed, ", "),
+			plural(len(changed), "is", "are"),
+			plural(len(changed), "it", "them"))
+	})
+}
+
+func encodeSections(sections map[string]any) map[string]string {
+	encoded := make(map[string]string, len(sections))
+	for name, section := range sections {
+		content, err := yaml.Marshal(section)
+		if err != nil {
+			// Cannot happen for these types, and a failure here must not stop
+			// a server that is otherwise fine from running.
+			log.Errorf("cannot compare the %s settings: %s", name, err)
+			continue
+		}
+		encoded[name] = string(content)
+	}
+	return encoded
+}
+
+func plural(count int, one, many string) string {
+	if count == 1 {
+		return one
+	}
+	return many
+}
+
+func (self *server) serve(ctx context.Context) error {
+	configuration := self.store.Current()
+
+	unsubscribe := self.warnOnStartupOnlyChanges()
+	defer unsubscribe()
+
+	// The built-in filter's rules live in the database, because instances
+	// share them. This watches for a set this instance has not parsed —
+	// placed there by another instance, or by "config rules import".
+	if refresher, ok := self.spamFilter.(interface {
+		StartRuleRefresh(ctx context.Context)
+	}); ok {
+		refresher.StartRuleRefresh(ctx)
+	}
+
+	tlsConfig, err := self.tlsConfig(configuration)
+	if err != nil {
+		return err
+	}
+
+	var waitGroup sync.WaitGroup
+	stopped := make(chan string, 4)
+
+	// The plain HTTP listener also answers ACME http-01 challenges, so it is
+	// worth running even when the dashboard is switched off. When this
+	// process serves HTTPS itself, everything else on the plain listener is
+	// sent there: a hostname typed into a browser goes to port 80 first,
+	// and a dashboard that answered there took a password in the clear.
+	servesTLS := self.listeners.https != nil && self.handler != nil && tlsConfig != nil
+	httpHandler := withChallengeHandler(self.handler, self.acme, servesTLS)
+	httpServer := &http.Server{Handler: httpHandler, ReadHeaderTimeout: httpReadHeaderTimeout, ReadTimeout: httpReadTimeout, IdleTimeout: httpIdleTimeout, MaxHeaderBytes: httpMaxHeaderBytes}
+	httpsServer := &http.Server{Handler: self.handler, ReadHeaderTimeout: httpReadHeaderTimeout, ReadTimeout: httpReadTimeout, IdleTimeout: httpIdleTimeout, MaxHeaderBytes: httpMaxHeaderBytes}
+
+	if self.listeners.http != nil && httpHandler != nil {
+		waitGroup.Add(1)
+		go func() {
+			defer deferutil.Recover()
+			defer waitGroup.Done()
+			if err := httpServer.Serve(self.listeners.http); err != nil && err != http.ErrServerClosed {
+				log.Errorf("http server exited with error: %s", err)
+			}
+			stopped <- "http"
+		}()
+	}
+
+	if servesTLS {
+		waitGroup.Add(1)
+		go func() {
+			defer deferutil.Recover()
+			defer waitGroup.Done()
+			if err := httpsServer.Serve(tls.NewListener(self.listeners.https, tlsConfig)); err != nil && err != http.ErrServerClosed {
+				log.Errorf("https server exited with error: %s", err)
+			}
+			stopped <- "https"
+		}()
+	}
+
+	greeting := fmt.Sprintf("%s teanode/%s", configuration.Server.Name, version.Version())
+
+	// A mail program signing in to send: one of the mailbox's addresses and
+	// an app password. The exchange checks the sender against the mailbox's
+	// addresses when the message arrives, so the domain is left to it.
+	authenticateMailbox := func(username, password string) (string, string, bool) {
+		var mailbox *models.Mailbox
+		if err := self.database.Transaction(func(tx db.Transaction) error {
+			var err error
+			mailbox, err = access.AuthenticateAppPassword(tx, username, password)
+			return err
+		}); err != nil {
+			if !errors.Is(err, access.ErrInvalidAppPassword) {
+				log.Errorf("app password sign-in as %q failed: %s", username, err)
+			}
+			return "", "", false
+		}
+		return mailbox.ID, "", true
+	}
+
+	if self.listeners.smtpIncoming != nil {
+		waitGroup.Add(1)
+		go func() {
+			defer deferutil.Recover()
+			defer waitGroup.Done()
+			if err := smtpd.Serve(self.listeners.smtpIncoming, self.exchange.HandleEnvelope, self.locator, self.resolver, self.dropper, &smtpd.Settings{
+				Outgoing:       false,
+				Greeting:       greeting,
+				Timeout:        time.Hour,
+				MaxSize:        int(configuration.SMTP.MaxMessageSize.Bytes()),
+				MaxRecipients:  configuration.SMTP.MaxRecipientsIncoming,
+				TLSConfig:      tlsConfig,
+				Secret:         self.secret,
+				TrustedSenders: configuration.SMTP.TrustedSenders,
+				Delay:          configuration.SMTP.GreylistDelay.Duration(),
+				MaxConnections: smtpConnectionsAtOnce,
+
+				RequireReverseDNS: configuration.SMTP.RequireReverseDNS,
+			}); err != nil {
+				log.Debugf("incoming smtp server exited: %s", err)
+			}
+			stopped <- "incoming smtp"
+		}()
+	}
+
+	authLimiter := self.authLimiter(configuration)
+
+	if self.listeners.smtpOutgoing != nil {
+		waitGroup.Add(1)
+		go func() {
+			defer deferutil.Recover()
+			defer waitGroup.Done()
+			if err := smtpd.Serve(self.listeners.smtpOutgoing, self.exchange.HandleEnvelope, self.locator, self.resolver, self.dropper, &smtpd.Settings{
+				Outgoing:       true,
+				Greeting:       greeting,
+				Timeout:        time.Hour,
+				MaxSize:        int(configuration.SMTP.MaxMessageSize.Bytes()),
+				MaxRecipients:  configuration.SMTP.MaxRecipientsOutgoing,
+				TLSConfig:      tlsConfig,
+				Secret:         self.secret,
+				MaxConnections: smtpConnectionsAtOnce,
+
+				AuthLimiter:         authLimiter,
+				AuthenticateMailbox: authenticateMailbox,
+			}); err != nil {
+				log.Debugf("outgoing smtp server exited: %s", err)
+			}
+			stopped <- "outgoing smtp"
+		}()
+	}
+
+	// Mail programs. Two listeners for one server: STARTTLS on the plain
+	// port, TLS from the first byte on the other, which is what most
+	// programs try first.
+	imapSettings := &imap.Settings{
+		Database:    self.database,
+		Storage:     self.storage,
+		TLSConfig:   tlsConfig,
+		MaxSize:     int(configuration.SMTP.MaxMessageSize.Bytes()),
+		AuthLimiter: authLimiter,
+		// The same ceiling the mail listeners have had since an earlier
+		// audit, on the listeners it was not applied to. A mail program
+		// holds one connection per mailbox and idles on it, so a person
+		// with several devices is a handful; a thousand is everybody's
+		// devices at once and then some.
+		MaxConnections: mailProgramConnectionsAtOnce,
+	}
+	if self.listeners.imap != nil {
+		waitGroup.Add(1)
+		go func() {
+			defer deferutil.Recover()
+			defer waitGroup.Done()
+			// Said out loud, not at debug. Serve answers nil when the
+			// context is done, so an error here is a real failure -- and a
+			// listener that fails takes the whole server down with it, so
+			// this line is the only thing that says why. It used to be
+			// invisible at the level an operator runs at: what they saw was
+			// "shutting down: imap listener stopped", three milliseconds
+			// after "teanode is running", and nothing else.
+			if err := imap.Serve(ctx, self.listeners.imap, imapSettings); err != nil {
+				log.Errorf("the imap listener stopped: %s", err)
+			}
+			stopped <- "imap"
+		}()
+	}
+	if self.listeners.imaps != nil {
+		waitGroup.Add(1)
+		go func() {
+			defer deferutil.Recover()
+			defer waitGroup.Done()
+			// The raw listener: Serve puts the TLS on, so that the
+			// connection ceiling is applied underneath it and what the
+			// server sees is a *tls.Conn rather than a wrapper around one.
+			implicit := *imapSettings
+			implicit.ImplicitTLS = true
+			if err := imap.Serve(ctx, self.listeners.imaps, &implicit); err != nil {
+				log.Errorf("the imaps listener stopped: %s", err)
+			}
+			stopped <- "imaps"
+		}()
+	}
+
+	// SIGHUP re-reads the configuration file, so that an operator who edits it
+	// by hand does not have to restart and drop connections.
+	reload := make(chan os.Signal, 1)
+	signal.Notify(reload, syscall.SIGHUP)
+	defer signal.Stop(reload)
+
+	// SIGQUIT dumps goroutine stacks, which is how a wedged server is
+	// diagnosed in production.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGQUIT)
+	defer signal.Stop(quit)
+
+	log.Noticef("teanode is running")
+
+	var reason string
+	// Far enough to serve. A staged binary is only trusted after this: the
+	// marker beside it is what stops a release that crashes on startup from
+	// being exec'd again on every restart, for ever.
+	upgrade.Started(self.upgradeDirectory)
+
+	for reason == "" {
+		select {
+		case <-ctx.Done():
+			reason = "interrupted"
+		case <-self.restartRequested:
+			reason = "restart requested through the API"
+			self.stoppedForRestart = true
+		case <-reload:
+			log.Noticef("reloading configuration")
+			if err := self.store.Reload(); err != nil {
+				log.Errorf("failed to reload configuration, keeping the previous one: %s", err)
+			}
+		case <-quit:
+			log.Warningf("%s", debugutil.GetAllStacks())
+		case name := <-stopped:
+			reason = name + " listener stopped"
+		}
+	}
+
+	log.Noticef("shutting down: %s", reason)
+
+	timer := time.AfterFunc(shutdownTimeout, func() {
+		log.Errorf("graceful shutdown timed out after %s: %s", shutdownTimeout, debugutil.GetAllStacks())
+		os.Exit(1)
+	})
+	defer timer.Stop()
+
+	shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	if err := httpServer.Shutdown(shutdownContext); err != nil {
+		log.Errorf("failed to shut down http: %s", err)
+	}
+	if err := httpsServer.Shutdown(shutdownContext); err != nil {
+		log.Errorf("failed to shut down https: %s", err)
+	}
+	if self.listeners.smtpIncoming != nil {
+		_ = self.listeners.smtpIncoming.Close()
+	}
+	if self.listeners.smtpOutgoing != nil {
+		_ = self.listeners.smtpOutgoing.Close()
+	}
+
+	waitGroup.Wait()
+
+	// An upgrade is not applied here. runServer does it, after every deferred
+	// close has run: exec never returns, so doing it from inside this function
+	// would skip all of them and abandon whatever the mailer and the queue
+	// were part way through.
+	return nil
+}
+
+// execTarget is the binary this process should become, if an upgrade put one
+// in place and the shutdown that just happened is the one it asked for.
+//
+// Both halves matter. Nothing when the web component was never built, which is
+// every command other than run. And nothing when the server stopped for any
+// other reason, because the new binary is in place from the moment the swap
+// succeeds — a moment before the restart is even requested. Without this, a
+// SIGTERM arriving in that window, or an ordinary "docker compose stop" some
+// hours after an upgrade that could not ask for a restart, would exec the new
+// binary instead of exiting: the operator asked the server to stop and it
+// would have come back.
+func (self *server) execTarget() string {
+	if self.upgrader == nil || !self.stoppedForRestart {
+		return ""
+	}
+	return self.upgrader.ExecTarget()
+}
+
+// openLocator returns a GeoIP locator, or one that locates nothing when the
+// operator has not supplied a MaxMind database. None is bundled: the license
+// requires each user to accept it themselves.
+func openLocator(configuration *config.Configuration) geoip.Locator {
+	if !configuration.GeoIP.Enabled {
+		return geoip.NewNullLocator()
+	}
+	return geoip.NewLocator(configuration.Path(configuration.GeoIP.DatabaseFile))
+}
+
+// openAntispam builds whichever filter the configuration asks for.
+//
+// The engine is resolved rather than read, so that a server which has been
+// talking to a daemon keeps talking to it across an upgrade that never
+// mentioned the setting, and a server with no daemon configured gets the
+// filter inside this process.
+func openAntispam(configuration *config.Configuration, nameResolver resolver.Resolver, database db.Database) (spamfilter.Filter, error) {
+	if !configuration.Antispam.Enabled {
+		return nil, nil
+	}
+	switch configuration.Antispam.ResolvedEngine() {
+	case config.AntispamEngineSpamd:
+		host, port := configuration.Antispam.SpamdHost(), configuration.Antispam.SpamdPort()
+		filter, err := spamfilter.NewSpamd(host, port)
+		if err != nil {
+			return nil, err
+		}
+		log.Noticef("spam filter: an external spamassassin daemon at %s:%d", host, port)
+		return filter, nil
+	default:
+		log.Noticef("spam filter: the built-in filter")
+		return strainer.New(&configuration.Antispam.Builtin, nameResolver, database), nil
+	}
+}
+
+func openAntivirus(configuration *config.Configuration) (clamav.Client, error) {
+	if !configuration.Antivirus.Enabled {
+		return nil, nil
+	}
+	client, err := clamav.Open(&clamav.Settings{
+		Host: configuration.Antivirus.Host,
+		Port: configuration.Antivirus.Port,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("cannot connect to clamav at %s:%d: %w", configuration.Antivirus.Host, configuration.Antivirus.Port, err)
+	}
+	return client, nil
+}
+
+// loadAwsConfig builds an AWS configuration for the optional Route53 and S3
+// integrations.
+//
+// Credentials come from teanode.yaml when they are set there, from a shared
+// credentials file when one is named, and otherwise from the default AWS
+// chain — which is how an instance role works, and the option with no
+// long-lived secret to leak.
+func loadAwsConfig(region, accessKeyId, secretAccessKey, credentialsFile string) (aws.Config, error) {
+	options := []func(*awsconfig.LoadOptions) error{
+		awsconfig.WithRegion(region),
+	}
+	switch {
+	case accessKeyId != "" && secretAccessKey != "":
+		options = append(options, awsconfig.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(accessKeyId, secretAccessKey, "")))
+	case credentialsFile != "":
+		options = append(options, awsconfig.WithSharedCredentialsFiles([]string{credentialsFile}))
+	}
+	return awsconfig.LoadDefaultConfig(context.Background(), options...)
+}

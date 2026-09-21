@@ -1,0 +1,23 @@
+-- The directories a scan held back, and the ones let in since.
+--
+-- A scan used to stop at a directory whose *name* looked like it held
+-- records about other people -- eval, review, recruiting, hr, salary --
+-- name it here, and read what was under it only once the person had said
+-- so on the source's page. The judgement was made on the name alone,
+-- which is not something a name can carry: a folder called "reviews" is
+-- as often a person's own notes on books, restaurants or a pull request
+-- as it is a file on a colleague, and a folder that really does hold
+-- somebody else's records is as often called "2024" as anything else. It
+-- stopped the wrong things, missed the things it was for, and left the
+-- person to clear a list of names their agent could not explain.
+--
+-- So it is gone: every directory is read like any other. What still
+-- refuses a file is the secret filter, which looks at what a file is
+-- called and what is in it rather than at what a directory is called,
+-- and it is untouched.
+--
+-- Dropping the columns loses which names a scan had held back and which
+-- the person had let in. Neither means anything any more -- nothing is
+-- held back -- and the next pass reads those directories either way.
+ALTER TABLE "agent_source" DROP COLUMN "sensitive";
+ALTER TABLE "agent_source" DROP COLUMN "allowed";

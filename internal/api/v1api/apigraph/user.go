@@ -1,0 +1,447 @@
+package apigraph
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/ziyan/teanode/internal/access"
+	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/security"
+)
+
+type UserQuery interface {
+	// List every User. Needs user:manage.
+	ListUsers(ctx context.Context) ([]*User, error)
+
+	// Get the User this request is authenticated as, or null for the
+	// console and for a server that has no accounts
+	GetCurrentUser(ctx context.Context) (*User, error)
+}
+
+type UserMutation interface {
+	// Add a User, into the groups named or into Members when none is
+	CreateUser(ctx context.Context, arguments CreateUserArguments) (*User, error)
+
+	// Change a User: their name, email address, the username they sign in
+	// with, whether they may sign in at all, and which groups they are in
+	UpdateUser(ctx context.Context, arguments UpdateUserArguments) (*User, error)
+
+	// Set a User's password. The current password is not required, because
+	// the caller manages users; changing your own goes through ChangePassword,
+	// which does require it.
+	SetUserPassword(ctx context.Context, arguments SetUserPasswordArguments) (*User, error)
+
+	// Remove a User, along with their sessions, tokens, passkeys and
+	// memberships. Removing the last one leaves the server unclaimed.
+	DeleteUser(ctx context.Context, arguments DeleteUserArguments) error
+}
+
+// User is somebody with an account on this server.
+type User struct {
+	// ID of the User, stable for its lifetime
+	ID string `json:"id"`
+
+	// Username they log in with
+	Username string `json:"username"`
+
+	// What to call this person, when they have said. Empty otherwise; the
+	// web UI falls back to the username.
+	Name string `json:"name,omitempty"`
+
+	// Address that receives notifications, such as a domain whose DNS records
+	// have stopped resolving
+	Email string `json:"email,omitempty"`
+
+	// When this person was disabled, or null while they may sign in
+	DisabledAt *time.Time `json:"disabledAt,omitempty"`
+
+	// Whether they have a password at all. One without signs in with a
+	// passkey or through an identity provider.
+	HasPassword bool `json:"hasPassword"`
+
+	// Locale the web UI greets them in, when they chose one
+	Locale string `json:"locale,omitempty"`
+
+	// LocaleSeen is the language their browser last said; what the agent
+	// writes in when no locale was chosen
+	LocaleSeen string `json:"localeSeen,omitempty"`
+
+	// Timezone is where they are, and TimezoneMode whether it follows the
+	// browser ("auto") or stays as set ("fixed")
+	Timezone     string `json:"timezone,omitempty"`
+	TimezoneMode string `json:"timezoneMode,omitempty"`
+
+	// The groups this person is in
+	GroupIDs []string `json:"groupIds"`
+
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func describeUser(user *models.User) *User {
+	if user == nil {
+		return nil
+	}
+	groupIds := user.GroupIDs
+	if groupIds == nil {
+		groupIds = []string{}
+	}
+	return &User{
+		ID:           user.ID,
+		Username:     user.Username,
+		Name:         user.Name,
+		Email:        user.Email,
+		DisabledAt:   user.DisabledAt,
+		HasPassword:  user.PasswordHash != "",
+		Locale:       user.Locale,
+		LocaleSeen:   user.LocaleSeen,
+		Timezone:     user.Timezone,
+		TimezoneMode: user.TimezoneMode,
+		GroupIDs:     groupIds,
+		CreatedAt:    user.CreatedAt,
+	}
+}
+
+func (self *graph) ListUsers(ctx context.Context) ([]*User, error) {
+	if _, err := self.requirePermission(ctx, models.PermissionUserManage); err != nil {
+		return nil, err
+	}
+	stored, err := self.transaction(ctx).ListUsers()
+	if err != nil {
+		return nil, err
+	}
+	users := make([]*User, 0, len(stored))
+	for _, user := range stored {
+		users = append(users, describeUser(user))
+	}
+	return users, nil
+}
+
+func (self *graph) GetCurrentUser(ctx context.Context) (*User, error) {
+	principal, err := self.requireSignedIn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return describeUser(principal.User), nil
+}
+
+type CreateUserArguments struct {
+	// Username they will log in with
+	Username string `json:"username"`
+
+	// Password they will log in with. Empty leaves them without one, for a
+	// person who will sign in through an identity provider.
+	Password *string `json:"password"`
+
+	// What to call this person
+	Name *string `json:"name"`
+
+	// Address that receives notifications
+	Email *string `json:"email"`
+
+	// Groups to put them in. Omitted means Members, when that group is still
+	// there, so that a person made here can read the mailbox they are about
+	// to be given. A server whose Members group was renamed or deleted has
+	// to name the groups, or the account joins none and can do nothing.
+	GroupIDs *[]string `json:"groupIds"`
+}
+
+func (self *graph) CreateUser(ctx context.Context, arguments CreateUserArguments) (*User, error) {
+	if _, err := self.requirePermission(ctx, models.PermissionUserManage); err != nil {
+		return nil, err
+	}
+	username := strings.TrimSpace(arguments.Username)
+	if err := validateUsername(username); err != nil {
+		return nil, err
+	}
+	created := &models.User{Username: username}
+	if arguments.Password != nil && *arguments.Password != "" {
+		hash, err := security.HashPassword(*arguments.Password)
+		if err != nil {
+			return nil, err
+		}
+		created.PasswordHash = string(hash)
+	}
+	if arguments.Name != nil {
+		created.Name = strings.TrimSpace(*arguments.Name)
+	}
+	if arguments.Email != nil {
+		created.Email = strings.TrimSpace(*arguments.Email)
+	}
+	tx := self.transaction(ctx)
+	if arguments.GroupIDs != nil {
+		// Bounded by what the caller holds, exactly as updating an
+		// account's groups is. Putting somebody into a group is deciding
+		// what they may do, and the create path accepted the same field
+		// with no bound -- so the permission to manage accounts was the
+		// permission to make an administrator and sign in as them, which
+		// is the sentence the update path's own comment warns about.
+		principal, err := self.requirePermission(ctx, models.PermissionUserManage)
+		if err != nil {
+			return nil, err
+		}
+		for _, groupId := range *arguments.GroupIDs {
+			if err := self.mayHandOut(ctx, principal, groupId); err != nil {
+				return nil, err
+			}
+		}
+		created.GroupIDs = *arguments.GroupIDs
+	} else if members, err := tx.GetGroupByName(models.GroupNameMembers); err != nil {
+		return nil, err
+	} else if members != nil {
+		created.GroupIDs = []string{members.ID}
+	} else {
+		// Somebody renamed or deleted that group, and nothing puts it back:
+		// seeding only runs on a server that has no groups at all. So this
+		// account joins no group, which is no roles and no permissions — it
+		// can sign in and see nothing, including the mailbox made for it
+		// below. That is worth a line in the log, because from the dashboard
+		// it looks like an account that simply does not work.
+		log.Warningf("there is no %s group, so %q was created in no group and holds no permissions",
+			models.GroupNameMembers, username)
+	}
+	stored, err := tx.CreateUser(created)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	if _, err := access.EnsureMailbox(tx, stored); err != nil {
+		return nil, err
+	}
+	log.Noticef("%s created the account %q", operatorName(ctx), stored.Username)
+	return describeUser(stored), nil
+}
+
+// selfService says whether this change is one a person may make to their own
+// account without being allowed to administer everybody's.
+//
+// Their own account, and only the parts of it that are about them. Whether an
+// account may sign in and which groups it is in are about what a person may
+// do, and nobody grants themselves that.
+func selfService(own bool, arguments UpdateUserArguments) bool {
+	if !own {
+		return false
+	}
+	return arguments.Disabled == nil && arguments.GroupIDs == nil
+}
+
+type UpdateUserArguments struct {
+	// ID of the User to change
+	UserID string `json:"userId"`
+
+	// What to call this person. Empty clears it.
+	Name *string `json:"name"`
+
+	// Address that receives notifications
+	Email *string `json:"email"`
+
+	// The username to sign in with from now on. Sessions and API tokens move
+	// with the account, so nobody is signed out by their own rename.
+	Username *string `json:"username"`
+
+	// Whether this person may sign in. Disabling keeps everything of theirs.
+	Disabled *bool `json:"disabled"`
+
+	// The groups this person is in, replacing the current list
+	GroupIDs *[]string `json:"groupIds"`
+
+	// Locale the web UI greets them in; empty means the browser's
+	Locale *string `json:"locale"`
+
+	// Where they are, as an IANA zone name, and whether it follows the
+	// browser ("auto", the default) or stays as set ("fixed")
+	Timezone     *string `json:"timezone"`
+	TimezoneMode *string `json:"timezoneMode"`
+}
+
+func (self *graph) UpdateUser(ctx context.Context, arguments UpdateUserArguments) (*User, error) {
+	// A person may change their own account without being allowed to
+	// administer everybody's. /settings/profile is the page about you — what
+	// to call you, what you sign in with, where notifications go — and
+	// needing user:manage to use it meant only administrators could correct
+	// their own name.
+	//
+	// Two fields stay administrative whoever asks: whether an account may
+	// sign in, and which groups it is in. Those are about what a person may
+	// do, and nobody grants themselves that.
+	principal, err := self.requireSignedIn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	own := principal.User != nil && principal.User.ID == arguments.UserID
+	if !selfService(own, arguments) {
+		if principal, err = self.requirePermission(ctx, models.PermissionUserManage); err != nil {
+			return nil, err
+		}
+	}
+	if arguments.Username != nil {
+		if err := validateUsername(strings.TrimSpace(*arguments.Username)); err != nil {
+			return nil, err
+		}
+	}
+	// Putting somebody into a group is deciding what they may do, so it is
+	// bounded by what the person doing it may do. Otherwise the permission
+	// to manage accounts is the permission to become an administrator: move
+	// yourself into the group that already holds everything, and the next
+	// request is answered with all of it.
+	if arguments.GroupIDs != nil {
+		for _, groupId := range *arguments.GroupIDs {
+			if err := self.mayHandOut(ctx, principal, groupId); err != nil {
+				return nil, err
+			}
+		}
+	}
+	updated, err := self.transaction(ctx).UpdateUser(arguments.UserID, func(user *models.User) error {
+		if arguments.Username != nil {
+			user.Username = strings.TrimSpace(*arguments.Username)
+		}
+		if arguments.Name != nil {
+			user.Name = strings.TrimSpace(*arguments.Name)
+		}
+		if arguments.Email != nil {
+			user.Email = strings.TrimSpace(*arguments.Email)
+		}
+		if arguments.Locale != nil {
+			user.Locale = strings.TrimSpace(*arguments.Locale)
+		}
+		if arguments.Timezone != nil {
+			user.Timezone = strings.TrimSpace(*arguments.Timezone)
+		}
+		if arguments.TimezoneMode != nil {
+			user.TimezoneMode = strings.TrimSpace(*arguments.TimezoneMode)
+		}
+		if arguments.Disabled != nil {
+			if *arguments.Disabled && user.ID == principal.UserID() {
+				// Disabling oneself is a lock-out with nobody left to undo
+				// it from the same screen.
+				return api.ErrInvalidArguments
+			}
+			if *arguments.Disabled && user.DisabledAt == nil {
+				now := time.Now()
+				user.DisabledAt = &now
+			} else if !*arguments.Disabled {
+				user.DisabledAt = nil
+			}
+		}
+		if arguments.GroupIDs != nil {
+			user.GroupIDs = *arguments.GroupIDs
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, translateError(err)
+	}
+	log.Noticef("%s changed the account %q", operatorName(ctx), updated.Username)
+	return describeUser(updated), nil
+}
+
+type SetUserPasswordArguments struct {
+	// ID of the User whose password to set
+	UserID string `json:"userId"`
+
+	// The new password
+	Password string `json:"password"`
+}
+
+func (self *graph) SetUserPassword(ctx context.Context, arguments SetUserPasswordArguments) (*User, error) {
+	principal, err := self.requirePermission(ctx, models.PermissionUserManage)
+	if err != nil {
+		return nil, err
+	}
+	// Not somebody who may do more than the person setting it. A password is
+	// the account, so resetting an administrator's password is becoming an
+	// administrator -- which made the permission to manage accounts the
+	// permission to hold every other one, by a shorter route than the groups.
+	if principal.User == nil || principal.User.ID != arguments.UserID {
+		held, err := self.transaction(ctx).EffectivePermissions(arguments.UserID)
+		if err != nil {
+			return nil, translateError(err)
+		}
+		if !principal.Permissions.Covers(held) {
+			return nil, fmt.Errorf("%w: that account holds permissions you do not, so its password is not yours to set",
+				api.ErrPermissionDenied)
+		}
+	}
+	if arguments.Password == "" {
+		return nil, api.ErrInvalidArguments
+	}
+	hash, err := security.HashPassword(arguments.Password)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := self.transaction(ctx).UpdateUser(arguments.UserID, func(user *models.User) error {
+		user.PasswordHash = string(hash)
+		return nil
+	})
+	if err != nil {
+		return nil, translateError(err)
+	}
+	log.Noticef("%s set the password for %q", operatorName(ctx), updated.Username)
+	// An administrator resetting a password is taking the account back;
+	// whoever was signed in as it is signed out.
+	//
+	// Both credentials, not just the one. A token is checked before the
+	// cookie, never reads the password, carries the whole account, and can
+	// mint a fresh non-expiring successor -- so ending only the sessions
+	// left the person being displaced with everything, while the mutation
+	// reported success. Deleting an account takes its tokens with it and
+	// disabling one stops them being accepted; a reset was the outlier.
+	if self.authenticator != nil {
+		if _, err := self.authenticator.RevokeSessions(updated.Username, ""); err != nil {
+			log.Errorf("failed to end the sessions of %q after a password reset: %s", updated.Username, err)
+		}
+	}
+	if revoked, err := self.database.RevokeTokensByUser(updated.ID, time.Now()); err != nil {
+		log.Errorf("failed to revoke the API tokens of %q after a password reset: %s", updated.Username, err)
+	} else if revoked > 0 {
+		log.Noticef("revoked %d API token(s) of %q with the password reset", revoked, updated.Username)
+	}
+	return describeUser(updated), nil
+}
+
+type DeleteUserArguments struct {
+	// ID of the User to remove
+	UserID string `json:"userId"`
+}
+
+func (self *graph) DeleteUser(ctx context.Context, arguments DeleteUserArguments) error {
+	principal, err := self.requirePermission(ctx, models.PermissionUserManage)
+	if err != nil {
+		return err
+	}
+	if arguments.UserID == principal.UserID() {
+		return api.ErrInvalidArguments
+	}
+	tx := self.transaction(ctx)
+	user, err := tx.GetUser(arguments.UserID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return api.ErrNotFound
+	}
+	if err := tx.DeleteUser(user.ID); err != nil {
+		return translateError(err)
+	}
+	log.Noticef("%s removed the account %q", operatorName(ctx), user.Username)
+	if count, err := tx.CountUsers(); err == nil && count == 0 {
+		log.Warningf("no accounts remain; this server is unclaimed and the next visitor can take it")
+	}
+	return nil
+}
+
+// validateUsername applies the same rule the first-run setup does, so an
+// account added later cannot be one that could not have been created first.
+func validateUsername(username string) error {
+	if username == "" || len(username) > 64 || strings.ContainsAny(username, " \t\r\n") {
+		return api.ErrInvalidArguments
+	}
+	// The console's name is not an account's to take: a request carrying
+	// it is handled as the console, with every permission, and an account
+	// renamed to it would be from then on.
+	if models.IsReservedUsername(username) {
+		return api.ErrInvalidArguments
+	}
+	return nil
+}

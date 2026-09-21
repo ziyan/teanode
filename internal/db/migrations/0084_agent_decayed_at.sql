@@ -1,0 +1,16 @@
+-- When the arithmetic half of a night last faded this agent's links.
+--
+-- The fade used to be a constant a pass: every link kept four fifths of
+-- its weight each time the quiet half ran. That was written for one pass
+-- a night. Bootstrapping runs a night every few minutes, so after a day
+-- of catching up every link nothing had touched sat on the floor, and a
+-- graph whose weights all read 0.05 says nothing about what matters.
+--
+-- With a watermark the fade is a function of elapsed time instead, so a
+-- link untouched for thirty days is worth half whether the night ran once
+-- or a thousand times in between, and the reinforcement window is the
+-- same real interval rather than a guess at six hours.
+--
+-- Null, not now(): the first pass after this migration has no interval to
+-- account for, so it fades nothing and only writes the watermark down.
+ALTER TABLE "agent" ADD COLUMN "decayed_at" timestamp with time zone;

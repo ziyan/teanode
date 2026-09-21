@@ -1,0 +1,18 @@
+-- The commit authors a source found that the agent does not know are the
+-- person.
+--
+-- Whether a checkout is the person's own work is decided by matching the
+-- commit author against the addresses on the card they marked as
+-- themselves. When no address matches, everything downstream is quietly
+-- empty: no "worked on" link, no career timeline, no answer to "who did
+-- that feature". Nothing said so.
+--
+-- It happened on the first real ingest. The account's address was the
+-- one they sign in with; their commits are authored as two others. Three
+-- hundred and fifty-eight facts were filed about their checkouts and one
+-- link was drawn, and the only way to find out why was to read the code.
+--
+-- So a source keeps the addresses it saw and could not place, the way it
+-- already keeps the directories it held back: something the person can
+-- look at and resolve, rather than a silence.
+ALTER TABLE "agent_source" ADD COLUMN "unknown_authors" jsonb NOT NULL DEFAULT '[]';

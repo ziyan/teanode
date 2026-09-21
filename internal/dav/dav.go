@@ -1,0 +1,395 @@
+// Package dav serves a person's address book and their calendar to their
+// phone and their desktop, over CardDAV and CalDAV.
+//
+// CardDAV and CalDAV are ways of keeping address books and calendars in step
+// over HTTP, defined in RFC 6352 and RFC 4791. Both are WebDAV -- HTTP with a
+// few extra methods -- with rules about what a collection looks like. The methods beyond ordinary HTTP that
+// matter here are PROPFIND, which asks for properties of a URL and, with a
+// "Depth: 1" header, of everything directly inside it; and REPORT, which runs
+// a named query. The protocol itself is handled by go-webdav; what this
+// package supplies is who the caller is, where things live, and the storage
+// underneath.
+//
+// A client signs in with HTTP Basic authentication: one of a mailbox's
+// addresses as the username, and one of that mailbox's app passwords as the
+// password, exactly as a mail program signs in over IMAP. The account's own
+// password is never accepted. What a client then sees belongs to the account
+// that owns that mailbox.
+package dav
+
+import (
+	"bytes"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/emersion/go-webdav"
+	"github.com/emersion/go-webdav/caldav"
+	"github.com/emersion/go-webdav/carddav"
+	"github.com/gorilla/mux"
+	"github.com/op/go-logging"
+
+	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/contacts"
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/ratelimit"
+	"github.com/ziyan/teanode/internal/web"
+)
+
+var log = logging.MustGetLogger("dav")
+
+const (
+	// Prefix is where this is mounted. It is given to the CardDAV handler
+	// as well, and it must be: the library decides what kind of resource a
+	// URL names by counting the path segments after its prefix, so a
+	// handler that does not know where it is mounted reads every resource
+	// as something one level deeper than it is.
+	Prefix = "/dav"
+
+	// The fixed names of the two home sets, which is how a person's
+	// contacts and their calendars are told apart at the same depth.
+	contactsSegment  = "contacts"
+	calendarsSegment = "calendars"
+
+	// The layout, which is not ours to choose. The library reads the kind
+	// of a resource off how deep it is:
+	//
+	//     /dav/{userId}/                             the principal
+	//     /dav/{userId}/contacts/                    the home set
+	//     /dav/{userId}/contacts/{bookId}/           an address book
+	//     /dav/{userId}/contacts/{bookId}/{id}.vcf   a contact
+	//
+	// so a person, their books and their cards are at one, two, three and
+	// four segments and nowhere else.
+	cardSuffix = ".vcf"
+
+	// The same layout for calendars, for the same reason:
+	//
+	//     /dav/{userId}/calendars/                      the home set
+	//     /dav/{userId}/calendars/{calendarId}/         a calendar
+	//     /dav/{userId}/calendars/{calendarId}/{id}.ics an event
+	eventSuffix = ".ics"
+
+	// maximumBody is the largest request this mount will read. A card is
+	// capped at contacts.MaximumCard; the rest is room for the XML around a
+	// multiget of many of them, which is the biggest legitimate body a
+	// client sends.
+	maximumBody = 8 * contacts.MaximumCard
+)
+
+type component struct {
+	database      db.Database
+	configuration config.Store
+
+	// limiter is the shared credential limiter -- the same buckets the
+	// submission listener and IMAP count against -- or nil when an
+	// operator has turned the limit off.
+	limiter *ratelimit.Registry
+}
+
+// New builds the DAV component. It is a web.Component, registered in
+// internal/cmd/server/run.go beside the API.
+func New(database db.Database, configuration config.Store, limiter *ratelimit.Registry) (web.Component, error) {
+	return &component{database: database, configuration: configuration, limiter: limiter}, nil
+}
+
+// AddRoutes mounts the whole subtree on one route and dispatches inside it.
+//
+// One route, deliberately. The router this joins is built with
+// StrictSlash(true), which answers a request for a collection without its
+// trailing slash with a redirect -- and a redirect is not harmless here: an
+// HTTP client turns a 301 into a GET, so a PROPFIND that gets redirected
+// arrives as a GET and is answered "method not allowed". Matching the prefix
+// and routing in Go means nothing under /dav can ever be redirected.
+func (self *component) AddRoutes(router *mux.Router) error {
+	// One route for the whole subtree, and the boundary checked in Go.
+	//
+	// Two routes would be the obvious way to say "/dav and everything
+	// under it", and it is wrong here: a route registered for the bare
+	// path makes StrictSlash redirect /dav/ to /dav, and a redirect is
+	// what turns a PROPFIND into a GET. So the prefix is matched loosely
+	// and anything that merely starts with those letters -- /dave, /davos
+	// -- is handed back to the rest of the router by serve.
+	router.PathPrefix(Prefix).HandlerFunc(self.serve)
+	// How a client finds any of this when somebody types only a mail
+	// address: RFC 6764 says to look here first.
+	router.Path("/.well-known/carddav").HandlerFunc(self.wellKnown)
+	// And the same for calendars, which live beside them.
+	router.Path("/.well-known/caldav").HandlerFunc(self.wellKnown)
+	return nil
+}
+
+// wellKnown sends a client from the address it guessed to where this
+// actually lives. A permanent redirect, which is what the specification asks
+// for and what clients cache.
+func (self *component) wellKnown(response http.ResponseWriter, request *http.Request) {
+	http.Redirect(response, request, Prefix+"/", http.StatusMovedPermanently)
+}
+
+// serve is every request under the mount.
+func (self *component) serve(response http.ResponseWriter, request *http.Request) {
+	// /dave is not /dav. PathPrefix matches letters, not segments, so a
+	// path that merely begins the same way is not ours and must not be
+	// answered with a demand for a password.
+	if rest := strings.TrimPrefix(request.URL.Path, Prefix); rest != "" && !strings.HasPrefix(rest, "/") {
+		http.NotFound(response, request)
+		return
+	}
+
+	// Bounded before anything reads it. The protocol library decodes a
+	// whole card, and a whole XML document, into memory before any size is
+	// checked, so a refusal that comes from looking at the parsed result
+	// arrives far too late to stop somebody sending a gigabyte. Every
+	// other place this server takes a body does the same.
+	if request.Body != nil {
+		request.Body = http.MaxBytesReader(response, request.Body, maximumBody)
+	}
+
+	signedIn, ok := self.authenticate(response, request)
+	if !ok {
+		return
+	}
+
+	// What the path names, by depth, after the mount.
+	rest := strings.Trim(strings.TrimPrefix(request.URL.Path, Prefix), "/")
+	var segments []string
+	if rest != "" {
+		segments = strings.Split(rest, "/")
+	}
+
+	// A collection's address ends in a slash and a file's does not.
+	//
+	// Written down here because /dav is deliberately exempt from the
+	// redirect that would otherwise add one -- a redirect turns a PROPFIND
+	// into a GET, which is how a phone comes back with the wrong thing
+	// entirely. Without it the library compared a slashless home set
+	// against its own idea of that address, matched nothing, and answered
+	// 207 with an empty list: to a client synchronizing, every calendar in
+	// the account had just been deleted.
+	if len(segments) > 0 && len(segments) < 4 && !strings.HasSuffix(request.URL.Path, "/") {
+		request.URL.Path += "/"
+	}
+	// And the other way: a file's address with a slash on the end is a
+	// collection that does not exist, not the file.
+	if len(segments) >= 4 && strings.HasSuffix(request.URL.Path, "/") {
+		http.Error(response, "no such collection", http.StatusNotFound)
+		return
+	}
+
+	// The mount itself: the one question a client asks before it knows
+	// anything, which is who it is signed in as.
+	if len(segments) == 0 {
+		self.servePrincipal(response, request, signedIn)
+		return
+	}
+
+	// Everything else belongs to exactly one account, and only that
+	// account may reach it. Refused rather than hidden: that other
+	// accounts exist is not a secret, and answering "not found" sends some
+	// clients into a retry loop looking for a collection they were told
+	// about.
+	if segments[0] != signedIn.userID {
+		http.Error(response, "that is not your address book", http.StatusForbidden)
+		return
+	}
+
+	// The principal itself.
+	if len(segments) == 1 {
+		self.servePrincipal(response, request, signedIn)
+		return
+	}
+
+	switch segments[1] {
+	case contactsSegment, calendarsSegment:
+	default:
+		http.Error(response, "no such collection", http.StatusNotFound)
+		return
+	}
+
+	// A DELETE may carry If-Match, and clients send one: "remove this only
+	// if it is still the version I read". The backend is handed a path and
+	// nothing else, so the condition would otherwise be dropped on the
+	// floor and a device would destroy an edit it never saw.
+	ctx := withSignedIn(request.Context(), signedIn)
+	if request.Method == http.MethodDelete {
+		ctx = withIfMatch(ctx, request.Header.Get("If-Match"))
+	}
+
+	if segments[1] == calendarsSegment {
+		self.serveCalendars(response, request.WithContext(ctx), signedIn, segments)
+		return
+	}
+
+	backing := &backend{component: self, signedIn: signedIn}
+
+	// Fetching one contact is answered from here rather than by the
+	// protocol library, which serves a card by re-encoding the parsed form
+	// with its own encoder. That encoder writes a different number of
+	// bytes than this server stores -- it does not quote a parameter value
+	// that needs quoting -- so the length declared and the length sent
+	// disagreed, and the body was cut short by a byte. Serving what is
+	// stored is also the only way the promise the ETag makes can hold: the
+	// version a listing names is the bytes a fetch returns.
+	// Any fetch of a contact, with the suffix or without it: the path
+	// resolver accepts a bare name, so requiring the suffix here left a
+	// way round to the library's encoder and to a body that did not match
+	// the length declared for it.
+	if (request.Method == http.MethodGet || request.Method == http.MethodHead) && len(segments) == 4 {
+		self.serveCard(response, request.WithContext(ctx), backing)
+		return
+	}
+
+	// A report is answered here too, for the same reason a fetch is: the
+	// library writes a card by re-encoding it, and its encoder is the one
+	// this server replaced. A phone synchronizing asks for the etags and
+	// then reports for the cards that changed, so this is the ordinary
+	// path rather than a corner of one.
+	if request.Method == "REPORT" {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			http.Error(response, "that request could not be read", http.StatusBadRequest)
+			return
+		}
+		request.Body = io.NopCloser(bytes.NewReader(body))
+		if self.serveReport(response, request.WithContext(ctx), backing, body) {
+			return
+		}
+	}
+
+	handler := &carddav.Handler{Backend: backing, Prefix: Prefix}
+	handler.ServeHTTP(response, request.WithContext(ctx))
+}
+
+// serveCalendars is every request under a person's calendars.
+//
+// It mirrors the contacts side exactly, and for the same reasons: a fetch and
+// a report are answered from the stored bytes rather than by handing the
+// decoded form back to the library's encoder, because the promise the ETag
+// makes is that the version a listing names is the bytes a fetch returns --
+// and because the library does not fold lines, so what it would write is not
+// what the length says.
+func (self *component) serveCalendars(response http.ResponseWriter, request *http.Request, signedIn *session, segments []string) {
+	backing := &calendarBackend{component: self, signedIn: signedIn}
+
+	if (request.Method == http.MethodGet || request.Method == http.MethodHead) && len(segments) == 4 {
+		self.serveEvent(response, request, backing)
+		return
+	}
+
+	if request.Method == "REPORT" {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			http.Error(response, "that request could not be read", http.StatusBadRequest)
+			return
+		}
+		request.Body = io.NopCloser(bytes.NewReader(body))
+		if self.serveCalendarReport(response, request, backing, body) {
+			return
+		}
+	}
+
+	handler := &caldav.Handler{Backend: backing, Prefix: Prefix}
+	handler.ServeHTTP(response, request)
+}
+
+// serveEvent answers a fetch of one event with exactly what is stored.
+func (self *component) serveEvent(response http.ResponseWriter, request *http.Request, backing *calendarBackend) {
+	object, err := backing.storedEvent(request.Context(), request.URL.Path)
+	if err != nil {
+		status, message := statusOf(err)
+		http.Error(response, message, status)
+		return
+	}
+	response.Header().Set("Content-Type", "text/calendar; charset=utf-8")
+	response.Header().Set("ETag", strconv.Quote(object.ETag))
+	response.Header().Set("Content-Length", strconv.Itoa(len(object.Data)))
+	response.WriteHeader(http.StatusOK)
+	if request.Method == http.MethodHead {
+		return
+	}
+	if _, err := io.WriteString(response, object.Data); err != nil {
+		log.Debugf("an event could not be written to the client: %s", err)
+	}
+}
+
+// servePrincipal answers for the person: who they are, and where their
+// address books live. The CardDAV handler does not serve this -- it has its
+// own helper in the library -- and discovery stops at the first step without
+// it.
+func (self *component) servePrincipal(response http.ResponseWriter, request *http.Request, signedIn *session) {
+	// Only what this account may actually reach. Advertising a calendar to
+	// somebody who is then refused it sends their phone into a loop asking
+	// for a collection it has been told about and cannot have.
+	var permissions *models.EffectivePermissions
+	if err := self.database.TransactionContext(request.Context(), func(tx db.Transaction) (err error) {
+		permissions, err = tx.EffectivePermissions(signedIn.userID)
+		return err
+	}); err != nil {
+		log.Errorf("cannot read what a DAV caller may do: %s", err)
+		http.Error(response, "cannot check that just now", http.StatusServiceUnavailable)
+		return
+	}
+	var homeSets []webdav.BackendSuppliedHomeSet
+	var capabilities []webdav.Capability
+	if permissions.Has(models.PermissionContactsUse) {
+		homeSets = append(homeSets, carddav.NewAddressBookHomeSet(homeSetPath(signedIn.userID)))
+		capabilities = append(capabilities, carddav.CapabilityAddressBook)
+	}
+	if permissions.Has(models.PermissionCalendarUse) {
+		homeSets = append(homeSets, caldav.NewCalendarHomeSet(calendarHomeSetPath(signedIn.userID)))
+		capabilities = append(capabilities, caldav.CapabilityCalendar)
+	}
+	webdav.ServePrincipal(response, request, &webdav.ServePrincipalOptions{
+		CurrentUserPrincipalPath: principalPath(signedIn.userID),
+		HomeSets:                 homeSets,
+		Capabilities:             capabilities,
+	})
+}
+
+func principalPath(userId string) string { return Prefix + "/" + userId + "/" }
+
+func homeSetPath(userId string) string {
+	return Prefix + "/" + userId + "/" + contactsSegment + "/"
+}
+
+func bookPath(userId, addressBookId string) string {
+	return homeSetPath(userId) + addressBookId + "/"
+}
+
+func contactPath(userId, addressBookId, contactId string) string {
+	return bookPath(userId, addressBookId) + contactId + cardSuffix
+}
+
+func calendarHomeSetPath(userId string) string {
+	return Prefix + "/" + userId + "/" + calendarsSegment + "/"
+}
+
+func calendarPath(userId, calendarId string) string {
+	return calendarHomeSetPath(userId) + calendarId + "/"
+}
+
+func eventPath(userId, calendarId, objectId string) string {
+	return calendarPath(userId, calendarId) + objectId + eventSuffix
+}
+
+// serveCard answers a fetch of one contact with exactly what is stored.
+func (self *component) serveCard(response http.ResponseWriter, request *http.Request, backing *backend) {
+	card, err := backing.storedCard(request.Context(), request.URL.Path)
+	if err != nil {
+		status, message := statusOf(err)
+		http.Error(response, message, status)
+		return
+	}
+	response.Header().Set("Content-Type", "text/vcard; charset=utf-8")
+	response.Header().Set("ETag", strconv.Quote(card.ETag))
+	response.Header().Set("Content-Length", strconv.Itoa(len(card.Card)))
+	response.WriteHeader(http.StatusOK)
+	if request.Method == http.MethodHead {
+		return
+	}
+	if _, err := io.WriteString(response, card.Card); err != nil {
+		log.Debugf("a contact could not be written to the client: %s", err)
+	}
+}
