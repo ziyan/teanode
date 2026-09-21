@@ -36,11 +36,17 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries using either the stable draft key or its source item identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, agent calendar mutation retries, contact proposal acceptance and protocol adapters, knowledge-source and rule-update commands remain.
-- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; sent ingestion now rejects missing stored bodies instead of indexing placeholder text; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; graph prompt context, recall, ranking, embedding, retrieval, indexing and note updates now live in separate files; dream scheduling, budget, requests, digest, timeline, consolidation, organization and splitting now have separate files; digest material retrieval, prompt construction and response decoding now have explicit boundaries; memory-tool page preparation now happens before its write transaction; HTTP recall now owns short read phases outside model calls; detached dream bookkeeping now has a completion deadline and digest fact writes, read markers and progress commit together; synthetic page/retrieval baselines now cover both database images; graph embedding reports only committed writes; embedding requests and stored identities now share a registry snapshot; remaining job/model adapters and source-local measurements remain.
+- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; sent ingestion now rejects missing stored bodies instead of indexing placeholder text; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; graph prompt context, recall, ranking, embedding, retrieval, indexing and note updates now live in separate files; dream scheduling, budget, requests, digest, timeline, consolidation, organization and splitting now have separate files; digest material retrieval, prompt construction and response decoding now have explicit boundaries; memory-tool page preparation now happens before its write transaction; HTTP recall now owns short read phases outside model calls; detached dream bookkeeping now has a completion deadline and digest fact writes, read markers and progress commit together; synthetic page/retrieval baselines now cover both database images; graph embedding reports only committed writes; embedding requests and stored identities now share a registry snapshot; graph embedding rejects results for changed or deleted inputs; remaining job/model adapters and source-local measurements remain.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+- An in-flight graph embedding could restore a stale vector after a page or
+  fact edit deleted the previous vector. Deleting a page during the same
+  request instead failed the whole batch on its foreign key. Regressions
+  perform each mutation inside the local provider request before returning
+  vectors; the original write path fails all three cases.
 
 - Embedding adapters mixed a startup registry with live model names and widths.
   After a pending model change, the old provider request could be stored under
@@ -221,6 +227,14 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+- Decision: apply periodic graph embeddings as a guarded batch using the input
+  page and fact modification timestamps, with row locks through vector writes.
+  Rationale: model calls remain outside SQL; rechecking without a lock would
+  leave a second edit race. Facts depend on their page name as well as their
+  own words, so both versions participate. Changed or deleted inputs are
+  skipped while valid results commit; changed rows remain eligible for retry.
+  Date/Author: 2026-09-21, implementation review.
 
 - Decision: resolve embedding clients, provider model names, stored identities
   and requested widths together from the running registry.
@@ -2618,3 +2632,35 @@ Both binaries build, repository lint and gogolint pass, and added-text privacy
 review and staged secret checks are clean. The final focused regression is
 repeated after the review correction that propagates invalid backfill selection
 errors. No dashboard changes are included.
+
+Periodic graph embedding now prepares a typed batch containing each vector and
+the modification times of its input page and, where applicable, fact. The
+database locks facts first and then pages, ordered by identifier within each
+table, matching fact edits that record a revision on their page. It verifies
+agent ownership, row existence, versions and fact-to-page identity before
+writing. This protects the check/write interval without holding a transaction
+during the provider call. A skipped stale result is not counted as written.
+The whole accepted batch still shares a transaction and reports zero on failure.
+
+The regression changes a page name, edits a fact, or deletes the page while the
+local embedding provider is handling the request. It verifies no stale result,
+continued progress for unaffected pages, exact committed counts and a retry that
+embeds only changed rows. The original implementation restores stale vectors
+after edits and loses all valid work after deletion; each case fails before the
+fix. The fixed file is restored and byte-compared before broader validation.
+This change covers periodic graph embedding. Existing-vector invalidation for
+all page metadata changes and other prepared model writes remain in the model
+side-effect audit; no claim of full graph audit completion is made.
+
+Follow-up review identifies AskRun.NoteNode and AskRun.NoteFact in
+internal/agent/graph_note.go as additional in-flight embedding writers that
+still need the same guard. They remain explicit next work, alongside page
+metadata invalidation; the current batch correction does not imply those
+interactive paths have been fixed.
+
+Guarded graph-batch validation passes: the full standard PostgreSQL suite runs
+2,077 tests with two expected skips and 42.5% aggregate coverage. Agent and
+database packages pass race tests against the disposable vector database,
+including the existing statement/commit rollback-count regressions. Both
+binaries build, repository lint and gogolint pass, and added-text privacy and
+staged secret checks pass. No dashboard changes are included.

@@ -30,6 +30,7 @@ func (self *Agent) EmbedGraph(ctx context.Context, agent *models.Agent, limit in
 		return 0, nil
 	}
 
+	pages := map[string]*models.AgentNode{}
 	paths := map[string]string{}
 	names := map[string]string{}
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
@@ -42,6 +43,7 @@ func (self *Agent) EmbedGraph(ctx context.Context, agent *models.Agent, limit in
 			return err
 		}
 		for _, node := range found {
+			pages[node.ID] = node
 			paths[node.ID] = node.Path
 			names[node.ID] = node.Name
 		}
@@ -61,28 +63,25 @@ func (self *Agent) EmbedGraph(ctx context.Context, agent *models.Agent, limit in
 	if !ok {
 		return 0, nil
 	}
+	writing := make([]db.AgentGraphVector, 0, len(nodes)+len(facts))
+	for index, node := range nodes {
+		if index >= len(vectors) || len(vectors[index]) == 0 {
+			continue
+		}
+		writing = append(writing, db.AgentGraphVector{NodeID: node.ID, NodeModifiedAt: node.ModifiedAt, Model: modelName, Vector: vectors[index]})
+	}
+	for index, fact := range facts {
+		position := len(nodes) + index
+		page := pages[fact.NodeID]
+		if page == nil || position >= len(vectors) || len(vectors[position]) == 0 {
+			continue
+		}
+		writing = append(writing, db.AgentGraphVector{NodeID: page.ID, NodeModifiedAt: page.ModifiedAt, FactID: fact.ID, FactModifiedAt: fact.ModifiedAt, Model: modelName, Vector: vectors[position]})
+	}
 	written := 0
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		for index, node := range nodes {
-			if index >= len(vectors) || len(vectors[index]) == 0 {
-				continue
-			}
-			if err := tx.PutAgentNodeVector(agent.ID, node.ID, modelName, vectors[index]); err != nil {
-				return err
-			}
-			written++
-		}
-		for index, fact := range facts {
-			position := len(nodes) + index
-			if position >= len(vectors) || len(vectors[position]) == 0 {
-				continue
-			}
-			if err := tx.PutAgentFactVector(agent.ID, fact.ID, modelName, vectors[position]); err != nil {
-				return err
-			}
-			written++
-		}
-		return nil
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		written, err = tx.PutAgentGraphVectors(agent.ID, writing)
+		return err
 	}); err != nil {
 		return 0, err
 	}
