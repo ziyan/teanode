@@ -804,9 +804,16 @@ func (self *transaction) FindAgentNodeByName(agentId, parent string, kind models
 			likeEscaped(parent)+"/%", len(parent)+2)
 	}
 	// By the name it is given or by any name it also answers to. Both are
-	// compared without case, the way the caller compared them.
-	query = query.Where(`(lower("name") = lower(?) OR EXISTS (`+
-		`SELECT 1 FROM jsonb_array_elements_text("aliases") AS alias WHERE lower(alias) = lower(?)))`,
+	// compared without case and without separators, the way the caller
+	// compared them: one name written with a hyphen, with a space and
+	// with neither is one name, and the graph was making a page for each.
+	// Only separators come out, so a script that puts no spaces between
+	// its words is left alone rather than squashed to nothing.
+	const squash = `regexp_replace(lower(%s), '[-_[:space:]]', '', 'g')`
+	query = query.Where(
+		`(`+fmt.Sprintf(squash, `"name"`)+` = `+fmt.Sprintf(squash, `?`)+` OR EXISTS (`+
+			`SELECT 1 FROM jsonb_array_elements_text("aliases") AS alias `+
+			`WHERE `+fmt.Sprintf(squash, `alias`)+` = `+fmt.Sprintf(squash, `?`)+`))`,
 		wanted, wanted)
 	found, err := self.nodesFrom(query.Order(`"created_at" ASC`).Limit(1))
 	if err != nil || len(found) == 0 {
