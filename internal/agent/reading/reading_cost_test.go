@@ -2,6 +2,7 @@ package reading_test
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -215,4 +216,43 @@ func itoa(number int) string {
 		number /= 10
 	}
 	return digits
+}
+
+// The estimate says what the budget comes to, where the budget is what the
+// reading is waiting for.
+//
+// The hours are what it would take dreaming without pause. An agent with a
+// daily budget stops when the budget is spent, and where the rest costs
+// several days of it the two answers differ by days: a person told "about
+// eleven hours left" on a reading with four days of budget to go has been
+// misled by a number that looks precise. This is the night that ran out at
+// $70.01 of a $70 budget and reported it as a model that did not answer.
+func TestTheEstimateSaysWhatTheBudgetComesTo(test *testing.T) {
+	test.Parallel()
+
+	for _, each := range []struct {
+		what     string
+		costLeft float64
+		budget   float64
+		days     int
+		says     bool
+	}{
+		{"four days of budget", 280, 70, 4, true},
+		{"a part of a day counts as a day", 71, 70, 2, true},
+		{"exactly a day's budget is not days", 70, 70, 0, false},
+		{"what fits inside a day", 12, 70, 0, false},
+		{"no budget at all", 280, 0, 0, false},
+	} {
+		progress := &reading.Progress{Waiting: 1000, Read: 1000, PerHour: 100, HoursLeft: 10, CostLeft: each.costLeft, Currency: "usd"}
+		if each.budget > 0 && each.costLeft > each.budget {
+			progress.DaysAtBudget = int(math.Ceil(each.costLeft / each.budget))
+		}
+		if progress.DaysAtBudget != each.days {
+			test.Errorf("%s: %d days", each.what, progress.DaysAtBudget)
+		}
+		line := progress.Describe()
+		if said := strings.Contains(line, "daily budget spreads over"); said != each.says {
+			test.Errorf("%s: the line says it=%v: %q", each.what, said, line)
+		}
+	}
 }
