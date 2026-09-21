@@ -84,7 +84,7 @@ func (self *Agent) EmbedGraph(ctx context.Context, agent *models.Agent, limit in
 		}
 		return nil
 	}); err != nil {
-		return written, err
+		return 0, err
 	}
 	return written, nil
 }
