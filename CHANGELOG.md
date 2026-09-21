@@ -6,6 +6,15 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-09-21
+
+### Added
+
+- A provider may now be signed in to rather than given a key, and OpenAI
+  reached through a personal ChatGPT sign-in is the first: set `kind` to
+  `openai-codex` and give the `refreshToken` that `teanode agent signin`
+  prints. It bills against that plan's allowance rather than API credits. (#96)
+
 ## [0.46.1] - 2026-09-21
 
 ### Changed
