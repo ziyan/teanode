@@ -94,6 +94,18 @@ func NewProvider(kind, baseUrl, apiKey string, timeout time.Duration) (Service, 
 	return nil, fmt.Errorf("llm: %q is not a provider kind", kind)
 }
 
+// NewSignedInProvider builds a client for a kind that signs in rather than
+// taking a key. Separate from NewProvider because what it needs is not a
+// key but a refresh token, and the account the work is billed to.
+func NewSignedInProvider(kind, baseUrl, refreshToken, account string, timeout time.Duration) (Provider, error) {
+	client := &http.Client{Timeout: timeout}
+	switch kind {
+	case config.AgentProviderKindCodex:
+		return newCodex(baseUrl, refreshToken, account, client)
+	}
+	return nil, fmt.Errorf("llm: %q is not a provider kind that signs in", kind)
+}
+
 // doJSON posts a JSON body and decodes a JSON answer, turning a non-2xx
 // status into an APIError carrying whatever message the provider wrote.
 func doJSON(ctx context.Context, client *http.Client, method, url string, headers map[string]string, body any, result any) error {

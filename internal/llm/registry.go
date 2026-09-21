@@ -65,7 +65,20 @@ func Open(configuration *config.Agent) (*Registry, error) {
 		if !declared.IsEnabled() {
 			continue
 		}
-		service, err := NewProvider(declared.Kind, declared.BaseURL, declared.APIKey, timeout)
+		// A provider that signs in takes a refresh token where the others
+		// take a key, so which constructor is asked is the kind's business.
+		// Both answer a Service: what the thing can actually do is asked of
+		// it afterwards, by the caller that wants a conversation, a vector
+		// or a decision.
+		var service Service
+		var err error
+		switch declared.Kind {
+		case config.AgentProviderKindCodex:
+			service, err = NewSignedInProvider(declared.Kind, declared.BaseURL,
+				declared.RefreshToken, declared.Account, timeout)
+		default:
+			service, err = NewProvider(declared.Kind, declared.BaseURL, declared.APIKey, timeout)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("llm: provider %q: %w", declared.Name, err)
 		}

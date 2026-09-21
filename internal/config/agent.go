@@ -107,6 +107,12 @@ const (
 	// writes nothing. It is assigned to Models.Decide and to nothing
 	// else: assigning it to work that writes is refused below.
 	AgentProviderKindTypeSafe = "typesafe"
+
+	// AgentProviderKindCodex is OpenAI reached with a personal sign-in
+	// rather than a key: the subscription behind the Codex command line,
+	// which speaks a different protocol at a different address and bills
+	// against a plan's allowance instead of credits.
+	AgentProviderKindCodex = "openai-codex"
 )
 
 // AgentProvider is one model service.
@@ -115,7 +121,8 @@ type AgentProvider struct {
 	// the models section and every usage row name it.
 	Name string `yaml:"name"`
 
-	// Kind is the API the service speaks: openai, anthropic or gemini.
+	// Kind is the API the service speaks: openai, anthropic, gemini, or
+	// openai-codex for one signed in to rather than keyed.
 	Kind string `yaml:"kind"`
 
 	// BaseURL is where it listens; empty means the service's public
@@ -124,6 +131,21 @@ type AgentProvider struct {
 
 	// APIKey authenticates this server to the service. A secret.
 	APIKey string `yaml:"apiKey,omitempty" secret:"true"`
+
+	// RefreshToken authenticates a service that is signed in to rather
+	// than keyed: the long half of the pair, traded for a short-lived
+	// access token before each run of requests. A secret.
+	//
+	// Where the service rotates these, the one here goes stale and the
+	// server keeps the newer one for as long as it runs. An operator who
+	// restarts after that signs in again, which is why what it gives is
+	// worth writing back here.
+	RefreshToken string `yaml:"refreshToken,omitempty" secret:"true"`
+
+	// Account names which of a signed-in person's accounts the work is
+	// billed to, where the service asks. Not a secret: it identifies an
+	// account, it does not open one.
+	Account string `yaml:"account,omitempty"`
 
 	// Enabled keeps the key while switching the provider off. Unset means
 	// on.
@@ -898,8 +920,20 @@ func (self *Configuration) validateAgent(validator *validator) {
 		names[provider.Name] = true
 		switch provider.Kind {
 		case AgentProviderKindOpenAI, AgentProviderKindAnthropic, AgentProviderKindGemini, AgentProviderKindTypeSafe:
+		case AgentProviderKindCodex:
+			// Signed in, not keyed: the refresh token is what it needs, and
+			// a key here would be quietly ignored, which is worse than
+			// being told.
+			if provider.RefreshToken == "" {
+				validator.add(prefix+".refreshToken",
+					"required for a signed-in provider: sign in and give the refresh token it hands back")
+			}
+			if provider.APIKey != "" {
+				validator.add(prefix+".apiKey", "a signed-in provider takes no key; give refreshToken instead")
+			}
 		default:
-			validator.add(prefix+".kind", `must be "openai" (also every compatible server), "anthropic", "gemini" or "typesafe"`)
+			validator.add(prefix+".kind",
+				`must be "openai" (also every compatible server), "anthropic", "gemini", "typesafe" or "openai-codex"`)
 		}
 		if provider.Kind == AgentProviderKindTypeSafe {
 			deciders[provider.Name] = true
