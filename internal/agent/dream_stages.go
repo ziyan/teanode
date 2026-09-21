@@ -735,6 +735,7 @@ func (self *Agent) dreamForgetSaidTwice(ctx context.Context, run *Run, record *m
 	// reported again -- the same facts and the same number for as long as
 	// the page stayed as it was.
 	missing := 0
+	counted := 0
 	for _, fact := range twice {
 		if ctx.Err() != nil {
 			return
@@ -766,6 +767,20 @@ func (self *Agent) dreamForgetSaidTwice(ctx context.Context, run *Run, record *m
 			continue
 		}
 		record.Merged++
+		counted++
+	}
+	if counted > 0 {
+		// Named apart from the two other things that add to the same total
+		// on the record -- pairs a rewrite called one statement, and a page
+		// under people that was the person -- because one number over three
+		// operations cannot be read.
+		log.Noticef("a dream folded %d facts a page already said in the same words", counted)
+	}
+	if len(twice) >= reviseBatch {
+		// The listing is cut at a count, so a night that fills it has left
+		// some behind and the number above is the batch rather than what
+		// there was.
+		log.Noticef("there were at least %d facts said twice, which is as many as one night lists", len(twice))
 	}
 	if missing > 0 {
 		// The search for duplicates and the search for what they duplicate
