@@ -13,14 +13,14 @@ import (
 	"github.com/ziyan/teanode/internal/config"
 )
 
-// Provider is one model service.
-//
-// Implementations must be safe for concurrent use and must respect the
-// context: a run that is cancelled must not keep a call open.
 // Service is what every provider has in common, whatever it does: the API
 // it speaks and the models it offers. The registry holds these, and the
 // settings page lists them, because both are true of a provider that only
 // decides as much as of one that writes.
+//
+// Implementations must be safe for concurrent use and must respect the
+// context: a run that is cancelled must not keep a call open. That was said
+// of Provider when every provider was one, and it is true of all of them.
 type Service interface {
 	// Kind is the API this provider speaks: openai, anthropic, gemini or
 	// typesafe.
