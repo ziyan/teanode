@@ -36,7 +36,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries using either the stable draft key or its source item identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, agent calendar mutation retries, contact proposal acceptance and protocol adapters, knowledge-source and rule-update commands remain.
-- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; graph prompt context, recall, ranking, embedding, retrieval, indexing and note updates now live in separate files; dream scheduling, budget, requests, digest, timeline, consolidation, organization and splitting now have separate files; digest material retrieval, prompt construction and response decoding now have explicit boundaries; memory-tool page preparation now happens before its write transaction; HTTP recall now owns short read phases outside model calls; detached dream bookkeeping now has a completion deadline and digest fact writes, read markers and progress commit together; remaining job/model adapters and benchmarks remain.
+- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; graph prompt context, recall, ranking, embedding, retrieval, indexing and note updates now live in separate files; dream scheduling, budget, requests, digest, timeline, consolidation, organization and splitting now have separate files; digest material retrieval, prompt construction and response decoding now have explicit boundaries; memory-tool page preparation now happens before its write transaction; HTTP recall now owns short read phases outside model calls; detached dream bookkeeping now has a completion deadline and digest fact writes, read markers and progress commit together; synthetic page/retrieval baselines now cover both database images; remaining job/model adapters and source-local measurements remain.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
@@ -2484,3 +2484,36 @@ review finds only the two moved heading separator literals, which remain byte
 identical. No dashboard changes in this extraction. The last full two-image
 run, before this extraction, passed 2,054 tests on each image; final full-suite
 and Chrome/deployment gates remain part of the overall plan.
+
+Performance measurements now have a reproducible synthetic harness. It runs
+changed source pages of 25 and 100 documents, an unchanged 100-document page,
+and graph retrieval over 100 and 1,000 facts with precomputed 32-dimensional
+vectors. Each case validates its returned counts. Disposable standard and
+vector PostgreSQL containers preload pg_stat_statements, so statement counts
+come from PostgreSQL without adding production query logging. Benchmarks report
+operation time and Go allocations; an isolated child-process resource counter
+records client peak RSS, including fixture setup and excluding database memory.
+The database test helpers accept testing.TB so these benchmarks use the same
+isolated-database lifecycle as tests.
+
+The benchmark baseline is recorded in docs/reviews/agent-performance-baseline.md
+with reproduction instructions, workload definitions, sample ranges, allocations,
+SQL counts and client-process peak RSS. Both images completed all five workloads
+with checked counts. Changed pages use 11 statements per document plus three
+per page for these fixtures; unchanged pages use seven statements in total.
+The standard 1,000-fact vector retrieval allocates about 2.6 MiB per operation
+versus about 123 KiB on the vector image. These are current-state synthetic
+measurements, not a historical speedup claim. The corpus has repeated clustered
+vectors, and memory excludes the database process. Source-local operational
+metrics and the remaining model-adapter review remain open.
+
+Benchmark validation: the final harness completes all five cases on both images,
+with three samples of twenty operations per case. SQL counts and returned
+workload counts are checked against the actual database paths. All test packages
+compile after the testing.TB helper change; both binaries build, repository lint
+and gogolint pass, and the shell script passes bash syntax validation. Privacy
+review covers the new fixtures, script and report. The harness uses Python's
+Linux child-process resource accounting because GNU time is not required to be
+installed. Each sub-benchmark selector is anchored separately to avoid matching
+changed and unchanged workloads together. No production behavior changes or
+dashboard changes in this benchmark commit.

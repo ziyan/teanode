@@ -57,7 +57,7 @@ func dropDatabase(settings *db.Settings) error {
 }
 
 // AcquireDatabase acquires a db.Database for testing.
-func AcquireDatabase(test *testing.T) (db.Database, func()) {
+func AcquireDatabase(test testing.TB) (db.Database, func()) {
 	test.Helper()
 
 	host := os.Getenv("TEANODE_TEST_DATABASE_HOST")
@@ -133,7 +133,7 @@ func CreateUser(test *testing.T, database db.Database, username string) string {
 
 // QueryString reads one string cell straight from the database, for a test
 // that has to see what is stored rather than what is read back.
-func QueryString(test *testing.T, database db.Database, query string) string {
+func QueryString(test testing.TB, database db.Database, query string) string {
 	test.Helper()
 	value, err := database.(interface{ RawQueryString(string) (string, error) }).RawQueryString(query)
 	if err != nil {
@@ -157,7 +157,7 @@ func RunTransactionOn(test *testing.T, database db.Database, run func(db.Transac
 
 // Exec runs one statement straight against the database, for a test that
 // has to put a row there that nothing else would write.
-func Exec(test *testing.T, database db.Database, statement string) {
+func Exec(test testing.TB, database db.Database, statement string) {
 	test.Helper()
 	if err := database.(interface{ RawExec(string) error }).RawExec(statement); err != nil {
 		test.Fatalf("statement failed: %s", err)
