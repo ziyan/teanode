@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.6] - 2026-09-21
+
+### Fixed
+
+- The row above the page list no longer flickers between the trail and the
+  search box each time a page is opened. (#105)
+
 ## [0.47.5] - 2026-09-21
 
 ### Fixed
