@@ -1343,6 +1343,12 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 		return false
 	}
 	record.Merged += merged
+	if merged > 0 {
+		// Named apart from the other two things that add to the same
+		// total: this is a model calling two statements one, where the
+		// others are identical words and a page that was the person.
+		log.Noticef("a rewrite of %q called %d pairs of facts one statement", page.Path, merged)
+	}
 	return true
 }
 
