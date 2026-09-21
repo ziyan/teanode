@@ -102,6 +102,12 @@ func TestTheReadingSaysWhatItCostAndWhatIsLeftToSpend(test *testing.T) {
 	if progress.Currency != "eur" {
 		test.Fatalf("said in the operator's currency, not %q", progress.Currency)
 	}
+	// And the row can say what it measured. "The dreams behind that pace"
+	// named a window without saying there was one, so a person meeting it
+	// could not tell whether it meant today, last night, or all of them.
+	if progress.Dreams != 1 {
+		test.Fatalf("one night was counted, and it says %d", progress.Dreams)
+	}
 }
 
 // And where nothing prices the models, the row says nothing about money

@@ -785,7 +785,7 @@ const REREAD_DOCUMENTS = `mutation ($minutes: Int!) { RereadAgentDocuments(minut
 const DREAM_NOW = `mutation { DreamAgentNow }`
 const DREAM_BOOTSTRAP = `mutation ($on: Boolean!) { DreamAgentNow(bootstrap: $on) }`
 const BOOTSTRAPPING = `query { ReadAgent { agent { dreamBootstrap } } }`
-const READING_PROGRESS = `query { AgentReadingProgress { waiting read perHour hoursLeft bootstrapping spent costLeft currency } }`
+const READING_PROGRESS = `query { AgentReadingProgress { waiting read perHour hoursLeft bootstrapping spent costLeft currency dreams } }`
 
 type ReadingProgress = {
   waiting: number
@@ -795,6 +795,7 @@ type ReadingProgress = {
   bootstrapping: boolean
   spent: number
   costLeft: number
+  dreams: number
   currency: string | null
 }
 
@@ -2819,9 +2820,18 @@ function ReadingBar({ reading, hint }: { reading: ReadingProgress; hint: string 
           ? ` · ${t('agent.readingCostLeft', { amount: formatMoney(reading.costLeft, reading.currency) })}`
           : ''}
       </span>
-      {reading.spent > 0 ? (
+      {/* What the guess above is worked out from, said plainly. This read
+          "The dreams behind that pace cost X", which names a window
+          without ever saying there is one: a person meeting it cannot
+          tell whether it means today, the last night, or all of them. It
+          says how many nights were measured now, because that is the
+          thing that makes the rest of the row checkable. */}
+      {reading.spent > 0 && reading.dreams > 0 ? (
         <span className="muted">
-          {t('agent.readingSpent', { amount: formatMoney(reading.spent, reading.currency) })}
+          {t('agent.readingSpent', {
+            count: reading.dreams,
+            amount: formatMoney(reading.spent, reading.currency),
+          })}
         </span>
       ) : null}
       <span className="muted">{hint}</span>

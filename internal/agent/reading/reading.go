@@ -69,7 +69,14 @@ type Progress struct {
 	// have no prices configured, which is the ordinary case for a model
 	// somebody runs themselves. A zero is shown as nothing rather than as
 	// free.
-	Spent    float64 `json:"spent"`
+	Spent float64 `json:"spent"`
+
+	// Dreams is how many finished dreams the pace and the money were both
+	// taken from, so that the row can say what it measured rather than
+	// leaving a person to wonder what window "the dreams behind that
+	// pace" meant. Up to readingPaceDreams, and fewer before there have
+	// been that many.
+	Dreams   int     `json:"dreams"`
 	CostLeft float64 `json:"costLeft"`
 	Currency string  `json:"currency,omitempty"`
 }
@@ -117,6 +124,7 @@ func For(tx db.Transaction, configuration *config.Configuration, agent *models.A
 		spent += took
 		since = dream.StartedAt
 		counted++
+		progress.Dreams = counted
 		if counted == readingPaceDreams {
 			break
 		}
