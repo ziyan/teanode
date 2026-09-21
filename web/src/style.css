@@ -1531,7 +1531,10 @@ button.link:hover:not(:disabled) {
    `.show-more` says: not the thing to do first, so muted and unbordered
    until it is pointed at, but padded and shaped like the button it is. */
 .button-quiet {
-  border: 1px solid transparent;
+  /* A border at rest, not only under the pointer. Quiet is muted colour and
+     a light edge; invisible is not quiet, it is a control nobody can find,
+     and on a touch screen there is no hover to discover it with. */
+  border: 1px solid var(--border);
   background: none;
   color: var(--muted);
   padding: 2px 8px;
@@ -8607,7 +8610,21 @@ button.with-icon {
    and the list below does not move as you walk in and out of folders. */
 .knowledge-trail.list-toolbar {
   min-height: var(--space-7);
-  flex-wrap: wrap;
+  /* Not wrapped. The chevron and the levels are small and fixed, and the
+     name is the only thing that can be long: letting the row wrap put the
+     name on a line of its own and left the first line holding two glyphs
+     and a gap. It wraps inside its own box instead, which is what
+     overflow-wrap on the name is for. */
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+
+/* The two controls keep their place beside a name that has wrapped, rather
+   than stretching down the side of it. */
+.knowledge-trail.list-toolbar > .icon-action,
+.knowledge-trail-levels {
+  flex: none;
+  align-self: flex-start;
 }
 
 
@@ -8624,6 +8641,13 @@ button.with-icon {
    is in the menu behind it. */
 .knowledge-trail-levels {
   flex: none;
+  /* The same box the chevron beside it has, so the two sit level. An
+     ellipsis is a baseline glyph and sat low against an icon that is
+     centred in its own square. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
   border: none;
   background: none;
   padding: 0 var(--space-1);
