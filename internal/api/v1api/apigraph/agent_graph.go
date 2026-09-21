@@ -216,6 +216,13 @@ type AgentGraphNeighboursResult struct {
 	Parent     *models.AgentNode      `json:"parent"`
 	Neighbours []*AgentGraphNeighbour `json:"neighbours"`
 	Children   int                    `json:"children"`
+
+	// Links is how many links the page has, which is not always how many
+	// came back: a page linked to hundreds of others is given the
+	// strongest, because the drawing cannot hold them all. The count is
+	// here so that a drawing showing some of them can say so, the way it
+	// says how many pages are filed under one it has not opened.
+	Links int `json:"links"`
 }
 
 type SearchAgentGraphArguments struct {
@@ -889,6 +896,7 @@ func (self *graph) AgentGraphNeighbours(ctx context.Context, arguments AgentGrap
 	sort.SliceStable(edges, func(one, two int) bool {
 		return edges[one].Weight > edges[two].Weight
 	})
+	result.Links = len(edges)
 	if len(edges) > neighbourLimit {
 		edges = edges[:neighbourLimit]
 	}

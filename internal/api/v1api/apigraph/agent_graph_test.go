@@ -550,5 +550,10 @@ func TestNeighboursAreCappedAtTheStrongestLinks(t *testing.T) {
 		if weakest <= 0 {
 			t.Errorf("the weakest link returned has weight %v, so the weak ones were kept", weakest)
 		}
+		// And it says how many there really are, so a drawing showing some
+		// of them is not silently showing all it knows.
+		if around.Links != neighbourLimit*4 {
+			t.Errorf("it reports %d links, wanted all %d the page has", around.Links, neighbourLimit*4)
+		}
 	})
 }
