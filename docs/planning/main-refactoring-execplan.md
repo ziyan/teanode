@@ -52,7 +52,8 @@ The submission trace also found that fresh outgoing delivery rows have no retry
 time and depend on immediate dispatch. Identified acceptance must persist a due
 retry time before commit and dispatch through the claim path. Simply removing
 the early commit from `handleOutgoing` is insufficient: domain and alias usage
-counters update in memory before the caller can commit or roll back. Mailbox
+counters updated in memory before the caller could commit or roll back. These
+outgoing and alias counters now use callbacks after successful commit. Mailbox
 delivery also invokes rules, agent and calendar hooks, and out-of-office replies.
 The acceptance extraction must account for those effects and test storage failure
 before wiring the coordinator to the API. No unused acceptance interface is
@@ -781,8 +782,8 @@ is a prerequisite, not a completed send path: no adapter uses it yet.
 
 Next, make the exchange accept into its caller's transaction without early
 commit or immediate delivery, with storage errors refusing acceptance and due
-delivery rows persisted before commit. Defer in-memory usage updates until the
-owning transaction commits; account for nested command rollback. The coordinator
+delivery rows persisted before commit. In-memory outgoing and alias usage now
+waits for the owning transaction's commit and honors nested rollback. The coordinator
 must lock/check the accepted identity before rebuilding message content or
 looking up a draft that reconciliation may already have deleted. Bind the digest
 to the stable server-serialized request parameters, including mailbox and
@@ -799,3 +800,15 @@ their deduplication guarantee after that table is removed.
 Validation update: all four submission database regressions pass under the race
 detector. The full vector-enabled race suite reports 1,818 tests with the
 opt-in Chrome-proxy test skipped. Go lint and `gogolint` pass.
+
+Revision note: `Transaction.AfterCommit` now supports short, non-durable memory
+updates. Root rollback, failed/cancelled commit and failed command savepoints
+discard them. Successful nested commands transfer callbacks to the parent only
+after their savepoint is released. Manual commit consumes a batch once before
+reopening. Outgoing acceptance, local-domain handoff and alias matching use this
+for usage counters; durable delivery and reconciliation continue to require SQL
+queue records. Tests cover nested successes inside rolled-back commands, parent
+rollback/cancellation and manual commit/reopen. The stock PostgreSQL race suite
+reports 1,821 tests with two expected skips. An additional focused mail-path
+regression verifies that alias counters exclude a rolled-back delivery and count
+the successful retry once. Lint and `gogolint` pass.

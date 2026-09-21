@@ -18,6 +18,10 @@ func (self *transaction) TransactionContext(ctx context.Context, function func(T
 	if err := self.tx.WithContext(ctx).Exec("SAVEPOINT " + savepointName).Error; err != nil {
 		return err
 	}
+	nested := &transaction{
+		tx: self.tx.WithContext(ctx), database: self.database, ctx: ctx,
+		actor: self.actor, isNested: true,
+	}
 	hasSucceeded := false
 	defer func() {
 		// Even if a command's shorter deadline expired, undo its writes before
@@ -35,12 +39,12 @@ func (self *transaction) TransactionContext(ctx context.Context, function func(T
 		if releaseErr := cleanup.Exec("RELEASE SAVEPOINT " + savepointName).Error; releaseErr != nil {
 			self.rollbackErr = releaseErr
 			err = errors.Join(err, releaseErr)
+			return
+		}
+		if hasSucceeded {
+			self.afterCommit = append(self.afterCommit, nested.afterCommit...)
 		}
 	}()
-	nested := &transaction{
-		tx: self.tx.WithContext(ctx), database: self.database, ctx: ctx,
-		actor: self.actor, isNested: true,
-	}
 	if err := function(nested); err != nil {
 		return err
 	}

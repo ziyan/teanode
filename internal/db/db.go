@@ -131,6 +131,12 @@ type Database interface {
 type Transaction interface {
 	Commit() error
 
+	// AfterCommit queues a non-durable in-memory update after successful SQL
+	// commit. Rollback discards it, including rollback of a nested command.
+	// Callbacks must be short in-memory operations and must not panic or use
+	// the completed transaction. Durable work belongs in database queue records.
+	AfterCommit(callback func())
+
 	// TransactionContext runs one command under a savepoint on this connection.
 	// A failure rolls back only that command; success remains subject to the
 	// outer transaction's commit. The nested transaction cannot commit early.

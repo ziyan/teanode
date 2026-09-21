@@ -220,20 +220,19 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 			return nil, err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-
 	// track usages
-	self.trackDomainUsage(envelope.ReceivedAt, domain.ID, domainUsage{
+	self.trackDomainUsageAfterCommit(tx, envelope.ReceivedAt, domain.ID, domainUsage{
 		bytesReceived: envelope.Size,
 		mailsAccepted: 1,
 	})
 	if credential != nil {
-		self.trackCredentialUsage(envelope.ReceivedAt, credential.ID, credentialUsage{
+		self.trackCredentialUsageAfterCommit(tx, envelope.ReceivedAt, credential.ID, credentialUsage{
 			bytesReceived: envelope.Size,
 			mailsAccepted: 1,
 		})
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 
 	// create a delivery for each recipient
@@ -290,11 +289,11 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 		// the recipient's address holds a reference to the message that was
 		// sent, which is what "no copies" means.
 		// track usages
-		self.trackDomainUsage(envelope.ReceivedAt, domain.ID, domainUsage{
+		self.trackDomainUsageAfterCommit(tx, envelope.ReceivedAt, domain.ID, domainUsage{
 			bytesSent:           envelope.Size,
 			deliveriesSucceeded: 1,
 		})
-		self.trackDomainUsage(envelope.ReceivedAt, recipientDomain.ID, domainUsage{
+		self.trackDomainUsageAfterCommit(tx, envelope.ReceivedAt, recipientDomain.ID, domainUsage{
 			bytesReceived: envelope.Size,
 			mailsAccepted: 1,
 		})

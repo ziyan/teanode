@@ -222,6 +222,7 @@ type transaction struct {
 
 	isNested    bool
 	rollbackErr error
+	afterCommit []func()
 }
 
 func (self *database) Transaction(f func(Transaction) error) error {
@@ -264,12 +265,24 @@ func (self *transaction) commit() error {
 		return err
 	}
 	self.tx = nil
+	callbacks := self.afterCommit
+	self.afterCommit = nil
+	for _, callback := range callbacks {
+		callback()
+	}
 	return nil
 }
 
 func (self *transaction) rollback() {
+	self.afterCommit = nil
 	if self.tx != nil {
 		self.tx.Rollback()
+	}
+}
+
+func (self *transaction) AfterCommit(callback func()) {
+	if callback != nil {
+		self.afterCommit = append(self.afterCommit, callback)
 	}
 }
 
