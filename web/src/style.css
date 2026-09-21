@@ -8610,29 +8610,6 @@ button.with-icon {
   flex-wrap: wrap;
 }
 
-/* The way back to the top, at the far end of the trail, away from the
-   chevron that goes up a level: the two do different things and a thumb
-   should not find them next to each other. */
-.knowledge-trail-top {
-  margin-left: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-1);
-  background: none;
-  padding: 0 var(--space-2);
-  color: var(--muted);
-  font: inherit;
-  letter-spacing: inherit;
-  /* As with the root above: a form control does not take the row's capitals
-     by itself. */
-  text-transform: inherit;
-  line-height: calc(var(--space-5));
-  cursor: pointer;
-}
-
-.knowledge-trail-top:hover {
-  border-color: var(--muted);
-  color: var(--text);
-}
 
 /* The back button is where the chevron on the row that led here was, so
    the two read as the same door from both sides. */

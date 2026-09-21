@@ -2385,7 +2385,6 @@ export const en = {
   'knowledge.find': 'Search the pages',
   'knowledge.waysIn': 'Ways in',
   'knowledge.root': 'Knowledge',
-  'knowledge.toTop': 'Top',
   'knowledge.levels': 'The folders above this one',
   'knowledge.back': 'Back',
   'knowledge.into': 'What is inside {name}',

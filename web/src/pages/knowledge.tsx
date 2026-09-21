@@ -427,17 +427,6 @@ export function KnowledgePage() {
   // against the path it belongs to, so that going back to it comes back
   // to the list and going anywhere else does not.
   const [walkedInto, setWalkedInto] = useState('')
-  // The scrolling rows, for the way back to the top of a long folder.
-  const [rowsElement, setRowsElement] = useState<HTMLDivElement | null>(null)
-  const goToTop = useCallback(() => {
-    // The rows scroll on their own where there is room for them to; on a
-    // phone they do not, and it is the page that has to move.
-    if (rowsElement && rowsElement.scrollHeight > rowsElement.clientHeight) {
-      rowsElement.scrollTo({ top: 0, behavior: 'smooth' })
-      return
-    }
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }, [rowsElement])
 
   // Desktop with nothing open shows the person's own page.
   const open = at || (onePane ? '' : 'self')
@@ -694,13 +683,6 @@ export function KnowledgePage() {
         <span className="knowledge-trail-name" aria-current="page">
           {folderLabel}
         </span>
-        {/* The way back to the top of a long folder. Walking into one and
-            wanting out of it meant flicking back up through everything
-            first; the trail itself stays put, so the button on it can be
-            reached from anywhere in the list. */}
-        <button type="button" className="knowledge-trail-top" onClick={goToTop} title={t('knowledge.toTop')}>
-          {t('knowledge.toTop')}
-        </button>
       </div>
     ) : null
 
@@ -715,7 +697,7 @@ export function KnowledgePage() {
   const column = (
     <div className="knowledge-list">
       {trail ?? lookup}
-      <div ref={setRowsElement} className="knowledge-list-rows">
+      <div className="knowledge-list-rows">
         {list}
       </div>
     </div>
