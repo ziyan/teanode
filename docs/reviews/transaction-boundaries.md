@@ -155,3 +155,12 @@ a caller transaction. Alias/directive and revocation integration tests confirm
 no active transaction during the provider call and no nested read transaction.
 Mutation and subscription ownership is unchanged. Query field transaction
 failures are independent; a query is not an atomic multi-field command.
+
+Dream page splitting commits one child group at a time. Only committed fact
+moves contribute to its count, including earlier groups when a later one rolls
+back. Duplicate model-selected fact numbers are counted once and cannot satisfy
+the minimum group size by repetition. A trigger-based regression rejects the
+child's consolidation update after fact moves and checks that the failed group
+leaves neither its child nor its fact moves. Dream digest bookkeeping still has
+separate document/read and progress writes, including detached calls without an
+explicit deadline; those remain open for review.

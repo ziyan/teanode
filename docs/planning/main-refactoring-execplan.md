@@ -2347,3 +2347,35 @@ budget, digest splitting, tools, author evidence, merge and attachment regressio
 Both binaries build; repository lint and gogolint pass. The privacy scan finds
 only two moved prompt separator literals, whose bytes are intentionally unchanged.
 No dashboard rendering changes in this extraction.
+
+Page-split review found two related counting failures. A model could repeat one
+fact number enough times to satisfy the minimum child size, and each repeated
+number inflated the reported moves. A transaction that failed after moving facts
+also left its attempted moves in the returned count. Conversely, the phase
+discarded the count of earlier committed groups when a later group failed.
+Selection now counts unique numbers per group; committed groups alone contribute
+to the returned count, and the phase retains their count even on a later error.
+Each group remains its own transaction, preserving successful earlier groups.
+
+The new regression uses a local scripted provider and a database trigger that
+rejects consolidation after moves have been attempted. It covers duplicate-only
+groups, duplicates within valid groups, overlapping groups, full rollback,
+partial completion and the phase's retained count. It checks persisted child
+pages and fact locations as well as reported counts. The fixed implementation
+passes the focused race run. Digest progress atomicity and bounded detached
+bookkeeping remain separate open findings.
+
+Restoring the pre-fix split implementation under the new regression produced
+failures for all five faulty cases: a duplicate-only group moved one stored fact
+and reported three; a valid group with a repeat reported four instead of three;
+a rolled-back group reported three; a later failed group reported six instead
+of the three committed moves; and the phase lost all three earlier committed
+moves. The fixed source was restored before broader validation.
+
+Combined dream extraction and split-fix validation passes: standard PostgreSQL
+runs 2,035 tests with two expected skips and 42.4% aggregate coverage; vector
+PostgreSQL runs 2,035 tests with one expected skip and 42.5% coverage. The focused
+split regression passes with the race detector, both binaries build, repository
+lint and gogolint pass, and the added-text privacy scan is clean. The browser
+endpoint integration test remains skipped in these database-only runs; the
+separate final Chrome and deployment gates are still open.

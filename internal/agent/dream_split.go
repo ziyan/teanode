@@ -48,11 +48,11 @@ func (self *Agent) dreamSplit(ctx context.Context, run *Run, record *models.Agen
 			return
 		}
 		moved, err := self.splitPage(ctx, run, budget, page)
+		record.Moved += moved
 		if err != nil {
 			log.Warningf("cannot divide %q: %s", page.Path, err)
 			continue
 		}
-		record.Moved += moved
 	}
 }
 
@@ -110,9 +110,11 @@ func (self *Agent) splitPage(ctx context.Context, run *Run, budget *dreamBudget,
 			continue
 		}
 		var chosen []*models.AgentFact
+		selectedNumbers := map[int]bool{}
 		for _, number := range group.Facts {
-			if fact := byNumber[number]; fact != nil && !taken[number] {
+			if fact := byNumber[number]; fact != nil && !taken[number] && !selectedNumbers[number] {
 				chosen = append(chosen, fact)
+				selectedNumbers[number] = true
 			}
 		}
 		if len(chosen) < splitLeast {
@@ -123,6 +125,7 @@ func (self *Agent) splitPage(ctx context.Context, run *Run, budget *dreamBudget,
 		if page.Path == models.PathSelf {
 			kind = models.NodeTopic
 		}
+		var movedNumbers []int
 		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 			tx.AsActor(models.ActorDream)
 			child, err := tx.GetAgentNode(run.Agent.ID, childPath)
@@ -147,8 +150,7 @@ func (self *Agent) splitPage(ctx context.Context, run *Run, budget *dreamBudget,
 					}
 					return err
 				}
-				taken[fact.Number] = true
-				moved++
+				movedNumbers = append(movedNumbers, fact.Number)
 			}
 			// Both pages are due a fresh opening.
 			if err := tx.MarkAgentNodeConsolidated(child.ID, time.Time{}); err != nil {
@@ -158,7 +160,13 @@ func (self *Agent) splitPage(ctx context.Context, run *Run, budget *dreamBudget,
 		}); err != nil {
 			return moved, err
 		}
-		log.Noticef("divided %s: %d facts now under %s", page.Path, len(chosen), childPath)
+		// A later group may fail after earlier groups committed. Report only
+		// committed moves, and keep their facts out of subsequent groups.
+		for _, number := range movedNumbers {
+			taken[number] = true
+		}
+		moved += len(movedNumbers)
+		log.Noticef("divided %s: %d facts now under %s", page.Path, len(movedNumbers), childPath)
 	}
 	return moved, nil
 }
