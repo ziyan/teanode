@@ -72,6 +72,22 @@ func mediaLinkFromModel(model *mediaLinkModel) *models.MediaLink {
 }
 
 func (self *database) CreateMediaLink(link *models.MediaLink) (*models.MediaLink, error) {
+	return createMediaLink(self.db, link)
+}
+
+func (self *transaction) CreateMediaLink(link *models.MediaLink) (*models.MediaLink, error) {
+	var created *models.MediaLink
+	// A tracking link is optional. Preserve a usable enclosing transaction
+	// when the caller falls back to the image's ordinary address on failure.
+	err := self.TransactionContext(self.ctx, func(command Transaction) error {
+		var err error
+		created, err = createMediaLink(command.(*transaction).tx, link)
+		return err
+	})
+	return created, err
+}
+
+func createMediaLink(query *gorm.DB, link *models.MediaLink) (*models.MediaLink, error) {
 	now := time.Now().UTC()
 	model := &mediaLinkModel{
 		Token:      link.Token,
@@ -80,7 +96,7 @@ func (self *database) CreateMediaLink(link *models.MediaLink) (*models.MediaLink
 		MediaID:    link.MediaID,
 		EnvelopeID: link.EnvelopeID,
 	}
-	if err := self.db.Create(model).Error; err != nil {
+	if err := query.Create(model).Error; err != nil {
 		return nil, err
 	}
 	return mediaLinkFromModel(model), nil

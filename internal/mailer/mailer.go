@@ -94,6 +94,10 @@ type Mailer interface {
 	// credential — and comes back filled in.
 	Send(ctx context.Context, envelope *mailparse.Envelope, message *Message) error
 
+	// AcceptSubmission composes and prepares mailbox acceptance on the caller's
+	// transaction. Nothing is dispatched until its queued deliveries commit.
+	AcceptSubmission(ctx context.Context, transaction db.Transaction, envelope *mailparse.Envelope, message *Message) (*models.Mail, error)
+
 	// Compose builds the message as Send would and returns it instead of
 	// sending it, for a draft that is stored as the message it will become.
 	Compose(ctx context.Context, message *Message) (*Composed, error)
@@ -301,6 +305,13 @@ func (self *mailer) Send(ctx context.Context, envelope *mailparse.Envelope, mess
 	if err != nil {
 		return err
 	}
+	if err := prepareEnvelope(envelope, message, composed); err != nil {
+		return err
+	}
+	return self.exchange.HandleEnvelope(ctx, envelope)
+}
+
+func prepareEnvelope(envelope *mailparse.Envelope, message *Message, composed *Composed) error {
 	envelope.DomainID = composed.Domain.ID
 	envelope.Sender = message.From
 
@@ -335,15 +346,25 @@ func (self *mailer) Send(ctx context.Context, envelope *mailparse.Envelope, mess
 	if envelope.IP == nil {
 		envelope.IP = net.IPv4(127, 0, 0, 1)
 	}
-	return self.exchange.HandleEnvelope(ctx, envelope)
+	return nil
 }
 
 func (self *mailer) Compose(ctx context.Context, message *Message) (*Composed, error) {
+	var composed *Composed
+	err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		var err error
+		composed, err = self.compose(transaction, message)
+		return err
+	})
+	return composed, err
+}
+
+func (self *mailer) compose(transaction db.Transaction, message *Message) (*Composed, error) {
 	// Said rather than guessed. This used to fall back to a configured
 	// "primary" domain when the envelope named no sender, which meant a
 	// caller that forgot would send as some arbitrary domain instead of
 	// being told.
-	if message.From == "" {
+	if message == nil || message.From == "" {
 		return nil, fmt.Errorf("mailer: the message names no sender")
 	}
 	senderAddress, err := mailparse.ParseAddress(message.From)
@@ -352,16 +373,12 @@ func (self *mailer) Compose(ctx context.Context, message *Message) (*Composed, e
 	}
 	message.From = senderAddress
 	_, domainDomain := mailparse.SplitAddress(senderAddress)
-	var domain *models.Domain
-	var domains []*models.Domain
-	if err := self.database.Transaction(func(tx db.Transaction) error {
-		var err error
-		if domain, err = tx.GetDomainByName(domainDomain); err != nil {
-			return err
-		}
-		domains, err = tx.ListDomains()
-		return err
-	}); err != nil {
+	domain, err := transaction.GetDomainByName(domainDomain)
+	if err != nil {
+		return nil, err
+	}
+	domains, err := transaction.ListDomains()
+	if err != nil {
 		return nil, err
 	}
 	if domain == nil {
@@ -381,7 +398,7 @@ func (self *mailer) Compose(ctx context.Context, message *Message) (*Composed, e
 	// arrives unstyled. Done here rather than by the caller so that it holds
 	// for everything this server sends -- what a person wrote in the
 	// composer, what their agent drafted, what a template rendered.
-	html := self.rewriteMedia(id, domain, domains, inlineStyles(message.HTML))
+	html := self.rewriteMedia(transaction, id, domain, domains, inlineStyles(message.HTML))
 
 	var body bytes.Buffer
 	bodyHeaders, err := mailparse.Compose(&body, []byte(message.Text), []byte(html), message.Attachments)

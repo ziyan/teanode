@@ -33,7 +33,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): mutation retry protection, disjoint delivery claims, storage modes, submission persistence and transactional exchange acceptance are implemented; mailer/coordinator/API integration, recovery worker and client retry identities remain.
+- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition and the submission coordinator are implemented; public API integration, recovery worker, prompt dispatch and client retry identities remain.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes; mailbox drafts/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
@@ -844,12 +844,11 @@ including a message addressed to its own sender. The entire mail-exchange test
 package passes under the race detector. The mailer and public adapters still use
 legacy sending and must be connected before this changes their acceptance path.
 
-Next integration detail: `mailer.Compose` opens a separate lookup transaction,
-and `rewriteMedia` reads media and creates tracking links directly on the root
-database. The identified submission path must reuse its command transaction for
-both, while preserving optional-image fallback behavior with a savepoint if a
-media-link write fails. Check an accepted identity before composing, since MIME
-identifiers and media tokens change on each composition. The delivery poll is
+Composition now uses a supplied transaction for domain and media lookup and
+tracking-link creation. Optional media-link writes use a savepoint so failure
+preserves image fallback behavior without aborting acceptance. The coordinator
+checks an accepted identity before composing, since MIME identifiers and media
+tokens change on each composition. The delivery poll is
 currently eight records per minute, and a failed storage reload keeps its
 two-hour claim. Before routing normal sends through it, add prompt bounded
 dispatch and a retry policy for storage outages that cannot overwrite a newer
@@ -861,3 +860,40 @@ page-size change pass. The earlier conversion annotation is gone.
 Validation update: the full vector-enabled race suite reports 1,828 tests with
 the opt-in Chrome-proxy test skipped after transactional exchange acceptance
 and storage-read dispatch protection. Go lint and `gogolint` pass.
+
+Revision note: `Mailer.AcceptSubmission` now composes and accepts on its caller's
+command scope, including media links. `Compose` also uses context-aware SQL and
+the same composition implementation. Tests prove that composition sees an
+uncommitted domain edit, failed acceptance rolls back generated media links and
+mail, and a real SQL constraint failure in an optional media-link write does not
+abort acceptance. Bcc remains on the envelope and absent from message headers.
+The full vector-enabled race suite passes at this stage: 1,832 tests, one skip.
+
+Revision note: `SubmissionCoordinator.Submit` now checks mailbox ownership and
+send permission, validates draft/reply/forward references, binds the stable
+request bytes and bookkeeping references to an identifier, and returns an
+accepted record before invoking the preparation callback on replay. Callers
+without an identifier get a new one for each call. Preparation is deliberately
+lazy: retrying must not reload an already deleted draft. The request bytes must
+be serialized by the server adapter from its input, never supplied as a client
+digest. Generated MIME identifiers, dates and media tokens stay out of the hash.
+Hashing streams those bytes rather than making another base64-encoded copy.
+
+Coordinator regressions cover concurrent retries sharing one acceptance,
+replay after draft and mail deletion, refusal of changed content or bookkeeping,
+retry after failed acceptance, permission and reference ownership, and legacy
+calls without an identifier remaining separate sends. The stock PostgreSQL
+race suite reports 1,835 tests with two expected skips before the final two
+ownership/legacy regressions; the complete mailer race suite passes with those
+tests and the final hashing change. Lint and `gogolint` pass.
+
+Next, wire the public send adapter to the coordinator and supply recovery for
+its pending records. Do not reuse `removeDraft` unchanged: it deletes message
+bytes before the caller commits, so a later rollback can restore a draft with
+missing content. Reconciliation should remove the item transactionally and let
+retention remove unreferenced bytes. Preserve held-agent-reply cancellation and
+its feedback when extracting this command; `agent.RecordReplyDeclined` currently
+owns that feedback. The public adapter must map `ErrSubmissionConflict` to an
+invalid-arguments response and retain the existing Mail/Item result shape.
+The existing public and agent send paths still use legacy `Send`; the service
+tests do not establish completion of their integration or recovery gates.
