@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -34,8 +35,8 @@ type submissionModel models.Submission
 func (self *submissionModel) TableName() string { return "mail_submission" }
 
 func validateSubmissionIdentity(ownerId, submissionId string) error {
-	if ownerId == "" || len(ownerId) > 32 || submissionId == "" || len(submissionId) > 128 {
-		return fmt.Errorf("invalid submission identity")
+	if ownerId == "" || len(ownerId) > 32 || submissionId == "" || len(submissionId) > 128 || strings.ContainsRune(submissionId, 0) {
+		return fmt.Errorf("%w: invalid submission identity", ErrInvalidArguments)
 	}
 	return nil
 }

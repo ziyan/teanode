@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -17,7 +18,6 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/mx"
 	"github.com/ziyan/teanode/internal/storage"
-	"github.com/ziyan/teanode/internal/util/aggregate"
 	"github.com/ziyan/teanode/internal/util/mailparse"
 	"github.com/ziyan/teanode/internal/util/security"
 )
@@ -92,6 +92,8 @@ type MailboxMessageParameters struct {
 
 type SendMailboxMessageArguments struct {
 	MailboxID string `json:"mailboxId"`
+	// SubmissionID is retained for retries of one send; changing its content is refused.
+	SubmissionID string `json:"submissionId" graphapi:"nullable"`
 
 	Message MailboxMessageParameters `json:"message"`
 }
@@ -156,102 +158,80 @@ const (
 // permission is mail:send; the address is the mailbox's own, so a person
 // sends as who they are and not as whoever they name.
 func (self *graph) SendMailboxMessage(ctx context.Context, arguments SendMailboxMessageArguments) (*SendMailboxMessageReturnValue, error) {
-	mailbox, err := self.requireMailbox(ctx, models.PermissionMailSend, arguments.MailboxID)
+	principal, err := self.requirePermission(ctx, models.PermissionMailSend)
 	if err != nil {
 		return nil, err
 	}
-	tx := self.transaction(ctx)
 	parameters := &arguments.Message
-	message, domain, err := self.buildMailboxMessage(ctx, tx, mailbox, parameters, nil)
+	requestContent, err := json.Marshal(parameters)
 	if err != nil {
 		return nil, err
 	}
-	if len(message.To)+len(message.Cc)+len(message.Bcc) == 0 {
-		return nil, fmt.Errorf("%w: a message needs a recipient", api.ErrInvalidArguments)
+	request := mailer.SubmissionRequest{
+		SubmissionID: arguments.SubmissionID, MailboxID: arguments.MailboxID, RequestContent: requestContent,
+		DraftItemID: parameters.DraftItemID, ReplyItemID: parameters.ReplyToItemID, ForwardItemID: parameters.ForwardItemID,
 	}
-	if strings.TrimSpace(message.Text) == "" && strings.TrimSpace(message.HTML) == "" && len(message.Attachments) == 0 {
-		return nil, fmt.Errorf("%w: a message needs a body or an attachment", api.ErrInvalidArguments)
-	}
-
-	// Threading. In-Reply-To names the message answered; References carries
-	// its own references plus itself, which is how a thread stays one.
-	replied, threading, err := self.threadingHeaders(ctx, mailbox, parameters.ReplyToItemID)
-	if err != nil {
-		return nil, err
-	}
-	message.Headers = append(message.Headers, threading...)
-	var forwarded *models.MailboxItem
-	if parameters.ForwardItemID != "" {
-		item, _, err := self.requireOwnItem(ctx, mailbox, parameters.ForwardItemID)
+	var response *SendMailboxMessageReturnValue
+	err = self.transaction(ctx).TransactionContext(ctx, func(command db.Transaction) error {
+		outcome, err := mailer.NewSubmissionCoordinator(command, self.mailer).Submit(ctx, principal, request, func(ctx context.Context, preparation db.Transaction, mailbox *models.Mailbox) (*mailparse.Envelope, *mailer.Message, error) {
+			ctx = api.ContextWithTransaction(ctx, preparation)
+			message, _, err := self.buildMailboxMessage(ctx, preparation, mailbox, parameters, nil)
+			if err != nil {
+				return nil, nil, err
+			}
+			if len(message.To)+len(message.Cc)+len(message.Bcc) == 0 {
+				return nil, nil, fmt.Errorf("%w: a message needs a recipient", api.ErrInvalidArguments)
+			}
+			if strings.TrimSpace(message.Text) == "" && strings.TrimSpace(message.HTML) == "" && len(message.Attachments) == 0 {
+				return nil, nil, fmt.Errorf("%w: a message needs a body or an attachment", api.ErrInvalidArguments)
+			}
+			_, threading, err := self.threadingHeaders(ctx, mailbox, parameters.ReplyToItemID)
+			if err != nil {
+				return nil, nil, err
+			}
+			message.Headers = append(message.Headers, threading...)
+			envelope := self.envelopeFromRequest(ctx)
+			envelope.MailboxID = mailbox.ID
+			return envelope, message, nil
+		})
 		if err != nil {
-			return nil, err
+			return err
 		}
-		forwarded = item
-	}
-
-	envelope := self.envelopeFromRequest(ctx)
-	envelope.MailboxID = mailbox.ID
-	if err := self.mailer.Send(ctx, envelope, message); err != nil {
-		return nil, err
-	}
-
-	// Sent. What remains is bookkeeping in the caller's transaction: the
-	// answered and forwarded flags, and the draft this was written from.
-	yes := true
-	if replied != nil {
-		if _, err := tx.SetItemFlags([]string{replied.ID}, models.MailboxItemFlags{Answered: &yes}); err != nil {
-			return nil, err
-		}
-	}
-	if forwarded != nil {
-		if _, err := tx.SetItemFlags([]string{forwarded.ID}, models.MailboxItemFlags{Forwarded: &yes}); err != nil {
-			return nil, err
-		}
-	}
-	if parameters.DraftItemID != "" {
-		if err := self.removeDraft(ctx, tx, mailbox, parameters.DraftItemID); err != nil {
-			return nil, err
-		}
-	}
-
-	mails, err := tx.ListMails(domain.ID, &db.Options{
-		Limit:   1,
-		Columns: mailColumns,
-		Aggregations: aggregate.Pipeline{{Match: &aggregate.Filter{
-			Operation: aggregate.OperationEqual,
-			Field:     "envelopeId",
-			Value:     &envelope.ID,
-		}}},
-	})
-	if err != nil {
-		return nil, err
-	}
-	if len(mails) == 0 {
-		log.Warningf("sent envelope %q but found no stored mail for it", envelope.ID)
-		return &SendMailboxMessageReturnValue{}, nil
-	}
-
-	// The copy in Sent, if the delivery has filed one by now. Not an error
-	// when it is missing: the message has gone, which is what was asked for,
-	// and the caller has a folder to fall back to.
-	value := &SendMailboxMessageReturnValue{Mail: mails[0]}
-	sent, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindSent)
-	if err != nil {
-		return nil, err
-	}
-	if sent != nil {
-		items, err := tx.ListItemsByMail(mails[0].ID)
+		accepted := outcome.Submission
+		stored, err := command.GetMail(accepted.MailID, &db.Options{Columns: mailColumns})
 		if err != nil {
-			return nil, err
+			return err
 		}
-		for _, item := range items {
-			if item.FolderID == sent.ID {
-				value.Item = item
-				break
+		item, err := command.GetItem(accepted.SentItemID)
+		if err != nil {
+			return err
+		}
+		if item != nil {
+			folder, err := command.GetFolder(item.FolderID)
+			if err != nil {
+				return err
+			}
+			if folder == nil || folder.MailboxID != accepted.MailboxID || item.MailID != accepted.MailID {
+				item = nil
 			}
 		}
+		// Mail and its Sent item can have been deleted since acceptance. A replay
+		// still succeeds with the existing nullable response fields, without resending.
+		response = &SendMailboxMessageReturnValue{Mail: stored, Item: item}
+		if err := mailer.NewSubmissionReconciler(command).Reconcile(ctx, accepted.OwnerID, accepted.SubmissionID); err != nil {
+			// The failed savepoint keeps acceptance and pending recovery intact. The
+			// background worker completes it after this caller commits.
+			log.Warningf("cannot reconcile accepted submission %q immediately: %s", accepted.SubmissionID, err)
+		}
+		return nil
+	})
+	if errors.Is(err, mailer.ErrSubmissionConflict) {
+		return nil, fmt.Errorf("%w: submission identifier already used for different content", api.ErrInvalidArguments)
 	}
-	return value, nil
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return response, nil
 }
 
 // SaveMailboxDraft stores what is being written as a message in Drafts,

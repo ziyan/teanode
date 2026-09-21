@@ -33,7 +33,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; public API integration and client retry identities remain; bounded dispatch now wakes on commit.
+- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; client retry identities and remaining send adapters remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
@@ -131,6 +131,15 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: the mailbox send resolver accepts an optional `submissionId`, serializes
+its typed message parameters on the server and delegates acceptance to the shared
+coordinator inside its own command scope. It reads the original Mail/Item result
+before best-effort reconciliation; failed reconciliation remains durable pending
+work instead of turning an accepted send into a reported send failure. Replays
+whose original mail has been deleted by retention return the existing nullable fields,
+not a new acceptance. Missing identifiers retain legacy per-call behavior. Date:
+2026-09-21.
 
 Decision: queued deliveries use one draining loop per exchange, with no more than
 one claimed batch of eight deliveries active. An acceptance commit sends a
@@ -1012,3 +1021,39 @@ Validation update: the complete vector-enabled race suite passes after queued
 dispatch changes, with 1,847 tests and one expected skip. The focused exchange
 and database race suites, lint and `gogolint` pass. Remote checks on the preceding
 recovery commit are green. Public adapter and client identity work remain.
+
+Revision note: `SendMailboxMessage` now uses `SubmissionCoordinator` and immediate
+`SubmissionReconciler` work in its enclosing transaction. Message preparation,
+including draft attachments and threading lookups, runs only for a new identity
+and uses the coordinator's transaction via `ContextWithTransaction`. The adapter
+maps content conflicts and invalid identifier lengths/NUL bytes to invalid
+arguments. The response still contains Mail and Item, with their original IDs on
+retry; retention can make either nullable field empty without resending. Tests
+cover accepted send plus failed final reconciliation SQL, later recovery and
+replay after draft deletion, changed-content refusal, replay after mail deletion,
+parent rollback and retry, invalid identifiers before acceptance, and validation
+of both legacy and identified GraphQL documents.
+
+The remaining client work must retain both the identifier and exact request for
+an uncertain send. Dashboard autosave rewrites draft identifiers, so simply
+hashing the latest editor state or generating a new identifier on each click
+would still duplicate an accepted message after a lost response. Coordinate
+pending-send state with autosave and deliberate edits, and cover retry through
+Chrome. The mail-send agent tool currently calls this resolver without an
+identifier. The direct CLI mail command instead calls domain-scoped `SendMail`,
+which still uses legacy acceptance; its identity and authorization path needs
+explicit treatment, not an assumption that it uses the mailbox endpoint.
+
+Review also found that the held auto-reply sender reads its status before policy
+checks, then unconditionally marks it Sending later. A cancellation between those
+steps can be overwritten. During agent-send integration, require the held-to-sending
+transition under its row lock and make human takeover of a held draft part of
+acceptance, so delayed or failed draft reconciliation cannot leave the automatic
+reply eligible. Preserve the distinction between human takeover feedback and an
+agent completing its own draft. These gates remain open in Milestone 4.
+
+Validation update: the complete stock PostgreSQL race suite passes with the
+mailbox send adapter, 1,851 tests and two expected skips. Focused API, coordinator
+and persistence regressions pass. Lint and `gogolint` pass. Client identity
+retention, held-reply transition correctness, the remaining send paths and the
+final visual/deployment gates are still required.
