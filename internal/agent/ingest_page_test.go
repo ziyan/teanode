@@ -73,3 +73,41 @@ func TestIngestionAttachmentMetadataFailureDoesNotCompletePage(test *testing.T) 
 		test.Fatalf("failed attachment advanced: %q, %v", next, err)
 	}
 }
+
+func TestDocumentReplacementClearsSymbolsAtomically(test *testing.T) {
+	database, worker, run, source := ingestionPageFixture(test)
+	original := computer.ScanEntry{ExternalID: "fixture.go", Kind: "file", Hash: "original-hash", Text: "Original searchable content.", Symbols: []computer.ScanSymbol{{Symbol: "OriginalFunction", Kind: "function", Line: 1}}}
+	if _, err := worker.fileDocument(test.Context(), run, source, original, ""); err != nil {
+		test.Fatal(err)
+	}
+	replacement := original
+	replacement.Hash = "replacement-hash"
+	replacement.Text = "Replacement searchable content."
+	replacement.Symbols = nil
+	dbtest.Exec(test, database, `CREATE FUNCTION refuse_symbol_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture symbol failure'; END $$`)
+	dbtest.Exec(test, database, `CREATE TRIGGER refuse_symbol_delete BEFORE DELETE ON agent_symbol FOR EACH ROW EXECUTE FUNCTION refuse_symbol_delete()`)
+	if _, err := worker.fileDocument(test.Context(), run, source, replacement, ""); err == nil {
+		test.Fatal("symbol deletion failure did not fail replacement")
+	}
+	if hash := dbtest.QueryString(test, database, `SELECT hash FROM agent_document`); hash != original.Hash {
+		test.Fatalf("failed replacement changed hash: %s", hash)
+	}
+	if content := dbtest.QueryString(test, database, `SELECT text FROM agent_chunk`); content != original.Text {
+		test.Fatalf("failed replacement changed content: %s", content)
+	}
+	if symbolCount := dbtest.QueryString(test, database, `SELECT count(*)::text FROM agent_symbol`); symbolCount != "1" {
+		test.Fatalf("failed replacement lost symbols: %s", symbolCount)
+	}
+	dbtest.Exec(test, database, `DROP TRIGGER refuse_symbol_delete ON agent_symbol`)
+	for range 2 {
+		if _, err := worker.fileDocument(test.Context(), run, source, replacement, ""); err != nil {
+			test.Fatal(err)
+		}
+	}
+	if symbolCount := dbtest.QueryString(test, database, `SELECT count(*)::text FROM agent_symbol`); symbolCount != "0" {
+		test.Fatalf("obsolete symbols survived: %s", symbolCount)
+	}
+	if documentCount := dbtest.QueryString(test, database, `SELECT count(*)::text FROM agent_document`); documentCount != "1" {
+		test.Fatalf("replay documents: %s", documentCount)
+	}
+}

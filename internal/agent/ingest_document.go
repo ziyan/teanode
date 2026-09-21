@@ -89,17 +89,15 @@ func (self *Agent) fileDocument(ctx context.Context, run *Run, source *models.Ag
 			return err
 		}
 		written = len(chunks)
-		if len(entry.Symbols) > 0 {
-			symbols := make([]*models.AgentSymbol, 0, len(entry.Symbols))
-			for _, symbol := range entry.Symbols {
-				symbols = append(symbols, &models.AgentSymbol{
-					AgentID: source.AgentID, DocumentID: document.ID,
-					Symbol: symbol.Symbol, Kind: symbol.Kind, Line: symbol.Line,
-				})
-			}
-			if err := tx.ReplaceAgentSymbols(source.AgentID, document.ID, symbols); err != nil {
-				return err
-			}
+		symbols := make([]*models.AgentSymbol, 0, len(entry.Symbols))
+		for _, symbol := range entry.Symbols {
+			symbols = append(symbols, &models.AgentSymbol{
+				AgentID: source.AgentID, DocumentID: document.ID,
+				Symbol: symbol.Symbol, Kind: symbol.Kind, Line: symbol.Line,
+			})
+		}
+		if err := tx.ReplaceAgentSymbols(source.AgentID, document.ID, symbols); err != nil {
+			return err
 		}
 		return nil
 	})

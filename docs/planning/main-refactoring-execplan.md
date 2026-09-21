@@ -1992,3 +1992,17 @@ detector against the disposable vector database. The separate concurrent
 revocation regression also passes. Both binaries, repository lint and gogolint
 pass. Privacy review covers the new source guard and regression files. No
 presentation changes require a new Chrome audit at this checkpoint.
+
+
+Document replacement review found that an empty new symbol list skipped symbol
+replacement, leaving definitions from the previous file version searchable.
+Replacement now writes the complete symbol set, including the empty set, in the
+same transaction as the document and chunks. The regression injects failure
+while deleting old symbols, verifies rollback of all three, then retries the
+symbol-free document twice and verifies one document with no obsolete symbols.
+
+Document-replacement validation: the full standard-PostgreSQL race suite passes
+1,987 tests with two expected skips. Focused rollback/replay regressions, both
+binary builds, repository lint and gogolint pass. The transaction-boundary review
+now records current calendar recovery and ingestion guarantees without claiming
+page/cursor atomicity. The broader milestone remains in progress.

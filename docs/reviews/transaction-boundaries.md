@@ -111,5 +111,16 @@ command savepoints that include the occurrence index and invitation/cancellation
 acceptance. Mail dispatch runs from committed delivery rows. The prior guest
 list comes from the locked event rather than an earlier API read. RSVP responses
 now update participation and accept reply mail through the same event command.
-New field-based event creation and RSVP requests do not yet retain a caller
-identity across a lost response.
+Calendar save/delete and RSVP requests now retain caller identities in receipts
+that survive event deletion. Dashboard recovery resolves those receipts before
+retrying, and cancellation prevents an unresolved identity from executing later.
+
+
+Ingestion now locks the current source before document, chunk and symbol
+replacement, seen-marker writes, graph filing, cursor updates and unseen-document
+sweeping. Source revocation or configuration changes reject the old job's writes.
+A document replacement writes all three representations in one transaction,
+including deletion of all symbols when the new file has none. Failed page writes
+prevent cursor advancement, and committed entries can be replayed by external ID.
+Page effects and the cursor are still separate transactions; typed page completion
+and the remaining model-driven effects need further review.
