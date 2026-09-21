@@ -636,15 +636,16 @@ export function KnowledgePage() {
   //
   // The name of the top is a way back to it once there is more than one
   // level to climb, since the chevron only ever goes up by one.
-  // Every level, not the top and the bottom. It used to show the root and
-  // the folder open and nothing between, so `work/mujin` read as MUJIN
-  // filed directly under KNOWLEDGE: the trail said a path that did not
-  // exist, and the one level that would have explained where you were was
-  // the level it left out. Each is a way back to itself.
+  // Every level of the path, and nothing above it. It used to show the word
+  // KNOWLEDGE and the folder open and nothing between, so `work/mujin` read
+  // as MUJIN filed directly under KNOWLEDGE: a path that does not exist,
+  // missing the one level that said where you were. The word itself is not
+  // a level, it is the name of the page this already is, so it is gone and
+  // the levels that are real are each a way back to themselves.
   //
-  // Deep enough and the middle is an ellipsis rather than a line that
-  // wraps three times on a phone, keeping the root, the parent and the
-  // folder open, which are the ones anybody climbs to.
+  // Deep enough and the middle is an ellipsis rather than a line that wraps
+  // three times on a phone, keeping the first, the parent and the folder
+  // open, which are the ones anybody climbs to.
   const segments = folder ? folder.split('/').filter(Boolean) : []
   const ancestors = segments.map((segment, index) => ({
     path: segments.slice(0, index + 1).join('/'),
@@ -667,9 +668,6 @@ export function KnowledgePage() {
         >
           <ChevronLeftIcon size={16} />
         </button>
-        <button type="button" className="knowledge-trail-root" onClick={() => goTo('', true)}>
-          {t('knowledge.root')}
-        </button>
         {shown.map((step, index) =>
           step === null ? (
             <span key={`gap-${index}`} className="knowledge-trail-gap" aria-hidden="true">
@@ -677,13 +675,13 @@ export function KnowledgePage() {
             </span>
           ) : (
             <span key={step.path} className="knowledge-trail-step">
-              <span aria-hidden="true">/</span>{' '}
+              {index > 0 ? <span aria-hidden="true">/</span> : null}
               {step.last ? (
                 <span className="knowledge-trail-name" aria-current="page">
                   {step.label}
                 </span>
               ) : (
-                <button type="button" className="knowledge-trail-root" onClick={() => goTo(step.path, true)}>
+                <button type="button" className="knowledge-trail-link" onClick={() => goTo(step.path, true)}>
                   {step.label}
                 </button>
               )}
