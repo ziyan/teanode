@@ -2215,10 +2215,10 @@ function DreamCard({
           reading ? (
             <ReadingBar
               reading={reading}
-              // Grouped, like the two counts above it in the same row.
-              // "150294 documents wait" sat under "291,782 of 442,076
-              // documents read", and a number a person has to count the
-              // digits of is one they read twice.
+              // Grouped, like the two counts above it in the same row: an
+              // ungrouped six-digit count sat under a grouped one, and a
+              // number a person has to count the digits of is one they
+              // read twice.
               hint={
                 backlog > 0
                   ? t('agent.bootstrapHint', { count: backlog.toLocaleString() })

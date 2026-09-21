@@ -813,10 +813,9 @@ func filesOfScan(t *testing.T, root string) map[string]bool {
 // A checkout's tracked files are not the files worth reading, and the
 // difference is the dependencies somebody else wrote. The walk skips
 // vendor/ and its kind; git lists them, because they are committed. A
-// repository read through git therefore filed every one of them: on one
-// deployment 34,279 of 86,911 file documents were under those
-// directories, and half of what the agent had learned was about Go's
-// vendored golang.org/x/sys.
+// repository read through git therefore filed every one of them, and a
+// large share of everything the agent had learned came from vendored
+// third-party code rather than from anything the person wrote.
 func TestVendoredFilesAreNotOfferedByARepository(t *testing.T) {
 	committed := map[string]string{
 		"arm.py":                                "def grip(): pass\n",
@@ -1625,11 +1624,10 @@ func TestThePaceOfTheHistoryIsTheSourcesToChoose(t *testing.T) {
 // else's checkout and its files are not read; a small repository that is
 // genuinely theirs still is.
 //
-// The rule used to be any commit at all, and one drive-by commit
-// defeated it. Over the tree it was measured on, 59 checkouts holding
-// exactly one commit of the person's admitted 129,306 files, 39% of
-// everything the source read, the largest of them a fork of linux-stable
-// admitting 70,766 files on the strength of one.
+// The rule used to be any commit at all, and one drive-by commit defeated
+// it: a checkout holding exactly one commit of the person's admitted its
+// whole tree, and a fork of a large upstream project admits tens of
+// thousands of files on the strength of that one.
 func TestOneCommitInSomebodyElsesHistoryIsNotTheirWork(t *testing.T) {
 	root := t.TempDir()
 	// Theirs: small, and every commit in it is their own.

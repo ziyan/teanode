@@ -205,21 +205,21 @@ func pageIdentity(path string, kind models.AgentNodeKind, name string) (string, 
 	if !models.IsAgentNodeKind(kind) {
 		kind = kindOfPath(path)
 	}
-	// The root of the graph is folders and the person's own page. A
-	// model that files a fact at "mc" -- a chat channel's name cut to a
-	// slug -- made a page beside people/ and projects/ that nothing lists
-	// under a folder and the dashboard cannot move or merge, since those
-	// are hidden on a root. It goes under the folder its kind belongs to.
+	// The root of the graph is folders and the person's own page. A page
+	// filed straight at the root sits beside people/ and projects/, where
+	// nothing lists it under a folder and the dashboard can neither move
+	// nor merge it, since those are hidden on a root. It goes under the
+	// folder its kind belongs to instead.
 	if !strings.Contains(path, "/") && path != models.PathSelf && kind != models.NodeFolder {
 		path = models.JoinPath(folderOfKind(kind), path)
 	}
 	// A root folder said twice. A model reading a directory of people, in
 	// a source that keeps them under a folder of its own, files the first
-	// one at "people/people/alice-chen": the prompt's rule and the
-	// document's own shelf, one after the other. Nine pages arrived that
-	// way in one night, three of them a second copy of somebody who
-	// already had a page, so their facts stood apart and a question about
-	// either found half of them. The segments after the first are the
+	//	one at "people/people/alice-chen": the prompt's rule and the
+	// document's own shelf, one after the other. A page filed that way is
+	// a second copy of somebody who already has one, so their facts stand
+	// apart and a question about either finds half of them. The segments
+	// after the first are the
 	// person's to arrange, so only the repeat at the front is taken.
 	path = withoutTheRepeatedFolder(path)
 	name = strings.TrimSpace(name)

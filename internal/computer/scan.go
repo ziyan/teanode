@@ -100,12 +100,10 @@ const (
 	//
 	// The bar used to be a single commit. That is not authorship, it is
 	// a visit, and it let back in exactly what the rule was written to
-	// keep out: over the tree this was measured on, 59 checkouts holding
-	// one commit of the person's admitted 129,306 files, 39% of
-	// everything read. The largest was a fork of linux-stable -- 70,766
-	// files on the strength of one commit -- and after it a fork of
-	// opencv at 7,236, also one. 72% of all the files read sat in a
-	// directory no commit of theirs had ever touched.
+	// keep out. A fork of a large upstream project, carrying one drive-by
+	// fix of the person's, admitted its whole tree on the strength of it,
+	// and most of what a build tree holds sits in a directory no commit of
+	// theirs has ever touched.
 	//
 	// A share and not just a count, because two or three commits in a
 	// kernel is the same visit twice. A count and not just a share,
@@ -865,16 +863,15 @@ func withoutIgnoredDirectories(paths []string) []string {
 // Never more than the history itself. A checkout every commit of which
 // is theirs is theirs, and the count does not come into that either: a
 // project started last week, initialized and committed once, is not
-// somebody else's code because it has been committed to once. Five such
-// checkouts on the tree this was measured on -- 638 files of nobody
-// else's work -- would have gone out with the bathwater otherwise.
+// somebody else's code because it has been committed to once. A checkout
+// like that would go out with the bathwater otherwise.
 //
-// What the rest of that tree says: a repository of theirs with three
-// commits needs two and is theirs; a fork of linux-stable with a million
-// commits needs twenty-five, and one drive-by fix does not buy its
-// 70,766 files; a fork of opencv parked in the same build tree, four
-// commits of theirs in twenty-three thousand, needs twenty-five and does
-// not buy its 7,236 either.
+// What the rule says elsewhere: a repository of theirs with three commits
+// needs two and is theirs; a fork of a large upstream project with a
+// million commits needs twenty-five, and one drive-by fix does not buy its
+// files; another fork parked in the same build tree, a handful of commits
+// of theirs against its thousands, needs twenty-five and does not buy its
+// files either.
 //
 // What the source says, it says outright. A number set there is the bar,
 // flat, with no share added to it -- otherwise it would not be a
@@ -1308,16 +1305,16 @@ func extract(ctx context.Context, program string, arguments ...string) (string, 
 // program most of what it had been given. txt:Text is a Writer filter: a
 // Word document converts, and a spreadsheet or a presentation fails --
 // writing nothing, while soffice still exits successfully, so the failure
-// looked like a file with nothing in it rather than like a failure. On the
-// machine this was written for, 188 of 197 spreadsheets and 43 of 44
-// presentations reached the server with no text at all, against 7 of 79
-// Writer documents.
+// looked like a file with nothing in it rather than like a failure. Nearly
+// every spreadsheet and presentation reached the server with no text at
+// all, while Writer documents mostly came through, which is why it went
+// unnoticed.
 //
 // Calc has no text filter worth using -- its CSV export writes the first
 // sheet and silently drops the rest -- and Impress has none at all. Both
 // print, though, and this program already reads a PDF. So they go through
-// one, which costs a render and returns every sheet and every slide: a
-// spreadsheet that had given nothing gave 846 characters, a deck 2423.
+// one, which costs a render and returns every sheet and every slide, where
+// the text filter had returned nothing at all.
 func officeConversion(path string) (filter, extension string) {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".docx", ".doc", ".odt", ".rtf":
@@ -1346,12 +1343,10 @@ func extractOffice(ctx context.Context, path string) (string, error) {
 	defer cancel()
 	// A profile of its own, inside the directory that is removed at the
 	// end. Without one every call shares the account's single profile,
-	// and an office already running owns it: the next call hands its work
-	// to that instance and returns having written nothing. On the machine
-	// this was written for one such instance sat for two hours and
-	// forty-two minutes while 232 of 298 office documents came back with
-	// no text at all, and it held twelve gigabytes of deleted temporary
-	// files open the whole time.
+	//	and an office already running owns it: the next call hands its work
+	// to that instance and returns having written nothing. One such instance
+	// can sit for hours while every document behind it comes back with no
+	// text at all, holding its deleted temporary files open the whole time.
 	filter, extension := officeConversion(path)
 	command := exec.CommandContext(callContext, program,
 		"-env:UserInstallation=file://"+filepath.Join(directory, "profile"),

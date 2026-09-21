@@ -140,8 +140,19 @@ func (self *component) callback(response http.ResponseWriter, request *http.Requ
 		self.fail(response, request, "state")
 		return
 	}
-	// The cookie is spent whatever happens next.
-	http.SetCookie(response, &http.Cookie{Name: cookieName, Value: "", Path: "/api/v1/sso/", MaxAge: -1, HttpOnly: true})
+	// The cookie is spent whatever happens next. It is cleared with the same
+	// attributes it was set with: a browser will not let a cookie that is not
+	// marked secure overwrite one that is, so clearing it without them would
+	// leave the state behind instead of ending it.
+	http.SetCookie(response, &http.Cookie{
+		Name:     cookieName,
+		Value:    "",
+		Path:     "/api/v1/sso/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
 
 	claims, returnTo, err := self.service.Complete(request.Context(), *provider, self.redirectURL(request, provider.ID), cookie.Value, query.Get("state"), query.Get("code"))
 	if err != nil {
