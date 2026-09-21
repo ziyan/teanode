@@ -32,6 +32,7 @@ func newAgentGraphCommands() []*cli.Command {
 			Flags: []cli.Flag{
 				JSONFlag(),
 				&cli.IntFlag{Name: "depth", Usage: "how many levels below the path", Value: 3},
+				&cli.IntFlag{Name: "first", Usage: "how many pages to ask for; the tree is cut at this and says so", Value: indexPages},
 			},
 			Action: runAgentGraphIndex,
 		},
@@ -352,7 +353,11 @@ func runAgentGraphIndex(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	under := command.Args().First()
-	nodes, err := client.AgentGraphIndex(ctx, connection, under, 1000)
+	first := command.Int("first")
+	if first <= 0 {
+		first = indexPages
+	}
+	nodes, err := client.AgentGraphIndex(ctx, connection, under, first)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -385,8 +390,28 @@ func runAgentGraphIndex(ctx context.Context, command *cli.Command) error {
 	if len(nodes) == 0 {
 		_, _ = fmt.Fprintln(command.Writer, "nothing filed yet")
 	}
+	// The pages come back sorted by path and cut at a count, and the depth
+	// above is applied here rather than there. So a graph with more pages
+	// than the cut simply ends, alphabetically, part way through -- and
+	// what is missing is a whole branch of the tree, silently, with the
+	// last line before it looking exactly like the last line of the graph.
+	//
+	// An audit of this graph was run against a quarter of it that way, and
+	// read as though it had covered all of it. Saying so costs a line.
+	if len(nodes) >= first {
+		_, _ = fmt.Fprintf(command.Writer,
+			"\n(cut at %d pages, sorted by path: anything after the last line is not shown. "+
+				"Ask for a folder to see inside it, or raise --first.)\n", first)
+	}
 	return nil
 }
+
+// indexPages is how many pages the tree asks for when nobody says.
+//
+// The answer is sorted by path and cut here, so this is not a page size to
+// be walked through: it is the whole of what will be shown. Raised where a
+// graph is larger, which the line above tells the person to do.
+const indexPages = 1000
 
 func runAgentGraphGet(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() < 1 {

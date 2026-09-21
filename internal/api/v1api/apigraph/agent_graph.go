@@ -151,6 +151,13 @@ type AgentGraphMutation interface {
 
 // The arguments.
 
+// How many pages the index answers with: the default where none is asked
+// for, and the most it will give however many are.
+const (
+	agentGraphIndexPages     = 500
+	agentGraphIndexPagesMost = 2000
+)
+
 type AgentGraphIndexArguments struct {
 	// Under narrows to a subtree; empty is the whole graph.
 	Under string `json:"under" graphapi:"nullable"`
@@ -552,9 +559,17 @@ func (self *graph) AgentGraphIndex(ctx context.Context, arguments AgentGraphInde
 	if err := tx.EnsureAgentRoots(found.ID); err != nil {
 		return nil, err
 	}
+	// Asked for nothing, take the default; asked for more than there is to
+	// give, take the most. Both of those used to land on the default, so a
+	// caller asking for five thousand was answered with five hundred --
+	// fewer than asking for nothing gets, silently, which is the opposite
+	// of what anybody asking for more can have meant.
 	limit := arguments.First
-	if limit <= 0 || limit > 2000 {
-		limit = 500
+	switch {
+	case limit <= 0:
+		limit = agentGraphIndexPages
+	case limit > agentGraphIndexPagesMost:
+		limit = agentGraphIndexPagesMost
 	}
 	if under := models.NormalizePath(arguments.Under); under != "" {
 		return tx.ListAgentNodesUnder(found.ID, under, limit)
