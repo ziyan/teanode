@@ -214,8 +214,8 @@ also the one report that answers with a calendar rather than with XML.
 and a domain may publish `_caldavs._tcp` beside the address book's
 `_carddavs._tcp`; the domain page advises both. On a deployment reached at a
 port of its own these matter more than they look. Discovery from a bare name
-goes to port 443, and whatever answers there is what the phone finds — on the
-deployment this was written for, a router's administration page on a
+goes to port 443, and whatever answers there is what the phone finds, which
+on a home connection is as likely to be a router's administration page on a
 certificate for another name entirely. Without the SRV record the phone does
 not fail; it finds the wrong thing, and the person types the host and port by
 hand instead.

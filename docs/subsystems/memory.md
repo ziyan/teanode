@@ -102,8 +102,8 @@ dream that looks for connections has nothing to look at.
 That same match decides what is read at all. A person who points a source
 at the folder they keep their checkouts in is pointing it at other
 people's work as much as their own, and a first pass used to index every
-line of it — on one deployment, of 32,535 files in a single source more
-than half were under three checkouts nobody there had ever committed to.
+line of it — in a single source of tens of thousands of files, more than
+half were under a handful of checkouts nobody there had ever committed to.
 So a checkout whose history holds too few of the person's commits to be
 their work is kept to its **profile**: the page still says what it is,
 what its readme calls it, where it lives and what its newest tag is, so
@@ -137,9 +137,8 @@ source is shown.
 Checkouts nest, and every one of them is found. A build tool that clones
 what it depends on into the project, or a folder of checkouts kept inside
 one, leaves a checkout inside another checkout's working tree; the walk
-used to stop at the outer one, so on one deployment a source whose tree
-held 324 further checkouts — the person's own working code — indexed two
-files. A checkout's files still come from its own `git ls-files`, which
+used to stop at the outer one, so a source whose tree held hundreds of
+further checkouts — the person's own working code — indexed two files. A checkout's files still come from its own `git ls-files`, which
 is the whole of what it offers, and the walk goes on past it to find the
 checkouts below. The checkout nearest above a file is the one that
 decides whose work it is, so a dependency cloned into a project of yours
@@ -152,19 +151,20 @@ is the only kind that carries an author, so without commits the graph has
 no answer to who wrote a piece of code. They used to be offered only by a
 pass that reached the end of the tree in a single page and only out of
 whatever room that page had left over, and only from a root that was
-itself a checkout: a folder of checkouts is neither, and on one
-deployment 553,185 documents held not one commit. They then followed the
-files in the same sequence of pages, which on a real tree is the same as
-never: forty pages and 9,522 files into one, the cursor was still inside
-a single checkout's source and no commit had been offered. A fixed share
+itself a checkout: a folder of checkouts is neither, and a source of half a
+million documents could hold not one commit. They then followed the files in
+the same sequence of pages, which on a real tree is the same as never: forty
+pages and thousands of files into one, the cursor was still inside a single
+checkout's source and no commit had been offered. A fixed share
 of every page — one entry in eight, taken before the page's files,
 because a page of source leaves no room after them — is now the
 history's, so a night that stops part way through a tree stops with the
 authorship map already in it. It comes from every checkout in the tree
 that is the person's own work, the rule above keeping somebody else's
 history out as it keeps their files out. What one pass carries is bounded
-and shared out among those checkouts, each newest first: one tree of 137
-checkouts holds on the order of 340,000 commits, and read all at once
+and shared out among those checkouts, each newest first: a tree of a
+hundred or more checkouts holds hundreds of thousands of commits, and read
+all at once
 that is a graph and an embedding bill nobody asked for. The bound is two
 thousand a pass unless the source says otherwise —
 `specification.commitsPerPass`, or `teanode agent knowledge set <source>
@@ -179,9 +179,10 @@ date — and told outright that the author earns a page under `people/` and
 a `works_on` link to what they worked on, since one commit is evidence
 enough that they wrote it. That used to be left to the model's judgement,
 against an instruction to leave out any link it would not defend, and the
-judgement went the other way: in three hours it read 1,781 commits, filed
-162 facts from them and drew two links, while 139 distinct authors sat in
-document metadata against 29 people in the graph. Expect well over a
+judgement went the other way: over three hours it read a couple of thousand
+commits, filed a hundred or so facts from them and drew two links, while
+well over a hundred distinct authors sat in document metadata against a few
+dozen people in the graph. Expect well over a
 hundred pages, most of them a line or two, and a contact card each, since
 a page about a person is somebody the address book should know. An author
 whose name reads as something that runs rather than as somebody who types
@@ -202,8 +203,8 @@ authorship map, because most of what is in them was written by them.
 What the tree holds is worked out once a pass, on its first page, and
 lent to every page after it. It used to be worked out for each page of
 256 entries: the walk, and then `git ls-files`, `git status`, and a whole
-`git log` for the authors of every checkout met on the way. On a tree of
-1,122 checkouts that was twelve seconds of git before a file had been
+`git log` for the authors of every checkout met on the way. On a tree of a
+thousand checkouts that was twelve seconds of git before a file had been
 read, on each of the hundreds of pages a pass takes — more of the night
 than the reading. So a pass now sees the tree as it was when the pass
 began. A file written while a pass is running waits for the next pass,
