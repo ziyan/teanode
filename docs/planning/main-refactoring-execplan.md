@@ -35,7 +35,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
-- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, dashboard/agent event-create retries and RSVP/delete retry integration, contact protocol adapters, knowledge-source and rule-update commands remain.
+- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, dashboard/agent event-create retries and deletion retry integration, contact protocol adapters, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
@@ -194,6 +194,13 @@ a milestone fixing behavior that is already correct.
 
 ## Decision Log
 
+RSVP request recovery uses the same calendar receipt transaction as event saves.
+The invitation adapter still verifies access to the current mailbox item before
+replay, and checks calendar-use and mail-send. Receipt lookup for answer operations
+also requires mail-read. A replay never changes participation again, so a delayed
+accept retry cannot overwrite a later decline. The dashboard persists the exact
+answer and request ID in account/item-scoped session storage before sending,
+blocks another answer while uncertain, and checks completion before resending.
 Calendar API replay authorization: retain whether the original action required
 mail-send permission, using migration 0096. Personal saves must still work for
 accounts with calendar-use alone, while replaying an invitation send rechecks
@@ -1705,3 +1712,42 @@ and one expected Chrome-endpoint skip. The affected subsystem run passes 463
 tests. After final naming cleanup and the additional legacy-client wire test,
 focused calendar retry tests, lint including gogolint and both builds pass again.
 The real deployment and final Chrome audit are still required.
+
+
+RSVP recovery is now connected through optional AnswerMailInvitation.requestId
+and the reader's invitation card. Existing callers without IDs retain their wire
+shape. Tests cover repeated replies, accept/decline/old-accept ordering, replay
+after calendar deletion, all three permission revocations and failure of the
+final receipt insert. The latter restores event bytes and accepted mail together.
+The shared received-invitation fixture now supports both atomicity and recovery
+regressions without duplicating setup.
+
+The account/item-keyed card restores an uncertain answer after reload and offers
+Retry answer while disabling different choices. Lookup errors keep the pending
+request; storage write errors prevent sending. Successful lookup, including a
+deleted event, clears the request without another reply. Another mounted reader
+cannot have its newer answer cleared by an older completion. Five hook regressions
+cover these cases alongside the existing dashboard suite. Dashboard event editing,
+agent calendar tools, deletion identities and pending-request cancellation remain
+open; a permanently failing RSVP currently remains pending for retry, rather than
+silently allowing an uncertain earlier answer to race a new one.
+
+Chrome audit uses the production dashboard with a local synthetic GraphQL fixture
+that records acceptance then drops the first RSVP response. Desktop (1200px) and
+phone (390px) screenshots show readable recovery controls without horizontal
+overflow after layout transitions settle. Reload restores the answer; Retry
+answer performs lookup and sends no second reply. The audit records sendCount=1
+and no runtime exceptions. This exercises the real rendered dashboard, not a full
+SMTP/server deployment, which remains a required final gate.
+
+
+Review found a separate feedback bug: after successful reply acceptance, a failed
+invitation refresh was reported as a failed answer. The card now confirms the
+recorded answer separately and reports refresh failure with distinct text. A
+component regression checks that it makes one send and retains the successful
+answer notification. The standard-PostgreSQL race suite passes 1,946 tests with
+two expected skips; all 39 dashboard tests, TypeScript, ESLint, both webpack
+builds, repository lint, gogolint and both Go binary builds pass. The final Chrome
+run after review again records one send across reload and retry, without runtime
+exceptions. An earlier harness retry checked document.body during navigation;
+the harness now waits safely for the new document before inspecting the card.

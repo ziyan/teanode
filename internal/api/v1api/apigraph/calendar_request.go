@@ -36,6 +36,11 @@ func (self *graph) GetCalendarRequest(ctx context.Context, arguments CalendarReq
 	if receipt == nil {
 		return nil, nil
 	}
+	if receipt.Operation == "answer" {
+		if _, err := self.requirePermission(ctx, models.PermissionMailRead); err != nil {
+			return nil, err
+		}
+	}
 	if receipt.IsMailSendRequired {
 		if _, err := self.requirePermission(ctx, models.PermissionMailSend); err != nil {
 			return nil, err

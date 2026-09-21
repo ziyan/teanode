@@ -12,56 +12,62 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
+func invitationAnswerFixture(test *testing.T) (db.Database, *graph, *api.Principal, string, *models.CalendarObject, *eventAcceptanceMailer) {
+	test.Helper()
+	database, resolver, principal, eventArguments, sender := calendarEventFixture(test)
+	principal.Permissions = models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionCalendarUse}, {Permission: models.PermissionMailRead}, {Permission: models.PermissionMailSend}})
+	itemId := dbtest.QueryString(test, database, `SELECT id FROM mailbox_item LIMIT 1`)
+	var original *models.CalendarObject
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		startsAt := time.Date(2030, 1, 2, 10, 0, 0, 0, time.UTC)
+		parsed, err := calendar.Build(nil, &calendar.Fields{Summary: new("Invited meeting"), StartsAt: &startsAt, EndsAt: new(startsAt.Add(time.Hour)), Organizer: "organizer@example.net", Attendees: new([]calendar.Attendee{{Address: "sender@example.com", Participation: "NEEDS-ACTION"}})})
+		if err != nil {
+			test.Fatal(err)
+		}
+		occurrences, indexedUntil, err := calendar.Indexed(parsed)
+		if err != nil {
+			test.Fatal(err)
+		}
+		rows := make([]models.Occurrence, 0, len(occurrences))
+		for _, occurrence := range occurrences {
+			rows = append(rows, models.Occurrence{StartsAt: occurrence.StartsAt, EndsAt: occurrence.EndsAt, AllDay: occurrence.AllDay})
+		}
+		original, err = transaction.PutCalendarObject(&models.CalendarObject{CalendarID: eventArguments.CalendarID, UID: parsed.UID, ETag: calendar.ETag(parsed.Data), Data: string(parsed.Data), Summary: parsed.Summary, StartsAt: parsed.StartsAt, EndsAt: parsed.EndsAt, IndexedUntil: &indexedUntil}, rows)
+		if err != nil {
+			test.Fatal(err)
+		}
+		mailboxes, err := transaction.ListMailboxes(principal.User.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		item, err := transaction.GetItem(itemId)
+		if err != nil {
+			test.Fatal(err)
+		}
+		invitation, err := transaction.NoteCalendarInvitation(&models.CalendarInvitation{UserID: principal.User.ID, MailboxID: mailboxes[0].ID, ItemID: item.ID, MailID: item.MailID})
+		if err != nil {
+			test.Fatal(err)
+		}
+		invitation.Status = models.CalendarInvitationRead
+		invitation.Method = models.CalendarMethodRequest
+		invitation.UID = parsed.UID
+		invitation.CalendarID = original.CalendarID
+		invitation.ObjectID = original.ID
+		invitation.Organizer = parsed.Organizer
+		if err := transaction.FinishCalendarInvitation(invitation); err != nil {
+			test.Fatal(err)
+		}
+	})
+	return database, resolver, principal, itemId, original, sender
+}
+
 func TestInvitationAnswerAndReplyAcceptanceCommitTogether(test *testing.T) {
 	for _, failurePoint := range []string{"acceptance", "parent", "permission", "none"} {
 		test.Run(failurePoint, func(test *testing.T) {
-			database, resolver, principal, eventArguments, sender := calendarEventFixture(test)
-			principal.Permissions = models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionCalendarUse}, {Permission: models.PermissionMailRead}, {Permission: models.PermissionMailSend}})
+			database, resolver, principal, itemId, original, sender := invitationAnswerFixture(test)
 			if failurePoint == "permission" {
 				principal.Permissions = models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionCalendarUse}, {Permission: models.PermissionMailRead}})
 			}
-			itemId := dbtest.QueryString(test, database, `SELECT id FROM mailbox_item LIMIT 1`)
-			var original *models.CalendarObject
-			dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-				startsAt := time.Date(2030, 1, 2, 10, 0, 0, 0, time.UTC)
-				parsed, err := calendar.Build(nil, &calendar.Fields{Summary: new("Invited meeting"), StartsAt: &startsAt, EndsAt: new(startsAt.Add(time.Hour)), Organizer: "organizer@example.net", Attendees: new([]calendar.Attendee{{Address: "sender@example.com", Participation: "NEEDS-ACTION"}})})
-				if err != nil {
-					test.Fatal(err)
-				}
-				occurrences, indexedUntil, err := calendar.Indexed(parsed)
-				if err != nil {
-					test.Fatal(err)
-				}
-				rows := make([]models.Occurrence, 0, len(occurrences))
-				for _, occurrence := range occurrences {
-					rows = append(rows, models.Occurrence{StartsAt: occurrence.StartsAt, EndsAt: occurrence.EndsAt, AllDay: occurrence.AllDay})
-				}
-				original, err = transaction.PutCalendarObject(&models.CalendarObject{CalendarID: eventArguments.CalendarID, UID: parsed.UID, ETag: calendar.ETag(parsed.Data), Data: string(parsed.Data), Summary: parsed.Summary, StartsAt: parsed.StartsAt, EndsAt: parsed.EndsAt, IndexedUntil: &indexedUntil}, rows)
-				if err != nil {
-					test.Fatal(err)
-				}
-				mailboxes, err := transaction.ListMailboxes(principal.User.ID)
-				if err != nil {
-					test.Fatal(err)
-				}
-				item, err := transaction.GetItem(itemId)
-				if err != nil {
-					test.Fatal(err)
-				}
-				invitation, err := transaction.NoteCalendarInvitation(&models.CalendarInvitation{UserID: principal.User.ID, MailboxID: mailboxes[0].ID, ItemID: item.ID, MailID: item.MailID})
-				if err != nil {
-					test.Fatal(err)
-				}
-				invitation.Status = models.CalendarInvitationRead
-				invitation.Method = models.CalendarMethodRequest
-				invitation.UID = parsed.UID
-				invitation.CalendarID = original.CalendarID
-				invitation.ObjectID = original.ID
-				invitation.Organizer = parsed.Organizer
-				if err := transaction.FinishCalendarInvitation(invitation); err != nil {
-					test.Fatal(err)
-				}
-			})
 			interrupted := errors.New("fixture interrupted")
 			if failurePoint == "acceptance" {
 				sender.acceptError = interrupted

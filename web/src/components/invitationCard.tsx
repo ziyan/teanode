@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 
 import { graphql } from '../api'
+import { useSession } from '../session'
+import { InvitationAnswer, useInvitationAnswer } from '../hooks/useInvitationAnswer'
 import { useQuery } from '../components/useQuery'
 import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
@@ -18,13 +20,6 @@ const INVITATION = `
       id status method uid because summary location startsAt endsAt allDay cancelled
       organizer participation calendarId eventId
       attendees { address name participation role }
-    }
-  }`
-
-const ANSWER = `
-  mutation ($itemId: String!, $answer: String!) {
-    AnswerMailInvitation(itemId: $itemId, answer: $answer) {
-      id participation cancelled
     }
   }`
 
@@ -56,9 +51,20 @@ const ANSWERS = [
 ] as const
 
 export function InvitationCard({ itemId }: { itemId: string }) {
+  const session = useSession()
+  return (
+    <InvitationCardForAccount
+      key={`${session.userId ?? ''}:${itemId}`}
+      ownerId={session.userId ?? ''}
+      itemId={itemId}
+    />
+  )
+}
+
+function InvitationCardForAccount({ ownerId, itemId }: { ownerId: string; itemId: string }) {
   const { t } = useTranslation()
   const toast = useToast()
-  const [busy, setBusy] = useState('')
+  const submission = useInvitationAnswer(ownerId, itemId)
 
   const invitation = useQuery(
     () => graphql<{ GetMailInvitation: Invitation | null }>(INVITATION, { itemId }),
@@ -86,15 +92,9 @@ export function InvitationCard({ itemId }: { itemId: string }) {
     return until ? `${day}, ${from} – ${until}` : `${day}, ${from}`
   }, [found?.startsAt, found?.endsAt, found?.allDay])
 
-  // Nothing at all for an ordinary message, which is almost every message:
-  // the card must not leave a gap where there is nothing to say.
-  if (!found || !found.uid) return null
-
-  const answer = async (value: string) => {
-    setBusy(value)
+  const answer = async (value: InvitationAnswer) => {
     try {
-      await graphql(ANSWER, { itemId, answer: value })
-      await invitation.reload()
+      await submission.send(value)
       toast.done(
         t(
           `invitation.said.${value === 'ACCEPTED' ? 'accepted' : value === 'DECLINED' ? 'declined' : 'tentative'}` as Parameters<
@@ -104,16 +104,31 @@ export function InvitationCard({ itemId }: { itemId: string }) {
       )
     } catch (failure) {
       toast.failure(failure, t('invitation.failed'))
-    } finally {
-      setBusy('')
+      return
+    }
+    try {
+      await invitation.reload()
+    } catch (failure) {
+      toast.failure(failure, t('invitation.refreshFailed'))
     }
   }
+
+  const recovery = submission.pending && (
+    <div className="invitation-standing">
+      <p className="muted">{t('invitation.pending')}</p>
+      <button type="button" disabled={submission.isWorking} onClick={() => void answer(submission.pending!.answer)}>
+        {t('invitation.retry')}
+      </button>
+    </div>
+  )
+  if (!found || !found.uid) return recovery ? <div className="invitation-card">{recovery}</div> : null
 
   // A reply or a cancellation is a line rather than a card: there is nothing
   // to decide, only something to know.
   if (found.method !== 'REQUEST') {
     return (
       <div className="invitation-note">
+        {recovery}
         <span className="invitation-mark">{t('invitation.title')}</span>
         <span>
           {found.method === 'CANCEL' ? t('invitation.wasCancelled') : t('invitation.wasAnswered')}
@@ -186,7 +201,7 @@ export function InvitationCard({ itemId }: { itemId: string }) {
               key={choice.name}
               type="button"
               className={found.participation === choice.value ? 'chosen' : undefined}
-              disabled={busy !== ''}
+              disabled={submission.isWorking || submission.pending !== null}
               onClick={() => void answer(choice.value)}
             >
               {t(`invitation.${choice.name}` as Parameters<typeof t>[0])}
@@ -194,6 +209,7 @@ export function InvitationCard({ itemId }: { itemId: string }) {
           ))}
         </div>
       )}
+      {recovery}
       {/* What the person has already said, so the card is not silent about a
           decision they have made. */}
       {found.participation && found.participation !== 'NEEDS-ACTION' && (
