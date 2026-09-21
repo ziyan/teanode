@@ -118,6 +118,16 @@ type DreamOperation interface {
 	// first.
 	ListAgentFactsSaidTwice(agentId string, limit int) ([]*models.AgentFact, error)
 
+	// FirstAgentFactSayingIt is the live fact on the same page that says
+	// the same words on a lower number, or nothing where there is none.
+	//
+	// Asked of the database, because the page is where the pair is and a
+	// page may hold more facts than any caller wants to carry. Scanning a
+	// listing instead meant a duplicate the query above had found could
+	// not be folded, and on a page with more facts than the listing took
+	// it never could.
+	FirstAgentFactSayingIt(agentId, nodeId, text string, below int) (*models.AgentFact, error)
+
 	// RecomputeAgentImportance rewrites what the index is ordered by, and
 	// RetireAgentFacts marks what has not been wanted in a long time
 	// dormant. Neither deletes anything.
@@ -879,6 +889,27 @@ func (self *transaction) ListAgentFactsSaidTwice(agentId string, limit int) ([]*
 		  )
 		ORDER BY f."created_at"
 		LIMIT ?`, agentId, limit))
+}
+
+func (self *transaction) FirstAgentFactSayingIt(agentId, nodeId, text string, below int) (*models.AgentFact, error) {
+	wanted := strings.ToLower(strings.TrimSpace(text))
+	if agentId == "" || nodeId == "" || wanted == "" {
+		return nil, nil
+	}
+	// The same test the search for duplicates makes, the other way about:
+	// there it asks whether an earlier twin exists, here it asks which one.
+	// The two must agree, or a fact is found and cannot be folded.
+	facts, err := self.factsFrom(self.tx.Raw(`
+		SELECT f.* FROM "agent_fact" f
+		WHERE f."agent_id" = ? AND f."node_id" = ? AND f."number" < ?
+		  AND f."superseded_by" IS NULL
+		  AND lower(btrim(f."text")) = ?
+		ORDER BY f."number" ASC
+		LIMIT 1`, agentId, nodeId, below, wanted))
+	if err != nil || len(facts) == 0 {
+		return nil, err
+	}
+	return facts[0], nil
 }
 
 func (self *transaction) ListAgentNodesCrowded(agentId string, above, limit int) ([]*models.AgentNode, error) {
