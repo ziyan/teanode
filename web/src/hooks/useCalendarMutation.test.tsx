@@ -134,3 +134,24 @@ describe('calendar mutation recovery', () => {
     expect(first.result.current.pending?.requestId).toBe(second.result.current.pending?.requestId)
   })
 })
+
+it.each([false, true])('clears pending only after cancellation resolves, completed=%s', async (isCompleted) => {
+  const hook = renderHook(() => useCalendarMutation('owner'))
+  execute.mockRejectedValueOnce(new Error('lost response'))
+  await act(async () => {
+    await expect(hook.result.current.execute(save())).rejects.toThrow()
+  })
+  const requestId = hook.result.current.pending?.requestId
+  execute.mockRejectedValueOnce(new Error('cancellation response lost'))
+  await act(async () => {
+    await expect(hook.result.current.cancel()).rejects.toThrow('cancellation response lost')
+  })
+  expect(hook.result.current.pending?.requestId).toBe(requestId)
+  execute.mockResolvedValueOnce({ CancelCalendarRequest: isCompleted ? { requestId } : null })
+  await act(async () => {
+    await expect(hook.result.current.cancel()).resolves.toBe(isCompleted)
+  })
+  expect(hook.result.current.pending).toBeNull()
+  expect(execute.mock.calls[1][0]).toContain('CancelCalendarRequest')
+  expect(execute.mock.calls[2][1]).toEqual({ requestId })
+})

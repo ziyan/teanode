@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	calendarcommands "github.com/ziyan/teanode/internal/calendar/commands"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -51,4 +52,21 @@ func (self *graph) GetCalendarRequest(ctx context.Context, arguments CalendarReq
 		return nil, translateError(err)
 	}
 	return &CalendarRequestView{RequestID: receipt.RequestID, CalendarID: receipt.CalendarID, ObjectID: receipt.ObjectID, Operation: receipt.Operation, CompletedAt: receipt.CompletedAt, IsMissing: object == nil}, nil
+}
+
+// CancelCalendarRequest prevents a not-yet-completed request from committing.
+// A non-nil result means the original change already completed; it is not undone.
+func (self *graph) CancelCalendarRequest(ctx context.Context, arguments CalendarRequestArguments) (*CalendarRequestView, error) {
+	principal, err := self.requireCalendarPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	receipt, err := calendarcommands.New(self.transaction(ctx)).CancelRequest(ctx, principal, arguments.RequestID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	if receipt == nil {
+		return nil, nil
+	}
+	return self.GetCalendarRequest(ctx, arguments)
 }

@@ -26,6 +26,7 @@ func NewCalendarCommand() *cli.Command {
 		Name:  "calendar",
 		Usage: "your calendar: what you have on, synchronized to your devices over CalDAV",
 		Commands: []*cli.Command{
+			{Name: "stop", Usage: "stop an unresolved request; completed changes are not undone", ArgsUsage: "<request-id>", Flags: []cli.Flag{JSONFlag()}, Action: runCalendarStop},
 			{Name: "request", Usage: "look up a calendar change after an uncertain response", ArgsUsage: "<request-id>", Flags: []cli.Flag{JSONFlag()}, Action: runCalendarRequest},
 			{
 				Name:  "list",
@@ -753,5 +754,28 @@ func runCalendarRequest(ctx context.Context, command *cli.Command) error {
 	if receipt.IsMissing {
 		fmt.Println("the event no longer exists")
 	}
+	return nil
+}
+
+func runCalendarStop(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 1 {
+		return fmt.Errorf("usage: teanode calendar stop <request-id>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	receipt, err := client.CancelCalendarRequest(ctx, connection, command.Args().First())
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(receipt)
+	}
+	if receipt == nil {
+		fmt.Println("stopped; this request can no longer execute")
+		return nil
+	}
+	fmt.Printf("already completed: calendar %s, event %s; the change was not undone\n", receipt.CalendarID, receipt.ObjectID)
 	return nil
 }

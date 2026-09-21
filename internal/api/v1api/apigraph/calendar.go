@@ -43,6 +43,8 @@ type CalendarQuery interface {
 
 // CalendarMutation changes it.
 type CalendarMutation interface {
+	// Resolve an uncertain request before abandoning its retained parameters.
+	CancelCalendarRequest(ctx context.Context, arguments CalendarRequestArguments) (*CalendarRequestView, error)
 	// Keep an event, or change one that is kept. Give either a whole
 	// iCalendar file, which is what a program that speaks the format
 	// sends, or the filled-in fields, which is what the dashboard sends;

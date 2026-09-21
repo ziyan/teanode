@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 import { graphql } from '../api'
 import { useSession } from '../session'
@@ -65,6 +65,7 @@ function InvitationCardForAccount({ ownerId, itemId }: { ownerId: string; itemId
   const { t } = useTranslation()
   const toast = useToast()
   const submission = useInvitationAnswer(ownerId, itemId)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   const invitation = useQuery(
     () => graphql<{ GetMailInvitation: Invitation | null }>(INVITATION, { itemId }),
@@ -92,7 +93,19 @@ function InvitationCardForAccount({ ownerId, itemId }: { ownerId: string; itemId
     return until ? `${day}, ${from} – ${until}` : `${day}, ${from}`
   }, [found?.startsAt, found?.endsAt, found?.allDay])
 
+  const refresh = async () => {
+    setIsRefreshing(true)
+    try {
+      await invitation.reload()
+    } catch (failure) {
+      toast.failure(failure, t('invitation.refreshFailed'))
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
   const answer = async (value: InvitationAnswer) => {
+    if (isRefreshing) return
     try {
       await submission.send(value)
       toast.done(
@@ -106,19 +119,37 @@ function InvitationCardForAccount({ ownerId, itemId }: { ownerId: string; itemId
       toast.failure(failure, t('invitation.failed'))
       return
     }
+    await refresh()
+  }
+
+  const stop = async () => {
+    if (isRefreshing) return
     try {
-      await invitation.reload()
+      const isCompleted = await submission.cancel()
+      toast.done(t(isCompleted ? 'invitation.recorded' : 'invitation.stopped'))
     } catch (failure) {
-      toast.failure(failure, t('invitation.refreshFailed'))
+      toast.failure(failure, t('invitation.failed'))
+      return
     }
+    await refresh()
   }
 
   const recovery = submission.pending && (
     <div className="invitation-standing">
       <p className="muted">{t('invitation.pending')}</p>
-      <button type="button" disabled={submission.isWorking} onClick={() => void answer(submission.pending!.answer)}>
-        {t('invitation.retry')}
-      </button>
+      <div className="page-actions">
+        <button
+          type="button"
+          disabled={submission.isWorking || isRefreshing}
+          onClick={() => void answer(submission.pending!.answer)}
+        >
+          {t('invitation.retry')}
+        </button>
+        <button type="button" disabled={submission.isWorking || isRefreshing} onClick={() => void stop()}>
+          {t('invitation.stop')}
+        </button>
+      </div>
+      <p className="muted">{t('calendar.stopHint')}</p>
     </div>
   )
   if (!found || !found.uid) return recovery ? <div className="invitation-card">{recovery}</div> : null
@@ -201,7 +232,7 @@ function InvitationCardForAccount({ ownerId, itemId }: { ownerId: string; itemId
               key={choice.name}
               type="button"
               className={found.participation === choice.value ? 'chosen' : undefined}
-              disabled={submission.isWorking || submission.pending !== null}
+              disabled={submission.isWorking || isRefreshing || submission.pending !== null}
               onClick={() => void answer(choice.value)}
             >
               {t(`invitation.${choice.name}` as Parameters<typeof t>[0])}

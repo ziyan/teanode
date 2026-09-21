@@ -273,3 +273,17 @@ func DeleteCalendarEventWithRequest(ctx context.Context, connection *Client, cal
 	return connection.Execute(ctx, DocumentDeleteCalendarEventWithRequest,
 		map[string]any{"calendarId": calendarId, "id": id, "requestId": requestId}, &response)
 }
+
+// CancelCalendarRequest stops future execution or returns an already completed
+// change. It never undoes the event or mail belonging to a completed request.
+func CancelCalendarRequest(ctx context.Context, connection *Client, requestId string) (*CalendarRequest, error) {
+	var response struct {
+		CancelCalendarRequest *CalendarRequest `json:"CancelCalendarRequest"`
+	}
+	if err := connection.Execute(ctx, `mutation ($requestId: String!) {
+ CancelCalendarRequest(requestId: $requestId) { requestId calendarId objectId operation completedAt isMissing }
+ }`, map[string]any{"requestId": requestId}, &response); err != nil {
+		return nil, err
+	}
+	return response.CancelCalendarRequest, nil
+}

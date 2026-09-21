@@ -22,6 +22,8 @@ type CalendarRequestOperation interface {
 	// LockCalendarRequest serializes even absent identities until commit.
 	LockCalendarRequest(userId, requestId string) (*models.CalendarRequestReceipt, error)
 	CreateCalendarRequest(receipt *models.CalendarRequestReceipt) error
+	IsCalendarRequestCancelled(userId, requestId string) (bool, error)
+	CancelCalendarRequest(userId, requestId string) error
 }
 
 type calendarRequestModel models.CalendarRequestReceipt
@@ -85,4 +87,22 @@ func (self *transaction) CreateCalendarRequest(receipt *models.CalendarRequestRe
 	}
 	stored := calendarRequestModel(*receipt)
 	return self.tx.Create(&stored).Error
+}
+
+// IsCalendarRequestCancelled is read after taking the account/request lock.
+func (self *transaction) IsCalendarRequestCancelled(userId, requestId string) (bool, error) {
+	if err := validateCalendarRequestIdentity(userId, requestId); err != nil {
+		return false, err
+	}
+	var cancellationCount int64
+	err := self.tx.Table("calendar_request_cancellation").Where("user_id = ? AND request_id = ?", userId, requestId).Count(&cancellationCount).Error
+	return cancellationCount != 0, err
+}
+
+// CancelCalendarRequest must hold the same lock as CreateCalendarRequest.
+func (self *transaction) CancelCalendarRequest(userId, requestId string) error {
+	if err := validateCalendarRequestIdentity(userId, requestId); err != nil {
+		return err
+	}
+	return self.tx.Exec(`INSERT INTO calendar_request_cancellation (user_id, request_id) VALUES (?, ?) ON CONFLICT DO NOTHING`, userId, requestId).Error
 }

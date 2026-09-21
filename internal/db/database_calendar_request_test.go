@@ -89,3 +89,38 @@ func TestCalendarRequestPermissionMigrationReversesWithoutLosingIdentity(test *t
 	}
 	test.Fatal("calendar request permission migration is missing")
 }
+
+func TestCalendarCancellationMigrationPreservesCompletedReceipts(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if _, err := transaction.LockCalendarRequest("fixture-owner", "cancelled"); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.CancelCalendarRequest("fixture-owner", "cancelled"); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.CreateCalendarRequest(&models.CalendarRequestReceipt{UserID: "fixture-owner", RequestID: "completed", Operation: "save", CalendarID: "calendar", ObjectID: "event", RequestDigest: strings.Repeat("a", 64), CompletedAt: time.Now()}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	for _, migration := range migrations.Migrations() {
+		if migration.ID != "0097_calendar_request_cancellation" {
+			continue
+		}
+		dbtest.Exec(test, database, migration.ReverseSQL)
+		dbtest.Exec(test, database, migration.SQL)
+		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+			receipt, err := transaction.GetCalendarRequest("fixture-owner", "completed")
+			if err != nil || receipt == nil {
+				test.Fatalf("completed=%+v, %v", receipt, err)
+			}
+			isCancelled, err := transaction.IsCalendarRequestCancelled("fixture-owner", "cancelled")
+			if err != nil || isCancelled {
+				test.Fatalf("reapplied cancellation=%v, %v", isCancelled, err)
+			}
+		})
+		return
+	}
+	test.Fatal("calendar cancellation migration is missing")
+}

@@ -379,16 +379,19 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   // Whether it worked, so a dialog closes only on success. What happened is
   // said in a toast either way; the dialog also shows the reason, because
   // that is where the person is looking when a submit is refused.
-  const run = async (action: () => Promise<unknown>, done: string): Promise<boolean> => {
+  const run = async <Result,>(
+    action: () => Promise<Result>,
+    done: string | ((result: Result) => string),
+  ): Promise<boolean> => {
     openingGeneration.current++
     setOpening('')
     setBusy(true)
     try {
-      await action()
+      const result = await action()
       setDraft(null)
       setDeleting(null)
       setProblem(null)
-      toast.done(done)
+      toast.done(typeof done === 'function' ? done(result) : done)
       try {
         await Promise.all([events.reload(), calendars.reload()])
       } catch (failure) {
@@ -613,20 +616,35 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
           <h3>{submission.pending.summary || t('calendar.untitled')}</h3>
           <p>{t(submission.pending.operation === 'delete' ? 'calendar.pendingDelete' : 'calendar.pendingSave')}</p>
           {problem && <p className="error">{problem}</p>}
-          <button
-            type="button"
-            disabled={busy || submission.isWorking}
-            onClick={() =>
-              void run(() => submission.execute(), t('calendar.recovered')).then((done) => {
-                if (done) {
-                  setDraft(null)
-                  setDeleting(null)
-                }
-              })
-            }
-          >
-            {t('calendar.retry')}
-          </button>
+          <div className="page-actions">
+            <button
+              type="button"
+              disabled={busy || submission.isWorking}
+              onClick={() =>
+                void run(() => submission.execute(), t('calendar.recovered')).then((done) => {
+                  if (done) {
+                    setDraft(null)
+                    setDeleting(null)
+                  }
+                })
+              }
+            >
+              {t('calendar.retry')}
+            </button>
+            <button
+              type="button"
+              disabled={busy || submission.isWorking}
+              onClick={() =>
+                void run(
+                  () => submission.cancel(),
+                  (isCompleted) => t(isCompleted ? 'calendar.recovered' : 'calendar.stopped'),
+                )
+              }
+            >
+              {t('calendar.stop')}
+            </button>
+          </div>
+          <p className="muted">{t('calendar.stopHint')}</p>
         </div>
       )}
 

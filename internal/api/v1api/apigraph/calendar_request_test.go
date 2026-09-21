@@ -134,6 +134,7 @@ func TestCalendarRequestSchemaSupportsLegacyAndIdentifiedSave(test *testing.T) {
 		client.DocumentSaveCalendarEvent,
 		client.DocumentSaveCalendarEventWithRequest,
 		client.DocumentGetCalendarRequest,
+		`mutation ($requestId: String!) { CancelCalendarRequest(requestId: $requestId) { requestId isMissing } }`,
 		client.DocumentDeleteCalendarEvent,
 		client.DocumentDeleteCalendarEventWithRequest,
 	} {

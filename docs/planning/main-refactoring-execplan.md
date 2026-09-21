@@ -194,6 +194,14 @@ a milestone fixing behavior that is already correct.
 
 ## Decision Log
 
+Pending calendar requests can now be stopped without allowing an older in-flight
+mutation to commit afterward. Migration 0097 stores account/request cancellations
+without event content or deletion cascades. CancelRequest takes the same advisory
+lock as ExecuteRequest: completed changes return their receipt and are never
+undone; absent completion records a durable cancellation that execution checks
+before preparing event content or mail. Cancellation joins its caller transaction
+and honors current receipt permissions. Downgrade requires draining commands and
+discarding pending requests before dropping cancellations.
 The dashboard calendar editor now retains one unresolved save/delete request per
 account in this tab. Its request includes prepared timestamps, timezone and all
 fields, so retry cannot reinterpret a form after a timezone or calendar change.
@@ -1820,3 +1828,35 @@ of both uncertain operations it records saveCount=1, deleteCount=1 and no runtim
 exceptions. Screenshots were visually inspected. The preceding Go results remain
 369 affected tests and 1,946 full standard-PostgreSQL tests with two skips; this
 checkpoint changes dashboard code only.
+
+
+Calendar cancellation is connected through CancelCalendarRequest, both dashboard
+recovery hooks, and calendar stop in the CLI. Stop retrying clears browser state
+only after a successful server response. A lost cancellation response leaves the
+same request pending, so retrying cancellation remains safe. The UI distinguishes
+an already completed change from a stopped request and explains that stopping
+does not undo completion. Refresh failure after resolution is reported separately.
+The shared page-actions layout keeps retry and stop controls spaced and wrapping.
+
+Concurrency regressions hold the caller transaction after execution and prove
+that cancellation waits for its commit or rollback, returning completion or
+recording a stop respectively. Further tests prove cancellation rollback, late
+execution refusal, completed-receipt preservation on migration reversal, API resolution,
+CLI identity-only cancellation, and both UI outcomes including a lost cancellation
+response. Chrome uses synthetic acceptance fixtures for both calendar and RSVP
+cards, checking completion that won the race and cancellation of an uncommitted
+request. It records no duplicate mutation or runtime exception. Proposal-card and
+agent calendar identities, full content command extraction, protocol parity and
+the other unfinished milestones remain required.
+
+
+Cancellation validation: all 378 affected database/calendar/API tests and CLI
+regressions pass. The full vector-enabled race suite passes 1,960 tests with one
+expected Chrome-endpoint skip. Final UI review added a regression that keeps RSVP
+choices disabled until refresh finishes, preventing overlapping answer refreshes.
+All 49 UI tests, TypeScript, ESLint, both production webpack builds, repository
+lint, gogolint and both binary builds pass. Final desktop/phone Chrome runs cover
+accepted and unaccepted cancellation for both cards; they report no duplicate
+mutation or runtime exception. Screenshots show spaced recovery controls. The
+harness now waits for enabled buttons before clicking, so a pending network call
+cannot cause a test click to be silently ignored.

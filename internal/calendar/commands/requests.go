@@ -77,6 +77,13 @@ func (self *Commands) ExecuteRequest(ctx context.Context, principal *access.Prin
 			outcome = &RequestOutcome{Receipt: receipt, IsReplay: true}
 			return nil
 		}
+		isCancelled, err := transaction.IsCalendarRequestCancelled(principal.User.ID, request.RequestID)
+		if err != nil {
+			return err
+		}
+		if isCancelled {
+			return fmt.Errorf("%w: calendar request was cancelled", db.ErrInvalidArguments)
+		}
 		owned, err := transaction.GetCalendar(request.CalendarID)
 		if err != nil {
 			return err
@@ -105,4 +112,34 @@ func (self *Commands) ExecuteRequest(ctx context.Context, principal *access.Prin
 		return nil, err
 	}
 	return outcome, nil
+}
+
+// CancelRequest returns completion if it already committed, otherwise records a
+// durable cancellation. A nil receipt is safe only after the caller commits.
+func (self *Commands) CancelRequest(ctx context.Context, principal *access.Principal, requestId string) (*models.CalendarRequestReceipt, error) {
+	if !canUseCalendar(principal) {
+		return nil, db.ErrNotFound
+	}
+	var receipt *models.CalendarRequestReceipt
+	err := self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
+		var err error
+		receipt, err = transaction.LockCalendarRequest(principal.User.ID, requestId)
+		if err != nil {
+			return err
+		}
+		if receipt != nil {
+			if receipt.IsMailSendRequired && !principal.Permissions.Has(models.PermissionMailSend) {
+				return db.ErrNotFound
+			}
+			if receipt.Operation == "answer" && !principal.Permissions.Has(models.PermissionMailRead) {
+				return db.ErrNotFound
+			}
+			return nil
+		}
+		return transaction.CancelCalendarRequest(principal.User.ID, requestId)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return receipt, nil
 }
