@@ -258,13 +258,14 @@ type MailboxArguments struct {
 
 // DraftView is a draft as the tools hold on to one.
 type DraftView struct {
-	ItemID  string   `json:"itemId"`
-	Key     string   `json:"key"`
-	Subject string   `json:"subject"`
-	From    string   `json:"from"`
-	To      []string `json:"to"`
-	Cc      []string `json:"cc"`
-	Bcc     []string `json:"bcc"`
+	MailboxID string   `json:"mailboxId"`
+	ItemID    string   `json:"itemId"`
+	Key       string   `json:"key"`
+	Subject   string   `json:"subject"`
+	From      string   `json:"from"`
+	To        []string `json:"to"`
+	Cc        []string `json:"cc"`
+	Bcc       []string `json:"bcc"`
 }
 
 // FindDraft is the draft a tool was given the name of, wherever it is now.
@@ -282,18 +283,18 @@ func FindDraft(ctx context.Context, operations tools.Operations, view *MailboxVi
 	var byKey struct {
 		FindMailboxDraft *DraftView `json:"FindMailboxDraft"`
 	}
-	if err := operations.Execute(ctx, `query ($mailboxId: String!, $key: String!) { FindMailboxDraft(mailboxId: $mailboxId, key: $key) { itemId key subject from to cc bcc } }`,
+	if err := operations.Execute(ctx, `query ($mailboxId: String!, $key: String!) { FindMailboxDraft(mailboxId: $mailboxId, key: $key) { mailboxId itemId key subject from to cc bcc } }`,
 		map[string]any{"mailboxId": view.Mailbox.ID, "key": name}, &byKey); err == nil && byKey.FindMailboxDraft != nil {
 		return byKey.FindMailboxDraft, nil
 	}
 	var byItem struct {
 		GetMailboxDraft *DraftView `json:"GetMailboxDraft"`
 	}
-	if err := operations.Execute(ctx, `query ($itemId: String!) { GetMailboxDraft(itemId: $itemId) { itemId key subject from to cc bcc } }`,
+	if err := operations.Execute(ctx, `query ($itemId: String!) { GetMailboxDraft(itemId: $itemId) { mailboxId itemId key subject from to cc bcc } }`,
 		map[string]any{"itemId": name}, &byItem); err != nil {
 		return nil, fmt.Errorf("there is no draft %q; it may have been sent or thrown away", name)
 	}
-	if byItem.GetMailboxDraft == nil {
+	if byItem.GetMailboxDraft == nil || byItem.GetMailboxDraft.MailboxID != view.Mailbox.ID {
 		return nil, fmt.Errorf("there is no draft %q; it may have been sent or thrown away", name)
 	}
 	return byItem.GetMailboxDraft, nil

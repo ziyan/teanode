@@ -34,6 +34,7 @@ import (
 type MailboxComposeQuery interface {
 	// Recover a previously accepted send, including after its message was deleted.
 	GetMailboxSubmission(ctx context.Context, arguments GetMailboxSubmissionArguments) (*MailboxSubmission, error)
+	GetMailboxDraftSubmission(ctx context.Context, arguments GetMailboxDraftSubmissionArguments) (*MailboxSubmission, error)
 
 	// Read a draft back into the compose page
 	GetMailboxDraft(ctx context.Context, arguments GetMailboxDraftArguments) (*MailboxDraft, error)
@@ -180,18 +181,19 @@ type GetMailboxDraftArguments struct {
 
 // MailboxDraft is a stored draft read back into fields.
 type MailboxDraft struct {
-	ItemID   string        `json:"itemId"`
-	MailID   string        `json:"mailId"`
-	From     string        `json:"from"`
-	FromName string        `json:"fromName,omitempty"`
-	To       []string      `json:"to"`
-	Cc       []string      `json:"cc"`
-	Bcc      []string      `json:"bcc"`
-	Subject  string        `json:"subject"`
-	HTML     string        `json:"html,omitempty"`
-	Text     string        `json:"text,omitempty"`
-	Language string        `json:"language,omitempty"`
-	Parts    []*Attachment `json:"attachments"`
+	MailboxID string        `json:"mailboxId"`
+	ItemID    string        `json:"itemId"`
+	MailID    string        `json:"mailId"`
+	From      string        `json:"from"`
+	FromName  string        `json:"fromName,omitempty"`
+	To        []string      `json:"to"`
+	Cc        []string      `json:"cc"`
+	Bcc       []string      `json:"bcc"`
+	Subject   string        `json:"subject"`
+	HTML      string        `json:"html,omitempty"`
+	Text      string        `json:"text,omitempty"`
+	Language  string        `json:"language,omitempty"`
+	Parts     []*Attachment `json:"attachments"`
 
 	// What the draft was a reply to or a forward of, when it was: the
 	// compose page keeps the thread when the draft is sent.
@@ -444,6 +446,7 @@ func (self *graph) readDraft(ctx context.Context, mailbox *models.Mailbox, itemI
 		return nil, err
 	}
 	draft := &MailboxDraft{
+		MailboxID:     mailbox.ID,
 		ItemID:        item.ID,
 		MailID:        stored.ID,
 		Subject:       mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(headers, "Subject")),
@@ -835,4 +838,23 @@ func addressesOf(headers []string, name string) []string {
 		addresses = append(addresses, address.String())
 	}
 	return addresses
+}
+
+// GetMailboxDraftSubmissionArguments identifies an accepted source draft.
+type GetMailboxDraftSubmissionArguments struct {
+	MailboxID   string `json:"mailboxId"`
+	DraftItemID string `json:"draftItemId"`
+}
+
+// GetMailboxDraftSubmission reads acceptance without requiring a surviving draft.
+func (self *graph) GetMailboxDraftSubmission(ctx context.Context, arguments GetMailboxDraftSubmissionArguments) (*MailboxSubmission, error) {
+	mailbox, err := self.requireMailbox(ctx, models.PermissionMailSend, arguments.MailboxID)
+	if err != nil {
+		return nil, err
+	}
+	accepted, err := self.transaction(ctx).GetDraftSubmission(mailbox.UserID, mailbox.ID, strings.TrimSpace(arguments.DraftItemID))
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return mailboxSubmission(accepted), nil
 }

@@ -320,3 +320,34 @@ func TestDomainSubmissionMigrationPreservesMailOnReverse(test *testing.T) {
 	}
 	test.Fatal("domain submission migration is missing")
 }
+
+func TestDraftSubmissionIndexMigrationPreservesAcceptance(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if err := transaction.CreateSubmission(&models.Submission{OwnerID: "owner", SubmissionID: "send", MailboxID: "mailbox", DraftItemID: "draft", MailID: "mail", RequestDigest: strings.Repeat("a", 64), AcceptedAt: time.Now()}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	for _, migration := range migrations.Migrations() {
+		if migration.ID != "0099_submission_draft_lookup" {
+			continue
+		}
+		dbtest.Exec(test, database, migration.ReverseSQL)
+		dbtest.Exec(test, database, migration.SQL)
+		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+			receipt, err := transaction.GetDraftSubmission("owner", "mailbox", "draft")
+			if err != nil || receipt == nil || receipt.MailID != "mail" {
+				test.Fatalf("receipt=%+v, %v", receipt, err)
+			}
+			for _, lookup := range [][3]string{{"other", "mailbox", "draft"}, {"owner", "other", "draft"}} {
+				receipt, err := transaction.GetDraftSubmission(lookup[0], lookup[1], lookup[2])
+				if err != nil || receipt != nil {
+					test.Fatalf("foreign receipt=%+v, %v", receipt, err)
+				}
+			}
+		})
+		return
+	}
+	test.Fatal("draft lookup migration is missing")
+}

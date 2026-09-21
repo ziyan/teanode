@@ -26,6 +26,7 @@ type SubmissionOperation interface {
 	CreateDomainSubmission(submission *models.DomainSubmission) error
 	// GetSubmission reads a committed acceptance without claiming or locking it.
 	GetSubmission(ownerId, submissionId string) (*models.Submission, error)
+	GetDraftSubmission(ownerId, mailboxId, draftItemId string) (*models.Submission, error)
 	// LockSubmission serializes this owner's identifier through transaction end,
 	// including when no record exists. A nil result allows initial acceptance.
 	LockSubmission(ownerId, submissionId string) (*models.Submission, error)
@@ -157,4 +158,20 @@ func (self *transaction) DeferSubmissionReconciliation(ownerId, submissionId str
 		return fmt.Errorf("submission retry time is required")
 	}
 	return self.tx.Model(&submissionModel{}).Where("owner_id = ? AND submission_id = ? AND reconciled_at IS NULL", ownerId, submissionId).Update("reconcile_after", retryAt).Error
+}
+
+// GetDraftSubmission recovers acceptance after its source draft has been removed.
+func (self *transaction) GetDraftSubmission(ownerId, mailboxId, draftItemId string) (*models.Submission, error) {
+	if ownerId == "" || mailboxId == "" || draftItemId == "" {
+		return nil, ErrInvalidArguments
+	}
+	var stored submissionModel
+	err := self.tx.Where("owner_id = ? AND mailbox_id = ? AND draft_item_id = ? AND draft_item_id <> ''", ownerId, mailboxId, draftItemId).Order("accepted_at, submission_id").Take(&stored).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return (*models.Submission)(&stored), nil
 }

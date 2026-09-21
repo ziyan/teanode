@@ -130,6 +130,21 @@ func runMailSend(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return recoverRead(err)
 	}
 	itemId := found.ItemID
+	canonicalDraftId := strings.TrimSpace(found.Key)
+	if canonicalDraftId == "" {
+		canonicalDraftId = itemId
+	}
+	// Both accepted names must converge before composing another send.
+	checkedDraftIds := map[string]bool{strings.TrimSpace(arguments.DraftID): true}
+	for _, draftId := range []string{canonicalDraftId, itemId} {
+		if checkedDraftIds[draftId] {
+			continue
+		}
+		checkedDraftIds[draftId] = true
+		if recovered, err := acceptedDraft(ctx, operations, []*mailbox.MailboxView{view}, draftId); err != nil || recovered != nil {
+			return recovered, err
+		}
+	}
 	var draft struct {
 		GetMailboxDraft *struct {
 			From          string   `json:"from"`
@@ -172,7 +187,7 @@ func runMailSend(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			} `json:"mail"`
 		} `json:"SendMailboxMessage"`
 	}
-	if err := operations.Execute(ctx, `mutation ($mailboxId: String!, $message: MailboxMessageParametersInput!, $submissionId: String!) { SendMailboxMessage(mailboxId: $mailboxId, message: $message, submissionId: $submissionId) { mail { id } } }`, map[string]any{"mailboxId": view.Mailbox.ID, "message": message, "submissionId": draftSubmissionId(view.Mailbox.ID, arguments.DraftID)}, &result); err != nil {
+	if err := operations.Execute(ctx, `mutation ($mailboxId: String!, $message: MailboxMessageParametersInput!, $submissionId: String!) { SendMailboxMessage(mailboxId: $mailboxId, message: $message, submissionId: $submissionId) { mail { id } } }`, map[string]any{"mailboxId": view.Mailbox.ID, "message": message, "submissionId": draftSubmissionId(view.Mailbox.ID, canonicalDraftId)}, &result); err != nil {
 		return nil, err
 	}
 	sent := ""
@@ -187,7 +202,8 @@ func runMailSend(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	return answer, nil
 }
 
-// Retries of the same draft identifier reuse acceptance, including from the
+// New sends use the stable draft key; receipt lookup also accepts item IDs.
+// Retries reuse acceptance, including from the
 // direct CLI and after conversation retries. Provider call IDs may repeat, so they cannot
 // name the send. A new message gets a new draft key from the draft creator.
 func draftSubmissionId(mailboxId, draftId string) string {
@@ -204,6 +220,17 @@ func acceptedDraft(ctx context.Context, operations tools.Operations, views []*ma
 		}
 		if err := operations.Execute(ctx, `query ($mailboxId: String!, $submissionId: String!) { GetMailboxSubmission(mailboxId: $mailboxId, submissionId: $submissionId) { mailId } }`, map[string]any{"mailboxId": view.Mailbox.ID, "submissionId": draftSubmissionId(view.Mailbox.ID, draftId)}, &response); err != nil {
 			return nil, err
+		}
+		if response.GetMailboxSubmission == nil {
+			var byDraft struct {
+				GetMailboxDraftSubmission *struct {
+					MailID string `json:"mailId"`
+				} `json:"GetMailboxDraftSubmission"`
+			}
+			if err := operations.Execute(ctx, `query ($mailboxId: String!, $draftItemId: String!) { GetMailboxDraftSubmission(mailboxId: $mailboxId, draftItemId: $draftItemId) { mailId } }`, map[string]any{"mailboxId": view.Mailbox.ID, "draftItemId": strings.TrimSpace(draftId)}, &byDraft); err != nil {
+				return nil, err
+			}
+			response.GetMailboxSubmission = byDraft.GetMailboxDraftSubmission
 		}
 		if response.GetMailboxSubmission != nil {
 			answer, err := tools.JSONResult(map[string]any{"sent": true, "mail_id": response.GetMailboxSubmission.MailID, "is_replay": true})

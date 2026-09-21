@@ -33,7 +33,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
+- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries using either the stable draft key or its source item identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, agent calendar mutation retries, contact proposal acceptance and protocol adapters, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
@@ -101,9 +101,11 @@ The mail-send tool now derives its submission identifier from the mailbox and
 supplied draft identifier. Acceptance lookup precedes draft reads, so a response
 lost after committed acceptance remains recoverable after draft removal. A
 second lookup handles acceptance committed while a draft read was in flight.
-This guarantee covers retries of the same supplied draft identifier; switching
-between a logical draft key and an item identifier is a different identity and
-is not claimed as deduplicated by this adapter.
+The follow-up derives new sends from the resolved stable draft key and adds
+owner/mailbox-scoped receipt lookup by source item ID. Both supplied names can
+therefore recover new acceptance after source removal. Existing legacy receipts
+remain readable by their original identifiers and source items; an old receipt
+created from an item ID does not contain its deleted draft's stable key.
 
 The automatic reply worker checked Held before its policy ladder, then later
 wrote Sending without checking the locked row. Human cancellation could be
@@ -1916,3 +1918,26 @@ Insight follow-up validation: database, API and all agent packages pass with the
 race detector against the disposable vector database. Both binaries, repository
 lint and gogolint pass. No dashboard files changed after the 51-test UI suite and
 Chrome proposal audit. Staged and untracked privacy checks are clean.
+
+
+Draft alias recovery: GetMailboxDraftSubmission exposes only accepted identities
+for the caller's owned mailbox and requires current mail-send permission. It
+reads the source item reference already retained on mail_submission, so no draft
+bytes or surviving item are needed. Migration 0099 adds a partial lookup index;
+its reverse drops only that index. The tool still checks the originally supplied
+identity first for compatibility, then checks the resolved stable key and item
+before composition. New sends use the stable key, or the item for older keyless
+drafts. Tests cover both starting names, a lost response and both retries after
+removal, plus API ownership, permission revocation, retention and index reversal.
+
+Review also found and fixed mailbox selection for item-based draft lookup.
+MailboxDraft now returns its mailbox ID, and FindDraft rejects a fallback result
+from another granted view. A regression checks that the wrong view is rejected
+and the matching view returns the same stable draft key.
+
+Draft alias validation: the full vector-enabled race suite passes 1,976 tests
+with one expected Chrome-endpoint skip. Final focused tool tests also cover a
+draft-receipt lookup failure and the removal of redundant identity lookups.
+Repository lint, gogolint and both binary builds pass. This changes no dashboard
+presentation; the preceding desktop/phone Chrome and 51 UI-test evidence remains
+applicable. Privacy review includes untracked tests and both migration files.

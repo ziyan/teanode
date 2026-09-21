@@ -21,10 +21,13 @@ func (self *sendRun) Operations() tools.Operations { return self.operations }
 
 type sendOperations struct {
 	accepted                map[string]string
+	acceptedDrafts          map[string]string
+	draftAliases            map[string]string
 	sendCount               int
 	draftReadCount          int
 	hasLostResponse         bool
 	hasLookupFailure        bool
+	hasDraftLookupFailure   bool
 	hasAcceptanceDuringFind bool
 	hasDraftRemoved         bool
 }
@@ -38,6 +41,15 @@ func (self *sendOperations) Execute(_ context.Context, document string, variable
 	switch {
 	case strings.Contains(document, "ListMailboxes"):
 		response = map[string]any{"ListMailboxes": []any{map[string]any{"mailbox": map[string]any{"id": "mailbox-fixture", "agent": map[string]any{"granted": true}}}}}
+	case strings.Contains(document, "GetMailboxDraftSubmission"):
+		if self.hasDraftLookupFailure {
+			return errors.New("draft receipt lookup unavailable")
+		}
+		var accepted any
+		if mailId := self.acceptedDrafts[variables["draftItemId"].(string)]; mailId != "" {
+			accepted = map[string]any{"mailId": mailId}
+		}
+		response = map[string]any{"GetMailboxDraftSubmission": accepted}
 	case strings.Contains(document, "GetMailboxSubmission"):
 		if self.hasLookupFailure {
 			return errors.New("lookup unavailable")
@@ -59,7 +71,11 @@ func (self *sendOperations) Execute(_ context.Context, document string, variable
 		if len(self.accepted) > 0 && self.hasLostResponse {
 			return errors.New("draft already removed")
 		}
-		response = map[string]any{"FindMailboxDraft": map[string]any{"itemId": "draft-item", "key": variables["key"]}}
+		draftKey := variables["key"].(string)
+		if canonical := self.draftAliases[draftKey]; canonical != "" {
+			draftKey = canonical
+		}
+		response = map[string]any{"FindMailboxDraft": map[string]any{"itemId": "item-" + draftKey, "key": draftKey}}
 	case strings.Contains(document, "GetMailboxDraft"):
 		self.draftReadCount++
 		if self.hasDraftRemoved {
@@ -74,6 +90,10 @@ func (self *sendOperations) Execute(_ context.Context, document string, variable
 		}
 		mailId := fmt.Sprintf("accepted-mail-%d", self.sendCount)
 		self.accepted[submissionId] = mailId
+		if self.acceptedDrafts == nil {
+			self.acceptedDrafts = map[string]string{}
+		}
+		self.acceptedDrafts[variables["message"].(map[string]any)["draftItemId"].(string)] = mailId
 		if self.hasLostResponse {
 			return errors.New("response was lost after acceptance")
 		}
@@ -153,5 +173,45 @@ func TestMailSendRecoversAcceptanceDuringDraftLookup(test *testing.T) {
 	recovered, err := runMailSend(ctx, &tools.Call{Arguments: json.RawMessage(`{"draft_id":"draft-key"}`), Confirmed: true})
 	if err != nil || recovered == nil || !strings.Contains(recovered.Content, "accepted-during-read") || operations.sendCount != 0 {
 		test.Fatalf("concurrent acceptance = %+v, %v, sends=%d", recovered, err, operations.sendCount)
+	}
+}
+
+func TestMailSendRecoversBothDraftNamesAfterRemoval(test *testing.T) {
+	for _, firstName := range []string{"draft-key", "item-draft-key"} {
+		test.Run(firstName, func(test *testing.T) {
+			operations := &sendOperations{accepted: map[string]string{}, draftAliases: map[string]string{"item-draft-key": "draft-key"}, hasLostResponse: true}
+			ctx := tools.WithRun(test.Context(), &sendRun{operations: operations})
+			invoke := func(draftId string) (*tools.Result, error) {
+				arguments, err := json.Marshal(mailSendArguments{DraftID: draftId})
+				if err != nil {
+					test.Fatal(err)
+				}
+				return runMailSend(ctx, &tools.Call{Arguments: arguments, Confirmed: true})
+			}
+			if _, err := invoke(firstName); err == nil {
+				test.Fatal("expected lost response")
+			}
+			operations.hasDraftRemoved = true
+			for _, retryName := range []string{"draft-key", "item-draft-key"} {
+				recovered, err := invoke(retryName)
+				if err != nil || recovered == nil || !strings.Contains(recovered.Content, `"is_replay":true`) {
+					test.Fatalf("retry %s: %+v, %v", retryName, recovered, err)
+				}
+			}
+			if operations.sendCount != 1 {
+				test.Fatalf("sends=%d", operations.sendCount)
+			}
+		})
+	}
+}
+
+func TestMailSendStopsWhenDraftReceiptLookupFails(test *testing.T) {
+	operations := &sendOperations{accepted: map[string]string{}, hasDraftLookupFailure: true}
+	ctx := tools.WithRun(test.Context(), &sendRun{operations: operations})
+	if _, err := runMailSend(ctx, &tools.Call{Arguments: json.RawMessage(`{"draft_id":"draft-key"}`), Confirmed: true}); err == nil {
+		test.Fatal("lookup failure ignored")
+	}
+	if operations.sendCount != 0 || operations.draftReadCount != 0 {
+		test.Fatal("uncertain draft receipt allowed preparation")
 	}
 }

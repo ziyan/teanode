@@ -304,3 +304,48 @@ func TestMailboxSubmissionCancellationRequiresOwnershipAndPermission(test *testi
 		}
 	})
 }
+
+func TestDraftSubmissionLookupSurvivesRemovalAndChecksOwner(test *testing.T) {
+	database, resolver, principal, arguments, _ := submissionAPIFixture(test)
+	lookup := GetMailboxDraftSubmissionArguments{MailboxID: arguments.MailboxID, DraftItemID: arguments.Message.DraftItemID}
+	var mailId string
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(test.Context(), principal), transaction)
+		accepted, err := resolver.SendMailboxMessage(ctx, arguments)
+		if err != nil {
+			test.Fatal(err)
+		}
+		mailId = accepted.Mail.ID
+	})
+	if err := mailer.NewSubmissionReconciler(database).RunOnce(test.Context()); err != nil {
+		test.Fatal(err)
+	}
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		draft, err := transaction.GetItem(lookup.DraftItemID)
+		if err != nil || draft != nil {
+			test.Fatalf("draft=%+v, %v", draft, err)
+		}
+		if err := transaction.DeleteMail(mailId, nil); err != nil {
+			test.Fatal(err)
+		}
+	})
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(test.Context(), principal), transaction)
+		accepted, err := resolver.GetMailboxDraftSubmission(ctx, lookup)
+		if err != nil || accepted == nil || accepted.MailID != mailId {
+			test.Fatalf("receipt=%+v, %v", accepted, err)
+		}
+		other := &api.Principal{User: &models.User{ID: "another-owner"}, Permissions: principal.Permissions}
+		if accepted, err := resolver.GetMailboxDraftSubmission(api.ContextWithPrincipal(ctx, other), lookup); err == nil || accepted != nil {
+			test.Fatal("another account read acceptance")
+		}
+		denied := &api.Principal{User: principal.User, Permissions: models.NewEffectivePermissions(nil)}
+		if accepted, err := resolver.GetMailboxDraftSubmission(api.ContextWithPrincipal(ctx, denied), lookup); err == nil || accepted != nil {
+			test.Fatal("revoked sender read acceptance")
+		}
+	})
+	schema := &graph{schema: buildSchemaForValidation(test)}
+	if _, rejected := schema.prepareGraphRequest(&graphRequest{Query: `query ($mailboxId: String!, $draftItemId: String!) { GetMailboxDraftSubmission(mailboxId: $mailboxId, draftItemId: $draftItemId) { mailId } }`}); rejected != nil {
+		test.Fatal(rejected.Errors)
+	}
+}
