@@ -36,7 +36,7 @@ func ingestionPageFixture(test *testing.T) (db.Database, *Agent, *Run, *models.A
 
 func TestIngestionPageFailureRetainsContinuationForReplay(test *testing.T) {
 	database, worker, run, source := ingestionPageFixture(test)
-	page := computer.ScanResult{Next: "next-page", Entries: []computer.ScanEntry{
+	page := ingestPage{NextCursor: "next-page", Entries: []computer.ScanEntry{
 		{ExternalID: "first", Kind: "file", Hash: "first-hash", Text: "First searchable document."},
 		{ExternalID: "second", Kind: "file", Hash: "second-hash", Text: "Second searchable document."},
 	}}
@@ -50,7 +50,7 @@ func TestIngestionPageFailureRetainsContinuationForReplay(test *testing.T) {
 	}
 	dbtest.Exec(test, database, `ALTER TABLE agent_document DROP CONSTRAINT fixture_refusal`)
 	next, _, err = worker.fileComputerPage(test.Context(), run, source, page, nil)
-	if err != nil || next != page.Next {
+	if err != nil || next != page.NextCursor {
 		test.Fatalf("replayed page=%q, %v", next, err)
 	}
 	if count := dbtest.QueryString(test, database, `SELECT count(*)::text FROM agent_document`); count != "2" {
@@ -65,7 +65,7 @@ func TestIngestionAttachmentMetadataFailureDoesNotCompletePage(test *testing.T) 
 	database, worker, run, source := ingestionPageFixture(test)
 	dbtest.Exec(test, database, `ALTER TABLE agent_document ADD CONSTRAINT fixture_attachment_refusal CHECK (external_id <> 'attachment')`)
 	failure := errors.New("fixture attachment unavailable")
-	page := computer.ScanResult{Next: "next-page", Entries: []computer.ScanEntry{{ExternalID: "attachment", Kind: computer.KindAttachment, Hash: strings.Repeat("a", 64), Size: 10}}}
+	page := ingestPage{NextCursor: "next-page", Entries: []computer.ScanEntry{{ExternalID: "attachment", Kind: computer.KindAttachment, Hash: strings.Repeat("a", 64), Size: 10}}}
 	next, _, err := worker.fileComputerPage(test.Context(), run, source, page, func(computer.ScanEntry) blobFetcher {
 		return func(context.Context) ([]byte, error) { return nil, failure }
 	})

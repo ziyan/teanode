@@ -13,8 +13,11 @@ import (
 
 // fileComputerPage returns continuation only after every entry was recorded.
 // Already committed entries can be replayed by their source and external ID.
-func (self *Agent) fileComputerPage(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, result computer.ScanResult, fetchAttachment func(computer.ScanEntry) blobFetcher) (string, db.SourceCounts, error) {
+func (self *Agent) fileComputerPage(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, result ingestPage, fetchAttachment func(computer.ScanEntry) blobFetcher) (string, db.SourceCounts, error) {
 	counts := db.SourceCounts{}
+	if result.IsComplete != (result.NextCursor == "") {
+		return "", counts, fmt.Errorf("source page completion disagrees with its cursor")
+	}
 	if err := self.checkSourceRead(ctx, source); err != nil {
 		return "", counts, err
 	}
@@ -99,5 +102,5 @@ func (self *Agent) fileComputerPage(ctx context.Context, run *Run, source *model
 			return "", counts, fmt.Errorf("recording what %s still has of %s: %w", source.Specification.Computer, source.Specification.Path, err)
 		}
 	}
-	return result.Next, counts, nil
+	return result.NextCursor, counts, nil
 }

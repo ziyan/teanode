@@ -160,8 +160,8 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 		}
 		return "", counts, fmt.Errorf("asking %s to read %s: %w", source.Specification.Computer, source.Specification.Path, err)
 	}
-	var result computer.ScanResult
-	if err := json.Unmarshal(answer, &result); err != nil {
+	result, err := decodeIngestPage(answer, after)
+	if err != nil {
 		return "", counts, fmt.Errorf("the computer's answer is not readable: %w", err)
 	}
 	return self.fileComputerPage(ctx, run, source, result, func(entry computer.ScanEntry) blobFetcher {

@@ -2006,3 +2006,24 @@ Document-replacement validation: the full standard-PostgreSQL race suite passes
 binary builds, repository lint and gogolint pass. The transaction-boundary review
 now records current calendar recovery and ingestion guarantees without claiming
 page/cursor atomicity. The broader milestone remains in progress.
+
+
+Device page boundary: decodeIngestPage now converts the unchanged device wire
+format into an internal ingestPage with entries, continuation and explicit
+completion. Missing entries, malformed entries, negative profile counts and an
+immediately repeated continuation are rejected before filing. Legacy last pages
+that omit next remain valid; entries:null remains valid because ScanResult
+serializes an empty nil slice that way. A zero internal page is not completion.
+
+Contract tests serialize existing ScanResult values and verify equivalent page
+semantics, then exercise malformed and non-advancing answers. File persistence
+continues to return continuation only after page effects succeed. Persisted cursor
+map adaptation, job-level typed outcomes and page/cursor coordination remain open;
+this boundary does not claim to detect arbitrary multi-page cursor cycles.
+
+Page-boundary validation: all agent and computer packages pass with the race
+detector and disposable database. Focused compatibility, malformed-response and
+zero-page regressions pass. Both binaries, repository lint and gogolint pass.
+No wire-format or dashboard presentation change is introduced. The last full
+standard-PostgreSQL suite remains 1,987 tests with two expected skips; this
+checkpoint adds boundary coverage and keeps the remaining milestone gates open.
