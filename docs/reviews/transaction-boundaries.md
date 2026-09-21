@@ -102,3 +102,11 @@ storage or late cleanup restores the previous item and rolls back new metadata,
 even if the caller handles the error and commits unrelated work. Stored bytes
 are not deleted during rollback and follow normal retention. MIME-specific
 preparation remains in the API adapter pending further command extraction.
+
+
+Calendar metadata now uses `internal/calendar/commands.Update` on the caller
+transaction. Its row lock also guards the agent grant adapter, preserving the
+other operation's fields during concurrent changes. Event save/delete and
+invitation mail retain their existing separate boundaries and remain part of
+the application-command extraction; metadata rollback does not prove event or
+invitation atomicity.

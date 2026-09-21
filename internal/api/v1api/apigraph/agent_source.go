@@ -79,7 +79,7 @@ func (self *graph) GrantAgentSource(ctx context.Context, arguments GrantAgentSou
 	id := strings.TrimSpace(arguments.ID)
 	switch strings.TrimSpace(arguments.Kind) {
 	case AgentCollectionCalendar:
-		calendar, err := tx.GetCalendar(id)
+		calendar, err := tx.LockCalendar(id)
 		if err != nil {
 			return nil, err
 		}

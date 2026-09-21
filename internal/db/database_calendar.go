@@ -119,8 +119,17 @@ func (self *transaction) ListCalendars(userId string) ([]*models.Calendar, error
 }
 
 func (self *transaction) GetCalendar(calendarId string) (*models.Calendar, error) {
+	return readCalendar(self.tx, calendarId)
+}
+
+// LockCalendar serializes metadata edits and agent grant changes until commit.
+func (self *transaction) LockCalendar(calendarId string) (*models.Calendar, error) {
+	return readCalendar(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}), calendarId)
+}
+
+func readCalendar(query *gorm.DB, calendarId string) (*models.Calendar, error) {
 	var found []calendarModel
-	if err := self.tx.Where("\"id\" = ?", calendarId).Limit(1).Find(&found).Error; err != nil {
+	if err := query.Where("\"id\" = ?", calendarId).Limit(1).Find(&found).Error; err != nil {
 		return nil, err
 	}
 	if len(found) == 0 {

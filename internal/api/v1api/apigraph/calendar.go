@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/calendar"
+	calendarcommands "github.com/ziyan/teanode/internal/calendar/commands"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
@@ -780,44 +782,22 @@ func (self *graph) callOff(ctx context.Context, object *models.CalendarObject, o
 }
 
 func (self *graph) SaveCalendar(ctx context.Context, arguments SaveCalendarArguments) (*CalendarView, error) {
-	found, err := self.requireOwnCalendar(ctx, arguments.ID)
+	principal, err := self.requireCalendarPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if zone := strings.TrimSpace(arguments.Timezone); zone != "" {
-		if _, err := time.LoadLocation(zone); err != nil {
-			return nil, fmt.Errorf("%w: this server does not know the time zone %q",
-				api.ErrInvalidArguments, zone)
-		}
+	outcome, err := calendarcommands.New(self.transaction(ctx)).Update(ctx, principal, calendarcommands.UpdateRequest{ID: arguments.ID, Name: arguments.Name, Description: arguments.Description, Colour: arguments.Colour, Timezone: arguments.Timezone, WeekStart: arguments.WeekStart})
+	if errors.Is(err, db.ErrInvalidArguments) {
+		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
-	// Refused rather than quietly turned into Sunday: a person who typed
-	// something else meant something, and being told is how they find out
-	// there are two answers here and not seven.
-	if given := strings.TrimSpace(arguments.WeekStart); given != "" && models.KnownWeekStart(given) == "" {
-		return nil, fmt.Errorf("%w: a week starts on sunday or on monday", api.ErrInvalidArguments)
-	}
-	var kept *models.Calendar
-	var count int64
-	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		if kept, err = tx.UpdateCalendar(&models.Calendar{
-			ID: found.ID, Name: arguments.Name, Description: arguments.Description,
-			Colour: arguments.Colour, Timezone: arguments.Timezone,
-			WeekStart: arguments.WeekStart,
-		}); err != nil {
-			return err
-		}
-		if kept == nil {
-			return api.ErrNotFound
-		}
-		count, err = tx.CountCalendarObjects(found.ID)
-		return err
-	}); err != nil {
+	if err != nil {
 		return nil, translateError(err)
 	}
+	kept := outcome.Calendar
 	return &CalendarView{
 		ID: kept.ID, Name: kept.Name, Description: kept.Description,
 		Colour: kept.Colour, Timezone: kept.Timezone, WeekStart: weekStartOf(kept),
-		Events: int(count), AgentGranted: kept.AgentGranted,
+		Events: int(outcome.EventCount), AgentGranted: kept.AgentGranted,
 	}, nil
 }
 

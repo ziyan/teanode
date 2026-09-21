@@ -103,6 +103,7 @@ type MemoryOperation interface {
 	// expanding every recurrence rule in the calendar.
 	ListCalendars(userId string) ([]*models.Calendar, error)
 	GetCalendar(calendarId string) (*models.Calendar, error)
+	LockCalendar(calendarId string) (*models.Calendar, error)
 	CreateCalendar(calendar *models.Calendar) (*models.Calendar, error)
 	UpdateCalendar(calendar *models.Calendar) (*models.Calendar, error)
 	DeleteCalendar(userId, calendarId string) error
