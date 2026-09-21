@@ -9559,3 +9559,11 @@ button.with-icon {
     padding-bottom: 84px;
   }
 }
+
+/* Keep a pending message readable while its fields and toolbar cannot change. */
+.compose-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}

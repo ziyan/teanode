@@ -13,6 +13,12 @@ import { useTranslation } from '../i18n/i18n'
 import { UploadHandle, isCancelled, uploadFiles } from '../upload'
 import { folderOfKind, useMailboxes } from '../mailboxes'
 import { Combobox, Select } from '../components/select'
+import { useSession } from '../session'
+import {
+  AcceptedMailboxSubmission,
+  AnotherMailboxSubmissionError,
+  useMailboxSubmission,
+} from '../hooks/useMailboxSubmission'
 
 // Writing from a mailbox: a new message, a reply, a forward, or a draft
 // picked up again. One page for the four, told apart by the address bar:
@@ -45,14 +51,6 @@ const DRAFT = `
     GetMailboxDraft(itemId: $itemId) {
       itemId mailId from fromName to cc bcc subject html text replyToItemId forwardItemId
       attachments { index filename contentType size inline }
-    }
-  }`
-
-const SEND = `
-  mutation ($mailboxId: String!, $message: MailboxMessageParametersInput!) {
-    SendMailboxMessage(mailboxId: $mailboxId, message: $message) {
-      mail { id }
-      item { id folderId }
     }
   }`
 
@@ -155,7 +153,12 @@ const DRAFT_REPLY = `
     DraftReply(itemId: $itemId, instructions: $instructions) { text }
   }`
 
-export function MailboxComposer({
+export function MailboxComposer(props: Parameters<typeof MailboxComposerForAccount>[0]) {
+  const session = useSession()
+  return <MailboxComposerForAccount key={session.userId ?? ''} {...props} />
+}
+
+function MailboxComposerForAccount({
   replyTo,
   replyAll,
   forwardOf,
@@ -190,12 +193,19 @@ export function MailboxComposer({
   const navigate = useNavigate()
   const toast = useToast()
   const mailboxes = useMailboxes()
+  const session = useSession()
+  const submission = useMailboxSubmission(session.userId ?? '')
+  const initialSubmission = useRef(submission.pending).current
+  const [submissionMailboxId, setSubmissionMailboxId] = useState(initialSubmission?.mailboxId)
   // The mailbox this message belongs to: the one holding the item replied
   // to, forwarded or continued, when there is one, else the one the rail
   // shows. A link into another mailbox's message must not be answered from
   // this one.
   const [ownerFolderId, setOwnerFolderId] = useState<string | null>(null)
   const view =
+    mailboxes.views.find(
+      (candidate) => candidate.mailbox.id === (submission.pending?.mailboxId ?? submissionMailboxId),
+    ) ||
     (ownerFolderId &&
       mailboxes.views.find((candidate) => candidate.folders.some((folder) => folder.id === ownerFolderId))) ||
     mailboxes.current
@@ -246,12 +256,20 @@ export function MailboxComposer({
   const [sent, setSent] = useState(false)
   const [discarding, setDiscarding] = useState(false)
   const dirty = useRef(false)
+  const sendingRequest = useRef(false)
+  const isMounted = useRef(true)
+  useEffect(() => {
+    isMounted.current = true
+    return () => {
+      isMounted.current = false
+    }
+  }, [])
   const fileInput = useRef<HTMLInputElement>(null)
 
   const addresses = useMemo(() => view?.mailbox.addresses ?? [], [view])
 
   const draftWithAgent = async () => {
-    if (!replyItemId || drafting) {
+    if (!replyItemId || drafting || sendingRequest.current || submission.pendingRequest.current) {
       return
     }
     setDrafting(true)
@@ -328,7 +346,8 @@ export function MailboxComposer({
   // The message being answered or forwarded, or the draft being continued,
   // read once into the fields.
   useEffect(() => {
-    if (!view) {
+    if (!view || initialSubmission || sendingRequest.current || submission.pendingRequest.current) {
+      if (initialSubmission) setLoading(false)
       return
     }
     let canceled = false
@@ -448,7 +467,7 @@ export function MailboxComposer({
   // picked up again, which already has whatever it has.
   const signed = useRef(false)
   useEffect(() => {
-    if (signed.current || loading || draftOf || !view) {
+    if (signed.current || loading || draftOf || initialSubmission || !view) {
       return
     }
     signed.current = true
@@ -462,15 +481,40 @@ export function MailboxComposer({
     if (signatureText) {
       setText((previous) => `\n\n-- \n${signatureText}${previous}`)
     }
-  }, [loading, draftOf, view])
+  }, [loading, draftOf, view, initialSubmission])
 
   // What the paperclip shows: the files, not the pictures the body holds.
   const shownKept = kept.filter((attachment) => !attachment.inline)
+
+  useEffect(() => {
+    const pending = submission.pending
+    if (!pending) return
+    setSubmissionMailboxId(pending.mailboxId)
+    const message = pending.message
+    const { cc: pendingCopies, bcc: pendingBlindCopies } = message
+    setFrom(message.from)
+    setTo(message.to.join(', '))
+    setCc(pendingCopies.join(', '))
+    setBcc(pendingBlindCopies.join(', '))
+    setSubject(message.subject)
+    setHtml(message.htmlContent)
+    setText(message.textContent)
+    setEditor(message.htmlContent ? 'rich' : 'plain')
+    setDraftItemId(message.draftItemId)
+    setReplyItemId(message.replyToItemId)
+    setForwardItemId(message.forwardItemId)
+    setKept(pending.kept)
+    setCarried(pending.carried)
+    setLoading(false)
+    setLoadError(null)
+  }, [submission.pending])
 
   const touch = () => {
     dirty.current = true
   }
 
+  const draftParts = useRef({ draftItemId, kept, carried })
+  draftParts.current = { draftItemId, kept, carried }
   const buildMessage = useCallback(
     async () => ({
       from,
@@ -482,11 +526,13 @@ export function MailboxComposer({
       textContent: editor === 'rich' ? htmlToText(html) : text,
       replyToItemId: replyItemId,
       forwardItemId: forwardItemId,
-      forwardAttachments: forwardItemId ? carried.map((attachment) => attachment.index) : [],
-      draftItemId: draftItemId,
-      keepAttachments: draftItemId ? kept.map((attachment) => attachment.index) : [],
+      forwardAttachments: forwardItemId ? draftParts.current.carried.map((attachment) => attachment.index) : [],
+      draftItemId: draftParts.current.draftItemId,
+      keepAttachments: draftParts.current.draftItemId
+        ? draftParts.current.kept.map((attachment) => attachment.index)
+        : [],
     }),
-    [from, to, cc, bcc, subject, editor, html, text, replyItemId, forwardItemId, carried, draftItemId, kept],
+    [from, to, cc, bcc, subject, editor, html, text, replyItemId, forwardItemId],
   )
 
   // The save in flight, so a send can wait for it rather than race it: a
@@ -495,7 +541,15 @@ export function MailboxComposer({
   const pendingSave = useRef<Promise<void> | null>(null)
 
   const save = useCallback(async () => {
-    if (!view || saving || sending || sent || !from) {
+    if (
+      !view ||
+      saving ||
+      pendingSave.current ||
+      sendingRequest.current ||
+      submission.pendingRequest.current ||
+      sent ||
+      !from
+    ) {
       return
     }
     setSaving(true)
@@ -526,6 +580,7 @@ export function MailboxComposer({
       const stored = (await graphql<{ GetMailboxDraft: Draft }>(DRAFT, { itemId: draftId })).GetMailboxDraft
       setKept(stored.attachments ?? [])
       setCarried([])
+      draftParts.current = { draftItemId: draftId, kept: stored.attachments ?? [], carried: [] }
       dirty.current = false
       setSavedAt(new Date())
       setProblem(null)
@@ -536,7 +591,7 @@ export function MailboxComposer({
       pendingSave.current = null
       finish()
     }
-  }, [view, saving, sending, sent, from, buildMessage, onDraft])
+  }, [view, saving, sent, from, buildMessage, onDraft, submission.pendingRequest])
 
   // The draft in hand, for an upload that arrives while a save is running.
   const latestDraftId = useRef<string | null>(draftItemId)
@@ -609,6 +664,7 @@ export function MailboxComposer({
         latestDraftId.current = reply.itemId
         setKept(reply.attachments ?? [])
         setCarried([])
+        draftParts.current = { draftItemId: reply.itemId, kept: reply.attachments ?? [], carried: [] }
         setSavedAt(new Date())
         setUploading([])
       })
@@ -634,7 +690,7 @@ export function MailboxComposer({
   }, [view])
 
   const attach = (chosen: File[]) => {
-    if (chosen.length === 0) {
+    if (chosen.length === 0 || sendingRequest.current || submission.pendingRequest.current) {
       return
     }
     // A selection larger than a message may be is refused here, with the
@@ -656,48 +712,73 @@ export function MailboxComposer({
     }
   }
 
-  const send = async () => {
-    if (!view) {
+  const finishSend = (accepted: AcceptedMailboxSubmission) => {
+    dirty.current = false
+    submission.clear()
+    if (!isMounted.current) return
+    setSent(true)
+    void mailboxes.refresh()
+    if (onSent) {
+      onSent()
       return
     }
+    toast.done(t('compose.mailbox.sent'))
+    const sentFolderId = accepted.folderId ?? (view && folderOfKind(view, 'sent')?.id)
+    navigate(
+      accepted.sentItemId && accepted.folderId
+        ? `/mailbox/${sentFolderId}/${accepted.sentItemId}`
+        : sentFolderId
+          ? `/mailbox/${sentFolderId}`
+          : '/mailbox',
+    )
+  }
+
+  const send = async () => {
+    if (!view || sendingRequest.current || submission.isWorking || drafting) return
+    sendingRequest.current = true
     setSending(true)
     setProblem(null)
     try {
-      // What is still being saved or uploaded belongs to the message.
       while (pendingSave.current || inFlight.current) {
         await pendingSave.current
         await inFlight.current?.promise.catch(() => {})
       }
       const message = await buildMessage()
-      const answer = await graphql<{ SendMailboxMessage: { item: { id: string; folderId: string } | null } }>(SEND, {
+      const accepted = await submission.send({
         mailboxId: view.mailbox.id,
         message,
+        kept: draftParts.current.kept,
+        carried: draftParts.current.carried,
       })
-      dirty.current = false
-      setSent(true)
-      void mailboxes.refresh()
-      if (onSent) {
-        onSent()
-        return
-      }
-      // On a page of its own, sending is the end of the page. Rather than
-      // leave a card saying it worked and a link to go and find the message,
-      // this opens the message — which is where somebody who just sent one
-      // wants to be, and is the same thing the link offered a click later.
-      toast.done(t('compose.mailbox.sent'))
-      const landed = answer.SendMailboxMessage?.item
-      const sentFolderId = landed?.folderId ?? folderOfKind(view, 'sent')?.id
-      navigate(
-        landed ? `/mailbox/${landed.folderId}/${landed.id}` : sentFolderId ? `/mailbox/${sentFolderId}` : '/mailbox',
-      )
+      finishSend(accepted)
     } catch (failure) {
-      setProblem(failure)
+      setProblem(
+        failure instanceof AnotherMailboxSubmissionError ? new Error(t('compose.mailbox.otherPendingSend')) : failure,
+      )
     } finally {
+      sendingRequest.current = false
       setSending(false)
     }
   }
 
+  const resumeEditing = async () => {
+    if (sendingRequest.current || submission.isWorking) return
+    setProblem(null)
+    try {
+      const accepted = await submission.cancel()
+      if (accepted) {
+        finishSend(accepted)
+      } else if (isMounted.current) {
+        dirty.current = true
+        submission.clear()
+      }
+    } catch (failure) {
+      setProblem(failure)
+    }
+  }
+
   const discard = async () => {
+    if (sendingRequest.current || submission.pendingRequest.current) return
     inFlight.current?.cancel()
     queue.current = []
     setQueued(0)
@@ -737,7 +818,7 @@ export function MailboxComposer({
   if (loadError) {
     return <ErrorMessage error={loadError} />
   }
-  if (addresses.length === 0) {
+  if (addresses.length === 0 && !submission.pending) {
     return (
       <div className="card">
         <SettingsEmpty>{t('compose.mailbox.noAddress')}</SettingsEmpty>
@@ -755,6 +836,8 @@ export function MailboxComposer({
   const ready =
     from !== '' &&
     !sending &&
+    !drafting &&
+    !submission.pending &&
     !saving &&
     splitAddresses(to).length + splitAddresses(cc).length + splitAddresses(bcc).length > 0 &&
     uploading.length === 0 &&
@@ -769,267 +852,298 @@ export function MailboxComposer({
         void send()
       }}
     >
-      <label>
-        {t('compose.mailbox.from')}
-        {addresses.length > 1 ? (
-          <Select
-            block
-            value={from}
-            label={t('compose.mailbox.from')}
-            options={addresses.map((address) => ({ value: address.address, label: address.address }))}
+      {submission.pending && (
+        <div role="status" className="compose-send-pending">
+          <p>{t('compose.mailbox.pendingSend')}</p>
+          <div className="page-actions">
+            <button
+              type="button"
+              className="primary"
+              disabled={sending || submission.isWorking}
+              onClick={() => void send()}
+            >
+              {t('compose.mailbox.retrySend')}
+            </button>
+            <button type="button" disabled={sending || submission.isWorking} onClick={() => void resumeEditing()}>
+              {t('compose.mailbox.resumeEditing')}
+            </button>
+          </div>
+        </div>
+      )}
+      <fieldset className="compose-fields" disabled={sending || Boolean(submission.pending)}>
+        <label>
+          {t('compose.mailbox.from')}
+          {addresses.length > 1 ? (
+            <Select
+              block
+              value={from}
+              label={t('compose.mailbox.from')}
+              options={addresses.map((address) => ({ value: address.address, label: address.address }))}
+              onChange={(value) => {
+                setFrom(value)
+                touch()
+              }}
+            />
+          ) : (
+            <input value={from} readOnly />
+          )}
+        </label>
+        <label>
+          {t('compose.mailbox.to')}
+          <Combobox
+            value={to}
+            label={t('compose.mailbox.to')}
+            suggestions={completions(to)}
             onChange={(value) => {
-              setFrom(value)
+              setTo(value)
+              setTyping(value)
+              touch()
+            }}
+            placeholder="ada@example.com, Bob <bob@example.org>"
+            autoFocus={!replyTo && !forwardOf && !draftOf}
+          />
+        </label>
+        {/* Copy and blind copy are fields like any other. They were behind a
+          link, which made two ordinary boxes into something to go looking
+          for, and put a link where the form's rhythm wanted a label. */}
+        <label>
+          {t('compose.mailbox.copy')}
+          <Combobox
+            value={cc}
+            label={t('compose.mailbox.copy')}
+            suggestions={completions(cc)}
+            onChange={(value) => {
+              setCc(value)
+              setTyping(value)
+              touch()
+            }}
+          />
+        </label>
+        <label>
+          {t('compose.mailbox.blindCopy')}
+          <Combobox
+            value={bcc}
+            label={t('compose.mailbox.blindCopy')}
+            suggestions={completions(bcc)}
+            onChange={(value) => {
+              setBcc(value)
+              setTyping(value)
+              touch()
+            }}
+          />
+        </label>
+        <label>
+          {t('compose.mailbox.subject')}
+          <input
+            value={subject}
+            onChange={(event) => {
+              setSubject(event.target.value)
+              touch()
+            }}
+          />
+        </label>
+
+        <div className="segmented compose-editor-switch" role="group">
+          <button
+            type="button"
+            className={editor === 'rich' ? 'active' : ''}
+            onClick={() => {
+              if (editor === 'plain') {
+                setHtml(textToHtml(text))
+              }
+              setEditor('rich')
+            }}
+          >
+            {t('compose.mailbox.richText')}
+          </button>
+          <button
+            type="button"
+            className={editor === 'plain' ? 'active' : ''}
+            onClick={() => {
+              if (editor === 'rich') {
+                setText(htmlToText(html))
+              }
+              setEditor('plain')
+            }}
+          >
+            {t('compose.mailbox.plainText')}
+          </button>
+        </div>
+        {replyItemId && view?.mailbox.agent?.granted && view.mailbox.agent.draftReplies && (
+          <div className="compose-agent">
+            <input
+              value={say}
+              placeholder={t('compose.mailbox.agentSay')}
+              aria-label={t('compose.mailbox.agentSay')}
+              disabled={drafting}
+              onChange={(event) => setSay(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  void draftWithAgent()
+                }
+              }}
+            />
+            <button type="button" disabled={drafting} onClick={() => void draftWithAgent()}>
+              <SparkIcon size={14} /> {drafting ? t('compose.mailbox.agentDrafting') : t('compose.mailbox.agentDraft')}
+            </button>
+          </div>
+        )}
+        {editor === 'rich' ? (
+          <RichTextEditor
+            value={html}
+            readOnly={sending || Boolean(submission.pending)}
+            hideQuoted={quoted && !showQuoted}
+            onChange={(next) => {
+              setHtml(next)
               touch()
             }}
           />
         ) : (
-          <input value={from} readOnly />
-        )}
-      </label>
-      <label>
-        {t('compose.mailbox.to')}
-        <Combobox
-          value={to}
-          label={t('compose.mailbox.to')}
-          suggestions={completions(to)}
-          onChange={(value) => {
-            setTo(value)
-            setTyping(value)
-            touch()
-          }}
-          placeholder="ada@example.com, Bob <bob@example.org>"
-          autoFocus={!replyTo && !forwardOf && !draftOf}
-        />
-      </label>
-      {/* Copy and blind copy are fields like any other. They were behind a
-          link, which made two ordinary boxes into something to go looking
-          for, and put a link where the form's rhythm wanted a label. */}
-      <label>
-        {t('compose.mailbox.copy')}
-        <Combobox
-          value={cc}
-          label={t('compose.mailbox.copy')}
-          suggestions={completions(cc)}
-          onChange={(value) => {
-            setCc(value)
-            setTyping(value)
-            touch()
-          }}
-        />
-      </label>
-      <label>
-        {t('compose.mailbox.blindCopy')}
-        <Combobox
-          value={bcc}
-          label={t('compose.mailbox.blindCopy')}
-          suggestions={completions(bcc)}
-          onChange={(value) => {
-            setBcc(value)
-            setTyping(value)
-            touch()
-          }}
-        />
-      </label>
-      <label>
-        {t('compose.mailbox.subject')}
-        <input
-          value={subject}
-          onChange={(event) => {
-            setSubject(event.target.value)
-            touch()
-          }}
-        />
-      </label>
-
-      <div className="segmented compose-editor-switch" role="group">
-        <button
-          type="button"
-          className={editor === 'rich' ? 'active' : ''}
-          onClick={() => {
-            if (editor === 'plain') {
-              setHtml(textToHtml(text))
-            }
-            setEditor('rich')
-          }}
-        >
-          {t('compose.mailbox.richText')}
-        </button>
-        <button
-          type="button"
-          className={editor === 'plain' ? 'active' : ''}
-          onClick={() => {
-            if (editor === 'rich') {
-              setText(htmlToText(html))
-            }
-            setEditor('plain')
-          }}
-        >
-          {t('compose.mailbox.plainText')}
-        </button>
-      </div>
-      {replyItemId && view?.mailbox.agent?.granted && view.mailbox.agent.draftReplies && (
-        <div className="compose-agent">
-          <input
-            value={say}
-            placeholder={t('compose.mailbox.agentSay')}
-            aria-label={t('compose.mailbox.agentSay')}
-            disabled={drafting}
-            onChange={(event) => setSay(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                void draftWithAgent()
-              }
+          <textarea
+            rows={14}
+            value={text}
+            onChange={(event) => {
+              setText(event.target.value)
+              touch()
             }}
           />
-          <button type="button" disabled={drafting} onClick={() => void draftWithAgent()}>
-            <SparkIcon size={14} /> {drafting ? t('compose.mailbox.agentDrafting') : t('compose.mailbox.agentDraft')}
-          </button>
-        </div>
-      )}
-      {editor === 'rich' ? (
-        <RichTextEditor
-          value={html}
-          hideQuoted={quoted && !showQuoted}
-          onChange={(next) => {
-            setHtml(next)
-            touch()
-          }}
-        />
-      ) : (
-        <textarea
-          rows={14}
-          value={text}
-          onChange={(event) => {
-            setText(event.target.value)
-            touch()
-          }}
-        />
-      )}
+        )}
 
-      {/* The quote is folded away while the answer is being written, and this
+        {/* The quote is folded away while the answer is being written, and this
           unfolds it. Only in the rich text editor: the plain one is a
           textarea, where "> " lines are the message and there is nothing to
           fold them into. */}
-      {quoted && editor === 'rich' && (
-        <div className="compose-quoted">
-          <button type="button" className="link" onClick={() => setShowQuoted((previous) => !previous)}>
-            {t(showQuoted ? 'compose.mailbox.hideQuoted' : 'compose.mailbox.showQuoted')}
-          </button>
-        </div>
-      )}
-
-      <div className="attachments">
-        {[...carried, ...shownKept].length > 0 && (
-          <div className="attachments-kept">
-            <span className="muted">{t('compose.mailbox.keptAttachments')}</span>
-            <ul>
-              {carried.map((attachment) => (
-                <li key={`carried-${attachment.index}`}>
-                  {attachment.filename} <span className="muted">{formatBytes(attachment.size)}</span>{' '}
-                  <button
-                    type="button"
-                    className="link"
-                    onClick={() => {
-                      setCarried((previous) => previous.filter((each) => each.index !== attachment.index))
-                      touch()
-                    }}
-                  >
-                    {t('compose.mailbox.remove')}
-                  </button>
-                </li>
-              ))}
-              {shownKept.map((attachment) => (
-                <li key={`kept-${attachment.index}`}>
-                  {attachment.filename} <span className="muted">{formatBytes(attachment.size)}</span>{' '}
-                  <button
-                    type="button"
-                    className="link"
-                    onClick={() => {
-                      setKept((previous) => previous.filter((each) => each.index !== attachment.index))
-                      touch()
-                    }}
-                  >
-                    {t('compose.mailbox.remove')}
-                  </button>
-                </li>
-              ))}
-            </ul>
+        {quoted && editor === 'rich' && (
+          <div className="compose-quoted">
+            <button type="button" className="link" onClick={() => setShowQuoted((previous) => !previous)}>
+              {t(showQuoted ? 'compose.mailbox.hideQuoted' : 'compose.mailbox.showQuoted')}
+            </button>
           </div>
         )}
-        {uploading.length > 0 && (
-          <ul className="uploads">
-            {uploading.map((entry, index) => (
-              <li key={index} className={entry.error ? 'failed' : ''}>
-                <span className="upload-name">{entry.file.name}</span>{' '}
-                <span className="muted">{formatBytes(entry.file.size)}</span>
-                {entry.error ? (
-                  <span className="muted"> {entry.error}</span>
-                ) : (
-                  <progress
-                    max={1}
-                    value={entry.progress}
-                    aria-label={t('compose.mailbox.uploading', { name: entry.file.name })}
-                  />
-                )}
-              </li>
-            ))}
-            {/* Canceling is for while the bytes are still going up. Once
+
+        <div className="attachments">
+          {[...carried, ...shownKept].length > 0 && (
+            <div className="attachments-kept">
+              <span className="muted">{t('compose.mailbox.keptAttachments')}</span>
+              <ul>
+                {carried.map((attachment) => (
+                  <li key={`carried-${attachment.index}`}>
+                    {attachment.filename} <span className="muted">{formatBytes(attachment.size)}</span>{' '}
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() => {
+                        setCarried((previous) => previous.filter((each) => each.index !== attachment.index))
+                        touch()
+                      }}
+                    >
+                      {t('compose.mailbox.remove')}
+                    </button>
+                  </li>
+                ))}
+                {shownKept.map((attachment) => (
+                  <li key={`kept-${attachment.index}`}>
+                    {attachment.filename} <span className="muted">{formatBytes(attachment.size)}</span>{' '}
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() => {
+                        setKept((previous) => previous.filter((each) => each.index !== attachment.index))
+                        touch()
+                      }}
+                    >
+                      {t('compose.mailbox.remove')}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {uploading.length > 0 && (
+            <ul className="uploads">
+              {uploading.map((entry, index) => (
+                <li key={index} className={entry.error ? 'failed' : ''}>
+                  <span className="upload-name">{entry.file.name}</span>{' '}
+                  <span className="muted">{formatBytes(entry.file.size)}</span>
+                  {entry.error ? (
+                    <span className="muted"> {entry.error}</span>
+                  ) : (
+                    <progress
+                      max={1}
+                      value={entry.progress}
+                      aria-label={t('compose.mailbox.uploading', { name: entry.file.name })}
+                    />
+                  )}
+                </li>
+              ))}
+              {/* Canceling is for while the bytes are still going up. Once
                 they have all arrived the server is writing the draft, and
                 an abort then would leave a draft the page knows nothing
                 about. */}
-            {uploading.some((entry) => !entry.error) ? (
-              uploading.some((entry) => entry.progress < 1) && (
+              {uploading.some((entry) => !entry.error) ? (
+                uploading.some((entry) => entry.progress < 1) && (
+                  <li>
+                    <button type="button" className="link" onClick={() => inFlight.current?.cancel()}>
+                      {t('compose.mailbox.cancelUpload')}
+                    </button>
+                  </li>
+                )
+              ) : (
                 <li>
-                  <button type="button" className="link" onClick={() => inFlight.current?.cancel()}>
-                    {t('compose.mailbox.cancelUpload')}
+                  <button type="button" className="link" onClick={() => setUploading([])}>
+                    {t('compose.mailbox.dismissUpload')}
                   </button>
                 </li>
-              )
-            ) : (
-              <li>
-                <button type="button" className="link" onClick={() => setUploading([])}>
-                  {t('compose.mailbox.dismissUpload')}
-                </button>
-              </li>
-            )}
-          </ul>
-        )}
-        <input
-          ref={fileInput}
-          type="file"
-          multiple
-          hidden
-          onChange={(event) => {
-            attach(Array.from(event.target.files ?? []))
-            event.target.value = ''
-          }}
-        />
-        <button type="button" className="with-icon" disabled={!from} onClick={() => fileInput.current?.click()}>
-          <PaperclipIcon size={16} /> {t('compose.mailbox.attach')}
-        </button>
-      </div>
+              )}
+            </ul>
+          )}
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            hidden
+            onChange={(event) => {
+              attach(Array.from(event.target.files ?? []))
+              event.target.value = ''
+            }}
+          />
+          <button type="button" className="with-icon" disabled={!from} onClick={() => fileInput.current?.click()}>
+            <PaperclipIcon size={16} /> {t('compose.mailbox.attach')}
+          </button>
+        </div>
+      </fieldset>
+      <ErrorMessage error={problem ?? submission.initialFailure} />
 
-      {problem ? <ErrorMessage error={problem} /> : null}
-
-      <div className="page-actions">
-        <button className="primary" type="submit" disabled={!ready}>
-          {t('compose.mailbox.send')}
-        </button>
-        <button type="button" disabled={saving || sending || !from} onClick={() => save()}>
-          {t('compose.mailbox.saveDraft')}
-        </button>
-        <button type="button" className="danger" onClick={() => setDiscarding(true)}>
-          {t('compose.mailbox.discard')}
-        </button>
-        <span className="muted">
-          {saving
-            ? t('compose.mailbox.saving')
-            : savedAt
-              ? t('compose.mailbox.draftSaved', { time: formatTime(savedAt.toISOString()) })
-              : ''}
-        </span>
-      </div>
+      {!submission.pending && (
+        <div className="page-actions">
+          <button className="primary" type="submit" disabled={!ready}>
+            {t('compose.mailbox.send')}
+          </button>
+          <button
+            type="button"
+            disabled={saving || sending || Boolean(submission.pending) || !from}
+            onClick={() => save()}
+          >
+            {t('compose.mailbox.saveDraft')}
+          </button>
+          <button
+            type="button"
+            className="danger"
+            disabled={sending || Boolean(submission.pending)}
+            onClick={() => setDiscarding(true)}
+          >
+            {t('compose.mailbox.discard')}
+          </button>
+          <span className="muted">
+            {saving
+              ? t('compose.mailbox.saving')
+              : savedAt
+                ? t('compose.mailbox.draftSaved', { time: formatTime(savedAt.toISOString()) })
+                : ''}
+          </span>
+        </div>
+      )}
 
       {discarding && (
         <ConfirmDialog

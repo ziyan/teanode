@@ -33,7 +33,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing; dashboard retry retention and domain send adapters remain.
+- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; domain send adapters and deployment gates remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
@@ -41,6 +41,15 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+The composer could resume autosave after a lost send response, rewriting the
+draft identifier referenced by a retry. It now persists the exact request before
+sending and freezes editing, autosave and attachment additions while that request
+is unresolved. A save already in flight updates shared draft/attachment metadata
+before sending builds its snapshot. Pending content is restored without reading
+a draft that acceptance may already have removed. An older composer completing
+must compare identifiers before clearing browser storage, or it can erase a
+newer request's recovery record.
 
 A missing acceptance record does not prove that a timed-out send has stopped:
 the original request might acquire its identity lock after the lookup completes.
@@ -167,6 +176,19 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: retain one unresolved mailbox send per account in the current tab's
+session storage, including its identifier, exact API parameters and attachment
+presentation. Persist before contacting the server, fail before sending if that
+write fails, and keep the record on both send and cancellation errors. Retry
+first looks up acceptance and otherwise resends the same request. Returning to
+editing requires committed cancellation; if acceptance won, show the sent
+outcome instead. Account changes remount the composer, and a second existing
+composer cannot silently adopt and send the first one's request. Rationale:
+reload and navigation should not lose the evidence needed to resolve a send,
+and editing must not change an unresolved request. This storage lasts for the
+tab session; closing the tab is not a guaranteed recovery mechanism. Date:
+2026-09-21.
 
 Decision: add durable submission cancellation in migration 0093 and expose
 `CancelMailboxSubmission` through the shared coordinator. The command requires
@@ -1232,3 +1254,46 @@ explicit permission-helper call, despite authorization inside the coordinator;
 the adapter now follows that convention, and the complete rerun passes. Focused
 API, persistence and coordinator cancellation tests, lint and gogolint pass.
 The new migration has been reversed and reapplied in an isolated test database.
+
+Revision note: the dashboard mailbox composer now uses
+`web/src/hooks/useMailboxSubmission.ts` for identified sends, acceptance lookup,
+committed cancellation and session-storage recovery. It captures the complete
+request before the mutation and retains it on failures. Reload restores the
+message without depending on removed draft bytes. Retry reuses the identifier
+and request; returning to editing either cancels that identity or recovers the
+already accepted send. The fields and toolbar are disabled while unresolved,
+with the body remaining readable to assistive technology. Pending actions are
+shown above the message at desktop and phone widths and translated in all three
+catalogs. Recovery of a retained identity opens Sent rather than assuming its
+old item still exists.
+
+Review fixes include reading the latest attachment metadata after an in-flight
+save, suppressing autosave and new attachments during uncertainty, preventing
+overlapping send clicks before React renders, keeping the original mailbox when
+editing resumes, isolating pending content by account, preserving a newer
+pending record when an old composer completes, refusing to silently send another
+open composer's request, and avoiding navigation from an unmounted composer.
+Session storage is deliberately required before acceptance can be attempted;
+this guarantees reload recovery within the tab, not retention after closing it.
+A second composer can still save its draft while another send needs resolution.
+
+Validation update: all 33 UI tests pass, including thirteen new hook/component
+regressions for uncertain sends. TypeScript checking, ESLint, catalog checks,
+production dashboard/extension builds, both Go binary builds, repository lint
+and gogolint pass. The secret scanner initially treated a property access ending
+in the country-code suffix as a hostname; destructuring the copy-recipient
+fields resolved that false positive without changing the scanner's allow list.
+Chrome at 1200 by 900 and 390 by 844 verifies readable pending actions, no
+horizontal overflow, a read-only message, body restoration after reload,
+acceptance recovery without a second send, no autosave during uncertainty and
+return to editing after cancellation. The final fixture run reports no browser
+exceptions. This uses a local synthetic API fixture; the full disposable-server
+SMTP/mailbox deployment audit is still required, as are domain/CLI send identity
+and the remaining milestones.
+
+The optional `npm run check-queries` command could not connect because no live
+GraphQL server was listening at its development URL. It executes documents
+against a running server and is not part of the build; run it during the pending
+disposable deployment gate. Do not interpret the synthetic Chrome fixture as
+schema validation. The server's existing schema tests cover the send, lookup and
+cancellation operation shapes used by the new hook.
