@@ -33,13 +33,30 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): disable automatic mutation retries; durable submission identity, recovery and storage guarantees remain.
+- [ ] Milestone 4 (in progress): disable automatic mutation retries and make delivery retry claims disjoint across workers; durable submission identity, recovery and storage guarantees remain.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes; mailbox drafts/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+The delivery retry scan updated candidates without locking their selection.
+Concurrent workers could wait on the same rows and then both claim them. The
+scan now selects a bounded batch with `FOR UPDATE SKIP LOCKED` before updating
+retry times. A regression holds one worker's transaction open while another
+claims a separate batch. This protects concurrent claims, not remote SMTP
+acknowledgements or a worker still running after its retry lease expires.
+
+The submission trace also found that fresh outgoing delivery rows have no retry
+time and depend on immediate dispatch. Identified acceptance must persist a due
+retry time before commit and dispatch through the claim path. Simply removing
+the early commit from `handleOutgoing` is insufficient: domain and alias usage
+counters update in memory before the caller can commit or roll back. Mailbox
+delivery also invokes rules, agent and calendar hooks, and out-of-office replies.
+The acceptance extraction must account for those effects and test storage failure
+before wiring the coordinator to the API. No unused acceptance interface is
+retained while those semantics are unresolved.
 
 The shared API pagination helper returned an unlimited database query for omitted
 pagination or `first: 0`, despite the documented page cap. Both now select the
@@ -707,3 +724,10 @@ and folder extraction: 1,805 tests reported, with the Chrome-proxy integration
 skipped. A subsequent focused regression also confirms that a folder command
 reuses a row lock held by its caller instead of waiting for a second connection.
 Go lint and `gogolint` pass.
+
+Revision note: delivery retry selection now locks candidates with
+`FOR UPDATE SKIP LOCKED` before postponing them. The focused database delivery
+tests pass under the race detector, including two concurrent workers with the
+first transaction held open. `make lint`, including `gogolint`, passes. This is
+a prerequisite to durable submission dispatch; acceptance, bookkeeping recovery
+and storage modes remain open.

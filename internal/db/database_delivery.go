@@ -210,7 +210,13 @@ func (self *transaction) queryDeliveries(options *Options) *gorm.DB {
 
 func (self *transaction) ListDeliveriesToRetry(options *Options) ([]*models.Delivery, error) {
 	var existingModels []deliveryModel
-	if err := self.tx.Raw(`UPDATE "delivery" SET "retry_at" = ? WHERE "id" IN (SELECT "id" FROM "delivery" WHERE "retry_at" < ? ORDER BY "retry_at" ASC LIMIT 8) RETURNING *`, time.Now().In(time.Local).Add(2*time.Hour), time.Now().In(time.Local)).Scan(&existingModels).Error; err != nil {
+	// Lock candidates before updating their retry time so simultaneous workers
+	// take disjoint batches instead of waiting and claiming the same snapshot.
+	if err := self.tx.Raw(`WITH candidates AS (
+		SELECT "id" FROM "delivery" WHERE "retry_at" < ?
+		ORDER BY "retry_at" ASC, "id" ASC LIMIT 8 FOR UPDATE SKIP LOCKED
+	) UPDATE "delivery" SET "retry_at" = ? FROM candidates
+	WHERE "delivery"."id" = candidates."id" RETURNING "delivery".*`, time.Now().In(time.Local), time.Now().In(time.Local).Add(2*time.Hour)).Scan(&existingModels).Error; err != nil {
 		return nil, err
 	}
 	deliveries := make([]*models.Delivery, 0, len(existingModels))
