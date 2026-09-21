@@ -666,6 +666,13 @@ adding one does not duplicate mail that already has somewhere to go.
 
 **`kind`** — Kind is one of null, email, webhook or mailServer.
 
+`openai-codex` is OpenAI reached with a personal sign-in rather than a key:
+the subscription behind the Codex command line. It answers at a different
+address, speaks the responses protocol rather than chat completions, and
+bills against the plan's allowance instead of credits. It takes
+`refreshToken` and `account` and no `apiKey`, and it offers only the model
+that plan allows: every other name is refused outright.
+
 **`email`** — Email is the destination address when kind is email.
 
 **`webhook`** — Webhook is the destination URL when kind is webhook.
@@ -1079,6 +1086,22 @@ endpoint; a local server is `http://ollama:11434/v1`.
 
 **`apiKey`** — Authenticates this server to the service. A secret; shown
 redacted, kept when a settings update leaves it blank.
+
+**`refreshToken`** — Authenticates a provider that is signed in to rather
+than keyed, which at present means `openai-codex`. A secret, shown redacted
+and kept when a settings update leaves it blank.
+
+It is the long half of a pair: the server trades it for a short-lived access
+token before each run of requests, and never writes that token down. Sign in
+with the service's own tool and give the refresh token it hands back.
+
+Where the service rotates these, the one written here goes stale, and the
+server keeps the newer one for as long as it runs. Restarting after that
+means signing in again, which is why it is worth writing the newer one back.
+
+**`account`** — Which of a signed-in person's accounts the work is billed
+to, where the service asks for it. Not a secret: it names an account, it
+does not open one.
 
 **`enabled`** — Keeps the key while switching the provider off. Unset means
 on. Work assigned to a disabled provider fails validation, so a provider
