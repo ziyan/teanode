@@ -6,6 +6,15 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.46.1] - 2026-09-21
+
+### Changed
+
+- The Knowledge page is laid out like the mail page: one frame with the list
+  beside what is open, rather than two separate panels. The trail above the
+  list now names every folder you are inside rather than only the top and the
+  bottom, and stays one line however deep the folder is. (#97)
+
 ## [0.46.0] - 2026-09-21
 
 ### Added
