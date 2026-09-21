@@ -20,26 +20,32 @@ func (self *AskRun) NoteFact(ctx context.Context, fact *models.AgentFact) []*mod
 		return nil
 	}
 	agentId := self.settings.Agent.ID
-	var path, name string
-	var aliases []string
+	var page *models.AgentNode
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		node, err := tx.GetAgentNodeByID(agentId, fact.NodeID)
 		if err != nil || node == nil {
 			return err
 		}
-		path, name = node.Path, node.Name
-		aliases = node.Aliases
+		page = node
 		return nil
 	}); err != nil {
 		log.Warningf("cannot read the page a fact is on: %s", err)
+		return nil
 	}
-	vectors, modelName, ok := self.agent.embed(ctx, agentId, "ask", []string{factText(fact, path, name)})
+	if page == nil {
+		return nil
+	}
+	vectors, modelName, ok := self.agent.embed(ctx, agentId, "ask", []string{factText(fact, page.Path, page.Name)})
 	if !ok {
 		return nil
 	}
 	var twins []*models.AgentFact
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		if err := tx.PutAgentFactVector(agentId, fact.ID, modelName, vectors[0]); err != nil {
+		writtenCount, err := tx.PutAgentGraphVectors(agentId, []db.AgentGraphVector{{
+			NodeID: page.ID, NodeModifiedAt: page.ModifiedAt, FactID: fact.ID,
+			FactModifiedAt: fact.ModifiedAt, Model: modelName, Vector: vectors[0],
+		}})
+		if err != nil || writtenCount == 0 {
 			return err
 		}
 		scores, err := tx.Nearest(db.AgentFactTable, agentId, modelName, vectors[0], 6, db.VectorQuery{
@@ -55,7 +61,7 @@ func (self *AskRun) NoteFact(ctx context.Context, fact *models.AgentFact) []*mod
 			return err
 		}
 		// The page's own name is not evidence either way; see sharesAName.
-		itsOwn := append([]string{name}, aliases...)
+		itsOwn := append([]string{page.Name}, page.Aliases...)
 		for _, candidate := range orderFacts(candidates, idsOf(scores)) {
 			if sharesAName(fact.Text, candidate.Text, itsOwn...) {
 				twins = append(twins, candidate)
@@ -95,7 +101,10 @@ func (self *AskRun) NoteNode(ctx context.Context, node *models.AgentNode) {
 		return
 	}
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		return tx.PutAgentNodeVector(agentId, node.ID, modelName, vectors[0])
+		_, err := tx.PutAgentGraphVectors(agentId, []db.AgentGraphVector{{
+			NodeID: node.ID, NodeModifiedAt: node.ModifiedAt, Model: modelName, Vector: vectors[0],
+		}})
+		return err
 	}); err != nil {
 		log.Warningf("cannot keep a page's vector: %s", err)
 	}
