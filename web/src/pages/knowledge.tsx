@@ -1421,7 +1421,7 @@ function DocumentsDialog({ onClose }: { onClose: () => void }) {
                         anybody who cannot see which heading it is under. */}
                     <button
                       type="button"
-                      className="link"
+                      className="button-quiet"
                       aria-label={t('knowledge.documents.readOne', { title: name })}
                       onClick={() => read(group.document.documentId)}
                     >
@@ -1476,7 +1476,7 @@ function DocumentsDialog({ onClose }: { onClose: () => void }) {
       closeLabel={t('common.close')}
       otherAction={
         reading === null ? undefined : (
-          <button type="button" className="link" onClick={() => setReading(null)}>
+          <button type="button" className="button-quiet" onClick={() => setReading(null)}>
             {t('knowledge.documents.back')}
           </button>
         )

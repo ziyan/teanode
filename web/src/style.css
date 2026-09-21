@@ -1506,47 +1506,46 @@ button.primary.danger:hover:not(:disabled) {
   color: var(--text);
 }
 
-/* A button that is quiet, not a button pretending to be a link.
+/* A word in a sentence that does something: "Remote content blocked. Show
+   images." It is drawn as an anchor because in a line of prose that is what
+   it reads as, and a box around it would break the line.
    
-   It was underlined text with no padding, which is how this dashboard draws
-   an anchor: the same paint on two different things, so a control that does
-   something on this page looked like one that goes somewhere else, and had
-   no hit area worth tapping on a phone. The rule above `.show-more` already
-   says the settled version of this -- quiet, because it is not the thing to
-   do first, but a button -- and this is the same thing said once for the
-   two dozen places that were drawing it the other way.
-   
-   Quiet is the muted colour and no border until it is hovered; a button is
-   the padding, the radius and the target that comes with them. */
+   A control standing on its own is not this. It is `.button-quiet` below,
+   because underlined text with no padding gave a control that acts on the
+   page the same paint as one that leaves it, and no target worth tapping. */
 button.link {
+  border: none;
+  background: none;
+  color: var(--muted);
+  padding: 0;
+  font-weight: inherit;
+  text-decoration: underline;
+}
+
+button.link:hover:not(:disabled) {
+  background: none;
+  color: var(--text);
+}
+
+/* A control that stands on its own, quiet. The settled version of what
+   `.show-more` says: not the thing to do first, so muted and unbordered
+   until it is pointed at, but padded and shaped like the button it is. */
+.button-quiet {
   border: 1px solid transparent;
   background: none;
   color: var(--muted);
   padding: 2px 8px;
   border-radius: var(--radius-2);
+  font: inherit;
   font-weight: inherit;
   text-decoration: none;
+  cursor: pointer;
 }
 
-button.link:hover:not(:disabled) {
+.button-quiet:hover:not(:disabled) {
   border-color: var(--border);
   background: var(--sidebar-hover);
   color: var(--text);
-}
-
-/* Inside a line of prose it is a word among words, and the padding and the
-   box would break the line around it. */
-p > button.link,
-.muted > button.link {
-  padding: 0;
-  border-color: transparent;
-  text-decoration: underline;
-}
-
-p > button.link:hover:not(:disabled),
-.muted > button.link:hover:not(:disabled) {
-  border-color: transparent;
-  background: none;
 }
 
 input,
