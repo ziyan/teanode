@@ -374,7 +374,7 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 			// same thing said by a night that could not.
 			// A dream whose reading stopped on an error has not caught
 			// up; it says so, and bootstrapping stays on for the next.
-			if agent.DreamBootstrap && record.LastError == "" && (record.Backlog-record.Digested <= 0 || record.Digested == 0) {
+			if agent.DreamBootstrap && caughtUp(record) {
 				agent.DreamBootstrap = false
 				log.Noticef("agent %s has finished bootstrapping; dreaming is back to its hours", run.Agent.ID)
 			}
@@ -382,6 +382,20 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 		})
 		return err
 	})
+}
+
+// caughtUp says whether a finished night means there is nothing left to
+// catch up on, which is when bootstrapping switches itself off.
+//
+// Nothing waiting, or nothing read, which is the same thing said by a
+// night that had nothing to read. A night that says what went wrong is
+// neither: it did not read because it could not, and the backlog it left
+// is still there.
+func caughtUp(record *models.AgentDream) bool {
+	if record.LastError != "" {
+		return false
+	}
+	return record.Backlog-record.Digested <= 0 || record.Digested == 0
 }
 
 // lookupTools is the pair a call reaches when all it needs is to look
@@ -568,6 +582,17 @@ type dreamBudget struct {
 	// account it bills cannot pay. Nothing the night does next changes
 	// that, so it counts as having nothing left to spend.
 	refused bool
+}
+
+// whyItStopped is what to write on the night's row when the allowance,
+// rather than the model, is what ended the reading.
+func (self *dreamBudget) whyItStopped() string {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if self.refused {
+		return "the provider would not bill this account; the reading stops here"
+	}
+	return "the night has spent its share of the day; the reading stops here"
 }
 
 // dreamCallEstimate is what one call of a night is held against the
@@ -768,6 +793,18 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 					// for is not a silence, and blaming the model for
 					// the night running out of tokens reads as a fault
 					// on the dream's row.
+					//
+					// It is not a night that caught up either, and
+					// saying nothing made it look like one: a night
+					// that read nothing and reported nothing wrong is
+					// how bootstrapping decides the backlog is done,
+					// so a provider that refused every call switched
+					// catching up off with fifty thousand documents
+					// still waiting. Say what stopped it instead.
+					if record.LastError == "" {
+						record.LastError = budget.whyItStopped()
+					}
+					stopped = true
 					return
 				}
 				silent++

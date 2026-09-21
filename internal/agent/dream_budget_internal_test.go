@@ -213,3 +213,41 @@ func TestTheRowSaysWhatStoppedTheReading(t *testing.T) {
 		t.Errorf("and it still says the reading stops: %q", spent)
 	}
 }
+
+// Catching up switches itself off when a night finds nothing left to read.
+// A night that could not read is not that night, and the difference is the
+// whole of what keeps a backlog moving: one that read nothing and reported
+// nothing wrong ended catching up with fifty thousand documents waiting,
+// because a provider had refused every call and the night said so nowhere.
+func TestANightThatCouldNotReadHasNotCaughtUp(t *testing.T) {
+	nothingWaiting := &models.AgentDream{Backlog: 40, Digested: 40}
+	if !caughtUp(nothingWaiting) {
+		t.Error("a night that read everything waiting has caught up")
+	}
+	nothingToRead := &models.AgentDream{Backlog: 0, Digested: 0}
+	if !caughtUp(nothingToRead) {
+		t.Error("a night with nothing to read has caught up")
+	}
+	stillGoing := &models.AgentDream{Backlog: 5000, Digested: 40}
+	if caughtUp(stillGoing) {
+		t.Error("a night that left a backlog has not caught up")
+	}
+	couldNotRead := &models.AgentDream{Backlog: 51854, Digested: 0, LastError: "the provider would not bill this account; the reading stops here"}
+	if caughtUp(couldNotRead) {
+		t.Error("a night that could not read has not caught up, whatever it digested")
+	}
+}
+
+// And the night says which of the two stopped it, since one is the person's
+// own cap and the other is the account behind the provider.
+func TestTheBudgetSaysWhichOneStoppedTheReading(t *testing.T) {
+	spent := (&dreamBudget{}).whyItStopped()
+	if !strings.Contains(spent, "share of the day") {
+		t.Errorf("an allowance that ran out: %q", spent)
+	}
+	refused := &dreamBudget{}
+	refused.refuse()
+	if got := refused.whyItStopped(); !strings.Contains(got, "would not bill") {
+		t.Errorf("a provider that refused: %q", got)
+	}
+}
