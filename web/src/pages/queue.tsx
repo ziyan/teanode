@@ -34,7 +34,7 @@ export function QueuePage() {
 
   const { data, error, loading, reload } = useQuery(() => graphql<{ ListPendingDeliveries: Delivery[] }>(PENDING), [])
   const domainQuery = useQuery(() => graphql<{ ListDomains: Domain[] }>(DOMAINS), [])
-  const domains = domainQuery.data?.ListDomains ?? []
+  const domains = useMemo(() => domainQuery.data?.ListDomains ?? [], [domainQuery.data])
   const domainNames = useMemo(() => new Map(domains.map((domain) => [domain.id, domain.domain])), [domains])
 
   const columns = useMemo<Column<Delivery>[]>(
@@ -125,7 +125,7 @@ export function QueuePage() {
         ),
       },
     ],
-    [t, reload, domains, domainNames],
+    [t, reload, domains, domainNames, label],
   )
 
   if (loading && !data) {

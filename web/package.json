@@ -8,13 +8,16 @@
     "build": "NODE_ENV=production webpack && npm run build:extension",
     "build:extension": "webpack --config webpack.extension.config.js",
     "dev": "webpack serve",
-    "lint": "eslint src --ext .ts,.tsx",
+    "lint": "eslint src --max-warnings 0",
     "format": "prettier --write 'src/**/*.{ts,tsx,css}'",
     "typecheck": "tsc --noEmit",
     "check-catalogs": "node scripts/check-catalogs.mjs",
-    "check-queries": "node scripts/check-queries.mjs"
+    "check-queries": "node scripts/check-queries.mjs",
+    "test": "vitest run"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@testing-library/react": "^16.3.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@typescript-eslint/eslint-plugin": "^8.70.0",
@@ -22,7 +25,11 @@
     "copy-webpack-plugin": "^14.0.0",
     "css-loader": "^7.1.5",
     "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
     "html-webpack-plugin": "^5.6.0",
+    "jsdom": "^29.1.1",
     "mini-css-extract-plugin": "^2.9.0",
     "prettier": "^3.2.0",
     "react": "^19.3.0",
@@ -30,12 +37,13 @@
     "react-router-dom": "^7.18.3",
     "ts-loader": "^9.5.2",
     "typescript": "^6.0.3",
+    "vitest": "^5.0.1",
     "webpack": "^5.110.3",
     "webpack-cli": "^7.2.3",
     "webpack-dev-server": "^6.0.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": "^22.13.0 || >=24.0.0"
   },
   "dependencies": {
     "echarts": "6.1.0"

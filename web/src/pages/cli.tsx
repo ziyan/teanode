@@ -94,8 +94,8 @@ export function CommandLinePage({ username }: { username: string }) {
     setError(null)
     setPhase('working')
 
-    let issued = ''
-    let tokenId = ''
+    let issued: string
+    let tokenId: string
     try {
       const data = await graphql<{ CreateToken: { secret: string; token: { id: string } } }>(CREATE, {
         name: tokenName,

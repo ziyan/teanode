@@ -88,15 +88,17 @@ export function useQuery<T>(run: () => Promise<T>, dependencies: unknown[] = [],
     dependencies,
   )
 
+  const invalidate = useCallback(() => {
+    generation.current++
+  }, [])
+
   useEffect(() => {
     loaded.current = false
     void load()
     // Unmounting, or a change of dependencies, retires whatever is in flight:
     // its number is no longer the current one, so its answer is dropped.
-    return () => {
-      generation.current++
-    }
-  }, [load])
+    return invalidate
+  }, [load, invalidate])
 
   useEffect(() => {
     if (!refresh) {

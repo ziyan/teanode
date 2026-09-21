@@ -189,7 +189,7 @@ export function MessageFrame({
       window.clearInterval(timer)
       inner?.removeEventListener('load', schedule, true)
     }
-  }, [measure, source])
+  }, [measure, source, onGroundMeasured])
 
   return (
     <iframe

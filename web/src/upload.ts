@@ -53,7 +53,7 @@ export function uploadFiles(
       onProgress({ sent: event.loaded, total: event.total, files: perFile })
     }
     request.onload = () => {
-      let parsed: unknown = null
+      let parsed: unknown
       try {
         parsed = request.responseText ? JSON.parse(request.responseText) : null
       } catch {
@@ -64,7 +64,10 @@ export function uploadFiles(
         resolve(parsed)
       } else {
         const message =
-          parsed && typeof parsed === 'object' && 'error' in parsed && typeof (parsed as { error: unknown }).error === 'string'
+          parsed &&
+          typeof parsed === 'object' &&
+          'error' in parsed &&
+          typeof (parsed as { error: unknown }).error === 'string'
             ? (parsed as { error: string }).error
             : request.statusText || `HTTP ${request.status}`
         reject(new Error(message))

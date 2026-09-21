@@ -42,6 +42,7 @@ export function ServerPage() {
   const navigate = useNavigate()
   const session = useSession()
   const { t } = useTranslation()
+  const { upgradeAvailable } = useFreshness()
 
   // A link to where the access tabs used to be goes where they are.
   if (tab && ACCESS_TABS.includes(tab)) {
@@ -50,7 +51,6 @@ export function ServerPage() {
 
   // The rail's dot says "there is something on the Server page"; this one
   // says which tab it is on.
-  const { upgradeAvailable } = useFreshness()
   const TABS: Tab[] = hasPermission(session.permissions, 'server:manage')
     ? SERVER_TABS.map((candidate) =>
         candidate.id === 'about' && upgradeAvailable

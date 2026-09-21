@@ -332,7 +332,8 @@ export function CalendarPage() {
   // The view and the day are in the address, so that a link to a week is a
   // link to that week and the back button goes where it looks like it goes.
   const view = (parameters.get('view') as View) || 'month'
-  const on = parseDay(parameters.get('on'))
+  const selectedDay = parameters.get('on')
+  const on = useMemo(() => parseDay(selectedDay), [selectedDay])
   const move = (next: { view?: View; on?: Date }) => {
     const updated = new URLSearchParams(parameters)
     if (next.view) updated.set('view', next.view)
@@ -359,7 +360,7 @@ export function CalendarPage() {
     if (view === 'agenda') return [startOfDay(on), addDays(startOfDay(on), 31)]
     const grid = monthGrid(on, weekStart)
     return [grid[0], addDays(grid[41], 1)]
-  }, [view, on.getTime(), weekStart])
+  }, [view, on, weekStart])
 
   const events = useQuery(
     () =>
@@ -464,7 +465,7 @@ export function CalendarPage() {
     }
   }
 
-  const found = events.data?.ListCalendarEvents ?? []
+  const found = useMemo(() => events.data?.ListCalendarEvents ?? [], [events.data])
 
   // Grouped by the day they start on, which is how every view here reads
   // them. An event running over several days is listed on the day it begins;
@@ -583,7 +584,7 @@ export function CalendarPage() {
     if (head) {
       grid.current.style.setProperty('--calendar-head', `${head.getBoundingClientRect().height}px`)
     }
-  }, [view, on.getTime(), loading])
+  }, [view, on, loading])
 
   const entry = (event: CalendarEvent) => (
     <button

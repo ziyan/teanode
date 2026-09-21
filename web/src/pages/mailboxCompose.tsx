@@ -536,7 +536,7 @@ export function MailboxComposer({
       pendingSave.current = null
       finish()
     }
-  }, [view, saving, sending, sent, from, buildMessage])
+  }, [view, saving, sending, sent, from, buildMessage, onDraft])
 
   // The draft in hand, for an upload that arrives while a save is running.
   const latestDraftId = useRef<string | null>(draftItemId)

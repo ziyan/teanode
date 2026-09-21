@@ -250,7 +250,7 @@ export function DataTable<Row>({
     const rows = [...filtered]
     rows.sort(column.sort)
     return order.direction === 'descending' ? rows.reverse() : rows
-  }, [filtered, order, columns])
+  }, [filtered, order, columns, remote])
 
   // A filter that shortens the list must not leave you on a page past its
   // end, staring at nothing. Not on mount, though: the first run would throw

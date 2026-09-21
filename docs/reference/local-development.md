@@ -8,7 +8,7 @@ and for the dashboard `docs/coding/frontend-design.md`.
 ## Prerequisites
 
 - Go 1.25 or newer
-- Node 20 or newer, for the dashboard
+- Node 22.13 or newer on the 22.x line, or Node 24 or newer, for the dashboard
 - Docker, for the PostgreSQL the tests use
 - Optional: the local naming checks that `make lint` runs; `make lint` skips
   them, with a note, when they are not installed
