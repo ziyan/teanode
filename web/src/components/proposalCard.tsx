@@ -26,7 +26,7 @@ const SAVE_EVENT = `
 const SAVE_CONTACT = `
   mutation ($addressBookId: String!, $contactId: String, $name: String, $organization: String,
             $title: String, $emails: [String!], $phones: [String!], $note: String) {
-    SaveContact(addressBookId: $addressBookId, contactId: $contactId, name: $name,
+    SaveContact(addressBookId: $addressBookId, id: $contactId, name: $name,
       organization: $organization, title: $title, emails: $emails, phones: $phones, note: $note) { id }
   }`
 
