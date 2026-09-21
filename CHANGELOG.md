@@ -6,6 +6,15 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.3] - 2026-09-21
+
+### Fixed
+
+- A table column that shortens its text no longer collapses to an ellipsis in
+  a half width window. (#101)
+- A night that stopped because the daily budget was used up now says so on
+  its row, instead of reporting that the model did not answer. (#102)
+
 ## [0.47.2] - 2026-09-21
 
 ### Fixed
