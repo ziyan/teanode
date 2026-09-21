@@ -209,11 +209,11 @@ func pageIdentity(path string, kind models.AgentNodeKind, name string) (string, 
 	if !models.IsAgentNodeKind(kind) {
 		kind = kindOfPath(path)
 	}
-	// The root of the graph is folders and the person's own page. A
-	// model that files a fact at "mc" -- a chat channel's name cut to a
-	// slug -- made a page beside people/ and projects/ that nothing lists
-	// under a folder and the dashboard cannot move or merge, since those
-	// are hidden on a root. It goes under the folder its kind belongs to.
+	// The root of the graph is folders and the person's own page. A page
+	// filed straight at the root sits beside people/ and projects/, where
+	// nothing lists it under a folder and the dashboard can neither move
+	// nor merge it, since those are hidden on a root. It goes under the
+	// folder its kind belongs to instead.
 	if !strings.Contains(path, "/") && path != models.PathSelf && kind != models.NodeFolder {
 		path = models.JoinPath(folderOfKind(kind), path)
 	}

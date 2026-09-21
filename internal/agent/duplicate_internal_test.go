@@ -115,9 +115,9 @@ func TestAPageWithEveryAliasIsStillTheSamePage(t *testing.T) {
 // A page proposed at the root of the graph goes under the folder its
 // kind belongs to; only a folder and the person's own page live there.
 //
-// A digest filed a thread about a controller at "mc", the chat channel's
-// name cut to a slug, and the page sat beside people/ and projects/ where
-// nothing lists it and the dashboard's move and merge are hidden.
+// A one-word path with no folder in it would otherwise sit beside people/
+// and projects/, where nothing lists it and the dashboard's move and merge
+// are hidden.
 func TestAPageProposedAtTheRootGoesUnderItsKindsFolder(t *testing.T) {
 	t.Parallel()
 	for _, trial := range []struct {
@@ -125,8 +125,8 @@ func TestAPageProposedAtTheRootGoesUnderItsKindsFolder(t *testing.T) {
 		kind models.AgentNodeKind
 		want string
 	}{
-		{"mc", models.NodeThing, "things/mc"},
-		{"mc", "", "topics/mc"},
+		{"bramble", models.NodeThing, "things/bramble"},
+		{"bramble", "", "topics/bramble"},
 		{"alice-chen", models.NodePerson, "people/alice-chen"},
 		{"work", models.NodeFolder, "work"},
 		{"self", models.NodeSelf, "self"},

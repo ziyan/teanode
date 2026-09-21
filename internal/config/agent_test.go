@@ -99,7 +99,7 @@ func TestTheAllowListSaysWhatCannotBeUsed(t *testing.T) {
 		}
 	}
 
-	accepted := []string{"192.168.255.254", "10.0.0.0/24", "fd00::/8", "::1", "printer.lan", "controller", "unifi-protect.example.com"}
+	accepted := []string{"192.168.255.254", "10.0.0.0/24", "fd00::/8", "::1", "printer.lan", "nas.lan", "unifi-protect.example.com"}
 	for _, entry := range accepted {
 		validator := &validator{}
 		configuration := &Configuration{Agent: Agent{AllowPrivateAddresses: []string{entry}}}
