@@ -2,6 +2,9 @@
 
 - Status: accepted
 - Date: 2026-09-13
+- Changed: 2026-09-21 — the address book is still the only list of people,
+  and the graph no longer writes to it. See "What the graph does not do"
+  below.
 - Deciders: the maintainer
 
 ## Context
@@ -61,3 +64,33 @@ week.
 - `teanode mailbox contact`, the `ListMailboxContacts` API, and the agent's
   search over learned addresses are gone. The reverse migration recreates the
   table empty.
+
+## What the graph does not do
+
+Added 2026-09-21.
+
+The decision above is about there being one list of people, and it stands. A
+corollary was drawn from it that does not: that a page under `people/` and a
+card for that person are two views of one thing, so the night that made the
+page also made the card.
+
+They are not two views of one thing. The graph files whoever turns up in a
+commit log, a chat channel or a document. An address book is the people
+somebody keeps. Those sets overlap and are not the same, and filling one from
+the other fills it with the difference.
+
+What that came to, measured: five hundred and nineteen cards, of which five
+hundred and eighteen held a name and nothing else -- no address, no number,
+nothing to reach anybody by. Among them a release bot and a build account,
+because both commit. The one card with anything on it was the owner's own.
+
+Two further faults followed from the same corollary. Merging two pages for
+one person left both cards, because merging a page has never touched a card.
+And a card outlived the page that made it, because nothing removes one: two
+of those bots had no page left at all.
+
+So the graph does not write to the address book. A card is made when a person
+makes one, or when they promote somebody the mail has learned, which is what
+the decision above already provided for. A page may still point at a card
+where somebody has linked them, and what the graph knows about a person lives
+on their page, where being wrong costs nothing more than a wrong page.
