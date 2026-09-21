@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.45.3] - 2026-09-21
+
+### Fixed
+
+- The browser cookie holding single sign-on state is now cleared properly
+  when a sign-in finishes or fails. It could previously be left behind. (#81)
+
 ## [0.45.2] - 2026-09-21
 
 ### Changed
