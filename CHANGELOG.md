@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.45.1] - 2026-09-21
+
+### Fixed
+
+- The agent no longer files a second page for somebody who already has one
+  when their folder holds a large number of pages. Beyond a few hundred
+  pages under one folder, it had stopped recognising what was already there. (#82)
+
 ## [0.44.5] - 2026-09-20
 
 ### Changed
