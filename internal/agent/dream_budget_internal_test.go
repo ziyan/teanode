@@ -173,3 +173,21 @@ func TestHalfwayIsHalfOfWhatIsLeft(t *testing.T) {
 		t.Fatalf("half of forty minutes: %v", got)
 	}
 }
+
+// A night whose provider will not bill the account stops, rather than
+// asking again for every page, every document and every person left. The
+// budget is where it stops, because every stage of the night already asks
+// the budget whether to go on.
+func TestARefusedAccountEndsTheNight(t *testing.T) {
+	budget := &dreamBudget{allowed: 1000000}
+	if !budget.left() {
+		t.Fatal("a fresh night has room")
+	}
+	budget.refuse()
+	if budget.left() {
+		t.Fatal("the night goes on after the provider refused to bill")
+	}
+	if budget.reserve() {
+		t.Fatal("and it claimed the cost of another call")
+	}
+}

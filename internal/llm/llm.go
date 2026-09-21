@@ -13,6 +13,7 @@ package llm
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/op/go-logging"
@@ -28,6 +29,38 @@ type APIError struct {
 
 func (self *APIError) Error() string {
 	return fmt.Sprintf("llm: the provider answered %d: %s", self.Status, self.Message)
+}
+
+// IsOutOfCreditError says whether a provider refused because the account
+// cannot pay, which no caller can fix and no later request will get past.
+//
+// It is told apart from an ordinary rate limit on purpose, even though the
+// providers answer both with 429. A rate limit clears by itself and the
+// next request is worth making; an empty account refuses every request
+// there is, so work that marches through a list of items would otherwise
+// ask once per item and fail every time.
+func IsOutOfCreditError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	var apiError *APIError
+	if errors.As(err, &apiError) {
+		// Payment required, where a provider uses it. Most answer 429
+		// for this, the same status as a rate limit, which is why the
+		// words below have to do the telling apart.
+		if apiError.Status == http.StatusPaymentRequired {
+			return true
+		}
+		message = apiError.Message
+	}
+	message = strings.ToLower(message)
+	return strings.Contains(message, "insufficient_quota") ||
+		strings.Contains(message, "insufficient quota") ||
+		strings.Contains(message, "no credits remaining") ||
+		strings.Contains(message, "credit balance is too low") ||
+		strings.Contains(message, "exceeded your current quota") ||
+		strings.Contains(message, "billing details")
 }
 
 // IsContextLengthError says whether a provider refused because the request
