@@ -23,6 +23,9 @@ import (
 // how much, and between which dates. Handing that to a model to be
 // rephrased would cost money and lose precision.
 func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, entry computer.ScanEntry) {
+	if err := self.checkSourceRead(ctx, source); err != nil {
+		return
+	}
 	profile := entry.Repository
 	if profile == nil {
 		return
@@ -82,6 +85,9 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 	opening, about, links := self.describeCheckout(ctx, run, source, entry, path)
 
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		if err := lockIngestSource(tx, source); err != nil {
+			return err
+		}
 		// Marked as the source's, so a page's history can say a sentence
 		// came from a repository rather than from the person.
 		tx.AsActor(models.ActorIngest)

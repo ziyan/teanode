@@ -36,7 +36,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries using either the stable draft key or its source item identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, agent calendar mutation retries, contact proposal acceptance and protocol adapters, knowledge-source and rule-update commands remain.
-- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation; typed page/cursor contracts, source revocation, scan decomposition, retrieval/model extraction and benchmarks remain.
+- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; typed page/cursor contracts, scan decomposition, retrieval/model extraction and benchmarks remain.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
@@ -1969,3 +1969,26 @@ repository lint, gogolint and both binary builds. A syntax-tree comparison found
 34 original function bodies unchanged; readFromComputer now delegates filing to
 the tested helper. No dashboard code changed. This starts Milestone 6 and does
 not satisfy its remaining paging, revocation, model separation or benchmark gates.
+
+
+Ingestion source revocation: each page and attachment read now checks the current
+source configuration. Document and graph writes, seen markers, final sweeping
+and cursor updates lock the source row and reject disabled, deleted, reassigned
+or reconfigured sources. A response already in flight is refused before its
+results are persisted. Source-author bookkeeping uses the same lock, preventing
+its full-row update from restoring a concurrently disabled source. Current
+progress fields may change without invalidating the configuration comparison.
+
+The final progress write has a ten-second cleanup deadline. Unseen-document
+sweeping honors cancellation rather than using an unbounded detached context.
+Regressions verify that stale jobs cannot read, write, sweep or replace the new
+cursor after source changes, and that a write waits for an uncommitted revocation
+and rejects it after commit. Typed cursor application, source command extraction,
+scan decomposition and model/retrieval separation remain open.
+
+
+Source-guard validation: database and all agent packages pass with the race
+detector against the disposable vector database. The separate concurrent
+revocation regression also passes. Both binaries, repository lint and gogolint
+pass. Privacy review covers the new source guard and regression files. No
+presentation changes require a new Chrome audit at this checkpoint.

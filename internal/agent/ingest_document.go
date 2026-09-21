@@ -67,6 +67,9 @@ func (self *Agent) fileDocument(ctx context.Context, run *Run, source *models.Ag
 	chunks := chunkText(entry.Text)
 	written := 0
 	err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		if err := lockIngestSource(tx, source); err != nil {
+			return err
+		}
 		metadata := entry.Metadata
 		if metadata == nil {
 			metadata = map[string]any{}

@@ -99,6 +99,9 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 	// wrong later.
 	own := addressList(self.ownAddresses(ctx, run.Owner))
 	ask := func(known map[string]string) (json.RawMessage, error) {
+		if err := self.checkSourceRead(ctx, source); err != nil {
+			return nil, err
+		}
 		return device.Ask(ctx, "scan", &computer.ScanArguments{
 			Root:    source.Specification.Path,
 			Format:  source.Specification.Format,
@@ -162,7 +165,12 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 		return "", counts, fmt.Errorf("the computer's answer is not readable: %w", err)
 	}
 	return self.fileComputerPage(ctx, run, source, result, func(entry computer.ScanEntry) blobFetcher {
-		return blobFrom(device, entry, mostAttachmentBytes)
+		return func(ctx context.Context) ([]byte, error) {
+			if err := self.checkSourceRead(ctx, source); err != nil {
+				return nil, err
+			}
+			return blobFrom(device, entry, mostAttachmentBytes)(ctx)
+		}
 	})
 }
 
@@ -191,6 +199,9 @@ func (self *Agent) notedUnknownAuthors(ctx context.Context, source *models.Agent
 		return
 	}
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		if err := lockIngestSource(tx, source); err != nil {
+			return err
+		}
 		found, err := tx.GetAgentSource(source.AgentID, source.ID)
 		if err != nil || found == nil {
 			return err

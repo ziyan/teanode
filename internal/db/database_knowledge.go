@@ -26,6 +26,7 @@ type KnowledgeOperation interface {
 	// Sources.
 	PutAgentSource(source *models.AgentKnowledgeSource) (*models.AgentKnowledgeSource, error)
 	GetAgentSource(agentId, sourceId string) (*models.AgentKnowledgeSource, error)
+	LockAgentSource(agentId, sourceId string) (*models.AgentKnowledgeSource, error)
 	GetAgentSourceByName(agentId, name string) (*models.AgentKnowledgeSource, error)
 	ListAgentSources(agentId string) ([]*models.AgentKnowledgeSource, error)
 	DeleteAgentSource(agentId, sourceId string) error
@@ -907,4 +908,13 @@ func (self *transaction) ListAgentAttachmentsDeclined(agentId, sourceId string, 
 		query = query.Where(`"source_id" = ?`, sourceId)
 	}
 	return self.documentsFrom(query.Order(`"happened_at" DESC NULLS LAST`).Limit(limit))
+}
+
+// LockAgentSource serializes ingestion writes with source edits and removal.
+func (self *transaction) LockAgentSource(agentId, sourceId string) (*models.AgentKnowledgeSource, error) {
+	sources, err := self.sourcesFrom(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("agent_id = ? AND id = ?", agentId, sourceId).Limit(1))
+	if err != nil || len(sources) == 0 {
+		return nil, err
+	}
+	return sources[0], nil
 }

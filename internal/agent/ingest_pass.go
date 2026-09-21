@@ -89,7 +89,10 @@ func (self *Agent) sweepUnseen(ctx context.Context, source *models.AgentKnowledg
 		return
 	}
 	removed := 0
-	if err := self.settings.Database.TransactionContext(context.WithoutCancel(ctx), func(tx db.Transaction) (err error) {
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		if err := lockIngestSource(tx, source); err != nil {
+			return err
+		}
 		removed, err = tx.DeleteAgentDocumentsUnseen(source.ID, startedPass)
 		return err
 	}); err != nil {

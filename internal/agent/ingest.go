@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -188,6 +189,9 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 		// pass can possibly have been shown.
 		startedPass := markPassStart(source, cursor, time.Now())
 		next, passCounts, err := self.readOnePass(ctx, run, source, cursor)
+		if errors.Is(err, errIngestSourceChanged) {
+			return nil
+		}
 		counts.Documents += passCounts.Documents
 		counts.Chunks += passCounts.Chunks
 		counts.Refused += passCounts.Refused
@@ -305,7 +309,13 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 	// With a context that outlives the deadline: this is the write that
 	// says where the run got to, and it is the one write that must not be
 	// the deadline's victim.
-	return self.markSource(context.WithoutCancel(ctx), source, cursor, counts, more, failure, nextRun)
+	completionContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	err = self.markSource(completionContext, source, cursor, counts, more, failure, nextRun)
+	if errors.Is(err, errIngestSourceChanged) {
+		return nil
+	}
+	return err
 }
 
 // waitingForDevice is a source whose computer is not attached.
@@ -335,6 +345,9 @@ const (
 
 // readOnePass asks the source for one page and files it.
 func (self *Agent) readOnePass(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, cursor map[string]any) (string, db.SourceCounts, error) {
+	if err := self.checkSourceRead(ctx, source); err != nil {
+		return "", db.SourceCounts{}, err
+	}
 	switch source.Kind {
 	case models.SourceComputer, models.SourceArchive:
 		return self.readFromComputer(ctx, run, source, cursor)
@@ -369,6 +382,9 @@ func (self *Agent) markSource(ctx context.Context, source *models.AgentKnowledge
 		next = &nextRun
 	}
 	return self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		if err := lockIngestSource(tx, source); err != nil {
+			return err
+		}
 		return tx.MarkAgentSourceRun(source.ID, cursor, counts, more, failure, next)
 	})
 }

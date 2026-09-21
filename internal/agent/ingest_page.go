@@ -15,6 +15,9 @@ import (
 // Already committed entries can be replayed by their source and external ID.
 func (self *Agent) fileComputerPage(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, result computer.ScanResult, fetchAttachment func(computer.ScanEntry) blobFetcher) (string, db.SourceCounts, error) {
 	counts := db.SourceCounts{}
+	if err := self.checkSourceRead(ctx, source); err != nil {
+		return "", counts, err
+	}
 	for index := range result.Entries {
 		takeTheNullsOut(&result.Entries[index])
 	}
@@ -88,6 +91,9 @@ func (self *Agent) fileComputerPage(ctx context.Context, run *Run, source *model
 	// tree would take that page's documents for gone.
 	if len(named) > 0 {
 		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			if err := lockIngestSource(tx, source); err != nil {
+				return err
+			}
 			return tx.MarkAgentDocumentsSeen(source.ID, named, time.Now())
 		}); err != nil {
 			return "", counts, fmt.Errorf("recording what %s still has of %s: %w", source.Specification.Computer, source.Specification.Path, err)

@@ -56,6 +56,9 @@ func (self *Agent) readSentMail(ctx context.Context, run *Run, source *models.Ag
 
 	oldest := before
 	for _, item := range items {
+		if err := self.checkSourceRead(ctx, source); err != nil {
+			return "", counts, err
+		}
 		if ctx.Err() != nil {
 			return "", counts, ctx.Err()
 		}
