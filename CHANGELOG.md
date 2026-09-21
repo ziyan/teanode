@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.8] - 2026-09-21
+
+### Fixed
+
+- The list of pages scrolls again in a long folder, instead of taking the
+  scroll and moving neither itself nor the page. (#107)
+- The folder's name lines up with the control beside it. (#107)
+- The button that lengthens the list is no longer flush with the bottom edge. (#107)
+- Expanding a heavily linked page in the graph explorer no longer floods the
+  drawing with every link it has. (#108)
+
 ## [0.47.7] - 2026-09-21
 
 ### Fixed
