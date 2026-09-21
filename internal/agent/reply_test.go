@@ -71,6 +71,10 @@ func (self *fakeMailer) Send(ctx context.Context, envelope *mailparse.Envelope, 
 	self.sent = append(self.sent, message)
 	return nil
 }
+func (self *fakeMailer) ComposeInTransaction(ctx context.Context, _ db.Transaction, message *mailer.Message) (*mailer.Composed, error) {
+	return self.Compose(ctx, message)
+}
+
 func (self *fakeMailer) Compose(ctx context.Context, message *mailer.Message) (*mailer.Composed, error) {
 	headers := append([]string{
 		"Message-ID: <draft-" + fmt.Sprint(time.Now().UnixNano()) + "@example.com>",

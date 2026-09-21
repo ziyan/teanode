@@ -35,7 +35,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
-- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving/send, calendar, contacts, knowledge-source and rule-update commands remain.
+- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; content preparation, remaining send adapters, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
@@ -186,6 +186,15 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: introduce a SaveDraft mailbox command with an authorized mailbox,
+transaction-bound preparer and narrow byte-storage dependency. Compose draft
+MIME and media links through ComposeInTransaction; persist mail, item, search
+and previous-draft cleanup under the same command savepoint. Both GraphQL and
+multipart uploads delegate to it. Keep content/attachment adaptation in the
+existing resolver for now; further extraction remains explicit in Milestone 5.
+Rationale: callers that handle a failed save must not commit a partial new draft
+or media metadata, and old bytes must remain recoverable. Date: 2026-09-21.
 
 Decision: expose domain acceptance as a read-only query and a separate CLI
 `mail submission` command. Do not silently turn a retry with changed content
@@ -1423,3 +1432,30 @@ resolver transaction. Draft composition can create media rows. The draft command
 must bind composition, new mail/item/search rows and replacement cleanup to one
 command scope so a late failure cannot leave committed composition metadata.
 The multipart upload adapter shares this path and must retain its behavior.
+
+
+Revision note: a regression reproduced partial draft saves at both mandatory
+storage failure and final replacement failure: committing the enclosing caller
+left an extra mail row. Draft composition also committed media links on its own
+connection. SaveDraft now authorizes ownership and mail-write permission before
+preparation, and its command savepoint includes transaction-bound composition,
+mail creation, storage, Drafts insertion, search indexing and old-item cleanup.
+GraphQL and multipart upload paths both use the command. On rollback, original
+items and their bytes survive; any new unreferenced bytes follow normal retention.
+
+The regression now proves no new mail or media links survive either failure,
+while successful saves retain the intended media link and replace one item.
+The shared upload path keeps its attached file, and denied/missing-mailbox
+requests do not reach preparation. A test mailer was updated for the new
+transactional composition interface after broad compilation detected it.
+Content validation and MIME-specific header preparation still live in the API
+adapter, so this is not completion of the full mailbox command extraction.
+
+
+Validation update: the complete vector-enabled race suite passes with 1,904
+tests and one expected browser integration skip. Focused draft rollback,
+authorization, upload and composition regressions pass, as do repository lint,
+gogolint and both binary builds. The original regression failed before the fix
+with two mail rows instead of one at both injected failure points. UI behavior
+and wire fields are unchanged; full deployment and broader command extraction
+remain open.

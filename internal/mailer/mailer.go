@@ -102,6 +102,9 @@ type Mailer interface {
 	// sending it, for a draft that is stored as the message it will become.
 	Compose(ctx context.Context, message *Message) (*Composed, error)
 
+	// ComposeInTransaction keeps generated media links inside the caller's command.
+	ComposeInTransaction(ctx context.Context, transaction db.Transaction, message *Message) (*Composed, error)
+
 	// SendMail renders a template of the sender's domain in a locale and
 	// sends it to the envelope's recipients.
 	SendMail(ctx context.Context, envelope *mailparse.Envelope, templateName string, locale string, variables map[string]interface{}) error
@@ -357,6 +360,19 @@ func (self *mailer) Compose(ctx context.Context, message *Message) (*Composed, e
 		return err
 	})
 	return composed, err
+}
+
+func (self *mailer) ComposeInTransaction(ctx context.Context, transaction db.Transaction, message *Message) (*Composed, error) {
+	var composed *Composed
+	err := transaction.TransactionContext(ctx, func(command db.Transaction) error {
+		var err error
+		composed, err = self.compose(command, message)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return composed, nil
 }
 
 func (self *mailer) compose(transaction db.Transaction, message *Message) (*Composed, error) {

@@ -42,12 +42,13 @@ Keep existing multi-field partial-result behavior while moving each application
 command's writes into its own tested boundary. Do not claim document-wide
 atomicity.
 
-`SendMailboxMessage` validates and reads through the outer API transaction, then
-calls the mailer and exchange, which use separate transactions. It subsequently
-updates reply/forward flags and removes a draft through the outer transaction.
-An error in those final writes can therefore follow durable mail acceptance.
-The submission milestone must record acceptance and recoverable bookkeeping,
-not merely hide that error.
+`SendMailboxMessage` now uses the submission coordinator on the API transaction.
+Composition, required byte persistence, mail, deliveries, Sent item and retry
+identity share its command scope. Draft/flag reconciliation has a separate
+savepoint and durable pending state, so its failure does not lose acceptance.
+Dispatch wakes only after the enclosing transaction commits. Domain API sends
+use the same transaction-bound composition and acceptance with a separate
+principal-scoped identity; their requests have no mailbox reconciliation.
 
 `SaveContact` also uses a separate write transaction after authorization and an
 initial read; it rereads the card in the writing transaction before merging.
@@ -87,3 +88,13 @@ unchanged, or writes a durable cancellation. The send coordinator checks that
 record before preparation. A rolled-back cancellation cannot block a later send;
 a committed cancellation blocks even an original request that arrives afterward.
 The API returns that result only after the request transaction commits.
+
+
+Draft saving now delegates to `internal/mailbox.Commands.SaveDraft`, including
+multipart uploads. Ownership and mail-write permission precede preparation.
+Composition uses the caller transaction for media links; mail, Drafts item,
+search indexing and replacement cleanup share the savepoint. Failed mandatory
+storage or late cleanup restores the previous item and rolls back new metadata,
+even if the caller handles the error and commits unrelated work. Stored bytes
+are not deleted during rollback and follow normal retention. MIME-specific
+preparation remains in the API adapter pending further command extraction.

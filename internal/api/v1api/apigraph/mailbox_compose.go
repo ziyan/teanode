@@ -337,6 +337,13 @@ func (self *graph) threadingHeaders(ctx context.Context, mailbox *models.Mailbox
 // fields given, the parts kept from the draft being continued, and any
 // files just uploaded — and removes the previous save of it.
 func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *models.Mailbox, parameters *MailboxMessageParameters, uploads []*mailparse.Attachment) (*models.MailboxItem, error) {
+	saved, err := mailboxcommands.New(tx).SaveDraft(ctx, api.ContextPrincipal(ctx), mailboxcommands.SaveDraftRequest{MailboxID: mailbox.ID, PreviousItemID: parameters.DraftItemID}, self.storage, func(ctx context.Context, transaction db.Transaction, owned *models.Mailbox) (*models.Mail, error) {
+		return self.prepareDraft(api.ContextWithTransaction(ctx, transaction), transaction, owned, parameters, uploads)
+	})
+	return saved, translateError(err)
+}
+
+func (self *graph) prepareDraft(ctx context.Context, tx db.Transaction, mailbox *models.Mailbox, parameters *MailboxMessageParameters, uploads []*mailparse.Attachment) (*models.Mail, error) {
 	message, domain, err := self.buildMailboxMessage(ctx, tx, mailbox, parameters, uploads)
 	if err != nil {
 		return nil, err
@@ -375,18 +382,10 @@ func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *mo
 	}
 	message.Headers = append(message.Headers, mailparse.UnsplitHeader(draftHeaderKey, key))
 
-	composed, err := self.mailer.Compose(ctx, message)
+	composed, err := self.mailer.ComposeInTransaction(ctx, tx, message)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
-	drafts, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindDrafts)
-	if err != nil {
-		return nil, err
-	}
-	if drafts == nil {
-		return nil, api.ErrNotFound
-	}
-
 	recipients := append(append(append([]string{}, message.To...), message.Cc...), message.Bcc...)
 	now := time.Now()
 	// A draft reply belongs to the conversation it answers, so that it shows
@@ -395,7 +394,7 @@ func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *mo
 	if err != nil {
 		return nil, err
 	}
-	created, err := tx.CreateMail(&models.Mail{
+	return &models.Mail{
 		ThreadID:   threadId,
 		DomainID:   domain.ID,
 		EnvelopeID: composed.ID,
@@ -410,27 +409,7 @@ func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *mo
 		Status:     models.MailStatusAccepted,
 		ReceivedAt: now,
 		Kind:       models.MailKindDraft,
-	}, nil)
-	if err != nil {
-		return nil, translateError(err)
-	}
-	if err := self.storage.Put(ctx, created.ID, composed.Headers, composed.Body); err != nil {
-		return nil, err
-	}
-	yes := true
-	item, err := tx.AddItem(drafts.ID, created.ID, "", models.MailboxItemFlags{Draft: &yes, Seen: &yes})
-	if err != nil {
-		return nil, translateError(err)
-	}
-	if err := tx.SetMailSearch(created.ID, mx.SearchDocument(created), mx.AttachmentCount(created)); err != nil {
-		return nil, err
-	}
-	if parameters.DraftItemID != "" {
-		if err := self.removeDraft(ctx, tx, mailbox, parameters.DraftItemID); err != nil {
-			return nil, err
-		}
-	}
-	return item, nil
+	}, nil
 }
 
 // GetMailboxDraft reads a stored draft back into the fields it was written
