@@ -33,13 +33,18 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation and its regressions pass; GraphQL preparation, command atomicity and bounded cleanup remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4: make mail submission retries and storage guarantees explicit.
+- [ ] Milestone 4 (in progress): disable automatic mutation retries; durable submission identity, recovery and storage guarantees remain.
 - [ ] Milestone 5: extract shared application commands from transport adapters.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7: separate dashboard request state from presentation.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+The dashboard fetch wrapper retried every operation after a lost response,
+including mutations that send mail or start agent work. A failed connection
+cannot establish whether the server accepted the action. Mocked transport tests
+reproduced two mutation attempts for one call before the fix.
 
 
 `TransactionContext` currently means audit context, without SQL cancellation.
@@ -60,6 +65,12 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: automatically retry only documents starting with the GraphQL query
+keyword or anonymous query selection. The dashboard sends no operation name;
+the server rejects documents containing multiple operations. Other document
+shapes receive no automatic retry. Durable submission identity remains required
+before offering safe mutation retries.
 
 
 Decision: start with correctness and verification, then extract one command at
@@ -573,3 +584,9 @@ than supporting mixed workers with a temporary missing-identity bypass. The
 forward and reverse migrations requeue interrupted claims, and the operating
 procedure is documented in the jobs subsystem. This preserves the completion
 check throughout the new worker's lifetime.
+
+Revision note: the dashboard transport no longer automatically repeats mutations
+when a response is lost. Ten transport regression cases cover mutation and
+unknown-operation refusal, query retry, its single-attempt limit, cancellation,
+and HTTP failures. All thirteen dashboard behavior tests, typechecking and lint
+pass. This is a prerequisite to Milestone 4, not its durable acceptance contract.

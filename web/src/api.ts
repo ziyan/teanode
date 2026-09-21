@@ -13,24 +13,6 @@ export class APIError extends Error {
   }
 }
 
-// send posts the query, once more if the connection failed before the server
-// had a chance to answer.
-//
-// Every request this dashboard makes is a POST, and a browser will not retry
-// one of those by itself — for good reason, since it cannot know whether the
-// request was acted on. A connection that failed before any reply arrived is
-// the case where it can: nothing was received, so nothing happened that
-// asking again would repeat, and a GraphQL query changes nothing anyway.
-//
-// The failure this is for: a keep-alive connection picked up at the moment
-// the other end had already closed it. It is invisible in the origin's log —
-// the request never arrives — and it lands as a bare "Failed to fetch" over a
-// page that was fine, most often on a burst of requests after an idle spell,
-// which is exactly what clicking into a domain is.
-//
-// Once, and only for that. A server that answered, however it answered, is a
-// server whose answer we keep; retrying a real failure twice as fast is not
-// help.
 // Where this browser is, sent with every call so the server can tell time in
 // the person's own zone when nobody is looking — a scheduled brief, a held
 // reply's notification. The language goes as Accept-Language, which the
@@ -91,6 +73,11 @@ export function sharedAttachment(attachmentId: string): Promise<string> {
   return asking
 }
 
+// A lost response does not prove that the server did not act. Only retry
+// documents identified as queries; mutations need durable submission identity
+// before they can be repeated safely. This client sends no operationName, so a
+// document with multiple operations is rejected by the server. Documents that
+// start with comments or fragments conservatively receive no automatic retry.
 async function send(
   query: string,
   variables: Record<string, unknown>,
@@ -113,6 +100,7 @@ async function send(
     if (signal?.aborted || (caught instanceof DOMException && caught.name === 'AbortError')) {
       throw caught
     }
+    if (!/^\s*(?:query\b|\{)/.test(query)) throw caught
     return await request()
   }
 }
