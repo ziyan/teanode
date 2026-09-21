@@ -6,8 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"reflect"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -163,6 +165,73 @@ var Any = graphql.NewScalar(graphql.ScalarConfig{
 		return value.GetValue()
 	},
 })
+
+// Int64 is a whole number too big for the 32 bits a GraphQL Int promises.
+//
+// The library serializes Int through int32 and returns nil for anything
+// past 2147483647. A summed token count is an int64 and is not nullable, so
+// once the total passed two billion the whole query failed with "Cannot
+// return null for non-nullable field" instead of returning the number.
+// Fields and arguments declared int64, uint64 or uint use this scalar, which
+// goes on the wire as a plain JSON number like Int does.
+var Int64 = graphql.NewScalar(graphql.ScalarConfig{
+	Name:        "Int64",
+	Description: "A whole number that may need all 64 bits.",
+	Serialize: func(value interface{}) interface{} {
+		number, ok := asInt64(value)
+		if !ok {
+			return nil
+		}
+		return number
+	},
+	ParseValue: func(value interface{}) interface{} {
+		number, ok := asInt64(value)
+		if !ok {
+			return nil
+		}
+		return number
+	},
+	ParseLiteral: func(value ast.Value) interface{} {
+		literal, ok := value.(*ast.IntValue)
+		if !ok {
+			return nil
+		}
+		number, err := strconv.ParseInt(literal.Value, 10, 64)
+		if err != nil {
+			return nil
+		}
+		return number
+	},
+})
+
+// asInt64 reads whatever the caller had as an int64: a field the generator
+// found by reflection holds one of several widths, and a variable that
+// arrived as JSON is a float64.
+func asInt64(value interface{}) (int64, bool) {
+	if value == nil {
+		return 0, false
+	}
+	reflected := reflect.ValueOf(value)
+	if reflected.Kind() == reflect.Pointer {
+		if reflected.IsNil() {
+			return 0, false
+		}
+		reflected = reflected.Elem()
+	}
+	switch reflected.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return reflected.Int(), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		unsigned := reflected.Uint()
+		if unsigned > math.MaxInt64 {
+			return 0, false
+		}
+		return int64(unsigned), true
+	case reflect.Float32, reflect.Float64:
+		return int64(reflected.Float()), true
+	}
+	return 0, false
+}
 
 type GraphAPI interface {
 	// Return the generated graphql schema
@@ -610,8 +679,14 @@ func translateCommonType(modelType reflect.Type) graphql.Type {
 		return graphql.Boolean
 	case reflect.String:
 		return graphql.String
-	case reflect.Int, reflect.Uint, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Uint64, reflect.Uint32, reflect.Uint16:
+	// Int stays Int. It is what every limit, offset and small count on
+	// the surface is declared as, and the queries the dashboard and the
+	// command line already send name Int in their variable declarations,
+	// which only validate against the same type.
+	case reflect.Int, reflect.Int32, reflect.Int16, reflect.Uint32, reflect.Uint16:
 		return graphql.Int
+	case reflect.Int64, reflect.Uint64, reflect.Uint:
+		return Int64
 	case reflect.Float64, reflect.Float32:
 		return graphql.Float
 	case reflect.Struct:
@@ -643,22 +718,15 @@ func coerceCommonKind(value interface{}, modelType reflect.Type) reflect.Value {
 		return reflect.ValueOf(value.(bool))
 	case reflect.String:
 		return reflect.ValueOf(value.(string))
-	case reflect.Int:
-		return reflect.ValueOf(value.(int))
-	case reflect.Uint:
-		return reflect.ValueOf(uint(value.(int)))
-	case reflect.Int64:
-		return reflect.ValueOf(int64(value.(int)))
-	case reflect.Int32:
-		return reflect.ValueOf(int32(value.(int)))
-	case reflect.Int16:
-		return reflect.ValueOf(int16(value.(int)))
-	case reflect.Uint64:
-		return reflect.ValueOf(uint64(value.(int)))
-	case reflect.Uint32:
-		return reflect.ValueOf(uint32(value.(int)))
-	case reflect.Uint16:
-		return reflect.ValueOf(uint16(value.(int)))
+	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16,
+		reflect.Uint, reflect.Uint64, reflect.Uint32, reflect.Uint16:
+		// An Int argument arrives as an int and an Int64 one as an
+		// int64, so neither width can be asserted directly.
+		number, ok := asInt64(value)
+		if !ok {
+			return reflect.Value{}
+		}
+		return reflect.ValueOf(number)
 	case reflect.Float64:
 		return reflect.ValueOf(value.(float64))
 	case reflect.Float32:
