@@ -26,6 +26,7 @@ import { useToast } from '../components/toast'
 import { useIsDesktop } from '../components/sidebar'
 import { useSession } from '../session'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
+import { MenuButton } from '../components/menuButton'
 import { Markdown } from '../components/markdown'
 import { Tooltip } from '../components/tooltip'
 import { GraphExplorer } from '../components/graphExplorer'
@@ -636,26 +637,24 @@ export function KnowledgePage() {
   //
   // The name of the top is a way back to it once there is more than one
   // level to climb, since the chevron only ever goes up by one.
-  // Every level of the path, and nothing above it. It used to show the word
-  // KNOWLEDGE and the folder open and nothing between, so `work/mujin` read
-  // as MUJIN filed directly under KNOWLEDGE: a path that does not exist,
-  // missing the one level that said where you were. The word itself is not
-  // a level, it is the name of the page this already is, so it is gone and
-  // the levels that are real are each a way back to themselves.
+  // The levels above, in a menu, and the folder open written out.
   //
-  // Deep enough and the middle is an ellipsis rather than a line that wraps
-  // three times on a phone, keeping the first, the parent and the folder
-  // open, which are the ones anybody climbs to.
+  // Spelling the path across the row cannot work here whatever the width.
+  // Folders in a real graph nest four deep and are named in full -- sixty
+  // five characters is an ordinary one -- so a trail of them is two hundred
+  // characters, which wraps four times on a phone and still pushes the rows
+  // off the screen. Collapsing the middle does not save it either: two of
+  // those names is already more than a phone has.
+  //
+  // So the row costs the same at any depth. The chevron goes up one, the
+  // menu holds every level above with the nearest first and is the way to
+  // any of them in one go, and the name of the folder you are in gets the
+  // rest of the room, since that is the one a person is reading.
   const segments = folder ? folder.split('/').filter(Boolean) : []
-  const ancestors = segments.map((segment, index) => ({
+  const ancestors = segments.slice(0, -1).map((segment, index) => ({
     path: segments.slice(0, index + 1).join('/'),
-    // The last one is the folder that is open, which already has a name
-    // worked out from its node; the ones above it are only a path here,
-    // so the segment is what there is to show.
-    label: index === segments.length - 1 ? folderLabel : segment,
-    last: index === segments.length - 1,
+    label: segment,
   }))
-  const shown = ancestors.length > 3 ? [ancestors[0], null, ...ancestors.slice(-2)] : ancestors
   const trail =
     !search && folder ? (
       <div className="knowledge-trail list-toolbar">
@@ -668,26 +667,33 @@ export function KnowledgePage() {
         >
           <ChevronLeftIcon size={16} />
         </button>
-        {shown.map((step, index) =>
-          step === null ? (
-            <span key={`gap-${index}`} className="knowledge-trail-gap" aria-hidden="true">
-              / …
-            </span>
-          ) : (
-            <span key={step.path} className="knowledge-trail-step">
-              {index > 0 ? <span aria-hidden="true">/</span> : null}
-              {step.last ? (
-                <span className="knowledge-trail-name" aria-current="page">
-                  {step.label}
-                </span>
-              ) : (
-                <button type="button" className="knowledge-trail-link" onClick={() => goTo(step.path, true)}>
+        {ancestors.length > 0 ? (
+          <MenuButton
+            label={t('knowledge.levels')}
+            className="knowledge-trail-levels"
+            icon={<span aria-hidden="true">…</span>}
+            render={(close) =>
+              // Nearest first: climbing is nearly always one or two levels,
+              // and the top of the tree is the least likely thing wanted.
+              [...ancestors].reverse().map((step) => (
+                <button
+                  key={step.path}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    close()
+                    goTo(step.path, true)
+                  }}
+                >
                   {step.label}
                 </button>
-              )}
-            </span>
-          ),
-        )}
+              ))
+            }
+          />
+        ) : null}
+        <span className="knowledge-trail-name" aria-current="page">
+          {folderLabel}
+        </span>
         {/* The way back to the top of a long folder. Walking into one and
             wanting out of it meant flicking back up through everything
             first; the trail itself stays put, so the button on it can be
@@ -707,7 +713,7 @@ export function KnowledgePage() {
   // to go. In a folder the trail is that row; at the top, where there is no
   // folder to leave, it is the search box and the ways in.
   const column = (
-    <div className="card knowledge-list">
+    <div className="knowledge-list">
       {trail ?? lookup}
       <div ref={setRowsElement} className="knowledge-list-rows">
         {list}
@@ -715,22 +721,22 @@ export function KnowledgePage() {
     </div>
   )
 
-  if (onePane) {
-    // One column at a time. Which one is in the URL, so Back is Back,
-    // and the breadcrumb on the bar is the way up out of the navigator.
-    return (
-      <div ref={setFrameElement} className="knowledge-phone">
-        {showingDetail ? detail : column}
-        {recall}
-        {documents}
-      </div>
-    )
-  }
-
+  // The same frame the mail list and its reading pane are drawn in: one
+  // bordered box with the list down the left and what is open beside it,
+  // divided by a line rather than by a gap between two rounded cards. This
+  // page invented its own pair of cards, which made a list of pages and a
+  // page look like two unrelated panels on a page that is one thing.
+  //
+  // Which pane shows on a narrow window is the frame's own business, as it
+  // is there: `reading` says something is open, and the container query
+  // below hides whichever of the two is not wanted. One column at a time,
+  // and which one is in the URL, so Back is Back.
   return (
-    <div ref={setFrameElement} className="knowledge-columns">
-      <div className="knowledge-column knowledge-column-navigator">{column}</div>
-      <div className="knowledge-column knowledge-page">{detail}</div>
+    <div ref={setFrameElement} className="knowledge-frame">
+      <div className={['knowledge-split', showingDetail ? 'reading' : ''].filter(Boolean).join(' ')}>
+        {column}
+        <div className="knowledge-pane knowledge-page">{detail}</div>
+      </div>
       {recall}
       {documents}
     </div>

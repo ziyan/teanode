@@ -2298,6 +2298,7 @@ export const zh: Catalog = {
   'knowledge.waysIn': '入口',
   'knowledge.root': '知识',
   'knowledge.toTop': '回到顶部',
+  'knowledge.levels': '上级文件夹',
   'knowledge.back': '返回',
   'knowledge.into': '{name} 里面有什么',
   'knowledge.emptyFolder': '这里还没有内容。',

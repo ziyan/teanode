@@ -2386,6 +2386,7 @@ export const en = {
   'knowledge.waysIn': 'Ways in',
   'knowledge.root': 'Knowledge',
   'knowledge.toTop': 'Top',
+  'knowledge.levels': 'The folders above this one',
   'knowledge.back': 'Back',
   'knowledge.into': 'What is inside {name}',
   'knowledge.emptyFolder': 'Nothing here yet.',
