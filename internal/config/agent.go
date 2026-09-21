@@ -102,6 +102,11 @@ const (
 	AgentProviderKindOpenAI    = "openai"
 	AgentProviderKindAnthropic = "anthropic"
 	AgentProviderKindGemini    = "gemini"
+
+	// AgentProviderKindTypeSafe decides between answers it is given and
+	// writes nothing. It is assigned to Models.Decide and to nothing
+	// else: assigning it to work that writes is refused below.
+	AgentProviderKindTypeSafe = "typesafe"
 )
 
 // AgentProvider is one model service.
@@ -270,6 +275,19 @@ type AgentModels struct {
 	Default   string `yaml:"default"`
 	Fast      string `yaml:"fast,omitempty"`
 	Embedding string `yaml:"embedding,omitempty"`
+
+	// Decide is the model for a question whose answers are known in
+	// advance: is this file worth opening, which of these folders does
+	// this belong under. It writes nothing and cannot be asked to.
+	//
+	// Empty is the whole of "off". Every decision that can use one has a
+	// path that asks a language model instead, which is what runs when
+	// this is not set, so nothing here is needed for the agent to work.
+	// It is worth setting where the same decision is made tens of
+	// thousands of times: the answer comes back in well under a second,
+	// with how sure it is attached, and cannot be a word that was not on
+	// the list.
+	Decide string `yaml:"decide,omitempty"`
 
 	// EmbeddingDimensions is the width to ask the embedding model for,
 	// where it takes such a request. Zero is the model's own width.
@@ -869,6 +887,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 	}
 	names := map[string]bool{}
 	enabledProviders := 0
+	deciders := map[string]bool{}
 	for index, provider := range agent.Providers {
 		prefix := fmt.Sprintf("agent.providers[%d]", index)
 		if provider.Name == "" {
@@ -878,9 +897,12 @@ func (self *Configuration) validateAgent(validator *validator) {
 		}
 		names[provider.Name] = true
 		switch provider.Kind {
-		case AgentProviderKindOpenAI, AgentProviderKindAnthropic, AgentProviderKindGemini:
+		case AgentProviderKindOpenAI, AgentProviderKindAnthropic, AgentProviderKindGemini, AgentProviderKindTypeSafe:
 		default:
-			validator.add(prefix+".kind", `must be "openai" (also every compatible server), "anthropic" or "gemini"`)
+			validator.add(prefix+".kind", `must be "openai" (also every compatible server), "anthropic", "gemini" or "typesafe"`)
+		}
+		if provider.Kind == AgentProviderKindTypeSafe {
+			deciders[provider.Name] = true
 		}
 		if provider.IsEnabled() {
 			enabledProviders++
@@ -913,8 +935,21 @@ func (self *Configuration) validateAgent(validator *validator) {
 		if !provider.Models.Admits(model) {
 			validator.add(field, "%q names a model the provider's filter does not admit", value)
 		}
+		// A decider writes nothing and a writer cannot say how sure it is,
+		// so neither stands in for the other. Caught here rather than at
+		// the moment of use, where it would be a run that failed for a
+		// reason nobody could see from the configuration.
+		decides := field == "agent.models.decide"
+		if decider := deciders[providerName]; decider != decides {
+			if decides {
+				validator.add(field, "%q names a provider that writes; a decision needs a typesafe provider", value)
+			} else {
+				validator.add(field, "%q names a provider that only decides; this work writes", value)
+			}
+		}
 	}
 	checkModel("agent.models.default", agent.Models.Default)
+	checkModel("agent.models.decide", agent.Models.Decide)
 	checkModel("agent.models.fast", agent.Models.Fast)
 	checkModel("agent.models.embedding", agent.Models.Embedding)
 	checkModel("agent.models.triage", agent.Models.Triage)
