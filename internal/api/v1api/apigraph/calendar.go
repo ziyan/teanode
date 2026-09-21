@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -35,6 +36,9 @@ type CalendarQuery interface {
 
 	// One event, with its whole file. Needs calendar:use.
 	GetCalendarEvent(ctx context.Context, arguments CalendarEventArguments) (*CalendarEventView, error)
+
+	// Completion of a retained request, including when its event no longer exists.
+	GetCalendarRequest(ctx context.Context, arguments CalendarRequestArguments) (*CalendarRequestView, error)
 }
 
 // CalendarMutation changes it.
@@ -131,6 +135,8 @@ type CalendarEventArguments struct {
 }
 
 type SaveCalendarEventArguments struct {
+	// RequestID is retained by the caller across retries of the exact same input.
+	RequestID  string `json:"requestId" graphapi:"nullable"`
 	CalendarID string `json:"calendarId"`
 
 	// ID names an event already kept; empty keeps a new one.
@@ -407,14 +413,55 @@ func eventView(object *models.CalendarObject, whole bool) (*CalendarEventView, e
 }
 
 func (self *graph) SaveCalendarEvent(ctx context.Context, arguments SaveCalendarEventArguments) (*CalendarEventView, error) {
+	if arguments.RequestID == "" {
+		view, _, err := self.saveCalendarEvent(ctx, arguments)
+		return view, err
+	}
 	principal, err := self.requireCalendarPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
-	organizer, err := self.organizerFor(ctx)
+	requestContent, err := json.Marshal(arguments)
 	if err != nil {
 		return nil, err
 	}
+	var saved *CalendarEventView
+	outcome, err := calendarcommands.New(self.transaction(ctx)).ExecuteRequest(ctx, principal, calendarcommands.RequestIdentity{RequestID: arguments.RequestID, CalendarID: arguments.CalendarID, Operation: "save", Content: requestContent}, func(ctx context.Context, transaction db.Transaction) (calendarcommands.RequestResult, error) {
+		var isMailSendRequired bool
+		var err error
+		saved, isMailSendRequired, err = self.saveCalendarEvent(api.ContextWithTransaction(ctx, transaction), arguments)
+		if err != nil {
+			return calendarcommands.RequestResult{}, err
+		}
+		return calendarcommands.RequestResult{ObjectID: saved.ID, IsMailSendRequired: isMailSendRequired}, nil
+	})
+	if err != nil {
+		return nil, translateError(err)
+	}
+	if !outcome.IsReplay {
+		return saved, nil
+	}
+	// Return current content, never an old snapshot or a recreated deleted event.
+	object, err := self.transaction(ctx).GetCalendarObject(outcome.Receipt.CalendarID, outcome.Receipt.ObjectID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	if object == nil {
+		return nil, nil
+	}
+	return eventView(object, true)
+}
+
+func (self *graph) saveCalendarEvent(ctx context.Context, arguments SaveCalendarEventArguments) (*CalendarEventView, bool, error) {
+	principal, err := self.requireCalendarPerson(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	organizer, err := self.organizerFor(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	isMailSendRequired := false
 	kept, err := calendarcommands.New(self.transaction(ctx)).SaveEvent(ctx, principal, calendarcommands.EventRequest{CalendarID: arguments.CalendarID, ID: arguments.ID}, func(ctx context.Context, transaction db.Transaction, existing *models.CalendarObject) (*calendar.Parsed, error) {
 		parsed, err := buildSaved(&arguments, existing, organizer)
 		if err != nil {
@@ -422,15 +469,18 @@ func (self *graph) SaveCalendarEvent(ctx context.Context, arguments SaveCalendar
 		}
 		return parsed, nil
 	}, func(ctx context.Context, transaction db.Transaction, kept, before *models.CalendarObject) error {
-		return self.inviteTo(api.ContextWithTransaction(ctx, transaction), kept, before, organizer)
+		var err error
+		isMailSendRequired, err = self.inviteTo(api.ContextWithTransaction(ctx, transaction), kept, before, organizer)
+		return err
 	})
 	if errors.Is(err, db.ErrInvalidArguments) {
-		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+		return nil, false, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
 	if err != nil {
-		return nil, translateError(err)
+		return nil, false, translateError(err)
 	}
-	return eventView(kept, true)
+	view, err := eventView(kept, true)
+	return view, isMailSendRequired, err
 }
 
 // organizerFor is the address this person would organize a meeting from.
@@ -464,13 +514,13 @@ func (self *graph) organizerFor(ctx context.Context) (string, error) {
 // event has really changed, and only the newly added ones when it has not.
 // Sending to everybody on every save would mean correcting a typo in the
 // notes putting an invitation in five people's mailboxes.
-func (self *graph) inviteTo(ctx context.Context, kept, before *models.CalendarObject, organizer string) error {
+func (self *graph) inviteTo(ctx context.Context, kept, before *models.CalendarObject, organizer string) (bool, error) {
 	if kept == nil || organizer == "" {
-		return nil
+		return false, nil
 	}
 	parsed, err := calendar.Parse([]byte(kept.Data))
 	if err != nil || len(parsed.Attendees) == 0 {
-		return nil
+		return false, nil
 	}
 	var held *calendar.Parsed
 	if before != nil {
@@ -480,16 +530,16 @@ func (self *graph) inviteTo(ctx context.Context, kept, before *models.CalendarOb
 	}
 	asked, err := guestsToInvite(parsed, held, organizer)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if len(asked) == 0 {
-		return nil
+		return false, nil
 	}
 	written, err := calendar.Invite([]byte(kept.Data), organizer)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return self.sendCalendarMessage(ctx, organizer, asked, kept, written, "REQUEST")
+	return true, self.sendCalendarMessage(ctx, organizer, asked, kept, written, "REQUEST")
 }
 
 // guestsToInvite is who an invitation goes to when this person saves this

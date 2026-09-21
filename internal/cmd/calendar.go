@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/calendar"
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/util/security"
 )
 
 // The calendar: what somebody has on, which their devices synchronize over
@@ -24,6 +26,7 @@ func NewCalendarCommand() *cli.Command {
 		Name:  "calendar",
 		Usage: "your calendar: what you have on, synchronized to your devices over CalDAV",
 		Commands: []*cli.Command{
+			{Name: "request", Usage: "look up a calendar change after an uncertain response", ArgsUsage: "<request-id>", Flags: []cli.Flag{JSONFlag()}, Action: runCalendarRequest},
 			{
 				Name:  "list",
 				Usage: "what is on; one line per time something happens",
@@ -108,6 +111,7 @@ func NewCalendarCommand() *cli.Command {
 
 func eventFlags() []cli.Flag {
 	return []cli.Flag{
+		&cli.StringFlag{Name: "request-id", Usage: "reuse this identifier with unchanged fields after an uncertain response"},
 		JSONFlag(),
 		&cli.StringFlag{Name: "summary", Aliases: []string{"title"}, Usage: "what it is"},
 		&cli.StringFlag{Name: "starts", Usage: "when it starts, as YYYY-MM-DDTHH:MM in your calendar's zone"},
@@ -436,9 +440,17 @@ func runCalendarAdd(ctx context.Context, command *cli.Command) error {
 	if fields.File == "" && fields.StartsAt == nil {
 		return fmt.Errorf("an event needs a time: --starts 2026-09-14T10:00")
 	}
+	fields.RequestID = command.String("request-id")
+	if fields.RequestID == "" {
+		fields.RequestID = security.NewULID()
+	}
+	fmt.Fprintf(os.Stderr, "calendar request %s\n", fields.RequestID)
 	event, err := client.SaveCalendarEvent(ctx, connection, fields)
 	if err != nil {
-		return describeError(command, err)
+		return fmt.Errorf("calendar save failed; look up 'teanode calendar request %s' or retry unchanged fields with --request-id %s: %w", fields.RequestID, fields.RequestID, err)
+	}
+	if event == nil {
+		return fmt.Errorf("calendar request %s completed, but the event was subsequently deleted", fields.RequestID)
 	}
 	if command.Bool("json") {
 		return PrintJSON(event)
@@ -480,9 +492,17 @@ func runCalendarEdit(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	fields.ID = command.Args().First()
+	fields.RequestID = command.String("request-id")
+	if fields.RequestID == "" {
+		fields.RequestID = security.NewULID()
+	}
+	fmt.Fprintf(os.Stderr, "calendar request %s\n", fields.RequestID)
 	event, err := client.SaveCalendarEvent(ctx, connection, fields)
 	if err != nil {
-		return describeError(command, err)
+		return fmt.Errorf("calendar save failed; look up 'teanode calendar request %s' or retry unchanged fields with --request-id %s: %w", fields.RequestID, fields.RequestID, err)
+	}
+	if event == nil {
+		return fmt.Errorf("calendar request %s completed, but the event was subsequently deleted", fields.RequestID)
 	}
 	if command.Bool("json") {
 		return PrintJSON(event)
@@ -690,4 +710,30 @@ func runCalendarFree(ctx context.Context, command *cli.Command) error {
 		return nil
 	}
 	return printTable([]string{"day", "from", "until"}, rows)
+}
+
+func runCalendarRequest(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 1 {
+		return fmt.Errorf("usage: teanode calendar request <request-id>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	receipt, err := client.GetCalendarRequest(ctx, connection, command.Args().First())
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(receipt)
+	}
+	if receipt == nil {
+		fmt.Println("no completed request found; the original request may still be in progress")
+		return nil
+	}
+	fmt.Printf("completed %s: calendar %s, event %s\n", receipt.RequestID, receipt.CalendarID, receipt.ObjectID)
+	if receipt.IsMissing {
+		fmt.Println("the event has since been deleted")
+	}
+	return nil
 }

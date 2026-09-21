@@ -35,7 +35,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
-- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, API/caller integration of event-create and RSVP retry receipts, contact protocol adapters, knowledge-source and rule-update commands remain.
+- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, dashboard/agent event-create retries and RSVP/delete retry integration, contact protocol adapters, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
@@ -194,6 +194,12 @@ a milestone fixing behavior that is already correct.
 
 ## Decision Log
 
+Calendar API replay authorization: retain whether the original action required
+mail-send permission, using migration 0096. Personal saves must still work for
+accounts with calendar-use alone, while replaying an invitation send rechecks
+mail-send even after its event is deleted. Request receipts contain no message
+or event content. A save replay returns current event content or null if deleted;
+GetCalendarRequest provides explicit completion and an isMissing flag.
 
 Calendar recovery foundation: migration 0095 adds account-scoped calendar request
 receipts without foreign-key deletion cascades. ExecuteRequest serializes each
@@ -1674,3 +1680,28 @@ detector, including the reverse/reapply fixture. Repository lint, gogolint and
 both binary builds pass. The remaining recovery work starts with optional API
 request IDs and completion lookup, then retained identities in dashboard, CLI
 and agent callers. Full deployment and Chrome verification remain open.
+
+
+Calendar recovery now reaches SaveCalendarEvent through an optional requestId,
+with an account-scoped GetCalendarRequest lookup. Identical retries skip event
+preparation and notification acceptance, changed arguments conflict, and later
+edits remain intact. The Go client preserves the old query for callers without a
+request ID and offers identified saves and lookup. CLI add/edit print a retained
+ID before sending, accept --request-id for explicit retries, and report uncertain
+errors with both lookup and retry instructions. The calendar request command
+needs neither the original fields nor a surviving calendar/event.
+
+API regressions cover duplicate invitation avoidance, preserving later edits,
+deleted result lookup, revoked send permission, personal events without send
+permission, failed acceptance rollback and account isolation. CLI tests inject a
+lost response, check there was no automatic mutation retry, and verify an explicit
+retry sends the same identity and fields. Lookup of a deleted result is a single
+query. Dashboard and agent callers, RSVP and deletion identities, complete command
+extraction and final deployment/Chrome verification remain required.
+
+
+Validation update: the complete vector-enabled race suite passes with 1,941 tests
+and one expected Chrome-endpoint skip. The affected subsystem run passes 463
+tests. After final naming cleanup and the additional legacy-client wire test,
+focused calendar retry tests, lint including gogolint and both builds pass again.
+The real deployment and final Chrome audit are still required.

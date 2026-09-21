@@ -19,14 +19,14 @@ func TestCalendarRequestConcurrentReplayAndRetention(test *testing.T) {
 	request := RequestIdentity{RequestID: "retained-request", CalendarID: storedCalendar.ID, Operation: "save", Content: []byte(`{"title":"Meeting"}`)}
 	var executionCount atomic.Int32
 	var callbackCount atomic.Int32
-	execute := func(ctx context.Context, transaction db.Transaction) (string, error) {
+	execute := func(ctx context.Context, transaction db.Transaction) (RequestResult, error) {
 		executionCount.Add(1)
 		_, err := New(transaction).Update(ctx, principal, UpdateRequest{ID: storedCalendar.ID, Name: "Accepted"})
 		if err != nil {
-			return "", err
+			return RequestResult{}, err
 		}
 		transaction.AfterCommit(func() { callbackCount.Add(1) })
-		return "event-result", nil
+		return RequestResult{ObjectID: "event-result"}, nil
 	}
 	const workerCount = 8
 	outcomes := make(chan *RequestOutcome, workerCount)
@@ -95,16 +95,16 @@ func TestCalendarRequestRollback(test *testing.T) {
 			expectedError := errors.New("injected failure")
 			var callbackCount atomic.Int32
 			err := database.TransactionContext(test.Context(), func(parent db.Transaction) error {
-				_, err := New(parent).ExecuteRequest(test.Context(), principal, request, func(ctx context.Context, transaction db.Transaction) (string, error) {
+				_, err := New(parent).ExecuteRequest(test.Context(), principal, request, func(ctx context.Context, transaction db.Transaction) (RequestResult, error) {
 					_, err := New(transaction).Update(ctx, principal, UpdateRequest{ID: storedCalendar.ID, Name: "Must roll back"})
 					if err != nil {
-						return "", err
+						return RequestResult{}, err
 					}
 					transaction.AfterCommit(func() { callbackCount.Add(1) })
 					if failureKind == "action" {
-						return "", expectedError
+						return RequestResult{}, expectedError
 					}
-					return "event-result", nil
+					return RequestResult{ObjectID: "event-result"}, nil
 				})
 				if failureKind == "parent" {
 					if err != nil {
@@ -150,10 +150,10 @@ func TestCalendarRequestReadDoesNotWaitAndLockCancels(test *testing.T) {
 	canFinish := make(chan struct{})
 	finished := make(chan error, 1)
 	go func() {
-		_, err := New(database).ExecuteRequest(test.Context(), principal, request, func(_ context.Context, _ db.Transaction) (string, error) {
+		_, err := New(database).ExecuteRequest(test.Context(), principal, request, func(_ context.Context, _ db.Transaction) (RequestResult, error) {
 			close(hasLock)
 			<-canFinish
-			return "event-result", nil
+			return RequestResult{ObjectID: "event-result"}, nil
 		})
 		finished <- err
 	}()

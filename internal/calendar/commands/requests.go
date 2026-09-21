@@ -29,13 +29,20 @@ type RequestOutcome struct {
 	IsReplay bool
 }
 
+// RequestResult records the affected object and the permission used for mail.
+type RequestResult struct {
+	ObjectID           string
+	IsMailSendRequired bool
+}
+
 // RequestAction changes the event and accepts any mail on this transaction,
-// returning the affected object's ID. It must not independently commit or send.
-type RequestAction func(context.Context, db.Transaction) (string, error)
+// returning its identity and any mail-send requirement. It must not independently
+// commit or send.
+type RequestAction func(context.Context, db.Transaction) (RequestResult, error)
 
 // ExecuteRequest records one calendar command once for a user's request ID.
-// Callers must check any additional permissions required by their operation,
-// including mail-send and mailbox-read, before invoking this wrapper on replay.
+// Recorded mail-send permission is checked on replay. Callers must also check
+// any remaining operation permissions, including mailbox-read, before replay.
 func (self *Commands) ExecuteRequest(ctx context.Context, principal *access.Principal, request RequestIdentity, requestAction RequestAction) (*RequestOutcome, error) {
 	if !canUseCalendar(principal) {
 		return nil, db.ErrNotFound
@@ -64,6 +71,9 @@ func (self *Commands) ExecuteRequest(ctx context.Context, principal *access.Prin
 			if receipt.CalendarID != request.CalendarID || receipt.Operation != request.Operation || receipt.RequestDigest != requestDigest {
 				return fmt.Errorf("%w: calendar request identifier already used for different content", db.ErrInvalidArguments)
 			}
+			if receipt.IsMailSendRequired && !principal.Permissions.Has(models.PermissionMailSend) {
+				return db.ErrNotFound
+			}
 			outcome = &RequestOutcome{Receipt: receipt, IsReplay: true}
 			return nil
 		}
@@ -77,11 +87,14 @@ func (self *Commands) ExecuteRequest(ctx context.Context, principal *access.Prin
 		if requestAction == nil {
 			return db.ErrInvalidArguments
 		}
-		objectId, err := requestAction(ctx, transaction)
+		commandResult, err := requestAction(ctx, transaction)
 		if err != nil {
 			return err
 		}
-		receipt = &models.CalendarRequestReceipt{UserID: principal.User.ID, RequestID: request.RequestID, Operation: request.Operation, CalendarID: request.CalendarID, ObjectID: objectId, RequestDigest: requestDigest, CompletedAt: time.Now().Truncate(time.Microsecond)}
+		if commandResult.IsMailSendRequired && !principal.Permissions.Has(models.PermissionMailSend) {
+			return db.ErrNotFound
+		}
+		receipt = &models.CalendarRequestReceipt{UserID: principal.User.ID, RequestID: request.RequestID, Operation: request.Operation, CalendarID: request.CalendarID, ObjectID: commandResult.ObjectID, IsMailSendRequired: commandResult.IsMailSendRequired, RequestDigest: requestDigest, CompletedAt: time.Now().Truncate(time.Microsecond)}
 		if err := transaction.CreateCalendarRequest(receipt); err != nil {
 			return err
 		}

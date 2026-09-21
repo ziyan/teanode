@@ -1,6 +1,9 @@
 package client
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // A person's own calendar: the events they keep, which their devices
 // synchronize over CalDAV.
@@ -83,6 +86,21 @@ const (
     attendees: $attendees) { id uid summary startsAt endsAt allDay }
 }`
 
+	DocumentSaveCalendarEventWithRequest = `mutation ($requestId: String!, $calendarId: String!, $id: String, $file: String,
+    $summary: String, $location: String, $description: String,
+    $startsAt: String, $endsAt: String, $allDay: Boolean,
+    $timezone: String, $recurrence: String, $status: String, $attendees: [String!]) {
+  SaveCalendarEvent(requestId: $requestId, calendarId: $calendarId, id: $id, file: $file,
+    summary: $summary, location: $location, description: $description,
+    startsAt: $startsAt, endsAt: $endsAt, allDay: $allDay,
+    timezone: $timezone, recurrence: $recurrence, status: $status,
+    attendees: $attendees) { id uid summary startsAt endsAt allDay }
+}`
+
+	DocumentGetCalendarRequest = `query ($requestId: String!) {
+ GetCalendarRequest(requestId: $requestId) { requestId calendarId objectId operation completedAt isMissing }
+ }`
+
 	DocumentDeleteCalendarEvent = `mutation ($calendarId: String!, $id: String!) {
   DeleteCalendarEvent(calendarId: $calendarId, id: $id)
 }`
@@ -135,6 +153,7 @@ func GetCalendarEvent(ctx context.Context, connection *Client, calendarId, id st
 // SaveCalendarEventFields keeps an event from filled-in fields. A nil field is
 // left as it was; a pointer to an empty value clears it.
 type SaveCalendarEventFields struct {
+	RequestID  string
 	CalendarID string
 	ID         string
 	File       string
@@ -186,7 +205,12 @@ func SaveCalendarEvent(ctx context.Context, connection *Client, fields *SaveCale
 	var result struct {
 		SaveCalendarEvent *CalendarEvent `json:"SaveCalendarEvent"`
 	}
-	if err := connection.Execute(ctx, DocumentSaveCalendarEvent, arguments, &result); err != nil {
+	document := DocumentSaveCalendarEvent
+	if fields.RequestID != "" {
+		document = DocumentSaveCalendarEventWithRequest
+		arguments["requestId"] = fields.RequestID
+	}
+	if err := connection.Execute(ctx, document, arguments, &result); err != nil {
 		return nil, err
 	}
 	return result.SaveCalendarEvent, nil
@@ -213,4 +237,26 @@ func SaveCalendar(ctx context.Context, connection *Client, id, name, description
 		return nil, err
 	}
 	return result.SaveCalendar, nil
+}
+
+// CalendarRequest identifies a committed change even when its event was deleted.
+type CalendarRequest struct {
+	RequestID   string    `json:"requestId"`
+	CalendarID  string    `json:"calendarId"`
+	ObjectID    string    `json:"objectId"`
+	Operation   string    `json:"operation"`
+	CompletedAt time.Time `json:"completedAt"`
+	IsMissing   bool      `json:"isMissing"`
+}
+
+// GetCalendarRequest looks up completion without repeating the original mutation.
+// A nil receipt does not prove that an in-flight request will never commit.
+func GetCalendarRequest(ctx context.Context, connection *Client, requestId string) (*CalendarRequest, error) {
+	var response struct {
+		GetCalendarRequest *CalendarRequest `json:"GetCalendarRequest"`
+	}
+	if err := connection.Execute(ctx, DocumentGetCalendarRequest, map[string]any{"requestId": requestId}, &response); err != nil {
+		return nil, err
+	}
+	return response.GetCalendarRequest, nil
 }

@@ -61,3 +61,31 @@ func TestCalendarRequestMigrationPreservesEventAndMail(test *testing.T) {
 	}
 	test.Fatal("calendar request migration is missing")
 }
+
+func TestCalendarRequestPermissionMigrationReversesWithoutLosingIdentity(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if err := transaction.CreateCalendarRequest(&models.CalendarRequestReceipt{UserID: "fixture-owner", RequestID: "fixture", Operation: "save", CalendarID: "fixture-calendar", ObjectID: "fixture-event", RequestDigest: strings.Repeat("a", 64), CompletedAt: time.Now(), IsMailSendRequired: true}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	for _, migration := range migrations.Migrations() {
+		if migration.ID != "0096_calendar_request_permission" {
+			continue
+		}
+		dbtest.Exec(test, database, migration.ReverseSQL)
+		if count := dbtest.QueryString(test, database, `SELECT count(*)::text FROM calendar_request`); count != "1" {
+			test.Fatalf("retained identities=%s", count)
+		}
+		dbtest.Exec(test, database, migration.SQL)
+		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+			receipt, err := transaction.GetCalendarRequest("fixture-owner", "fixture")
+			if err != nil || receipt == nil || receipt.ObjectID != "fixture-event" || receipt.IsMailSendRequired {
+				test.Fatalf("reapplied permission=%+v, %v", receipt, err)
+			}
+		})
+		return
+	}
+	test.Fatal("calendar request permission migration is missing")
+}
