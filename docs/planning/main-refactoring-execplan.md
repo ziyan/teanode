@@ -33,7 +33,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): disable automatic mutation retries, make delivery retry claims disjoint, and define explicit storage modes with local flushes and shared-write outage tests; durable submission identity, recovery and acceptance guarantees remain.
+- [ ] Milestone 4 (in progress): mutation retry protection, disjoint delivery claims, explicit storage modes and submission persistence are implemented; exchange/coordinator/API integration, recovery worker and client retry identities remain.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes; mailbox drafts/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
@@ -101,6 +101,16 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: accepted submission records use `(owner_id, submission_id)` as their
+key and retain the request digest, mailbox, original mail/Sent identities and
+pending draft/reply/forward item changes. They do not cascade when mail is
+deleted. A transaction-scoped advisory lock serializes even an identifier that
+has no row yet; its hash never substitutes for the composite database key.
+Failed acceptance rolls back without retaining a placeholder. Recovery workers
+lock pending records with `SKIP LOCKED`, apply mailbox changes and mark completion
+in one transaction. This keeps send deduplication distinct from delivery retries
+and prevents retention from making an old accepted identifier reusable.
 
 Decision: explicit `storage.mode` values are `local` and `shared`; an empty mode
 preserves existing configurations. Shared mode requires enabled S3 and an empty
@@ -761,3 +771,31 @@ Chrome-proxy integration remains opt-in. A subsequent focused storage race run
 also covers failed-rename cleanup and the existing-spool startup adjustment.
 The stock PostgreSQL race suite reports 1,814 tests with two skips (Chrome proxy
 and the vector-extension-specific index check). Go lint and `gogolint` pass.
+
+Revision note: migration `0091_mail_submission` and its reverse add accepted
+submission identities and pending mailbox reconciliation. Database tests cover
+acceptance rollback, failed reconciliation remaining pending, identity survival
+after mail deletion, owner-scoped concurrent retry locks, separate recovery
+worker batches and migration reversal/reapplication. The persistence interface
+is a prerequisite, not a completed send path: no adapter uses it yet.
+
+Next, make the exchange accept into its caller's transaction without early
+commit or immediate delivery, with storage errors refusing acceptance and due
+delivery rows persisted before commit. Defer in-memory usage updates until the
+owning transaction commits; account for nested command rollback. The coordinator
+must lock/check the accepted identity before rebuilding message content or
+looking up a draft that reconciliation may already have deleted. Bind the digest
+to the stable server-serialized request parameters, including mailbox and
+attachment references, excluding generated MIME identifiers and timestamps.
+Reconciliation can run under a command savepoint after acceptance writes, with
+failure leaving the durable record pending; a worker must retry after commit.
+Reuse the caller's transaction so a second connection never waits on its locks.
+
+Downgrading past `0091_mail_submission` discards all accepted retry identities
+and pending reconciliation. Finish reconciliation and stop sending clients
+before an intentional revert; retries of pre-downgrade requests cannot retain
+their deduplication guarantee after that table is removed.
+
+Validation update: all four submission database regressions pass under the race
+detector. The full vector-enabled race suite reports 1,818 tests with the
+opt-in Chrome-proxy test skipped. Go lint and `gogolint` pass.

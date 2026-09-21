@@ -169,6 +169,7 @@ type Transaction interface {
 	AliasUsageOperation
 	CredentialUsageOperation
 	MailOperation
+	SubmissionOperation
 	DeliveryOperation
 	ReportOperation
 	LayoutOperation
