@@ -12,7 +12,7 @@ import (
 var errIngestSourceChanged = errors.New("ingestion source was disabled, removed or changed")
 
 func checkIngestSource(current, expected *models.AgentKnowledgeSource) error {
-	if current == nil || !current.Enabled || current.Kind != expected.Kind || current.RootPath != expected.RootPath || current.Instance != expected.Instance || current.Cron != expected.Cron || !reflect.DeepEqual(current.Specification, expected.Specification) {
+	if current == nil || current.Generation != expected.Generation || !current.Enabled || current.Kind != expected.Kind || current.RootPath != expected.RootPath || current.Instance != expected.Instance || current.Cron != expected.Cron || !reflect.DeepEqual(current.Specification, expected.Specification) {
 		return errIngestSourceChanged
 	}
 	return nil

@@ -1,0 +1,1 @@
+ALTER TABLE agent_source ADD COLUMN generation BIGINT NOT NULL DEFAULT 0;

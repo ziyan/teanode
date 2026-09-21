@@ -183,6 +183,9 @@ type AgentKnowledgeSource struct {
 	Enabled bool   `json:"enabled"`
 	Cron    string `json:"cron,omitempty"`
 
+	// Generation changes when a source is saved, invalidating older ingestion work.
+	Generation int64 `json:"-"`
+
 	// Cursor is where the last pass stopped. Opaque above the reader that
 	// wrote it.
 	Cursor map[string]any `json:"-"`

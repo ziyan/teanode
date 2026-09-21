@@ -1634,7 +1634,7 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 	tx := self.writing(ctx)
 	source := &models.AgentKnowledgeSource{AgentID: found.ID, Enabled: true}
 	if arguments.SourceID != "" {
-		existing, err := tx.GetAgentSource(found.ID, arguments.SourceID)
+		existing, err := tx.LockAgentSource(found.ID, arguments.SourceID)
 		if err != nil {
 			return nil, err
 		}
@@ -1740,7 +1740,7 @@ func (self *graph) SyncAgentKnowledgeSource(ctx context.Context, arguments Delet
 		return false, err
 	}
 	tx := self.writing(ctx)
-	source, err := tx.GetAgentSource(found.ID, arguments.SourceID)
+	source, err := tx.LockAgentSource(found.ID, arguments.SourceID)
 	if err != nil || source == nil {
 		return false, err
 	}

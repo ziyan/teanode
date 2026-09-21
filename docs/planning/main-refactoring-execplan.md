@@ -36,7 +36,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries using either the stable draft key or its source item identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, agent calendar mutation retries, contact proposal acceptance and protocol adapters, knowledge-source and rule-update commands remain.
-- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; job outcomes, source reset generations, retrieval/model extraction and benchmarks remain.
+- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; job outcomes, retrieval/model extraction and benchmarks remain.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
@@ -204,6 +204,14 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Every explicit source save advances an internal generation. Ingestion checks
+that generation under the source lock before filing documents, completing a
+pass or recording progress, so reset and pause/resume sequences cannot restore
+permission to an old run. API and tool controls load the current source under
+lock before changing it. Generation-qualified updates also refuse deleted or
+superseded rows rather than recreating them. Progress and observed author
+addresses use field-specific writes and do not invalidate their own reader.
 
 The scanner decomposition keeps all declarations in the computer package and
 preserves the device wire format and function bodies. Separate files isolate
@@ -2125,3 +2133,37 @@ against the disposable database; both binary builds, repository lint and
 gogolint pass. The initial lint invocation lacked Node on PATH; rerunning with
 the installed Node runtime completed all checks. Added and moved text passed
 privacy review. This structural change has no dashboard presentation changes.
+
+
+Source generation review found that comparing current configuration alone
+accepted an old worker after a pause/resume sequence and could not distinguish
+a same-configuration cursor reset. Migration 0100 adds an internal generation,
+defaulting existing sources to zero. Every explicit save advances it; workers
+retain the generation they loaded. Source controls now read under a row lock
+before saving, preserving progress that committed while the control waited.
+An update to a removed or superseded source fails instead of using an upsert.
+Author observations update only their own fields without advancing generation.
+
+Regressions cover reset and pause/resume rejection across reads, writes,
+progress and completed-pass sweeping; ordinary progress and author observations
+remain usable by the current reader. Stale saves cannot overwrite a newer save
+or recreate a deleted source. Reversing and reapplying migration 0100 preserves
+sources and their documents. Drain workers before migration rollback: dropping
+the generation removes this protection, and older binaries do not enforce it.
+This change guards ingestion persistence; agent-wide embedding and remaining
+model side effects still require their separate lifecycle and policy review.
+
+A tool-level concurrency regression holds an uncommitted progress write while
+pause, resume or sync starts. Each control waits, then retains the committed
+cursor, document count and remaining-work flag while advancing the generation.
+The focused test and database/agent/API race suite pass, including the migration
+round trip. Both binary builds, repository lint and gogolint pass.
+
+Full source-generation validation passes: 2,009 tests with standard PostgreSQL
+(two skips) and 2,009 with pgvector (one skip), both under the race detector.
+The standard image skips vector-specific coverage; both skip the opt-in real
+Chrome proxy test. Both commands report 42.2 percent statement coverage.
+Concurrent runs initially shared the coverage output and corrupted reporting,
+so both were rerun with distinct BUILD_DIR values; the reruns complete cleanly.
+Use separate build directories for future concurrent database-image checks.
+Privacy review includes all added files and the staged secret scan passes.

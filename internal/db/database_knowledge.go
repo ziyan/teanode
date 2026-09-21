@@ -24,7 +24,10 @@ import (
 // KnowledgeOperation is knowledge as the rest of the server reaches it.
 type KnowledgeOperation interface {
 	// Sources.
+	// PutAgentSource advances the generation. Existing rows must be read under
+	// LockAgentSource so concurrent ingestion progress is preserved.
 	PutAgentSource(source *models.AgentKnowledgeSource) (*models.AgentKnowledgeSource, error)
+	SetAgentSourceUnknownAuthors(sourceId string, addresses []string) error
 	GetAgentSource(agentId, sourceId string) (*models.AgentKnowledgeSource, error)
 	LockAgentSource(agentId, sourceId string) (*models.AgentKnowledgeSource, error)
 	GetAgentSourceByName(agentId, name string) (*models.AgentKnowledgeSource, error)
@@ -171,6 +174,7 @@ type agentSourceModel struct {
 	RootPath       string     `gorm:"column:root_path"`
 	Enabled        bool       `gorm:"column:enabled"`
 	Cron           string     `gorm:"column:cron"`
+	Generation     int64      `gorm:"column:generation"`
 	Cursor         []byte     `gorm:"column:cursor;type:jsonb"`
 	Instance       string     `gorm:"column:instance"`
 	LastRunAt      *time.Time `gorm:"column:last_run_at"`
@@ -257,6 +261,7 @@ func (self *transaction) PutAgentSource(source *models.AgentKnowledgeSource) (*m
 	now := time.Now().Truncate(time.Microsecond)
 	written := *source
 	written.ModifiedAt = now
+	written.Generation++
 	create := written.ID == ""
 	if create {
 		written.ID = newID()
@@ -266,7 +271,7 @@ func (self *transaction) PutAgentSource(source *models.AgentKnowledgeSource) (*m
 		ID: written.ID, AgentID: written.AgentID, CreatedAt: written.CreatedAt, ModifiedAt: now,
 		Kind: string(written.Kind), Name: written.Name, Specification: specification,
 		RootPath: written.RootPath, Enabled: written.Enabled, Cron: written.Cron,
-		Cursor: cursor, Instance: written.Instance,
+		Cursor: cursor, Instance: written.Instance, Generation: written.Generation,
 		LastRunAt: written.LastRunAt, NextRunAt: written.NextRunAt, LastError: written.LastError,
 		DocumentCount: written.DocumentCount, ChunkCount: written.ChunkCount,
 		RefusedCount: written.RefusedCount, More: written.More,
@@ -278,8 +283,16 @@ func (self *transaction) PutAgentSource(source *models.AgentKnowledgeSource) (*m
 		if err := self.tx.Create(row).Error; err != nil {
 			return nil, err
 		}
-	} else if err := self.tx.Save(row).Error; err != nil {
-		return nil, err
+	} else {
+		updated := self.tx.Model(&agentSourceModel{}).
+			Where("id = ? AND agent_id = ? AND generation = ?", source.ID, source.AgentID, source.Generation).
+			Select("*").Updates(row)
+		if updated.Error != nil {
+			return nil, updated.Error
+		}
+		if updated.RowsAffected != 1 {
+			return nil, fmt.Errorf("db: source changed or was removed; reload it before saving")
+		}
 	}
 	return &written, nil
 }
@@ -302,7 +315,7 @@ func (self *agentSourceModel) toModel() (*models.AgentKnowledgeSource, error) {
 	source := &models.AgentKnowledgeSource{
 		ID: self.ID, AgentID: self.AgentID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt,
 		Kind: models.AgentKnowledgeKind(self.Kind), Name: self.Name, RootPath: self.RootPath,
-		Enabled: self.Enabled, Cron: self.Cron, Instance: self.Instance,
+		Enabled: self.Enabled, Cron: self.Cron, Instance: self.Instance, Generation: self.Generation,
 		LastRunAt: self.LastRunAt, NextRunAt: self.NextRunAt, LastError: self.LastError,
 		DocumentCount: self.DocumentCount, ChunkCount: self.ChunkCount,
 		RefusedCount: self.RefusedCount, More: self.More,
@@ -917,4 +930,15 @@ func (self *transaction) LockAgentSource(agentId, sourceId string) (*models.Agen
 		return nil, err
 	}
 	return sources[0], nil
+}
+
+// SetAgentSourceUnknownAuthors records observations without changing the source generation.
+// The caller holds the source lock and checks that its ingestion generation is current.
+func (self *transaction) SetAgentSourceUnknownAuthors(sourceId string, addresses []string) error {
+	encodedAddresses, err := json.Marshal(orEmptyStrings(addresses))
+	if err != nil {
+		return err
+	}
+	return self.tx.Model(&agentSourceModel{}).Where("id = ?", sourceId).
+		Updates(map[string]any{"unknown_authors": encodedAddresses, "modified_at": time.Now()}).Error
 }

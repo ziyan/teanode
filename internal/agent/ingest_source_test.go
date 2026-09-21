@@ -9,10 +9,11 @@ import (
 	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/db/migrations"
 )
 
 func TestIngestionRejectsRevokedAndChangedSources(test *testing.T) {
-	for _, change := range []string{"disabled", "deleted", "path", "root", "instance"} {
+	for _, change := range []string{"disabled", "deleted", "path", "root", "instance", "reset", "pause-resume"} {
 		test.Run(change, func(test *testing.T) {
 			database, worker, run, source := ingestionPageFixture(test)
 			entry := computer.ScanEntry{ExternalID: "retained", Kind: "file", Hash: "fixture-hash", Text: "Retained document."}
@@ -34,6 +35,14 @@ func TestIngestionRejectsRevokedAndChangedSources(test *testing.T) {
 					changed.Specification.Path = "/another-fixture"
 				case "root":
 					changed.RootPath = "projects/another-fixture"
+				case "pause-resume":
+					changed.Enabled = false
+					paused, err := transaction.PutAgentSource(&changed)
+					if err != nil {
+						test.Fatal(err)
+					}
+					changed = *paused
+					changed.Enabled = true
 				case "instance":
 					changed.Instance = "another-instance"
 				}
@@ -97,4 +106,76 @@ func TestIngestionWriteWaitsForSourceRevocation(test *testing.T) {
 	if count := dbtest.QueryString(test, database, `SELECT count(*)::text FROM agent_document`); count != "0" {
 		test.Fatalf("late documents=%s", count)
 	}
+}
+
+func TestSourceProgressDoesNotInvalidateCurrentIngestion(test *testing.T) {
+	database, worker, run, source := ingestionPageFixture(test)
+	if err := worker.markSource(test.Context(), source, map[string]any{"after": "next"}, db.SourceCounts{}, true, "", time.Time{}); err != nil {
+		test.Fatal(err)
+	}
+	worker.notedUnknownAuthors(test.Context(), source, []string{"author@example.com"})
+	if _, err := worker.fileDocument(test.Context(), run, source, computer.ScanEntry{ExternalID: "next", Kind: "file", Text: "Next page."}, ""); err != nil {
+		test.Fatal(err)
+	}
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		current, err := transaction.GetAgentSource(source.AgentID, source.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if current.Generation != source.Generation || current.Cursor["after"] != "next" || len(current.UnknownAuthors) != 1 {
+			test.Fatalf("progress changed generation or lost observations: %+v", current)
+		}
+	})
+}
+
+func TestStaleSourceSaveCannotOverwriteOrRecreateSource(test *testing.T) {
+	database, _, _, source := ingestionPageFixture(test)
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		changed := *source
+		changed.Name = "Updated source"
+		written, err := transaction.PutAgentSource(&changed)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.PutAgentSource(source); err == nil {
+			test.Fatal("a stale source overwrote a newer save")
+		}
+		if err := transaction.DeleteAgentSource(source.AgentID, source.ID); err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.PutAgentSource(written); err == nil {
+			test.Fatal("a stale save recreated a deleted source")
+		}
+	})
+	if count := dbtest.QueryString(test, database, `SELECT count(*)::text FROM agent_source`); count != "0" {
+		test.Fatalf("source was recreated: %s", count)
+	}
+}
+
+func TestSourceGenerationMigrationPreservesSourceAndDocuments(test *testing.T) {
+	database, worker, run, source := ingestionPageFixture(test)
+	if _, err := worker.fileDocument(test.Context(), run, source, computer.ScanEntry{ExternalID: "retained", Kind: "file", Text: "Retained document."}, ""); err != nil {
+		test.Fatal(err)
+	}
+	for _, migration := range migrations.Migrations() {
+		if migration.ID != "0100_source_generation" {
+			continue
+		}
+		dbtest.Exec(test, database, migration.ReverseSQL)
+		dbtest.Exec(test, database, migration.SQL)
+		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+			current, err := transaction.GetAgentSource(source.AgentID, source.ID)
+			if err != nil || current == nil || current.Generation != 0 || current.Name != source.Name {
+				test.Fatalf("migrated source=%+v, %v", current, err)
+			}
+			if _, err := transaction.PutAgentSource(current); err != nil {
+				test.Fatal(err)
+			}
+		})
+		if count := dbtest.QueryString(test, database, `SELECT count(*)::text FROM agent_document`); count != "1" {
+			test.Fatalf("migration lost documents: %s", count)
+		}
+		return
+	}
+	test.Fatal("source generation migration is missing")
 }

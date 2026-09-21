@@ -226,8 +226,7 @@ func (self *Agent) notedUnknownAuthors(ctx context.Context, source *models.Agent
 		if !changed {
 			return nil
 		}
-		_, err = tx.PutAgentSource(found)
-		return err
+		return tx.SetAgentSourceUnknownAuthors(found.ID, found.UnknownAuthors)
 	}); err != nil {
 		log.Warningf("cannot note whose commits source %q could not place: %s", source.ID, err)
 	}

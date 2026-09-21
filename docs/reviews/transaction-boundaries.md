@@ -125,4 +125,7 @@ prevent cursor advancement, and committed entries can be replayed by external ID
 Per-entry page effects and continuation writes remain separate and replayable.
 Completed-pass sweeping, refreshed counts and cursor reset now share one source-locked
 transaction; failure to record completion rolls the sweep back. Model-driven
-effects and source reset generations still require review.
+effects still require review. Source controls now lock before saving and advance
+a persisted generation; older readers cannot file or clear a newly reset pass,
+even after the configuration is restored. Author observations and pass progress
+use field-specific updates without changing that generation.
