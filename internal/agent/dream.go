@@ -489,6 +489,12 @@ func (self *Agent) dreamThoughtAbout(ctx context.Context, run *Run, budget *drea
 		usage = thinking.Usage
 	}
 	budget.settle(usage)
+	// An account that cannot pay refuses the next call too, and every
+	// stage of the night walks a list: without this the night asked once
+	// per page, per document and per person, and failed every time.
+	if llm.IsOutOfCreditError(err) {
+		budget.refuse()
+	}
 	return thinking, err
 }
 
@@ -525,6 +531,11 @@ type dreamBudget struct {
 	// digestUntil is when the reading has to stop so the rest of the
 	// night gets its turn; zero means the night has no deadline.
 	digestUntil time.Time
+
+	// refused is a provider that will not answer anything, because the
+	// account it bills cannot pay. Nothing the night does next changes
+	// that, so it counts as having nothing left to spend.
+	refused bool
 }
 
 // dreamCallEstimate is what one call of a night is held against the
@@ -591,9 +602,19 @@ func (self *dreamBudget) left() bool {
 	return self.room()
 }
 
+// refuse records that the provider will not answer again tonight.
+func (self *dreamBudget) refuse() {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if !self.refused {
+		log.Warningf("the night stops: the provider will not bill this account")
+	}
+	self.refused = true
+}
+
 // room is left without the lock, for a caller that already holds it.
 func (self *dreamBudget) room() bool {
-	if self.exhausted {
+	if self.exhausted || self.refused {
 		return false
 	}
 	return self.allowed == 0 || self.spent+self.reserved < self.allowed

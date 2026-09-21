@@ -547,3 +547,33 @@ func chatFor(kind, baseUrl, apiKey string, timeout time.Duration) (Provider, err
 	}
 	return provider, nil
 }
+
+// An empty account and a rate limit both come back as 429, and the two
+// have to be told apart: one clears by itself and the other never does.
+func TestAnEmptyAccountIsNotARateLimit(t *testing.T) {
+	for _, message := range []string{
+		"You have no credits remaining. Add credits to continue using the API.",
+		"You exceeded your current quota, please check your plan and billing details.",
+		"Your credit balance is too low to access the API.",
+		"insufficient_quota",
+	} {
+		if !IsOutOfCreditError(&APIError{Status: 429, Message: message}) {
+			t.Errorf("not read as an empty account: %q", message)
+		}
+	}
+	for _, message := range []string{
+		"Rate limit reached for requests. Please try again in 20s.",
+		"Too many requests, slow down.",
+		"The server had an error while processing your request.",
+	} {
+		if IsOutOfCreditError(&APIError{Status: 429, Message: message}) {
+			t.Errorf("read as an empty account: %q", message)
+		}
+	}
+	if !IsOutOfCreditError(&APIError{Status: 402, Message: "payment required"}) {
+		t.Error("402 is an account that cannot pay")
+	}
+	if IsOutOfCreditError(nil) {
+		t.Error("no error is not an empty account")
+	}
+}
