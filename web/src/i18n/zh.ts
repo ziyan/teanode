@@ -2584,7 +2584,7 @@ export const zh: Catalog = {
   'agent.readingProgress': '已读 {read} / {total} 份文档',
   'agent.readingNothing': '尚未索引任何内容。',
   'agent.readingCostLeft': '还需约 {amount}',
-  'agent.readingSpent': '该速度所依据的梦境花费了 {amount}。',
+  'agent.readingSpent': '依据最近 {count} 次梦境估算，其花费为 {amount}。',
   'agent.readingLeft': '按每小时 {rate} 份计，约还需 {span}',
   'agent.readingIfUnpaused': '（若不间断地做梦）',
   'agent.readingMinutes': '{count} 分钟',

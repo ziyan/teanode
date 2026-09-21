@@ -2673,7 +2673,7 @@ export const ja: Catalog = {
   'agent.readingProgress': '{total} 件中 {read} 件を読了',
   'agent.readingNothing': 'まだ何も索引されていません。',
   'agent.readingCostLeft': 'あと {amount} ほど',
-  'agent.readingSpent': 'この速度の根拠となった夢の費用は {amount} でした。',
+  'agent.readingSpent': '直近 {count} 回の夢から算出。その費用は {amount} でした。',
   'agent.readingLeft': '1 時間あたり {rate} 件のペースで、残り約 {span}',
   'agent.readingIfUnpaused': '（休まず夢を見続けた場合）',
   'agent.readingMinutes': '{count} 分',

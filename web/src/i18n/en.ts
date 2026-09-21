@@ -2704,7 +2704,7 @@ export const en = {
   'agent.readingProgress': '{read} of {total} documents read',
   'agent.readingNothing': 'Nothing has been indexed yet.',
   'agent.readingCostLeft': 'about {amount} more',
-  'agent.readingSpent': 'The dreams behind that pace cost {amount}.',
+  'agent.readingSpent': 'Measured over the last {count} dreams, which cost {amount}.',
   'agent.readingLeft': 'about {span} left at {rate} an hour',
   'agent.readingIfUnpaused': 'if it dreamed without pause',
   'agent.readingMinutes': '{count} minutes',
