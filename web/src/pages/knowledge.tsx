@@ -464,6 +464,23 @@ export function KnowledgePage() {
   // the folder in the address, and otherwise the folder that page is
   // filed in, with the page's own row marked in it.
   const folder = at === '' || walkedInto === at ? at : !answered ? null : isFolder ? at : parentOf(at)
+  // And the folder it was listing a moment ago, for as long as the new one
+  // is still a question.
+  //
+  // Null means "not known yet", which the row above the list read as "the
+  // top of the graph": every step into a page took the trail away, put the
+  // search box and the ways in in its place, and then took those away
+  // again when the answer came. The header already keeps its name across
+  // that gap for the same reason; this keeps the row it sits in.
+  // Seeded from the address, so that opening a link to a page deep in the
+  // graph does not flash the row of the top either: a page is nearly
+  // always read from the folder it is filed in, and if it turns out to be
+  // a folder itself the answer says so a moment later.
+  const lastFolder = useRef(at === '' ? '' : parentOf(at))
+  useEffect(() => {
+    if (folder !== null) lastFolder.current = folder
+  }, [folder])
+  const shownFolder = folder ?? lastFolder.current
   // A page walked into keeps the one pane for its list; on two columns
   // it is read on the right while its children are walked on the left.
   const showingPage = open !== '' && !isFolder && !(onePane && folder === at)
@@ -505,7 +522,9 @@ export function KnowledgePage() {
   const goPage = useCallback((next: string) => goTo(next, false), [goTo])
   // Up is the folder this one is filed in, walked into rather than read:
   // it may be a page with children itself.
-  const goUp = useCallback(() => goTo(parentOf(folder ?? ''), true), [goTo, folder])
+  // From the folder being shown, not from the one still being answered:
+  // while that was null this climbed to the top instead of up one.
+  const goUp = useCallback(() => goTo(parentOf(shownFolder), true), [goTo, shownFolder])
 
   const recall = recalling ? (
     <RecallDialog
@@ -639,13 +658,13 @@ export function KnowledgePage() {
   // menu holds every level above with the nearest first and is the way to
   // any of them in one go, and the name of the folder you are in gets the
   // rest of the room, since that is the one a person is reading.
-  const segments = folder ? folder.split('/').filter(Boolean) : []
+  const segments = shownFolder ? shownFolder.split('/').filter(Boolean) : []
   const ancestors = segments.slice(0, -1).map((segment, index) => ({
     path: segments.slice(0, index + 1).join('/'),
     label: segment,
   }))
   const trail =
-    !search && folder ? (
+    !search && shownFolder ? (
       <div className="knowledge-trail list-toolbar">
         <button
           type="button"
