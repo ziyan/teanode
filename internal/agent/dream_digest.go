@@ -2,14 +2,11 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/ziyan/teanode/internal/agent/reading"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
@@ -181,68 +178,12 @@ func (self *Agent) markTinyRead(ctx context.Context, run *Run, waiting []*models
 
 // digestBatch reads a handful of documents and files what they taught.
 func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*models.AgentDocument, budget *dreamBudget, coarse bool, complete digestCompletion) (int, bool) {
-	var index []string
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		lines, err := memoryLines(tx, run.Agent.ID, models.AudienceAsk, 10, false)
-		index = lines
-		return err
-	}); err != nil {
-		log.Debugf("cannot read the index for a dream: %s", err)
-	}
-
-	var builder strings.Builder
-	// What each document was shown as, kept by id so that a fact filed
-	// from this batch can be held against the words the model actually
-	// had. A coarse night shows a title and no body, and a quote from one
-	// of those came from nowhere.
-	shown := make(map[string]string, len(documents))
-	for _, document := range documents {
-		heading := document.Cite()
-		// "by" rather than another dash. A heading is a title, a name and
-		// a date joined by the same mark, and the reading is now told
-		// that the author of an item earns a page under people/ -- a rule
-		// it cannot apply if it has to guess which of the three parts is
-		// the person.
-		if author := document.Author(); author != "" {
-			heading += " — by " + author
-		}
-		if document.HappenedAt != nil {
-			heading += " — " + document.HappenedAt.Format("2 Jan 2006")
-		}
-		opening := self.openingOf(ctx, run, document, coarse)
-		builder.WriteString("[" + document.ID + "] " + heading + "\n")
-		if opening != "" {
-			builder.WriteString(unclosable(opening) + "\n")
-		}
-		builder.WriteString("\n")
-		shown[document.ID] = heading + "\n" + opening
-	}
-
-	// Keep the source's root in the prompt so its pages are filed under
-	// the configured source hierarchy.
-	sourceName, sourceRoot := "", ""
-	if len(documents) > 0 {
-		_ = run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-			source, err := tx.GetAgentSource(run.Agent.ID, documents[0].SourceID)
-			if err == nil && source != nil {
-				sourceName, sourceRoot = source.Name, strings.Trim(source.RootPath, "/")
-			}
-			return nil
-		})
-	}
-	prompt, err := render("digest.txt", map[string]any{
-		"SourceName": sourceName,
-		"SourceRoot": sourceRoot,
-		"PersonName": personName(run.Owner),
-		"Index":      index,
-		"Items":      builder.String(),
-		"Most":       digestFacts,
-		"Coarse":     coarse,
-	})
+	material := self.retrieveDigestMaterial(ctx, run, documents, coarse)
+	request, err := buildDigestRequest(run.Owner, material, coarse)
 	if err != nil {
 		return 0, false
 	}
-	thinking, err := self.dreamThought(ctx, run, budget, fmt.Sprintf("Read %d documents", len(documents)), prompt, true)
+	thinking, err := self.dreamThought(ctx, run, budget, fmt.Sprintf("Read %d documents", len(documents)), request.Prompt, true)
 	if err != nil {
 		// A batch the model's context cannot hold is cut in two and each
 		// half read on its own. Twenty openings of twelve hundred runes
@@ -271,28 +212,14 @@ func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*model
 		log.Warningf("a dream's digest could not ask the model: %s", err)
 		return 0, false
 	}
-	// Answered in words rather than with the object: the words hold the
-	// reading's conclusions, so they are handed to one more call with no
-	// tools that has only to write the object. A batch that still comes
-	// back with none counts as read, so the dream moves on, and its run
-	// says so where the person will see it rather than passing for a
-	// batch that taught nothing.
-	extracted, err := llm.ExtractJSON(thinking.Text)
-	if err != nil && len(thinking.Text) > 200 && !textualToolCall(thinking.Text) {
-		extracted, err = self.digestObjectFromWords(ctx, run, budget, thinking.Text)
-	}
+	answer, err := self.parseDigestResponse(ctx, run, budget, thinking.Text)
 	if err != nil {
-		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %d documents, and answered with no object", len(documents)))
-		return 0, self.givingUpOn(ctx, run, documents) && completeDigestWithoutFacts(ctx, run, documents, complete)
-	}
-	answer := &RememberAnswer{}
-	if err := json.Unmarshal([]byte(extracted), answer); err != nil {
 		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %d documents, and answered with no object", len(documents)))
 		return 0, self.givingUpOn(ctx, run, documents) && completeDigestWithoutFacts(ctx, run, documents, complete)
 	}
 	// Evidence points at the document rather than at a conversation:
 	// these facts came from something read, not something said.
-	filed, err := self.fileWhatWasLearned(ctx, run, answer, nil, models.EvidenceDocument, shown, func(transaction db.Transaction, filed whatWasFiled) error {
+	filed, err := self.fileWhatWasLearned(ctx, run, answer, nil, models.EvidenceDocument, request.Shown, func(transaction db.Transaction, filed whatWasFiled) error {
 		if complete == nil {
 			return nil
 		}
@@ -406,44 +333,4 @@ func (self *Agent) digestHalves(ctx context.Context, run *Run, documents []*mode
 		}
 	}
 	return total, true
-}
-
-// digestObjectFromWords asks once more, with no tools, for the object a
-// reading in words should have ended with, and hands back the JSON in it.
-func (self *Agent) digestObjectFromWords(ctx context.Context, run *Run, budget *dreamBudget, words string) (string, error) {
-	prompt, err := render("digest_object.txt", map[string]any{
-		"PersonName": personName(run.Owner),
-		"Reading":    cutRunes(words, 12000),
-	})
-	if err != nil {
-		return "", err
-	}
-	thinking, err := self.dreamThought(ctx, run, budget, "Wrote the object for a reading given in words", prompt, false)
-	if err != nil {
-		return "", err
-	}
-	return llm.ExtractJSON(thinking.Text)
-}
-
-// openingOf is as much of a document as the digest reads: its first
-// passage, or its title alone where the night is working coarsely.
-func (self *Agent) openingOf(ctx context.Context, run *Run, document *models.AgentDocument, coarse bool) string {
-	if coarse {
-		return ""
-	}
-	var chunks []*models.AgentChunk
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		chunks, err = tx.ListAgentChunks(run.Agent.ID, document.ID)
-		return err
-	}); err != nil || len(chunks) == 0 {
-		return ""
-	}
-	return cutRunes(chunks[0].Text, 1200)
-}
-
-// chatNamesOf is what the person may be called in a chat archive: their
-// username, and each word of their name, in lower case. A thread whose
-// participants include one of these is one they took part in.
-func chatNamesOf(owner *models.User) []string {
-	return reading.ChatNamesOf(owner)
 }
