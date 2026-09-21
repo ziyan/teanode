@@ -1401,6 +1401,14 @@ func mergeSaidTwice(tx db.Transaction, agentId string, facts []*models.AgentFact
 		wording := bestNow.Text
 		if _, err := tx.UpdateAgentFact(agentId, gone.ID, func(fact *models.AgentFact) error {
 			fact.SupersededBy = keep.ID
+			// Dormant with it, as folding one fact into another leaves it.
+			// The two ways of putting a fact out of the way used to leave
+			// different rows, and a query asking only about dormant let
+			// everything merged here through: they were embedded, counted
+			// on the page and read back into a month's timeline. Queries
+			// ask about both now, and this leaves nothing for one that
+			// forgets to.
+			fact.Dormant = true
 			return nil
 		}); err != nil {
 			return merged, err
