@@ -1199,6 +1199,16 @@ td.truncate {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* ...but not below the point where the column says nothing. The trick
+     above gives the column whatever is left after the fixed ones, and a
+     window between a phone and a full screen leaves almost nothing: the
+     settings rail takes its share, four stated widths take theirs, and the
+     column holding what each row is about came out 56 pixels wide, which
+     fits two letters and an ellipsis. A floor costs nothing where there is
+     room, since the column measures the same at full width with it as
+     without, and the surface scrolls sideways when there is not, which is
+     what a table does. */
+  min-width: 14rem;
 }
 /* A table of rules, not a grid of boxes. The head is a quiet label in the
    same case as everything else — uppercase at this size is harder to read and
