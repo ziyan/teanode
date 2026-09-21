@@ -34,12 +34,19 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition and the submission coordinator are implemented; public API integration, recovery worker, prompt dispatch and client retry identities remain.
+- [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes; mailbox drafts/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+Draft cleanup deleted stored bytes before its caller committed SQL. A later
+rollback restored the draft item and mail row but could not restore its body.
+Cleanup now deletes only the item, which already starts the unreferenced-mail
+retention clock in the same transaction. A real local-storage regression covers
+rollback, committed removal, and repeated cleanup.
 
 The retry worker continued to dispatch after a storage read failed, leaving a
 mail's headers and body empty. It now dispatches only successfully reloaded
@@ -115,6 +122,12 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: use normal retention for removed drafts instead of deleting their
+message bytes inside the command transaction. Rationale: storage deletion cannot
+roll back with SQL, and retention already handles unreferenced messages after
+commit. Held-reply cancellation and feedback retain their existing behavior.
+Date: 2026-09-20.
 
 Decision: accepted submission records use `(owner_id, submission_id)` as their
 key and retain the request digest, mailbox, original mail/Sent identities and
@@ -888,12 +901,23 @@ ownership/legacy regressions; the complete mailer race suite passes with those
 tests and the final hashing change. Lint and `gogolint` pass.
 
 Next, wire the public send adapter to the coordinator and supply recovery for
-its pending records. Do not reuse `removeDraft` unchanged: it deletes message
-bytes before the caller commits, so a later rollback can restore a draft with
-missing content. Reconciliation should remove the item transactionally and let
-retention remove unreferenced bytes. Preserve held-agent-reply cancellation and
+its pending records. Draft cleanup now removes the item transactionally and lets
+retention remove unreferenced bytes; the rollback regression uses real local
+storage to verify that restored drafts remain readable. Preserve held-agent-reply cancellation and
 its feedback when extracting this command; `agent.RecordReplyDeclined` currently
 owns that feedback. The public adapter must map `ErrSubmissionConflict` to an
 invalid-arguments response and retain the existing Mail/Item result shape.
 The existing public and agent send paths still use legacy `Send`; the service
 tests do not establish completion of their integration or recovery gates.
+
+Revision note: draft cleanup now leaves mail rows and message bytes to normal
+retention. This fixes rollback losing draft content and supplies the safe storage
+behavior needed by submission reconciliation. The new regression covers rollback,
+committed removal starting retention, and idempotent removal. Recovery and public
+send integration remain open.
+
+Validation update: the complete GraphQL API package passes with the race
+detector after draft cleanup changes. Go lint and `gogolint` pass. Removed
+drafts now follow spool retention, including retaining unreferenced content
+when retention is disabled. The exchange sweep removes SQL rows first and
+only deletes stored bytes after that transaction commits.

@@ -779,10 +779,10 @@ func (self *graph) requireDraftOwner(ctx context.Context, permission models.Perm
 	return mailbox, nil
 }
 
-// removeDraft removes a superseded draft: its item, its row and its bytes.
-// A draft nobody wants back gets no retention grace.
+// removeDraft removes a superseded draft from its mailbox. Retention removes
+// unreferenced mail and bytes after commit so rollback can restore a readable draft.
 func (self *graph) removeDraft(ctx context.Context, tx db.Transaction, mailbox *models.Mailbox, itemId string) error {
-	item, stored, err := self.requireOwnItem(ctx, mailbox, itemId)
+	item, _, err := self.requireOwnItem(ctx, mailbox, itemId)
 	if err != nil {
 		if errors.Is(err, api.ErrNotFound) {
 			// Already gone — saved from two tabs, or sent twice.
@@ -812,25 +812,6 @@ func (self *graph) removeDraft(ctx context.Context, tx db.Transaction, mailbox *
 	}
 	if _, err := tx.DeleteItems([]string{item.ID}); err != nil {
 		return err
-	}
-	// The row and its bytes go only when they are a draft's own: a message
-	// somebody merely flagged \Draft over IMAP is held by other folders and
-	// other people, and retention is its way out.
-	if stored == nil || stored.Kind != models.MailKindDraft {
-		return nil
-	}
-	others, err := tx.ListItemsByMail(stored.ID)
-	if err != nil {
-		return err
-	}
-	if len(others) > 0 {
-		return nil
-	}
-	if err := tx.DeleteMail(stored.ID, nil); err != nil {
-		return err
-	}
-	if err := self.storage.Delete(ctx, stored.ID); err != nil && !errors.Is(err, storage.ErrNotFound) {
-		log.Warningf("failed to remove the bytes of draft %q: %s", stored.ID, err)
 	}
 	return nil
 }
