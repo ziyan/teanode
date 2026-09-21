@@ -62,6 +62,22 @@ func newCodex(baseUrl, refreshToken, account string, client *http.Client) (*code
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Minute}
 	}
+	// A rotated refresh token is kept for as long as the server runs and
+	// then lost, because nothing here writes the configuration: it may be
+	// a file somebody edits, a file something else manages, or a row in
+	// the database, and a provider guessing at which would be wrong in at
+	// least two of the three.
+	//
+	// So it is said instead, once, where an operator will see it. The cost
+	// of not saying it is a server that signs in perfectly well until it
+	// restarts and then cannot, with nothing to connect the two.
+	signer.rotated = func(string) {
+		log.Warningf(
+			"the %s provider was given a new refresh token; the one in the configuration is now stale "+
+				"and will not work after a restart. Run \"teanode agent signin\" and put the new one in.",
+			config.AgentProviderKindCodex)
+	}
+
 	return &codex{
 		baseUrl: strings.TrimRight(baseUrl, "/"),
 		account: strings.TrimSpace(account),

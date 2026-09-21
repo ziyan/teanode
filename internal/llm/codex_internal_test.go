@@ -273,3 +273,22 @@ func TestTheSignedInProviderChatsAndNamesItsModels(test *testing.T) {
 		test.Error("a keyed kind was accepted as one that signs in")
 	}
 }
+
+// A rotated refresh token is reported, because nothing here writes the
+// configuration and the one in it has just gone stale. Unsaid, the server
+// signs in perfectly well until it restarts and then cannot, with nothing
+// connecting the two.
+func TestARotationIsReportedByTheProvider(test *testing.T) {
+	test.Parallel()
+
+	made, err := newCodex("https://example.test", "a-refresh-token", "an-account", nil)
+	if err != nil {
+		test.Fatalf("newCodex: %s", err)
+	}
+	if made.signIn.rotated == nil {
+		test.Fatal("a rotation would pass unremarked")
+	}
+	// It says something rather than panicking on a nil logger or writing
+	// the token out, which would put a secret in the log.
+	made.signIn.rotated("the-next-one")
+}
