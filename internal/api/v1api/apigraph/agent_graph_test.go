@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -459,6 +460,95 @@ func TestAPausedSourceKeepsAnEmptyCronEmpty(t *testing.T) {
 		}
 		if made.Cron == "" {
 			t.Errorf("a new source is read nightly unless the person says otherwise")
+		}
+	})
+}
+
+// A page may be linked to far more pages than a drawing can hold. The
+// explorer draws what this returns, and it returned every link: expanding a
+// page with hundreds of them put hundreds of circles on the canvas at once
+// and the drawing was gone. Children have always stopped at the same
+// number. The strongest links are the ones kept, since those are the ones
+// the drawing is for.
+func TestNeighboursAreCappedAtTheStrongestLinks(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+
+	var owner *models.User
+	var found *models.Agent
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if owner, err = tx.CreateUser(&models.User{Username: "explorer", Name: "Alice Example"}); err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if found, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if err = tx.EnsureAgentRoots(found.ID); err != nil {
+			t.Fatalf("EnsureAgentRoots: %s", err)
+		}
+		middle, err := tx.PutAgentNode(&models.AgentNode{
+			AgentID: found.ID, Path: "topics/harbour", Kind: models.NodeTopic, Name: "Harbour",
+		})
+		if err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+		// Far more than the drawing holds, and the weights climb with the
+		// number, so the strongest are the ones made last.
+		for index := 0; index < neighbourLimit*4; index++ {
+			other, err := tx.PutAgentNode(&models.AgentNode{
+				AgentID: found.ID, Path: fmt.Sprintf("topics/jetty-%03d", index),
+				Kind: models.NodeTopic, Name: fmt.Sprintf("Jetty %03d", index),
+			})
+			if err != nil {
+				t.Fatalf("PutAgentNode: %s", err)
+			}
+			if err := tx.PutAgentEdge(&models.AgentEdge{
+				AgentID: found.ID, FromID: middle.ID, ToID: other.ID,
+				Relation: models.EdgeUses, Weight: float32(index) / 100,
+				Status: models.EdgeStated,
+			}); err != nil {
+				t.Fatalf("PutAgentEdge: %s", err)
+			}
+		}
+	})
+
+	principal := &api.Principal{
+		User: owner,
+		Permissions: models.NewEffectivePermissions([]models.Grant{
+			{Permission: models.PermissionAgentUse},
+		}),
+	}
+	resolver := &graph{database: database}
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), principal), tx)
+		around, err := resolver.AgentGraphNeighbours(ctx, AgentGraphPageArguments{Path: "topics/harbour"})
+		if err != nil {
+			t.Fatalf("AgentGraphNeighbours: %s", err)
+		}
+		linked := 0
+		weakest := float64(0)
+		for _, neighbour := range around.Neighbours {
+			if neighbour.Relation == "" {
+				continue // a child, which is counted separately
+			}
+			linked++
+			if weakest == 0 || neighbour.Weight < weakest {
+				weakest = neighbour.Weight
+			}
+		}
+		if linked > neighbourLimit {
+			t.Errorf("%d links came back, more than the %d a drawing holds", linked, neighbourLimit)
+		}
+		if linked != neighbourLimit {
+			t.Errorf("%d links came back, wanted the full %d", linked, neighbourLimit)
+		}
+		// The strongest kept: the weakest one returned is stronger than the
+		// weakest that exists, which is zero.
+		if weakest <= 0 {
+			t.Errorf("the weakest link returned has weight %v, so the weak ones were kept", weakest)
 		}
 	})
 }
