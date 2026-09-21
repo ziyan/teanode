@@ -43,6 +43,10 @@ read from storage when asked for, and an idling session is woken by the
 database's `folder_changed` notification. Nothing is held in memory that
 another instance would need.
 
+**`internal/addressbook`** implements authorized contact save and delete commands.
+It merges fields through the vCard package and keeps contact writes on the
+caller's transaction, with ownership checks and rollback scopes.
+
 **`internal/contacts`** — the vCard format, and nothing else: parsing a card,
 writing one out, and naming a version of one with an ETag. It writes cards
 itself rather than through the vendored encoder, which does not quote a

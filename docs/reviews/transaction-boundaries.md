@@ -50,8 +50,10 @@ Dispatch wakes only after the enclosing transaction commits. Domain API sends
 use the same transaction-bound composition and acceptance with a separate
 principal-scoped identity; their requests have no mailbox reconciliation.
 
-`SaveContact` also uses a separate write transaction after authorization and an
-initial read; it rereads the card in the writing transaction before merging.
+`SaveContact` and `DeleteContact` now use shared address-book commands on the
+caller's transaction. Form merging locks and rereads the existing contact so
+omitted fields reflect the latest committed version. `SaveAddressBook` still
+uses a separate write transaction and remains in the extraction inventory.
 Domain verification and connected-server probes perform further database reads
 while the legacy `Commit()` has already reopened an outer transaction.
 

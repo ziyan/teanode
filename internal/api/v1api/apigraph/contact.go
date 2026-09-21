@@ -2,9 +2,11 @@ package apigraph
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/ziyan/teanode/internal/addressbook"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/contacts"
 	"github.com/ziyan/teanode/internal/db"
@@ -280,107 +282,11 @@ func (self *graph) ownContact(ctx context.Context, contactId string) (*models.Co
 }
 
 func (self *graph) SaveContact(ctx context.Context, arguments SaveContactArguments) (*ContactView, error) {
-	var existing *models.Contact
-	var book *models.AddressBook
-	var err error
-	if strings.TrimSpace(arguments.ID) != "" {
-		if existing, book, err = self.ownContact(ctx, arguments.ID); err != nil {
-			return nil, err
-		}
-	} else if book, err = self.requireOwnAddressBook(ctx, arguments.AddressBookID); err != nil {
+	principal, err := self.requireAddressBookPerson(ctx)
+	if err != nil {
 		return nil, err
 	}
 
-	var kept *models.Contact
-	var refused error
-	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		// Read inside the transaction that writes. The form sends the
-		// boxes it showed, and the server merges them onto the card it
-		// holds; reading that card outside the write meant a phone's
-		// change arriving in between was merged away without a word.
-		if existing != nil {
-			latest, err := tx.GetContact(book.ID, existing.ID)
-			if err != nil {
-				return err
-			}
-			if latest == nil {
-				return api.ErrNotFound
-			}
-			existing = latest
-		}
-		parsed, err := parseSaved(&arguments, existing)
-		if err != nil {
-			refused = fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
-			return refused
-		}
-		contact := &models.Contact{
-			AddressBookID: book.ID, UID: parsed.UID, ETag: contacts.ETag(parsed.Card),
-			Card: string(parsed.Card), Name: parsed.Name, Organization: parsed.Organization,
-			Emails: parsed.Emails, Phones: parsed.Phones,
-		}
-		if existing != nil {
-			contact.ID = existing.ID
-			contact.CreatedAt = existing.CreatedAt
-		}
-		// The same ceiling the CardDAV side enforces. A listing is the
-		// whole book in one answer, and a client reads a card missing
-		// from it as deleted, so a book that grew past what can be listed
-		// would tell a phone to forget the contacts it could not see.
-		if existing == nil {
-			held, err := tx.CountContacts(book.ID)
-			if err != nil {
-				return err
-			}
-			if held >= db.ContactsPerBook {
-				refused = fmt.Errorf("%w: this address book already holds %d contacts, which is as many as this server keeps",
-					api.ErrInvalidArguments, db.ContactsPerBook)
-				return refused
-			}
-		}
-		// The card's own identifier decides which person this is. Two
-		// devices adding somebody at the same time pick different file
-		// names but agree on the identifier, and the second must land on
-		// the first rather than making a second copy of them.
-		//
-		// When a contact is already named, a card carrying somebody
-		// else's identifier is refused instead. Leaving that to the unique
-		// index gave whoever asked a 500 carrying the index's name.
-		twin, err := tx.GetContactByUID(book.ID, contact.UID)
-		if err != nil {
-			return err
-		}
-		if twin != nil {
-			if contact.ID == "" {
-				contact.ID = twin.ID
-				contact.CreatedAt = twin.CreatedAt
-			} else if twin.ID != contact.ID {
-				refused = fmt.Errorf("%w: another contact in this address book already has that identifier",
-					api.ErrInvalidArguments)
-				return refused
-			}
-		}
-		kept, err = tx.PutContact(contact)
-		return err
-	}); err != nil {
-		if refused != nil {
-			return nil, refused
-		}
-		return nil, translateError(err)
-	}
-	return contactView(kept, true), nil
-}
-
-// parseSaved turns what was sent into a card: whole vCard text when a program
-// sent one, otherwise the filled-in fields applied to whatever is already
-// kept.
-func parseSaved(arguments *SaveContactArguments, existing *models.Contact) (*contacts.Parsed, error) {
-	if strings.TrimSpace(arguments.Card) != "" {
-		return contacts.Parse([]byte(arguments.Card))
-	}
-	var previous []byte
-	if existing != nil {
-		previous = []byte(existing.Card)
-	}
 	fields := &contacts.Fields{
 		Name: arguments.Name, Organization: arguments.Organization, Title: arguments.Title,
 		Emails: arguments.Emails, Phones: arguments.Phones, Note: arguments.Note,
@@ -395,18 +301,23 @@ func parseSaved(arguments *SaveContactArguments, existing *models.Contact) (*con
 		}
 		fields.Addresses = &wanted
 	}
-	return contacts.Build(previous, fields)
+	kept, err := addressbook.New(self.transaction(ctx)).Save(ctx, principal, addressbook.SaveRequest{AddressBookID: arguments.AddressBookID, ID: arguments.ID, Card: arguments.Card, Fields: *fields})
+	if errors.Is(err, db.ErrInvalidArguments) {
+		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+	}
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return contactView(kept, true), nil
 }
 
 func (self *graph) DeleteContact(ctx context.Context, arguments ContactArguments) (bool, error) {
-	contact, _, err := self.ownContact(ctx, arguments.ID)
+	principal, err := self.requireAddressBookPerson(ctx)
 	if err != nil {
 		return false, err
 	}
-	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		return tx.DeleteContact(contact.AddressBookID, contact.ID)
-	}); err != nil {
-		return false, err
+	if err := addressbook.New(self.transaction(ctx)).Delete(ctx, principal, arguments.ID); err != nil {
+		return false, translateError(err)
 	}
 	return true, nil
 }

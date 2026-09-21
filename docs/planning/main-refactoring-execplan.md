@@ -35,7 +35,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
-- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; content preparation, remaining send adapters, calendar, contacts, knowledge-source and rule-update commands remain.
+- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete now share authorized command scopes and locked field merging; content preparation, remaining send adapters, calendar, address-book metadata and protocol adapters, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
@@ -186,6 +186,13 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: keep vCard parsing and formatting in internal/contacts and add
+internal/addressbook for authorized save/delete commands. GraphQL converts
+arguments and errors, while the command owns principal checks, contact lookup,
+locked field merging and writes on the caller transaction. Rationale: contact
+writes must not escape a caller rollback, and a form must merge onto the card
+that remains current while writing. Date: 2026-09-21.
 
 Decision: introduce a SaveDraft mailbox command with an authorized mailbox,
 transaction-bound preparer and narrow byte-storage dependency. Compose draft
@@ -1459,3 +1466,28 @@ gogolint and both binary builds. The original regression failed before the fix
 with two mail rows instead of one at both injected failure points. UI behavior
 and wire fields are unchanged; full deployment and broader command extraction
 remain open.
+
+
+Revision note: contact save and delete no longer open separate write connections
+from inside API transactions. Shared address-book commands enforce ownership and
+contacts-use permission, join the caller's transaction and roll back failed
+commands independently. Field edits now lock the existing contact before parsing
+and merging; the previous reread alone left a race between read and write. A
+whole card naming an existing UID remains an update even at the book's contact
+ceiling, while genuinely new contacts remain refused at capacity.
+
+Regressions cover parent rollback for save/delete, revoked permissions and
+another owner, failure in final SQL followed by a successful sibling command,
+concurrent edits to separate fields, resolver calls that create then edit in one
+transaction, and an existing UID update at capacity. Contact data retains the
+existing no-audit-content policy. Address-book metadata updates, CardDAV
+conditional commands and concurrent capacity enforcement across adapters remain
+in the review inventory; this extraction does not close Milestone 5.
+
+
+Validation update: the complete standard-PostgreSQL race suite passes with 1,908
+tests and two expected skips. The subsequently added full-book UID regression
+passes separately under the race detector. Both binary builds, repository lint
+and gogolint pass. No GraphQL field names or client documents changed. The
+process-level deployment, protocol conditional-write review and final Chrome
+verification remain open.
