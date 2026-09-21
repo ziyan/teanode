@@ -35,7 +35,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
-- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, dashboard/agent calendar mutation retries, contact protocol adapters, knowledge-source and rule-update commands remain.
+- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, proposal-card and agent calendar mutation retries, contact protocol adapters, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
@@ -194,6 +194,13 @@ a milestone fixing behavior that is already correct.
 
 ## Decision Log
 
+The dashboard calendar editor now retains one unresolved save/delete request per
+account in this tab. Its request includes prepared timestamps, timezone and all
+fields, so retry cannot reinterpret a form after a timezone or calendar change.
+It stores the request before mutation, checks completion before resending, and
+shows recovery outside the editor so it survives deletion of the edited event.
+A pending change blocks new mutations until resolved. Confirmed completion closes
+the editor before refreshing lists; a refresh failure is reported separately.
 Calendar deletion now uses optional retained request IDs and the same atomic
 receipt as saves and answers. The receipt remembers whether cancellation required
 mail-send permission, which replay checks even after the calendar is gone. The
@@ -1784,3 +1791,32 @@ under the race detector. The lost-response CLI regression passes again after
 making its synthetic server's captured identifier explicitly synchronized.
 Repository lint, gogolint and both binary builds pass. The preceding full suite
 remains 1,946 standard-PostgreSQL tests with two skips; this step changes no UI.
+
+
+Calendar editor recovery now uses useCalendarMutation for both saves and deletes.
+The page remounts on account changes. An uncertain action leaves a recovery panel
+with its event summary, error and retry control; it survives reload and resolves
+accepted requests, including deleted results, without a second mutation. Starting
+a different request while one is pending is refused. Tests cover exact timestamps
+and fields across retries, both operations, storage failure, lookup failure,
+account isolation and a late completion that must not erase a newer request.
+A generation counter also prevents an event read started before a mutation from
+opening its stale editor afterward.
+
+Chrome exposed a layout regression when the recovery panel was added: the month
+grid could squeeze the desktop tabs to zero height. Calendar controls now keep
+their natural height, and the month grid scrolls within the remaining space with
+all six weeks available. The audit uses the production dashboard and a local
+synthetic GraphQL fixture that accepts a create and deletion but drops each first
+response. This is UI recovery coverage; real deployment, protocol parity,
+proposal-card and agent identities, and pending-request cancellation remain open.
+
+
+Calendar editor validation: all 44 dashboard tests, TypeScript, ESLint, dashboard
+and extension production builds, repository lint, gogolint and both binary builds
+pass. The final Chrome audit at 1200px and 390px checks visible tabs, access to the
+last calendar week, and no document horizontal overflow. After reload and retry
+of both uncertain operations it records saveCount=1, deleteCount=1 and no runtime
+exceptions. Screenshots were visually inspected. The preceding Go results remain
+369 affected tests and 1,946 full standard-PostgreSQL tests with two skips; this
+checkpoint changes dashboard code only.

@@ -7755,7 +7755,7 @@ button.with-icon {
   grid-template-columns: repeat(7, minmax(0, 1fr));
   /* One row for the weekday names, then six weeks that share what is left. */
   grid-template-rows: auto repeat(6, minmax(6.5rem, 1fr));
-  height: 100%;
+  min-height: 100%;
   gap: 1px;
   background: var(--border);
   border: 1px solid var(--border);
@@ -7934,6 +7934,20 @@ button.with-icon {
   /* The height is measured and set from the page itself; see the comment
      there. A percentage cannot see the breadcrumb and the title it sits
      below, and overshoots by exactly their height. */
+}
+
+.calendar-page > .tabs,
+.calendar-page > .card,
+.calendar-page > .calendar-bar {
+  flex-shrink: 0;
+}
+
+/* A pending change takes space above the grid; keep the controls visible and
+   let all six weeks remain reachable in the remaining height. */
+.calendar-month-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 /* The time grid: hours down the side, a column per day, and events placed

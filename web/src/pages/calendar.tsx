@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../api'
+import { useSession } from '../session'
+import { useCalendarMutation } from '../hooks/useCalendarMutation'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { ChevronLeftIcon, ChevronRightIcon, PencilIcon, TrashIcon } from '../components/icons'
 import { Tooltip } from '../components/tooltip'
@@ -37,19 +39,6 @@ const GET = `
       recurring recurrence status timezone organizer attendees { address name participation role }
     }
   }`
-
-const SAVE = `
-  mutation ($calendarId: String!, $id: String, $summary: String, $location: String,
-            $description: String, $startsAt: String, $endsAt: String, $allDay: Boolean,
-            $timezone: String, $recurrence: String, $status: String, $attendees: [String!]) {
-    SaveCalendarEvent(calendarId: $calendarId, id: $id, summary: $summary, location: $location,
-                      description: $description, startsAt: $startsAt, endsAt: $endsAt, allDay: $allDay,
-                      timezone: $timezone, recurrence: $recurrence, status: $status,
-                      attendees: $attendees) { id uid summary }
-  }`
-
-const DELETE = `
-  mutation ($calendarId: String!, $id: String!) { DeleteCalendarEvent(calendarId: $calendarId, id: $id) }`
 
 type Calendar = {
   id: string
@@ -325,6 +314,11 @@ function parseDay(value: string | null): Date {
 }
 
 export function CalendarPage() {
+  const session = useSession()
+  return <CalendarPageForAccount key={session.userId ?? ''} ownerId={session.userId ?? ''} />
+}
+function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
+  const submission = useCalendarMutation(ownerId)
   const { t } = useTranslation()
   const toast = useToast()
   const [parameters, setParameters] = useSearchParams()
@@ -379,18 +373,27 @@ export function CalendarPage() {
   const [deleting, setDeleting] = useState<CalendarEvent | null>(null)
   const [busy, setBusy] = useState(false)
   const [opening, setOpening] = useState('')
+  const openingGeneration = useRef(0)
   const [problem, setProblem] = useState<string | null>(null)
 
   // Whether it worked, so a dialog closes only on success. What happened is
   // said in a toast either way; the dialog also shows the reason, because
   // that is where the person is looking when a submit is refused.
   const run = async (action: () => Promise<unknown>, done: string): Promise<boolean> => {
+    openingGeneration.current++
+    setOpening('')
     setBusy(true)
     try {
       await action()
+      setDraft(null)
+      setDeleting(null)
       setProblem(null)
-      await Promise.all([events.reload(), calendars.reload()])
       toast.done(done)
+      try {
+        await Promise.all([events.reload(), calendars.reload()])
+      } catch (failure) {
+        toast.failure(failure, t('calendar.refreshFailed'))
+      }
       return true
     } catch (failure) {
       setProblem(failure instanceof Error ? failure.message : String(failure))
@@ -427,6 +430,8 @@ export function CalendarPage() {
   // this", so a dialog opened before the description had arrived would delete
   // the description of anybody quick enough to save.
   const edit = async (event: CalendarEvent) => {
+    if (busy || submission.pending || submission.isWorking) return
+    const generation = ++openingGeneration.current
     setProblem(null)
     setOpening(event.id)
     try {
@@ -434,6 +439,7 @@ export function CalendarPage() {
         calendarId: event.calendarId,
         id: event.id,
       })
+      if (generation !== openingGeneration.current) return
       const full = answer.GetCalendarEvent
       const starts = new Date(full.startsAt)
       const ends = new Date(full.endsAt)
@@ -461,7 +467,7 @@ export function CalendarPage() {
     } catch (failure) {
       toast.failure(failure, t('calendar.failed'))
     } finally {
-      setOpening('')
+      if (generation === openingGeneration.current) setOpening('')
     }
   }
 
@@ -592,6 +598,7 @@ export function CalendarPage() {
       type="button"
       className={`calendar-entry${event.allDay ? ' all-day' : ''}${opening === event.id ? ' busy' : ''}`}
       onClick={() => void edit(event)}
+      aria-disabled={!!submission.pending || submission.isWorking || busy}
       title={event.summary || t('calendar.untitled')}
     >
       {!event.allDay && <span className="calendar-entry-time">{timeFormat.format(new Date(event.startsAt))}</span>}
@@ -601,6 +608,28 @@ export function CalendarPage() {
 
   return (
     <div className="calendar-page" ref={page}>
+      {submission.pending && (
+        <div className="card" role="status">
+          <h3>{submission.pending.summary || t('calendar.untitled')}</h3>
+          <p>{t(submission.pending.operation === 'delete' ? 'calendar.pendingDelete' : 'calendar.pendingSave')}</p>
+          {problem && <p className="error">{problem}</p>}
+          <button
+            type="button"
+            disabled={busy || submission.isWorking}
+            onClick={() =>
+              void run(() => submission.execute(), t('calendar.recovered')).then((done) => {
+                if (done) {
+                  setDraft(null)
+                  setDeleting(null)
+                }
+              })
+            }
+          >
+            {t('calendar.retry')}
+          </button>
+        </div>
+      )}
+
       {/* The views are a row of tabs, the same component the server and
           domain pages use: five of them is what a tab strip is for, and it
           scrolls sideways on a narrow screen rather than being cut off. */}
@@ -633,7 +662,7 @@ export function CalendarPage() {
         <button
           className="primary"
           type="button"
-          disabled={!calendarId}
+          disabled={!calendarId || !!submission.pending || submission.isWorking || busy}
           onClick={() => {
             setProblem(null)
             setDraft(blank(on))
@@ -683,9 +712,10 @@ export function CalendarPage() {
                   <button
                     type="button"
                     className="calendar-day-add"
+                    disabled={!!submission.pending || submission.isWorking || busy}
                     onClick={() => {
                       setProblem(null)
-                      setDraft(blank(day))
+                      if (!busy && !submission.pending && !submission.isWorking) setDraft(blank(day))
                     }}
                     title={t('calendar.newOn', { day: dayFormat.format(day) })}
                     aria-label={t('calendar.newOn', { day: dayFormat.format(day) })}
@@ -771,7 +801,7 @@ export function CalendarPage() {
                         const at = new Date(day)
                         at.setHours(Math.floor(hour), hour % 1 ? 30 : 0, 0, 0)
                         setProblem(null)
-                        setDraft(blank(at))
+                        if (!busy && !submission.pending && !submission.isWorking) setDraft(blank(at))
                       }}
                     >
                       {Array.from({ length: 24 }, (_, hour) => (
@@ -796,6 +826,7 @@ export function CalendarPage() {
                             width: `calc(${(1 / across) * 100}% - 4px)`,
                           }}
                           onClick={() => void edit(event)}
+                          aria-disabled={!!submission.pending || submission.isWorking || busy}
                           title={event.summary || t('calendar.untitled')}
                         >
                           <span className="calendar-placed-time">{timeFormat.format(new Date(event.startsAt))}</span>
@@ -842,8 +873,9 @@ export function CalendarPage() {
                   <button
                     type="button"
                     className="icon-button"
-                    disabled={opening === event.id}
+                    disabled={opening === event.id || !!submission.pending || submission.isWorking || busy}
                     onClick={() => void edit(event)}
+                    aria-disabled={!!submission.pending || submission.isWorking || busy}
                     aria-label={t('common.edit')}
                   >
                     <PencilIcon />
@@ -853,6 +885,7 @@ export function CalendarPage() {
                   <button
                     type="button"
                     className="icon-button danger"
+                    disabled={!!submission.pending || submission.isWorking || busy}
                     onClick={() => setDeleting(event)}
                     aria-label={t('common.delete')}
                   >
@@ -865,7 +898,7 @@ export function CalendarPage() {
         </div>
       )}
 
-      {draft && (
+      {draft && !submission.pending && (
         <FormDialog
           title={draft.id ? t('calendar.edit') : t('calendar.new')}
           submitLabel={draft.id ? t('common.save') : t('common.create')}
@@ -894,30 +927,34 @@ export function CalendarPage() {
                 // Every box, including the empty ones. The server treats a
                 // field left out as "leave it alone" and a field given empty
                 // as "clear it", and this form shows all of them.
-                graphql(SAVE, {
-                  calendarId,
-                  id: draft.id || null,
+                submission.execute({
+                  operation: 'save',
                   summary: draft.summary.trim(),
-                  location: draft.location.trim(),
-                  description: draft.description.trim(),
-                  startsAt: draft.allDay ? `${draft.startDate}T00:00:00Z` : joined(draft.startDate, draft.startTime),
-                  endsAt: draft.allDay
-                    ? `${dayShifted(draft.endDate || draft.startDate, 1)}T00:00:00Z`
-                    : joined(draft.endDate || draft.startDate, draft.endTime),
-                  allDay: draft.allDay,
-                  // The calendar's own zone, so that a repeat keeps its
-                  // hour when the clocks change. An all-day event is a
-                  // date and has no zone at all.
-                  timezone: draft.allDay ? '' : calendar?.timezone || browserZone(),
-                  recurrence: draft.recurrence.trim(),
-                  status: draft.status.trim(),
-                  // Every line, including none: an empty box means nobody
-                  // is coming, which is a different thing from the meeting
-                  // being called off.
-                  attendees: draft.attendees
-                    .split('\n')
-                    .map((line) => line.trim())
-                    .filter(Boolean),
+                  variables: {
+                    calendarId,
+                    id: draft.id || null,
+                    summary: draft.summary.trim(),
+                    location: draft.location.trim(),
+                    description: draft.description.trim(),
+                    startsAt: draft.allDay ? `${draft.startDate}T00:00:00Z` : joined(draft.startDate, draft.startTime),
+                    endsAt: draft.allDay
+                      ? `${dayShifted(draft.endDate || draft.startDate, 1)}T00:00:00Z`
+                      : joined(draft.endDate || draft.startDate, draft.endTime),
+                    allDay: draft.allDay,
+                    // The calendar's own zone, so that a repeat keeps its
+                    // hour when the clocks change. An all-day event is a
+                    // date and has no zone at all.
+                    timezone: draft.allDay ? '' : calendar?.timezone || browserZone(),
+                    recurrence: draft.recurrence.trim(),
+                    status: draft.status.trim(),
+                    // Every line, including none: an empty box means nobody
+                    // is coming, which is a different thing from the meeting
+                    // being called off.
+                    attendees: draft.attendees
+                      .split('\n')
+                      .map((line) => line.trim())
+                      .filter(Boolean),
+                  },
                 }),
               draft.id
                 ? t('calendar.saidSaved', { name: draft.summary.trim() })
@@ -1023,7 +1060,7 @@ export function CalendarPage() {
         </FormDialog>
       )}
 
-      {deleting && (
+      {deleting && !submission.pending && (
         <ConfirmDialog
           title={t('calendar.deleteTitle')}
           body={t('calendar.deleteBody', { name: deleting.summary || t('calendar.untitled') })}
@@ -1032,7 +1069,12 @@ export function CalendarPage() {
           onClose={() => setDeleting(null)}
           onConfirm={() =>
             void run(
-              () => graphql(DELETE, { calendarId: deleting.calendarId, id: deleting.id }),
+              () =>
+                submission.execute({
+                  operation: 'delete',
+                  summary: deleting.summary || t('calendar.untitled'),
+                  variables: { calendarId: deleting.calendarId, id: deleting.id },
+                }),
               t('calendar.saidDeleted', { name: deleting.summary || t('calendar.untitled') }),
             ).then((done) => done && setDeleting(null))
           }
