@@ -36,7 +36,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries using either the stable draft key or its source item identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, agent calendar mutation retries, contact proposal acceptance and protocol adapters, knowledge-source and rule-update commands remain.
-- [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
+- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation; typed page/cursor contracts, source revocation, scan decomposition, retrieval/model extraction and benchmarks remain.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
@@ -1941,3 +1941,31 @@ draft-receipt lookup failure and the removal of redundant identity lookups.
 Repository lint, gogolint and both binary builds pass. This changes no dashboard
 presentation; the preceding desktop/phone Chrome and 51 UI-test evidence remains
 applicable. Privacy review includes untracked tests and both migration files.
+
+
+Knowledge ingestion extraction: ingest.go now owns source scheduling and the job
+loop. Separate files contain device requests, page filing, document persistence,
+embedding, pass bookkeeping, sent-mail reading and repository interpretation.
+The extraction keeps the wire format and existing model/ranking behavior intact.
+Page filing is callable independently of the device socket for failure tests.
+
+Review found that failed document writes were logged and skipped while the
+caller still received the next-page cursor. Document and attachment-metadata
+write failures now fail the page, keeping its cursor available for replay.
+Already committed documents and chunks are replaced by source/external identity,
+so replay does not duplicate them. Tests inject a failure on the second entry,
+replay the page, and check document/chunk counts. Another regression checks that
+a failed attachment metadata write cannot complete the page.
+
+The existing attachment policy remains: a failed byte fetch records metadata
+without a storage key, and a later pass retries the bytes. That is distinct from
+failing to record the document itself. Repository interpretation still contains
+best-effort model/graph writes; typed page completion, source revocation and
+transactional cursor application remain required before this milestone is done.
+
+Ingestion extraction validation: all agent and computer packages pass with the
+race detector and disposable database. Focused failure/replay tests pass, as do
+repository lint, gogolint and both binary builds. A syntax-tree comparison found
+34 original function bodies unchanged; readFromComputer now delegates filing to
+the tested helper. No dashboard code changed. This starts Milestone 6 and does
+not satisfy its remaining paging, revocation, model separation or benchmark gates.
