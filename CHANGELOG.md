@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-09-21
+
+### Added
+
+- A provider may now be a decision model, which answers a question whose
+  answers are known in advance rather than writing an answer. Assign one
+  with `agent.models.decide`. Where it is set, the night uses it to judge
+  which files are worth opening, which is faster and costs less than asking
+  a language model; where it is not, nothing changes. (#95)
+
 ## [0.45.5] - 2026-09-21
 
 ### Fixed
