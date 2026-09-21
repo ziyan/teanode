@@ -700,3 +700,48 @@ func graphSearchFinds(t *testing.T, tx db.Transaction, agentId, query, nodeId st
 	}
 	return false
 }
+
+// One name written two ways is one name. A page called "Lamp Post" and a
+// page called "lamp-post" under the same parent are the same page, and the
+// graph was making one of each and splitting the facts between them.
+func TestGraphAHyphenDoesNotMakeASecondPage(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		if err := tx.EnsureAgentRoots(agent.ID); err != nil {
+			t.Fatalf("roots: %s", err)
+		}
+		if _, err := tx.PutAgentNode(&models.AgentNode{
+			AgentID: agent.ID, Path: "notes/lamp-post",
+			Kind: models.NodeTopic, Name: "Lamp Post",
+		}); err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+
+		for _, wanted := range []string{"lamp post", "lamppost", "LAMP-POST", "Lamp_Post"} {
+			found, err := tx.FindAgentNodeByName(agent.ID, "notes", models.NodeTopic, wanted)
+			if err != nil {
+				t.Fatalf("FindAgentNodeByName(%q): %s", wanted, err)
+			}
+			if found == nil {
+				t.Errorf("%q did not find the page it names", wanted)
+				continue
+			}
+			if found.Path != "notes/lamp-post" {
+				t.Errorf("%q found %q", wanted, found.Path)
+			}
+		}
+
+		// A name that is genuinely another name still finds nothing, so
+		// this widens what counts as the same word and nothing else.
+		other, err := tx.FindAgentNodeByName(agent.ID, "notes", models.NodeTopic, "lamp posts")
+		if err != nil {
+			t.Fatalf("FindAgentNodeByName: %s", err)
+		}
+		if other != nil {
+			t.Errorf("a different name found %q", other.Path)
+		}
+	})
+}

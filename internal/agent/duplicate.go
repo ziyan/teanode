@@ -82,10 +82,30 @@ const (
 // path, or give a slug that says it and a name that says it differently.
 func sameName(above *models.AgentNode, path, name string) bool {
 	if wanted := strings.TrimSpace(name); wanted != "" &&
-		strings.EqualFold(strings.TrimSpace(above.Name), wanted) {
+		squashed(above.Name) == squashed(wanted) {
 		return true
 	}
-	return strings.EqualFold(models.LastSegment(above.Path), models.LastSegment(path))
+	return squashed(models.LastSegment(above.Path)) == squashed(models.LastSegment(path))
+}
+
+// squashed is a name with its case folded and the separators taken out,
+// so that the same name written with a hyphen, with a space and with
+// neither is one name rather than three.
+//
+// Only separators come out. Every letter and digit stays, of every
+// script, because a name written in one that puts no spaces between its
+// words would otherwise squash to nothing and match every other such
+// name. A full stop stays too: a version number is not a separator
+// problem, and taking it out would make two of them the same.
+func squashed(name string) string {
+	var squashing strings.Builder
+	for _, letter := range strings.ToLower(strings.TrimSpace(name)) {
+		if letter == '-' || letter == '_' || unicode.IsSpace(letter) {
+			continue
+		}
+		squashing.WriteRune(letter)
+	}
+	return squashing.String()
 }
 
 func (self *Agent) findExistingPage(tx db.Transaction, agentId, path string, kind models.AgentNodeKind, name string, sense *meaning) (*models.AgentNode, error) {
