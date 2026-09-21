@@ -138,3 +138,53 @@ func ownContact(transaction db.Transaction, userId, contactId string) (*models.C
 	}
 	return nil, nil, db.ErrNotFound
 }
+
+// UpdateBookRequest changes presentation without changing the agent's grant.
+// An empty name retains the old name; an empty description clears it.
+type UpdateBookRequest struct {
+	ID          string
+	Name        string
+	Description string
+}
+
+// BookOutcome carries metadata and the contact count from the command snapshot.
+type BookOutcome struct {
+	Book         *models.AddressBook
+	ContactCount int64
+}
+
+// UpdateBook authorizes and locks metadata before preserving unedited fields.
+func (self *Commands) UpdateBook(ctx context.Context, principal *access.Principal, request UpdateBookRequest) (*BookOutcome, error) {
+	if !canUseContacts(principal) {
+		return nil, db.ErrNotFound
+	}
+	var outcome *BookOutcome
+	err := self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
+		book, err := transaction.LockAddressBook(strings.TrimSpace(request.ID))
+		if err != nil {
+			return err
+		}
+		if book == nil || book.UserID != principal.User.ID {
+			return db.ErrNotFound
+		}
+		book.Name = request.Name
+		book.Description = request.Description
+		kept, err := transaction.UpdateAddressBook(book)
+		if err != nil {
+			return err
+		}
+		if kept == nil {
+			return db.ErrNotFound
+		}
+		contactCount, err := transaction.CountContacts(book.ID)
+		if err != nil {
+			return err
+		}
+		outcome = &BookOutcome{Book: kept, ContactCount: contactCount}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return outcome, nil
+}

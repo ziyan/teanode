@@ -52,8 +52,10 @@ principal-scoped identity; their requests have no mailbox reconciliation.
 
 `SaveContact` and `DeleteContact` now use shared address-book commands on the
 caller's transaction. Form merging locks and rereads the existing contact so
-omitted fields reflect the latest committed version. `SaveAddressBook` still
-uses a separate write transaction and remains in the extraction inventory.
+omitted fields reflect the latest committed version. `SaveAddressBook` now uses
+the same command boundary, locks metadata and preserves the agent grant. The
+agent grant adapter takes that same row lock before changing the setting, so
+neither operation can overwrite the other's freshly committed fields.
 Domain verification and connected-server probes perform further database reads
 while the legacy `Commit()` has already reopened an outer transaction.
 

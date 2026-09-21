@@ -92,8 +92,17 @@ func (self *transaction) ListAddressBooks(userId string) ([]*models.AddressBook,
 }
 
 func (self *transaction) GetAddressBook(addressBookId string) (*models.AddressBook, error) {
+	return readAddressBook(self.tx, addressBookId)
+}
+
+// LockAddressBook serializes metadata edits and grant changes until commit.
+func (self *transaction) LockAddressBook(addressBookId string) (*models.AddressBook, error) {
+	return readAddressBook(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}), addressBookId)
+}
+
+func readAddressBook(query *gorm.DB, addressBookId string) (*models.AddressBook, error) {
 	var found []addressBookModel
-	if err := self.tx.Where("\"id\" = ?", addressBookId).Limit(1).Find(&found).Error; err != nil {
+	if err := query.Where("\"id\" = ?", addressBookId).Limit(1).Find(&found).Error; err != nil {
 		return nil, err
 	}
 	if len(found) == 0 {

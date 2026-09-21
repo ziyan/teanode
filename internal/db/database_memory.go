@@ -79,6 +79,7 @@ type MemoryOperation interface {
 	// go past rather than what somebody chose to keep.
 	ListAddressBooks(userId string) ([]*models.AddressBook, error)
 	GetAddressBook(addressBookId string) (*models.AddressBook, error)
+	LockAddressBook(addressBookId string) (*models.AddressBook, error)
 	CreateAddressBook(book *models.AddressBook) (*models.AddressBook, error)
 	UpdateAddressBook(book *models.AddressBook) (*models.AddressBook, error)
 	DeleteAddressBook(addressBookId string) error

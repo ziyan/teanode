@@ -162,3 +162,60 @@ func TestContactUIDUpdateAtCapacityDoesNotBecomeANewContact(test *testing.T) {
 		test.Fatalf("new contact at capacity=%v", err)
 	}
 }
+
+func TestBookMetadataCommandPreservesConcurrentGrantAndAuditActor(test *testing.T) {
+	database, principal, book := contactCommandFixture(test)
+	isLocked := make(chan struct{})
+	canCommit := make(chan struct{})
+	grantDone := make(chan error, 1)
+	go func() {
+		grantDone <- database.TransactionContext(test.Context(), func(transaction db.Transaction) error {
+			locked, err := transaction.LockAddressBook(book.ID)
+			if err == nil {
+				locked.AgentGranted = true
+				_, err = transaction.UpdateAddressBook(locked)
+			}
+			close(isLocked)
+			<-canCommit
+			return err
+		})
+	}()
+	<-isLocked
+	ctx, cancel := context.WithTimeout(test.Context(), 5*time.Second)
+	defer cancel()
+	ctx = db.ContextWithAuditPrincipal(ctx, db.AuditPrincipal{ActorKind: models.AuditActorUser, UserID: principal.User.ID})
+	updateDone := make(chan error, 1)
+	go func() {
+		_, err := New(database).UpdateBook(ctx, principal, UpdateBookRequest{ID: book.ID, Name: "Renamed", Description: "Updated"})
+		updateDone <- err
+	}()
+	select {
+	case err := <-updateDone:
+		close(canCommit)
+		<-grantDone
+		test.Fatalf("metadata edit did not wait for grant: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(canCommit)
+	if err := <-grantDone; err != nil {
+		test.Fatal(err)
+	}
+	if err := <-updateDone; err != nil {
+		test.Fatal(err)
+	}
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		kept, err := transaction.GetAddressBook(book.ID)
+		if err != nil || kept == nil || !kept.AgentGranted || kept.Name != "Renamed" {
+			test.Fatalf("metadata=%+v, %v", kept, err)
+		}
+		events, err := transaction.ListAuditEvents(&db.AuditOptions{ResourceID: book.ID, ActorUserID: principal.User.ID})
+		if err != nil || len(events) != 1 || events[0].ActorKind != models.AuditActorUser {
+			test.Fatalf("audit=%+v, %v", events, err)
+		}
+	})
+	for _, denied := range []*access.Principal{nil, {User: principal.User, Permissions: models.NewEffectivePermissions(nil)}, {User: &models.User{ID: "different-owner"}, Permissions: principal.Permissions}} {
+		if _, err := New(database).UpdateBook(test.Context(), denied, UpdateBookRequest{ID: book.ID, Name: "Refused"}); !errors.Is(err, db.ErrNotFound) {
+			test.Fatalf("metadata permission=%v", err)
+		}
+	}
+}

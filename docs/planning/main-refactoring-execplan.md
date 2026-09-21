@@ -35,7 +35,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
-- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete now share authorized command scopes and locked field merging; content preparation, remaining send adapters, calendar, address-book metadata and protocol adapters, knowledge-source and rule-update commands remain.
+- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete and address-book metadata now share authorized command scopes, locked field merging and grant preservation; content preparation, remaining send adapters, calendar, contact protocol adapters, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
@@ -186,6 +186,13 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: serialize address-book metadata and agent grant changes with a row
+lock, preserving unedited fields on the current row. UpdateBook runs inside the
+caller command and retains its audit actor. Rationale: a metadata form does not
+carry an agent grant, and a partial model with a zero boolean must not silently
+revoke it. Concurrent grant writes also must not restore an obsolete name.
+Date: 2026-09-21.
 
 Decision: keep vCard parsing and formatting in internal/contacts and add
 internal/addressbook for authorized save/delete commands. GraphQL converts
@@ -1491,3 +1498,34 @@ passes separately under the race detector. Both binary builds, repository lint
 and gogolint pass. No GraphQL field names or client documents changed. The
 process-level deployment, protocol conditional-write review and final Chrome
 verification remain open.
+
+
+Revision note: renaming an address book was reproduced clearing AgentGranted and
+surviving rollback of the caller transaction. SaveAddressBook now converts its
+arguments to the shared UpdateBook command. It checks contacts-use permission
+and ownership, locks the row, changes only presentation fields and returns the
+contact count inside the same command scope. Empty-name and empty-description
+behavior is preserved. Agent sharing changes also lock before reading and
+writing the full model so they cannot restore stale metadata.
+
+Regressions verify the original failure, rollback, grant preservation during a
+concurrent rename, current permission and ownership checks, and the actor on the
+committed audit event. The vCard and contact wire formats are unchanged. CardDAV
+conditional writes and concurrent contact-capacity enforcement still need their
+cross-adapter review; the metadata change does not claim those gates.
+
+
+Follow-up review: calendar metadata has the same partial-model pattern as the
+address-book bug. SaveCalendar supplies presentation fields without AgentGranted,
+and UpdateCalendar writes that boolean. It also opens a separate transaction.
+Calendar metadata needs the equivalent authorized, locked command before moving
+on to event/invitation orchestration. The calendar grant adapter currently reads
+without a row lock and must join that serialization when the command is added.
+
+
+Validation update: the complete vector-enabled race suite passes with 1,911
+tests and one expected browser integration skip. Focused metadata, contact and
+audit regressions, lint including gogolint, and both binary builds pass. The
+address-book regression failed before the fix on both grant preservation and
+caller rollback. Calendar metadata remains the next confirmed boundary defect;
+full deployment and final visual verification remain open.

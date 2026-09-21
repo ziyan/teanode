@@ -323,27 +323,16 @@ func (self *graph) DeleteContact(ctx context.Context, arguments ContactArguments
 }
 
 func (self *graph) SaveAddressBook(ctx context.Context, arguments SaveAddressBookArguments) (*AddressBookView, error) {
-	book, err := self.requireOwnAddressBook(ctx, arguments.ID)
+	principal, err := self.requireAddressBookPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var kept *models.AddressBook
-	var count int64
-	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		if kept, err = tx.UpdateAddressBook(&models.AddressBook{
-			ID: book.ID, Name: arguments.Name, Description: arguments.Description,
-		}); err != nil {
-			return err
-		}
-		count, err = tx.CountContacts(book.ID)
-		return err
-	}); err != nil {
-		return nil, err
+	outcome, err := addressbook.New(self.transaction(ctx)).UpdateBook(ctx, principal, addressbook.UpdateBookRequest{ID: arguments.ID, Name: arguments.Name, Description: arguments.Description})
+	if err != nil {
+		return nil, translateError(err)
 	}
-	if kept == nil {
-		return nil, api.ErrNotFound
-	}
-	return &AddressBookView{ID: kept.ID, Name: kept.Name, Description: kept.Description, Contacts: int(count), AgentGranted: kept.AgentGranted}, nil
+	kept := outcome.Book
+	return &AddressBookView{ID: kept.ID, Name: kept.Name, Description: kept.Description, Contacts: int(outcome.ContactCount), AgentGranted: kept.AgentGranted}, nil
 }
 
 func contactView(contact *models.Contact, withCard bool) *ContactView {

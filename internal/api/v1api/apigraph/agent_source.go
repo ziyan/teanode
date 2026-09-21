@@ -92,7 +92,7 @@ func (self *graph) GrantAgentSource(ctx context.Context, arguments GrantAgentSou
 		}
 		log.Noticef("%s %s their agent the calendar %q", operatorName(ctx), granting(arguments.Granted), calendar.Name)
 	case AgentCollectionAddressBook:
-		book, err := tx.GetAddressBook(id)
+		book, err := tx.LockAddressBook(id)
 		if err != nil {
 			return nil, err
 		}
