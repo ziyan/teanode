@@ -594,9 +594,15 @@ export function KnowledgePage() {
   useEffect(() => {
     if (folder !== null) lastFolderLabel.current = folderLabel
   }, [folder, folderLabel])
+  // Nothing, rather than an ellipsis, while the name is still coming. The
+  // ellipsis stood in for a name that arrives a moment later, so every
+  // step showed it and replaced it, which is a flicker in the one row of
+  // the screen that is meant to hold still. The crumb appears when it can
+  // say what it is. The folder above it is read from the folder being
+  // shown, so that it does not go out and come back in the same moment.
   useBreadcrumbDetail(
-    onePane ? (showingPage ? (folder ? folderLabel : (pageName ?? '…')) : folder ? folderLabel : null) : null,
-    onePane && showingPage && folder ? (pageName ?? '…') : null,
+    onePane ? (showingPage ? (shownFolder ? folderLabel : pageName) : shownFolder ? folderLabel : null) : null,
+    onePane && showingPage && shownFolder ? pageName : null,
   )
 
   const list = search ? (
