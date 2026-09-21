@@ -498,6 +498,38 @@ func (self *Agent) dreamThoughtAbout(ctx context.Context, run *Run, budget *drea
 	return thinking, err
 }
 
+// readingStopReason is what to write on the night's row when the reading
+// gives up.
+//
+// A turn the day's allowance stopped ends the same way as a model that
+// went quiet: the loop notes why and returns without an error, so the
+// batch comes back unanswered either way. Blaming the model sends the
+// reader to a provider status page for something that is a number in the
+// settings, so say what the budget says when the budget is the reason.
+func readingStopReason(budget *Budget) string {
+	if budget != nil {
+		if spent := budget.exhaustedBy(); spent != "" {
+			return spent + "; the reading stops here"
+		}
+	}
+	return "the model did not answer; the reading stops here"
+}
+
+// budgetNow is the day's allowance as it stands, or nil if it cannot be
+// read. Nil is not a failure worth ending a night over: it only means the
+// row falls back to what it used to say.
+func (self *Agent) budgetNow(ctx context.Context, run *Run) *Budget {
+	var budget *Budget
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		budget, err = CheckBudget(tx, run.Configuration(), run.Agent, run.Owner, time.Now())
+		return err
+	}); err != nil {
+		log.Debugf("cannot read the budget for a night that stopped reading: %s", err)
+		return nil
+	}
+	return budget
+}
+
 // errNothingLeftToSpend is a call the night's allowance cannot pay for.
 // Every caller already stops on an error from a call, which is what
 // should happen here too; it is named so that the reading can tell it
@@ -740,7 +772,7 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 				}
 				silent++
 				if silent >= dreamSilences {
-					record.LastError = "the model did not answer; the reading stops here"
+					record.LastError = readingStopReason(self.budgetNow(ctx, run))
 					stopped = true
 				}
 				return
