@@ -42,6 +42,7 @@ func (self *exchange) AcceptSubmission(ctx context.Context, transaction db.Trans
 				return err
 			}
 		}
+		command.AfterCommit(self.wakeDeliveryQueue)
 		accepted = mail
 		return nil
 	})

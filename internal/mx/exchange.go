@@ -30,7 +30,7 @@ type exchange struct {
 	cancel context.CancelFunc
 
 	waitGroup        sync.WaitGroup
-	periodicDeliver  periodic.Periodic
+	deliveryWake     chan struct{}
 	periodicScavenge periodic.Periodic
 	periodicUsage    periodic.Periodic
 
@@ -89,11 +89,7 @@ func Open(database db.Database, configuration config.Store, storage storage.Stor
 		settings:   settings,
 	}
 	self.ctx, self.cancel = context.WithCancel(context.TODO())
-	self.periodicDeliver = periodic.New(self.ctx, &self.waitGroup, self.deliverOnce, &periodic.Settings{
-		Interval:       time.Minute,
-		Name:           "mx:deliver",
-		SkipInitialRun: true,
-	})
+	self.deliveryWake = make(chan struct{}, 1)
 	self.periodicScavenge = periodic.New(self.ctx, &self.waitGroup, self.scavengeOnce, &periodic.Settings{
 		Interval: 5 * time.Minute,
 		Name:     "mx:scavenge",
@@ -102,7 +98,8 @@ func Open(database db.Database, configuration config.Store, storage storage.Stor
 		Interval: 5 * time.Second,
 		Name:     "mx:usage",
 	})
-	self.periodicDeliver.Start()
+	self.waitGroup.Add(1)
+	go self.runDeliveryQueue()
 	self.periodicScavenge.Start()
 	self.periodicUsage.Start()
 	return self, nil
@@ -111,7 +108,6 @@ func Open(database db.Database, configuration config.Store, storage storage.Stor
 func (self *exchange) Close() error {
 	defer self.waitGroup.Wait()
 	self.cancel()
-	self.periodicDeliver.Stop()
 	self.periodicScavenge.Stop()
 	self.periodicUsage.Stop()
 	return nil

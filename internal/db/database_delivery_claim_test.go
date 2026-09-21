@@ -74,3 +74,60 @@ func TestDeliveryWorkersClaimDisjointBatchesWithoutWaiting(test *testing.T) {
 		}
 	}
 }
+
+func TestStorageRetryCannotOverwriteAnotherDeliveryLease(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	var delivery *models.Delivery
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		mail, err := transaction.CreateMail(&models.Mail{Subject: "Lease fixture"}, nil)
+		if err != nil {
+			test.Fatal(err)
+		}
+		delivery, err = transaction.CreateDelivery(&models.Delivery{MailID: mail.ID, Kind: models.DeliveryKindExternal, RetryAt: new(time.Now().Add(-time.Minute))}, nil)
+		if err != nil {
+			test.Fatal(err)
+		}
+	})
+	claim := func() *models.Delivery {
+		test.Helper()
+		var claimed *models.Delivery
+		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+			deliveries, err := transaction.ListDeliveriesToRetry(nil)
+			if err != nil || len(deliveries) != 1 {
+				test.Fatalf("claim: %d, %v", len(deliveries), err)
+			}
+			claimed = deliveries[0]
+		})
+		return claimed
+	}
+	first := claim()
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		wasDeferred, err := transaction.DeferDeliveryRetry(first.ID, *first.RetryAt, time.Now().Add(-time.Second))
+		if err != nil || !wasDeferred {
+			test.Fatalf("owned retry: %t, %v", wasDeferred, err)
+		}
+	})
+	second := claim()
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		wasDeferred, err := transaction.DeferDeliveryRetry(first.ID, *first.RetryAt, time.Now().Add(time.Minute))
+		if err != nil || wasDeferred {
+			test.Fatalf("stale retry replaced a newer claim: %t, %v", wasDeferred, err)
+		}
+		stored, err := transaction.GetDelivery(delivery.ID, nil)
+		if err != nil || stored == nil || stored.RetryAt == nil || !stored.RetryAt.Equal(*second.RetryAt) || stored.Attempts != 0 {
+			test.Fatalf("lease changed: %+v, %v", stored, err)
+		}
+		if _, err := transaction.ModifyDelivery(delivery.ID, func(stored *models.Delivery) error {
+			stored.RetryAt = nil
+			stored.Status = models.DeliveryStatusDelivered
+			return nil
+		}, nil); err != nil {
+			test.Fatal(err)
+		}
+		wasDeferred, err = transaction.DeferDeliveryRetry(second.ID, *second.RetryAt, time.Now().Add(time.Minute))
+		if err != nil || wasDeferred {
+			test.Fatalf("retry requeued completed mail: %t, %v", wasDeferred, err)
+		}
+	})
+}

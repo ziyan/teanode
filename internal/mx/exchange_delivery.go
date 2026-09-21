@@ -87,7 +87,7 @@ func (self *exchange) deliver(ctx context.Context, delivery *models.Delivery) er
 	// to attempt; the row is settled as delivered. Reached by the retry loop,
 	// for the rows that a release before this one left on the ladder.
 	if delivery.Kind == models.DeliveryKindMailbox {
-		return self.settleMailboxDelivery(delivery)
+		return self.settleMailboxDelivery(ctx, delivery)
 	}
 
 	// attempt delivery and update status
@@ -149,8 +149,10 @@ func (self *exchange) deliver(ctx context.Context, delivery *models.Delivery) er
 		delivery.AttemptedAt = &now
 		delivery.Attempts++
 
-		// update database
-		if err := self.database.Transaction(func(tx db.Transaction) error {
+		// Record the attempt even after cancellation, with a bounded SQL deadline.
+		completionContext, cancelCompletion := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancelCompletion()
+		if err := self.database.TransactionContext(completionContext, func(tx db.Transaction) error {
 			_, err := tx.ModifyDelivery(delivery.ID, func(existingDelivery *models.Delivery) error {
 				if existingDelivery.CreatedAt.IsZero() {
 					return fmt.Errorf("mx: delivery already deleted")
@@ -545,7 +547,9 @@ func (self *exchange) sendWebhook(ctx context.Context, url, sender, recipient st
 // settleMailboxDelivery records that a mailbox delivery is done: delivered,
 // with no retry, no error, and the time it was actually made kept — the
 // item went into the folder when the row was created, not now.
-func (self *exchange) settleMailboxDelivery(delivery *models.Delivery) error {
+func (self *exchange) settleMailboxDelivery(ctx context.Context, delivery *models.Delivery) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
 	delivery.Status = models.DeliveryStatusDelivered
 	delivery.Error = ""
 	delivery.RetryAt = nil
@@ -556,7 +560,7 @@ func (self *exchange) settleMailboxDelivery(delivery *models.Delivery) error {
 		}
 		delivery.DeliveredAt = &delivered
 	}
-	return self.database.Transaction(func(tx db.Transaction) error {
+	return self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		_, err := tx.ModifyDelivery(delivery.ID, func(existingDelivery *models.Delivery) error {
 			if existingDelivery.CreatedAt.IsZero() {
 				return fmt.Errorf("mx: delivery already deleted")
@@ -573,8 +577,11 @@ func (self *exchange) settleMailboxDelivery(delivery *models.Delivery) error {
 	})
 }
 
-// periodically re-attempt deliveries
-func (self *exchange) deliverOnce(ctx context.Context) error {
+// deliverBatch bounds queued work to one database claim and waits for its
+// deliveries before another batch can be claimed by this instance.
+func (self *exchange) deliverBatch(ctx context.Context) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
 	var deliveries []*models.Delivery
 	var mails []*models.Mail
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
@@ -641,10 +648,12 @@ func (self *exchange) deliverOnce(ctx context.Context) error {
 
 		return nil
 	}); err != nil {
-		return err
+		return 0, err
 	}
 
-	// load mails from s3
+	// Load at most the claimed batch, with a shorter bound for storage outages.
+	loadContext, cancelLoad := context.WithTimeout(ctx, 30*time.Second)
+	defer cancelLoad()
 	var waitGroup sync.WaitGroup
 	var availableMails sync.Map
 	for _, mail := range mails {
@@ -655,7 +664,7 @@ func (self *exchange) deliverOnce(ctx context.Context) error {
 		go func(mail *models.Mail) {
 			defer deferutil.Recover()
 			defer waitGroup.Done()
-			headers, body, err := self.storage.Get(ctx, mail.ID)
+			headers, body, err := self.storage.Get(loadContext, mail.ID)
 			if err != nil {
 				log.Warningf("cannot reload mail %q, deferring delivery: %s", mail.ID, err)
 				return
@@ -666,24 +675,45 @@ func (self *exchange) deliverOnce(ctx context.Context) error {
 		}(mail)
 	}
 	waitGroup.Wait()
+	cancelLoad()
 
-	// delivery all in parallel
+	var unavailable []*models.Delivery
+	// Deliver available messages while deferring unavailable ones in one bounded transaction.
 	for _, delivery := range deliveries {
 		if delivery.Mail != nil {
 			if _, hasContent := availableMails.Load(delivery.MailID); !hasContent {
-				// Keep the retry lease without consuming an SMTP attempt. A
-				// storage outage must never turn the metadata into an empty email.
+				unavailable = append(unavailable, delivery)
 				continue
 			}
 		}
-		self.waitGroup.Add(1)
+		waitGroup.Add(1)
 		go func(delivery *models.Delivery) {
 			defer deferutil.Recover()
-			defer self.waitGroup.Done()
-			_ = self.deliver(self.ctx, delivery)
+			defer waitGroup.Done()
+			_ = self.deliver(ctx, delivery)
 		}(delivery)
 	}
-	return nil
+	if len(unavailable) > 0 {
+		// A late read failure must not overwrite a lease another worker acquired.
+		retryContext, cancelRetry := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		err := self.database.TransactionContext(retryContext, func(transaction db.Transaction) error {
+			for _, delivery := range unavailable {
+				if delivery.RetryAt == nil {
+					continue
+				}
+				if _, err := transaction.DeferDeliveryRetry(delivery.ID, *delivery.RetryAt, time.Now().Add(time.Minute)); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		cancelRetry()
+		if err != nil {
+			log.Warningf("cannot defer deliveries after storage failure: %s", err)
+		}
+	}
+	waitGroup.Wait()
+	return len(deliveries), ctx.Err()
 }
 
 // signingDomain is the d= value to put in a signature or an ARC seal: the

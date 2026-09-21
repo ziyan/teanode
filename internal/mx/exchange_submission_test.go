@@ -80,6 +80,7 @@ func TestSubmissionStorageAndSQLAcceptanceAreAtomic(test *testing.T) {
 				spool.putError = injectedErr
 			}
 			exchange, mailbox := submissionExchange(test, database, spool)
+			exchange.deliveryWake = make(chan struct{}, 1)
 			envelope := &mailparse.Envelope{
 				ID: "fixture-envelope", MailboxID: mailbox.ID, Sender: "sender@example.com",
 				Recipients: []string{"recipient@example.net"}, IP: net.IPv4(127, 0, 0, 1), ReceivedAt: time.Now(),
@@ -99,6 +100,9 @@ func TestSubmissionStorageAndSQLAcceptanceAreAtomic(test *testing.T) {
 				if err != nil || accepted == nil {
 					test.Fatalf("prepare acceptance: %+v, %v", accepted, err)
 				}
+				if len(exchange.deliveryWake) != 0 {
+					test.Fatal("delivery woke before acceptance committed")
+				}
 				if len(exchange.domainUsagesMap) != 0 {
 					test.Fatal("usage changed before acceptance commit")
 				}
@@ -114,6 +118,9 @@ func TestSubmissionStorageAndSQLAcceptanceAreAtomic(test *testing.T) {
 				test.Fatal("submission never reached storage")
 			}
 			hasAccepted := failurePoint == "none"
+			if (len(exchange.deliveryWake) > 0) != hasAccepted {
+				test.Fatal("delivery wake does not match committed acceptance")
+			}
 			expectedCount := 0
 			if hasAccepted {
 				expectedCount = 1

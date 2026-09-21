@@ -40,7 +40,7 @@ func TestDeliveryRetryDoesNotDispatchWithoutStoredContent(test *testing.T) {
 		deliveryId = delivery.ID
 	})
 	exchange := &exchange{database: database, storage: &unavailableMessageStorage{}, ctx: context.Background()}
-	if err := exchange.deliverOnce(context.Background()); err != nil {
+	if _, err := exchange.deliverBatch(context.Background()); err != nil {
 		test.Fatal(err)
 	}
 	exchange.waitGroup.Wait()
@@ -52,7 +52,7 @@ func TestDeliveryRetryDoesNotDispatchWithoutStoredContent(test *testing.T) {
 		if delivery.Status != models.DeliveryStatusQueued || delivery.Attempts != 0 || delivery.DeliveredAt != nil {
 			test.Fatalf("storage failure was dispatched: %+v", delivery)
 		}
-		if delivery.RetryAt == nil || !delivery.RetryAt.After(time.Now()) {
+		if delivery.RetryAt == nil || !delivery.RetryAt.After(time.Now()) || delivery.RetryAt.After(time.Now().Add(2*time.Minute)) {
 			test.Fatal("storage failure lost its retry")
 		}
 	})

@@ -33,7 +33,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; public API integration, prompt dispatch and client retry identities remain.
+- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; public API integration and client retry identities remain; bounded dispatch now wakes on commit.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
@@ -58,8 +58,9 @@ rollback, committed removal, and repeated cleanup.
 
 The retry worker continued to dispatch after a storage read failed, leaving a
 mail's headers and body empty. It now dispatches only successfully reloaded
-messages, retaining the retry lease without consuming an attempt on a read
-failure. A regression uses a local mailbox delivery to prove that no dispatch
+messages, deferring unavailable content for one minute without consuming an
+attempt. The deferral checks the original lease time so a late load failure cannot
+change a newer claim. A regression uses a local mailbox delivery to prove that no dispatch
 occurs, without permitting network transport in the test.
 
 Sent filing before local-recipient resolution made a message addressed to its
@@ -130,6 +131,17 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: queued deliveries use one draining loop per exchange, with no more than
+one claimed batch of eight deliveries active. An acceptance commit sends a
+coalesced in-memory wakeup; startup and a five-second idle poll recover durable
+work without requiring a wakeup. Storage loads have a 30-second deadline, delivery
+batches ten minutes, attempt completion SQL ten seconds, and storage retry SQL five
+seconds for the whole batch. Storage outages defer one minute using the claimed
+retry time as a conditional update. Rationale: normal accepted sends must not wait
+for the previous one-minute retry poll, and polling must not accumulate unbounded
+parallel attempts. Legacy immediate SMTP dispatch is still a separate path and
+must be covered by the remaining lifecycle review. Date: 2026-09-21.
 
 Decision: run submission reconciliation independently of sending, with at most
 32 locked pending records per batch, a 30-second batch deadline, two-second
@@ -976,3 +988,27 @@ skips. Focused agent, mailer and submission database regressions and the final
 lint and `gogolint` checks pass. Existing remote checks on the prior commit are
 all green; this change will trigger new checks when pushed. The full refactoring,
 public send integration, final deployment and complete Chrome audit remain open.
+
+Revision note: the exchange's delivery queue now starts by scanning persisted
+work, drains bounded batches, waits for their completion, and wakes immediately
+after transactional acceptance commits. A buffered notification collapses many
+commits; the database remains the source of work after a lost notification or a
+restart. Storage load failures now get a one-minute retry without increasing
+attempt counts. `DeferDeliveryRetry` updates only the lease the reader claimed,
+and refuses both a newer claim and an already completed delivery. Completion SQL
+uses a bounded context that survives caller cancellation. The older direct SMTP
+submission path still dispatches immediately and is not covered by the queue's
+per-instance concurrency bound.
+
+New regressions cover startup recovery across more than one batch, holding the
+first eight storage reads before allowing a ninth, idle wakeup before the poll,
+shutdown, no wake before commit or after rollback, bounded storage retry delay,
+and refusal to change a newer or completed lease. These tests use mailbox delivery
+settlement and fake storage, never external transport. Next wire the GraphQL send
+adapter to the coordinator, preserve its Mail/Item response, and give dashboard,
+CLI and agent callers identities retained across retries of the same send.
+
+Validation update: the complete vector-enabled race suite passes after queued
+dispatch changes, with 1,847 tests and one expected skip. The focused exchange
+and database race suites, lint and `gogolint` pass. Remote checks on the preceding
+recovery commit are green. Public adapter and client identity work remain.

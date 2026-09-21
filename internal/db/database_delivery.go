@@ -15,6 +15,8 @@ import (
 type DeliveryOperation interface {
 	// retry deliveries
 	ListDeliveriesToRetry(options *Options) ([]*models.Delivery, error)
+	// DeferDeliveryRetry changes a storage-read retry only while the caller still owns its lease.
+	DeferDeliveryRetry(deliveryId string, claimedRetryAt, retryAt time.Time) (bool, error)
 
 	// list deliveries that belong to a specific domain (via mail's domain_id)
 	ListDeliveriesByDomainID(domainId string, options *Options) ([]*models.Delivery, error)
@@ -224,6 +226,14 @@ func (self *transaction) ListDeliveriesToRetry(options *Options) ([]*models.Deli
 		deliveries = append(deliveries, getDeliveryFromDeliveryModel(existingModel))
 	}
 	return deliveries, nil
+}
+
+func (self *transaction) DeferDeliveryRetry(deliveryId string, claimedRetryAt, retryAt time.Time) (bool, error) {
+	if deliveryId == "" || claimedRetryAt.IsZero() || retryAt.IsZero() {
+		return false, ErrInvalidArguments
+	}
+	updated := self.tx.Model(&deliveryModel{}).Where("id = ? AND retry_at = ?", deliveryId, claimedRetryAt).Updates(map[string]any{"retry_at": retryAt, "modified_at": time.Now()})
+	return updated.RowsAffected == 1, updated.Error
 }
 
 func (self *transaction) ListDeliveriesByDomainID(domainId string, options *Options) ([]*models.Delivery, error) {
