@@ -176,6 +176,7 @@ type Transaction interface {
 	CredentialUsageOperation
 	MailOperation
 	SubmissionOperation
+	CalendarRequestOperation
 	MediaCompositionOperation
 	DeliveryOperation
 	ReportOperation
