@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -46,8 +45,8 @@ const fileDirectory = "media"
 const fileKeyPrefix = "media/"
 
 func (self *filesystem) filePath(id string) (string, error) {
-	if id == "" || strings.ContainsAny(id, "/\\.") {
-		return "", fmt.Errorf("storage: %q is not a usable identifier", id)
+	if err := validateIdentifier(id); err != nil {
+		return "", err
 	}
 	// Sharded on the last two characters, as the messages are: a directory
 	// with a hundred thousand entries in it is slow to list on every
@@ -57,6 +56,9 @@ func (self *filesystem) filePath(id string) (string, error) {
 }
 
 func (self *filesystem) PutFile(ctx context.Context, id string, content []byte) error {
+	if err := validateIdentifier(id); err != nil {
+		return err
+	}
 	if self.settings.Directory == "" {
 		return self.mirror.PutFile(ctx, id, content)
 	}
@@ -97,6 +99,9 @@ func (self *filesystem) PutFile(ctx context.Context, id string, content []byte) 
 }
 
 func (self *filesystem) GetFile(ctx context.Context, id string) ([]byte, error) {
+	if err := validateIdentifier(id); err != nil {
+		return nil, err
+	}
 	if self.settings.Directory == "" {
 		return self.mirror.GetFile(ctx, id)
 	}
@@ -129,6 +134,9 @@ func (self *filesystem) GetFile(ctx context.Context, id string) ([]byte, error) 
 }
 
 func (self *filesystem) DeleteFile(ctx context.Context, id string) error {
+	if err := validateIdentifier(id); err != nil {
+		return err
+	}
 	if self.settings.Directory == "" {
 		return self.mirror.DeleteFile(ctx, id)
 	}

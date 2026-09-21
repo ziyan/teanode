@@ -95,14 +95,17 @@ func (self *filesystem) Close() error {
 // directory holding hundreds of thousands of files, which is slow to list and
 // unpleasant to look at.
 func (self *filesystem) path(id string) (string, error) {
-	if id == "" || strings.ContainsAny(id, "/\\.") {
-		return "", fmt.Errorf("storage: %q is not a usable identifier", id)
+	if err := validateIdentifier(id); err != nil {
+		return "", err
 	}
 	shard := id[len(id)-2:]
 	return filepath.Join(self.settings.Directory, shard, id+".eml"), nil
 }
 
 func (self *filesystem) Put(ctx context.Context, id string, headers []string, body []byte) error {
+	if err := validateIdentifier(id); err != nil {
+		return err
+	}
 	if self.settings.Directory == "" {
 		// No local copy: the store is the record, so its failure is the
 		// call's failure rather than a line in the log.
@@ -148,6 +151,9 @@ func (self *filesystem) Put(ctx context.Context, id string, headers []string, bo
 }
 
 func (self *filesystem) Get(ctx context.Context, id string) ([]string, []byte, error) {
+	if err := validateIdentifier(id); err != nil {
+		return nil, nil, err
+	}
 	if self.settings.Directory == "" {
 		return self.mirror.Get(ctx, id)
 	}
@@ -179,6 +185,9 @@ func (self *filesystem) Get(ctx context.Context, id string) ([]string, []byte, e
 }
 
 func (self *filesystem) Delete(ctx context.Context, id string) error {
+	if err := validateIdentifier(id); err != nil {
+		return err
+	}
 	if self.settings.Directory == "" {
 		return self.mirror.Delete(ctx, id)
 	}

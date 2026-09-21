@@ -213,7 +213,7 @@ type transaction struct {
 	tx       *gorm.DB
 	database *database
 
-	// ctx carries who is acting, for the audit rows the writes produce.
+	// ctx bounds SQL work and carries who is acting for audit rows.
 	ctx context.Context
 
 	// actor is who the graph writes in this transaction are by, for the
@@ -245,7 +245,7 @@ func (self *database) TransactionContext(ctx context.Context, f func(Transaction
 }
 
 func (self *transaction) begin() error {
-	tx := self.database.db.Begin()
+	tx := self.database.db.WithContext(self.ctx).Begin()
 	if err := tx.Error; err != nil {
 		return err
 	}

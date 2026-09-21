@@ -1,6 +1,7 @@
 package db
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"math"
 	"sort"
@@ -133,7 +134,7 @@ func (self *database) EnsureVectorIndex(table VectorTable, model string, dimensi
 	if dimension <= 0 || dimension > 16000 {
 		return fmt.Errorf("db: %q writes vectors of %d, which is not a width an index can be built at", model, dimension)
 	}
-	name := vectorIndexName(table, model)
+	name := vectorIndexName(table, model, dimension)
 	statement := fmt.Sprintf(
 		`CREATE INDEX IF NOT EXISTS %s ON %s USING hnsw ((%s::vector(%d)) vector_cosine_ops) WHERE %s = %s`,
 		pq.QuoteIdentifier(name), pq.QuoteIdentifier(table.Table),
@@ -149,24 +150,16 @@ func (self *database) EnsureVectorIndex(table VectorTable, model string, dimensi
 	return nil
 }
 
-// vectorIndexName is stable for a table and a model, and within the 63
-// characters PostgreSQL allows an identifier. A model's name carries
-// punctuation a name may not, so everything but letters and digits becomes
-// an underscore and the whole is cut.
-func vectorIndexName(table VectorTable, model string) string {
-	var builder strings.Builder
-	for _, character := range strings.ToLower(model) {
-		if (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') {
-			builder.WriteRune(character)
-		} else {
-			builder.WriteByte('_')
-		}
+// vectorIndexName includes the full identity in its digest because readable
+// names can collide after punctuation replacement or PostgreSQL's truncation.
+// Existing indexes are retained until an operator retires the older binary.
+func vectorIndexName(table VectorTable, model string, dimension int) string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d", table.Table, model, dimension)))
+	prefix := table.Table + "_v_"
+	if len(prefix) > 30 {
+		prefix = prefix[:30]
 	}
-	name := table.Table + "_v_" + builder.String()
-	if len(name) > 63 {
-		name = name[:63]
-	}
-	return name
+	return fmt.Sprintf("%s%x", prefix, digest[:16])
 }
 
 // Nearest ranks a table's vectors against the query.
