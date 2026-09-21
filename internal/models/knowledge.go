@@ -131,11 +131,11 @@ type AgentKnowledgeSpecification struct {
 	// tree carries, over all the checkouts in it. Zero is the daemon's
 	// own pace, which is two thousand.
 	//
-	// The history is what says who wrote a piece of code, and it is
-	// deep: one tree of a hundred and thirty-seven checkouts holds on
-	// the order of three hundred and forty thousand commits, which
-	// filed in one night would bury the graph and the person's
-	// embedding budget. So a pass takes the newest of them, at a pace
+	//	The history is what says who wrote a piece of code, and it is
+	// deep: a tree of a hundred or more checkouts can hold hundreds of
+	// thousands of commits, which filed in one night would bury the
+	// graph and the person's embedding budget. So a pass takes the
+	// newest of them, at a pace
 	// somebody chose, and the graph fills at that pace. Raise it for a
 	// tree whose history matters more than its files.
 	CommitsPerPass int `json:"commitsPerPass,omitempty"`

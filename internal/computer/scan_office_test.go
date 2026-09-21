@@ -14,9 +14,9 @@ import (
 // The one that was here before sent every one of them through txt:Text,
 // which is a Writer filter. A spreadsheet or a presentation came back with
 // nothing, and soffice exited successfully while writing no file, so the
-// failure looked like a document that had nothing in it. On the archive
-// this was written against, 188 of 197 spreadsheets and 43 of 44
-// presentations had no text at all, against 7 of 79 Writer documents.
+// failure looked like a document that had nothing in it. Nearly every
+// spreadsheet and presentation had no text at all, while Writer documents
+// mostly came through, which is why it went unnoticed.
 func TestEachKindOfOfficeDocumentIsConvertedWithAFilterThatWorks(test *testing.T) {
 	test.Parallel()
 

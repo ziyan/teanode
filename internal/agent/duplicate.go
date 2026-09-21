@@ -219,11 +219,11 @@ func pageIdentity(path string, kind models.AgentNodeKind, name string) (string, 
 	}
 	// A root folder said twice. A model reading a directory of people, in
 	// a source that keeps them under a folder of its own, files the first
-	// one at "people/people/alice-chen": the prompt's rule and the
-	// document's own shelf, one after the other. Nine pages arrived that
-	// way in one night, three of them a second copy of somebody who
-	// already had a page, so their facts stood apart and a question about
-	// either found half of them. The segments after the first are the
+	//	one at "people/people/alice-chen": the prompt's rule and the
+	// document's own shelf, one after the other. A page filed that way is
+	// a second copy of somebody who already has one, so their facts stand
+	// apart and a question about either finds half of them. The segments
+	// after the first are the
 	// person's to arrange, so only the repeat at the front is taken.
 	path = withoutTheRepeatedFolder(path)
 	name = strings.TrimSpace(name)

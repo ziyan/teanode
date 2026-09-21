@@ -143,8 +143,8 @@ func TestAPageProposedAtTheRootGoesUnderItsKindsFolder(t *testing.T) {
 //
 // A model reading a directory of people files the first at
 // "people/people/alice-chen": the prompt's rule and the document's own
-// shelf, one after the other. Nine pages arrived that way in one night,
-// three of them a second copy of somebody who already had a page.
+// shelf, one after the other. A page filed that way is a second copy of
+// somebody who already has one.
 func TestARootFolderSaidTwiceIsSaidOnce(t *testing.T) {
 	t.Parallel()
 
