@@ -72,7 +72,9 @@ func (self *Agent) sweepUnseen(ctx context.Context, source *models.AgentKnowledg
 		delete(cursor, cursorPassSeen)
 		delete(cursor, cursorPassRefused)
 	}()
-	if startedPass.IsZero() {
+	// The clock can move backward while a device request is in flight.
+	// A future cutoff would also remove documents just filed by this pass.
+	if startedPass.IsZero() || startedPass.After(time.Now()) {
 		return
 	}
 	// What this pass refused is what the row says, not every pass added

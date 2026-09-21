@@ -22,23 +22,27 @@ import (
 // cannot pull a private key across the socket.
 func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, cursor map[string]any) (string, db.SourceCounts, error) {
 	counts := db.SourceCounts{}
+	position, err := readDeviceCursor(cursor, time.Now())
+	if err != nil {
+		return "", counts, err
+	}
 	device := self.computerNamed(source.AgentID, source.Specification.Computer)
 	if device == nil {
 		return "", counts, &waitingForDevice{name: source.Specification.Computer}
 	}
 
-	after, _ := cursor["after"].(string)
+	after := position.After
 	// The known hashes go to the daemon once a pass, under the pass's
 	// name, and every later page names the pass instead of carrying the
 	// map: fifty megabytes a page for a big source, which was most of
 	// what a page cost. The name changes when a pass starts at the top,
 	// and a daemon that no longer holds the map says so and is sent it
 	// again.
-	knownId, _ := cursor[cursorKnownID].(string)
+	knownId := position.KnownID
 	if after == "" || knownId == "" {
 		knownId = source.ID + "@" + time.Now().Format(time.RFC3339)
 	}
-	sent, _ := cursor[cursorKnownSent].(string)
+	sent := position.KnownSent
 	carry := sent != knownId
 	var known map[string]string
 	if carry {

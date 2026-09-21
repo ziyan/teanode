@@ -36,7 +36,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries using either the stable draft key or its source item identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, agent calendar mutation retries, contact proposal acceptance and protocol adapters, knowledge-source and rule-update commands remain.
-- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; typed page/cursor contracts, scan decomposition, retrieval/model extraction and benchmarks remain.
+- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; job outcomes, page-completion coordination, scan decomposition, retrieval/model extraction and benchmarks remain.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
@@ -2058,3 +2058,24 @@ pass with the race detector against the disposable vector database. Focused
 paging and failure-retry tests, both binaries, repository lint and gogolint pass.
 Privacy checks include the new cursor and synthetic mailbox fixtures. This adds
 sent-source cursor safety without completing the remaining ingestion milestone.
+
+
+Persisted device cursor boundary: readDeviceCursor validates existing map keys
+and produces typed continuation, known-map identity, pass start and counters.
+Legacy cursors with no pass metadata remain valid. Integer counters written in
+memory and floating-point counters decoded from JSON round-trip identically;
+unknown map fields are preserved because reading does not rewrite the map.
+Invalid field types, fractional/negative/overflowing counts and future pass
+starts fail before device access rather than silently changing scan position.
+
+Sweeping separately refuses a future cutoff, covering a clock adjustment while
+a device request is in flight. Tests cover legacy map round trips, malformed
+state, no map mutation, refusal before device access and no database access for
+a future sweep. This adds the persisted cursor boundary; the job still updates
+its existing map, and typed job outcomes/page-completion coordination remain open.
+
+
+Device-cursor validation: all agent and computer packages pass with the race
+detector against the disposable database. Final focused cursor/sweep regressions,
+both binary builds, repository lint and gogolint pass. Privacy checks include the
+new parser and fixtures. No dashboard presentation or persisted key names change.

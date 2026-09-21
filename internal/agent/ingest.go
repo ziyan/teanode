@@ -176,6 +176,11 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 	if cursor == nil {
 		cursor = map[string]any{}
 	}
+	if walksAWholeTree(source) {
+		if _, err := readDeviceCursor(cursor, time.Now()); err != nil {
+			return err
+		}
+	}
 	more := false
 	failure := ""
 
