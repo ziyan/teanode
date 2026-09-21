@@ -667,3 +667,15 @@ mutation; a source-document regression test preserves that correction. Client
 and agent document preparation tests also pass. The remaining transaction audit
 must review cross-domain list aggregation and unpaginated collection sizes;
 these estimates do not replace database limits or command-level atomicity.
+
+Revision note: [the transaction-boundary inventory](../reviews/transaction-boundaries.md)
+records all nine remaining application calls to manual SQL commit, their durable
+writes and subsequent work. It also records known nested-transaction cases and
+why neither global rollback nor a small connection pool is a safe substitute for
+extracting application commands. The broader nested-call and listener audit
+remains open.
+
+Validation update: the full race suite also passes with stock PostgreSQL and
+vector indexing explicitly disabled: 1,797 tests reported, with the Chrome-proxy
+integration and extension-only index checks skipped. This verifies the database
+fallback path after pagination and GraphQL work estimation changes.
