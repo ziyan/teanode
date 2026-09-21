@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"net/url"
@@ -281,10 +282,19 @@ func randomToken() (string, error) {
 }
 
 // writeSignInPage is what the browser shows when it comes back.
+//
+// Escaped, because some of what it says comes from the address the browser
+// arrived on: the service's own description of what went wrong is a query
+// parameter, and anything that reaches this port can set it. Written into
+// the page as it came, it would run there.
 func writeSignInPage(writer http.ResponseWriter, said string) {
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Nothing on this page is meant to be read by a script, and nothing
+	// should be loaded into it: the one thing it does is say a sentence.
+	writer.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+	writer.Header().Set("X-Content-Type-Options", "nosniff")
 	_, _ = fmt.Fprintf(writer,
 		"<!doctype html><meta charset=utf-8><title>TeaNode</title>"+
 			"<body style=\"font:16px system-ui;margin:4rem auto;max-width:32rem\"><p>%s</p>",
-		said)
+		html.EscapeString(said))
 }

