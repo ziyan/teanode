@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -15,11 +16,14 @@ import (
 
 type sentIngestStorage struct {
 	storage.Storage
-	readError error
+	readError        error
+	readCount        int
+	allowedReadCount int
 }
 
 func (self *sentIngestStorage) Get(context.Context, string) ([]string, []byte, error) {
-	if self.readError != nil {
+	self.readCount++
+	if self.readError != nil && self.readCount > self.allowedReadCount {
 		return nil, nil, self.readError
 	}
 	return []string{"Content-Type: text/plain; charset=utf-8"}, []byte("Fixture sent message content."), nil
@@ -115,5 +119,45 @@ func TestSentCursorPreservesPrecisionAndRejectsMalformedState(test *testing.T) {
 		if _, err := readSentCursor(map[string]any{"before": invalid}, time.Now()); err == nil {
 			test.Fatalf("accepted invalid cursor: %v", invalid)
 		}
+	}
+}
+
+func TestSentIngestionNeverFilesAMissingBodyPlaceholder(test *testing.T) {
+	for _, messageCount := range []int{1, 2} {
+		test.Run(fmt.Sprint(messageCount), func(test *testing.T) {
+			database, worker, run, source, store := sentPageFixture(test, messageCount)
+			cursor := map[string]any{"before": "2031-01-01T00:00:00Z"}
+			store.readError = fmt.Errorf("fixture object missing: %w", storage.ErrNotFound)
+			store.allowedReadCount = messageCount - 1
+			next, counts, err := worker.readSentMail(test.Context(), run, source, cursor)
+			if !errors.Is(err, storage.ErrNotFound) || next != "" || counts.Documents != messageCount-1 {
+				test.Fatalf("missing-body read advanced: cursor=%q, counts=%+v, err=%v", next, counts, err)
+			}
+			for _, table := range []string{"agent_document", "agent_chunk"} {
+				if rowCount := dbtest.QueryString(test, database, "SELECT count(*)::text FROM "+table); rowCount != fmt.Sprint(messageCount-1) {
+					test.Fatalf("missing body changed %s beyond its completed prefix: %s", table, rowCount)
+				}
+			}
+			store.readError = nil
+			next, counts, err = worker.readSentMail(test.Context(), run, source, cursor)
+			if err != nil || next == "" || counts.Documents != 1 {
+				test.Fatalf("restored-body retry failed: cursor=%q, counts=%+v, err=%v", next, counts, err)
+			}
+			if bodyCount := dbtest.QueryString(test, database, `SELECT count(*)::text FROM agent_chunk WHERE text = 'Fixture sent message content.'`); bodyCount != fmt.Sprint(messageCount) {
+				test.Fatalf("stored actual bodies = %s", bodyCount)
+			}
+			if _, counts, err := worker.readSentMail(test.Context(), run, source, cursor); err != nil || counts.Documents != 0 {
+				test.Fatalf("replay duplicated the restored message: counts=%+v, err=%v", counts, err)
+			}
+		})
+	}
+}
+
+func TestMessageContextStillDescribesAMissingBody(test *testing.T) {
+	store := &sentIngestStorage{readError: storage.ErrNotFound}
+	mail := &models.Mail{ID: "fixture-mail", Subject: "Fixture subject"}
+	message, err := BuildMessageContext(test.Context(), store, mail, 100, false)
+	if err != nil || message == nil || message.Text != "(the message body is no longer stored)" || message.Subject != mail.Subject {
+		test.Fatalf("missing-body context = %+v, %v", message, err)
 	}
 }

@@ -80,7 +80,7 @@ func (self *Agent) readSentMail(ctx context.Context, run *Run, source *models.Ag
 		}
 		// Without the quoted reply underneath: what they wrote is the
 		// example, and the message they were answering is not.
-		message, err := BuildMessageContext(ctx, run.Storage(), mail, sentCharacters, false)
+		message, err := buildMessageContext(ctx, run.Storage(), mail, sentCharacters, false, false)
 		if err != nil {
 			return "", counts, err
 		}
