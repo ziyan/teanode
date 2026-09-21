@@ -426,6 +426,17 @@ export function KnowledgePage() {
   // against the path it belongs to, so that going back to it comes back
   // to the list and going anywhere else does not.
   const [walkedInto, setWalkedInto] = useState('')
+  // The scrolling rows, for the way back to the top of a long folder.
+  const [rowsElement, setRowsElement] = useState<HTMLDivElement | null>(null)
+  const goToTop = useCallback(() => {
+    // The rows scroll on their own where there is room for them to; on a
+    // phone they do not, and it is the page that has to move.
+    if (rowsElement && rowsElement.scrollHeight > rowsElement.clientHeight) {
+      rowsElement.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [rowsElement])
 
   // Desktop with nothing open shows the person's own page.
   const open = at || (onePane ? '' : 'self')
@@ -625,10 +636,28 @@ export function KnowledgePage() {
   //
   // The name of the top is a way back to it once there is more than one
   // level to climb, since the chevron only ever goes up by one.
-  const climbing = folder ? folder.split('/').filter(Boolean).length : 0
+  // Every level, not the top and the bottom. It used to show the root and
+  // the folder open and nothing between, so `work/mujin` read as MUJIN
+  // filed directly under KNOWLEDGE: the trail said a path that did not
+  // exist, and the one level that would have explained where you were was
+  // the level it left out. Each is a way back to itself.
+  //
+  // Deep enough and the middle is an ellipsis rather than a line that
+  // wraps three times on a phone, keeping the root, the parent and the
+  // folder open, which are the ones anybody climbs to.
+  const segments = folder ? folder.split('/').filter(Boolean) : []
+  const ancestors = segments.map((segment, index) => ({
+    path: segments.slice(0, index + 1).join('/'),
+    // The last one is the folder that is open, which already has a name
+    // worked out from its node; the ones above it are only a path here,
+    // so the segment is what there is to show.
+    label: index === segments.length - 1 ? folderLabel : segment,
+    last: index === segments.length - 1,
+  }))
+  const shown = ancestors.length > 3 ? [ancestors[0], null, ...ancestors.slice(-2)] : ancestors
   const trail =
     !search && folder ? (
-      <div className="knowledge-trail">
+      <div className="knowledge-trail list-toolbar">
         <button
           type="button"
           className="icon-action"
@@ -638,25 +667,53 @@ export function KnowledgePage() {
         >
           <ChevronLeftIcon size={16} />
         </button>
-        {climbing > 1 ? (
-          <>
-            <button type="button" className="knowledge-trail-root" onClick={() => goTo('', true)}>
-              {t('knowledge.root')}
-            </button>
-            <span aria-hidden="true">/</span>
-          </>
-        ) : null}
-        <span className="knowledge-trail-name">{folderLabel}</span>
+        <button type="button" className="knowledge-trail-root" onClick={() => goTo('', true)}>
+          {t('knowledge.root')}
+        </button>
+        {shown.map((step, index) =>
+          step === null ? (
+            <span key={`gap-${index}`} className="knowledge-trail-gap" aria-hidden="true">
+              / …
+            </span>
+          ) : (
+            <span key={step.path} className="knowledge-trail-step">
+              <span aria-hidden="true">/</span>{' '}
+              {step.last ? (
+                <span className="knowledge-trail-name" aria-current="page">
+                  {step.label}
+                </span>
+              ) : (
+                <button type="button" className="knowledge-trail-root" onClick={() => goTo(step.path, true)}>
+                  {step.label}
+                </button>
+              )}
+            </span>
+          ),
+        )}
+        {/* The way back to the top of a long folder. Walking into one and
+            wanting out of it meant flicking back up through everything
+            first; the trail itself stays put, so the button on it can be
+            reached from anywhere in the list. */}
+        <button type="button" className="knowledge-trail-top" onClick={goToTop} title={t('knowledge.toTop')}>
+          {t('knowledge.toTop')}
+        </button>
       </div>
     ) : null
 
   // The toolbar is inside the panel rather than above it, so it stays put
   // while the rows under it scroll.
+  // One row above the rows, not two. The search box and the ways in belong
+  // to the whole graph, and inside a folder the thing wanted at the top of
+  // the column is the way out of it: the trail took a second row to say so,
+  // which on a phone is a row of chrome over a list that then had nowhere
+  // to go. In a folder the trail is that row; at the top, where there is no
+  // folder to leave, it is the search box and the ways in.
   const column = (
     <div className="card knowledge-list">
-      {lookup}
-      {trail}
-      <div className="knowledge-list-rows">{list}</div>
+      {trail ?? lookup}
+      <div ref={setRowsElement} className="knowledge-list-rows">
+        {list}
+      </div>
     </div>
   )
 

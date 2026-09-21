@@ -8487,10 +8487,59 @@ button.with-icon {
   padding: 0;
 }
 
+/* On a phone the card is the whole screen, and giving it a height of its
+   own made a second scrolling area inside the one the page already has:
+   two things to flick, an inner one that ended early, and a row left
+   sitting half under the toolbar. The list is as long as it is here and
+   the page scrolls it; the toolbar and the trail stay put at the top
+   instead, which is what the height was really for. */
+@media (max-width: 760px) {
+  .knowledge-list {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .knowledge-list-rows {
+    overflow: visible;
+    /* No window, so no rule saying it is one. */
+    background: none;
+  }
+
+  .knowledge-list > .list-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface);
+    padding-top: var(--space-2);
+  }
+}
+
 .knowledge-list-rows {
   overflow: auto;
   padding: var(--space-2);
+  /* A rule at each edge the list scrolls past, rather than a straight cut
+     through whatever row happens to be there. Half a row of text, sliced
+     square across the letters, reads as a rendering fault; a line says the
+     list is a window onto something longer, which is what is actually
+     true.
+
+     The lines are drawn only where there is something past them: they are
+     a background pinned to the top and bottom of the scrolling area, sized
+     to nothing until it scrolls, so a list that fits has no lines at all
+     and needs no rule to say so. */
+  background:
+    linear-gradient(var(--border), var(--border)) top / 100% 1px,
+    linear-gradient(var(--border), var(--border)) bottom / 100% 1px;
+  background-repeat: no-repeat;
+  background-attachment: local, local;
+  /* A row scrolled to by the keyboard stops clear of the rule rather than
+     under it. */
+  scroll-padding-block: var(--space-2);
+  /* The page behind does not start moving when this list reaches its end,
+     which on a phone took the whole screen with it. */
+  overscroll-behavior: contain;
 }
+
 
 /* Nothing of its own: the box and the ways in share a row, which is what
    the mail list does and what the shared toolbar already arranges. The box
@@ -8531,6 +8580,38 @@ button.with-icon {
   letter-spacing: 0.04em;
 }
 
+/* It stands where the toolbar stands when it is the row in its place, so
+   the column's first row is the same height whichever of the two is in it
+   and the list below does not move as you walk in and out of folders. */
+.knowledge-trail.list-toolbar {
+  min-height: var(--space-7);
+  flex-wrap: wrap;
+}
+
+/* The way back to the top, at the far end of the trail, away from the
+   chevron that goes up a level: the two do different things and a thumb
+   should not find them next to each other. */
+.knowledge-trail-top {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: none;
+  padding: 0 var(--space-2);
+  color: var(--muted);
+  font: inherit;
+  letter-spacing: inherit;
+  /* As with the root above: a form control does not take the row's capitals
+     by itself. */
+  text-transform: inherit;
+  line-height: calc(var(--space-5));
+  cursor: pointer;
+}
+
+.knowledge-trail-top:hover {
+  border-color: var(--muted);
+  color: var(--text);
+}
+
 /* The back button is where the chevron on the row that led here was, so
    the two read as the same door from both sides. */
 .knowledge-trail .icon-action {
@@ -8562,6 +8643,24 @@ button.with-icon {
 .knowledge-trail-name {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* One level of the trail: the slash and the name travel together, so a
+   trail that wraps breaks between levels rather than between a level and
+   its separator. */
+.knowledge-trail-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* The levels that were left out, where the trail is deeper than there is
+   room to write out. Not a control: the levels it stands for are reachable
+   by climbing, and a menu here would be a third way to do what the chevron
+   and the root already do. */
+.knowledge-trail-gap {
+  color: var(--muted);
 }
 
 /* Two lists live here while one is replacing the other. The one arriving

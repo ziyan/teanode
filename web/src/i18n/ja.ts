@@ -2373,6 +2373,7 @@ export const ja: Catalog = {
   'knowledge.find': 'ページを検索',
   'knowledge.waysIn': '入り口',
   'knowledge.root': 'ナレッジ',
+  'knowledge.toTop': '先頭へ',
   'knowledge.back': '戻る',
   'knowledge.into': '{name} の中身',
   'knowledge.emptyFolder': 'まだ何もありません。',
