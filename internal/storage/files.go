@@ -9,8 +9,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-
-	"github.com/ziyan/teanode/internal/util/atomicfile"
 )
 
 // Files stores opaque bytes, as distinct from messages.
@@ -66,24 +64,7 @@ func (self *filesystem) PutFile(ctx context.Context, id string, content []byte) 
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(filename), 0o700); err != nil {
-		return fmt.Errorf("storage: cannot create %s: %w", filepath.Dir(filename), err)
-	}
-
-	file, err := atomicfile.Create(filename)
-	if err != nil {
-		return fmt.Errorf("storage: cannot write %s: %w", filename, err)
-	}
-	defer func() {
-		_ = atomicfile.Discard(file)
-	}()
-	if err := file.Chmod(0o600); err != nil {
-		return fmt.Errorf("storage: cannot write %s: %w", filename, err)
-	}
-	if _, err := file.Write(content); err != nil {
-		return fmt.Errorf("storage: cannot write %s: %w", filename, err)
-	}
-	if err := atomicfile.Commit(file); err != nil {
+	if err := writeLocalFile(filename, content); err != nil {
 		return fmt.Errorf("storage: cannot write %s: %w", filename, err)
 	}
 

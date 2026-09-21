@@ -675,6 +675,7 @@ func relaySettings(configuration *config.Configuration) *mx.RelaySettings {
 
 func (self *server) openStorage(configuration *config.Configuration) error {
 	settings := &storage.Settings{
+		Mode:      configuration.Storage.Mode,
 		Directory: configuration.Path(configuration.Storage.Directory),
 		Retention: configuration.Storage.SpoolRetention.Duration(),
 		// A message a mailbox still holds outlives the retention: the row

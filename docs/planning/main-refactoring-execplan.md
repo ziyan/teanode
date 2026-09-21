@@ -33,7 +33,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): disable automatic mutation retries and make delivery retry claims disjoint across workers; durable submission identity, recovery and storage guarantees remain.
+- [ ] Milestone 4 (in progress): disable automatic mutation retries, make delivery retry claims disjoint, and define explicit storage modes with local flushes and shared-write outage tests; durable submission identity, recovery and acceptance guarantees remain.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes; mailbox drafts/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
@@ -101,6 +101,16 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: explicit `storage.mode` values are `local` and `shared`; an empty mode
+preserves existing configurations. Shared mode requires enabled S3 and an empty
+local directory. It delegates writes directly to the object store, including
+errors, and keeps no local cache. Local mode requires a directory and treats S3
+as an optional best-effort mirror. Both messages and opaque files use one local
+write helper with private creation permissions, file flush before rename, and
+directory flush after rename. This makes the required storage behavior explicit
+without silently changing existing deployments or claiming that the still-open
+submission coordinator already honors its errors.
 
 Decision: validate the application-command boundary with folder operations before
 moving draft/send acceptance. A command invoked within an existing transaction
@@ -731,3 +741,23 @@ tests pass under the race detector, including two concurrent workers with the
 first transaction held open. `make lint`, including `gogolint`, passes. This is
 a prerequisite to durable submission dispatch; acceptance, bookkeeping recovery
 and storage modes remain open.
+
+Revision note: explicit local/shared storage modes now validate in configuration
+and storage construction, and the server passes the selected mode through.
+Message and file writes share private atomic file creation and file/directory
+flushes. A fake object store verifies that shared writes report outages, local
+writes survive mirror outages, and a second storage instance reads a successful
+shared write. These tests use no network. Storage and configuration race tests
+pass. Full server acceptance and two-instance submission recovery remain open;
+these storage-instance tests alone do not satisfy that acceptance gate.
+
+Revision note: CI identified an integer-conversion warning in GraphQL page-work
+estimation. The conversion now explicitly enforces the signed 32-bit GraphQL
+integer range independently of configuration validation, with boundary tests.
+
+Validation update: the vector-enabled race suite reports 1,814 tests with one
+skip after delivery claims, storage modes and integer conversion bounds. The
+Chrome-proxy integration remains opt-in. A subsequent focused storage race run
+also covers failed-rename cleanup and the existing-spool startup adjustment.
+The stock PostgreSQL race suite reports 1,814 tests with two skips (Chrome proxy
+and the vector-extension-specific index check). Go lint and `gogolint` pass.

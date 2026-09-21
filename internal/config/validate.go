@@ -433,6 +433,19 @@ func (self *Configuration) validateIntegrations(validator *validator) {
 		validator.add("storage.directory",
 			"required unless storage.s3 is enabled: where raw messages are kept, for example spool")
 	}
+	switch self.Storage.Mode {
+	case "":
+	case "local":
+		if self.Storage.Directory == "" {
+			validator.add("storage.directory", "required in local storage mode")
+		}
+	case "shared":
+		if !self.Storage.S3.Enabled || self.Storage.Directory != "" {
+			validator.add("storage.mode", "shared mode requires storage.s3.enabled and an empty storage.directory")
+		}
+	default:
+		validator.add("storage.mode", "must be local, shared or empty")
+	}
 	if self.Storage.SpoolRetention <= 0 {
 		validator.add("storage.spoolRetention", "must be positive, for example 30d")
 	}

@@ -47,7 +47,11 @@ type Storage interface {
 
 // Settings describes where messages are kept.
 type Settings struct {
-	// Directory is the spool root. Always used.
+	// Mode is local or shared. Empty preserves existing configuration: a
+	// directory selects local storage, otherwise the object store is required.
+	Mode string
+
+	// Directory is the local spool root. Empty in shared mode.
 	Directory string
 
 	// Retention is how long a message is kept before the sweep removes it.

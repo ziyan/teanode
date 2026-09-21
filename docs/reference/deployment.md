@@ -227,7 +227,8 @@ instance its own `TEANODE_INSTANCE_ID`.
 The object store is the part that matters: without it each instance can only
 read the messages it handled itself.
 
-With it, clear `storage.directory` as well. A directory beside an object
+Set `storage.mode` to `shared` and clear `storage.directory` as well. A directory
+beside an object
 store holds only the messages the instance that handled them wrote — no
 instance has all of them, reads fall through to the store anyway, and every
 machine keeps a copy of somebody's mail that nothing else needs. Empty, and
@@ -238,6 +239,11 @@ where a directory keeps working while the network does not.
 Before clearing it on a server that has been running, check the store
 actually holds what the disk does. A mirror that could not be reached logged
 a warning and carried on, by design, so a gap is not an error anybody saw.
+
+An empty `storage.mode` preserves older configurations. Explicit `local` mode
+requires a directory and permits an optional S3 mirror; it does not guarantee
+that another instance can read a successful write during an S3 outage. Changing
+the mode does not copy existing messages or attachments into the object store.
 
 ## When it does not start
 

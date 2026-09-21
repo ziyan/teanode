@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ziyan/teanode/internal/util/atomicfile"
 	"github.com/ziyan/teanode/internal/util/bufferpool"
 	"github.com/ziyan/teanode/internal/util/mailparse"
 	"github.com/ziyan/teanode/internal/util/periodic"
@@ -24,15 +23,18 @@ const sweepInterval = time.Hour
 type filesystem struct {
 	settings *Settings
 
-	// mirror is the object store, or nil. Typed concretely rather than as
-	// Storage because the sweep needs something the interface does not have:
-	// the bucket holds every instance's messages, so expiring it cannot be
-	// driven from one instance's local files.
-	mirror *s3Storage
+	mirror objectStore
 
 	waitGroup sync.WaitGroup
 	periodic  periodic.Periodic
 	cancel    context.CancelFunc
+}
+
+// Object retention must examine the whole bucket, independently of the local
+// files: other instances can have stored messages this instance never saw.
+type objectStore interface {
+	Storage
+	Sweep(context.Context, time.Time, func(context.Context, string) (bool, error)) (int, error)
 }
 
 // Open returns storage keeping messages in a directory, in an object store,
@@ -47,12 +49,29 @@ type filesystem struct {
 // mirror and becomes the thing that has to answer: a write that cannot reach
 // it fails, where before it was a warning.
 func Open(settings *Settings) (Storage, error) {
+	switch settings.Mode {
+	case "":
+	case "local":
+		if settings.Directory == "" {
+			return nil, fmt.Errorf("storage: local mode requires a directory")
+		}
+	case "shared":
+		if settings.S3 == nil || settings.Directory != "" {
+			return nil, fmt.Errorf("storage: shared mode requires an object store and an empty directory")
+		}
+	default:
+		return nil, fmt.Errorf("storage: unknown mode %q", settings.Mode)
+	}
 	if settings.Directory == "" && settings.S3 == nil {
 		return nil, fmt.Errorf("storage: no directory and no object store configured")
 	}
 	if settings.Directory != "" {
-		if err := os.MkdirAll(settings.Directory, 0o700); err != nil {
-			return nil, fmt.Errorf("storage: cannot create %s: %w", settings.Directory, err)
+		// An existing spool can be accessible even when its parent's entries
+		// are not readable. Only a newly created root needs its parent flushed.
+		if entry, err := os.Stat(settings.Directory); err != nil || !entry.IsDir() {
+			if err := ensureLocalDirectory(settings.Directory); err != nil {
+				return nil, fmt.Errorf("storage: cannot create %s: %w", settings.Directory, err)
+			}
 		}
 	}
 
@@ -122,21 +141,7 @@ func (self *filesystem) Put(ctx context.Context, id string, headers []string, bo
 		return fmt.Errorf("storage: cannot assemble %s: %w", id, err)
 	}
 
-	file, err := atomicfile.Create(filename)
-	if err != nil {
-		return fmt.Errorf("storage: cannot write %s: %w", filename, err)
-	}
-	defer func() {
-		_ = atomicfile.Discard(file)
-	}()
-	// A stored message is somebody's mail.
-	if err := file.Chmod(0o600); err != nil {
-		return fmt.Errorf("storage: cannot write %s: %w", filename, err)
-	}
-	if _, err := file.Write(buffer.Bytes()); err != nil {
-		return fmt.Errorf("storage: cannot write %s: %w", filename, err)
-	}
-	if err := atomicfile.Commit(file); err != nil {
+	if err := writeLocalFile(filename, buffer.Bytes()); err != nil {
 		return fmt.Errorf("storage: cannot write %s: %w", filename, err)
 	}
 

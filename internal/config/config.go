@@ -852,6 +852,12 @@ type GeoIP struct {
 // store, or both. With both, the directory is the record and the store a
 // mirror. With the store alone nothing is kept on this machine.
 type Storage struct {
+	// Mode is local or shared. Local requires a directory and treats S3 as a
+	// best-effort mirror. Shared requires S3 and an empty directory, so object
+	// store failures are returned to the caller. Empty preserves the existing
+	// behavior selected by whether directory is configured.
+	Mode string `yaml:"mode,omitempty"`
+
 	// Directory holds the raw messages, relative to server.dataDirectory.
 	// They are kept out of the database because they are large, are never
 	// queried, and would make a backup expensive.

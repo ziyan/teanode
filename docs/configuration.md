@@ -886,6 +886,12 @@ that published rule data when you enable it and load it.
 
 ### `storage`
 
+**`mode`**: `local` requires a directory and treats S3 as a best-effort mirror.
+`shared` requires enabled S3 and an empty directory; object-store errors are
+returned to the caller. Use shared mode for multiple instances. Empty preserves
+existing behavior: a directory selects local storage, otherwise S3 is required.
+Changing mode does not migrate existing messages or uploaded files.
+
 **`directory`** — Directory holds the raw messages, relative to
 server.dataDirectory. They are kept out of the database because they are
 large, are never queried, and would make a backup expensive.
@@ -1536,4 +1542,3 @@ unlike a password, it cannot be guessed.
 benefit.
 
 **`expires`** — Expires, when set, is when it stops working.
-
