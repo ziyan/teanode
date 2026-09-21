@@ -43,6 +43,8 @@ type MailboxOperation interface {
 	// arrived from, for the delivery that knows; "" everywhere else.
 	AddItem(folderId, mailId, subscriptionId string, flags models.MailboxItemFlags) (*models.MailboxItem, error)
 	GetItem(itemId string) (*models.MailboxItem, error)
+	// LockItem reads current flags while excluding concurrent changes through transaction end.
+	LockItem(itemId string) (*models.MailboxItem, error)
 	ListItems(folderId string, options *ItemOptions) ([]*models.MailboxItem, error)
 	CountItems(folderId string, options *ItemOptions) (int64, error)
 
@@ -907,6 +909,29 @@ func (self *transaction) GetItem(itemId string) (*models.MailboxItem, error) {
 		return nil, nil
 	}
 	return itemFromModel(&rows[0]), nil
+}
+
+// LockItem locks the folder before the item, matching flag changes and expunges.
+// A move replaces the item identity, so rereading after the lock also detects it.
+func (self *transaction) LockItem(itemId string) (*models.MailboxItem, error) {
+	item, err := self.GetItem(itemId)
+	if err != nil || item == nil {
+		return nil, err
+	}
+	if err := lockRow(self.tx, &mailboxFolderModel{}, item.FolderID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var stored mailboxItemModel
+	if err := lockRow(self.tx, &stored, itemId); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return itemFromModel(&stored), nil
 }
 
 func (self *transaction) itemQuery(folderId string, options *ItemOptions) *gorm.DB {

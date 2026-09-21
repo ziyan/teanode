@@ -753,6 +753,19 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		}
 	})
 
+	reconciliationContext, cancelReconciliation := context.WithCancel(context.Background())
+	var reconciliationGroup sync.WaitGroup
+	reconciler := mailer.NewSubmissionReconciler(self.database)
+	reconciliation := periodic.New(reconciliationContext, &reconciliationGroup, reconciler.RunOnce, &periodic.Settings{
+		Name: "submission-reconciliation", Interval: 5 * time.Second,
+	})
+	reconciliation.Start()
+	self.onClose(func() {
+		cancelReconciliation()
+		reconciliation.Stop()
+		reconciliationGroup.Wait()
+	})
+
 	verifier, err := dns.Open(self.store, self.database, &dns.Settings{
 		Nameserver:    configuration.DNS.Nameserver,
 		CheckInterval: configuration.DNS.CheckInterval.Duration(),

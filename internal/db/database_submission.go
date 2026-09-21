@@ -26,6 +26,7 @@ type SubmissionOperation interface {
 	// workers. Reconcile and mark them in this same transaction.
 	ListSubmissionsToReconcile(limit int) ([]*models.Submission, error)
 	MarkSubmissionReconciled(ownerId, submissionId string, reconciledAt time.Time) error
+	DeferSubmissionReconciliation(ownerId, submissionId string, retryAt time.Time) error
 }
 
 type submissionModel models.Submission
@@ -85,7 +86,7 @@ func (self *transaction) ListSubmissionsToReconcile(limit int) ([]*models.Submis
 	}
 	var stored []submissionModel
 	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-		Where("reconciled_at IS NULL").Order("accepted_at, owner_id, submission_id").Limit(limit).Find(&stored).Error; err != nil {
+		Where("reconciled_at IS NULL AND COALESCE(reconcile_after, accepted_at) <= ?", time.Now()).Order("COALESCE(reconcile_after, accepted_at), owner_id, submission_id").Limit(limit).Find(&stored).Error; err != nil {
 		return nil, err
 	}
 	submissions := make([]*models.Submission, len(stored))
@@ -104,4 +105,15 @@ func (self *transaction) MarkSubmissionReconciled(ownerId, submissionId string, 
 	}
 	return self.tx.Model(&submissionModel{}).Where("owner_id = ? AND submission_id = ? AND reconciled_at IS NULL", ownerId, submissionId).
 		Update("reconciled_at", reconciledAt).Error
+}
+
+// DeferSubmissionReconciliation leaves acceptance intact while retrying mailbox work later.
+func (self *transaction) DeferSubmissionReconciliation(ownerId, submissionId string, retryAt time.Time) error {
+	if err := validateSubmissionIdentity(ownerId, submissionId); err != nil {
+		return err
+	}
+	if retryAt.IsZero() {
+		return fmt.Errorf("submission retry time is required")
+	}
+	return self.tx.Model(&submissionModel{}).Where("owner_id = ? AND submission_id = ? AND reconciled_at IS NULL", ownerId, submissionId).Update("reconcile_after", retryAt).Error
 }

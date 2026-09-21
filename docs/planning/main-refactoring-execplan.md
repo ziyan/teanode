@@ -33,14 +33,22 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition and the submission coordinator are implemented; public API integration, recovery worker, prompt dispatch and client retry identities remain.
+- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; public API integration, prompt dispatch and client retry identities remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
-- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes; mailbox drafts/send, calendar, contacts, knowledge-source and rule-update commands remain.
+- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+Recovery must not let permanently failing records occupy every oldest slot. Its
+pending query now orders by an indexed due time and failed commands persist a
+one-minute retry delay. SQL failures roll back a command savepoint before that
+delay is recorded, allowing healthy records in the batch to finish. Draft removal
+also needs to reread flags after locking: a draft converted into a regular item
+while recovery waits must survive. Folder locks precede item locks, matching the
+existing flag and expunge paths.
 
 Draft cleanup deleted stored bytes before its caller committed SQL. A later
 rollback restored the draft item and mail row but could not restore its body.
@@ -122,6 +130,16 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: run submission reconciliation independently of sending, with at most
+32 locked pending records per batch, a 30-second batch deadline, two-second
+command deadlines and time reserved to finish SQL cleanup and commit. Failed
+records wait one minute. Rationale: mailbox bookkeeping must recover after a
+restart without a model call, network delivery or a repeat acceptance. The server
+starts the worker explicitly and stops and joins it before closing the mailer.
+Migration `0092_submission_reconciliation_retry` adds the due time and replaces
+the pending index; its reverse restores the old index and loses only retry delays,
+never accepted identities or pending work. Date: 2026-09-21.
 
 Decision: use normal retention for removed drafts instead of deleting their
 message bytes inside the command transaction. Rationale: storage deletion cannot
@@ -921,3 +939,40 @@ detector after draft cleanup changes. Go lint and `gogolint` pass. Removed
 drafts now follow spool retention, including retaining unreferenced content
 when retention is disabled. The exchange sweep removes SQL rows first and
 only deletes stored bytes after that transaction commits.
+
+Revision note: `SubmissionReconciler` now runs at server startup and every five
+seconds. It applies answered/forwarded flags, removes a superseded draft and marks
+the accepted identity reconciled in one command transaction. It checks mailbox
+ownership and item membership, ignores deleted/moved references and preserves a
+draft changed into a regular item. It never calls the mail acceptor. Failures roll
+back flags, draft removal, held-reply cancellation and feedback together, then
+persist a retry time outside the failed savepoint. Later records remain eligible.
+The shared `mailbox.RemoveDraft` command now backs GraphQL cleanup as well; the
+reply feedback formatter moved to `internal/agent/feedback` to avoid importing the
+agent runtime into mailbox commands. Feedback write failures now abort cleanup
+instead of being logged while leaving its SQL transaction failed.
+
+Regressions cover fresh-worker recovery, repeated recovery without resending,
+held-reply cancellation and exactly one correction, a real constraint failure on
+the final completion write, continued processing of a healthy record, retry after
+the failure is removed, preservation of a converted draft including a concurrent
+conversion, and reversing/reapplying the retry migration without losing acceptance.
+The earlier acceptance migration test now reverses later migrations first and
+reapplies them in order. Public send adapters still use the legacy path; next add
+prompt delivery dispatch and storage-read retry handling before switching them to
+the coordinator and giving clients stable submission identities.
+
+Revision note: review found the agent's separate `discardDraft` path deleting
+bytes before its caller committed too. It now removes only the item within a
+command savepoint and leaves rows and bytes to retention, matching dashboard
+cleanup without recording a human cancellation for the agent's own action. A
+local-storage regression proves rollback restores the draft and its bytes, and
+committed removal starts retention.
+
+Validation update: the vector-enabled race suite passed with 1,843 tests and one
+expected skip before the final indexed due-time predicate and agent cleanup fix.
+The final stock PostgreSQL race suite passes with 1,844 tests and two expected
+skips. Focused agent, mailer and submission database regressions and the final
+lint and `gogolint` checks pass. Existing remote checks on the prior commit are
+all green; this change will trigger new checks when pushed. The full refactoring,
+public send integration, final deployment and complete Chrome audit remain open.

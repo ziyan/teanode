@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
+	mailboxcommands "github.com/ziyan/teanode/internal/mailbox"
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/mx"
@@ -782,38 +782,7 @@ func (self *graph) requireDraftOwner(ctx context.Context, permission models.Perm
 // removeDraft removes a superseded draft from its mailbox. Retention removes
 // unreferenced mail and bytes after commit so rollback can restore a readable draft.
 func (self *graph) removeDraft(ctx context.Context, tx db.Transaction, mailbox *models.Mailbox, itemId string) error {
-	item, _, err := self.requireOwnItem(ctx, mailbox, itemId)
-	if err != nil {
-		if errors.Is(err, api.ErrNotFound) {
-			// Already gone — saved from two tabs, or sent twice.
-			return nil
-		}
-		return err
-	}
-	if !item.Draft {
-		return fmt.Errorf("%w: %q is not a draft", api.ErrInvalidArguments, itemId)
-	}
-	// A draft the agent is holding to send: removed or rewritten by hand,
-	// it is the person's now, and the agent does not send it.
-	if held, err := tx.ListAgentReplies(&db.AgentReplyFilter{DraftItemID: item.ID, Statuses: []models.AgentReplyStatus{models.AgentReplyHeld}}, &db.Options{Limit: 1}); err != nil {
-		return err
-	} else if len(held) > 0 {
-		if _, err := tx.UpdateAgentReply(held[0].ID, func(reply *models.AgentReply) error {
-			reply.Status = models.AgentReplyCancelled
-			reply.Reason = "taken over by the person"
-			reply.DraftItemID = ""
-			return nil
-		}); err != nil {
-			return err
-		}
-		if err := agent.RecordReplyDeclined(tx, held[0], "taken over by the person, who wrote their own"); err != nil {
-			log.Warningf("cannot record the correction for reply %q: %s", held[0].ID, err)
-		}
-	}
-	if _, err := tx.DeleteItems([]string{item.ID}); err != nil {
-		return err
-	}
-	return nil
+	return translateError(mailboxcommands.RemoveDraft(ctx, tx, mailbox.ID, itemId))
 }
 
 // envelopeFromRequest is an envelope carrying where the request came from.

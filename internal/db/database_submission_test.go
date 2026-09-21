@@ -153,12 +153,17 @@ func TestSubmissionLocksAreScopedToOwnerAndReleasedOnRollback(test *testing.T) {
 func TestSubmissionMigrationCanBeReversedAndReapplied(test *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(test)
 	defer closeDatabase()
-	for _, migration := range migrations.Migrations() {
+	for migrationIndex, migration := range migrations.Migrations() {
 		if migration.ID != "0091_mail_submission" {
 			continue
 		}
-		dbtest.Exec(test, database, migration.ReverseSQL)
-		dbtest.Exec(test, database, migration.SQL)
+		allMigrations := migrations.Migrations()
+		for reverseIndex := len(allMigrations) - 1; reverseIndex >= migrationIndex; reverseIndex-- {
+			dbtest.Exec(test, database, allMigrations[reverseIndex].ReverseSQL)
+		}
+		for _, reapplied := range allMigrations[migrationIndex:] {
+			dbtest.Exec(test, database, reapplied.SQL)
+		}
 		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 			if err := transaction.CreateSubmission(submissionFixture()); err != nil {
 				test.Fatal(err)
@@ -220,4 +225,35 @@ func TestSubmissionRecoveryWorkersTakeSeparateRecords(test *testing.T) {
 	}); err != nil {
 		test.Fatal(err)
 	}
+}
+
+func TestSubmissionRetryMigrationPreservesAcceptance(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	submission := submissionFixture()
+	submission.ReconcileAfter = new(time.Now().Add(time.Hour))
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if err := transaction.CreateSubmission(submission); err != nil {
+			test.Fatal(err)
+		}
+	})
+	for _, migration := range migrations.Migrations() {
+		if migration.ID != "0092_submission_reconciliation_retry" {
+			continue
+		}
+		dbtest.Exec(test, database, migration.ReverseSQL)
+		dbtest.Exec(test, database, migration.SQL)
+		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+			stored, err := transaction.LockSubmission(submission.OwnerID, submission.SubmissionID)
+			if err != nil || stored == nil || stored.MailID != submission.MailID || stored.RequestDigest != submission.RequestDigest || stored.ReconcileAfter != nil {
+				test.Fatalf("migration lost acceptance: %+v, %v", stored, err)
+			}
+			pending, err := transaction.ListSubmissionsToReconcile(1)
+			if err != nil || len(pending) != 1 {
+				test.Fatalf("reapplied retry migration lost pending work: %d, %v", len(pending), err)
+			}
+		})
+		return
+	}
+	test.Fatal("submission retry migration is missing")
 }
