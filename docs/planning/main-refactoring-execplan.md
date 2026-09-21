@@ -36,7 +36,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries using either the stable draft key or its source item identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, agent calendar mutation retries, contact proposal acceptance and protocol adapters, knowledge-source and rule-update commands remain.
-- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; job outcomes, graph/dream extraction and benchmarks remain.
+- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; graph prompt context, recall, ranking, embedding, retrieval, indexing and note updates now live in separate files; job outcomes, dream extraction, remaining transaction adapters and benchmarks remain.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
@@ -204,6 +204,13 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Graph decomposition preserves all function bodies and shared bounds. Model
+calls live in graph_embedding.go, SQL/vector retrieval in graph_retrieval.go,
+ranking in graph_ranking.go, and prompt context, recall selection, indexing,
+note updates, word comparisons and knowledge adapters each have their own file.
+Existing database interfaces, exported methods and fallback decisions remain
+unchanged. Transaction ownership at the adapters still needs a separate change.
 
 Conversation memory retains its current request and persistence contracts while
 separating them into retrieval, request, response, preparation, application,
@@ -2200,3 +2207,30 @@ repository lint and gogolint pass. Moved comments no longer carry personal graph
 measurements or named examples; existing normalization and prompt literals stay
 unchanged. Graph/dream extraction, measurements and remaining side-effect review
 are still required by this milestone.
+
+
+Graph decomposition preserves all 61 original function bodies, verified by a
+parsed comparison that distinguishes methods with the same name on different
+receivers. The shared constants stay in graph.go; functions are grouped by
+prompt construction, recall orchestration/selection, rank fusion, embedding,
+database retrieval, vector maintenance, note updates, text comparisons and
+knowledge adapters. Existing graph, embedding, recall, twin and evidence tests
+exercise these paths without a new test that merely mirrors the file moves.
+Personal graph anecdotes were removed from moved comments; ranking constants,
+normalization literals, external method signatures and database queries stay
+unchanged.
+
+Review identified remaining transaction adapters: AskRun.ResolvePage performs
+meaningOf while its caller supplies a transaction; RecallForQuestion accepts a
+transaction but carryIndex and searchGraph open independent read transactions
+and can request an embedding. Separate model preparation from these callers
+before claiming the model/transaction audit complete. This commit isolates the
+relevant code without altering that behavior. Dream extraction, synthetic
+benchmarks, source-local measurements and the other milestones remain open.
+
+Graph validation: the complete agent package tree passes under the race detector
+against the disposable vector database. A separate standard PostgreSQL run also
+passes all 318 agent tests and reports 45.5 percent aggregate coverage. Both
+binary builds, repository lint and gogolint pass. Added-file privacy review
+finds only the existing prompt separator literal; its bytes are preserved.
+No dashboard code changes in this extraction.

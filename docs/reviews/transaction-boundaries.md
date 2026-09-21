@@ -138,3 +138,12 @@ Page creation and contact binding retain their earlier transaction and can remai
 after a later application failure. Embeddings are prepared outside both write
 transactions. This extraction preserves that boundary and does not claim that
 all graph effects from a memory run roll back together.
+
+
+Graph extraction leaves two adapter findings open. AskRun.ResolvePage accepts a
+transaction and obtains an embedding before resolvePage uses it. The memory
+tool caller therefore can hold its transaction across model work. RecallForQuestion
+accepts a caller transaction for block selection, but carryIndex and searchGraph
+open separate reads and can call the embedding provider. These need prepared
+inputs or changed transaction ownership; moving functions to separate files
+does not remove those waits or extra connections.
