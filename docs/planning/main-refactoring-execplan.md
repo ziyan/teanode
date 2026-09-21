@@ -31,7 +31,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Draft milestones, compatibility constraints, rollback procedures and acceptance gates.
 - [x] (2026-09-20) Record baseline checks and their limits.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
-- [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document limits pass; list-work bounds, command atomicity and the remaining transaction audit remain.
+- [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
 - [ ] Milestone 4 (in progress): disable automatic mutation retries; durable submission identity, recovery and storage guarantees remain.
 - [ ] Milestone 5: extract shared application commands from transport adapters.
@@ -40,6 +40,12 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+The shared API pagination helper returned an unlimited database query for omitted
+pagination or `first: 0`, despite the documented page cap. Both now select the
+1,000-row maximum, including the combined mail result. A dashboard document
+audit also found that proposal cards sent an obsolete contact argument; the
+mutation now maps its contact identifier to the existing `id` argument.
 
 GraphQL document preparation needs a separate fragment-cycle validation pass
 before the validator rules that compare expanded selections. Parser nesting and
@@ -78,6 +84,13 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: charge field selections by their requested page size at each paginated
+ancestor, including variables, variable defaults, aliases and repeated fragments.
+Omitted or nonpositive sizes use the shared 1,000-row upper bound for estimation.
+The defaults are 1,000 requested items and 200,000 weighted selections. This is a
+pagination-work estimate, not a promise about resolver SQL scans or unpaginated
+collections. Continue auditing those resource bounds with application commands.
 
 Decision: keep GraphQL response formatting and operation-selection errors
 compatible while preparing the syntax tree outside SQL. Apply the same helper
@@ -641,3 +654,16 @@ vector-enabled suite reports 1,771 tests with one Chrome-proxy integration skip;
 the embedded dashboard test now runs after the production build. Go lint and
 `gogolint` pass. List-work limits, broader query headroom measurement and command
 failure semantics remain open within Milestone 2.
+
+Revision note: pagination-work checks now run during preparation. Fifteen cases
+cover literal and variable sizes, object pagination, defaults, nested pages,
+fragment expansion, aliases and operation selection. Shared pagination tests
+cover omitted, zero, oversized and overflowing sizes while retaining cursors
+and offsets. API and configuration tests pass under race detection. An audit of
+226 statically resolved dashboard documents found maximum depth 7, 222 tokens,
+117 expanded selections and 50,000 weighted selections when omitted page sizes
+are charged at 1,000. All fit the defaults after correcting the contact-proposal
+mutation; a source-document regression test preserves that correction. Client
+and agent document preparation tests also pass. The remaining transaction audit
+must review cross-domain list aggregation and unpaginated collection sizes;
+these estimates do not replace database limits or command-level atomicity.

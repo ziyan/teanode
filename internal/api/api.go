@@ -96,10 +96,11 @@ type Pagination struct {
 	After *string `json:"after"`
 }
 
-// Limit returns how many results the caller asked for, or zero for no limit.
+// Limit returns a bounded page size. Omitted and zero sizes select the largest
+// page; zero must not reach the database, where it means no limit.
 func (self *Pagination) Limit() int {
-	if self == nil || self.First == nil {
-		return 0
+	if self == nil || self.First == nil || *self.First == 0 || *self.First > MaximumPageSize {
+		return MaximumPageSize
 	}
 	return int(*self.First)
 }
@@ -112,15 +113,9 @@ func (self *Pagination) Options() *db.Options {
 // OptionsWith is Options plus the aggregation pipeline and the fields it is
 // allowed to name.
 func (self *Pagination) OptionsWith(aggregations Aggregations, columns aggregate.Columns) *db.Options {
-	options := &db.Options{Aggregations: aggregations, Columns: columns}
+	options := &db.Options{Aggregations: aggregations, Columns: columns, Limit: uint64(self.Limit())}
 	if self == nil {
 		return options
-	}
-	// Bounded either way: a page is what the dashboard reads, and a caller
-	// asking for everything gets the largest page instead of the table.
-	options.Limit = MaximumPageSize
-	if self.First != nil && *self.First < MaximumPageSize {
-		options.Limit = *self.First
 	}
 	if self.Offset != nil {
 		options.Offset = *self.Offset

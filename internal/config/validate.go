@@ -63,6 +63,12 @@ func (self *Configuration) Validate() error {
 	if self.GraphQL.MaximumSelectionCount < 1 || self.GraphQL.MaximumSelectionCount > 100000 {
 		validator.add("graphql.maximumSelectionCount", "must be between 1 and 100000")
 	}
+	if self.GraphQL.MaximumListItemCount < 1 || self.GraphQL.MaximumListItemCount > 100000 {
+		validator.add("graphql.maximumListItemCount", "must be between 1 and 100000")
+	}
+	if self.GraphQL.MaximumWorkCount < 1 || self.GraphQL.MaximumWorkCount > 100000000 {
+		validator.add("graphql.maximumWorkCount", "must be between 1 and 100000000")
+	}
 	self.validateListen(validator)
 	self.validateTls(validator)
 	self.validateDatabase(validator)

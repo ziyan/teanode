@@ -911,4 +911,6 @@ type GraphQL struct {
 	MaximumDepth          int `yaml:"maximumDepth"`
 	MaximumTokenCount     int `yaml:"maximumTokenCount"`
 	MaximumSelectionCount int `yaml:"maximumSelectionCount"`
+	MaximumListItemCount  int `yaml:"maximumListItemCount"`
+	MaximumWorkCount      int `yaml:"maximumWorkCount"`
 }

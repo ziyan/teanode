@@ -327,6 +327,22 @@ selections visited across operations and fragment definitions, including repeate
 fragment expansion and aliases. This is a document-work limit, not a result-row
 limit; individual resolvers retain their pagination bounds.
 
+**`maximumListItemCount`** (default `1000`, range `1` to `100000`): largest
+explicit `first` argument, including `pagination.first`. Variables and variable
+defaults count too. Omitted, null and nonpositive sizes are charged as 1,000 rows,
+so setting this below 1,000 requires callers to supply a smaller positive size.
+Resolvers may enforce a smaller cap of their own.
+
+**`maximumWorkCount`** (default `200000`, range `1` to `100000000`): maximum
+pagination-weighted field selections in the selected operation. Each field is
+charged once per requested item at every paginated ancestor. Aliases and repeated
+fragments count separately; conditional selections count even when skipped.
+This bounds pagination-driven work, not the size of unpaginated collections,
+SQL scans, or model calls. Resolver-specific limits still apply.
+
+The shared mail-audit pagination helper treats omitted and zero sizes as a
+1,000-row page. They no longer request an unlimited database result.
+
 ### `listen`
 
 **`smtpIncoming`** — SMTPIncoming receives mail from the internet. Port 25 in

@@ -42,7 +42,11 @@ func (self *graph) prepareGraphRequest(request *graphRequest) (graphql.ExecutePa
 	if !validation.IsValid {
 		return graphql.ExecuteParams{}, &graphql.Result{Errors: validation.Errors}
 	}
-	if _, err := selectGraphOperation(document, request.OperationName); err != nil {
+	operation, err := selectGraphOperation(document, request.OperationName)
+	if err != nil {
+		return graphql.ExecuteParams{}, &graphql.Result{Errors: gqlerrors.FormatErrors(err)}
+	}
+	if err := checkGraphWork(&self.schema, document, operation, request.Variables, limits); err != nil {
 		return graphql.ExecuteParams{}, &graphql.Result{Errors: gqlerrors.FormatErrors(err)}
 	}
 	return graphql.ExecuteParams{
