@@ -41,6 +41,9 @@ var authorizing = map[string]bool{
 	// requirePermission(agent:use), plus the caller's agent, which the Ask
 	// operations all need and none of which may run without.
 	"requireAgentPerson": true,
+	// The same agent permission check in a short transaction, with current
+	// account state loaded for HTTP query execution.
+	"requireRecallPerson": true,
 	// The mailbox holding a draft, refused unless the caller owns it.
 	"requireDraftOwner": true,
 	// requirePermission(contacts:use), plus the caller's account; and the

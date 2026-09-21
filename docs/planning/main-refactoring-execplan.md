@@ -36,11 +36,16 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries using either the stable draft key or its source item identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, agent calendar mutation retries, contact proposal acceptance and protocol adapters, knowledge-source and rule-update commands remain.
-- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; graph prompt context, recall, ranking, embedding, retrieval, indexing and note updates now live in separate files; job outcomes, dream extraction, memory-tool page preparation now happens before its write transaction; job/recall transaction adapters and benchmarks remain.
+- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; graph prompt context, recall, ranking, embedding, retrieval, indexing and note updates now live in separate files; job outcomes, dream extraction, memory-tool page preparation now happens before its write transaction; HTTP recall now owns short read phases outside model calls; remaining job/model adapters and benchmarks remain.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+- The HTTP query wrapper must return resolver errors from the transaction callback.
+  A regression caught a successful partial write being committed when an error was
+  retained only for the GraphQL response. Returning the error rolls back that field
+  while allowing its sibling to execute.
 
 Calendar proposal cards previously saved an event and accepted the offer in two
 separate mutations. A lost response between them could create another event.
@@ -204,6 +209,15 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+HTTP query root resolvers now own their transactions; mutations keep their
+request transaction. Schema construction installs the query wrappers once.
+Recall owns its authorization/read phases and calls its embedding provider
+without an open request transaction, then revalidates account state, permission
+and active agent before returning results. RecallForQuestion no longer accepts
+a caller transaction. The query-scope consequence and compatibility limits are
+recorded in the refactoring decision, including independent field failures and
+materialized nested output objects.
 
 The internal Remembering interface prepares a page resolver before the memory
 tool begins its write transaction. PreparePage normalizes the identity and
@@ -2266,3 +2280,47 @@ PostgreSQL run passes all 258 tests in the agent and memory-tool packages,
 including each new transaction/fallback regression. Both builds, repository lint
 and gogolint pass. Privacy review includes the new fixture and staged secret
 checks pass. No dashboard rendering or tool JSON changes.
+
+
+Recall review traced the open transaction to graphView, which previously wrapped
+all GraphQL execution. A helper-only change could not release that connection.
+HTTP queries now execute with root-resolver transactions installed at schema
+construction. Each ordinary root field reads current account state and effective
+permissions in its own transaction. Mutations keep their request transaction;
+subscriptions retain their existing path. Recall is the query with separate
+short authorization phases, independent graph reads and model work outside SQL.
+It rechecks current account state, permission and active agent before returning.
+
+HTTP integration tests use the real schema and a local embedding provider. They
+exercise recall under an alias and directive, denied permission, skipped recall,
+permission revoked by the provider, a disabled account and a disabled agent.
+Provider calls must see no active request transaction, no nested transaction may
+be acquired, and revoked results must not be returned. A separate transport test
+checks two query aliases receive two transactions, two mutation fields retain
+one, and a skipped query field acquires none. Existing recall ranking and usage
+bookkeeping contracts remain covered by the agent suite. Remaining dream
+extraction, measurements, lifecycle review and deployment gates are still open.
+
+The first full-suite run found the new authorization helper was absent from the
+source-level authorization inventory. It is now named requireRecallPerson and
+registered there as the short-transaction form of requireAgentPerson. The HTTP
+regression also checks an anonymous caller, which must receive no recalled
+content and trigger no model call. The focused authorization and HTTP tests pass;
+complete database-image runs are repeated after this correction.
+
+The final query-isolation regression caught a partial-write bug in the first
+wrapper: it retained a resolver error for GraphQL but returned nil to the
+transaction callback, committing a successful write before the error. The
+wrapper now returns the resolver error from the callback. The regression creates
+a user, rejects a duplicate, checks that neither write persists, and verifies
+that a sibling root field still succeeds. The focused race run passes after
+this correction; full database-image validation is repeated for the final code.
+
+Final HTTP query validation passes: the standard PostgreSQL suite runs 2,028
+tests with two expected skips and 42.3% aggregate coverage; the vector suite
+runs 2,028 tests with one expected skip and 42.4% coverage. Both binaries build,
+repository lint and gogolint pass, and the focused HTTP/authorization race tests
+pass. Added and untracked text passes the privacy scan. The lint invocation
+required adding the installed Node runtime to PATH; its rerun passed. No dashboard
+rendering changed in this step. Full deployment and final Chrome gates remain
+open alongside the remaining milestones.

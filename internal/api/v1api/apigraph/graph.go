@@ -1,6 +1,7 @@
 package apigraph
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"mime"
@@ -107,6 +108,13 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 	ctx = api.ContextWithResponse(ctx, response)
 	ctx = api.ContextWithAuthenticatedUsername(ctx, username)
 	ctx = db.ContextWithAuditPrincipal(ctx, self.auditPrincipal(request, user))
+
+	operation, err := selectGraphOperation(prepared.AST, prepared.OperationName)
+	if err == nil && operation.Operation == "query" {
+		prepared.Context = context.WithValue(ctx, queryExecutionKey{}, &queryExecution{Username: username, User: user})
+		writeGraphResult(response, graphql.Execute(prepared))
+		return
+	}
 
 	var result *graphql.Result
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {

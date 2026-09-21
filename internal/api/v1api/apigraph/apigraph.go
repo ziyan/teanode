@@ -98,6 +98,7 @@ func New(database db.Database, configuration config.Store, messages storage.Stor
 		return nil, err
 	}
 	self.schema = schema
+	self.wrapQueryTransactions()
 	return self, nil
 }
 

@@ -147,7 +147,11 @@ fact still commit together. Provider failure preserves word-based resolution.
 A local-provider regression checks that embedding calls see no active transaction
 and that a rejected fact write leaves no newly created page.
 
-RecallForQuestion still accepts a caller transaction for block selection while
-carryIndex and searchGraph open separate reads and can call the embedding
-provider. That path still needs changed transaction ownership; the memory-tool
-fix does not remove those waits or extra connections.
+HTTP recall no longer has a request transaction around its model work. Ordinary
+HTTP query root resolvers use their own transactions; recall instead checks the
+current account, permission and active agent in short phases before and after
+its separate graph reads and embedding call. RecallForQuestion no longer takes
+a caller transaction. Alias/directive and revocation integration tests confirm
+no active transaction during the provider call and no nested read transaction.
+Mutation and subscription ownership is unchanged. Query field transaction
+failures are independent; a query is not an atomic multi-field command.
