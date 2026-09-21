@@ -134,24 +134,7 @@ func (self *Agent) runExtract(ctx context.Context, run *Run) error {
 	}
 	self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Found %s in %q", describeProposals(proposals), mail.Subject))
 	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		insights, err := tx.GetMailInsights(run.Mailbox.ID, []string{mail.ID})
-		if err != nil {
-			return err
-		}
-		current := insights[mail.ID]
-		if current == nil {
-			return nil // the insight went away while the run was thinking
-		}
-		// Whatever the person has already done stays done: a proposal they
-		// accepted or dismissed is not offered again by a second run.
-		kept := make([]models.MailProposal, 0, len(current.Proposals)+len(proposals))
-		for _, proposal := range current.Proposals {
-			if proposal.Status != models.MailProposalOffered {
-				kept = append(kept, proposal)
-			}
-		}
-		current.Proposals = append(kept, proposals...)
-		return tx.PutMailInsight(current)
+		return tx.ReplaceMailProposals(run.Mailbox.ID, mail.ID, proposals)
 	})
 }
 

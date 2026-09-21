@@ -46,8 +46,10 @@ Calendar proposal cards previously saved an event and accepted the offer in two
 separate mutations. A lost response between them could create another event.
 Acceptance now validates the original offer under its insight row lock, then
 commits the event, proposal status and retained receipt in one transaction.
-Agent extraction and triage still need review: full-row insight replacement can
-overwrite an acceptance after reading an older insight.
+The follow-up separates sorting updates from proposal replacement: sorting
+preserves proposals, and extraction locks the insight before retaining decisions
+and replacing outstanding offers. Repeated extraction of semantically equivalent
+offers and contact proposal acceptance still require review.
 
 
 Calendar retry review: a caller-retained UID alone cannot prevent resurrection
@@ -1899,3 +1901,18 @@ both production webpack builds, both binaries, repository lint and gogolint pass
 The schema regression now validates the proposal component and its shared
 calendar hook after the mutation moved between them. Privacy review included
 untracked files. This checkpoint does not complete the remaining milestones.
+
+
+Insight replacement follow-up: PutMailInsight now preserves existing proposals
+alongside research notes. Extraction uses ReplaceMailProposals, which locks the
+current insight and updates only its proposals. This removes both the stale
+acceptance overwrite and the unrelated sorting-field overwrite. Regressions
+exercise stale sorting after acceptance/research and extraction waiting for an
+uncommitted acceptance. The change preserves the existing policy of retaining
+resolved offers and replacing outstanding offers; semantic deduplication of new
+model output remains a separate review item.
+
+Insight follow-up validation: database, API and all agent packages pass with the
+race detector against the disposable vector database. Both binaries, repository
+lint and gogolint pass. No dashboard files changed after the 51-test UI suite and
+Chrome proposal audit. Staged and untracked privacy checks are clean.

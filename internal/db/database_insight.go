@@ -16,8 +16,8 @@ import (
 // InsightOperation is what the agent worked out about messages, and the
 // transcripts of it working.
 type InsightOperation interface {
-	// PutMailInsight writes or replaces the insight for a message in a
-	// mailbox.
+	// PutMailInsight writes sorting fields, preserving existing proposals and
+	// research notes. New insights may include initial proposals and notes.
 	PutMailInsight(insight *models.MailInsight) error
 
 	// SetMailInsightNotes writes what research found onto an insight.
@@ -28,6 +28,7 @@ type InsightOperation interface {
 	GetMailInsights(mailboxId string, mailIds []string) (map[string]*models.MailInsight, error)
 	LockMailInsight(mailboxId, mailId string) (*models.MailInsight, error)
 	SetMailProposalStatus(mailboxId, mailId string, index int, proposalStatus string) error
+	ReplaceMailProposals(mailboxId, mailId string, proposals []models.MailProposal) error
 
 	// ListMailWithoutInsight is the newest messages of a mailbox — in any
 	// folder but Junk, Trash, Drafts and Sent, since a rule may have filed
@@ -246,7 +247,7 @@ func (self *transaction) PutMailInsight(insight *models.MailInsight) error {
 	}
 	return self.tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "mail_id"}, {Name: "mailbox_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"agent_id", "category", "priority", "needs_reply", "research_asked", "extract_asked", "summary", "action_items", "proposals", "model", "run_id", "created_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"agent_id", "category", "priority", "needs_reply", "research_asked", "extract_asked", "summary", "action_items", "model", "run_id", "created_at"}),
 	}).Create(model).Error
 }
 
@@ -845,4 +846,24 @@ func (self *transaction) SetMailProposalStatus(mailboxId, mailId string, index i
 		return ErrNotFound
 	}
 	return nil
+}
+
+// ReplaceMailProposals replaces outstanding offers while preserving the person's
+// decisions. The row lock prevents acceptance from being lost to a reading run.
+func (self *transaction) ReplaceMailProposals(mailboxId, mailId string, proposals []models.MailProposal) error {
+	insight, err := self.LockMailInsight(mailboxId, mailId)
+	if err != nil || insight == nil {
+		return err
+	}
+	kept := make([]models.MailProposal, 0, len(insight.Proposals)+len(proposals))
+	for _, proposal := range insight.Proposals {
+		if proposal.Status != models.MailProposalOffered {
+			kept = append(kept, proposal)
+		}
+	}
+	encoded, err := json.Marshal(append(kept, proposals...))
+	if err != nil {
+		return err
+	}
+	return self.tx.Model(&mailInsightModel{}).Where("mailbox_id = ? AND mail_id = ?", mailboxId, mailId).Update("proposals", encoded).Error
 }
