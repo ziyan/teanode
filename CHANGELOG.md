@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.1] - 2026-09-21
+
+### Fixed
+
+- Token totals larger than two billion no longer make a usage query fail. (#98)
+- A night now stops when the model provider says the account cannot pay,
+  instead of asking again for every remaining item. (#99)
+
 ## [0.47.0] - 2026-09-21
 
 ### Added
