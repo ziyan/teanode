@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/config"
-	"github.com/ziyan/teanode/internal/contacts"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
@@ -685,13 +684,18 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 				continue
 			}
 			ready.Node = node
-			// A page about a person is a person the address book should
-			// know: one list of people, not two.
-			if node.Kind == models.NodePerson && node.ContactID == "" {
-				if err := self.bindContact(tx, run.Owner, node); err != nil {
-					log.Warningf("cannot keep a contact for %q: %s", node.Path, err)
-				}
-			}
+			// A page about a person is not a contact. The graph files
+			// whoever turns up in a commit log, a chat channel or a
+			// document, and that is not the same set as the people
+			// somebody keeps: it filed five hundred and eighteen cards
+			// with a name and nothing else on them, among them a release
+			// bot and a build account, and the address book stopped being
+			// an address book.
+			//
+			// A card is made when a person makes one, or when they promote
+			// somebody the mail has learned. What the graph knows about a
+			// person lives on their page, where it can be wrong without
+			// reaching a phone.
 		}
 		return nil
 	}); err != nil {
@@ -1360,57 +1364,6 @@ func saidByThePerson(said map[string]bool, messageId string) bool {
 	return messageId != "" && said[messageId]
 }
 
-// bindContact keeps a person the agent learned about in the address book,
-// and points the page at them. The address book is the only list of
-// people this server keeps (see the decision record of 2026-09-13), so a
-// page about somebody and a card for them are two views of one thing.
-func (self *Agent) bindContact(tx db.Transaction, owner *models.User, node *models.AgentNode) error {
-	name := strings.TrimSpace(node.Name)
-	if name == "" {
-		return nil
-	}
-	books, err := tx.ListAddressBooks(owner.ID)
-	if err != nil || len(books) == 0 {
-		return err
-	}
-	book := books[0]
-	// Somebody they already keep, matched by name, is not written again.
-	existing, err := tx.ListContacts(book.ID, name, 5)
-	if err != nil {
-		return err
-	}
-	for _, contact := range existing {
-		if strings.EqualFold(strings.TrimSpace(contact.Name), name) {
-			_, err := tx.PutAgentNode(&models.AgentNode{
-				AgentID: node.AgentID, Path: node.Path, Kind: node.Kind, Name: node.Name,
-				Aliases: node.Aliases, Summary: node.Summary, ContactID: contact.ID,
-				Pinned: node.Pinned, Importance: node.Importance,
-			})
-			return err
-		}
-	}
-	// A card with a name and nothing else is a valid card. The page is
-	// where what the agent learned lives; this is only the entry that
-	// says the person exists.
-	built, err := contacts.Build(nil, &contacts.Fields{Name: &name})
-	if err != nil {
-		return err
-	}
-	contact, err := tx.PutContact(&models.Contact{
-		AddressBookID: book.ID, UID: built.UID, Name: built.Name, Card: string(built.Card),
-	})
-	if err != nil {
-		return err
-	}
-	_, err = tx.PutAgentNode(&models.AgentNode{
-		AgentID: node.AgentID, Path: node.Path, Kind: node.Kind, Name: node.Name,
-		Aliases: node.Aliases, Summary: node.Summary, ContactID: contact.ID,
-		Pinned: node.Pinned, Importance: node.Importance,
-	})
-	return err
-}
-
-// whenHappened reads the date the run gave, in the person's zone.
 func whenHappened(run *Run, said string) *time.Time {
 	said = strings.TrimSpace(said)
 	if said == "" || strings.EqualFold(said, "null") {
