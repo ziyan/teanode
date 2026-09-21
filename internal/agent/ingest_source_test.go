@@ -52,7 +52,9 @@ func TestIngestionRejectsRevokedAndChangedSources(test *testing.T) {
 				test.Fatalf("progress=%v", err)
 			}
 			counts := db.SourceCounts{Documents: 1}
-			worker.sweepUnseen(test.Context(), source, map[string]any{cursorPassSeen: 1}, time.Now(), &counts)
+			if _, err := worker.completeIngestPass(test.Context(), source, map[string]any{cursorPassSeen: 1}, time.Now(), counts); !errors.Is(err, errIngestSourceChanged) {
+				test.Fatalf("completion=%v", err)
+			}
 			if change != "deleted" {
 				if count := dbtest.QueryString(test, database, `SELECT count(*)::text FROM agent_document`); count != "1" {
 					test.Fatalf("revoked sweep removed documents: %s", count)

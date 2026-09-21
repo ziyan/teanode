@@ -122,5 +122,7 @@ sweeping. Source revocation or configuration changes reject the old job's writes
 A document replacement writes all three representations in one transaction,
 including deletion of all symbols when the new file has none. Failed page writes
 prevent cursor advancement, and committed entries can be replayed by external ID.
-Page effects and the cursor are still separate transactions; typed page completion
-and the remaining model-driven effects need further review.
+Per-entry page effects and continuation writes remain separate and replayable.
+Completed-pass sweeping, refreshed counts and cursor reset now share one source-locked
+transaction; failure to record completion rolls the sweep back. Model-driven
+effects and source reset generations still require review.

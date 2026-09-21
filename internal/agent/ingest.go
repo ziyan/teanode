@@ -235,40 +235,23 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 				return self.markSource(ctx, source, cursor, counts, source.More || midway, waiting.Error(), when)
 			}
 			failure = err.Error()
+			more = true
 			break
 		}
 		if next == "" {
-			// The end of the tree. The cursor is cleared so the next run
-			// starts at the beginning again: a source that kept its
-			// cursor only ever saw what sorted after the last thing it
-			// read, so a file added anywhere earlier was never noticed.
-			//
-			// Starting over is cheap. The server sends the hash of
-			// everything it holds and the program leaves out whatever
-			// still matches, so a second pass over an unchanged tree
-			// carries the names and none of the text.
-			delete(cursor, "after")
-			delete(cursor, "before")
-			delete(cursor, cursorKnownID)
-			delete(cursor, cursorKnownSent)
-			self.sweepUnseen(ctx, source, cursor, startedPass, &counts)
-			// What the source holds now, counted. The running total
-			// added every document a pass filed, and a document filed
-			// again under the same name was counted twice: a converted
-			// archive of four hundred thousand units showed seven
-			// hundred thousand.
-			if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-				documents, chunks, err := tx.CountAgentSourceDocuments(source.ID)
-				if err != nil {
-					return err
-				}
-				counts.Documents, counts.Chunks = documents, chunks
+			completion, err := self.completeIngestPass(ctx, source, cursor, startedPass, counts)
+			if errors.Is(err, errIngestSourceChanged) {
 				return nil
-			}); err != nil {
-				log.Warningf("cannot count what source %q holds: %s", source.ID, err)
 			}
+			if err != nil {
+				failure = err.Error()
+				more = true
+				break
+			}
+			cursor, counts = completion.Cursor, completion.Counts
 			break
 		}
+
 		// A files source pages by path and a sent source by date; both
 		// call it "where we got to".
 		if source.Kind == models.SourceSent {

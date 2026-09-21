@@ -6,8 +6,6 @@ import (
 	"reflect"
 	"testing"
 	"time"
-
-	"github.com/ziyan/teanode/internal/db"
 )
 
 func TestDeviceCursorPreservesLegacyMaps(test *testing.T) {
@@ -65,10 +63,7 @@ func TestInvalidDeviceCursorStopsBeforeDeviceAccess(test *testing.T) {
 }
 
 func TestFuturePassCannotSweepFreshDocuments(test *testing.T) {
-	worker := &Agent{}
-	counts := db.SourceCounts{Documents: 7}
-	worker.sweepUnseen(test.Context(), nil, map[string]any{cursorPassSeen: 1}, time.Now().Add(time.Hour), &counts)
-	if counts.Documents != 7 {
-		test.Fatal("future pass changed document count")
+	if shouldSweepIngestPass(map[string]any{cursorPassSeen: 1}, time.Now().Add(time.Hour), time.Now()) {
+		test.Fatal("future pass authorized sweeping")
 	}
 }

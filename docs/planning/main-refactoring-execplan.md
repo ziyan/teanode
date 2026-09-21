@@ -2079,3 +2079,25 @@ Device-cursor validation: all agent and computer packages pass with the race
 detector against the disposable database. Final focused cursor/sweep regressions,
 both binary builds, repository lint and gogolint pass. Privacy checks include the
 new parser and fixtures. No dashboard presentation or persisted key names change.
+
+
+Pass completion now returns a typed ingestCompletion only after one transaction
+has locked the current source, removed eligible unseen documents, counted the
+remaining documents/chunks and recorded the cleared cursor. The input cursor is
+cloned, so a failed progress write leaves both persisted and caller positions
+available for retry. Unknown cursor fields survive completion. Empty, legacy
+partial and future-dated passes remain ineligible to delete documents.
+
+Completion records More until embedding and final bookkeeping finish, so a
+crash between those phases does not strand an unscheduled source. Page errors
+also retain More, including failures on the first page. A trigger/constraint
+regression proves that failure to record completion rolls back the sweep; a
+successful retry clears only pass keys and stores accurate counts. Per-entry
+writes remain independently committed and replayable; model/graph effects and
+source reset generations still need review before claiming full page atomicity.
+
+Pass-completion validation: database and all agent packages pass with the race
+detector against the disposable vector database. Focused sweep rollback, empty
+pass and source-revocation tests pass, as do both builds, repository lint and
+gogolint. Privacy review includes the new completion fixture. No dashboard code
+changed. Remaining model effects, source generations and scan contracts stay open.

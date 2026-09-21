@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"maps"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -54,63 +55,47 @@ func markPassStart(source *models.AgentKnowledgeSource, cursor map[string]any, n
 	return started
 }
 
-// sweepUnseen removes what the source no longer has, now that a pass has
-// walked its tree to the end.
-//
-// Until this, nothing ever took a document away. A file deleted from a
-// checkout, a page deleted from a wiki, a chat export converted to
-// records under new names: the row stayed, its passages stayed, and both
-// went on being searched and dreamed over. Every entry a pass is shown
-// -- filed, unchanged, or refused, because a thing the source holds and
-// cannot read is still a thing it holds -- has its seen time written; so
-// what is still older than the time this pass began is what the source
-// stopped reporting.
-func (self *Agent) sweepUnseen(ctx context.Context, source *models.AgentKnowledgeSource, cursor map[string]any, startedPass time.Time, counts *db.SourceCounts) {
-	// However this ends, the next pass over this source starts its own.
-	defer func() {
-		delete(cursor, cursorPassStarted)
-		delete(cursor, cursorPassSeen)
-		delete(cursor, cursorPassRefused)
-	}()
-	// The clock can move backward while a device request is in flight.
-	// A future cutoff would also remove documents just filed by this pass.
-	if startedPass.IsZero() || startedPass.After(time.Now()) {
-		return
-	}
-	// What this pass refused is what the row says, not every pass added
-	// together.
-	if _, kept := cursor[cursorPassRefused]; kept {
-		counts.Refused = countInCursor(cursor, cursorPassRefused)
-	}
-	// A pass shown nothing at all is not somebody deleting everything
-	// they own. It is a folder nothing mounted, or a checkout moved, and
-	// the answer to either is to wait for the next pass rather than to
-	// empty the source.
-	if seen := countInCursor(cursor, cursorPassSeen); seen <= 0 {
-		log.Debugf("source %q reached the end of its tree having been shown nothing; leaving what it holds alone", source.ID)
-		return
-	}
-	removed := 0
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		if err := lockIngestSource(tx, source); err != nil {
+type ingestCompletion struct {
+	Cursor map[string]any
+	Counts db.SourceCounts
+}
+
+func shouldSweepIngestPass(cursor map[string]any, startedPass, now time.Time) bool {
+	return !startedPass.IsZero() && !startedPass.After(now) && countInCursor(cursor, cursorPassSeen) > 0
+}
+
+// completeIngestPass commits sweeping, counts and cursor reset together.
+// Its returned cursor is usable only after the transaction succeeds.
+func (self *Agent) completeIngestPass(ctx context.Context, source *models.AgentKnowledgeSource, cursor map[string]any, startedPass time.Time, counts db.SourceCounts) (*ingestCompletion, error) {
+	completion := &ingestCompletion{Cursor: maps.Clone(cursor), Counts: counts}
+	err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		if err := lockIngestSource(transaction, source); err != nil {
 			return err
 		}
-		removed, err = tx.DeleteAgentDocumentsUnseen(source.ID, startedPass)
-		return err
-	}); err != nil {
-		log.Warningf("cannot remove what source %q no longer holds: %s", source.ID, err)
-		return
+		if walksAWholeTree(source) && shouldSweepIngestPass(cursor, startedPass, time.Now()) {
+			if _, err := transaction.DeleteAgentDocumentsUnseen(source.ID, startedPass); err != nil {
+				return err
+			}
+		}
+		if _, exists := cursor[cursorPassRefused]; exists && !startedPass.IsZero() {
+			completion.Counts.Refused = countInCursor(cursor, cursorPassRefused)
+		}
+		documents, chunks, err := transaction.CountAgentSourceDocuments(source.ID)
+		if err != nil {
+			return err
+		}
+		completion.Counts.Documents, completion.Counts.Chunks = documents, chunks
+		for _, key := range []string{"after", "before", cursorKnownID, cursorKnownSent, cursorPassStarted, cursorPassSeen, cursorPassRefused} {
+			delete(completion.Cursor, key)
+		}
+		// A crash before embedding/final bookkeeping must still leave the source due.
+		nextRun := time.Now().Add(ingestAgain)
+		return transaction.MarkAgentSourceRun(source.ID, completion.Cursor, completion.Counts, true, "", &nextRun)
+	})
+	if err != nil {
+		return nil, err
 	}
-	if removed == 0 {
-		return
-	}
-	// Off the source's own count, which is what the person is shown, the
-	// same way the documents this pass filed went on to it.
-	counts.Documents -= removed
-	if counts.Documents < 0 {
-		counts.Documents = 0
-	}
-	log.Infof("source %q no longer has %d document(s); removed them with their passages", source.ID, removed)
+	return completion, nil
 }
 
 // partWayThroughTree says whether the cursor stopped in the middle of a
