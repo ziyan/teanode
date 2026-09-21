@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.5] - 2026-09-21
+
+### Fixed
+
+- A page whose name is written with a hyphen, with a space or with neither
+  is now one page rather than one for each spelling. (#104)
+
 ## [0.47.4] - 2026-09-21
 
 ### Fixed
