@@ -400,3 +400,27 @@ func gitIn(b *testing.B, where string, arguments ...string) {
 		b.Skipf("git is not usable here: %s: %s", err, output)
 	}
 }
+
+// A cached manifest carries file names, never permission to keep reading them.
+func TestAResumedScanRefusesAForgottenRoot(test *testing.T) {
+	root := treeOfNotes(test, 4)
+	options := allowing(test, root)
+	firstPage, err := RunScan(test.Context(), options, &ScanArguments{
+		Root: root, KnownID: "revoked-pass", Known: map[string]string{}, Most: 1,
+	})
+	if err != nil {
+		test.Fatal(err)
+	}
+	if firstPage.Next == "" || len(firstPage.Entries) == 0 {
+		test.Fatal("expected a file and a continuation before removing permission")
+	}
+	if err := ForgetScanRoot(options, root); err != nil {
+		test.Fatal(err)
+	}
+	resumedPage, err := RunScan(test.Context(), options, &ScanArguments{
+		Root: root, KnownID: "revoked-pass", After: firstPage.Next, Most: 1,
+	})
+	if err == nil || resumedPage != nil {
+		test.Fatalf("resuming a forgotten root returned page %v and error %v", resumedPage, err)
+	}
+}
