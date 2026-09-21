@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -189,5 +190,26 @@ func TestARefusedAccountEndsTheNight(t *testing.T) {
 	}
 	if budget.reserve() {
 		t.Fatal("and it claimed the cost of another call")
+	}
+}
+
+// The night's row said the model did not answer whenever the reading gave
+// up, including when what stopped it was the day's allowance. The two look
+// the same from the reading's side: a turn the allowance stopped is noted
+// and ends without an error, so the batch comes back unanswered either way.
+func TestTheRowSaysWhatStoppedTheReading(t *testing.T) {
+	quiet := readingStopReason(nil)
+	if quiet != "the model did not answer; the reading stops here" {
+		t.Errorf("with no budget to read: %q", quiet)
+	}
+	if got := readingStopReason(&Budget{Limit: 1000, Used: 10}); got != quiet {
+		t.Errorf("with room left: %q", got)
+	}
+	spent := readingStopReason(&Budget{CostLimit: 70, Cost: 70.01, Currency: "USD"})
+	if !strings.Contains(spent, "is used up") || strings.Contains(spent, "the model did not answer") {
+		t.Errorf("with the day's money gone: %q", spent)
+	}
+	if !strings.HasSuffix(spent, "; the reading stops here") {
+		t.Errorf("and it still says the reading stops: %q", spent)
 	}
 }
