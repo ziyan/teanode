@@ -79,6 +79,18 @@ type GraphOperation interface {
 	// for a tree view and for the move above.
 	ListAgentNodesUnder(agentId, path string, limit int) ([]*models.AgentNode, error)
 
+	// FindAgentNodeByName is the page filed directly under a parent that
+	// answers to a name, by its name or by one of its aliases, whatever
+	// slug its path uses.
+	//
+	// Asked of the database rather than by listing the parent and looking
+	// through what comes back. That listing is of the whole subtree,
+	// sorted by path and capped, so under a parent with more pages beneath
+	// it than the cap the one being looked for was usually not in what
+	// came back, the caller concluded there was no such page, and it made
+	// a second one.
+	FindAgentNodeByName(agentId, parent string, kind models.AgentNodeKind, name string) (*models.AgentNode, error)
+
 	// AddAgentFact puts a sentence on a page, taking the next number.
 	AddAgentFact(fact *models.AgentFact) (*models.AgentFact, error)
 
@@ -772,6 +784,35 @@ func (self *transaction) ListAgentNodesUnder(agentId, path string, limit int) ([
 		query = query.Where(`("path" = ? OR "path" LIKE ?)`, path, likeEscaped(path)+"/%")
 	}
 	return self.nodesFrom(query.Order(`"path" ASC`).Limit(limit))
+}
+
+// FindAgentNodeByName finds a direct child of a parent by what it is
+// called. See the interface for why this is a query and not a scan.
+func (self *transaction) FindAgentNodeByName(agentId, parent string, kind models.AgentNodeKind, name string) (*models.AgentNode, error) {
+	wanted := strings.TrimSpace(name)
+	if agentId == "" || wanted == "" {
+		return nil, nil
+	}
+	// A direct child and not a descendant: the path begins with the
+	// parent and has no further slash in what follows it. At the root the
+	// path has no slash at all.
+	query := self.tx.Where(`"agent_id" = ? AND "kind" = ?`, agentId, string(kind))
+	if parent == "" {
+		query = query.Where(`strpos("path", '/') = 0`)
+	} else {
+		query = query.Where(`"path" LIKE ? AND strpos(substr("path", ?), '/') = 0`,
+			likeEscaped(parent)+"/%", len(parent)+2)
+	}
+	// By the name it is given or by any name it also answers to. Both are
+	// compared without case, the way the caller compared them.
+	query = query.Where(`(lower("name") = lower(?) OR EXISTS (`+
+		`SELECT 1 FROM jsonb_array_elements_text("aliases") AS alias WHERE lower(alias) = lower(?)))`,
+		wanted, wanted)
+	found, err := self.nodesFrom(query.Order(`"created_at" ASC`).Limit(1))
+	if err != nil || len(found) == 0 {
+		return nil, err
+	}
+	return found[0], nil
 }
 
 // --- facts ------------------------------------------------------------
