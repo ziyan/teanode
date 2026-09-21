@@ -879,6 +879,19 @@ func (self *graph) AgentGraphNeighbours(ctx context.Context, arguments AgentGrap
 	if err != nil {
 		return nil, err
 	}
+	// The strongest links, not every link. A page may be linked to
+	// hundreds of others -- a person's own page is linked to much of what
+	// they touched -- and what is returned here is what the explorer
+	// draws. Expanding such a page put eight hundred circles on the canvas
+	// at once and the drawing was gone. Children have always stopped at
+	// this number; links never did, though the note below has always said
+	// the two share the room.
+	sort.SliceStable(edges, func(one, two int) bool {
+		return edges[one].Weight > edges[two].Weight
+	})
+	if len(edges) > neighbourLimit {
+		edges = edges[:neighbourLimit]
+	}
 	far := make([]string, 0, len(edges))
 	for _, edge := range edges {
 		if edge.FromID == node.ID {
