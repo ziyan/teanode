@@ -13,6 +13,16 @@ permissions:
   contents: write
   packages: write
 
+# One release at a time. Every run pushes the image as :latest as well as
+# under its own version, and a run takes about half an hour, so releases cut
+# minutes apart overlap and whichever finishes last decides what :latest
+# means. Six of them once ran at once and only finished in the right order by
+# luck. Queue instead of cancelling: a release killed part way through would
+# leave the tag published and the image missing.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Release
