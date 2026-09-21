@@ -35,12 +35,19 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
-- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, proposal-card and agent calendar mutation retries, contact protocol adapters, knowledge-source and rule-update commands remain.
+- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, agent calendar mutation retries, contact proposal acceptance and protocol adapters, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+Calendar proposal cards previously saved an event and accepted the offer in two
+separate mutations. A lost response between them could create another event.
+Acceptance now validates the original offer under its insight row lock, then
+commits the event, proposal status and retained receipt in one transaction.
+Agent extraction and triage still need review: full-row insight replacement can
+overwrite an acceptance after reading an older insight.
 
 
 Calendar retry review: a caller-retained UID alone cannot prevent resurrection
@@ -193,6 +200,14 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Calendar proposal acceptance uses optional source-item, proposal-index and
+expected-offer arguments on the existing identified save command. Ordinary
+request JSON omits these fields to preserve existing receipt digests. Accepted
+proposal receipts record their mail-write permission requirement for replay,
+lookup and cancellation. Migration 0098 adds the requirement with a false default
+for older receipts; its reverse preserves receipt identities. Pending proposal
+requests must be discarded and commands drained before downgrade.
 
 Pending calendar requests can now be stopped without allowing an older in-flight
 mutation to commit afterward. Migration 0097 stores account/request cancellations
@@ -1860,3 +1875,27 @@ accepted and unaccepted cancellation for both cards; they report no duplicate
 mutation or runtime exception. Screenshots show spaced recovery controls. The
 harness now waits for enabled buttons before clicking, so a pending network call
 cannot cause a test click to be silently ignored.
+
+
+Calendar proposal acceptance now uses the shared retained calendar request hook.
+The card freezes the exact corrected fields before sending, resolves completion
+before retrying, and supports durable cancellation. When a reload already shows
+the proposal as accepted, the retained original offer keeps recovery accessible.
+The server rejects a changed or already accepted offer, including a second
+request identifier, and updates only the selected proposal status. Tests cover
+status/receipt failure, caller rollback, concurrent acceptance, permission
+revocation, stale offers and recovery after an accepted response is lost.
+Contact proposal atomicity and agent insight replacement remain open.
+
+Chrome production-dashboard checks at 1200px and 390px confirm readable recovery
+controls and no horizontal overflow. A synthetic acceptance fixture drops the
+save response and returns an accepted offer after reload; retry resolves the
+receipt with exactly one save call and no runtime exceptions. Screenshots were
+visually inspected. This remains UI fixture coverage, not full deployment proof.
+
+Proposal recovery validation: the full standard-PostgreSQL race suite passes
+1,968 tests with two expected skips. All 51 dashboard tests, TypeScript, ESLint,
+both production webpack builds, both binaries, repository lint and gogolint pass.
+The schema regression now validates the proposal component and its shared
+calendar hook after the mutation moved between them. Privacy review included
+untracked files. This checkpoint does not complete the remaining milestones.

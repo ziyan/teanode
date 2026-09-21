@@ -26,6 +26,8 @@ type InsightOperation interface {
 	// GetMailInsights reads the insights a mailbox has for these messages,
 	// by mail id.
 	GetMailInsights(mailboxId string, mailIds []string) (map[string]*models.MailInsight, error)
+	LockMailInsight(mailboxId, mailId string) (*models.MailInsight, error)
+	SetMailProposalStatus(mailboxId, mailId string, index int, proposalStatus string) error
 
 	// ListMailWithoutInsight is the newest messages of a mailbox — in any
 	// folder but Junk, Trash, Drafts and Sent, since a rule may have filed
@@ -816,3 +818,31 @@ func (self *transaction) LastAgentPersonWordAt(agentId string) (*time.Time, erro
 }
 
 var _ = gorm.ErrRecordNotFound
+
+// LockMailInsight serializes proposal acceptance with other insight writers.
+func (self *transaction) LockMailInsight(mailboxId, mailId string) (*models.MailInsight, error) {
+	var found []mailInsightModel
+	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("mailbox_id = ? AND mail_id = ?", mailboxId, mailId).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return insightFromModel(&found[0])
+}
+
+// SetMailProposalStatus changes only one proposal status, preserving unrelated
+// insight fields. Callers lock the insight and validate the proposal first.
+func (self *transaction) SetMailProposalStatus(mailboxId, mailId string, index int, proposalStatus string) error {
+	if index < 0 || (proposalStatus != models.MailProposalAccepted && proposalStatus != models.MailProposalDismissed) {
+		return ErrInvalidArguments
+	}
+	update := self.tx.Exec(`UPDATE mail_insight SET proposals = jsonb_set(proposals, ARRAY[?::text, 'status'], to_jsonb(?::text)) WHERE mailbox_id = ? AND mail_id = ? AND jsonb_array_length(proposals) > ?`, fmt.Sprint(index), proposalStatus, mailboxId, mailId, index)
+	if update.Error != nil {
+		return update.Error
+	}
+	if update.RowsAffected != 1 {
+		return ErrNotFound
+	}
+	return nil
+}

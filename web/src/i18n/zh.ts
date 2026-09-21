@@ -1877,6 +1877,7 @@ export const zh: Catalog = {
   'proposal.addFailed': '无法添加。',
   'proposal.saveFailed': '无法保存。',
   'proposal.dismissFailed': '操作失败。',
+  'proposal.pendingElsewhere': '另一项日历更改尚未完成。请打开日历处理后再保存此建议。',
   'proposal.noCalendar': '没有可添加的日历。',
   'proposal.noAddressBook': '没有可保存的通讯录。',
   'invitation.untitled': '无标题',

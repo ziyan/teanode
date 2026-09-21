@@ -1952,6 +1952,7 @@ export const en = {
   'proposal.addFailed': 'It could not be added.',
   'proposal.saveFailed': 'It could not be saved.',
   'proposal.dismissFailed': 'That did not work.',
+  'proposal.pendingElsewhere': 'Another calendar change is pending. Open Calendar to resolve it before keeping this offer.',
   'proposal.noCalendar': 'There is no calendar to add it to.',
   'proposal.noAddressBook': 'There is no address book to save it in.',
   'invitation.untitled': 'Untitled',

@@ -1942,6 +1942,7 @@ export const ja: Catalog = {
   'proposal.addFailed': '追加できませんでした。',
   'proposal.saveFailed': '保存できませんでした。',
   'proposal.dismissFailed': 'うまくいきませんでした。',
+  'proposal.pendingElsewhere': '別のカレンダー変更が保留中です。この提案を保存する前にカレンダーを開いて解決してください。',
   'proposal.noCalendar': '追加できるカレンダーがありません。',
   'proposal.noAddressBook': '保存できるアドレス帳がありません。',
   'invitation.untitled': '無題',

@@ -12,10 +12,12 @@ interface PendingCalendarMutation extends CalendarMutation {
 }
 const SAVE = `mutation ($requestId: String!, $calendarId: String!, $id: String, $summary: String, $location: String,
   $description: String, $startsAt: String, $endsAt: String, $allDay: Boolean,
-  $timezone: String, $recurrence: String, $status: String, $attendees: [String!]) {
+  $timezone: String, $recurrence: String, $status: String, $attendees: [String!],
+  $proposalItemId: String, $proposalIndex: Int, $expectedProposal: String) {
   SaveCalendarEvent(requestId: $requestId, calendarId: $calendarId, id: $id, summary: $summary, location: $location,
     description: $description, startsAt: $startsAt, endsAt: $endsAt, allDay: $allDay,
-    timezone: $timezone, recurrence: $recurrence, status: $status, attendees: $attendees) { id }
+    timezone: $timezone, recurrence: $recurrence, status: $status, attendees: $attendees, proposalItemId: $proposalItemId,
+    proposalIndex: $proposalIndex, expectedProposal: $expectedProposal) { id }
 }`
 const DELETE = `mutation ($requestId: String!, $calendarId: String!, $id: String!) {
   DeleteCalendarEvent(requestId: $requestId, calendarId: $calendarId, id: $id)

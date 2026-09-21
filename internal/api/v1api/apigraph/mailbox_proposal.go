@@ -1,7 +1,9 @@
 package apigraph
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -18,10 +20,9 @@ import (
 // waves it away. This is where their answer is recorded, so that a card they
 // have dealt with does not come back.
 //
-// Adding it is the ordinary mutation for adding one -- SaveCalendarEvent or
-// SaveContact -- called by the page with whatever is in the form, because the
-// person may correct what was found before they keep it. This only says what
-// became of the offer.
+// Calendar acceptance binds the corrected fields to the original offer in one
+// retained request. Contact saves still use their ordinary mutation followed by
+// a status update. Dismissal only records what became of the offer.
 
 // SetMailProposalStatusArguments name one proposal on one message.
 type SetMailProposalStatusArguments struct {
@@ -50,17 +51,58 @@ func (self *graph) SetMailProposalStatus(ctx context.Context, arguments SetMailP
 		return nil, fmt.Errorf("%w: a proposal is accepted or dismissed", api.ErrInvalidArguments)
 	}
 	tx := self.transaction(ctx)
-	insights, err := tx.GetMailInsights(mailbox.ID, []string{items[0].MailID})
+	insight, err := tx.LockMailInsight(mailbox.ID, items[0].MailID)
 	if err != nil {
 		return nil, err
 	}
-	insight := insights[items[0].MailID]
 	if insight == nil || arguments.Index < 0 || arguments.Index >= len(insight.Proposals) {
 		return nil, api.ErrNotFound
 	}
 	insight.Proposals[arguments.Index].Status = status
-	if err := tx.PutMailInsight(insight); err != nil {
+	if err := tx.SetMailProposalStatus(mailbox.ID, items[0].MailID, arguments.Index, status); err != nil {
 		return nil, translateError(err)
+	}
+	return insight, nil
+}
+
+// calendarProposal checks the exact offer the person saw before changing it.
+func (self *graph) calendarProposal(ctx context.Context, arguments SaveCalendarEventArguments) (*models.MailInsight, error) {
+	if arguments.ProposalIndex == nil || arguments.ExpectedProposal == "" {
+		return nil, api.ErrInvalidArguments
+	}
+	items, mailbox, err := self.requireItems(ctx, models.PermissionMailWrite, []string{arguments.ProposalItemID})
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, api.ErrNotFound
+	}
+	insight, err := self.transaction(ctx).LockMailInsight(mailbox.ID, items[0].MailID)
+	if err != nil {
+		return nil, err
+	}
+	index := *arguments.ProposalIndex
+	if insight == nil || index < 0 || index >= len(insight.Proposals) {
+		return nil, api.ErrNotFound
+	}
+	proposal := insight.Proposals[index]
+	if proposal.Kind != "event" || proposal.Status != "" {
+		return nil, fmt.Errorf("%w: this proposal is no longer available", api.ErrInvalidArguments)
+	}
+	var expected models.MailProposal
+	if err := json.Unmarshal([]byte(arguments.ExpectedProposal), &expected); err != nil {
+		return nil, api.ErrInvalidArguments
+	}
+	original, err := json.Marshal(proposal)
+	if err != nil {
+		return nil, err
+	}
+	supplied, err := json.Marshal(expected)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(original, supplied) {
+		return nil, fmt.Errorf("%w: this proposal changed; refresh it before accepting", api.ErrInvalidArguments)
 	}
 	return insight, nil
 }

@@ -31,8 +31,9 @@ type RequestOutcome struct {
 
 // RequestResult records the affected object and the permission used for mail.
 type RequestResult struct {
-	ObjectID           string
-	IsMailSendRequired bool
+	ObjectID            string
+	IsMailSendRequired  bool
+	IsMailWriteRequired bool
 }
 
 // RequestAction changes the event and accepts any mail on this transaction,
@@ -71,6 +72,9 @@ func (self *Commands) ExecuteRequest(ctx context.Context, principal *access.Prin
 			if receipt.CalendarID != request.CalendarID || receipt.Operation != request.Operation || receipt.RequestDigest != requestDigest {
 				return fmt.Errorf("%w: calendar request identifier already used for different content", db.ErrInvalidArguments)
 			}
+			if receipt.IsMailWriteRequired && !principal.Permissions.Has(models.PermissionMailWrite) {
+				return db.ErrNotFound
+			}
 			if receipt.IsMailSendRequired && !principal.Permissions.Has(models.PermissionMailSend) {
 				return db.ErrNotFound
 			}
@@ -98,10 +102,13 @@ func (self *Commands) ExecuteRequest(ctx context.Context, principal *access.Prin
 		if err != nil {
 			return err
 		}
+		if commandResult.IsMailWriteRequired && !principal.Permissions.Has(models.PermissionMailWrite) {
+			return db.ErrNotFound
+		}
 		if commandResult.IsMailSendRequired && !principal.Permissions.Has(models.PermissionMailSend) {
 			return db.ErrNotFound
 		}
-		receipt = &models.CalendarRequestReceipt{UserID: principal.User.ID, RequestID: request.RequestID, Operation: request.Operation, CalendarID: request.CalendarID, ObjectID: commandResult.ObjectID, IsMailSendRequired: commandResult.IsMailSendRequired, RequestDigest: requestDigest, CompletedAt: time.Now().Truncate(time.Microsecond)}
+		receipt = &models.CalendarRequestReceipt{UserID: principal.User.ID, RequestID: request.RequestID, Operation: request.Operation, CalendarID: request.CalendarID, ObjectID: commandResult.ObjectID, IsMailSendRequired: commandResult.IsMailSendRequired, IsMailWriteRequired: commandResult.IsMailWriteRequired, RequestDigest: requestDigest, CompletedAt: time.Now().Truncate(time.Microsecond)}
 		if err := transaction.CreateCalendarRequest(receipt); err != nil {
 			return err
 		}
@@ -128,6 +135,9 @@ func (self *Commands) CancelRequest(ctx context.Context, principal *access.Princ
 			return err
 		}
 		if receipt != nil {
+			if receipt.IsMailWriteRequired && !principal.Permissions.Has(models.PermissionMailWrite) {
+				return db.ErrNotFound
+			}
 			if receipt.IsMailSendRequired && !principal.Permissions.Has(models.PermissionMailSend) {
 				return db.ErrNotFound
 			}

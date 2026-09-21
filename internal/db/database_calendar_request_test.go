@@ -124,3 +124,28 @@ func TestCalendarCancellationMigrationPreservesCompletedReceipts(test *testing.T
 	}
 	test.Fatal("calendar cancellation migration is missing")
 }
+
+func TestCalendarMailWritePermissionMigrationPreservesReceipt(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if err := transaction.CreateCalendarRequest(&models.CalendarRequestReceipt{UserID: "owner", RequestID: "proposal", Operation: "save", CalendarID: "calendar", ObjectID: "event", RequestDigest: strings.Repeat("a", 64), CompletedAt: time.Now(), IsMailWriteRequired: true}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	for _, migration := range migrations.Migrations() {
+		if migration.ID != "0098_calendar_request_mail_write" {
+			continue
+		}
+		dbtest.Exec(test, database, migration.ReverseSQL)
+		dbtest.Exec(test, database, migration.SQL)
+		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+			receipt, err := transaction.GetCalendarRequest("owner", "proposal")
+			if err != nil || receipt == nil || receipt.ObjectID != "event" || receipt.IsMailWriteRequired {
+				test.Fatalf("reapplied receipt=%+v, %v", receipt, err)
+			}
+		})
+		return
+	}
+	test.Fatal("calendar mail-write permission migration is missing")
+}

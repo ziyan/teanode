@@ -143,6 +143,11 @@ type DeleteCalendarEventArguments struct {
 }
 
 type SaveCalendarEventArguments struct {
+	// These optional fields bind a corrected event to the offer being accepted.
+	// Omit them from ordinary request digests for compatibility with old receipts.
+	ProposalItemID   string `json:"proposalItemId,omitempty" graphapi:"nullable"`
+	ProposalIndex    *int   `json:"proposalIndex,omitempty" graphapi:"nullable"`
+	ExpectedProposal string `json:"expectedProposal,omitempty" graphapi:"nullable"`
 	// RequestID is retained by the caller across retries of the exact same input.
 	RequestID  string `json:"requestId" graphapi:"nullable"`
 	CalendarID string `json:"calendarId"`
@@ -422,6 +427,9 @@ func eventView(object *models.CalendarObject, whole bool) (*CalendarEventView, e
 
 func (self *graph) SaveCalendarEvent(ctx context.Context, arguments SaveCalendarEventArguments) (*CalendarEventView, error) {
 	if arguments.RequestID == "" {
+		if arguments.ProposalItemID != "" || arguments.ProposalIndex != nil || arguments.ExpectedProposal != "" {
+			return nil, api.ErrInvalidArguments
+		}
 		view, _, err := self.saveCalendarEvent(ctx, arguments)
 		return view, err
 	}
@@ -441,7 +449,7 @@ func (self *graph) SaveCalendarEvent(ctx context.Context, arguments SaveCalendar
 		if err != nil {
 			return calendarcommands.RequestResult{}, err
 		}
-		return calendarcommands.RequestResult{ObjectID: saved.ID, IsMailSendRequired: isMailSendRequired}, nil
+		return calendarcommands.RequestResult{ObjectID: saved.ID, IsMailSendRequired: isMailSendRequired, IsMailWriteRequired: arguments.ProposalItemID != ""}, nil
 	})
 	if err != nil {
 		return nil, translateError(err)
@@ -469,6 +477,15 @@ func (self *graph) saveCalendarEvent(ctx context.Context, arguments SaveCalendar
 	if err != nil {
 		return nil, false, err
 	}
+	var proposalInsight *models.MailInsight
+	if arguments.ProposalItemID != "" {
+		proposalInsight, err = self.calendarProposal(ctx, arguments)
+		if err != nil {
+			return nil, false, err
+		}
+	} else if arguments.ProposalIndex != nil || arguments.ExpectedProposal != "" {
+		return nil, false, api.ErrInvalidArguments
+	}
 	isMailSendRequired := false
 	kept, err := calendarcommands.New(self.transaction(ctx)).SaveEvent(ctx, principal, calendarcommands.EventRequest{CalendarID: arguments.CalendarID, ID: arguments.ID}, func(ctx context.Context, transaction db.Transaction, existing *models.CalendarObject) (*calendar.Parsed, error) {
 		parsed, err := buildSaved(&arguments, existing, organizer)
@@ -486,6 +503,11 @@ func (self *graph) saveCalendarEvent(ctx context.Context, arguments SaveCalendar
 	}
 	if err != nil {
 		return nil, false, translateError(err)
+	}
+	if proposalInsight != nil {
+		if err := self.transaction(ctx).SetMailProposalStatus(proposalInsight.MailboxID, proposalInsight.MailID, *arguments.ProposalIndex, models.MailProposalAccepted); err != nil {
+			return nil, false, translateError(err)
+		}
 	}
 	view, err := eventView(kept, true)
 	return view, isMailSendRequired, err
