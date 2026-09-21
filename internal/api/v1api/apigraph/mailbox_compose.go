@@ -44,6 +44,9 @@ type MailboxComposeQuery interface {
 }
 
 type MailboxComposeMutation interface {
+	// Prevent an uncertain send, or recover its existing acceptance.
+	CancelMailboxSubmission(ctx context.Context, arguments GetMailboxSubmissionArguments) (*MailboxSubmission, error)
+
 	// Send a message from a mailbox, as one of its addresses
 	SendMailboxMessage(ctx context.Context, arguments SendMailboxMessageArguments) (*SendMailboxMessageReturnValue, error)
 
@@ -121,7 +124,28 @@ func (self *graph) GetMailboxSubmission(ctx context.Context, arguments GetMailbo
 	if accepted == nil || accepted.MailboxID != mailbox.ID {
 		return nil, nil
 	}
-	return &MailboxSubmission{SubmissionID: accepted.SubmissionID, MailID: accepted.MailID, SentItemID: accepted.SentItemID, AcceptedAt: accepted.AcceptedAt, IsReconciled: accepted.ReconciledAt != nil}, nil
+	return mailboxSubmission(accepted), nil
+}
+
+// CancelMailboxSubmission returns nil only when this identity cannot send later.
+// A non-nil result means acceptance won the race; accepted mail is not recalled.
+func (self *graph) CancelMailboxSubmission(ctx context.Context, arguments GetMailboxSubmissionArguments) (*MailboxSubmission, error) {
+	principal, err := self.requirePermission(ctx, models.PermissionMailSend)
+	if err != nil {
+		return nil, err
+	}
+	accepted, err := mailer.NewSubmissionCoordinator(self.transaction(ctx), self.mailer).Cancel(ctx, principal, arguments.MailboxID, arguments.SubmissionID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return mailboxSubmission(accepted), nil
+}
+
+func mailboxSubmission(accepted *models.Submission) *MailboxSubmission {
+	if accepted == nil {
+		return nil
+	}
+	return &MailboxSubmission{SubmissionID: accepted.SubmissionID, MailID: accepted.MailID, SentItemID: accepted.SentItemID, AcceptedAt: accepted.AcceptedAt, IsReconciled: accepted.ReconciledAt != nil}
 }
 
 type SendMailboxMessageArguments struct {
@@ -261,6 +285,9 @@ func (self *graph) SendMailboxMessage(ctx context.Context, arguments SendMailbox
 	})
 	if errors.Is(err, mailer.ErrSubmissionConflict) {
 		return nil, fmt.Errorf("%w: submission identifier already used for different content", api.ErrInvalidArguments)
+	}
+	if errors.Is(err, mailer.ErrSubmissionCancelled) {
+		return nil, fmt.Errorf("%w: submission was cancelled", api.ErrInvalidArguments)
 	}
 	if err != nil {
 		return nil, translateError(err)

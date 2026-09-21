@@ -22,6 +22,9 @@ import (
 // different request. The accepted result cannot be replaced or sent again.
 var ErrSubmissionConflict = errors.New("submission identifier already used for different content")
 
+// ErrSubmissionCancelled means a cancelled identifier cannot accept new mail.
+var ErrSubmissionCancelled = errors.New("submission was cancelled")
+
 type submissionTransactions interface {
 	TransactionContext(context.Context, func(db.Transaction) error) error
 }
@@ -64,6 +67,37 @@ type SubmissionCoordinator struct {
 // NewSubmissionCoordinator accepts a database or an existing transaction scope.
 func NewSubmissionCoordinator(transactions submissionTransactions, acceptor SubmissionAcceptor) *SubmissionCoordinator {
 	return &SubmissionCoordinator{transactions: transactions, acceptor: acceptor}
+}
+
+// Cancel prevents this identity from accepting mail, or returns its existing
+// acceptance. A successful nil result is safe to abandon, even if an earlier
+// send request arrives later. It does not recall mail already accepted.
+func (self *SubmissionCoordinator) Cancel(ctx context.Context, principal *access.Principal, mailboxId, submissionId string) (*models.Submission, error) {
+	if principal == nil || principal.User == nil || principal.Permissions == nil || !principal.Permissions.Has(models.PermissionMailSend) {
+		return nil, db.ErrNotFound
+	}
+	var accepted *models.Submission
+	err := self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
+		mailbox, err := transaction.GetMailbox(mailboxId)
+		if err != nil {
+			return err
+		}
+		if mailbox == nil || mailbox.UserID != principal.User.ID {
+			return db.ErrNotFound
+		}
+		accepted, err = transaction.CancelSubmission(principal.User.ID, submissionId)
+		if err != nil {
+			return err
+		}
+		if accepted != nil && accepted.MailboxID != mailbox.ID {
+			return db.ErrNotFound
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return accepted, nil
 }
 
 // Submit accepts a new request once, or returns its original persisted result.
@@ -112,6 +146,11 @@ func (self *SubmissionCoordinator) Submit(ctx context.Context, principal *access
 			}
 			outcome = &SubmissionOutcome{Submission: stored, IsReplay: true}
 			return nil
+		}
+		if isCancelled, err := transaction.IsSubmissionCancelled(principal.User.ID, request.SubmissionID); err != nil {
+			return err
+		} else if isCancelled {
+			return ErrSubmissionCancelled
 		}
 		if err := validateSubmissionItems(transaction, request); err != nil {
 			return err

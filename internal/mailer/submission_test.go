@@ -290,3 +290,74 @@ func TestSubmissionTakeoverRollsBackWithFailedAcceptance(test *testing.T) {
 		}
 	})
 }
+
+func TestSubmissionCancellationPreventsDelayedAcceptance(test *testing.T) {
+	database, principal, mailbox, acceptor := coordinatorFixture(test)
+	coordinator := NewSubmissionCoordinator(database, acceptor)
+	request := SubmissionRequest{SubmissionID: "cancelled-request", MailboxID: mailbox.ID, RequestContent: []byte(`{"subject":"Fixture"}`)}
+	for range 2 {
+		accepted, err := coordinator.Cancel(context.Background(), principal, mailbox.ID, request.SubmissionID)
+		if err != nil || accepted != nil {
+			test.Fatalf("cancel = %+v, %v", accepted, err)
+		}
+	}
+	if _, err := coordinator.Submit(context.Background(), principal, request, prepareSubmissionFixture); !errors.Is(err, ErrSubmissionCancelled) {
+		test.Fatalf("delayed send = %v", err)
+	}
+	if acceptor.acceptCount.Load() != 0 {
+		test.Fatal("cancelled request reached acceptance")
+	}
+	request.SubmissionID = "replacement-request"
+	if _, err := coordinator.Submit(context.Background(), principal, request, prepareSubmissionFixture); err != nil {
+		test.Fatal(err)
+	}
+	accepted, err := coordinator.Cancel(context.Background(), principal, mailbox.ID, request.SubmissionID)
+	if err != nil || accepted == nil || accepted.MailID == "" {
+		test.Fatalf("accepted send cancellation = %+v, %v", accepted, err)
+	}
+}
+
+func TestSubmissionCancellationRollsBackWithParent(test *testing.T) {
+	database, principal, mailbox, acceptor := coordinatorFixture(test)
+	request := SubmissionRequest{SubmissionID: "rollback-request", MailboxID: mailbox.ID, RequestContent: []byte(`{"subject":"Fixture"}`)}
+	injectedErr := errors.New("outer failure")
+	err := database.TransactionContext(context.Background(), func(transaction db.Transaction) error {
+		if _, err := NewSubmissionCoordinator(transaction, acceptor).Cancel(context.Background(), principal, mailbox.ID, request.SubmissionID); err != nil {
+			return err
+		}
+		return injectedErr
+	})
+	if !errors.Is(err, injectedErr) {
+		test.Fatal(err)
+	}
+	if _, err := NewSubmissionCoordinator(database, acceptor).Submit(context.Background(), principal, request, prepareSubmissionFixture); err != nil {
+		test.Fatal(err)
+	}
+}
+
+func TestSubmissionCancellationAndAcceptanceHaveOneWinner(test *testing.T) {
+	database, principal, mailbox, acceptor := coordinatorFixture(test)
+	coordinator := NewSubmissionCoordinator(database, acceptor)
+	request := SubmissionRequest{SubmissionID: "racing-request", MailboxID: mailbox.ID, RequestContent: []byte(`{"subject":"Fixture"}`)}
+	var outcome *SubmissionOutcome
+	var accepted *models.Submission
+	var sendError, cancelError error
+	var group sync.WaitGroup
+	group.Go(func() {
+		outcome, sendError = coordinator.Submit(context.Background(), principal, request, prepareSubmissionFixture)
+	})
+	group.Go(func() {
+		accepted, cancelError = coordinator.Cancel(context.Background(), principal, mailbox.ID, request.SubmissionID)
+	})
+	group.Wait()
+	if cancelError != nil {
+		test.Fatal(cancelError)
+	}
+	if accepted == nil {
+		if !errors.Is(sendError, ErrSubmissionCancelled) || outcome != nil || acceptor.acceptCount.Load() != 0 {
+			test.Fatalf("cancel won: %+v, %v, count=%d", outcome, sendError, acceptor.acceptCount.Load())
+		}
+	} else if sendError != nil || outcome == nil || outcome.Submission.MailID != accepted.MailID || acceptor.acceptCount.Load() != 1 {
+		test.Fatalf("accept won: %+v, %+v, %v", accepted, outcome, sendError)
+	}
+}

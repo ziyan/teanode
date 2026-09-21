@@ -33,7 +33,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; dashboard retry retention and domain send adapters remain.
+- [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries of the same draft identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing; dashboard retry retention and domain send adapters remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
@@ -41,6 +41,15 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+A missing acceptance record does not prove that a timed-out send has stopped:
+the original request might acquire its identity lock after the lookup completes.
+Allowing the editor to create a fresh send then can accept two messages. A
+cancellation command now acquires the same identity lock and either returns the
+existing acceptance or commits a permanent cancellation. Later requests with
+that identifier are rejected before composition. The composer can safely resume
+editing only after that command confirms cancellation; a failed cancellation
+response remains uncertain and must be retried with the same identifier.
 
 Scheduled answers and goal notifications used the same legacy mail send path.
 A scheduled retry could generate a different answer and send it again after
@@ -158,6 +167,16 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: add durable submission cancellation in migration 0093 and expose
+`CancelMailboxSubmission` through the shared coordinator. The command requires
+mail-send permission and an owned mailbox. It returns the accepted submission
+when sending won, or null when the identifier has been cancelled. Cancellation
+is not recall. Keep records separate from accepted mail so recovery workers and
+existing acceptance readers cannot mistake a cancelled request for a sent mail.
+Rationale: a read-only lookup cannot exclude a delayed original send. All sending
+instances must understand cancellation before clients rely on this guarantee;
+downgrading discards it. Date: 2026-09-21.
 
 Decision: identify an agent mail notification by owner and job, not generated
 answer content or the schedule identifier. Each schedule occurrence and goal
@@ -1187,3 +1206,29 @@ Validation update: the full vector-enabled race suite passes with 1,872 tests
 and one expected browser integration skip. Focused notification, schedule and
 goal tests pass, as do lint and gogolint. No dashboard code changed in this
 revision; full Chrome and deployment acceptance remain open.
+
+Revision note: composer review found that safe return to editing after an
+uncertain send requires a committed cancellation, not an absent lookup result.
+Migration 0093 adds owner-scoped cancelled identities, with reverse SQL and no
+cascading reference to retained mail. `SubmissionCoordinator.Cancel` serializes
+with acceptance on the existing identity lock. `Submit` refuses cancelled
+identifiers before preparation; a different identifier still permits an edited
+message. The new API mutation returns the original acceptance if sending won,
+and null only when cancellation has committed at the request boundary.
+
+Regression tests cover cancellation before a delayed send, repeat cancellation,
+a distinct replacement send, acceptance winning before cancellation, concurrent
+acceptance and cancellation, parent rollback, API ownership and send permission,
+and reversing/reapplying the migration. Rollout must stop old sending instances:
+a binary predating this change does not consult cancellation records. Downgrade
+also drops those records, so discard outstanding client requests before using an
+older server. The dashboard still needs to retain the exact request and identity,
+expose retry and return-to-edit actions, and pass component and Chrome checks.
+This revision establishes that prerequisite and does not complete the dashboard.
+
+Validation update: the full standard PostgreSQL race suite passes with 1,878
+tests and two expected skips. The first full run caught the resolver's missing
+explicit permission-helper call, despite authorization inside the coordinator;
+the adapter now follows that convention, and the complete rerun passes. Focused
+API, persistence and coordinator cancellation tests, lint and gogolint pass.
+The new migration has been reversed and reapplied in an isolated test database.

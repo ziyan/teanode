@@ -80,3 +80,10 @@ still returns its document error to the outer transaction. A shared command's
 failure is rolled back in both paths, but the adapters' treatment of successful
 siblings is not yet unified. That remaining compatibility decision must be tested
 before changing the agent adapter's document-wide behavior.
+
+Submission cancellation uses its own coordinator command scope. It obtains the
+same owner/identifier lock as acceptance, returns an already accepted submission
+unchanged, or writes a durable cancellation. The send coordinator checks that
+record before preparation. A rolled-back cancellation cannot block a later send;
+a committed cancellation blocks even an original request that arrives afterward.
+The API returns that result only after the request transaction commits.

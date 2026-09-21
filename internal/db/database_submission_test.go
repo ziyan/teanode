@@ -257,3 +257,31 @@ func TestSubmissionRetryMigrationPreservesAcceptance(test *testing.T) {
 	}
 	test.Fatal("submission retry migration is missing")
 }
+
+func TestSubmissionCancellationMigrationReversesAndReapplies(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if _, err := transaction.CancelSubmission("fixture-owner", "fixture-request"); err != nil {
+			test.Fatal(err)
+		}
+	})
+	for _, migration := range migrations.Migrations() {
+		if migration.ID != "0093_submission_cancellation" {
+			continue
+		}
+		dbtest.Exec(test, database, migration.ReverseSQL)
+		dbtest.Exec(test, database, migration.SQL)
+		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+			isCancelled, err := transaction.IsSubmissionCancelled("fixture-owner", "fixture-request")
+			if err != nil || isCancelled {
+				test.Fatalf("recreated cancellation = %v, %v", isCancelled, err)
+			}
+			if _, err := transaction.CancelSubmission("fixture-owner", "fixture-request"); err != nil {
+				test.Fatal(err)
+			}
+		})
+		return
+	}
+	test.Fatal("cancellation migration is missing")
+}

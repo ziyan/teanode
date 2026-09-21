@@ -196,6 +196,7 @@ func TestMailboxSendRejectsInvalidIdentityBeforeAcceptance(test *testing.T) {
 func TestMailboxSendSchemaAcceptsLegacyAndIdentifiedRequests(test *testing.T) {
 	resolver := &graph{schema: buildSchemaForValidation(test)}
 	for _, document := range []string{
+		`mutation ($mailboxId: String!, $submissionId: String!) { CancelMailboxSubmission(mailboxId: $mailboxId, submissionId: $submissionId) { submissionId mailId sentItemId acceptedAt isReconciled } }`,
 		`query ($mailboxId: String!, $submissionId: String!) { GetMailboxSubmission(mailboxId: $mailboxId, submissionId: $submissionId) { submissionId mailId sentItemId acceptedAt isReconciled } }`,
 		`mutation ($mailboxId: String!, $message: MailboxMessageParametersInput!) { SendMailboxMessage(mailboxId: $mailboxId, message: $message) { mail { id } item { id } } }`,
 		`mutation ($mailboxId: String!, $message: MailboxMessageParametersInput!, $submissionId: String) { SendMailboxMessage(mailboxId: $mailboxId, message: $message, submissionId: $submissionId) { mail { id } item { id } } }`,
@@ -249,6 +250,57 @@ func TestMailboxSubmissionLookupPreservesIdentityAndEnforcesOwnership(test *test
 		query.SubmissionID = "unknown-request"
 		if accepted, err := resolver.GetMailboxSubmission(ctx, query); err != nil || accepted != nil {
 			test.Fatalf("unknown identity = %+v, %v", accepted, err)
+		}
+	})
+}
+
+func TestMailboxSubmissionCancellationReturnsAcceptanceOrPreventsSend(test *testing.T) {
+	database, resolver, principal, arguments, sender := submissionAPIFixture(test)
+	query := GetMailboxSubmissionArguments{MailboxID: arguments.MailboxID, SubmissionID: arguments.SubmissionID}
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), principal), transaction)
+		accepted, err := resolver.CancelMailboxSubmission(ctx, query)
+		if err != nil || accepted != nil {
+			test.Fatalf("cancel = %+v, %v", accepted, err)
+		}
+	})
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), principal), transaction)
+		if _, err := resolver.SendMailboxMessage(ctx, arguments); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Fatalf("late send = %v", err)
+		}
+		if sender.acceptCount != 0 {
+			test.Fatal("cancelled send reached mailer")
+		}
+		arguments.SubmissionID = "replacement-send"
+		response, err := resolver.SendMailboxMessage(ctx, arguments)
+		if err != nil {
+			test.Fatal(err)
+		}
+		query.SubmissionID = arguments.SubmissionID
+		accepted, err := resolver.CancelMailboxSubmission(ctx, query)
+		if err != nil || accepted == nil || accepted.MailID != response.Mail.ID {
+			test.Fatalf("accepted cancel = %+v, %v", accepted, err)
+		}
+	})
+}
+
+func TestMailboxSubmissionCancellationRequiresOwnershipAndPermission(test *testing.T) {
+	database, resolver, principal, arguments, _ := submissionAPIFixture(test)
+	query := GetMailboxSubmissionArguments{MailboxID: arguments.MailboxID, SubmissionID: arguments.SubmissionID}
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		for _, unauthorized := range []*api.Principal{
+			{User: &models.User{ID: "foreign-owner"}, Permissions: principal.Permissions},
+			{User: principal.User, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailRead}})},
+		} {
+			ctx := api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), unauthorized), transaction)
+			if _, err := resolver.CancelMailboxSubmission(ctx, query); !errors.Is(err, api.ErrNotFound) {
+				test.Fatalf("unauthorized cancellation = %v", err)
+			}
+		}
+		isCancelled, err := transaction.IsSubmissionCancelled(principal.User.ID, arguments.SubmissionID)
+		if err != nil || isCancelled {
+			test.Fatalf("unauthorized request persisted cancellation: %v, %v", isCancelled, err)
 		}
 	})
 }

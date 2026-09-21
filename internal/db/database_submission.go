@@ -25,6 +25,10 @@ type SubmissionOperation interface {
 	// including when no record exists. A nil result allows initial acceptance.
 	LockSubmission(ownerId, submissionId string) (*models.Submission, error)
 	CreateSubmission(submission *models.Submission) error
+	// CancelSubmission locks the identity and either returns its acceptance or
+	// permanently prevents it from being accepted. The caller must commit.
+	CancelSubmission(ownerId, submissionId string) (*models.Submission, error)
+	IsSubmissionCancelled(ownerId, submissionId string) (bool, error)
 	// ListSubmissionsToReconcile locks pending records without waiting for other
 	// workers. Reconcile and mark them in this same transaction.
 	ListSubmissionsToReconcile(limit int) ([]*models.Submission, error)
@@ -35,6 +39,24 @@ type SubmissionOperation interface {
 type submissionModel models.Submission
 
 func (self *submissionModel) TableName() string { return "mail_submission" }
+
+func (self *transaction) IsSubmissionCancelled(ownerId, submissionId string) (bool, error) {
+	if err := validateSubmissionIdentity(ownerId, submissionId); err != nil {
+		return false, err
+	}
+	var cancellationCount int64
+	err := self.tx.Table("mail_submission_cancellation").Where("owner_id = ? AND submission_id = ?", ownerId, submissionId).Count(&cancellationCount).Error
+	return cancellationCount != 0, err
+}
+
+func (self *transaction) CancelSubmission(ownerId, submissionId string) (*models.Submission, error) {
+	accepted, err := self.LockSubmission(ownerId, submissionId)
+	if err != nil || accepted != nil {
+		return accepted, err
+	}
+	err = self.tx.Exec("INSERT INTO mail_submission_cancellation (owner_id, submission_id) VALUES (?, ?) ON CONFLICT DO NOTHING", ownerId, submissionId).Error
+	return nil, err
+}
 
 func validateSubmissionIdentity(ownerId, submissionId string) error {
 	if ownerId == "" || len(ownerId) > 32 || submissionId == "" || len(submissionId) > 128 || strings.ContainsRune(submissionId, 0) {
