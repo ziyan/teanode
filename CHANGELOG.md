@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.7] - 2026-09-21
+
+### Fixed
+
+- The breadcrumb no longer flashes an ellipsis in place of the page name
+  each time a page is opened. (#106)
+
 ## [0.47.6] - 2026-09-21
 
 ### Fixed
