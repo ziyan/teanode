@@ -577,7 +577,7 @@ func (self *exchange) settleMailboxDelivery(delivery *models.Delivery) error {
 func (self *exchange) deliverOnce(ctx context.Context) error {
 	var deliveries []*models.Delivery
 	var mails []*models.Mail
-	if err := self.database.Transaction(func(tx db.Transaction) error {
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		var err error
 		deliveries, err = tx.ListDeliveriesToRetry(nil)
 		if err != nil {
@@ -646,6 +646,7 @@ func (self *exchange) deliverOnce(ctx context.Context) error {
 
 	// load mails from s3
 	var waitGroup sync.WaitGroup
+	var availableMails sync.Map
 	for _, mail := range mails {
 		if mail == nil {
 			continue
@@ -656,17 +657,25 @@ func (self *exchange) deliverOnce(ctx context.Context) error {
 			defer waitGroup.Done()
 			headers, body, err := self.storage.Get(ctx, mail.ID)
 			if err != nil {
-				log.Warningf("cannot retry the delivery of mail %q, its content is no longer stored: %s", mail.ID, err)
+				log.Warningf("cannot reload mail %q, deferring delivery: %s", mail.ID, err)
 				return
 			}
 			mail.Headers = headers
 			mail.Body = body
+			availableMails.Store(mail.ID, true)
 		}(mail)
 	}
 	waitGroup.Wait()
 
 	// delivery all in parallel
 	for _, delivery := range deliveries {
+		if delivery.Mail != nil {
+			if _, hasContent := availableMails.Load(delivery.MailID); !hasContent {
+				// Keep the retry lease without consuming an SMTP attempt. A
+				// storage outage must never turn the metadata into an empty email.
+				continue
+			}
+		}
 		self.waitGroup.Add(1)
 		go func(delivery *models.Delivery) {
 			defer deferutil.Recover()

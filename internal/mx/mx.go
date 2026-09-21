@@ -72,6 +72,11 @@ type Exchange interface {
 	// handle received mail
 	HandleEnvelope(ctx context.Context, envelope *mailparse.Envelope) error
 
+	// AcceptSubmission prepares mailbox mail, storage and queued deliveries in
+	// the supplied transaction. The caller's commit makes acceptance durable;
+	// no external delivery starts here. Errors roll back this command's writes.
+	AcceptSubmission(ctx context.Context, transaction db.Transaction, envelope *mailparse.Envelope) (*models.Mail, error)
+
 	// SetAgentHook installs what is told about a message placed in a
 	// mailbox, inside the delivery transaction. Nil means nobody is told,
 	// which is the case while the agent is off.

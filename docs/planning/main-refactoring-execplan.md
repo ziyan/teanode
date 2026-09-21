@@ -33,13 +33,26 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Milestone 1: restore dashboard lint, add UI tests and vector CI, validate storage identifiers and make vector index names distinct.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
-- [ ] Milestone 4 (in progress): mutation retry protection, disjoint delivery claims, explicit storage modes and submission persistence are implemented; exchange/coordinator/API integration, recovery worker and client retry identities remain.
+- [ ] Milestone 4 (in progress): mutation retry protection, disjoint delivery claims, storage modes, submission persistence and transactional exchange acceptance are implemented; mailer/coordinator/API integration, recovery worker and client retry identities remain.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes; mailbox drafts/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+The retry worker continued to dispatch after a storage read failed, leaving a
+mail's headers and body empty. It now dispatches only successfully reloaded
+messages, retaining the retry lease without consuming an attempt on a read
+failure. A regression uses a local mailbox delivery to prove that no dispatch
+occurs, without permitting network transport in the test.
+
+Sent filing before local-recipient resolution made a message addressed to its
+sender look already delivered to that mailbox. Transactional submission now
+resolves local recipients before filing Sent, committing both together. This
+ordering is covered for the sender's mailbox and another local mailbox, including
+storage failure. Legacy SMTP acceptance retains its existing ordering until its
+separate early-commit path is migrated.
 
 The delivery retry scan updated candidates without locking their selection.
 Concurrent workers could wait on the same rows and then both claim them. The
@@ -780,10 +793,12 @@ after mail deletion, owner-scoped concurrent retry locks, separate recovery
 worker batches and migration reversal/reapplication. The persistence interface
 is a prerequisite, not a completed send path: no adapter uses it yet.
 
-Next, make the exchange accept into its caller's transaction without early
-commit or immediate delivery, with storage errors refusing acceptance and due
-delivery rows persisted before commit. In-memory outgoing and alias usage now
-waits for the owning transaction's commit and honors nested rollback. The coordinator
+The exchange now accepts mailbox submissions into a command savepoint in its
+caller's transaction without early commit or immediate delivery. Storage errors
+roll back mail, Sent, recipient items and delivery rows, even when the caller
+commits its enclosing transaction. Successful external recipients receive a due
+retry time before commit. In-memory outgoing and alias usage waits for the owning
+transaction's commit and honors nested rollback. The coordinator
 must lock/check the accepted identity before rebuilding message content or
 looking up a draft that reconciliation may already have deleted. Bind the digest
 to the stable server-serialized request parameters, including mailbox and
@@ -820,3 +835,29 @@ integral and range validation before conversion. This also rejects negative
 infinity and negative fractions instead of treating them as default page sizes.
 The focused GraphQL race tests and lint pass; the next CI run must confirm the
 conversion annotation is gone.
+
+Revision note: `Exchange.AcceptSubmission` now implements that transactional
+boundary. External-recipient tests cover storage failure, parent rollback and
+successful commit, including saved bytes, Sent, queue eligibility and usage.
+Local-recipient tests cover Inbox and Sent committing or rolling back together,
+including a message addressed to its own sender. The entire mail-exchange test
+package passes under the race detector. The mailer and public adapters still use
+legacy sending and must be connected before this changes their acceptance path.
+
+Next integration detail: `mailer.Compose` opens a separate lookup transaction,
+and `rewriteMedia` reads media and creates tracking links directly on the root
+database. The identified submission path must reuse its command transaction for
+both, while preserving optional-image fallback behavior with a savepoint if a
+media-link write fails. Check an accepted identity before composing, since MIME
+identifiers and media tokens change on each composition. The delivery poll is
+currently eight records per minute, and a failed storage reload keeps its
+two-hour claim. Before routing normal sends through it, add prompt bounded
+dispatch and a retry policy for storage outages that cannot overwrite a newer
+claim. Submission reconciliation still needs its worker and adapter integration.
+
+CI update: the completed CodeQL and Go analysis checks on the integer-preserving
+page-size change pass. The earlier conversion annotation is gone.
+
+Validation update: the full vector-enabled race suite reports 1,828 tests with
+the opt-in Chrome-proxy test skipped after transactional exchange acceptance
+and storage-read dispatch protection. Go lint and `gogolint` pass.
