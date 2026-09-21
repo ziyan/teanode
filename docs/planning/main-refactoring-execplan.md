@@ -36,7 +36,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries using either the stable draft key or its source item identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, agent calendar mutation retries, contact proposal acceptance and protocol adapters, knowledge-source and rule-update commands remain.
-- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; graph prompt context, recall, ranking, embedding, retrieval, indexing and note updates now live in separate files; job outcomes, dream extraction, memory-tool page preparation now happens before its write transaction; HTTP recall now owns short read phases outside model calls; remaining job/model adapters and benchmarks remain.
+- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; graph prompt context, recall, ranking, embedding, retrieval, indexing and note updates now live in separate files; dream scheduling, budget, requests, digest, timeline, consolidation, organization and splitting now have separate files; memory-tool page preparation now happens before its write transaction; HTTP recall now owns short read phases outside model calls; remaining job/model adapters and benchmarks remain.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
@@ -2324,3 +2324,26 @@ pass. Added and untracked text passes the privacy scan. The lint invocation
 required adding the installed Node runtime to PATH; its rerun passed. No dashboard
 rendering changed in this step. Full deployment and final Chrome gates remain
 open alongside the remaining milestones.
+
+Dream-processing extraction keeps runDream and its shared pacing bounds in
+internal/agent/dream.go. Scheduling, model calls, budget accounting, document
+digestion, timeline writing, consolidation, organization and page splitting each
+have a separate file beside it. The receiver-qualified AST comparison reports
+all 37 original function bodies unchanged. Prompts, response contracts, phase
+order, transaction scopes and retry behavior are preserved. Historical personal
+comments are removed, and the digest failure comment now accurately distinguishes
+committed page preparation from fact filing.
+
+Review found remaining bookkeeping concerns: digest completion marks documents
+read separately from dream progress, and splitPage increments its local moved
+count inside a transaction before commit. These require focused failure tests
+and fixes after this behavior-preserving extraction. Digest retrieval, request
+parsing and application also still need narrower boundaries within their file.
+This change does not close the remaining model-adapter or benchmark gates.
+
+Dream extraction validation: all agent packages pass with the race detector
+against the disposable vector database, including the existing whole-dream,
+budget, digest splitting, tools, author evidence, merge and attachment regressions.
+Both binaries build; repository lint and gogolint pass. The privacy scan finds
+only two moved prompt separator literals, whose bytes are intentionally unchanged.
+No dashboard rendering changes in this extraction.
