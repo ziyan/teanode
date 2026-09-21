@@ -89,6 +89,15 @@ readonly ALLOWED_HOSTS=(
   # published on purpose, which is the opposite of a private reference.
   .teanode.com
 
+  # Where a provider that signs in rather than holding a key sends its
+  # requests, and where it signs in. These are addresses of a public service,
+  # written in the code that talks to it, in the same way the other providers
+  # name theirs: nothing about them belongs to any one person, and a comment
+  # naming an example instead would leave the code unable to say where it
+  # actually goes.
+  chatgpt.com
+  auth.openai.com
+
   # The services the published skills call. They are in the fixtures under
   # internal/skills/testdata, which are the registry's own files kept
   # verbatim so that a change to what it publishes shows up as a test
