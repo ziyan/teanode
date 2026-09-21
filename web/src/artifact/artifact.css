@@ -1,0 +1,110 @@
+/* The look of a page the agent makes, so what opens beside the conversation
+   belongs to it: the dashboard's palette and type, a card, a grid, a table,
+   a box for a chart. Served at /assets/artifact.css for the page to link;
+   the page is shown in a sandbox, so nothing else of the dashboard reaches
+   it. The tokens are the dashboard's own (src/tokens.css), bundled in. */
+@import '../tokens.css';
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  padding: 16px;
+  background: var(--background);
+  color: var(--text);
+  font:
+    14px/1.5 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+}
+h1,
+h2,
+h3 {
+  margin: 0 0 8px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+h1 {
+  font-size: 20px;
+}
+h2 {
+  font-size: 16px;
+}
+h3 {
+  font-size: 14px;
+}
+p {
+  margin: 0 0 12px;
+}
+a {
+  color: inherit;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+.muted {
+  color: var(--muted);
+}
+.card {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.card + .card,
+.grid + .card,
+.card + .grid {
+  margin-top: 16px;
+}
+.grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+/* As wide as its box whatever the page said, since the box is what the
+   drawer has; the height is the page's to choose. */
+.chart {
+  width: 100% !important;
+  max-width: 100%;
+  height: 320px;
+}
+.chart.tall {
+  height: 480px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+th,
+td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+th.number,
+td.number {
+  text-align: right;
+}
+.good {
+  color: var(--good);
+}
+.bad {
+  color: var(--bad);
+}
+.warn {
+  color: var(--warn);
+}

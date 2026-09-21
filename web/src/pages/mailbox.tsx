@@ -1,0 +1,2397 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+
+import {
+  MailContent,
+  MailboxFolder,
+  MailboxItem,
+  MailboxThread,
+  MailboxThreadItem,
+  MailboxThreadPage,
+  MailboxThreadView,
+  MailboxView,
+  graphql,
+  MailInsight,
+  ThreadSummary,
+  AgentReply,
+  askAgentAbout,
+  openAgentConversation,
+  MAIL_CHANGED_EVENT,
+  announceMailChanged,
+} from '../api'
+import { ErrorMessage, Loading, VerdictMark, formatTime, verdictOf } from '../components/common'
+import {
+  ArchiveIcon,
+  ArrowLeftIcon,
+  ChevronDownIcon,
+  StarIcon,
+  ForwardIcon,
+  JunkIcon,
+  ListIcon,
+  MailIcon,
+  MailOpenIcon,
+  PriorityIcon,
+  MoveIcon,
+  ReplyAllIcon,
+  ReplyIcon,
+  TrashIcon,
+  SparkIcon,
+} from '../components/icons'
+import { MenuButton } from '../components/menuButton'
+import { Tooltip } from '../components/tooltip'
+import { ConfirmDialog, FormDialog } from '../components/dialog'
+import { useToast } from '../components/toast'
+import { EnvelopeTrail } from '../components/envelopeTrail'
+import { Shortcut, useShortcuts } from '../shortcuts'
+import { RelativeTime } from '../components/relativeTime'
+import { SenderLogo } from '../components/senderLogo'
+import { SaveSenderDialog } from '../components/saveSenderDialog'
+import { useQuery } from '../components/useQuery'
+import { useBreadcrumbDetail } from '../components/breadcrumb'
+import { Key, useTranslation } from '../i18n/i18n'
+import { folderLabel, folderOfKind, folderRows, useMailboxes } from '../mailboxes'
+import { hasAnywhere, useSession } from '../session'
+import { InvitationCard } from '../components/invitationCard'
+import { ProposalCards } from '../components/proposalCard'
+import { MessageContent } from './mailDetail'
+import { MailboxComposer } from './mailboxCompose'
+import { Select } from '../components/select'
+import { useAgent } from './agent'
+
+// The mailbox: one folder's messages beside the one being read.
+//
+// The folder tree is in the rail, so this page is the other two panes of the
+// usual three. The list is a page of the folder, newest first, with the
+// controls that act on a selection above it; the pane is the message, with
+// the controls that act on that one message above it. Reading marks a
+// message seen, as every mail program does, and the counts in the rail move
+// with it.
+
+const PAGE_SIZE = 50
+
+// STARRED is the path segment of the view of every flagged message.
+export const STARRED = 'starred'
+
+function starredFolder(view: MailboxView): MailboxFolder {
+  return {
+    id: STARRED,
+    mailboxId: view.mailbox.id,
+    name: 'Starred',
+    kind: STARRED,
+    unread: view.starredUnread ?? 0,
+    total: 0,
+  }
+}
+
+// PRIORITY is the path segment of the view of every message the agent marked
+// as high priority, wherever it is filed.
+export const PRIORITY = 'priority'
+
+function priorityFolder(view: MailboxView): MailboxFolder {
+  return {
+    id: PRIORITY,
+    mailboxId: view.mailbox.id,
+    name: 'Priority',
+    kind: PRIORITY,
+    unread: view.priorityUnread ?? 0,
+    total: 0,
+  }
+}
+
+const THREADS = `
+  query ($folderId: String, $mailboxId: String, $unread: Boolean, $flagged: Boolean, $priority: String, $search: String, $from: String, $to: String, $subject: String, $since: DateTime, $before: DateTime, $hasAttachment: Boolean, $first: Int, $offset: Int) {
+    ListMailboxThreads(folderId: $folderId, mailboxId: $mailboxId, unread: $unread, flagged: $flagged, priority: $priority, search: $search, from: $from, to: $to, subject: $subject, since: $since, before: $before, hasAttachment: $hasAttachment, first: $first, offset: $offset) {
+      total
+      threads {
+        threadId count unread flagged participants itemIds hasDraft
+        item {
+          id folderId mailId uid seen flagged answered forwarded draft addedAt subscriptionId
+          insight { category priority needsReply summary actionItems notes }
+          mail {
+            id from fromName sender subject recipients receivedAt size kind status logoDomain
+            authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
+          }
+        }
+      }
+    }
+  }`
+
+const THREAD = `
+  query ($itemId: String!) {
+    GetMailboxThread(itemId: $itemId) {
+      threadId subject truncated
+      summary { summary throughMailId messageCount createdAt stale pending }
+      heldReply { id status subject to text sendAfter draftItemId }
+      items {
+        folderId folderName folderKind
+        item {
+          id folderId mailId uid seen flagged answered forwarded draft addedAt subscriptionId
+          insight { category priority needsReply summary actionItems notes model runId
+            proposals { kind because status summary starts ends location allDay name organization title emails phones note contactId } }
+          mail {
+            id from fromName sender subject recipients receivedAt size kind status messageId
+            listKey listName listOneClick logoDomain
+            authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
+          }
+        }
+      }
+    }
+  }`
+
+const CONTENT = `
+  query ($mailId: String!) {
+    GetMailContent(mailId: $mailId) {
+      mailId available text html hasRemoteContent imagesAllowed size rawHeaders
+      headers { key value }
+      attachments { index filename contentType size inline }
+    }
+  }`
+
+const SORT_ITEMS = `
+  mutation ($itemIds: [String!]!, $category: String, $priority: String, $needsReply: Boolean) {
+    SortMailboxItems(itemIds: $itemIds, category: $category, priority: $priority, needsReply: $needsReply)
+  }`
+
+export const SET_FLAGS = `
+  mutation ($itemIds: [String!]!, $seen: Boolean, $flagged: Boolean) {
+    SetMailboxItemFlags(itemIds: $itemIds, seen: $seen, flagged: $flagged)
+  }`
+
+// What a move gives back: the new item, where it now is, and which message it
+// holds. The last of those is what makes undo possible, since the item's own
+// identifier does not survive the move.
+type MovedItem = { id: string; folderId: string; mailId: string }
+
+// What is in a folder now, which is how a moved message is found again.
+const ITEMS_IN = `
+  query ($folderId: String, $first: Int) {
+    ListMailboxItems(folderId: $folderId, first: $first) {
+      items { id folderId mailId addedAt }
+    }
+  }`
+
+export const MOVE = `
+  mutation ($itemIds: [String!]!, $folderId: String!) {
+    MoveMailboxItems(itemIds: $itemIds, folderId: $folderId) { id folderId mailId }
+  }`
+
+export const DELETE = `
+  mutation ($itemIds: [String!]!) {
+    DeleteMailboxItems(itemIds: $itemIds)
+  }`
+
+export const REPORT_JUNK = `
+  mutation ($itemIds: [String!]!, $notJunk: Boolean) {
+    ReportMailboxJunk(itemIds: $itemIds, notJunk: $notJunk)
+  }`
+
+const EMPTY_TRASH = `
+  mutation ($mailboxId: String!) {
+    EmptyMailboxTrash(mailboxId: $mailboxId)
+  }`
+
+type Filter = 'all' | 'unread' | 'flagged'
+
+// What a search narrows by, beyond the words: where it looks and what it
+// asks of a message. Empty means not asked.
+type Narrowing = {
+  everywhere: boolean
+  from: string
+  to: string
+  subject: string
+  since: string
+  before: string
+  attachment: 'any' | 'with' | 'without'
+}
+
+const NOTHING_NARROWED: Narrowing = {
+  everywhere: false,
+  from: '',
+  to: '',
+  subject: '',
+  since: '',
+  before: '',
+  attachment: 'any',
+}
+
+const FILTERS: Filter[] = ['all', 'unread', 'flagged']
+
+// A narrowing read back out of the address. Anything absent is not asked.
+function narrowingFromParameters(parameters: URLSearchParams): Narrowing {
+  const attachment = parameters.get('attachment')
+  return {
+    everywhere: parameters.get('everywhere') === 'true',
+    from: parameters.get('from') ?? '',
+    to: parameters.get('to') ?? '',
+    subject: parameters.get('subject') ?? '',
+    since: parameters.get('since') ?? '',
+    before: parameters.get('before') ?? '',
+    attachment: attachment === 'with' || attachment === 'without' ? attachment : 'any',
+  }
+}
+
+function narrowed(value: Narrowing): boolean {
+  return (
+    value.from !== '' ||
+    value.to !== '' ||
+    value.subject !== '' ||
+    value.since !== '' ||
+    value.before !== '' ||
+    value.attachment !== 'any'
+  )
+}
+
+// A day typed into a date field, as the moment it starts (or the moment the
+// next day starts, for an end that should include the day itself).
+function dayStart(value: string, plusDays = 0): string | undefined {
+  if (!value) {
+    return undefined
+  }
+  const date = new Date(value + 'T00:00:00')
+  if (Number.isNaN(date.getTime())) {
+    return undefined
+  }
+  date.setDate(date.getDate() + plusDays)
+  return date.toISOString()
+}
+
+// A toolbar button: an icon, its name in a tooltip, and nothing else on the
+// screen. A mail toolbar is nine verbs, and nine words of them wrapped onto a
+// second line on anything narrower than a laptop.
+// Shared for the same reason: a toolbar of these is what both readers are.
+export function IconAction({
+  label,
+  icon,
+  onClick,
+  disabled,
+  className,
+  // The state the action would undo — a starred conversation, so the star is
+  // drawn as set rather than as something to do.
+  active,
+  shortcut,
+}: {
+  label: string
+  icon: React.ReactNode
+  onClick: () => void
+  disabled?: boolean
+  className?: string
+  active?: boolean
+  // The key that does the same thing. Said in the tooltip — "Archive (E)" —
+  // because a shortcut nobody is told about belongs to whoever wrote it, and
+  // the place somebody looks to find out what a button does is the place to
+  // say there is a faster way to do it.
+  shortcut?: string
+}) {
+  const described = shortcut ? `${label} (${shortcut.toUpperCase()})` : label
+  return (
+    <Tooltip label={described}>
+      <button
+        type="button"
+        className={['icon-button', className, active ? 'active' : ''].filter(Boolean).join(' ')}
+        // The label without the key: a screen reader announces the button, and
+        // the keyboard hint is for somebody who can see the pointer.
+        aria-label={label}
+        aria-keyshortcuts={shortcut}
+        aria-pressed={active}
+        disabled={disabled}
+        onClick={onClick}
+      >
+        {icon}
+      </button>
+    </Tooltip>
+  )
+}
+
+// Where to move what is selected: the folders, in a menu the button opens.
+// A native select in a row of icons is a box with a word and an arrow in it,
+// which is the one control on the row that says what it is twice.
+// Shared with the subscriptions page, which moves a whole list's mail the
+// same way a conversation is moved.
+export function MoveToMenu({
+  targets,
+  onMove,
+  disabled,
+}: {
+  targets: { folder: MailboxFolder; depth: number }[]
+  onMove: (folderId: string) => void
+  disabled?: boolean
+}) {
+  const { t } = useTranslation()
+  return (
+    <MenuButton
+      label={t('mailbox.moveTo')}
+      className="icon-button"
+      icon={<MoveIcon size={16} />}
+      render={(close) =>
+        targets.map(({ folder: candidate, depth }) => (
+          <button
+            key={candidate.id}
+            type="button"
+            role="menuitem"
+            disabled={disabled}
+            style={{ paddingLeft: `${12 + depth * 12}px` }}
+            onClick={() => {
+              close()
+              onMove(candidate.id)
+            }}
+          >
+            {folderLabel(t, candidate)}
+          </button>
+        ))
+      }
+    />
+  )
+}
+
+export function MailboxPage() {
+  const { folderId, itemId } = useParams()
+  const mailboxes = useMailboxes()
+  const { t } = useTranslation()
+
+  if (!mailboxes.loaded) {
+    return <Loading />
+  }
+  if (mailboxes.error) {
+    return <ErrorMessage error={mailboxes.error} />
+  }
+  const view = folderId
+    ? (mailboxes.views.find((candidate) => candidate.folders.some((folder) => folder.id === folderId)) ??
+      mailboxes.current)
+    : mailboxes.current
+  if (!view) {
+    return (
+      <div className="card">
+        <h3>{t('mailbox.none')}</h3>
+        <p className="muted">{t('mailbox.noneHint')}</p>
+      </div>
+    )
+  }
+
+  // Starred is every flagged message wherever it sits: a view, not a
+  // folder, drawn as one.
+  if (folderId === STARRED) {
+    return <FollowRail view={view} folder={starredFolder(view)} itemId={itemId} />
+  }
+  // Priority is every message the agent said matters today, likewise.
+  if (folderId === PRIORITY) {
+    return <FollowRail view={view} folder={priorityFolder(view)} itemId={itemId} />
+  }
+
+  // /mailbox on its own is the inbox of the mailbox last looked at.
+  const folder = folderId ? view.folders.find((candidate) => candidate.id === folderId) : undefined
+  if (!folder) {
+    const inbox = folderOfKind(view, 'inbox') ?? view.folders[0]
+    return inbox ? <Navigate to={`/mailbox/${inbox.id}`} replace /> : <p className="muted">{t('common.notFound')}</p>
+  }
+
+  return <FollowRail view={view} folder={folder} itemId={itemId} />
+}
+
+// FollowRail keeps the tree in the rail on the mailbox being read: a link
+// into a folder of the second mailbox should not leave the rail showing the
+// first. An effect rather than a call during render, which React refuses.
+function FollowRail({ view, folder, itemId }: { view: MailboxView; folder: MailboxFolder; itemId?: string }) {
+  const mailboxes = useMailboxes()
+  const mailboxId = view.mailbox.id
+  useEffect(() => {
+    if (mailboxes.current?.mailbox.id !== mailboxId) {
+      mailboxes.setCurrentId(mailboxId)
+    }
+  }, [mailboxes, mailboxId])
+  return <Folder key={folder.id} folder={folder} folders={view.folders} itemId={itemId} />
+}
+
+function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: MailboxFolder[]; itemId?: string }) {
+  const { t, plural } = useTranslation()
+  const toast = useToast()
+  const navigate = useNavigate()
+  const mailboxes = useMailboxes()
+  const session = useSession()
+  const addresses = mailboxes.current?.mailbox.addresses ?? []
+  const managesDomains = hasAnywhere(session.permissions, 'domain:manage')
+
+  // What the list is narrowed to lives in the address. It was state, so a
+  // search could not be linked to, survived neither a reload nor the back
+  // button, and was lost the moment a message was opened from it.
+  //
+  // In the query rather than the path, because none of this is a place: it
+  // is what the place is being shown through. The path still says which
+  // folder and which conversation.
+  const [parameters, setParameters] = useSearchParams()
+  const applied = parameters.get('q') ?? ''
+  const filter = FILTERS.includes(parameters.get('filter') as Filter) ? (parameters.get('filter') as Filter) : 'all'
+  const appliedNarrowing = useMemo(() => narrowingFromParameters(parameters), [parameters])
+
+  // The form's own values, which are what is being typed rather than what is
+  // being asked. They follow the address, so arriving at a link — or coming
+  // back to one — fills the form in with the search it describes.
+  const [search, setSearch] = useState(applied)
+  const [narrowing, setNarrowing] = useState<Narrowing>(appliedNarrowing)
+  const [showNarrowing, setShowNarrowing] = useState(() => narrowed(appliedNarrowing) || appliedNarrowing.everywhere)
+  useEffect(() => {
+    setSearch(applied)
+    setNarrowing(appliedNarrowing)
+  }, [applied, appliedNarrowing])
+
+  // Every move inside this folder keeps the query. A search is part of what
+  // you are looking at, so opening a message found by one — and coming back
+  // from it — has to find the search still there.
+  const within = (path: string) => {
+    const query = parameters.toString()
+    return query === '' ? path : `${path}?${query}`
+  }
+
+  // One writer for all of it, so the address always describes the whole of
+  // what the list is showing rather than the last thing that changed.
+  const applyFilters = (next: { q?: string; filter?: Filter; narrowing?: Narrowing }) => {
+    const wanted = next.q ?? applied
+    const chosen = next.filter ?? filter
+    const narrow = next.narrowing ?? appliedNarrowing
+    const written = new URLSearchParams()
+    if (wanted !== '') {
+      written.set('q', wanted)
+    }
+    if (chosen !== 'all') {
+      written.set('filter', chosen)
+    }
+    if (narrow.everywhere) {
+      written.set('everywhere', 'true')
+    }
+    for (const field of ['from', 'to', 'subject', 'since', 'before'] as const) {
+      if (narrow[field] !== '') {
+        written.set(field, narrow[field])
+      }
+    }
+    if (narrow.attachment !== 'any') {
+      written.set('attachment', narrow.attachment)
+    }
+    // Nothing to go back to when nothing changed: retyping the same search,
+    // or leaving the field without touching it, should not fill up history.
+    setParameters(written, { replace: written.toString() === parameters.toString() })
+  }
+  const starred = folder.kind === STARRED
+  const priority = folder.kind === PRIORITY
+  const everywhere =
+    starred ||
+    priority ||
+    (appliedNarrowing.everywhere && (applied !== '' || narrowed(appliedNarrowing) || filter !== 'all'))
+  const [threads, setThreads] = useState<MailboxThread[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<unknown>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [emptying, setEmptying] = useState(false)
+  const [busy, setBusy] = useState(false)
+  // The messages a sort dialog is open for, when one is.
+  const [sorting, setSorting] = useState<string[] | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
+
+  // Where you are: the folder, and the message inside it when one is open.
+  // The subject comes from the row the message was opened from, so the trail
+  // names it at once rather than a moment later — the two are the same words.
+  // The list does not always hold that row, though: a narrowed list, or an
+  // address opened straight from somewhere else. Then the reader below is the
+  // only thing that knows, and it says so when the conversation arrives.
+  const [read, setRead] = useState<{ itemId: string; subject: string } | null>(null)
+  const row = itemId ? threads.find((each) => each.item.id === itemId || each.itemIds.includes(itemId)) : undefined
+  const named = read && read.itemId === itemId ? read.subject : null
+  const subject = row ? (row.item.mail?.subject ?? '') : named
+  useBreadcrumbDetail(
+    folderLabel(t, folder),
+    itemId ? (subject === null ? '…' : subject || t('mailbox.noSubject')) : undefined,
+  )
+
+  const variables = useMemo(
+    () => ({
+      folderId: everywhere ? undefined : folder.id,
+      mailboxId: everywhere ? folder.mailboxId : undefined,
+      unread: filter === 'unread' ? true : undefined,
+      flagged: starred || filter === 'flagged' ? true : undefined,
+      priority: priority ? 'high' : undefined,
+      search: applied || undefined,
+      from: appliedNarrowing.from || undefined,
+      to: appliedNarrowing.to || undefined,
+      subject: appliedNarrowing.subject || undefined,
+      since: dayStart(appliedNarrowing.since),
+      before: dayStart(appliedNarrowing.before, 1),
+      hasAttachment: appliedNarrowing.attachment === 'any' ? undefined : appliedNarrowing.attachment === 'with',
+      first: PAGE_SIZE,
+    }),
+    [folder.id, folder.mailboxId, filter, applied, appliedNarrowing, everywhere, starred, priority],
+  )
+
+  const load = useCallback(
+    async (offset?: number) => {
+      setLoading(true)
+      try {
+        const response = await graphql<{ ListMailboxThreads: MailboxThreadPage }>(THREADS, {
+          ...variables,
+          offset,
+        })
+        const page = response.ListMailboxThreads
+        setThreads((previous) => {
+          if (!offset) {
+            return page.threads
+          }
+          // Paged by offset, a conversation answered or arrived since the
+          // last page shifts the rest down one: the overlap is dropped
+          // rather than shown twice.
+          const shown = new Set(previous.map((thread) => thread.threadId))
+          return [...previous, ...page.threads.filter((thread) => !shown.has(thread.threadId))]
+        })
+        setTotal(page.total)
+        setError(null)
+      } catch (failure) {
+        setError(failure)
+      } finally {
+        setLoading(false)
+      }
+    },
+    [variables],
+  )
+
+  useEffect(() => {
+    setSelected(new Set())
+    void load()
+    // reloadToken is here so that something outside the ordinary flow — undo
+    // putting messages back where they were — can ask for the list again
+    // through the same path the page loads by, rather than calling load()
+    // from a closure that has already served its purpose.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, reloadToken])
+
+  // The agent filed, sent or made something: the list reads again.
+  useEffect(() => {
+    const listener = () => {
+      void load()
+      void mailboxes.refresh()
+    }
+    window.addEventListener(MAIL_CHANGED_EVENT, listener)
+    return () => window.removeEventListener(MAIL_CHANGED_EVENT, listener)
+  }, [load, mailboxes])
+
+  // A change to a message's flags is written into the list in place rather
+  // than reloaded: the list should not jump under somebody who just marked
+  // a row, and the rail's counts are refreshed separately.
+  const patch = (itemIds: string[], change: Partial<MailboxItem>) =>
+    setThreads((previous) =>
+      previous.map((thread) => {
+        if (!thread.itemIds.some((id) => itemIds.includes(id))) {
+          return thread
+        }
+        const next = { ...thread }
+        if (itemIds.includes(thread.item.id)) {
+          next.item = { ...thread.item, ...change }
+        }
+        // The counts the row shows are of the whole conversation, so a
+        // message marked read changes them whichever message it was.
+        const touched = thread.itemIds.filter((id) => itemIds.includes(id)).length
+        if (change.seen === true) {
+          next.unread = Math.max(0, thread.unread - touched)
+        } else if (change.seen === false) {
+          next.unread = Math.min(thread.count, thread.unread + touched)
+        }
+        if (change.flagged !== undefined) {
+          next.flagged = change.flagged
+        }
+        return next
+      }),
+    )
+  const remove = (itemIds: string[]) => {
+    let gone = 0
+    setThreads((previous) =>
+      previous
+        .map((thread) => {
+          const left = thread.itemIds.filter((id) => !itemIds.includes(id))
+          if (left.length === thread.itemIds.length) {
+            return thread
+          }
+          if (left.length === 0 || itemIds.includes(thread.item.id)) {
+            // The message the row showed is gone. Rather than guess which of
+            // the rest to show, the row goes and the next load brings it back
+            // if the conversation still has messages here.
+            gone += 1
+            return null
+          }
+          return { ...thread, itemIds: left, count: Math.max(1, thread.count - (thread.itemIds.length - left.length)) }
+        })
+        .filter((thread): thread is MailboxThread => thread !== null),
+    )
+    setTotal((previous) => Math.max(0, previous - gone))
+    setSelected((previous) => {
+      const next = new Set(previous)
+      itemIds.forEach((id) => next.delete(id))
+      return next
+    })
+  }
+
+  // What happened, said once and briefly. An action that worked used to say
+  // nothing at all, and one that failed left a block above the list until
+  // something else replaced it — both are passing facts, and a passing fact
+  // belongs somewhere it can pass.
+  const act = async (action: () => Promise<void>, said?: { message: string; undo?: () => Promise<void> }) => {
+    setBusy(true)
+    try {
+      await action()
+      setError(null)
+      if (said) {
+        toast.done(said.message, said.undo ? { label: t('common.undo'), run: said.undo } : undefined)
+      }
+    } catch (failure) {
+      toast.failure(failure, t('mailbox.actionFailed'))
+    } finally {
+      setBusy(false)
+      void mailboxes.refresh()
+    }
+  }
+
+  // What to read once the open conversation has been dealt with.
+  //
+  // Emptying the pane was the wrong answer: the reason somebody archives what
+  // they are reading is to get to the next one, and being returned to the
+  // list means finding their place again for every message. The next one
+  // down, or the one above when the last was dealt with, or the list itself
+  // when there is nothing left.
+  const openNext = (itemIds: string[]) => {
+    if (!itemId || !itemIds.includes(itemId)) {
+      return
+    }
+    const shown = threads.map((thread) => thread.item.id)
+    const at = shown.indexOf(itemId)
+    const remaining = shown.filter((id) => !itemIds.includes(id))
+    if (remaining.length === 0 || at < 0) {
+      navigate(within(`/mailbox/${folder.id}`))
+      return
+    }
+    // The first one after it that is still there, and failing that the
+    // nearest one before it.
+    const after = shown.slice(at + 1).find((id) => remaining.includes(id))
+    const before = [...shown.slice(0, at)].reverse().find((id) => remaining.includes(id))
+    const next = after ?? before
+    navigate(next ? `/mailbox/${folder.id}/${next}` : `/mailbox/${folder.id}`)
+  }
+
+  // Moving down the list without the pointer, the way every mail program has
+  // done it for twenty years: j to the next conversation, k to the one above.
+  // They open it rather than moving a highlight, because a highlight that is
+  // not the thing being read is a second idea of "where you are".
+  const stepThrough = (by: number) => {
+    const shown = threads.map((thread) => thread.item.id)
+    if (shown.length === 0) {
+      return
+    }
+    const at = itemId ? shown.indexOf(itemId) : -1
+    const to = at < 0 ? (by > 0 ? 0 : shown.length - 1) : Math.min(Math.max(at + by, 0), shown.length - 1)
+    navigate(within(`/mailbox/${folder.id}/${shown[to]}`))
+  }
+
+  useShortcuts(
+    useMemo(
+      () => [
+        { key: 'j', label: t('shortcuts.nextConversation'), run: () => stepThrough(1) },
+        { key: 'k', label: t('shortcuts.previousConversation'), run: () => stepThrough(-1) },
+      ],
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [threads, itemId, folder.id, t],
+    ),
+    !busy,
+  )
+
+  // Where each of these messages is now, so that undoing means putting them
+  // back rather than guessing. Read from the list the reader is looking at,
+  // which is the only place that knows.
+  // Where a message was, keyed by the message rather than by the item.
+  //
+  // An item is a message in a folder, and moving one does not move a row: it
+  // makes a new row in the destination and expunges the old, with a new
+  // identifier. So undo cannot put back the ids it was given — they no longer
+  // exist, and asking for them is how undo came to fail silently with "not
+  // found". What survives a move is the message, so that is what the map is
+  // keyed by, and the move says which message each new item holds.
+  const whereTheyWere = (itemIds: string[]): Record<string, string> => {
+    // Everything acted on here is in the folder being read, unless the list
+    // is showing several folders at once — Starred, or a search across the
+    // mailbox — where the row says which one each came from.
+    //
+    // The folder is the floor rather than the row, because the ids come from
+    // whichever part of the page did the acting: the reader hands over the
+    // conversation's messages, which are not the row's own list of them, and
+    // looking them up in the rows found nothing at all. An undo that quietly
+    // does nothing is worse than no undo.
+    const byItem = new Map<string, { mailId: string; folderId: string }>()
+    for (const thread of threads) {
+      byItem.set(thread.item.id, {
+        mailId: thread.item.mailId,
+        folderId: thread.item.folderId || folder.id,
+      })
+    }
+    const places: Record<string, string> = {}
+    for (const id of itemIds) {
+      const known = byItem.get(id)
+      if (known?.mailId) {
+        places[known.mailId] = known.folderId
+      }
+    }
+    return places
+  }
+
+  // Where a message goes back to when the map does not name it. A row knows
+  // only its newest message, and a conversation is acted on whole — so most
+  // of the messages moved are not in the map at all. In a folder they all came
+  // from that folder, which is the answer; a list gathered from several
+  // folders is the exception the map is for.
+  const home = (places: Record<string, string>, mailId: string) => places[mailId] ?? folder.id
+
+  // Putting them back where they were, which may be several folders at once:
+  // a conversation read from Starred can have messages in three.
+  // What a folder gained just now.
+  //
+  // Moving a message makes a new item and expunges the old, so the ids handed
+  // to an action are gone by the time anybody wants to undo it. The message
+  // survives — but a row names only the newest message of its conversation,
+  // and a conversation is acted on whole, so most of what moved cannot be
+  // named that way either.
+  //
+  // What is knowable is what the destination gained: the items filed there
+  // since the moment before the action. Nothing else files mail into Trash,
+  // and the few seconds this covers are the ones between an action and the
+  // undo beside it.
+  const itemsAddedSince = async (folderId: string, since: number): Promise<MovedItem[]> => {
+    const answer = await graphql<{ ListMailboxItems: { items: (MovedItem & { addedAt: string })[] } }>(ITEMS_IN, {
+      folderId,
+      first: 200,
+    })
+    return (answer.ListMailboxItems?.items ?? []).filter((item) => Date.parse(item.addedAt) >= since)
+  }
+
+  const putBack = async (places: Record<string, string>, moved: MovedItem[]) => {
+    // Group the items the move produced by the folder their message came
+    // from, so a conversation gathered from three folders goes back to three.
+    const byFolder = new Map<string, string[]>()
+    for (const item of moved) {
+      const back = home(places, item.mailId)
+      if (!back || back === item.folderId) {
+        continue
+      }
+      byFolder.set(back, [...(byFolder.get(back) ?? []), item.id])
+    }
+    for (const [folderId, ids] of byFolder) {
+      await graphql(MOVE, { itemIds: ids, folderId })
+    }
+    setReloadToken((previous) => previous + 1)
+    void mailboxes.refresh()
+  }
+
+  const setFlags = (itemIds: string[], flags: { seen?: boolean; flagged?: boolean }) =>
+    act(async () => {
+      await graphql(SET_FLAGS, { itemIds, ...flags })
+      patch(itemIds, flags)
+      if (starred && flags.flagged === false) {
+        // Unstarred is gone from Starred.
+        remove(itemIds)
+        if (itemIds.includes(itemId ?? '')) {
+          navigate(within(`/mailbox/${folder.id}`))
+        }
+      }
+    })
+  const moveTo = (itemIds: string[], target: string) => {
+    const places = whereTheyWere(itemIds)
+    let moved: MovedItem[] = []
+    const archive = folders.find((candidate) => candidate.id === target)?.kind === 'archive'
+    return act(
+      async () => {
+        const answer = await graphql<{ MoveMailboxItems: MovedItem[] }>(MOVE, { itemIds, folderId: target })
+        moved = answer.MoveMailboxItems ?? []
+        remove(itemIds)
+        openNext(itemIds)
+      },
+      {
+        message: archive
+          ? plural(
+              itemIds.length,
+              { one: 'mailbox.saidArchivedOne', other: 'mailbox.saidArchivedOther' },
+              { count: itemIds.length },
+            )
+          : plural(
+              itemIds.length,
+              { one: 'mailbox.saidMovedOne', other: 'mailbox.saidMovedOther' },
+              { count: itemIds.length },
+            ),
+        undo: () => putBack(places, moved),
+      },
+    )
+  }
+  // Junk is a move and a lesson at once. Moving without teaching leaves the
+  // next one from the same sender in the Inbox; teaching without moving
+  // leaves the reader looking at what they have just called junk.
+  const reportJunk = (itemIds: string[], notJunk: boolean) => {
+    const places = whereTheyWere(itemIds)
+    let moved: MovedItem[] = []
+    const began = Date.now() - 1000
+    return act(
+      async () => {
+        await graphql(REPORT_JUNK, { itemIds, notJunk })
+        // Where they went, so undo can find them: reporting junk files it in
+        // Junk, and saying it is not junk puts it back in the Inbox.
+        const landed = folders.find((candidate) => candidate.kind === (notJunk ? 'inbox' : 'junk'))
+        moved = landed ? await itemsAddedSince(landed.id, began) : []
+        remove(itemIds)
+        openNext(itemIds)
+      },
+      {
+        message: notJunk
+          ? plural(
+              itemIds.length,
+              { one: 'mailbox.saidNotJunkOne', other: 'mailbox.saidNotJunkOther' },
+              { count: itemIds.length },
+            )
+          : plural(
+              itemIds.length,
+              { one: 'mailbox.saidJunkOne', other: 'mailbox.saidJunkOther' },
+              { count: itemIds.length },
+            ),
+        // Junk teaches as well as moves, so undoing has to unteach: moving it
+        // back while the filter still believes it was junk leaves the next one
+        // from that sender in the same place.
+        undo: async () => {
+          if (moved.length === 0) {
+            return
+          }
+          // Un-reporting is itself a move — junk goes to Junk, not-junk goes
+          // to the Inbox — so this both unteaches the filter and brings the
+          // messages back. Moving them again afterwards with the ids from
+          // before would ask for items that no longer exist, which is what
+          // "not found" was.
+          const back = Date.now() - 1000
+          await graphql(REPORT_JUNK, { itemIds: moved.map((item) => item.id), notJunk: !notJunk })
+          const returned = folders.find((candidate) => candidate.kind === (notJunk ? 'junk' : 'inbox'))
+          // And on to wherever they actually came from, when that is not
+          // where un-reporting puts them.
+          await putBack(places, returned ? await itemsAddedSince(returned.id, back) : [])
+        },
+      },
+    )
+  }
+  const deleteItems = (itemIds: string[]) => {
+    const places = whereTheyWere(itemIds)
+    let moved: MovedItem[] = []
+    const began = Date.now() - 1000
+    // From the Trash there is no way back: the message is gone rather than
+    // moved, so nothing is offered that cannot be done.
+    const forever = inTrash
+    return act(
+      async () => {
+        await graphql(DELETE, { itemIds })
+        // Deleting from anywhere but the Trash is a move to it, so that is
+        // where the messages are found again.
+        const trash = folders.find((candidate) => candidate.kind === 'trash')
+        moved = forever || !trash ? [] : await itemsAddedSince(trash.id, began)
+        remove(itemIds)
+        openNext(itemIds)
+      },
+      {
+        message: forever
+          ? plural(
+              itemIds.length,
+              { one: 'mailbox.saidDeletedOne', other: 'mailbox.saidDeletedOther' },
+              { count: itemIds.length },
+            )
+          : plural(
+              itemIds.length,
+              { one: 'mailbox.saidTrashedOne', other: 'mailbox.saidTrashedOther' },
+              { count: itemIds.length },
+            ),
+        undo: forever ? undefined : () => putBack(places, moved),
+      },
+    )
+  }
+
+  // A chosen conversation is all of its messages in this folder: starring,
+  // moving or deleting one means the conversation, which is what the row is.
+  //
+  // Except where the list is not a folder. Starred and a search across the
+  // mailbox gather a conversation's messages from everywhere it has any —
+  // Sent, Drafts, Trash — and acting on all of those from a starred row
+  // would archive your own replies and delete an unsent draft. There the row
+  // stands for the message it shows, which is what it stood for before
+  // conversations existed.
+  const chosen = threads.filter((thread) => selected.has(thread.threadId))
+  const chosenIds = everywhere ? chosen.map((thread) => thread.item.id) : chosen.flatMap((thread) => thread.itemIds)
+  // Sorting by hand is offered where the agent sorts, so the words mean
+  // the same thing to both.
+  const owning = mailboxes.views.find((candidate) => candidate.mailbox.id === folder.mailboxId)
+  const sortable = !!owning?.mailbox.agent?.granted && !!owning.mailbox.agent.triage?.enabled
+  const archive = folderOfKind(
+    { mailbox: undefined as never, folders, unread: 0, starredUnread: 0, priorityUnread: 0 },
+    'archive',
+  )
+  const inTrash = folder.kind === 'trash'
+  const inJunk = folder.kind === 'junk'
+  const targets = folderRows(folders).filter(({ folder: candidate }) => candidate.id !== folder.id)
+  // In Starred, "delete" means what it means in the message's own folder;
+  // the server decides by the item, so nothing to do here but not to call
+  // it "delete for good".
+
+  const toggleAll = () =>
+    setSelected((previous) =>
+      previous.size === threads.length ? new Set() : new Set(threads.map((thread) => thread.threadId)),
+    )
+
+  // The panes measure themselves against mailbox-frame rather than against
+  // the window: how much room two panes have depends on the rail beside
+  // them, and a media query cannot see the rail.
+  return (
+    <div className="mailbox-frame">
+      <div className={['mailbox', itemId ? 'reading' : ''].filter(Boolean).join(' ')}>
+        <div className="mailbox-list">
+          <div className="mailbox-new">
+            <button type="button" className="primary" onClick={() => navigate('/mailbox/compose')}>
+              {t('mailbox.newMessage')}
+            </button>
+          </div>
+          <form
+            className="list-toolbar"
+            onSubmit={(event) => {
+              event.preventDefault()
+              applyFilters({ q: search.trim(), narrowing })
+            }}
+          >
+            <input
+              type="search"
+              placeholder={narrowing.everywhere ? t('mailbox.searchEverywhere') : t('mailbox.search')}
+              aria-label={t('mailbox.search')}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              onBlur={() => applyFilters({ q: search.trim() })}
+            />
+            <div className="segmented" role="group">
+              <button
+                type="button"
+                className={filter === 'unread' ? 'active' : ''}
+                onClick={() => applyFilters({ filter: filter === 'unread' ? 'all' : 'unread' })}
+              >
+                {t('mailbox.unreadOnly')}
+              </button>
+              {!starred && (
+                <button
+                  type="button"
+                  className={filter === 'flagged' ? 'active' : ''}
+                  onClick={() => applyFilters({ filter: filter === 'flagged' ? 'all' : 'flagged' })}
+                >
+                  {t('mailbox.flaggedOnly')}
+                </button>
+              )}
+              <button
+                type="button"
+                className={showNarrowing || narrowed(appliedNarrowing) || appliedNarrowing.everywhere ? 'active' : ''}
+                aria-expanded={showNarrowing}
+                onClick={() => setShowNarrowing((previous) => !previous)}
+              >
+                {t('mailbox.narrow')}
+              </button>
+            </div>
+            {showNarrowing && (
+              <div className="mailbox-narrowing">
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={narrowing.everywhere}
+                    onChange={(event) => setNarrowing({ ...narrowing, everywhere: event.target.checked })}
+                  />
+                  {t('mailbox.narrowEverywhere')}
+                </label>
+                <label>
+                  <span>{t('mailbox.narrowFrom')}</span>
+                  <input
+                    value={narrowing.from}
+                    onChange={(event) => setNarrowing({ ...narrowing, from: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>{t('mailbox.narrowTo')}</span>
+                  <input
+                    value={narrowing.to}
+                    onChange={(event) => setNarrowing({ ...narrowing, to: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>{t('mailbox.narrowSubject')}</span>
+                  <input
+                    value={narrowing.subject}
+                    onChange={(event) => setNarrowing({ ...narrowing, subject: event.target.value })}
+                  />
+                </label>
+                <div className="mailbox-narrowing-row">
+                  <label>
+                    <span>{t('mailbox.narrowSince')}</span>
+                    <input
+                      type="date"
+                      value={narrowing.since}
+                      onChange={(event) => setNarrowing({ ...narrowing, since: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>{t('mailbox.narrowBefore')}</span>
+                    <input
+                      type="date"
+                      value={narrowing.before}
+                      onChange={(event) => setNarrowing({ ...narrowing, before: event.target.value })}
+                    />
+                  </label>
+                </div>
+                <label>
+                  <span>{t('mailbox.narrowAttachment')}</span>
+                  <Select
+                    block
+                    value={narrowing.attachment}
+                    label={t('mailbox.narrowAttachment')}
+                    options={[
+                      { value: 'any', label: t('mailbox.narrowAttachmentAny') },
+                      { value: 'with', label: t('mailbox.narrowAttachmentWith') },
+                      { value: 'without', label: t('mailbox.narrowAttachmentWithout') },
+                    ]}
+                    onChange={(value) => setNarrowing({ ...narrowing, attachment: value as Narrowing['attachment'] })}
+                  />
+                </label>
+                <div className="mailbox-narrowing-actions">
+                  <button type="submit" className="primary">
+                    {t('mailbox.narrowApply')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNarrowing(NOTHING_NARROWED)
+                      applyFilters({ narrowing: NOTHING_NARROWED })
+                      setShowNarrowing(false)
+                    }}
+                  >
+                    {t('mailbox.narrowClear')}
+                  </button>
+                </div>
+              </div>
+            )}
+          </form>
+
+          {/* Acting on a selection. Shown always rather than only once
+              something is selected, so the row does not appear and push the
+              list down at the moment somebody clicks a checkbox. */}
+          <div className="mailbox-actions">
+            <input
+              type="checkbox"
+              aria-label={t('mailbox.selectAll')}
+              checked={threads.length > 0 && selected.size === threads.length}
+              onChange={toggleAll}
+              disabled={threads.length === 0}
+            />
+            {chosen.length > 0 ? (
+              <>
+                <span className="muted">{t('mailbox.selected', { count: chosen.length })}</span>
+                {/* Icons, with their names in the tooltip. Eight words across
+                    the top of a list wrapped onto two lines on anything
+                    narrower than a laptop, and every one of them is a verb a
+                    mail program already has a picture for. */}
+                {chosen.some((thread) => thread.unread > 0) ? (
+                  <IconAction
+                    label={t('mailbox.markRead')}
+                    icon={<MailOpenIcon size={16} />}
+                    disabled={busy}
+                    onClick={() => setFlags(chosenIds, { seen: true })}
+                  />
+                ) : (
+                  <IconAction
+                    label={t('mailbox.markUnread')}
+                    icon={<MailIcon size={16} />}
+                    disabled={busy}
+                    onClick={() => setFlags(chosenIds, { seen: false })}
+                  />
+                )}
+                {chosen.some((item) => !item.flagged) ? (
+                  <IconAction
+                    label={t('mailbox.flag')}
+                    icon={<StarIcon size={16} />}
+                    disabled={busy}
+                    onClick={() => setFlags(chosenIds, { flagged: true })}
+                  />
+                ) : (
+                  <IconAction
+                    label={t('mailbox.unflag')}
+                    icon={<StarIcon size={16} />}
+                    active
+                    disabled={busy}
+                    onClick={() => setFlags(chosenIds, { flagged: false })}
+                  />
+                )}
+                {sortable && (
+                  <IconAction
+                    label={t('mailbox.sortAs')}
+                    icon={<PriorityIcon size={16} />}
+                    disabled={busy}
+                    onClick={() => setSorting(chosenIds)}
+                  />
+                )}
+                {archive && folder.id !== archive.id && (
+                  <IconAction
+                    label={t('mailbox.archive')}
+                    icon={<ArchiveIcon size={16} />}
+                    disabled={busy}
+                    onClick={() => moveTo(chosenIds, archive.id)}
+                  />
+                )}
+                <IconAction
+                  label={inJunk ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
+                  icon={<JunkIcon size={16} />}
+                  disabled={busy}
+                  onClick={() => reportJunk(chosenIds, inJunk)}
+                />
+                <MoveToMenu targets={targets} disabled={busy} onMove={(folderId) => moveTo(chosenIds, folderId)} />
+                <IconAction
+                  label={inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
+                  icon={<TrashIcon size={16} />}
+                  className="danger"
+                  disabled={busy}
+                  onClick={() => deleteItems(chosenIds)}
+                />
+              </>
+            ) : (
+              <>
+                {inTrash && total > 0 && (
+                  <button type="button" className="danger" disabled={busy} onClick={() => setEmptying(true)}>
+                    {t('mailbox.emptyTrash')}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+
+          {error ? <ErrorMessage error={error} /> : null}
+
+          <ul className="mailbox-rows">
+            {threads.map((thread) => (
+              <Row
+                key={thread.threadId}
+                thread={thread}
+                folderName={
+                  everywhere && thread.item.folderId !== folder.id
+                    ? folderLabelOf(folders, thread.item.folderId, t)
+                    : undefined
+                }
+                active={thread.itemIds.includes(itemId ?? '')}
+                selected={selected.has(thread.threadId)}
+                onSelect={(on) =>
+                  setSelected((previous) => {
+                    const next = new Set(previous)
+                    if (on) {
+                      next.add(thread.threadId)
+                    } else {
+                      next.delete(thread.threadId)
+                    }
+                    return next
+                  })
+                }
+                // A draft goes to its conversation like anything else. It used
+                // to open a page of its own, which is the one place in the
+                // program where a half-written reply is shown without the thing
+                // it is replying to — the composer opens inside the
+                // conversation instead, which is where it opens when the reply
+                // is started.
+                href={within(`/mailbox/${folder.id}/${thread.item.id}`)}
+                onOpen={() => navigate(within(`/mailbox/${folder.id}/${thread.item.id}`))}
+                onFlag={(on) => setFlags(everywhere ? [thread.item.id] : thread.itemIds, { flagged: on })}
+              />
+            ))}
+            {!loading && threads.length === 0 && (
+              <li className="mailbox-placeholder">
+                {applied || filter !== 'all' || narrowed(appliedNarrowing) ? (
+                  t('mailbox.nothingFound')
+                ) : starred ? (
+                  t('mailbox.nothingStarred')
+                ) : priority ? (
+                  t('mailbox.nothingPriority')
+                ) : folder.kind === 'inbox' && addresses.length === 0 ? (
+                  // An Inbox with no address is the first thing a new account
+                  // sees, and "nothing here" would leave it wondering why.
+                  <>
+                    {t('mailbox.noAddress')}
+                    {managesDomains && (
+                      <>
+                        {' '}
+                        <Link to="/domains">{t('mailbox.noAddressLink')}</Link>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  t('mailbox.nothing')
+                )}
+              </li>
+            )}
+          </ul>
+
+          <div className="mailbox-foot">
+            <span>{loading ? t('common.loading') : t('mailbox.count', { shown: threads.length, total })}</span>
+            {threads.length < total && !loading && (
+              <button type="button" className="show-more" onClick={() => load(threads.length)}>
+                {t('mailbox.loadMore')}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="mailbox-pane">
+          {itemId ? (
+            <Reader
+              key={itemId}
+              itemId={itemId}
+              folder={folder}
+              archive={archive}
+              targets={targets}
+              busy={busy}
+              onSeen={(itemIds, seen) => setFlags(itemIds, { seen })}
+              onFlag={(itemIds, flagged) => setFlags(itemIds, { flagged })}
+              onMove={(itemIds, target) => moveTo(itemIds, target)}
+              onJunk={(itemIds, notJunk) => reportJunk(itemIds, notJunk)}
+              onDelete={(itemIds) => deleteItems(itemIds)}
+              onSort={sortable ? (itemIds) => setSorting(itemIds) : undefined}
+              onSubject={(value) => setRead({ itemId, subject: value })}
+              onDiscarded={(discarded) => {
+                remove([discarded])
+                openNext([discarded])
+                void mailboxes.refresh()
+              }}
+              onBack={() => navigate(within(`/mailbox/${folder.id}`))}
+            />
+          ) : (
+            <div className="mailbox-pane-placeholder">
+              <EnvelopeTrail />
+              <span>{t('mailbox.chooseMessage')}</span>
+            </div>
+          )}
+        </div>
+
+        {sorting ? <SortDialog itemIds={sorting} onClose={() => setSorting(null)} /> : null}
+        {emptying && (
+          <ConfirmDialog
+            title={t('mailbox.emptyTrash')}
+            body={t('mailbox.emptyTrashConfirm')}
+            confirmLabel={t('mailbox.emptyTrash')}
+            busy={busy}
+            onConfirm={() =>
+              act(async () => {
+                await graphql(EMPTY_TRASH, { mailboxId: folder.mailboxId })
+                setThreads([])
+                setTotal(0)
+                setEmptying(false)
+                if (itemId) {
+                  navigate(within(`/mailbox/${folder.id}`))
+                }
+              })
+            }
+            onClose={() => setEmptying(false)}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// folderLabelOf is a folder's name by id, for a hit from another folder.
+function folderLabelOf(folders: MailboxFolder[], folderId: string, t: (key: Key) => string): string {
+  const found = folders.find((folder) => folder.id === folderId)
+  return found ? folderLabel(t, found) : ''
+}
+
+function Row({
+  thread,
+  folderName,
+  href,
+  active,
+  selected,
+  onSelect,
+  onOpen,
+  onFlag,
+}: {
+  thread: MailboxThread
+  folderName?: string
+  href: string
+  active: boolean
+  selected: boolean
+  onSelect: (on: boolean) => void
+  onOpen: () => void
+  onFlag: (on: boolean) => void
+}) {
+  const { t } = useTranslation()
+  const item = thread.item
+  const mail = item.mail
+  // Who the row is about: everybody who has written, when more than one has.
+  // A conversation of one reads as it always did.
+  const who =
+    thread.participants.length > 1
+      ? thread.participants.join(', ')
+      : thread.participants[0] || mail?.fromName || mail?.from || mail?.sender || t('mailbox.unknownSender')
+  return (
+    <li
+      className={['mailbox-row', thread.unread > 0 ? 'unread' : '', active ? 'active' : ''].filter(Boolean).join(' ')}
+      onClick={onOpen}
+    >
+      <input
+        type="checkbox"
+        aria-label={t('mailbox.select')}
+        checked={selected}
+        onClick={(event) => event.stopPropagation()}
+        onChange={(event) => onSelect(event.target.checked)}
+      />
+      <button
+        type="button"
+        className={['mailbox-star', thread.flagged ? 'on' : ''].filter(Boolean).join(' ')}
+        aria-label={thread.flagged ? t('mailbox.unflag') : t('mailbox.flag')}
+        aria-pressed={thread.flagged}
+        onClick={(event) => {
+          event.stopPropagation()
+          onFlag(!thread.flagged)
+        }}
+      >
+        {thread.flagged ? '★' : '☆'}
+      </button>
+      {/* A real link, so the keyboard reaches it and a middle click opens
+          it in a tab; the row's own click is for the mouse. */}
+      <Link
+        className="mailbox-row-link"
+        to={href}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          onOpen()
+        }}
+      >
+        <div className="mailbox-row-from">
+          {/* The sender's own mark where they publish one and the message
+              proved it came from them, and their initial otherwise. Who wrote
+              is what the eye looks for first in a list. */}
+          <SenderLogo name={who} logoDomain={mail?.logoDomain} size={18} />
+          {/* The name has its own box so that it, and not the marks beside
+              it, is what gives way when the row is narrow. */}
+          <span className="mailbox-row-who">{who}</span>
+          {thread.count > 1 && <span className="mailbox-row-count">{thread.count}</span>}
+          {/* An answer begun and left. Worth saying in the list, because the
+              conversation looks finished otherwise and the half-written reply
+              is two folders away. */}
+          {thread.hasDraft && <span className="mailbox-row-draft">{t('mailbox.draft')}</span>}
+          {item.insight && <InsightChips insight={item.insight} />}
+        </div>
+        <div className="mailbox-row-subject">
+          {folderName && <span className="mailbox-row-folder">{folderName}</span>}
+          {mail?.subject || t('mailbox.noSubject')}
+        </div>
+      </Link>
+      <div className="mailbox-row-when">
+        {/* What the checks said, in the width of a character: the answer to
+            "is this really from who it says" belongs where the message is
+            listed, not only on the audit page. */}
+        <VerdictMark mail={mail} />
+        <RelativeTime value={mail?.receivedAt ?? item.addedAt} />
+      </div>
+    </li>
+  )
+}
+
+// The fixed categories the agent sorts into; a person's own are shown by
+// their name, since nobody but them knows what to call them.
+// SortDialog sorts messages by hand: the category, the priority, whether
+// a reply is needed — each left as it is unless changed. The agent is told
+// what the person chose, as a correction it learns from.
+function SortDialog({ itemIds, onClose }: { itemIds: string[]; onClose: () => void }) {
+  const { t, plural } = useTranslation()
+  const toast = useToast()
+  const agent = useAgent({ refresh: false })
+  const [category, setCategory] = useState('')
+  const [priority, setPriority] = useState('')
+  const [needsReply, setNeedsReply] = useState('')
+  const [busy, setBusy] = useState(false)
+  const categories = agent.data?.ReadAgent.categories ?? Object.keys(CATEGORY_LABELS)
+  return (
+    <FormDialog
+      title={plural(itemIds.length, { one: 'mailbox.sortTitleOne', other: 'mailbox.sortTitleOther' })}
+      submitLabel={t('mailbox.sort')}
+      busy={busy}
+      canSubmit={category !== '' || priority !== '' || needsReply !== ''}
+      onClose={onClose}
+      onSubmit={() => {
+        setBusy(true)
+        graphql(SORT_ITEMS, {
+          itemIds,
+          category: category || undefined,
+          priority: priority || undefined,
+          needsReply: needsReply === '' ? undefined : needsReply === 'yes',
+        })
+          .then(() => {
+            toast.done(t('mailbox.sorted'))
+            announceMailChanged()
+            onClose()
+          })
+          .catch((caught) => toast.failed(caught instanceof Error ? caught.message : String(caught)))
+          .finally(() => setBusy(false))
+      }}
+    >
+      <label>
+        <span>{t('mailbox.sortCategory')}</span>
+        <Select
+          block
+          value={category}
+          label={t('mailbox.sortCategory')}
+          options={[
+            { value: '', label: t('mailbox.sortUnchanged') },
+            ...categories.map((name) => ({
+              value: name,
+              label: CATEGORY_LABELS[name] ? t(CATEGORY_LABELS[name]) : name,
+            })),
+          ]}
+          onChange={setCategory}
+        />
+      </label>
+      <label>
+        <span>{t('mailbox.sortPriority')}</span>
+        <Select
+          block
+          value={priority}
+          label={t('mailbox.sortPriority')}
+          options={[
+            { value: '', label: t('mailbox.sortUnchanged') },
+            { value: 'high', label: t('mailbox.priority.high') },
+            { value: 'normal', label: t('mailbox.priority.normal') },
+            { value: 'low', label: t('mailbox.priority.low') },
+          ]}
+          onChange={setPriority}
+        />
+      </label>
+      <label>
+        <span>{t('mailbox.sortNeedsReply')}</span>
+        <Select
+          block
+          value={needsReply}
+          label={t('mailbox.sortNeedsReply')}
+          options={[
+            { value: '', label: t('mailbox.sortUnchanged') },
+            { value: 'yes', label: t('common.yes') },
+            { value: 'no', label: t('common.no') },
+          ]}
+          onChange={setNeedsReply}
+        />
+      </label>
+    </FormDialog>
+  )
+}
+
+const CATEGORY_LABELS: Record<string, Key> = {
+  personal: 'mailbox.category.personal',
+  work: 'mailbox.category.work',
+  newsletter: 'mailbox.category.newsletter',
+  notification: 'mailbox.category.notification',
+  receipt: 'mailbox.category.receipt',
+  promotion: 'mailbox.category.promotion',
+  social: 'mailbox.category.social',
+  invitation: 'mailbox.category.invitation',
+  phishing: 'mailbox.category.phishing',
+  junk: 'mailbox.category.junk',
+  other: 'mailbox.category.other',
+}
+
+// InsightChips is what the agent worked out about a message, in the width
+// of a word or two: a mark when it said the message matters today, the
+// category, and whether somebody is waiting on an answer. The summary rides
+// on the title, where a hover finds it without the row growing a line.
+export function InsightChips({ insight }: { insight: MailInsight }) {
+  const { t } = useTranslation()
+  const label = CATEGORY_LABELS[insight.category]
+  return (
+    <span className="mailbox-row-insight" title={insight.summary || undefined}>
+      {insight.priority === 'high' && (
+        <span className="mailbox-row-priority" aria-label={t('mailbox.priorityHigh')}>
+          !
+        </span>
+      )}
+      {insight.category && insight.category !== 'other' && (
+        <span className="mailbox-row-chip">{label ? t(label) : insight.category}</span>
+      )}
+      {insight.needsReply && <span className="mailbox-row-chip">{t('mailbox.needsReply')}</span>}
+    </span>
+  )
+}
+
+const CANCEL_REPLY = `
+  mutation ($replyId: String!) {
+    CancelAgentReply(replyId: $replyId) { id status }
+  }`
+
+// HeldReplyBanner says the agent is about to answer, and offers the two
+// ways out: cancel, or take the draft over — which is also a cancel, since
+// an edited reply is the person's to send.
+function HeldReplyBanner({ reply, onChanged }: { reply: AgentReply; onChanged: () => void }) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false)
+  const cancel = async () => {
+    setBusy(true)
+    try {
+      await graphql(CANCEL_REPLY, { replyId: reply.id })
+      toast.done(t('mailbox.heldReplyCancelled'))
+      onChanged()
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="mailbox-held-reply" role="status">
+      <div className="mailbox-held-reply-head">
+        <SparkIcon size={14} />
+        <span>
+          {reply.sendAfter
+            ? t('mailbox.heldReplyAt', { to: reply.to, time: formatTime(reply.sendAfter) })
+            : t('mailbox.heldReply', { to: reply.to })}
+        </span>
+        <button type="button" className="link" onClick={() => setOpen((previous) => !previous)}>
+          {open ? t('mailbox.heldReplyHide') : t('mailbox.heldReplyShow')}
+        </button>
+        <span className="mailbox-held-reply-actions">
+          {reply.draftItemId && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => navigate(`/mailbox/compose?draft=${encodeURIComponent(reply.draftItemId ?? '')}`)}
+            >
+              {t('mailbox.heldReplyEdit')}
+            </button>
+          )}
+          <button type="button" className="danger" disabled={busy} onClick={() => void cancel()}>
+            {t('mailbox.heldReplyCancel')}
+          </button>
+        </span>
+      </div>
+      {open && <p className="mailbox-held-reply-text">{reply.text}</p>}
+    </div>
+  )
+}
+
+// ThreadSummaryStrip is the agent's summary of the conversation, folded at
+// the top of the reader: a line to open when the conversation is long, and
+// nothing that pushes the messages down when it is not wanted.
+function ThreadSummaryStrip({ summary }: { summary: ThreadSummary }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem('teanode.mailbox.summaryOpen') === '1'
+    } catch {
+      return false
+    }
+  })
+  const toggle = () => {
+    setOpen((previous) => {
+      try {
+        localStorage.setItem('teanode.mailbox.summaryOpen', previous ? '0' : '1')
+      } catch {
+        // A browser that keeps nothing forgets the fold, which is fine.
+      }
+      return !previous
+    })
+  }
+  return (
+    <div className={['mailbox-thread-summary', open ? 'open' : ''].filter(Boolean).join(' ')}>
+      <button type="button" className="mailbox-thread-summary-head" aria-expanded={open} onClick={toggle}>
+        <SparkIcon size={14} />
+        <span>{t('mailbox.summaryTitle')}</span>
+        {summary.pending && (
+          <span className="muted">{summary.summary ? t('mailbox.summaryUpdating') : t('mailbox.summaryWriting')}</span>
+        )}
+        {!summary.pending && summary.stale && <span className="muted">{t('mailbox.summaryStale')}</span>}
+        {/* The same chevron every other disclosure here uses, turned over
+            rather than swapped for a different arrow: a glyph replaced at
+            the moment of the press reads as a flicker, and a turn reads as
+            the two states being one thing. */}
+        <span className="mailbox-thread-summary-chevron">
+          <ChevronDownIcon size={14} className="chevron" />
+        </span>
+      </button>
+      {open && summary.summary && <p className="mailbox-thread-summary-text">{summary.summary}</p>}
+    </div>
+  )
+}
+
+// Reader shows the conversation a message belongs to, not the message alone.
+//
+// Newest first, because the last thing said is what somebody opening a
+// conversation wants; read messages collapsed to a line, because a
+// conversation of twenty is unreadable otherwise; and every message of it in
+// this mailbox whatever folder it is in, because the answers are in Sent
+// while the conversation is being read from the Inbox.
+function Reader({
+  itemId,
+  folder,
+  archive,
+  targets,
+  busy,
+  onSeen,
+  onFlag,
+  onMove,
+  onJunk,
+  onDelete,
+  onSort,
+  onSubject,
+  onDiscarded,
+  onBack,
+}: {
+  itemId: string
+  folder: MailboxFolder
+  archive?: MailboxFolder
+  targets: { folder: MailboxFolder; depth: number }[]
+  busy: boolean
+  onSeen: (itemIds: string[], seen: boolean) => void
+  onFlag: (itemIds: string[], flagged: boolean) => void
+  onMove: (itemIds: string[], folderId: string) => void
+  onJunk: (itemIds: string[], notJunk: boolean) => void
+  onDelete: (itemIds: string[]) => void
+  onSort?: (itemIds: string[]) => void
+  // What the conversation is called, for the trail above: the folder's list
+  // is where that normally comes from, and this is for when it is not in it.
+  onSubject: (subject: string) => void
+  // A draft thrown away from the composer below. The list is the folder's,
+  // not this pane's, so taking the row out of it belongs to the folder.
+  onDiscarded: (itemId: string) => void
+  onBack: () => void
+}) {
+  const { t } = useTranslation()
+  const thread = useQuery(() => graphql<{ GetMailboxThread: MailboxThreadView }>(THREAD, { itemId }), [itemId], {
+    refresh: false,
+  })
+  // The agent filed or answered something in this conversation: read it
+  // again.
+  useEffect(() => {
+    const listener = () => void thread.reload()
+    window.addEventListener(MAIL_CHANGED_EVENT, listener)
+    return () => window.removeEventListener(MAIL_CHANGED_EVENT, listener)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemId])
+
+  // The trail above names the conversation, and the list it was opened from
+  // is usually where that name comes from. When it is not, this is.
+  const named = thread.data?.GetMailboxThread?.subject
+  useEffect(() => {
+    if (named !== undefined) {
+      onSubject(named)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [named])
+
+  // A summary on its way is asked for again in a moment, a few times; the
+  // run is quick when the model is, and a reader who has moved on stops
+  // asking when the page does.
+  const pending = thread.data?.GetMailboxThread?.summary?.pending ?? false
+  const [summaryAsks, setSummaryAsks] = useState(0)
+  useEffect(() => {
+    setSummaryAsks(0)
+  }, [itemId])
+  useEffect(() => {
+    if (!pending || summaryAsks >= 6) {
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setSummaryAsks((previous) => previous + 1)
+      void thread.reload()
+    }, 5000)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, summaryAsks, thread.data])
+
+  // Opening a draft opens the composer on it. The thread is what was asked
+  // for; the draft inside it is what the reader meant.
+  useEffect(() => {
+    const entries = thread.data?.GetMailboxThread?.items ?? []
+    const opened = entries.find((entry) => entry.item.id === itemId)
+    if (opened?.item.draft) {
+      setWriting((previous) => previous ?? { kind: 'draft', itemId: opened.item.id })
+    }
+  }, [thread.data, itemId])
+
+  // Which messages are open. Decided once from what arrives — the newest,
+  // anything unread, and the one that was clicked — and then it is the
+  // reader's, so opening and closing sticks while they are on the page.
+  const [open, setOpen] = useState<Set<string> | null>(null)
+  // What has been marked read or unread here, so that neither flickers back
+  // to what the query returned. Absent means "as it arrived".
+  const [marks, setMarks] = useState<Record<string, boolean>>({})
+  const [flags, setFlagState] = useState<Record<string, boolean>>({})
+  // What is being written, if anything: which message it answers and how.
+  // Above the newest message rather than below the whole conversation,
+  // because that is where the answer will be once it is sent.
+  const [writing, setWriting] = useState<{ kind: 'reply' | 'replyAll' | 'forward' | 'draft'; itemId: string } | null>(
+    null,
+  )
+  // The draft what is being written has been saved as. Closing the composer
+  // saves what was typed, so reopening it — Reply, then Reply to all — has to
+  // continue that draft rather than start a second one of the same reply.
+  const [draftId, setDraftId] = useState<string | null>(null)
+  const navigate = useNavigate()
+
+  const view = thread.data?.GetMailboxThread
+  const entries = view?.items ?? []
+
+  useEffect(() => {
+    if (!view || open !== null) {
+      return
+    }
+    const wanted = new Set<string>()
+    const readable = view.items.filter((entry) => !entry.item.draft)
+    if (readable.length > 0) {
+      wanted.add(readable[0].item.id)
+    }
+    for (const entry of readable) {
+      if (!entry.item.seen || entry.item.id === itemId) {
+        wanted.add(entry.item.id)
+      }
+    }
+    setOpen(wanted)
+    // Opening a conversation reads what it opens. Once: the reader can mark
+    // one unread again afterwards and it stays that way.
+    //
+    // Only what is in the folder being read, or the message that was asked
+    // for. Opening a conversation from the Inbox should not clear the unread
+    // mark on a message of it sitting in Junk.
+    const opening = view.items
+      .filter(
+        (entry) =>
+          wanted.has(entry.item.id) && !entry.item.seen && (entry.folderId === folder.id || entry.item.id === itemId),
+      )
+      .map((entry) => entry.item.id)
+    if (opening.length > 0) {
+      setMarks((previous) => ({ ...previous, ...Object.fromEntries(opening.map((id) => [id, true])) }))
+      onSeen(opening, true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view])
+
+  // The same actions the toolbar above offers, on the keys a person coming
+  // from another mail program already has in their fingers. Everything here
+  // is something the toolbar can do: a shortcut for something with no button
+  // is a feature only its author knows about.
+  const [showingKeys, setShowingKeys] = useState(false)
+  const shortcuts = useMemo<Shortcut[]>(() => {
+    // Derived here rather than read from below: everything under the early
+    // returns runs only once there is a conversation to show, and a hook has
+    // to run every time.
+    const items = view?.items ?? []
+    const inFolder = items.filter((entry) => entry.folderId === folder.id).map((entry) => entry.item.id)
+    const acting = inFolder.length > 0 ? inFolder : [itemId]
+    const anyUnread = items.some((entry) => !(marks[entry.item.id] ?? entry.item.seen))
+    const anyFlagged = items.some((entry) => flags[entry.item.id] ?? entry.item.flagged)
+
+    const list: Shortcut[] = [
+      { key: 'u', label: t('shortcuts.back'), run: onBack },
+      { key: 'r', label: t('shortcuts.reply'), run: () => setWriting({ itemId: acting[0], kind: 'reply' }) },
+      { key: 'a', label: t('shortcuts.replyAll'), run: () => setWriting({ itemId: acting[0], kind: 'replyAll' }) },
+      { key: 'f', label: t('shortcuts.forward'), run: () => setWriting({ itemId: acting[0], kind: 'forward' }) },
+      {
+        key: 's',
+        label: t('shortcuts.flag'),
+        run: () => {
+          const next = !anyFlagged
+          setFlagState((previous) => ({ ...previous, ...Object.fromEntries(acting.map((id) => [id, next])) }))
+          onFlag(acting, next)
+        },
+      },
+      {
+        key: 'm',
+        label: t('shortcuts.read'),
+        run: () => {
+          const seen = anyUnread
+          setMarks((previous) => ({ ...previous, ...Object.fromEntries(acting.map((id) => [id, seen])) }))
+          onSeen(acting, seen)
+        },
+      },
+      { key: '!', shift: true, label: t('shortcuts.junk'), run: () => onJunk(acting, folder.kind === 'junk') },
+      { key: '#', shift: true, label: t('shortcuts.delete'), run: () => onDelete(acting) },
+      { key: '?', shift: true, label: t('shortcuts.help'), run: () => setShowingKeys(true) },
+    ]
+    if (archive) {
+      list.splice(1, 0, { key: 'e', label: t('shortcuts.archive'), run: () => onMove(acting, archive.id) })
+    }
+    return list
+  }, [view, itemId, marks, flags, archive, folder.id, folder.kind, onBack, onDelete, onFlag, onJunk, onMove, onSeen, t])
+
+  useShortcuts(shortcuts, !busy)
+
+  if (thread.loading && !thread.data) {
+    return <Loading />
+  }
+  if (thread.error) {
+    // The conversation is gone from here — the agent, or another window,
+    // moved it — so the list is the place to be, not a blank reader.
+    if (/not found/i.test(thread.error instanceof Error ? thread.error.message : String(thread.error))) {
+      // After this render, not during it: leaving is the parent's state.
+      setTimeout(onBack, 0)
+      return null
+    }
+    return <ErrorMessage error={thread.error} />
+  }
+  if (!view || entries.length === 0) {
+    return <p className="muted">{t('common.notFound')}</p>
+  }
+
+  // What an answer answers is the newest message of the conversation, not
+  // the unsent one at the top of it: a draft is what you are writing, and
+  // replying to your own half-written reply is not a thing anybody means.
+  const newest = entries.find((entry) => !entry.item.draft) ?? entries[0]
+  const draft = entries.find((entry) => entry.item.draft)
+  const opened = open ?? new Set([newest.item.id])
+  // What the actions act on: the conversation's messages in the folder being
+  // read, since that is the row the reader came from. A message of it that
+  // lives in Sent is not archived by archiving the conversation.
+  const here = entries.filter((entry) => entry.folderId === folder.id).map((entry) => entry.item.id)
+  // Read from Starred or from a search, there is no folder to scope to, so
+  // the actions act on the message that was opened — not on every message of
+  // the conversation wherever it happens to be filed.
+  const acting = here.length > 0 ? here : [itemId]
+  const seenOf = (entry: MailboxThreadItem) => marks[entry.item.id] ?? entry.item.seen
+  const anyUnread = entries.some((entry) => !seenOf(entry))
+  const anyFlagged = entries.some((entry) => flags[entry.item.id] ?? entry.item.flagged)
+
+  const inTrash = folder.kind === 'trash'
+  const toggle = (id: string) =>
+    setOpen((previous) => {
+      const next = new Set(previous ?? opened)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+
+  return (
+    <>
+      <div className="mailbox-pane-actions">
+        <IconAction label={t('mailbox.backToList')} icon={<ArrowLeftIcon size={16} />} onClick={onBack} />
+        {draft && (
+          <button
+            type="button"
+            className="primary"
+            disabled={Boolean(writing)}
+            onClick={() => setWriting({ kind: 'draft', itemId: draft.item.id })}
+          >
+            {t('mailbox.editDraft')}
+          </button>
+        )}
+        {!newest.item.draft && (
+          <>
+            {/* One answer at a time. Swapping a half-written reply for a
+                forward would either throw away what was typed or leave a
+                second draft of it behind, and neither is what the click
+                meant: close it, and the draft is kept. */}
+            <IconAction
+              label={t('mailbox.reply')}
+              icon={<ReplyIcon size={16} />}
+              shortcut="r"
+              disabled={Boolean(writing)}
+              onClick={() => setWriting({ kind: 'reply', itemId: newest.item.id })}
+            />
+            <IconAction
+              label={t('mailbox.replyAll')}
+              icon={<ReplyAllIcon size={16} />}
+              shortcut="a"
+              disabled={Boolean(writing)}
+              onClick={() => setWriting({ kind: 'replyAll', itemId: newest.item.id })}
+            />
+            <IconAction
+              label={t('mailbox.forward')}
+              icon={<ForwardIcon size={16} />}
+              shortcut="f"
+              disabled={Boolean(writing)}
+              onClick={() => setWriting({ kind: 'forward', itemId: newest.item.id })}
+            />
+            {/* The agent is pointed at the conversation: the drawer opens
+                with a chip for it, or the agent page when there is no
+                agent to open. */}
+            <IconAction
+              label={t('mailbox.askAgent')}
+              icon={<SparkIcon size={16} />}
+              onClick={() => {
+                const handled = askAgentAbout({
+                  itemId: newest.item.id,
+                  threadId: view?.threadId,
+                  subject: newest.item.mail?.subject ?? view?.subject,
+                  from: newest.item.mail?.from,
+                })
+                if (!handled) window.location.assign('/settings/agent')
+              }}
+            />
+          </>
+        )}
+        <IconAction
+          label={anyUnread ? t('mailbox.markRead') : t('mailbox.markUnread')}
+          icon={anyUnread ? <MailOpenIcon size={16} /> : <MailIcon size={16} />}
+          shortcut="m"
+          disabled={busy}
+          onClick={() => {
+            // Anything unread and the button says "Mark read", so that is
+            // what it does; everything read and it marks unread.
+            const seen = anyUnread
+            setMarks((previous) => ({ ...previous, ...Object.fromEntries(acting.map((id) => [id, seen])) }))
+            onSeen(acting, seen)
+          }}
+        />
+        <IconAction
+          label={anyFlagged ? t('mailbox.unflag') : t('mailbox.flag')}
+          icon={<StarIcon size={16} />}
+          shortcut="s"
+          active={anyFlagged}
+          disabled={busy}
+          onClick={() => {
+            const next = !anyFlagged
+            // The same messages the server is told about, so the star does
+            // not show the answer to a question that was never asked.
+            setFlagState((previous) => ({ ...previous, ...Object.fromEntries(acting.map((id) => [id, next])) }))
+            onFlag(acting, next)
+          }}
+        />
+        {onSort && (
+          <IconAction
+            label={t('mailbox.sortAs')}
+            icon={<PriorityIcon size={16} />}
+            disabled={busy}
+            onClick={() => onSort(acting)}
+          />
+        )}
+        {archive && folder.id !== archive.id && (
+          <IconAction
+            label={t('mailbox.archive')}
+            icon={<ArchiveIcon size={16} />}
+            shortcut="e"
+            disabled={busy}
+            onClick={() => onMove(acting, archive.id)}
+          />
+        )}
+        <IconAction
+          label={folder.kind === 'junk' ? t('mailbox.notJunk') : t('mailbox.reportJunk')}
+          icon={<JunkIcon size={16} />}
+          shortcut="!"
+          disabled={busy}
+          onClick={() => onJunk(acting, folder.kind === 'junk')}
+        />
+        {/* A newsletter says how to leave it in its headers, so the way out
+            is here rather than in the small print at the bottom of the
+            message. Only when the message named one. */}
+        {newest.item.mail?.listKey && (
+          <IconAction
+            label={t('subscriptions.openList')}
+            icon={<ListIcon size={16} />}
+            disabled={busy}
+            onClick={() =>
+              // The item knows which list it came from, so this is the list
+              // itself rather than a name to look one up by.
+              navigate(
+                newest.item.subscriptionId
+                  ? `/mailbox/subscriptions/${newest.item.subscriptionId}`
+                  : `/mailbox/subscriptions/${encodeURIComponent(newest.item.mail?.listKey ?? '')}`,
+              )
+            }
+          />
+        )}
+        <MoveToMenu targets={targets} disabled={busy} onMove={(folderId) => onMove(acting, folderId)} />
+        <IconAction
+          label={inTrash ? t('mailbox.deleteForever') : t('mailbox.delete')}
+          icon={<TrashIcon size={16} />}
+          className="danger"
+          shortcut="#"
+          disabled={busy}
+          onClick={() => onDelete(acting)}
+        />
+      </div>
+
+      {showingKeys && (
+        <ConfirmDialog
+          title={t('shortcuts.title')}
+          body={
+            <>
+              <p className="muted">{t('shortcuts.intro')}</p>
+              <dl className="shortcut-list">
+                {shortcuts.map((shortcut) => (
+                  <div key={shortcut.key}>
+                    <dt>
+                      <kbd>{shortcut.key}</kbd>
+                    </dt>
+                    <dd>{shortcut.label}</dd>
+                  </div>
+                ))}
+              </dl>
+            </>
+          }
+          onClose={() => setShowingKeys(false)}
+        />
+      )}
+
+      <div className="mailbox-pane-head">
+        <h2>{view.subject || t('mailbox.noSubject')}</h2>
+        {entries.length > 1 && (
+          <p className="muted mailbox-thread-count">
+            {t('mailbox.threadCount', { count: entries.length })}
+            {/* A conversation longer than the server returns is shown from
+                its newest end; saying so is the difference between a long
+                conversation and a conversation that lost its beginning. */}
+            {view.truncated ? ` · ${t('mailbox.threadTruncated', { count: entries.length })}` : ''}
+          </p>
+        )}
+      </div>
+
+      {view.heldReply && view.heldReply.status === 'held' && (
+        <HeldReplyBanner reply={view.heldReply} onChanged={() => void thread.reload()} />
+      )}
+      {view.summary && (view.summary.summary || view.summary.pending) && <ThreadSummaryStrip summary={view.summary} />}
+
+      {writing && (
+        <div className="mailbox-thread-compose">
+          <div className="page-actions page-actions-end">
+            {/* Closing is not discarding: what was typed is saved as a draft
+                on the way out, and picking Reply again continues it. */}
+            <button type="button" onClick={() => setWriting(null)}>
+              {t('mailbox.closeReply')}
+            </button>
+          </div>
+          <MailboxComposer
+            key={`${writing.kind}-${writing.itemId}`}
+            replyTo={writing.kind === 'forward' || writing.kind === 'draft' ? null : writing.itemId}
+            replyAll={writing.kind === 'replyAll'}
+            forwardOf={writing.kind === 'forward' ? writing.itemId : null}
+            draftOf={writing.kind === 'draft' ? writing.itemId : draftId}
+            onDraft={setDraftId}
+            onSent={() => {
+              setWriting(null)
+              setDraftId(null)
+              void thread.reload()
+            }}
+            // Discarding is not closing. The draft is gone from the server,
+            // so the row that showed it has to go from the list and from the
+            // conversation as well — otherwise it sits there until something
+            // else reloads the page, and opening it asks for a message that
+            // is not there any more.
+            onDiscarded={(discarded) => {
+              setWriting(null)
+              setDraftId(null)
+              if (discarded) {
+                onDiscarded(discarded)
+              }
+              void thread.reload()
+            }}
+          />
+        </div>
+      )}
+
+      <ol className="mailbox-thread">
+        {entries
+          // The draft being written is the composer above, not a row as
+          // well: the same half-written answer twice on one screen.
+          .filter((entry) => !(writing?.kind === 'draft' && writing.itemId === entry.item.id))
+          .map((entry) => (
+            <ThreadMessage
+              key={entry.item.id}
+              entry={entry}
+              folderId={folder.id}
+              seen={seenOf(entry)}
+              open={opened.has(entry.item.id)}
+              onChanged={() => void thread.reload()}
+              onToggle={() => {
+                // A draft is not a message to read, it is an answer to go back
+                // to. Clicking it opens what was written where it was written.
+                if (entry.item.draft) {
+                  setWriting({ kind: 'draft', itemId: entry.item.id })
+                  return
+                }
+                const opening = !opened.has(entry.item.id)
+                toggle(entry.item.id)
+                if (opening && !seenOf(entry)) {
+                  setMarks((previous) => ({ ...previous, [entry.item.id]: true }))
+                  onSeen([entry.item.id], true)
+                }
+              }}
+            />
+          ))}
+      </ol>
+    </>
+  )
+}
+
+// ThreadMessage is one message of a conversation: a line when it is closed,
+// the message itself when it is open. Its body is fetched only once it is
+// opened, so a conversation of twenty costs one request rather than twenty.
+// Exported so that a mailing list is read the way a conversation is: the same
+// component, the same collapsed line for what has been read, the same menu.
+export function ThreadMessage({
+  entry,
+  folderId,
+  seen,
+  open,
+  onToggle,
+  onChanged,
+  allowImages,
+}: {
+  entry: MailboxThreadItem
+  folderId: string
+  // Pictures already allowed by something the message itself cannot see —
+  // the list it belongs to having been trusted a moment ago.
+  allowImages?: boolean
+  // Read as the page has it, which is what arrived plus what opening it has
+  // marked since — so a message does not stay bold after it was just read.
+  seen: boolean
+  open: boolean
+  onToggle: () => void
+  // Read the conversation again: something on this message changed that the
+  // page did not do itself -- an offer accepted, an offer waved away.
+  onChanged?: () => void
+}) {
+  const { t } = useTranslation()
+  const mailboxes = useMailboxes()
+  const item = entry.item
+  const mail = item.mail
+  // Whether this message is somewhere nothing should be offered from. The
+  // folder it is in now, not the one the reader came from: a message moved
+  // to Junk after its offers were written must stop showing them.
+  const unwantedFolder = ((view) => {
+    if (!view) {
+      return false
+    }
+    const folder = view.folders.find((candidate) => candidate.id === item.folderId)
+    return folder?.kind === 'junk' || folder?.kind === 'trash'
+  })(mailboxes.current)
+  // Where the message's own menu — download, headers, theme — goes: the end
+  // of the line that names the message, not a row of its own above it. A
+  // conversation of six would otherwise carry six rows holding one button.
+  const [menuSlot, setMenuSlot] = useState<HTMLElement | null>(null)
+  const content = useQuery(
+    () =>
+      open && mail ? graphql<{ GetMailContent: MailContent }>(CONTENT, { mailId: mail.id }) : Promise.resolve(null),
+    [open, mail?.id],
+    { refresh: false },
+  )
+  const who = mail?.fromName || mail?.from || mail?.sender || t('mailbox.unknownSender')
+  const verdict = verdictOf(mail, t)
+  // From, To, Received and what the checks said, when somebody asks for them.
+  const [details, setDetails] = useState(false)
+  // Whether the dialog for keeping this message's sender is up.
+  const [keeping, setKeeping] = useState(false)
+
+  return (
+    <li className={['mailbox-message', open ? 'open' : '', seen ? '' : 'unread'].filter(Boolean).join(' ')}>
+      <div className="mailbox-message-head">
+        {/* The whole line opens and closes it, so there is nothing to aim
+            at — except the menu at its end, which is a button of its own and
+            so sits outside this one rather than inside it. */}
+        <button type="button" className="mailbox-message-summary" aria-expanded={open} onClick={onToggle}>
+          <SenderLogo name={who} logoDomain={mail?.logoDomain} size={20} />
+          <Tooltip label={mail?.from || mail?.sender || ''}>
+            <span className="mailbox-message-who">{who}</span>
+          </Tooltip>
+          {/* Where it is, when that is not where the conversation is being
+              read: your own answer is in Sent, and saying so is the difference
+              between a conversation and a list. */}
+          {entry.folderId !== folderId && entry.folderName && (
+            <span className="mailbox-row-folder">{entry.folderName}</span>
+          )}
+          {!open && <span className="mailbox-message-subject">{mail?.subject}</span>}
+          <span className="mailbox-message-when">
+            {/* Whether the message is really from who it says: the one thing
+                about it worth seeing without asking. Everything else the
+                checks found is behind "show details" in the menu. */}
+            <VerdictMark mail={mail} />
+            <RelativeTime value={mail?.receivedAt ?? item.addedAt} />
+          </span>
+        </button>
+        {open && <span className="mailbox-message-menu" ref={setMenuSlot} />}
+      </div>
+
+      {open && (
+        <div className="mailbox-message-body">
+          {mail ? (
+            <>
+              {details && (
+                <dl className="mailbox-pane-meta">
+                  <dt>{t('mailbox.from')}</dt>
+                  <dd>
+                    {mail.fromName
+                      ? `${mail.fromName} <${mail.from || mail.sender}>`
+                      : mail.from || mail.sender || t('mailbox.unknownSender')}
+                  </dd>
+                  <dt>{t('mailbox.to')}</dt>
+                  <dd>{(mail.recipients ?? []).join(', ')}</dd>
+                  <dt>{t('mail.received')}</dt>
+                  <dd>{formatTime(mail.receivedAt)}</dd>
+                  {verdict && (
+                    <>
+                      <dt>{t('mailDetail.authentication')}</dt>
+                      <dd className={verdict.tone ? `verdict-detail ${verdict.tone}` : 'verdict-detail'}>
+                        {verdict.detail}
+                      </dd>
+                    </>
+                  )}
+                  {/* What the agent worked out, in the same list rather than
+                      a second one under it. Both answer "what does this
+                      server know about this message", and two lists of the
+                      same shape one above the other read as one list that
+                      has gone wrong. */}
+                  {entry.item.insight && <SortingRows insight={entry.item.insight} />}
+                </dl>
+              )}
+              {/* Above the message, because an invitation is the thing the
+                  message is about and the words around it are a covering
+                  note. */}
+              <InvitationCard itemId={entry.item.id} />
+              {/* And what the message carries in its words rather than in a
+                  calendar part: an appointment, somebody's details. An
+                  offer, with the line it came from under it. */}
+              {/* Not from junk. A scam's signature is the most carefully
+                  written part of it, so it is exactly what an extract run
+                  finds -- and being asked whether to keep the sender of a
+                  message that is sitting in Junk is the agent undoing what
+                  the filter just did. Nothing is offered from there or from
+                  Trash, whatever was worked out before the message landed
+                  in either. */}
+              {!unwantedFolder && (
+                <ProposalCards
+                  itemId={entry.item.id}
+                  proposals={entry.item.insight?.proposals}
+                  onChanged={() => onChanged?.()}
+                />
+              )}
+              {content.loading && !content.data ? (
+                <Loading />
+              ) : content.error ? (
+                <ErrorMessage error={content.error} />
+              ) : (
+                <MessageContent
+                  mailId={mail.id}
+                  itemId={entry.item.id}
+                  allowImages={allowImages}
+                  content={content.data?.GetMailContent}
+                  mode="mailbox"
+                  menuContainer={menuSlot}
+                  menuExtra={(close) => (
+                    <>
+                      {/* Keeping the sender: the address book is the only
+                          list of people there is, and nothing arrives in it
+                          by itself. Here, because this is where you find out
+                          you want to keep somebody. */}
+                      {(mail.from || mail.sender) && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            close()
+                            setKeeping(true)
+                          }}
+                        >
+                          {t('mailbox.saveSender')}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          close()
+                          setDetails((previous) => !previous)
+                        }}
+                      >
+                        {t(details ? 'mailbox.hideDetails' : 'mailbox.showDetails')}
+                      </button>
+                    </>
+                  )}
+                />
+              )}
+            </>
+          ) : (
+            <p className="muted">{t('mailbox.messageGone')}</p>
+          )}
+          {keeping && mail && (
+            <SaveSenderDialog
+              address={mail.from || mail.sender || ''}
+              displayName={mail.fromName}
+              onClose={() => setKeeping(false)}
+            />
+          )}
+        </div>
+      )}
+    </li>
+  )
+}
+
+// SortingRows is what the agent worked out about a message, for somebody who
+// wants to know why it was filed where it was. Rows of the details list
+// rather than a list of their own: it is the same question.
+//
+// The category and the priority are what rules act on, so a message in the
+// wrong folder is usually a category somebody disagrees with -- and until
+// now there was nowhere to see that it had one. The summary and the action
+// items are what the agent read the message as; the notes are what a
+// research run found. The run itself is a conversation kept whole, so the
+// last line opens the working rather than only the verdict.
+function SortingRows({ insight }: { insight: MailInsight }) {
+  const { t } = useTranslation()
+  const items = insight.actionItems ?? []
+  return (
+    <>
+      <dt>{t('mailbox.sortingCategory')}</dt>
+      <dd>{insight.category || t('mailbox.sortingUnsorted')}</dd>
+      <dt>{t('mailbox.sortingPriority')}</dt>
+      <dd>{insight.priority || t('mailbox.sortingUnsorted')}</dd>
+      <dt>{t('mailbox.sortingNeedsReply')}</dt>
+      <dd>{insight.needsReply ? t('common.yes') : t('common.no')}</dd>
+      {insight.summary && (
+        <>
+          <dt>{t('mailbox.sortingSummary')}</dt>
+          <dd>{insight.summary}</dd>
+        </>
+      )}
+      {items.length > 0 && (
+        <>
+          <dt>{t('mailbox.sortingActions')}</dt>
+          <dd>
+            <ul className="mailbox-sorting-list">
+              {items.map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ul>
+          </dd>
+        </>
+      )}
+      {insight.notes && (
+        <>
+          <dt>{t('mailbox.sortingNotes')}</dt>
+          <dd>{insight.notes}</dd>
+        </>
+      )}
+      {(insight.model || insight.runId) && (
+        <>
+          <dt>{t('mailbox.sortingDecidedBy')}</dt>
+          <dd>
+            {insight.model}
+            {insight.runId && (
+              <>
+                {insight.model ? ' · ' : ''}
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() => {
+                    // The drawer takes it when it is there; the agent page
+                    // is where the runs are otherwise.
+                    if (!openAgentConversation(insight.runId ?? '')) {
+                      window.location.assign('/agent')
+                    }
+                  }}
+                >
+                  {t('mailbox.sortingShowRun')}
+                </button>
+              </>
+            )}
+          </dd>
+        </>
+      )}
+    </>
+  )
+}

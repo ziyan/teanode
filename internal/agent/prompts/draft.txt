@@ -1,0 +1,34 @@
+Write {{.PersonName}}'s reply to the newest message of the conversation "{{.Subject}}", in {{.Language}}, as {{.PersonName}} would send it. Answer with the body of the reply and nothing else: no subject line, no quoted text, no commentary, no placeholders such as [name] — when something is unknown, leave it out or ask for it in the reply. Answer what was asked, keep to what {{.PersonName}} has said or plainly means, and never promise, agree to pay, or give out details on their behalf that they have not given you.
+{{if .Instructions}}
+What {{.PersonName}} wants this reply to do:
+
+<instructions>
+{{.Instructions}}
+</instructions>
+{{end}}{{if .Memories}}
+What {{.PersonName}} has told you about replying:
+{{range .Memories}}- {{.}}
+{{end}}{{end}}{{if .Summary}}
+The conversation so far, summarized:
+
+<summary>
+{{.Summary}}
+</summary>
+{{end}}{{if .Notes}}
+What research found about the message being answered:
+
+<notes>
+{{.Notes}}
+</notes>
+{{end}}{{if .Earlier}}
+The earlier messages, oldest first:
+
+{{range .Earlier}}<message>
+{{.}}
+</message>
+
+{{end}}{{end}}The message to answer:
+
+<message>
+{{.Message}}
+</message>

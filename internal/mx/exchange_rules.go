@@ -1,0 +1,268 @@
+package mx
+
+import (
+	"regexp"
+	"strconv"
+	"strings"
+
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/mailparse"
+)
+
+// A mailbox's rules run in order against a message just placed in its Inbox.
+// Every condition of a rule must hold for its actions to run; a rule that
+// stops ends the run. A failing rule is logged and skipped: a person's
+// misspelled pattern must not lose them the message.
+
+// Rules run in two phases. At delivery, the rules whose conditions the
+// server can answer on its own; once the agent has written an insight, the
+// rules that read it. A rule with both kinds of condition waits for the
+// second phase, because all of its conditions must hold at once.
+func (self *exchange) runRules(tx db.Transaction, mailbox *models.Mailbox, inbox *models.MailboxFolder, item *models.MailboxItem, mail *models.Mail) error {
+	return self.runRulesPhase(tx, mailbox, item, mail, nil, false)
+}
+
+// RunInsightRules implements Exchange.
+func (self *exchange) RunInsightRules(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail, insight *models.MailInsight) error {
+	return self.runRulesPhase(tx, mailbox, item, mail, insight, true)
+}
+
+func (self *exchange) runRulesPhase(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail, insight *models.MailInsight, insightPhase bool) error {
+	current := item
+	for index, rule := range mailbox.Rules {
+		if !rule.Enabled || current == nil {
+			continue
+		}
+		if rule.NeedsInsight() != insightPhase {
+			continue
+		}
+		matched, err := self.ruleMatches(tx, mailbox, rule, mail, insight)
+		if err != nil {
+			log.Warningf("rule %d (%q) of mailbox %q could not be evaluated: %s", index, rule.Name, mailbox.ID, err)
+			continue
+		}
+		if !matched {
+			continue
+		}
+		for _, action := range rule.Actions {
+			current, err = self.runRuleAction(tx, mailbox, action, current, mail)
+			if err != nil {
+				log.Warningf("rule %d (%q) of mailbox %q failed: %s", index, rule.Name, mailbox.ID, err)
+				break
+			}
+			if current == nil {
+				break
+			}
+		}
+		if rule.Stop {
+			break
+		}
+	}
+	return nil
+}
+
+func (self *exchange) ruleMatches(tx db.Transaction, mailbox *models.Mailbox, rule models.MailboxRule, mail *models.Mail, insight *models.MailInsight) (bool, error) {
+	for _, condition := range rule.Conditions {
+		holds, err := self.conditionHolds(tx, mailbox, condition, mail, insight)
+		if err != nil {
+			return false, err
+		}
+		if !holds {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// RuleMatches is the dry run the settings page offers: which of the last
+// messages would this rule match.
+func RuleMatches(rule models.MailboxRule, mail *models.Mail, senderKnown bool, insight *models.MailInsight) bool {
+	for _, condition := range rule.Conditions {
+		if !conditionHoldsWithout(condition, mail, senderKnown, insight) {
+			return false
+		}
+	}
+	return true
+}
+
+func (self *exchange) conditionHolds(tx db.Transaction, mailbox *models.Mailbox, condition models.MailboxRuleCondition, mail *models.Mail, insight *models.MailInsight) (bool, error) {
+	senderKnown := false
+	if condition.Field == "sender-known" {
+		address, _ := senderOf(mail)
+		// Somebody the person keeps, in their own address book. It used to
+		// mean somebody who had written before, counted off a ledger this
+		// server built of every address that had ever written to the
+		// mailbox; "known" is now what the word means everywhere else.
+		contact, err := tx.FindContactByAddress(mailbox.UserID, address)
+		if err != nil {
+			return false, err
+		}
+		senderKnown = contact != nil
+	}
+	return conditionHoldsWithout(condition, mail, senderKnown, insight), nil
+}
+
+func conditionHoldsWithout(condition models.MailboxRuleCondition, mail *models.Mail, senderKnown bool, insight *models.MailInsight) bool {
+	switch condition.Field {
+	case "any":
+		return true
+	case "category":
+		// What the agent said the message is. Without an insight the
+		// condition cannot hold, which is what keeps such a rule waiting for
+		// the second phase.
+		return insight != nil && compare(condition.Operator, insight.Category, condition.Value)
+	case "priority":
+		return insight != nil && compare(condition.Operator, insight.Priority, condition.Value)
+	case "needs-reply":
+		return insight != nil && insight.NeedsReply
+	case "sender-known":
+		return senderKnown
+	case "score":
+		var score float64
+		if mail.AuthenticationResults.SpamFilter != nil {
+			score = mail.AuthenticationResults.SpamFilter.Score
+		}
+		threshold, err := strconv.ParseFloat(strings.TrimSpace(condition.Value), 64)
+		if err != nil {
+			return false
+		}
+		switch condition.Operator {
+		case "above":
+			return score > threshold
+		case "below":
+			return score < threshold
+		}
+		return false
+	}
+	var subject string
+	switch condition.Field {
+	case "from":
+		// The header when the message is in hand, as it is on receipt; the
+		// row's own address when only the row was read, as in a dry run.
+		subject = mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(mail.Headers, "From"))
+		if subject == "" {
+			subject = mail.From
+			if subject == "" {
+				subject = mail.Sender
+			}
+		}
+	case "to":
+		subject = mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(mail.Headers, "To")) + " " +
+			mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(mail.Headers, "Cc")) + " " + strings.Join(mail.Recipients, " ")
+	case "subject":
+		subject = mail.Subject
+	case "header":
+		subject = mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(mail.Headers, condition.Header))
+	default:
+		return false
+	}
+	return compare(condition.Operator, subject, condition.Value)
+}
+
+func compare(operator, subject, value string) bool {
+	switch operator {
+	case "contains", "":
+		return strings.Contains(strings.ToLower(subject), strings.ToLower(value))
+	case "equals":
+		return strings.EqualFold(strings.TrimSpace(subject), strings.TrimSpace(value))
+	case "matches":
+		pattern, err := regexp.Compile("(?i)" + value)
+		if err != nil {
+			return false
+		}
+		return pattern.MatchString(subject)
+	}
+	return false
+}
+
+func (self *exchange) runRuleAction(tx db.Transaction, mailbox *models.Mailbox, action models.MailboxRuleAction, item *models.MailboxItem, mail *models.Mail) (*models.MailboxItem, error) {
+	yes := true
+	switch action.Kind {
+	case "markRead":
+		_, err := tx.SetItemFlags([]string{item.ID}, models.MailboxItemFlags{Seen: &yes})
+		return item, err
+	case "flag":
+		_, err := tx.SetItemFlags([]string{item.ID}, models.MailboxItemFlags{Flagged: &yes})
+		return item, err
+	case "move":
+		folder, err := tx.GetFolder(action.FolderID)
+		if err != nil {
+			return item, err
+		}
+		if folder == nil || folder.MailboxID != mailbox.ID {
+			// The folder was removed after the rule was written.
+			return item, nil
+		}
+		moved, err := tx.MoveItems([]string{item.ID}, folder.ID)
+		if err != nil || len(moved) == 0 {
+			return item, err
+		}
+		return moved[0], nil
+	case "delete":
+		trash, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindTrash)
+		if err != nil {
+			return item, err
+		}
+		if trash == nil {
+			_, err := tx.DeleteItems([]string{item.ID})
+			return nil, err
+		}
+		moved, err := tx.MoveItems([]string{item.ID}, trash.ID)
+		if err != nil || len(moved) == 0 {
+			return item, err
+		}
+		return moved[0], nil
+	case "forward":
+		// Not back to where it has already been: a message that carries
+		// the forward's own address as a Delivered-To has been through it,
+		// and two mailboxes forwarding to each other would otherwise pass
+		// it back and forth, a Received header longer each time, until it
+		// outgrew the size limit — or for ever, without one.
+		if !forwardable(mail, action.Address) {
+			log.Warningf("not forwarding mail %q from mailbox %q to %q: it has been there, or has been forwarded too often", mail.ID, mailbox.ID, action.Address)
+			return item, nil
+		}
+		// A forward is a delivery like any alias's: signed, queued, recorded.
+		_, err := tx.CreateDelivery(&models.Delivery{
+			MailID:      mail.ID,
+			Mail:        mail,
+			Recipient:   action.Address,
+			Kind:        models.DeliveryKindForward,
+			Status:      models.DeliveryStatusQueued,
+			Method:      "email",
+			Destination: action.Address,
+			MailboxID:   mailbox.ID,
+		}, nil)
+		return item, err
+	}
+	return item, nil
+}
+
+// maximumForwardHops is how many Received headers a message may carry and
+// still be forwarded by a rule. Real mail crosses a handful of hosts; one
+// that has crossed this many is going round in circles.
+const maximumForwardHops = 25
+
+// forwardable says whether a rule may forward a message to an address: not
+// one it has already been delivered to, and not one that has been forwarded
+// more times than any message has a reason to be.
+func forwardable(mail *models.Mail, address string) bool {
+	if mailparse.CountHeaders(mail.Headers, "Received") > maximumForwardHops {
+		return false
+	}
+	for _, header := range mail.Headers {
+		key, value := mailparse.SplitHeader(header)
+		if !strings.EqualFold(key, "Delivered-To") {
+			continue
+		}
+		delivered, err := mailparse.ParseAddress(strings.TrimSpace(value))
+		if err != nil {
+			delivered = strings.TrimSpace(value)
+		}
+		if strings.EqualFold(delivered, address) {
+			return false
+		}
+	}
+	return true
+}

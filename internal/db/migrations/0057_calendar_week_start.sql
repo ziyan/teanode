@@ -1,0 +1,11 @@
+-- The day a week starts on, for whoever is drawing it.
+--
+-- A month or a week is drawn in columns, and where the columns begin is a
+-- local convention rather than a fact: Sunday across much of the world,
+-- Monday across much of the rest. Written down per calendar, beside the zone
+-- and the colour, because it is the same kind of thing -- how this person's
+-- days are shown rather than what is in them.
+--
+-- Sunday by default, which is what this server's owner and most of its
+-- readers expect; anybody who writes their weeks the other way says so once.
+ALTER TABLE "calendar" ADD COLUMN "week_start" varchar(16) NOT NULL DEFAULT 'sunday';

@@ -1,0 +1,254 @@
+package mailparse
+
+import (
+	"encoding/base64"
+	"fmt"
+	"hash"
+	"io"
+	"mime"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"golang.org/x/net/html/charset"
+	"golang.org/x/text/transform"
+)
+
+func MergeHeaders(headers ...[]string) []string {
+	length := 0
+	for _, group := range headers {
+		length += len(group)
+	}
+	merged := make([]string, 0, length)
+	for _, group := range headers {
+		merged = append(merged, group...)
+	}
+	return merged
+}
+
+func SplitHeader(header string) (string, string) {
+	parts := strings.SplitN(header, ":", 2)
+	key := strings.TrimSpace(parts[0])
+	if len(parts) > 1 {
+		return key, strings.TrimSpace(parts[1])
+	}
+	return key, ""
+}
+
+func UnsplitHeader(key, value string) string {
+	return fmt.Sprintf("%s: %s%s", key, value, crlf)
+}
+
+func ParseParameters(value string) (map[string]string, error) {
+	pairs := strings.Split(value, ";")
+	parameters := make(map[string]string)
+	for _, pair := range pairs {
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) != 2 {
+			if trimmed := strings.TrimSpace(pair); trimmed != "" {
+				parameters[""] = trimmed
+			}
+			continue
+		}
+		parameters[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+	}
+	return parameters, nil
+}
+
+func UnparseParameters(parameters map[string]string, prefixes, suffixes []string) string {
+	sortedKeys := make([]string, 0, len(parameters))
+	for key := range parameters {
+		if !inStringSlice(key, prefixes) && !inStringSlice(key, suffixes) {
+			sortedKeys = append(sortedKeys, key)
+		}
+	}
+	sort.Strings(sortedKeys)
+	keys := make([]string, 0, len(parameters))
+	keys = append(keys, prefixes...)
+	keys = append(keys, sortedKeys...)
+	keys = append(keys, suffixes...)
+
+	var value string
+	var index int
+	for _, key := range keys {
+		if _, ok := parameters[key]; !ok {
+			continue
+		}
+		if index > 0 {
+			value += "; "
+		}
+		value += key + "=" + parameters[key]
+		index++
+	}
+	return value
+}
+
+func ParseTagList(value string) []string {
+	tags := strings.Split(value, ":")
+	for index, tag := range tags {
+		tags[index] = StripWhitespace(tag)
+	}
+	return tags
+}
+
+func UnparseTagList(values []string) string {
+	return strings.Join(values, ":")
+}
+
+func ParseTime(value string) (time.Time, error) {
+	seconds, err := strconv.ParseInt(StripWhitespace(value), 10, 64)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Unix(seconds, 0), nil
+}
+
+func UnparseTime(value time.Time) string {
+	return fmt.Sprintf("%d", value.Unix())
+}
+
+type headerPicker struct {
+	headers []string
+	picked  map[string]int
+}
+
+func (self *headerPicker) pick(key string) string {
+	at := self.picked[key]
+	for index := len(self.headers) - 1; index >= 0; index-- {
+		header := self.headers[index]
+		name, _ := SplitHeader(header)
+		if !strings.EqualFold(name, key) {
+			continue
+		}
+		if at == 0 {
+			self.picked[key]++
+			return header
+		}
+		at--
+	}
+	return ""
+}
+
+func HashHeaders(headers []string, keys []string, canonicalizer Canonicalizer, hasher hash.Hash) error {
+	self := &headerPicker{
+		headers: headers,
+		picked:  make(map[string]int),
+	}
+	for _, key := range keys {
+		if header := self.pick(key); header != "" {
+			if _, err := hasher.Write([]byte(canonicalizer.CanonicalizeHeader(header))); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func IsHeaderOfInterest(key string, interestedHeaderKeys []string) bool {
+	for _, interestedHeaderKey := range interestedHeaderKeys {
+		if strings.EqualFold(key, interestedHeaderKey) {
+			return true
+		}
+	}
+	return false
+}
+
+var removeSignaturePattern = regexp.MustCompile(`(b\s*=)[^;]+`)
+
+func RemoveSignature(value string) string {
+	return removeSignaturePattern.ReplaceAllString(value, "$1")
+}
+
+func DecodeBase64String(value string) ([]byte, error) {
+	return base64.StdEncoding.DecodeString(StripWhitespace(value))
+}
+
+func EncodeBase64String(value []byte) string {
+	return base64.StdEncoding.EncodeToString(value)
+}
+
+func inStringSlice(needle string, haystack []string) bool {
+	for _, candidate := range haystack {
+		if candidate == needle {
+			return true
+		}
+	}
+	return false
+}
+
+// CountHeaders is how many headers carry a name, whatever their case.
+func CountHeaders(headers []string, key string) int {
+	count := 0
+	for _, header := range headers {
+		name, _ := SplitHeader(header)
+		if strings.EqualFold(name, key) {
+			count++
+		}
+	}
+	return count
+}
+
+func FindHeaderValue(headers []string, key string) string {
+	for index := len(headers) - 1; index >= 0; index-- {
+		name, value := SplitHeader(headers[index])
+		if strings.EqualFold(name, key) {
+			return value
+		}
+	}
+	return ""
+}
+
+var wordDecoder = &mime.WordDecoder{
+	CharsetReader: func(label string, input io.Reader) (io.Reader, error) {
+		if encoding, _ := charset.Lookup(label); encoding != nil {
+			return encoding.NewDecoder().Reader(input), nil
+		}
+		log.Errorf("failed to lookup charset %q", label)
+		return nil, fmt.Errorf("mailparse: failed to decode charset %q", label)
+	},
+}
+
+func DecodeHeaderValue(value string) string {
+	if decoded, err := wordDecoder.DecodeHeader(strings.Join(strings.Split(value, crlf), "")); err == nil {
+		return decoded
+	}
+	return value
+}
+
+func EncodeHeaderValue(value string) string {
+	return mime.BEncoding.Encode("UTF-8", value)
+}
+
+// DecodeCharset converts a body part to UTF-8 from whatever its Content-Type
+// said it was written in.
+//
+// A header says what it is in each encoded word, so a subject decodes itself;
+// a body says it once, in the charset parameter, and the bytes are otherwise
+// indistinguishable from UTF-8 that happens to be full of escape sequences.
+// Japanese mail is routinely ISO-2022-JP, Chinese mail GB2312 or Big5, and a
+// good deal of European mail is still Windows-1252 — none of which is
+// readable if the bytes are handed to a browser as they are.
+//
+// An unknown or unreadable charset returns the bytes untouched: showing what
+// arrived is more useful than showing nothing, and for a mislabelled message
+// that is usually the right guess anyway.
+func DecodeCharset(content []byte, label string) []byte {
+	label = strings.TrimSpace(label)
+	switch strings.ToLower(label) {
+	case "", "utf-8", "utf8", "us-ascii", "ascii":
+		return content
+	}
+	encoding, _ := charset.Lookup(label)
+	if encoding == nil {
+		log.Warningf("a message part says it is %q, which is not a charset this knows; showing it as it arrived", label)
+		return content
+	}
+	decoded, _, err := transform.Bytes(encoding.NewDecoder(), content)
+	if err != nil {
+		log.Warningf("a message part says it is %q but does not decode as it: %s", label, err)
+		return content
+	}
+	return decoded
+}

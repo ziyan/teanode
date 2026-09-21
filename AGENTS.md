@@ -1,0 +1,135 @@
+# Working in this repository
+
+Entry point for anyone — human or coding agent — making a change here. Read
+`CONTRIBUTING.md` for the conventions; this file is about orientation.
+
+## What this program is
+
+A mail server that receives mail over SMTP for domains you configure,
+authenticates it (SPF, DKIM, DMARC, ARC), optionally scans it for viruses and
+spam, and forwards it somewhere else — another address, an HTTP webhook, or
+another mail server. It also relays authenticated outbound mail from your own
+devices.
+
+It is also a mailbox server: an address can be a mailbox that keeps its mail
+here, read over IMAP or in the dashboard, with folders, rules, search,
+subscriptions and out-of-office. An address can instead forward and keep
+nothing, which is what this program did first and still does.
+
+And each person can have an agent: a language model that sorts what arrives,
+summarizes threads, drafts and sends replies under a policy, and holds a
+conversation about the mailbox. It is off until an operator configures a model
+and a person turns it on. See `docs/subsystems/` for how it works.
+
+## Where things are
+
+    cmd/teanode-server/     the server's entry point (urfave/cli v3)
+    cmd/teanode/            the client's entry point
+    internal/
+      cmd/                  the client's subcommands, one file per group, and
+                            what both programs share; cmd/server/ holds the
+                            server's own: run, config, tls, user, password
+      config/               the configuration: types, validation, the Store
+                            interface. Everything an operator can set
+      bootstrap/            the environment: how to reach the database, which
+                            instance this is, and what to create on a first run
+      access/               who may do what: permissions, roles and the checks
+      mx/                   the mail path. Start at exchange.go HandleEnvelope
+      db/                   PostgreSQL via GORM: mail, mailboxes and their
+                            folders, deliveries, DMARC reports, agents and
+                            everything of theirs, usage counters, templates
+      storage/              where a message's bytes and a person's files live:
+                            the filesystem or an S3 bucket
+      imap/                 the IMAP server over those mailboxes
+      contacts/             the vCard format: parsing a card, writing one out,
+                            and naming a version of one with an ETag
+      calendar/             the iCalendar format: reading an event, working out
+                            when a repeat happens, building a file from boxes
+                            somebody filled in, and free-busy
+      scheduling/           invitations by mail, in both directions: what
+                            arrives with a calendar part, and the replies
+      dav/                  a person's address book and calendar to their phone
+                            and desktop over CardDAV and CalDAV, signed in to
+                            with an app password
+      api/                  GraphQL over the config store and the database
+      client/               the other side of that API, for the client
+      web/                  HTTP server and middlewares
+      dns/                  advisory DNS record checking for configured domains
+      mailer/               template rendering and transactional send
+      llm/                  talking to language models: OpenAI-compatible,
+                            Anthropic and Gemini clients, the registry that
+                            picks a model per kind of work, structured output
+      agent/                the personal agent: the job queue and worker, the
+                            runs (sorting, summaries, research, replies and
+                            sending them, embeddings, schedules) and the
+                            Ask loop. Knows mail, not HTTP
+      agent/tools/          the tool kit, and one package per tool beside it;
+                            a new tool is a new directory, imported in tools/all
+      skills/               skills: files of declarations fetched from a signed
+                            registry, whose tools join the catalog at run time
+      mcp/                  a client for connected servers (Model Context
+                            Protocol): HTTP and stdio transports, OAuth 2.1
+      browser/              the DevTools client behind the agent's browser tool
+      computer/             the program `teanode computer` runs on a person's machine, and the rule over commands
+      channel/              a person's own Telegram or Discord bot, carrying
+                            their primary conversation
+      sso/                  signing in through an external identity provider
+      frontend/             the built dashboard, embedded in the binary
+      upgrade/              moving a deployment from one version to the next
+      models/               structs shared across packages
+      spamfilter/           the seam between the server and whatever scores mail
+      strainer/             the built-in spam filter, which scores it here
+      util/                 protocol implementations: smtpd, smtpc, dkim, spf,
+                            dmarc, arc, mailparse, autoacme, clamav, spamc
+    web/                    dashboard source (React, TypeScript, webpack)
+    docs/                   see docs/decisions/ for why things are as they are
+
+## How a message flows
+
+1. `internal/util/smtpd` speaks SMTP, optionally does STARTTLS and `AUTH
+   PLAIN`, and produces a `mailparse.Envelope`.
+2. `mx.exchange.HandleEnvelope` picks one of four paths from the envelope: a
+   signed `dsn+`, `rua+` or `ruf+` recipient means a bounce or a DMARC report;
+   a credential means outbound submission; otherwise it is inbound mail.
+3. Inbound: find the domain in the configuration, run the authentication checks
+   in parallel, prepend `Received` and `Authentication-Results`, store the
+   mail, match the recipient's local part against that domain's aliases, and
+   create one delivery per match.
+4. Delivery: an alias that forwards signs a bounce return path, adds ARC
+   headers, connects out, and on failure schedules a retry on a fixed backoff
+   ladder. An alias that is a mailbox files the message instead
+   (`exchange_mailbox.go`): one item in the mailbox's Inbox referencing the one
+   stored message, the mailbox's rules run over it, and where a person has
+   granted their agent that mailbox, the processing jobs are queued in the same
+   transaction — never a model call inside the SMTP transaction.
+
+Reading those four files in order — `exchange.go`, `exchange_incoming.go`,
+`exchange_utils.go`, `exchange_delivery.go` — explains most of the system.
+
+## Ground rules
+
+The invariants in `CONTRIBUTING.md` are the ones that bite. The short version:
+
+- Every migration needs reverse SQL.
+- Configuration identifiers never change once generated.
+- No cloud client is constructed when its integration is disabled.
+- The ACME challenge route comes before authentication.
+- Unit tests never touch the network.
+- Never commit a secret or a real email address.
+
+## Current state
+
+This repository is being restructured from a hosted service into a
+self-hostable open-source server. What is settled is written down as
+decisions under `docs/decisions/`; read those before starting anything
+substantial.
+
+The personal agent — a language model, when an operator configures one,
+that sorts, summarizes, drafts and answers a person's mail and talks to
+them through a drawer and the command line — has its tools as packages of
+their own. How the parts of it actually work — the loop, the prompt,
+compaction, streaming, memory, the devices — is written down under
+`docs/subsystems/`. Its words are fixed:
+*rules* are the mailbox's rules and nothing else; the prompt is the
+*conduct*; the person's standing words are *instructions*; the operator's
+are *house instructions*; the auto-reply policy's text is *guidance*.

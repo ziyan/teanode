@@ -1,0 +1,169 @@
+# TeaNode's naming and error conventions, as gogolint checks them.
+#
+# gogolint is a local check. `make lint` runs it, CI does not, so a
+# contributor who does not have it installed is never blocked by it. Run
+# `make gogolint` before sending a change.
+#
+# Every rule below can be switched off, given its own exclusions, and told
+# about the vocabulary this repository actually uses. Where a rule is exempted
+# the reason is written down, because an exemption without one is indis-
+# tinguishable from a rule nobody understood.
+
+exclude:
+  paths:
+    - vendor/
+  # A test is code and the names in it are read as often as any others.
+  tests: false
+  generated: true
+
+reports:
+  # Enough to act on in one sitting. Raise it to see the whole backlog.
+  maximumPerRule: 25
+
+naming:
+  enabled: true
+  acronyms:
+    # Mail protocol vocabulary. Each is a real acronym from the relevant RFC,
+    # so it is written in full caps when the identifier starts with a capital.
+    # Anything that could be spelled out instead was spelled out.
+    - ACME     # Automatic Certificate Management Environment, RFC 8555
+    - AFRF     # Authentication Failure Reporting Format, a DMARC report format
+    - ALPN     # Application-Layer Protocol Negotiation, RFC 7301
+    - ARC      # Authenticated Received Chain, RFC 8617
+    - DKIM     # DomainKeys Identified Mail, RFC 6376
+    - DMARC    # Domain-based Message Authentication, Reporting and Conformance
+    - DSN      # Delivery Status Notification, RFC 3464
+    - MX       # Mail Exchange, the DNS record naming a domain's mail servers
+    - RDNS     # Reverse DNS, the PTR record for a connecting address
+    - RUA      # DMARC aggregate report address
+    - RUF      # DMARC forensic report address
+    - SMTP     # Simple Mail Transfer Protocol, RFC 5321
+    - SPF      # Sender Policy Framework, RFC 7208
+    - TLSALPN  # forced by acme.Client.TLSALPN01ChallengeCert
+    - TXT      # the DNS TXT record type
+    # Vocabulary from outside mail, written the way its specification writes it.
+    - AAGUID   # Authenticator Attestation GUID, WebAuthn
+    - CSS      # Cascading Style Sheets
+    - PEM      # Privacy-Enhanced Mail, the container format for keys, RFC 7468
+    - QL       # the tail of GraphQL, which its authors spell that way
+  compounds:
+    # A DKIM term of art. One English word that the default segmentation
+    # splits; everything else flagged was renamed instead.
+    - canonicalization
+    # One word in universal use; nobody writes "webHook".
+    - webhook
+    # An address on this machine, and the adjective for one. Two English words
+    # that fused long ago; "loopBack" is not a spelling anybody uses.
+    - loopback
+    # What this program does to a secret before it shows it, and the state a
+    # secret is in afterwards.
+    - redact
+    - redacted
+
+abbreviation:
+  enabled: true
+  words:
+    # Added to the defaults. A word mapped to the empty string is removed from
+    # them, which is how a codebase that really does mean "ch" says so.
+    ptr: pointer
+  allow:
+    # These satisfy *net.Resolver. Rename them and a real resolver no longer
+    # satisfies the interface, which is a worse outcome than an abbreviation.
+    - LookupAddr
+    - LookupIPAddr
+
+singleLetter:
+  enabled: true
+  allow: []
+  allowIn:
+    # The DNS and mail RFCs name their own things, and a parser that follows
+    # one reads better using the specification's letters than a paraphrase.
+    - path: internal/util/spf/
+      names: [a, i]
+
+receiver:
+  enabled: true
+  # Every method here calls its receiver self. A receiver named for its type
+  # has to be renamed when the type is, and one named r says nothing at all.
+  name: self
+
+errorPrefix:
+  enabled: true
+  format: "{package}: "
+  exempt:
+    # The command line's errors are not wrapped by anything: urfave/cli prints
+    # them as the program's own output. "cmd: no section called foo" is a worse
+    # sentence than the one it replaces, and the package an error came from is
+    # not information a person typing a command wants.
+    - internal/cmd/
+
+packageLog:
+  enabled: true
+  exclude:
+    paths:
+      # Two version strings and a String method. It has nothing to log and
+      # never will.
+      - internal/version/
+  declaration: 'var log = logging.MustGetLogger("{package}")'
+  # A package that does not log yet still declares one, so that when it starts
+  # it logs under its own name rather than borrowing whichever is in scope.
+  unusedSuffix: "//nolint:unused"
+  # An external test package is not a package anybody logs from.
+  testPackages: false
+
+deferUnlock:
+  enabled: true
+  # A lock taken with TryLock and released by the goroutine it hands the work
+  # to is a reservation, not a critical section: deferring it would release it
+  # immediately and let two callers through. Only a lock and an unlock in the
+  # same block, neither deferred, is reported.
+  allowTransfer: true
+
+recover:
+  enabled: true
+  # A panic in a goroutine is not recovered by whatever started it: it takes
+  # the whole process down, which in a mail server means every connection
+  # drops because one sweep hit a nil. This project's guard is deferutil.
+  guard: "deferutil.Recover()"
+  exclude:
+    paths:
+      # A panic in a goroutine started by a test fails that test, loudly and
+      # in the right place. The guard exists to keep a server alive, and a
+      # test that survives its own panic is a test that reports a pass.
+      - "*_test.go"
+
+structTag:
+  enabled: true
+  # Every key anything here reads. A key not on this list is either a typo —
+  # `jsno:"password"` is well formed, unique, and silently ignored — or a new
+  # convention that belongs on the list with the others.
+  keys:
+    - json
+    - yaml
+    - gorm
+    - graphapi   # the GraphQL schema builder in internal/util/graphapi
+    - secret     # marks a configuration field the API must never return
+    - datastruct
+    - msgpack
+    - xml
+    - maxminddb  # read by the MaxMind reader in internal/util/geoip
+
+camelCase:
+  enabled: true
+  # Empty on purpose. A dictionary cannot do this job in technical English:
+  # "redacted" splits into "red" and "acted" and "loopback" into "loop" and
+  # "back", both pairs of real words and neither a finding anybody wants.
+  # Add a word here when this project decides how it is written.
+  separate: {}
+
+docComment:
+  # Off, and deliberately. The other rules are about mechanics, where a
+  # machine can be right. This one is about writing, and on a codebase whose
+  # comments are already carrying most of its explanation it describes the
+  # voice rather than a fault. Switch it on to read what it says; do not
+  # switch it on to act on all of it.
+  enabled: false
+  maximumSentenceWords: 25
+  passiveVoice: true
+  contractions: true
+  filler: true

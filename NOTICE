@@ -1,0 +1,13 @@
+TeaNode
+Copyright the TeaNode authors
+
+This product optionally reads spam rule data published by the Apache
+SpamAssassin project (https://spamassassin.apache.org), licensed under the
+Apache License, Version 2.0. That data is not distributed with this software:
+an operator loads it deliberately with "teanode-server config rules import",
+and it is used only when antispam.builtin.rules.enabled is set.
+
+The built-in spam filter in this software is a separate implementation. It is
+not SpamAssassin, is not derived from its code, and is not compatible with it;
+it reads the published rule format and evaluates the subset of it that it
+understands.

@@ -1,0 +1,43 @@
+---
+name: git
+description: Git repository operations
+tools:
+  - name: git_status
+    description: Show the working tree status of a git repository
+    type: shell
+    command: ["git", "status", "--porcelain"]
+    timeout: 10
+    parameters:
+      type: object
+      properties: {}
+
+  - name: git_diff
+    description: Show unstaged changes for a required path in the current repository
+    type: shell
+    command: ["git", "diff", "{{path}}"]
+    timeout: 30
+    parameters:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Required file or directory path to filter the diff (use "." for full repo)
+      required: ["path"]
+
+  - name: git_log
+    description: Show recent commit history with an explicit count
+    type: shell
+    command: ["git", "log", "--oneline", "-n", "{{count}}"]
+    timeout: 10
+    parameters:
+      type: object
+      properties:
+        count:
+          type: string
+          description: Number of commits to show
+      required: ["count"]
+---
+
+You have access to git tools for repository operations. Use git_status to
+check the working tree before making changes. Use git_diff to review changes
+before committing.

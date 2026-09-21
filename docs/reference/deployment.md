@@ -1,0 +1,273 @@
+# Deploying with Docker Compose
+
+This is how a TeaNode server is meant to run: one compose file, the published
+image, and PostgreSQL beside it. `docs/getting-started.md` walks through the
+same server installed as a binary, and explains DNS and the port 25 problem in
+more detail — read its "Before you begin" first, because a host that cannot
+send on port 25 cannot deliver mail however it is deployed.
+
+## What you get
+
+    postgres        the configuration, the keys, and every message handled
+    postgres-certs  a certificate for it, generated once, so that connection
+                    is encrypted and verified rather than in the clear
+    teanode-data    creates the data directory and gives it to the server's uid
+    teanode         the server, with the dashboard inside it
+    clamav          virus scanning, optional
+
+Spam is scored by the filter inside the server, so there is no spam service
+here. Two other profiles exist for deployments that need them: `cluster`
+starts MinIO and Redis, which only matter when you run more than one instance,
+and `spamd` starts a SpamAssassin daemon for a deployment that would rather
+use one — see "Choosing a spam filter" below.
+
+## 1. Take the compose file
+
+    mkdir -p /opt/teanode && cd /opt/teanode
+    curl -L -O https://raw.githubusercontent.com/ziyan/teanode/main/deploy/docker-compose.yml
+
+Nothing else needs to be installed — not even the binaries, since the image
+carries both of them.
+
+## 2. Describe the server
+
+    docker run --rm ghcr.io/ziyan/teanode:latest \
+      config env --output - --hostname mail.example.com --domain example.com > .env
+    chmod 600 .env
+
+`--hostname` is what the server announces over SMTP and what your MX record
+will point at, so it has to be a name you can add a DNS record for.
+`--domain` becomes the first domain it serves.
+
+Open `.env` and set `TEANODE_TLS_ACME_EMAIL` to an address the certificate
+authority can warn about expiry. Check that
+`TEANODE_SERVER_DATA_DIRECTORY` reads `/var/lib/teanode`, which is where the
+compose file mounts the volume. It has to be inside that volume: a path that is
+not is either unwritable — the image runs as an unprivileged uid and cannot
+create a directory at the root — or, worse, writable inside a container that
+the next upgrade throws away, taking the keys and the spool with it.
+
+The file holds a database password, which is why it is `chmod 600`.
+
+`TEANODE_DATABASE_URL` asks for `sslmode=verify-full`. The official PostgreSQL
+image ships with TLS off and no certificate, so the compose file generates a
+self-signed one and starts PostgreSQL with it; `verify-full` means the
+connection is encrypted *and* checked against that certificate, so nothing else
+on the Docker network can answer as the database. Pointing at a PostgreSQL of
+your own means pointing `sslrootcert` at that server's authority instead, or
+dropping to `sslmode=require` to encrypt without checking who answered.
+
+## 3. Start it
+
+    docker compose up -d
+
+The first start migrates the schema, writes the configuration the environment
+describes, generates a server secret and a signing key for the domain, and
+obtains a certificate over HTTP-01 — which needs port 80 reachable from the
+internet. Port 80 answers those challenges and sends everything else to
+HTTPS; the dashboard is never served in the clear. Watch it do all that:
+
+    docker compose logs -f teanode
+
+You are looking for `teanode is running`.
+
+### Mail programs
+
+The server serves IMAP on 993 (TLS) and 143 (STARTTLS) when
+`TEANODE_LISTEN_IMAPS` and `TEANODE_LISTEN_IMAP` are set — `config env`
+writes them as `:993` and `:143` — and the container shares the host's
+network, so those two ports need opening in the firewall or security group
+beside 25, 587, 80 and 443. A server that was set up before they existed
+turns them on under **Server → Listeners** in the web UI, since the
+environment only describes a first run, and restarts.
+
+## 4. Claim the dashboard
+
+Open `https://mail.example.com/`. **The first visitor creates the only
+account**, so do this immediately. If you would rather not race anybody:
+
+    docker compose exec teanode /usr/local/bin/teanode-server user add you
+
+`exec` runs a command beside the server rather than through the image's
+entrypoint, and the image has no shell, so the binary is named in full. Every
+`teanode-server` subcommand is available this way.
+
+It prompts for a password. In a script, where there is no terminal, pass
+`--stdin` and pipe one in.
+
+## 5. Publish DNS
+
+The dashboard lists exactly which records are missing, per domain, and keeps
+checking. `docs/getting-started.md` explains what each one is for.
+
+## 6. Tidy the .env
+
+Once the server has started, most of that file is dead weight. Everything
+marked "first run only" was copied into the database on the first start and is
+ignored from then on — the server logs a warning naming any that disagree with
+what is stored, because a file that says one thing while the server does
+another is how an afternoon gets lost.
+
+Delete them. What has to stay:
+
+| variable | why |
+| --- | --- |
+| `TEANODE_DATABASE_URL` | how it finds everything else. Read on every start |
+| `TEANODE_INSTANCE_ID` | only if you set one; it has to differ between instances |
+| `TEANODE_SERVER_DATA_DIRECTORY` | read from the environment, not from the database, so that a staged upgrade can be found before the database is open |
+| `TEANODE_S3_*` | **only if you run the `cluster` profile** — compose passes these to MinIO as its root credentials, so deleting them changes the credentials on the next recreate |
+| `POSTGRES_PASSWORD` | the password the compose file created PostgreSQL with. It is only read when the database is first created, but the line records what the connection string above is signing in with |
+
+That last row is the trap: they read like settings that moved into the
+database, and they are, but the compose file also interpolates them into a
+different service.
+
+Settings change in the dashboard from here on, or with `config import`.
+
+### Rotating the database password
+
+A deployment created before this file generated one is using `teanode`, which
+is the word this repository publishes. PostgreSQL only reads
+`POSTGRES_PASSWORD` when it creates the database, so changing the line alone
+does nothing. Change it in the database itself, then in the file:
+
+    docker compose exec postgres psql -U teanode -c "ALTER USER teanode PASSWORD 'the new one'"
+
+then put the same string in both places in `.env` — `POSTGRES_PASSWORD`, and
+the password inside `TEANODE_DATABASE_URL` — and
+
+    docker compose up -d teanode
+
+The database is reachable on the loopback address only, so this is worth doing
+on a machine other things run on, and worth doing before anyone else has an
+account on it.
+
+## Choosing a spam filter
+
+Mail is scored by the built-in filter, which needs no second program. It reads
+what the server already established about a message — the SPF, DKIM, DMARC and
+ARC results, whether the sending host has a confirmed reverse DNS name, what
+it called itself — consults public block lists over ordinary DNS, and applies
+a classifier trained on the mail you mark in the dashboard. A message's score
+comes with a breakdown of which check contributed what.
+
+An external SpamAssassin daemon is still fully supported:
+
+    docker compose --profile spamd up -d
+
+and in the dashboard, or in the stored configuration, set
+`antispam.engine` to `spamd`. Leaving `engine` empty is resolved rather than
+defaulted, so a deployment that was already talking to a daemon keeps talking
+to it across an upgrade that never mentioned the setting.
+
+The classifier is the part that improves with use, and it starts knowing
+nothing. Mark messages in the dashboard — it needs examples of ordinary mail
+as much as of spam — and it begins contributing once it has seen enough of
+both. The settings page shows how many it has learned.
+
+## The agent's browser
+
+The personal agent can drive a web page — a carrier's tracking page, a
+supplier's portal — in a Chrome that runs beside the server, off unless you
+switch it on. The compose file has one under the `browser` profile:
+
+    docker compose --profile browser up -d
+
+Then, on the dashboard's server page under Agent, set the browser's
+endpoint to `http://chrome:9222` and switch the browser on. Every run gets a
+fresh, isolated context that is signed in as nobody and discarded when the
+run ends; private and internal addresses are refused unless you list them;
+downloads are off. A person who wants the agent to act in a page only they
+can sign into installs the extension under `web/extension/` and attaches
+that tab; `agent.browser.attachTabs` switches that off for everybody.
+
+## Upgrading
+
+From the dashboard, under Settings, when a release is available — it stages
+the new binary in the volume and restarts into it. Or pull the image:
+
+    docker compose pull teanode
+    docker compose up -d teanode
+
+Both are safe to run against a server handling mail; in-flight deliveries
+finish. Pin the image tag rather than following `latest` if you would rather
+an upgrade were a thing you did on a day you chose.
+
+## What to back up
+
+**PostgreSQL, and nothing else matters as much.** It holds the configuration,
+the DKIM signing keys, the server secret from which every SMTP password is
+derived, and the mail. Losing it means republishing DNS records and reissuing
+credentials.
+
+    docker compose exec postgres pg_dump -U teanode teanode | gzip > teanode-$(date +%F).sql.gz
+
+A configuration-only backup, readable and reviewable, without the mail:
+
+    docker compose exec teanode /usr/local/bin/teanode-server \
+      config export --file /var/lib/teanode/backup.yaml
+
+That file carries signing keys and the server secret in the clear — it has to,
+or restoring it would invalidate every SMTP password and every published DKIM
+record. Treat it as a private key.
+
+`./data/teanode` holds the certificates, the keys, and the spool where one is
+configured. Certificates are reissued automatically, so it is worth backing up
+but not urgent.
+
+## More than one instance
+
+    docker compose --profile cluster up -d
+
+They share the configuration through PostgreSQL, the stored messages through
+MinIO, and half-finished passkey sign-ins through Redis. Uncomment the
+`TEANODE_S3_*` block in `.env`, set `passkey.redis.address`, and give each
+instance its own `TEANODE_INSTANCE_ID`.
+
+The object store is the part that matters: without it each instance can only
+read the messages it handled itself.
+
+With it, clear `storage.directory` as well. A directory beside an object
+store holds only the messages the instance that handled them wrote — no
+instance has all of them, reads fall through to the store anyway, and every
+machine keeps a copy of somebody's mail that nothing else needs. Empty, and
+nothing is written to the machines at all. What it costs is that the store
+has to answer for a message to be stored: a write it cannot reach fails,
+where a directory keeps working while the network does not.
+
+Before clearing it on a server that has been running, check the store
+actually holds what the disk does. A mirror that could not be reached logged
+a warning and carried on, by design, so a gap is not an error anybody saw.
+
+## When it does not start
+
+Read the log first — the server is specific about what is wrong.
+
+    docker compose logs teanode | tail -40
+
+**`cannot create ...: permission denied`.** The image runs as uid 65532, and
+the data directory has to be writable by it. The `teanode-data` service in the
+compose file arranges this before the server starts; if you changed the volume,
+do the same thing to the new one:
+
+    chown -R 65532:65532 ./data/teanode
+
+**`ignoring TEANODE_...: the database wins`.** Exactly what it says, and
+usually harmless — a leftover "first run only" line. Delete it, or change the
+setting in the dashboard.
+
+**A bad setting stored on the first start.** The first start writes the
+configuration whether or not the server then manages to run, and after that the
+environment is ignored — so editing `.env` will not fix it, and a server that
+cannot start has no dashboard to fix it in. Go through the file instead:
+
+    docker compose run --rm --no-deps teanode config export --file /var/lib/teanode/fix.yaml
+    # edit ./data/teanode/fix.yaml, which is that same file from outside
+    docker compose run --rm --no-deps teanode config import --file /var/lib/teanode/fix.yaml --force
+
+`run` rather than `exec` here, because a server restarting in a loop has no
+container to exec into. `--no-deps` so it does not start the rest of the stack
+to do it.
+
+`--force` is required once the database holds domains or operators; without it
+the import refuses rather than replacing them.

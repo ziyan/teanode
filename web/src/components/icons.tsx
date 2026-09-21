@@ -1,0 +1,799 @@
+// Inline SVG, no icon package. The dashboard needs a couple of dozen glyphs; a
+// library would be a dependency, a build step and a megabyte to draw them.
+//
+// All of them are 24×24 outline icons on the same 2px stroke, so they sit
+// together without one looking heavier than the rest, and they take their
+// color from the text around them.
+
+type IconProps = { size?: number; className?: string }
+
+function Icon({ size = 18, className, children }: IconProps & { children: React.ReactNode }) {
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {children}
+    </svg>
+  )
+}
+
+export function MailIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="m2 7 10 6 10-6" />
+    </Icon>
+  )
+}
+
+// The folders of a mailbox, one drawing per kind, so that the rail reads at a
+// glance when it is collapsed to icons.
+export function InboxIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+    </Icon>
+  )
+}
+
+export function PencilIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </Icon>
+  )
+}
+
+// Drafts are what is still being written: the pencil.
+export function DraftsIcon(props: IconProps) {
+  return <PencilIcon {...props} />
+}
+
+export function MoveIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+      <path d="M9 13h6" />
+      <path d="m12.5 10.5 2.5 2.5-2.5 2.5" />
+    </Icon>
+  )
+}
+
+export function SentIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m22 2-7 20-4-9-9-4Z" />
+      <path d="M22 2 11 13" />
+    </Icon>
+  )
+}
+
+export function ArchiveIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="3" width="20" height="5" rx="1" />
+      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+      <path d="M10 12h4" />
+    </Icon>
+  )
+}
+
+export function JunkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m5.6 5.6 12.8 12.8" />
+    </Icon>
+  )
+}
+
+export function FolderIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+    </Icon>
+  )
+}
+
+export function CloseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M18 6 6 18M6 6l12 12" />
+    </Icon>
+  )
+}
+
+// Who may do what: two people, one behind the other.
+export function PeopleIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </Icon>
+  )
+}
+
+export function ArrowUpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 19V5" />
+      <path d="m5 12 7-7 7 7" />
+    </Icon>
+  )
+}
+
+export function ArrowDownIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 5v14" />
+      <path d="m19 12-7 7-7-7" />
+    </Icon>
+  )
+}
+
+// A person with a plus: keeping somebody who has only written to you.
+export function AddPersonIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M19 8v6" />
+      <path d="M22 11h-6" />
+    </Icon>
+  )
+}
+
+// The same person, already kept: a tick rather than a plus.
+export function KeptPersonIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M16 11l2 2 4-4" />
+    </Icon>
+  )
+}
+
+export function PinIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 17v5" />
+      <path d="M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
+    </Icon>
+  )
+}
+
+// A switch, drawn on and drawn off: the two states of a rule that is running
+// or is not. Two pictures rather than one dimmed one, because a single icon
+// at half strength is a state nobody reads correctly the first time.
+export function ToggleOnIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="7" width="20" height="10" rx="5" />
+      <circle cx="17" cy="12" r="2.5" fill="currentColor" />
+    </Icon>
+  )
+}
+
+export function ToggleOffIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="7" width="20" height="10" rx="5" />
+      <circle cx="7" cy="12" r="2.5" />
+    </Icon>
+  )
+}
+
+export function PinOffIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 17v5" />
+      <path d="M9 3h6l-1 7 3 3H7l3-3-1-7Z" />
+      <path d="m3 3 18 18" />
+    </Icon>
+  )
+}
+
+export function StarIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2Z" />
+    </Icon>
+  )
+}
+
+// TargetIcon marks what a conversation is being aimed at: the goal the
+// agent keeps working toward until it is met or the person clears it.
+export function TargetIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="5" />
+      <circle cx="12" cy="12" r="1" />
+    </Icon>
+  )
+}
+
+// PriorityIcon marks the view of what the agent said matters today.
+export function PriorityIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v5" />
+      <path d="M12 16h.01" />
+    </Icon>
+  )
+}
+
+// SparkIcon marks the agent: what acts on the person's behalf.
+export function SparkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2zM5 17l.9 2.1L8 20l-2.1.9L5 23l-.9-2.1L2 20l2.1-.9L5 17z" />
+    </Icon>
+  )
+}
+export function QueueIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </Icon>
+  )
+}
+
+export function DomainsIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18" />
+    </Icon>
+  )
+}
+
+export function SetupIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9 11l2 2 4-4" />
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+    </Icon>
+  )
+}
+
+export function MenuIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 6h18M3 12h18M3 18h18" />
+    </Icon>
+  )
+}
+
+export function GlobeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18" />
+    </Icon>
+  )
+}
+
+export function SunIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" />
+    </Icon>
+  )
+}
+
+export function MoonIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+    </Icon>
+  )
+}
+
+export function AutoThemeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="4" width="20" height="14" rx="2" />
+      <path d="M8 21h8" />
+    </Icon>
+  )
+}
+
+export function KeyIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="8" cy="15" r="4" />
+      <path d="m10.8 12.2 8.2-8.2M17 6l2 2M14 9l2 2" />
+    </Icon>
+  )
+}
+
+export function GridIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </Icon>
+  )
+}
+
+export function WarningIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+      <path d="M12 9v4M12 17h.01" />
+    </Icon>
+  )
+}
+
+export function ShieldIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3 4 6v6c0 4.4 3.4 7.8 8 9 4.6-1.2 8-4.6 8-9V6l-8-3z" />
+    </Icon>
+  )
+}
+
+// A chevron pointing down: what opens a thing in place, and turns to point up
+// when it is open.
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </Icon>
+  )
+}
+
+// The other half of a disclosure: pointing at where the thing that is open
+// goes back to.
+export function ChevronUpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m6 15 6-6 6 6" />
+    </Icon>
+  )
+}
+
+export function ChevronRightIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m9 18 6-6-6-6" />
+    </Icon>
+  )
+}
+
+// The same arrow the other way, for a control that puts something back rather
+// than opening it: narrowing the rail moves it to the left, and the arrow
+// should say which way the thing goes.
+export function ChevronLeftIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m15 18-6-6 6-6" />
+    </Icon>
+  )
+}
+
+// A pair of chevrons for an unsorted column, one for the direction in force.
+export function SortIcon({ direction, ...props }: IconProps & { direction?: 'ascending' | 'descending' }) {
+  if (direction === 'ascending') {
+    return (
+      <Icon {...props}>
+        <path d="m6 15 6-6 6 6" />
+      </Icon>
+    )
+  }
+  if (direction === 'descending') {
+    return (
+      <Icon {...props}>
+        <path d="m6 9 6 6 6-6" />
+      </Icon>
+    )
+  }
+  return (
+    <Icon {...props}>
+      <path d="m7 9 5-5 5 5M7 15l5 5 5-5" />
+    </Icon>
+  )
+}
+
+export function CalendarIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 10h18M8 3v4M16 3v4" />
+    </Icon>
+  )
+}
+
+export function UserIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0 1 16 0" />
+    </Icon>
+  )
+}
+
+export function SettingsIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 8.4a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+    </Icon>
+  )
+}
+
+export function PlusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 5v14M5 12h14" />
+    </Icon>
+  )
+}
+
+export function CopyIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+    </Icon>
+  )
+}
+
+export function CheckIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20 6L9 17l-5-5" />
+    </Icon>
+  )
+}
+
+export function TrashIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    </Icon>
+  )
+}
+
+export function LogoutIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+    </Icon>
+  )
+}
+
+// A circular arrow: the restart, and the page about the running process.
+// Two arrows chasing each other: reload the page, rather than restart the
+// server, which is what RestartIcon means two rows down.
+export function RefreshIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-7.5-4" />
+      <path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 7.5 4" />
+      <path d="M17 7h4V3" />
+      <path d="M7 17H3v4" />
+    </Icon>
+  )
+}
+
+// A rack: two units stacked, each with its indicator light. Nothing about the
+// machine itself is drawn — a box with a light on it is what a server looks
+// like to anybody who has seen one, and drawing the ports would be detail at
+// a size where detail is noise.
+//
+// It replaces a circular arrow, which is the sign for restarting a thing, not
+// for the thing: the page it names says what this server is and which version
+// it runs, and restarting is one button on it.
+export function ServerIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="4" width="18" height="7" rx="2" />
+      <rect x="3" y="13" width="18" height="7" rx="2" />
+      <path d="M7 7.5h.01M7 16.5h.01" />
+    </Icon>
+  )
+}
+
+export function RestartIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 12a9 9 0 1 0 3-6.7" />
+      <path d="M3 4v5h5" />
+    </Icon>
+  )
+}
+
+// Stacked boxes with a link between them: the optional services this server
+// talks to over the network.
+export function ServiceIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="4" width="18" height="6" rx="1" />
+      <rect x="3" y="14" width="18" height="6" rx="1" />
+      <path d="M7 7h.01M7 17h.01" />
+    </Icon>
+  )
+}
+
+export function FilterIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 5h18l-7 8v6l-4 2v-8z" />
+    </Icon>
+  )
+}
+
+// A desktop computer: the person's own machine, which is not a server and
+// should not wear the server's stacked boxes.
+export function ComputerIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2.5" y="4" width="19" height="12" rx="2" />
+      <path d="M9 20h6M12 16v4" />
+    </Icon>
+  )
+}
+
+export function TerminalIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 17l6-5-6-5M12 19h8" />
+    </Icon>
+  )
+}
+
+export function ComposeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </Icon>
+  )
+}
+
+export function TemplateIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+      <path d="M14 3v6h6" />
+      <path d="M8 13h8M8 17h5" />
+    </Icon>
+  )
+}
+
+export function PaperclipIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m21 12-8.5 8.5a5 5 0 0 1-7-7L14 5a3.3 3.3 0 0 1 4.7 4.7L10 18.5a1.7 1.7 0 0 1-2.4-2.4L16 7.6" />
+    </Icon>
+  )
+}
+
+// The rich text toolbar. Bold, italic and underline are their letters, which
+// is what every editor uses; the rest are drawn.
+export function ListIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9 6h11M9 12h11M9 18h11" />
+      <circle cx="4.5" cy="6" r="1" fill="currentColor" />
+      <circle cx="4.5" cy="12" r="1" fill="currentColor" />
+      <circle cx="4.5" cy="18" r="1" fill="currentColor" />
+    </Icon>
+  )
+}
+
+export function NumberedListIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M10 6h10M10 12h10M10 18h10" />
+      <path d="M4 5h1.5v4M3.5 9H6M3.5 14.5a1.3 1.3 0 1 1 2.3.8L3.5 18h3" />
+    </Icon>
+  )
+}
+
+export function QuoteIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 6H5a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h2a2 2 0 0 1 2 2c0 1.5-1 2.5-3 3" />
+      <path d="M19 6h-3a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h2a2 2 0 0 1 2 2c0 1.5-1 2.5-3 3" />
+    </Icon>
+  )
+}
+
+// ExternalIcon marks a link that opens in a tab of its own.
+export function ExternalIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M14 4h6v6" />
+      <path d="M20 4 10 14" />
+      <path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" />
+    </Icon>
+  )
+}
+
+export function LinkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5" />
+      <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5" />
+    </Icon>
+  )
+}
+
+// Merge: two strands that become one, the way every version control
+// program has drawn it, so that "this page joins that one" is read off
+// the glyph rather than learned.
+export function MergeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7 3v6a6 6 0 0 0 6 6h4" />
+      <path d="M7 21v-6" />
+      <path d="m14 12 3 3-3 3" />
+    </Icon>
+  )
+}
+
+export function EraserIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m7 21-4-4a2 2 0 0 1 0-3l9-9a2 2 0 0 1 3 0l6 6a2 2 0 0 1 0 3l-7 7" />
+      <path d="M6 12l6 6M7 21h13" />
+    </Icon>
+  )
+}
+
+// A picture: a frame with a hill and a sun in it, which is what every toolbar
+// in the world uses and is therefore the one that needs no explaining.
+export function PictureIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <path d="M21 15l-5-5L5 21" />
+    </Icon>
+  )
+}
+
+// Back: an arrow pointing at where you came from.
+// Unlink: the two links of LinkIcon with a stroke through them.
+export function UnlinkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5" />
+      <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5" />
+      <path d="M4 4l16 16" />
+    </Icon>
+  )
+}
+
+export function ArrowLeftIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M19 12H5M12 19l-7-7 7-7" />
+    </Icon>
+  )
+}
+
+// Reply: the arrow that turns back on itself, which is what every mail
+// program has drawn for thirty years.
+export function ReplyIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9 17 4 12l5-5" />
+      <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+    </Icon>
+  )
+}
+
+// Reply to all: the same arrow, with a second one behind it.
+export function ReplyAllIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7 17 2 12l5-5" />
+      <path d="M12 17 7 12l5-5" />
+      <path d="M22 18v-2a4 4 0 0 0-4-4H7" />
+    </Icon>
+  )
+}
+
+// Forward: the reply arrow, the other way round.
+export function ForwardIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m15 17 5-5-5-5" />
+      <path d="M4 18v-2a4 4 0 0 1 4-4h12" />
+    </Icon>
+  )
+}
+
+// Flagged: a flag on a pole. Not the star, which is what the list already
+// uses for the same thing at a glance.
+export function FlagIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+      <path d="M4 22v-7" />
+    </Icon>
+  )
+}
+
+// Read: an envelope with its flap open, against MailIcon's closed one.
+export function MailOpenIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 10v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9l-9-6z" />
+      <path d="m3 10 9 6 9-6" />
+    </Icon>
+  )
+}
+
+// Skips the Inbox: the Inbox with a line through it, which is what muting a
+// list does — the mail keeps coming and goes straight to the Archive. Drawn
+// with the same stroke as BellOffIcon beside it, so the pair reads as two
+// answers to the same question rather than two unrelated marks.
+export function InboxOffIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+      <path d="M2 2l20 20" />
+    </Icon>
+  )
+}
+
+// Stop sending: a bell with a line through it. Not a cross, which reads as
+// "close this", and not the circle with a slash, which is already what
+// reporting junk is drawn as.
+export function BellOffIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8.7 3.7A6 6 0 0 1 18 9v2c0 .7.1 1.3.4 1.9" />
+      <path d="M6 9v2c0 2-1 3-1 3h11" />
+      <path d="M10.3 21a2 2 0 0 0 3.4 0" />
+      <path d="M2 2l20 20" />
+    </Icon>
+  )
+}
+
+// GraphIcon is three pages and the lines between them: the graph explorer.
+export function GraphIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="6" cy="6" r="2.5" />
+      <circle cx="18" cy="8" r="2.5" />
+      <circle cx="10" cy="18" r="2.5" />
+      <path d="M8.3 7.1 15.7 8.6M7.2 8.2l1.9 7.6M12.3 17l4.6-6.6" />
+    </Icon>
+  )
+}
+
+// MinusIcon is the one line: less, fold away.
+export function MinusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 12h14" />
+    </Icon>
+  )
+}

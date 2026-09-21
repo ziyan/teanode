@@ -1,0 +1,41 @@
+This is a checkout on {{.PersonName}}'s computer, filed as a page in
+their agent's notes. Say what it is, from what it says about itself.
+
+## The checkout
+
+{{.Path}} — {{.Name}}
+{{if .Languages}}Written in {{.Languages}}.{{end}}
+{{if .Directories}}Top-level directories: {{.Directories}}.{{end}}
+{{if .History}}{{.History}}{{end}}
+
+## What it says about itself
+
+<readme>
+{{.Readme}}
+</readme>
+
+{{if .Index}}## Their other pages
+
+{{range .Index}}{{.}}
+{{end}}
+{{end}}## What to write
+
+An opening of two or three sentences: what this is, what it is for, and
+who it is for, in plain words {{.PersonName}} would use. Not where it is
+or what it is written in -- those are already on the page.
+
+Then up to five facts worth keeping beside it, each a sentence on its
+own: what its main parts are, what it depends on or talks to, how it is
+run or deployed, what it was made for. Only what the readme supports;
+an empty list is a good answer for a readme that says nothing.
+
+Then, only where the readme itself names one of the pages listed above
+-- the project this is the website of, the system it is a plugin for,
+the tool it is built with -- say what this is to it: `part_of`, `uses`
+or `related_to`, with the path exactly as listed and a few words why. No
+link on a guess; an empty list is the usual answer.
+
+Answer with this object and nothing else:
+
+{"opening": "...", "facts": ["...", "..."],
+ "links": [{"to": "projects/teanode", "relation": "part_of", "note": "the website and documentation of it"}]}

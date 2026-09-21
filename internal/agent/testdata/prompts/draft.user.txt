@@ -1,0 +1,39 @@
+Write Alice Example's reply to the newest message of the conversation "Thursday?", in English, as Alice Example would send it. Answer with the body of the reply and nothing else: no subject line, no quoted text, no commentary, no placeholders such as [name] — when something is unknown, leave it out or ask for it in the reply. Answer what was asked, keep to what Alice Example has said or plainly means, and never promise, agree to pay, or give out details on their behalf that they have not given you.
+
+What Alice Example wants this reply to do:
+
+<instructions>
+Say yes to Thursday, ask her to bring the plan.
+</instructions>
+
+What Alice Example has told you about replying:
+- Always write to Maria in French.
+
+What research found about the message being answered:
+
+<notes>
+The plan is the club's mooring plan, due Friday.
+</notes>
+
+The earlier messages, oldest first:
+
+<message>
+From: Alice
+Date: 2026-09-09 18:00 UTC
+Subject: Thursday?
+
+When suits you?
+</message>
+
+The message to answer:
+
+<message>
+From: Maria <maria@example.net>
+To: alice@example.com
+Date: 2026-09-10 09:00 UTC
+Subject: Thursday?
+Attachments: plan.pdf (application/pdf)
+Server facts: SPF: pass; DKIM: pass
+
+Can you do Thursday at 3? I need the key back too.
+</message>

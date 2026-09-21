@@ -1,0 +1,373 @@
+// Package client talks to a running TeaNode server's GraphQL API.
+//
+// It exists so that the command line tool and the dashboard change
+// configuration the same way: through the server. The alternative, editing
+// teanode.yaml underneath a running process, loses whichever change the other
+// writer made second, because the server holds the whole configuration in
+// memory and rewrites the file from it.
+package client
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"mime/multipart"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/ziyan/teanode/internal/api"
+
+	"github.com/op/go-logging"
+)
+
+var log = logging.MustGetLogger("client") //nolint:unused
+
+// Client is a connection to one server's API.
+type Client struct {
+	url      string
+	token    string
+	client   *http.Client
+	readOnly bool
+}
+
+// Options configure a Client.
+type Options struct {
+	// URL of the server, for example https://mail.example.com. The API path
+	// is appended.
+	URL string
+
+	// Token sent as "Authorization: Bearer". Empty is allowed, and works
+	// against a server that has no accounts yet.
+	Token string
+
+	// HTTPClient overrides the transport, which is how the local connection
+	// pins the server's own certificate.
+	HTTPClient *http.Client
+
+	// Insecure skips verifying the server's certificate, for a development
+	// server with a self-signed one. Ignored when HTTPClient is given.
+	Insecure bool
+
+	// Timeout for a single request. Zero means one minute.
+	Timeout time.Duration
+
+	// ReadOnly refuses every mutation before it is sent, so that a profile
+	// handed to a script or an agent can look but not change. Queries,
+	// introspection and downloads go through as they would otherwise.
+	ReadOnly bool
+}
+
+// NormalizeURL is how a server is named everywhere the client remembers one:
+// trimmed, without a trailing slash, and https unless a scheme was given.
+func NormalizeURL(url string) string {
+	url = strings.TrimRight(strings.TrimSpace(url), "/")
+	if url == "" {
+		return ""
+	}
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		url = "https://" + url
+	}
+	return url
+}
+
+// New builds a Client.
+func New(options Options) (*Client, error) {
+	url := NormalizeURL(options.URL)
+	if url == "" {
+		return nil, fmt.Errorf("client: no server URL")
+	}
+
+	httpClient := options.HTTPClient
+	if httpClient == nil {
+		httpClient = &http.Client{
+			// An API answers; it does not redirect. Following one would
+			// carry the token wherever the redirect pointed — to plain
+			// HTTP on the same host, which the standard library allows —
+			// so a redirect is reported as the answer it is.
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+		if options.Insecure {
+			httpClient.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+		}
+	}
+	if httpClient.Timeout == 0 {
+		httpClient.Timeout = options.Timeout
+		if httpClient.Timeout == 0 {
+			httpClient.Timeout = time.Minute
+		}
+	}
+
+	return &Client{url: url, token: options.Token, client: httpClient, readOnly: options.ReadOnly}, nil
+}
+
+// URL returns the server this client talks to.
+func (self *Client) URL() string {
+	return self.url
+}
+
+// Token is what this client signs in with, for a connection made beside
+// it, such as a websocket.
+func (self *Client) Token() string {
+	return self.token
+}
+
+// ReadOnly says whether this client refuses mutations.
+func (self *Client) ReadOnly() bool {
+	return self.readOnly
+}
+
+// Error is a message the server returned for a query.
+type Error struct {
+	Message   string `json:"message"`
+	Path      []any  `json:"path,omitempty"`
+	Locations []struct {
+		Line   int `json:"line"`
+		Column int `json:"column"`
+	} `json:"locations,omitempty"`
+}
+
+func (self *Error) Error() string {
+	return self.Message
+}
+
+// Errors is every error one query returned.
+type Errors []*Error
+
+func (self Errors) Error() string {
+	messages := make([]string, 0, len(self))
+	for _, err := range self {
+		messages = append(messages, err.Message)
+	}
+	return strings.Join(messages, "; ")
+}
+
+// Execute runs a query or mutation and decodes the data into result, which
+// should be a pointer to a struct with the field names the query selects.
+func (self *Client) Execute(ctx context.Context, query string, variables map[string]any, result any) error {
+	// Checked before anything else, so that a refused mutation has not been
+	// encoded, let alone sent, and the caller can be sure nothing changed.
+	if self.readOnly && IsMutationDocument(query) {
+		return &ReadOnlyError{URL: self.url}
+	}
+
+	body, err := json.Marshal(map[string]any{"query": query, "variables": variables})
+	if err != nil {
+		return fmt.Errorf("client: cannot encode the query: %w", err)
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, self.url+api.PathGraphQL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	if self.token != "" {
+		request.Header.Set("Authorization", "Bearer "+self.token)
+	}
+	// Where this shell is and what it reads in, the way the dashboard sends
+	// the browser's, so a person who lives in the terminal is placed as well
+	// as one who lives in the browser.
+	if zone := localZoneName(); zone != "" {
+		request.Header.Set("X-Timezone", zone)
+	}
+	if language := localLanguage(); language != "" {
+		request.Header.Set("Accept-Language", language)
+	}
+
+	response, err := self.client.Do(request)
+	if err != nil {
+		return &ConnectionError{URL: self.url, Cause: err}
+	}
+	defer func() {
+		_ = response.Body.Close()
+	}()
+
+	if response.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("%w: %s answered HTTP 401", ErrUnauthorized, self.url)
+	}
+
+	var envelope struct {
+		Data   json.RawMessage `json:"data"`
+		Errors Errors          `json:"errors"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		return fmt.Errorf("client: %s answered with something that is not a GraphQL reply (HTTP %d): %w", self.url, response.StatusCode, err)
+	}
+	if len(envelope.Errors) > 0 {
+		return classify(envelope.Errors)
+	}
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("client: %s answered HTTP %d", self.url, response.StatusCode)
+	}
+	if result == nil || len(envelope.Data) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(envelope.Data, result); err != nil {
+		return fmt.Errorf("client: cannot decode the reply: %w", err)
+	}
+	return nil
+}
+
+// executeAllowed sends a document a read-only client may send even though
+// it is a mutation: one that itself promises to change nothing.
+func (self *Client) executeAllowed(ctx context.Context, query string, variables map[string]any, result any) error {
+
+	body, err := json.Marshal(map[string]any{"query": query, "variables": variables})
+	if err != nil {
+		return fmt.Errorf("client: cannot encode the query: %w", err)
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, self.url+api.PathGraphQL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	if self.token != "" {
+		request.Header.Set("Authorization", "Bearer "+self.token)
+	}
+	// Where this shell is and what it reads in, the way the dashboard sends
+	// the browser's, so a person who lives in the terminal is placed as well
+	// as one who lives in the browser.
+	if zone := localZoneName(); zone != "" {
+		request.Header.Set("X-Timezone", zone)
+	}
+	if language := localLanguage(); language != "" {
+		request.Header.Set("Accept-Language", language)
+	}
+
+	response, err := self.client.Do(request)
+	if err != nil {
+		return &ConnectionError{URL: self.url, Cause: err}
+	}
+	defer func() {
+		_ = response.Body.Close()
+	}()
+
+	if response.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("%w: %s answered HTTP 401", ErrUnauthorized, self.url)
+	}
+
+	var envelope struct {
+		Data   json.RawMessage `json:"data"`
+		Errors Errors          `json:"errors"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		return fmt.Errorf("client: %s answered with something that is not a GraphQL reply (HTTP %d): %w", self.url, response.StatusCode, err)
+	}
+	if len(envelope.Errors) > 0 {
+		return classify(envelope.Errors)
+	}
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("client: %s answered HTTP %d", self.url, response.StatusCode)
+	}
+	if result == nil || len(envelope.Data) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(envelope.Data, result); err != nil {
+		return fmt.Errorf("client: cannot decode the reply: %w", err)
+	}
+	return nil
+}
+
+// Upload sends a file to an endpoint that takes one, as a multipart form with
+// the file under the given field. The counterpart of Download, and the only
+// way to reach the parts of the API that take a file rather than arguments: a
+// logo is bytes, and bytes are not a GraphQL argument.
+//
+// The reply is returned as it came, since callers read a small JSON object out
+// of it — the address to publish, or the reason the file was refused.
+func (self *Client) Upload(ctx context.Context, path, field, filename string, content []byte) (*http.Response, error) {
+	body := &bytes.Buffer{}
+	form := multipart.NewWriter(body)
+	part, err := form.CreateFormFile(field, filename)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := part.Write(content); err != nil {
+		return nil, err
+	}
+	if err := form.Close(); err != nil {
+		return nil, err
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, self.url+path, body)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Content-Type", form.FormDataContentType())
+	if self.token != "" {
+		request.Header.Set("Authorization", "Bearer "+self.token)
+	}
+	response, err := self.client.Do(request)
+	if err != nil {
+		return nil, &ConnectionError{URL: self.url, Cause: err}
+	}
+	if response.StatusCode == http.StatusUnauthorized {
+		_ = response.Body.Close()
+		return nil, fmt.Errorf("%w: %s answered HTTP 401", ErrUnauthorized, self.url)
+	}
+	return response, nil
+}
+
+// PostJSON sends a JSON body to a path beside the GraphQL endpoint and
+// hands back what came of it, with the same credentials and the same
+// verification of the server's certificate.
+//
+// For an endpoint that is not GraphQL and is not a file: the Model Context
+// Protocol, whose messages are JSON-RPC and whose answers are the same.
+// The caller closes the body and reads whatever status came back, because
+// this protocol says things in the body that HTTP would say with a code.
+func (self *Client) PostJSON(ctx context.Context, path string, body []byte) (*http.Response, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, self.url+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	if self.token != "" {
+		request.Header.Set("Authorization", "Bearer "+self.token)
+	}
+	response, err := self.client.Do(request)
+	if err != nil {
+		return nil, &ConnectionError{URL: self.url, Cause: err}
+	}
+	if response.StatusCode == http.StatusUnauthorized {
+		_ = response.Body.Close()
+		return nil, fmt.Errorf("%w: %s answered HTTP 401", ErrUnauthorized, self.url)
+	}
+	return response, nil
+}
+
+// Download fetches something that is a file rather than a GraphQL reply — the
+// raw source of a stored message — with the same credentials. The caller
+// closes the body. A reply that is not a success is returned as an error, so
+// that a "not found" page is never saved as though it were the file.
+func (self *Client) Download(ctx context.Context, path string) (*http.Response, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, self.url+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if self.token != "" {
+		request.Header.Set("Authorization", "Bearer "+self.token)
+	}
+	response, err := self.client.Do(request)
+	if err != nil {
+		return nil, &ConnectionError{URL: self.url, Cause: err}
+	}
+	switch response.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized:
+		_ = response.Body.Close()
+		return nil, fmt.Errorf("%w: %s answered HTTP 401", ErrUnauthorized, self.url)
+	case http.StatusNotFound:
+		_ = response.Body.Close()
+		return nil, fmt.Errorf("%w: %s answered HTTP 404 for %s", ErrNotFound, self.url, path)
+	default:
+		_ = response.Body.Close()
+		return nil, fmt.Errorf("client: %s answered HTTP %d for %s", self.url, response.StatusCode, path)
+	}
+	return response, nil
+}
