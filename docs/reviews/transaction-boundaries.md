@@ -63,3 +63,20 @@ transaction calls and persistent notification listeners have been inventoried.
 A caller holding one connection while waiting for another can otherwise stall a
 bounded pool. This document records known cases; the complete lifecycle and
 notification-listener audit remains part of the plan.
+
+## Command scopes introduced during extraction
+
+`internal/mailbox` folder commands accept either a database or an existing
+transaction as their transaction scope. The latter uses SQL savepoints, including
+release on success or after rollback. This preserves one connection and its locks
+while allowing a failing command to undo all of its own writes. Nested commands
+cannot commit the parent, and a failed cleanup prevents a later parent commit.
+Cleanup has its own bounded context so cancellation of a shorter command does
+not prevent rolling back its writes.
+
+GraphQL folder adapters use this scope on their existing transaction. HTTP still
+returns partial results and commits successful sibling fields; the agent adapter
+still returns its document error to the outer transaction. A shared command's
+failure is rolled back in both paths, but the adapters' treatment of successful
+siblings is not yet unified. That remaining compatibility decision must be tested
+before changing the agent adapter's document-wide behavior.

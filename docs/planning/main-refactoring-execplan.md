@@ -34,7 +34,7 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 2 (in progress): SQL cancellation, bounded job completion and GraphQL preparation with document and pagination-work limits pass; command atomicity and the remaining transaction audit remain.
 - [x] (2026-09-20) Milestone 3: distinct failure accounting, per-claim completion, bounded shutdown recording, retry and migration regressions.
 - [ ] Milestone 4 (in progress): disable automatic mutation retries; durable submission identity, recovery and storage guarantees remain.
-- [ ] Milestone 5: extract shared application commands from transport adapters.
+- [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes; mailbox drafts/send, calendar, contacts, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6: separate knowledge ingestion, retrieval and model interpretation.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
@@ -84,6 +84,16 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+Decision: validate the application-command boundary with folder operations before
+moving draft/send acceptance. A command invoked within an existing transaction
+uses a savepoint on that connection; a standalone command opens a transaction.
+This avoids introducing a second connection that can wait on locks already held
+by the caller. Failure rolls back the command, while successful commands still
+belong to the outer transaction. Preserve the existing multi-field behavior while
+migrating commands; HTTP/agent document-wide failure differences remain to be
+resolved after command boundaries are covered. The folder slice is a foundation,
+not a replacement for the submission milestone or the remaining command scope.
 
 Decision: charge field selections by their requested page size at each paginated
 ancestor, including variables, variable defaults, aliases and repeated fragments.
@@ -148,11 +158,11 @@ catalogues and the current React stack already supply the necessary boundaries.
 ## Outcomes & Retrospective
 
 
-Implementation is underway. Milestone 1 and the SQL cancellation portion of
-Milestone 2 are implemented and pass focused checks. The findings distinguish reproduced
-failures, source-derived risks, existing security backlog and areas needing a
-focused follow-up. Update this section after each milestone with actual behavior,
-validation evidence, compatibility costs and remaining work.
+Implementation is underway. Milestones 1 and 3 are implemented, with tested
+portions of Milestones 2, 4, 5 and 7. Mail acceptance and recovery, the remaining
+application commands, knowledge extraction, broader dashboard extraction and
+lifecycle work remain incomplete. Passing foundation checks is not completion
+of this plan. The revision notes below record the current evidence and limits.
 
 ## Context and Orientation
 
@@ -679,3 +689,21 @@ Validation update: the full race suite also passes with stock PostgreSQL and
 vector indexing explicitly disabled: 1,797 tests reported, with the Chrome-proxy
 integration and extension-only index checks skipped. This verifies the database
 fallback path after pagination and GraphQL work estimation changes.
+
+Revision note: database transactions now offer nested command scopes with bounded
+rollback cleanup and released savepoints. Nested scopes cannot commit the parent;
+a cleanup failure prevents its commit. Regression tests cover SQL errors,
+command cancellation, panic recovery and outer rollback. Folder create, update,
+pin and delete now share `internal/mailbox` authorization and transactional
+orchestration. `access.Principal` holds the shared identity while `api.Principal`
+remains a source-compatible alias. Failure injection after recursive folder
+deletion restores both descendants and mail items, with the next command still
+usable, in standalone and existing-transaction modes. Permission, ownership and
+built-in folder protections are tested. Draft/send and the other commands remain
+open; the full-suite gate is being rerun after this database-interface change.
+
+Validation update: the full vector-enabled race suite passes after command-scope
+and folder extraction: 1,805 tests reported, with the Chrome-proxy integration
+skipped. A subsequent focused regression also confirms that a folder command
+reuses a row lock held by its caller instead of waiting for a second connection.
+Go lint and `gogolint` pass.

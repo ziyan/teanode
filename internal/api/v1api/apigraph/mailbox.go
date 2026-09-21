@@ -10,6 +10,7 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/bimi"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/mailbox"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/strainer"
 )
@@ -1252,19 +1253,16 @@ type CreateMailboxFolderArguments struct {
 }
 
 func (self *graph) CreateMailboxFolder(ctx context.Context, arguments CreateMailboxFolderArguments) (*models.MailboxFolder, error) {
-	mailbox, err := self.requireMailbox(ctx, models.PermissionMailboxManage, arguments.MailboxID)
+	principal, err := self.requirePermission(ctx, models.PermissionMailboxManage)
 	if err != nil {
 		return nil, err
 	}
-	folder := &models.MailboxFolder{MailboxID: mailbox.ID, Name: strings.TrimSpace(arguments.Name)}
+	request := mailbox.CreateFolderRequest{MailboxID: arguments.MailboxID, Name: arguments.Name}
 	if arguments.ParentID != nil {
-		folder.ParentID = *arguments.ParentID
+		request.ParentID = *arguments.ParentID
 	}
-	created, err := self.transaction(ctx).CreateFolder(folder)
-	if err != nil {
-		return nil, translateError(err)
-	}
-	return created, nil
+	created, err := mailbox.New(self.transaction(ctx)).CreateFolder(ctx, principal, request)
+	return created, translateError(err)
 }
 
 type UpdateMailboxFolderArguments struct {
@@ -1274,28 +1272,14 @@ type UpdateMailboxFolderArguments struct {
 }
 
 func (self *graph) UpdateMailboxFolder(ctx context.Context, arguments UpdateMailboxFolderArguments) (*models.MailboxFolder, error) {
-	_, folder, err := self.requireFolder(ctx, models.PermissionMailboxManage, arguments.FolderID)
+	principal, err := self.requirePermission(ctx, models.PermissionMailboxManage)
 	if err != nil {
 		return nil, err
 	}
-	if folder.Kind != models.MailboxFolderKindCustom {
-		// Inbox, Sent and the rest keep their names: they are what a mail
-		// program looks for.
-		return nil, api.ErrInvalidArguments
-	}
-	updated, err := self.transaction(ctx).UpdateFolder(folder.ID, func(folder *models.MailboxFolder) error {
-		if arguments.Name != nil {
-			folder.Name = strings.TrimSpace(*arguments.Name)
-		}
-		if arguments.ParentID != nil {
-			folder.ParentID = *arguments.ParentID
-		}
-		return nil
+	updated, err := mailbox.New(self.transaction(ctx)).UpdateFolder(ctx, principal, mailbox.UpdateFolderRequest{
+		FolderID: arguments.FolderID, Name: arguments.Name, ParentID: arguments.ParentID,
 	})
-	if err != nil {
-		return nil, translateError(err)
-	}
-	return updated, nil
+	return updated, translateError(err)
 }
 
 type SetMailboxFolderPinnedArguments struct {
@@ -1304,28 +1288,12 @@ type SetMailboxFolderPinnedArguments struct {
 }
 
 func (self *graph) SetMailboxFolderPinned(ctx context.Context, arguments SetMailboxFolderPinnedArguments) (*models.MailboxFolder, error) {
-	_, folder, err := self.requireFolder(ctx, models.PermissionMailboxManage, arguments.FolderID)
+	principal, err := self.requirePermission(ctx, models.PermissionMailboxManage)
 	if err != nil {
 		return nil, err
 	}
-	if folder.Kind == models.MailboxFolderKindInbox {
-		// The Inbox is always at the top; there is nothing to pin or unpin.
-		return nil, api.ErrInvalidArguments
-	}
-	updated, err := self.transaction(ctx).UpdateFolder(folder.ID, func(folder *models.MailboxFolder) error {
-		switch {
-		case arguments.Pinned && folder.PinnedAt == nil:
-			now := time.Now()
-			folder.PinnedAt = &now
-		case !arguments.Pinned:
-			folder.PinnedAt = nil
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, translateError(err)
-	}
-	return updated, nil
+	updated, err := mailbox.New(self.transaction(ctx)).SetFolderPinned(ctx, principal, arguments.FolderID, arguments.Pinned)
+	return updated, translateError(err)
 }
 
 type DeleteMailboxFolderArguments struct {
@@ -1333,14 +1301,11 @@ type DeleteMailboxFolderArguments struct {
 }
 
 func (self *graph) DeleteMailboxFolder(ctx context.Context, arguments DeleteMailboxFolderArguments) error {
-	_, folder, err := self.requireFolder(ctx, models.PermissionMailboxManage, arguments.FolderID)
+	principal, err := self.requirePermission(ctx, models.PermissionMailboxManage)
 	if err != nil {
 		return err
 	}
-	if err := self.transaction(ctx).DeleteFolder(folder.ID); err != nil {
-		return translateError(err)
-	}
-	return nil
+	return translateError(mailbox.New(self.transaction(ctx)).DeleteFolder(ctx, principal, arguments.FolderID))
 }
 
 type UpdateMailboxArguments struct {
