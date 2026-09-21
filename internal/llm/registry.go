@@ -29,7 +29,7 @@ type Registry struct {
 
 type providerEntry struct {
 	configuration config.AgentProvider
-	provider      Provider
+	service       Service
 }
 
 type cachedModels struct {
@@ -65,11 +65,11 @@ func Open(configuration *config.Agent) (*Registry, error) {
 		if !declared.IsEnabled() {
 			continue
 		}
-		provider, err := NewProvider(declared.Kind, declared.BaseURL, declared.APIKey, timeout)
+		service, err := NewProvider(declared.Kind, declared.BaseURL, declared.APIKey, timeout)
 		if err != nil {
 			return nil, fmt.Errorf("llm: provider %q: %w", declared.Name, err)
 		}
-		registry.providers[declared.Name] = &providerEntry{configuration: declared, provider: provider}
+		registry.providers[declared.Name] = &providerEntry{configuration: declared, service: service}
 	}
 	if len(registry.providers) == 0 {
 		return nil, fmt.Errorf("llm: the agent is enabled but no provider is")
@@ -113,7 +113,7 @@ func (self *Registry) ForWork(work config.AgentWork) (Provider, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	return entry.provider, model, nil
+	return chatting(entry, model)
 }
 
 // ForModel is the provider behind an explicit "provider:model", for the
@@ -123,7 +123,19 @@ func (self *Registry) ForModel(name string) (Provider, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	return entry.provider, model, nil
+	return chatting(entry, model)
+}
+
+// chatting is the entry as something that holds a conversation, or the
+// reason it is not. A provider that only decides is the case: it is a
+// mistake to have assigned it to work that writes, and the configuration
+// check refuses it, so this is what is left if one ever gets past.
+func chatting(entry *providerEntry, model string) (Provider, string, error) {
+	provider, ok := entry.service.(Provider)
+	if !ok {
+		return nil, "", fmt.Errorf("llm: provider %q decides between answers and does not write", entry.configuration.Name)
+	}
+	return provider, model, nil
 }
 
 // Embedding is the embedder and model for search by meaning, or an error
@@ -137,11 +149,33 @@ func (self *Registry) Embedding() (Embedder, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	embedder, ok := entry.provider.(Embedder)
+	embedder, ok := entry.service.(Embedder)
 	if !ok {
 		return nil, "", fmt.Errorf("llm: provider %q cannot embed", entry.configuration.Name)
 	}
 	return embedder, model, nil
+}
+
+// Deciding is the decider and model for a question whose answers are known
+// in advance, or an error saying there is none.
+//
+// Beside Embedding, and for the same reason: it is a capability some
+// providers have and most do not, so it is asked for by name rather than
+// assumed of whatever is configured.
+func (self *Registry) Deciding() (Decider, string, error) {
+	name := self.configuration.Models.Decide
+	if name == "" {
+		return nil, "", fmt.Errorf("llm: no decision model is configured")
+	}
+	entry, model, err := self.resolve(name)
+	if err != nil {
+		return nil, "", err
+	}
+	decider, ok := entry.service.(Decider)
+	if !ok {
+		return nil, "", fmt.Errorf("llm: provider %q cannot decide", entry.configuration.Name)
+	}
+	return decider, model, nil
 }
 
 // Pricing is what a provider charges, for the usage view.
@@ -188,7 +222,7 @@ func (self *Registry) listProvider(ctx context.Context, name string, entry *prov
 		listed = cached.models
 	} else {
 		var err error
-		listed, err = entry.provider.ListModels(ctx)
+		listed, err = entry.service.ListModels(ctx)
 		if err != nil {
 			return nil, err
 		}

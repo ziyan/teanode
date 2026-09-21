@@ -13,13 +13,32 @@ import (
 	"github.com/ziyan/teanode/internal/config"
 )
 
-// Provider is one model service.
+// Service is what every provider has in common, whatever it does: the API
+// it speaks and the models it offers. The registry holds these, and the
+// settings page lists them, because both are true of a provider that only
+// decides as much as of one that writes.
 //
 // Implementations must be safe for concurrent use and must respect the
-// context: a run that is cancelled must not keep a call open.
-type Provider interface {
-	// Kind is the API this provider speaks: openai, anthropic or gemini.
+// context: a run that is cancelled must not keep a call open. That was said
+// of Provider when every provider was one, and it is true of all of them.
+type Service interface {
+	// Kind is the API this provider speaks: openai, anthropic, gemini or
+	// typesafe.
 	Kind() string
+
+	// ListModels asks the service what it offers.
+	ListModels(ctx context.Context) ([]ModelInformation, error)
+}
+
+// Provider is a service that holds a conversation. Most are, and the work
+// that writes -- a reply, a summary, a page -- needs one.
+//
+// It is not the only kind. A service that decides between answers it was
+// given cannot chat and does not pretend to: it is a Service and a Decider,
+// and a caller that wants a conversation asserts for this and is told no,
+// rather than being handed something whose Chat returns an apology.
+type Provider interface {
+	Service
 
 	// Chat sends a conversation and returns the whole answer.
 	Chat(ctx context.Context, request *ChatRequest) (*ChatResponse, error)
@@ -27,9 +46,6 @@ type Provider interface {
 	// ChatStream sends a conversation and returns the answer as it comes.
 	// The channel closes after a Done or Error event.
 	ChatStream(ctx context.Context, request *ChatRequest) (<-chan StreamEvent, error)
-
-	// ListModels asks the service what it offers.
-	ListModels(ctx context.Context) ([]ModelInformation, error)
 }
 
 // Embedder is a provider that can also turn text into vectors. The OpenAI
@@ -58,7 +74,12 @@ type EmbedRequest struct {
 
 // NewProvider builds a client for a provider kind. It opens no connection;
 // the first request does.
-func NewProvider(kind, baseUrl, apiKey string, timeout time.Duration) (Provider, error) {
+//
+// The answer is a Service, since not every kind chats: a caller that needs
+// a conversation asserts Provider, one that needs vectors asserts Embedder,
+// one that needs a decision asserts Decider. The registry does this on the
+// caller's behalf and says which provider cannot do what was asked.
+func NewProvider(kind, baseUrl, apiKey string, timeout time.Duration) (Service, error) {
 	client := &http.Client{Timeout: timeout}
 	switch kind {
 	case config.AgentProviderKindOpenAI:
@@ -67,6 +88,8 @@ func NewProvider(kind, baseUrl, apiKey string, timeout time.Duration) (Provider,
 		return newAnthropic(baseUrl, apiKey, client), nil
 	case config.AgentProviderKindGemini:
 		return newGemini(baseUrl, apiKey, client), nil
+	case config.AgentProviderKindTypeSafe:
+		return newTypeSafe(baseUrl, apiKey, timeout)
 	}
 	return nil, fmt.Errorf("llm: %q is not a provider kind", kind)
 }

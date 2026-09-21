@@ -1150,6 +1150,21 @@ wherever a vector is kept — two widths of one model are two spaces, and
 must never be ranked against each other — so changing it makes the
 existing vectors stale in the same way changing `embedding` does.
 
+**`decide`** — The model for a question whose answers are known in advance:
+is this file worth opening, which of these folders does this page belong
+under. It writes nothing and cannot be asked to, so it must name a
+`typesafe` provider, and no other kind of work may name one.
+
+Empty is the whole of "off", and is the default. Every decision that can use
+one also has a path that asks a language model, and that is what runs when
+this is not set, so nothing here is needed for the agent to work.
+
+Worth setting where the same decision is made tens of thousands of times.
+The answer comes back in well under a second rather than after a model has
+written a sentence about it, it carries how sure it is, and it cannot be a
+word that was not on the list — which is most of the error handling around
+asking a model to choose.
+
 **`scan`** — The model for bulk understanding with nobody present: filing
 what a conversation taught, summarizing a document, writing a month's
 page, consolidating a page from its facts. It runs over everything the
