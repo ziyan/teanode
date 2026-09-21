@@ -15,11 +15,11 @@ each document as a heading of title, author and date, so a commit is the
 one thing in the graph that can say *this person worked on this code*;
 files say only that the code exists.
 
-There were none. On the deployment this was written for, 553,185
-documents held zero of kind `commit`, and had from the beginning. Three
-things had to go right for one to be offered and they rarely did. The
-commits were read from the scanned root alone and only when that root was
-itself a checkout, which a folder of a hundred and thirty-seven checkouts
+There were none. On a source of half a million documents, not one was of
+kind `commit`, and none ever had been. Three things had to go right for one
+to be offered and they rarely did. The commits were read from the scanned
+root alone and only when that root was itself a checkout, which a folder of
+a hundred or more checkouts
 is not. They were offered only on a page that ended a pass, and only out
 of the room that page had left over after its files and every checkout's
 profile — for a tree of any size, none. And a commit the server already
@@ -27,9 +27,9 @@ held was left out of the page altogether, so the few that did get filed
 were swept by the next pass that finished, because a document a completed
 pass was not shown is taken as gone.
 
-The scale is why this cannot simply be turned on. That tree holds on the
-order of 340,000 commits across some 500 authors. Filed in one night they
-would bury the graph and the person's embedding budget.
+The scale is why this cannot simply be turned on. A tree of that size holds
+hundreds of thousands of commits across hundreds of authors. Filed in one
+night they would bury the graph and the person's embedding budget.
 
 ## Decision
 

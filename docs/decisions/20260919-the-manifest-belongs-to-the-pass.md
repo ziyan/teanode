@@ -17,12 +17,12 @@ on the way `git ls-files`, `git status --porcelain` twice, `rev-parse`,
 authors its profile carries. The caller sliced out its page and threw the
 rest away, and the next page built it again.
 
-On the owner's machine the tree holds 1,122 checkouts — one directory in
-it, `a-large-checkout`, holds 113,677 tracked files on its own, and there are
-twenty-five more beside it. That is on the order of nine thousand git
-processes for every page of 256 entries. Measured in-process over a
-smaller part of the same tree, 333 checkouts, forty pages took over five
-hundred seconds: about twelve seconds a page, nearly all of it git,
+A large work tree holds on the order of a thousand checkouts, one of which
+may hold a hundred thousand tracked files on its own with more beside it.
+That is on the order of nine thousand git processes for every page of 256
+entries. Measured in-process over a few hundred checkouts, forty pages took
+over five hundred seconds: about twelve seconds a page, nearly all of it
+git,
 before one file had been read. A complete pass over the whole tree is
 hundreds of pages, so the night was spent on git and not on reading.
 

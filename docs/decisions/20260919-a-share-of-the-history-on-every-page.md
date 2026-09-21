@@ -13,14 +13,13 @@ That record put the history in the same sequence of pages as the files
 and after all of them: past the files the cursor names a commit instead
 of a path. On a tree of any size that is too late to be reached.
 
-The scan was run over the owner's tree and watched page. Forty pages,
-256 entries each, 9,522 files read, and the cursor was still inside one
-checkout's source directory. Zero commits and zero repository profiles
-in those forty pages, because both are offered only on the page that
-ends a pass. The tree holds 519 checkouts — 232,309 files in the ones
-kept to their profile alone — and a complete pass over it is hundreds of
-pages, each costing minutes: the manifest is rebuilt every page and
-`git ls-files` runs once per checkout, 333 times a page.
+The scan was run over a large tree and watched page by page. Forty pages of
+256 entries each went by, thousands of files read, and the cursor was still
+inside one checkout's source directory. Zero commits and zero repository
+profiles in those forty pages, because both are offered only on the page
+that ends a pass. A tree of several hundred checkouts takes hundreds of
+pages to walk, each costing minutes: the manifest is rebuilt every page and
+`git ls-files` runs once per checkout, hundreds of times a page.
 
 So the one document that carries an author sat behind every file in the
 tree, and the graph held no commit all night. Not because the commit

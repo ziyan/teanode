@@ -15,8 +15,8 @@ work in, and that directory holds other people's work too: everything they
 have ever cloned to read, to build, or to fix one line of. Read as a tree of
 files it all looks the same, so the agent indexed all of it and spent its
 nights filing facts about somebody else's source onto the person's own
-pages. On one deployment a single source held 32,535 indexed files and more
-than half were from three checkouts nobody there had ever committed to.
+pages. A single source can hold tens of thousands of indexed files with most
+of them from a handful of checkouts nobody there has ever committed to.
 
 The obvious fix is a list — of directory names, of project names, of the
 places dependencies are usually kept. This program had exactly such a list
@@ -33,28 +33,27 @@ themselves.
 ### Why the bar moved
 
 The first version of this rule asked for **one** commit, and that is not
-authorship, it is a visit. The owner's whole work tree was censused after
-the rule shipped — every `.git` in it, remembering that a submodule keeps
-`.git` as a *file*, so the obvious `find -type d` census undercounts
-badly:
+authorship, it is a visit. A work tree was censused after the rule shipped —
+every `.git` in it, remembering that a submodule keeps `.git` as a *file*,
+so the obvious `find -type d` census undercounts badly. What it showed:
 
-- 1,122 checkouts, of which 467 were "theirs" under the one-commit rule
-  and admitted **333,976 files**.
-- **59 of those checkouts held exactly one commit of the person's, and
-  between them admitted 129,306 files — 39% of everything read.**
-- The largest was a fork of `linux-stable`: **70,766 files admitted by
-  one commit.** After it a fork of `opencv` at 7,236 files, also on
-  one.
-- 72% of all the files read sat in a directory no commit of theirs had
+- Of the checkouts the one-commit rule called "theirs", a substantial
+  minority held **exactly one** commit of the person's, and between them
+  they admitted something close to two fifths of every file read.
+- The largest single offender was a fork of a kernel tree: tens of
+  thousands of files admitted on the strength of one commit. Behind it,
+  forks of large upstream libraries parked in the same build tree, each
+  the same shape.
+- Most of the files being read sat in a directory no commit of theirs had
   ever touched.
 
-Which is the thing the owner asked for at the outset, back again through
-the door the rule left open: *"don't index linux source code tree, or
-3rdparty library source that is of low value."* A kernel is not low value
-because it is a kernel — no list here says that, and none will — it is
-low value to this person's graph because essentially none of it is their
-work, and the history says so plainly if it is asked how much rather than
-whether.
+Which is the thing the rule was written for in the first place, back again
+through the door the one-commit bar left open: a kernel tree or a vendored
+third-party library is not worth a night's reading. A kernel is not low
+value because it is a kernel — no list here says that, and none will — it
+is low value to a personal graph because essentially none of it is that
+person's work, and the history says so plainly if it is asked how much
+rather than whether.
 
 ## Decision
 
@@ -69,7 +68,7 @@ their commits to be their work, and that is one number:
   which is theirs is always theirs.
 
 Each of the four earns its place. Two because one commit is a visit, and
-because 39% of everything this source read came in on single commits. A
+because so much of what these sources read came in on single commits. A
 fiftieth because two or three commits in a kernel is the same visit
 twice. The cap because somebody on a large team owns their monorepo at
 half a percent of its history, and a share alone would throw away the
@@ -113,23 +112,19 @@ was.
 
 ## Consequences
 
-**What the new bar costs**, worked out by censusing the owner's home
-directory again and applying both rules to it — 1,245 checkouts, a
-superset of the source's tree above, which is why the totals differ from
-it. Of the 575 checkouts the one-commit rule admitted there, holding
-410,534 files, the new bar keeps 481 checkouts and 269,931 files and
-drops 94 checkouts and
-**140,603 files — a third of everything the source was reading**. The
-kernel fork goes: one commit against a bar of twenty-five, and 70,766
-files with it. So do the forks of `opencv`, `pcl` and `numpy` parked in
-the same build tree — 12,790 files between them, on one to four commits
-each out of tens of thousands.
+**What the new bar costs**, worked out by censusing a work tree again and
+applying both rules to it. The new bar drops something like a sixth of the
+checkouts the one-commit rule admitted, and with them roughly **a third of
+every file the source was reading**. The kernel fork goes: one commit
+against a bar of twenty-five, and all of its files with it. So do the forks
+of large upstream libraries parked in the same build tree, on a handful of
+commits each out of tens of thousands.
 
 Of the checkouts holding exactly one commit of the person's, all but one
 kind go: the kind where that commit is the entire history, which is a
-project of their own started and not yet worked on. On the census above
-that is fourteen checkouts and 830 files kept out of sixty-nine and
-123,480.
+project of their own started and not yet worked on. Those are a small
+number of checkouts holding very few files, which is exactly why the
+"never more than the whole history" clause is worth its place.
 
 **An affected source loses those documents on its next full pass**, through
 the ordinary sweep, exactly as it did when this rule first shipped. Facts
@@ -140,8 +135,8 @@ somebody else's source goes on saying it until somebody strikes it.
 **A drive-by fix of theirs is now invisible to the graph**, files and
 commits alike, where before one bought the whole checkout. That is the
 trade and it is the right way round: the graph loses a line about a patch
-they sent to a project once, and stops holding seventy thousand files of
-a kernel. Where it is the wrong way round for a particular tree — one
+they sent to a project once, and stops holding tens of thousands of files
+of a kernel. Where it is the wrong way round for a particular tree — one
 where a handful of commits really is the person's work — the source says
 so with `--own-commits-at-least`, and the number is on the source where
 anybody can see it.
