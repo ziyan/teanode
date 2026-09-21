@@ -119,25 +119,21 @@ func (self *Agent) findExistingPage(tx db.Transaction, agentId, path string, kin
 	// By what it is called, within the same parent. "Alice Chen" filed
 	// under people/ is the page called Alice Chen under people/, whatever
 	// slug the writer chose.
+	//
+	// Asked of the database. This used to list the parent and look through
+	// what came back, but that listing is of the whole subtree, sorted by
+	// path and capped. Under a parent with more pages beneath it than the
+	// cap, the page being looked for was usually not in what came back, so
+	// this tier found nothing and a second page was filed under the same
+	// parent with the same name.
 	wanted := strings.TrimSpace(strings.ToLower(name))
 	if wanted != "" {
-		parent := models.ParentPath(path)
-		siblings, err := tx.ListAgentNodesUnder(agentId, parent, 400)
+		sibling, err := tx.FindAgentNodeByName(agentId, models.ParentPath(path), kind, name)
 		if err != nil {
 			return nil, err
 		}
-		for _, sibling := range siblings {
-			if sibling.Path == parent || sibling.Kind != kind {
-				continue
-			}
-			if strings.EqualFold(strings.TrimSpace(sibling.Name), name) {
-				return sibling, nil
-			}
-			for _, alias := range sibling.Aliases {
-				if strings.EqualFold(strings.TrimSpace(alias), name) {
-					return sibling, nil
-				}
-			}
+		if sibling != nil {
+			return sibling, nil
 		}
 	}
 
