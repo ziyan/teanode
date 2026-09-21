@@ -570,7 +570,7 @@ func (self *transaction) ListAgentNodesToConsolidate(agentId string, limit int) 
 		  AND (
 			EXISTS (
 				SELECT 1 FROM "agent_fact" f
-				WHERE f."node_id" = n."id" AND NOT f."dormant"
+				WHERE f."node_id" = n."id" AND NOT f."dormant" AND f."superseded_by" IS NULL
 				  AND f."modified_at" > COALESCE(n."consolidated_at", to_timestamp(0))
 			)
 			OR (
