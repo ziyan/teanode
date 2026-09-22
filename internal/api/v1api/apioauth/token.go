@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -64,7 +65,7 @@ func (self *oauth) tokenView(response http.ResponseWriter, request *http.Request
 func (self *oauth) exchangeCode(response http.ResponseWriter, request *http.Request) {
 	code := request.PostForm.Get("code")
 	verifier := request.PostForm.Get("code_verifier")
-	clientId := strings.TrimSpace(request.PostForm.Get("client_id"))
+	clientId := clientIdOf(request)
 	redirectURI := request.PostForm.Get("redirect_uri")
 
 	// The approval is an identifier and a secret, joined. The identifier
@@ -133,7 +134,7 @@ func (self *oauth) refreshToken(response http.ResponseWriter, request *http.Requ
 	// A refresh names the token it renews, so the client it belongs to is not
 	// taken from the request: a client identifier in the body would be
 	// somebody else's claim about whose token this is.
-	if clientId := strings.TrimSpace(request.PostForm.Get("client_id")); clientId != "" && clientId != previous.ClientID {
+	if clientId := clientIdOf(request); clientId != "" && clientId != previous.ClientID {
 		writeOAuthError(response, http.StatusBadRequest, "invalid_grant",
 			"that refresh token belongs to a different program")
 		return
@@ -148,6 +149,26 @@ func (self *oauth) refreshToken(response http.ResponseWriter, request *http.Requ
 		return
 	}
 	self.issue(response, previous.UserID, previous.Name, previous.ClientID, previous.Resource)
+}
+
+// clientIdOf is the client a token request names, in the body or in an HTTP
+// Basic header.
+//
+// Clients here are public and are told to send their identifier in the body,
+// but RFC 6749 lets a client put it in the Authorization header instead, and
+// some do out of habit. Reading only the body refused those for having no
+// client at all. Nothing is checked about the password half: these clients
+// hold no secret, and whatever a client sends there proves nothing.
+func clientIdOf(request *http.Request) string {
+	if clientId := strings.TrimSpace(request.PostForm.Get("client_id")); clientId != "" {
+		return clientId
+	}
+	if username, _, ok := request.BasicAuth(); ok {
+		if decoded, err := url.QueryUnescape(username); err == nil {
+			return strings.TrimSpace(decoded)
+		}
+	}
+	return ""
 }
 
 // issue mints the token and answers with it.

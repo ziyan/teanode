@@ -68,6 +68,17 @@ func Handler() http.Handler {
 			}
 		}
 
+		// A well-known address is a question a program asks, never a page
+		// somebody reloads. Answering an unclaimed one with the dashboard and
+		// a 200 tells the program the document exists and is broken, which it
+		// reports as a server fault; a 404 tells it the truth, that this
+		// server does not publish one, and it moves on to the next address
+		// it knows to try.
+		if strings.HasPrefix(name, ".well-known/") {
+			http.NotFound(response, request)
+			return
+		}
+
 		if indexError != nil {
 			http.Error(response, "the dashboard was not built into this binary; run 'make web'", http.StatusNotFound)
 			return

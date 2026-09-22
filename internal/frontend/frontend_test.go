@@ -94,3 +94,25 @@ func TestTheBuiltDashboardIsServed(t *testing.T) {
 		t.Fatalf("the page names the current build and must not be kept: %q", cache)
 	}
 }
+
+// An unclaimed well-known address is a 404, not the dashboard.
+//
+// Programs probe several of these in turn: a client looking for an
+// authorization server tries more than one document and moves on when one is
+// missing. Handed the dashboard's HTML with a 200 instead, it concludes the
+// document exists and is broken. A deep link into the dashboard still gets the
+// page, which is what the fallback is for.
+func TestAnUnclaimedWellKnownAddressIsNotFound(t *testing.T) {
+	handler := Handler()
+
+	for _, address := range []string{"/.well-known/openid-configuration", "/.well-known/anything/at/all"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, address, nil))
+		if response.Code != http.StatusNotFound {
+			t.Errorf("%s answered %d, not 404", address, response.Code)
+		}
+		if strings.Contains(response.Header().Get("Content-Type"), "text/html") && strings.Contains(response.Body.String(), "<html") {
+			t.Errorf("%s answered with the dashboard", address)
+		}
+	}
+}
