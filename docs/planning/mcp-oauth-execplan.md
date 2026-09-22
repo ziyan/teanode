@@ -355,10 +355,16 @@ session. The first half stops being the whole truth here.
 - [x] Milestone 1: metadata documents and the `WWW-Authenticate` header.
       Four tests in `internal/api/v1api/apioauth/metadata_test.go` and two in
       `internal/web/auth_middleware_test.go`, all passing under `-race`.
-- [ ] Milestone 2: dynamic client registration.
-- [ ] Milestone 3: the approval page.
-- [ ] Milestone 4: the token endpoint and audience binding.
-- [ ] Milestone 5: proof against a real client, and the documentation.
+- [x] Milestone 2: dynamic client registration (`internal/api/v1api/apioauth/register.go`).
+- [x] Milestone 3: the approval page, drawn by the dashboard at `/oauth/authorize`
+      (`web/src/pages/authorize.tsx`), approving through the
+      `ApproveOAuthAuthorization` mutation.
+- [x] Milestone 4: the token endpoint with PKCE, refresh rotation, revocation, and
+      audience binding in `authenticateBearer`.
+- [x] Milestone 5, first half: the whole flow run against a deployed server with a
+      browser approval and a hand-written client (see `Outcomes & Retrospective`).
+- [ ] Milestone 5, second half: a third-party harness connecting with only the
+      address, and `docs/subsystems/mcp.md` updated.
 
 ## Surprises & Discoveries
 
@@ -426,6 +432,19 @@ from becoming a visible regression.
 decides whether a host is loopback. Registration needs the same rule, and two
 copies of a security check drift.
 
+**The three planned migrations became one.** Milestones 2 to 4 ship together, so
+splitting the schema across three files bought review granularity nobody would
+use and three chances to deploy a partial schema.
+
+**The approval page is drawn by the dashboard, not by the server.** The
+dashboard already renders its login form at any address when nobody is signed
+in, and `/cli` already uses that to ask one question of a signed-in person. Not
+claiming `/oauth/authorize` as a server route lets it fall through to the
+dashboard the same way, so signing in on the way to approving reuses passkeys
+and single sign-on for free. The page reads the request through
+`ReadOAuthAuthorizationRequest` and approves through
+`ApproveOAuthAuthorization`, both in `internal/api/v1api/apigraph/oauth.go`.
+
 **The origin comes from the request, not from a setting.** A conforming client
 refuses a metadata document whose issuer disagrees with the address it asked,
 and TeaNode's own client does exactly that at `internal/mcp/oauth.go:246`. A
@@ -443,4 +462,19 @@ shape was decided; this follows it.
 
 ## Outcomes & Retrospective
 
-To be written as milestones land.
+Milestones 1 to 4 are in, and the flow was run end to end against a deployed
+server: a client registered itself, a person approved it in the dashboard, the
+approval came back to a loopback listener with its state, and the exchange with
+the PKCE verifier returned an access token and a refresh token. That token
+listed the agent tools over MCP and was refused by GraphQL and by an ordinary
+API path, which is the audience binding doing its job. Replaying the code,
+reusing a spent refresh token, and using a revoked token were all refused, and
+registration refused a plain-HTTP redirect to a host that is not loopback.
+
+One visual defect was found by looking rather than by testing: in dark mode the
+facts panel on the approval page disappeared into the card, because `--field`
+is darker than the surface there rather than lighter. It now carries a border,
+as `web/src/tokens.css` says anything sitting on a surface should.
+
+What remains is a third-party harness connecting with nothing but the address,
+and the documentation in `docs/subsystems/mcp.md`.
