@@ -9803,9 +9803,16 @@ main.content:has(> .knowledge-frame) {
 
   /* The sheet covers the foot of the canvas, so the legend goes up out of
      its way and the sentence about dragging goes: the gestures are the ones
-     the phone already teaches. */
+     the phone already teaches.
+     
+     Up out of the way of the controls as well, which is what this said and
+     did not do. Narrowing it was not enough: at this width the legend wraps
+     onto two lines and still reached them. Measured at a 500 pixel viewport
+     it ended at 372 and the zoom buttons began at 371, so the buttons were
+     drawn over the words. Above them it has the width back. */
   .graph-explore-legend {
-    max-width: calc(100% - 140px);
+    max-width: 100%;
+    bottom: calc(var(--space-3) + 2.75rem);
   }
 
   .graph-explore-hint {
