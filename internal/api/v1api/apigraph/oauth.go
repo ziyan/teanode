@@ -149,6 +149,11 @@ func (self *graph) ApproveOAuthAuthorization(ctx context.Context, arguments Appr
 		return nil, fmt.Errorf("%w: this server authorizes only with a PKCE challenge, hashed with S256", api.ErrInvalidArguments)
 	}
 
+	resource, err := agentToolsResource(valueOrEmpty(arguments.Resource))
+	if err != nil {
+		return nil, err
+	}
+
 	// The secret half of the approval. The program collects by presenting it
 	// alongside the verifier, and only the hash is kept here.
 	key := security.GenerateRandomString(32, security.LowerAlphaNumeric)
@@ -158,7 +163,7 @@ func (self *graph) ApproveOAuthAuthorization(ctx context.Context, arguments Appr
 		UserID:        principal.User.ID,
 		RedirectURI:   arguments.RedirectURI,
 		CodeChallenge: challenge,
-		Resource:      valueOrEmpty(arguments.Resource),
+		Resource:      resource,
 		ExpiresAt:     time.Now().Add(authorizationLifetime),
 	}, hashOf(key))
 	if err != nil {
@@ -183,6 +188,29 @@ func (self *graph) ApproveOAuthAuthorization(ctx context.Context, arguments Appr
 
 	log.Noticef("%s authorized the client %s (%q)", principal.User.Username, client.ID, client.Name)
 	return &OAuthApproval{RedirectURL: redirect.String()}, nil
+}
+
+// agentToolsResource is what an approved token will be good for: the agent
+// tools endpoint, and nothing else.
+//
+// A program may leave the resource out, and some do. Taken as given, an empty
+// resource meant a token good for the whole API, because an empty resource is
+// what a token minted by hand carries. So a missing one becomes the agent tools
+// endpoint. A program may also name something else, and naming the management
+// API would have turned a page that says "use your agent tools" into a way to
+// hand out a token for everything. That is refused.
+//
+// Compared by path, the same way the token is checked when it is used, because
+// one server answers on more than one host name.
+func agentToolsResource(asked string) (string, error) {
+	if asked == "" {
+		return api.PathAgentMCP, nil
+	}
+	parsed, err := url.Parse(asked)
+	if err != nil || parsed.Path != api.PathAgentMCP {
+		return "", fmt.Errorf("%w: a program can be authorized only for the agent tools", api.ErrInvalidArguments)
+	}
+	return asked, nil
 }
 
 // usableChallenge is a PKCE challenge this server will accept.
