@@ -95,17 +95,27 @@ func (self *graph) agentAttachmentsView(response http.ResponseWriter, request *h
 	result := &AgentAttachmentUploadResult{Attachments: []*models.AgentAttachment{}}
 	for _, upload := range uploads {
 		var created *models.AgentAttachment
+		// Read out of the file before the transaction opens rather than
+		// inside it. It walks the whole upload and it needs nothing from
+		// the database, so doing it under the transaction held one open
+		// for the length of a file.
+		contentType := contentTypeOf(upload.Filename, upload.ContentType, upload.Content)
+		text := agent.ExtractAttachmentText(upload.Filename, upload.ContentType, upload.Content)
 		if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 			created, err = tx.CreateAgentAttachment(&models.AgentAttachment{
 				AgentID:     found.ID,
 				Name:        upload.Filename,
-				ContentType: contentTypeOf(upload.Filename, upload.ContentType, upload.Content),
+				ContentType: contentType,
 				Size:        int64(len(upload.Content)),
-				Text:        agent.ExtractAttachmentText(upload.Filename, upload.ContentType, upload.Content),
+				Text:        text,
 			})
 			if err != nil {
 				return err
 			}
+			// The bytes go before the row is committed, not after: a row
+			// that outlives its bytes is an attachment nobody can open,
+			// while bytes that outlive a rolled back row are reclaimed by
+			// retention. The id is the row's, so this cannot move out.
 			return self.storage.PutFile(ctx, created.ID, upload.Content)
 		}); err != nil {
 			log.Errorf("storing a file for the agent of %q failed: %s", user.Username, err)
