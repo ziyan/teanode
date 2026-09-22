@@ -454,6 +454,21 @@ and single sign-on for free. The page reads the request through
 `ReadOAuthAuthorizationRequest` and approves through
 `ApproveOAuthAuthorization`, both in `internal/api/v1api/apigraph/oauth.go`.
 
+**A program cannot mint a credential through the tools.** The tools act as the
+person, which the approval page says. What a program must not do is leave a
+credential behind: the tools that make an API token, an app password, a sending
+credential or an account with a password would give it something that works
+everywhere and outlives revoking the program. `credentialTools` in
+`internal/api/v1api/apigraph/agent_mcp.go` leaves them out for a program-held
+token, and a test fails if one of those names stops being a tool.
+
+**A refresh outlives the access it renews.** Many programs renew only after a
+request is refused, so a refresh that required unexpired access made every
+program need approving again each month. `models.RefreshWindow` allows renewal
+for 60 days past expiry, the sweep keeps renewable tokens that long, and
+retiring the old token reports whether this call did it, so two renewals racing
+with the same refresh token cannot both succeed.
+
 **The origin comes from the request, not from a setting.** A conforming client
 refuses a metadata document whose issuer disagrees with the address it asked,
 and TeaNode's own client does exactly that at `internal/mcp/oauth.go:246`. A
