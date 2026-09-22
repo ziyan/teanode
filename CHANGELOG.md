@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.10] - 2026-09-22
+
+### Fixed
+
+- The list of pages says how many of them are shown, and the control that
+  shows more sits in the same strip the mailbox uses rather than against the
+  edge of the list. (#110)
+- A page in the knowledge reading pane is drawn as a page rather than as
+  cards nested inside cards. (#111)
+- The list of folded sentences no longer carries a heading that repeats what
+  each line already says. (#112)
+
 ## [0.47.9] - 2026-09-22
 
 ### Fixed
