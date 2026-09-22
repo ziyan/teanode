@@ -2315,6 +2315,14 @@ pre.message-text {
   /* Subject lines and error messages are the exception: they are the content,
      and there is no pointer here to hover over a truncated one, so they wrap
      instead. */
+  /* Written with the surface in front of them, because the rule that
+     keeps every other cell on one line is `.table-surface td:not(.wrap)`
+     and that is the more specific of the two. A media query adds no
+     specificity of its own, so the plain `td.truncate` here lost and the
+     lines went on not wrapping: the table grew to four times the width of
+     a phone and every one of them had to be dragged into view. */
+  .table-surface td.wrap,
+  .table-surface td.truncate,
   td.wrap,
   td.truncate {
     max-width: none;
@@ -6344,6 +6352,14 @@ label.check-list-item {
   font-weight: 500;
   color: var(--muted);
   white-space: nowrap;
+  /* Shortened rather than cut. The column it sits in is as wide as the
+     row can spare and it clips what does not fit, so on a phone the word
+     ended mid-letter: "Promotio", "Notificat", "Soc". A word ending in an
+     ellipsis reads as a word too long for the room; a word ending in the
+     middle reads as a fault. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mailbox-row-priority {
@@ -8633,16 +8649,35 @@ main.content:has(> .knowledge-frame) {
    it, and that box ended with the first section. */
 .knowledge-page-head {
   position: sticky;
-  top: 0;
+  /* Flush with the top of the pane, not with the top of its padding. A
+     sticky offset is measured from the scrollport's padding box, so top: 0
+     parked this sixteen pixels down and left a channel above it that the
+     page scrolled through in full view. */
+  top: calc(var(--space-4) * -1);
   z-index: 2;
-  margin: calc(var(--space-4) * -1) calc(var(--space-4) * -1) 0;
-  padding: var(--space-3) var(--space-4) var(--space-2);
+  margin: calc(var(--space-4) * -1) calc(var(--space-4) * -1) var(--space-3);
+  /* The same room above the name as below the row under it. The pane's
+     own padding above and a smaller pad below left the name sitting
+     nearer one line than the other. */
+  padding: var(--space-4);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
 
 .knowledge-page-head h3 {
   margin: 0;
+}
+
+/* What the page is and what can be done to it, on one line under its
+   name and pinned with it: they belong to the page rather than to the
+   first thing written on it, and scrolling them away left no way to act
+   on the page being read. */
+.knowledge-page-head-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
 .knowledge-pane {
