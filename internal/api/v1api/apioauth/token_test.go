@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // A client may name itself in the body or in an HTTP Basic header.
@@ -37,5 +38,24 @@ func TestTheClientIsReadFromTheBodyOrTheBasicHeader(test *testing.T) {
 	}
 	if got := clientIdOf(request(url.Values{}, "")); got != "" {
 		test.Errorf("with neither: %q", got)
+	}
+}
+
+// A name is cut by characters, never through one.
+//
+// Cutting bytes could split a character, and the database refuses the half
+// that is left, so a long name in Japanese or with an emoji near the limit
+// got a server error instead of a registration.
+func TestANameIsCutByCharacters(test *testing.T) {
+	long := strings.Repeat("名", clientNameLongest+5)
+	cut := truncateName(long)
+	if count := len([]rune(cut)); count != clientNameLongest {
+		test.Errorf("cut to %d characters, not %d", count, clientNameLongest)
+	}
+	if !utf8.ValidString(cut) {
+		test.Error("the cut name is not valid UTF-8")
+	}
+	if short := "a short name"; truncateName(short) != short {
+		test.Error("a short name was changed")
 	}
 }
