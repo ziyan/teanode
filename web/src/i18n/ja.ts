@@ -2468,6 +2468,7 @@ export const ja: Catalog = {
   'knowledge.openPage': '開く',
   'knowledge.backTo': '{name} に戻る',
   'knowledge.moreUnder': '配下に {count} 件',
+  'knowledge.linksLeftOut': '未描画のリンクが {count} 件',
   'knowledge.linkPage': 'ページをリンク',
   'knowledge.linkTo': 'ページにつなぐ',
   'knowledge.linkRelation': 'どうつながるか',

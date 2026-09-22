@@ -2482,6 +2482,7 @@ export const en = {
   'knowledge.openPage': 'Open',
   'knowledge.backTo': 'Back to {name}',
   'knowledge.moreUnder': '{count} under it',
+  'knowledge.linksLeftOut': '{count} more links not drawn',
   'knowledge.linkPage': 'Link a page',
   'knowledge.linkTo': 'Link to a page',
   'knowledge.linkRelation': 'How they are joined',

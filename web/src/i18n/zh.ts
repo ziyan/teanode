@@ -2387,6 +2387,7 @@ export const zh: Catalog = {
   'knowledge.openPage': '打开',
   'knowledge.backTo': '回到 {name}',
   'knowledge.moreUnder': '下属 {count} 页',
+  'knowledge.linksLeftOut': '另有 {count} 条连接未绘制',
   'knowledge.linkPage': '链接一个页面',
   'knowledge.linkTo': '链接到某个页面',
   'knowledge.linkRelation': '两者的关系',
