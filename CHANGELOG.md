@@ -6,6 +6,43 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-09-22
+
+### Added
+
+- Explicit local and shared storage modes, preserving existing configuration defaults. (#86)
+- Mailbox send retry identifiers, acceptance lookup, durable cancellation and pending-update recovery. (#86)
+- Domain API and CLI send retry identifiers, plus acceptance lookup without original message inputs. (#86)
+- Calendar save/delete retry identifiers and completion lookup in the API and CLI, including deleted calendars. (#86)
+- Retained RSVP and calendar editor requests with dashboard recovery and durable cancellation; CLI calendar stop resolves uncertain requests. (#86)
+
+### Fixed
+
+- Honor database cancellation, preserve deferred job retries and isolate concurrent claims. (#86)
+- Keep embedding indexes distinct, bound page requests and restore contact-proposal acceptance. (#86)
+- Prevent stale conversation reads and automatic mutation retries; roll back partial folder commands. (#86)
+- Flush local storage writes, count committed mail usage and defer delivery when stored bytes are unavailable. (#86)
+- Preserve readable drafts on rollback; compose and replace saved drafts atomically, including uploads. (#86)
+- Keep contact writes in the caller transaction, merge locked cards and preserve agent sharing when renaming address books or calendars. (#86)
+- Keep held replies cancelled and commit automatic reply acceptance and bookkeeping together. (#86)
+- Recover accepted agent draft sends by stable key or item ID, and scheduled notifications after a lost response. (#86)
+- Retain dashboard send requests across errors and reloads; cancel before returning to editing. (#86)
+- Commit calendar events and RSVP answers with queued mail; preserve outgoing copies in the sender mailbox. (#86)
+- Accept calendar proposals with their event and recovery receipt in one transaction; retain recovery after reload. (#86)
+- Preserve accepted proposals when sorting or extraction updates an insight. (#86)
+- Retain failed ingestion pages, preserve sent-mail timestamp ties, clear obsolete symbols, and reject stale source work. (#86)
+- Preserve ingestion progress during source controls and reject old workers after resets or pause/resume. (#86)
+- Prepare memory-page embeddings before the transaction that creates the page and fact. (#86)
+- Release recall database transactions before model calls, recheck access before returning, and roll back failed query fields independently. (#86)
+- Count unique committed facts in dream page splits and retain earlier completed groups when a later group fails. (#86)
+- Bound detached dream bookkeeping to ten seconds while retaining completed work after cancellation. (#86)
+- Commit digest facts, read markers and progress together; preserve completed halves and concurrent batch counts. (#86)
+- Keep missing sent-mail bodies available for retry instead of indexing a storage placeholder as authored text. (#86)
+- Report zero completed graph embeddings when vector writes or their commit roll back. (#86)
+- Keep embedding requests, dimensions and stored model identities on the same registry snapshot until restart; recognize completed dimensioned mailbox vectors during backfill. (#86)
+- Skip graph embedding results for edited or deleted input rows while committing unaffected vectors and retaining changed rows for retry. (#86)
+- Reject stale interactive page/fact embeddings and suppress duplicate-fact suggestions based on changed input. (#86)
+
 ## [0.47.15] - 2026-09-22
 
 ### Fixed
