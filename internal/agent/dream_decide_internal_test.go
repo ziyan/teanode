@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/decide"
@@ -10,14 +11,20 @@ import (
 
 // A decider that answers from a script, for asking what this path does
 // with each kind of answer.
+// The real path asks several deciders at once, so this is asked from
+// several goroutines at once and has to count under a lock.
 type scriptedDecider struct {
 	answers map[string]float64
 	err     error
-	asked   int
+
+	mutex sync.Mutex
+	asked int
 }
 
 func (self *scriptedDecider) Decide(_ context.Context, state string, _ map[string]decide.Question) (decide.Answers, error) {
+	self.mutex.Lock()
 	self.asked++
+	self.mutex.Unlock()
 	if self.err != nil {
 		return nil, self.err
 	}
@@ -26,6 +33,12 @@ func (self *scriptedDecider) Decide(_ context.Context, state string, _ map[strin
 		return nil, errors.New("nothing scripted for that state")
 	}
 	return decide.Answers{"worth_opening": {Yes: yes}}, nil
+}
+
+func (self *scriptedDecider) timesAsked() int {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.asked
 }
 
 // A file is opened when the answer is strongly yes and passed over when it
@@ -103,8 +116,8 @@ func TestOnlyWhatReadsAsWorthOpeningIsChosen(test *testing.T) {
 	if chosen["a"] == chosen["c"] {
 		test.Errorf("both reasons read the same: %q", chosen["a"])
 	}
-	if decider.asked != 3 {
-		test.Errorf("it asked %d times for three files", decider.asked)
+	if asked := decider.timesAsked(); asked != 3 {
+		test.Errorf("it asked %d times for three files", asked)
 	}
 }
 
