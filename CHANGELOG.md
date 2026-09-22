@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.12] - 2026-09-22
+
+### Fixed
+
+- A long mail folder scrolls again. Past the first screenful the list moved
+  neither itself nor the page. (#115)
+- The name of the page being read stays at the top of the pane while its
+  facts are scrolled. (#116)
+- The waiting message has the spacing and centring an earlier change claimed
+  to give it. (#116)
+
 ## [0.47.11] - 2026-09-22
 
 ### Fixed
