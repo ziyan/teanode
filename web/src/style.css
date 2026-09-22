@@ -8596,6 +8596,15 @@ main.content:has(> .knowledge-frame) {
    and a thin bar takes less of the row to begin with. The rest of the gap
    is the scrollbar, and a classic scrollbar is outside what a row can
    paint. */
+/* The wait, with room around it and in the middle of what it is waiting
+   in. It was a bare line of text, so it took the alignment and the padding
+   of whatever held it: in a list whose rows run to the edges, and which
+   therefore has no padding of its own, it sat in the top corner. */
+.loading {
+  padding: var(--space-4);
+  text-align: center;
+}
+
 .knowledge-list-rows {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
@@ -8616,6 +8625,24 @@ main.content:has(> .knowledge-frame) {
 
 .knowledge-list-rows::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
+}
+
+/* The name of the page being read, kept at the top of the pane while the
+   rest of it scrolls under. Lifted out of the section below rather than
+   pinned inside it: a sticky thing stays only within the box that holds
+   it, and that box ended with the first section. */
+.knowledge-page-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: calc(var(--space-4) * -1) calc(var(--space-4) * -1) 0;
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.knowledge-page-head h3 {
+  margin: 0;
 }
 
 .knowledge-pane {
