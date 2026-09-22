@@ -4106,12 +4106,35 @@ label.check-list-item {
 .mailbox-frame {
   container-type: inline-size;
   container-name: mailbox;
+  /* It takes the height left on the page rather than growing to its
+     content, so the list inside it is the thing that scrolls. The rows
+     have overflow-y: auto, but a scroller only scrolls when something
+     above it says how tall it may be, and only a minimum was ever said:
+     with a hundred threads loaded the frame stood five thousand seven
+     hundred pixels tall in a window of eleven hundred, the rows never
+     overflowed, and neither they nor the page moved. The knowledge
+     navigator had the same fault, found first because its folders are
+     longer. */
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+/* The page this frame sits on becomes the column that bounds it, and only
+   this page: every other one is a document that grows and is scrolled
+   whole, which is what a block container already does. */
+main.content:has(> .mailbox-frame) {
+  display: flex;
+  flex-direction: column;
 }
 .mailbox {
   display: grid;
   grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
   gap: 0;
-  min-height: 60vh;
+  /* Fills the frame rather than standing on a minimum of its own, which
+     was all that was ever said about its height. */
+  flex: 1 1 auto;
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
@@ -4122,6 +4145,9 @@ label.check-list-item {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* A grid item refuses to shrink below its content without this, so the
+     rows below would take their height from the whole folder again. */
+  min-height: 0;
 }
 /* The strip across the top of a list: the box that searches it, and beside
    or under that the control that narrows it. Named for the shape rather than
