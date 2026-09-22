@@ -107,6 +107,31 @@ const (
 	// image so that a page can show it without carrying four hundred
 	// kilobytes of base64 through a listing.
 	PathContactPhoto = Prefix + "/contacts/{contactId}/photo"
+
+	// The two documents a program reads before it knows how to ask for a
+	// token. Outside the API prefix and outside the session check, like
+	// PathBimiLogo above, because whatever fetches them has no credential
+	// yet -- being told how to get one is the entire point of them.
+	//
+	// The protected resource document is served at two addresses because
+	// clients disagree about which to ask for, and the disagreement is
+	// visible in this tree: wellKnown in internal/mcp/oauth.go builds both
+	// the suffixed and the prefixed form and tries them in turn. Answering
+	// only one works with some clients and, with the rest, looks like a
+	// document that would not parse.
+	PathOAuthProtectedResource    = "/.well-known/oauth-protected-resource"
+	PathOAuthProtectedResourceMCP = "/.well-known/oauth-protected-resource" + PathAgentMCP
+	PathOAuthAuthorizationServer  = "/.well-known/oauth-authorization-server"
+
+	// Where a program registers itself, sends a person to approve, and
+	// swaps that approval for a token. Named here because the document at
+	// PathOAuthAuthorizationServer has to publish the addresses, and a
+	// published address and the route serving it must come from one place
+	// or they drift apart silently.
+	PathOAuthRegister  = "/oauth/register"
+	PathOAuthAuthorize = "/oauth/authorize"
+	PathOAuthToken     = "/oauth/token"
+	PathOAuthRevoke    = "/oauth/revoke"
 )
 
 // BimiLogoUploadPath is PathBimiLogoUpload with its parameter filled in: where
@@ -173,7 +198,12 @@ const ()
 // mail private; it was a second lock on the same door, and having it made the
 // login endpoints have to live outside GraphQL.
 func PublicPaths() []string {
-	return []string{PathGraphQL, PathAgentTab, PathAgentComputer}
+	return []string{
+		PathGraphQL, PathAgentTab, PathAgentComputer,
+		// A program reads these precisely because it has no credential
+		// yet; refusing them would refuse the answer to the refusal.
+		PathOAuthProtectedResource, PathOAuthProtectedResourceMCP, PathOAuthAuthorizationServer,
+	}
 }
 
 // PublicPrefixes are reachable without the middleware turning them away, for

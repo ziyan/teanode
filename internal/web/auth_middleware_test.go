@@ -22,7 +22,7 @@ func TestAuthenticationMiddleware(t *testing.T) {
 	}
 
 	var reachedHandler bool
-	handler := web.MakeAuthenticationMiddleware(authenticator, "/.well-known/acme-challenge/")(
+	handler := web.MakeAuthenticationMiddleware(authenticator, "/.well-known/acme-challenge/", nil)(
 		http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 			reachedHandler = true
 			// Echo back whoever the middleware says this is.
@@ -104,7 +104,7 @@ func TestAuthenticationMiddlewareStripsForgedHeader(t *testing.T) {
 	}
 
 	var seen string
-	handler := web.MakeAuthenticationMiddleware(authenticator, "")(
+	handler := web.MakeAuthenticationMiddleware(authenticator, "", nil)(
 		http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 			seen = request.Header.Get(api.AuthenticatedUsernameHeader)
 		}),
@@ -175,7 +175,7 @@ func TestAPublicPathStillIdentifiesTheCaller(t *testing.T) {
 	}
 
 	var seen string
-	handler := web.MakeAuthenticationMiddleware(authenticator, "")(
+	handler := web.MakeAuthenticationMiddleware(authenticator, "", nil)(
 		http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
 			seen = request.Header.Get(api.AuthenticatedUsernameHeader)
 		}),
@@ -203,5 +203,63 @@ func TestAPublicPathStillIdentifiesTheCaller(t *testing.T) {
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, api.PathGraphQL, nil))
 	if seen != "" {
 		t.Errorf("an anonymous caller was identified as %q", seen)
+	}
+}
+
+// A program refused at the MCP endpoint is told where to go.
+//
+// Without this header the only honest report a harness can make is that the
+// server wants a login it has no way to perform, which is exactly what one
+// reported before this existed. The header is what turns the refusal into the
+// first step of getting a token.
+func TestTheMCPRefusalSaysWhereToAuthorize(t *testing.T) {
+	t.Parallel()
+
+	authenticator, err := web.NewAuthenticator(newStore(t), newMemoryStore(newUser(t, "admin", "hunter2")))
+	if err != nil {
+		t.Fatalf("failed to create the authenticator: %s", err)
+	}
+	handler := web.MakeAuthenticationMiddleware(authenticator, "", nil)(
+		http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {}),
+	)
+
+	request := httptest.NewRequest(http.MethodPost, api.PathAgentMCP, nil)
+	request.Host = "mail.example.com:10443"
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("the refusal was %d, not 401", response.Code)
+	}
+	header := response.Header().Get("WWW-Authenticate")
+	want := `Bearer resource_metadata="http://mail.example.com:10443` + api.PathOAuthProtectedResource + `"`
+	if header != want {
+		t.Errorf("the refusal carried %q, not %q", header, want)
+	}
+}
+
+// The dashboard's own endpoints are refused without it.
+//
+// A browser meeting Bearer in this header on a fetch behaves in ways the
+// dashboard does not want, and GraphQL, mail and media are all fetched by the
+// browser. The header belongs only on the endpoint that programs speak to.
+func TestTheDashboardRefusalCarriesNoBearerChallenge(t *testing.T) {
+	t.Parallel()
+
+	authenticator, err := web.NewAuthenticator(newStore(t), newMemoryStore(newUser(t, "admin", "hunter2")))
+	if err != nil {
+		t.Fatalf("failed to create the authenticator: %s", err)
+	}
+	handler := web.MakeAuthenticationMiddleware(authenticator, "", nil)(
+		http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {}),
+	)
+
+	for _, path := range []string{api.Prefix + "/mail/anything/raw", api.Prefix + "/contacts/anything/photo"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if header := response.Header().Get("WWW-Authenticate"); header != "" {
+			t.Errorf("%s carried %q", path, header)
+		}
 	}
 }

@@ -24,7 +24,7 @@ func writeJson(response http.ResponseWriter, statusCode int, body any) {
 // The paths in api.PublicPaths and under api.PublicPrefixes are always allowed
 // through, and so is the ACME challenge, because a certificate authority
 // cannot log in.
-func MakeAuthenticationMiddleware(authenticator Authenticator, challengePath string) Middleware {
+func MakeAuthenticationMiddleware(authenticator Authenticator, challengePath string, trustedProxies func() []string) Middleware {
 	public := make(map[string]bool, len(api.PublicPaths()))
 	for _, path := range api.PublicPaths() {
 		public[path] = true
@@ -72,6 +72,20 @@ func MakeAuthenticationMiddleware(authenticator Authenticator, challengePath str
 				// dashboard itself, which has to load in order to show a
 				// login form.
 				if strings.HasPrefix(path, "/api/") {
+					// Say where to go, not merely no. A program reading
+					// this header discovers the authorization server and
+					// gets itself a token; without it the only honest
+					// report it can make is that the server wants a login
+					// it has no way to perform.
+					//
+					// Only on the endpoint programs speak to. The
+					// dashboard fetches GraphQL, mail and media from a
+					// browser, and a browser meeting Bearer in this header
+					// on a fetch behaves in ways the dashboard does not
+					// want.
+					if path == api.PathAgentMCP {
+						response.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+resourceMetadataURL(request, trustedProxies)+`"`)
+					}
 					writeJson(response, http.StatusUnauthorized, map[string]string{"error": "not logged in"})
 					return
 				}
@@ -79,4 +93,22 @@ func MakeAuthenticationMiddleware(authenticator Authenticator, challengePath str
 			handler.ServeHTTP(response, request)
 		})
 	}
+}
+
+// resourceMetadataURL is where the refusal points: the document naming this
+// resource and the server that authorizes it.
+//
+// Built from the address in hand for the same reason the documents
+// themselves are, in internal/api/v1api/apioauth/metadata.go: a client
+// checks that what it reads back matches what it asked for.
+func resourceMetadataURL(request *http.Request, trustedProxies func() []string) string {
+	var proxies []string
+	if trustedProxies != nil {
+		proxies = trustedProxies()
+	}
+	scheme := "http"
+	if api.IsSecure(request, proxies) {
+		scheme = "https"
+	}
+	return scheme + "://" + request.Host + api.PathOAuthProtectedResource
 }

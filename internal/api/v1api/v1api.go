@@ -21,6 +21,7 @@ import (
 	"github.com/ziyan/teanode/internal/api/v1api/apigraph"
 	"github.com/ziyan/teanode/internal/api/v1api/apimail"
 	"github.com/ziyan/teanode/internal/api/v1api/apimedia"
+	"github.com/ziyan/teanode/internal/api/v1api/apioauth"
 	"github.com/ziyan/teanode/internal/api/v1api/apisend"
 	"github.com/ziyan/teanode/internal/api/v1api/apisso"
 	"github.com/ziyan/teanode/internal/config"
@@ -75,7 +76,16 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	return &v1{components: []web.Component{graph, send, raw, pictures, signOn}}, nil
+	// The discovery documents a program reads before it holds a credential.
+	// Part of this version's surface even though the two addresses sit
+	// outside the API prefix: what they describe is the MCP endpoint, which
+	// graph above serves.
+	discovery, err := apioauth.New(configuration)
+	if err != nil {
+		return nil, err
+	}
+
+	return &v1{components: []web.Component{graph, send, raw, pictures, signOn, discovery}}, nil
 }
 
 func (self *v1) AddRoutes(router *mux.Router) error {
