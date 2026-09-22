@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.11] - 2026-09-22
+
+### Fixed
+
+- The reading no longer opens a page under people for an item that names no
+  author. (#113)
+- The waiting message in a list has room around it and sits in the middle. (#114)
+- The scrollbar beside the list of pages is thin and its track no longer
+  draws a second colour beside a highlighted row. (#114)
+
 ## [0.47.10] - 2026-09-22
 
 ### Fixed
