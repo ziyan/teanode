@@ -94,10 +94,41 @@ func (self *graph) requireClient(clientId, redirectURI string) (*models.OAuthCli
 	if client == nil {
 		return nil, fmt.Errorf("%w: no program is registered under that identifier", api.ErrNotFound)
 	}
-	if !client.AllowsRedirect(redirectURI) {
+	if !allowsRedirect(client, redirectURI) {
 		return nil, fmt.Errorf("%w: that program did not register this address", api.ErrInvalidArguments)
 	}
 	return client, nil
+}
+
+// allowsRedirect says whether an approval may be sent to an address.
+//
+// Exactly one of the addresses the program registered, with one exception
+// RFC 8252 requires: a loopback address matches whatever its port. A program
+// on somebody's own machine listens on whichever port is free that time, so
+// the port it registered with is rarely the port it is listening on later;
+// holding it to that port meant the approval page refused the same program
+// the second time it asked. Scheme, host and path still have to match, and
+// the exception is for plain HTTP on loopback only, which cannot leave the
+// machine.
+func allowsRedirect(client *models.OAuthClient, address string) bool {
+	if client.AllowsRedirect(address) {
+		return true
+	}
+	asked, err := url.Parse(address)
+	if err != nil || asked.Scheme != "http" || !api.IsLoopbackHost(asked.Hostname()) {
+		return false
+	}
+	for _, registered := range client.RedirectURIs {
+		known, err := url.Parse(registered)
+		if err != nil || known.Scheme != "http" || !api.IsLoopbackHost(known.Hostname()) {
+			continue
+		}
+		if known.Hostname() == asked.Hostname() && known.Path == asked.Path &&
+			known.RawQuery == asked.RawQuery && asked.Fragment == "" && asked.User == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (self *graph) ReadOAuthAuthorizationRequest(ctx context.Context, arguments ReadOAuthAuthorizationRequestArguments) (*OAuthAuthorizationRequest, error) {
