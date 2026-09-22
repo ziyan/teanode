@@ -9952,6 +9952,11 @@ main.content:has(> .knowledge-frame) {
   margin: var(--space-4) 0 0;
   padding: var(--space-3) var(--space-4);
   background: var(--field);
+  /* Outlined as well as filled. In light the fill alone reads as a panel,
+     but in dark --field is a step darker than the card rather than lighter,
+     and the panel all but vanished into it. tokens.css says as much: what
+     sits on a surface is told apart by its outline. */
+  border: 1px solid var(--border);
   border-radius: var(--radius-2);
 }
 
