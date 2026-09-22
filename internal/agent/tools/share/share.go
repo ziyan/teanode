@@ -136,6 +136,14 @@ func runShare(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if strings.TrimSpace(arguments.Caption) != "" {
 		answer["caption"] = strings.TrimSpace(arguments.Caption)
 	}
+	// A run that can sign an address hands that out instead: one that opens
+	// the file with no sign-in, for a caller who has none here.
+	if linking, ok := run.(tools.Linking); ok {
+		if link := linking.SharedLink(attachment.ID); link != "" {
+			answer["url"] = link
+			answer["url_note"] = "opens as it is, with no sign-in, for six hours; fetch it directly"
+		}
+	}
 	var images []llm.ContentPart
 	if arguments.Look {
 		// The size is the row's, not the bytes in hand: a file already in

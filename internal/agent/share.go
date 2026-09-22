@@ -24,6 +24,12 @@ import (
 // enough to find in a chat's history, not forever.
 const ShareFor = 30 * 24 * time.Hour
 
+// ShareToOpenFor is how long an address made to open a file now stays good:
+// one the drawer draws, or one handed to a program over MCP to fetch. Short,
+// because it is made afresh each time, and an address that opens a file
+// without a sign-in should not outlive the moment it was made for.
+const ShareToOpenFor = 6 * time.Hour
+
 // ShareAttachment is the query value that opens the file until the time
 // given, or "" when the server has no secret to sign with.
 func (self *Agent) ShareAttachment(attachmentId string, until time.Time) string {
