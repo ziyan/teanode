@@ -1695,7 +1695,7 @@ export const zh: Catalog = {
   'authorize.program': '程序',
   'authorize.claimedName': '注册时自称的名称',
   'authorize.unnamed': '未提供名称的程序',
-  'authorize.sendsTo': '授权发送至',
+  'authorize.sendsTo': '返回到',
   'authorize.actsAs': '执行身份',
   'authorize.grant': '它只能做你能做的事。你可以随时在令牌列表中撤销。',
   'authorize.askedFor': '它请求发送到',

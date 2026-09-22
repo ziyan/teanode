@@ -1749,7 +1749,7 @@ export const ja: Catalog = {
   'authorize.program': 'プログラム',
   'authorize.claimedName': '登録時に名乗った名前',
   'authorize.unnamed': '名前のないプログラム',
-  'authorize.sendsTo': '承認の送信先',
+  'authorize.sendsTo': '戻り先',
   'authorize.actsAs': '実行者',
   'authorize.grant': 'あなたができることだけを行えます。トークンの一覧からいつでも取り消せます。',
   'authorize.askedFor': '要求された送信先',

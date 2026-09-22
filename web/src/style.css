@@ -2434,7 +2434,25 @@ pre.message-text {
 
   .auth-page {
     align-items: flex-start;
-    padding: var(--space-6) max(16px, env(safe-area-inset-left)) var(--space-6) max(16px, env(safe-area-inset-right));
+    /* The top keeps the room the wide rule gives the language and appearance
+       controls. This rule used to put the top back to --space-6, which let
+       the card start level with the controls, so on every phone they sat on
+       its top edge: the login form, /cli and approving a program alike. */
+    padding: max(56px, calc(env(safe-area-inset-top) + 48px)) max(16px, env(safe-area-inset-right))
+      var(--space-6) max(16px, env(safe-area-inset-left));
+  }
+
+  /* Scrolled away with the page rather than fixed over it. A card taller
+     than a phone's screen scrolled underneath fixed controls, which then sat
+     on whatever field or button was passing. */
+  .page-corner {
+    position: absolute;
+  }
+
+  /* The wide padding left a column of under three hundred pixels on a phone,
+     and every sentence on the card wrapped more than it needed to. */
+  .auth-card {
+    padding: 32px 24px;
   }
 
   .login {
@@ -9947,7 +9965,10 @@ main.content:has(> .knowledge-frame) {
   display: grid;
   /* The label column takes what it needs and no more, so the values line up
      against it; on a phone they stack instead, below. */
-  grid-template-columns: auto minmax(0, 1fr);
+  /* The label column is capped so a long label wraps onto a second line
+     rather than taking the width the value needs. Uncapped, "Sends the
+     approval to" left the host so little room that it broke mid-word. */
+  grid-template-columns: fit-content(7.5rem) minmax(0, 1fr);
   gap: var(--space-2) var(--space-4);
   margin: var(--space-4) 0 0;
   padding: var(--space-3) var(--space-4);
@@ -9999,7 +10020,10 @@ main.content:has(> .knowledge-frame) {
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
   font-size: var(--text-label);
-  overflow-wrap: anywhere;
+  /* Broken at the dots the page marks, and only mid-label when one label is
+     longer than the card. "anywhere" also let the browser choose to break a
+     short host that would have fitted. */
+  overflow-wrap: break-word;
 }
 
 .authorize-grant {
@@ -10036,17 +10060,25 @@ main.content:has(> .knowledge-frame) {
 @media (max-width: 480px) {
   /* Stacked: the label above its value, so a long host name has the whole
      card width rather than what is left beside a label. */
+  /* Stacked, each label close over its own value and a clear step before
+     the next pair. With an even gap throughout, a label sat about as far
+     from its value as from the pair above, and "Acts as" read as belonging
+     to the host. */
   .authorize-facts {
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-1);
+    gap: 0;
   }
 
   .authorize-facts dt {
-    padding-top: var(--space-2);
+    padding-top: var(--space-4);
   }
 
   .authorize-facts dt:first-of-type {
     padding-top: 0;
+  }
+
+  .authorize-facts dd {
+    margin-top: 2px;
   }
 
   /* One under the other, Allow still first. Two buttons side by side on a

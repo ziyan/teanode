@@ -1757,7 +1757,7 @@ export const en = {
   'authorize.program': 'Program',
   'authorize.claimedName': 'the name it gave when it registered',
   'authorize.unnamed': 'a program that gave no name',
-  'authorize.sendsTo': 'Sends the approval to',
+  'authorize.sendsTo': 'Returns you to',
   'authorize.actsAs': 'Acts as',
   'authorize.grant': 'It will be able to do what you can do, and nothing more. You can revoke it at any time from your tokens.',
   'authorize.askedFor': 'It asked to be sent to',

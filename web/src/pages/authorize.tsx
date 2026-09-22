@@ -161,7 +161,7 @@ export function AuthorizePage() {
         <p className="muted">{t('authorize.unknownProgram')}</p>
         {redirectHostOf(redirectUri) && (
           <p className="authorize-asked muted">
-            {t('authorize.askedFor')} <code className="authorize-host">{redirectHostOf(redirectUri)}</code>
+            {t('authorize.askedFor')} <Host name={redirectHostOf(redirectUri)} />
           </p>
         )}
         <ErrorMessage error={error} />
@@ -193,7 +193,7 @@ export function AuthorizePage() {
 
         <dt>{t('authorize.sendsTo')}</dt>
         <dd>
-          <code className="authorize-host">{request.redirectHost}</code>
+          <Host name={request.redirectHost} />
         </dd>
 
         <dt>{t('authorize.actsAs')}</dt>
@@ -225,4 +225,26 @@ function redirectHostOf(address: string): string {
   } catch {
     return ''
   }
+}
+
+// Host is a host name that may break after each dot and nowhere else, unless
+// one of its labels is longer than the card. A reader checks a host by its
+// labels, so a break in the middle of one makes it harder to read
+// at exactly the moment it is being judged.
+function Host({ name }: { name: string }) {
+  const labels = name.split('.')
+  return (
+    <code className="authorize-host">
+      {labels.map((label, index) => (
+        <React.Fragment key={index}>
+          {label}
+          {index < labels.length - 1 && (
+            <>
+              .<wbr />
+            </>
+          )}
+        </React.Fragment>
+      ))}
+    </code>
+  )
 }
