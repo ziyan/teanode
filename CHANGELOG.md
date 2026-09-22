@@ -6,6 +6,21 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-09-22
+
+### Added
+
+- Programs that speak the Model Context Protocol can now be authorized from the
+  dashboard instead of being given an API token to paste. Point one at
+  `/api/v1/mcp` and approve it when the page opens. Tokens it receives work only
+  for the agent tools and can be revoked like any other. (#120)
+
+### Fixed
+
+- A program using the agent tools over MCP can now reach the person's attached
+  computer and tab; before, the computer, terminal and coding tools failed. (#120)
+- On a phone, the language and appearance buttons no longer sit on the sign-in card. (#120)
+
 ## [0.48.0] - 2026-09-22
 
 ### Added
