@@ -399,13 +399,23 @@ func (self *Agent) Probe(ctx context.Context, server *config.AgentMCPServer, age
 // person's computer when several are attached and its reach names none: a
 // call has no computer to run on, and says so, but the list of tools is the
 // same whichever computer the command runs on, so it is listed through the
-// first. Without that, the tools vanished the moment a second computer was
+// first one where the command answers. Without that, the tools vanished the moment a second computer was
 // attached, and all the person saw was a tool that no longer existed.
 func (self *Agent) discovery(ctx context.Context, server *config.AgentMCPServer, agentId string) (*connectedServer, error) {
 	if server.ResolvedTransport() == config.AgentMCPTransportStdio && server.ResolvedLocation() == config.AgentMCPLocationComputer &&
 		self.reachOf(ctx, agentId, models.AgentReachServer, server.Name) == "" {
+		// Each in turn until one answers: the command may be installed on
+		// only some of the person's computers.
 		if computers := self.computersFor(agentId); len(computers) > 1 {
-			return self.connectionThrough(ctx, server, agentId, computers[0].name)
+			var lastError error
+			for _, computer := range computers {
+				entry, err := self.connectionThrough(ctx, server, agentId, computer.name)
+				if err == nil {
+					return entry, nil
+				}
+				lastError = err
+			}
+			return nil, lastError
 		}
 	}
 	return self.connection(ctx, server, agentId)

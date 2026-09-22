@@ -113,7 +113,7 @@ func (self *Agent) skillTool(skill *skills.Skill, settled string, declared *skil
 	parameters := declared.Parameters
 	var riskOf func(json.RawMessage) tools.Risk
 	if risk == tools.RiskDestructive {
-		parameters = withComputer(parameters, "which attached computer to run on, when several are")
+		parameters = withComputer(parameters, "which attached computer to run on; leave out to use the person's reach, or the only one attached")
 		description += " It runs a command on the person's own computer."
 	} else {
 		// Its requests go through this server unless the person's reach for
@@ -247,7 +247,14 @@ func (self *Agent) skillRunner(skill *skills.Skill, settled, toolName string) fu
 			}
 		}
 		if runsCommandsNamed(skill, toolName) {
+			// The computer the call names, or else the one the skill's reach
+			// names, or else the only one attached. Held to Of's rule either
+			// way: this runs commands on the person's computer, which a run
+			// with nobody present does not do, reach or no reach.
 			named, _ := arguments["computer"].(string)
+			if strings.TrimSpace(named) == "" {
+				named = self.reachOf(ctx, run.Agent().ID, models.AgentReachSkill, skill.Name)
+			}
 			attached, err := computer.Of(run, named)
 			if err != nil {
 				return nil, err
