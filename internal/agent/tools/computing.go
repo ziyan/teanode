@@ -36,6 +36,9 @@ type Computer interface {
 	// Home is the person's home directory there, which ~ and a relative
 	// path are from.
 	Home() string
+	// Description is the person's sentence about what the computer is for,
+	// or empty; it is how the agent tells several apart.
+	Description() string
 }
 
 // SessionHolder is a computer that can hold a program open: a terminal the

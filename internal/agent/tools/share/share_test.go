@@ -60,9 +60,10 @@ func (self *fakeComputer) Ask(_ context.Context, action string, args any, _ time
 	}
 	return json.RawMessage(`{"path":"~/Pictures/cat.png","name":"cat.png","bytes":33,"content_type":"image/png","base64":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"}`), nil
 }
-func (self *fakeComputer) Name() string   { return "laptop" }
-func (self *fakeComputer) System() string { return "linux" }
-func (self *fakeComputer) Home() string   { return "/home/alice" }
+func (self *fakeComputer) Name() string        { return "laptop" }
+func (self *fakeComputer) System() string      { return "linux" }
+func (self *fakeComputer) Home() string        { return "/home/alice" }
+func (self *fakeComputer) Description() string { return "" }
 
 func find(t *testing.T, name string) *tools.Tool {
 	t.Helper()

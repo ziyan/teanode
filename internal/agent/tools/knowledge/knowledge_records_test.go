@@ -56,9 +56,10 @@ type listingComputer struct {
 	entries []computer.Entry
 }
 
-func (self *listingComputer) Name() string   { return "gen7" }
-func (self *listingComputer) System() string { return "linux" }
-func (self *listingComputer) Home() string   { return "/home/person" }
+func (self *listingComputer) Name() string        { return "gen7" }
+func (self *listingComputer) System() string      { return "linux" }
+func (self *listingComputer) Home() string        { return "/home/person" }
+func (self *listingComputer) Description() string { return "" }
 
 func (self *listingComputer) Ask(ctx context.Context, action string, arguments any, wait time.Duration) (json.RawMessage, error) {
 	switch action {

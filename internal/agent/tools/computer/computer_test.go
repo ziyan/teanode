@@ -37,7 +37,9 @@ func (self *fakeRun) ComputersUnattended() bool            { return self.unatten
 func (self *fakeRun) Offered() []*tools.Tool               { return nil }
 
 type fakeComputer struct {
-	asked []string
+	asked       []string
+	name        string
+	description string
 }
 
 func (self *fakeComputer) Ask(_ context.Context, action string, args any, _ time.Duration) (json.RawMessage, error) {
@@ -48,9 +50,15 @@ func (self *fakeComputer) Ask(_ context.Context, action string, args any, _ time
 	}
 	return json.RawMessage(`{"entries":[{"name":"notes.txt","size":12}]}`), nil
 }
-func (self *fakeComputer) Name() string   { return "laptop" }
-func (self *fakeComputer) System() string { return "linux" }
-func (self *fakeComputer) Home() string   { return "/home/alice" }
+func (self *fakeComputer) Name() string {
+	if self.name == "" {
+		return "laptop"
+	}
+	return self.name
+}
+func (self *fakeComputer) System() string      { return "linux" }
+func (self *fakeComputer) Home() string        { return "/home/alice" }
+func (self *fakeComputer) Description() string { return self.description }
 
 func find(t *testing.T, name string) *tools.Tool {
 	t.Helper()
@@ -138,5 +146,19 @@ func TestFilesystemRisksByAction(t *testing.T) {
 	}
 	if _, err := filesystem.Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"action":"burn","path":"a"}`)}); err == nil {
 		t.Fatal("an unknown action is refused")
+	}
+}
+
+// Several computers are named with what each is for, when the person said.
+//
+// A caller asking without naming one is told which are attached; told only
+// two host names, it still had to guess which was the one it wanted.
+func TestSeveralComputersAreNamedWithWhatEachIsFor(t *testing.T) {
+	listed := names([]tools.Computer{
+		&fakeComputer{name: "desk", description: "the machine at home, with the family photos"},
+		&fakeComputer{name: "travel"},
+	})
+	if listed != "desk, the machine at home, with the family photos; travel" {
+		t.Errorf("listed as %q", listed)
 	}
 }

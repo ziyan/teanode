@@ -184,9 +184,10 @@ type AgentComputersView struct {
 
 // AgentComputerView is one attached computer.
 type AgentComputerView struct {
-	Name   string    `json:"name"`
-	System string    `json:"system,omitempty"`
-	Since  time.Time `json:"since"`
+	Name        string    `json:"name"`
+	System      string    `json:"system,omitempty"`
+	Description string    `json:"description,omitempty"`
+	Since       time.Time `json:"since"`
 }
 
 // ReadAgentComputers says which computers the server sees for the caller.
@@ -194,7 +195,7 @@ func ReadAgentComputers(ctx context.Context, connection *Client) (*AgentComputer
 	var result struct {
 		ReadAgentComputers *AgentComputersView `json:"ReadAgentComputers"`
 	}
-	if err := connection.Execute(ctx, `query { ReadAgentComputers { allowed computers { name system since } } }`, nil, &result); err != nil {
+	if err := connection.Execute(ctx, `query { ReadAgentComputers { allowed computers { name system description since } } }`, nil, &result); err != nil {
 		return nil, err
 	}
 	return result.ReadAgentComputers, nil

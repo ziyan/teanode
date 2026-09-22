@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -51,9 +52,11 @@ type AgentComputersView struct {
 
 // AgentComputerView is one attached computer.
 type AgentComputerView struct {
-	Name   string    `json:"name"`
-	System string    `json:"system,omitempty"`
-	Since  time.Time `json:"since"`
+	Name   string `json:"name"`
+	System string `json:"system,omitempty"`
+	// Description is the person's sentence about what the computer is for.
+	Description string    `json:"description,omitempty"`
+	Since       time.Time `json:"since"`
 }
 
 func (self *graph) ReadAgentComputers(ctx context.Context) (*AgentComputersView, error) {
@@ -65,7 +68,7 @@ func (self *graph) ReadAgentComputers(ctx context.Context) (*AgentComputersView,
 	view := &AgentComputersView{Allowed: agent.FeatureAllowed(configuration, "computer"), Computers: []AgentComputerView{}}
 	if worker := self.agentWorker(); worker != nil {
 		for _, computer := range worker.ComputersAttached(found.ID) {
-			view.Computers = append(view.Computers, AgentComputerView{Name: computer.Name, System: computer.System, Since: computer.Since})
+			view.Computers = append(view.Computers, AgentComputerView{Name: computer.Name, System: computer.System, Description: computer.Description, Since: computer.Since})
 		}
 	}
 	return view, nil
@@ -117,20 +120,21 @@ func (self *graph) computerView(response http.ResponseWriter, request *http.Requ
 			return
 		}
 		var message struct {
-			Type     string          `json:"type"`
-			Protocol int             `json:"protocol"`
-			Token    string          `json:"token"`
-			Name     string          `json:"name"`
-			System   string          `json:"system"`
-			Home     string          `json:"home"`
-			ID       int64           `json:"id"`
-			OK       bool            `json:"ok"`
-			Data     json.RawMessage `json:"data"`
-			Error    string          `json:"error"`
-			Session  string          `json:"session"`
-			Event    string          `json:"event"`
-			Stream   string          `json:"stream"`
-			Code     int             `json:"code"`
+			Type        string          `json:"type"`
+			Protocol    int             `json:"protocol"`
+			Token       string          `json:"token"`
+			Name        string          `json:"name"`
+			System      string          `json:"system"`
+			Home        string          `json:"home"`
+			Description string          `json:"description"`
+			ID          int64           `json:"id"`
+			OK          bool            `json:"ok"`
+			Data        json.RawMessage `json:"data"`
+			Error       string          `json:"error"`
+			Session     string          `json:"session"`
+			Event       string          `json:"event"`
+			Stream      string          `json:"stream"`
+			Code        int             `json:"code"`
 		}
 		if err := json.Unmarshal(data, &message); err != nil {
 			continue
@@ -155,7 +159,10 @@ func (self *graph) computerView(response http.ResponseWriter, request *http.Requ
 				return
 			}
 			name = message.Name
-			worker.AttachComputer(found.ID, socket, message.Name, message.System, message.Home, message.Session)
+			worker.AttachComputer(found.ID, socket, agent.ComputerIdentity{
+				Name: message.Name, System: message.System, Home: message.Home,
+				Description: strings.TrimSpace(message.Description), Terminal: message.Session,
+			})
 			attached = true
 			welcome, _ := json.Marshal(map[string]any{"type": "welcome", "protocol": computerProtocol, "username": username})
 			_ = socket.Send(welcome)

@@ -183,9 +183,15 @@ func Of(run tools.Run, name string) (tools.Computer, error) {
 func names(computers []tools.Computer) string {
 	listed := make([]string, 0, len(computers))
 	for _, computer := range computers {
+		// With what each is for, when the person said: a caller told only
+		// two host names still has to guess which one it wanted.
+		if description := strings.TrimSpace(computer.Description()); description != "" {
+			listed = append(listed, fmt.Sprintf("%s, %s", computer.Name(), description))
+			continue
+		}
 		listed = append(listed, computer.Name())
 	}
-	return strings.Join(listed, ", ")
+	return strings.Join(listed, "; ")
 }
 
 // carry sends a request to the computer and makes its answer a result: as
@@ -354,6 +360,11 @@ func computerOverlay(ctx context.Context) string {
 	builder.WriteString(":\n")
 	for _, computer := range attached {
 		fmt.Fprintf(&builder, "- %q (%s): the whole machine as the person; ~ and a relative path are from %s, where commands run unless a directory is given\n", computer.Name(), computer.System(), computer.Home())
+		// The person's own words about what it is for, which is what tells
+		// two machines apart better than their host names do.
+		if description := strings.TrimSpace(computer.Description()); description != "" {
+			fmt.Fprintf(&builder, "  In their words: %s\n", description)
+		}
 	}
 	builder.WriteString("The shell and filesystem tools reach them, with the person's files and programs. Removing, moving, installing and reaching out ask them first; read before you change.\n</computer>")
 	return builder.String()
