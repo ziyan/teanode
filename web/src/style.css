@@ -8586,6 +8586,38 @@ main.content:has(> .knowledge-frame) {
   overscroll-behavior: contain;
 }
 
+/* The bar itself, as thin and as quiet as the one in the drawer.
+   
+   The rows run to the edge of the list, and a scrollbar takes its width out
+   of the room they have: the highlight on a row stops where the bar starts,
+   and against the default bar's own track that reads as the highlight
+   falling short rather than as a scrollbar being there. A transparent track
+   leaves the list's own ground beside the row instead of a second colour,
+   and a thin bar takes less of the row to begin with. The rest of the gap
+   is the scrollbar, and a classic scrollbar is outside what a row can
+   paint. */
+.knowledge-list-rows {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.knowledge-list-rows::-webkit-scrollbar {
+  width: 8px;
+}
+
+.knowledge-list-rows::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.knowledge-list-rows::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--border);
+}
+
+.knowledge-list-rows::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
 .knowledge-pane {
   min-width: 0;
   overflow: auto;
