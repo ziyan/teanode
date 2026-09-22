@@ -21,13 +21,6 @@ import (
 // approval is still worth something.
 const authorizationLifetime = 5 * time.Minute
 
-// How long a token issued by approval lasts before it has to be refreshed.
-//
-// A month, matching what a person gets when they mint one by hand and say
-// nothing about a lifetime. A program that is still in use refreshes without
-// anybody noticing; one that was forgotten stops working, which is the point.
-const authorizedTokenLifetime = 30 * 24 * time.Hour
-
 type OAuthQuery interface {
 	// Describe the program asking to be authorized, for the page that asks
 	// somebody whether to allow it.

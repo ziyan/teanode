@@ -38,7 +38,7 @@ func get[T any](test *testing.T, address string) T {
 	if err != nil {
 		test.Fatalf("GET %s: %s", address, err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		test.Fatalf("GET %s: %d", address, response.StatusCode)
 	}
