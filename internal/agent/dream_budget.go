@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -44,6 +45,64 @@ type dreamBudget struct {
 	// digestUntil is when the reading has to stop so the rest of the
 	// night gets its turn; zero means the night has no deadline.
 	digestUntil time.Time
+
+	// refused is a provider that will not answer anything, because the
+	// account it bills cannot pay. Nothing the night does next changes
+	// that, so it counts as having nothing left to spend.
+	refused bool
+}
+
+// whyItStopped is what to write on the night's row when the allowance,
+// rather than the model, is what ended the reading.
+func (self *dreamBudget) whyItStopped() string {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if self.refused {
+		return "the provider would not bill this account; the reading stops here"
+	}
+	return "the night has spent its share of the day; the reading stops here"
+}
+
+// refuse records that the provider will not answer again tonight.
+func (self *dreamBudget) refuse() {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if !self.refused {
+		log.Warningf("the night stops: the provider will not bill this account")
+	}
+	self.refused = true
+}
+
+// readingStopReason is what to write on the night's row when the reading
+// gives up.
+//
+// A turn the day's allowance stopped ends the same way as a model that
+// went quiet: the loop notes why and returns without an error, so the
+// batch comes back unanswered either way. Blaming the model sends the
+// reader to a provider status page for something that is a number in the
+// settings, so say what the budget says when the budget is the reason.
+func readingStopReason(budget *Budget) string {
+	if budget != nil {
+		if spent := budget.exhaustedBy(); spent != "" {
+			return spent + "; the reading stops here"
+		}
+	}
+	return "the model did not answer; the reading stops here"
+}
+
+// budgetNow is the day's allowance as it stands, or nil if it cannot be
+// read. Nil is not a failure worth ending a night over: it only means the
+// row falls back to what it used to say.
+func (self *Agent) budgetNow(ctx context.Context, run *Run) *Budget {
+	var budget *Budget
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		budget, err = CheckBudget(tx, run.Configuration(), run.Agent, run.Owner, time.Now())
+		return err
+	}); err != nil {
+		log.Debugf("cannot read the budget for a night that stopped reading: %s", err)
+		return nil
+	}
+	return budget
 }
 
 // dreamCallEstimate is what one call of a night is held against the
@@ -112,7 +171,7 @@ func (self *dreamBudget) left() bool {
 
 // room is left without the lock, for a caller that already holds it.
 func (self *dreamBudget) room() bool {
-	if self.exhausted {
+	if self.exhausted || self.refused {
 		return false
 	}
 	return self.allowed == 0 || self.spent+self.reserved < self.allowed

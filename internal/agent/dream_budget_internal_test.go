@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -171,5 +172,82 @@ func TestHalfwayIsHalfOfWhatIsLeft(t *testing.T) {
 	defer cancel()
 	if got := halfway(ctx, now); got != now.Add(20*time.Minute) {
 		t.Fatalf("half of forty minutes: %v", got)
+	}
+}
+
+// A night whose provider will not bill the account stops, rather than
+// asking again for every page, every document and every person left. The
+// budget is where it stops, because every stage of the night already asks
+// the budget whether to go on.
+func TestARefusedAccountEndsTheNight(t *testing.T) {
+	budget := &dreamBudget{allowed: 1000000}
+	if !budget.left() {
+		t.Fatal("a fresh night has room")
+	}
+	budget.refuse()
+	if budget.left() {
+		t.Fatal("the night goes on after the provider refused to bill")
+	}
+	if budget.reserve() {
+		t.Fatal("and it claimed the cost of another call")
+	}
+}
+
+// The night's row said the model did not answer whenever the reading gave
+// up, including when what stopped it was the day's allowance. The two look
+// the same from the reading's side: a turn the allowance stopped is noted
+// and ends without an error, so the batch comes back unanswered either way.
+func TestTheRowSaysWhatStoppedTheReading(t *testing.T) {
+	quiet := readingStopReason(nil)
+	if quiet != "the model did not answer; the reading stops here" {
+		t.Errorf("with no budget to read: %q", quiet)
+	}
+	if got := readingStopReason(&Budget{Limit: 1000, Used: 10}); got != quiet {
+		t.Errorf("with room left: %q", got)
+	}
+	spent := readingStopReason(&Budget{CostLimit: 70, Cost: 70.01, Currency: "USD"})
+	if !strings.Contains(spent, "is used up") || strings.Contains(spent, "the model did not answer") {
+		t.Errorf("with the day's money gone: %q", spent)
+	}
+	if !strings.HasSuffix(spent, "; the reading stops here") {
+		t.Errorf("and it still says the reading stops: %q", spent)
+	}
+}
+
+// Catching up switches itself off when a night finds nothing left to read.
+// A night that could not read is not that night, and the difference is the
+// whole of what keeps a backlog moving: one that read nothing and reported
+// nothing wrong ended catching up with fifty thousand documents waiting,
+// because a provider had refused every call and the night said so nowhere.
+func TestANightThatCouldNotReadHasNotCaughtUp(t *testing.T) {
+	nothingWaiting := &models.AgentDream{Backlog: 40, Digested: 40}
+	if !caughtUp(nothingWaiting) {
+		t.Error("a night that read everything waiting has caught up")
+	}
+	nothingToRead := &models.AgentDream{Backlog: 0, Digested: 0}
+	if !caughtUp(nothingToRead) {
+		t.Error("a night with nothing to read has caught up")
+	}
+	stillGoing := &models.AgentDream{Backlog: 5000, Digested: 40}
+	if caughtUp(stillGoing) {
+		t.Error("a night that left a backlog has not caught up")
+	}
+	couldNotRead := &models.AgentDream{Backlog: 51854, Digested: 0, LastError: "the provider would not bill this account; the reading stops here"}
+	if caughtUp(couldNotRead) {
+		t.Error("a night that could not read has not caught up, whatever it digested")
+	}
+}
+
+// And the night says which of the two stopped it, since one is the person's
+// own cap and the other is the account behind the provider.
+func TestTheBudgetSaysWhichOneStoppedTheReading(t *testing.T) {
+	spent := (&dreamBudget{}).whyItStopped()
+	if !strings.Contains(spent, "share of the day") {
+		t.Errorf("an allowance that ran out: %q", spent)
+	}
+	refused := &dreamBudget{}
+	refused.refuse()
+	if got := refused.whyItStopped(); !strings.Contains(got, "would not bill") {
+		t.Errorf("a provider that refused: %q", got)
 	}
 }

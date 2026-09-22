@@ -1225,11 +1225,11 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
             )}
           </ul>
 
-          <div className="mailbox-foot">
-            <span>{loading ? t('common.loading') : t('mailbox.count', { shown: threads.length, total })}</span>
+          <div className="list-foot">
+            <span>{loading ? t('common.loading') : t('list.count', { shown: threads.length, total })}</span>
             {threads.length < total && !loading && (
               <button type="button" className="show-more" onClick={() => load(threads.length)}>
-                {t('mailbox.loadMore')}
+                {t('list.showMore')}
               </button>
             )}
           </div>

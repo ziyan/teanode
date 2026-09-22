@@ -165,7 +165,7 @@ const (
 
 	DocumentListAgentDeadLetters = `query { ListAgentDeadLetters ` + agentJobSelection + ` }`
 
-	DocumentSetAgentLimit = `mutation ($agentId: String!, $dailyTokens: Int, $dailyCost: Float) {
+	DocumentSetAgentLimit = `mutation ($agentId: String!, $dailyTokens: Int64, $dailyCost: Float) {
 		SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens, dailyCost: $dailyCost) ` + agentSummarySelection + `
 	}`
 

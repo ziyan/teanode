@@ -805,9 +805,16 @@ func (self *transaction) FindAgentNodeByName(agentId, parent string, kind models
 			likeEscaped(parent)+"/%", len(parent)+2)
 	}
 	// By the name it is given or by any name it also answers to. Both are
-	// compared without case, the way the caller compared them.
-	query = query.Where(`(lower("name") = lower(?) OR EXISTS (`+
-		`SELECT 1 FROM jsonb_array_elements_text("aliases") AS alias WHERE lower(alias) = lower(?)))`,
+	// compared without case and without separators, the way the caller
+	// compared them: one name written with a hyphen, with a space and
+	// with neither is one name, and the graph was making a page for each.
+	// Only separators come out, so a script that puts no spaces between
+	// its words is left alone rather than squashed to nothing.
+	const squash = `regexp_replace(lower(%s), '[-_[:space:]]', '', 'g')`
+	query = query.Where(
+		`(`+fmt.Sprintf(squash, `"name"`)+` = `+fmt.Sprintf(squash, `?`)+` OR EXISTS (`+
+			`SELECT 1 FROM jsonb_array_elements_text("aliases") AS alias `+
+			`WHERE `+fmt.Sprintf(squash, `alias`)+` = `+fmt.Sprintf(squash, `?`)+`))`,
 		wanted, wanted)
 	found, err := self.nodesFrom(query.Order(`"created_at" ASC`).Limit(1))
 	if err != nil || len(found) == 0 {
@@ -1040,7 +1047,8 @@ func (self *transaction) ListAgentFactsBetween(agentId string, from, until time.
 		limit = 2000
 	}
 	return self.factsFrom(self.tx.
-		Where(`"agent_id" = ? AND NOT "dormant" AND "happened_at" >= ? AND "happened_at" < ?`, agentId, from, until).
+		Where(`"agent_id" = ? AND NOT "dormant" AND "superseded_by" IS NULL AND "happened_at" >= ? AND "happened_at" < ?`,
+			agentId, from, until).
 		Order(`"happened_at" ASC`).Limit(limit))
 }
 
@@ -1414,9 +1422,17 @@ func (self *transaction) ListAgentFactsWithoutVector(agentId, model string, limi
 	}
 	var ids []string
 	if err := self.tx.Raw(
+		// Superseded as well as dormant. A fact is put out of the way in
+		// two ways and they do not leave the same row: folding one into
+		// another marks it dormant and superseded, while a rewrite that
+		// calls two statements one marks only superseded. Asking about
+		// dormant alone therefore let every fact merged by a rewrite
+		// through, and each was embedded -- paid for at the embedding
+		// model, for a row no search will ever return.
 		`SELECT f."id" FROM "agent_fact" f
 		 LEFT JOIN "agent_fact_vector" v ON v."fact_id" = f."id" AND v."model" = ?
-		 WHERE f."agent_id" = ? AND v."fact_id" IS NULL AND NOT f."dormant"
+		 WHERE f."agent_id" = ? AND v."fact_id" IS NULL
+		   AND NOT f."dormant" AND f."superseded_by" IS NULL
 		 ORDER BY f."modified_at" DESC LIMIT ?`, model, agentId, limit).Scan(&ids).Error; err != nil {
 		return nil, err
 	}
@@ -1428,7 +1444,8 @@ func (self *transaction) CountAgentGraph(agentId string) (int64, int64, error) {
 	if err := self.tx.Model(&agentNodeModel{}).Where(`"agent_id" = ?`, agentId).Count(&nodes).Error; err != nil {
 		return 0, 0, err
 	}
-	if err := self.tx.Model(&agentFactModel{}).Where(`"agent_id" = ? AND NOT "dormant"`, agentId).Count(&facts).Error; err != nil {
+	if err := self.tx.Model(&agentFactModel{}).
+		Where(`"agent_id" = ? AND NOT "dormant" AND "superseded_by" IS NULL`, agentId).Count(&facts).Error; err != nil {
 		return 0, 0, err
 	}
 	return nodes, facts, nil

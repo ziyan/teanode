@@ -202,7 +202,7 @@ export function Loading() {
   if (!visible) {
     return null
   }
-  return <p className="muted">{t('common.loading')}</p>
+  return <p className="loading muted">{t('common.loading')}</p>
 }
 
 // Whatever went wrong, said in the one place the eye already looks for it.

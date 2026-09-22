@@ -5,6 +5,7 @@ package reading
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -79,6 +80,22 @@ type Progress struct {
 	Dreams   int     `json:"dreams"`
 	CostLeft float64 `json:"costLeft"`
 	Currency string  `json:"currency,omitempty"`
+
+	// DaysAtBudget is how many days the rest of the reading takes when the
+	// daily budget is what stops it, rather than the hours above.
+	//
+	// The hours answer a question nobody's reading is limited by: they are
+	// what it would take dreaming without pause, and an agent with a daily
+	// budget stops when the budget is spent, not when the night ends. Where
+	// the rest costs more than a day's budget the two answers differ by
+	// days, and the hours are the wrong one -- a person planning around
+	// "about eleven hours left" on a reading that has four days of budget
+	// to go has been told something untrue by a number that looks precise.
+	//
+	// Zero where there is no budget, where the models have no prices, or
+	// where what is left fits inside one day's, which is the ordinary case
+	// and reads exactly as it did before.
+	DaysAtBudget int `json:"daysAtBudget,omitempty"`
 }
 
 // readingPaceDreams is how many finished dreams the pace is taken from:
@@ -165,6 +182,12 @@ func (self *Progress) priceTheReading(tx db.Transaction, configuration *config.C
 	if self.Spent > 0 && documents > 0 {
 		self.CostLeft = self.Spent / float64(documents) * float64(self.Waiting)
 		self.Currency = configuration.Agent.Currency
+		// And how long that is where a budget is what the reading waits
+		// for. Rounded up, because a part of a day's budget is still a day
+		// the reading is not finished in.
+		if budget := configuration.Agent.Limits.DailyCostPerAgent; budget > 0 && self.CostLeft > budget {
+			self.DaysAtBudget = int(math.Ceil(self.CostLeft / budget))
+		}
 	}
 	return nil
 }
@@ -192,6 +215,13 @@ func (self *Progress) Describe() string {
 		// dashboard, so all three say it or none do.
 		if self.CostLeft > 0 {
 			line += fmt.Sprintf(", about %s more", money(self.CostLeft, self.Currency))
+		}
+		// The budget, where it is what the reading is actually waiting
+		// for. Last in the line because it is the answer that holds: the
+		// hours above say what it would take without pause, and this says
+		// what the pauses come to.
+		if self.DaysAtBudget > 1 {
+			line += fmt.Sprintf(", which the daily budget spreads over about %d days", self.DaysAtBudget)
 		}
 	}
 	// After the pace rather than inside it: these are not waiting for a

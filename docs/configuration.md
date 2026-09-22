@@ -700,6 +700,13 @@ adding one does not duplicate mail that already has somewhere to go.
 
 **`kind`** — Kind is one of null, email, webhook or mailServer.
 
+`openai-codex` is OpenAI reached with a personal sign-in rather than a key:
+the subscription behind the Codex command line. It answers at a different
+address, speaks the responses protocol rather than chat completions, and
+bills against the plan's allowance instead of credits. It takes
+`refreshToken` and `account` and no `apiKey`, and it offers only the model
+that plan allows: every other name is refused outright.
+
 **`email`** — Email is the destination address when kind is email.
 
 **`webhook`** — Webhook is the destination URL when kind is webhook.
@@ -1120,6 +1127,22 @@ endpoint; a local server is `http://ollama:11434/v1`.
 **`apiKey`** — Authenticates this server to the service. A secret; shown
 redacted, kept when a settings update leaves it blank.
 
+**`refreshToken`** — Authenticates a provider that is signed in to rather
+than keyed, which at present means `openai-codex`. A secret, shown redacted
+and kept when a settings update leaves it blank.
+
+It is the long half of a pair: the server trades it for a short-lived access
+token before each run of requests, and never writes that token down. Sign in
+with the service's own tool and give the refresh token it hands back.
+
+Where the service rotates these, the one written here goes stale, and the
+server keeps the newer one for as long as it runs. Restarting after that
+means signing in again, which is why it is worth writing the newer one back.
+
+**`account`** — Which of a signed-in person's accounts the work is billed
+to, where the service asks for it. Not a secret: it names an account, it
+does not open one.
+
 **`enabled`** — Keeps the key while switching the provider off. Unset means
 on. Work assigned to a disabled provider fails validation, so a provider
 cannot be switched off from under the models section by accident.
@@ -1189,6 +1212,21 @@ store is a third the size. The width travels with the model's name
 wherever a vector is kept — two widths of one model are two spaces, and
 must never be ranked against each other — so changing it makes the
 existing vectors stale in the same way changing `embedding` does.
+
+**`decide`** — The model for a question whose answers are known in advance:
+is this file worth opening, which of these folders does this page belong
+under. It writes nothing and cannot be asked to, so it must name a
+`typesafe` provider, and no other kind of work may name one.
+
+Empty is the whole of "off", and is the default. Every decision that can use
+one also has a path that asks a language model, and that is what runs when
+this is not set, so nothing here is needed for the agent to work.
+
+Worth setting where the same decision is made tens of thousands of times.
+The answer comes back in well under a second rather than after a model has
+written a sentence about it, it carries how sure it is, and it cannot be a
+word that was not on the list — which is most of the error handling around
+asking a model to choose.
 
 **`scan`** — The model for bulk understanding with nobody present: filing
 what a conversation taught, summarizing a document, writing a month's

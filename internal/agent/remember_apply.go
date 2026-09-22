@@ -242,13 +242,18 @@ func (self *Agent) openRememberedPages(ctx context.Context, run *Run, prepared [
 				continue
 			}
 			ready.Node = node
-			// A page about a person is a person the address book should
-			// know: one list of people, not two.
-			if node.Kind == models.NodePerson && node.ContactID == "" {
-				if err := self.bindContact(tx, run.Owner, node); err != nil {
-					log.Warningf("cannot keep a contact for %q: %s", node.Path, err)
-				}
-			}
+			// A page about a person is not a contact. The graph files
+			// whoever turns up in a commit log, a chat channel or a
+			// document, and that is not the same set as the people
+			// somebody keeps: it filed five hundred and eighteen cards
+			// with a name and nothing else on them, among them a release
+			// bot and a build account, and the address book stopped being
+			// an address book.
+			//
+			// A card is made when a person makes one, or when they promote
+			// somebody the mail has learned. What the graph knows about a
+			// person lives on their page, where it can be wrong without
+			// reaching a phone.
 		}
 		return nil
 	})

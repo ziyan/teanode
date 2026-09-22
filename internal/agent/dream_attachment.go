@@ -219,6 +219,15 @@ func unopenable(document *models.AgentDocument) string {
 // chooseAttachments asks which of a batch are worth opening, and answers
 // with the reason given for each, and whether the model answered at all.
 func (self *Agent) chooseAttachments(ctx context.Context, run *Run, documents []*models.AgentDocument, budget *dreamBudget) (map[string]string, bool) {
+	// A decision model first, where one is configured: this is a question
+	// with two answers about a line of text, which is the whole of what
+	// such a model does, and it answers in well under a second without
+	// spending a model's attention or writing a word. It says so when it
+	// cannot, and then a model is asked exactly as before.
+	if chosen, answered := self.decideAttachments(ctx, documents); answered {
+		return chosen, true
+	}
+
 	var builder strings.Builder
 	for _, document := range documents {
 		builder.WriteString("[" + document.ID + "] " + attachmentLine(document) + "\n")

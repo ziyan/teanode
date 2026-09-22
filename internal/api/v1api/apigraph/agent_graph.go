@@ -151,6 +151,13 @@ type AgentGraphMutation interface {
 
 // The arguments.
 
+// How many pages the index answers with: the default where none is asked
+// for, and the most it will give however many are.
+const (
+	agentGraphIndexPages     = 500
+	agentGraphIndexPagesMost = 2000
+)
+
 type AgentGraphIndexArguments struct {
 	// Under narrows to a subtree; empty is the whole graph.
 	Under string `json:"under" graphapi:"nullable"`
@@ -209,6 +216,13 @@ type AgentGraphNeighboursResult struct {
 	Parent     *models.AgentNode      `json:"parent"`
 	Neighbours []*AgentGraphNeighbour `json:"neighbours"`
 	Children   int                    `json:"children"`
+
+	// Links is how many links the page has, which is not always how many
+	// came back: a page linked to hundreds of others is given the
+	// strongest, because the drawing cannot hold them all. The count is
+	// here so that a drawing showing some of them can say so, the way it
+	// says how many pages are filed under one it has not opened.
+	Links int `json:"links"`
 }
 
 type SearchAgentGraphArguments struct {
@@ -552,9 +566,17 @@ func (self *graph) AgentGraphIndex(ctx context.Context, arguments AgentGraphInde
 	if err := tx.EnsureAgentRoots(found.ID); err != nil {
 		return nil, err
 	}
+	// Asked for nothing, take the default; asked for more than there is to
+	// give, take the most. Both of those used to land on the default, so a
+	// caller asking for five thousand was answered with five hundred --
+	// fewer than asking for nothing gets, silently, which is the opposite
+	// of what anybody asking for more can have meant.
 	limit := arguments.First
-	if limit <= 0 || limit > 2000 {
-		limit = 500
+	switch {
+	case limit <= 0:
+		limit = agentGraphIndexPages
+	case limit > agentGraphIndexPagesMost:
+		limit = agentGraphIndexPagesMost
 	}
 	if under := models.NormalizePath(arguments.Under); under != "" {
 		return tx.ListAgentNodesUnder(found.ID, under, limit)
@@ -863,6 +885,20 @@ func (self *graph) AgentGraphNeighbours(ctx context.Context, arguments AgentGrap
 	edges, err := tx.ListAgentEdges(found.ID, node.ID)
 	if err != nil {
 		return nil, err
+	}
+	// The strongest links, not every link. A page may be linked to
+	// hundreds of others -- a person's own page is linked to much of what
+	// they touched -- and what is returned here is what the explorer
+	// draws. Expanding such a page put eight hundred circles on the canvas
+	// at once and the drawing was gone. Children have always stopped at
+	// this number; links never did, though the note below has always said
+	// the two share the room.
+	sort.SliceStable(edges, func(one, two int) bool {
+		return edges[one].Weight > edges[two].Weight
+	})
+	result.Links = len(edges)
+	if len(edges) > neighbourLimit {
+		edges = edges[:neighbourLimit]
 	}
 	far := make([]string, 0, len(edges))
 	for _, edge := range edges {

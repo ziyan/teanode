@@ -205,7 +205,7 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 			// same thing said by a night that could not.
 			// A dream whose reading stopped on an error has not caught
 			// up; it says so, and bootstrapping stays on for the next.
-			if agent.DreamBootstrap && record.LastError == "" && (record.Backlog-record.Digested <= 0 || record.Digested == 0) {
+			if agent.DreamBootstrap && caughtUp(record) {
 				agent.DreamBootstrap = false
 				log.Noticef("agent %s has finished bootstrapping; dreaming is back to its hours", run.Agent.ID)
 			}
@@ -213,6 +213,20 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 		})
 		return err
 	})
+}
+
+// caughtUp says whether a finished night means there is nothing left to
+// catch up on, which is when bootstrapping switches itself off.
+//
+// Nothing waiting, or nothing read, which is the same thing said by a
+// night that had nothing to read. A night that says what went wrong is
+// neither: it did not read because it could not, and the backlog it left
+// is still there.
+func caughtUp(record *models.AgentDream) bool {
+	if record.LastError != "" {
+		return false
+	}
+	return record.Backlog-record.Digested <= 0 || record.Digested == 0
 }
 
 const (

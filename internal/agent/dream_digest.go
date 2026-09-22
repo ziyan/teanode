@@ -106,11 +106,23 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 					// for is not a silence, and blaming the model for
 					// the night running out of tokens reads as a fault
 					// on the dream's row.
+					//
+					// It is not a night that caught up either, and
+					// saying nothing made it look like one: a night
+					// that read nothing and reported nothing wrong is
+					// how bootstrapping decides the backlog is done,
+					// so a provider that refused every call switched
+					// catching up off with fifty thousand documents
+					// still waiting. Say what stopped it instead.
+					if record.LastError == "" {
+						record.LastError = budget.whyItStopped()
+					}
+					stopped = true
 					return
 				}
 				silent++
 				if silent >= dreamSilences {
-					record.LastError = "the model did not answer; the reading stops here"
+					record.LastError = readingStopReason(self.budgetNow(ctx, run))
 					stopped = true
 				}
 				return

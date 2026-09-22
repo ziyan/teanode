@@ -279,9 +279,13 @@ func TestRememberFilesWhatAConversationTaught(t *testing.T) {
 		if node.Kind != models.NodePerson || node.Name != "Dr Patel" {
 			t.Fatalf("as a person, named: %+v", node)
 		}
-		// One list of people: the page points at an address book entry.
-		if node.ContactID == "" {
-			t.Fatalf("a person the agent learned about is kept in the address book")
+		// A page about a person is not a contact. The graph files whoever
+		// turns up in a commit log or a chat channel, which is not the set
+		// of people somebody keeps: filling the address book from it filled
+		// it with five hundred cards holding a name and nothing else, a
+		// release bot among them. A card is made when a person makes one.
+		if node.ContactID != "" {
+			t.Fatalf("filing a person wrote a card into the address book: %q", node.ContactID)
 		}
 		facts, err := tx.ListAgentFacts(world.agent.ID, node.ID, false, 10)
 		if err != nil || len(facts) != 2 {

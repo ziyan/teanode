@@ -166,3 +166,40 @@ func TestARootFolderSaidTwiceIsSaidOnce(t *testing.T) {
 		}
 	}
 }
+
+// A hyphen is not a different name. The graph had ninety six pairs of
+// sibling pages whose names were the same word written two ways, each pair
+// splitting the facts about one thing across two pages.
+func TestSeparatorsDoNotMakeASecondName(t *testing.T) {
+	for _, pair := range [][2]string{
+		{"lamp-post", "lamp post"},
+		{"lamp_post", "lamppost"},
+		{"Lamp Post", "lamppost"},
+		{"  lamp-post  ", "LampPost"},
+	} {
+		if squashed(pair[0]) != squashed(pair[1]) {
+			t.Errorf("%q and %q are the same name: %q against %q", pair[0], pair[1], squashed(pair[0]), squashed(pair[1]))
+		}
+	}
+	// And names that are genuinely different stay different. A full stop
+	// is left in, because a version is not a separator.
+	for _, pair := range [][2]string{
+		{"lamp-post", "lamp-posts"},
+		{"release 1.2", "release 12"},
+		{"harbour", "harbor"},
+	} {
+		if squashed(pair[0]) == squashed(pair[1]) {
+			t.Errorf("%q and %q are not the same name, both squashed to %q", pair[0], pair[1], squashed(pair[0]))
+		}
+	}
+	// A script that writes no spaces between its words keeps every letter,
+	// rather than squashing to nothing and matching everything.
+	for _, name := range []string{"日本語", "안녕하세요", "Ελλάδα"} {
+		if squashed(name) == "" {
+			t.Errorf("%q squashed to nothing", name)
+		}
+	}
+	if squashed("日本語") == squashed("한국어") {
+		t.Error("two names in scripts without spaces are not the same name")
+	}
+}

@@ -556,11 +556,11 @@ export function MailboxSubscriptionsPage() {
                 is the whole list; without this the page showed a fraction of it
                 and said nothing. */}
             {query.data && subscriptions.length > 0 && (
-              <div className="mailbox-foot">
-                <span>{paging ? t('common.loading') : t('mailbox.count', { shown: subscriptions.length, total })}</span>
+              <div className="list-foot">
+                <span>{paging ? t('common.loading') : t('list.count', { shown: subscriptions.length, total })}</span>
                 {subscriptions.length < total && !paging && (
                   <button type="button" className="show-more" onClick={() => void loadMore()}>
-                    {t('mailbox.loadMore')}
+                    {t('list.showMore')}
                   </button>
                 )}
               </div>

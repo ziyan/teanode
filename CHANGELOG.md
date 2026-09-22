@@ -6,6 +6,199 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.15] - 2026-09-22
+
+### Fixed
+
+- The key to the graph no longer runs under the zoom controls on a narrow
+  screen. (#119)
+
+## [0.47.14] - 2026-09-22
+
+### Fixed
+
+- The model that answers a question whose answers are known in advance can be
+  set through the API and read back from the command line. (#118)
+- The files a night passed over are grouped under the reason they share
+  rather than repeating it on every row. (#118)
+
+## [0.47.13] - 2026-09-22
+
+### Fixed
+
+- The strip saying how much of a folder is shown stays in view while the
+  folder is walked. (#117)
+- The name of the page being read, and the buttons acting on it, stay at the
+  top of the pane. (#117)
+- A category on a mail row is shortened rather than cut mid-letter. (#117)
+- A long line in a table wraps on a phone instead of making the table four
+  times the width of the screen. (#117)
+
+## [0.47.12] - 2026-09-22
+
+### Fixed
+
+- A long mail folder scrolls again. Past the first screenful the list moved
+  neither itself nor the page. (#115)
+- The name of the page being read stays at the top of the pane while its
+  facts are scrolled. (#116)
+- The waiting message has the spacing and centring an earlier change claimed
+  to give it. (#116)
+
+## [0.47.11] - 2026-09-22
+
+### Fixed
+
+- The reading no longer opens a page under people for an item that names no
+  author. (#113)
+- The waiting message in a list has room around it and sits in the middle. (#114)
+- The scrollbar beside the list of pages is thin and its track no longer
+  draws a second colour beside a highlighted row. (#114)
+
+## [0.47.10] - 2026-09-22
+
+### Fixed
+
+- The list of pages says how many of them are shown, and the control that
+  shows more sits in the same strip the mailbox uses rather than against the
+  edge of the list. (#110)
+- A page in the knowledge reading pane is drawn as a page rather than as
+  cards nested inside cards. (#111)
+- The list of folded sentences no longer carries a heading that repeats what
+  each line already says. (#112)
+
+## [0.47.9] - 2026-09-22
+
+### Fixed
+
+- A page in the graph explorer whose links were too many to draw now says so
+  instead of appearing to have none left. (#109)
+
+## [0.47.8] - 2026-09-21
+
+### Fixed
+
+- The list of pages scrolls again in a long folder, instead of taking the
+  scroll and moving neither itself nor the page. (#107)
+- The folder's name lines up with the control beside it. (#107)
+- The button that lengthens the list is no longer flush with the bottom edge. (#107)
+- Expanding a heavily linked page in the graph explorer no longer floods the
+  drawing with every link it has. (#108)
+
+## [0.47.7] - 2026-09-21
+
+### Fixed
+
+- The breadcrumb no longer flashes an ellipsis in place of the page name
+  each time a page is opened. (#106)
+
+## [0.47.6] - 2026-09-21
+
+### Fixed
+
+- The row above the page list no longer flickers between the trail and the
+  search box each time a page is opened. (#105)
+
+## [0.47.5] - 2026-09-21
+
+### Fixed
+
+- A page whose name is written with a hyphen, with a space or with neither
+  is now one page rather than one for each spelling. (#104)
+
+## [0.47.4] - 2026-09-21
+
+### Fixed
+
+- Catching up on a backlog no longer switches itself off when the model
+  provider refused every call, which left the remaining documents unread and
+  scheduled no further attempt. (#103)
+
+## [0.47.3] - 2026-09-21
+
+### Fixed
+
+- A table column that shortens its text no longer collapses to an ellipsis in
+  a half width window. (#101)
+- A night that stopped because the daily budget was used up now says so on
+  its row, instead of reporting that the model did not answer. (#102)
+
+## [0.47.2] - 2026-09-21
+
+### Fixed
+
+- Release runs no longer overlap, so the image tagged `latest` is always the
+  newest release rather than whichever run happened to finish last. (#100)
+
+## [0.47.1] - 2026-09-21
+
+### Fixed
+
+- Token totals larger than two billion no longer make a usage query fail. (#98)
+- A night now stops when the model provider says the account cannot pay,
+  instead of asking again for every remaining item. (#99)
+
+## [0.47.0] - 2026-09-21
+
+### Added
+
+- A provider may now be signed in to rather than given a key, and OpenAI
+  reached through a personal ChatGPT sign-in is the first: set `kind` to
+  `openai-codex` and give the `refreshToken` that `teanode agent signin`
+  prints. It bills against that plan's allowance rather than API credits. (#96)
+
+## [0.46.1] - 2026-09-21
+
+### Changed
+
+- The Knowledge page is laid out like the mail page: one frame with the list
+  beside what is open, rather than two separate panels. The trail above the
+  list now names every folder you are inside rather than only the top and the
+  bottom, and stays one line however deep the folder is. (#97)
+
+## [0.46.0] - 2026-09-21
+
+### Added
+
+- A provider may now be a decision model, which answers a question whose
+  answers are known in advance rather than writing an answer. Assign one
+  with `agent.models.decide`. Where it is set, the night uses it to judge
+  which files are worth opening, which is faster and costs less than asking
+  a language model; where it is not, nothing changes. (#95)
+
+## [0.45.5] - 2026-09-21
+
+### Fixed
+
+- A fact a page already states in the same words is now folded into the
+  earlier one on pages holding more than five hundred facts. It was found
+  and reported as merged every night without being folded, so the same
+  duplicates were counted again and again and never went away. (#93)
+
+## [0.45.4] - 2026-09-21
+
+### Changed
+
+- The reading line on the agent page now says how many days the daily budget
+  spreads the remaining reading over, where what is left costs more than one
+  day of it. Before, it gave an hours estimate that assumed the agent would
+  read without pause, which an agent with a budget does not do. (#90)
+
+### Fixed
+
+- `teanode agent memory index` now says when it has shown only part of the
+  graph, and takes `--first` to show more. It previously stopped part way
+  through without saying so, and asking for more pages than the maximum
+  returned fewer than asking for none. (#91)
+- The agent no longer adds a contact to your address book for every person
+  it reads about. It was filing a card for anybody who appeared in a commit
+  log or a chat channel, including release bots, and those cards stayed
+  behind when the pages they came from were merged or removed. (#94)
+- Facts merged away by a page rewrite are no longer sent to the embedding
+  model, counted among a page's facts, or read back into a month's page.
+  They were left in a state that several queries did not recognise as
+  superseded, which cost embedding calls for rows nothing would return. (#92)
+
 ## [0.45.3] - 2026-09-21
 
 ### Fixed

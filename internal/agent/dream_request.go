@@ -105,5 +105,11 @@ func (self *Agent) dreamThoughtAbout(ctx context.Context, run *Run, budget *drea
 		usage = thinking.Usage
 	}
 	budget.settle(usage)
+	// An account that cannot pay refuses the next call too, and every
+	// stage of the night walks a list: without this the night asked once
+	// per page, per document and per person, and failed every time.
+	if llm.IsOutOfCreditError(err) {
+		budget.refuse()
+	}
 	return thinking, err
 }

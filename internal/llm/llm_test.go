@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -64,7 +65,7 @@ func TestOpenAIChatToolCallsAndUsage(t *testing.T) {
 	var requests []map[string]any
 	server := fakeOpenAI(t, &requests)
 	defer server.Close()
-	provider, err := NewProvider("openai", server.URL+"/v1", "key-1", time.Second)
+	provider, err := chatFor("openai", server.URL+"/v1", "key-1", time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +107,7 @@ func TestOpenAIChatPlainAnswer(t *testing.T) {
 	var requests []map[string]any
 	server := fakeOpenAI(t, &requests)
 	defer server.Close()
-	provider, _ := NewProvider("openai", server.URL+"/v1", "key-1", time.Second)
+	provider, _ := chatFor("openai", server.URL+"/v1", "key-1", time.Second)
 	response, err := provider.Chat(context.Background(), &ChatRequest{Model: "m", Messages: []ChatMessage{{Role: RoleUser, Content: "hi"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -120,7 +121,7 @@ func TestOpenAIStreamAssemblesTextAndToolCalls(t *testing.T) {
 	var requests []map[string]any
 	server := fakeOpenAI(t, &requests)
 	defer server.Close()
-	provider, _ := NewProvider("openai", server.URL+"/v1", "key-1", time.Second)
+	provider, _ := chatFor("openai", server.URL+"/v1", "key-1", time.Second)
 	events, err := provider.ChatStream(context.Background(), &ChatRequest{Model: "m", Messages: []ChatMessage{{Role: RoleUser, Content: "hi"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +159,7 @@ func TestOpenAIListModelsAndEmbed(t *testing.T) {
 	var requests []map[string]any
 	server := fakeOpenAI(t, &requests)
 	defer server.Close()
-	provider, _ := NewProvider("openai", server.URL+"/v1", "key-1", time.Second)
+	provider, _ := chatFor("openai", server.URL+"/v1", "key-1", time.Second)
 	models, err := provider.ListModels(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +183,7 @@ func TestEmbeddingAsksForAWidthWhenOneIsWanted(t *testing.T) {
 	var requests []map[string]any
 	server := fakeOpenAI(t, &requests)
 	defer server.Close()
-	provider, _ := NewProvider("openai", server.URL+"/v1", "key-1", time.Second)
+	provider, _ := chatFor("openai", server.URL+"/v1", "key-1", time.Second)
 	if _, _, err := provider.(Embedder).Embed(context.Background(), EmbedRequest{
 		Model: "e", Inputs: []string{"a"}, Dimensions: 512,
 	}); err != nil {
@@ -207,7 +208,7 @@ func TestOpenAIErrorsCarryTheProvidersMessage(t *testing.T) {
 	var requests []map[string]any
 	server := fakeOpenAI(t, &requests)
 	defer server.Close()
-	provider, _ := NewProvider("openai", server.URL+"/v1", "wrong", time.Second)
+	provider, _ := chatFor("openai", server.URL+"/v1", "wrong", time.Second)
 	_, err := provider.ListModels(context.Background())
 	var apiError *APIError
 	if err == nil || !strings.Contains(err.Error(), "bad key") {
@@ -255,7 +256,7 @@ func TestAnthropicChatEncodesAlternationAndDecodesToolUse(t *testing.T) {
 		_, _ = writer.Write([]byte(`{"id":"m2","model":"claude","content":[{"type":"text","text":"Reading."},{"type":"tool_use","id":"tu_2","name":"mail_read","input":{"item_id":"i2"}}],"stop_reason":"tool_use","usage":{"input_tokens":30,"output_tokens":8,"cache_creation_input_tokens":12}}`))
 	}))
 	defer server.Close()
-	provider, _ := NewProvider("anthropic", server.URL, "k", time.Second)
+	provider, _ := chatFor("anthropic", server.URL, "k", time.Second)
 	response, err := provider.Chat(context.Background(), &ChatRequest{
 		Model: "claude",
 		Messages: []ChatMessage{
@@ -331,7 +332,7 @@ func TestGeminiChatEncodesFunctionCalling(t *testing.T) {
 		_, _ = writer.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"Looking."},{"functionCall":{"name":"mail_search","args":{"query":"roof"}}}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":15,"candidatesTokenCount":4,"cachedContentTokenCount":5},"modelVersion":"gemini-x-001"}`))
 	}))
 	defer server.Close()
-	provider, _ := NewProvider("gemini", server.URL, "g", time.Second)
+	provider, _ := chatFor("gemini", server.URL, "g", time.Second)
 	response, err := provider.Chat(context.Background(), &ChatRequest{
 		Model: "gemini-x",
 		Messages: []ChatMessage{
@@ -512,7 +513,7 @@ func TestOpenAIFoldsSystemMessagesForATemplateThatWantsOne(t *testing.T) {
 		_, _ = writer.Write([]byte(`{"id":"c","model":"m","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
 	}))
 	defer server.Close()
-	provider, _ := NewProvider("openai", server.URL+"/v1", "k", time.Second)
+	provider, _ := chatFor("openai", server.URL+"/v1", "k", time.Second)
 	request := &ChatRequest{Model: "m", Messages: []ChatMessage{
 		{Role: RoleSystem, Content: "You are helpful."},
 		{Role: RoleUser, Content: "hi"},
@@ -528,5 +529,51 @@ func TestOpenAIFoldsSystemMessagesForATemplateThatWantsOne(t *testing.T) {
 	// refusal on the first round is not in the list.
 	if len(systems) != 2 || systems[0] != 1 || systems[1] != 1 {
 		t.Fatalf("system messages per answered call: %v", systems)
+	}
+}
+
+// chatFor is NewProvider for a kind that holds a conversation, which is
+// what most of these tests are about. NewProvider answers a Service, since
+// not every kind chats; asserting it once here keeps that out of every
+// test that only wants to send a message.
+func chatFor(kind, baseUrl, apiKey string, timeout time.Duration) (Provider, error) {
+	service, err := NewProvider(kind, baseUrl, apiKey, timeout)
+	if err != nil {
+		return nil, err
+	}
+	provider, ok := service.(Provider)
+	if !ok {
+		return nil, fmt.Errorf("llm: a %q provider does not chat", kind)
+	}
+	return provider, nil
+}
+
+// An empty account and a rate limit both come back as 429, and the two
+// have to be told apart: one clears by itself and the other never does.
+func TestAnEmptyAccountIsNotARateLimit(t *testing.T) {
+	for _, message := range []string{
+		"You have no credits remaining. Add credits to continue using the API.",
+		"You exceeded your current quota, please check your plan and billing details.",
+		"Your credit balance is too low to access the API.",
+		"insufficient_quota",
+	} {
+		if !IsOutOfCreditError(&APIError{Status: 429, Message: message}) {
+			t.Errorf("not read as an empty account: %q", message)
+		}
+	}
+	for _, message := range []string{
+		"Rate limit reached for requests. Please try again in 20s.",
+		"Too many requests, slow down.",
+		"The server had an error while processing your request.",
+	} {
+		if IsOutOfCreditError(&APIError{Status: 429, Message: message}) {
+			t.Errorf("read as an empty account: %q", message)
+		}
+	}
+	if !IsOutOfCreditError(&APIError{Status: 402, Message: "payment required"}) {
+		t.Error("402 is an account that cannot pay")
+	}
+	if IsOutOfCreditError(nil) {
+		t.Error("no error is not an empty account")
 	}
 }

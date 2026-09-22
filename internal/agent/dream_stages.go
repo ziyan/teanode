@@ -728,46 +728,66 @@ func (self *Agent) dreamForgetSaidTwice(ctx context.Context, run *Run, record *m
 		log.Warningf("cannot list what is said twice: %s", err)
 		return
 	}
+	// Nothing to stand behind is not the same as folded, and the two were
+	// told apart nowhere: the closure returned nil for both, so the count
+	// went up either way. A fact whose earlier twin the search could not
+	// reach was reported as merged every night, found again the next, and
+	// reported again -- the same facts and the same number for as long as
+	// the page stayed as it was.
+	missing := 0
+	counted := 0
 	for _, fact := range twice {
 		if ctx.Err() != nil {
 			return
 		}
+		folded := false
 		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 			tx.AsActor(models.ActorDream)
-			kept, err := firstSayingIt(tx, run.Agent.ID, fact)
-			if err != nil || kept == nil {
-				// Gone, or folded by another pass between the listing
-				// and here. Nothing to stand behind, so nothing to do.
+			kept, err := tx.FirstAgentFactSayingIt(run.Agent.ID, fact.NodeID, fact.Text, fact.Number)
+			if err != nil {
 				return err
 			}
-			_, err = tx.FoldAgentFact(run.Agent.ID, fact.ID, kept.ID,
-				"the page already said it in the same words")
-			return err
+			if kept == nil {
+				// Gone, or folded by another pass between the listing and
+				// here. Left as it is, and not counted as done.
+				return nil
+			}
+			if _, err := tx.FoldAgentFact(run.Agent.ID, fact.ID, kept.ID,
+				"the page already said it in the same words"); err != nil {
+				return err
+			}
+			folded = true
+			return nil
 		}); err != nil {
 			log.Warningf("cannot fold the second copy of %s: %s", fact.ID, err)
 			continue
 		}
-		record.Merged++
-	}
-}
-
-// firstSayingIt is the fact the page already states in the same words,
-// on a lower number than the one given.
-func firstSayingIt(tx db.Transaction, agentId string, fact *models.AgentFact) (*models.AgentFact, error) {
-	facts, err := tx.ListAgentFacts(agentId, fact.NodeID, false, 500)
-	if err != nil {
-		return nil, err
-	}
-	saying := strings.ToLower(strings.TrimSpace(fact.Text))
-	for _, candidate := range facts {
-		if candidate.ID == fact.ID || candidate.Number >= fact.Number {
+		if !folded {
+			missing++
 			continue
 		}
-		if strings.ToLower(strings.TrimSpace(candidate.Text)) == saying {
-			return candidate, nil
-		}
+		record.Merged++
+		counted++
 	}
-	return nil, nil
+	if counted > 0 {
+		// Named apart from the two other things that add to the same total
+		// on the record -- pairs a rewrite called one statement, and a page
+		// under people that was the person -- because one number over three
+		// operations cannot be read.
+		log.Noticef("a dream folded %d facts a page already said in the same words", counted)
+	}
+	if len(twice) >= reviseBatch {
+		// The listing is cut at a count, so a night that fills it has left
+		// some behind and the number above is the batch rather than what
+		// there was.
+		log.Noticef("there were at least %d facts said twice, which is as many as one night lists", len(twice))
+	}
+	if missing > 0 {
+		// The search for duplicates and the search for what they duplicate
+		// disagreeing is the shape of the fault this replaced, and should
+		// now be nothing.
+		log.Warningf("%d facts said twice had nothing found to fold them into", missing)
+	}
 }
 
 // dreamForgetEmptyPages removes the pages that say nothing at all.

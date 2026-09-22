@@ -74,7 +74,7 @@ const ADMIN = `query ($by: String, $since: DateTime, $until: DateTime) {
   AgentServerUsage(by: $by, since: $since, until: $until) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
   ListAgentDeadLetters { id agentId mailboxId kind subjectId attempts error finishedAt }
 }`
-const SET_LIMIT = `mutation ($agentId: String!, $dailyTokens: Int, $dailyCost: Float) { SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens, dailyCost: $dailyCost) ${SUMMARY} }`
+const SET_LIMIT = `mutation ($agentId: String!, $dailyTokens: Int64, $dailyCost: Float) { SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens, dailyCost: $dailyCost) ${SUMMARY} }`
 const SET_DISABLED = `mutation ($agentId: String!, $disabled: Boolean!) { SetAgentDisabled(agentId: $agentId, disabled: $disabled) ${SUMMARY} }`
 const RETRY = `mutation ($jobId: String!) { RetryAgentJob(jobId: $jobId) { id } }`
 

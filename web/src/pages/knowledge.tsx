@@ -26,6 +26,7 @@ import { useToast } from '../components/toast'
 import { useIsDesktop } from '../components/sidebar'
 import { useSession } from '../session'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
+import { MenuButton } from '../components/menuButton'
 import { Markdown } from '../components/markdown'
 import { Tooltip } from '../components/tooltip'
 import { GraphExplorer } from '../components/graphExplorer'
@@ -463,6 +464,24 @@ export function KnowledgePage() {
   // the folder in the address, and otherwise the folder that page is
   // filed in, with the page's own row marked in it.
   const folder = at === '' || walkedInto === at ? at : !answered ? null : isFolder ? at : parentOf(at)
+  // And the folder it was listing a moment ago, for as long as the new one
+  // is still a question.
+  //
+  // Null means "not known yet", which the row above the list read as "the
+  // top of the graph": every step into a page took the trail away, put the
+  // search box and the ways in in its place, and then took those away
+  // again when the answer came. The header already keeps its name across
+  // that gap for the same reason; this keeps the row it sits in.
+  // Seeded from the address, so that opening a link to a page deep in the
+  // graph does not flash the row of the top either: a page is nearly
+  // always read from the folder it is filed in, and if it turns out to be
+  // a folder itself the answer says so a moment later.
+  const [paging, setPaging] = useState<Paging | null>(null)
+  const lastFolder = useRef(at === '' ? '' : parentOf(at))
+  useEffect(() => {
+    if (folder !== null) lastFolder.current = folder
+  }, [folder])
+  const shownFolder = folder ?? lastFolder.current
   // A page walked into keeps the one pane for its list; on two columns
   // it is read on the right while its children are walked on the left.
   const showingPage = open !== '' && !isFolder && !(onePane && folder === at)
@@ -504,7 +523,9 @@ export function KnowledgePage() {
   const goPage = useCallback((next: string) => goTo(next, false), [goTo])
   // Up is the folder this one is filed in, walked into rather than read:
   // it may be a page with children itself.
-  const goUp = useCallback(() => goTo(parentOf(folder ?? ''), true), [goTo, folder])
+  // From the folder being shown, not from the one still being answered:
+  // while that was null this climbed to the top instead of up one.
+  const goUp = useCallback(() => goTo(parentOf(shownFolder), true), [goTo, shownFolder])
 
   const recall = recalling ? (
     <RecallDialog
@@ -574,9 +595,15 @@ export function KnowledgePage() {
   useEffect(() => {
     if (folder !== null) lastFolderLabel.current = folderLabel
   }, [folder, folderLabel])
+  // Nothing, rather than an ellipsis, while the name is still coming. The
+  // ellipsis stood in for a name that arrives a moment later, so every
+  // step showed it and replaced it, which is a flicker in the one row of
+  // the screen that is meant to hold still. The crumb appears when it can
+  // say what it is. The folder above it is read from the folder being
+  // shown, so that it does not go out and come back in the same moment.
   useBreadcrumbDetail(
-    onePane ? (showingPage ? (folder ? folderLabel : (pageName ?? '…')) : folder ? folderLabel : null) : null,
-    onePane && showingPage && folder ? (pageName ?? '…') : null,
+    onePane ? (showingPage ? (shownFolder ? folderLabel : pageName) : shownFolder ? folderLabel : null) : null,
+    onePane && showingPage && shownFolder ? pageName : null,
   )
 
   const list = search ? (
@@ -588,6 +615,7 @@ export function KnowledgePage() {
       me={me}
       onOpen={goPage}
       onInto={(next: string) => goTo(next, true)}
+      onPaging={setPaging}
     />
   )
 
@@ -625,10 +653,27 @@ export function KnowledgePage() {
   //
   // The name of the top is a way back to it once there is more than one
   // level to climb, since the chevron only ever goes up by one.
-  const climbing = folder ? folder.split('/').filter(Boolean).length : 0
+  // The levels above, in a menu, and the folder open written out.
+  //
+  // Spelling the path across the row cannot work here whatever the width.
+  // Folders in a real graph nest four deep and are named in full -- sixty
+  // five characters is an ordinary one -- so a trail of them is two hundred
+  // characters, which wraps four times on a phone and still pushes the rows
+  // off the screen. Collapsing the middle does not save it either: two of
+  // those names is already more than a phone has.
+  //
+  // So the row costs the same at any depth. The chevron goes up one, the
+  // menu holds every level above with the nearest first and is the way to
+  // any of them in one go, and the name of the folder you are in gets the
+  // rest of the room, since that is the one a person is reading.
+  const segments = shownFolder ? shownFolder.split('/').filter(Boolean) : []
+  const ancestors = segments.slice(0, -1).map((segment, index) => ({
+    path: segments.slice(0, index + 1).join('/'),
+    label: segment,
+  }))
   const trail =
-    !search && folder ? (
-      <div className="knowledge-trail">
+    !search && shownFolder ? (
+      <div className="knowledge-trail list-toolbar">
         <button
           type="button"
           className="icon-action"
@@ -638,44 +683,86 @@ export function KnowledgePage() {
         >
           <ChevronLeftIcon size={16} />
         </button>
-        {climbing > 1 ? (
-          <>
-            <button type="button" className="knowledge-trail-root" onClick={() => goTo('', true)}>
-              {t('knowledge.root')}
-            </button>
-            <span aria-hidden="true">/</span>
-          </>
+        {ancestors.length > 0 ? (
+          <MenuButton
+            label={t('knowledge.levels')}
+            className="knowledge-trail-levels"
+            icon={<span aria-hidden="true">…</span>}
+            render={(close) =>
+              // Nearest first: climbing is nearly always one or two levels,
+              // and the top of the tree is the least likely thing wanted.
+              [...ancestors].reverse().map((step) => (
+                <button
+                  key={step.path}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    close()
+                    goTo(step.path, true)
+                  }}
+                >
+                  {step.label}
+                </button>
+              ))
+            }
+          />
         ) : null}
-        <span className="knowledge-trail-name">{folderLabel}</span>
+        <span className="knowledge-trail-name" aria-current="page">
+          {folderLabel}
+        </span>
       </div>
     ) : null
 
   // The toolbar is inside the panel rather than above it, so it stays put
   // while the rows under it scroll.
+  // One row above the rows, not two. The search box and the ways in belong
+  // to the whole graph, and inside a folder the thing wanted at the top of
+  // the column is the way out of it: the trail took a second row to say so,
+  // which on a phone is a row of chrome over a list that then had nowhere
+  // to go. In a folder the trail is that row; at the top, where there is no
+  // folder to leave, it is the search box and the ways in.
   const column = (
-    <div className="card knowledge-list">
-      {lookup}
-      {trail}
-      <div className="knowledge-list-rows">{list}</div>
+    <div className="knowledge-list">
+      {trail ?? lookup}
+      <div className="knowledge-list-rows">
+        {list}
+      </div>
+      {/* Under the rows rather than among them, which is where the mailbox
+          puts the same strip and what keeps it in view while the folder is
+          walked down. It cannot be drawn where it is counted: the panels
+          slide inside a box that clips them, and a thing inside a clipped
+          box cannot be pinned to the bottom of the list around it. */}
+      {!search && paging ? (
+        <div className="list-foot">
+          <span>
+            {paging.loading ? t('common.loading') : t('list.count', { shown: paging.shown, total: paging.total })}
+          </span>
+          {paging.shown < paging.total && !paging.loading ? (
+            <button type="button" className="show-more" onClick={paging.more}>
+              {t('list.showMore')}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 
-  if (onePane) {
-    // One column at a time. Which one is in the URL, so Back is Back,
-    // and the breadcrumb on the bar is the way up out of the navigator.
-    return (
-      <div ref={setFrameElement} className="knowledge-phone">
-        {showingDetail ? detail : column}
-        {recall}
-        {documents}
-      </div>
-    )
-  }
-
+  // The same frame the mail list and its reading pane are drawn in: one
+  // bordered box with the list down the left and what is open beside it,
+  // divided by a line rather than by a gap between two rounded cards. This
+  // page invented its own pair of cards, which made a list of pages and a
+  // page look like two unrelated panels on a page that is one thing.
+  //
+  // Which pane shows on a narrow window is the frame's own business, as it
+  // is there: `reading` says something is open, and the container query
+  // below hides whichever of the two is not wanted. One column at a time,
+  // and which one is in the URL, so Back is Back.
   return (
-    <div ref={setFrameElement} className="knowledge-columns">
-      <div className="knowledge-column knowledge-column-navigator">{column}</div>
-      <div className="knowledge-column knowledge-page">{detail}</div>
+    <div ref={setFrameElement} className="knowledge-frame">
+      <div className={['knowledge-split', showingDetail ? 'reading' : ''].filter(Boolean).join(' ')}>
+        {column}
+        <div className="knowledge-pane knowledge-page">{detail}</div>
+      </div>
       {recall}
       {documents}
     </div>
@@ -727,12 +814,14 @@ function Navigator({
   me,
   onOpen,
   onInto,
+  onPaging,
 }: {
   path: string | null
   selected: string
   me: string
   onOpen: (path: string) => void
   onInto: (path: string) => void
+  onPaging: (paging: Paging | null) => void
 }) {
   const [shown, setShown] = useState(path)
   const [leaving, setLeaving] = useState<{ path: string; deeper: boolean } | null>(null)
@@ -818,7 +907,15 @@ function Navigator({
         <div className="knowledge-navigator-frame" ref={frame}>
           {panels.map((panel) => (
             <div key={panel.path} className={panel.className} ref={panel.path === (shown ?? '') ? entering : undefined}>
-              <NavigatorList path={panel.path} selected={selected} me={me} onOpen={onOpen} onInto={onInto} />
+              <NavigatorList
+                path={panel.path}
+                selected={selected}
+                me={me}
+                onOpen={onOpen}
+                onInto={onInto}
+                current={panel.path === (shown ?? '')}
+                onPaging={onPaging}
+              />
             </div>
           ))}
         </div>
@@ -826,6 +923,16 @@ function Navigator({
     </div>
   )
 }
+
+// Paging is what the strip under the list needs to draw itself: how much
+// of the folder is shown, how much there is, and the way to ask for more.
+//
+// It is reported upwards rather than drawn where it is counted, because
+// the strip has to sit outside the box the panels slide inside. That box
+// clips its content, which is what makes the slide look like a slide, and
+// a thing inside a clipped box cannot be pinned to the bottom of the list
+// around it.
+export type Paging = { shown: number; total: number; loading: boolean; more: () => void }
 
 // NavigatorList is what is filed inside one folder, fifty at a time,
 // each row with enough of a hint to tell it from its neighbours.
@@ -835,12 +942,19 @@ function NavigatorList({
   me,
   onOpen,
   onInto,
+  current,
+  onPaging,
 }: {
   path: string
   selected: string
   me: string
   onOpen: (path: string) => void
   onInto: (path: string) => void
+  // Only the panel being walked into reports what it holds: while the
+  // slide is running there are two of these, and the one sliding out
+  // would otherwise overwrite the count of the one sliding in.
+  current: boolean
+  onPaging: (paging: Paging | null) => void
 }) {
   const { t } = useTranslation()
   const [rows, setRows] = useState<Row[]>([])
@@ -890,6 +1004,11 @@ function NavigatorList({
     void load(rows.length)
   }, [loading, selected, rows, total, load])
 
+  useEffect(() => {
+    if (!current) return
+    onPaging({ shown: rows.length, total, loading, more: () => void load(rows.length) })
+  }, [current, rows.length, total, loading, load, onPaging])
+
   if (problem) return <ErrorMessage error={problem} />
   if (loading && rows.length === 0) return <Loading />
   if (rows.length === 0) return <SettingsEmpty>{t('knowledge.emptyFolder')}</SettingsEmpty>
@@ -902,11 +1021,6 @@ function NavigatorList({
           </li>
         ))}
       </ul>
-      {rows.length < total ? (
-        <button type="button" className="show-more" disabled={loading} onClick={() => void load(rows.length)}>
-          {t('knowledge.showMore', { count: Math.min(PAGE_SIZE, total - rows.length) })}
-        </button>
-      ) : null}
     </>
   )
 }
@@ -1360,7 +1474,7 @@ function DocumentsDialog({ onClose }: { onClose: () => void }) {
                         anybody who cannot see which heading it is under. */}
                     <button
                       type="button"
-                      className="link"
+                      className="button-quiet"
                       aria-label={t('knowledge.documents.readOne', { title: name })}
                       onClick={() => read(group.document.documentId)}
                     >
@@ -1415,7 +1529,7 @@ function DocumentsDialog({ onClose }: { onClose: () => void }) {
       closeLabel={t('common.close')}
       otherAction={
         reading === null ? undefined : (
-          <button type="button" className="link" onClick={() => setReading(null)}>
+          <button type="button" className="button-quiet" onClick={() => setReading(null)}>
             {t('knowledge.documents.back')}
           </button>
         )
@@ -1535,17 +1649,20 @@ function PageView({
 
   return (
     <>
-      <SettingsSection
-        card
-        title={node.path === 'self' && me ? me : node.name || node.path}
-        description={
-          <>
+      {/* The name stays in view while the facts under it are read past.
+          Reading the fortieth fact on a page whose name has scrolled away
+          is reading somebody's notes with the cover missing. It is lifted
+          out of the section below rather than pinned inside it, because a
+          sticky thing stays only within the box that holds it and that box
+          ended with the first section. */}
+      <header className="knowledge-page-head">
+        <h3>{node.path === 'self' && me ? me : node.name || node.path}</h3>
+        <div className="knowledge-page-head-meta">
+          <div>
             <code className="tag knowledge-path">{node.path}</code>{' '}
             <Tag value={t(`knowledge.kind.${node.kind}` as 'knowledge.kind.person')} />
             {node.pinned ? <Tag value={t('knowledge.pinned')} tone="good" /> : null}
-          </>
-        }
-        action={
+          </div>
           <div className="row-actions">
             <button
               type="button"
@@ -1624,7 +1741,10 @@ function PageView({
               <TrashIcon size={16} />
             </button>
           </div>
-        }
+        </div>
+      </header>
+      <SettingsSection
+        card
       >
         {/* The other names the page answers to, said the way the command
             line says them, because a page found under a name that is not
@@ -1715,19 +1835,16 @@ function PageView({
             a fold is the agent's own judgement about two sentences, and a
             judgement nobody can see is one nobody can disagree with. */}
         {page.folded.length > 0 ? (
-          <>
-            <p className="knowledge-list-heading">{t('knowledge.foldedFacts')}</p>
-            <ul className="knowledge-rows">
-              {page.folded.map((row) => (
-                <li key={row.fact.id} className="knowledge-folded">
-                  <span>
-                    #{row.fact.number} {row.fact.text}
-                  </span>
-                  <span className="knowledge-folded-into">{t('knowledge.foldedInto', { number: row.into })}</span>
-                </li>
-              ))}
-            </ul>
-          </>
+          <ul className="knowledge-rows">
+            {page.folded.map((row) => (
+              <li key={row.fact.id} className="knowledge-folded">
+                <span>
+                  #{row.fact.number} {row.fact.text}
+                </span>
+                <span className="knowledge-folded-into">{t('knowledge.foldedInto', { number: row.into })}</span>
+              </li>
+            ))}
+          </ul>
         ) : null}
       </SettingsSection>
 

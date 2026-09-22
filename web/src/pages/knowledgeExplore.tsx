@@ -38,6 +38,7 @@ const NEIGHBOURS = `query ($path: String!) {
     parent { id path kind name }
     neighbours { node { id path kind name summary } relation outward note weight status }
     children
+    links
   }
 }`
 
@@ -69,6 +70,7 @@ type Neighbourhood = {
   parent: GraphNode | null
   neighbours: Neighbour[]
   children: number
+  links: number
 }
 
 // A page on the drawing.
@@ -92,6 +94,11 @@ type Drawn = {
   // How many pages are filed under it, as of the last time it was
   // expanded. -1 until that has been asked.
   children: number
+  // How many of its links were not drawn. A page linked to hundreds of
+  // others is given the strongest of them, and without this the drawing
+  // showed part of its neighbourhood and nothing said so: the badge that
+  // means "there is more here" goes out when a page is expanded.
+  linksLeftOut: number
   expanded: boolean
   // Held under a finger. The simulation reads its position instead of
   // writing it, so a page being dragged does not fight the springs.
@@ -579,6 +586,7 @@ export function KnowledgeExplorePage() {
       velocityY: 0,
       degree: 0,
       children: -1,
+      linksLeftOut: 0,
       expanded: false,
       held: false,
     }
@@ -651,6 +659,10 @@ export function KnowledgeExplorePage() {
         }
         here.expanded = true
         here.children = around.children
+        // What came back against what the page has. The server gives the
+        // strongest links rather than all of them, so a page can be
+        // expanded and still have more behind it.
+        here.linksLeftOut = Math.max(0, around.links - around.neighbours.filter((one) => one.relation).length)
         if (around.parent) {
           if (ensure(around.parent, here)) {
             contain(around.parent.path, here.path)
@@ -1144,7 +1156,7 @@ export function KnowledgeExplorePage() {
             // A page with pages under it, or one nobody has opened yet, has
             // more behind it than is drawn. The badge is the only thing on
             // the canvas that says so.
-            const more = node.children > 0 || !node.expanded
+            const more = node.children > 0 || !node.expanded || node.linksLeftOut > 0
             const classes = ['graph-explore-node', `graph-explore-kind-${node.kind}`]
             if (node.expanded) classes.push('expanded')
             if (node.path === selected) classes.push('selected')
@@ -1163,7 +1175,11 @@ export function KnowledgeExplorePage() {
                   }
                 }}
               >
-                <title>{node.path}</title>
+                <title>
+                  {node.linksLeftOut > 0
+                    ? `${node.path} · ${t('knowledge.linksLeftOut', { count: node.linksLeftOut })}`
+                    : node.path}
+                </title>
                 <circle r={radius} />
                 {more ? (
                   <g className="graph-explore-more">

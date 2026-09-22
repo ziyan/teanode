@@ -40,6 +40,7 @@ func NewAgentCommand() *cli.Command {
 			newAgentFeedbackCommand(),
 			newAgentMCPCommand(),
 			newAgentChannelCommand(),
+			newAgentSignInCommand(),
 			newAgentSettingsCommand(),
 			newAgentSourceCommand(),
 			newAgentBriefCommand(),
