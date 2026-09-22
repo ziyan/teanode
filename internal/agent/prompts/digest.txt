@@ -122,6 +122,14 @@ jenkins, deploy, release, noreply, automation, service, or a word with a
 number stuck on the end of it -- open no page and draw no link. Where it
 reads like a person's name, it is a person's.
 
+A name that stands in for a missing name is not a person either. Where
+the heading has no author, or gives one only as a word for not knowing
+who it was -- unknown, anonymous, nobody, none, or however the item's own
+language says it -- open no page and draw no link. A page under `people/`
+is for somebody there is a name for; one called after the absence of a
+name is a page about nobody, and everything filed to it afterwards is
+filed to the same nobody.
+
 One link between two pages is enough for ever; drawing it again costs
 nothing but says nothing either. Leave out any you would not defend --
 except the author's, which the heading has already defended.
