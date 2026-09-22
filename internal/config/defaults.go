@@ -27,6 +27,7 @@ func Default() *Configuration {
 			DataDirectory: "/opt/teanode/data",
 			LogLevel:      "INFO",
 		},
+		GraphQL: GraphQL{MaximumDepth: 32, MaximumTokenCount: 20000, MaximumSelectionCount: 5000, MaximumListItemCount: 1000, MaximumWorkCount: 200000},
 		Listen: Listen{
 			SMTPIncoming: ":25",
 			SMTPOutgoing: ":587",

@@ -22,6 +22,7 @@ import (
 // settingSections are the parts of the configuration, each one row.
 const (
 	settingServer    = "server"
+	settingGraphQl   = "graphql"
 	settingListen    = "listen"
 	settingImap      = "imap"
 	settingTls       = "tls"
@@ -42,6 +43,7 @@ const (
 func (self *Configuration) sections() map[string]any {
 	return map[string]any{
 		settingServer:    &self.Server,
+		settingGraphQl:   &self.GraphQL,
 		settingListen:    &self.Listen,
 		settingImap:      &self.IMAP,
 		settingTls:       &self.TLS,

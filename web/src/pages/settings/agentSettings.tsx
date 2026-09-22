@@ -286,7 +286,6 @@ function GeneralForm({ settings, onSaved }: Props) {
     setInstructions(settings.instructions)
     setAllowPrivate(storedAllowPrivate)
     setSkipCertificates(storedSkipCertificates)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.enabled, settings.instructions, storedAllowPrivate, storedSkipCertificates])
 
   return (

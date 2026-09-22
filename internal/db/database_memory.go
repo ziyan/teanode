@@ -79,6 +79,7 @@ type MemoryOperation interface {
 	// go past rather than what somebody chose to keep.
 	ListAddressBooks(userId string) ([]*models.AddressBook, error)
 	GetAddressBook(addressBookId string) (*models.AddressBook, error)
+	LockAddressBook(addressBookId string) (*models.AddressBook, error)
 	CreateAddressBook(book *models.AddressBook) (*models.AddressBook, error)
 	UpdateAddressBook(book *models.AddressBook) (*models.AddressBook, error)
 	DeleteAddressBook(addressBookId string) error
@@ -102,6 +103,7 @@ type MemoryOperation interface {
 	// expanding every recurrence rule in the calendar.
 	ListCalendars(userId string) ([]*models.Calendar, error)
 	GetCalendar(calendarId string) (*models.Calendar, error)
+	LockCalendar(calendarId string) (*models.Calendar, error)
 	CreateCalendar(calendar *models.Calendar) (*models.Calendar, error)
 	UpdateCalendar(calendar *models.Calendar) (*models.Calendar, error)
 	DeleteCalendar(userId, calendarId string) error

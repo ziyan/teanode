@@ -16,8 +16,8 @@ import (
 // InsightOperation is what the agent worked out about messages, and the
 // transcripts of it working.
 type InsightOperation interface {
-	// PutMailInsight writes or replaces the insight for a message in a
-	// mailbox.
+	// PutMailInsight writes sorting fields, preserving existing proposals and
+	// research notes. New insights may include initial proposals and notes.
 	PutMailInsight(insight *models.MailInsight) error
 
 	// SetMailInsightNotes writes what research found onto an insight.
@@ -26,6 +26,9 @@ type InsightOperation interface {
 	// GetMailInsights reads the insights a mailbox has for these messages,
 	// by mail id.
 	GetMailInsights(mailboxId string, mailIds []string) (map[string]*models.MailInsight, error)
+	LockMailInsight(mailboxId, mailId string) (*models.MailInsight, error)
+	SetMailProposalStatus(mailboxId, mailId string, index int, proposalStatus string) error
+	ReplaceMailProposals(mailboxId, mailId string, proposals []models.MailProposal) error
 
 	// ListMailWithoutInsight is the newest messages of a mailbox — in any
 	// folder but Junk, Trash, Drafts and Sent, since a rule may have filed
@@ -244,7 +247,7 @@ func (self *transaction) PutMailInsight(insight *models.MailInsight) error {
 	}
 	return self.tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "mail_id"}, {Name: "mailbox_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"agent_id", "category", "priority", "needs_reply", "research_asked", "extract_asked", "summary", "action_items", "proposals", "model", "run_id", "created_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"agent_id", "category", "priority", "needs_reply", "research_asked", "extract_asked", "summary", "action_items", "model", "run_id", "created_at"}),
 	}).Create(model).Error
 }
 
@@ -816,3 +819,51 @@ func (self *transaction) LastAgentPersonWordAt(agentId string) (*time.Time, erro
 }
 
 var _ = gorm.ErrRecordNotFound
+
+// LockMailInsight serializes proposal acceptance with other insight writers.
+func (self *transaction) LockMailInsight(mailboxId, mailId string) (*models.MailInsight, error) {
+	var found []mailInsightModel
+	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("mailbox_id = ? AND mail_id = ?", mailboxId, mailId).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return insightFromModel(&found[0])
+}
+
+// SetMailProposalStatus changes only one proposal status, preserving unrelated
+// insight fields. Callers lock the insight and validate the proposal first.
+func (self *transaction) SetMailProposalStatus(mailboxId, mailId string, index int, proposalStatus string) error {
+	if index < 0 || (proposalStatus != models.MailProposalAccepted && proposalStatus != models.MailProposalDismissed) {
+		return ErrInvalidArguments
+	}
+	update := self.tx.Exec(`UPDATE mail_insight SET proposals = jsonb_set(proposals, ARRAY[?::text, 'status'], to_jsonb(?::text)) WHERE mailbox_id = ? AND mail_id = ? AND jsonb_array_length(proposals) > ?`, fmt.Sprint(index), proposalStatus, mailboxId, mailId, index)
+	if update.Error != nil {
+		return update.Error
+	}
+	if update.RowsAffected != 1 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ReplaceMailProposals replaces outstanding offers while preserving the person's
+// decisions. The row lock prevents acceptance from being lost to a reading run.
+func (self *transaction) ReplaceMailProposals(mailboxId, mailId string, proposals []models.MailProposal) error {
+	insight, err := self.LockMailInsight(mailboxId, mailId)
+	if err != nil || insight == nil {
+		return err
+	}
+	kept := make([]models.MailProposal, 0, len(insight.Proposals)+len(proposals))
+	for _, proposal := range insight.Proposals {
+		if proposal.Status != models.MailProposalOffered {
+			kept = append(kept, proposal)
+		}
+	}
+	encoded, err := json.Marshal(append(kept, proposals...))
+	if err != nil {
+		return err
+	}
+	return self.tx.Model(&mailInsightModel{}).Where("mailbox_id = ? AND mail_id = ?", mailboxId, mailId).Update("proposals", encoded).Error
+}

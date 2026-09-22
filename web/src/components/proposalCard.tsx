@@ -1,6 +1,8 @@
 import { useState } from 'react'
 
 import { MailProposal, graphql } from '../api'
+import { useSession } from '../session'
+import { useCalendarMutation } from '../hooks/useCalendarMutation'
 import { useToast } from './toast'
 import { useTranslation } from '../i18n/i18n'
 
@@ -17,16 +19,10 @@ import { useTranslation } from '../i18n/i18n'
 // because a stranger's message mentioned a day is how a calendar stops being
 // trusted.
 
-const SAVE_EVENT = `
-  mutation ($calendarId: String!, $summary: String, $location: String, $startsAt: String, $endsAt: String, $allDay: Boolean) {
-    SaveCalendarEvent(calendarId: $calendarId, summary: $summary, location: $location,
-      startsAt: $startsAt, endsAt: $endsAt, allDay: $allDay) { id }
-  }`
-
 const SAVE_CONTACT = `
   mutation ($addressBookId: String!, $contactId: String, $name: String, $organization: String,
             $title: String, $emails: [String!], $phones: [String!], $note: String) {
-    SaveContact(addressBookId: $addressBookId, contactId: $contactId, name: $name,
+    SaveContact(addressBookId: $addressBookId, id: $contactId, name: $name,
       organization: $organization, title: $title, emails: $emails, phones: $phones, note: $note) { id }
   }`
 
@@ -38,36 +34,70 @@ const SET_STATUS = `
     SetMailProposalStatus(itemId: $itemId, index: $index, status: $status) { proposals { status } }
   }`
 
-export function ProposalCards({
-  itemId,
-  proposals,
-  onChanged,
-}: {
+interface ProposalCardsProps {
   itemId: string
   proposals?: MailProposal[] | null
   onChanged: () => void
-}) {
+}
+export function ProposalCards(props: ProposalCardsProps) {
+  const session = useSession()
+  return (
+    <ProposalCardsForAccount
+      key={`${session.userId ?? ''}:${props.itemId}`}
+      ownerId={session.userId ?? ''}
+      {...props}
+    />
+  )
+}
+function ProposalCardsForAccount({ ownerId, itemId, proposals, onChanged }: ProposalCardsProps & { ownerId: string }) {
+  const submission = useCalendarMutation(ownerId)
   const offered = (proposals ?? [])
     .map((proposal, index) => ({ proposal, index }))
     .filter(({ proposal }) => !proposal.status)
+  // A committed acceptance can disappear from the offers before its response
+  // arrives. Keep its retained card available to resolve that response on reload.
+  const retained = submission.pending?.variables
+  if (
+    retained?.proposalItemId === itemId &&
+    typeof retained.proposalIndex === 'number' &&
+    typeof retained.expectedProposal === 'string'
+  ) {
+    try {
+      const original = JSON.parse(retained.expectedProposal) as MailProposal
+      const existing = offered.find((entry) => entry.index === retained.proposalIndex)
+      if (existing) existing.proposal = original
+      else offered.push({ index: retained.proposalIndex, proposal: original })
+    } catch {
+      /* The shared calendar recovery panel still retains invalid input. */
+    }
+  }
   if (offered.length === 0) {
     return null
   }
   return (
     <>
       {offered.map(({ proposal, index }) => (
-        <ProposalCard key={index} itemId={itemId} index={index} proposal={proposal} onChanged={onChanged} />
+        <ProposalCard
+          key={`${itemId}:${index}:${JSON.stringify(proposal)}`}
+          submission={submission}
+          itemId={itemId}
+          index={index}
+          proposal={proposal}
+          onChanged={onChanged}
+        />
       ))}
     </>
   )
 }
 
 function ProposalCard({
+  submission,
   itemId,
   index,
   proposal,
   onChanged,
 }: {
+  submission: ReturnType<typeof useCalendarMutation>
   itemId: string
   index: number
   proposal: MailProposal
@@ -75,14 +105,21 @@ function ProposalCard({
 }) {
   const { t } = useTranslation()
   const toast = useToast()
+  const isOwnPending =
+    submission.pending?.variables.proposalItemId === itemId && submission.pending?.variables.proposalIndex === index
+  const saved = isOwnPending ? submission.pending?.variables : null
   const [busy, setBusy] = useState(false)
   // An empty summary is "" rather than null, and `??` only falls through on
   // null -- so a contact whose name the run found was offered with an empty
   // name box, with the name it had found nowhere on the card.
-  const [summary, setSummary] = useState(proposal.summary || proposal.name || '')
-  const [starts, setStarts] = useState(proposal.starts ?? '')
-  const [ends, setEnds] = useState(proposal.ends ?? '')
-  const [location, setLocation] = useState(proposal.location ?? '')
+  const [summary, setSummary] = useState(
+    typeof saved?.summary === 'string' ? saved.summary : proposal.summary || proposal.name || '',
+  )
+  const [starts, setStarts] = useState(typeof saved?.startsAt === 'string' ? saved.startsAt : (proposal.starts ?? ''))
+  const [ends, setEnds] = useState(typeof saved?.endsAt === 'string' ? saved.endsAt : (proposal.ends ?? ''))
+  const [location, setLocation] = useState(
+    typeof saved?.location === 'string' ? saved.location : (proposal.location ?? ''),
+  )
   const [organization, setOrganization] = useState(proposal.organization ?? '')
 
   const event = proposal.kind === 'event'
@@ -90,19 +127,29 @@ function ProposalCard({
   async function keep() {
     setBusy(true)
     try {
-      if (event) {
+      if (event && isOwnPending) {
+        await submission.execute()
+      } else if (event) {
         const calendars = await graphql<{ ListCalendars: { id: string; name: string }[] }>(CALENDARS)
         const calendar = calendars.ListCalendars[0]
         if (!calendar) {
           throw new Error(t('proposal.noCalendar'))
         }
-        await graphql(SAVE_EVENT, {
-          calendarId: calendar.id,
+        await submission.execute({
+          operation: 'save',
           summary,
-          location,
-          startsAt: starts,
-          endsAt: ends || undefined,
-          allDay: proposal.allDay ?? false,
+          variables: {
+            id: null,
+            proposalItemId: itemId,
+            proposalIndex: index,
+            expectedProposal: JSON.stringify(proposal),
+            calendarId: calendar.id,
+            summary,
+            location,
+            startsAt: starts,
+            endsAt: ends || undefined,
+            allDay: proposal.allDay ?? false,
+          },
         })
       } else {
         const books = await graphql<{ ListAddressBooks: { id: string; name: string }[] }>(BOOKS)
@@ -121,11 +168,24 @@ function ProposalCard({
           note: proposal.note,
         })
       }
-      await graphql(SET_STATUS, { itemId, index, status: 'accepted' })
+      if (!event) await graphql(SET_STATUS, { itemId, index, status: 'accepted' })
       toast.done(event ? t('proposal.added') : t('proposal.saved'))
       onChanged()
     } catch (caught) {
       toast.failure(caught, event ? t('proposal.addFailed') : t('proposal.saveFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function stop() {
+    setBusy(true)
+    try {
+      const isCompleted = await submission.cancel()
+      toast.done(t(isCompleted ? 'proposal.added' : 'calendar.stopped'))
+      onChanged()
+    } catch (failure) {
+      toast.failure(failure, t('proposal.addFailed'))
     } finally {
       setBusy(false)
     }
@@ -152,30 +212,50 @@ function ProposalCard({
       <div className="form-narrow">
         <label>
           <span>{event ? t('proposal.what') : t('proposal.who')}</span>
-          <input value={summary} disabled={busy} onChange={(change) => setSummary(change.target.value)} />
+          <input
+            value={summary}
+            disabled={busy || (event && !!submission.pending)}
+            onChange={(change) => setSummary(change.target.value)}
+          />
         </label>
         {event ? (
           <>
             <div className="row">
               <label>
                 <span>{t('proposal.starts')}</span>
-                <input value={starts} disabled={busy} onChange={(change) => setStarts(change.target.value)} />
+                <input
+                  value={starts}
+                  disabled={busy || (event && !!submission.pending)}
+                  onChange={(change) => setStarts(change.target.value)}
+                />
               </label>
               <label>
                 <span>{t('proposal.ends')}</span>
-                <input value={ends} disabled={busy} onChange={(change) => setEnds(change.target.value)} />
+                <input
+                  value={ends}
+                  disabled={busy || (event && !!submission.pending)}
+                  onChange={(change) => setEnds(change.target.value)}
+                />
               </label>
             </div>
             <label>
               <span>{t('proposal.where')}</span>
-              <input value={location} disabled={busy} onChange={(change) => setLocation(change.target.value)} />
+              <input
+                value={location}
+                disabled={busy || (event && !!submission.pending)}
+                onChange={(change) => setLocation(change.target.value)}
+              />
             </label>
           </>
         ) : (
           <>
             <label>
               <span>{t('proposal.organization')}</span>
-              <input value={organization} disabled={busy} onChange={(change) => setOrganization(change.target.value)} />
+              <input
+                value={organization}
+                disabled={busy || (event && !!submission.pending)}
+                onChange={(change) => setOrganization(change.target.value)}
+              />
             </label>
             {(proposal.emails ?? []).length > 0 || (proposal.phones ?? []).length > 0 ? (
               <p className="muted">{[...(proposal.emails ?? []), ...(proposal.phones ?? [])].join(' · ')}</p>
@@ -184,12 +264,25 @@ function ProposalCard({
         )}
       </div>
       {proposal.because ? <blockquote className="muted">{proposal.because}</blockquote> : null}
+      {event && submission.pending && (
+        <p className="muted">{t(isOwnPending ? 'calendar.pendingSave' : 'proposal.pendingElsewhere')}</p>
+      )}
       <div className="page-actions page-actions-end">
-        <button type="button" disabled={busy} onClick={() => void dismiss()}>
+        {event && isOwnPending && (
+          <button type="button" disabled={busy || submission.isWorking} onClick={() => void stop()}>
+            {t('calendar.stop')}
+          </button>
+        )}
+        <button type="button" disabled={busy || (event && !!submission.pending)} onClick={() => void dismiss()}>
           {t('proposal.dismiss')}
         </button>
-        <button type="button" className="primary" disabled={busy} onClick={() => void keep()}>
-          {event ? t('proposal.add') : t('proposal.save')}
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || submission.isWorking || (event && !!submission.pending && !isOwnPending)}
+          onClick={() => void keep()}
+        >
+          {event ? t(isOwnPending ? 'calendar.retry' : 'proposal.add') : t('proposal.save')}
         </button>
       </div>
     </section>

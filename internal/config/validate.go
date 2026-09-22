@@ -54,6 +54,21 @@ func (self *Configuration) Validate() error {
 	validator := &validator{}
 
 	self.validateServer(validator)
+	if self.GraphQL.MaximumDepth < 1 || self.GraphQL.MaximumDepth > 256 {
+		validator.add("graphql.maximumDepth", "must be between 1 and 256")
+	}
+	if self.GraphQL.MaximumTokenCount < 1 || self.GraphQL.MaximumTokenCount > 1000000 {
+		validator.add("graphql.maximumTokenCount", "must be between 1 and 1000000")
+	}
+	if self.GraphQL.MaximumSelectionCount < 1 || self.GraphQL.MaximumSelectionCount > 100000 {
+		validator.add("graphql.maximumSelectionCount", "must be between 1 and 100000")
+	}
+	if self.GraphQL.MaximumListItemCount < 1 || self.GraphQL.MaximumListItemCount > 100000 {
+		validator.add("graphql.maximumListItemCount", "must be between 1 and 100000")
+	}
+	if self.GraphQL.MaximumWorkCount < 1 || self.GraphQL.MaximumWorkCount > 100000000 {
+		validator.add("graphql.maximumWorkCount", "must be between 1 and 100000000")
+	}
 	self.validateListen(validator)
 	self.validateTls(validator)
 	self.validateDatabase(validator)
@@ -417,6 +432,19 @@ func (self *Configuration) validateIntegrations(validator *validator) {
 	if self.Storage.Directory == "" && !self.Storage.S3.Enabled {
 		validator.add("storage.directory",
 			"required unless storage.s3 is enabled: where raw messages are kept, for example spool")
+	}
+	switch self.Storage.Mode {
+	case "":
+	case "local":
+		if self.Storage.Directory == "" {
+			validator.add("storage.directory", "required in local storage mode")
+		}
+	case "shared":
+		if !self.Storage.S3.Enabled || self.Storage.Directory != "" {
+			validator.add("storage.mode", "shared mode requires storage.s3.enabled and an empty storage.directory")
+		}
+	default:
+		validator.add("storage.mode", "must be local, shared or empty")
 	}
 	if self.Storage.SpoolRetention <= 0 {
 		validator.add("storage.spoolRetention", "must be positive, for example 30d")

@@ -557,7 +557,6 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
     // putting messages back where they were — can ask for the list again
     // through the same path the page loads by, rather than calling load()
     // from a closure that has already served its purpose.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, reloadToken])
 
   // The agent filed, sent or made something: the list reads again.

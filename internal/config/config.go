@@ -30,6 +30,9 @@ type Configuration struct {
 	// Addresses to listen on
 	Listen Listen `yaml:"listen"`
 
+	// Bounds on GraphQL document preparation before database work.
+	GraphQL GraphQL `yaml:"graphql"`
+
 	// What a mail program is told to connect to for reading mail, when that
 	// is not what this server listens on
 	IMAP IMAPAccess `yaml:"imap"`
@@ -849,6 +852,12 @@ type GeoIP struct {
 // store, or both. With both, the directory is the record and the store a
 // mirror. With the store alone nothing is kept on this machine.
 type Storage struct {
+	// Mode is local or shared. Local requires a directory and treats S3 as a
+	// best-effort mirror. Shared requires S3 and an empty directory, so object
+	// store failures are returned to the caller. Empty preserves the existing
+	// behavior selected by whether directory is configured.
+	Mode string `yaml:"mode,omitempty"`
+
 	// Directory holds the raw messages, relative to server.dataDirectory.
 	// They are kept out of the database because they are large, are never
 	// queried, and would make a backup expensive.
@@ -901,4 +910,13 @@ type S3 struct {
 	// CredentialsFile is an AWS shared credentials file, as an alternative to
 	// the two fields above.
 	CredentialsFile string `yaml:"credentialsFile,omitempty"`
+}
+
+// GraphQL limits document parsing and expanded selection work.
+type GraphQL struct {
+	MaximumDepth          int `yaml:"maximumDepth"`
+	MaximumTokenCount     int `yaml:"maximumTokenCount"`
+	MaximumSelectionCount int `yaml:"maximumSelectionCount"`
+	MaximumListItemCount  int `yaml:"maximumListItemCount"`
+	MaximumWorkCount      int `yaml:"maximumWorkCount"`
 }

@@ -405,7 +405,7 @@ func TestRegistryResolvesWorkAndFilters(t *testing.T) {
 	if _, _, err := registry.ForModel("cloud:claude"); err == nil {
 		t.Fatal("a disabled provider must be refused")
 	}
-	if _, _, err := registry.Embedding(); err == nil {
+	if _, err := registry.Embedding(); err == nil {
 		t.Fatal("no embedding model is configured")
 	}
 	filtered := FilterModels("local", &configuration.Providers[0].Models, []ModelInformation{{ID: "qwen2.5:7b"}, {ID: "llama3"}})

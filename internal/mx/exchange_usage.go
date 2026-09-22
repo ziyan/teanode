@@ -18,6 +18,18 @@ type domainUsage struct {
 	deliveriesBounced   uint64
 }
 
+func (self *exchange) trackDomainUsageAfterCommit(transaction db.Transaction, receivedAt time.Time, domainId string, usage domainUsage) {
+	transaction.AfterCommit(func() { self.trackDomainUsage(receivedAt, domainId, usage) })
+}
+
+func (self *exchange) trackCredentialUsageAfterCommit(transaction db.Transaction, receivedAt time.Time, credentialId string, usage credentialUsage) {
+	transaction.AfterCommit(func() { self.trackCredentialUsage(receivedAt, credentialId, usage) })
+}
+
+func (self *exchange) trackAliasUsageAfterCommit(transaction db.Transaction, receivedAt time.Time, aliasId string, usage aliasUsage) {
+	transaction.AfterCommit(func() { self.trackAliasUsage(receivedAt, aliasId, usage) })
+}
+
 func (self domainUsage) values() []uint64 {
 	return []uint64{
 		self.bytesReceived,

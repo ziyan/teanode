@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -50,7 +51,7 @@ func newToken() (string, error) {
 // which is worse than a message not sent only if the message matters less than
 // the logo in it. It does not: the picture is dropped back to the address that
 // works for everybody, and the send goes on.
-func (self *mailer) rewriteMedia(envelopeId string, domain *models.Domain, domains []*models.Domain, html string) string {
+func (self *mailer) rewriteMedia(media db.MediaCompositionOperation, envelopeId string, domain *models.Domain, domains []*models.Domain, html string) string {
 	if html == "" || domain == nil {
 		return html
 	}
@@ -72,7 +73,7 @@ func (self *mailer) rewriteMedia(envelopeId string, domain *models.Domain, domai
 		// Only this domain's own pictures. A template naming another domain's
 		// media is a mistake somebody made, and quietly serving it from here
 		// would hide it.
-		stored, err := self.database.GetMedia(mediaId)
+		stored, err := media.GetMedia(mediaId)
 		if err != nil || stored == nil || stored.DomainID != domain.ID {
 			if err != nil {
 				log.Warningf("failed to look up media %s while sending: %s", mediaId, err)
@@ -85,7 +86,7 @@ func (self *mailer) rewriteMedia(envelopeId string, domain *models.Domain, domai
 			log.Errorf("failed to make an address for media %s: %s", mediaId, err)
 			return match
 		}
-		if _, err := self.database.CreateMediaLink(&models.MediaLink{
+		if _, err := media.CreateMediaLink(&models.MediaLink{
 			Token:      token,
 			MediaID:    stored.ID,
 			EnvelopeID: envelopeId,

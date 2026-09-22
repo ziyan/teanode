@@ -37,7 +37,7 @@ export function ReportsPage() {
     [],
   )
   const domainQuery = useQuery(() => graphql<{ ListDomains: Domain[] }>(DOMAINS), [])
-  const domains = domainQuery.data?.ListDomains ?? []
+  const domains = useMemo(() => domainQuery.data?.ListDomains ?? [], [domainQuery.data])
   const domainNames = useMemo(() => new Map(domains.map((domain) => [domain.id, domain.domain])), [domains])
 
   const columns = useMemo<Column<Report>[]>(

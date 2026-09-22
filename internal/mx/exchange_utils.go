@@ -761,7 +761,7 @@ func (self *exchange) matchAliases(tx db.Transaction, domain *models.Domain, rec
 	// find all recipient addresses
 	var deliveries []*models.Delivery
 	for _, alias := range aliases {
-		self.trackAliasUsage(mail.ReceivedAt, alias.ID, aliasUsage{
+		self.trackAliasUsageAfterCommit(tx, mail.ReceivedAt, alias.ID, aliasUsage{
 			bytesReceived: mail.Size,
 			mailsAccepted: 1,
 		})

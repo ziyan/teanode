@@ -592,10 +592,18 @@ func syncAction(ctx context.Context, run tools.Run, arguments *knowledgeArgument
 		return nil, err
 	}
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		current, err := tx.LockAgentSource(run.Agent().ID, source.ID)
+		if err != nil {
+			return err
+		}
+		if current == nil {
+			return fmt.Errorf("the source was removed")
+		}
+		source = current
 		now := time.Now()
 		source.NextRunAt = &now
 		source.Enabled = true
-		_, err := tx.PutAgentSource(source)
+		_, err = tx.PutAgentSource(source)
 		return err
 	}); err != nil {
 		return nil, err
@@ -625,6 +633,14 @@ func setEnabled(ctx context.Context, run tools.Run, arguments *knowledgeArgument
 		return nil, err
 	}
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		current, err := tx.LockAgentSource(run.Agent().ID, source.ID)
+		if err != nil {
+			return err
+		}
+		if current == nil {
+			return fmt.Errorf("the source was removed")
+		}
+		source = current
 		source.Enabled = enabled
 		if enabled {
 			// Due now, the same as the API does when a source is switched
@@ -633,7 +649,7 @@ func setEnabled(ctx context.Context, run tools.Run, arguments *knowledgeArgument
 			now := time.Now()
 			source.NextRunAt = &now
 		}
-		_, err := tx.PutAgentSource(source)
+		_, err = tx.PutAgentSource(source)
 		return err
 	}); err != nil {
 		return nil, err

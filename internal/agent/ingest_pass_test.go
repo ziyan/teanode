@@ -1,11 +1,9 @@
 package agent
 
 import (
-	"context"
 	"testing"
 	"time"
 
-	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -77,33 +75,13 @@ func TestOnlyAWholeTreeMayLoseDocuments(t *testing.T) {
 	}
 }
 
-// A pass shown nothing at all takes nothing: an empty answer is a folder
-// nothing mounted, not somebody deleting everything they own. Either way
-// the pass's marks are cleared, so the next one starts its own.
+// Empty and legacy partial passes cannot authorize deletion.
 func TestAPassShownNothingTakesNothing(t *testing.T) {
-	agent := &Agent{}
-	source := &models.AgentKnowledgeSource{ID: "one", Kind: models.SourceArchive}
-
-	// Nothing seen: the sweep answers before it ever reaches a database,
-	// which is what this agent without one proves.
-	cursor := map[string]any{cursorPassStarted: "2026-09-16T00:00:00Z", cursorPassSeen: float64(0)}
-	counts := db.SourceCounts{Documents: 7}
-	agent.sweepUnseen(context.Background(), source, cursor, time.Now(), &counts)
-	if counts.Documents != 7 {
-		t.Fatalf("a pass shown nothing changed the count to %d", counts.Documents)
+	if shouldSweepIngestPass(map[string]any{cursorPassSeen: 0}, time.Now(), time.Now()) {
+		t.Fatal("empty pass authorized sweeping")
 	}
-	for _, key := range []string{cursorPassStarted, cursorPassSeen} {
-		if _, left := cursor[key]; left {
-			t.Fatalf("%q was left on the cursor", key)
-		}
-	}
-
-	// And a pass with no start -- one resumed mid-tree across an upgrade
-	// -- takes nothing however much it saw.
-	cursor = map[string]any{cursorPassSeen: float64(4000)}
-	agent.sweepUnseen(context.Background(), source, cursor, time.Time{}, &counts)
-	if counts.Documents != 7 {
-		t.Fatalf("a pass with no start changed the count to %d", counts.Documents)
+	if shouldSweepIngestPass(map[string]any{cursorPassSeen: 4000}, time.Time{}, time.Now()) {
+		t.Fatal("legacy partial pass authorized sweeping")
 	}
 }
 

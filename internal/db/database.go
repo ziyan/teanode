@@ -213,12 +213,16 @@ type transaction struct {
 	tx       *gorm.DB
 	database *database
 
-	// ctx carries who is acting, for the audit rows the writes produce.
+	// ctx bounds SQL work and carries who is acting for audit rows.
 	ctx context.Context
 
 	// actor is who the graph writes in this transaction are by, for the
 	// history a page keeps. See database_revision.go.
 	actor models.RevisionActor
+
+	isNested    bool
+	rollbackErr error
+	afterCommit []func()
 }
 
 func (self *database) Transaction(f func(Transaction) error) error {
@@ -245,7 +249,7 @@ func (self *database) TransactionContext(ctx context.Context, f func(Transaction
 }
 
 func (self *transaction) begin() error {
-	tx := self.database.db.Begin()
+	tx := self.database.db.WithContext(self.ctx).Begin()
 	if err := tx.Error; err != nil {
 		return err
 	}
@@ -254,20 +258,38 @@ func (self *transaction) begin() error {
 }
 
 func (self *transaction) commit() error {
+	if self.rollbackErr != nil {
+		return self.rollbackErr
+	}
 	if err := self.tx.Commit().Error; err != nil {
 		return err
 	}
 	self.tx = nil
+	callbacks := self.afterCommit
+	self.afterCommit = nil
+	for _, callback := range callbacks {
+		callback()
+	}
 	return nil
 }
 
 func (self *transaction) rollback() {
+	self.afterCommit = nil
 	if self.tx != nil {
 		self.tx.Rollback()
 	}
 }
 
+func (self *transaction) AfterCommit(callback func()) {
+	if callback != nil {
+		self.afterCommit = append(self.afterCommit, callback)
+	}
+}
+
 func (self *transaction) Commit() error {
+	if self.isNested {
+		return fmt.Errorf("cannot commit a nested command transaction")
+	}
 	if err := self.commit(); err != nil {
 		return err
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -151,22 +152,39 @@ func chatting(entry *providerEntry, model string) (Provider, string, error) {
 	return provider, model, nil
 }
 
-// Embedding is the embedder and model for search by meaning, or an error
-// saying there is none.
-func (self *Registry) Embedding() (Embedder, string, error) {
+// EmbeddingSelection keeps the request and stored vector identity tied to the
+// same registry snapshot. Model settings take effect when the registry restarts.
+type EmbeddingSelection struct {
+	Embedder   Embedder
+	Model      string
+	Name       string
+	Dimensions int
+}
+
+// HasEmbedding reports whether the running registry has an embedding model.
+func (self *Registry) HasEmbedding() bool {
+	return self != nil && self.configuration.Models.Embedding != ""
+}
+
+// Embedding resolves the configured embedding model and vector space.
+func (self *Registry) Embedding() (*EmbeddingSelection, error) {
 	name := self.configuration.Models.Embedding
 	if name == "" {
-		return nil, "", fmt.Errorf("llm: no embedding model is configured")
+		return nil, fmt.Errorf("llm: no embedding model is configured")
 	}
 	entry, model, err := self.resolve(name)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	embedder, ok := entry.service.(Embedder)
 	if !ok {
-		return nil, "", fmt.Errorf("llm: provider %q cannot embed", entry.configuration.Name)
+		return nil, fmt.Errorf("llm: provider %q cannot embed", entry.configuration.Name)
 	}
-	return embedder, model, nil
+	dimensions := self.configuration.Models.EmbeddingDimensions
+	if dimensions > 0 {
+		name += "@" + strconv.Itoa(dimensions)
+	}
+	return &EmbeddingSelection{Embedder: embedder, Model: model, Name: name, Dimensions: dimensions}, nil
 }
 
 // Deciding is the decider and model for a question whose answers are known

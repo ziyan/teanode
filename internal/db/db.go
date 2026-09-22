@@ -131,6 +131,17 @@ type Database interface {
 type Transaction interface {
 	Commit() error
 
+	// AfterCommit queues a non-durable in-memory update after successful SQL
+	// commit. Rollback discards it, including rollback of a nested command.
+	// Callbacks must be short in-memory operations and must not panic or use
+	// the completed transaction. Durable work belongs in database queue records.
+	AfterCommit(callback func())
+
+	// TransactionContext runs one command under a savepoint on this connection.
+	// A failure rolls back only that command; success remains subject to the
+	// outer transaction's commit. The nested transaction cannot commit early.
+	TransactionContext(ctx context.Context, function func(Transaction) error) error
+
 	// TryAdvisoryLock takes an advisory lock for the rest of the
 	// transaction, or says another transaction holds it.
 	TryAdvisoryLock(key int64) (bool, error)
@@ -164,6 +175,9 @@ type Transaction interface {
 	AliasUsageOperation
 	CredentialUsageOperation
 	MailOperation
+	SubmissionOperation
+	CalendarRequestOperation
+	MediaCompositionOperation
 	DeliveryOperation
 	ReportOperation
 	LayoutOperation

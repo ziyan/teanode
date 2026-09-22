@@ -186,7 +186,7 @@ func TestABatchTooLongForTheModelIsSplitInTwo(t *testing.T) {
 	worker, run := digestSplitWorld(t, database, provider.URL)
 	documents := digestSplitDocuments(t, database, run, 4)
 
-	_, answered := worker.digestBatch(context.Background(), run, documents, &dreamBudget{}, false)
+	_, answered := worker.digestBatch(context.Background(), run, documents, &dreamBudget{}, false, nil)
 	if !answered {
 		t.Fatal("a batch whose halves the model answered is answered, and its documents are marked read")
 	}
@@ -232,7 +232,7 @@ func TestOneDocumentTooLongForTheModelIsSkippedRatherThanSplit(t *testing.T) {
 	worker, run := digestSplitWorld(t, database, provider.URL)
 	documents := digestSplitDocuments(t, database, run, 1)
 
-	filed, answered := worker.digestBatch(context.Background(), run, documents, &dreamBudget{}, false)
+	filed, answered := worker.digestBatch(context.Background(), run, documents, &dreamBudget{}, false, nil)
 	if !answered || filed != 0 {
 		t.Fatalf("a document nothing can be done with counts as read and files nothing: %d %v", filed, answered)
 	}

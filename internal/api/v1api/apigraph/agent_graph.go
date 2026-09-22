@@ -972,7 +972,7 @@ func (self *graph) SearchAgentGraph(ctx context.Context, arguments SearchAgentGr
 }
 
 func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentMemoryArguments) (*RecallAgentMemoryResult, error) {
-	principal, found, err := self.requireAgentPerson(ctx)
+	principal, found, err := self.requireRecallPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -984,9 +984,16 @@ func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentM
 	if question == "" {
 		return &RecallAgentMemoryResult{Pages: []*RecalledAgentPage{}}, nil
 	}
-	recalled, err := worker.RecallForQuestion(ctx, self.transaction(ctx), found, principal.User, question)
+	recalled, err := worker.RecallForQuestion(ctx, found, principal.User, question)
 	if err != nil {
 		return nil, err
+	}
+	_, current, err := self.requireRecallPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if current.ID != found.ID {
+		return nil, agent.ErrUnavailable
 	}
 	result := &RecallAgentMemoryResult{Pages: make([]*RecalledAgentPage, 0, len(recalled))}
 	for _, page := range recalled {
@@ -1670,7 +1677,7 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 	tx := self.writing(ctx)
 	source := &models.AgentKnowledgeSource{AgentID: found.ID, Enabled: true}
 	if arguments.SourceID != "" {
-		existing, err := tx.GetAgentSource(found.ID, arguments.SourceID)
+		existing, err := tx.LockAgentSource(found.ID, arguments.SourceID)
 		if err != nil {
 			return nil, err
 		}
@@ -1776,7 +1783,7 @@ func (self *graph) SyncAgentKnowledgeSource(ctx context.Context, arguments Delet
 		return false, err
 	}
 	tx := self.writing(ctx)
-	source, err := tx.GetAgentSource(found.ID, arguments.SourceID)
+	source, err := tx.LockAgentSource(found.ID, arguments.SourceID)
 	if err != nil || source == nil {
 		return false, err
 	}

@@ -599,28 +599,18 @@ func (self *Agent) storeDraft(ctx context.Context, tx db.Transaction, mailbox *m
 	return item, nil
 }
 
-// discardDraft removes a draft the agent holds: the item, and the row and
-// bytes when nothing else holds them.
+// discardDraft removes the agent's draft item. Retention removes unreferenced
+// mail and bytes after commit, allowing rollback to restore readable content.
 func (self *Agent) discardDraft(ctx context.Context, tx db.Transaction, itemId string) error {
 	if itemId == "" {
 		return nil
 	}
-	item, err := tx.GetItem(itemId)
-	if err != nil || item == nil {
+	return tx.TransactionContext(ctx, func(command db.Transaction) error {
+		item, err := command.LockItem(itemId)
+		if err != nil || item == nil || !item.Draft {
+			return err
+		}
+		_, err = command.DeleteItems([]string{itemId})
 		return err
-	}
-	if _, err := tx.DeleteItems([]string{item.ID}); err != nil {
-		return err
-	}
-	others, err := tx.ListItemsByMail(item.MailID)
-	if err != nil || len(others) > 0 {
-		return err
-	}
-	if err := tx.DeleteMail(item.MailID, nil); err != nil {
-		return err
-	}
-	if err := self.settings.Storage.Delete(ctx, item.MailID); err != nil {
-		log.Warningf("failed to remove the bytes of draft %q: %s", item.MailID, err)
-	}
-	return nil
+	})
 }

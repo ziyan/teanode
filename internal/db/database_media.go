@@ -35,6 +35,13 @@ type MediaOperation interface {
 	DeleteMedia(mediaId string) error
 }
 
+// MediaCompositionOperation resolves images and records their message-specific
+// links on the same connection as message composition.
+type MediaCompositionOperation interface {
+	GetMedia(mediaId string) (*models.Media, error)
+	CreateMediaLink(link *models.MediaLink) (*models.MediaLink, error)
+}
+
 type mediaModel struct {
 	ID string `gorm:"column:id;primaryKey;size:32"`
 
@@ -84,11 +91,19 @@ func (self *database) CreateMedia(media *models.Media) (*models.Media, error) {
 }
 
 func (self *database) GetMedia(mediaId string) (*models.Media, error) {
+	return getMedia(self.db, mediaId)
+}
+
+func (self *transaction) GetMedia(mediaId string) (*models.Media, error) {
+	return getMedia(self.tx, mediaId)
+}
+
+func getMedia(query *gorm.DB, mediaId string) (*models.Media, error) {
 	if mediaId == "" {
 		return nil, nil
 	}
 	var model mediaModel
-	if err := self.db.First(&model, "\"id\" = ?", mediaId).Error; err != nil {
+	if err := query.First(&model, "\"id\" = ?", mediaId).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}

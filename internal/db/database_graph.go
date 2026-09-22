@@ -168,6 +168,7 @@ type GraphOperation interface {
 
 	// The vectors. Put writes one; ListWithout says what is still waiting
 	// for one, so a change of model catches up a few at a time.
+	PutAgentGraphVectors(agentId string, vectors []AgentGraphVector) (int, error)
 	PutAgentNodeVector(agentId, nodeId, model string, vector []float32) error
 	PutAgentFactVector(agentId, factId, model string, vector []float32) error
 	ListAgentNodesWithoutVector(agentId, model string, limit int) ([]*models.AgentNode, error)

@@ -332,7 +332,11 @@ func TestGoalStopsAtTheDayCap(t *testing.T) {
 			if err != nil {
 				t.Fatalf("EnqueueAgentJob: %s", err)
 			}
-			if err := tx.FinishAgentJob(job.ID, "", models.AgentJobDone, "", nil); err != nil {
+			claimed, err := tx.ClaimAgentJobs("fixture", 1, time.Now())
+			if err != nil || len(claimed) != 1 || claimed[0].ID != job.ID {
+				t.Fatalf("claim fixture job: %v", err)
+			}
+			if _, err := tx.FinishAgentJob(job.ID, claimed[0].ClaimID, &db.AgentJobOutcome{JobStatus: models.AgentJobDone, FinishedAt: time.Now()}); err != nil {
 				t.Fatalf("FinishAgentJob: %s", err)
 			}
 		}
@@ -414,7 +418,11 @@ func TestGoalStopsAfterTurnsAlone(t *testing.T) {
 			if err != nil {
 				t.Fatalf("EnqueueAgentJob: %s", err)
 			}
-			if err := tx.FinishAgentJob(job.ID, "", models.AgentJobDone, "", nil); err != nil {
+			claimed, err := tx.ClaimAgentJobs("fixture", 1, time.Now())
+			if err != nil || len(claimed) != 1 || claimed[0].ID != job.ID {
+				t.Fatalf("claim fixture job: %v", err)
+			}
+			if _, err := tx.FinishAgentJob(job.ID, claimed[0].ClaimID, &db.AgentJobOutcome{JobStatus: models.AgentJobDone, FinishedAt: time.Now()}); err != nil {
 				t.Fatalf("FinishAgentJob: %s", err)
 			}
 		}

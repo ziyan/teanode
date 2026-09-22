@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -9,15 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
+	mailboxcommands "github.com/ziyan/teanode/internal/mailbox"
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/mx"
 	"github.com/ziyan/teanode/internal/storage"
-	"github.com/ziyan/teanode/internal/util/aggregate"
 	"github.com/ziyan/teanode/internal/util/mailparse"
 	"github.com/ziyan/teanode/internal/util/security"
 )
@@ -32,6 +32,10 @@ import (
 // added by the exchange in the transaction that records it.
 
 type MailboxComposeQuery interface {
+	// Recover a previously accepted send, including after its message was deleted.
+	GetMailboxSubmission(ctx context.Context, arguments GetMailboxSubmissionArguments) (*MailboxSubmission, error)
+	GetMailboxDraftSubmission(ctx context.Context, arguments GetMailboxDraftSubmissionArguments) (*MailboxSubmission, error)
+
 	// Read a draft back into the compose page
 	GetMailboxDraft(ctx context.Context, arguments GetMailboxDraftArguments) (*MailboxDraft, error)
 
@@ -41,6 +45,9 @@ type MailboxComposeQuery interface {
 }
 
 type MailboxComposeMutation interface {
+	// Prevent an uncertain send, or recover its existing acceptance.
+	CancelMailboxSubmission(ctx context.Context, arguments GetMailboxSubmissionArguments) (*MailboxSubmission, error)
+
 	// Send a message from a mailbox, as one of its addresses
 	SendMailboxMessage(ctx context.Context, arguments SendMailboxMessageArguments) (*SendMailboxMessageReturnValue, error)
 
@@ -90,8 +97,62 @@ type MailboxMessageParameters struct {
 	InlineImages []string `json:"inlineImages" graphapi:"nullable"`
 }
 
+// GetMailboxSubmissionArguments identifies a send within an owned mailbox.
+type GetMailboxSubmissionArguments struct {
+	MailboxID    string `json:"mailboxId"`
+	SubmissionID string `json:"submissionId"`
+}
+
+// MailboxSubmission is the durable local acceptance, not remote delivery status.
+type MailboxSubmission struct {
+	SubmissionID string    `json:"submissionId"`
+	MailID       string    `json:"mailId"`
+	SentItemID   string    `json:"sentItemId"`
+	AcceptedAt   time.Time `json:"acceptedAt"`
+	IsReconciled bool      `json:"isReconciled"`
+}
+
+// GetMailboxSubmission exposes only the caller's accepted send identities.
+func (self *graph) GetMailboxSubmission(ctx context.Context, arguments GetMailboxSubmissionArguments) (*MailboxSubmission, error) {
+	mailbox, err := self.requireMailbox(ctx, models.PermissionMailSend, arguments.MailboxID)
+	if err != nil {
+		return nil, err
+	}
+	accepted, err := self.transaction(ctx).GetSubmission(mailbox.UserID, arguments.SubmissionID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	if accepted == nil || accepted.MailboxID != mailbox.ID {
+		return nil, nil
+	}
+	return mailboxSubmission(accepted), nil
+}
+
+// CancelMailboxSubmission returns nil only when this identity cannot send later.
+// A non-nil result means acceptance won the race; accepted mail is not recalled.
+func (self *graph) CancelMailboxSubmission(ctx context.Context, arguments GetMailboxSubmissionArguments) (*MailboxSubmission, error) {
+	principal, err := self.requirePermission(ctx, models.PermissionMailSend)
+	if err != nil {
+		return nil, err
+	}
+	accepted, err := mailer.NewSubmissionCoordinator(self.transaction(ctx), self.mailer).Cancel(ctx, principal, arguments.MailboxID, arguments.SubmissionID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return mailboxSubmission(accepted), nil
+}
+
+func mailboxSubmission(accepted *models.Submission) *MailboxSubmission {
+	if accepted == nil {
+		return nil
+	}
+	return &MailboxSubmission{SubmissionID: accepted.SubmissionID, MailID: accepted.MailID, SentItemID: accepted.SentItemID, AcceptedAt: accepted.AcceptedAt, IsReconciled: accepted.ReconciledAt != nil}
+}
+
 type SendMailboxMessageArguments struct {
 	MailboxID string `json:"mailboxId"`
+	// SubmissionID is retained for retries of one send; changing its content is refused.
+	SubmissionID string `json:"submissionId" graphapi:"nullable"`
 
 	Message MailboxMessageParameters `json:"message"`
 }
@@ -120,18 +181,19 @@ type GetMailboxDraftArguments struct {
 
 // MailboxDraft is a stored draft read back into fields.
 type MailboxDraft struct {
-	ItemID   string        `json:"itemId"`
-	MailID   string        `json:"mailId"`
-	From     string        `json:"from"`
-	FromName string        `json:"fromName,omitempty"`
-	To       []string      `json:"to"`
-	Cc       []string      `json:"cc"`
-	Bcc      []string      `json:"bcc"`
-	Subject  string        `json:"subject"`
-	HTML     string        `json:"html,omitempty"`
-	Text     string        `json:"text,omitempty"`
-	Language string        `json:"language,omitempty"`
-	Parts    []*Attachment `json:"attachments"`
+	MailboxID string        `json:"mailboxId"`
+	ItemID    string        `json:"itemId"`
+	MailID    string        `json:"mailId"`
+	From      string        `json:"from"`
+	FromName  string        `json:"fromName,omitempty"`
+	To        []string      `json:"to"`
+	Cc        []string      `json:"cc"`
+	Bcc       []string      `json:"bcc"`
+	Subject   string        `json:"subject"`
+	HTML      string        `json:"html,omitempty"`
+	Text      string        `json:"text,omitempty"`
+	Language  string        `json:"language,omitempty"`
+	Parts     []*Attachment `json:"attachments"`
 
 	// What the draft was a reply to or a forward of, when it was: the
 	// compose page keeps the thread when the draft is sent.
@@ -156,102 +218,83 @@ const (
 // permission is mail:send; the address is the mailbox's own, so a person
 // sends as who they are and not as whoever they name.
 func (self *graph) SendMailboxMessage(ctx context.Context, arguments SendMailboxMessageArguments) (*SendMailboxMessageReturnValue, error) {
-	mailbox, err := self.requireMailbox(ctx, models.PermissionMailSend, arguments.MailboxID)
+	principal, err := self.requirePermission(ctx, models.PermissionMailSend)
 	if err != nil {
 		return nil, err
 	}
-	tx := self.transaction(ctx)
 	parameters := &arguments.Message
-	message, domain, err := self.buildMailboxMessage(ctx, tx, mailbox, parameters, nil)
+	requestContent, err := json.Marshal(parameters)
 	if err != nil {
 		return nil, err
 	}
-	if len(message.To)+len(message.Cc)+len(message.Bcc) == 0 {
-		return nil, fmt.Errorf("%w: a message needs a recipient", api.ErrInvalidArguments)
+	request := mailer.SubmissionRequest{
+		SubmissionID: arguments.SubmissionID, MailboxID: arguments.MailboxID, RequestContent: requestContent,
+		DraftItemID: parameters.DraftItemID, ReplyItemID: parameters.ReplyToItemID, ForwardItemID: parameters.ForwardItemID,
 	}
-	if strings.TrimSpace(message.Text) == "" && strings.TrimSpace(message.HTML) == "" && len(message.Attachments) == 0 {
-		return nil, fmt.Errorf("%w: a message needs a body or an attachment", api.ErrInvalidArguments)
-	}
-
-	// Threading. In-Reply-To names the message answered; References carries
-	// its own references plus itself, which is how a thread stays one.
-	replied, threading, err := self.threadingHeaders(ctx, mailbox, parameters.ReplyToItemID)
-	if err != nil {
-		return nil, err
-	}
-	message.Headers = append(message.Headers, threading...)
-	var forwarded *models.MailboxItem
-	if parameters.ForwardItemID != "" {
-		item, _, err := self.requireOwnItem(ctx, mailbox, parameters.ForwardItemID)
+	var response *SendMailboxMessageReturnValue
+	err = self.transaction(ctx).TransactionContext(ctx, func(command db.Transaction) error {
+		outcome, err := mailer.NewSubmissionCoordinator(command, self.mailer).Submit(ctx, principal, request, func(ctx context.Context, preparation db.Transaction, mailbox *models.Mailbox) (*mailparse.Envelope, *mailer.Message, error) {
+			ctx = api.ContextWithTransaction(ctx, preparation)
+			message, _, err := self.buildMailboxMessage(ctx, preparation, mailbox, parameters, nil)
+			if err != nil {
+				return nil, nil, err
+			}
+			if len(message.To)+len(message.Cc)+len(message.Bcc) == 0 {
+				return nil, nil, fmt.Errorf("%w: a message needs a recipient", api.ErrInvalidArguments)
+			}
+			if strings.TrimSpace(message.Text) == "" && strings.TrimSpace(message.HTML) == "" && len(message.Attachments) == 0 {
+				return nil, nil, fmt.Errorf("%w: a message needs a body or an attachment", api.ErrInvalidArguments)
+			}
+			_, threading, err := self.threadingHeaders(ctx, mailbox, parameters.ReplyToItemID)
+			if err != nil {
+				return nil, nil, err
+			}
+			message.Headers = append(message.Headers, threading...)
+			envelope := self.envelopeFromRequest(ctx)
+			envelope.MailboxID = mailbox.ID
+			return envelope, message, nil
+		})
 		if err != nil {
-			return nil, err
+			return err
 		}
-		forwarded = item
-	}
-
-	envelope := self.envelopeFromRequest(ctx)
-	envelope.MailboxID = mailbox.ID
-	if err := self.mailer.Send(ctx, envelope, message); err != nil {
-		return nil, err
-	}
-
-	// Sent. What remains is bookkeeping in the caller's transaction: the
-	// answered and forwarded flags, and the draft this was written from.
-	yes := true
-	if replied != nil {
-		if _, err := tx.SetItemFlags([]string{replied.ID}, models.MailboxItemFlags{Answered: &yes}); err != nil {
-			return nil, err
-		}
-	}
-	if forwarded != nil {
-		if _, err := tx.SetItemFlags([]string{forwarded.ID}, models.MailboxItemFlags{Forwarded: &yes}); err != nil {
-			return nil, err
-		}
-	}
-	if parameters.DraftItemID != "" {
-		if err := self.removeDraft(ctx, tx, mailbox, parameters.DraftItemID); err != nil {
-			return nil, err
-		}
-	}
-
-	mails, err := tx.ListMails(domain.ID, &db.Options{
-		Limit:   1,
-		Columns: mailColumns,
-		Aggregations: aggregate.Pipeline{{Match: &aggregate.Filter{
-			Operation: aggregate.OperationEqual,
-			Field:     "envelopeId",
-			Value:     &envelope.ID,
-		}}},
-	})
-	if err != nil {
-		return nil, err
-	}
-	if len(mails) == 0 {
-		log.Warningf("sent envelope %q but found no stored mail for it", envelope.ID)
-		return &SendMailboxMessageReturnValue{}, nil
-	}
-
-	// The copy in Sent, if the delivery has filed one by now. Not an error
-	// when it is missing: the message has gone, which is what was asked for,
-	// and the caller has a folder to fall back to.
-	value := &SendMailboxMessageReturnValue{Mail: mails[0]}
-	sent, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindSent)
-	if err != nil {
-		return nil, err
-	}
-	if sent != nil {
-		items, err := tx.ListItemsByMail(mails[0].ID)
+		accepted := outcome.Submission
+		stored, err := command.GetMail(accepted.MailID, &db.Options{Columns: mailColumns})
 		if err != nil {
-			return nil, err
+			return err
 		}
-		for _, item := range items {
-			if item.FolderID == sent.ID {
-				value.Item = item
-				break
+		item, err := command.GetItem(accepted.SentItemID)
+		if err != nil {
+			return err
+		}
+		if item != nil {
+			folder, err := command.GetFolder(item.FolderID)
+			if err != nil {
+				return err
+			}
+			if folder == nil || folder.MailboxID != accepted.MailboxID || item.MailID != accepted.MailID {
+				item = nil
 			}
 		}
+		// Mail and its Sent item can have been deleted since acceptance. A replay
+		// still succeeds with the existing nullable response fields, without resending.
+		response = &SendMailboxMessageReturnValue{Mail: stored, Item: item}
+		if err := mailer.NewSubmissionReconciler(command).Reconcile(ctx, accepted.OwnerID, accepted.SubmissionID); err != nil {
+			// The failed savepoint keeps acceptance and pending recovery intact. The
+			// background worker completes it after this caller commits.
+			log.Warningf("cannot reconcile accepted submission %q immediately: %s", accepted.SubmissionID, err)
+		}
+		return nil
+	})
+	if errors.Is(err, mailer.ErrSubmissionConflict) {
+		return nil, fmt.Errorf("%w: submission identifier already used for different content", api.ErrInvalidArguments)
 	}
-	return value, nil
+	if errors.Is(err, mailer.ErrSubmissionCancelled) {
+		return nil, fmt.Errorf("%w: submission was cancelled", api.ErrInvalidArguments)
+	}
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return response, nil
 }
 
 // SaveMailboxDraft stores what is being written as a message in Drafts,
@@ -296,6 +339,13 @@ func (self *graph) threadingHeaders(ctx context.Context, mailbox *models.Mailbox
 // fields given, the parts kept from the draft being continued, and any
 // files just uploaded — and removes the previous save of it.
 func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *models.Mailbox, parameters *MailboxMessageParameters, uploads []*mailparse.Attachment) (*models.MailboxItem, error) {
+	saved, err := mailboxcommands.New(tx).SaveDraft(ctx, api.ContextPrincipal(ctx), mailboxcommands.SaveDraftRequest{MailboxID: mailbox.ID, PreviousItemID: parameters.DraftItemID}, self.storage, func(ctx context.Context, transaction db.Transaction, owned *models.Mailbox) (*models.Mail, error) {
+		return self.prepareDraft(api.ContextWithTransaction(ctx, transaction), transaction, owned, parameters, uploads)
+	})
+	return saved, translateError(err)
+}
+
+func (self *graph) prepareDraft(ctx context.Context, tx db.Transaction, mailbox *models.Mailbox, parameters *MailboxMessageParameters, uploads []*mailparse.Attachment) (*models.Mail, error) {
 	message, domain, err := self.buildMailboxMessage(ctx, tx, mailbox, parameters, uploads)
 	if err != nil {
 		return nil, err
@@ -334,18 +384,10 @@ func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *mo
 	}
 	message.Headers = append(message.Headers, mailparse.UnsplitHeader(draftHeaderKey, key))
 
-	composed, err := self.mailer.Compose(ctx, message)
+	composed, err := self.mailer.ComposeInTransaction(ctx, tx, message)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
-	drafts, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindDrafts)
-	if err != nil {
-		return nil, err
-	}
-	if drafts == nil {
-		return nil, api.ErrNotFound
-	}
-
 	recipients := append(append(append([]string{}, message.To...), message.Cc...), message.Bcc...)
 	now := time.Now()
 	// A draft reply belongs to the conversation it answers, so that it shows
@@ -354,7 +396,7 @@ func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *mo
 	if err != nil {
 		return nil, err
 	}
-	created, err := tx.CreateMail(&models.Mail{
+	return &models.Mail{
 		ThreadID:   threadId,
 		DomainID:   domain.ID,
 		EnvelopeID: composed.ID,
@@ -369,27 +411,7 @@ func (self *graph) saveDraft(ctx context.Context, tx db.Transaction, mailbox *mo
 		Status:     models.MailStatusAccepted,
 		ReceivedAt: now,
 		Kind:       models.MailKindDraft,
-	}, nil)
-	if err != nil {
-		return nil, translateError(err)
-	}
-	if err := self.storage.Put(ctx, created.ID, composed.Headers, composed.Body); err != nil {
-		return nil, err
-	}
-	yes := true
-	item, err := tx.AddItem(drafts.ID, created.ID, "", models.MailboxItemFlags{Draft: &yes, Seen: &yes})
-	if err != nil {
-		return nil, translateError(err)
-	}
-	if err := tx.SetMailSearch(created.ID, mx.SearchDocument(created), mx.AttachmentCount(created)); err != nil {
-		return nil, err
-	}
-	if parameters.DraftItemID != "" {
-		if err := self.removeDraft(ctx, tx, mailbox, parameters.DraftItemID); err != nil {
-			return nil, err
-		}
-	}
-	return item, nil
+	}, nil
 }
 
 // GetMailboxDraft reads a stored draft back into the fields it was written
@@ -424,6 +446,7 @@ func (self *graph) readDraft(ctx context.Context, mailbox *models.Mailbox, itemI
 		return nil, err
 	}
 	draft := &MailboxDraft{
+		MailboxID:     mailbox.ID,
 		ItemID:        item.ID,
 		MailID:        stored.ID,
 		Subject:       mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(headers, "Subject")),
@@ -779,60 +802,10 @@ func (self *graph) requireDraftOwner(ctx context.Context, permission models.Perm
 	return mailbox, nil
 }
 
-// removeDraft removes a superseded draft: its item, its row and its bytes.
-// A draft nobody wants back gets no retention grace.
+// removeDraft removes a superseded draft from its mailbox. Retention removes
+// unreferenced mail and bytes after commit so rollback can restore a readable draft.
 func (self *graph) removeDraft(ctx context.Context, tx db.Transaction, mailbox *models.Mailbox, itemId string) error {
-	item, stored, err := self.requireOwnItem(ctx, mailbox, itemId)
-	if err != nil {
-		if errors.Is(err, api.ErrNotFound) {
-			// Already gone — saved from two tabs, or sent twice.
-			return nil
-		}
-		return err
-	}
-	if !item.Draft {
-		return fmt.Errorf("%w: %q is not a draft", api.ErrInvalidArguments, itemId)
-	}
-	// A draft the agent is holding to send: removed or rewritten by hand,
-	// it is the person's now, and the agent does not send it.
-	if held, err := tx.ListAgentReplies(&db.AgentReplyFilter{DraftItemID: item.ID, Statuses: []models.AgentReplyStatus{models.AgentReplyHeld}}, &db.Options{Limit: 1}); err != nil {
-		return err
-	} else if len(held) > 0 {
-		if _, err := tx.UpdateAgentReply(held[0].ID, func(reply *models.AgentReply) error {
-			reply.Status = models.AgentReplyCancelled
-			reply.Reason = "taken over by the person"
-			reply.DraftItemID = ""
-			return nil
-		}); err != nil {
-			return err
-		}
-		if err := agent.RecordReplyDeclined(tx, held[0], "taken over by the person, who wrote their own"); err != nil {
-			log.Warningf("cannot record the correction for reply %q: %s", held[0].ID, err)
-		}
-	}
-	if _, err := tx.DeleteItems([]string{item.ID}); err != nil {
-		return err
-	}
-	// The row and its bytes go only when they are a draft's own: a message
-	// somebody merely flagged \Draft over IMAP is held by other folders and
-	// other people, and retention is its way out.
-	if stored == nil || stored.Kind != models.MailKindDraft {
-		return nil
-	}
-	others, err := tx.ListItemsByMail(stored.ID)
-	if err != nil {
-		return err
-	}
-	if len(others) > 0 {
-		return nil
-	}
-	if err := tx.DeleteMail(stored.ID, nil); err != nil {
-		return err
-	}
-	if err := self.storage.Delete(ctx, stored.ID); err != nil && !errors.Is(err, storage.ErrNotFound) {
-		log.Warningf("failed to remove the bytes of draft %q: %s", stored.ID, err)
-	}
-	return nil
+	return translateError(mailboxcommands.RemoveDraft(ctx, tx, mailbox.ID, itemId))
 }
 
 // envelopeFromRequest is an envelope carrying where the request came from.
@@ -865,4 +838,23 @@ func addressesOf(headers []string, name string) []string {
 		addresses = append(addresses, address.String())
 	}
 	return addresses
+}
+
+// GetMailboxDraftSubmissionArguments identifies an accepted source draft.
+type GetMailboxDraftSubmissionArguments struct {
+	MailboxID   string `json:"mailboxId"`
+	DraftItemID string `json:"draftItemId"`
+}
+
+// GetMailboxDraftSubmission reads acceptance without requiring a surviving draft.
+func (self *graph) GetMailboxDraftSubmission(ctx context.Context, arguments GetMailboxDraftSubmissionArguments) (*MailboxSubmission, error) {
+	mailbox, err := self.requireMailbox(ctx, models.PermissionMailSend, arguments.MailboxID)
+	if err != nil {
+		return nil, err
+	}
+	accepted, err := self.transaction(ctx).GetDraftSubmission(mailbox.UserID, mailbox.ID, strings.TrimSpace(arguments.DraftItemID))
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return mailboxSubmission(accepted), nil
 }

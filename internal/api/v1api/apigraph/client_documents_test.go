@@ -177,6 +177,9 @@ func TestTheSchemaHasWhatTheDashboardNames(test *testing.T) {
     attendees { address name participation role }
   }
 }`,
+		"retrying an answer": `mutation ($requestId: String!, $itemId: String!, $answer: String!) {
+  AnswerMailInvitation(requestId: $requestId, itemId: $itemId, answer: $answer) { id participation }
+}`,
 		"answering one": `mutation ($itemId: String!, $answer: String!) {
   AnswerMailInvitation(itemId: $itemId, answer: $answer) { id participation cancelled }
 }`,

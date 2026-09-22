@@ -2986,12 +2986,14 @@ const TOOLS = `{ ListAgentTools { name family risk description confirms core act
 function ConfirmForm({ agent, busy, onSave }: SaveProps) {
   const { t } = useTranslation()
   const { data } = useQuery(() => graphql<{ ListAgentTools: PolicyTool[] }>(TOOLS), [], { refresh: false })
-  const tools = data?.ListAgentTools ?? []
+  const tools = useMemo(() => data?.ListAgentTools ?? [], [data])
   const families = useMemo(() => Array.from(new Set(tools.map((tool) => tool.family))), [tools])
   const [policy, setPolicy] = useState<Record<string, string>>({})
+  const confirmedTools = JSON.stringify(agent.confirm)
   useEffect(() => {
-    setPolicy(Object.fromEntries(agent.confirm.map((name) => [name, 'confirm'])))
-  }, [agent.confirm.join(',')])
+    const names: string[] = JSON.parse(confirmedTools)
+    setPolicy(Object.fromEntries(names.map((name) => [name, 'confirm'])))
+  }, [confirmedTools])
   const options = [
     { value: 'allow', label: t('agent.policyUsual') },
     { value: 'confirm', label: t('agent.policyAsk') },

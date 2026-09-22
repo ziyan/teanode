@@ -288,6 +288,13 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 
 // subscribe starts a subscription as the person the socket belongs to.
 func (self *webSocketConnection) subscribe(ctx context.Context, data *graphRequest) (chan *graphql.Result, error) {
+	prepared, rejected := self.graph.prepareGraphRequest(data)
+	if rejected != nil {
+		channel := make(chan *graphql.Result, 1)
+		channel <- rejected
+		close(channel)
+		return channel, nil
+	}
 	username := api.UsernameFromRequest(self.request)
 	var user *models.User
 	if username != "" && username != localUsername {
@@ -303,24 +310,17 @@ func (self *webSocketConnection) subscribe(ctx context.Context, data *graphReque
 	}
 	ctx = api.ContextWithRequest(ctx, self.request)
 	ctx = api.ContextWithAuthenticatedUsername(ctx, username)
-	var channel chan *graphql.Result
+	var principal *api.Principal
 	if err := self.graph.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		ctx := api.ContextWithTransaction(ctx, tx)
-		principal, err := self.graph.resolvePrincipal(tx, username, user)
-		if err != nil {
-			return err
-		}
-		ctx = api.ContextWithPrincipal(ctx, principal)
-		channel = graphql.Subscribe(graphql.Params{
-			Schema:         self.graph.schema,
-			RequestString:  data.Query,
-			VariableValues: data.Variables,
-			OperationName:  data.OperationName,
-			Context:        ctx,
-		})
-		return nil
+		var err error
+		principal, err = self.graph.resolvePrincipal(tx, username, user)
+		return err
 	}); err != nil {
 		return nil, err
 	}
-	return channel, nil
+	// Subscription resolvers perform their own short lookups. Start them only
+	// after principal resolution commits, and never retain that transaction
+	// in the context of a long-lived stream.
+	prepared.Context = api.ContextWithPrincipal(ctx, principal)
+	return graphql.ExecuteSubscription(prepared), nil
 }

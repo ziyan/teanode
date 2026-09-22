@@ -309,6 +309,40 @@ they sign in: no password, an identity bound to the provider, a Personal
 mailbox, and the groups their claims name. Off, only people whose account
 already has an identity at this provider may sign in through it.
 
+### `graphql`
+
+Document limits apply before SQL work on HTTP requests, agent operations and
+websocket subscriptions. Changes take effect on the next request.
+
+**`maximumDepth`** (default `32`, range `1` to `256`): maximum delimiter nesting
+before parsing, and maximum selection depth after expanding fragments. Strings
+and comments do not add nesting.
+
+**`maximumTokenCount`** (default `20000`, range `1` to `1000000`): maximum lexical
+tokens in one document. A quoted string is one token; the document also has a
+one-megabyte byte limit.
+
+**`maximumSelectionCount`** (default `5000`, range `1` to `100000`): maximum total
+selections visited across operations and fragment definitions, including repeated
+fragment expansion and aliases. This is a document-work limit, not a result-row
+limit; individual resolvers retain their pagination bounds.
+
+**`maximumListItemCount`** (default `1000`, range `1` to `100000`): largest
+explicit `first` argument, including `pagination.first`. Variables and variable
+defaults count too. Omitted, null and nonpositive sizes are charged as 1,000 rows,
+so setting this below 1,000 requires callers to supply a smaller positive size.
+Resolvers may enforce a smaller cap of their own.
+
+**`maximumWorkCount`** (default `200000`, range `1` to `100000000`): maximum
+pagination-weighted field selections in the selected operation. Each field is
+charged once per requested item at every paginated ancestor. Aliases and repeated
+fragments count separately; conditional selections count even when skipped.
+This bounds pagination-driven work, not the size of unpaginated collections,
+SQL scans, or model calls. Resolver-specific limits still apply.
+
+The shared mail-audit pagination helper treats omitted and zero sizes as a
+1,000-row page. They no longer request an unlimited database result.
+
 ### `listen`
 
 **`smtpIncoming`** — SMTPIncoming receives mail from the internet. Port 25 in
@@ -858,6 +892,12 @@ that published rule data when you enable it and load it.
 **`databaseFile`** — DatabaseFile is a MaxMind .mmdb file.
 
 ### `storage`
+
+**`mode`**: `local` requires a directory and treats S3 as a best-effort mirror.
+`shared` requires enabled S3 and an empty directory; object-store errors are
+returned to the caller. Use shared mode for multiple instances. Empty preserves
+existing behavior: a directory selects local storage, otherwise S3 is required.
+Changing mode does not migrate existing messages or uploaded files.
 
 **`directory`** — Directory holds the raw messages, relative to
 server.dataDirectory. They are kept out of the database because they are
@@ -1540,4 +1580,3 @@ unlike a password, it cannot be guessed.
 benefit.
 
 **`expires`** — Expires, when set, is when it stops working.
-

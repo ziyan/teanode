@@ -340,14 +340,6 @@ func (self *Agent) OnMailboxDelivery(tx db.Transaction, mailbox *models.Mailbox,
 	}
 }
 
-// staleClaim is how long a claimed job may sit without finishing before it
-// is assumed to belong to an instance that died and is put back.
-const staleClaim = 15 * time.Minute
-
-// retryLadder is how long a failed job waits before each retry; after the
-// last rung it is dead.
-var retryLadder = []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour, 4 * time.Hour}
-
 // Tick releases stale claims, claims what is due, and runs it. The worker
 // calls it on its interval; a test calls it by hand.
 func (self *Agent) Tick(ctx context.Context) error {
@@ -407,17 +399,17 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 		// The night has its own bound (see jobTimeout): released at the
 		// general fifteen minutes it was started a second time beside
 		// itself.
-		if released, err := tx.ReleaseStaleAgentJobsOfKind(models.AgentJobDream, now.Add(-dreamLongest-5*time.Minute)); err != nil {
+		if released, err := tx.ReleaseStaleAgentJobsOfKind(models.AgentJobDream, now.Add(-jobClaimLifetime(models.AgentJobDream))); err != nil {
 			log.Warningf("cannot put back a dream that died: %s", err)
 		} else if released > 0 {
 			log.Noticef("put back %d dream(s) that died", released)
 		}
-		if released, err := tx.ReleaseStaleAgentJobsOfKind(models.AgentJobIngest, now.Add(-ingestLongest-5*time.Minute)); err != nil {
+		if released, err := tx.ReleaseStaleAgentJobsOfKind(models.AgentJobIngest, now.Add(-jobClaimLifetime(models.AgentJobIngest))); err != nil {
 			log.Warningf("cannot put back an ingest that died: %s", err)
 		} else if released > 0 {
 			log.Noticef("put back %d ingest(s) that died", released)
 		}
-		if released, err := tx.ReleaseStaleAgentJobs(now.Add(-staleClaim)); err != nil {
+		if released, err := tx.ReleaseStaleAgentJobs(now.Add(-jobClaimLifetime(models.AgentJobNoop))); err != nil {
 			return err
 		} else if released > 0 {
 			log.Warningf("put back %d job(s) whose instance never finished them", released)
@@ -452,28 +444,9 @@ func (self *Deferral) Error() string {
 	return fmt.Sprintf("deferred until %s: %s", self.Until.Format(time.RFC3339), self.Reason)
 }
 
-// jobTimeout is how long one job may run. Ten minutes for a job that
-// answers somebody; the night is a job too, and ten minutes of reading
-// four hundred chat days left nothing for the phases after it -- the
-// night finished on the deadline every time with its tidying undone.
-//
-// An ingest job gets longer again. The first page of a records source
-// runs the folder's refresh script on the person's machine and waits
-// ingestRefreshWait for it, and ten minutes here made that wait
-// unreachable: the scan was abandoned on the deadline every time, so a
-// source whose refresh takes half an hour never got past its first page.
-func jobTimeout(kind models.AgentJobKind) time.Duration {
-	switch kind {
-	case models.AgentJobDream:
-		return dreamLongest
-	case models.AgentJobIngest:
-		return ingestLongest
-	}
-	return 10 * time.Minute
-}
-
 // execute runs one claimed job and records how it ended.
 func (self *Agent) execute(job *models.AgentJob, now time.Time) {
+	startedAt := time.Now()
 	ctx, cancel := context.WithTimeout(self.ctx, jobTimeout(job.Kind))
 	defer cancel()
 
@@ -492,29 +465,24 @@ func (self *Agent) execute(job *models.AgentJob, now time.Time) {
 		}
 	}
 
-	status, message, notBefore := models.AgentJobDone, "", (*time.Time)(nil)
-	switch typed := err.(type) {
-	case nil:
-	case *Deferral:
-		status, message, notBefore = models.AgentJobQueued, typed.Reason, &typed.Until
-		log.Noticef("%s job %s for agent %s waits until %s: %s", job.Kind, job.ID, job.AgentID, typed.Until.Format(time.RFC3339), typed.Reason)
-	default:
-		message = err.Error()
-		if job.Attempts > len(retryLadder) {
-			status = models.AgentJobDead
-			log.Errorf("%s job %s for agent %s gave up after %d attempts: %s", job.Kind, job.ID, job.AgentID, job.Attempts, err)
-		} else {
-			delay := retryLadder[job.Attempts-1]
-			retryAt := time.Now().Add(delay)
-			status, notBefore = models.AgentJobQueued, &retryAt
-			log.Warningf("%s job %s for agent %s failed (attempt %d), retrying in %s: %s", job.Kind, job.ID, job.AgentID, job.Attempts, delay, err)
-		}
+	outcome := outcomeForJob(job, err, now.Add(time.Since(startedAt)))
+	if outcome.JobStatus == models.AgentJobDead {
+		log.Errorf("%s job %s gave up after %d failures: %s", job.Kind, job.ID, outcome.FailureCount, outcome.ErrorMessage)
+	} else if err != nil {
+		log.Noticef("%s job %s returned to the queue after %d failures: %s", job.Kind, job.ID, outcome.FailureCount, outcome.ErrorMessage)
 	}
-	if err := self.settings.Database.Transaction(func(tx db.Transaction) error {
-		return tx.FinishAgentJob(job.ID, job.ClaimedBy, status, message, notBefore)
+	completionContext, cancelCompletion := context.WithTimeout(context.WithoutCancel(ctx), jobCompletionTimeout)
+	defer cancelCompletion()
+	if err := self.settings.Database.TransactionContext(completionContext, func(transaction db.Transaction) error {
+		hasFinished, err := transaction.FinishAgentJob(job.ID, job.ClaimID, outcome)
+		if err == nil && !hasFinished {
+			log.Noticef("ignored completion of an expired claim for job %s", job.ID)
+		}
+		return err
 	}); err != nil {
 		log.Errorf("cannot record how job %s ended: %s", job.ID, err)
 	}
+
 }
 
 // resolve loads what every handler needs. A job whose agent has been turned

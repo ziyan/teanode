@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import { graphql } from '../api'
 import { Column, DataTable } from '../components/dataTable'
@@ -183,50 +183,56 @@ export function AddressBookPage() {
   // dialog opened before the note had arrived would delete the note of
   // anybody quick enough to save -- or of anybody at all, if the read
   // failed and left the box empty behind a toast nobody had to act on.
-  const edit = async (contact: Contact) => {
-    setProblem(null)
-    setOpening(contact.id)
-    try {
-      const answer = await graphql<{ GetContact: Contact & { note?: string } }>(GET, { id: contact.id })
-      const full = answer.GetContact
-      const kept = full.addresses ?? []
-      const first = kept[0] ?? {}
-      setDraft({
-        id: contact.id,
-        name: full.name ?? '',
-        organization: full.organization ?? '',
-        emails: (full.emails ?? []).join('\n'),
-        phones: (full.phones ?? []).join('\n'),
-        note: full.note ?? '',
-        street: first.street ?? '',
-        locality: first.locality ?? '',
-        region: first.region ?? '',
-        postalCode: first.postalCode ?? '',
-        country: first.country ?? '',
-        addresses: kept,
-      })
-    } catch (failure) {
-      toast.failure(failure, t('addressBook.failed'))
-    } finally {
-      setOpening('')
-    }
-  }
+  const edit = useCallback(
+    async (contact: Contact) => {
+      setProblem(null)
+      setOpening(contact.id)
+      try {
+        const answer = await graphql<{ GetContact: Contact & { note?: string } }>(GET, { id: contact.id })
+        const full = answer.GetContact
+        const kept = full.addresses ?? []
+        const first = kept[0] ?? {}
+        setDraft({
+          id: contact.id,
+          name: full.name ?? '',
+          organization: full.organization ?? '',
+          emails: (full.emails ?? []).join('\n'),
+          phones: (full.phones ?? []).join('\n'),
+          note: full.note ?? '',
+          street: first.street ?? '',
+          locality: first.locality ?? '',
+          region: first.region ?? '',
+          postalCode: first.postalCode ?? '',
+          country: first.country ?? '',
+          addresses: kept,
+        })
+      } catch (failure) {
+        toast.failure(failure, t('addressBook.failed'))
+      } finally {
+        setOpening('')
+      }
+    },
+    [toast, t],
+  )
 
   // Naming the contact that is the person themselves. One at a time:
   // choosing a second clears the first, and choosing the one that is
   // already marked unmarks it.
-  const markAsMe = async (contact: Contact | null) => {
-    setBusy(true)
-    try {
-      await graphql(SET_ME, { contactId: contact?.id ?? null })
-      toast.done(t('agent.myContactSaved'))
-      await me.reload()
-    } catch (caught) {
-      toast.failed(caught instanceof Error ? caught.message : String(caught))
-    } finally {
-      setBusy(false)
-    }
-  }
+  const markAsMe = useCallback(
+    async (contact: Contact | null) => {
+      setBusy(true)
+      try {
+        await graphql(SET_ME, { contactId: contact?.id ?? null })
+        toast.done(t('agent.myContactSaved'))
+        await me.reload()
+      } catch (caught) {
+        toast.failed(caught instanceof Error ? caught.message : String(caught))
+      } finally {
+        setBusy(false)
+      }
+    },
+    [me, toast, t],
+  )
 
   const columns = useMemo<Column<Contact>[]>(
     () => [
@@ -318,7 +324,7 @@ export function AddressBookPage() {
         ),
       },
     ],
-    [t, busy, opening, myContactId],
+    [t, busy, opening, myContactId, edit, markAsMe],
   )
 
   const rows = contacts.data?.ListContacts ?? []

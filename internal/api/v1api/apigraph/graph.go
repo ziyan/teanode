@@ -1,6 +1,7 @@
 package apigraph
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"mime"
@@ -71,6 +72,12 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 		return
 	}
 
+	prepared, rejected := self.prepareGraphRequest(&data)
+	if rejected != nil {
+		writeGraphResult(response, rejected)
+		return
+	}
+
 	// Authentication is handled by the session middleware in internal/web
 	// rather than here; the username it established is what the principal is
 	// built from. The account is read outside the transaction, like every
@@ -102,6 +109,13 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 	ctx = api.ContextWithAuthenticatedUsername(ctx, username)
 	ctx = db.ContextWithAuditPrincipal(ctx, self.auditPrincipal(request, user))
 
+	operation, err := selectGraphOperation(prepared.AST, prepared.OperationName)
+	if err == nil && operation.Operation == "query" {
+		prepared.Context = context.WithValue(ctx, queryExecutionKey{}, &queryExecution{Username: username, User: user})
+		writeGraphResult(response, graphql.Execute(prepared))
+		return
+	}
+
 	var result *graphql.Result
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		ctx := api.ContextWithTransaction(ctx, tx)
@@ -112,19 +126,18 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 		}
 		ctx = api.ContextWithPrincipal(ctx, principal)
 
-		result = graphql.Do(graphql.Params{
-			Schema:         self.schema,
-			RequestString:  data.Query,
-			VariableValues: data.Variables,
-			OperationName:  data.OperationName,
-			Context:        ctx,
-		})
+		prepared.Context = ctx
+		result = graphql.Execute(prepared)
 		return nil
 	}); err != nil {
 		log.Errorf("failed to execute request: %s", err)
 		http.Error(response, fmt.Sprintf("failed to execute request: %s", err), http.StatusInternalServerError)
 		return
 	}
+	writeGraphResult(response, result)
+}
+
+func writeGraphResult(response http.ResponseWriter, result *graphql.Result) {
 	response.Header().Set("Content-Type", mime.FormatMediaType("application/json", map[string]string{"charset": "utf-8"}))
 	response.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(response).Encode(result); err != nil {

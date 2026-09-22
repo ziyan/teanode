@@ -15,6 +15,8 @@ import (
 type DeliveryOperation interface {
 	// retry deliveries
 	ListDeliveriesToRetry(options *Options) ([]*models.Delivery, error)
+	// DeferDeliveryRetry changes a storage-read retry only while the caller still owns its lease.
+	DeferDeliveryRetry(deliveryId string, claimedRetryAt, retryAt time.Time) (bool, error)
 
 	// list deliveries that belong to a specific domain (via mail's domain_id)
 	ListDeliveriesByDomainID(domainId string, options *Options) ([]*models.Delivery, error)
@@ -210,7 +212,13 @@ func (self *transaction) queryDeliveries(options *Options) *gorm.DB {
 
 func (self *transaction) ListDeliveriesToRetry(options *Options) ([]*models.Delivery, error) {
 	var existingModels []deliveryModel
-	if err := self.tx.Raw(`UPDATE "delivery" SET "retry_at" = ? WHERE "id" IN (SELECT "id" FROM "delivery" WHERE "retry_at" < ? ORDER BY "retry_at" ASC LIMIT 8) RETURNING *`, time.Now().In(time.Local).Add(2*time.Hour), time.Now().In(time.Local)).Scan(&existingModels).Error; err != nil {
+	// Lock candidates before updating their retry time so simultaneous workers
+	// take disjoint batches instead of waiting and claiming the same snapshot.
+	if err := self.tx.Raw(`WITH candidates AS (
+		SELECT "id" FROM "delivery" WHERE "retry_at" < ?
+		ORDER BY "retry_at" ASC, "id" ASC LIMIT 8 FOR UPDATE SKIP LOCKED
+	) UPDATE "delivery" SET "retry_at" = ? FROM candidates
+	WHERE "delivery"."id" = candidates."id" RETURNING "delivery".*`, time.Now().In(time.Local), time.Now().In(time.Local).Add(2*time.Hour)).Scan(&existingModels).Error; err != nil {
 		return nil, err
 	}
 	deliveries := make([]*models.Delivery, 0, len(existingModels))
@@ -218,6 +226,14 @@ func (self *transaction) ListDeliveriesToRetry(options *Options) ([]*models.Deli
 		deliveries = append(deliveries, getDeliveryFromDeliveryModel(existingModel))
 	}
 	return deliveries, nil
+}
+
+func (self *transaction) DeferDeliveryRetry(deliveryId string, claimedRetryAt, retryAt time.Time) (bool, error) {
+	if deliveryId == "" || claimedRetryAt.IsZero() || retryAt.IsZero() {
+		return false, ErrInvalidArguments
+	}
+	updated := self.tx.Model(&deliveryModel{}).Where("id = ? AND retry_at = ?", deliveryId, claimedRetryAt).Updates(map[string]any{"retry_at": retryAt, "modified_at": time.Now()})
+	return updated.RowsAffected == 1, updated.Error
 }
 
 func (self *transaction) ListDeliveriesByDomainID(domainId string, options *Options) ([]*models.Delivery, error) {

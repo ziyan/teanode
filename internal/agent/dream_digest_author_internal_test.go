@@ -299,7 +299,7 @@ func TestTheAuthorOfACommitGetsAPageAndALink(t *testing.T) {
 		{subject: "Obtain certificates without a cloud account", author: "Alice.Chen <alice.chen@example.net>"},
 	})
 
-	if _, answered := worker.digestBatch(context.Background(), run, documents, &dreamBudget{}, false); !answered {
+	if _, answered := worker.digestBatch(context.Background(), run, documents, &dreamBudget{}, false, nil); !answered {
 		t.Fatal("the model answered, so the batch is read")
 	}
 
@@ -363,7 +363,7 @@ func TestADocumentWithNoAuthorMakesNobodyAPage(t *testing.T) {
 		{subject: "Move the ACME handler in front of authentication"},
 	})
 
-	if _, answered := worker.digestBatch(context.Background(), run, documents, &dreamBudget{}, false); !answered {
+	if _, answered := worker.digestBatch(context.Background(), run, documents, &dreamBudget{}, false, nil); !answered {
 		t.Fatal("the model answered, so the batch is read")
 	}
 
@@ -402,7 +402,7 @@ func TestAnAuthorThatReadsAsAMachineGetsNoPage(t *testing.T) {
 		{subject: "Sign the release archives", author: "Alice.Chen <alice.chen@example.net>"},
 	})
 
-	if _, answered := worker.digestBatch(context.Background(), run, documents, &dreamBudget{}, false); !answered {
+	if _, answered := worker.digestBatch(context.Background(), run, documents, &dreamBudget{}, false, nil); !answered {
 		t.Fatal("the model answered, so the batch is read")
 	}
 
@@ -442,7 +442,7 @@ func TestTheOwnersOwnCommitsLinkToTheirOwnPage(t *testing.T) {
 		{subject: "Reject before the DATA command", author: "Alice Example"},
 	})
 
-	if _, answered := worker.digestBatch(context.Background(), run, documents, &dreamBudget{}, false); !answered {
+	if _, answered := worker.digestBatch(context.Background(), run, documents, &dreamBudget{}, false, nil); !answered {
 		t.Fatal("the model answered, so the batch is read")
 	}
 

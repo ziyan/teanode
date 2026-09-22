@@ -4,6 +4,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -143,5 +144,27 @@ func TestVectorCosine(t *testing.T) {
 	}
 	if score := db.CosineSimilarity([]float32{0, 0}, []float32{1, 0}); score != 0 {
 		t.Fatalf("a vector of nothing is near nothing: %v", score)
+	}
+}
+
+func TestVectorIndexesKeepCollidingModelNames(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	if !database.VectorIndexing() {
+		test.Skip("vector extension is not installed")
+	}
+	// A legacy index must survive while distinct new names receive their own indexes.
+	dbtest.Exec(test, database, `CREATE INDEX fixture_legacy_vector ON agent_node_vector USING hnsw ((vector::vector(32)) vector_cosine_ops) WHERE model = 'fixture:a'`)
+	modelNames := []string{"fixture:a", "fixture-a", "FIXTURE:a", strings.Repeat("prefix", 20) + "a", strings.Repeat("prefix", 20) + "b"}
+	for repeat := 0; repeat < 2; repeat++ {
+		for _, modelName := range modelNames {
+			if err := database.EnsureVectorIndex(db.AgentNodeTable, modelName, 32); err != nil {
+				test.Fatal(err)
+			}
+		}
+	}
+	indexCount := dbtest.QueryString(test, database, `SELECT count(*)::text FROM pg_indexes WHERE tablename = 'agent_node_vector' AND indexdef LIKE '%USING hnsw%'`)
+	if indexCount != "6" {
+		test.Fatalf("wanted five model indexes and the retained legacy index, got %s", indexCount)
 	}
 }

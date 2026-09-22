@@ -26,9 +26,7 @@ type DreamOperation interface {
 	StartAgentDream(dream *models.AgentDream) (*models.AgentDream, error)
 	FinishAgentDream(dream *models.AgentDream) error
 
-	// NoteAgentDreamProgress writes what a dream has done so far, so that
-	// a night the server restarts under still says what it read.
-	NoteAgentDreamProgress(dream *models.AgentDream) error
+	AdvanceAgentDreamProgress(dream *models.AgentDream, digestedCount, filedCount int) error
 	ListAgentDreams(agentId string, limit int) ([]*models.AgentDream, error)
 
 	// CountAgentDocumentsReading is how far the night has got, by the same
@@ -263,23 +261,22 @@ func (self *transaction) FinishAgentDream(dream *models.AgentDream) error {
 	}).Error
 }
 
-// NoteAgentDreamProgress writes what a dream has done so far, leaving it
-// unfinished.
-//
-// A dream counts what it reads and files in memory and wrote it once, at
-// the end. A server that restarts under one therefore loses the count
-// entirely, and the row the person is shown says "Cut short" and nothing
-// else -- while the documents that night read are marked read, and the
-// facts it filed are on their pages. The work survived; only the account
-// of it did not.
-func (self *transaction) NoteAgentDreamProgress(dream *models.AgentDream) error {
+// AdvanceAgentDreamProgress adds one committed batch without overwriting another
+// concurrent batch's counts. The caller also marks its documents in this transaction.
+func (self *transaction) AdvanceAgentDreamProgress(dream *models.AgentDream, digestedCount, filedCount int) error {
 	if dream == nil || dream.ID == "" {
 		return nil
 	}
-	return self.tx.Model(&agentDreamModel{}).Where(`"id" = ?`, dream.ID).Updates(map[string]any{
-		"digested": dream.Digested, "filed": dream.Filed, "backlog": dream.Backlog,
-		"tokens": dream.Tokens,
-	}).Error
+	update := self.tx.Exec(`UPDATE agent_dream SET digested = digested + ?, filed = filed + ?,
+		backlog = ?, tokens = GREATEST(tokens, ?) WHERE id = ? AND agent_id = ?`,
+		digestedCount, filedCount, dream.Backlog, dream.Tokens, dream.ID, dream.AgentID)
+	if update.Error != nil {
+		return update.Error
+	}
+	if update.RowsAffected != 1 {
+		return fmt.Errorf("the dream no longer exists")
+	}
+	return nil
 }
 
 func (self *transaction) ListAgentDreams(agentId string, limit int) ([]*models.AgentDream, error) {

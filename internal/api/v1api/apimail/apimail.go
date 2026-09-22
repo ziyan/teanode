@@ -199,10 +199,13 @@ func (self *mail) requireOperator(request *http.Request) error {
 
 // load reads a stored message, or says why it could not.
 func (self *mail) load(request *http.Request, mailId string) ([]string, []byte, error) {
-	var headers []string
-	var body []byte
 	username := api.UsernameFromRequest(request)
-	err := self.database.Transaction(func(tx db.Transaction) error {
+	// Who may read it, and which row it is, are the transaction's business.
+	// The bytes are not: they are somewhere else entirely, and fetching
+	// them inside held a database transaction open for the length of a
+	// network read of a whole message.
+	var id string
+	if err := self.database.Transaction(func(tx db.Transaction) error {
 		stored, err := tx.GetMail(mailId, nil)
 		if err != nil {
 			return err
@@ -217,10 +220,12 @@ func (self *mail) load(request *http.Request, mailId string) ([]string, []byte, 
 		if !allowed {
 			return api.ErrNotFound
 		}
-		headers, body, err = self.storage.Get(request.Context(), stored.ID)
-		return err
-	})
-	return headers, body, err
+		id = stored.ID
+		return nil
+	}); err != nil {
+		return nil, nil, err
+	}
+	return self.storage.Get(request.Context(), id)
 }
 
 // canRead is the same answer the GraphQL resolvers give: the operator of the

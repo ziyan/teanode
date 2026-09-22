@@ -272,7 +272,7 @@ export function MailboxSubscriptionsPage() {
     } finally {
       setPaging(false)
     }
-  }, [mailboxId, rows.length, showingLeft, matching, t])
+  }, [mailboxId, rows.length, showingLeft, matching, t, toast])
 
   const subscriptions = rows
 
@@ -351,7 +351,7 @@ export function MailboxSubscriptionsPage() {
         toast.failure(caught, t('domain.failed'))
       }
     },
-    [mailboxId, query, t],
+    [mailboxId, query, t, toast],
   )
 
   const images = useCallback(
@@ -365,7 +365,7 @@ export function MailboxSubscriptionsPage() {
         toast.failure(caught, t('domain.failed'))
       }
     },
-    [mailboxId, query, t],
+    [mailboxId, query, t, toast],
   )
 
   const unsubscribe = useCallback(async () => {
@@ -393,7 +393,7 @@ export function MailboxSubscriptionsPage() {
     } finally {
       setBusy(false)
     }
-  }, [leaving, mailboxId, query, t])
+  }, [leaving, mailboxId, query, t, toast])
 
   return (
     <>

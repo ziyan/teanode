@@ -2,13 +2,14 @@ package apigraph
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"net"
 	"strings"
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/calendar"
+	calendarcommands "github.com/ziyan/teanode/internal/calendar/commands"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
@@ -71,7 +72,8 @@ type MailInvitationArguments struct {
 }
 
 type AnswerMailInvitationArguments struct {
-	ItemID string `json:"itemId"`
+	RequestID string `json:"requestId" graphapi:"nullable"`
+	ItemID    string `json:"itemId"`
 
 	// Answer is ACCEPTED, DECLINED or TENTATIVE.
 	Answer string `json:"answer"`
@@ -177,7 +179,8 @@ func (self *graph) addressesOf(ctx context.Context, mailboxId string) (map[strin
 }
 
 func (self *graph) AnswerMailInvitation(ctx context.Context, arguments AnswerMailInvitationArguments) (*MailInvitationView, error) {
-	if _, err := self.requirePermission(ctx, models.PermissionCalendarUse); err != nil {
+	principal, err := self.requireCalendarPerson(ctx)
+	if err != nil {
 		return nil, err
 	}
 	answer := strings.ToUpper(strings.TrimSpace(arguments.Answer))
@@ -197,73 +200,71 @@ func (self *graph) AnswerMailInvitation(ctx context.Context, arguments AnswerMai
 	if invitation.CalendarID == "" || invitation.ObjectID == "" {
 		return nil, fmt.Errorf("%w: that invitation is not in your calendar", api.ErrInvalidArguments)
 	}
-	theirs, err := self.addressesOf(ctx, invitation.MailboxID)
-	if err != nil {
-		return nil, err
-	}
 
-	// Their own copy is marked first, and the reply is sent after. This
-	// order matters: a reply that is sent and then not recorded leaves the
-	// organizer believing something the person's own calendar does not
-	// say, and they have no way to find out.
-	var stored *models.CalendarObject
-	var speaking string
-	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		object, err := tx.GetCalendarObject(invitation.CalendarID, invitation.ObjectID)
+	executeAnswer := func(ctx context.Context, transaction db.Transaction) (calendarcommands.RequestResult, error) {
+		ctx = api.ContextWithTransaction(ctx, transaction)
+		theirs, err := self.addressesOf(ctx, invitation.MailboxID)
 		if err != nil {
-			return err
+			return calendarcommands.RequestResult{}, err
 		}
-		if object == nil {
-			return api.ErrNotFound
-		}
-		parsed, err := calendar.Parse([]byte(object.Data))
-		if err != nil {
-			return fmt.Errorf("%w: that event cannot be read back", api.ErrInvalidArguments)
-		}
-		// Which of their addresses the event actually invites. An event
-		// may name a person by an address that is one of several their
-		// mailbox answers to, and the reply has to come from that one or
-		// the organizer will not match it to anybody.
-		var answering []calendar.Attendee
-		for _, attendee := range parsed.Attendees {
-			if !theirs[strings.ToLower(attendee.Address)] {
-				continue
+
+		var speaking string
+		_, err = calendarcommands.New(transaction).SaveEvent(ctx, principal, calendarcommands.EventRequest{CalendarID: invitation.CalendarID, ID: invitation.ObjectID}, func(ctx context.Context, transaction db.Transaction, object *models.CalendarObject) (*calendar.Parsed, error) {
+			parsed, err := calendar.Parse([]byte(object.Data))
+			if err != nil {
+				return nil, fmt.Errorf("%w: that event cannot be read back", api.ErrInvalidArguments)
 			}
-			speaking = attendee.Address
-			answering = append(answering, calendar.Attendee{
-				Address: attendee.Address, Participation: answer,
-			})
-		}
-		if len(answering) == 0 {
-			return fmt.Errorf("%w: that invitation does not name any of your addresses", api.ErrInvalidArguments)
-		}
-		updated, err := calendar.Answer([]byte(object.Data), answering)
+			// Which of their addresses the event actually invites. An event
+			// may name a person by an address that is one of several their
+			// mailbox answers to, and the reply has to come from that one or
+			// the organizer will not match it to anybody.
+			var answering []calendar.Attendee
+			for _, attendee := range parsed.Attendees {
+				if !theirs[strings.ToLower(attendee.Address)] {
+					continue
+				}
+				speaking = attendee.Address
+				answering = append(answering, calendar.Attendee{
+					Address: attendee.Address, Participation: answer,
+				})
+			}
+			if len(answering) == 0 {
+				return nil, fmt.Errorf("%w: that invitation does not name any of your addresses", api.ErrInvalidArguments)
+			}
+			updated, err := calendar.Answer([]byte(object.Data), answering)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+			}
+			return updated, nil
+		}, func(ctx context.Context, transaction db.Transaction, stored, _ *models.CalendarObject) error {
+			return self.sendInvitationReply(api.ContextWithTransaction(ctx, transaction), stored, speaking, answer)
+		})
 		if err != nil {
-			return fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+			return calendarcommands.RequestResult{}, translateError(err)
 		}
-		occurrences, indexedUntil, err := occurrencesOf(updated)
+
+		return calendarcommands.RequestResult{ObjectID: invitation.ObjectID, IsMailSendRequired: true}, nil
+	}
+	if arguments.RequestID == "" {
+		_, err = executeAnswer(ctx, self.transaction(ctx))
+	} else {
+		// Every RSVP requires sending permission, including a replay that sends nothing.
+		if _, err := self.requirePermission(ctx, models.PermissionMailSend); err != nil {
+			return nil, err
+		}
+		requestContent, err := json.Marshal(arguments)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		stored, err = tx.PutCalendarObject(&models.CalendarObject{
-			ID: object.ID, CalendarID: object.CalendarID, UID: updated.UID,
-			CreatedAt: object.CreatedAt, ETag: calendar.ETag(updated.Data),
-			Data: string(updated.Data), Summary: updated.Summary, Location: updated.Location,
-			StartsAt: updated.StartsAt, EndsAt: updated.EndsAt,
-			AllDay: updated.AllDay, Recurring: updated.Recurring, Status: updated.Status,
-			IndexedUntil: &indexedUntil,
-		}, occurrences)
-		return err
-	}); err != nil {
+		_, err = calendarcommands.New(self.transaction(ctx)).ExecuteRequest(ctx, principal, calendarcommands.RequestIdentity{RequestID: arguments.RequestID, CalendarID: invitation.CalendarID, Operation: "answer", Content: requestContent}, executeAnswer)
+		if err != nil {
+			return nil, translateError(err)
+		}
+	}
+	if err != nil {
 		return nil, translateError(err)
 	}
 
-	if err := self.sendInvitationReply(ctx, stored, speaking, answer); err != nil {
-		// Said plainly rather than swallowed. Their calendar is right
-		// either way, and whoever asked them is still waiting -- which
-		// they can only know if they are told.
-		return nil, fmt.Errorf("your calendar is marked, but the answer could not be sent: %w", err)
-	}
 	return self.invitationView(ctx, invitation)
 }
 
@@ -317,15 +318,10 @@ func (self *graph) sendInvitationReply(ctx context.Context, object *models.Calen
 		}},
 		Headers: []string{"Auto-Submitted: auto-replied"},
 	}
-	envelope := &mailparse.Envelope{}
-	if request := api.ContextRequest(ctx); request != nil {
-		host, _, err := net.SplitHostPort(request.RemoteAddr)
-		if err != nil {
-			host = request.RemoteAddr
-		}
-		envelope.IP = net.ParseIP(host)
-		envelope.Location = self.locator.Locate(envelope.IP)
-		envelope.TLS = request.TLS
+	envelope, err := self.calendarEnvelope(ctx, speaking)
+	if err != nil {
+		return err
 	}
-	return self.mailer.Send(ctx, envelope, message)
+	_, err = self.mailer.AcceptSubmission(ctx, self.transaction(ctx), envelope, message)
+	return err
 }

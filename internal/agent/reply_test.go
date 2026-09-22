@@ -45,6 +45,25 @@ type fakeMailer struct {
 }
 
 func (self *fakeMailer) Close() error { return nil }
+func (self *fakeMailer) AcceptSubmission(_ context.Context, transaction db.Transaction, envelope *mailparse.Envelope, message *mailer.Message) (*models.Mail, error) {
+	accepted, err := transaction.CreateMail(&models.Mail{Subject: message.Subject}, nil)
+	if err != nil {
+		return nil, err
+	}
+	sent, err := transaction.GetFolderByKind(envelope.MailboxID, models.MailboxFolderKindSent)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := transaction.AddItem(sent.ID, accepted.ID, "", models.MailboxItemFlags{}); err != nil {
+		return nil, err
+	}
+	transaction.AfterCommit(func() {
+		self.mutex.Lock()
+		defer self.mutex.Unlock()
+		self.sent = append(self.sent, message)
+	})
+	return accepted, nil
+}
 func (self *fakeMailer) Send(ctx context.Context, envelope *mailparse.Envelope, message *mailer.Message) error {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
@@ -52,6 +71,10 @@ func (self *fakeMailer) Send(ctx context.Context, envelope *mailparse.Envelope, 
 	self.sent = append(self.sent, message)
 	return nil
 }
+func (self *fakeMailer) ComposeInTransaction(ctx context.Context, _ db.Transaction, message *mailer.Message) (*mailer.Composed, error) {
+	return self.Compose(ctx, message)
+}
+
 func (self *fakeMailer) Compose(ctx context.Context, message *mailer.Message) (*mailer.Composed, error) {
 	headers := append([]string{
 		"Message-ID: <draft-" + fmt.Sprint(time.Now().UnixNano()) + "@example.com>",

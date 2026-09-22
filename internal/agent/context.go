@@ -66,6 +66,12 @@ func LoadHeaders(ctx context.Context, store storage.Storage, mail *models.Mail) 
 
 // BuildMessageContext reads a stored message and reduces it.
 func BuildMessageContext(ctx context.Context, store storage.Storage, mail *models.Mail, maximumCharacters int, includeQuoted bool) (*MessageContext, error) {
+	return buildMessageContext(ctx, store, mail, maximumCharacters, includeQuoted, true)
+}
+
+// Context shown to a model may describe an unavailable body. Ingestion must
+// reject that fallback so a storage failure cannot become the person's words.
+func buildMessageContext(ctx context.Context, store storage.Storage, mail *models.Mail, maximumCharacters int, includeQuoted, shouldAllowMissingBody bool) (*MessageContext, error) {
 	result := &MessageContext{
 		MailID:  mail.ID,
 		Subject: mail.Subject,
@@ -87,7 +93,7 @@ func BuildMessageContext(ctx context.Context, store storage.Storage, mail *model
 
 	headers, body, err := store.Get(ctx, mail.ID)
 	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
+		if shouldAllowMissingBody && errors.Is(err, storage.ErrNotFound) {
 			result.Facts = MailFacts(mail)
 			result.Text = "(the message body is no longer stored)"
 			return result, nil

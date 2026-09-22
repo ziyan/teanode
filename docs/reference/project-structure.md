@@ -43,6 +43,10 @@ read from storage when asked for, and an idling session is woken by the
 database's `folder_changed` notification. Nothing is held in memory that
 another instance would need.
 
+**`internal/addressbook`** implements authorized contact save and delete commands.
+It merges fields through the vCard package and keeps contact writes on the
+caller's transaction, with ownership checks and rollback scopes.
+
 **`internal/contacts`** — the vCard format, and nothing else: parsing a card,
 writing one out, and naming a version of one with an ETag. It writes cards
 itself rather than through the vendored encoder, which does not quote a
@@ -55,6 +59,11 @@ describing a time zone as the offsets themselves rather than as a name. Unlike
 the vCard side it uses the vendored encoder as it stands, which was measured
 against the cases that destroy a vCard and survives them; what it adds is line
 folding, which the library does not do.
+
+**`internal/calendar/commands`** owns authorized calendar metadata and event
+changes with command rollback. It preserves agent sharing during metadata
+changes and joins event persistence to notification acceptance. Format handling
+stays in the parent calendar package.
 
 **`internal/dav`** — a person's address book and their calendar to their phone
 and their desktop, over CardDAV and CalDAV. Signs in with a mailbox address and

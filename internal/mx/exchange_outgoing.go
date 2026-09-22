@@ -16,6 +16,10 @@ import (
 )
 
 func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, envelope *mailparse.Envelope) ([]*models.Delivery, error) {
+	return self.prepareOutgoing(ctx, tx, envelope, true)
+}
+
+func (self *exchange) prepareOutgoing(ctx context.Context, tx db.Transaction, envelope *mailparse.Envelope, shouldCommitMail bool) ([]*models.Delivery, error) {
 	// figure out sender domain
 	_, senderDomain := mailparse.SplitAddress(envelope.Sender)
 
@@ -180,6 +184,9 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 
 	if err := self.authenticateOutgoing(ctx, envelope, mail, domain); err != nil {
 		log.Warningf("failed to authenticate outgoing mail %q, rejecting: %s", envelope.ID, err)
+		if !shouldCommitMail {
+			return nil, err
+		}
 
 		// try to save mail before exiting
 		if _, err := tx.CreateMail(mail, nil); err != nil {
@@ -215,25 +222,26 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 	// A person's submission goes in their Sent folder, by reference, in the
 	// same transaction as the row: there is no moment at which the message
 	// exists and their Sent folder does not know it.
-	if envelope.MailboxID != "" {
+	if shouldCommitMail && envelope.MailboxID != "" {
 		if err := self.fileInSent(tx, envelope.MailboxID, mail); err != nil {
 			return nil, err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-
 	// track usages
-	self.trackDomainUsage(envelope.ReceivedAt, domain.ID, domainUsage{
+	self.trackDomainUsageAfterCommit(tx, envelope.ReceivedAt, domain.ID, domainUsage{
 		bytesReceived: envelope.Size,
 		mailsAccepted: 1,
 	})
 	if credential != nil {
-		self.trackCredentialUsage(envelope.ReceivedAt, credential.ID, credentialUsage{
+		self.trackCredentialUsageAfterCommit(tx, envelope.ReceivedAt, credential.ID, credentialUsage{
 			bytesReceived: envelope.Size,
 			mailsAccepted: 1,
 		})
+	}
+	if shouldCommitMail {
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
 	}
 
 	// create a delivery for each recipient
@@ -290,11 +298,11 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 		// the recipient's address holds a reference to the message that was
 		// sent, which is what "no copies" means.
 		// track usages
-		self.trackDomainUsage(envelope.ReceivedAt, domain.ID, domainUsage{
+		self.trackDomainUsageAfterCommit(tx, envelope.ReceivedAt, domain.ID, domainUsage{
 			bytesSent:           envelope.Size,
 			deliveriesSucceeded: 1,
 		})
-		self.trackDomainUsage(envelope.ReceivedAt, recipientDomain.ID, domainUsage{
+		self.trackDomainUsageAfterCommit(tx, envelope.ReceivedAt, recipientDomain.ID, domainUsage{
 			bytesReceived: envelope.Size,
 			mailsAccepted: 1,
 		})
@@ -307,6 +315,14 @@ func (self *exchange) handleOutgoing(ctx context.Context, tx db.Transaction, env
 		deliveries = append(deliveries, matchedDeliveries...)
 	}
 
+	if !shouldCommitMail && envelope.MailboxID != "" {
+		// Resolve local recipients before Sent exists: the mailbox delivery
+		// deduplication must not mistake Sent for an already received copy of
+		// a message addressed to its own sender. Both copies commit together.
+		if err := self.fileInSent(tx, envelope.MailboxID, mail); err != nil {
+			return nil, err
+		}
+	}
 	return tx.CreateDeliveries(deliveries, nil)
 }
 

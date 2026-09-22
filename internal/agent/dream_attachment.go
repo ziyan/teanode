@@ -369,9 +369,7 @@ func (self *Agent) readPicture(ctx context.Context, run *Run, budget *dreamBudge
 	// Without the cancellation, as the reading's own marking is: a night
 	// out of time has still paid for this description and losing it would
 	// mean paying again.
-	if err := run.Database().TransactionContext(context.WithoutCancel(ctx), func(tx db.Transaction) error {
-		return tx.ReplaceAgentChunks(document, chunkText(text))
-	}); err != nil {
+	if err := keepDreamPicture(ctx, run, document, text); err != nil {
 		log.Warningf("cannot keep what %s turned out to show: %s", document.Cite(), err)
 		return false
 	}
@@ -385,7 +383,7 @@ func declineAttachments(ctx context.Context, run *Run, documentIds []string, rea
 	if len(documentIds) == 0 {
 		return
 	}
-	if err := run.Database().TransactionContext(context.WithoutCancel(ctx), func(tx db.Transaction) error {
+	if err := dreamBookkeeping(ctx, run, func(tx db.Transaction) error {
 		return tx.MarkAgentDocumentsDeclined(documentIds, reason, time.Now())
 	}); err != nil {
 		log.Warningf("cannot record what a dream decided against opening: %s", err)

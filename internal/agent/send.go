@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -9,7 +10,6 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
-	"github.com/ziyan/teanode/internal/util/aggregate"
 	"github.com/ziyan/teanode/internal/util/mailparse"
 )
 
@@ -42,19 +42,37 @@ func (self *Agent) runSend(ctx context.Context, run *Run) error {
 	}
 	mailbox := run.Mailbox
 	settle := func(status models.AgentReplyStatus, reason string) error {
-		return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-			if err := self.discardDraft(ctx, tx, reply.DraftItemID); err != nil {
+		settleContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		err := run.Database().TransactionContext(settleContext, func(tx db.Transaction) error {
+			if _, err := tx.LockItem(reply.DraftItemID); err != nil {
 				return err
 			}
-			_, err := tx.UpdateAgentReply(reply.ID, func(reply *models.AgentReply) error {
-				reply.Status = status
-				reply.Reason = reason
-				reply.DraftItemID = ""
+			if _, err := tx.UpdateAgentReply(reply.ID, func(current *models.AgentReply) error {
+				if current.Status != reply.Status {
+					return errReplyChanged
+				}
+				if current.DraftItemID != reply.DraftItemID || !current.ModifiedAt.Equal(reply.ModifiedAt) {
+					if current.Status == models.AgentReplyHeld {
+						return &Deferral{Until: time.Now().Add(time.Second), Reason: "the held reply changed before settlement"}
+					}
+					return errReplyChanged
+				}
+				current.Status = status
+				current.Reason = reason
+				current.DraftItemID = ""
 				return nil
-			})
-			return err
+			}); err != nil {
+				return err
+			}
+			return self.discardDraft(settleContext, tx, reply.DraftItemID)
 		})
+		if errors.Is(err, errReplyChanged) {
+			return nil
+		}
+		return err
 	}
+
 	if reply.Status == models.AgentReplySending {
 		// The mailer had it and the record of the send never happened —
 		// the process stopped between the two. Sending again could send
@@ -78,7 +96,7 @@ func (self *Agent) runSend(ctx context.Context, run *Run) error {
 		if err != nil {
 			return err
 		}
-		if draft == nil {
+		if draft == nil || !draft.Draft {
 			refused = "the draft was changed or removed by hand"
 			return nil
 		}
@@ -124,7 +142,6 @@ func (self *Agent) runSend(ctx context.Context, run *Run) error {
 	// Sent as the person, marked as the agent's doing in the audit trail,
 	// and marked automatic so that no responder answers it.
 	acting := db.ContextWithAuditPrincipal(ctx, db.AuditPrincipal{ActorKind: models.AuditActorAgent, UserID: run.Owner.ID})
-	envelope := &mailparse.Envelope{MailboxID: mailbox.ID}
 	message := &mailer.Message{
 		From:     reply.From,
 		FromName: mailbox.Name,
@@ -136,76 +153,24 @@ func (self *Agent) runSend(ctx context.Context, run *Run) error {
 			mailparse.UnsplitHeader("X-Auto-Response-Suppress", "All"),
 		),
 	}
-	// Marked as with the mailer before it goes, so a retry after a crash
-	// between the send and its record does not send it again.
-	mark := func(status models.AgentReplyStatus) error {
-		return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-			_, err := tx.UpdateAgentReply(reply.ID, func(reply *models.AgentReply) error {
-				reply.Status = status
-				return nil
-			})
+	wasAccepted, err := self.acceptHeldReply(acting, run.Database(), reply, originalItem.ID, message, now)
+	if errors.Is(err, errAutoReplyLimit) {
+		return settle(models.AgentReplyRefused, "the mailbox has reached its automatic reply limit for this hour")
+	}
+	if err != nil {
+		var deferral *Deferral
+		if errors.As(err, &deferral) {
 			return err
-		})
-	}
-	if err := mark(models.AgentReplySending); err != nil {
-		return err
-	}
-	if err := self.settings.Mailer.Send(acting, envelope, message); err != nil {
-		if markErr := mark(models.AgentReplyHeld); markErr != nil {
-			log.Warningf("cannot put the reply %q back on hold: %s", reply.ID, markErr)
 		}
-		if run.Job.Attempts+1 > len(retryLadder) {
-			// The last try: the reply stays unsent, and the person is told
-			// why in the activity rather than left with a draft that never
-			// went.
+		if !errors.Is(err, context.Canceled) && run.Job.FailureCount+1 > len(retryLadder) {
 			if settleErr := settle(models.AgentReplyFailed, "could not be sent: "+err.Error()); settleErr != nil {
 				log.Warningf("cannot record the failed reply %q: %s", reply.ID, settleErr)
 			}
 		}
 		return fmt.Errorf("sending the reply: %w", err)
 	}
-
-	return run.Database().TransactionContext(acting, func(tx db.Transaction) error {
-		if err := self.discardDraft(ctx, tx, reply.DraftItemID); err != nil {
-			return err
-		}
-		yes := true
-		if _, err := tx.SetItemFlags([]string{originalItem.ID}, models.MailboxItemFlags{Answered: &yes}); err != nil {
-			return err
-		}
-		// One more automatic reply out of this mailbox this hour. Counted
-		// rather than remembered per sender: what this bounds is a loop,
-		// and a loop is a rate.
-		if _, err := tx.ClaimAutoReply(mailbox.ID, now, agentReplyHourlyLimit); err != nil {
-			return err
-		}
-		sentMailId := ""
-		_, domainName := mailparse.SplitAddress(reply.From)
-		if domain, err := tx.GetDomainByName(domainName); err != nil {
-			return err
-		} else if domain != nil {
-			mails, err := tx.ListMails(domain.ID, &db.Options{Limit: 1, Columns: aggregate.Columns{"envelopeId": `"envelope_id"`}, Aggregations: aggregate.Pipeline{{Match: &aggregate.Filter{
-				Operation: aggregate.OperationEqual,
-				Field:     "envelopeId",
-				Value:     &envelope.ID,
-			}}}})
-			if err != nil {
-				return err
-			}
-			if len(mails) > 0 {
-				sentMailId = mails[0].ID
-			}
-		}
-		if _, err := tx.UpdateAgentReply(reply.ID, func(reply *models.AgentReply) error {
-			reply.Status = models.AgentReplySent
-			reply.DraftItemID = ""
-			reply.SentMailID = sentMailId
-			reply.SentAt = &now
-			return nil
-		}); err != nil {
-			return err
-		}
+	if wasAccepted {
 		log.Noticef("the agent of mailbox %q answered %q from %q", mailbox.ID, strings.TrimSpace(reply.To), reply.From)
-		return nil
-	})
+	}
+	return nil
 }

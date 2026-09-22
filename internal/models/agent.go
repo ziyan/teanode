@@ -472,19 +472,21 @@ const (
 
 // AgentJob is one unit of work for the worker.
 type AgentJob struct {
-	ID         string         `json:"id"`
-	CreatedAt  time.Time      `json:"createdAt"`
-	AgentID    string         `json:"agentId"`
-	MailboxID  string         `json:"mailboxId,omitempty"`
-	Kind       AgentJobKind   `json:"kind"`
-	SubjectID  string         `json:"subjectId,omitempty"`
-	Status     AgentJobStatus `json:"status"`
-	Attempts   int            `json:"attempts"`
-	NotBefore  *time.Time     `json:"notBefore,omitempty"`
-	ClaimedAt  *time.Time     `json:"claimedAt,omitempty"`
-	ClaimedBy  string         `json:"claimedBy,omitempty"`
-	Error      string         `json:"error,omitempty"`
-	FinishedAt *time.Time     `json:"finishedAt,omitempty"`
+	ID           string         `json:"id"`
+	CreatedAt    time.Time      `json:"createdAt"`
+	AgentID      string         `json:"agentId"`
+	MailboxID    string         `json:"mailboxId,omitempty"`
+	Kind         AgentJobKind   `json:"kind"`
+	SubjectID    string         `json:"subjectId,omitempty"`
+	Status       AgentJobStatus `json:"status"`
+	Attempts     int            `json:"attempts"`
+	FailureCount int            `json:"failureCount"`
+	ClaimID      string         `json:"-" graphapi:"ignore"`
+	NotBefore    *time.Time     `json:"notBefore,omitempty"`
+	ClaimedAt    *time.Time     `json:"claimedAt,omitempty"`
+	ClaimedBy    string         `json:"claimedBy,omitempty"`
+	Error        string         `json:"error,omitempty"`
+	FinishedAt   *time.Time     `json:"finishedAt,omitempty"`
 }
 
 // AgentUsageValues is what each ordinal of an agent_usage row's values

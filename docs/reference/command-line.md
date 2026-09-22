@@ -261,6 +261,24 @@ count --by` is checked by the server, which knows every field. A list that
 stopped at `--first` says so on standard error, so a page is never mistaken
 for the whole.
 
+`mail send` prints its submission identifier on standard error before sending.
+If the response is lost, repeat the command with `--submission-id` set to that
+identifier and the same content, attachments, template and variables. The server
+returns the original acceptance instead of accepting another message. Reusing an
+identifier with changed parameters is refused; use a new identifier for a new
+message. Keep input files unchanged for the retry, including content originally
+read from standard input. The identifier is scoped to the account or the local
+console, so retry with the same identity. This protects local acceptance, not
+exactly-once remote SMTP delivery. The identified command requires a server that
+supports `SendMail`'s `submissionId` argument.
+
+Use `mail submission <domain> <submission-id>` to check acceptance without the
+original files or template. It returns the accepted mail identifier even after
+mail retention removes the stored copy. Run it as the same account or console
+that sent the message. With `--json`, it returns the acceptance object or `null`.
+A missing result means no acceptance is recorded yet; an in-flight request may
+still commit, so retry with the same identifier and unchanged content.
+
 ### From a script, or an agent
 
 The same commands serve a script, with three differences that matter when
@@ -369,6 +387,8 @@ have made.
 | `teanode agent channel list\|set\|unlink\|remove` | the chat apps you talk to your agent from: your own Telegram or Discord bot. `set telegram --token -` reads the bot's token from standard input; `list` shows the code a chat sends the bot as `/link CODE` to become the linked one, and whether the bot runs; `unlink` draws a new code |
 | `teanode contact list\|show\|add\|edit\|remove` | your address book: the people you keep, which your phone and your computer synchronize over CardDAV. `add --name "Ada Lovelace" --email ada@example.com` keeps one; `edit <id> --name "Ada King"` changes only what you give and leaves the rest of the card alone, so correcting a name does not throw away the photograph a phone put there; `--card -` reads a whole vCard from standard input |
 | `teanode calendar list\|show\|add\|edit\|remove` | your calendar, which your phone and your computer synchronize over CalDAV. `list --from 2026-09-14 --until 2026-09-21` prints one line for every time something happens, a repeating event once per occurrence; `add --title Standup --starts 2026-09-14T09:30 --repeat FREQ=WEEKLY;BYDAY=MO` puts something in it; `--invite ada@example.com` sends the invitation by mail, and moving or removing the event tells everybody invited; `--all-day` belongs to the day rather than to a time, and its `--ends` is the last day it is on, so the same date at both ends is one day; `--file -` reads a whole iCalendar file from standard input. Times are read and written in the calendar's own zone unless they carry an offset |
+| `teanode calendar request <request-id>` | check whether a calendar save completed, even after its event or calendar was deleted. `add`, `edit` and `remove` print a request ID before changing an event; after an uncertain response, look it up here or retry the same operation and fields with `--request-id`. A retried removal checks completion before loading the deleted event. An absent receipt may mean the original request is still in progress. Changed fields require a new ID |
+| `teanode calendar stop <request-id>` | resolve an uncertain request before discarding its fields. An uncommitted request is durably stopped; an already completed change is reported and is not undone. A failed stop response is still uncertain, so retry the same request ID |
 | `teanode calendar free` | when you are free: the stretches of the working day nothing is booked in, day by day. `--earliest 08:00 --latest 18:00` moves the ends of the day; a whole-day entry does not make a day busy, and neither does anything cancelled. Worked out with the same two functions that answer a phone's free-busy request, so what this prints and what a colleague's client is told cannot disagree |
 | `teanode calendar calendars\|set` | the calendars themselves: what they are called, what a client paints them, the zone a new event is written in, and the day a week is drawn from — `set --timezone Europe/Berlin`, `set --week-start monday`. Weeks start on Sunday unless a calendar says otherwise; the five-day view is Monday to Friday either way, because that is what a working week is |
 | `teanode agent skill list\|search\|install\|update\|remove\|enable\|disable\|scope\|secret` | tools installed from the skill registry, for everyone on this server: `search` says what there is, `install weather` checks the signature and the hash before keeping it, `update` with no name installs every newer version there is. `scope <name> operator|person|skill` settles who fills the skill's secrets in here — one set of values for the whole server, each person's own, or whatever the skill declares. Installing and scoping need `server:manage`. A skill that runs commands runs them on a computer you attached, asks first, and is never used by a run with nobody watching. `secret list\|set\|clear` is for the values a skill asks *you* for rather than the server: `secret set news NEWSAPI_KEY` reads the value from the terminal without echoing, or from standard input when there is no terminal |

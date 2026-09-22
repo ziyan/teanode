@@ -22,8 +22,10 @@ export function RichTextEditor({
   placeholder,
   domainId,
   hideQuoted,
+  readOnly = false,
 }: {
   value: string
+  readOnly?: boolean
   onChange: (html: string) => void
   placeholder?: string
   // Fold away the quoted message a reply carries. It stays in the document,
@@ -59,12 +61,14 @@ export function RichTextEditor({
   }, [])
 
   function emit() {
+    if (readOnly) return
     const html = editor.current?.innerHTML ?? ''
     emitted.current = html
     onChange(html)
   }
 
   function run(command: string, argument?: string) {
+    if (readOnly) return
     editor.current?.focus()
     document.execCommand(command, false, argument)
     emit()
@@ -115,7 +119,7 @@ export function RichTextEditor({
 
   return (
     <div className="richtext">
-      <div className="richtext-toolbar" role="toolbar" aria-label={t('richText.toolbar')}>
+      <div className="richtext-toolbar" inert={readOnly} role="toolbar" aria-label={t('richText.toolbar')}>
         {commands.map((entry) => (
           <Tooltip key={entry.command + (entry.argument ?? '')} label={entry.title}>
             <button
@@ -153,6 +157,7 @@ export function RichTextEditor({
             savedRange.current = selection && selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null
           }}
           onUploaded={(media) => {
+            if (readOnly) return
             const element = editor.current
             if (!element) {
               return
@@ -214,7 +219,7 @@ export function RichTextEditor({
       <div
         ref={editor}
         className={hideQuoted ? 'richtext-editor quoted-hidden' : 'richtext-editor'}
-        contentEditable
+        contentEditable={!readOnly}
         suppressContentEditableWarning
         data-placeholder={placeholder}
         onInput={emit}

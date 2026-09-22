@@ -9,23 +9,17 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// A night the server restarts under still says what it read.
-//
-// A dream counted what it read and filed in memory and wrote the count
-// once, at the end. A restart therefore lost it entirely, and the row the
-// person sees said "Cut short" and nothing else -- while the documents
-// that night read were marked read and the facts it filed were on their
-// pages. The work survived; only the account of it did not.
+// Committed progress survives a restart without finishing the dream.
 func TestADreamWritesDownWhatItHasReadBeforeItIsOver(test *testing.T) {
 	database, release := dbtest.AcquireDatabase(test)
 	test.Cleanup(release)
 
 	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
-		owner, err := tx.CreateUser(&models.User{Username: "alice", Name: "Alice Example"})
+		owner, err := tx.CreateUser(&models.User{Username: "fixture-owner", Name: "Fixture Owner"})
 		if err != nil {
 			test.Fatalf("CreateUser: %s", err)
 		}
-		person, err := tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"})
+		person, err := tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Fixture"})
 		if err != nil {
 			test.Fatalf("CreateAgent: %s", err)
 		}
@@ -35,13 +29,15 @@ func TestADreamWritesDownWhatItHasReadBeforeItIsOver(test *testing.T) {
 			test.Fatalf("StartAgentDream: %s", err)
 		}
 
-		// Two batches in, and the server is about to go.
-		dream.Digested = 240
-		dream.Filed = 31
-		dream.Backlog = 150000
-		dream.Tokens = 412000
-		if err := tx.NoteAgentDreamProgress(dream); err != nil {
-			test.Fatalf("NoteAgentDreamProgress: %s", err)
+		dream.Backlog = 10
+		dream.Tokens = 200
+		if err := tx.AdvanceAgentDreamProgress(dream, 2, 1); err != nil {
+			test.Fatal(err)
+		}
+		// An older token snapshot must not lower already committed usage.
+		dream.Tokens = 100
+		if err := tx.AdvanceAgentDreamProgress(dream, 1, 1); err != nil {
+			test.Fatal(err)
 		}
 
 		dreams, err := tx.ListAgentDreams(person.ID, 10)
@@ -49,10 +45,10 @@ func TestADreamWritesDownWhatItHasReadBeforeItIsOver(test *testing.T) {
 			test.Fatalf("ListAgentDreams: %v %s", dreams, err)
 		}
 		written := dreams[0]
-		if written.Digested != 240 || written.Filed != 31 {
+		if written.Digested != 3 || written.Filed != 2 {
 			test.Fatalf("what it had read is on the row: %d read, %d filed", written.Digested, written.Filed)
 		}
-		if written.Tokens != 412000 {
+		if written.Tokens != 200 {
 			test.Fatalf("and what it had spent: %d", written.Tokens)
 		}
 		// And it is not over. A progress note that finished the dream

@@ -675,6 +675,7 @@ func relaySettings(configuration *config.Configuration) *mx.RelaySettings {
 
 func (self *server) openStorage(configuration *config.Configuration) error {
 	settings := &storage.Settings{
+		Mode:      configuration.Storage.Mode,
 		Directory: configuration.Path(configuration.Storage.Directory),
 		Retention: configuration.Storage.SpoolRetention.Duration(),
 		// A message a mailbox still holds outlives the retention: the row
@@ -750,6 +751,19 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		if err := mailerComponent.Close(); err != nil {
 			log.Errorf("failed to close mailer: %s", err)
 		}
+	})
+
+	reconciliationContext, cancelReconciliation := context.WithCancel(context.Background())
+	var reconciliationGroup sync.WaitGroup
+	reconciler := mailer.NewSubmissionReconciler(self.database)
+	reconciliation := periodic.New(reconciliationContext, &reconciliationGroup, reconciler.RunOnce, &periodic.Settings{
+		Name: "submission-reconciliation", Interval: 5 * time.Second,
+	})
+	reconciliation.Start()
+	self.onClose(func() {
+		cancelReconciliation()
+		reconciliation.Stop()
+		reconciliationGroup.Wait()
 	})
 
 	verifier, err := dns.Open(self.store, self.database, &dns.Settings{

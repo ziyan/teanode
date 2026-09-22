@@ -70,7 +70,7 @@ export function MailPage() {
     [opensQuery.data],
   )
 
-  const domains = domainQuery.data?.ListDomains ?? []
+  const domains = useMemo(() => domainQuery.data?.ListDomains ?? [], [domainQuery.data])
   const domainNames = useMemo(() => new Map(domains.map((domain) => [domain.id, domain.domain])), [domains])
 
   const columns = useMemo<Column<Mail>[]>(
@@ -185,7 +185,7 @@ export function MailPage() {
         render: (mail) => <RelativeTime value={mail.receivedAt} />,
       },
     ],
-    [t, domains, domainNames, opens],
+    [t, domains, domainNames, opens, label],
   )
 
   if (domainQuery.loading || (mails.loading && !mails.data)) {
