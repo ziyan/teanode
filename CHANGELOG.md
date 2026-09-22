@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.13] - 2026-09-22
+
+### Fixed
+
+- The strip saying how much of a folder is shown stays in view while the
+  folder is walked. (#117)
+- The name of the page being read, and the buttons acting on it, stay at the
+  top of the pane. (#117)
+- A category on a mail row is shortened rather than cut mid-letter. (#117)
+- A long line in a table wraps on a phone instead of making the table four
+  times the width of the screen. (#117)
+
 ## [0.47.12] - 2026-09-22
 
 ### Fixed
