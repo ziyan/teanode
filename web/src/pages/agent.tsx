@@ -837,6 +837,23 @@ type SourceAttachments = {
 }
 
 // One file the night decided against opening, with the reason it gave.
+// groupedByReason keeps the order the files came in and gathers each run
+// of them under the reason they share, which is what lets the reason be
+// said once instead of once a file.
+function groupedByReason(files: DeclinedFile[]): [string, DeclinedFile[]][] {
+  const order: string[] = []
+  const byReason = new Map<string, DeclinedFile[]>()
+  for (const file of files) {
+    const reason = file.declined
+    if (!byReason.has(reason)) {
+      byReason.set(reason, [])
+      order.push(reason)
+    }
+    byReason.get(reason)?.push(file)
+  }
+  return order.map((reason) => [reason, byReason.get(reason) ?? []])
+}
+
 type DeclinedFile = {
   documentId: string
   name: string
@@ -2009,24 +2026,36 @@ function SourceFiles({ sourceId, files }: { sourceId: string; files?: SourceAtta
         declined.length === 0 ? (
           <SettingsEmpty>{t('agent.filesNoneDeclined')}</SettingsEmpty>
         ) : (
+          /* Said once over the files it was said about, rather than once
+             a row. There are two reasons a file is passed over and a
+             batch of forty shares one of them, so repeating it put the
+             same twenty five words on every line and buried the only
+             part that differed. */
           <ul className="agent-declined-files">
-            {declined.map((file) => (
-              <li key={file.documentId}>
-                {/* The file itself where its bytes are here, so a person
-                    who disagrees with the decision can look at what was
-                    passed over. */}
-                {file.path === '' ? (
-                  <span>{file.name}</span>
-                ) : (
-                  <a href={file.path} target="_blank" rel="noreferrer">
-                    {file.name}
-                  </a>
-                )}
-                <span className="muted">
-                  {[file.declined, [file.thread, file.channel].filter((part) => part.trim() !== '').join(' · ')]
-                    .filter((part) => part !== '')
-                    .join(' — ')}
-                </span>
+            {groupedByReason(declined).map(([reason, group]) => (
+              <li key={reason} className="agent-declined-group">
+                <p className="muted">{reason}</p>
+                <ul>
+                  {group.map((file) => (
+                    <li key={file.documentId}>
+                      {/* The file itself where its bytes are here, so a
+                          person who disagrees with the decision can look
+                          at what was passed over. */}
+                      {file.path === '' ? (
+                        <span>{file.name}</span>
+                      ) : (
+                        <a href={file.path} target="_blank" rel="noreferrer">
+                          {file.name}
+                        </a>
+                      )}
+                      {[file.thread, file.channel].filter((part) => part.trim() !== '').length > 0 ? (
+                        <span className="muted">
+                          {[file.thread, file.channel].filter((part) => part.trim() !== '').join(' · ')}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
               </li>
             ))}
           </ul>

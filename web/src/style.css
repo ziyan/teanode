@@ -5455,6 +5455,31 @@ main.content:has(> .mailbox-frame) {
   overflow-wrap: anywhere;
 }
 
+/* A reason, then the files it was given for. Written with the list in
+   front of them: the rule above is `.agent-declined-files li`, which
+   matches these too and is worth exactly as much, so a plain
+   `.agent-declined-group > ul > li` lost on being written first and every
+   file stood in its own column with nothing marking the group. */
+.agent-declined-files .agent-declined-group > p {
+  margin: var(--space-3) 0 var(--space-1);
+}
+
+.agent-declined-files .agent-declined-group > ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 var(--space-3);
+  border-left: 1px solid var(--border);
+}
+
+.agent-declined-files .agent-declined-group > ul > li {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: 2px 0;
+}
+
 .agent-declined-files .muted {
   font-size: var(--text-label);
 }
