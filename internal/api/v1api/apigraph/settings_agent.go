@@ -130,7 +130,10 @@ type AgentModelsSettings struct {
 
 	// Scan is the model for bulk understanding with nobody present, and
 	// EmbeddingDimensions the width to ask the embedding model for.
-	Scan                string `json:"scan"`
+	Scan string `json:"scan"`
+	// Decide is the model for a question whose answers are known in
+	// advance, which is the one that writes nothing.
+	Decide              string `json:"decide"`
 	EmbeddingDimensions int    `json:"embeddingDimensions"`
 }
 
@@ -273,6 +276,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			Choices:   nonNil(agent.Models.Choices),
 
 			Scan:                agent.Models.Scan,
+			Decide:              agent.Models.Decide,
 			EmbeddingDimensions: agent.Models.EmbeddingDimensions,
 		},
 		Features: &AgentFeaturesSettings{
@@ -456,19 +460,26 @@ type AgentProviderParameters struct {
 // AgentModelsParameters assign work to models; each given field replaces
 // the stored one.
 type AgentModelsParameters struct {
-	Default             *string   `json:"default"`
-	Fast                *string   `json:"fast"`
-	Embedding           *string   `json:"embedding"`
-	Triage              *string   `json:"triage"`
-	Research            *string   `json:"research"`
-	Summarize           *string   `json:"summarize"`
-	Reply               *string   `json:"reply"`
-	Ask                 *string   `json:"ask"`
-	Schedule            *string   `json:"schedule"`
-	Compact             *string   `json:"compact"`
-	Choices             *[]string `json:"choices"`
-	Scan                *string   `json:"scan"`
-	EmbeddingDimensions *int      `json:"embeddingDimensions"`
+	Default   *string   `json:"default"`
+	Fast      *string   `json:"fast"`
+	Embedding *string   `json:"embedding"`
+	Triage    *string   `json:"triage"`
+	Research  *string   `json:"research"`
+	Summarize *string   `json:"summarize"`
+	Reply     *string   `json:"reply"`
+	Ask       *string   `json:"ask"`
+	Schedule  *string   `json:"schedule"`
+	Compact   *string   `json:"compact"`
+	Choices   *[]string `json:"choices"`
+	Scan      *string   `json:"scan"`
+	// Decide is the model for a question whose answers are known in
+	// advance. It is the one model field that names a provider which
+	// writes nothing, and it was the one field this input never carried:
+	// the setting could be written into the configuration file by hand
+	// and nowhere else, so the feature could not be switched on through
+	// the API or the dashboard at all.
+	Decide              *string `json:"decide"`
+	EmbeddingDimensions *int    `json:"embeddingDimensions"`
 }
 
 // AgentFeaturesParameters switch what the deployment offers.
@@ -658,6 +669,7 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		applyString(&models.Fast, parameters.Models.Fast)
 		applyString(&models.Embedding, parameters.Models.Embedding)
 		applyString(&models.Scan, parameters.Models.Scan)
+		applyString(&models.Decide, parameters.Models.Decide)
 		applyInt(&models.EmbeddingDimensions, parameters.Models.EmbeddingDimensions)
 		applyString(&models.Triage, parameters.Models.Triage)
 		applyString(&models.Research, parameters.Models.Research)
