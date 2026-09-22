@@ -476,6 +476,7 @@ export function KnowledgePage() {
   // graph does not flash the row of the top either: a page is nearly
   // always read from the folder it is filed in, and if it turns out to be
   // a folder itself the answer says so a moment later.
+  const [paging, setPaging] = useState<Paging | null>(null)
   const lastFolder = useRef(at === '' ? '' : parentOf(at))
   useEffect(() => {
     if (folder !== null) lastFolder.current = folder
@@ -614,6 +615,7 @@ export function KnowledgePage() {
       me={me}
       onOpen={goPage}
       onInto={(next: string) => goTo(next, true)}
+      onPaging={setPaging}
     />
   )
 
@@ -725,6 +727,23 @@ export function KnowledgePage() {
       <div className="knowledge-list-rows">
         {list}
       </div>
+      {/* Under the rows rather than among them, which is where the mailbox
+          puts the same strip and what keeps it in view while the folder is
+          walked down. It cannot be drawn where it is counted: the panels
+          slide inside a box that clips them, and a thing inside a clipped
+          box cannot be pinned to the bottom of the list around it. */}
+      {!search && paging ? (
+        <div className="list-foot">
+          <span>
+            {paging.loading ? t('common.loading') : t('list.count', { shown: paging.shown, total: paging.total })}
+          </span>
+          {paging.shown < paging.total && !paging.loading ? (
+            <button type="button" className="show-more" onClick={paging.more}>
+              {t('list.showMore')}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 
@@ -795,12 +814,14 @@ function Navigator({
   me,
   onOpen,
   onInto,
+  onPaging,
 }: {
   path: string | null
   selected: string
   me: string
   onOpen: (path: string) => void
   onInto: (path: string) => void
+  onPaging: (paging: Paging | null) => void
 }) {
   const [shown, setShown] = useState(path)
   const [leaving, setLeaving] = useState<{ path: string; deeper: boolean } | null>(null)
@@ -886,7 +907,15 @@ function Navigator({
         <div className="knowledge-navigator-frame" ref={frame}>
           {panels.map((panel) => (
             <div key={panel.path} className={panel.className} ref={panel.path === (shown ?? '') ? entering : undefined}>
-              <NavigatorList path={panel.path} selected={selected} me={me} onOpen={onOpen} onInto={onInto} />
+              <NavigatorList
+                path={panel.path}
+                selected={selected}
+                me={me}
+                onOpen={onOpen}
+                onInto={onInto}
+                current={panel.path === (shown ?? '')}
+                onPaging={onPaging}
+              />
             </div>
           ))}
         </div>
@@ -894,6 +923,16 @@ function Navigator({
     </div>
   )
 }
+
+// Paging is what the strip under the list needs to draw itself: how much
+// of the folder is shown, how much there is, and the way to ask for more.
+//
+// It is reported upwards rather than drawn where it is counted, because
+// the strip has to sit outside the box the panels slide inside. That box
+// clips its content, which is what makes the slide look like a slide, and
+// a thing inside a clipped box cannot be pinned to the bottom of the list
+// around it.
+export type Paging = { shown: number; total: number; loading: boolean; more: () => void }
 
 // NavigatorList is what is filed inside one folder, fifty at a time,
 // each row with enough of a hint to tell it from its neighbours.
@@ -903,12 +942,19 @@ function NavigatorList({
   me,
   onOpen,
   onInto,
+  current,
+  onPaging,
 }: {
   path: string
   selected: string
   me: string
   onOpen: (path: string) => void
   onInto: (path: string) => void
+  // Only the panel being walked into reports what it holds: while the
+  // slide is running there are two of these, and the one sliding out
+  // would otherwise overwrite the count of the one sliding in.
+  current: boolean
+  onPaging: (paging: Paging | null) => void
 }) {
   const { t } = useTranslation()
   const [rows, setRows] = useState<Row[]>([])
@@ -958,6 +1004,11 @@ function NavigatorList({
     void load(rows.length)
   }, [loading, selected, rows, total, load])
 
+  useEffect(() => {
+    if (!current) return
+    onPaging({ shown: rows.length, total, loading, more: () => void load(rows.length) })
+  }, [current, rows.length, total, loading, load, onPaging])
+
   if (problem) return <ErrorMessage error={problem} />
   if (loading && rows.length === 0) return <Loading />
   if (rows.length === 0) return <SettingsEmpty>{t('knowledge.emptyFolder')}</SettingsEmpty>
@@ -970,18 +1021,6 @@ function NavigatorList({
           </li>
         ))}
       </ul>
-      {/* The same strip the mailbox ends its list with: how much of the
-          folder is shown, and the control that shows more. It was a button
-          on its own here, which said nothing about how much was left and
-          sat against the edge of a list whose rows run to it. */}
-      <div className="list-foot">
-        <span>{loading ? t('common.loading') : t('list.count', { shown: rows.length, total })}</span>
-        {rows.length < total && !loading ? (
-          <button type="button" className="show-more" onClick={() => void load(rows.length)}>
-            {t('list.showMore')}
-          </button>
-        ) : null}
-      </div>
     </>
   )
 }
@@ -1618,17 +1657,12 @@ function PageView({
           ended with the first section. */}
       <header className="knowledge-page-head">
         <h3>{node.path === 'self' && me ? me : node.name || node.path}</h3>
-      </header>
-      <SettingsSection
-        card
-        description={
-          <>
+        <div className="knowledge-page-head-meta">
+          <div>
             <code className="tag knowledge-path">{node.path}</code>{' '}
             <Tag value={t(`knowledge.kind.${node.kind}` as 'knowledge.kind.person')} />
             {node.pinned ? <Tag value={t('knowledge.pinned')} tone="good" /> : null}
-          </>
-        }
-        action={
+          </div>
           <div className="row-actions">
             <button
               type="button"
@@ -1707,7 +1741,10 @@ function PageView({
               <TrashIcon size={16} />
             </button>
           </div>
-        }
+        </div>
+      </header>
+      <SettingsSection
+        card
       >
         {/* The other names the page answers to, said the way the command
             line says them, because a page found under a name that is not
