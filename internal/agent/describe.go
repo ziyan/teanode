@@ -104,7 +104,7 @@ func (self *Agent) describeConversation(ctx context.Context, conversation *model
 				if summary != "" {
 					conversation.Summary = summary
 				}
-				if title != "" && conversation.Kind == models.AgentConversationNamed && conversation.TitledBy != "person" && conversation.Title != title {
+				if title != "" && conversation.Kind == models.AgentConversationNamed && conversation.TitledBy != "person" && conversation.TitledBy != "program" && conversation.Title != title {
 					conversation.Title = title
 					titled = title
 				}

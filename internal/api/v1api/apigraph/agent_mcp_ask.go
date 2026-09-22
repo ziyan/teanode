@@ -50,8 +50,10 @@ func mcpAskTool() mcp.Tool {
 			"reading has learned about their work and the people in it, and it can use every tool " +
 			"listed here. Slower than calling one of those tools, and worth it for anything " +
 			"open-ended, anything needing judgement, or anything you would otherwise have to work " +
-			"out across several calls. Leave the question out and give a conversation to go on " +
-			"waiting for an answer that was not finished.",
+			"out across several calls. Each program has a conversation of its own, which is where a " +
+			"question goes when no conversation is given, so what it asked before is remembered. " +
+			"Leave the question out and give a conversation to go on waiting for an answer that was " +
+			"not finished.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -62,7 +64,7 @@ func mcpAskTool() mcp.Tool {
 				"conversation": map[string]any{
 					"type": "string",
 					"description": "the conversation to ask in, to carry on an earlier exchange " +
-						"or to wait for an answer that was not finished; the main one when left out",
+						"or to wait for an answer that was not finished; this program's own when left out",
 				},
 			},
 		},
@@ -84,6 +86,10 @@ func (self *mcpCatalog) ask(ctx context.Context, arguments json.RawMessage) (str
 
 	var conversation *models.AgentConversation
 	if err := self.graph.database.Transaction(func(tx db.Transaction) (err error) {
+		if strings.TrimSpace(call.Conversation) == "" && self.caller.programID != "" {
+			conversation, err = programConversation(tx, self.person, self.caller)
+			return err
+		}
 		conversation, err = self.graph.ownConversation(tx, self.person, call.Conversation, false)
 		return err
 	}); err != nil || conversation == nil {
@@ -206,4 +212,32 @@ func mcpCollect(ctx context.Context, events <-chan agent.Event, personName, conv
 		return "The agent finished without saying anything."
 	}
 	return said
+}
+
+// programTitledBy marks a conversation titled with the name of the program it
+// belongs to, which the job that titles conversations leaves alone.
+const programTitledBy = "program"
+
+// programConversation is the conversation a program asks in when it names
+// none: its own, found by the program's identifier, and made the first time.
+//
+// A program's questions used to land in the person's main conversation,
+// between their own messages and looking like messages they had typed. Each
+// program asking in a conversation of its own keeps what it asked before, and
+// keeps it out of the one the person is using. It is an ordinary conversation,
+// listed with the others, titled with the program's name.
+func programConversation(tx db.Transaction, person *models.Agent, caller mcpCaller) (*models.AgentConversation, error) {
+	found, err := tx.FindAgentConversationBySubject(person.ID, models.AgentConversationNamed, caller.programID)
+	if err != nil || found != nil {
+		return found, err
+	}
+	return tx.CreateAgentConversation(&models.AgentConversation{
+		AgentID:   person.ID,
+		Kind:      models.AgentConversationNamed,
+		Title:     caller.name,
+		TitledBy:  programTitledBy,
+		SubjectID: caller.programID,
+		Surface:   mcpSurface,
+		LastAt:    time.Now(),
+	})
 }

@@ -214,6 +214,12 @@ type mcpCaller struct {
 
 	// isProgramHeld is a token a program was given by approval.
 	isProgramHeld bool
+
+	// programID is what the program is known by across its calls: its
+	// registration when it was approved, which outlives each token it is
+	// given, or the token when somebody minted one by hand for it. Empty for
+	// a caller that is not a program: a signed-in browser, the console.
+	programID string
 }
 
 // callerOf is who the credential on a request belongs to.
@@ -242,7 +248,11 @@ func (self *graph) callerOf(request *http.Request) mcpCaller {
 	if name == "" {
 		name = "a program"
 	}
-	return mcpCaller{name: name, isProgramHeld: token.ClientID != ""}
+	programID := token.ID
+	if token.ClientID != "" {
+		programID = token.ClientID
+	}
+	return mcpCaller{name: name, isProgramHeld: token.ClientID != "", programID: programID}
 }
 
 // originOf is the address a request reached this server by: https behind a
