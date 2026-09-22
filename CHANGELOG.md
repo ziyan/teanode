@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.15] - 2026-09-22
+
+### Fixed
+
+- The key to the graph no longer runs under the zoom controls on a narrow
+  screen. (#119)
+
 ## [0.47.14] - 2026-09-22
 
 ### Fixed
