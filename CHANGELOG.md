@@ -6,6 +6,15 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.14] - 2026-09-22
+
+### Fixed
+
+- The model that answers a question whose answers are known in advance can be
+  set through the API and read back from the command line. (#118)
+- The files a night passed over are grouped under the reason they share
+  rather than repeating it on every row. (#118)
+
 ## [0.47.13] - 2026-09-22
 
 ### Fixed
