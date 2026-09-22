@@ -115,7 +115,7 @@ func runShare(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 			attachment, err = tx.CreateAgentAttachment(&models.AgentAttachment{
 				AgentID:        run.Agent().ID,
-				ConversationID: run.Conversation().ID,
+				ConversationID: tools.ConversationIDOf(run),
 				MessageID:      sharedMessage,
 				Name:           safeName(file.name),
 				ContentType:    file.contentType,
@@ -294,7 +294,7 @@ func fromConversation(ctx context.Context, run tools.Run, arguments shareArgumen
 	// of another, which matters most where a turn can be started by
 	// somebody else: a linked group chat.
 	if attachment == nil || attachment.AgentID != run.Agent().ID ||
-		(attachment.ConversationID != "" && attachment.ConversationID != run.Conversation().ID) {
+		(attachment.ConversationID != "" && attachment.ConversationID != tools.ConversationIDOf(run)) {
 		return nil, fmt.Errorf("there is no attachment %q in this conversation", id)
 	}
 	file := &fetched{name: attachment.Name, contentType: attachment.ContentType, existing: attachment}

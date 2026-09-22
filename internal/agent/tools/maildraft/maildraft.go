@@ -86,7 +86,7 @@ func ownFiles(ctx context.Context, run tools.Run, ids []string) error {
 				return err
 			}
 			if attachment == nil || attachment.AgentID != run.Agent().ID ||
-				(attachment.ConversationID != "" && attachment.ConversationID != run.Conversation().ID) {
+				(attachment.ConversationID != "" && attachment.ConversationID != tools.ConversationIDOf(run)) {
 				return fmt.Errorf("there is no file %q in this conversation", id)
 			}
 			if !tools.IsImage(attachment.ContentType) {

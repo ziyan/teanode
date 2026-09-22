@@ -100,7 +100,13 @@ func runTodo(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 	database := run.Database()
-	conversationId := run.Conversation().ID
+	// A to-do list is a conversation's, kept for the turns that follow. A
+	// call from outside one has no list to keep, and inventing one would
+	// file items nobody would ever see again.
+	conversationId := tools.ConversationIDOf(run)
+	if conversationId == "" {
+		return nil, fmt.Errorf("a to-do list belongs to a conversation, and this call is not part of one")
+	}
 	list := func() (*tools.Result, error) {
 		var todos []*models.AgentTodo
 		if err := database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
@@ -162,12 +168,12 @@ func runTodo(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 // todoOverlay is the open items, oldest first, capped, with counts.
 func todoOverlay(ctx context.Context) string {
 	run, err := tools.RunFrom(ctx)
-	if err != nil {
+	if err != nil || tools.ConversationIDOf(run) == "" {
 		return ""
 	}
 	var todos []*models.AgentTodo
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		todos, err = tx.ListAgentTodos(run.Conversation().ID)
+		todos, err = tx.ListAgentTodos(tools.ConversationIDOf(run))
 		return err
 	}); err != nil || len(todos) == 0 {
 		return ""
