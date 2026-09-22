@@ -47,13 +47,13 @@ func (self *deskRun) ComputersUnattended() bool            { return false }
 func (self *deskRun) Headless() bool                       { return false }
 func (self *deskRun) Configuration() *config.Configuration { return self.configuration }
 
-// An address only the person's network reaches is refused from the server
-// and read through their computer.
+// An address only the person's network reaches is refused through this
+// server and read through their computer.
 //
 // The test server listens on loopback, which the server's own fetcher
 // refuses as private; from the computer it is simply an address on its
 // network, which is what going through one is for.
-func TestAPrivateAddressIsReadThroughAComputerAndRefusedFromTheServer(t *testing.T) {
+func TestAPrivateAddressIsReadThroughAComputerAndRefusedThroughThisServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 		response.Header().Set("Content-Type", "text/html")
 		_, _ = io.WriteString(response, "<html><title>Inside</title><body>only from the desk</body></html>")
@@ -75,15 +75,15 @@ func TestAPrivateAddressIsReadThroughAComputerAndRefusedFromTheServer(t *testing
 
 	direct, _ := json.Marshal(map[string]any{"url": server.URL})
 	if _, err := runWebFetch(ctx, &tools.Call{Arguments: direct}); err == nil {
-		t.Error("a loopback address was fetched from the server")
+		t.Error("a loopback address was fetched through this server")
 	}
 }
 
 // Going through a computer asks first, as reaching out with the shell does;
-// a public page from the server does not.
+// a public page through this server does not.
 func TestGoingThroughAComputerAsksFirst(t *testing.T) {
 	if risk := webFetchRisk(json.RawMessage(`{"url":"https://example.com"}`)); risk != tools.RiskRead {
-		t.Errorf("a fetch from the server is %v", risk)
+		t.Errorf("a fetch through this server is %v", risk)
 	}
 	if risk := webFetchRisk(json.RawMessage(`{"url":"https://example.com","computer":"desk"}`)); risk != tools.RiskWrite {
 		t.Errorf("a fetch through a computer is %v", risk)

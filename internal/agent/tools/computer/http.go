@@ -14,8 +14,8 @@ import (
 	"github.com/ziyan/teanode/internal/computer"
 )
 
-// HTTPClient makes its requests from one of the person's computers rather
-// than from the server.
+// HTTPClient makes its requests through one of the person's computers rather
+// than through this server.
 //
 // Anything that fetches with an *http.Client can be pointed at a computer
 // this way: a page the agent reads, a skill calling a service that only

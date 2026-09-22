@@ -11,21 +11,21 @@ import (
 	"time"
 )
 
-// A request made from this computer, on the agent's behalf.
+// A request made through this computer, on the agent's behalf.
 //
 // The server fetches from where it runs, and it refuses private and internal
 // addresses, which is right for a server. The person's own computer is on
 // networks the server is not: a work network behind a VPN, a home network, a
 // host that trusts a certificate authority of its own. Made from here, a
-// request goes out the way a browser on this machine would, through its
-// proxy settings and trusting what this machine trusts, and reaches what the
+// request goes out the way a browser on this computer would, through its
+// proxy settings and trusting what this computer trusts, and reaches what the
 // person can reach from their desk.
 //
 // Nothing here narrows which addresses may be asked for. That is decided on
 // the server, where the person is asked before a request goes through a
 // computer, the same as any command run on it.
 
-// HTTPArguments are one request to make from this computer.
+// HTTPArguments are one request to make through this computer.
 type HTTPArguments struct {
 	Method string              `json:"method"`
 	URL    string              `json:"url"`
@@ -58,7 +58,7 @@ const (
 	httpBytesMost      = 32 << 20
 )
 
-// RunHTTP makes one request from this computer.
+// RunHTTP makes one request through this computer.
 func RunHTTP(ctx context.Context, arguments *HTTPArguments) (*HTTPResult, error) {
 	target, err := url.Parse(strings.TrimSpace(arguments.URL))
 	if err != nil || target.Host == "" || (target.Scheme != "http" && target.Scheme != "https") {
@@ -92,8 +92,8 @@ func RunHTTP(ctx context.Context, arguments *HTTPArguments) (*HTTPResult, error)
 			request.Header.Add(name, value)
 		}
 	}
-	// This machine's proxy settings, as a browser here would use them; the
-	// default transport already reads them, and trusts what the machine
+	// This computer's proxy settings, as a browser here would use them; the
+	// default transport already reads them, and trusts what the computer
 	// trusts.
 	client := &http.Client{Transport: http.DefaultTransport}
 	response, err := client.Do(request)
