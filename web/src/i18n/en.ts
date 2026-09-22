@@ -971,6 +971,7 @@ export const en = {
   'agent.reachNotAttached': 'Through {name} (not attached now)',
   'agent.reachKept': '{name} now goes {through}',
   'agent.reachChooseOne': 'Several computers are attached: choose the one it runs on, or its calls cannot run.',
+  'agent.reachNotChosen': 'No computer chosen',
   'agent.reachFailed': 'The reach could not be set.',
   'agent.skillSecrets': 'Your keys for skills',
   'agent.skillSecretsHint':

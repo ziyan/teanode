@@ -1399,7 +1399,13 @@ function ReachCard() {
         const options = [
           {
             value: '',
-            label: reach.isOnComputer ? t('agent.reachOnlyComputer') : t('agent.reachThisServer'),
+            // Unset means the only computer when there is one; with several it
+            // means nothing yet, and says so rather than naming "the only one".
+            label: !reach.isOnComputer
+              ? t('agent.reachThisServer')
+              : computers.length > 1
+                ? t('agent.reachNotChosen')
+                : t('agent.reachOnlyComputer'),
           },
           ...computers.map((computer) => ({
             value: computer.name,

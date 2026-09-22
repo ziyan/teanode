@@ -70,11 +70,11 @@ the setting is right.
 
 ## Progress
 
-- [ ] Migration, model and database operations for `agent_reach`.
-- [ ] Skills go through the computer the reach or the call's `computer` names.
-- [ ] Connected servers the same, with a session per computer.
-- [ ] API to read and set, and the card on the Connections tab.
-- [ ] Deployed and checked on a server with two computers attached.
+- [x] Migration, model and database operations for `agent_reach`.
+- [x] Skills go through the computer the reach or the call's `computer` names.
+- [x] Connected servers the same, with a session per computer.
+- [x] API to read and set, and the card on the Connections tab.
+- [x] Deployed and checked on a server with two computers attached.
 
 ## Surprises & Discoveries
 
@@ -89,4 +89,14 @@ MCP runs in a `directRun`, and the assertion failed.
 
 ## Outcomes & Retrospective
 
-To be written when this lands.
+Checked on a deployed server with two computers attached. With no reach, a
+skill's requests went through this server; with its reach on the second
+computer, all of them went through it, as its own log showed; a call naming
+that computer did the same. A server that runs on the person's computer, with
+two attached and no reach, kept its tools listed and answered a call with the
+instruction to set its reach; with its reach set, it ran there.
+
+Looking at it found one fault the tests had not: with two computers and no
+reach, discovery refused the way a call does and the server's tools vanished,
+so the person saw only a tool that no longer existed. Discovery now lists the
+tools through any computer, since the list is the same on each.
