@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/browser"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -219,4 +221,107 @@ func (self *Agent) LatestIn(conversationId string) *AskRun {
 	self.runsMutex.Lock()
 	defer self.runsMutex.Unlock()
 	return self.latest[conversationId]
+}
+
+// The optional sides of a run, which a tool looks for with a type assertion
+// and quietly does without when they are missing. Held to them here so that
+// leaving one out breaks the build: every one of these was missing once, and
+// through the protocol the computer, the attached tab and the coding tools
+// failed outright while the searches quietly lost their sense of meaning.
+var (
+	_ tools.Computing          = (*directRun)(nil)
+	_ tools.Browsing           = (*directRun)(nil)
+	_ tools.GraphSearching     = (*directRun)(nil)
+	_ tools.KnowledgeSearching = (*directRun)(nil)
+	_ tools.Remembering        = (*directRun)(nil)
+)
+
+// The person's computers (tools.Computing), the same ones a conversation
+// reaches: whoever is at the harness is the person, and asked for this.
+func (self *directRun) AttachedComputers() []tools.Computer {
+	var computers []tools.Computer
+	for _, computer := range self.agent.computersFor(self.agentModel.ID) {
+		computers = append(computers, computer)
+	}
+	return computers
+}
+
+func (self *directRun) ComputersAllowed() bool {
+	return FeatureAllowed(self.agent.settings.Configuration(), "computer")
+}
+
+// ComputersUnattended is false, and never matters here: this run is not
+// headless, so the unattended rule is not reached.
+func (self *directRun) ComputersUnattended() bool { return false }
+
+// The person's attached tab (tools.Browsing), which lives in their own
+// browser and outlasts any one call.
+func (self *directRun) AttachedTab() tools.Tab {
+	if tab := self.agent.tabFor(self.agentModel.ID); tab != nil {
+		return tab
+	}
+	return nil
+}
+
+func (self *directRun) TabsAllowed() bool {
+	attach := self.agent.settings.Configuration().Agent.Browser.AttachTabs
+	return attach == nil || *attach
+}
+
+// BrowserPage is refused: the server's own browser keeps a page for the
+// length of a conversation and closes it when the turn ends. A call from
+// outside one has no turn to end, so a page opened here would be gone by
+// the next call, or left open with nobody to close it. The attached tab
+// above is what a harness can drive, and the agent itself, asked through
+// teanode_ask, can use its own browser inside a turn.
+func (self *directRun) BrowserPage(ctx context.Context) (*browser.Context, error) {
+	return nil, fmt.Errorf("the server's own browser is used inside a conversation; drive the attached tab instead, or ask the agent")
+}
+
+// meaningOfQuestion is what the words mean, for the searches below. A
+// conversation remembers these for the length of its turn; one call asks
+// once, so there is nothing to remember them for.
+func (self *directRun) meaningOfQuestion(ctx context.Context, kind, words string) *meaning {
+	text := cutRunes(strings.TrimSpace(words), graphEmbedCharacters)
+	if text == "" {
+		return nil
+	}
+	return self.agent.meaningOf(ctx, self.agentModel.ID, kind, text)
+}
+
+// Searching by meaning (tools.GraphSearching, tools.KnowledgeSearching), as a
+// conversation does. Without these the memory and knowledge tools fell back
+// to matching words alone.
+func (self *directRun) SearchGraphByMeaning(ctx context.Context, words string, limit int) ([]*models.AgentNode, []*models.AgentFact) {
+	nodes, facts, err := self.agent.nearestInGraphTo(ctx, self.agentModel.ID, self.meaningOfQuestion(ctx, "recall", words), limit)
+	if err != nil {
+		log.Warningf("cannot rank the graph of %q by meaning: %s", self.owner.Username, err)
+	}
+	return nodes, facts
+}
+
+func (self *directRun) SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, words string, limit int) ([]*models.AgentChunk, bool) {
+	return self.agent.searchChunksByMeaning(ctx, self.agentModel.ID, self.meaningOfQuestion(ctx, "search", words), sourceIds, limit)
+}
+
+func (self *directRun) RankChunksByMeaning(ctx context.Context, words string, chunks []*models.AgentChunk, limit int) []*models.AgentChunk {
+	if len(chunks) <= 1 {
+		return chunks
+	}
+	return self.agent.rankChunksByMeaning(ctx, self.agentModel.ID, self.meaningOfQuestion(ctx, "search", words), chunks, limit)
+}
+
+// Remembering (tools.Remembering), the same as a conversation: without it a
+// fact written from outside was filed with no vector and no check for the
+// same thing already said on the page.
+func (self *directRun) NoteFact(ctx context.Context, fact *models.AgentFact) []*models.AgentFact {
+	return self.agent.noteFact(ctx, self.agentModel.ID, fact)
+}
+
+func (self *directRun) PreparePage(ctx context.Context, path string, kind models.AgentNodeKind, name string) tools.PreparedPage {
+	return self.agent.preparePage(ctx, self.agentModel.ID, path, kind, name)
+}
+
+func (self *directRun) NoteNode(ctx context.Context, node *models.AgentNode) {
+	self.agent.noteNode(ctx, self.agentModel.ID, node)
 }
