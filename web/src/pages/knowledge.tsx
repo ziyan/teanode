@@ -1790,19 +1790,16 @@ function PageView({
             a fold is the agent's own judgement about two sentences, and a
             judgement nobody can see is one nobody can disagree with. */}
         {page.folded.length > 0 ? (
-          <>
-            <p className="knowledge-list-heading">{t('knowledge.foldedFacts')}</p>
-            <ul className="knowledge-rows">
-              {page.folded.map((row) => (
-                <li key={row.fact.id} className="knowledge-folded">
-                  <span>
-                    #{row.fact.number} {row.fact.text}
-                  </span>
-                  <span className="knowledge-folded-into">{t('knowledge.foldedInto', { number: row.into })}</span>
-                </li>
-              ))}
-            </ul>
-          </>
+          <ul className="knowledge-rows">
+            {page.folded.map((row) => (
+              <li key={row.fact.id} className="knowledge-folded">
+                <span>
+                  #{row.fact.number} {row.fact.text}
+                </span>
+                <span className="knowledge-folded-into">{t('knowledge.foldedInto', { number: row.into })}</span>
+              </li>
+            ))}
+          </ul>
         ) : null}
       </SettingsSection>
 
