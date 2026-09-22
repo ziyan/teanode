@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.47.9] - 2026-09-22
+
+### Fixed
+
+- A page in the graph explorer whose links were too many to draw now says so
+  instead of appearing to have none left. (#109)
+
 ## [0.47.8] - 2026-09-21
 
 ### Fixed
