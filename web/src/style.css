@@ -8587,6 +8587,37 @@ main.content:has(> .knowledge-frame) {
   padding: var(--space-4);
 }
 
+/* What is read in the pane is a page, not a settings form.
+   
+   The pane is already inside the frame, and the frame already has a line
+   around it and a corner on it. A card inside that is a box inside a box,
+   and the rows inside the card are a third, which is what the pane was:
+   five hundred bordered, rounded, filled things in one column. The mail
+   reading pane beside it has none of them, because a thing being read does
+   not need a container to say where it starts; a heading says that, and a
+   hairline says where the last one ended. */
+.knowledge-pane .settings-section.card {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.knowledge-pane .settings-section.card + .settings-section.card {
+  border-top: 1px solid var(--border);
+}
+
+/* The same for what is inside them: a fact and a link are lines of a page. */
+.knowledge-pane .settings-row,
+.knowledge-pane .settings-empty {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
 /* One column at a time once there is not room for two, which is the frame's
    own business rather than something to measure in script. */
 @container knowledge (max-width: 860px) {
