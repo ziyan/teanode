@@ -141,6 +141,32 @@ type filesystemArguments struct {
 	Recursive   bool   `json:"recursive,omitempty"`
 }
 
+// ForReach is the computer a person's reach names for one of their skills or
+// connected servers.
+//
+// Unlike Of, it finds the computer in a run with nobody present. The rule Of
+// keeps is about the agent deciding, alone, to act on somebody's computer; a
+// reach is the person's own standing decision, made once, and all that goes
+// through the computer is the service's own requests. A schedule or a triage
+// run using a service with a reach uses it the way the person set it.
+func ForReach(run tools.Run, name string) (tools.Computer, error) {
+	computing, ok := run.(tools.Computing)
+	if !ok || !computing.ComputersAllowed() || !tools.FeatureAllowed(run.Configuration(), "computer") {
+		return nil, fmt.Errorf("attaching a computer is off on this server")
+	}
+	name = strings.TrimSpace(name)
+	attached := computing.AttachedComputers()
+	for _, computer := range attached {
+		if strings.EqualFold(computer.Name(), name) {
+			return computer, nil
+		}
+	}
+	if len(attached) == 0 {
+		return nil, fmt.Errorf("it goes through the computer %q, and no computer is attached", name)
+	}
+	return nil, fmt.Errorf("it goes through the computer %q, which is not attached; there are %s", name, names(attached))
+}
+
 // computerOf is the person's computer a call means: the one named, the
 // only one when one is attached, and a question back when there are
 // several and none was named.
@@ -361,11 +387,41 @@ func computerOverlay(ctx context.Context) string {
 	for _, computer := range attached {
 		fmt.Fprintf(&builder, "- %q (%s): the whole machine as the person; ~ and a relative path are from %s, where commands run unless a directory is given\n", computer.Name(), computer.System(), computer.Home())
 		// The person's own words about what it is for, which is what tells
-		// two machines apart better than their host names do.
+		// two computers apart better than their host names do.
 		if description := strings.TrimSpace(computer.Description()); description != "" {
 			fmt.Fprintf(&builder, "  In their words: %s\n", description)
 		}
 	}
-	builder.WriteString("The shell and filesystem tools reach them, with the person's files and programs. Removing, moving, installing and reaching out ask them first; read before you change.\n</computer>")
+	builder.WriteString("The shell and filesystem tools reach them, with the person's files and programs. Removing, moving, installing and reaching out ask them first; read before you change.\n")
+	// The reaches the person set, so a call through the right computer
+	// leaves computer out rather than naming it and asking for nothing.
+	if reaches := reachLines(ctx, run); len(reaches) > 0 {
+		builder.WriteString("These go through a computer, as the person set: ")
+		builder.WriteString(strings.Join(reaches, "; "))
+		builder.WriteString(". Leave computer out of their calls to use that; name another computer only when that one cannot reach what is needed.\n")
+	}
+	builder.WriteString("</computer>")
 	return builder.String()
+}
+
+// reachLines are the person's reaches as the overlay says them: "the gitlab
+// skill through work". Nothing when they cannot be read: the overlay is a
+// convenience, and a call without it still uses the reach.
+func reachLines(ctx context.Context, run tools.Run) []string {
+	var lines []string
+	database := run.Database()
+	if database == nil {
+		return nil
+	}
+	_ = database.TransactionContext(ctx, func(tx db.Transaction) error {
+		reaches, err := tx.ListAgentReaches(run.Agent().ID)
+		if err != nil {
+			return err
+		}
+		for _, reach := range reaches {
+			lines = append(lines, fmt.Sprintf("the %s %s through %q", reach.Name, reach.Kind, reach.ComputerName))
+		}
+		return nil
+	})
+	return lines
 }

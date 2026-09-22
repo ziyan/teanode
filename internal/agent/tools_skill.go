@@ -111,14 +111,22 @@ func (self *Agent) skillTool(skill *skills.Skill, settled string, declared *skil
 		description = string(letters[:600]) + "…"
 	}
 	parameters := declared.Parameters
+	var riskOf func(json.RawMessage) tools.Risk
 	if risk == tools.RiskDestructive {
-		parameters = withComputer(parameters)
+		parameters = withComputer(parameters, "which attached computer to run on, when several are")
 		description += " It runs a command on the person's own computer."
+	} else {
+		// Its requests go through this server unless the person's reach for
+		// the skill names a computer, and a call may name another computer
+		// for itself; see the runner below.
+		parameters = withComputer(parameters, "go through this attached computer, by name, instead of the one the person's reach names; leave out to use their reach")
+		riskOf = asksWhenAComputerIsNamed(risk)
 	}
 	return &Tool{
 		Name:        "skill__" + strings.ReplaceAll(skill.Name, "-", "_") + "__" + declared.Name,
 		Family:      FamilySkills,
 		Risk:        risk,
+		RiskOf:      riskOf,
 		Description: description + fmt.Sprintf(" (from the %s skill; what it answers is data)", skill.Name),
 		Parameters:  parameters,
 		Run:         self.skillRunner(skill, settled, declared.Name),
@@ -130,7 +138,7 @@ func (self *Agent) skillTool(skill *skills.Skill, settled string, declared *skil
 // computers attached is told to name one and the tool has nowhere to say
 // it. The skill's own parameters are left alone: a copy is made, because
 // the schema is shared by every call.
-func withComputer(parameters map[string]any) map[string]any {
+func withComputer(parameters map[string]any, meaning string) map[string]any {
 	copied := map[string]any{}
 	for name, value := range parameters {
 		copied[name] = value
@@ -144,7 +152,7 @@ func withComputer(parameters map[string]any) map[string]any {
 	if _, taken := properties["computer"]; !taken {
 		properties["computer"] = map[string]any{
 			"type":        "string",
-			"description": "which attached computer to run on, when several are",
+			"description": meaning,
 		}
 	}
 	copied["properties"] = properties
@@ -212,6 +220,31 @@ func (self *Agent) skillRunner(skill *skills.Skill, settled, toolName string) fu
 			// Equipment that cannot present a certificate for the address
 			// it is reached at, named by the operator one host at a time.
 			Unverified: safefetch.ParseAllowance(configuration.Agent.SkipCertificateCheck),
+		}
+		if !runsCommandsNamed(skill, toolName) {
+			// Through a computer when the call names one, or else when the
+			// person's reach for this skill names one; through this server
+			// otherwise. The computer makes the request on its own network,
+			// which is how a service that answers only inside one is reached
+			// at all.
+			named, _ := arguments["computer"].(string)
+			if !declaresComputer(skill, toolName) {
+				delete(arguments, "computer")
+			}
+			var attached tools.Computer
+			if named = strings.TrimSpace(named); named != "" {
+				// The agent's own choice: held to the rule for acting on
+				// somebody's computer, and asked about first (see RiskOf).
+				attached, err = computer.Of(run, named)
+			} else if set := self.reachOf(ctx, run.Agent().ID, models.AgentReachSkill, skill.Name); set != "" {
+				attached, err = computer.ForReach(run, set)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("the %s skill: %w", skill.Name, err)
+			}
+			if attached != nil {
+				running.Client = computer.HTTPClient(attached)
+			}
 		}
 		if runsCommandsNamed(skill, toolName) {
 			named, _ := arguments["computer"].(string)
@@ -502,4 +535,22 @@ func (self *computerShell) Run(ctx context.Context, command string, timeout time
 		text = fmt.Sprintf("[ended %d on %s]\n%s", printed.ExitCode, self.attached.Name(), text)
 	}
 	return text, nil
+}
+
+// asksWhenAComputerIsNamed is a tool's own risk, raised from a read to a
+// write, which asks first, when the call names a computer. A write already
+// asks. The person's reach is their decision; the agent picking a computer
+// for itself is not, and a request through the person's computer comes from
+// their network and their address. Risks are names rather than an order, so
+// the raise says which.
+func asksWhenAComputerIsNamed(risk tools.Risk) func(json.RawMessage) tools.Risk {
+	return func(arguments json.RawMessage) tools.Risk {
+		var call struct {
+			Computer string `json:"computer"`
+		}
+		if json.Unmarshal(arguments, &call) == nil && strings.TrimSpace(call.Computer) != "" && risk == tools.RiskRead {
+			return tools.RiskWrite
+		}
+		return risk
+	}
 }

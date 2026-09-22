@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strings"
 	"time"
+
+	"github.com/ziyan/teanode/internal/db"
 )
 
 // The computer relay: the person's own computer, attached through
@@ -142,3 +145,27 @@ func (self *attachedComputer) Home() string   { return self.home }
 
 // Description is the person's sentence about what the computer is for.
 func (self *attachedComputer) Description() string { return self.description }
+
+// reachOf is the computer a person's reach names for one of their skills or
+// connected servers: what its requests go through. Empty means through this
+// server, and so does a reach that cannot be read, with a line in the log: the
+// service then fails on its own if only a computer could reach it, which says
+// more than failing here.
+func (self *Agent) reachOf(ctx context.Context, agentId, kind, name string) string {
+	var computerName string
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		reaches, err := tx.ListAgentReaches(agentId)
+		if err != nil {
+			return err
+		}
+		for _, reach := range reaches {
+			if reach.Kind == kind && strings.EqualFold(reach.Name, name) {
+				computerName = reach.ComputerName
+			}
+		}
+		return nil
+	}); err != nil {
+		log.Warningf("cannot read the reach of %s %q: %s", kind, name, err)
+	}
+	return computerName
+}

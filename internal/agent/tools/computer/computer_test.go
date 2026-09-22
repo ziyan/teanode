@@ -9,6 +9,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 )
 
 // fakeRun is a turn with the person present and a computer attached, or
@@ -35,6 +36,10 @@ func (self *fakeRun) Configuration() *config.Configuration { return self.config 
 func (self *fakeRun) ComputersAllowed() bool               { return true }
 func (self *fakeRun) ComputersUnattended() bool            { return self.unattended }
 func (self *fakeRun) Offered() []*tools.Tool               { return nil }
+
+// Database is none: these tests are about the computer, and a reach is read
+// only to mention it.
+func (self *fakeRun) Database() db.Database { return nil }
 
 type fakeComputer struct {
 	asked       []string
@@ -155,10 +160,10 @@ func TestFilesystemRisksByAction(t *testing.T) {
 // two host names, it still had to guess which was the one it wanted.
 func TestSeveralComputersAreNamedWithWhatEachIsFor(t *testing.T) {
 	listed := names([]tools.Computer{
-		&fakeComputer{name: "desk", description: "the machine at home, with the family photos"},
+		&fakeComputer{name: "desk", description: "the computer at home, with the family photos"},
 		&fakeComputer{name: "travel"},
 	})
-	if listed != "desk, the machine at home, with the family photos; travel" {
+	if listed != "desk, the computer at home, with the family photos; travel" {
 		t.Errorf("listed as %q", listed)
 	}
 }
