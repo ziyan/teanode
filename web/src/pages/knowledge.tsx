@@ -1610,9 +1610,17 @@ function PageView({
 
   return (
     <>
+      {/* The name stays in view while the facts under it are read past.
+          Reading the fortieth fact on a page whose name has scrolled away
+          is reading somebody's notes with the cover missing. It is lifted
+          out of the section below rather than pinned inside it, because a
+          sticky thing stays only within the box that holds it and that box
+          ended with the first section. */}
+      <header className="knowledge-page-head">
+        <h3>{node.path === 'self' && me ? me : node.name || node.path}</h3>
+      </header>
       <SettingsSection
         card
-        title={node.path === 'self' && me ? me : node.name || node.path}
         description={
           <>
             <code className="tag knowledge-path">{node.path}</code>{' '}
