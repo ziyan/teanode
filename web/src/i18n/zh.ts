@@ -1698,6 +1698,7 @@ export const zh: Catalog = {
   'authorize.sendsTo': '授权发送至',
   'authorize.actsAs': '执行身份',
   'authorize.grant': '它只能做你能做的事。你可以随时在令牌列表中撤销。',
+  'authorize.askedFor': '它请求发送到',
   'authorize.allow': '允许',
   'authorize.refuse': '拒绝',
   'authorize.working': '正在授权…',

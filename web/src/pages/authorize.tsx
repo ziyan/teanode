@@ -151,9 +151,20 @@ export function AuthorizePage() {
   }
 
   if (!request) {
+    // Nothing can be approved, so the reason is the whole of the page rather
+    // than the outcome of something the reader pressed. A toast alone left
+    // an empty card once it faded, which reads as a page that failed to load.
+    // The toast still carries the server's own words; the card says what the
+    // reader can check, which is where the program asked to be sent.
     return (
       <AuthCard purpose={t('authorize.title')} onSubmit={(event) => event.preventDefault()}>
-        <ErrorMessage error={error ?? t('authorize.unknownProgram')} />
+        <p className="muted">{t('authorize.unknownProgram')}</p>
+        {redirectHostOf(redirectUri) && (
+          <p className="authorize-asked muted">
+            {t('authorize.askedFor')} <code className="authorize-host">{redirectHostOf(redirectUri)}</code>
+          </p>
+        )}
+        <ErrorMessage error={error} />
       </AuthCard>
     )
   }
@@ -203,4 +214,15 @@ export function AuthorizePage() {
       </div>
     </AuthCard>
   )
+}
+
+// redirectHostOf is the host an address names, or '' when it names none. The
+// address came from a query string anybody could write, so it is shown only
+// as a host, and only when it parses.
+function redirectHostOf(address: string): string {
+  try {
+    return new URL(address).host
+  } catch {
+    return ''
+  }
 }

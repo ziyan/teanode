@@ -10059,3 +10059,11 @@ main.content:has(> .knowledge-frame) {
     width: 100%;
   }
 }
+
+/* Where a program asked to be sent, under the sentence saying it cannot be
+   approved: the one detail a reader can check against what they expected. */
+.authorize-asked {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-label);
+  overflow-wrap: anywhere;
+}

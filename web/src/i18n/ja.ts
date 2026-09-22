@@ -1752,6 +1752,7 @@ export const ja: Catalog = {
   'authorize.sendsTo': '承認の送信先',
   'authorize.actsAs': '実行者',
   'authorize.grant': 'あなたができることだけを行えます。トークンの一覧からいつでも取り消せます。',
+  'authorize.askedFor': '要求された送信先',
   'authorize.allow': '許可',
   'authorize.refuse': '拒否',
   'authorize.working': '認可しています…',

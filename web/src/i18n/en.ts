@@ -1760,6 +1760,7 @@ export const en = {
   'authorize.sendsTo': 'Sends the approval to',
   'authorize.actsAs': 'Acts as',
   'authorize.grant': 'It will be able to do what you can do, and nothing more. You can revoke it at any time from your tokens.',
+  'authorize.askedFor': 'It asked to be sent to',
   'authorize.allow': 'Allow',
   'authorize.refuse': 'Refuse',
   'authorize.working': 'Authorizing…',
