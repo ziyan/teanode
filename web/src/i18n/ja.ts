@@ -2425,7 +2425,6 @@ export const ja: Catalog = {
   'knowledge.facts': '事実',
   'knowledge.factsHint': 'これについてエージェントが知っていること。それぞれ出どころの言葉が付いています。',
   'knowledge.noFacts': 'このページにはまだ何もありません。',
-  'knowledge.foldedFacts': 'まとめられた記述',
   'knowledge.foldedInto': '#{number} にまとめられました',
   'knowledge.history': '変更の記録',
   'knowledge.historyHint': 'このページへのすべての変更を新しい順に、誰が行ったかとともに。',

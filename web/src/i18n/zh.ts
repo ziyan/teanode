@@ -2346,7 +2346,6 @@ export const zh: Catalog = {
   'knowledge.facts': '事实',
   'knowledge.factsHint': '代理关于此事所知道的，每条都附有来源原文。',
   'knowledge.noFacts': '这一页还没有内容。',
-  'knowledge.foldedFacts': '已并入的内容',
   'knowledge.foldedInto': '并入 #{number}',
   'knowledge.history': '修订记录',
   'knowledge.historyHint': '这一页的每一次改动，最新的在前，以及是谁改的。',

@@ -2439,7 +2439,6 @@ export const en = {
   'knowledge.facts': 'Facts',
   'knowledge.factsHint': 'What your agent knows about this, each with the words it came from.',
   'knowledge.noFacts': 'Nothing on this page yet.',
-  'knowledge.foldedFacts': 'Folded in',
   'knowledge.foldedInto': 'folded into #{number}',
   'knowledge.history': 'History',
   'knowledge.historyHint': 'Every change to this page, newest first, and who made it.',
