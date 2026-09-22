@@ -42,7 +42,20 @@ func outcomeForJob(job *models.AgentJob, err error, finishedAt time.Time) *db.Ag
 		outcome.NotBefore = &deferral.Until
 		return outcome
 	}
-	if errors.Is(err, context.Canceled) {
+	// A job that was stopped, rather than one that went wrong, goes back
+	// in the queue without a mark against it.
+	//
+	// Cancelled means the server is going down. Deadline exceeded means
+	// the job reached the bound this very package gives it, which is not
+	// the job failing: it did the work it had time for and the rest is
+	// still waiting. Counting it as a failure put a night that needed
+	// longer than its bound on the retry ladder, and the ladder ends in
+	// dead. A night whose reading was nearly done spent an hour and forty
+	// minutes parked before its next attempt, and nothing could bring it
+	// forward: asking for a dream now cannot make a second job while one
+	// is queued, and a retry is only offered for a job already given up
+	// on.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		outcome.JobStatus = models.AgentJobQueued
 		return outcome
 	}

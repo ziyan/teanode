@@ -51,3 +51,28 @@ func TestJobClaimsOutlastWorkAndCompletion(test *testing.T) {
 		}
 	}
 }
+
+// A job that reached the bound this package gives it did not fail: it did
+// the work it had time for, and the rest is still waiting. Counting it as a
+// failure put it on the retry ladder, whose last rung is dead, and nothing
+// could bring it forward: a night cannot be asked for while one is queued,
+// and a retry is only offered for a job already given up on. A night that
+// needed longer than its bound sat parked for an hour and forty minutes
+// with two hundred and ten documents left to read.
+func TestReachingTheBoundDoesNotConsumeFailureAllowance(test *testing.T) {
+	outcome := outcomeForJob(&models.AgentJob{FailureCount: 3}, fmt.Errorf("the night: %w", context.DeadlineExceeded), time.Now())
+	if outcome.JobStatus != models.AgentJobQueued {
+		test.Fatalf("a job that ran out of time goes back in the queue: %+v", outcome)
+	}
+	if outcome.FailureCount != 3 {
+		test.Errorf("it costs no failure allowance: %d, want 3", outcome.FailureCount)
+	}
+	if outcome.NotBefore != nil {
+		test.Errorf("and waits for nothing: %v", outcome.NotBefore)
+	}
+	// A job that genuinely failed still climbs the ladder.
+	failed := outcomeForJob(&models.AgentJob{FailureCount: 3}, fmt.Errorf("the model refused"), time.Now())
+	if failed.FailureCount != 4 || failed.NotBefore == nil {
+		test.Errorf("a real failure still waits its turn: %+v", failed)
+	}
+}
