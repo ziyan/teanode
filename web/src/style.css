@@ -4343,7 +4343,12 @@ label.check-list-item {
 .mailbox-star.on {
   color: #d99a1b;
 }
-.mailbox-foot {
+/* The strip across the bottom of a list: how much of it is shown, and the
+   control that shows more. Named for the shape rather than for the mailbox
+   it was first written for, the same way the strip across the top is, since
+   the knowledge navigator ends the same kind of list and a page should not
+   have to wear another page's name to be drawn like it. */
+.list-foot {
   display: flex;
   justify-content: space-between;
   align-items: center;

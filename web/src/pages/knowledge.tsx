@@ -970,11 +970,18 @@ function NavigatorList({
           </li>
         ))}
       </ul>
-      {rows.length < total ? (
-        <button type="button" className="show-more" disabled={loading} onClick={() => void load(rows.length)}>
-          {t('knowledge.showMore', { count: Math.min(PAGE_SIZE, total - rows.length) })}
-        </button>
-      ) : null}
+      {/* The same strip the mailbox ends its list with: how much of the
+          folder is shown, and the control that shows more. It was a button
+          on its own here, which said nothing about how much was left and
+          sat against the edge of a list whose rows run to it. */}
+      <div className="list-foot">
+        <span>{loading ? t('common.loading') : t('list.count', { shown: rows.length, total })}</span>
+        {rows.length < total && !loading ? (
+          <button type="button" className="show-more" onClick={() => void load(rows.length)}>
+            {t('list.showMore')}
+          </button>
+        ) : null}
+      </div>
     </>
   )
 }
