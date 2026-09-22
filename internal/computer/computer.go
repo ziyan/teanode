@@ -368,6 +368,12 @@ func handle(ctx context.Context, options *Options, action string, args json.RawM
 			return nil, fmt.Errorf("the request is not readable: %w", err)
 		}
 		result, err = RunShell(ctx, options, &arguments)
+	case "http":
+		var arguments HTTPArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = RunHTTP(ctx, &arguments)
 	case "filesystem":
 		var arguments FilesystemArguments
 		if err := json.Unmarshal(args, &arguments); err != nil {
