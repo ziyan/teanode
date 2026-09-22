@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/util/safefetch"
 )
 
@@ -229,15 +230,12 @@ func Discover(ctx context.Context, settings *OAuthSettings) (*Metadata, error) {
 // loopback is a host that never leaves this machine, where plain HTTP carries
 // nothing anybody else can read. An operator running a connected server beside
 // this one is the case this exists for.
+//
+// The rule itself lives in internal/api, because the other half of this
+// protocol asks the same question about a redirect address and a security
+// check kept in two places is a security check that will eventually differ.
 func loopback(host string) bool {
-	host = strings.ToLower(strings.TrimSpace(host))
-	if host == "localhost" {
-		return true
-	}
-	if address := net.ParseIP(host); address != nil {
-		return address.IsLoopback()
-	}
-	return false
+	return api.IsLoopbackHost(host)
 }
 
 // sameIssuer is whether a document fetched from one address may claim to

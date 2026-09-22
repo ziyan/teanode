@@ -30,9 +30,10 @@ type memoryStore struct {
 }
 
 type storedCredential struct {
-	keyHash string
-	session *models.Session
-	token   *models.Token
+	keyHash     string
+	refreshHash string
+	session     *models.Session
+	token       *models.Token
 }
 
 func newMemoryStore(users ...*models.User) *memoryStore {
@@ -151,6 +152,29 @@ func (self *memoryStore) CreateToken(token *models.Token, keyHash string) (*mode
 	stored.ModifiedAt = stored.CreatedAt
 	self.tokens[token.ID] = &storedCredential{keyHash: keyHash, token: &stored}
 	return &stored, nil
+}
+
+func (self *memoryStore) CreateAuthorizedToken(token *models.Token, keyHash, refreshHash string) (*models.Token, error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	stored := *token
+	stored.CreatedAt = time.Now()
+	stored.ModifiedAt = stored.CreatedAt
+	self.tokens[token.ID] = &storedCredential{keyHash: keyHash, refreshHash: refreshHash, token: &stored}
+	return &stored, nil
+}
+
+func (self *memoryStore) GetTokenRefresh(tokenId string) (*models.Token, string, error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	found, ok := self.tokens[tokenId]
+	if !ok {
+		return nil, "", nil
+	}
+	copied := *found.token
+	return &copied, found.refreshHash, nil
 }
 
 func (self *memoryStore) GetToken(tokenId string) (*models.Token, string, error) {

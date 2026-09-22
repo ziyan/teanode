@@ -19,7 +19,7 @@ import (
 // below ask for them the way a program would.
 func serve(test *testing.T) *httptest.Server {
 	test.Helper()
-	component, err := New(config.NewMemoryStore(&config.Configuration{}))
+	component, err := New(config.NewMemoryStore(&config.Configuration{}), nil, nil)
 	if err != nil {
 		test.Fatalf("New: %s", err)
 	}

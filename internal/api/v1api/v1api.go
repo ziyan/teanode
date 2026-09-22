@@ -80,7 +80,7 @@ func New(
 	// Part of this version's surface even though the two addresses sit
 	// outside the API prefix: what they describe is the MCP endpoint, which
 	// graph above serves.
-	discovery, err := apioauth.New(configuration)
+	discovery, err := apioauth.New(configuration, database, authenticator)
 	if err != nil {
 		return nil, err
 	}

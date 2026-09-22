@@ -24,23 +24,44 @@ import (
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/web"
 )
 
 var log = logging.MustGetLogger("apioauth")
 
 type oauth struct {
-	config config.Store
+	config        config.Store
+	database      db.Database
+	authenticator web.Authenticator
 }
 
 // New builds the OAuth component.
-func New(configuration config.Store) (web.Component, error) {
-	return &oauth{config: configuration}, nil
+//
+// The database and the authenticator may be nil, which serves the discovery
+// documents and nothing else. That is what the tests covering those documents
+// use, and it keeps them from having to stand up a database to read two pieces
+// of JSON.
+func New(configuration config.Store, database db.Database, authenticator web.Authenticator) (web.Component, error) {
+	return &oauth{config: configuration, database: database, authenticator: authenticator}, nil
 }
 
 func (self *oauth) AddRoutes(router *mux.Router) error {
 	router.Path(api.PathOAuthProtectedResource).Methods(http.MethodGet).HandlerFunc(self.protectedResourceView)
 	router.Path(api.PathOAuthProtectedResourceMCP).Methods(http.MethodGet).HandlerFunc(self.protectedResourceView)
 	router.Path(api.PathOAuthAuthorizationServer).Methods(http.MethodGet).HandlerFunc(self.authorizationServerView)
+	if self.database == nil || self.authenticator == nil {
+		return nil
+	}
+	router.Path(api.PathOAuthRegister).Methods(http.MethodPost).HandlerFunc(self.registerView)
+	router.Path(api.PathOAuthToken).Methods(http.MethodPost).HandlerFunc(self.tokenView)
+	router.Path(api.PathOAuthRevoke).Methods(http.MethodPost).HandlerFunc(self.revokeView)
+	// PathOAuthAuthorize is deliberately not here. It is where a person is
+	// sent to approve, so it is a page rather than an endpoint, and it is
+	// drawn by the dashboard: that way approving reuses the sign-in the
+	// dashboard already has, with passkeys and single sign-on, rather than
+	// this package growing a second place that accepts a password. Not
+	// claiming the route is what lets it fall through to the dashboard, the
+	// same way /cli does.
 	return nil
 }

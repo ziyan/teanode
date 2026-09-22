@@ -27,6 +27,7 @@ type Query interface {
 	CalendarQuery
 	CalendarInvitationQuery
 	TokenQuery
+	OAuthQuery
 	SessionQuery
 	PasskeyQuery
 	SettingsQuery
@@ -69,6 +70,7 @@ type Mutation interface {
 	CalendarMutation
 	CalendarInvitationMutation
 	TokenMutation
+	OAuthMutation
 	SessionMutation
 	PasskeyMutation
 	SettingsMutation
