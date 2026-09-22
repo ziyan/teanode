@@ -11,7 +11,15 @@ import (
 // TokenOperation is the same for API tokens.
 type TokenOperation interface {
 	CreateToken(token *models.Token, keyHash string) (*models.Token, error)
+
+	// CreateAuthorizedToken mints a token a program holds, with the hash of
+	// the secret it refreshes with.
+	CreateAuthorizedToken(token *models.Token, keyHash, refreshHash string) (*models.Token, error)
+
 	GetToken(tokenId string) (*models.Token, string, error)
+
+	// GetTokenRefresh is the hash a refresh secret is checked against.
+	GetTokenRefresh(tokenId string) (*models.Token, string, error)
 	ListTokens(userId string, options *SessionOptions) ([]*models.Token, error)
 	TouchToken(tokenId string, at time.Time, ip, userAgent string) error
 	RevokeToken(tokenId string, at time.Time) error
@@ -36,6 +44,10 @@ type tokenModel struct {
 
 	IP        string `gorm:"column:ip;size:64"`
 	UserAgent string `gorm:"type:text"`
+
+	ClientID    *string `gorm:"column:client_id;size:32"`
+	Resource    string  `gorm:"type:text"`
+	RefreshHash *string `gorm:"column:refresh_hash;size:64"`
 }
 
 func (self *tokenModel) TableName() string {
@@ -54,7 +66,28 @@ func tokenFromModel(model *tokenModel) *models.Token {
 		RevokedAt:  timeOrZero(model.RevokedAt),
 		IP:         model.IP,
 		UserAgent:  model.UserAgent,
+		ClientID:   stringOrEmpty(model.ClientID),
+		Resource:   model.Resource,
 	}
+}
+
+// stringOrEmpty is the nullable columns read back. Null and empty mean the
+// same thing here -- no client, no resource -- and the column is nullable
+// only so that every token issued before this existed keeps its meaning.
+func stringOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+// stringOrNil is the reverse, so that "no client" is stored as null rather
+// than as an empty string that a foreign key would have to explain.
+func stringOrNil(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func (self *database) CreateToken(token *models.Token, keyHash string) (*models.Token, error) {
@@ -72,6 +105,37 @@ func (self *database) CreateToken(token *models.Token, keyHash string) (*models.
 		return nil, err
 	}
 	return tokenFromModel(model), nil
+}
+
+func (self *database) CreateAuthorizedToken(token *models.Token, keyHash, refreshHash string) (*models.Token, error) {
+	now := time.Now()
+	model := &tokenModel{
+		ID:          token.ID,
+		CreatedAt:   now,
+		ModifiedAt:  now,
+		UserID:      token.UserID,
+		Name:        token.Name,
+		KeyHash:     keyHash,
+		ExpiresAt:   timeOrNil(token.ExpiresAt),
+		ClientID:    stringOrNil(token.ClientID),
+		Resource:    token.Resource,
+		RefreshHash: stringOrNil(refreshHash),
+	}
+	if err := self.db.Create(model).Error; err != nil {
+		return nil, err
+	}
+	return tokenFromModel(model), nil
+}
+
+func (self *database) GetTokenRefresh(tokenId string) (*models.Token, string, error) {
+	var model tokenModel
+	if err := self.db.First(&model, "\"id\" = ?", tokenId).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, "", nil
+		}
+		return nil, "", err
+	}
+	return tokenFromModel(&model), stringOrEmpty(model.RefreshHash), nil
 }
 
 func (self *database) GetToken(tokenId string) (*models.Token, string, error) {

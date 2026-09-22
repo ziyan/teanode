@@ -42,6 +42,17 @@ type Token struct {
 
 	// When it was revoked. Set rather than deleted, so the list can say so.
 	RevokedAt time.Time `json:"revokedAt,omitempty"`
+
+	// ClientID is the program a person authorized to hold this token, when
+	// one was. Empty on a token somebody minted for themselves, which is
+	// every token that existed before programs could be authorized.
+	ClientID string `json:"clientId,omitempty"`
+
+	// Resource is what this token is good for. Empty means what it has
+	// always meant: this server, the way a token minted by hand is. A token
+	// naming a resource is refused anywhere else, so one issued for the
+	// agent tools endpoint cannot be replayed against the rest of the API.
+	Resource string `json:"resource,omitempty"`
 }
 
 // Active reports whether this Token would authenticate a request now.
