@@ -127,7 +127,7 @@ export function LoginPage({
       {ssoProviders.length > 0 && (
         <div className="sso-buttons">
           {ssoProviders.map((provider) => (
-            <a key={provider.id} className="button" href={`/api/v1/sso/${encodeURIComponent(provider.id)}/start`}>
+            <a key={provider.id} className="button" href={ssoStart(provider.id)}>
               {t('login.withProvider', { name: provider.name })}
             </a>
           ))}
@@ -135,4 +135,19 @@ export function LoginPage({
       )}
     </AuthCard>
   )
+}
+
+// ssoStart is where single sign-on begins, carrying the address the reader was
+// on so they come back to it rather than to the home page.
+//
+// The login form is drawn at whatever address needed a sign-in: a deep link, the
+// command line's page, or a program's approval page, whose query is the whole
+// request. Signing in with a password or a passkey stays on that address; single
+// sign-on leaves for the provider, and without this it came back to the home
+// page, and an approval the program was waiting on was lost. The server accepts
+// only a path on this server here.
+function ssoStart(providerId: string): string {
+  const start = `/api/v1/sso/${encodeURIComponent(providerId)}/start`
+  const here = window.location.pathname + window.location.search
+  return here === '/' ? start : `${start}?return=${encodeURIComponent(here)}`
 }

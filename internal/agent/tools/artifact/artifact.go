@@ -97,7 +97,7 @@ func runArtifact(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		created, err = tx.CreateAgentAttachment(&models.AgentAttachment{
 			AgentID:        run.Agent().ID,
-			ConversationID: run.Conversation().ID,
+			ConversationID: tools.ConversationIDOf(run),
 			MessageID:      artifactMessage,
 			Name:           safeFilename(title) + extension,
 			ContentType:    contentType,

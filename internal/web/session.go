@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -95,6 +96,30 @@ type Authenticator interface {
 	// row and the token string, which is the only time it can be read.
 	IssueToken(username, name string, lifetime time.Duration) (*models.Token, string, error)
 
+	// IssueAuthorizedToken mints the token a program collects after somebody
+	// approved it, returning the row, the token and the refresh secret.
+	IssueAuthorizedToken(userId, name, clientId, resource string, lifetime time.Duration) (*models.Token, string, string, error)
+
+	// RedeemRefresh checks a refresh secret and returns the token it renews,
+	// without minting the replacement.
+	RedeemRefresh(value string) (*models.Token, error)
+
+	// RevokeTokenByID retires a token without knowing whose it is, for a
+	// refresh replacing the one it renewed, and says whether this call was
+	// the one that retired it.
+	RevokeTokenByID(tokenId string) (bool, error)
+
+	// UserByID is the account a token or an approval belongs to.
+	UserByID(userId string) *models.User
+
+	// UserByName is the account somebody is signed in as.
+	UserByName(username string) *models.User
+
+	// TokenIDOf is the identifier inside an access token, when the value is
+	// one this server minted. It verifies the signature, so an identifier
+	// only comes back for a credential that was issued here.
+	TokenIDOf(value string) (string, bool)
+
 	// ListTokens returns an operator's tokens, newest first.
 	ListTokens(username string, includeRevoked bool) ([]*models.Token, error)
 
@@ -134,6 +159,10 @@ type CredentialStore interface {
 	db.SessionOperation
 	db.TokenOperation
 	db.UserLookup
+
+	// ScavengeOAuth sweeps approvals nobody collected and registrations
+	// nobody approved, alongside the sessions and tokens swept here.
+	ScavengeOAuth(now time.Time) (int64, error)
 
 	// TransactionContext is for the two writes to the user table made here:
 	// claiming a fresh server, and a person changing their own password.
@@ -333,6 +362,19 @@ func (self *authenticator) authenticateBearer(header string, request *http.Reque
 	if token == nil || !matches(keyHash, key) || !token.Active(time.Now()) {
 		return "", false
 	}
+	// A token issued for one thing is refused everywhere else.
+	//
+	// Without this the resource a program asked for would be decoration and
+	// the token a skeleton key: somebody who got hold of one minted for the
+	// agent tools endpoint could spend it against the whole management API.
+	// A token with no resource is one somebody minted by hand, which is what
+	// every token was before programs could be authorized, and it keeps
+	// meaning what it meant.
+	if token.Resource != "" && !allowsResource(token.Resource, request) {
+		log.Warningf("token %s was offered at %s but was issued for %s", token.ID, request.URL.Path, token.Resource)
+		return "", false
+	}
+
 	// A token acts as the account it belongs to, so removing the account
 	// takes its tokens with it.
 	user := self.findUserById(token.UserID)
@@ -342,6 +384,22 @@ func (self *authenticator) authenticateBearer(header string, request *http.Reque
 
 	self.touch(token.ID, token.UsedAt, request, self.database.TouchToken)
 	return user.Username, true
+}
+
+// allowsResource says whether a request is for the thing a token was issued
+// for.
+//
+// Compared by path rather than by whole address. The resource was written
+// down as the address the program asked through, and one server answers on
+// more than one name -- a hostname, a loopback address, whatever a proxy
+// forwards -- so comparing the whole thing would refuse a token for arriving
+// by a different door of the same building.
+func allowsResource(resource string, request *http.Request) bool {
+	parsed, err := url.Parse(resource)
+	if err != nil {
+		return false
+	}
+	return parsed.Path == request.URL.Path
 }
 
 // bearerToken extracts the credential from an Authorization header, accepting
@@ -705,8 +763,103 @@ func (self *authenticator) Scavenge() error {
 	if err != nil {
 		return err
 	}
-	if sessions > 0 || tokens > 0 {
-		log.Noticef("removed %d expired sessions and %d expired tokens", sessions, tokens)
+	// Registration needs no credential, so without this sweep the table of
+	// programs that introduced themselves grows with every one that ever
+	// did, approved or not.
+	programs, err := self.database.ScavengeOAuth(now)
+	if err != nil {
+		return err
+	}
+	if sessions > 0 || tokens > 0 || programs > 0 {
+		log.Noticef("removed %d expired sessions, %d expired tokens and %d unused program registrations or approvals",
+			sessions, tokens, programs)
 	}
 	return nil
+}
+
+// IssueAuthorizedToken mints the token a program collects after somebody
+// approved it, and the secret it renews with.
+//
+// An ordinary token, with two things added: the client that holds it, so a
+// person reading their list sees a program rather than a row, and the resource
+// it is good for, so it is refused anywhere else. Everything that already
+// works for a token minted by hand -- expiry, revocation, acting as the
+// account, appearing in the audit log -- works for this one, because it is the
+// same kind of thing.
+func (self *authenticator) IssueAuthorizedToken(userId, name, clientId, resource string, lifetime time.Duration) (*models.Token, string, string, error) {
+	id, value, keyHash := issue(kindToken, TokenPrefix, self.tokenKey())
+	// The refresh secret is signed with the same key but a different kind, so
+	// it verifies only where a refresh is expected. It carries the access
+	// token's identifier, which is what a refresh has to name.
+	refreshKey := security.GenerateRandomString(16, security.LowerAlphaNumeric)
+	refreshValue := RefreshPrefix + security.EncodeToken(kindRefresh, id, refreshKey, self.tokenKey())
+
+	token := &models.Token{ID: id, UserID: userId, Name: name, ClientID: clientId, Resource: resource}
+	if lifetime > 0 {
+		token.ExpiresAt = time.Now().Add(lifetime)
+	}
+
+	stored, err := self.database.CreateAuthorizedToken(token, keyHash, hashKey(refreshKey))
+	if err != nil {
+		return nil, "", "", err
+	}
+	log.Noticef("issued API token %s to the authorized client %s (%q)", id, clientId, name)
+	return stored, value, refreshValue, nil
+}
+
+// RedeemRefresh checks a refresh secret and returns the token it renews.
+//
+// It does not mint the replacement: the caller does that, so that retiring the
+// old token and issuing the new one stay in one place.
+func (self *authenticator) RedeemRefresh(value string) (*models.Token, error) {
+	id, key, ok := parse(kindRefresh, RefreshPrefix, value, self.tokenKey())
+	if !ok {
+		return nil, ErrInvalidCredentials
+	}
+	token, refreshHash, err := self.database.GetTokenRefresh(id)
+	if err != nil {
+		return nil, err
+	}
+	// A token with no refresh hash was minted by hand and cannot be renewed;
+	// matches on an empty hash would be a comparison against nothing.
+	if token == nil || refreshHash == "" || !matches(refreshHash, key) {
+		return nil, ErrInvalidCredentials
+	}
+	// Refreshable rather than Active: a program renews when its access has
+	// run out, often only after a request was refused, so an expired access
+	// token is the usual case here rather than a reason to refuse.
+	if !token.Refreshable(time.Now()) {
+		return nil, ErrInvalidCredentials
+	}
+	return token, nil
+}
+
+// RevokeTokenByID retires a token by its identifier alone.
+//
+// RevokeToken takes an account as well, because a person revoking a token
+// must not be able to name somebody else's. A refresh has already proved it
+// holds the token it is retiring, so there is nobody to check it against.
+func (self *authenticator) RevokeTokenByID(tokenId string) (bool, error) {
+	return self.database.RetireToken(tokenId, time.Now())
+}
+
+// UserByID is the account an identifier names, or nil.
+func (self *authenticator) UserByID(userId string) *models.User {
+	return self.findUserById(userId)
+}
+
+// UserByName is the account a name signs in as, or nil.
+func (self *authenticator) UserByName(username string) *models.User {
+	return self.findUser(username)
+}
+
+// TokenIDOf reads the identifier out of an access token this server minted.
+//
+// The signature is checked, so this cannot be used to name a row somebody
+// made up. The secret half is not compared, because the caller is revoking:
+// holding the token is the only claim revoking it needs, and a wrong secret
+// simply finds a row that whoever asked already had.
+func (self *authenticator) TokenIDOf(value string) (string, bool) {
+	id, _, ok := parse(kindToken, TokenPrefix, value, self.tokenKey())
+	return id, ok
 }

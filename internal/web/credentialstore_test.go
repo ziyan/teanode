@@ -30,9 +30,10 @@ type memoryStore struct {
 }
 
 type storedCredential struct {
-	keyHash string
-	session *models.Session
-	token   *models.Token
+	keyHash     string
+	refreshHash string
+	session     *models.Session
+	token       *models.Token
 }
 
 func newMemoryStore(users ...*models.User) *memoryStore {
@@ -153,6 +154,29 @@ func (self *memoryStore) CreateToken(token *models.Token, keyHash string) (*mode
 	return &stored, nil
 }
 
+func (self *memoryStore) CreateAuthorizedToken(token *models.Token, keyHash, refreshHash string) (*models.Token, error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	stored := *token
+	stored.CreatedAt = time.Now()
+	stored.ModifiedAt = stored.CreatedAt
+	self.tokens[token.ID] = &storedCredential{keyHash: keyHash, refreshHash: refreshHash, token: &stored}
+	return &stored, nil
+}
+
+func (self *memoryStore) GetTokenRefresh(tokenId string) (*models.Token, string, error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	found, ok := self.tokens[tokenId]
+	if !ok {
+		return nil, "", nil
+	}
+	copied := *found.token
+	return &copied, found.refreshHash, nil
+}
+
 func (self *memoryStore) GetToken(tokenId string) (*models.Token, string, error) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
@@ -206,6 +230,22 @@ func (self *memoryStore) RevokeToken(tokenId string, at time.Time) error {
 		found.token.RevokedAt = at
 	}
 	return nil
+}
+
+func (self *memoryStore) RetireToken(tokenId string, at time.Time) (bool, error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	found, ok := self.tokens[tokenId]
+	if !ok || !found.token.RevokedAt.IsZero() {
+		return false, nil
+	}
+	found.token.RevokedAt = at
+	return true, nil
+}
+
+func (self *memoryStore) ScavengeOAuth(now time.Time) (int64, error) {
+	return 0, nil
 }
 
 func (self *memoryStore) RevokeTokensByUser(userId string, at time.Time) (int64, error) {

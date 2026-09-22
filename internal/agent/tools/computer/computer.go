@@ -306,7 +306,7 @@ func putOnComputer(ctx context.Context, run tools.Run, attached tools.Computer, 
 	// of files in other conversations are readable, and a file of one
 	// conversation is not a file of another.
 	if attachment == nil || attachment.AgentID != run.Agent().ID ||
-		(attachment.ConversationID != "" && attachment.ConversationID != run.Conversation().ID) {
+		(attachment.ConversationID != "" && attachment.ConversationID != tools.ConversationIDOf(run)) {
 		return nil, fmt.Errorf("there is no file %q in this conversation", id)
 	}
 	if attachment.Size > putBytes {

@@ -99,3 +99,17 @@ func MustRun(ctx context.Context) Run {
 	}
 	return run
 }
+
+// ConversationIDOf is the conversation a run is part of, or empty when it is
+// part of none: the night, and a call from a harness over the protocol.
+//
+// Every tool reads it through here rather than as Conversation().ID. That
+// form dereferenced a nil conversation, and through the protocol it took
+// down the request: the harness saw its connection dropped, with no answer
+// and no error.
+func ConversationIDOf(run Run) string {
+	if conversation := run.Conversation(); conversation != nil {
+		return conversation.ID
+	}
+	return ""
+}

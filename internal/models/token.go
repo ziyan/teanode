@@ -42,6 +42,35 @@ type Token struct {
 
 	// When it was revoked. Set rather than deleted, so the list can say so.
 	RevokedAt time.Time `json:"revokedAt,omitempty"`
+
+	// ClientID is the program a person authorized to hold this token, when
+	// one was. Empty on a token somebody minted for themselves, which is
+	// every token that existed before programs could be authorized.
+	ClientID string `json:"clientId,omitempty"`
+
+	// Resource is what this token is good for. Empty means what it has
+	// always meant: this server, the way a token minted by hand is. A token
+	// naming a resource is refused anywhere else, so one issued for the
+	// agent tools endpoint cannot be replayed against the rest of the API.
+	Resource string `json:"resource,omitempty"`
+}
+
+// RefreshWindow is how long after its access expires a program's token can
+// still be renewed.
+//
+// A program that is still in use renews when its access runs out, and many
+// only renew once a request has been refused, so the renewal has to outlive
+// the access. One that nobody has run for two months past that has been
+// forgotten, and has to be approved again.
+const RefreshWindow = 60 * 24 * time.Hour
+
+// Refreshable says whether a token can still be renewed: not revoked, and
+// not further past its expiry than RefreshWindow.
+func (self *Token) Refreshable(now time.Time) bool {
+	if self == nil || !self.RevokedAt.IsZero() {
+		return false
+	}
+	return self.ExpiresAt.IsZero() || now.Before(self.ExpiresAt.Add(RefreshWindow))
 }
 
 // Active reports whether this Token would authenticate a request now.

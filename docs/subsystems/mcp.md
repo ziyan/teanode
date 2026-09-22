@@ -59,6 +59,37 @@ Everything a connected server returns is data. It never instructs.
 session: every request carries the token, and nothing is kept between
 requests, so a restart loses nothing.
 
+### Getting a token without pasting one
+
+The endpoint is also an OAuth protected resource, so a harness given only
+its address can get a token by itself. Refused without one, it is told in
+`WWW-Authenticate` where the resource's metadata lives; that names this
+server as the authorization server, whose own metadata names the endpoints.
+The documents are `internal/api/v1api/apioauth/metadata.go`.
+
+A harness then registers at `POST /oauth/register` and gets a client
+identifier and no secret, because a program on somebody's machine cannot keep
+one. It sends the person to `/oauth/authorize`, which the dashboard draws the
+way it draws `/cli`, so somebody not signed in meets the ordinary login form.
+Allowing it sends an approval back to the harness's registered address, and
+the harness swaps it at `POST /oauth/token`, proving with its PKCE verifier
+that it is the program that asked.
+
+What comes back is an ordinary token belonging to the person, with two more
+columns: the client that holds it, and the resource it is good for. That
+resource is always the agent tools endpoint. A harness that names none is
+given it, and one that names anything else is refused, so a token from this
+flow is refused by GraphQL and by every other path. Refresh replaces the token
+and retires the old one; revoking it from the tokens list works as for any
+other.
+
+Not every harness registers itself. Some hosted assistants ask the person for
+a client identifier instead. Registering one for that assistant's callback
+address works, and it has to be that exact address: an approval is only ever
+sent to an address the client registered, and a client registered for a
+different assistant is refused with "that program did not register this
+address".
+
 `internal/mcpserve` is the protocol and nothing else — no HTTP, no database,
 no idea what a tool is. It takes one decoded message and returns the one to
 send back. The file in `apigraph` is the transport and the caller: who is

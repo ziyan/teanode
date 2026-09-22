@@ -93,6 +93,7 @@ type Database interface {
 	// that in a transaction would buy nothing.
 	SessionOperation
 	TokenOperation
+	OAuthOperation
 	PasskeyOperation
 
 	// Media is read on every request for a picture in a sent message, which

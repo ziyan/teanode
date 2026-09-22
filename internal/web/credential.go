@@ -19,8 +19,13 @@ import (
 const (
 	kindSession   = "session"
 	kindToken     = "token"
+	kindRefresh   = "refresh"
 	SessionPrefix = "tns_"
 	TokenPrefix   = "tnt_"
+	// A refresh secret is a different kind, so a refresh cannot be presented
+	// as the access token it renews however it is rearranged. Same reasoning
+	// as a session cookie not being usable as an API token.
+	RefreshPrefix = "tnr_"
 )
 
 // issue mints a credential: an identifier, the string to hand out, and the

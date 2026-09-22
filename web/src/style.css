@@ -2434,7 +2434,25 @@ pre.message-text {
 
   .auth-page {
     align-items: flex-start;
-    padding: var(--space-6) max(16px, env(safe-area-inset-left)) var(--space-6) max(16px, env(safe-area-inset-right));
+    /* The top keeps the room the wide rule gives the language and appearance
+       controls. This rule used to put the top back to --space-6, which let
+       the card start level with the controls, so on every phone they sat on
+       its top edge: the login form, /cli and approving a program alike. */
+    padding: max(56px, calc(env(safe-area-inset-top) + 48px)) max(16px, env(safe-area-inset-right))
+      var(--space-6) max(16px, env(safe-area-inset-left));
+  }
+
+  /* Scrolled away with the page rather than fixed over it. A card taller
+     than a phone's screen scrolled underneath fixed controls, which then sat
+     on whatever field or button was passing. */
+  .page-corner {
+    position: absolute;
+  }
+
+  /* The wide padding left a column of under three hundred pixels on a phone,
+     and every sentence on the card wrapped more than it needed to. */
+  .auth-card {
+    padding: 32px 24px;
   }
 
   .login {
@@ -9926,4 +9944,158 @@ main.content:has(> .knowledge-frame) {
   margin: 0;
   padding: 0;
   border: 0;
+}
+
+/* --- approving a program ---------------------------------------------------
+   The card a program's authorization request is read in. Same chrome as
+   signing in and as /cli, because it is the same kind of moment: one
+   question, arrived at from somewhere else.
+
+   The facts are a description list rather than prose. The reader is being
+   asked to make a security decision about something they may not recognize,
+   and three labelled values they can scan beat a sentence they have to
+   parse. */
+
+.authorize-intro {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.authorize-facts {
+  display: grid;
+  /* The label column takes what it needs and no more, so the values line up
+     against it; on a phone they stack instead, below. */
+  /* The label column is capped so a long label wraps onto a second line
+     rather than taking the width the value needs. Uncapped, "Sends the
+     approval to" left the host so little room that it broke mid-word. */
+  grid-template-columns: fit-content(7.5rem) minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--field);
+  /* Outlined as well as filled. In light the fill alone reads as a panel,
+     but in dark --field is a step darker than the card rather than lighter,
+     and the panel all but vanished into it. tokens.css says as much: what
+     sits on a surface is told apart by its outline. */
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+}
+
+.authorize-facts dt {
+  color: var(--muted);
+  font-size: var(--text-label);
+  /* Against the first line of its value, which is two lines tall when the
+     program's name carries the note under it. */
+  align-self: start;
+  padding-top: 1px;
+}
+
+.authorize-facts dd {
+  margin: 0;
+  min-width: 0;
+}
+
+/* The claimed name, which is the thing most likely to be long and least
+   likely to be trustworthy. Broken anywhere rather than allowed to widen the
+   card: a registration is a stranger's text and may be one long word. */
+.authorize-name {
+  display: block;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.authorize-claimed {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-label);
+}
+
+/* The address the approval would go to. The one fact on this card a reader
+   can actually check, so it is set as what it is rather than as prose. */
+.authorize-host {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  font-size: var(--text-label);
+  /* Broken at the dots the page marks, and only mid-label when one label is
+     longer than the card. "anywhere" also let the browser choose to break a
+     short host that would have fitted. */
+  overflow-wrap: break-word;
+}
+
+.authorize-grant {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-label);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+/* Allow and Refuse side by side, Allow first because it is what the reader
+   came to do. Refuse is not styled as a danger: refusing is the safe answer
+   and should not look like the frightening one. */
+.authorize-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.authorize-actions .auth-button {
+  margin-top: 0;
+}
+
+/* Refuse takes the space it needs; Allow takes the rest. */
+.authorize-actions button[type='button'] {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 0 var(--space-4);
+}
+
+.authorize-actions button[type='submit'] {
+  flex: 1;
+}
+
+@media (max-width: 480px) {
+  /* Stacked: the label above its value, so a long host name has the whole
+     card width rather than what is left beside a label. */
+  /* Stacked, each label close over its own value and a clear step before
+     the next pair. With an even gap throughout, a label sat about as far
+     from its value as from the pair above, and "Acts as" read as belonging
+     to the host. */
+  .authorize-facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .authorize-facts dt {
+    padding-top: var(--space-4);
+  }
+
+  .authorize-facts dt:first-of-type {
+    padding-top: 0;
+  }
+
+  .authorize-facts dd {
+    margin-top: 2px;
+  }
+
+  /* One under the other, Allow still first. Two buttons side by side on a
+     narrow card leaves each too small to press confidently. */
+  .authorize-actions {
+    flex-direction: column;
+  }
+
+  .authorize-actions button[type='button'] {
+    width: 100%;
+  }
+}
+
+/* Where a program asked to be sent, under the sentence saying it cannot be
+   approved: the one detail a reader can check against what they expected. */
+.authorize-asked {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-label);
+  overflow-wrap: anywhere;
 }

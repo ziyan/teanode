@@ -71,7 +71,7 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 		limit = maximumLimit
 	}
 	agentId := run.Agent().ID
-	here := run.Conversation().ID
+	here := tools.ConversationIDOf(run)
 
 	switch arguments.Action {
 	case "search", "list":

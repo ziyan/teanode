@@ -141,3 +141,25 @@ func IsSecure(request *http.Request, trustedProxies []string) bool {
 	}
 	return strings.EqualFold(strings.TrimSpace(forwarded), "https")
 }
+
+// IsLoopbackHost says whether a host never leaves this machine.
+//
+// Two callers with the same question and different reasons. A connected
+// server declared at a loopback address is one an operator is running beside
+// this one, where plain HTTP carries nothing anybody else can read. And a
+// program being authorized here receives its approval on a loopback port,
+// which cannot have a certificate, so that is the one place an http redirect
+// address is allowed.
+//
+// One copy, because it is a security check in both places and two copies of a
+// security check drift.
+func IsLoopbackHost(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "localhost" {
+		return true
+	}
+	if address := net.ParseIP(host); address != nil {
+		return address.IsLoopback()
+	}
+	return false
+}
