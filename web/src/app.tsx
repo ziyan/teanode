@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
 import { Session, framedDrawer, getSession, logout, signInWithToken } from './api'
 import { LoginPage } from './pages/login'
+import { AuthorizePage } from './pages/authorize'
 import { MailPage } from './pages/mail'
 import { MailboxPage } from './pages/mailbox'
 import { SetupAccountPage } from './pages/setupAccount'
@@ -216,6 +217,22 @@ export function App() {
   // The page "teanode auth login" opens is drawn like the login form — one
   // card and nothing else — because the reader was brought here to answer
   // one question, and the rail would be a list of other places to go.
+  // Approving a program, for the same reason /cli is drawn this way: one
+  // question, brought here by something else. Served from this shell rather
+  // than by the server so that somebody who is not signed in meets the login
+  // form above, with passkeys and single sign-on, instead of a second form
+  // written beside it.
+  if (location.pathname === '/oauth/authorize') {
+    return (
+      <div className="auth-page">
+        {corner}
+        <Suspense fallback={<Loading />}>
+          <AuthorizePage />
+        </Suspense>
+      </div>
+    )
+  }
+
   if (location.pathname === '/cli') {
     return (
       <div className="auth-page">
