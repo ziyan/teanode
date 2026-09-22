@@ -363,8 +363,8 @@ session. The first half stops being the whole truth here.
       audience binding in `authenticateBearer`.
 - [x] Milestone 5, first half: the whole flow run against a deployed server with a
       browser approval and a hand-written client (see `Outcomes & Retrospective`).
-- [ ] Milestone 5, second half: a third-party harness connecting with only the
-      address, and `docs/subsystems/mcp.md` updated.
+- [x] Milestone 5, second half: a hosted assistant's connector connected and
+      called the agent tools; `docs/subsystems/mcp.md` describes the flow.
 
 ## Surprises & Discoveries
 
@@ -381,6 +381,15 @@ authorization server":
 
 The `401` carries no `WWW-Authenticate` header at all, so even a client that
 handled the HTML gracefully has nowhere to go next.
+
+**A real hosted connector did two things the plan did not expect.** It did not
+register itself: its form asked the person for a client identifier, so one had
+to be registered for its callback address, and a client registered for another
+assistant's callback was correctly refused. And it sent no `resource`. The
+approval first stored that as an empty resource, which on a token means "the
+whole API", the meaning a hand-minted token has. A missing resource now becomes
+the agent tools endpoint, and a resource naming anything else is refused, both
+in `agentToolsResource` in `internal/api/v1api/apigraph/oauth.go`.
 
 **Milestone 1 cannot be released on its own, which the plan originally
 assumed it could be.** The authorization server document is required to name
