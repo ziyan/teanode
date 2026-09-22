@@ -18,9 +18,8 @@ import (
 // computer, read their mail and send some, and the dashboard showed none of
 // it. Each call is now a run of its own in the activity list, named for the
 // program, holding what was asked and what came back. A question put through
-// teanode_ask is filed too: the turn itself happens in the person's main
-// conversation, where it always has, and the run beside it is what says a
-// program asked it.
+// teanode_ask is not filed here: it is a turn in a conversation, the program's
+// own, which already holds it.
 //
 // A run rather than a table of its own because the activity list already
 // lists runs, filters them by kind, searches their titles and opens them to
@@ -77,24 +76,6 @@ func mcpTranscript(caller, name string, arguments json.RawMessage, answer string
 		outcome = "It failed: " + failure.Error()
 	}
 	outcome = cutForRecord(outcome)
-
-	if name == mcpAskName {
-		var asked struct {
-			Question string `json:"question"`
-		}
-		_ = json.Unmarshal(arguments, &asked)
-		question := strings.TrimSpace(asked.Question)
-		said := fmt.Sprintf("%s asked, over MCP:\n\n%s", caller, question)
-		title := fmt.Sprintf("%s asked: %s", caller, question)
-		if question == "" {
-			said = fmt.Sprintf("%s, over MCP, went on waiting for the answer to its last question.", caller)
-			title = fmt.Sprintf("%s waited for an answer", caller)
-		}
-		return titleOf(title, failure), []*models.AgentMessage{
-			{Role: "user", Content: cutForRecord(said)},
-			{Role: "assistant", Content: outcome},
-		}
-	}
 
 	compact := compactArguments(arguments)
 	return titleOf(fmt.Sprintf("%s: %s %s", caller, name, cutRunes(compact, mcpTitleArguments)), failure),

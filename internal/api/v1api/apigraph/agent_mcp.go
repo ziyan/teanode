@@ -290,9 +290,15 @@ func (self *mcpCatalog) List(ctx context.Context) ([]mcp.Tool, error) {
 }
 
 // Call runs a tool and files what happened where the person can read it.
+//
+// Not a question through teanode_ask: that is a turn in a conversation, which
+// already holds the question and the answer where the person reads them, and
+// a run beside it only said the same thing twice.
 func (self *mcpCatalog) Call(ctx context.Context, name string, arguments json.RawMessage) (string, error) {
 	answer, err := self.call(ctx, name, arguments)
-	self.record(name, arguments, answer, err)
+	if name != mcpAskName {
+		self.record(name, arguments, answer, err)
+	}
 	return answer, err
 }
 

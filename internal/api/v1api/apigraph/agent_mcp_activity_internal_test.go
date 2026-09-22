@@ -40,17 +40,6 @@ func TestAFailedCallSaysSoInItsTitle(test *testing.T) {
 	}
 }
 
-// A question put through teanode_ask reads as the question and the answer.
-func TestAQuestionIsFiledAsTheQuestionAndTheAnswer(test *testing.T) {
-	title, messages := mcpTranscript("An assistant", mcpAskName, json.RawMessage(`{"question":"What is on my calendar?"}`), "Nothing today.", nil)
-	if title != "An assistant asked: What is on my calendar?" {
-		test.Errorf("the title is %q", title)
-	}
-	if len(messages) != 2 || messages[1].Content != "Nothing today." {
-		test.Errorf("the transcript is %+v", messages)
-	}
-}
-
 // What is kept is capped, and a title fits its column, without splitting a
 // character.
 func TestALargeCallIsCutToWhatIsWorthKeeping(test *testing.T) {
