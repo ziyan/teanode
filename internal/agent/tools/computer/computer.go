@@ -28,7 +28,7 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "shell", Family: tools.FamilyComputer, Risk: tools.RiskWrite,
-				Description: "Run a command on the person's own computer, when they have attached it with `teanode computer`: through their shell, in a directory of theirs, with a timeout. The answer carries what it printed and its exit code; a non-zero code is an answer, not a failure. It runs as the person, anywhere on their machine, and does what it says: nothing here second-guesses a command. Without an attached computer the tool says so.",
+				Description: "Run a command on the person's own computer, when they have attached it with `teanode computer`: through their shell, in a directory of theirs, with a timeout. The answer carries what it printed and its exit code; a non-zero code is an answer, not a failure. It runs as the person, anywhere on their machine, and does what it says: nothing here second-guesses a command. Without an attached computer the tool says so. To take a file off the computer, share_file with source computer does it in one call and hands back a link to download it; do not read a file out through the shell in pieces.",
 				Parameters: tools.Object(map[string]any{
 					"computer":    tools.StringProperty("which of their computers, by name, when more than one is attached"),
 					"command":     tools.StringProperty("the command line, as typed into their shell"),
@@ -290,7 +290,27 @@ func runFilesystem(ctx context.Context, call *tools.Call) (*tools.Result, error)
 	if arguments.Action == "put" {
 		return putOnComputer(ctx, run, attached, arguments)
 	}
-	return carry(ctx, attached, "filesystem", arguments, 2*time.Minute, arguments.Action+" "+arguments.Path+" on "+attached.Name())
+	result, err := carry(ctx, attached, "filesystem", arguments, 2*time.Minute, arguments.Action+" "+arguments.Path+" on "+attached.Name())
+	if err != nil || arguments.Action != "read" {
+		return result, err
+	}
+	return withBinaryHint(result, attached.Name(), arguments.Path), nil
+}
+
+// withBinaryHint adds, to a read that found a file that is not text, the way
+// to get the file. Reading only says "binary" and stops, and a caller told
+// nothing more has been seen to copy a picture out through the shell in ten
+// pieces rather than take it in one call with share_file.
+func withBinaryHint(result *tools.Result, computerName, path string) *tools.Result {
+	var answer map[string]any
+	if json.Unmarshal([]byte(result.Content), &answer) != nil || answer["binary"] != true {
+		return result
+	}
+	answer["to_get_it"] = fmt.Sprintf("not text, so not read out here: share_file with source computer, computer %q and path %q hands the file back as a link that downloads it", computerName, path)
+	if content, err := json.Marshal(answer); err == nil {
+		result.Content = string(content)
+	}
+	return result
 }
 
 // putBytes is the largest file sent to a computer, the same as the largest

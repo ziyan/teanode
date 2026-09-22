@@ -30,7 +30,7 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "share_file", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskRead,
-				Description: "Hand the person a file, shown in the conversation — a picture inline, a video playing, anything else to open — and sent to their chat app if that is where they are. From a message (source mail: the item and the attachment's number or name as mail_read lists them), from their attached computer (source computer: the path), or one already in this conversation (source conversation: its attachment id). With look, a picture is shown to you as well, so you can say what is in it. Say in the answer what you handed over; the person sees it under the tool line.",
+				Description: "Hand the person a file, shown in the conversation — a picture inline, a video playing, anything else to open — and sent to their chat app if that is where they are. From a message (source mail: the item and the attachment's number or name as mail_read lists them), from their attached computer (source computer: the path), or one already in this conversation (source conversation: its attachment id). With look, a picture is shown to you as well, so you can say what is in it. Say in the answer what you handed over; the person sees it under the tool line. The answer's url is the file itself: called over MCP, it downloads directly with no sign-in for six hours, which is how to get any file off the person's computer, a picture or a binary file included, in one call.",
 				Parameters: tools.Object(map[string]any{
 					"source":        tools.EnumProperty("where the file is", "mail", "computer", "conversation"),
 					"item_id":       tools.StringProperty("mail: the message's item id"),

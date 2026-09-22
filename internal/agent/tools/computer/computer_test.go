@@ -167,3 +167,15 @@ func TestSeveralComputersAreNamedWithWhatEachIsFor(t *testing.T) {
 		t.Errorf("listed as %q", listed)
 	}
 }
+
+// A read that finds a file that is not text says how to get the file.
+func TestABinaryReadSaysHowToGetTheFile(t *testing.T) {
+	binary := withBinaryHint(&tools.Result{Content: `{"path":"/tmp/shot.png","bytes":5000,"binary":true}`}, "desk", "/tmp/shot.png")
+	if !strings.Contains(binary.Content, "share_file") || !strings.Contains(binary.Content, `\"desk\"`) {
+		t.Errorf("a binary read answered %s", binary.Content)
+	}
+	text := withBinaryHint(&tools.Result{Content: `{"path":"/tmp/notes.txt","content":"hello"}`}, "desk", "/tmp/notes.txt")
+	if strings.Contains(text.Content, "share_file") {
+		t.Errorf("a text read was given the hint: %s", text.Content)
+	}
+}
