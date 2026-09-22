@@ -965,6 +965,7 @@ export const ja: Catalog = {
   'agent.reachThrough': '{name} 経由',
   'agent.reachNotAttached': '{name} 経由（現在未接続）',
   'agent.reachKept': '{name} は {through} になりました',
+  'agent.reachChooseOne': '複数のコンピューターが接続されています。実行するコンピューターを選ばないと、呼び出しは実行できません。',
   'agent.reachFailed': '経由を設定できませんでした。',
   'agent.skillSecrets': 'スキル用のあなたの鍵',
   'agent.skillSecretsHint':

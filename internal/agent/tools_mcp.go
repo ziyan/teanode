@@ -393,6 +393,24 @@ func (self *Agent) Probe(ctx context.Context, server *config.AgentMCPServer, age
 	return len(entry.tools), nil
 }
 
+// discovery is the session a server's tools are listed through.
+//
+// Usually the one its calls use. The exception is a server that runs on the
+// person's computer when several are attached and its reach names none: a
+// call has no computer to run on, and says so, but the list of tools is the
+// same whichever computer the command runs on, so it is listed through the
+// first. Without that, the tools vanished the moment a second computer was
+// attached, and all the person saw was a tool that no longer existed.
+func (self *Agent) discovery(ctx context.Context, server *config.AgentMCPServer, agentId string) (*connectedServer, error) {
+	if server.ResolvedTransport() == config.AgentMCPTransportStdio && server.ResolvedLocation() == config.AgentMCPLocationComputer &&
+		self.reachOf(ctx, agentId, models.AgentReachServer, server.Name) == "" {
+		if computers := self.computersFor(agentId); len(computers) > 1 {
+			return self.connectionThrough(ctx, server, agentId, computers[0].name)
+		}
+	}
+	return self.connection(ctx, server, agentId)
+}
+
 // serverAvailable says whether a server is offered to a person: on, and
 // connected where the person must connect it.
 func (self *Agent) serverAvailable(ctx context.Context, server *config.AgentMCPServer, agentId string) bool {
@@ -435,7 +453,7 @@ func (self *Agent) remoteTools(ctx context.Context, agentId string, headless boo
 			// configuration that would say otherwise.
 			continue
 		}
-		entry, err := self.connection(ctx, server, agentId)
+		entry, err := self.discovery(ctx, server, agentId)
 		if err != nil {
 			log.Warningf("connected server %q is not answering: %s", server.Name, err)
 			continue

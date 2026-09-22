@@ -932,6 +932,7 @@ export const zh: Catalog = {
   'agent.reachThrough': '经由 {name}',
   'agent.reachNotAttached': '经由 {name}（当前未连接）',
   'agent.reachKept': '{name} 现在{through}',
+  'agent.reachChooseOne': '已连接多台电脑：请选择它运行的那台，否则调用无法运行。',
   'agent.reachFailed': '无法设置经由。',
   'agent.skillSecrets': '你的技能密钥',
   'agent.skillSecretsHint':

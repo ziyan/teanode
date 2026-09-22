@@ -1416,6 +1416,12 @@ function ReachCard() {
             key={key}
             title={reach.name}
             badge={<Tag value={reach.kind} />}
+            // A server that runs on a computer, with several attached and
+            // none chosen, has nowhere to run: its calls say so, and so does
+            // its row, which is where the choice is made.
+            subtitle={
+              reach.isOnComputer && !reach.computerName && computers.length > 1 ? t('agent.reachChooseOne') : undefined
+            }
             actions={
               <Select
                 label={`${t('agent.reach')} · ${reach.name}`}
