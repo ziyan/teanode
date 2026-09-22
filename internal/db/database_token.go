@@ -23,6 +23,11 @@ type TokenOperation interface {
 	ListTokens(userId string, options *SessionOptions) ([]*models.Token, error)
 	TouchToken(tokenId string, at time.Time, ip, userAgent string) error
 	RevokeToken(tokenId string, at time.Time) error
+
+	// RetireToken revokes a token and says whether this call was the one that
+	// did it, so that two callers racing to retire the same token cannot both
+	// go on as though they had.
+	RetireToken(tokenId string, at time.Time) (bool, error)
 	RevokeTokensByUser(userId string, at time.Time) (int64, error)
 
 	ScavengeTokens(now time.Time) (int64, error)
@@ -184,6 +189,13 @@ func (self *database) RevokeToken(tokenId string, at time.Time) error {
 		Updates(map[string]any{"revoked_at": at.UTC(), "modified_at": at.UTC()}).Error
 }
 
+func (self *database) RetireToken(tokenId string, at time.Time) (bool, error) {
+	result := self.db.Model(&tokenModel{}).
+		Where("\"id\" = ? AND \"revoked_at\" IS NULL", tokenId).
+		Updates(map[string]any{"revoked_at": at.UTC(), "modified_at": at.UTC()})
+	return result.RowsAffected == 1, result.Error
+}
+
 func (self *database) RevokeTokensByUser(userId string, at time.Time) (int64, error) {
 	result := self.db.Model(&tokenModel{}).
 		Where("\"user_id\" = ? AND \"revoked_at\" IS NULL", userId).
@@ -192,9 +204,14 @@ func (self *database) RevokeTokensByUser(userId string, at time.Time) (int64, er
 }
 
 func (self *database) ScavengeTokens(now time.Time) (int64, error) {
+	// A token a program can renew is kept through its refresh window, however
+	// long ago its access expired: deleting it at the usual day would make the
+	// window a day long.
 	result := self.db.Where(
-		"(\"expires_at\" IS NOT NULL AND \"expires_at\" < ?) OR (\"revoked_at\" IS NOT NULL AND \"revoked_at\" < ?)",
-		now.Add(-expiredRetention), now.Add(-revokedRetention),
+		"(\"expires_at\" IS NOT NULL AND \"refresh_hash\" IS NULL AND \"expires_at\" < ?)"+
+			" OR (\"expires_at\" IS NOT NULL AND \"refresh_hash\" IS NOT NULL AND \"expires_at\" < ?)"+
+			" OR (\"revoked_at\" IS NOT NULL AND \"revoked_at\" < ?)",
+		now.Add(-expiredRetention), now.Add(-models.RefreshWindow), now.Add(-revokedRetention),
 	).Delete(&tokenModel{})
 	return result.RowsAffected, result.Error
 }

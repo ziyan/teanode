@@ -170,3 +170,75 @@ func TestUnusedRegistrationsAreSweptAndApprovedOnesAreKept(test *testing.T) {
 		test.Error("a registration somebody approved was swept")
 	}
 }
+
+// A program's expired token is kept for its refresh window; a hand-minted one
+// is swept the next day.
+//
+// The sweep used to remove every token a day after it expired, which made
+// renewal after expiry impossible after a day however long the window was.
+func TestAProgramsExpiredTokenIsKeptThroughItsRefreshWindow(test *testing.T) {
+	database, release := dbtest.AcquireDatabase(test)
+	defer release()
+
+	now := time.Now()
+	userId := dbtest.CreateUser(test, database, "token-holder")
+	create := func(expiredFor time.Duration, refreshHash string) string {
+		id := security.NewULID()
+		token := &models.Token{ID: id, UserID: userId, Name: "a token", ExpiresAt: now.Add(-expiredFor)}
+		var err error
+		if refreshHash == "" {
+			_, err = database.CreateToken(token, "a-hash")
+		} else {
+			token.ClientID, token.Resource = "a-client", "/api/v1/mcp"
+			_, err = database.CreateAuthorizedToken(token, "a-hash", refreshHash)
+		}
+		if err != nil {
+			test.Fatalf("creating a token: %s", err)
+		}
+		return id
+	}
+	handMinted := create(48*time.Hour, "")
+	programRecent := create(48*time.Hour, "a-refresh-hash")
+	programForgotten := create(models.RefreshWindow+time.Hour, "a-refresh-hash")
+
+	if _, err := database.ScavengeTokens(now); err != nil {
+		test.Fatalf("ScavengeTokens: %s", err)
+	}
+	for _, check := range []struct {
+		describe string
+		id       string
+		kept     bool
+	}{
+		{"a hand-minted token two days expired", handMinted, false},
+		{"a program's token two days expired", programRecent, true},
+		{"a program's token past its refresh window", programForgotten, false},
+	} {
+		token, _, err := database.GetToken(check.id)
+		if err != nil {
+			test.Fatalf("GetToken: %s", err)
+		}
+		if kept := token != nil; kept != check.kept {
+			test.Errorf("%s: kept was %v", check.describe, kept)
+		}
+	}
+}
+
+// Retiring a token says whether this call did it.
+func TestRetiringATokenSaysWhoRetiredIt(test *testing.T) {
+	database, release := dbtest.AcquireDatabase(test)
+	defer release()
+
+	id := security.NewULID()
+	userId := dbtest.CreateUser(test, database, "token-holder")
+	if _, err := database.CreateToken(&models.Token{ID: id, UserID: userId, Name: "a token"}, "a-hash"); err != nil {
+		test.Fatalf("CreateToken: %s", err)
+	}
+	first, err := database.RetireToken(id, time.Now())
+	if err != nil || !first {
+		test.Fatalf("the first retirement: %v, %v", first, err)
+	}
+	second, err := database.RetireToken(id, time.Now())
+	if err != nil || second {
+		test.Errorf("a token already retired was retired again: %v, %v", second, err)
+	}
+}

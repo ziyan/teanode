@@ -94,7 +94,12 @@ func (self *oauth) exchangeCode(response http.ResponseWriter, request *http.Requ
 	// The same program, coming back to the same place. An approval issued to
 	// one client and collected by another, or sent to one address and
 	// collected against another, is refused.
-	if authorization.ClientID != clientId || (redirectURI != "" && authorization.RedirectURI != redirectURI) {
+	//
+	// The address is required rather than compared only when present. The
+	// approval always recorded one, and RFC 6749 requires it back whenever
+	// it did: leaving it out would otherwise skip the one check tying the
+	// approval to the place it was sent.
+	if authorization.ClientID != clientId || authorization.RedirectURI != redirectURI {
 		writeOAuthError(response, http.StatusBadRequest, "invalid_grant",
 			"that authorization was issued to a different program, or for a different address")
 		return
@@ -143,9 +148,21 @@ func (self *oauth) refreshToken(response http.ResponseWriter, request *http.Requ
 	// Retired before the replacement is minted. The other order leaves both
 	// working if the second step fails, and a refresh token that still works
 	// after being spent is the one thing a rotation is supposed to prevent.
-	if err := self.authenticator.RevokeTokenByID(previous.ID); err != nil {
+	//
+	// And only by the one request that actually retired it. Checking the
+	// refresh secret and retiring the token are two steps, so two requests
+	// with the same refresh token, a retry or a stolen copy racing the real
+	// one, can both pass the check; the retirement decides which of them
+	// continues.
+	retired, err := self.authenticator.RevokeTokenByID(previous.ID)
+	if err != nil {
 		log.Errorf("could not retire the token being refreshed: %s", err)
 		writeOAuthError(response, http.StatusInternalServerError, "server_error", "the token could not be replaced")
+		return
+	}
+	if !retired {
+		writeOAuthError(response, http.StatusBadRequest, "invalid_grant",
+			"that refresh token has been used, has expired, or was not issued here")
 		return
 	}
 	self.issue(response, previous.UserID, previous.Name, previous.ClientID, previous.Resource)
@@ -205,11 +222,11 @@ func (self *oauth) revokeView(response http.ResponseWriter, request *http.Reques
 	}
 	value := request.PostForm.Get("token")
 	if token, err := self.authenticator.RedeemRefresh(value); err == nil && token != nil {
-		if err := self.authenticator.RevokeTokenByID(token.ID); err != nil {
+		if _, err := self.authenticator.RevokeTokenByID(token.ID); err != nil {
 			log.Errorf("could not revoke a token: %s", err)
 		}
 	} else if id, ok := self.authenticator.TokenIDOf(value); ok {
-		if err := self.authenticator.RevokeTokenByID(id); err != nil {
+		if _, err := self.authenticator.RevokeTokenByID(id); err != nil {
 			log.Errorf("could not revoke a token: %s", err)
 		}
 	}

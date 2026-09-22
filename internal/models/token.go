@@ -55,6 +55,24 @@ type Token struct {
 	Resource string `json:"resource,omitempty"`
 }
 
+// RefreshWindow is how long after its access expires a program's token can
+// still be renewed.
+//
+// A program that is still in use renews when its access runs out, and many
+// only renew once a request has been refused, so the renewal has to outlive
+// the access. One that nobody has run for two months past that has been
+// forgotten, and has to be approved again.
+const RefreshWindow = 60 * 24 * time.Hour
+
+// Refreshable says whether a token can still be renewed: not revoked, and
+// not further past its expiry than RefreshWindow.
+func (self *Token) Refreshable(now time.Time) bool {
+	if self == nil || !self.RevokedAt.IsZero() {
+		return false
+	}
+	return self.ExpiresAt.IsZero() || now.Before(self.ExpiresAt.Add(RefreshWindow))
+}
+
 // Active reports whether this Token would authenticate a request now.
 func (self *Token) Active(now time.Time) bool {
 	if self == nil {

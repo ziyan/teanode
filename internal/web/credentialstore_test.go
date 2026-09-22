@@ -232,6 +232,22 @@ func (self *memoryStore) RevokeToken(tokenId string, at time.Time) error {
 	return nil
 }
 
+func (self *memoryStore) RetireToken(tokenId string, at time.Time) (bool, error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	found, ok := self.tokens[tokenId]
+	if !ok || !found.token.RevokedAt.IsZero() {
+		return false, nil
+	}
+	found.token.RevokedAt = at
+	return true, nil
+}
+
+func (self *memoryStore) ScavengeOAuth(now time.Time) (int64, error) {
+	return 0, nil
+}
+
 func (self *memoryStore) RevokeTokensByUser(userId string, at time.Time) (int64, error) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()

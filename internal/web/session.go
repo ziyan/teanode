@@ -105,8 +105,9 @@ type Authenticator interface {
 	RedeemRefresh(value string) (*models.Token, error)
 
 	// RevokeTokenByID retires a token without knowing whose it is, for a
-	// refresh replacing the one it renewed.
-	RevokeTokenByID(tokenId string) error
+	// refresh replacing the one it renewed, and says whether this call was
+	// the one that retired it.
+	RevokeTokenByID(tokenId string) (bool, error)
 
 	// UserByID is the account a token or an approval belongs to.
 	UserByID(userId string) *models.User
@@ -158,6 +159,10 @@ type CredentialStore interface {
 	db.SessionOperation
 	db.TokenOperation
 	db.UserLookup
+
+	// ScavengeOAuth sweeps approvals nobody collected and registrations
+	// nobody approved, alongside the sessions and tokens swept here.
+	ScavengeOAuth(now time.Time) (int64, error)
 
 	// TransactionContext is for the two writes to the user table made here:
 	// claiming a fresh server, and a person changing their own password.
@@ -758,8 +763,16 @@ func (self *authenticator) Scavenge() error {
 	if err != nil {
 		return err
 	}
-	if sessions > 0 || tokens > 0 {
-		log.Noticef("removed %d expired sessions and %d expired tokens", sessions, tokens)
+	// Registration needs no credential, so without this sweep the table of
+	// programs that introduced themselves grows with every one that ever
+	// did, approved or not.
+	programs, err := self.database.ScavengeOAuth(now)
+	if err != nil {
+		return err
+	}
+	if sessions > 0 || tokens > 0 || programs > 0 {
+		log.Noticef("removed %d expired sessions, %d expired tokens and %d unused program registrations or approvals",
+			sessions, tokens, programs)
 	}
 	return nil
 }
@@ -812,7 +825,10 @@ func (self *authenticator) RedeemRefresh(value string) (*models.Token, error) {
 	if token == nil || refreshHash == "" || !matches(refreshHash, key) {
 		return nil, ErrInvalidCredentials
 	}
-	if !token.Active(time.Now()) {
+	// Refreshable rather than Active: a program renews when its access has
+	// run out, often only after a request was refused, so an expired access
+	// token is the usual case here rather than a reason to refuse.
+	if !token.Refreshable(time.Now()) {
 		return nil, ErrInvalidCredentials
 	}
 	return token, nil
@@ -823,8 +839,8 @@ func (self *authenticator) RedeemRefresh(value string) (*models.Token, error) {
 // RevokeToken takes an account as well, because a person revoking a token
 // must not be able to name somebody else's. A refresh has already proved it
 // holds the token it is retiring, so there is nobody to check it against.
-func (self *authenticator) RevokeTokenByID(tokenId string) error {
-	return self.database.RevokeToken(tokenId, time.Now())
+func (self *authenticator) RevokeTokenByID(tokenId string) (bool, error) {
+	return self.database.RetireToken(tokenId, time.Now())
 }
 
 // UserByID is the account an identifier names, or nil.
