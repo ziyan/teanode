@@ -35,7 +35,6 @@ func (self *graph) applySourceType(ctx context.Context, tx db.Transaction, sourc
 	if err != nil {
 		return fmt.Errorf("the installed %s cannot be read: %w", name, err)
 	}
-	values := map[string]any{}
 	given := settingsJSON
 	if len(bytes.TrimSpace(given)) == 0 || string(bytes.TrimSpace(given)) == "null" {
 		// Settings not given keep what the source had, for its own type.
@@ -44,94 +43,19 @@ func (self *graph) applySourceType(ctx context.Context, tx db.Transaction, sourc
 			given = source.Specification.Settings
 		}
 	}
-	if len(given) > 0 {
-		decoder := json.NewDecoder(bytes.NewReader(given))
-		decoder.UseNumber()
-		if err := decoder.Decode(&values); err != nil {
-			return fmt.Errorf("%w: settings are a JSON object: %s", api.ErrInvalidArguments, err)
-		}
-	}
-	checked, err := parsed.CheckSettings(values)
+	values, err := sources.DecodeSettings(given)
 	if err != nil {
 		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
-	encoded, err := json.Marshal(checked)
-	if err != nil {
-		return err
+	if err := parsed.Specify(source, values); err != nil {
+		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
-	specification := &source.Specification
-	specification.Type, specification.Settings = parsed.Name, encoded
-	text := func(name string) string {
-		value, _ := checked[name].(string)
-		return value
-	}
-	list := func(name string) []string {
-		var found []string
-		for _, each := range asAnyList(checked[name]) {
-			if value, ok := each.(string); ok {
-				found = append(found, value)
-			}
-		}
-		return found
-	}
-	number := func(name string) int {
-		value, _ := checked[name].(int)
-		return value
-	}
-	flag := func(name string) bool {
-		value, _ := checked[name].(bool)
-		return value
-	}
-	switch parsed.Reader {
-	case sources.ReaderFiles, sources.ReaderJournal:
-		if source.Kind != models.SourceArchive {
-			source.Kind = models.SourceComputer
-		}
-		specification.Path = text("path")
-		specification.Format = models.FormatFiles
-		if parsed.Reader == sources.ReaderJournal {
-			specification.Format = models.FormatJournal
-		}
-		specification.Include, specification.Exclude = list("include"), list("exclude")
-		specification.ReadEveryCheckout = flag("readEveryCheckout")
-		specification.OwnCommitsAtLeast = number("ownCommitsAtLeast")
-		specification.CommitsPerPass = number("commitsPerPass")
-	case sources.ReaderSent:
+	if parsed.Reader == sources.ReaderSent {
 		// Theirs, and one that exists, as for a sent source added by its
 		// mailbox: the reader opens whatever mailbox it is handed.
-		mailbox := text("mailbox")
-		if _, err := self.requireMailbox(ctx, models.PermissionMailRead, mailbox); err != nil {
+		if _, err := self.requireMailbox(ctx, models.PermissionMailRead, source.Specification.MailboxID); err != nil {
 			return err
 		}
-		source.Kind, specification.MailboxID = models.SourceSent, mailbox
-	case sources.ReaderWeb:
-		source.Kind = models.SourceWeb
-		specification.Start, specification.Allow, specification.Depth = text("start"), list("allow"), number("depth")
-	case "":
-		if !parsed.RunsOn(sources.RunsComputer) {
-			return fmt.Errorf("%w: %s runs only on the server, which does not read source types yet", api.ErrInvalidArguments, parsed.Name)
-		}
-		source.Kind = models.SourceComputer
-		specification.Format, specification.Path = models.FormatTyped, ""
-		if strings.TrimSpace(specification.Computer) == "" {
-			return fmt.Errorf("%w: %s runs on a computer; say which", api.ErrInvalidArguments, parsed.Name)
-		}
-	default:
-		return fmt.Errorf("%w: %s names the reader %q, which this server does not have", api.ErrInvalidArguments, parsed.Name, parsed.Reader)
-	}
-	return nil
-}
-
-func asAnyList(value any) []any {
-	switch typed := value.(type) {
-	case []any:
-		return typed
-	case []string:
-		list := make([]any, len(typed))
-		for index, each := range typed {
-			list[index] = each
-		}
-		return list
 	}
 	return nil
 }
