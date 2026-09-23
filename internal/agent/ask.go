@@ -678,14 +678,14 @@ func (self *AskRun) turn() error {
 	for name := range calledIn(history) {
 		self.loaded[name] = true
 	}
-	// The skills an operator installed, which everybody is offered, and
-	// which are in the round from the start: somebody chose to install
-	// each of them, and a tool that has to be searched for is one the
-	// model answers around. There are a handful, not a catalog.
+	// The skills an operator installed, which everybody is offered. They
+	// wait behind tool_search like the rest, each skill named on a line of
+	// its own in the prompt: loaded from the start they had grown to forty
+	// tools and a quarter of every request, for a round that uses none.
+	// One the conversation has used is loaded, above.
 	for _, tool := range self.agent.SkillTools(ctx) {
 		if !listed(configuration.Agent.Tools.Disabled, tool) {
 			self.offered = append(self.offered, tool)
-			self.loaded[tool.Name] = true
 		}
 	}
 	// Handing work to a run of its own. Built rather than registered,
@@ -1272,10 +1272,7 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 			guidance = append(guidance, strings.TrimSpace(tool.Guidance))
 		}
 	}
-	deferredLines := make([]string, 0, len(deferred))
-	for _, tool := range deferred {
-		deferredLines = append(deferredLines, tool.Name+" — "+firstSentence(tool.Description))
-	}
+	deferredLines := deferredCatalog(deferred)
 	return render("ask.txt", map[string]any{
 		"AgentName":         settings.Agent.DisplayName(),
 		"PersonName":        personName(settings.Owner),
@@ -1293,6 +1290,42 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 		"Guidance":  guidance,
 		"Deferred":  deferredLines,
 	})
+}
+
+// deferredCatalog is a line for each tool not loaded, and one for each
+// skill: a skill's tools share their prefix and their purpose, and a line
+// apiece repeated the skill forty times over.
+func deferredCatalog(deferred []*Tool) []string {
+	lines := make([]string, 0, len(deferred))
+	skillLine := map[string]int{}
+	for _, tool := range deferred {
+		prefix, toolName, isSkill := skillToolName(tool.Name)
+		if !isSkill {
+			lines = append(lines, tool.Name+" — "+firstSentence(tool.Description))
+			continue
+		}
+		if index, seen := skillLine[prefix]; seen {
+			lines[index] += ", " + toolName
+			continue
+		}
+		skillLine[prefix] = len(lines)
+		lines = append(lines, prefix+"* — the "+strings.TrimSuffix(strings.TrimPrefix(prefix, "skill__"), "__")+" skill: "+toolName)
+	}
+	return lines
+}
+
+// skillToolName splits a skill's tool name into the skill's prefix and the
+// tool's own name, and says whether it is one.
+func skillToolName(name string) (string, string, bool) {
+	rest, isSkill := strings.CutPrefix(name, "skill__")
+	if !isSkill {
+		return "", "", false
+	}
+	skill, own, found := strings.Cut(rest, "__")
+	if !found {
+		return "", "", false
+	}
+	return "skill__" + skill + "__", own, true
 }
 
 func firstSentence(text string) string {

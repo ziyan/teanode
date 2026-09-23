@@ -49,7 +49,7 @@ func init() {
 					"text":    tools.StringProperty("for set: the goal, in the person's words, or empty to clear it. For note, wait and met: a sentence or two on where you are, what you need, or how it ended"),
 					"minutes": tools.IntegerProperty("for note: how long until your next turn on this, from 5 to 1440; 30 by default"),
 				}, "action"),
-				Guidance: "goal: while a goal is set you take turns in this conversation on your own, and every one of them ends with exactly one call to this tool. `note` when there is more to do: say in a sentence or two where you are, and give the minutes until it is worth looking again -- a build that takes an hour is not worth looking at in five. `wait` when you need the person: something wants their confirmation, an answer or a file, and nothing you can do moves it on; say in one line what you need, because that line is what they are shown above the box they type in. `met` when it is done. Keep the text to a sentence or two either way; it is read beside the conversation, not in it. Only `set` a goal when the person asks you to keep working at something, and never in a check-in of your own.",
+				Guidance: "goal: while a goal is set you take turns here on your own, and each ends with exactly one call to this tool: `note` where you are and the minutes until it is worth looking again; `wait` with one line saying what you need from the person, which is shown above the box they type in; `met` when it is done. A sentence or two each. `set` a goal only when the person asks you to keep working at something, never in a check-in of your own.",
 				Run:      run,
 			},
 		}
