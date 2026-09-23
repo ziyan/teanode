@@ -5675,26 +5675,28 @@ main.content:has(> .mailbox-frame) {
 
   .agent-drawer-grip.top,
   .agent-drawer-grip.bottom {
-    left: 12px;
-    right: 12px;
+    left: 20px;
+    right: 20px;
     height: 6px;
     cursor: ns-resize;
   }
 
   .agent-drawer-grip.left,
   .agent-drawer-grip.right {
-    top: 12px;
-    bottom: 12px;
+    top: 20px;
+    bottom: 20px;
     width: 6px;
     cursor: ew-resize;
   }
 
+  /* Larger than the corner's rounding, which clips what can be pressed:
+     at the rounding's size a corner grip was almost all outside the box. */
   .agent-drawer-grip.top-left,
   .agent-drawer-grip.top-right,
   .agent-drawer-grip.bottom-left,
   .agent-drawer-grip.bottom-right {
-    width: 12px;
-    height: 12px;
+    width: 20px;
+    height: 20px;
   }
 
   .agent-drawer-grip.top,

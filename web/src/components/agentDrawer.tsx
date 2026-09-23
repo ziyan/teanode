@@ -29,6 +29,7 @@ import {
   ArrowUpIcon,
   ChevronDownIcon,
   ComputerIcon,
+  RestartIcon,
   GlobeIcon,
   InboxIcon,
   PaperclipIcon,
@@ -579,10 +580,17 @@ function rememberPlacement(placement: Placement | null) {
 }
 
 // isGestureExempt says whether a pointer went down on something in the
-// header that is pressed rather than grabbed: the conversation picker, the
-// buttons, a link, and the list the picker opens.
+// header that is pressed rather than grabbed: the buttons, a link, and the
+// list the picker opens. The title, which opens the list, is not: it runs
+// most of the header's width, and exempting it left almost nothing to take
+// hold of. A press on it that moves is a move; one that does not is still
+// a click.
 function isGestureExempt(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest('button, a, input, select, textarea, [role="menu"]') !== null
+  if (!(target instanceof Element) || target.closest('[role="menu"]')) {
+    return target instanceof Element
+  }
+  const pressed = target.closest('button, a, input, select, textarea')
+  return pressed !== null && !pressed.classList.contains('agent-drawer-conversation')
 }
 
 // usePlacement lets a person move the floating box by its header and resize
@@ -642,7 +650,13 @@ function usePlacement(isEnabled: boolean) {
       edges,
       hasMoved: false,
     }
-    pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId)
+    // A grip is a few pixels wide and has no click to keep, so it holds
+    // the pointer from the press; the header waits until it is a move.
+    if (edges) {
+      if (!pointerEvent.currentTarget.hasPointerCapture(pointerEvent.pointerId)) {
+        pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId)
+      }
+    }
     // Held down, a pointer would otherwise select the title it drags across.
     pointerEvent.preventDefault()
   }
@@ -655,6 +669,10 @@ function usePlacement(isEnabled: boolean) {
     if (!current.hasMoved) {
       if (Math.abs(deltaX) < GESTURE_THRESHOLD && Math.abs(deltaY) < GESTURE_THRESHOLD) return
       current.hasMoved = true
+      // Captured only once it is a move: captured from the press, the
+      // click that follows a still press would go to the header rather
+      // than to the title under it, and the list would never open.
+      pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId)
       // From here on the box is placed by its custom properties rather than
       // docked by the stylesheet; they start where it already is.
       writePlacement(current.startPlacement)
@@ -686,6 +704,14 @@ function usePlacement(isEnabled: boolean) {
     rememberPlacement(finished)
   }
 
+  // reset puts the box back in its corner at its first size, and forgets
+  // where it was.
+  const reset = () => {
+    livePlacement.current = null
+    setPlacement(null)
+    rememberPlacement(null)
+  }
+
   const headProps = {
     onPointerDown: (pointerEvent: React.PointerEvent<HTMLElement>) => {
       if (isGestureExempt(pointerEvent.target)) return
@@ -698,9 +724,7 @@ function usePlacement(isEnabled: boolean) {
     // first size, and forgets where it was.
     onDoubleClick: (mouseEvent: React.MouseEvent<HTMLElement>) => {
       if (!isEnabled || isPhoneWidth() || isGestureExempt(mouseEvent.target)) return
-      livePlacement.current = null
-      setPlacement(null)
-      rememberPlacement(null)
+      reset()
     },
   }
 
@@ -720,7 +744,7 @@ function usePlacement(isEnabled: boolean) {
       } as React.CSSProperties)
     : undefined
 
-  return { placement, isRepositioning, boxElement, style, headProps, gripProps }
+  return { placement, isRepositioning, boxElement, style, headProps, gripProps, reset }
 }
 
 function formatBytes(size: number): string {
@@ -2915,6 +2939,21 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             {/* Framed by the extension, the panel around this has a bar
                 of its own with the close on it; two of them, one under
                 the other, is one too many. */}
+            {/* Only once it was moved: the title runs the width of the
+                bar, so a double click on the bar mostly lands on the title
+                and opens the list, and the way back needs a place of its
+                own. */}
+            {!standalone && chatBox.placement && (
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={t('agentDrawer.putBack')}
+                title={t('agentDrawer.putBack')}
+                onClick={chatBox.reset}
+              >
+                <RestartIcon size={14} />
+              </button>
+            )}
             {!standalone && (
               <button
                 type="button"

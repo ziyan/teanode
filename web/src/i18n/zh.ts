@@ -1048,6 +1048,7 @@ export const zh: Catalog = {
   'agentDrawer.computersAttached': '已附加你的电脑：{names}',
   'agentDrawer.answer': '你的回答…',
   'agentDrawer.close': '关闭',
+  'agentDrawer.putBack': '把聊天放回角落',
   'agentDrawer.main': '主聊天',
   'agentDrawer.untitled': '未命名',
   'agentDrawer.new': '新的侧边聊天',

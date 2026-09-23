@@ -1089,6 +1089,7 @@ export const en = {
   'agentDrawer.computersAttached': 'Your computers are attached: {names}',
   'agentDrawer.answer': 'Your answer…',
   'agentDrawer.close': 'Close',
+  'agentDrawer.putBack': 'Put the chat back in its corner',
   'agentDrawer.main': 'Main chat',
   'agentDrawer.untitled': 'Untitled',
   'agentDrawer.new': 'New side chat',
