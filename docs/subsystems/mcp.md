@@ -80,8 +80,10 @@ columns: the client that holds it, and the resource it is good for. That
 resource is always the agent tools endpoint. A harness that names none is
 given it, and one that names anything else is refused, so a token from this
 flow is refused by GraphQL and by every other path. Refresh replaces the token
-and retires the old one; revoking it from the tokens list works as for any
-other.
+and retires the old one, carrying its name over. Because the token changes at
+every refresh, these tokens are listed by app rather than with the person's
+API tokens: Settings > Apps (and `teanode app`) renames an app or disconnects
+it, which revokes every token it holds.
 
 Not every harness registers itself. Some hosted assistants ask the person for
 a client identifier instead. Registering one for that assistant's callback

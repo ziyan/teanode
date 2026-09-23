@@ -14,7 +14,7 @@ import (
 type TokenQuery interface {
 	// List this account's API tokens. The tokens themselves are not stored
 	// and cannot be listed; only what they were issued for, and when each was
-	// last used.
+	// last used. The tokens apps hold are listed by app, with ListApps.
 	ListTokens(ctx context.Context, arguments ListTokensArguments) ([]*Token, error)
 }
 
@@ -58,10 +58,6 @@ type Token struct {
 
 	// When it was revoked, or null while it still works
 	Revoked *time.Time `json:"revoked,omitempty"`
-
-	// IsHeldByProgram says a program the person authorized holds it. Such
-	// a token renews itself and cannot be renamed or given a lifetime.
-	IsHeldByProgram bool `json:"isHeldByProgram"`
 }
 
 // CreatedToken is a newly issued Token together with the secret, which is not
@@ -86,8 +82,6 @@ func describeToken(token *models.Token) *Token {
 		LastUsed:   optionalTime(token.UsedAt),
 		LastUsedIP: token.IP,
 		Revoked:    optionalTime(token.RevokedAt),
-
-		IsHeldByProgram: token.ClientID != "",
 	}
 }
 
@@ -126,6 +120,11 @@ func (self *graph) ListTokens(ctx context.Context, arguments ListTokensArguments
 
 	tokens := make([]*Token, 0, len(stored))
 	for _, token := range stored {
+		// An app's token is replaced at every renewal, so it is listed by
+		// app instead, where it can be named and disconnected.
+		if token.ClientID != "" {
+			continue
+		}
 		tokens = append(tokens, describeToken(token))
 	}
 	return tokens, nil

@@ -757,3 +757,72 @@ func TestUpdateTokenKeepsTheSecret(t *testing.T) {
 		t.Errorf("a revoked token cannot be brought back: %v", err)
 	}
 }
+
+// Renaming or disconnecting an app touches every token that app holds for
+// the person, and nothing of another app's or of anybody else's.
+func TestAnAppIsRenamedAndDisconnectedWhole(t *testing.T) {
+	store := newStore(t)
+	if err := store.Update(func(configuration *config.Configuration) error {
+		configuration.Server.Secret = "a-server-secret-long-enough"
+		return nil
+	}); err != nil {
+		t.Fatalf("Update: %s", err)
+	}
+	credentials := newMemoryStore()
+	authenticator, err := web.NewAuthenticator(store, credentials)
+	if err != nil {
+		t.Fatalf("NewAuthenticator: %s", err)
+	}
+	if err := authenticator.CreateFirstUser(context.Background(), "ziyan", "a-password"); err != nil {
+		t.Fatalf("CreateFirstUser: %s", err)
+	}
+	credentials.addUser(&models.User{Username: "someone", PasswordHash: testPasswordHash})
+	owner, other := identifierOf(t, credentials, "ziyan"), identifierOf(t, credentials, "someone")
+
+	issue := func(userId, clientId, name string) *models.Token {
+		t.Helper()
+		token, _, _, err := authenticator.IssueAuthorizedToken(userId, name, clientId, "https://mail.example.com/mcp", time.Hour)
+		if err != nil {
+			t.Fatalf("IssueAuthorizedToken: %s", err)
+		}
+		return token
+	}
+	first, second := issue(owner, "assistant", "An assistant"), issue(owner, "assistant", "An assistant")
+	elsewhere := issue(owner, "editor", "An editor")
+	theirs := issue(other, "assistant", "An assistant")
+
+	if err := authenticator.RenameApp("ziyan", "assistant", "  my assistant "); err != nil {
+		t.Fatalf("RenameApp: %s", err)
+	}
+	named := func(token *models.Token) string {
+		t.Helper()
+		found, _, err := credentials.GetToken(token.ID)
+		if err != nil || found == nil {
+			t.Fatalf("GetToken: %v, %s", found, err)
+		}
+		return found.Name
+	}
+	if named(first) != "my assistant" || named(second) != "my assistant" {
+		t.Errorf("both of its tokens are renamed: %q, %q", named(first), named(second))
+	}
+	if named(elsewhere) != "An editor" || named(theirs) != "An assistant" {
+		t.Errorf("another app's and somebody else's are not: %q, %q", named(elsewhere), named(theirs))
+	}
+	if err := authenticator.RenameApp("ziyan", "nobody", "x"); !errors.Is(err, api.ErrNotFound) {
+		t.Errorf("an app holding nothing of theirs is not found: %v", err)
+	}
+
+	if err := authenticator.DisconnectApp("ziyan", "assistant"); err != nil {
+		t.Fatalf("DisconnectApp: %s", err)
+	}
+	for _, token := range []*models.Token{first, second, elsewhere, theirs} {
+		found, _, _ := credentials.GetToken(token.ID)
+		isRevoked := !found.RevokedAt.IsZero()
+		if isRevoked != (token == first || token == second) {
+			t.Errorf("token %s (%s of %s) revoked: %v", token.ID, token.ClientID, token.UserID, isRevoked)
+		}
+	}
+	if err := authenticator.DisconnectApp("ziyan", "assistant"); !errors.Is(err, api.ErrNotFound) {
+		t.Errorf("disconnecting twice finds nothing the second time: %v", err)
+	}
+}

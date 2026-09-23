@@ -76,6 +76,7 @@ func main() {
 			cmd.NewGroupCommand(),
 			cmd.NewRoleCommand(),
 			cmd.NewTokenCommand(),
+			cmd.NewAppCommand(),
 			cmd.NewSessionCommand(),
 			cmd.NewPasskeyCommand(),
 			cmd.NewSettingsCommand(),

@@ -126,6 +126,13 @@ type Authenticator interface {
 	// RevokeToken ends one token belonging to an operator.
 	RevokeToken(username, tokenId string) error
 
+	// RenameApp names an app everywhere a person sees it, on every token it
+	// holds for them and on each one it renews into.
+	RenameApp(username, clientId, name string) error
+
+	// DisconnectApp ends every token an app holds for a person.
+	DisconnectApp(username, clientId string) error
+
 	// UpdateToken renames one of an operator's tokens or gives it a new
 	// lifetime, counted from now; a lifetime of zero never expires. Nil
 	// leaves either as it is.
@@ -805,6 +812,44 @@ func (self *authenticator) UpdateToken(username, tokenId string, name *string, l
 	updated.Username = user.Username
 	log.Noticef("%s changed API token %s (%q, expires %s)", username, tokenId, updated.Name, describeExpiry(updated.ExpiresAt))
 	return updated, nil
+}
+
+func (self *authenticator) RenameApp(username, clientId, name string) error {
+	user := self.findUser(username)
+	if user == nil {
+		return ErrInvalidCredentials
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("%w: a name is required, so that an app can be recognized later", api.ErrInvalidArguments)
+	}
+	renamed, err := self.database.RenameClientTokens(user.ID, clientId, name, time.Now())
+	if err != nil {
+		return err
+	}
+	// An app with no token for this person is not theirs to name, and is
+	// reported the same as one that does not exist.
+	if renamed == 0 {
+		return api.ErrNotFound
+	}
+	log.Noticef("%s renamed the app %s to %q", username, clientId, name)
+	return nil
+}
+
+func (self *authenticator) DisconnectApp(username, clientId string) error {
+	user := self.findUser(username)
+	if user == nil {
+		return ErrInvalidCredentials
+	}
+	revoked, err := self.database.RevokeClientTokens(user.ID, clientId, time.Now())
+	if err != nil {
+		return err
+	}
+	if revoked == 0 {
+		return api.ErrNotFound
+	}
+	log.Noticef("%s disconnected the app %s, revoking %d tokens", username, clientId, revoked)
+	return nil
 }
 
 // describeExpiry is an expiry for the log.

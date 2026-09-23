@@ -130,7 +130,8 @@ so one command serves a person and a script.
 | `role` | the named sets of permissions a group holds; `role permissions` lists what may be given |
 | `audit` | the log of administrative changes, with filters |
 | `mailbox` | a mailbox and everything in it: `folder`, `rule`, `subscription`, `device`, `autoreply`, `programs` |
-| `token` | API tokens; `token create --user` on the console issues somebody's first |
+| `token` | API tokens: `create`, `list`, `update` (rename, or a new lifetime from now), `revoke`; `token create --user` on the console issues somebody's first |
+| `app` | apps authorized to act as you: `list`, `rename` (the name stays when the app renews), `disconnect` (revokes every token it holds) |
 | `session` | the browsers signed in to the dashboard |
 | `passkey` | the passkeys registered to your account; registering one needs the dashboard |
 | `settings` | the optional integrations; `settings set <section> key=value` |
