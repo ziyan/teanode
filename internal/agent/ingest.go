@@ -98,6 +98,11 @@ const (
 	// refused for a source whose reader no longer refused anything.
 	cursorPassRefused = "passRefused"
 
+	// cursorPassUnfinished says a page of this pass ran out of time part
+	// way through what it should have read, which it reads next pass; a
+	// pass that did not see everything must not delete what it missed.
+	cursorPassUnfinished = "passUnfinished"
+
 	// unknownAuthorsKept is how many unplaced commit addresses a source
 	// remembers. Enough to recognise yourself in the list, not a census
 	// of everybody who ever committed to a mirrored upstream.
@@ -229,6 +234,14 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 				// page, and sat until its hour with the cursor halfway.
 				midway := partWayThroughTree(cursor)
 				when := self.nextRunOf(source, run.Owner)
+				if waiting.readingOther != "" {
+					// The computer is there and busy with another source:
+					// this one's turn comes when that one is done, not at
+					// its hour tomorrow, which is where a pass that had
+					// not started was put, and so never ran while one
+					// long source was reading.
+					when = time.Now().Add(ingestRetry)
+				}
 				if source.More || midway {
 					when = time.Now().Add(ingestSoon)
 				}
@@ -239,6 +252,11 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 			break
 		}
 		if next == "" {
+			// A pass that ran out of time on part of what it read goes
+			// on with the next one straight away rather than at its hour.
+			if unfinished, _ := cursor[cursorPassUnfinished].(bool); unfinished {
+				more = true
+			}
 			completion, err := self.completeIngestPass(ctx, source, cursor, startedPass, counts)
 			if errors.Is(err, errIngestSourceChanged) {
 				return nil
@@ -309,9 +327,16 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 // waitingForDevice is a source whose computer is not attached.
 type waitingForDevice struct {
 	name string
+
+	// readingOther is the source the computer is busy reading, by its
+	// name, when it is attached and this source is waiting its turn.
+	readingOther string
 }
 
 func (self *waitingForDevice) Error() string {
+	if self.readingOther != "" {
+		return "waiting its turn on " + self.name + ", which is reading " + self.readingOther
+	}
 	return "waiting for the computer " + self.name + " to be attached"
 }
 

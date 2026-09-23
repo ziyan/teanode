@@ -49,6 +49,10 @@ const (
 type Index struct {
 	Publisher string   `json:"publisher"`
 	Skills    []*Entry `json:"skills"`
+
+	// Sources is the entries of a source types registry, which is read
+	// with this same code under a key of its own.
+	Sources []*Entry `json:"sources"`
 }
 
 // Entry is one skill in the index: where it is, what it should hash to,

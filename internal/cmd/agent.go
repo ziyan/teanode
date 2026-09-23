@@ -34,6 +34,7 @@ func NewAgentCommand() *cli.Command {
 			newAgentToolsCommand(),
 			newAgentMemoryCommand(),
 			newAgentSkillCommand(),
+			newAgentSourceTypeCommand(),
 			newAgentScheduleCommand(),
 			newAgentKnowledgeCommand(),
 			newAgentDreamCommand(),

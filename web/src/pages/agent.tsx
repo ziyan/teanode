@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 
 import { AgentReply, graphql, openAgentConversation } from '../api'
 import {
@@ -28,6 +28,19 @@ import { useTranslation } from '../i18n/i18n'
 import { useMailboxes } from '../mailboxes'
 import { Select } from '../components/select'
 import { PolicyTool, ToolPolicyAccordion } from '../components/toolPolicy'
+import {
+  LIST_SOURCE_TYPES,
+  SettingDrafts,
+  SourceType,
+  SourceTypeSettingsFields,
+  isReadOnComputer,
+  orderedSourceTypes,
+  settingLabel,
+  settingDrafts,
+  settingValues,
+  settingsProblem,
+  storedSettings,
+} from '../components/sourceTypeSettings'
 
 // A person's agent: the page where they turn it on, name it, tell it about
 // themselves, choose what it may reach and what it does there, and see what
@@ -151,9 +164,11 @@ function messageOf(caught: unknown): string {
 // The tabs of /settings/agent, and the path a person can be sent to. One
 // scroll of fourteen cards meant scrolling past a mailbox's policies to
 // reach what the agent remembered; the six subjects here are the six
-// questions somebody opens this page with.
+// questions somebody opens this page with. Mail is what it may reach in
+// the person's mailboxes; Sources is everywhere else it reads.
 const AGENT_TABS: TabItem[] = [
   { id: 'overview', label: 'agent.tabOverview' },
+  { id: 'mail', label: 'agent.tabMail' },
   { id: 'sources', label: 'agent.tabSources' },
   { id: 'memory', label: 'agent.tabMemory' },
   { id: 'dreams', label: 'agent.tabDreams' },
@@ -311,7 +326,7 @@ export function AgentPage() {
           </div>
         </>
       ) : null}
-      {tab === 'sources' ? (
+      {tab === 'mail' ? (
         <>
           <SettingsSection card title={t('agent.sources')} description={t('agent.sourcesHint')}>
             {view.sources.map((source) => (
@@ -336,9 +351,10 @@ export function AgentPage() {
       {tab === 'dreams' ? (
         <>
           <DreamCard agent={agent} busy={busy} onChange={update} onOpenRuns={showRunsOf} />
-          <KnowledgeSourcesCard />
         </>
       ) : null}
+      {/* The places it reads: each a source of an installed type. */}
+      {tab === 'sources' ? <KnowledgeSourcesCard /> : null}
       {/* What it does at set times, of its own: the schedules and the
           morning brief, which are timetables rather than connections. */}
       {tab === 'schedules' ? (
@@ -740,15 +756,15 @@ const STRIKE_FACT = `
 const KNOWLEDGE_SOURCES = `
   query {
     ListAgentKnowledgeSources {
-      id kind name specification { computer path format mailboxId readEveryCheckout }
+      id kind name specification { type settings computer path format mailboxId readEveryCheckout }
       rootPath enabled cron lastRunAt lastError documentCount chunkCount refusedCount more
       unknownAuthors checkoutsKeptToProfile filesKeptToProfile
     }
   }`
 
 const SAVE_KNOWLEDGE_SOURCE = `
-  mutation ($sourceId: String, $kind: String, $name: String, $computer: String, $path: String, $format: String, $enabled: Boolean, $mailboxId: String, $rootPath: String, $cron: String, $readEveryCheckout: Boolean) {
-    SaveAgentKnowledgeSource(sourceId: $sourceId, kind: $kind, name: $name, computer: $computer, path: $path, format: $format, enabled: $enabled, mailboxId: $mailboxId, rootPath: $rootPath, cron: $cron, readEveryCheckout: $readEveryCheckout) { id name }
+  mutation ($sourceId: String, $kind: String, $name: String, $computer: String, $path: String, $format: String, $enabled: Boolean, $mailboxId: String, $rootPath: String, $cron: String, $readEveryCheckout: Boolean, $type: String, $settings: JSON) {
+    SaveAgentKnowledgeSource(sourceId: $sourceId, kind: $kind, name: $name, computer: $computer, path: $path, format: $format, enabled: $enabled, mailboxId: $mailboxId, rootPath: $rootPath, cron: $cron, readEveryCheckout: $readEveryCheckout, type: $type, settings: $settings) { id name }
   }`
 
 // What became of the pictures and files each source carried. Counted
@@ -812,7 +828,17 @@ type KnowledgeSource = {
   id: string
   kind: string
   name: string
-  specification: { computer: string; path: string; format: string; mailboxId: string; readEveryCheckout: boolean }
+  specification: {
+    // The installed source type it was added as, and what was filled in
+    // for it; empty for a source added without one.
+    type: string
+    settings: unknown
+    computer: string
+    path: string
+    format: string
+    mailboxId: string
+    readEveryCheckout: boolean
+  }
   rootPath: string
   enabled: boolean
   cron: string
@@ -1691,6 +1717,76 @@ function shapeOf(source: { kind: string; specification: { format: string } }): K
 // OFFERED_SHAPES is what a person may add, which is every shape there is.
 const OFFERED_SHAPES: KnowledgeShape[] = ['files', 'journal', 'records', 'sent']
 
+const COMPUTER_NAMES = `query { ReadAgentComputers { computers { name } } }`
+
+type MailboxNaming = { id: string; name?: string | null; addresses?: { address: string }[] | null }
+
+function mailboxLabel(mailbox: MailboxNaming): string {
+  return mailbox.name || mailbox.addresses?.[0]?.address || mailbox.id
+}
+
+// whereSourceReads is the line under a source's name that says where it
+// reads: the folder and the computer, the mailbox of sent mail, or for a
+// type of commands what was filled in for it.
+function whereSourceReads(source: KnowledgeSource, views: { mailbox: MailboxNaming }[]): string {
+  const mailboxId = source.specification.mailboxId
+  if (source.kind === 'sent' && mailboxId) {
+    const view = views.find((candidate) => candidate.mailbox.id === mailboxId)
+    return view ? mailboxLabel(view.mailbox) : ''
+  }
+  let where = source.specification.path
+  if (!where && source.specification.type) {
+    where = Object.entries(storedSettings(source.specification.settings))
+      .filter(([, value]) => value !== '' && value !== null && value !== false)
+      .filter(([, value]) => !(Array.isArray(value) && value.length === 0))
+      .map(
+        ([settingName, value]) =>
+          `${settingLabel(settingName)}: ${Array.isArray(value) ? value.join(', ') : String(value)}`,
+      )
+      .join(' · ')
+  }
+  return [where, source.specification.computer].filter((part) => part).join(' · ')
+}
+
+// SourceTypePicker is the first question of adding a source: which of the
+// installed types it is, each by its name and what it says it reads.
+function SourceTypePicker({
+  sourceTypes,
+  chosen,
+  onChoose,
+}: {
+  sourceTypes: SourceType[]
+  chosen: string
+  onChoose: (name: string) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <fieldset className="check-list">
+      <legend>{t('sourceTypes.choose')}</legend>
+      <div className="check-list-items" role="radiogroup">
+        {sourceTypes.map((sourceType) => (
+          <label
+            key={sourceType.name}
+            className={chosen === sourceType.name ? 'check-list-item chosen' : 'check-list-item'}
+          >
+            <input
+              type="radio"
+              name="source-type"
+              checked={chosen === sourceType.name}
+              onChange={() => onChoose(sourceType.name)}
+            />
+            <span>
+              {sourceType.name}
+              {sourceType.isLocal ? ` · ${t('sourceTypes.local')}` : ''}
+              <span>{sourceType.description}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
 // KnowledgeSourcesCard is the places the person has pointed their agent
 // at, and how far each has got.
 //
@@ -1755,7 +1851,38 @@ function KnowledgeSourcesCard() {
   const { views } = useMailboxes()
   const readingMailboxId = mailboxId || views[0]?.mailbox.id || ''
 
+  // The source types installed here. Where there are any, a source is
+  // added by choosing one and filling in what it asks for; the sorts of
+  // place above stay for a server with none, and as the last choice. A
+  // person who may not read the list is simply offered the sorts of place.
+  const installedTypes = useQuery(() => graphql<{ ListAgentSourceTypes: SourceType[] }>(LIST_SOURCE_TYPES, {}), [], {
+    refresh: false,
+  })
+  const allSourceTypes = installedTypes.data?.ListAgentSourceTypes ?? []
+  const offeredSourceTypes = orderedSourceTypes(allSourceTypes)
+  // The type chosen in the form, by name; empty for the sorts of place.
+  const [sourceTypeName, setSourceTypeName] = useState('')
+  const [drafts, setDrafts] = useState<SettingDrafts>({})
+  const chosenSourceType = allSourceTypes.find((sourceType) => sourceType.name === sourceTypeName) ?? null
+  // The computers attached, offered as the person types one; a computer
+  // not attached right now can still be named.
+  const attached = useQuery(
+    () => graphql<{ ReadAgentComputers: { computers: { name: string }[] } }>(COMPUTER_NAMES, {}),
+    [],
+    { refresh: false },
+  )
+  const computerNames = (attached.data?.ReadAgentComputers.computers ?? []).map((one) => one.name)
+  const computerListId = useId()
+
   const sources = data?.ListAgentKnowledgeSources ?? []
+
+  const chooseSourceType = (name: string) => {
+    setSourceTypeName(name)
+    const sourceType = allSourceTypes.find((candidate) => candidate.name === name)
+    setDrafts(sourceType ? settingDrafts(sourceType) : {})
+    // What was wrong with the last type's form says nothing about this one.
+    setProblem(null)
+  }
 
   // Opening the form on a source, which is the whole of Edit: every box
   // the add dialog has, holding what the source already says.
@@ -1768,9 +1895,89 @@ function KnowledgeSourcesCard() {
     setCron(source.cron)
     setMailboxId(source.specification.mailboxId)
     setReadEveryCheckout(source.specification.readEveryCheckout)
+    const sourceType = allSourceTypes.find((candidate) => candidate.name === source.specification.type)
+    setSourceTypeName(source.specification.type)
+    setDrafts(sourceType ? settingDrafts(sourceType, storedSettings(source.specification.settings)) : {})
     setProblem(null)
     setEditing(source)
   }
+
+  // A typed source opened before the list of types arrived has its boxes
+  // filled in when it does. Saved empty, they would put every setting back
+  // to the type's default.
+  useEffect(() => {
+    if (!editing || !chosenSourceType || Object.keys(drafts).length > 0) return
+    setDrafts(settingDrafts(chosenSourceType, storedSettings(editing.specification.settings)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, chosenSourceType])
+
+  // Saving a source of a type: the settings it declares, checked here
+  // first so the person is told which box is wrong, and the server sets
+  // the kind, the format and the folder from them.
+  const saveTyped = async (sourceType: SourceType) => {
+    const isSent = sourceType.reader === 'sent'
+    const refusal = settingsProblem(sourceType, drafts, t, isSent ? ['mailbox'] : [])
+    if (refusal) {
+      setProblem(refusal)
+      toast.failed(refusal)
+      return false
+    }
+    if (isReadOnComputer(sourceType) && !editing && computer.trim() === '') {
+      setProblem(t('sourceTypes.computerMissing'))
+      toast.failed(t('sourceTypes.computerMissing'))
+      return false
+    }
+    const settings = settingValues(sourceType, drafts)
+    if (isSent) settings.mailbox = readingMailboxId
+    return run(
+      SAVE_KNOWLEDGE_SOURCE,
+      {
+        sourceId: editing?.id,
+        name: name.trim(),
+        type: sourceType.name,
+        settings,
+        computer: isReadOnComputer(sourceType)
+          ? editing
+            ? editing.specification.computer
+            : computer.trim()
+          : undefined,
+        rootPath: rootPath.trim() || undefined,
+        cron: cron.trim() || undefined,
+      },
+      t('agent.knowledgeSaved'),
+    )
+  }
+
+  // Which computer, typed, with the ones attached offered as it is.
+  const computerInput = (
+    <>
+      <input
+        value={computer}
+        list={computerListId}
+        autoComplete="off"
+        onChange={(event) => setComputer(event.target.value)}
+      />
+      <datalist id={computerListId}>
+        {computerNames.map((computerName) => (
+          <option key={computerName} value={computerName} />
+        ))}
+      </datalist>
+    </>
+  )
+
+  const mailboxPicker = (
+    <label>
+      <span>{t('agent.knowledgeMailbox')}</span>
+      <select value={readingMailboxId} onChange={(event) => setMailboxId(event.target.value)}>
+        {views.length === 0 ? <option value="">{t('agent.knowledgeNoMailboxes')}</option> : null}
+        {views.map((view) => (
+          <option key={view.mailbox.id} value={view.mailbox.id}>
+            {mailboxLabel(view.mailbox)}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
 
   const run = async (document: string, variables: Record<string, unknown>, said: string) => {
     setBusy(true)
@@ -1808,6 +2015,11 @@ function KnowledgeSourcesCard() {
               setCron('')
               setMailboxId('')
               setReadEveryCheckout(false)
+              // The first type offered, which is the folder where one is
+              // installed: the list is in front of the person, so the
+              // choice is theirs, and Add is never a button that waits
+              // for something nobody said.
+              chooseSourceType(offeredSourceTypes[0]?.name ?? '')
               setProblem(null)
               setEditing(null)
               setAdding(true)
@@ -1826,16 +2038,30 @@ function KnowledgeSourcesCard() {
             title={source.name}
             badge={
               <>
-                <Tag value={t(`agent.knowledgeShape.${shapeOf(source)}` as 'agent.knowledgeShape.files')} />
+                {source.specification.type ? (
+                  <>
+                    <Tag value={source.specification.type} />
+                    {allSourceTypes.some(
+                      (sourceType) => sourceType.name === source.specification.type && sourceType.isLocal,
+                    ) ? (
+                      <Tag value={t('sourceTypes.local')} tone="warn" />
+                    ) : null}
+                  </>
+                ) : (
+                  <Tag value={t(`agent.knowledgeShape.${shapeOf(source)}` as 'agent.knowledgeShape.files')} />
+                )}
                 {source.more ? <Tag value={t('agent.knowledgeReading')} tone="good" /> : null}
                 {!source.enabled ? <Tag value={t('agent.knowledgePausedBadge')} tone="warn" /> : null}
               </>
             }
             subtitle={
               <>
-                {source.specification.path}
-                {source.specification.computer ? ` · ${source.specification.computer}` : ''}
-                <br />
+                {whereSourceReads(source, views) ? (
+                  <>
+                    {whereSourceReads(source, views)}
+                    <br />
+                  </>
+                ) : null}
                 {t('agent.knowledgeCounts', { documents: source.documentCount, chunks: source.chunkCount })}
                 {source.refusedCount > 0 ? ` · ${t('agent.knowledgeRefused', { count: source.refusedCount })}` : ''}
                 {/* And what became of the pictures and files it carried,
@@ -1882,10 +2108,7 @@ function KnowledgeSourcesCard() {
                     <br />
                     <span className="muted">
                       {t('agent.knowledgeUnknownAuthors', { names: source.unknownAuthors.join(', ') })}
-                    </span>{' '}
-                    <Link className="link" to="/mailbox/contacts">
-                      {t('agent.knowledgeWhichIsYou')}
-                    </Link>
+                    </span>
                   </>
                 ) : null}
               </>
@@ -1953,7 +2176,12 @@ function KnowledgeSourcesCard() {
           error={problem}
           canSubmit={
             name.trim() !== '' &&
-            (kind === 'sent' ? readingMailboxId !== '' : path.trim() !== '' && computer.trim() !== '')
+            // A source of a type is saved only through its type's form: the
+            // plain one, shown while the types load, would save a folder
+            // beside settings that still name the old one.
+            !(editing?.specification.type && chosenSourceType === null) &&
+            (chosenSourceType !== null ||
+              (kind === 'sent' ? readingMailboxId !== '' : path.trim() !== '' && computer.trim() !== ''))
           }
           onClose={() => {
             setAdding(false)
@@ -1961,6 +2189,13 @@ function KnowledgeSourcesCard() {
           }}
           onSubmit={() => {
             void (async () => {
+              if (chosenSourceType) {
+                if (await saveTyped(chosenSourceType)) {
+                  setAdding(false)
+                  setEditing(null)
+                }
+                return
+              }
               if (
                 await run(
                   SAVE_KNOWLEDGE_SOURCE,
@@ -1996,66 +2231,91 @@ function KnowledgeSourcesCard() {
             })()
           }}
         >
+          {/* What it is comes first when there are types to choose from:
+              every other box depends on it. */}
+          {!editing && offeredSourceTypes.length > 0 ? (
+            <SourceTypePicker sourceTypes={offeredSourceTypes} chosen={sourceTypeName} onChoose={chooseSourceType} />
+          ) : null}
           <label>
             <span>{t('agent.knowledgeName')}</span>
             <input value={name} onChange={(event) => setName(event.target.value)} />
           </label>
-          <label>
-            <span>{t('agent.knowledgeKind')}</span>
-            {editing ? (
-              <input value={t(`agent.knowledgeShape.${shape}` as 'agent.knowledgeShape.files')} readOnly disabled />
-            ) : (
-              <select value={shape} onChange={(event) => setShape(event.target.value as KnowledgeShape)}>
-                {OFFERED_SHAPES.map((value) => (
-                  <option key={value} value={value}>
-                    {t(`agent.knowledgeShape.${value}` as 'agent.knowledgeShape.files')}
-                  </option>
-                ))}
-              </select>
-            )}
-          </label>
-          {kind !== 'sent' ? (
+          {chosenSourceType ? (
             <>
-              {/* A records folder is empty until a script fills it, which is
-                  the one shape where choosing it is not the whole job. */}
-              {format === 'records' ? <p className="muted">{t('agent.knowledgeShape.recordsHint')}</p> : null}
-              <label>
-                <span>{t('agent.knowledgeComputer')}</span>
-                {editing ? (
-                  <input value={computer} readOnly disabled />
-                ) : (
-                  <input value={computer} onChange={(event) => setComputer(event.target.value)} />
-                )}
-              </label>
-              <label>
-                <span>{t('agent.knowledgePath')}</span>
-                <input value={path} placeholder="~/projects" onChange={(event) => setPath(event.target.value)} />
-              </label>
-              {/* A tree of checkouts is mostly other people's work, so a
-                  checkout with none of the person's commits in it is kept
-                  to its profile. This is how they disagree. */}
-              {shape === 'files' ? (
-                <Check
-                  checked={readEveryCheckout}
-                  label={t('agent.knowledgeReadEveryCheckout')}
-                  onChange={setReadEveryCheckout}
-                />
+              {editing ? (
+                <label>
+                  <span>{t('agent.knowledgeKind')}</span>
+                  <input value={chosenSourceType.name} readOnly disabled />
+                </label>
               ) : null}
+              {isReadOnComputer(chosenSourceType) ? (
+                <>
+                  <label>
+                    <span>{t('agent.knowledgeComputer')}</span>
+                    {editing ? <input value={computer} readOnly disabled /> : computerInput}
+                  </label>
+                  {/* A type of commands needs its tools on that computer,
+                      and says so before the first night finds out. */}
+                  {chosenSourceType.requires.length > 0 ? (
+                    <p className="muted field-hint">
+                      {t('sourceTypes.needsTools', { tools: chosenSourceType.requires.join(', ') })}
+                    </p>
+                  ) : null}
+                </>
+              ) : null}
+              <SourceTypeSettingsFields
+                sourceType={chosenSourceType}
+                drafts={drafts}
+                onChange={(settingName, draft) => setDrafts((previous) => ({ ...previous, [settingName]: draft }))}
+                replaced={chosenSourceType.reader === 'sent' ? { mailbox: mailboxPicker } : {}}
+              />
             </>
           ) : (
-            /* A sent source reads one mailbox's Sent folder, and the
+            <>
+              <label>
+                <span>{t('agent.knowledgeKind')}</span>
+                {editing ? (
+                  <input value={t(`agent.knowledgeShape.${shape}` as 'agent.knowledgeShape.files')} readOnly disabled />
+                ) : (
+                  <select value={shape} onChange={(event) => setShape(event.target.value as KnowledgeShape)}>
+                    {OFFERED_SHAPES.map((value) => (
+                      <option key={value} value={value}>
+                        {t(`agent.knowledgeShape.${value}` as 'agent.knowledgeShape.files')}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </label>
+              {kind !== 'sent' ? (
+                <>
+                  {/* A records folder is empty until a script fills it, which is
+                  the one shape where choosing it is not the whole job. */}
+                  {format === 'records' ? <p className="muted">{t('agent.knowledgeShape.recordsHint')}</p> : null}
+                  <label>
+                    <span>{t('agent.knowledgeComputer')}</span>
+                    {editing ? <input value={computer} readOnly disabled /> : computerInput}
+                  </label>
+                  <label>
+                    <span>{t('agent.knowledgePath')}</span>
+                    <input value={path} placeholder="~/projects" onChange={(event) => setPath(event.target.value)} />
+                  </label>
+                  {/* A tree of checkouts is mostly other people's work, so a
+                  checkout with none of the person's commits in it is kept
+                  to its profile. This is how they disagree. */}
+                  {shape === 'files' ? (
+                    <Check
+                      checked={readEveryCheckout}
+                      label={t('agent.knowledgeReadEveryCheckout')}
+                      onChange={setReadEveryCheckout}
+                    />
+                  ) : null}
+                </>
+              ) : (
+                /* A sent source reads one mailbox's Sent folder, and the
                server refuses one that does not say which. */
-            <label>
-              <span>{t('agent.knowledgeMailbox')}</span>
-              <select value={readingMailboxId} onChange={(event) => setMailboxId(event.target.value)}>
-                {views.length === 0 ? <option value="">{t('agent.knowledgeNoMailboxes')}</option> : null}
-                {views.map((view) => (
-                  <option key={view.mailbox.id} value={view.mailbox.id}>
-                    {view.mailbox.name || view.mailbox.addresses?.[0]?.address || view.mailbox.id}
-                  </option>
-                ))}
-              </select>
-            </label>
+                mailboxPicker
+              )}
+            </>
           )}
           <label>
             <span>{t('agent.knowledgeUnder')}</span>
@@ -2117,11 +2377,9 @@ function SourceFiles({ sourceId, files }: { sourceId: string; files?: SourceAtta
 
   // Asked for on the click rather than with the sources: a source may
   // have passed over tens of thousands, and most people never open this.
-  const toggle = async () => {
-    if (declined !== null) {
-      setDeclined(null)
-      return
-    }
+  // Shown in a dialog: listed under the source, it made one row of the
+  // list longer than every other row put together.
+  const open = async () => {
     setLoading(true)
     try {
       const answer = await graphql<{ ListAgentDeclinedAttachments: DeclinedFile[] }>(DECLINED_ATTACHMENTS, { sourceId })
@@ -2138,51 +2396,59 @@ function SourceFiles({ sourceId, files }: { sourceId: string; files?: SourceAtta
       <br />
       <span className="muted">{said.join(' · ')}</span>{' '}
       {files.declined > 0 ? (
-        <button type="button" className="link" onClick={() => void toggle()}>
-          {declined === null ? t('agent.filesWhich') : t('agent.filesHide')}
+        <button type="button" className="link" disabled={loading} onClick={() => void open()}>
+          {t('agent.filesWhich')}
         </button>
       ) : null}
-      {loading ? <Loading /> : null}
       {declined !== null ? (
-        declined.length === 0 ? (
-          <SettingsEmpty>{t('agent.filesNoneDeclined')}</SettingsEmpty>
-        ) : (
-          /* Said once over the files it was said about, rather than once
+        <ConfirmDialog
+          title={t('agent.filesDeclinedTitle')}
+          onClose={() => setDeclined(null)}
+          body={<div className="dialog-scroll">{declinedList(declined, t)}</div>}
+        />
+      ) : null}
+    </>
+  )
+}
+
+// declinedList is the files a source's reading passed over, grouped by why.
+function declinedList(declined: DeclinedFile[], t: ReturnType<typeof useTranslation>['t']) {
+  return declined.length === 0 ? (
+    <SettingsEmpty>{t('agent.filesNoneDeclined')}</SettingsEmpty>
+  ) : (
+    /* Said once over the files it was said about, rather than once
              a row. There are two reasons a file is passed over and a
              batch of forty shares one of them, so repeating it put the
              same twenty five words on every line and buried the only
              part that differed. */
-          <ul className="agent-declined-files">
-            {groupedByReason(declined).map(([reason, group]) => (
-              <li key={reason} className="agent-declined-group">
-                <p className="muted">{reason}</p>
-                <ul>
-                  {group.map((file) => (
-                    <li key={file.documentId}>
-                      {/* The file itself where its bytes are here, so a
+    <ul className="agent-declined-files">
+      {groupedByReason(declined).map(([reason, group]) => (
+        <li key={reason} className="agent-declined-group">
+          <p className="muted">{reason}</p>
+          <ul>
+            {group.map((file) => (
+              <li key={file.documentId}>
+                {/* The file itself where its bytes are here, so a
                           person who disagrees with the decision can look
                           at what was passed over. */}
-                      {file.path === '' ? (
-                        <span>{file.name}</span>
-                      ) : (
-                        <a href={file.path} target="_blank" rel="noreferrer">
-                          {file.name}
-                        </a>
-                      )}
-                      {[file.thread, file.channel].filter((part) => part.trim() !== '').length > 0 ? (
-                        <span className="muted">
-                          {[file.thread, file.channel].filter((part) => part.trim() !== '').join(' · ')}
-                        </span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
+                {file.path === '' ? (
+                  <span>{file.name}</span>
+                ) : (
+                  <a href={file.path} target="_blank" rel="noreferrer">
+                    {file.name}
+                  </a>
+                )}
+                {[file.thread, file.channel].filter((part) => part.trim() !== '').length > 0 ? (
+                  <span className="muted">
+                    {[file.thread, file.channel].filter((part) => part.trim() !== '').join(' · ')}
+                  </span>
+                ) : null}
               </li>
             ))}
           </ul>
-        )
-      ) : null}
-    </>
+        </li>
+      ))}
+    </ul>
   )
 }
 
