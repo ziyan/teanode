@@ -62,13 +62,15 @@ func NewComputerCommand() *cli.Command {
 				Usage:     "run a source type here and print the records it reads, without the server",
 				ArgsUsage: "<source.md>",
 				Description: "Runs a source type the way a pass does -- lists its containers, then reads\n" +
-					"them -- on this computer, and prints each record as a JSON line and a summary at\n" +
+					"them -- on this computer, and prints each record as a JSON line, with the container\n" +
+					"it came from as \"container\", and a summary at\n" +
 					"the end. For trying a type against the tool it calls before installing it. What\n" +
 					"the type keeps between passes goes in a directory of its own, left behind to look at.",
 				Flags: []cli.Flag{
 					&cli.StringSliceFlag{Name: "setting", Usage: "a setting, name=value; a list setting takes a comma-separated value"},
 					&cli.IntFlag{Name: "containers", Value: 2, Usage: "how many containers to read; 0 lists them and reads none"},
-					&cli.IntFlag{Name: "records", Value: 5, Usage: "how many records of each container to print"},
+					&cli.IntFlag{Name: "records", Value: 5, Usage: "how many records of each container to print; -1 prints every one"},
+					&cli.StringSliceFlag{Name: "only", Usage: "read only the container of this name (repeatable), however many --containers says"},
 					&cli.StringFlag{Name: "state", Usage: "where the type keeps what it knows between runs; a new directory by default"},
 				},
 				Action: runComputerTrySource,
@@ -350,6 +352,12 @@ func runComputerTrySource(ctx context.Context, command *cli.Command) error {
 				settings[name] = list
 			case "boolean":
 				settings[name] = value == "true" || value == "yes" || value == "1"
+			case "integer":
+				number, err := strconv.Atoi(value)
+				if err != nil {
+					return usage(fmt.Sprintf("%s is a whole number", name))
+				}
+				settings[name] = number
 			}
 		}
 	}
@@ -378,9 +386,17 @@ func runComputerTrySource(ctx context.Context, command *cli.Command) error {
 			break
 		}
 	}
+	only := map[string]bool{}
+	for _, name := range command.StringSlice("only") {
+		only[name] = true
+	}
 	read := 0
 	for _, container := range containers {
-		if read >= int(command.Int("containers")) {
+		if len(only) > 0 {
+			if !only[container.Name] {
+				continue
+			}
+		} else if read >= int(command.Int("containers")) {
 			break
 		}
 		read++
@@ -390,9 +406,10 @@ func runComputerTrySource(ctx context.Context, command *cli.Command) error {
 		}
 		fmt.Fprintf(os.Stderr, "%s: %d records\n", container.Name, len(records))
 		for index, record := range records {
-			if index >= int(command.Int("records")) {
+			if limit := int(command.Int("records")); limit >= 0 && index >= limit {
 				break
 			}
+			record["container"] = container.Name
 			encoded, _ := json.Marshal(record)
 			fmt.Println(string(encoded))
 		}

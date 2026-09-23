@@ -145,6 +145,9 @@ type recordsFolder struct {
 	// typed is the source type run in place of a records script, for a
 	// typed source.
 	typed *typedSource
+
+	// videos is what this page has left for making sheets of frames.
+	videos videoBudget
 }
 
 // scanRecords reads a folder of JSON lines, one record a line, in the
@@ -393,6 +396,11 @@ func readRecords(ctx context.Context, folder *recordsFolder, relative string, so
 		// filed by exactly the same rule. The entry the record itself
 		// produces is made below, or by the grouping at the end for a
 		// chat post; these ride beside it.
+		if folder.typed != nil {
+			// A script makes its own sheets; a type cannot, so they are
+			// made here.
+			folder.withVideoSheets(ctx, &one)
+		}
 		entries = append(entries, folder.attachmentsOf(ctx, relative, &one, attached)...)
 		if strings.EqualFold(strings.TrimSpace(one.Kind), "chat") {
 			if _, seen := posts[one.Channel]; !seen {
