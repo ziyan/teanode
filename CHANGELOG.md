@@ -6,6 +6,26 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-09-23
+
+### Added
+
+- The agent's Activity tab lists what programs did through the agent tools: each
+  tool they called and each question they asked, under the kind `mcp`. (#121)
+- `teanode computer start --description "…"` tells the agent what a computer is for,
+  so it can choose between several. (#121)
+- `web_fetch` can read a page through an attached computer, reaching an intranet or
+  home network the server cannot. Update the program on each computer to use it. (#121)
+- The Reach card on the Connections tab sets, for each skill and connected server,
+  which of your computers its requests go through, for services that answer only
+  inside one network. (#121)
+
+### Fixed
+
+- A connected server that runs on your computer runs on the one you choose, not on
+  whichever computer's name sorts first; its tools no longer fail over MCP. (#121)
+- A program using the agent tools can fetch a file it was handed with `share_file`. (#121)
+
 ## [0.49.0] - 2026-09-22
 
 ### Added
