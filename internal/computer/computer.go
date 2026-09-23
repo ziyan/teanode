@@ -104,12 +104,6 @@ type Options struct {
 	// default.
 	Home string
 
-	// ScanRootsFile is where the list of directories this program will
-	// scan for the agent's knowledge is kept. Empty uses the one beside
-	// the person's own profile. See scan.go for why the list lives here
-	// rather than on the server.
-	ScanRootsFile string
-
 	// Notice is where the program says what it was asked and how long it
 	// took. Optional; nothing is said when it is not set.
 	//

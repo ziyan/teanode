@@ -2560,7 +2560,6 @@ export const zh: Catalog = {
   'agent.knowledgeUnderHint': '图谱中的一个页面，例如 projects。留空则由助手自行决定归档的位置。',
   'agent.knowledgeCron': '多久读取一次（cron 格式）',
   'agent.knowledgeCronHint': '五个字段，按你所在的时区。留空则每晚读取一次。',
-  'agent.knowledgeAllowFirst': '先在那台电脑上允许：teanode computer allow {path}。在此之前不会读取任何内容。',
   'agent.knowledgeUnknownAuthors': '这里的提交来自 {names}，其中没有一个是你，所以这些都不算作你的工作。',
   'agent.knowledgeWhichIsYou': '指定哪个联系人是你',
   'agent.knowledgeRefused': '有 {count} 项在本机被拦下',

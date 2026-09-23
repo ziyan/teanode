@@ -62,7 +62,7 @@ func init() {
 					"mailboxId": tools.StringProperty("for add of a sent source: which of their mailboxes to read their own sent mail from, by name or by identifier"),
 					"cron":      tools.StringProperty("for add: how often to read it, as five cron fields in their own zone; nightly if left out"),
 				}, "action"),
-				Guidance: "knowledge: their own code, chat, notes and documents. Search it before answering a question about their work from memory alone, and cite what you used. An identifier from a log (ResetPayloadAngularOffset, mwesexecutor.py) is looked up exactly, so paste it in as it is. A passage marked private came from a channel or a message only they can see: say so if you quote it into something that leaves. When they point you at a folder to index, look inside it first with the terminal or filesystem tool when a computer is attached. journal is only for a folder of their own notes; an export of anything -- a wiki, a chat, a drive, a tracker -- has a shape of its own, and the way in is records: ask `shape`, write the script yourself in a records folder beside the export, run it on a subset, then add that folder as the source. Which script depends on where the records are. Files already on their computer are read where they lie by a `records` script, which prints the names of its files and then one file's records when asked for it; never copy an archive into a second copy of itself with a `refresh`, which is for records that have to be fetched from a service or a command line tool. A folder has to be allowed on that computer with `teanode computer allow` before a scan of it runs; say so if a pass is refused. \"Stop reading that\" is `pause`, never `remove`: pausing keeps every document and passage, and removing throws away the hours of reading and the embeddings that a first pass cost.",
+				Guidance: "knowledge: their own code, chat, notes and documents. Search it before answering a question about their work from memory alone, and cite what you used. An identifier from a log (ResetPayloadAngularOffset, mwesexecutor.py) is looked up exactly, so paste it in as it is. A passage marked private came from a channel or a message only they can see: say so if you quote it into something that leaves. When they point you at a folder to index, look inside it first with the terminal or filesystem tool when a computer is attached. journal is only for a folder of their own notes; an export of anything -- a wiki, a chat, a drive, a tracker -- has a shape of its own, and the way in is records: ask `shape`, write the script yourself in a records folder beside the export, run it on a subset, then add that folder as the source. Which script depends on where the records are. Files already on their computer are read where they lie by a `records` script, which prints the names of its files and then one file's records when asked for it; never copy an archive into a second copy of itself with a `refresh`, which is for records that have to be fetched from a service or a command line tool. \"Stop reading that\" is `pause`, never `remove`: pausing keeps every document and passage, and removing throws away the hours of reading and the embeddings that a first pass cost.",
 				Preview: tools.PreviewOf(func(call struct {
 					Action   string `json:"action"`
 					Query    string `json:"query"`
@@ -395,7 +395,7 @@ func addAction(ctx context.Context, run tools.Run, arguments *knowledgeArguments
 	}); err != nil {
 		return nil, err
 	}
-	result := tools.TextResult("%s is added as %q; nothing is read yet. The first pass is queued and runs within the minute, and it is refused unless the folder is allowed on that computer with `teanode computer allow`; use `sources` in a while to see whether it ran and how far it got, and say so rather than assuming.",
+	result := tools.TextResult("%s is added as %q; nothing is read yet. The first pass is queued and runs within the minute; use `sources` in a while to see whether it ran and how far it got, and say so rather than assuming.",
 		written.Describe(), written.Name)
 	result.Note = "now indexing " + written.Describe()
 	return result, nil
@@ -745,11 +745,16 @@ func lookBeforeAdding(ctx context.Context, run tools.Run, computerName, path, fo
 		return nil
 	}
 	if _, err := device.Ask(ctx, "scan", &computer.ScanArguments{Root: path, Format: computer.FormatProbe, Most: 1}, 30*time.Second); err != nil {
-		if strings.Contains(err.Error(), "allowed for scanning") {
-			return fmt.Errorf("%s does not allow %s to be scanned: the person has to run `teanode computer allow %s` on %s themselves, and then ask again; nothing was added", device.Name(), path, path, device.Name())
+		switch {
+		case strings.Contains(err.Error(), "allowed for scanning"):
+			// A daemon from before the list of scannable folders was
+			// dropped still keeps one.
+			return fmt.Errorf("%s runs an older teanode, which scans only folders on a list of its own; update teanode there and ask again; nothing was added", device.Name())
+		case strings.Contains(err.Error(), "no such file") || strings.Contains(err.Error(), "not a directory"):
+			return fmt.Errorf("%s has no folder %s (%s); nothing was added", device.Name(), path, err)
 		}
-		// An older daemon that does not know the probe, or a folder that
-		// is not there: neither is this check's to decide.
+		// An older daemon that does not know the probe: not this check's
+		// to decide.
 	}
 	if format != models.FormatRecords {
 		return nil

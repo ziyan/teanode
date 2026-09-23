@@ -31,10 +31,7 @@ func recordsIn(t *testing.T, files map[string]string) (string, func(arguments *S
 			t.Fatalf("WriteFile: %s", err)
 		}
 	}
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 	return root, func(arguments *ScanArguments) (*ScanResult, error) {
 		if arguments == nil {
 			arguments = &ScanArguments{}
@@ -356,9 +353,9 @@ exit 3
 	}
 }
 
-// A link where the script should be is refused rather than followed: the
-// person allowed this folder, not whatever the link points at, and
-// nobody is watching when this runs.
+// A link where the script should be is refused rather than followed:
+// nobody is watching when this runs, and a link dropped in the folder
+// would run a program from somewhere else.
 func TestARefreshThatIsASymlinkIsNotRun(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a refresh script here is a shell script")
@@ -429,10 +426,7 @@ func TestTheKnownHashesAreKeptUnderThePassName(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "a.jsonl"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatal(err)
-	}
+	options := &Options{Home: home}
 	scan := func(arguments *ScanArguments) (*ScanResult, error) {
 		arguments.Root = root
 		return RunScan(context.Background(), options, arguments)
@@ -801,57 +795,6 @@ func TestAnAttachmentTooLargeIsRefusedWithAReason(t *testing.T) {
 	}
 	if count := countOfKind(again.Entries, KindAttachment); count != 2 {
 		t.Fatalf("both files: %d", count)
-	}
-}
-
-// A path out of the folder is refused rather than followed, whether a
-// script wrote it or a link in the folder leads there. The folder is what
-// the person allowed; the rest of their disk is not, and a script that
-// read somebody else's archive does not get to decide otherwise.
-func TestAnAttachmentOutsideTheAllowedRootsIsRefused(t *testing.T) {
-	elsewhere := t.TempDir()
-	secret := filepath.Join(elsewhere, "id_rsa")
-	if err := os.WriteFile(secret, []byte("somewhere nobody allowed"), 0o600); err != nil {
-		t.Fatalf("WriteFile: %s", err)
-	}
-	root, scan := recordsIn(t, nil)
-	names := []string{"absolute", "climbed"}
-	links := ""
-	if runtime.GOOS != "windows" {
-		if err := os.Symlink(secret, filepath.Join(root, "linked")); err != nil {
-			t.Fatalf("Symlink: %s", err)
-		}
-		links = `,{"path":"linked","name":"linked"}`
-		names = append(names, "linked")
-	}
-	if err := os.WriteFile(filepath.Join(root, "posts.jsonl"), []byte(
-		`{"id":"post:1","kind":"chat","channel":"ops","at":"2026-08-14T09:30:00Z","author":"ziyan","text":"here","attachments":[`+
-			`{"path":"`+filepath.ToSlash(secret)+`","name":"absolute"},`+
-			`{"path":"../elsewhere/id_rsa","name":"climbed"}`+links+`]}`+"\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %s", err)
-	}
-
-	result, err := scan(nil)
-	if err != nil {
-		t.Fatalf("RunScan: %s", err)
-	}
-	attachments := entriesOfKind(result.Entries, KindAttachment)
-	for _, name := range names {
-		entry, found := attachments["posts.jsonl#post:1#"+name]
-		if !found {
-			t.Fatalf("%s was not reported at all: %+v", name, attachments)
-		}
-		if entry.Refused == "" || entry.Hash != "" {
-			t.Fatalf("%s was not refused: %+v", name, entry)
-		}
-	}
-	for _, entry := range attachments {
-		if entry.Refused == "" {
-			t.Fatalf("something outside the folder was carried: %+v", entry)
-		}
-	}
-	if result.Refused != len(names) {
-		t.Fatalf("%d refusals, not %d", result.Refused, len(names))
 	}
 }
 

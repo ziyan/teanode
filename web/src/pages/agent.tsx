@@ -2023,7 +2023,6 @@ function KnowledgeSourcesCard() {
                 <span>{t('agent.knowledgePath')}</span>
                 <input value={path} placeholder="~/projects" onChange={(event) => setPath(event.target.value)} />
               </label>
-              <p className="muted">{t('agent.knowledgeAllowFirst', { path: path.trim() || '~/projects' })}</p>
               {/* A tree of checkouts is mostly other people's work, so a
                   checkout with none of the person's commits in it is kept
                   to its profile. This is how they disagree. */}

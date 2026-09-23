@@ -2675,8 +2675,6 @@ export const en = {
     'A page in the graph, such as projects. Leave it empty and your agent files what it finds where it thinks it belongs.',
   'agent.knowledgeCron': 'How often to read it, as a cron line',
   'agent.knowledgeCronHint': 'Five fields, in your own zone. Leave it empty and it is read once a night.',
-  'agent.knowledgeAllowFirst':
-    'On that computer, allow it first: teanode computer allow {path}. Nothing is read until you do.',
   'agent.knowledgeUnknownAuthors':
     'The commits here are by {names}, and none of those is you — so none of this counts as your work.',
   'agent.knowledgeWhichIsYou': 'Say which contact is you',

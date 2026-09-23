@@ -637,7 +637,7 @@ implementation executes GraphQL as the person. `internal/agent/agent.go` claims
 queued work and runs handlers. A claim records which worker may finish a job;
 a deferral postpones a job without an operational failure.
 
-`internal/computer/scan.go` pages files and commit records from allowed roots on
+`internal/computer/scan.go` pages files and commit records from a folder on
 a person's device. A cursor records where the next page begins. Agent ingest
 stores documents and advances that cursor; graph and dream code interpret the
 material through models and write knowledge. Preserve the decisions about whose
