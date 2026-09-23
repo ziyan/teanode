@@ -25,7 +25,6 @@ import (
 	"mime"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -88,6 +87,12 @@ type Options struct {
 	// Terminal, when set, attaches the terminal this program runs in.
 	Terminal *TerminalOptions
 
+	// Background holds the commands running on after their call, across
+	// connections; a program that reconnects passes the same one each
+	// time. When nil, Serve keeps its own and ends them with the
+	// connection.
+	Background *BackgroundCommands
+
 	// Token is the person's, from `teanode auth login`.
 	Token string
 	// Name is what the computer is called to the agent; the host name by
@@ -147,7 +152,18 @@ type message struct {
 	Event   string `json:"event,omitempty"`
 	Stream  string `json:"stream,omitempty"`
 	Code    int    `json:"code,omitempty"`
+
+	// Features are what this program offers beyond the protocol's
+	// version, said in the hello. Optional in both directions: a server
+	// that predates it ignores it, and one that reads it asks only for
+	// what is named.
+	Features []string `json:"features,omitempty"`
 }
+
+// FeatureBackground is background commands: a command started to run on,
+// one left running when its wait runs out, and the actions that read,
+// list and stop them.
+const FeatureBackground = "background"
 
 // RefusedError is the server turning the program away in words: a token it
 // does not take, a protocol it does not speak. Not worth reconnecting for.
@@ -175,6 +191,11 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 	// the person stopped the program, the network went -- the processes it
 	// started have nobody to answer and are not left running.
 	defer held.closeAll()
+	background := options.Background
+	if background == nil {
+		background = NewBackgroundCommands()
+		defer background.Close()
+	}
 	output := func(session, stream, data string) {
 		_ = write(message{Type: "session", Session: session, Event: "output", Stream: stream, Data: json.RawMessage(quoted(data))})
 	}
@@ -182,7 +203,7 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 		_ = write(message{Type: "session", Session: session, Event: "ended", Code: code})
 	}
 
-	hello := message{Type: "hello", Protocol: Protocol, Token: options.Token, Name: options.Name, System: options.System, Home: options.Home, Description: strings.TrimSpace(options.Description)}
+	hello := message{Type: "hello", Protocol: Protocol, Token: options.Token, Name: options.Name, System: options.System, Home: options.Home, Description: strings.TrimSpace(options.Description), Features: []string{FeatureBackground}}
 	// Closed when the shell the person attached ends. Leaving the shell is
 	// how they detach, so this program ends with it rather than sitting on
 	// a dead pty until they find the key that kills it.
@@ -230,6 +251,15 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+	// Endings are told from here on, the ones nobody has acknowledged
+	// first: what ended while the connection was down is told now.
+	defer background.listen(func(status *BackgroundStatus) {
+		data, err := json.Marshal(status)
+		if err != nil {
+			return
+		}
+		_ = write(message{Type: "background", Session: status.ID, Event: "ended", Code: status.ExitCode, Data: data})
+	})()
 	pings := time.NewTicker(pingEvery)
 	defer pings.Stop()
 	slots := make(chan struct{}, concurrentAtMost)
@@ -246,7 +276,7 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 					started := time.Now()
 					what := request.Action + whatWasAsked(request.Args)
 					options.Notice("asked to " + what)
-					data, err := handleSafely(ctx, options, request.Action, request.Args, held, output, ended)
+					data, err := handleSafely(ctx, options, request.Action, request.Args, held, background, output, ended)
 					answer := message{Type: "result", ID: request.ID, OK: err == nil, Data: data}
 					if err != nil {
 						answer.Error = err.Error()
@@ -342,17 +372,17 @@ func whatWasAsked(args json.RawMessage) string {
 // one scan took the whole program down, and with it every other request
 // open on the computer; the server saw only that the computer had gone.
 func handleSafely(ctx context.Context, options *Options, action string, args json.RawMessage,
-	held *sessions, output pushOutput, ended pushEnded) (data json.RawMessage, err error) {
+	held *sessions, background *BackgroundCommands, output pushOutput, ended pushEnded) (data json.RawMessage, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("%s failed on this computer: %v", action, recovered)
 		}
 	}()
-	return handle(ctx, options, action, args, held, output, ended)
+	return handle(ctx, options, action, args, held, background, output, ended)
 }
 
 func handle(ctx context.Context, options *Options, action string, args json.RawMessage,
-	held *sessions, output pushOutput, ended pushEnded) (json.RawMessage, error) {
+	held *sessions, background *BackgroundCommands, output pushOutput, ended pushEnded) (json.RawMessage, error) {
 	var result any
 	var err error
 	switch action {
@@ -361,7 +391,27 @@ func handle(ctx context.Context, options *Options, action string, args json.RawM
 		if err := json.Unmarshal(args, &arguments); err != nil {
 			return nil, fmt.Errorf("the request is not readable: %w", err)
 		}
-		result, err = RunShell(ctx, options, &arguments)
+		result, err = RunShell(ctx, options, background, &arguments)
+	case "background_list":
+		result = background.list()
+	case "background_read":
+		var arguments BackgroundReadArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = background.read(&arguments)
+	case "background_stop":
+		var arguments BackgroundStopArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = background.stopOne(&arguments)
+	case "background_acknowledge":
+		var arguments BackgroundAcknowledgeArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = background.acknowledge(&arguments)
 	case "http":
 		var arguments HTTPArguments
 		if err := json.Unmarshal(args, &arguments); err != nil {
@@ -441,6 +491,17 @@ type ShellArguments struct {
 	Directory   string            `json:"directory,omitempty"`
 	Timeout     int               `json:"timeout,omitempty"`
 	Environment map[string]string `json:"environment,omitempty"`
+
+	// Background starts it and answers at once, leaving it running.
+	// KeepOnTimeout leaves it running when the call's wait runs out,
+	// rather than killing it. Both hand it to the background commands,
+	// which a server that predates them never asks for.
+	Background    bool `json:"background,omitempty"`
+	KeepOnTimeout bool `json:"keepOnTimeout,omitempty"`
+
+	// Origin is the server's own note of who started it, handed back
+	// untouched when it ends so the server knows whom to tell.
+	Origin json.RawMessage `json:"origin,omitempty"`
 }
 
 // ShellResult is what a command did.
@@ -452,86 +513,80 @@ type ShellResult struct {
 	StderrTruncated bool    `json:"stderrTruncated,omitempty"`
 	TimedOut        bool    `json:"timedOut,omitempty"`
 	Seconds         float64 `json:"seconds"`
+
+	// BackgroundID names the command when it is still running in the
+	// background: started there, or moved there when the wait ran out.
+	// The output is then what it had written so far.
+	BackgroundID string `json:"backgroundId,omitempty"`
 }
 
 // RunShell runs a command through the person's shell, in a directory of
-// theirs, for at most the timeout, and reports what it printed.
-func RunShell(ctx context.Context, options *Options, arguments *ShellArguments) (*ShellResult, error) {
+// theirs, and reports what it printed: when it ends, or when the timeout
+// comes -- killing it then, or leaving it in the background when the
+// call asked for that and there is somewhere to leave it.
+func RunShell(ctx context.Context, options *Options, background *BackgroundCommands, arguments *ShellArguments) (*ShellResult, error) {
 	options = withDefaults(options)
 	if strings.TrimSpace(arguments.Command) == "" {
 		return nil, errors.New("there is no command")
+	}
+	if (arguments.Background || arguments.KeepOnTimeout) && background == nil {
+		return nil, errors.New("this program holds no background commands")
 	}
 	timeout := defaultTimeout
 	if arguments.Timeout > 0 {
 		timeout = min(time.Duration(arguments.Timeout)*time.Second, longestTimeout)
 	}
-	directory := options.Home
-	if arguments.Directory != "" {
-		directory = resolve(options.Home, arguments.Directory)
+	held, err := startCommand(options, arguments)
+	if err != nil {
+		return nil, err
 	}
-	callContext, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	var command *exec.Cmd
-	if runtime.GOOS == "windows" {
-		command = exec.CommandContext(callContext, "cmd", "/C", arguments.Command)
-	} else {
-		command = exec.CommandContext(callContext, "/bin/sh", "-c", arguments.Command)
+	if arguments.Background {
+		if err := background.adopt(held); err != nil {
+			held.stop()
+			<-held.done
+			return nil, err
+		}
+		return shellResultOf(held, false), nil
 	}
-	command.Dir = directory
-	command.Env = os.Environ()
-	// When its time is up the command is ended, and whatever it left
-	// running is not waited for beyond a moment.
-	command.WaitDelay = 2 * time.Second
-	prepare(command)
-	for key, value := range arguments.Environment {
-		command.Env = append(command.Env, key+"="+value)
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-held.done:
+		return shellResultOf(held, false), nil
+	case <-timer.C:
+	case <-ctx.Done():
+		// The connection went with the call: nobody is waiting for the
+		// answer, and nobody asked for it to go on.
+		held.stop()
+		<-held.done
+		return nil, ctx.Err()
 	}
-	stdout := &boundedBuffer{limit: outputBytes}
-	stderr := &boundedBuffer{limit: outputBytes}
-	command.Stdout, command.Stderr = stdout, stderr
-	started := time.Now()
-	err := command.Run()
-	result := &ShellResult{
-		Stdout: stdout.String(), Stderr: stderr.String(),
-		StdoutTruncated: stdout.truncated, StderrTruncated: stderr.truncated,
-		TimedOut: errors.Is(callContext.Err(), context.DeadlineExceeded),
-		Seconds:  time.Since(started).Seconds(),
+	if arguments.KeepOnTimeout {
+		if err := background.adopt(held); err == nil {
+			return shellResultOf(held, false), nil
+		}
+		// No room in the background: stopped, as it always was.
 	}
-	var exit *exec.ExitError
+	held.stop()
+	<-held.done
+	return shellResultOf(held, true), nil
+}
+
+// shellResultOf is the answer to a call: how it ended, or, while it is
+// still running, its name in the background and what it wrote so far.
+func shellResultOf(held *backgroundCommand, isTimedOut bool) *ShellResult {
+	result := &ShellResult{Seconds: time.Since(held.startedAt).Seconds(), TimedOut: isTimedOut}
+	result.Stdout, result.StdoutTruncated = held.stdout.text()
+	result.Stderr, result.StderrTruncated = held.stderr.text()
 	switch {
-	case err == nil:
-	case errors.As(err, &exit):
-		result.ExitCode = exit.ExitCode()
-	case result.TimedOut:
+	case !held.hasEnded():
+		result.BackgroundID = held.id
+	case isTimedOut:
 		result.ExitCode = -1
 	default:
-		return nil, fmt.Errorf("the command could not be started: %w", err)
+		result.ExitCode = held.exitCode
 	}
-	if result.TimedOut {
-		result.ExitCode = -1
-	}
-	return result, nil
-}
-
-// boundedBuffer keeps the first limit bytes and says when more came.
-type boundedBuffer struct {
-	bytes.Buffer
-	limit     int
-	truncated bool
-}
-
-func (self *boundedBuffer) Write(data []byte) (int, error) {
-	room := self.limit - self.Len()
-	if room <= 0 {
-		self.truncated = true
-		return len(data), nil
-	}
-	if len(data) > room {
-		self.truncated = true
-		_, _ = self.Buffer.Write(data[:room])
-		return len(data), nil
-	}
-	return self.Buffer.Write(data)
+	return result
 }
 
 // FilesystemArguments are one thing to do with the files.

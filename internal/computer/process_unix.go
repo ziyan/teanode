@@ -20,3 +20,11 @@ func prepare(command *exec.Cmd) {
 		return syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
 	}
 }
+
+// terminate asks the command's whole group to end: the polite signal, which
+// a build or a loop can act on before it is killed.
+func terminate(command *exec.Cmd) {
+	if command.Process != nil {
+		_ = syscall.Kill(-command.Process.Pid, syscall.SIGTERM)
+	}
+}

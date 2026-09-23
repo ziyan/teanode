@@ -120,6 +120,11 @@ func runComputerDaemon(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	options := &computer.Options{Token: resolved.Token, Name: command.String("name"), Description: command.String("description")}
+	// One for the life of the program rather than one per connection: a
+	// build left running in the background outlives a network that drops,
+	// and ends when the program does.
+	options.Background = computer.NewBackgroundCommands()
+	defer options.Background.Close()
 	// What it was asked and how long that took, beside where it connected.
 	// A daemon that logs only its connections leaves the server's "did
 	// not answer within ten minutes" with nothing to check it against.
