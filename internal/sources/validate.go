@@ -1,0 +1,362 @@
+package sources
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+// scopeNames are the names a template may begin with, besides settings.
+var scopeNames = map[string]bool{
+	"container": true, "item": true, "each": true, "parent": true, "folder": true,
+	"response": true, "detail": true, "output": true, "pass": true, "record": true,
+}
+
+var (
+	settingTypes  = map[string]bool{"string": true, "array": true, "boolean": true, "integer": true}
+	parseKinds    = map[string]bool{"json": true, "xml": true, "jsonl": true, "lines": true, "text": true}
+	pagingKinds   = map[string]bool{"": true, "none": true, "all": true, "token": true, "limit": true}
+	settingName   = regexp.MustCompile(`^[a-z][A-Za-z0-9]*$`)
+	knownReaders  = map[string]bool{ReaderFiles: true, ReaderJournal: true, ReaderSent: true, ReaderWeb: true}
+	knownRunsOn   = map[string]bool{RunsComputer: true, RunsServer: true}
+	shellCommands = map[string]bool{"sh": true, "bash": true, "zsh": true, "dash": true}
+)
+
+// validate refuses a type that could not be run as written, before
+// anybody adds a source of it.
+func (self *Type) validate() error {
+	if !namePattern.MatchString(self.Name) || len(self.Name) > 64 {
+		return fmt.Errorf("the name %q is not lowercase letters, digits and hyphens", self.Name)
+	}
+	if strings.TrimSpace(self.Description) == "" {
+		return fmt.Errorf("a type says what it reads in its description")
+	}
+	for _, where := range self.Runs {
+		if !knownRunsOn[where] {
+			return fmt.Errorf("runs says %q, which is not computer or server", where)
+		}
+	}
+	settings := map[string]Setting{}
+	for _, setting := range self.Settings {
+		if !settingName.MatchString(setting.Name) {
+			return fmt.Errorf("the setting %q is not a name", setting.Name)
+		}
+		if _, twice := settings[setting.Name]; twice {
+			return fmt.Errorf("the setting %q is declared twice", setting.Name)
+		}
+		if !settingTypes[setting.Type] {
+			return fmt.Errorf("the setting %q has the type %q", setting.Name, setting.Type)
+		}
+		for _, pattern := range []string{setting.Pattern, itemPattern(setting)} {
+			if pattern != "" {
+				if _, err := regexp.Compile(pattern); err != nil {
+					return fmt.Errorf("the setting %q: %w", setting.Name, err)
+				}
+			}
+		}
+		settings[setting.Name] = setting
+	}
+	secrets := map[string]bool{}
+	for _, secret := range self.Secrets {
+		if secret.Key == "" || secrets[secret.Key] {
+			return fmt.Errorf("a secret has no key, or one declared twice")
+		}
+		secrets[secret.Key] = true
+	}
+
+	if self.Reader != "" {
+		if !knownReaders[self.Reader] {
+			return fmt.Errorf("%q is not a reader TeaNode has", self.Reader)
+		}
+		if len(self.Containers) > 0 || len(self.Records) > 0 {
+			return fmt.Errorf("a type that names a reader says nothing of how to list or read")
+		}
+		return nil
+	}
+
+	if len(self.Containers) == 0 || len(self.Records) == 0 {
+		return fmt.Errorf("a type says how to list its containers and how to read them")
+	}
+	if self.RunsCommands() && self.RunsOn(RunsServer) {
+		return fmt.Errorf("a type that runs commands runs on a computer, never on the server")
+	}
+
+	check := func(where, template string, allowed map[string]bool) error {
+		parsed, err := compileTemplate(template)
+		if err != nil {
+			return fmt.Errorf("%s: %w", where, err)
+		}
+		names, secretKeys := parsed.roots()
+		for _, name := range names {
+			if setting, isSetting := strings.CutPrefix(name, "settings."); isSetting {
+				if _, ok := settings[setting]; !ok {
+					return fmt.Errorf("%s refers to the setting %q, which is not declared", where, setting)
+				}
+				continue
+			}
+			if name == "settings" {
+				return fmt.Errorf("%s refers to settings without saying which", where)
+			}
+			if !scopeNames[name] || (allowed != nil && !allowed[name]) {
+				return fmt.Errorf("%s refers to %q, which is not there", where, name)
+			}
+		}
+		for _, key := range secretKeys {
+			if !secrets[key] {
+				return fmt.Errorf("%s refers to the secret %q, which is not declared", where, key)
+			}
+		}
+		return nil
+	}
+	checkCondition := func(where, text string, allowed map[string]bool) error {
+		if strings.TrimSpace(text) == "" {
+			return nil
+		}
+		if _, err := compileCondition(text); err != nil {
+			return fmt.Errorf("%s: %w", where, err)
+		}
+		for _, template := range templateOperand.FindAllString(text, -1) {
+			if err := check(where, template, allowed); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	checkCall := func(where string, command []string, request *Request, shape Parsing, paging Paging, allowed map[string]bool) error {
+		if (len(command) > 0) == (request != nil) {
+			return fmt.Errorf("%s gives a command or a request, one of them", where)
+		}
+		if err := checkCommand(where, command); err != nil {
+			return err
+		}
+		for _, word := range command {
+			if err := check(where, word, allowed); err != nil {
+				return err
+			}
+		}
+		if request != nil {
+			if err := self.checkRequest(where, request, secrets, check, allowed); err != nil {
+				return err
+			}
+		}
+		if !parseKinds[shape.Kind] {
+			return fmt.Errorf("%s: parse is %q", where, shape.Kind)
+		}
+		if shape.Kind == "lines" {
+			if _, err := regexp.Compile(shape.Pattern); err != nil || shape.Pattern == "" {
+				return fmt.Errorf("%s: lines needs a pattern that compiles", where)
+			}
+		}
+		if !pagingKinds[paging.Kind] {
+			return fmt.Errorf("%s: paging is %q", where, paging.Kind)
+		}
+		if paging.Kind == "token" && (paging.Field == "" || paging.Flag == "") {
+			return fmt.Errorf("%s: token paging names the field and the flag", where)
+		}
+		if paging.Kind == "limit" && paging.Size <= 0 {
+			return fmt.Errorf("%s: limit paging says the size of a full page", where)
+		}
+		return nil
+	}
+
+	listings := map[string]bool{}
+	for index, listing := range self.Containers {
+		where := fmt.Sprintf("listing %d", index+1)
+		allowed := map[string]bool{"item": true, "response": true}
+		if err := checkCondition(where, listing.When, map[string]bool{}); err != nil {
+			return err
+		}
+		switch {
+		case listing.Each != "":
+			allowed["each"] = true
+			if err := check(where, "{{"+listing.Each+"}}", map[string]bool{}); err != nil {
+				return err
+			}
+		case listing.Over != "":
+			if !listings[listing.Over] {
+				return fmt.Errorf("%s lists over %q, which is not an earlier listing", where, listing.Over)
+			}
+			allowed["parent"] = true
+		}
+		if listing.Walk != nil {
+			allowed["folder"] = true
+			for _, template := range listing.Walk.Start {
+				if err := check(where, template, map[string]bool{}); err != nil {
+					return err
+				}
+			}
+			for _, template := range listing.Walk.Child {
+				if err := check(where, template, allowed); err != nil {
+					return err
+				}
+			}
+			if err := checkCondition(where, listing.Walk.Branch, allowed); err != nil {
+				return err
+			}
+		}
+		if listing.Fixed == nil {
+			if err := checkCall(where, listing.Command, listing.Request, listing.Parse, listing.Paging, allowed); err != nil {
+				return err
+			}
+		}
+		if err := checkCondition(where, listing.Skip, allowed); err != nil {
+			return err
+		}
+		if listing.Name == "" && listing.Only != "parents" {
+			return fmt.Errorf("%s gives its containers no name", where)
+		}
+		if err := check(where, listing.Name, allowed); err != nil {
+			return err
+		}
+		for _, template := range listing.Fields {
+			if err := check(where, template, allowed); err != nil {
+				return err
+			}
+		}
+		if listing.ID != "" {
+			listings[listing.ID] = true
+		}
+	}
+
+	for index, reading := range self.Records {
+		where := fmt.Sprintf("reading %d", index+1)
+		allowed := map[string]bool{"container": true, "item": true, "response": true, "each": true, "pass": true}
+		if err := checkCall(where, reading.Command, reading.Request, reading.Parse, reading.Paging, allowed); err != nil {
+			return err
+		}
+		if err := checkCondition(where, reading.Skip, allowed); err != nil {
+			return err
+		}
+		if reading.Record["id"] == "" {
+			return fmt.Errorf("%s gives its records no id", where)
+		}
+		withDetail := map[string]bool{"detail": true, "record": true}
+		for key, value := range allowed {
+			withDetail[key] = value
+		}
+		for field, template := range reading.Record {
+			if err := check(where+" "+field, template, withDetail); err != nil {
+				return err
+			}
+		}
+		if reading.Since != nil {
+			if reading.Since.Window != "" {
+				if _, err := parseDuration(reading.Since.Window); err != nil {
+					return fmt.Errorf("%s: %w", where, err)
+				}
+			}
+			if err := checkCondition(where, reading.Since.UnchangedWhen, allowed); err != nil {
+				return err
+			}
+		}
+		if reading.Unseen != "" && reading.Unseen != "keep" && reading.Unseen != "delete" {
+			return fmt.Errorf("%s: unseen is keep or delete", where)
+		}
+		if reading.Detail != nil {
+			shape := reading.Detail.Parse
+			if shape.Kind == "" {
+				shape.Kind = "text"
+			}
+			if err := checkCall(where+" detail", reading.Detail.Command, reading.Detail.Request, shape, Paging{}, withDetail); err != nil {
+				return err
+			}
+			if err := check(where+" detail", reading.Detail.Text, withDetail); err != nil {
+				return err
+			}
+		}
+		for _, attachment := range reading.Attachments {
+			withOutput := map[string]bool{"output": true, "record": true}
+			for key, value := range allowed {
+				withOutput[key] = value
+			}
+			if len(attachment.Command) == 0 {
+				return fmt.Errorf("%s: an attachment is a command", where)
+			}
+			if err := checkCommand(where+" attachment", attachment.Command); err != nil {
+				return err
+			}
+			for _, word := range attachment.Command {
+				if err := check(where+" attachment", word, withOutput); err != nil {
+					return err
+				}
+			}
+			if err := checkCondition(where+" attachment", attachment.When, allowed); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+var templateOperand = regexp.MustCompile(`\{\{[^}]*\}\}`)
+
+func itemPattern(setting Setting) string {
+	if setting.Items == nil {
+		return ""
+	}
+	return setting.Items.Pattern
+}
+
+// checkCommand refuses a script given to a shell with a template inside
+// it: a value filled into a script is code, whatever its setting's
+// pattern says.
+func checkCommand(where string, command []string) error {
+	if len(command) == 0 {
+		return nil
+	}
+	if strings.Contains(command[0], "{{") {
+		return fmt.Errorf("%s: the program a command runs is written into the type", where)
+	}
+	if shellCommands[command[0]] {
+		for index, word := range command {
+			if word == "-c" && index+1 < len(command) && strings.Contains(command[index+1], "{{") {
+				return fmt.Errorf("%s: a template inside a shell script is code; pass the value as an argument", where)
+			}
+		}
+	}
+	return nil
+}
+
+// checkRequest keeps a request's credential to a host the type settled:
+// written into the type, or from a secret. A person's own secret may go
+// to an address in that person's settings; an operator's may not.
+func (self *Type) checkRequest(where string, request *Request, secrets map[string]bool, check func(string, string, map[string]bool) error, allowed map[string]bool) error {
+	for _, template := range append([]string{request.URL, request.Body}, valuesOf(request.Headers)...) {
+		if err := check(where, template, allowed); err != nil {
+			return err
+		}
+	}
+	if request.Auth == "" {
+		return nil
+	}
+	profile, ok := self.AuthenticationProfiles[request.Auth]
+	if !ok {
+		return fmt.Errorf("%s uses the authentication profile %q, which is not declared", where, request.Auth)
+	}
+	for _, template := range []string{profile.Token, profile.Username, profile.Password, profile.Value, profile.Key} {
+		if err := check(where, template, map[string]bool{}); err != nil {
+			return err
+		}
+	}
+	address := strings.TrimSpace(request.URL)
+	if strings.HasPrefix(address, "http://") || strings.HasPrefix(address, "https://") || strings.HasPrefix(address, "{{secret:") {
+		return nil
+	}
+	if strings.HasPrefix(address, "{{settings.") {
+		for _, secret := range self.Secrets {
+			if secret.Scope != "person" {
+				return fmt.Errorf("%s sends the operator's secret %q to an address from a setting", where, secret.Key)
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("%s sends a credential to an address the type does not settle", where)
+}
+
+func valuesOf(values map[string]string) []string {
+	result := make([]string, 0, len(values))
+	for _, key := range sortedKeys(values) {
+		result = append(result, values[key])
+	}
+	return result
+}
