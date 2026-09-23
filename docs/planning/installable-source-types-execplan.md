@@ -8,9 +8,9 @@ A knowledge source is somewhere the agent reads on the person's behalf: a folder
 
 After this change a person adds a source the way they add a skill. An operator installs a *source type*, a short YAML file that says which command line tool to call, how to list what it holds, how to page through it, and how each item becomes a record. The person then adds a source of that type from the Knowledge page or the command line, fills in its settings (which account, which query, which spaces), and chooses which attached computer runs it. The program on that computer runs the type itself. No script is written or copied anywhere.
 
-Seeing it work: install the Gmail type, then run
+Seeing it work: install the `gmail-gog` type, then run
 
-    teanode agent knowledge add --type gmail --computer laptop --setting query='newer_than:30d' inbox
+    teanode agent knowledge add --type gmail-gog --computer laptop --setting query='newer_than:30d' inbox
 
 and within a minute the source page shows messages being read, with no file created on the computer except a cache under `~/.cache/teanode/sources/`. The same install, pointed at another computer, is how a work tracker is read from a work laptop while a personal chat is read from a personal one.
 
@@ -39,6 +39,10 @@ and within a minute the source page shows messages being read, with no file crea
 
 - Decision: a source type is a YAML file like a skill, distributed through a registry of its own, `github.com/teanode/teanode-sources`, laid out as `github.com/teanode/teanode-skills` is: an `index.json` listing each type with its version, URL, SHA-256 and signature, and `sources/<name>/source.md` for each type. It is signed with a key of its own, `keys/teanode-sources-ed25519-public.pem`, which TeaNode carries built in beside the skills key.
   Rationale: types and skills are installed, reviewed and released on their own schedules, and a person browsing either should see only one kind of thing. A key of its own means a key that signs source types cannot be used to publish a skill, and the other way round. The signing decision record, `docs/decisions/20260911-skills-are-signed-and-run-where-they-can-do-least.md`, gains a note that there are now two registries, each with its own key.
+  Date/Author: 2026-09-23, the person.
+
+- Decision: a type is named for the service and the tool it calls, `<service>-<tool>` (`github-gh`, `gitlab-glab`, `mattermost-mm`, `google-drive-gog`, `gmail-gog`), or for the service alone when the tool is named after it (`confluence`).
+  Rationale: one service can be read by more than one tool, and the name says which, so a second way of reading a service can be published beside the first without renaming it.
   Date/Author: 2026-09-23, the person.
 
 - Decision: the runner lives in `teanode computer`, as a new scan format, and produces the same records the records contract produces today.
@@ -96,7 +100,7 @@ A type is a markdown file whose YAML header describes the type; the prose under 
 An abridged type for a mailbox read with the `gog` Google command line tool, as it might be written:
 
     ---
-    name: gmail
+    name: gmail-gog
     description: A Gmail mailbox, read with the gog command line tool.
     requires: [gog]
     settings:
