@@ -3,6 +3,9 @@ package agent
 import (
 	"regexp"
 	"strings"
+	"unicode"
+
+	normalization "golang.org/x/text/unicode/norm"
 
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -44,12 +47,87 @@ func evidenceLikeness(text string) string {
 // guarding against -- a quote the model composed out of the gist, stored
 // at full confidence as though the person had said it -- is exactly the
 // kind a judgement call would wave through at scale.
+//
+// Words, in order, and nothing else. What a document is read as is often
+// markdown, and a model quoting it drops the backticks and the asterisks
+// and closes a sentence with a full stop where the text had a comma; none
+// of that is a word it made up. A quote the model shortened with "..."
+// holds when each piece occurs, in the order given, and each is long
+// enough (evidenceSpliceWords words, evidenceSpliceLetters letters) that
+// a splice cannot be assembled out of scraps found anywhere. The whole
+// quote is tried first, since "..." is also in text that says it.
 func quoteOccursIn(quote, text string) bool {
-	quote = evidenceLikeness(quote)
-	if quote == "" {
+	whole := evidenceWords(quote)
+	if len(whole) == 0 {
 		return true
 	}
-	return strings.Contains(evidenceLikeness(text), quote)
+	body := " " + strings.Join(evidenceWords(text), " ") + " "
+	if strings.Contains(body, " "+strings.Join(whole, " ")+" ") {
+		return true
+	}
+	pieces := evidencePieces.Split(quote, -1)
+	if len(pieces) < 2 {
+		return false
+	}
+	at := 0
+	for _, piece := range pieces {
+		words := evidenceWords(piece)
+		if len(words) == 0 {
+			continue
+		}
+		if len(words) < evidenceSpliceWords || len([]rune(strings.Join(words, ""))) < evidenceSpliceLetters {
+			return false
+		}
+		wanted := " " + strings.Join(words, " ") + " "
+		found := strings.Index(body[at:], wanted)
+		if found < 0 {
+			return false
+		}
+		// The space closing this piece may open the next.
+		at += found + len(wanted) - 1
+	}
+	return true
+}
+
+// evidencePieces is where a model marks that it left words out of a quote.
+var evidencePieces = regexp.MustCompile(`\s*(?:\.\.\.|…|\[\.\.\.\])\s*`)
+
+// How long each piece of a shortened quote has to be for the quote to
+// count: in words, and in letters, since a character of Japanese or
+// Chinese is a word of its own and two of them occur almost anywhere.
+const (
+	evidenceSpliceWords   = 2
+	evidenceSpliceLetters = 4
+)
+
+// evidenceWords is text as the words it says, lowercased, with everything
+// between them dropped: punctuation, markup, spacing. A character of a
+// script written without spaces is a word of its own, so a quote of part
+// of a Japanese or Chinese sentence is still found inside it.
+func evidenceWords(text string) []string {
+	var words []string
+	var word strings.Builder
+	flush := func() {
+		if word.Len() > 0 {
+			words = append(words, word.String())
+			word.Reset()
+		}
+	}
+	// One form for each letter: an accent written as its own mark after
+	// the letter and one written into it are the same word.
+	for _, letter := range strings.ToLower(normalization.NFKC.String(text)) {
+		switch {
+		case unicode.In(letter, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul):
+			flush()
+			words = append(words, string(letter))
+		case unicode.IsLetter(letter) || unicode.IsDigit(letter) || unicode.IsMark(letter):
+			word.WriteRune(letter)
+		default:
+			flush()
+		}
+	}
+	flush()
+	return words
 }
 
 // evidenceOutcome is what the check made of one fact's citation.

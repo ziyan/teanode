@@ -47,9 +47,9 @@ type Client struct {
 
 // New builds a client. It opens no connection; the first question does.
 //
-// The model may be empty, in which case the service's own default is used.
-// Naming a version pins it, which is worth doing where an answer is stored
-// and compared with later ones.
+// The model is required by the service, which refuses a request that names
+// none. Naming a dated version rather than the latest pins it, which is
+// worth doing where an answer is stored and compared with later ones.
 func New(baseUrl, apiKey, model string, timeout time.Duration) (*Client, error) {
 	baseUrl = strings.TrimRight(strings.TrimSpace(baseUrl), "/")
 	if baseUrl == "" {
@@ -67,6 +67,18 @@ func New(baseUrl, apiKey, model string, timeout time.Duration) (*Client, error) 
 		model:   strings.TrimSpace(model),
 		http:    &http.Client{Timeout: timeout},
 	}, nil
+}
+
+// WithModel is the same client asking a different model, or itself where
+// the model is empty.
+func (self *Client) WithModel(model string) *Client {
+	model = strings.TrimSpace(model)
+	if model == "" || model == self.model {
+		return self
+	}
+	copied := *self
+	copied.model = model
+	return &copied
 }
 
 // Question is one thing asked about the state, and the answers it may have.

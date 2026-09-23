@@ -2,12 +2,14 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/decide"
 )
 
@@ -65,13 +67,20 @@ func TestTheChatProvidersStillChat(test *testing.T) {
 
 // A decision goes out and comes back through the provider, so the wiring
 // between this package and the client underneath is exercised and not just
-// assumed.
+// assumed. It names its model: the service used to fall back to its own
+// default when none was given, and now refuses the request.
 func TestADecisionGoesThroughTheProvider(test *testing.T) {
 	test.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/v1/systemone" {
 			test.Errorf("it asked at %q", request.URL.Path)
+		}
+		var body struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil || body.Model != "jev-latest" {
+			test.Errorf("it named the model %q (%v)", body.Model, err)
 		}
 		_, _ = io.WriteString(writer, `{"answers":{"open":{"type":"noul","noul":0.87}}}`)
 	}))
@@ -96,5 +105,43 @@ func TestADecisionGoesThroughTheProvider(test *testing.T) {
 	}
 	if answers["open"].Yes != 0.87 {
 		test.Errorf("the answer came back as %+v", answers["open"])
+	}
+}
+
+// The model the configuration names for deciding is the one asked, so a
+// dated version an operator pinned is not quietly replaced by the latest.
+func TestADecisionAsksTheConfiguredModel(test *testing.T) {
+	test.Parallel()
+
+	asked := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var body struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		asked <- body.Model
+		_, _ = io.WriteString(writer, `{"answers":{"open":{"type":"noul","noul":0.5}}}`)
+	}))
+	defer server.Close()
+
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	configuration.Agent.Providers = []config.AgentProvider{{Name: "decider", Kind: "typesafe", BaseURL: server.URL + "/v1", APIKey: "a-key"}}
+	configuration.Agent.Models.Decide = "decider:jev-2026-01-01"
+	registry, err := Open(&configuration.Agent)
+	if err != nil {
+		test.Fatalf("Open: %s", err)
+	}
+	decider, model, err := registry.Deciding()
+	if err != nil || model != "jev-2026-01-01" {
+		test.Fatalf("Deciding: %q, %v", model, err)
+	}
+	if _, err := decider.Decide(context.Background(), "a state", map[string]decide.Question{
+		"open": {Instructions: "Worth opening?", Choices: map[string]string{"true": "yes", "false": "no"}},
+	}); err != nil {
+		test.Fatalf("Decide: %s", err)
+	}
+	if got := <-asked; got != "jev-2026-01-01" {
+		test.Errorf("the request named %q", got)
 	}
 }
