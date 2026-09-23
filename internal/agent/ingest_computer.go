@@ -89,7 +89,7 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 				break
 			}
 			if time.Since(waited) > ingestTurn {
-				return "", counts, &waitingForDevice{name: name + " (it is reading " + other + ")"}
+				return "", counts, &waitingForDevice{name: name, readingOther: self.sourceName(ctx, run, source.AgentID, other)}
 			}
 			select {
 			case <-ctx.Done():
@@ -317,4 +317,17 @@ func (self *Agent) typedSourceParts(ctx context.Context, run *Run, source *model
 		return "", nil, fmt.Errorf("the settings of this source no longer suit %s as installed: %w", installed.Name, err)
 	}
 	return installed.Content, settings, nil
+}
+
+// sourceName is a source's name, for saying which one a computer is busy
+// with; its identifier where it cannot be looked up.
+func (self *Agent) sourceName(ctx context.Context, run *Run, agentId, sourceId string) string {
+	var found *models.AgentKnowledgeSource
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		found, err = tx.GetAgentSource(agentId, sourceId)
+		return err
+	}); err != nil || found == nil {
+		return "another source"
+	}
+	return found.Name
 }

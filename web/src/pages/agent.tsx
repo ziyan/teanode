@@ -164,9 +164,11 @@ function messageOf(caught: unknown): string {
 // The tabs of /settings/agent, and the path a person can be sent to. One
 // scroll of fourteen cards meant scrolling past a mailbox's policies to
 // reach what the agent remembered; the six subjects here are the six
-// questions somebody opens this page with.
+// questions somebody opens this page with. Mail is what it may reach in
+// the person's mailboxes; Sources is everywhere else it reads.
 const AGENT_TABS: TabItem[] = [
   { id: 'overview', label: 'agent.tabOverview' },
+  { id: 'mail', label: 'agent.tabMail' },
   { id: 'sources', label: 'agent.tabSources' },
   { id: 'memory', label: 'agent.tabMemory' },
   { id: 'dreams', label: 'agent.tabDreams' },
@@ -324,7 +326,7 @@ export function AgentPage() {
           </div>
         </>
       ) : null}
-      {tab === 'sources' ? (
+      {tab === 'mail' ? (
         <>
           <SettingsSection card title={t('agent.sources')} description={t('agent.sourcesHint')}>
             {view.sources.map((source) => (
@@ -349,9 +351,10 @@ export function AgentPage() {
       {tab === 'dreams' ? (
         <>
           <DreamCard agent={agent} busy={busy} onChange={update} onOpenRuns={showRunsOf} />
-          <KnowledgeSourcesCard />
         </>
       ) : null}
+      {/* The places it reads: each a source of an installed type. */}
+      {tab === 'sources' ? <KnowledgeSourcesCard /> : null}
       {/* What it does at set times, of its own: the schedules and the
           morning brief, which are timetables rather than connections. */}
       {tab === 'schedules' ? (

@@ -926,6 +926,7 @@ export const ja: Catalog = {
     'エージェントが伝える時刻 — リマインダー、要約、返信が送られる時刻 — はこのゾーンです。ブラウザに従うと旅先で移動します。',
   'agent.title': 'あなたのエージェント',
   'agent.tabOverview': '概要',
+  'agent.tabMail': 'メールとカレンダー',
   'agent.tabSources': 'ソース',
   'agent.tabMemory': '記憶',
   'agent.tabDreams': '夢',

@@ -319,9 +319,16 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 // waitingForDevice is a source whose computer is not attached.
 type waitingForDevice struct {
 	name string
+
+	// readingOther is the source the computer is busy reading, by its
+	// name, when it is attached and this source is waiting its turn.
+	readingOther string
 }
 
 func (self *waitingForDevice) Error() string {
+	if self.readingOther != "" {
+		return "waiting its turn on " + self.name + ", which is reading " + self.readingOther
+	}
 	return "waiting for the computer " + self.name + " to be attached"
 }
 

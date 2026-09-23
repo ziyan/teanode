@@ -893,6 +893,7 @@ export const zh: Catalog = {
     '代理告诉你的每个时间——提醒、简报、回复发出的时刻——都以此时区显示。跟随浏览器意味着你旅行时它会随之变化。',
   'agent.title': '你的代理',
   'agent.tabOverview': '概览',
+  'agent.tabMail': '邮件与日历',
   'agent.tabSources': '来源',
   'agent.tabMemory': '记忆',
   'agent.tabDreams': '梦境',

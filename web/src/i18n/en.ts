@@ -931,6 +931,7 @@ export const en = {
     'Every time your agent tells you — a reminder, a brief, when a reply goes out — is in this zone. Following the browser means it moves when you travel.',
   'agent.title': 'Your agent',
   'agent.tabOverview': 'Overview',
+  'agent.tabMail': 'Mail and calendars',
   'agent.tabSources': 'Sources',
   'agent.tabMemory': 'Memory',
   'agent.tabDreams': 'Dreams',
