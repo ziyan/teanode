@@ -1534,8 +1534,6 @@ export const zh: Catalog = {
   'sourceTypes.settingListHint': '多个值用逗号分隔。',
   'sourceTypes.settingRequired': '必填',
   'sourceTypes.choose': '这是什么',
-  'sourceTypes.untyped': '其他',
-  'sourceTypes.untypedHint': '手动选择位置的种类，即有来源类型之前的添加方式。',
   'sourceTypes.computerMissing': '请说明它在哪台电脑上。',
   'sourceTypes.needsTools': '那台电脑上需要安装 {tools}。',
   'agentSettings.servers': '已连接的服务器',

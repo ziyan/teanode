@@ -23,19 +23,25 @@ containers:
     parse: jsonl
     paging: all
     name: "{{item.path_with_namespace}}.jsonl"
-    fields: {project: "{{item.id}}", path: "{{item.path_with_namespace}}", url: "{{item.web_url}}", visibility: "{{item.visibility}}"}
+    skip: "{{item.marked_for_deletion_on | present}} || {{item.marked_for_deletion_at | present}}"
+    fields: {project: "{{item.id}}", path: "{{item.path_with_namespace}}", url: "{{item.web_url}}", visibility: "{{item.visibility}}", lastActivity: "{{item.last_activity_at}}"}
 
   - each: settings.groups
     command: [glab, api, --hostname, "{{settings.hostname}}", "groups/{{each | urlencode}}/projects?include_subgroups=true&archived=false&per_page=100", --paginate, --output, ndjson]
     parse: jsonl
     paging: all
     name: "{{item.path_with_namespace}}.jsonl"
-    fields: {project: "{{item.id}}", path: "{{item.path_with_namespace}}", url: "{{item.web_url}}", visibility: "{{item.visibility}}"}
+    skip: "{{item.marked_for_deletion_on | present}} || {{item.marked_for_deletion_at | present}}"
+    fields: {project: "{{item.id}}", path: "{{item.path_with_namespace}}", url: "{{item.web_url}}", visibility: "{{item.visibility}}", lastActivity: "{{item.last_activity_at}}"}
 
 records:
-  - command: [glab, api, --hostname, "{{settings.hostname}}", "projects/{{container.project}}/issues?scope=all&per_page=100", --paginate, --output, ndjson]
+  # Only what changed since the last complete pass over the project, and a
+  # project with no activity since is not asked at all; what was read
+  # before is kept.
+  - command: [glab, api, --hostname, "{{settings.hostname}}", "projects/{{container.project}}/issues?scope=all&per_page=100&updated_after={{pass.since | time}}", --paginate, --output, ndjson]
     parse: jsonl
     paging: all
+    since: {first: "2000-01-01T00:00:00Z", unchangedWhen: "{{container.lastActivity}} <= {{pass.since}}"}
     record:
       id: "{{container.path}}#{{item.iid}}"
       kind: post
@@ -46,11 +52,15 @@ records:
       author: "{{item.author.username}}"
       channel: "{{container.path}}"
       private: "{{container.visibility}} != public"
-      text: "{{container.path}}#{{item.iid}}, issue, {{item.state}}. {{item.labels | join \", \"}}\n\n{{item.description}}"
+      text: "{{container.path}}#{{item.iid}}, issue, {{item.state}}{{', labelled ' | if item.labels}}{{item.labels | join ', '}}.\n\n{{item.description | trim}}"
 
-  - command: [glab, api, --hostname, "{{settings.hostname}}", "projects/{{container.project}}/merge_requests?scope=all&per_page=100", --paginate, --output, ndjson]
+  # Only what changed since the last complete pass over the project, and a
+  # project with no activity since is not asked at all; what was read
+  # before is kept.
+  - command: [glab, api, --hostname, "{{settings.hostname}}", "projects/{{container.project}}/merge_requests?scope=all&per_page=100&updated_after={{pass.since | time}}", --paginate, --output, ndjson]
     parse: jsonl
     paging: all
+    since: {first: "2000-01-01T00:00:00Z", unchangedWhen: "{{container.lastActivity}} <= {{pass.since}}"}
     record:
       id: "{{container.path}}!{{item.iid}}"
       kind: post
@@ -61,7 +71,7 @@ records:
       author: "{{item.author.username}}"
       channel: "{{container.path}}"
       private: "{{container.visibility}} != public"
-      text: "{{container.path}}!{{item.iid}}, merge request, {{item.state}}. {{item.labels | join \", \"}}\n\n{{item.description}}"
+      text: "{{container.path}}!{{item.iid}}, merge request, {{item.state}}{{', labelled ' | if item.labels}}{{item.labels | join ', '}}.\n\n{{item.description | trim}}"
 ---
 
 # GitLab
@@ -76,4 +86,4 @@ These are not the identifiers of a source built from an exported archive, which 
 
 ## Checked against the tool
 
-`glab api --paginate --output ndjson` and the REST fields were read from `glab` 1.x. Not yet run end to end.
+Run end to end with `glab` 1.89 against a self-hosted GitLab of some four thousand projects.

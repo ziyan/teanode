@@ -1590,8 +1590,6 @@ export const en = {
   'sourceTypes.settingListHint': 'Separate several with commas.',
   'sourceTypes.settingRequired': 'required',
   'sourceTypes.choose': 'What it is',
-  'sourceTypes.untyped': 'Something else',
-  'sourceTypes.untypedHint': 'Choose the sort of place by hand, the way sources were added before source types.',
   'sourceTypes.computerMissing': 'Say which computer it is on.',
   'sourceTypes.needsTools': 'Needs {tools} installed on that computer.',
   'agentSettings.servers': 'Connected servers',

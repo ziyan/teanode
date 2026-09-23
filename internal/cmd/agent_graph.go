@@ -219,6 +219,7 @@ func newAgentKnowledgeCommand() *cli.Command {
 					&cli.StringFlag{Name: "format", Usage: "files, journal or records"},
 					&cli.StringFlag{Name: "mailbox", Usage: "for a sent source: which mailbox"},
 					&cli.StringFlag{Name: "type", Usage: "read it as another installed source type"},
+					&cli.StringFlag{Name: "computer", Usage: "read it on another of your computers"},
 					&cli.StringSliceFlag{Name: "setting", Usage: "change one of its type's settings, name=value; the others stay as they are (repeatable)"},
 					&cli.BoolFlag{Name: "read-every-checkout", Usage: "read the files of checkouts barely any of which is your work, not only their profile"},
 					&cli.IntFlag{Name: "commits-per-pass", Usage: "how many commits one pass over the tree carries, shared among its checkouts; 0 is the program's own pace"},
@@ -1066,7 +1067,7 @@ func runKnowledgeSet(ctx context.Context, command *cli.Command) error {
 	fields := map[string]any{"sourceId": source.ID}
 	for flag, name := range map[string]string{
 		"name": "name", "path": "path", "under": "rootPath",
-		"cron": "cron", "format": "format", "mailbox": "mailboxId",
+		"cron": "cron", "format": "format", "mailbox": "mailboxId", "computer": "computer",
 	} {
 		if value := command.String(flag); value != "" {
 			fields[name] = value
@@ -1095,7 +1096,9 @@ func runKnowledgeSet(ctx context.Context, command *cli.Command) error {
 		// server keeps them whole, so the ones not given are sent as
 		// they are.
 		settings := map[string]any{}
-		if len(source.Specification.Settings) > 0 {
+		// Another type's settings mean nothing to this one.
+		sameType := command.String("type") == "" || command.String("type") == source.Specification.Type
+		if sameType && len(source.Specification.Settings) > 0 {
 			if err := json.Unmarshal(source.Specification.Settings, &settings); err != nil {
 				return err
 			}
@@ -1114,7 +1117,7 @@ func runKnowledgeSet(ctx context.Context, command *cli.Command) error {
 		fields["settings"] = settings
 	}
 	if len(fields) == 1 {
-		return fmt.Errorf("what should change? --name, --path, --under, --cron, --format, --mailbox, --type, --setting, --read-every-checkout, --commits-per-pass or --own-commits-at-least")
+		return fmt.Errorf("what should change? --name, --path, --under, --cron, --format, --mailbox, --type, --setting, --computer, --read-every-checkout, --commits-per-pass or --own-commits-at-least")
 	}
 	changed, err := client.SaveAgentKnowledgeSource(ctx, connection, fields)
 	if err != nil {

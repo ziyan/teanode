@@ -1580,8 +1580,6 @@ export const ja: Catalog = {
   'sourceTypes.settingListHint': '複数ある場合はカンマで区切ります。',
   'sourceTypes.settingRequired': '必須',
   'sourceTypes.choose': '種類',
-  'sourceTypes.untyped': 'その他',
-  'sourceTypes.untypedHint': '場所の種類を手で選びます。ソースの種類ができる前の追加のしかたです。',
   'sourceTypes.computerMissing': 'どのコンピューターにあるか指定してください。',
   'sourceTypes.needsTools': 'そのコンピューターに {tools} が必要です。',
   'agentSettings.servers': '接続サーバー',

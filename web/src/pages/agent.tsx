@@ -1742,8 +1742,7 @@ function whereSourceReads(source: KnowledgeSource, views: { mailbox: MailboxNami
 }
 
 // SourceTypePicker is the first question of adding a source: which of the
-// installed types it is, each by its name and what it says it reads, with
-// the sorts of place this form has always offered as the last choice.
+// installed types it is, each by its name and what it says it reads.
 function SourceTypePicker({
   sourceTypes,
   chosen,
@@ -1776,13 +1775,6 @@ function SourceTypePicker({
             </span>
           </label>
         ))}
-        <label className={chosen === '' ? 'check-list-item chosen' : 'check-list-item'}>
-          <input type="radio" name="source-type" checked={chosen === ''} onChange={() => onChoose('')} />
-          <span>
-            {t('sourceTypes.untyped')}
-            <span>{t('sourceTypes.untypedHint')}</span>
-          </span>
-        </label>
       </div>
     </fieldset>
   )
