@@ -5345,9 +5345,6 @@ main.content:has(> .mailbox-frame) {
 /* The day's budget as a ring in the drawer's head, and as a bar on the
    agent's page. One colour rule for both, in the tokens' own words. */
 .agent-drawer-budget {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px;
   color: var(--muted);
 }
 
@@ -5510,9 +5507,6 @@ main.content:has(> .mailbox-frame) {
 }
 
 .agent-drawer-device {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px;
   color: var(--muted);
 }
 

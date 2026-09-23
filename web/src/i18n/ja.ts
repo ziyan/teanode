@@ -1084,7 +1084,6 @@ export const ja: Catalog = {
   'agentDrawer.computersAttached': 'コンピューターを接続中: {names}',
   'agentDrawer.answer': '答えを入力…',
   'agentDrawer.close': '閉じる',
-  'agentDrawer.putBack': 'チャットを元の位置に戻す',
   'agentDrawer.main': 'メインチャット',
   'agentDrawer.untitled': '無題',
   'agentDrawer.new': '新しいサイドチャット',

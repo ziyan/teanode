@@ -29,7 +29,6 @@ import {
   ArrowUpIcon,
   ChevronDownIcon,
   ComputerIcon,
-  RestartIcon,
   GlobeIcon,
   InboxIcon,
   PaperclipIcon,
@@ -1292,6 +1291,42 @@ function CitedPicture({ file }: { file: CitedFile }) {
   )
 }
 
+// DeviceButton is something of the person's that is attached, a browser
+// tab or a computer: a button the size of the others in the bar, with the
+// details on hover, that opens where attached things are listed.
+function DeviceButton({
+  label,
+  framed,
+  onLeaving,
+  children,
+}: {
+  label: string
+  framed: boolean
+  onLeaving: () => void
+  children: React.ReactNode
+}) {
+  const where = '/settings/agent/connections'
+  return (
+    <Tooltip label={label}>
+      {framed ? (
+        <a
+          className="icon-button agent-drawer-device"
+          href={`${window.location.origin}${where}`}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={label}
+        >
+          {children}
+        </a>
+      ) : (
+        <Link className="icon-button agent-drawer-device" to={where} aria-label={label} onClick={onLeaving}>
+          {children}
+        </Link>
+      )}
+    </Tooltip>
+  )
+}
+
 // BudgetRing is the day's tokens as a ring in the drawer's head: how much
 // of the budget has gone, coloured by how near the end of it the day is,
 // with the numbers and the hour it resets on hover, and the agent's own
@@ -1343,7 +1378,7 @@ function BudgetRing({
         // Framed into another site, the drawer sends the person to the
         // dashboard itself rather than drawing a settings page in here.
         <a
-          className="agent-drawer-budget"
+          className="icon-button agent-drawer-budget"
           href={`${window.location.origin}/settings/agent`}
           target="_blank"
           rel="noreferrer"
@@ -1352,7 +1387,7 @@ function BudgetRing({
           {ring}
         </a>
       ) : (
-        <Link className="agent-drawer-budget" to="/settings/agent" aria-label={label} onClick={onLeaving}>
+        <Link className="icon-button agent-drawer-budget" to="/settings/agent" aria-label={label} onClick={onLeaving}>
           {ring}
         </Link>
       )}
@@ -2915,55 +2950,31 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             {/* What of the person's own is attached, as a mark with the
                 details on hover: the transcript is for the conversation. */}
             {tab?.attached && (
-              <Tooltip label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}>
-                <span
-                  className="agent-drawer-device"
-                  aria-label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}
-                >
-                  <GlobeIcon size={14} />
-                </span>
-              </Tooltip>
+              <DeviceButton
+                label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}
+                framed={standalone}
+                onLeaving={leaving}
+              >
+                <GlobeIcon size={14} />
+              </DeviceButton>
             )}
             {computers.length > 0 && (
-              <Tooltip
+              <DeviceButton
                 label={
                   computers.length === 1
                     ? t('agentDrawer.computerAttached', { name: computers[0] })
                     : t('agentDrawer.computersAttached', { names: computers.join(', ') })
                 }
+                framed={standalone}
+                onLeaving={leaving}
               >
-                <span
-                  className="agent-drawer-device"
-                  aria-label={
-                    computers.length === 1
-                      ? t('agentDrawer.computerAttached', { name: computers[0] })
-                      : t('agentDrawer.computersAttached', { names: computers.join(', ') })
-                  }
-                >
-                  <ComputerIcon size={14} />
-                </span>
-              </Tooltip>
+                <ComputerIcon size={14} />
+              </DeviceButton>
             )}
             {budget && <BudgetRing budget={budget} zone={agentZone} framed={standalone} onLeaving={leaving} />}
             {/* Framed by the extension, the panel around this has a bar
                 of its own with the close on it; two of them, one under
                 the other, is one too many. */}
-            {/* Only once it was moved: the title runs the width of the
-                bar, so a double click on the bar mostly lands on the title
-                and opens the list, and the way back needs a place of its
-                own. */}
-            {!standalone && chatBox.placement && (
-              <Tooltip label={t('agentDrawer.putBack')}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={t('agentDrawer.putBack')}
-                  onClick={chatBox.reset}
-                >
-                  <RestartIcon size={14} />
-                </button>
-              </Tooltip>
-            )}
             {!standalone && (
               <Tooltip label={t('agentDrawer.close')}>
                 <button type="button" className="icon-button" aria-label={t('agentDrawer.close')} onClick={toggle}>
