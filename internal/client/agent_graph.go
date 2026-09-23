@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -123,6 +124,11 @@ type AgentKnowledgeSource struct {
 
 // AgentKnowledgeSpecification says what a source reads.
 type AgentKnowledgeSpecification struct {
+	// Type is the source type this source is one of, and Settings what
+	// was filled in for it.
+	Type     string          `json:"type"`
+	Settings json.RawMessage `json:"settings"`
+
 	Computer  string   `json:"computer"`
 	Path      string   `json:"path"`
 	Format    string   `json:"format"`
@@ -239,7 +245,7 @@ type AgentDream struct {
 
 const nodeFields = `{ id path kind name aliases summary contactId pinned importance dormant usedAt modifiedAt }`
 const factFields = `{ id number kind text happenedAt confidence inferred evidence { kind id quote } audiences dormant createdAt }`
-const sourceFields = `{ id kind name specification { computer path format include exclude tool start depth mailboxId readEveryCheckout commitsPerPass ownCommitsAtLeast } rootPath enabled cron lastRunAt nextRunAt lastError documentCount chunkCount refusedCount more unknownAuthors checkoutsKeptToProfile filesKeptToProfile }`
+const sourceFields = `{ id kind name specification { type settings computer path format include exclude tool start depth mailboxId readEveryCheckout commitsPerPass ownCommitsAtLeast } rootPath enabled cron lastRunAt nextRunAt lastError documentCount chunkCount refusedCount more unknownAuthors checkoutsKeptToProfile filesKeptToProfile }`
 const revisionFields = `{ revision kind actor summary change before after path reason createdAt }`
 const passageFields = `{ documentId externalId title url kind author sourceId source happenedAt private number text score }`
 const extractFields = `{ documentId externalId title url kind author sourceId source happenedAt private from text total next }`
@@ -291,8 +297,8 @@ const (
 	DocumentSetMyContact    = `mutation ($contactId: String) { SetMyContact(contactId: $contactId) }`
 
 	DocumentListAgentKnowledgeSources = `query { ListAgentKnowledgeSources ` + sourceFields + ` }`
-	DocumentSaveAgentKnowledgeSource  = `mutation ($sourceId: String, $kind: String, $name: String, $computer: String, $path: String, $format: String, $rootPath: String, $cron: String, $enabled: Boolean, $mailboxId: String, $readEveryCheckout: Boolean, $commitsPerPass: Int, $ownCommitsAtLeast: Int) {
-		SaveAgentKnowledgeSource(sourceId: $sourceId, kind: $kind, name: $name, computer: $computer, path: $path, format: $format, rootPath: $rootPath, cron: $cron, enabled: $enabled, mailboxId: $mailboxId, readEveryCheckout: $readEveryCheckout, commitsPerPass: $commitsPerPass, ownCommitsAtLeast: $ownCommitsAtLeast) ` + sourceFields + `
+	DocumentSaveAgentKnowledgeSource  = `mutation ($sourceId: String, $kind: String, $name: String, $computer: String, $path: String, $format: String, $rootPath: String, $cron: String, $enabled: Boolean, $mailboxId: String, $readEveryCheckout: Boolean, $commitsPerPass: Int, $ownCommitsAtLeast: Int, $type: String, $settings: JSON) {
+		SaveAgentKnowledgeSource(type: $type, settings: $settings, sourceId: $sourceId, kind: $kind, name: $name, computer: $computer, path: $path, format: $format, rootPath: $rootPath, cron: $cron, enabled: $enabled, mailboxId: $mailboxId, readEveryCheckout: $readEveryCheckout, commitsPerPass: $commitsPerPass, ownCommitsAtLeast: $ownCommitsAtLeast) ` + sourceFields + `
 	}`
 	DocumentSearchAgentDocuments = `query ($query: String!, $first: Int, $sourceId: String) {
 		SearchAgentDocuments(query: $query, first: $first, sourceId: $sourceId) {

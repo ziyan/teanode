@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -331,6 +332,14 @@ type SaveAgentKnowledgeSourceArguments struct {
 
 	// MailboxID is which mailbox a sent source reads.
 	MailboxID string `json:"mailboxId" graphapi:"nullable"`
+
+	// Type is the installed source type to read this source as, and
+	// Settings what is filled in for it, as a JSON object. A type naming
+	// a reader built into TeaNode sets the kind, format and fields that
+	// reader takes from its settings; any other is read by running it on
+	// the computer. Settings not given keep what the source had.
+	Type     string          `json:"type" graphapi:"nullable"`
+	Settings json.RawMessage `json:"settings" graphapi:"nullable"`
 
 	// MaxAttachmentBytes is the largest file this source carries off the
 	// person's machine. Not given leaves it alone; zero puts it back to
@@ -1689,6 +1698,21 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 		source.Kind = models.AgentKnowledgeKind(strings.TrimSpace(arguments.Kind))
 		source.Specification.Format = models.FormatFiles
 	}
+	// A source of a type is described by its settings alone: a path or a
+	// format set beside them would disagree with them, and the next save
+	// of the settings would put the old path back and sweep what was
+	// read from the new one.
+	if source.Specification.Type != "" || arguments.Type != "" {
+		for name, given := range map[string]bool{
+			"kind": arguments.Kind != "", "path": arguments.Path != "", "format": arguments.Format != "",
+			"mailboxId": arguments.MailboxID != "", "readEveryCheckout": arguments.ReadEveryCheckout != nil,
+			"commitsPerPass": arguments.CommitsPerPass != nil, "ownCommitsAtLeast": arguments.OwnCommitsAtLeast != nil,
+		} {
+			if given {
+				return nil, fmt.Errorf("%w: this source is of a type, so %s is one of its settings; change it there", api.ErrInvalidArguments, name)
+			}
+		}
+	}
 	if kind := models.AgentKnowledgeKind(strings.TrimSpace(arguments.Kind)); kind != "" {
 		source.Kind = kind
 	}
@@ -1736,6 +1760,11 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 		}
 		source.Specification.OwnCommitsAtLeast = *arguments.OwnCommitsAtLeast
 	}
+	if arguments.Type != "" || (source.Specification.Type != "" && len(arguments.Settings) > 0) {
+		if err := self.applySourceType(ctx, tx, source, arguments.Type, arguments.Settings); err != nil {
+			return nil, err
+		}
+	}
 	if arguments.RootPath != "" {
 		source.RootPath = models.NormalizePath(arguments.RootPath)
 	}
@@ -1747,6 +1776,9 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 	}
 	if source.Name == "" {
 		source.Name = models.Slug(source.Specification.Path)
+		if source.Name == "" {
+			source.Name = source.Specification.Type
+		}
 		if source.Name == "" {
 			source.Name = string(source.Kind)
 		}

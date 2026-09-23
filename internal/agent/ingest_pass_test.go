@@ -85,6 +85,18 @@ func TestAPassShownNothingTakesNothing(t *testing.T) {
 	}
 }
 
+// A pass part of whose reading ran out of time did not see everything, so
+// it deletes nothing, however much it was shown.
+func TestAnUnfinishedPassTakesNothing(t *testing.T) {
+	started := time.Now().Add(-time.Hour)
+	if !shouldSweepIngestPass(map[string]any{cursorPassSeen: 4000}, started, time.Now()) {
+		t.Fatal("a whole pass did not sweep")
+	}
+	if shouldSweepIngestPass(map[string]any{cursorPassSeen: 4000, cursorPassUnfinished: true}, started, time.Now()) {
+		t.Fatal("an unfinished pass authorized sweeping")
+	}
+}
+
 // What the cursor is keeping comes back from the database as JSON, so a
 // number written as an int is read as a float.
 func TestACountSurvivesTheCursor(t *testing.T) {
