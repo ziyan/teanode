@@ -234,6 +234,14 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 				// page, and sat until its hour with the cursor halfway.
 				midway := partWayThroughTree(cursor)
 				when := self.nextRunOf(source, run.Owner)
+				if waiting.readingOther != "" {
+					// The computer is there and busy with another source:
+					// this one's turn comes when that one is done, not at
+					// its hour tomorrow, which is where a pass that had
+					// not started was put, and so never ran while one
+					// long source was reading.
+					when = time.Now().Add(ingestRetry)
+				}
 				if source.More || midway {
 					when = time.Now().Add(ingestSoon)
 				}
