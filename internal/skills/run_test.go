@@ -805,3 +805,20 @@ func TestACredentialFieldIsKeptBackFromAnUnchangedSkill(t *testing.T) {
 		t.Fatalf("the rest of the step is untouched: %v", signIn)
 	}
 }
+
+// A client given from outside still keeps the steps' cookies.
+//
+// A skill whose requests go through the person's computer is given that
+// computer's client, and a skill that signs in in one step and fetches in the
+// next has to send the sign-in's cookie with the fetch.
+func TestAGivenClientKeepsTheStepsCookies(t *testing.T) {
+	running := &Running{Client: &http.Client{}}
+	first := running.client(time.Second, "example.com")
+	second := running.client(time.Second, "example.com")
+	if first.Jar == nil || first.Jar != second.Jar {
+		t.Error("the steps do not share a cookie jar")
+	}
+	if running.Client.Jar != nil {
+		t.Error("the client given was changed rather than copied")
+	}
+}

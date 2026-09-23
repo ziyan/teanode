@@ -95,6 +95,10 @@ type Options struct {
 	// commands it may use.
 	Name   string
 	System string
+	// Description is what the computer is and what it is for, in the
+	// person's words, so the agent can tell it from their others: which
+	// one is for work, which one reaches which network.
+	Description string
 	// Home is where a command runs unless a directory is given, and what
 	// ~ and a relative path are from; the person's home directory by
 	// default.
@@ -125,20 +129,23 @@ type Connection interface {
 
 // message is what goes over the relay, either way.
 type message struct {
-	Type     string          `json:"type"`
-	Protocol int             `json:"protocol,omitempty"`
-	Token    string          `json:"token,omitempty"`
-	Name     string          `json:"name,omitempty"`
-	System   string          `json:"system,omitempty"`
-	Home     string          `json:"home,omitempty"`
-	Reason   string          `json:"reason,omitempty"`
-	Username string          `json:"username,omitempty"`
-	ID       int64           `json:"id,omitempty"`
-	Action   string          `json:"action,omitempty"`
-	Args     json.RawMessage `json:"args,omitempty"`
-	OK       bool            `json:"ok,omitempty"`
-	Data     json.RawMessage `json:"data,omitempty"`
-	Error    string          `json:"error,omitempty"`
+	Type     string `json:"type"`
+	Protocol int    `json:"protocol,omitempty"`
+	Token    string `json:"token,omitempty"`
+	Name     string `json:"name,omitempty"`
+	System   string `json:"system,omitempty"`
+	Home     string `json:"home,omitempty"`
+	// Description is optional, and a server that predates it ignores it,
+	// so it needs no new protocol version.
+	Description string          `json:"description,omitempty"`
+	Reason      string          `json:"reason,omitempty"`
+	Username    string          `json:"username,omitempty"`
+	ID          int64           `json:"id,omitempty"`
+	Action      string          `json:"action,omitempty"`
+	Args        json.RawMessage `json:"args,omitempty"`
+	OK          bool            `json:"ok,omitempty"`
+	Data        json.RawMessage `json:"data,omitempty"`
+	Error       string          `json:"error,omitempty"`
 
 	// A session says what it did without being asked, so these carry no
 	// request number: the session's own identifier is what names it.
@@ -181,7 +188,7 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 		_ = write(message{Type: "session", Session: session, Event: "ended", Code: code})
 	}
 
-	hello := message{Type: "hello", Protocol: Protocol, Token: options.Token, Name: options.Name, System: options.System, Home: options.Home}
+	hello := message{Type: "hello", Protocol: Protocol, Token: options.Token, Name: options.Name, System: options.System, Home: options.Home, Description: strings.TrimSpace(options.Description)}
 	// Closed when the shell the person attached ends. Leaving the shell is
 	// how they detach, so this program ends with it rather than sitting on
 	// a dead pty until they find the key that kills it.
@@ -361,6 +368,12 @@ func handle(ctx context.Context, options *Options, action string, args json.RawM
 			return nil, fmt.Errorf("the request is not readable: %w", err)
 		}
 		result, err = RunShell(ctx, options, &arguments)
+	case "http":
+		var arguments HTTPArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = RunHTTP(ctx, &arguments)
 	case "filesystem":
 		var arguments FilesystemArguments
 		if err := json.Unmarshal(args, &arguments); err != nil {

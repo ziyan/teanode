@@ -562,3 +562,27 @@ type AgentDraft struct {
 	Model string `json:"model"`
 	RunID string `json:"runId"`
 }
+
+// AgentReach is a reach: the computer one of a person's skills or connected
+// servers makes its requests through, rather than through this server, named
+// as it attaches.
+type AgentReach struct {
+	AgentID string `json:"agentId"`
+
+	// Kind is AgentReachSkill or AgentReachServer.
+	Kind string `json:"kind"`
+
+	// Name is the skill's or the server's.
+	Name string `json:"name"`
+
+	// ComputerName is the attached computer the requests go through.
+	ComputerName string `json:"computerName"`
+
+	ModifiedAt time.Time `json:"modifiedAt"`
+}
+
+// The two kinds of thing whose requests can go through a computer.
+const (
+	AgentReachSkill  = "skill"
+	AgentReachServer = "server"
+)

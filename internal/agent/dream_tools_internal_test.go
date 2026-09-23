@@ -124,7 +124,7 @@ func TestTheNightIsOfferedThePersonsWholeToolKit(t *testing.T) {
 	laptop := &fakeComputer{agent: worker, agentId: run.Agent.ID, answers: func(string, json.RawMessage) (bool, string) {
 		return true, `{}`
 	}}
-	worker.AttachComputer(run.Agent.ID, laptop, "laptop", "linux", "~", "")
+	worker.AttachComputer(run.Agent.ID, laptop, ComputerIdentity{Name: "laptop", System: "linux", Home: "~", Terminal: ""})
 
 	budget := newDreamBudget(run.Configuration(), run.Agent, 1, 0)
 	if _, err := worker.dreamThought(context.Background(), run, budget, "Read a batch", "Answer with {}.", true); err != nil {
@@ -173,7 +173,7 @@ func TestDescribingACheckoutStillOnlyLooksThingsUp(t *testing.T) {
 	laptop := &fakeComputer{agent: worker, agentId: run.Agent.ID, answers: func(string, json.RawMessage) (bool, string) {
 		return true, `{}`
 	}}
-	worker.AttachComputer(run.Agent.ID, laptop, "laptop", "linux", "~", "")
+	worker.AttachComputer(run.Agent.ID, laptop, ComputerIdentity{Name: "laptop", System: "linux", Home: "~", Terminal: ""})
 
 	if _, err := worker.think(context.Background(), run, "Described the checkout ~/src/portal", "Answer with {}.",
 		lookupTools, roundsFor(run.Configuration(), models.AgentJobIngest), models.AgentJobIngest, config.AgentWorkScan); err != nil {
@@ -229,7 +229,7 @@ func TestTheNightCanRunSomethingOnTheMachine(t *testing.T) {
 		mutex.Unlock()
 		return true, `{"stdout":"402 records/posts.jsonl\n","stderr":"","exitCode":0}`
 	}}
-	worker.AttachComputer(run.Agent.ID, laptop, "laptop", "linux", "~", "")
+	worker.AttachComputer(run.Agent.ID, laptop, ComputerIdentity{Name: "laptop", System: "linux", Home: "~", Terminal: ""})
 
 	budget := newDreamBudget(run.Configuration(), run.Agent, 1, 0)
 	thinking, err := worker.dreamThought(context.Background(), run, budget, "Read a batch", "Answer with {}.", true)
@@ -433,7 +433,7 @@ func TestTheNightsMachineIsNotHeldToReading(t *testing.T) {
 		mutex.Unlock()
 		return true, `{"stdout":"","stderr":"","exitCode":0}`
 	}}
-	worker.AttachComputer(run.Agent.ID, laptop, "laptop", "linux", "~", "")
+	worker.AttachComputer(run.Agent.ID, laptop, ComputerIdentity{Name: "laptop", System: "linux", Home: "~", Terminal: ""})
 
 	budget := newDreamBudget(run.Configuration(), run.Agent, 1, 0)
 	thinking, err := worker.dreamThought(context.Background(), run, budget, "Read a batch", "Answer with {}.", true)

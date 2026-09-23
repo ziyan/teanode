@@ -68,6 +68,11 @@ type MemoryOperation interface {
 	// A person's own values for the secrets a skill declared as theirs.
 	// The operator's live in the configuration; these are per person and
 	// sealed.
+	// Where a person's skills and connected servers make their requests
+	// from, when that is one of their computers rather than the server.
+	ListAgentReaches(agentId string) ([]*models.AgentReach, error)
+	PutAgentReach(reach *models.AgentReach) error
+
 	ListAgentSkillSecrets(agentId string) ([]*models.AgentSkillSecret, error)
 	PutAgentSkillSecret(secret *models.AgentSkillSecret) error
 	DeleteAgentSkillSecret(agentId, skill, key string) error

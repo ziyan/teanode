@@ -242,3 +242,57 @@ func TestRetiringATokenSaysWhoRetiredIt(test *testing.T) {
 		test.Errorf("a token already retired was retired again: %v, %v", second, err)
 	}
 }
+
+// A reach is set, read back, moved and cleared.
+func TestAReachIsSetMovedAndCleared(test *testing.T) {
+	database, release := dbtest.AcquireDatabase(test)
+	defer release()
+
+	userId := dbtest.CreateUser(test, database, "reach-holder")
+	var agentId string
+	if err := database.Transaction(func(tx db.Transaction) error {
+		created, err := tx.CreateAgent(&models.Agent{UserID: userId, Enabled: true, Name: "an agent"})
+		if err != nil {
+			return err
+		}
+		agentId = created.ID
+		return nil
+	}); err != nil {
+		test.Fatalf("creating an agent: %s", err)
+	}
+	put := func(name, computerName string) {
+		test.Helper()
+		if err := database.Transaction(func(tx db.Transaction) error {
+			return tx.PutAgentReach(&models.AgentReach{AgentID: agentId, Kind: models.AgentReachSkill, Name: name, ComputerName: computerName})
+		}); err != nil {
+			test.Fatalf("PutAgentReach: %s", err)
+		}
+	}
+	read := func() map[string]string {
+		test.Helper()
+		found := map[string]string{}
+		if err := database.Transaction(func(tx db.Transaction) error {
+			reaches, err := tx.ListAgentReaches(agentId)
+			for _, reach := range reaches {
+				found[reach.Name] = reach.ComputerName
+			}
+			return err
+		}); err != nil {
+			test.Fatalf("ListAgentReaches: %s", err)
+		}
+		return found
+	}
+
+	put("code-host", "desk")
+	if got := read(); got["code-host"] != "desk" {
+		test.Errorf("after setting, the reach is %v", got)
+	}
+	put("code-host", "travel")
+	if got := read(); got["code-host"] != "travel" || len(got) != 1 {
+		test.Errorf("after moving, the reaches are %v", got)
+	}
+	put("code-host", "")
+	if got := read(); len(got) != 0 {
+		test.Errorf("after clearing, the reaches are %v", got)
+	}
+}

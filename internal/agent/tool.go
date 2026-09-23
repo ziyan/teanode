@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"context"
-
 	"github.com/ziyan/teanode/internal/agent/tools"
 )
 
@@ -60,17 +58,6 @@ var (
 	nextCron        = tools.NextCron
 	resolveRelative = tools.ResolveRelative
 )
-
-// runOf is the turn a tool was called in, as this package's own run. The
-// tools still in this package reach it this way; a tool package reaches
-// the same run through the kit's interface.
-func runOf(ctx context.Context) *AskRun {
-	run, err := tools.RunFrom(ctx)
-	if err != nil {
-		panic(err)
-	}
-	return run.(*AskRun)
-}
 
 // Helpers that moved to the kit with the mailbox family.
 var (

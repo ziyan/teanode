@@ -51,6 +51,10 @@ type InsightOperation interface {
 
 	CreateAgentConversation(conversation *models.AgentConversation) (*models.AgentConversation, error)
 	GetAgentConversation(conversationId string) (*models.AgentConversation, error)
+
+	// FindAgentConversationBySubject is the newest conversation of a kind
+	// whose subject is the one given, not archived, or nil.
+	FindAgentConversationBySubject(agentId string, kind models.AgentConversationKind, subjectId string) (*models.AgentConversation, error)
 	UpdateAgentConversation(conversationId string, modify func(*models.AgentConversation) error) (*models.AgentConversation, error)
 	ListAgentConversations(agentId string, kinds []models.AgentConversationKind, options *Options) ([]*models.AgentConversation, error)
 
@@ -424,6 +428,7 @@ func (self *transaction) CreateAgentConversation(conversation *models.AgentConve
 		MailboxID:  conversation.MailboxID,
 		Kind:       string(conversation.Kind),
 		Title:      truncateRunes(conversation.Title, 200),
+		TitledBy:   conversation.TitledBy,
 		JobID:      conversation.JobID,
 		JobKind:    conversation.JobKind,
 		SubjectID:  conversation.SubjectID,
@@ -439,6 +444,18 @@ func (self *transaction) CreateAgentConversation(conversation *models.AgentConve
 		return nil, err
 	}
 	return conversationFromModel(model), nil
+}
+
+func (self *transaction) FindAgentConversationBySubject(agentId string, kind models.AgentConversationKind, subjectId string) (*models.AgentConversation, error) {
+	var found []agentConversationModel
+	if err := self.tx.Where("\"agent_id\" = ? AND \"kind\" = ? AND \"subject_id\" = ? AND \"archived_at\" IS NULL",
+		agentId, string(kind), subjectId).Order("\"last_at\" DESC").Limit(1).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return conversationFromModel(&found[0]), nil
 }
 
 func (self *transaction) GetAgentConversation(conversationId string) (*models.AgentConversation, error) {

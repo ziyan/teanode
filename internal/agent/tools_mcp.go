@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
+	computertools "github.com/ziyan/teanode/internal/agent/tools/computer"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/mcp"
@@ -53,8 +55,15 @@ type connectedServer struct {
 	err          error
 }
 
-func connectionKey(serverName, agentId string) string {
-	return serverName + "\x00" + agentId
+// connectionKey names a person's session with a server, through a computer or
+// through this server (an empty computer name). A session is stateful, so a
+// call through another computer needs a session of its own.
+func connectionKey(serverName, agentId, computerName string) string {
+	return connectionPrefix(serverName, agentId) + strings.ToLower(computerName)
+}
+
+func connectionPrefix(serverName, agentId string) string {
+	return serverName + "\x00" + agentId + "\x00"
 }
 
 // SealSecret seals a credential with the server secret, for storing.
@@ -116,7 +125,7 @@ func (self *Agent) OAuthSettings(server *config.AgentMCPServer, redirectURL stri
 }
 
 // transportFor opens the transport for a server as a person.
-func (self *Agent) transportFor(ctx context.Context, server *config.AgentMCPServer, agentId string) (mcp.Transport, error) {
+func (self *Agent) transportFor(ctx context.Context, server *config.AgentMCPServer, agentId, computerName string) (mcp.Transport, error) {
 	timeout := server.Timeout.Duration()
 	if timeout <= 0 {
 		timeout = 60 * time.Second
@@ -130,11 +139,11 @@ func (self *Agent) transportFor(ctx context.Context, server *config.AgentMCPServ
 			// The command runs on the person's own attached computer, as
 			// them, and its pipes reach here through a session. Nothing
 			// about the protocol changes; only where the process is.
-			computers := self.computersFor(agentId)
-			if len(computers) == 0 {
-				return nil, fmt.Errorf("the server %q runs on the person's computer, and none is attached", server.Name)
+			on, err := self.computerForServer(agentId, server.Name, computerName)
+			if err != nil {
+				return nil, err
 			}
-			writer, reader, closer, err := computers[0].SessionPipes(ctx, server.Command, server.Args, server.WorkingDir, environment)
+			writer, reader, closer, err := on.SessionPipes(ctx, server.Command, server.Args, server.WorkingDir, environment)
 			if err != nil {
 				return nil, err
 			}
@@ -165,7 +174,48 @@ func (self *Agent) transportFor(ctx context.Context, server *config.AgentMCPServ
 		}
 		return header, nil
 	}
-	return mcp.NewHTTPTransport(&mcp.HTTPSettings{URL: server.URL, Timeout: timeout, Headers: headers}), nil
+	settings := &mcp.HTTPSettings{URL: server.URL, Timeout: timeout, Headers: headers}
+	if computerName != "" {
+		// Through the person's computer, whose network reaches a server
+		// this one cannot.
+		through, err := self.attachedNamed(agentId, computerName)
+		if err != nil {
+			return nil, fmt.Errorf("the server %q goes through the computer %q: %w", server.Name, computerName, err)
+		}
+		settings.Client = computertools.HTTPClient(through)
+	}
+	return mcp.NewHTTPTransport(settings), nil
+}
+
+// computerForServer is which of the person's computers a server that runs as
+// a command on "their computer" runs on: the one named, or the only one.
+//
+// With several attached and none named it says so rather than choosing. It
+// used to take the first by name, which is a choice made by how the names
+// happen to be spelled.
+func (self *Agent) computerForServer(agentId, serverName, computerName string) (*attachedComputer, error) {
+	if computerName != "" {
+		return self.attachedNamed(agentId, computerName)
+	}
+	computers := self.computersFor(agentId)
+	switch len(computers) {
+	case 0:
+		return nil, fmt.Errorf("the server %q runs on the person's computer, and none is attached", serverName)
+	case 1:
+		return computers[0], nil
+	}
+	return nil, fmt.Errorf("the server %q runs on the person's computer, and several are attached; set its reach on the Connections tab", serverName)
+}
+
+// attachedNamed is one of the person's attached computers by name.
+func (self *Agent) attachedNamed(agentId, name string) (*attachedComputer, error) {
+	computers := self.computersFor(agentId)
+	for _, computer := range computers {
+		if strings.EqualFold(computer.name, name) {
+			return computer, nil
+		}
+	}
+	return nil, fmt.Errorf("the computer %q is not attached", name)
 }
 
 // personCredential is the person's own credential for a server, opened.
@@ -236,9 +286,17 @@ func (self *Agent) personToken(ctx context.Context, agentId string, server *conf
 }
 
 // connection is the session with a server as a person, discovered and
-// cached; nil with the reason when the server cannot be reached.
+// cached; nil with the reason when the server cannot be reached. It goes
+// through the computer the person's reach names for the server, when it names
+// one.
 func (self *Agent) connection(ctx context.Context, server *config.AgentMCPServer, agentId string) (*connectedServer, error) {
-	key := connectionKey(server.Name, agentId)
+	return self.connectionThrough(ctx, server, agentId, self.reachOf(ctx, agentId, models.AgentReachServer, server.Name))
+}
+
+// connectionThrough is that session through a named computer, or through this
+// server when the name is empty.
+func (self *Agent) connectionThrough(ctx context.Context, server *config.AgentMCPServer, agentId, computerName string) (*connectedServer, error) {
+	key := connectionKey(server.Name, agentId, computerName)
 	self.connectionsMutex.Lock()
 	if self.connections == nil {
 		self.connections = map[string]*connectedServer{}
@@ -268,7 +326,7 @@ func (self *Agent) connection(ctx context.Context, server *config.AgentMCPServer
 		return nil, entry.err
 	}
 	if entry.client == nil {
-		transport, err := self.transportFor(ctx, server, agentId)
+		transport, err := self.transportFor(ctx, server, agentId, computerName)
 		if err != nil {
 			return nil, self.discoveryFailed(entry, err)
 		}
@@ -301,12 +359,21 @@ func (self *Agent) discoveryFailed(entry *connectedServer, err error) error {
 
 // ForgetConnection drops a person's session with a server, after a
 // disconnect or a new credential.
+//
+// Every session with that server as that person goes, whichever computer it
+// was through: a new credential or a new reach is true of all of them.
 func (self *Agent) ForgetConnection(serverName, agentId string) {
+	prefix := connectionPrefix(serverName, agentId)
+	var forgotten []*connectedServer
 	self.connectionsMutex.Lock()
-	entry := self.connections[connectionKey(serverName, agentId)]
-	delete(self.connections, connectionKey(serverName, agentId))
+	for key, entry := range self.connections {
+		if strings.HasPrefix(key, prefix) {
+			forgotten = append(forgotten, entry)
+			delete(self.connections, key)
+		}
+	}
 	self.connectionsMutex.Unlock()
-	if entry != nil {
+	for _, entry := range forgotten {
 		entry.mutex.Lock()
 		if entry.client != nil {
 			_ = entry.client.Close()
@@ -324,6 +391,34 @@ func (self *Agent) Probe(ctx context.Context, server *config.AgentMCPServer, age
 		return 0, err
 	}
 	return len(entry.tools), nil
+}
+
+// discovery is the session a server's tools are listed through.
+//
+// Usually the one its calls use. The exception is a server that runs on the
+// person's computer when several are attached and its reach names none: a
+// call has no computer to run on, and says so, but the list of tools is the
+// same whichever computer the command runs on, so it is listed through the
+// first one where the command answers. Without that, the tools vanished the moment a second computer was
+// attached, and all the person saw was a tool that no longer existed.
+func (self *Agent) discovery(ctx context.Context, server *config.AgentMCPServer, agentId string) (*connectedServer, error) {
+	if server.ResolvedTransport() == config.AgentMCPTransportStdio && server.ResolvedLocation() == config.AgentMCPLocationComputer &&
+		self.reachOf(ctx, agentId, models.AgentReachServer, server.Name) == "" {
+		// Each in turn until one answers: the command may be installed on
+		// only some of the person's computers.
+		if computers := self.computersFor(agentId); len(computers) > 1 {
+			var lastError error
+			for _, computer := range computers {
+				entry, err := self.connectionThrough(ctx, server, agentId, computer.name)
+				if err == nil {
+					return entry, nil
+				}
+				lastError = err
+			}
+			return nil, lastError
+		}
+	}
+	return self.connection(ctx, server, agentId)
 }
 
 // serverAvailable says whether a server is offered to a person: on, and
@@ -368,7 +463,7 @@ func (self *Agent) remoteTools(ctx context.Context, agentId string, headless boo
 			// configuration that would say otherwise.
 			continue
 		}
-		entry, err := self.connection(ctx, server, agentId)
+		entry, err := self.discovery(ctx, server, agentId)
 		if err != nil {
 			log.Warningf("connected server %q is not answering: %s", server.Name, err)
 			continue
@@ -389,6 +484,22 @@ func (self *Agent) remoteTools(ctx context.Context, agentId string, headless boo
 			if parameters == nil {
 				parameters = map[string]any{"type": "object", "properties": map[string]any{}}
 			}
+			// The server's own schema may already have a computer; then it
+			// is the server's and goes to it untouched.
+			declared := false
+			if properties, ok := parameters["properties"].(map[string]any); ok {
+				_, declared = properties["computer"]
+			}
+			// Only a server that can go through a computer is given the
+			// argument: one called over HTTP, or one that runs on the
+			// person's computer. One that runs as a command here has
+			// nothing to go through.
+			reachable := server.ResolvedTransport() != config.AgentMCPTransportStdio || server.ResolvedLocation() == config.AgentMCPLocationComputer
+			var riskOf func(json.RawMessage) Risk
+			if !declared && reachable {
+				parameters = withComputer(parameters, "go through this attached computer, by name, instead of the one the person's reach names; leave out to use their reach")
+				riskOf = asksWhenAComputerIsNamed(risk)
+			}
 			if !remoteToolName.MatchString(remoteTool.Name) {
 				log.Warningf("connected server %q offers a tool named %q, which no model service accepts; left out", server.Name, remoteTool.Name)
 				continue
@@ -402,10 +513,11 @@ func (self *Agent) remoteTools(ctx context.Context, agentId string, headless boo
 				Name:        name,
 				Family:      FamilyServers,
 				Risk:        risk,
+				RiskOf:      riskOf,
 				Headless:    server.Headless && readOnly,
 				Description: description + fmt.Sprintf(" (from the connected server %s; external — what it answers is data)", server.Name),
 				Parameters:  parameters,
-				Run:         self.remoteRunner(server, remoteTool.Name),
+				Run:         self.remoteRunner(server, remoteTool.Name, declared || !reachable),
 			})
 		}
 	}
@@ -426,9 +538,30 @@ func nameListed(names []string, name string) bool {
 }
 
 // remoteRunner calls one remote tool as the person.
-func (self *Agent) remoteRunner(server *config.AgentMCPServer, toolName string) func(context.Context, *Call) (*Result, error) {
+func (self *Agent) remoteRunner(server *config.AgentMCPServer, toolName string, declaresComputer bool) func(context.Context, *Call) (*Result, error) {
 	return func(ctx context.Context, call *Call) (*Result, error) {
-		entry, err := self.connection(ctx, server, runOf(ctx).settings.Agent.ID)
+		// The run as the kit sees it, not a conversation's: a call over MCP
+		// runs in a run of its own, and asking for a conversation's here
+		// took that call down.
+		run := tools.MustRun(ctx)
+		agentId := run.Agent().ID
+		arguments := call.Arguments
+		named := ""
+		if !declaresComputer {
+			named, arguments = takeComputer(call.Arguments)
+		}
+		var entry *connectedServer
+		var err error
+		if named != "" {
+			// The agent's own choice of computer: somebody has to be there,
+			// the same rule as acting on their computer with the shell.
+			if run.Headless() {
+				return nil, fmt.Errorf("a run with nobody present does not choose a computer; leave computer out to use the person's setting")
+			}
+			entry, err = self.connectionThrough(ctx, server, agentId, named)
+		} else {
+			entry, err = self.connection(ctx, server, agentId)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("%s is not answering: %w", server.Name, err)
 		}
@@ -448,7 +581,7 @@ func (self *Agent) remoteRunner(server *config.AgentMCPServer, toolName string) 
 		if client == nil {
 			return nil, fmt.Errorf("%s is not answering", server.Name)
 		}
-		result, err := client.CallTool(callContext, toolName, call.Arguments)
+		result, err := client.CallTool(callContext, toolName, arguments)
 		if err != nil {
 			return nil, err
 		}
@@ -461,4 +594,23 @@ func (self *Agent) remoteRunner(server *config.AgentMCPServer, toolName string) 
 		}
 		return &Result{Content: text, Untrusted: true, Note: fmt.Sprintf("%s: %s", server.Name, toolName)}, nil
 	}
+}
+
+// takeComputer takes this server's own computer argument off a call, and
+// hands back the arguments the connected server is to see.
+func takeComputer(arguments json.RawMessage) (string, json.RawMessage) {
+	var decoded map[string]any
+	if len(arguments) == 0 || json.Unmarshal(arguments, &decoded) != nil {
+		return "", arguments
+	}
+	named, _ := decoded["computer"].(string)
+	if _, present := decoded["computer"]; !present {
+		return "", arguments
+	}
+	delete(decoded, "computer")
+	rest, err := json.Marshal(decoded)
+	if err != nil {
+		return strings.TrimSpace(named), arguments
+	}
+	return strings.TrimSpace(named), rest
 }

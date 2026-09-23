@@ -28,7 +28,7 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "shell", Family: tools.FamilyComputer, Risk: tools.RiskWrite,
-				Description: "Run a command on the person's own computer, when they have attached it with `teanode computer`: through their shell, in a directory of theirs, with a timeout. The answer carries what it printed and its exit code; a non-zero code is an answer, not a failure. It runs as the person, anywhere on their machine, and does what it says: nothing here second-guesses a command. Without an attached computer the tool says so.",
+				Description: "Run a command on the person's own computer, when they have attached it with `teanode computer`: through their shell, in a directory of theirs, with a timeout. The answer carries what it printed and its exit code; a non-zero code is an answer, not a failure. It runs as the person, anywhere on their machine, and does what it says: nothing here second-guesses a command. Without an attached computer the tool says so. To take a file off the computer, share_file with source computer does it in one call and hands back a link to download it; do not read a file out through the shell in pieces.",
 				Parameters: tools.Object(map[string]any{
 					"computer":    tools.StringProperty("which of their computers, by name, when more than one is attached"),
 					"command":     tools.StringProperty("the command line, as typed into their shell"),
@@ -141,6 +141,32 @@ type filesystemArguments struct {
 	Recursive   bool   `json:"recursive,omitempty"`
 }
 
+// ForReach is the computer a person's reach names for one of their skills or
+// connected servers.
+//
+// Unlike Of, it finds the computer in a run with nobody present. The rule Of
+// keeps is about the agent deciding, alone, to act on somebody's computer; a
+// reach is the person's own standing decision, made once, and all that goes
+// through the computer is the service's own requests. A schedule or a triage
+// run using a service with a reach uses it the way the person set it.
+func ForReach(run tools.Run, name string) (tools.Computer, error) {
+	computing, ok := run.(tools.Computing)
+	if !ok || !computing.ComputersAllowed() || !tools.FeatureAllowed(run.Configuration(), "computer") {
+		return nil, fmt.Errorf("attaching a computer is off on this server")
+	}
+	name = strings.TrimSpace(name)
+	attached := computing.AttachedComputers()
+	for _, computer := range attached {
+		if strings.EqualFold(computer.Name(), name) {
+			return computer, nil
+		}
+	}
+	if len(attached) == 0 {
+		return nil, fmt.Errorf("it goes through the computer %q, and no computer is attached", name)
+	}
+	return nil, fmt.Errorf("it goes through the computer %q, which is not attached; there are %s", name, names(attached))
+}
+
 // computerOf is the person's computer a call means: the one named, the
 // only one when one is attached, and a question back when there are
 // several and none was named.
@@ -183,9 +209,15 @@ func Of(run tools.Run, name string) (tools.Computer, error) {
 func names(computers []tools.Computer) string {
 	listed := make([]string, 0, len(computers))
 	for _, computer := range computers {
+		// With what each is for, when the person said: a caller told only
+		// two host names still has to guess which one it wanted.
+		if description := strings.TrimSpace(computer.Description()); description != "" {
+			listed = append(listed, fmt.Sprintf("%s, %s", computer.Name(), description))
+			continue
+		}
 		listed = append(listed, computer.Name())
 	}
-	return strings.Join(listed, ", ")
+	return strings.Join(listed, "; ")
 }
 
 // carry sends a request to the computer and makes its answer a result: as
@@ -258,7 +290,27 @@ func runFilesystem(ctx context.Context, call *tools.Call) (*tools.Result, error)
 	if arguments.Action == "put" {
 		return putOnComputer(ctx, run, attached, arguments)
 	}
-	return carry(ctx, attached, "filesystem", arguments, 2*time.Minute, arguments.Action+" "+arguments.Path+" on "+attached.Name())
+	result, err := carry(ctx, attached, "filesystem", arguments, 2*time.Minute, arguments.Action+" "+arguments.Path+" on "+attached.Name())
+	if err != nil || arguments.Action != "read" {
+		return result, err
+	}
+	return withBinaryHint(result, attached.Name(), arguments.Path), nil
+}
+
+// withBinaryHint adds, to a read that found a file that is not text, the way
+// to get the file. Reading only says "binary" and stops, and a caller told
+// nothing more has been seen to copy a picture out through the shell in ten
+// pieces rather than take it in one call with share_file.
+func withBinaryHint(result *tools.Result, computerName, path string) *tools.Result {
+	var answer map[string]any
+	if json.Unmarshal([]byte(result.Content), &answer) != nil || answer["binary"] != true {
+		return result
+	}
+	answer["to_get_it"] = fmt.Sprintf("not text, so not read out here: share_file with source computer, computer %q and path %q hands the file back as a link that downloads it", computerName, path)
+	if content, err := json.Marshal(answer); err == nil {
+		result.Content = string(content)
+	}
+	return result
 }
 
 // putBytes is the largest file sent to a computer, the same as the largest
@@ -354,7 +406,42 @@ func computerOverlay(ctx context.Context) string {
 	builder.WriteString(":\n")
 	for _, computer := range attached {
 		fmt.Fprintf(&builder, "- %q (%s): the whole machine as the person; ~ and a relative path are from %s, where commands run unless a directory is given\n", computer.Name(), computer.System(), computer.Home())
+		// The person's own words about what it is for, which is what tells
+		// two computers apart better than their host names do.
+		if description := strings.TrimSpace(computer.Description()); description != "" {
+			fmt.Fprintf(&builder, "  In their words: %s\n", description)
+		}
 	}
-	builder.WriteString("The shell and filesystem tools reach them, with the person's files and programs. Removing, moving, installing and reaching out ask them first; read before you change.\n</computer>")
+	builder.WriteString("The shell and filesystem tools reach them, with the person's files and programs. Removing, moving, installing and reaching out ask them first; read before you change.\n")
+	// The reaches the person set, so a call through the right computer
+	// leaves computer out rather than naming it and asking for nothing.
+	if reaches := reachLines(ctx, run); len(reaches) > 0 {
+		builder.WriteString("These go through a computer, as the person set: ")
+		builder.WriteString(strings.Join(reaches, "; "))
+		builder.WriteString(". Leave computer out of their calls to use that; name another computer only when that one cannot reach what is needed.\n")
+	}
+	builder.WriteString("</computer>")
 	return builder.String()
+}
+
+// reachLines are the person's reaches as the overlay says them: "the gitlab
+// skill through work". Nothing when they cannot be read: the overlay is a
+// convenience, and a call without it still uses the reach.
+func reachLines(ctx context.Context, run tools.Run) []string {
+	var lines []string
+	database := run.Database()
+	if database == nil {
+		return nil
+	}
+	_ = database.TransactionContext(ctx, func(tx db.Transaction) error {
+		reaches, err := tx.ListAgentReaches(run.Agent().ID)
+		if err != nil {
+			return err
+		}
+		for _, reach := range reaches {
+			lines = append(lines, fmt.Sprintf("the %s %s through %q", reach.Name, reach.Kind, reach.ComputerName))
+		}
+		return nil
+	})
+	return lines
 }

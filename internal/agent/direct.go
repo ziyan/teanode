@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/browser"
@@ -41,6 +43,10 @@ type directRun struct {
 	operations tools.Operations
 	surface    string
 	offered    []*tools.Tool
+
+	// origin is the address the caller reached this server by, for a link
+	// that has to work from wherever the caller is; empty when there is none.
+	origin string
 
 	mutex    sync.Mutex
 	recalled []string
@@ -174,6 +180,7 @@ func (self *Agent) CallDirect(
 	person *models.Agent,
 	operations tools.Operations,
 	surface string,
+	origin string,
 	name string,
 	arguments json.RawMessage,
 ) (*tools.Result, error) {
@@ -193,7 +200,7 @@ func (self *Agent) CallDirect(
 	}
 	run := &directRun{
 		agent: self, owner: owner, agentModel: person,
-		operations: operations, surface: surface, offered: offered,
+		operations: operations, surface: surface, offered: offered, origin: origin,
 	}
 	// Confirmed, because the person confirmed by making the call: a
 	// harness asks its own person before it runs a tool, and there is no
@@ -234,7 +241,23 @@ var (
 	_ tools.GraphSearching     = (*directRun)(nil)
 	_ tools.KnowledgeSearching = (*directRun)(nil)
 	_ tools.Remembering        = (*directRun)(nil)
+	_ tools.Linking            = (*directRun)(nil)
 )
+
+// SharedLink is a full address that opens one file with no sign-in
+// (tools.Linking). A caller over MCP has no session here, and its token, when
+// a program was given it by approval, works only at the tools endpoint, so a
+// plain path to the file was one it could not fetch.
+func (self *directRun) SharedLink(attachmentId string) string {
+	if self.origin == "" {
+		return ""
+	}
+	share := self.agent.ShareAttachment(attachmentId, time.Now().Add(ShareToOpenFor))
+	if share == "" {
+		return ""
+	}
+	return self.origin + "/api/v1/agent/attachments/" + url.PathEscape(attachmentId) + "?share=" + url.QueryEscape(share)
+}
 
 // The person's computers (tools.Computing), the same ones a conversation
 // reaches: whoever is at the harness is the person, and asked for this.

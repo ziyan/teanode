@@ -30,6 +30,7 @@ import (
 func NewComputerCommand() *cli.Command {
 	options := []cli.Flag{
 		&cli.StringFlag{Name: "name", Usage: "what to call this computer to the agent; the host name by default"},
+		&cli.StringFlag{Name: "description", Usage: "what this computer is and what it is for, in a sentence, so the agent can tell it from your others"},
 		&cli.BoolFlag{Name: "verbose", Usage: "say what the agent asks for and how long each request takes"},
 	}
 	return &cli.Command{
@@ -165,7 +166,7 @@ func runComputerDaemon(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	options := &computer.Options{Token: resolved.Token, Name: command.String("name")}
+	options := &computer.Options{Token: resolved.Token, Name: command.String("name"), Description: command.String("description")}
 	// What it was asked and how long that took, beside where it connected.
 	// A daemon that logs only its connections leaves the server's "did
 	// not answer within ten minutes" with nothing to check it against.
@@ -259,7 +260,7 @@ func runComputerStart(ctx context.Context, command *cli.Command) error {
 	if root.Bool("insecure") {
 		arguments = append(arguments, "--insecure")
 	}
-	for _, flag := range []string{"name"} {
+	for _, flag := range []string{"name", "description"} {
 		if value := command.String(flag); value != "" {
 			arguments = append(arguments, "--"+flag, value)
 		}
@@ -310,6 +311,9 @@ func runComputerStatus(ctx context.Context, command *cli.Command) error {
 	default:
 		for _, computer := range view.Computers {
 			_, _ = fmt.Fprintf(command.Writer, "the server sees %s (%s) since %s\n", computer.Name, computer.System, computer.Since.Local().Format("2006-01-02 15:04"))
+			if computer.Description != "" {
+				_, _ = fmt.Fprintf(command.Writer, "  %s\n", computer.Description)
+			}
 		}
 	}
 	return nil

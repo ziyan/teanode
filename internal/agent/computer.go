@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strings"
 	"time"
+
+	"github.com/ziyan/teanode/internal/db"
 )
 
 // The computer relay: the person's own computer, attached through
@@ -16,9 +19,10 @@ import (
 // attachedComputer is one of a person's attached computers.
 type attachedComputer struct {
 	*deviceLink
-	name   string
-	system string
-	home   string
+	name        string
+	system      string
+	home        string
+	description string
 
 	// terminal is the session of the terminal the person is sitting in,
 	// when they attached one; empty otherwise.
@@ -32,10 +36,27 @@ func (self *attachedComputer) AttachedTerminal() string {
 	return self.terminal
 }
 
+// ComputerIdentity is what a computer says about itself when it attaches.
+type ComputerIdentity struct {
+	Name   string
+	System string
+	Home   string
+
+	// Description is the person's sentence about what the computer is for,
+	// which the agent reads to choose between several; empty when they gave
+	// none.
+	Description string
+
+	// Terminal is the session of the terminal the person attached it from,
+	// when they did.
+	Terminal string
+}
+
 // AttachComputer records a person's computer by its name; a second attach
 // under the same name replaces the first, and a different name is another
 // computer beside it.
-func (self *Agent) AttachComputer(agentId string, connection DeviceConnection, name, system, home, terminal string) {
+func (self *Agent) AttachComputer(agentId string, connection DeviceConnection, identity ComputerIdentity) {
+	name, system, home, terminal := identity.Name, identity.System, identity.Home, identity.Terminal
 	self.computersMutex.Lock()
 	defer self.computersMutex.Unlock()
 	if self.computers == nil {
@@ -47,7 +68,7 @@ func (self *Agent) AttachComputer(agentId string, connection DeviceConnection, n
 	if previous := self.computers[agentId][name]; previous != nil {
 		previous.drop()
 	}
-	computer := &attachedComputer{deviceLink: newDeviceLink("the computer "+name, connection), name: name, system: system, home: home, terminal: terminal}
+	computer := &attachedComputer{deviceLink: newDeviceLink("the computer "+name, connection), name: name, system: system, home: home, description: identity.Description, terminal: terminal}
 	if terminal != "" {
 		// The device opened it before saying hello, so it is registered
 		// here without being asked for: reading and typing then work the
@@ -96,16 +117,17 @@ func (self *Agent) computersFor(agentId string) []*attachedComputer {
 
 // AttachedComputer is one attached computer of a person, for the API.
 type AttachedComputer struct {
-	Name   string
-	System string
-	Since  time.Time
+	Name        string
+	System      string
+	Description string
+	Since       time.Time
 }
 
 // ComputersAttached are the computers a person has attached, for the API.
 func (self *Agent) ComputersAttached(agentId string) []AttachedComputer {
 	var listed []AttachedComputer
 	for _, computer := range self.computersFor(agentId) {
-		listed = append(listed, AttachedComputer{Name: computer.name, System: computer.system, Since: computer.attachedAt})
+		listed = append(listed, AttachedComputer{Name: computer.name, System: computer.system, Description: computer.description, Since: computer.attachedAt})
 	}
 	return listed
 }
@@ -120,3 +142,30 @@ func (self *attachedComputer) Ask(ctx context.Context, action string, args any, 
 func (self *attachedComputer) Name() string   { return self.name }
 func (self *attachedComputer) System() string { return self.system }
 func (self *attachedComputer) Home() string   { return self.home }
+
+// Description is the person's sentence about what the computer is for.
+func (self *attachedComputer) Description() string { return self.description }
+
+// reachOf is the computer a person's reach names for one of their skills or
+// connected servers: what its requests go through. Empty means through this
+// server, and so does a reach that cannot be read, with a line in the log: the
+// service then fails on its own if only a computer could reach it, which says
+// more than failing here.
+func (self *Agent) reachOf(ctx context.Context, agentId, kind, name string) string {
+	var computerName string
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		reaches, err := tx.ListAgentReaches(agentId)
+		if err != nil {
+			return err
+		}
+		for _, reach := range reaches {
+			if reach.Kind == kind && strings.EqualFold(reach.Name, name) {
+				computerName = reach.ComputerName
+			}
+		}
+		return nil
+	}); err != nil {
+		log.Warningf("cannot read the reach of %s %q: %s", kind, name, err)
+	}
+	return computerName
+}

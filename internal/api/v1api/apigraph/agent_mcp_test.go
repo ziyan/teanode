@@ -51,7 +51,7 @@ func mcpEndpoint(test *testing.T) (*graph, *models.User, *models.User) {
 		Configuration: func() *config.Configuration { return configuration },
 		Instance:      "test", Tick: time.Hour,
 	})
-	return &graph{database: database, settings: &api.Settings{Agent: worker}}, person, reader
+	return &graph{database: database, config: config.NewMemoryStore(configuration), settings: &api.Settings{Agent: worker}}, person, reader
 }
 
 // grantMCPPermissions gives a person permissions the way a deployment

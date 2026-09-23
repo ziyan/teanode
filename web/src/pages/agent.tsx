@@ -352,6 +352,7 @@ export function AgentPage() {
           <ServersCard />
           <HarnessCard />
           <SkillSecretsCard />
+          <ReachCard />
           <ChatAppsCard />
         </>
       ) : null}
@@ -1327,6 +1328,119 @@ function ServersCard() {
         </FormDialog>
       ) : null}
     </>
+  )
+}
+
+// ReachCard is the reach of each skill and connected server: which of the
+// person's computers its requests go through, or this server. A service that
+// answers only inside one network -- behind a company VPN, on the home
+// network -- is reached through a computer on that network. The agent may
+// name another computer for one call, and asks first when it does.
+interface Reach {
+  kind: string
+  name: string
+  computerName: string
+  isOnComputer: boolean
+}
+
+const REACHES = `query {
+  ListAgentReaches { kind name computerName isOnComputer }
+  ReadAgentComputers { computers { name description } }
+}`
+
+const SET_REACH = `mutation ($kind: String!, $name: String!, $computerName: String!) {
+  SetAgentReach(kind: $kind, name: $name, computerName: $computerName) { kind name computerName }
+}`
+
+function ReachCard() {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const { data, error, reload } = useQuery(
+    () =>
+      graphql<{
+        ListAgentReaches: Reach[]
+        ReadAgentComputers: { computers: { name: string; description?: string }[] }
+      }>(REACHES, {}),
+    [],
+    { refresh: false },
+  )
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const reaches = data?.ListAgentReaches ?? []
+  // Nothing installed or declared that could go through a computer: no card.
+  if (error || reaches.length === 0) return null
+  const computers = data?.ReadAgentComputers.computers ?? []
+
+  const choose = async (reach: Reach, computerName: string) => {
+    const key = `${reach.kind}.${reach.name}`
+    setBusy(key)
+    try {
+      await graphql(SET_REACH, { kind: reach.kind, name: reach.name, computerName })
+      toast.done(
+        t('agent.reachKept', {
+          name: reach.name,
+          through: computerName ? t('agent.reachThrough', { name: computerName }) : t('agent.reachThisServer'),
+        }),
+      )
+      void reload()
+    } catch (caught) {
+      toast.failure(caught, t('agent.reachFailed'))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <SettingsSection card title={t('agent.reach')} description={t('agent.reachHint')}>
+      {reaches.map((reach) => {
+        const key = `${reach.kind}.${reach.name}`
+        // A server that runs on the person's computer has no "this server"
+        // to go through; left unset it runs on the only computer attached.
+        const options = [
+          {
+            value: '',
+            // Unset means the only computer when there is one; with several it
+            // means nothing yet, and says so rather than naming "the only one".
+            label: !reach.isOnComputer
+              ? t('agent.reachThisServer')
+              : computers.length > 1
+                ? t('agent.reachNotChosen')
+                : t('agent.reachOnlyComputer'),
+          },
+          ...computers.map((computer) => ({
+            value: computer.name,
+            label: t('agent.reachThrough', { name: computer.name }),
+          })),
+        ]
+        // A reach naming a computer that is not attached now is kept, and
+        // shown as such, rather than quietly looking unset.
+        if (reach.computerName && !computers.some((computer) => computer.name === reach.computerName)) {
+          options.push({ value: reach.computerName, label: t('agent.reachNotAttached', { name: reach.computerName }) })
+        }
+        return (
+          <SettingsRow
+            key={key}
+            title={reach.name}
+            badge={<Tag value={reach.kind} />}
+            // A server that runs on a computer, with several attached and
+            // none chosen, has nowhere to run: its calls say so, and so does
+            // its row, which is where the choice is made.
+            subtitle={
+              reach.isOnComputer && !reach.computerName && computers.length > 1 ? t('agent.reachChooseOne') : undefined
+            }
+            actions={
+              <Select
+                label={`${t('agent.reach')} · ${reach.name}`}
+                value={reach.computerName}
+                options={options}
+                disabled={busy === key}
+                onChange={(value) => void choose(reach, value)}
+              />
+            }
+          />
+        )
+      })}
+    </SettingsSection>
   )
 }
 

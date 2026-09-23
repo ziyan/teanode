@@ -9,6 +9,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 )
 
 // fakeRun is a turn with the person present and a computer attached, or
@@ -36,8 +37,14 @@ func (self *fakeRun) ComputersAllowed() bool               { return true }
 func (self *fakeRun) ComputersUnattended() bool            { return self.unattended }
 func (self *fakeRun) Offered() []*tools.Tool               { return nil }
 
+// Database is none: these tests are about the computer, and a reach is read
+// only to mention it.
+func (self *fakeRun) Database() db.Database { return nil }
+
 type fakeComputer struct {
-	asked []string
+	asked       []string
+	name        string
+	description string
 }
 
 func (self *fakeComputer) Ask(_ context.Context, action string, args any, _ time.Duration) (json.RawMessage, error) {
@@ -48,9 +55,15 @@ func (self *fakeComputer) Ask(_ context.Context, action string, args any, _ time
 	}
 	return json.RawMessage(`{"entries":[{"name":"notes.txt","size":12}]}`), nil
 }
-func (self *fakeComputer) Name() string   { return "laptop" }
-func (self *fakeComputer) System() string { return "linux" }
-func (self *fakeComputer) Home() string   { return "/home/alice" }
+func (self *fakeComputer) Name() string {
+	if self.name == "" {
+		return "laptop"
+	}
+	return self.name
+}
+func (self *fakeComputer) System() string      { return "linux" }
+func (self *fakeComputer) Home() string        { return "/home/alice" }
+func (self *fakeComputer) Description() string { return self.description }
 
 func find(t *testing.T, name string) *tools.Tool {
 	t.Helper()
@@ -138,5 +151,31 @@ func TestFilesystemRisksByAction(t *testing.T) {
 	}
 	if _, err := filesystem.Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"action":"burn","path":"a"}`)}); err == nil {
 		t.Fatal("an unknown action is refused")
+	}
+}
+
+// Several computers are named with what each is for, when the person said.
+//
+// A caller asking without naming one is told which are attached; told only
+// two host names, it still had to guess which was the one it wanted.
+func TestSeveralComputersAreNamedWithWhatEachIsFor(t *testing.T) {
+	listed := names([]tools.Computer{
+		&fakeComputer{name: "desk", description: "the computer at home, with the family photos"},
+		&fakeComputer{name: "travel"},
+	})
+	if listed != "desk, the computer at home, with the family photos; travel" {
+		t.Errorf("listed as %q", listed)
+	}
+}
+
+// A read that finds a file that is not text says how to get the file.
+func TestABinaryReadSaysHowToGetTheFile(t *testing.T) {
+	binary := withBinaryHint(&tools.Result{Content: `{"path":"/tmp/shot.png","bytes":5000,"binary":true}`}, "desk", "/tmp/shot.png")
+	if !strings.Contains(binary.Content, "share_file") || !strings.Contains(binary.Content, `\"desk\"`) {
+		t.Errorf("a binary read answered %s", binary.Content)
+	}
+	text := withBinaryHint(&tools.Result{Content: `{"path":"/tmp/notes.txt","content":"hello"}`}, "desk", "/tmp/notes.txt")
+	if strings.Contains(text.Content, "share_file") {
+		t.Errorf("a text read was given the hint: %s", text.Content)
 	}
 }

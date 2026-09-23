@@ -260,12 +260,6 @@ type ShareAgentAttachmentArguments struct {
 	AttachmentID string `json:"attachmentId"`
 }
 
-// sharedAttachmentFor is how long one of these addresses stays good. Short,
-// because it is made afresh whenever the drawer draws the file, and because
-// an address that opens a file without a sign-in should not outlive the
-// conversation it was drawn in.
-const sharedAttachmentFor = 6 * time.Hour
-
 // ShareAgentAttachment signs an address for one of the caller's own files.
 //
 // The drawer framed into another site has no session cookie of this origin,
@@ -294,7 +288,7 @@ func (self *graph) ShareAgentAttachment(ctx context.Context, arguments ShareAgen
 	if attachment == nil || attachment.AgentID != found.ID {
 		return "", api.ErrNotFound
 	}
-	share := worker.ShareAttachment(attachment.ID, time.Now().Add(sharedAttachmentFor))
+	share := worker.ShareAttachment(attachment.ID, time.Now().Add(agent.ShareToOpenFor))
 	if share == "" {
 		return "", agent.ErrUnavailable
 	}

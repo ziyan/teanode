@@ -138,7 +138,12 @@ func (self *Running) cookies() http.CookieJar {
 // longer, so the step's time is put on the client the guard built.
 func (self *Running) client(timeout time.Duration, host string) *http.Client {
 	if self != nil && self.Client != nil {
-		return self.Client
+		// A client given from outside -- one that goes through the
+		// person's computer -- still keeps the steps' cookies, so a skill
+		// that signs in and then fetches is signed in when it fetches.
+		given := *self.Client
+		given.Jar = self.cookies()
+		return &given
 	}
 	var allowance, unverified *safefetch.Allowance
 	if self != nil {

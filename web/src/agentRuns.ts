@@ -14,4 +14,6 @@ export const RUN_KINDS = [
   'draft',
   'describe',
   'compact',
+  // A tool called, or a question asked, by a program over MCP.
+  'mcp',
 ]
