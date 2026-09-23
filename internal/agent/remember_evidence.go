@@ -3,6 +3,7 @@ package agent
 import (
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -44,12 +45,77 @@ func evidenceLikeness(text string) string {
 // guarding against -- a quote the model composed out of the gist, stored
 // at full confidence as though the person had said it -- is exactly the
 // kind a judgement call would wave through at scale.
+//
+// Words, in order, and nothing else. What a document is read as is often
+// markdown, and a model quoting it drops the backticks and the asterisks
+// and closes a sentence with a full stop where the text had a comma; none
+// of that is a word it made up. A quote the model shortened with "..."
+// holds when each piece occurs, in the order given, and each is at least
+// evidenceSpliceWords long, so that a splice cannot be assembled out of
+// single words found anywhere.
 func quoteOccursIn(quote, text string) bool {
-	quote = evidenceLikeness(quote)
-	if quote == "" {
+	pieces := evidencePieces.Split(quote, -1)
+	spliced := len(pieces) > 1
+	var wanted []string
+	for _, piece := range pieces {
+		words := evidenceWords(piece)
+		if len(words) == 0 {
+			continue
+		}
+		if spliced && len(words) < evidenceSpliceWords {
+			return false
+		}
+		wanted = append(wanted, " "+strings.Join(words, " ")+" ")
+	}
+	if len(wanted) == 0 {
 		return true
 	}
-	return strings.Contains(evidenceLikeness(text), quote)
+	body := " " + strings.Join(evidenceWords(text), " ") + " "
+	at := 0
+	for _, piece := range wanted {
+		found := strings.Index(body[at:], piece)
+		if found < 0 {
+			return false
+		}
+		// The space closing this piece may open the next.
+		at += found + len(piece) - 1
+	}
+	return true
+}
+
+// evidencePieces is where a model marks that it left words out of a quote.
+var evidencePieces = regexp.MustCompile(`\s*(?:\.\.\.|…|\[\.\.\.\])\s*`)
+
+// evidenceSpliceWords is how long each piece of a shortened quote has to
+// be for the quote to count.
+const evidenceSpliceWords = 2
+
+// evidenceWords is text as the words it says, lowercased, with everything
+// between them dropped: punctuation, markup, spacing. A character of a
+// script written without spaces is a word of its own, so a quote of part
+// of a Japanese or Chinese sentence is still found inside it.
+func evidenceWords(text string) []string {
+	var words []string
+	var word strings.Builder
+	flush := func() {
+		if word.Len() > 0 {
+			words = append(words, word.String())
+			word.Reset()
+		}
+	}
+	for _, letter := range strings.ToLower(text) {
+		switch {
+		case unicode.In(letter, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul):
+			flush()
+			words = append(words, string(letter))
+		case unicode.IsLetter(letter) || unicode.IsDigit(letter):
+			word.WriteRune(letter)
+		default:
+			flush()
+		}
+	}
+	flush()
+	return words
 }
 
 // evidenceOutcome is what the check made of one fact's citation.
