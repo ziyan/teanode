@@ -5629,6 +5629,103 @@ main.content:has(> .mailbox-frame) {
   }
 }
 
+/* On a wide window the box can be moved by its header and resized by its
+   edges. Where the person left it is written onto the element as custom
+   properties, and only this query reads them: on a phone the box takes
+   the screen whatever was remembered, with nothing to move. */
+.agent-drawer-grip {
+  display: none;
+}
+
+@media (min-width: 721px) {
+  .agent-drawer.placed:not(.standalone) {
+    top: var(--agent-drawer-top);
+    left: var(--agent-drawer-left);
+    right: auto;
+    bottom: auto;
+    width: var(--agent-drawer-width);
+    height: var(--agent-drawer-height);
+  }
+
+  .agent-drawer-head.movable {
+    cursor: move;
+    touch-action: none;
+  }
+
+  .agent-drawer.repositioning {
+    user-select: none;
+  }
+
+  .agent-drawer.repositioning iframe {
+    pointer-events: none;
+  }
+
+  .agent-drawer-grip {
+    display: block;
+    position: absolute;
+    z-index: 6;
+    touch-action: none;
+  }
+
+  .agent-drawer-grip.top,
+  .agent-drawer-grip.bottom {
+    left: 12px;
+    right: 12px;
+    height: 6px;
+    cursor: ns-resize;
+  }
+
+  .agent-drawer-grip.left,
+  .agent-drawer-grip.right {
+    top: 12px;
+    bottom: 12px;
+    width: 6px;
+    cursor: ew-resize;
+  }
+
+  .agent-drawer-grip.top-left,
+  .agent-drawer-grip.top-right,
+  .agent-drawer-grip.bottom-left,
+  .agent-drawer-grip.bottom-right {
+    width: 12px;
+    height: 12px;
+  }
+
+  .agent-drawer-grip.top,
+  .agent-drawer-grip.top-left,
+  .agent-drawer-grip.top-right {
+    top: 0;
+  }
+
+  .agent-drawer-grip.bottom,
+  .agent-drawer-grip.bottom-left,
+  .agent-drawer-grip.bottom-right {
+    bottom: 0;
+  }
+
+  .agent-drawer-grip.left,
+  .agent-drawer-grip.top-left,
+  .agent-drawer-grip.bottom-left {
+    left: 0;
+  }
+
+  .agent-drawer-grip.right,
+  .agent-drawer-grip.top-right,
+  .agent-drawer-grip.bottom-right {
+    right: 0;
+  }
+
+  .agent-drawer-grip.top-left,
+  .agent-drawer-grip.bottom-right {
+    cursor: nwse-resize;
+  }
+
+  .agent-drawer-grip.top-right,
+  .agent-drawer-grip.bottom-left {
+    cursor: nesw-resize;
+  }
+}
+
 .agent-drawer-head {
   display: flex;
   align-items: center;

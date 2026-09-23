@@ -454,6 +454,275 @@ function remember(key: string, value: string) {
   }
 }
 
+// PLACEMENT_KEY holds where a person moved the box on a wide window and how
+// big they made it, as {left, top, width, height} in CSS pixels. Absent, the
+// box sits in its corner at the size the stylesheet gives it.
+const PLACEMENT_KEY = 'teanode.agentChatBox'
+// The width at which the box stops floating and takes the screen; the
+// stylesheet's media query for the drawer says the same number.
+const PHONE_QUERY = '(max-width: 720px)'
+const MINIMUM_WIDTH = 320
+const MINIMUM_HEIGHT = 360
+// How close to the window's edge the box may go, so that the edge it is
+// grabbed by is never outside the window.
+const VIEWPORT_MARGIN = 8
+
+type Placement = { left: number; top: number; width: number; height: number }
+
+// The edges a resize grip moves: one for a side, two for a corner.
+type ResizeEdges = { isTop: boolean; isLeft: boolean; isBottom: boolean; isRight: boolean }
+
+const RESIZE_GRIPS: { name: string; edges: ResizeEdges }[] = [
+  { name: 'top', edges: { isTop: true, isLeft: false, isBottom: false, isRight: false } },
+  { name: 'left', edges: { isTop: false, isLeft: true, isBottom: false, isRight: false } },
+  { name: 'bottom', edges: { isTop: false, isLeft: false, isBottom: true, isRight: false } },
+  { name: 'right', edges: { isTop: false, isLeft: false, isBottom: false, isRight: true } },
+  { name: 'top-left', edges: { isTop: true, isLeft: true, isBottom: false, isRight: false } },
+  { name: 'top-right', edges: { isTop: true, isLeft: false, isBottom: false, isRight: true } },
+  { name: 'bottom-left', edges: { isTop: false, isLeft: true, isBottom: true, isRight: false } },
+  { name: 'bottom-right', edges: { isTop: false, isLeft: false, isBottom: true, isRight: true } },
+]
+
+// A move or a resize in progress: which pointer, where it went down, and
+// where the box was then. Every step is measured from the start, so a
+// step the browser dropped costs nothing.
+type PlacementGesture = {
+  pointerId: number
+  startX: number
+  startY: number
+  startPlacement: Placement
+  edges: ResizeEdges | null
+  hasMoved: boolean
+}
+
+// How far a pointer goes before a press on the bar becomes a move: a click
+// that wobbles by a pixel is still a click, and pins nothing.
+const GESTURE_THRESHOLD = 3
+
+function isPhoneWidth(): boolean {
+  return window.matchMedia(PHONE_QUERY).matches
+}
+
+// clampPlacement keeps the box inside the window: no smaller than the
+// minimum where the window has room for it, no larger than the window, and
+// moved rather than cut when the window shrinks under it.
+function clampPlacement(placement: Placement): Placement {
+  const availableWidth = Math.max(0, window.innerWidth - 2 * VIEWPORT_MARGIN)
+  const availableHeight = Math.max(0, window.innerHeight - 2 * VIEWPORT_MARGIN)
+  const width = Math.min(Math.max(placement.width, Math.min(MINIMUM_WIDTH, availableWidth)), availableWidth)
+  const height = Math.min(Math.max(placement.height, Math.min(MINIMUM_HEIGHT, availableHeight)), availableHeight)
+  const left = Math.min(Math.max(placement.left, VIEWPORT_MARGIN), VIEWPORT_MARGIN + availableWidth - width)
+  const top = Math.min(Math.max(placement.top, VIEWPORT_MARGIN), VIEWPORT_MARGIN + availableHeight - height)
+  return { left, top, width, height }
+}
+
+function isSamePlacement(first: Placement, second: Placement): boolean {
+  return (
+    first.left === second.left &&
+    first.top === second.top &&
+    first.width === second.width &&
+    first.height === second.height
+  )
+}
+
+// resizedPlacement moves the edges a grip holds by how far the pointer
+// went, holding the opposite edge still: a box shrunk from its left keeps
+// its right edge where it was, including when it reaches its minimum.
+function resizedPlacement(start: Placement, edges: ResizeEdges, deltaX: number, deltaY: number): Placement {
+  let { left, top, width, height } = start
+  const right = start.left + start.width
+  const bottom = start.top + start.height
+  if (edges.isLeft) {
+    left = Math.min(Math.max(start.left + deltaX, VIEWPORT_MARGIN), right - MINIMUM_WIDTH)
+    width = right - left
+  }
+  if (edges.isRight) {
+    width = Math.min(Math.max(start.width + deltaX, MINIMUM_WIDTH), window.innerWidth - VIEWPORT_MARGIN - left)
+  }
+  if (edges.isTop) {
+    top = Math.min(Math.max(start.top + deltaY, VIEWPORT_MARGIN), bottom - MINIMUM_HEIGHT)
+    height = bottom - top
+  }
+  if (edges.isBottom) {
+    height = Math.min(Math.max(start.height + deltaY, MINIMUM_HEIGHT), window.innerHeight - VIEWPORT_MARGIN - top)
+  }
+  return clampPlacement({ left, top, width, height })
+}
+
+function rememberedPlacement(): Placement | null {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PLACEMENT_KEY) ?? 'null') as Partial<Placement> | null
+    if (
+      stored &&
+      [stored.left, stored.top, stored.width, stored.height].every(
+        (dimension) => typeof dimension === 'number' && Number.isFinite(dimension),
+      )
+    ) {
+      return clampPlacement(stored as Placement)
+    }
+  } catch {
+    // Unreadable or unparsable, the box sits in its corner.
+  }
+  return null
+}
+
+function rememberPlacement(placement: Placement | null) {
+  try {
+    if (placement) {
+      localStorage.setItem(PLACEMENT_KEY, JSON.stringify(placement))
+    } else {
+      localStorage.removeItem(PLACEMENT_KEY)
+    }
+  } catch {
+    // A browser that keeps nothing puts the box back in its corner next time.
+  }
+}
+
+// isGestureExempt says whether a pointer went down on something in the
+// header that is pressed rather than grabbed: the conversation picker, the
+// buttons, a link, and the list the picker opens.
+function isGestureExempt(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('button, a, input, select, textarea, [role="menu"]') !== null
+}
+
+// usePlacement lets a person move the floating box by its header and resize
+// it by its edges on a wide window, and remembers where they left it. The
+// steps of a gesture are written straight to the element's custom
+// properties rather than through state, because the drawer is a large tree
+// and a render per pointer move would lag behind the pointer; state, and
+// the stored copy, are brought up to date when the pointer comes up.
+function usePlacement(isEnabled: boolean) {
+  const [placement, setPlacement] = useState<Placement | null>(() => (isEnabled ? rememberedPlacement() : null))
+  const [isRepositioning, setIsRepositioning] = useState(false)
+  const boxElement = useRef<HTMLElement | null>(null)
+  const gesture = useRef<PlacementGesture | null>(null)
+  const livePlacement = useRef<Placement | null>(placement)
+
+  // A window made smaller brings the box back inside it. What is stored
+  // stays as the person left it, so a window made large again gets it back
+  // on the next load.
+  useEffect(() => {
+    if (!isEnabled) return
+    const onResize = () => {
+      const previous = livePlacement.current
+      if (!previous || gesture.current) return
+      const clamped = clampPlacement(previous)
+      if (isSamePlacement(clamped, previous)) return
+      livePlacement.current = clamped
+      setPlacement(clamped)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [isEnabled])
+
+  const writePlacement = (next: Placement) => {
+    livePlacement.current = next
+    const element = boxElement.current
+    if (!element) return
+    element.style.setProperty('--agent-drawer-left', `${next.left}px`)
+    element.style.setProperty('--agent-drawer-top', `${next.top}px`)
+    element.style.setProperty('--agent-drawer-width', `${next.width}px`)
+    element.style.setProperty('--agent-drawer-height', `${next.height}px`)
+  }
+
+  const begin = (pointerEvent: React.PointerEvent<HTMLElement>, edges: ResizeEdges | null) => {
+    if (!isEnabled || pointerEvent.button !== 0 || isPhoneWidth() || !boxElement.current) return
+    const bounds = boxElement.current.getBoundingClientRect()
+    const startPlacement = clampPlacement({
+      left: bounds.left,
+      top: bounds.top,
+      width: bounds.width,
+      height: bounds.height,
+    })
+    gesture.current = {
+      pointerId: pointerEvent.pointerId,
+      startX: pointerEvent.clientX,
+      startY: pointerEvent.clientY,
+      startPlacement,
+      edges,
+      hasMoved: false,
+    }
+    pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId)
+    // Held down, a pointer would otherwise select the title it drags across.
+    pointerEvent.preventDefault()
+  }
+
+  const onPointerMove = (pointerEvent: React.PointerEvent<HTMLElement>) => {
+    const current = gesture.current
+    if (!current || current.pointerId !== pointerEvent.pointerId) return
+    const deltaX = pointerEvent.clientX - current.startX
+    const deltaY = pointerEvent.clientY - current.startY
+    if (!current.hasMoved) {
+      if (Math.abs(deltaX) < GESTURE_THRESHOLD && Math.abs(deltaY) < GESTURE_THRESHOLD) return
+      current.hasMoved = true
+      // From here on the box is placed by its custom properties rather than
+      // docked by the stylesheet; they start where it already is.
+      writePlacement(current.startPlacement)
+      setPlacement(current.startPlacement)
+      setIsRepositioning(true)
+    }
+    const next = current.edges
+      ? resizedPlacement(current.startPlacement, current.edges, deltaX, deltaY)
+      : clampPlacement({
+          ...current.startPlacement,
+          left: current.startPlacement.left + deltaX,
+          top: current.startPlacement.top + deltaY,
+        })
+    writePlacement(next)
+  }
+
+  const onPointerEnd = (pointerEvent: React.PointerEvent<HTMLElement>) => {
+    const current = gesture.current
+    if (!current || current.pointerId !== pointerEvent.pointerId) return
+    gesture.current = null
+    if (pointerEvent.currentTarget.hasPointerCapture(pointerEvent.pointerId)) {
+      pointerEvent.currentTarget.releasePointerCapture(pointerEvent.pointerId)
+    }
+    if (!current.hasMoved) return
+    setIsRepositioning(false)
+    const finished = livePlacement.current
+    if (!finished) return
+    setPlacement(finished)
+    rememberPlacement(finished)
+  }
+
+  const headProps = {
+    onPointerDown: (pointerEvent: React.PointerEvent<HTMLElement>) => {
+      if (isGestureExempt(pointerEvent.target)) return
+      begin(pointerEvent, null)
+    },
+    onPointerMove,
+    onPointerUp: onPointerEnd,
+    onPointerCancel: onPointerEnd,
+    // A double click on the bar puts the box back in its corner at its
+    // first size, and forgets where it was.
+    onDoubleClick: (mouseEvent: React.MouseEvent<HTMLElement>) => {
+      if (!isEnabled || isPhoneWidth() || isGestureExempt(mouseEvent.target)) return
+      livePlacement.current = null
+      setPlacement(null)
+      rememberPlacement(null)
+    },
+  }
+
+  const gripProps = (edges: ResizeEdges) => ({
+    onPointerDown: (pointerEvent: React.PointerEvent<HTMLElement>) => begin(pointerEvent, edges),
+    onPointerMove,
+    onPointerUp: onPointerEnd,
+    onPointerCancel: onPointerEnd,
+  })
+
+  const style = placement
+    ? ({
+        '--agent-drawer-left': `${placement.left}px`,
+        '--agent-drawer-top': `${placement.top}px`,
+        '--agent-drawer-width': `${placement.width}px`,
+        '--agent-drawer-height': `${placement.height}px`,
+      } as React.CSSProperties)
+    : undefined
+
+  return { placement, isRepositioning, boxElement, style, headProps, gripProps }
+}
+
 function formatBytes(size: number): string {
   if (size >= 1 << 20) return `${(size / (1 << 20)).toFixed(1)} MB`
   if (size >= 1 << 10) return `${Math.round(size / (1 << 10))} kB`
@@ -1143,6 +1412,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const { t } = useTranslation()
   const toast = useToast()
   const location = useLocation()
+  // Framed by the extension, the panel is the frame and is moved with it.
+  const chatBox = usePlacement(!standalone)
   const [available, setAvailable] = useState(false)
   const [agentName, setAgentName] = useState('')
   // What the box says before anybody types: the agent's own name where it
@@ -2550,9 +2821,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       )}
       {open && (
         <aside
-          className={['agent-drawer', dragging ? 'dragging' : '', standalone ? 'standalone' : '']
+          ref={chatBox.boxElement}
+          className={[
+            'agent-drawer',
+            dragging ? 'dragging' : '',
+            standalone ? 'standalone' : '',
+            chatBox.placement ? 'placed' : '',
+            chatBox.isRepositioning ? 'repositioning' : '',
+          ]
             .filter(Boolean)
             .join(' ')}
+          style={chatBox.style}
           aria-label={agentName || t('agent.title')}
           onDragOver={(event) => {
             if (event.dataTransfer.types.includes('Files')) {
@@ -2569,7 +2848,21 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             setDragging(false)
           }}
         >
-          <div className="agent-drawer-head">
+          {/* Grips for resizing on a wide window, for a pointer only: the
+              stylesheet hides them where the box takes the screen. */}
+          {!standalone &&
+            RESIZE_GRIPS.map((grip) => (
+              <div
+                key={grip.name}
+                className={`agent-drawer-grip ${grip.name}`}
+                aria-hidden="true"
+                {...chatBox.gripProps(grip.edges)}
+              />
+            ))}
+          <div
+            className={['agent-drawer-head', standalone ? '' : 'movable'].filter(Boolean).join(' ')}
+            {...chatBox.headProps}
+          >
             <button
               type="button"
               className="agent-drawer-conversation"
