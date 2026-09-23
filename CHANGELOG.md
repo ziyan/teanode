@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.53.1] - 2026-09-23
+
+### Fixed
+
+- Questions the agent puts to a decision service are answered by it again, using the model the configuration names. (#125)
+- Facts the agent files from documents keep the quote they came from far more often. (#125)
+
 ## [0.53.0] - 2026-09-23
 
 ### Added
