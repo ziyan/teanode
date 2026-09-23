@@ -16,10 +16,12 @@ settings:
     default: ""
 
 containers:
-  # The tool prints "Available spaces:" and then one "KEY - Name" line each.
+  # The tool prints "Available spaces:" and then one "KEY - Name" line each,
+  # and never more than 500 of them: a site with that many may have more,
+  # and a listing that may be short fails rather than dropping spaces.
   - command: [confluence, --profile, "{{settings.profile}}", spaces]
     parse: {lines: {pattern: "^(?P<key>[^ ]+) - (?P<name>.+)$"}}
-    paging: none
+    paging: {limit: {size: 500}}
     skip: "!({{settings.spaces | empty}} || {{item.key}} in {{settings.spaces}})"
     # Every space in one file, the name the export this replaces used, so a
     # source switched to this type keeps what it has read.
@@ -27,15 +29,16 @@ containers:
     fields: {space: "{{item.key}}", spaceName: "{{item.name}}"}
 
 records:
-  # The tool cannot page: it answers at most --limit results and says nothing
-  # of more. So a search is kept to a window of time small enough to come
-  # back short of the limit, and a window that comes back full fails the
-  # pass. After the first pass each search is only what changed since.
+  # The tool cannot page, and the site answers at most 250 however many are
+  # asked for. So a search is kept to a window of time small enough to come
+  # back short of that, and a window that comes back full fails the pass
+  # rather than passing for complete. After the first pass each search is
+  # only what changed since.
   - each: [page, blogpost]
-    command: [confluence, --profile, "{{settings.profile}}", search, --cql, "space = \"{{container.space}}\" and type = {{each}} and lastmodified >= \"{{pass.windowStart | date}}\" and lastmodified < \"{{pass.windowEnd | date}}\"", --limit, "1000"]
+    command: [confluence, --profile, "{{settings.profile}}", search, --cql, "space = \"{{container.space}}\" and type = {{each}} and lastmodified >= \"{{pass.windowStart | date}}\" and lastmodified < \"{{pass.windowEnd | date}}\"", --limit, "250"]
     parse: {lines: {pattern: "^\\d+\\. (?P<title>.+) \\(ID: (?P<id>\\d+)\\)$"}}
-    paging: {limit: {size: 1000}}
-    since: {first: "2000-01-01", window: 90d}
+    paging: {limit: {size: 250}}
+    since: {first: "2000-01-01", window: 30d}
     record:
       id: "confluence:{{each}}:{{item.id}}"
       kind: page
@@ -62,6 +65,10 @@ A page that is deleted is not seen by a search for what changed, so it stays unt
 ## Document identifiers
 
 Every space is the one file `confluence-pages.jsonl`, and a page is `confluence:page:<id>` or `confluence:blogpost:<id>` within it: the names the export this replaces used.
+
+## Limits
+
+The tool lists at most 500 spaces and a search answers at most 250 results with no way to ask for more, so a site with more than 500 spaces, or a space where more than 250 pages changed in one month (a bulk import), cannot be read completely with it. Such a site makes the pass fail, saying so, and nothing already read is deleted; read it by naming its spaces in `spaces`, or from an export.
 
 ## Checked against the tool
 

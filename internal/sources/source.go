@@ -292,7 +292,8 @@ func (self *Parsing) UnmarshalYAML(node *yaml.Node) error {
 
 // Paging is how a command or request is asked for the next page.
 type Paging struct {
-	// Kind is none, all, token or limit.
+	// Kind is none, all, token, limit or offset: token asks for the next
+	// page with what the answer said, offset with how many came before.
 	Kind  string
 	Field string
 	Flag  string
@@ -313,7 +314,7 @@ func (self *Paging) UnmarshalYAML(node *yaml.Node) error {
 		return err
 	}
 	if len(shaped) != 1 {
-		return fmt.Errorf("paging is one of none, all, token or limit")
+		return fmt.Errorf("paging is one of none, all, token, limit or offset")
 	}
 	for kind, shape := range shaped {
 		self.Kind, self.Field, self.Flag, self.Size = kind, shape.Field, shape.Flag, shape.Size
