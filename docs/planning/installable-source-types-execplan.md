@@ -18,6 +18,7 @@ and within a minute the source page shows messages being read, with no file crea
 
 - [x] (2026-09-23) Surveyed the skills system, the source model, the scan and records path, and the five records scripts in use; wrote this plan.
 - [x] (2026-09-23) Created `github.com/teanode/teanode-sources` with its own signing key and draft types for GitHub, GitLab, Mattermost, Confluence, Google Drive and Gmail, their field names and paging read from each tool; not yet runnable.
+- [x] (2026-09-23) Added `folder`, `journal` and `website` as types naming a built-in reader, and `rss` as the first type that makes a web request and can run on the server.
 - [ ] Milestone 1: prototype runner on the computer, driven by a local YAML file, no server change.
 - [ ] Milestone 2: the source type format as a package, parsed and validated like a skill.
 - [ ] Milestone 3: installing types and adding sources of a type, end to end, for one type.
@@ -49,9 +50,13 @@ and within a minute the source page shows messages being read, with no file crea
   Rationale: everything after the records (filing, attachments by hash, the sweep, embeddings) already works and is tested. Only the part that scripts do by hand moves into the program. The server sends the type's YAML and the source's settings with the scan request, so the computer needs no installation step and always runs what the server holds.
   Date/Author: 2026-09-23, agent.
 
-- Decision: folders stay a built-in type ("Files and code"), not a YAML type.
-  Rationale: git awareness, authorship ("is this checkout the person's work"), file readers and commit history are code, tuned over many passes, and are not a matter of calling a tool. The UI shows it as one type among the others so the person sees one list.
-  Date/Author: 2026-09-23, agent.
+- Decision: reading a folder, a journal and a website stays code built into TeaNode, but each is a type in the registry all the same: `folder`, `journal` and `website` say `reader: files`, `reader: journal` or `reader: web` and declare the settings that reader takes, with no commands.
+  Rationale: git awareness, authorship ("is this checkout the person's work"), file readers, commit history, following links and turning HTML into text are code, tuned over many passes, and not a matter of calling a tool. Declaring them as types means every source a person has is of a registry type, the add form is built from each type's settings the same way, and a reader's settings are described in one place. This replaces the earlier decision (same day) that folders stay outside the registry.
+  Date/Author: 2026-09-23, the person (folders in the registry), agent (as readers named by a type).
+
+- Decision: a type can make a web request wherever it can run a command, with `secrets` and `authenticationProfiles` as a skill has them, and says where it `runs`: on an attached computer, on the server, or either, chosen per source; left out, a computer.
+  Rationale: some services have a web API and no tool worth installing (a feed, a self-hosted service's REST API), and wrapping `curl` in a command would put a credential in a command line. A type that only makes requests needs no computer at all, and one whose service answers only inside a network sends its requests through a computer in it with the daemon's existing `http` action (`internal/computer/http.go`), as skills already do. A credential is sent only to a host written into the type or taken from a secret, the rule `internal/skills/skill.go` keeps (`settledHost`), except that a person's own secret may go to an address that person gave in the source's settings; an operator's never does.
+  Date/Author: 2026-09-23, agent, at the person's request.
 
 - Decision: completeness is the runner's job, not the type author's. A listing that fails, answers something unparsable, or may have been cut by a limit fails the pass; the runner never prints a partial listing.
   Rationale: the sweep deletes whatever a listing leaves out. Each script had to remember this and one did not. Moving the rule into the runner makes it impossible to forget.
@@ -141,6 +146,8 @@ Milestone 1 is a prototype that proves a declarative runner can read real tools 
 
 Milestone 2 turns the prototype's struct into a package, `internal/sources`, beside `internal/skills`: `Parse(content []byte) (*Type, error)` reading the YAML header, and validation modelled on `internal/skills/skill.go` (`validate`, `checkReference`, `checkScripted`): commands are word lists, every `{{...}}` names a declared setting, a container field or an item field, no reference sits inside a `sh -c` script, `paging` and `parse` are one of the known shapes, and each setting has a type. Unit tests cover each refusal with a small invented type. The daemon imports the package so the server and the computer agree on what a type means.
 
+Milestone 2 also covers the rest of the format: `reader` (a type naming a built-in reader is only its settings, checked against what that reader takes), `request` in place of `command` (validated as `internal/skills/skill.go` validates an http step, including `settledHost`), `secrets` and `authenticationProfiles` (the shapes `internal/skills` already parses, reused rather than copied), `runs`, and `xml` beside `json` in `parse`.
+
 Milestone 3 wires one type end to end. Add a migration creating `agent_source_type` (name, version, publisher, url, sha256, local flag, content, timestamps), and add to the source's specification a `type` (the type's name) and `settings` (a map), with `format: typed`. `internal/agent/ingest_computer.go` sends the type's content and the source's settings in `ScanArguments` when the format is `typed`, and `RunScan` hands them to the runner from Milestone 1. Types come from their own registry, `https://raw.githubusercontent.com/teanode/teanode-sources/main/index.json`: `internal/skills/registry.go`'s index fetch, download and signature check are made to take the index address and the public key as parameters so both registries use them, the sources key built in from `internal/sources/keys/teanode-sources-ed25519-public.pem`, and install stores the file in `agent_source_type`. The repository exists (created 2026-09-23 with the tooling of `teanode-skills` and a key of its own) and holds the draft types this plan describes; each is added to its index, signed, once Milestone 4 has run it. API: `ListAgentSourceTypes`, `InstallAgentSourceType`, `AddLocalAgentSourceType` (needs `server:manage`), `RemoveAgentSourceType`, and `SaveAgentKnowledgeSource` accepting `type` and `settings`, validating settings against the type. CLI: `teanode agent source-type list|search|install|add-local|remove`, and `teanode agent knowledge add --type <name> --setting k=v`. Acceptance: install the Gmail type as a local type, add a source of it pointed at an attached computer, and see documents filed; pausing and removing it behave as for any source.
 
 Milestone 4 writes the types that replace the scripts, one at a time, each checked before its source is switched. For each, run `teanode agent knowledge try <source> --type <name> --setting ...`, a dry run that asks the source's computer to run the type and reports how many of the identifiers it produces the existing source already holds, and how many it holds that the type did not produce. A switch goes ahead only when the two agree (a handful of differences explained, not thousands). The types, each named for the service and calling a public command line tool where one exists:
@@ -148,6 +155,8 @@ Milestone 4 writes the types that replace the scripts, one at a time, each check
 A code host's issues and pull requests with `gh` (repositories the account owns plus named organizations, each organization a listing so that one failing fails the pass). A self-hosted code host with `glab`, run on whichever computer can reach it, which is the reason the computer is chosen per source. A team chat server with its command line tool: channels as containers, posts since the last pass, threads as the record's thread, files as attachments. A wiki with its command line tool: spaces as containers, pages found by query with a limit that fails when full, each page's text from a detail command in markdown. A cloud drive with `gog`: folders as containers, walked by a listing that follows child folders, each file a record, native documents exported through the detail command and other files fetched as attachments. Gmail as in the example above.
 
 Two things the scripts do that a type should not have to: reading a video attachment (describing it and sampling frames) and grouping chat records by thread. The first moves into the daemon's attachment readers in `internal/computer/scan_records.go`, available to every type; the second already happens there for records of kind `chat`.
+
+The existing sources that read folders are switched to the `folder` and `journal` types in Milestone 4 as well: their specification becomes `type: folder` with the same settings, which changes nothing they read, since the reader and the document identifiers are the same. A source of a type that `runs` on the server is read by a new path in `internal/agent/ingest.go` that runs the type's requests itself, with no computer; secrets for a type are kept as a skill's are, in a table like `agent_skill_secret` (`agent_source_type_secret`), encrypted with the server's secret. The `website` type's reader, never built, is its own piece of work after this plan; until then the type installs but cannot be read, and says so.
 
 Milestone 5 is the dashboard. Settings gets a "Source types" section beside Skills, listing installed and local types with install, update and remove. The Knowledge page's add dialog starts with the type (Files and code, Journal, and each installed type), then shows that type's settings as a form, the computer to run it on, and where in memory to file it. A source's card shows its type, its computer and its settings, and editing a setting starts a new pass.
 
@@ -182,12 +191,14 @@ In `internal/sources/source.go`:
 
     type Type struct {
         Name, Description string
+        Reader            string   // "files", "journal", "web", or empty for a type of calls
+        Runs              []string // "computer", "server"
         Requires          []string
         Settings          []Setting
+        Secrets           []skills.Secret
+        Profiles          map[string]skills.Profile
         Containers        []Listing
-        Records           Reading
-        Detail            *Detail
-        Attachments       *Fetch
+        Records           []Reading
     }
 
     func Parse(content []byte) (*Type, error)
@@ -198,5 +209,7 @@ In `internal/computer/scan_typed.go`:
     func runTyped(ctx context.Context, options *Options, arguments *ScanArguments) (*ScanResult, error)
 
 `ScanArguments` gains `TypeContent string` and `Settings map[string]string`, sent only when `Format` is `typed`. No new third-party libraries: YAML parsing uses the library `internal/skills` already uses.
+
+Revision note (2026-09-23, later): folders, journals and websites are types in the registry too, each naming a reader built into TeaNode; a type can make web requests with secrets, and can run on the server.
 
 Revision note (2026-09-23): source types have a registry of their own, `github.com/teanode/teanode-sources`, instead of a `sources/` directory in the skills registry, and a signing key of their own, both at the person's request. The repository now exists with draft types.
