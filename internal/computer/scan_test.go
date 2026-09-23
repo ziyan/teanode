@@ -25,10 +25,7 @@ func scanIn(t *testing.T, files map[string]string, arguments *ScanArguments) *Sc
 			t.Fatalf("WriteFile: %s", err)
 		}
 	}
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 	if arguments == nil {
 		arguments = &ScanArguments{}
 	}
@@ -38,46 +35,6 @@ func scanIn(t *testing.T, files map[string]string, arguments *ScanArguments) *Sc
 		t.Fatalf("RunScan: %s", err)
 	}
 	return result
-}
-
-// A scan refuses a directory the person has not allowed. This is what
-// lets a scan run with nobody watching: the list of what may be read is
-// held here, not by whoever is on the other end of the socket.
-func TestAScanOnlyReadsWhatWasAllowed(t *testing.T) {
-	home := t.TempDir()
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-
-	if _, err := RunScan(context.Background(), options, &ScanArguments{Root: home}); err == nil {
-		t.Fatalf("a computer with nothing allowed scans nothing")
-	}
-
-	allowed := t.TempDir()
-	if _, err := AllowScanRoot(options, allowed); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
-	if _, err := RunScan(context.Background(), options, &ScanArguments{Root: allowed}); err != nil {
-		t.Fatalf("an allowed directory is read: %s", err)
-	}
-	// Still not the home directory, nor anything outside.
-	if _, err := RunScan(context.Background(), options, &ScanArguments{Root: home}); err == nil {
-		t.Fatalf("a directory outside the allowed ones is refused")
-	}
-	// A directory under an allowed one is allowed, which is what makes
-	// one entry cover a tree.
-	inside := filepath.Join(allowed, "inside")
-	if err := os.MkdirAll(inside, 0o755); err != nil {
-		t.Fatalf("MkdirAll: %s", err)
-	}
-	if _, err := RunScan(context.Background(), options, &ScanArguments{Root: inside}); err != nil {
-		t.Fatalf("a directory under an allowed one is read: %s", err)
-	}
-	// And forgetting it takes it away again.
-	if err := ForgetScanRoot(options, allowed); err != nil {
-		t.Fatalf("ForgetScanRoot: %s", err)
-	}
-	if _, err := RunScan(context.Background(), options, &ScanArguments{Root: allowed}); err == nil {
-		t.Fatalf("a directory no longer allowed is refused")
-	}
 }
 
 // A person's own archive is read whole.
@@ -341,38 +298,6 @@ func TestAJournalCarriesTheDayItIsAbout(t *testing.T) {
 	}
 }
 
-// The allowed roots are a file the person owns, readable and editable by
-// hand, and nothing else can be scanned.
-func TestTheAllowedRootsAreAPlainFile(t *testing.T) {
-	home := t.TempDir()
-	file := filepath.Join(home, "roots.json")
-	options := &Options{Home: home, ScanRootsFile: file}
-	first, second := t.TempDir(), t.TempDir()
-	for _, root := range []string{first, second, first} { // twice is once
-		if _, err := AllowScanRoot(options, root); err != nil {
-			t.Fatalf("AllowScanRoot: %s", err)
-		}
-	}
-	roots, err := ListScanRoots(options)
-	if err != nil {
-		t.Fatalf("ListScanRoots: %s", err)
-	}
-	if len(roots) != 2 {
-		t.Fatalf("two roots, allowed once each: %v", roots)
-	}
-	content, err := os.ReadFile(file)
-	if err != nil {
-		t.Fatalf("the list is a file they can read: %s", err)
-	}
-	var written allowedRoots
-	if err := json.Unmarshal(content, &written); err != nil {
-		t.Fatalf("and it is JSON: %s", err)
-	}
-	if information, err := os.Stat(file); err != nil || information.Mode().Perm() != 0o600 {
-		t.Fatalf("readable by them alone: %v %s", information.Mode(), err)
-	}
-}
-
 // A page of a scan is bounded by bytes as well as by count.
 //
 // Found in the first real ingest: 256 source files came to tens of
@@ -439,10 +364,7 @@ func TestScanFilesACommitUnderItsHash(t *testing.T) {
 		run("git", "commit", "-q", "-m", fmt.Sprintf("the %d change", index))
 	}
 
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 	result, err := RunScan(context.Background(), options, &ScanArguments{Root: root})
 	if err != nil {
 		t.Fatalf("RunScan: %s", err)
@@ -510,10 +432,7 @@ func TestScanOffersEveryRepositoryInTheTree(t *testing.T) {
 	makeRepository(filepath.Join(root, "portal"), "main.go")
 	makeRepository(filepath.Join(root, "latch"), "arm.py")
 
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 	result, err := RunScan(context.Background(), options, &ScanArguments{Root: root})
 	if err != nil {
 		t.Fatalf("RunScan: %s", err)
@@ -605,10 +524,7 @@ func TestScanProfileListsTheTopLevelDirectories(t *testing.T) {
 			t.Skipf("git is not usable here: %s: %s", err, output)
 		}
 	}
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 	result, err := RunScan(context.Background(), options, &ScanArguments{Root: root})
 	if err != nil {
 		t.Fatalf("RunScan: %s", err)
@@ -703,23 +619,20 @@ func TestAnEmptyKnownMapIsHeldForThePass(t *testing.T) {
 	}
 }
 
-// The probe answers whether a root may be scanned and reads nothing: an
-// allowed root gets an empty page, one not allowed the refusal to act on.
-func TestTheProbeAsksOnlyWhetherARootIsAllowed(t *testing.T) {
+// The probe answers whether a root can be scanned and reads nothing: a
+// folder that is there gets an empty page, one that is not an error.
+func TestTheProbeAsksOnlyWhetherARootIsThere(t *testing.T) {
 	home := t.TempDir()
 	root := filepath.Join(home, "records")
 	if err := os.Mkdir(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 	if result, err := RunScan(t.Context(), options, &ScanArguments{Root: root, Format: FormatProbe}); err != nil || len(result.Entries) != 0 {
-		t.Fatalf("an allowed root probes to an empty page: %v, %v", result, err)
+		t.Fatalf("a folder that is there probes to an empty page: %v, %v", result, err)
 	}
-	if _, err := RunScan(t.Context(), options, &ScanArguments{Root: t.TempDir(), Format: FormatProbe}); err == nil || !strings.Contains(err.Error(), "allowed for scanning") {
-		t.Fatalf("a root not allowed probes to the refusal: %v", err)
+	if _, err := RunScan(t.Context(), options, &ScanArguments{Root: filepath.Join(home, "missing"), Format: FormatProbe}); err == nil {
+		t.Fatal("a folder that is not there probes to an error")
 	}
 }
 
@@ -785,10 +698,7 @@ func runGitAs(t *testing.T, where, address string, arguments ...string) {
 func filesOfScan(t *testing.T, root string) map[string]bool {
 	t.Helper()
 	home := t.TempDir()
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 	offered := map[string]bool{}
 	after := ""
 	for page := 0; page < 50; page++ {
@@ -934,10 +844,7 @@ func TestANestedCheckoutIsOfferedOnce(t *testing.T) {
 	}
 
 	home := t.TempDir()
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 	result, err := RunScan(context.Background(), options, &ScanArguments{Root: root})
 	if err != nil {
 		t.Fatalf("RunScan: %s", err)
@@ -1059,10 +966,7 @@ func TestTheIgnoredDirectoriesAreMatchedBySegment(t *testing.T) {
 func scanOfTree(t *testing.T, root string, arguments *ScanArguments) (map[string]bool, map[string]*RepositoryProfile, *ScanResult) {
 	t.Helper()
 	home := t.TempDir()
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 	arguments.Root = root
 	result, err := RunScan(context.Background(), options, arguments)
 	if err != nil {
@@ -1202,10 +1106,7 @@ func TestACheckoutsProfileIsOfferedOnceAPass(t *testing.T) {
 	checkoutWith(t, filepath.Join(root, "checkouts", "latch"), map[string]string{"main.go": "package main\n"})
 
 	home := t.TempDir()
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 	profilesOn := map[int]int{}
 	pages, after := 0, ""
 	for page := range 50 {
@@ -1290,10 +1191,7 @@ func passOverTree(t *testing.T, root string, arguments *ScanArguments) ([]ScanEn
 func passOverTreeFrom(t *testing.T, root string, arguments *ScanArguments, after string) ([]ScanEntry, int) {
 	t.Helper()
 	home := t.TempDir()
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 	var offered []ScanEntry
 	for page := range 200 {
 		asked := *arguments
@@ -1451,10 +1349,7 @@ func TestTheCommitsOfAPassAreOfferedByTheNextOne(t *testing.T) {
 func TestTheHistoryComesWithTheFilesAndNotAfterThem(t *testing.T) {
 	root := treeOfFilesAndHistory(t, 60, 5)
 	home := t.TempDir()
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 	var offered []ScanEntry
 	after := ""
 	for range 3 {
@@ -1776,10 +1671,7 @@ func TestAFileDeletedBetweenPagesDoesNotEndThePass(t *testing.T) {
 			t.Fatalf("WriteFile: %s", err)
 		}
 	}
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 
 	seen := map[string]int{}
 	after, deleted := "", ""

@@ -3,6 +3,7 @@ package computer
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -153,8 +154,7 @@ const KindAttachment = "attachment"
 
 // ScanArguments is what the server asks for.
 type ScanArguments struct {
-	// Root is the directory to read. It must be one the person allowed on
-	// this machine; anything else is refused here.
+	// Root is the directory to read.
 	Root string `json:"root"`
 
 	// Format is how to read it: files (the default), journal, records.
@@ -319,7 +319,7 @@ type ScanResult struct {
 	// page of that pass.
 	//
 	// Reported rather than silent: this is the program declining to read
-	// something the person allowed it to read, and a person who disagrees
+	// something the person asked it to read, and a person who disagrees
 	// has to be able to see it first.
 	CheckoutsKeptToProfile int `json:"checkoutsKeptToProfile,omitempty"`
 	FilesKeptToProfile     int `json:"filesKeptToProfile,omitempty"`
@@ -373,7 +373,7 @@ type ScanAuthor struct {
 // RunScan reads a tree and answers with a page of what it found.
 func RunScan(ctx context.Context, options *Options, arguments *ScanArguments) (*ScanResult, error) {
 	options = withDefaults(options)
-	root, err := allowedRoot(options, arguments.Root)
+	root, err := scanRoot(options, arguments.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -388,6 +388,13 @@ func RunScan(ctx context.Context, options *Options, arguments *ScanArguments) (*
 	}
 	switch strings.ToLower(strings.TrimSpace(arguments.Format)) {
 	case FormatProbe:
+		information, err := os.Stat(root)
+		if err != nil {
+			return nil, err
+		}
+		if !information.IsDir() {
+			return nil, fmt.Errorf("%s is not a directory", root)
+		}
 		return &ScanResult{}, nil
 	case "", FormatFiles:
 		return scanFiles(ctx, root, arguments, most)
@@ -411,9 +418,9 @@ const (
 	// another reader being written and released.
 	FormatRecords = "records"
 
-	// FormatProbe asks only whether the root may be scanned here: the
-	// answer is an empty page, or the refusal the person has to act on.
-	// Sent before a source is made, so that "allow it first" is said at
-	// once rather than found in the source's error a minute later.
+	// FormatProbe asks only whether the root can be scanned here: the
+	// answer is an empty page, or why not. Sent before a source is made,
+	// so that a missing folder is said at once rather than found in the
+	// source's error a minute later.
 	FormatProbe = "probe"
 )

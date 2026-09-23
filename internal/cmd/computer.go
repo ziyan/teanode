@@ -65,75 +65,8 @@ func NewComputerCommand() *cli.Command {
 				Usage:  "end the program running in the background",
 				Action: runComputerStop,
 			},
-			{
-				Name:      "allow",
-				Usage:     "let your agent index a directory here, even when you are not in a conversation",
-				ArgsUsage: "<directory>",
-				Description: "Indexing happens with nobody watching, so what may be read is settled here rather than\n" +
-					"by the server: a directory has to be allowed on this machine before any scan of it will\n" +
-					"run, and the list lives beside your profile. Reading is all it does; nothing is written\n" +
-					"and no command is run. Secrets are refused here, before anything is sent.",
-				Action: runComputerAllow,
-			},
-			{
-				Name:      "forget",
-				Usage:     "stop letting your agent index a directory here",
-				ArgsUsage: "<directory>",
-				Action:    runComputerForget,
-			},
-			{
-				Name:   "allowed",
-				Usage:  "the directories your agent may index here",
-				Action: runComputerAllowed,
-			},
 		},
 	}
-}
-
-// runComputerAllow adds a directory to what this machine will let the
-// agent index.
-//
-// On this machine rather than on the server, because a scan runs while
-// nobody is watching: every other action the agent takes here happens in
-// a conversation the person is in, and confirms what matters. See
-// internal/computer/scan.go.
-func runComputerAllow(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() < 1 {
-		return fmt.Errorf("which directory? teanode computer allow ~/projects")
-	}
-	allowed, err := computer.AllowScanRoot(&computer.Options{}, command.Args().First())
-	if err != nil {
-		return err
-	}
-	_, _ = fmt.Fprintf(command.Writer, "%s may be indexed by your agent.\n", allowed)
-	_, _ = fmt.Fprintln(command.Writer, "Reading only: nothing is written there, and no command is run but a records folder's own refresh script.")
-	return nil
-}
-
-func runComputerForget(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() < 1 {
-		return fmt.Errorf("which directory? teanode computer allowed")
-	}
-	if err := computer.ForgetScanRoot(&computer.Options{}, command.Args().First()); err != nil {
-		return err
-	}
-	_, _ = fmt.Fprintf(command.Writer, "%s will not be indexed.\n", command.Args().First())
-	return nil
-}
-
-func runComputerAllowed(ctx context.Context, command *cli.Command) error {
-	roots, err := computer.ListScanRoots(&computer.Options{})
-	if err != nil {
-		return err
-	}
-	if len(roots) == 0 {
-		_, _ = fmt.Fprintln(command.Writer, "nothing here may be indexed. teanode computer allow ~/projects")
-		return nil
-	}
-	for _, root := range roots {
-		_, _ = fmt.Fprintln(command.Writer, root)
-	}
-	return nil
 }
 
 // computerFiles are where the background program keeps its pid and its

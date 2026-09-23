@@ -670,6 +670,14 @@ func (self *AskRun) turn() error {
 			self.offered = append(self.offered, tool)
 		}
 	}
+	// A tool the conversation has already called stays in the round. The
+	// model reads that call in the history and takes the tool to be there
+	// still; when it had gone back behind tool_search, the model reached
+	// for whatever tool it could see instead, and went on doing it however
+	// often the person pointed out the mistake.
+	for name := range calledIn(history) {
+		self.loaded[name] = true
+	}
 	// The skills an operator installed, which everybody is offered, and
 	// which are in the round from the start: somebody chose to install
 	// each of them, and a tool that has to be searched for is one the
@@ -1585,4 +1593,15 @@ func (self *AskRun) Recall(line string) {
 	if len(self.recalled) > recallBlocks {
 		self.recalled = self.recalled[len(self.recalled)-recallBlocks:]
 	}
+}
+
+// calledIn is the names of the tools a history called.
+func calledIn(history []llm.ChatMessage) map[string]bool {
+	called := map[string]bool{}
+	for _, message := range history {
+		for _, call := range message.ToolCalls {
+			called[call.Name] = true
+		}
+	}
+	return called
 }

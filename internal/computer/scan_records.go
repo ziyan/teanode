@@ -136,12 +136,7 @@ type record struct {
 }
 
 // recordsFolder is the folder a pass is reading and the bounds it reads
-// under: where it is, what this machine allows to be read out of it, and
-// how large a file a record came with may be.
-//
-// The parser takes it because an attachment is a path somebody's script
-// wrote, and what a path may reach is not something a line of JSON gets
-// to decide.
+// under: where it is, and how large a file a record came with may be.
 type recordsFolder struct {
 	options            *Options
 	root               string
@@ -288,7 +283,7 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 				return result, nil
 			}
 			// A file a record came with that this program will not hand
-			// over -- too large, or somewhere the person never allowed --
+			// over -- too large, or not there any more --
 			// is one entry saying so, counted the way the walk counts a
 			// file it refused, so the source's page can show what was
 			// passed over rather than leaving the person to wonder.
@@ -596,11 +591,9 @@ var recordsCache struct {
 // failure is the scan's failure, so the source's page says why.
 //
 // This is the one thing this program runs with nobody watching, which is
-// why the checks below are what they are. The person allowed the folder
-// by hand with `teanode computer allow`, and that grant is the consent
-// for what the folder holds; the checks are there so that what runs is
-// what they allowed and not something another account, or a link out of
-// the folder, put in its place.
+// why the checks below are what they are: what runs is what the person
+// put in the folder, not something another account, or a link out of the
+// folder, put in its place.
 func refreshRecords(root string) error {
 	path, err := runnableScript(root, refreshScript)
 	if err != nil {
@@ -649,13 +642,11 @@ func refreshRecords(root string) error {
 // folder has none, and an error where something is there that this
 // program will not run.
 //
-// The checks are the consent. The person allowed the folder by hand with
-// `teanode computer allow`, and a scan is the one thing this program
-// does with nobody watching, so what runs has to be what they put there:
-// Lstat rather than Stat, because a symlink is refused rather than
-// followed and a link dropped in the folder cannot make this run a
-// program from somewhere they never allowed; a regular file, executable
-// by its owner, and owned by this account.
+// A scan is the one thing this program does with nobody watching, so
+// what runs has to be what the person put there: Lstat rather than Stat,
+// because a symlink is refused rather than followed and a link dropped
+// in the folder cannot make this run a program from somewhere else; a
+// regular file, executable by its owner, and owned by this account.
 func runnableScript(root, name string) (string, error) {
 	path := filepath.Join(root, name)
 	information, err := os.Lstat(path)
@@ -1031,14 +1022,8 @@ func (self *recordsFolder) attachmentMetadata(path, name, contentType string, on
 }
 
 // attachmentFile is where a record says its file is, and how large it is:
-// relative to the records folder unless it is absolute, and then only
-// where the person allowed this program to read.
-//
-// Nothing about a folder of records makes what it names safe. The script
-// that wrote them is somebody's and the archive it read is somebody
-// else's, so the roots are checked here exactly as they are checked for
-// the folder itself, and a link out of the folder is followed to where it
-// really goes before they are.
+// relative to the records folder unless it is absolute, and followed
+// through any link to where it really is.
 func (self *recordsFolder) attachmentFile(said string) (string, int64, error) {
 	said = strings.TrimSpace(said)
 	if said == "" {
@@ -1050,7 +1035,7 @@ func (self *recordsFolder) attachmentFile(said string) (string, int64, error) {
 	} else {
 		path = filepath.Join(self.root, path)
 	}
-	path, err := allowedFile(self.options, path)
+	path, err := scanFile(self.options, path)
 	if err != nil {
 		return "", 0, err
 	}
@@ -1082,8 +1067,8 @@ func hashOfFile(path string) (string, int64, error) {
 }
 
 // refusalOf is why a file was passed over, in the words the source's page
-// shows. A path the person never allowed says so in its own words;
-// anything else reads the way an unreadable file does.
+// shows. A refusal says so in its own words; anything else reads the way
+// an unreadable file does.
 func refusalOf(err error) string {
 	var refused *RefusedError
 	if errors.As(err, &refused) {

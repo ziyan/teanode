@@ -22,9 +22,8 @@ import (
 // those bytes, and only what it does not have is asked for here, one file
 // to a request.
 //
-// It runs with nobody watching, like the scan, so it settles what it may
-// reach the same way: the directories the person allowed on this machine,
-// with every link followed before they are checked. It also refuses to
+// It runs with nobody watching, like the scan, and follows every link to
+// where the file really is. It refuses to
 // hand over a file whose contents no longer hash to what was asked for,
 // because between the scan and this request the file may have been
 // replaced, and answering with the new bytes would file them under the
@@ -68,7 +67,7 @@ func RunBlob(options *Options, arguments *BlobArguments) (*BlobResult, error) {
 		// at a path, which is not what this action is for.
 		return nil, fmt.Errorf("the file's hash is needed to hand its bytes over")
 	}
-	path, err := allowedFile(options, arguments.Path)
+	path, err := scanFile(options, arguments.Path)
 	if err != nil {
 		return nil, err
 	}

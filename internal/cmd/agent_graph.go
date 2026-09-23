@@ -1017,9 +1017,6 @@ func runKnowledgeAdd(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(source)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "indexing %s as %q; the first pass starts within the minute\n", command.Args().Get(1), source.Name)
-	if source.Kind == "computer" || source.Kind == "archive" {
-		_, _ = fmt.Fprintf(command.Writer, "on that computer, allow it first: teanode computer allow %s\n", command.Args().Get(1))
-	}
 	// A records folder is empty until something fills it, and a person who
 	// adds one and waits for documents that never come has no way of
 	// knowing that from the source's page. Say here what has to happen

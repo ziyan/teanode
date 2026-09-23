@@ -10,14 +10,11 @@ import (
 	"time"
 )
 
-// allowing makes a computer whose one allowed root is this one.
-func allowing(t *testing.T, root string) *Options {
+// scanOptions is the options a test scans with.
+func scanOptions(t testing.TB) *Options {
 	t.Helper()
 	home := t.TempDir()
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 	return options
 }
 
@@ -66,7 +63,7 @@ func treeOfNotes(t *testing.T, notes int) string {
 // deletes whatever the pass did not name.
 func TestThePagesOfOnePassSeeOneTree(t *testing.T) {
 	root := treeOfNotes(t, 8)
-	options := allowing(t, root)
+	options := scanOptions(t)
 	forgetManifests()
 
 	first, err := RunScan(t.Context(), options, &ScanArguments{
@@ -120,7 +117,7 @@ func TestThePagesOfOnePassSeeOneTree(t *testing.T) {
 // which an older one that names no pass at all effectively does.
 func TestANewPassSeesTheTreeAsItIsNow(t *testing.T) {
 	root := treeOfNotes(t, 4)
-	options := allowing(t, root)
+	options := scanOptions(t)
 	forgetManifests()
 
 	if _, err := RunScan(t.Context(), options, &ScanArguments{
@@ -167,7 +164,7 @@ func TestAPassResumedAfterARestartOffersTheSameSet(t *testing.T) {
 
 	// The same pass again, with everything the daemon holds thrown away
 	// between every page of it.
-	options := allowing(t, root)
+	options := scanOptions(t)
 	forgetManifests()
 	var resumed []ScanEntry
 	after := ""
@@ -211,7 +208,7 @@ func TestOnePassesManifestIsNotLentToAnother(t *testing.T) {
 		writeFileIn(t, root, fmt.Sprintf("note%02d.txt", index), "a sentence about the work.\n")
 		writeFileIn(t, root, fmt.Sprintf("page%02d.md", index), "a sentence about the work.\n")
 	}
-	options := allowing(t, root)
+	options := scanOptions(t)
 	forgetManifests()
 
 	notes := &ScanArguments{Root: root, KnownID: "the-notes", Known: map[string]string{},
@@ -263,12 +260,7 @@ func TestTwoTreesKeepTheirOwnManifests(t *testing.T) {
 	writeFileIn(t, first, "one.txt", "the first tree.\n")
 	writeFileIn(t, second, "two.txt", "the second tree.\n")
 	home := t.TempDir()
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	for _, root := range []string{first, second} {
-		if _, err := AllowScanRoot(options, root); err != nil {
-			t.Fatalf("AllowScanRoot: %s", err)
-		}
-	}
+	options := &Options{Home: home}
 	for _, tree := range []struct{ root, wanted string }{{first, "one.txt"}, {second, "two.txt"}} {
 		result, err := RunScan(t.Context(), options, &ScanArguments{
 			Root: tree.root, KnownID: "pass-1", Known: map[string]string{}})
@@ -328,10 +320,7 @@ func TestTheManifestsHeldAreBoundedAndReleased(t *testing.T) {
 func BenchmarkAPassOverATreeOfCheckouts(b *testing.B) {
 	root := benchmarkTree(b, 200, 20)
 	home := b.TempDir()
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		b.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 	for _, shape := range []struct {
 		name      string
 		perPage   bool
@@ -398,29 +387,5 @@ func gitIn(b *testing.B, where string, arguments ...string) {
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	if output, err := command.CombinedOutput(); err != nil {
 		b.Skipf("git is not usable here: %s: %s", err, output)
-	}
-}
-
-// A cached manifest carries file names, never permission to keep reading them.
-func TestAResumedScanRefusesAForgottenRoot(test *testing.T) {
-	root := treeOfNotes(test, 4)
-	options := allowing(test, root)
-	firstPage, err := RunScan(test.Context(), options, &ScanArguments{
-		Root: root, KnownID: "revoked-pass", Known: map[string]string{}, Most: 1,
-	})
-	if err != nil {
-		test.Fatal(err)
-	}
-	if firstPage.Next == "" || len(firstPage.Entries) == 0 {
-		test.Fatal("expected a file and a continuation before removing permission")
-	}
-	if err := ForgetScanRoot(options, root); err != nil {
-		test.Fatal(err)
-	}
-	resumedPage, err := RunScan(test.Context(), options, &ScanArguments{
-		Root: root, KnownID: "revoked-pass", After: firstPage.Next, Most: 1,
-	})
-	if err == nil || resumedPage != nil {
-		test.Fatalf("resuming a forgotten root returned page %v and error %v", resumedPage, err)
 	}
 }

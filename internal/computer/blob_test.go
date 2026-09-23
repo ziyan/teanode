@@ -10,24 +10,18 @@ import (
 	"testing"
 )
 
-// allowedFolder is a directory this program may scan, and the options to
-// reach it with.
-func allowedFolder(t *testing.T) (string, *Options) {
+// scanFolder is a directory to scan, and the options to reach it with.
+func scanFolder(t *testing.T) (string, *Options) {
 	t.Helper()
 	root, home := t.TempDir(), t.TempDir()
-	options := &Options{Home: home, ScanRootsFile: filepath.Join(home, "roots.json")}
-	if _, err := AllowScanRoot(options, root); err != nil {
-		t.Fatalf("AllowScanRoot: %s", err)
-	}
+	options := &Options{Home: home}
 	return root, options
 }
 
 // The bytes of a file a scan found, asked for one file at a time because
-// a page of a scan could not carry them. It is the same guard as the
-// scan's: the directories the person allowed, and the size the server
-// said.
+// a page of a scan could not carry them, within the size the server said.
 func TestBlobHandsOverOneFileAndChecksItIsStillTheSame(t *testing.T) {
-	root, options := allowedFolder(t)
+	root, options := scanFolder(t)
 	picture := []byte("\x89PNG\r\n\x1a\na screenshot")
 	path := filepath.Join(root, "shot.png")
 	if err := os.WriteFile(path, picture, 0o644); err != nil {
@@ -65,26 +59,16 @@ func TestBlobHandsOverOneFileAndChecksItIsStillTheSame(t *testing.T) {
 	}
 }
 
-// The same refusals the scan makes: somewhere the person never allowed,
-// and anything above the bound the server asked under.
+// The same bound the scan keeps: anything above the size the server asked
+// under is refused.
 func TestBlobRefusesWhatAScanWouldRefuse(t *testing.T) {
-	root, options := allowedFolder(t)
-	elsewhere := t.TempDir()
-	outside := filepath.Join(elsewhere, "id_rsa")
-	if err := os.WriteFile(outside, []byte("nobody allowed this"), 0o600); err != nil {
-		t.Fatalf("WriteFile: %s", err)
-	}
-	sum := sha256.Sum256([]byte("nobody allowed this"))
-	if _, err := RunBlob(options, &BlobArguments{Path: outside, Hash: hex.EncodeToString(sum[:])}); err == nil {
-		t.Fatal("a file outside the allowed directories was handed over")
-	}
-
+	root, options := scanFolder(t)
 	large := strings.Repeat("x", 4096)
 	path := filepath.Join(root, "video.mp4")
 	if err := os.WriteFile(path, []byte(large), 0o644); err != nil {
 		t.Fatalf("WriteFile: %s", err)
 	}
-	sum = sha256.Sum256([]byte(large))
+	sum := sha256.Sum256([]byte(large))
 	hash := hex.EncodeToString(sum[:])
 	if _, err := RunBlob(options, &BlobArguments{Path: path, Hash: hash, MaxBytes: 1024}); err == nil {
 		t.Fatal("a file over the bound was handed over")

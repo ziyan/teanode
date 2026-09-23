@@ -2646,8 +2646,6 @@ export const ja: Catalog = {
   'agent.knowledgeUnderHint': 'グラフ内のページ（たとえば projects）。空のままならエージェントが置き場所を決めます。',
   'agent.knowledgeCron': 'どのくらいの頻度で読むか（cron 形式）',
   'agent.knowledgeCronHint': '5 つのフィールド、あなたのタイムゾーンで。空のままなら毎晩 1 回読みます。',
-  'agent.knowledgeAllowFirst':
-    'まずそのコンピューターで許可してください：teanode computer allow {path}。それまで何も読まれません。',
   'agent.knowledgeUnknownAuthors':
     'ここのコミットは {names} によるもので、どれもあなたではありません。あなたの仕事として数えられません。',
   'agent.knowledgeWhichIsYou': 'どの連絡先があなたかを指定する',

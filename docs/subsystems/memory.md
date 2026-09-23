@@ -301,8 +301,7 @@ keeps its ids keeps its documents.
 A record may also name the files it came with, in an `attachments` list of
 `{"path", "name", "contentType", "text"}` — a picture pasted into a
 thread, a document sent with a message. The path is relative to the
-records folder unless it is absolute, and is refused if it leads outside
-the directories allowed on that computer. Each attachment becomes a
+records folder unless it is absolute. Each attachment becomes a
 document of its own, of kind `attachment`, identified by the hash of its
 bytes rather than by where it sits, so the same screenshot pasted into
 four threads is one document. The daemon hashes and measures it, the
@@ -403,9 +402,8 @@ the cursor stands on — as the person, with the folder as the working
 directory, in their own environment, with thirty minutes (the server
 waits thirty-five for that first page). Each must be a regular file, not
 a symlink, executable by its owner and owned by that account: a scan is
-the one thing this program does with nobody watching, and the folder
-having been allowed by hand with `teanode computer allow` is the consent
-for what is in it.
+the one thing this program does with nobody watching, so what runs is
+what the person put there, not something another account left.
 
 The agent writes these scripts. The knowledge tool's `shape` action is
 the record shape and both contracts in words, and asked to index an
