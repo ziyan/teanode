@@ -159,22 +159,22 @@ export function settingProblem(
   if (setting.settingType === 'boolean') return null
   const text = typeof draft === 'string' ? draft.trim() : ''
   if (text === '') {
-    return setting.isRequired ? t('sourceTypes.settingMissing', { name: setting.name }) : null
+    return setting.isRequired ? t('sourceTypes.settingMissing', { name: settingLabel(setting.name) }) : null
   }
   if (setting.settingType === 'integer') {
     const number = Number(text)
-    if (!Number.isInteger(number)) return t('sourceTypes.settingNotWhole', { name: setting.name })
+    if (!Number.isInteger(number)) return t('sourceTypes.settingNotWhole', { name: settingLabel(setting.name) })
     if (setting.minimum !== null && number < setting.minimum)
-      return t('sourceTypes.settingTooSmall', { name: setting.name, minimum: setting.minimum })
+      return t('sourceTypes.settingTooSmall', { name: settingLabel(setting.name), minimum: setting.minimum })
     if (setting.maximum !== null && number > setting.maximum)
-      return t('sourceTypes.settingTooLarge', { name: setting.name, maximum: setting.maximum })
+      return t('sourceTypes.settingTooLarge', { name: settingLabel(setting.name), maximum: setting.maximum })
     return null
   }
   if (setting.settingType === 'array') {
     const refused = listOf(text).find((item) => !matches(setting.itemPattern, item))
-    return refused === undefined ? null : t('sourceTypes.settingItemRefused', { name: setting.name, item: refused })
+    return refused === undefined ? null : t('sourceTypes.settingItemRefused', { name: settingLabel(setting.name), item: refused })
   }
-  return matches(setting.pattern, text) ? null : t('sourceTypes.settingRefused', { name: setting.name })
+  return matches(setting.pattern, text) ? null : t('sourceTypes.settingRefused', { name: settingLabel(setting.name) })
 }
 
 // settingsProblem is the first thing wrong with the whole form, or null.
@@ -238,7 +238,7 @@ export function SourceTypeSettingsFields({
         const problem = text.trim() === '' ? null : settingProblem(setting, draft, t)
         const help = setting.description ? (
           <p className="muted field-hint">
-            {setting.description}
+            {asSentence(setting.description)}
             {setting.settingType === 'array' ? ` ${t('sourceTypes.settingListHint')}` : ''}
           </p>
         ) : setting.settingType === 'array' ? (
@@ -253,7 +253,7 @@ export function SourceTypeSettingsFields({
                   checked={draft === true}
                   onChange={(event) => onChange(setting.name, event.target.checked)}
                 />
-                {setting.name}
+                {settingLabel(setting.name)}
               </label>
               {help}
             </div>
@@ -264,10 +264,23 @@ export function SourceTypeSettingsFields({
           <div key={setting.name}>
             <label>
               <span>
-                {setting.name}
+                {settingLabel(setting.name)}
                 {setting.isRequired ? ` · ${t('sourceTypes.settingRequired')}` : ''}
               </span>
-              {setting.settingType === 'integer' ? (
+              {choicesOf(setting.pattern) ? (
+                <select
+                  value={text || asText(setting.default)}
+                  aria-required={setting.isRequired || undefined}
+                  onChange={(event) => onChange(setting.name, event.target.value)}
+                >
+                  {setting.isRequired && !text ? <option value="" /> : null}
+                  {choicesOf(setting.pattern)!.map((choice) => (
+                    <option key={choice} value={choice}>
+                      {choice}
+                    </option>
+                  ))}
+                </select>
+              ) : setting.settingType === 'integer' ? (
                 <input
                   type="number"
                   inputMode="numeric"
@@ -298,4 +311,30 @@ export function SourceTypeSettingsFields({
       })}
     </>
   )
+}
+
+// settingLabel is a setting's name as a label: its words split and the
+// first one capitalized, a run of capitals such as MB kept whole.
+export function settingLabel(name: string): string {
+  const words = name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .split(' ')
+    .map((word, index) => (index > 0 && !/^[A-Z]{2,}$/.test(word) ? word.toLowerCase() : word))
+    .join(' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+// asSentence is a description written as a phrase, as a sentence.
+function asSentence(description: string): string {
+  const trimmed = description.trim()
+  const capitalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+  return /[.!?)]$/.test(capitalized) ? capitalized : `${capitalized}.`
+}
+
+// choicesOf is the words a pattern such as ^(mine|public|all)$ allows, for
+// a setting that takes one of a few; null for any other pattern.
+export function choicesOf(pattern: string): string[] | null {
+  const matched = /^\^\(([A-Za-z0-9_-]+(?:\|[A-Za-z0-9_-]+)+)\)\$$/.exec(pattern || '')
+  return matched ? matched[1].split('|') : null
 }

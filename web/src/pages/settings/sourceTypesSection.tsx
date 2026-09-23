@@ -170,7 +170,7 @@ export function SourceTypesSection() {
               title={sourceType.name}
               badge={
                 <>
-                  <Tag value={sourceType.version} />
+                  {sourceType.version ? <Tag value={sourceType.version} /> : null}
                   {sourceType.isLocal ? <Tag value={t('sourceTypes.local')} tone="warn" /> : null}
                   {sourceType.readable ? <Tag value={t(sourceTypeReaderKey(sourceType))} /> : null}
                   {!sourceType.readable ? <Tag value={t('sourceTypes.unreadable')} tone="bad" /> : null}
