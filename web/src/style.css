@@ -1534,6 +1534,9 @@ button.link {
   padding: 0;
   font-weight: inherit;
   text-decoration: underline;
+  /* A button centers its text, which only shows once it wraps: a long
+     name in a list then sat centered under the short ones beside it. */
+  text-align: start;
 }
 
 button.link:hover:not(:disabled) {
