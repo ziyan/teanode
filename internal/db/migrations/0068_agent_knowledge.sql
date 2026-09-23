@@ -145,7 +145,7 @@ CREATE INDEX "agent_chunk_vector_scope" ON "agent_chunk_vector" ("agent_id", "mo
 
 -- Every top-level definition a code file declares. An exact index, asked
 -- before any vector: a log line pasted into a chat names a function, and
--- "which file is ResetPayloadAngularOffset in" is a question a cosine
+-- "which file is ComputeShippingQuote in" is a question a cosine
 -- answers badly and a string match answers exactly.
 CREATE TABLE "agent_symbol" (
     "agent_id"    character varying(32)  NOT NULL REFERENCES "agent" ("id") ON DELETE CASCADE,

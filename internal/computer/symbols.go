@@ -9,7 +9,7 @@ import (
 // The definitions a code file declares.
 //
 // Why this exists beside the vectors. A log line pasted into a chat says
-// `mwesexecutor.py:97 ResetPayloadAngularOffset`, and the question it
+// `quoteworker.py:97 ComputeShippingQuote`, and the question it
 // raises -- which file is that in, and who wrote it -- is one an
 // embedding answers badly and a string match answers exactly. So every
 // code file's top-level names go in a table of their own, and a search

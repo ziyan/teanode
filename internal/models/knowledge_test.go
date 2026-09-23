@@ -17,7 +17,7 @@ func TestAFormatThatIsNotAFormatIsRefused(t *testing.T) {
 		Kind: models.SourceArchive,
 		Name: "notes",
 		Specification: models.AgentKnowledgeSpecification{
-			Computer: "gen7",
+			Computer: "laptop",
 			Path:     "~/.teanode/records/notes",
 			Format:   "recrods",
 		},

@@ -811,7 +811,7 @@ Notable changes to TeaNode. The format follows
   "the migration that failed"` finds passages in everything a source indexed —
   your code, your chat, your notes — and prints each under the document it came
   from, with the identifier that reads that document back. An identifier out of
-  a log is looked up exactly, so pasting `ResetPayloadAngularOffset` in answers
+  a log is looked up exactly, so pasting `ComputeShippingQuote` in answers
   with the file and the line that defines it. `--source` narrows it to one
   source, `--first` says how many, `--json` prints the rows with their scores.
   Until now the only thing that could look through your own documents was your

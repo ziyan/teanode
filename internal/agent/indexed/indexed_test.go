@@ -8,19 +8,19 @@ import (
 
 // A name pasted out of a log is looked up exactly before anything is
 // ranked, so the predicate that tells one from an ordinary word decides
-// whether "who wrote mwesexecutor.py" answers with a file or with twenty
+// whether "who wrote quoteworker.py" answers with a file or with twenty
 // vaguely related passages.
 func TestAnIdentifierIsToldFromAnOrdinaryWord(test *testing.T) {
 	test.Parallel()
 
 	for word, wanted := range map[string]bool{
-		"ResetPayloadAngularOffset": true,
-		"mwesexecutor.py":           true,
-		"reset_payload":             true,
-		"deployment":                false,
-		"the":                       false,
-		"Tuesday":                   false,
-		".hidden":                   false,
+		"ComputeShippingQuote": true,
+		"quoteworker.py":       true,
+		"reset_payload":        true,
+		"deployment":           false,
+		"the":                  false,
+		"Tuesday":              false,
+		".hidden":              false,
 	} {
 		if got := LooksLikeSymbol(word); got != wanted {
 			test.Errorf("%q looks like an identifier: %v, want %v", word, got, wanted)

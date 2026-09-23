@@ -179,7 +179,7 @@ func writeDocuments(test *testing.T, tx db.Transaction, agentId string, count in
 	test.Helper()
 	source, err := tx.PutAgentSource(&models.AgentKnowledgeSource{
 		AgentID: agentId, Name: "notes", Kind: models.SourceComputer,
-		Specification: models.AgentKnowledgeSpecification{Path: "/notes", Computer: "gen7"},
+		Specification: models.AgentKnowledgeSpecification{Path: "/notes", Computer: "laptop"},
 	})
 	if err != nil {
 		test.Fatalf("PutAgentSource: %s", err)

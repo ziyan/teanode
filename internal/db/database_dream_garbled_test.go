@@ -31,7 +31,7 @@ func TestADocumentTheNightCouldNotReadIsCountedAndFindable(test *testing.T) {
 		}
 		source, err := tx.PutAgentSource(&models.AgentKnowledgeSource{
 			AgentID: person.ID, Name: "notes", Kind: models.SourceComputer,
-			Specification: models.AgentKnowledgeSpecification{Path: "/notes", Computer: "gen7"},
+			Specification: models.AgentKnowledgeSpecification{Path: "/notes", Computer: "laptop"},
 		})
 		if err != nil {
 			test.Fatalf("PutAgentSource: %s", err)
