@@ -96,7 +96,7 @@ export function AppsPage() {
                       {app.lastUsedIp ? ` (${app.lastUsedIp})` : ''}
                     </>
                   ) : (
-                    t('tokens.neverUsed')
+                    t('apps.notUsedYet')
                   )}
                   {app.tokenCount > 1 ? ` · ${t('apps.authorizedTimes', { count: app.tokenCount })}` : ''}
                 </div>
