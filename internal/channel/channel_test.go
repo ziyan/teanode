@@ -180,7 +180,7 @@ func (self *fakeTelegram) count(method string) int {
 // A bot linked with the code answers a greeting with the streamed answer
 // edited into its message, asks for a yes before a deletion and takes
 // "no" from the chat, and refuses a chat that is not the linked one.
-func TestTelegramBotCarriesThePrimaryConversation(t *testing.T) {
+func TestTelegramBotCarriesTheMainChat(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
@@ -273,7 +273,7 @@ func TestTelegramBotCarriesThePrimaryConversation(t *testing.T) {
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		conversations, _ := tx.ListAgentConversations(found.ID, []models.AgentConversationKind{models.AgentConversationMain}, nil)
 		if len(conversations) != 1 {
-			t.Fatalf("one primary conversation: %d", len(conversations))
+			t.Fatalf("one main chat: %d", len(conversations))
 		}
 		messages, _ := tx.ListAgentMessages(conversations[0].ID, nil)
 		roles := ""
@@ -281,7 +281,7 @@ func TestTelegramBotCarriesThePrimaryConversation(t *testing.T) {
 			roles += message.Role + " "
 		}
 		if !strings.HasPrefix(roles, "user assistant user assistant") {
-			t.Fatalf("the turns are in the primary conversation: %s", roles)
+			t.Fatalf("the turns are in the main chat: %s", roles)
 		}
 	})
 
@@ -298,11 +298,11 @@ func TestTelegramBotCarriesThePrimaryConversation(t *testing.T) {
 	}
 	fake.wait(t, "answers the person who linked it")
 
-	// /status answers; /new starts a fresh primary conversation.
+	// /status answers; /new starts a fresh main chat.
 	fake.push("/status")
 	fake.wait(t, "Agent: Bertie")
 	fake.push("/new")
-	fake.wait(t, "A fresh primary conversation.")
+	fake.wait(t, "A fresh main chat.")
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		mains, _ := tx.ListAgentConversations(found.ID, []models.AgentConversationKind{models.AgentConversationMain}, nil)
 		named, _ := tx.ListAgentConversations(found.ID, []models.AgentConversationKind{models.AgentConversationNamed}, nil)
