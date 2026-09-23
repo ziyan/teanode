@@ -434,8 +434,8 @@ func addAction(ctx context.Context, run tools.Run, arguments *knowledgeArguments
 	}); err != nil {
 		return nil, err
 	}
-	result := tools.TextResult("%s is added as %q; nothing is read yet. The first pass is queued and runs within the minute; use `sources` in a while to see whether it ran and how far it got, and say so rather than assuming.",
-		written.Describe(), written.Name)
+	result := tools.TextResult("%s is added as %q; nothing is read yet. The first pass is queued and runs within the minute; use `sources` in a while to see whether it ran and how far it got, and say so rather than assuming.%s",
+		written.Describe(), written.Name, secretsToFill(ctx, run, written))
 	result.Note = "now indexing " + written.Describe()
 	return result, nil
 }
@@ -515,6 +515,37 @@ func specifyType(ctx context.Context, run tools.Run, source *models.AgentKnowled
 		source.Specification.MailboxID = mailboxId
 	}
 	return nil
+}
+
+// secretsToFill is what the person still has to fill in for a new source
+// whose type declares secrets, said so the agent can tell them: it never
+// handles the values itself.
+func secretsToFill(ctx context.Context, run tools.Run, source *models.AgentKnowledgeSource) string {
+	if source.Specification.Type == "" {
+		return ""
+	}
+	var installed *models.AgentSourceType
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		installed, err = tx.GetAgentSourceType(source.Specification.Type)
+		return err
+	}); err != nil || installed == nil {
+		return ""
+	}
+	parsed, err := sources.Parse([]byte(installed.Content))
+	if err != nil {
+		return ""
+	}
+	var required []string
+	for _, secret := range parsed.Secrets {
+		if !secret.Optional {
+			required = append(required, secret.Key)
+		}
+	}
+	if len(required) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" It will not read until the person fills in %s on the source in the dashboard, or with `teanode agent knowledge secret set %q %s`; tell them, and never ask them to paste it to you.",
+		strings.Join(required, " and "), source.Name, required[0])
 }
 
 // grantedMailbox is the mailbox a sent source may read, by name or by

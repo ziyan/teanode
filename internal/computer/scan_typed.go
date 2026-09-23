@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -191,18 +192,40 @@ func DoRequest(ctx context.Context, request *sources.PreparedRequest) (int, []by
 	}
 	prepared, err := http.NewRequestWithContext(ctx, request.Method, request.URL, body)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, fmt.Errorf("the request could not be made")
 	}
 	for key, value := range request.Headers {
 		prepared.Header.Set(key, value)
 	}
-	response, err := http.DefaultClient.Do(prepared)
+	response, err := typedRequestClient.Do(prepared)
 	if err != nil {
-		return 0, nil, err
+		// Said without the address, which may carry what a type put in
+		// it, since this text is shown on the source and to the agent.
+		var failed *url.Error
+		if errors.As(err, &failed) {
+			return 0, nil, fmt.Errorf("the request to %s failed: %w", prepared.URL.Host, failed.Err)
+		}
+		return 0, nil, fmt.Errorf("the request to %s failed", prepared.URL.Host)
 	}
 	defer func() { _ = response.Body.Close() }()
 	content, err := io.ReadAll(io.LimitReader(response.Body, typedOutputBytes))
 	return response.StatusCode, content, err
+}
+
+// typedRequestClient follows a redirect only on the same scheme and host:
+// a type's credential goes where the type said, and a service that answers
+// with an address elsewhere does not decide otherwise.
+var typedRequestClient = &http.Client{
+	CheckRedirect: func(request *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return fmt.Errorf("too many redirects")
+		}
+		first := via[0].URL
+		if request.URL.Scheme != first.Scheme || request.URL.Host != first.Host {
+			return fmt.Errorf("a redirect to %s is not followed", request.URL.Host)
+		}
+		return nil
+	},
 }
 
 // limitedWriter keeps at most so many bytes, and says so when there was

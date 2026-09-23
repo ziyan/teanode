@@ -17,7 +17,7 @@ name: invented-api
 description: an invented service read by its web API
 runs: [computer]
 settings:
-  - {name: site, description: the site, type: string, pattern: "^[a-z.]+$"}
+  - {name: host, description: the host, type: string, pattern: "^[a-z.]+$"}
 secrets:
   - {key: token, description: an API token, scope: person}
   - {key: extra, description: an optional value, scope: person, optional: true}
@@ -27,7 +27,7 @@ containers:
   - fixed: [{}]
     name: all.jsonl
 records:
-  - request: {url: "https://{{settings.site}}/items", auth: api}
+  - request: {url: "https://{{settings.host}}/items", auth: api}
     parse: {json: {items: items}}
     record: {id: "{{item.id}}"}
 ---
@@ -75,7 +75,7 @@ func TestASourceKeepsTheSecretsItsTypeAsksFor(t *testing.T) {
 	var sourceId, agentId string
 	as(owner, func(ctx context.Context, tx db.Transaction) {
 		saved, err := resolver.SaveAgentKnowledgeSource(ctx, SaveAgentKnowledgeSourceArguments{
-			Type: "invented-api", Computer: "laptop", Settings: json.RawMessage(`{"site": "api.example.com"}`),
+			Type: "invented-api", Computer: "laptop", Settings: json.RawMessage(`{"host": "api.example.com"}`),
 		})
 		if err != nil {
 			t.Fatalf("a type with secrets is refused: %s", err)
@@ -97,6 +97,15 @@ func TestASourceKeepsTheSecretsItsTypeAsksFor(t *testing.T) {
 		asked, _ = resolver.ListAgentKnowledgeSourceSecrets(ctx, AgentSourceSecretsArguments{SourceID: sourceId})
 		if !asked[0].IsSet {
 			t.Errorf("a kept value is not shown as set")
+		}
+		// Clearing names one declared key: an empty one used to forget them all.
+		for _, key := range []string{"", "password"} {
+			if _, err := resolver.ClearAgentKnowledgeSourceSecret(ctx, ClearAgentSourceSecretArguments{SourceID: sourceId, Key: key}); !errors.Is(err, api.ErrInvalidArguments) {
+				t.Errorf("clearing %q was taken: %v", key, err)
+			}
+		}
+		if stored, _ := tx.ListAgentSourceSecrets(sourceId); len(stored) != 1 {
+			t.Errorf("a refused clear forgot values: %v", stored)
 		}
 	})
 

@@ -6,8 +6,8 @@ runs: [computer, server]
 pace: 100ms
 
 settings:
-  - name: site
-    description: the site's address without https://, such as example.atlassian.net
+  - name: domain
+    description: the site's own domain, without https:// or a path
     type: string
     pattern: "^[a-z0-9][a-z0-9.-]*\\.[a-z]{2,}$"
   - name: email
@@ -22,7 +22,7 @@ settings:
 
 secrets:
   - key: apiToken
-    description: an API token made at id.atlassian.com for the email above
+    description: an API token made in the Atlassian account of the email above
     scope: person
 
 authenticationProfiles:
@@ -36,7 +36,7 @@ containers:
   # together and a site of any size is never held at once. The API pages
   # the list of spaces by giving the next page's address.
   - request:
-      url: "https://{{settings.site}}/wiki/rest/api/space?limit=250"
+      url: "https://{{settings.domain}}/wiki/rest/api/space?limit=250"
       auth: site
     parse: {json: {items: results}}
     paging: {link: {field: _links.next, base: _links.base}}
@@ -52,13 +52,13 @@ records:
     request:
       # The query, escaped by hand around what varies: type = <kind> and
       # space = "<key>".
-      url: "https://{{settings.site}}/wiki/rest/api/content/search?limit=100&expand=version,history&cql=type%20%3D%20{{each}}%20and%20space%20%3D%20%22{{container.space | query-escape}}%22"
+      url: "https://{{settings.domain}}/wiki/rest/api/content/search?limit=100&expand=version,history&cql=type%20%3D%20{{each}}%20and%20space%20%3D%20%22{{container.space | query-escape}}%22"
       auth: site
     parse: {json: {items: results}}
     paging: {link: {field: _links.next, base: _links.base}}
     detail:
       request:
-        url: "https://{{settings.site}}/wiki/rest/api/content/{{item.id}}?expand=body.storage"
+        url: "https://{{settings.domain}}/wiki/rest/api/content/{{item.id}}?expand=body.storage"
         auth: site
       parse: json
       text: "{{detail.body.storage.value | html-text}}"
@@ -66,7 +66,7 @@ records:
       id: "confluence:{{each}}:{{item.id}}"
       kind: "{{each}}"
       title: "{{item.title}}"
-      url: "https://{{settings.site}}/wiki{{item._links.webui}}"
+      url: "https://{{settings.domain}}/wiki{{item._links.webui}}"
       at: "{{item.history.createdDate}}"
       modifiedAt: "{{item.version.when}}"
       author: "{{item.version.by.displayName | or item.history.createdBy.displayName}}"
@@ -79,7 +79,7 @@ records:
 
 # Confluence, through its web API
 
-Reads a Confluence Cloud site with its REST API, as the person, with an API token they make at id.atlassian.com and fill in on the source; the token is kept sealed on the server and sent only with the reading. Each space is a container: its pages, blog posts and comments are listed to the end of the API's paging, so a site of any size is read whole, and a body is fetched only when its version changed. The first pass fetches every body and takes a while; a pass that runs out of time goes on from where it stopped.
+Reads a Confluence Cloud site with its REST API, as the person, with an API token they make in their Atlassian account and fill in on the source; the token is kept sealed on the server and sent only with the reading. Each space is a container: its pages, blog posts and comments are listed to the end of the API's paging, so a site of any size is read whole, and a body is fetched only when its version changed. The first pass fetches every body and takes a while; a pass that runs out of time goes on from where it stopped.
 
 ## Document identifiers
 

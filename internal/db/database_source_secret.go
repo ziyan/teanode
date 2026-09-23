@@ -45,7 +45,7 @@ func (self *transaction) PutAgentSourceSecret(agentId string, secret *models.Age
 	now := time.Now()
 	row := &agentSourceSecretModel{SourceID: secret.SourceID, Key: strings.TrimSpace(secret.Key), CreatedAt: now, ModifiedAt: now, Value: secret.Value}
 	return self.applyMutation(models.AuditResourceAgent, agentId, models.AuditActionUpdate,
-		nil, &noteAboutSourceSecret{SourceID: row.SourceID, Key: row.Key, Set: true},
+		nil, &noteAboutSourceSecret{SourceID: row.SourceID, Key: row.Key, IsSet: true},
 		func(tx *gorm.DB) error {
 			return tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "source_id"}, {Name: "key"}},
@@ -58,14 +58,14 @@ func (self *transaction) PutAgentSourceSecret(agentId string, secret *models.Age
 type noteAboutSourceSecret struct {
 	SourceID string `json:"sourceId"`
 	Key      string `json:"key,omitempty"`
-	Set      bool   `json:"set"`
+	IsSet    bool   `json:"isSet"`
 }
 
 // DeleteAgentSourceSecret forgets one value; an empty key forgets every
 // value of the source.
 func (self *transaction) DeleteAgentSourceSecret(agentId, sourceId, key string) error {
 	return self.applyMutation(models.AuditResourceAgent, agentId, models.AuditActionUpdate,
-		nil, &noteAboutSourceSecret{SourceID: sourceId, Key: strings.TrimSpace(key), Set: false},
+		nil, &noteAboutSourceSecret{SourceID: sourceId, Key: strings.TrimSpace(key), IsSet: false},
 		func(tx *gorm.DB) error {
 			query := tx.Where("\"source_id\" = ?", sourceId)
 			if strings.TrimSpace(key) != "" {

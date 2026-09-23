@@ -62,7 +62,7 @@ description: an invented API
 settings:
   - {name: host, type: string, default: "api.example.com"}
 secrets:
-  - {key: token, scope: operator}
+  - {key: token, scope: person}
 authenticationProfiles:
   api: {type: bearer, token: "{{secret:token}}"}
 containers:
@@ -74,8 +74,8 @@ records:
     record: {id: "{{item.id}}"}
 `
 	for _, refused := range []struct{ url, extra string }{
-		{"https://{{settings.host}}/items", ""},
 		{"https://{{item.next}}/items", ""},
+		{"https://api.example.com/items?key={{secret:token}}", ""},
 		{"http://api.example.com/items", ""},
 		{"https://api.example.com/items", `, headers: {X-Token: "{{secret:token}}"}`},
 	} {
@@ -83,8 +83,21 @@ records:
 			t.Errorf("%s %s was accepted", refused.url, refused.extra)
 		}
 	}
-	if _, err := Parse([]byte("---\n" + strings.Replace(strings.Replace(base, "%s", "https://api.example.com/{{settings.host}}", 1), "%s", "", 1) + "---\n")); err != nil {
-		t.Errorf("a settled host with a setting in its path was refused: %s", err)
+	for _, accepted := range []string{"https://api.example.com/{{settings.host}}", "https://{{settings.host}}/items"} {
+		if _, err := Parse([]byte("---\n" + strings.Replace(strings.Replace(base, "%s", accepted, 1), "%s", "", 1) + "---\n")); err != nil {
+			t.Errorf("%s, with the person's own secret, was refused: %s", accepted, err)
+		}
+	}
+	// A secret anywhere but a profile: a record's text, a command word.
+	for _, misplaced := range []string{
+		strings.Replace(base, `record: {id: "{{item.id}}"}`, `record: {id: "{{item.id}}", text: "{{secret:token}}"}`, 1),
+		strings.Replace(base, `secrets:
+  - {key: token, scope: person}`, `secrets:
+  - {key: token}`, 1),
+	} {
+		if _, err := Parse([]byte("---\n" + strings.Replace(strings.Replace(misplaced, "%s", "https://api.example.com/items", 1), "%s", "", 1) + "---\n")); err == nil {
+			t.Errorf("a misplaced or operator secret was accepted")
+		}
 	}
 }
 

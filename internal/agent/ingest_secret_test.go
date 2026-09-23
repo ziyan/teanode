@@ -58,7 +58,7 @@ records:
 		}
 	})
 
-	if _, _, _, err := worker.typedSourceParts(t.Context(), run, source); err == nil || !strings.Contains(err.Error(), "knowledge secret set items token") {
+	if _, _, _, err := worker.typedSourceParts(t.Context(), run, source); err == nil || !strings.Contains(err.Error(), `knowledge secret set "items" token`) {
 		t.Fatalf("a missing token did not say how to set it: %v", err)
 	}
 	sealed, err := worker.SealSecret("the-token")

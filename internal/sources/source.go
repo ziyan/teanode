@@ -300,9 +300,9 @@ type Paging struct {
 	Field string
 	Flag  string
 	Size  int
-	// Base is where in the answer the address a relative link is read
-	// against is, for link paging.
-	Base string
+	// BaseField is where in the answer the address a relative link is
+	// read against is, for link paging.
+	BaseField string
 }
 
 func (self *Paging) UnmarshalYAML(node *yaml.Node) error {
@@ -323,7 +323,7 @@ func (self *Paging) UnmarshalYAML(node *yaml.Node) error {
 		return fmt.Errorf("paging is one of none, all, token, limit, offset or link")
 	}
 	for kind, shape := range shaped {
-		self.Kind, self.Field, self.Flag, self.Size, self.Base = kind, shape.Field, shape.Flag, shape.Size, shape.Base
+		self.Kind, self.Field, self.Flag, self.Size, self.BaseField = kind, shape.Field, shape.Flag, shape.Size, shape.Base
 	}
 	return nil
 }

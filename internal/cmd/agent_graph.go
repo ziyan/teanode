@@ -1132,6 +1132,28 @@ func runKnowledgeSet(ctx context.Context, command *cli.Command) error {
 		if err != nil {
 			return err
 		}
+		// Only what the type declares now: a setting an update of the
+		// type renamed or dropped would otherwise make the save refused.
+		typeName := command.String("type")
+		if typeName == "" {
+			typeName = source.Specification.Type
+		}
+		if installed, err := client.ListAgentSourceTypes(ctx, connection); err == nil {
+			for _, sourceType := range installed {
+				if sourceType.Name != typeName {
+					continue
+				}
+				declared := map[string]bool{}
+				for _, setting := range sourceType.Settings {
+					declared[setting.Name] = true
+				}
+				for name := range settings {
+					if !declared[name] {
+						delete(settings, name)
+					}
+				}
+			}
+		}
 		if settings == nil {
 			// A source without settings yet stores them as null.
 			settings = map[string]any{}
@@ -1819,13 +1841,13 @@ func runKnowledgeSecretList(ctx context.Context, command *cli.Command) error {
 	}
 	rows := make([][]string, 0, len(asked))
 	for _, secret := range asked {
-		state := "not set"
+		secretState := "not set"
 		if secret.IsSet {
-			state = "set"
+			secretState = "set"
 		} else if secret.IsOptional {
-			state = "not set, optional"
+			secretState = "not set, optional"
 		}
-		rows = append(rows, []string{secret.Key, state, secret.Description})
+		rows = append(rows, []string{secret.Key, secretState, secret.Description})
 	}
 	return printTable([]string{"key", "state", "what it is"}, rows)
 }

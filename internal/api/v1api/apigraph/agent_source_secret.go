@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
@@ -65,7 +66,9 @@ type ClearAgentSourceSecretArguments struct {
 func (self *graph) sourceSecretsAsked(ctx context.Context, found *models.Agent, sourceId string) ([]*AgentSourceSecretView, error) {
 	var views []*AgentSourceSecretView
 	if err := func(tx db.Transaction) error {
-		source, err := tx.GetAgentSource(found.ID, sourceId)
+		// Locked, so a change of type committed meanwhile cannot leave a
+		// value checked against the old type behind for the new one.
+		source, err := tx.LockAgentSource(found.ID, sourceId)
 		if err != nil {
 			return err
 		}
@@ -114,7 +117,9 @@ func (self *graph) ListAgentKnowledgeSourceSecrets(ctx context.Context, argument
 
 func (self *graph) SetAgentKnowledgeSourceSecret(ctx context.Context, arguments SetAgentSourceSecretArguments) (*AgentSourceSecretView, error) {
 	key := strings.TrimSpace(arguments.Key)
-	if key == "" || strings.TrimSpace(arguments.Value) == "" {
+	// A token pasted with a newline after it is the token.
+	value := strings.TrimSpace(arguments.Value)
+	if key == "" || value == "" {
 		return nil, fmt.Errorf("%w: a key and a value are needed", api.ErrInvalidArguments)
 	}
 	_, found, err := self.requireAgentPerson(ctx)
@@ -140,12 +145,21 @@ func (self *graph) SetAgentKnowledgeSourceSecret(ctx context.Context, arguments 
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	sealed, err := worker.SealSecret(arguments.Value)
+	sealed, err := worker.SealSecret(value)
 	if err != nil {
 		return nil, err
 	}
-	if err := self.writing(ctx).PutAgentSourceSecret(found.ID, &models.AgentSourceSecret{SourceID: arguments.SourceID, Key: key, Value: sealed}); err != nil {
+	tx := self.writing(ctx)
+	if err := tx.PutAgentSourceSecret(found.ID, &models.AgentSourceSecret{SourceID: arguments.SourceID, Key: key, Value: sealed}); err != nil {
 		return nil, err
+	}
+	// A source that was waiting for this reads now, not at its hour.
+	if source, err := tx.LockAgentSource(found.ID, arguments.SourceID); err == nil && source != nil && source.Enabled {
+		now := time.Now()
+		source.NextRunAt = &now
+		if _, err := tx.PutAgentSource(source); err != nil {
+			return nil, err
+		}
 	}
 	wanted.IsSet = true
 	return wanted, nil
@@ -156,8 +170,18 @@ func (self *graph) ClearAgentKnowledgeSourceSecret(ctx context.Context, argument
 	if err != nil {
 		return false, err
 	}
-	if _, err := self.sourceSecretsAsked(ctx, found, arguments.SourceID); err != nil {
+	asked, err := self.sourceSecretsAsked(ctx, found, arguments.SourceID)
+	if err != nil {
 		return false, err
 	}
-	return true, self.writing(ctx).DeleteAgentSourceSecret(found.ID, arguments.SourceID, arguments.Key)
+	// One declared key: an empty one would forget every value.
+	key := strings.TrimSpace(arguments.Key)
+	declared := false
+	for _, view := range asked {
+		declared = declared || view.Key == key
+	}
+	if !declared {
+		return false, fmt.Errorf("%w: this source's type does not ask for %q", api.ErrInvalidArguments, key)
+	}
+	return true, self.writing(ctx).DeleteAgentSourceSecret(found.ID, arguments.SourceID, key)
 }

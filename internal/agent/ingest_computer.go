@@ -341,7 +341,7 @@ func (self *Agent) typedSourceParts(ctx context.Context, run *Run, source *model
 		}
 	}
 	if len(missing) > 0 {
-		return "", nil, nil, fmt.Errorf("%s needs %s filled in for this source; set it on the source in the dashboard, or with `teanode agent knowledge secret set %s %s`",
+		return "", nil, nil, fmt.Errorf("%s needs %s filled in for this source; set it on the source in the dashboard, or with `teanode agent knowledge secret set %q %s`",
 			parsed.Name, strings.Join(missing, " and "), source.Name, missing[0])
 	}
 	return installed.Content, settings, secrets, nil

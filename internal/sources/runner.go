@@ -1223,8 +1223,8 @@ func (self *Runner) fetchItems(ctx context.Context, command []string, request *R
 			if link == "" {
 				return all, nil
 			}
-			if paging.Base != "" && !strings.Contains(link, "://") {
-				base, _ := at(result.response, paging.Base)
+			if paging.BaseField != "" && !strings.Contains(link, "://") {
+				base, _ := at(result.response, paging.BaseField)
 				link = strings.TrimRight(text(base), "/") + "/" + strings.TrimLeft(link, "/")
 			}
 			token = link

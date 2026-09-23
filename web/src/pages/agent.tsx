@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { AgentReply, graphql, openAgentConversation } from '../api'
 import {
@@ -1871,6 +1871,11 @@ function KnowledgeSourcesCard() {
   // empty keeps it.
   const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({})
   const [secretsKept, setSecretsKept] = useState<Record<string, boolean>>({})
+  // The source this dialog is about, for an answer that arrives late, and
+  // the one it made: a save retried after a secret was refused saves that
+  // source again rather than making a second.
+  const openSourceId = useRef<string | null>(null)
+  const [madeSourceId, setMadeSourceId] = useState<string | null>(null)
   const chosenSourceType = allSourceTypes.find((sourceType) => sourceType.name === sourceTypeName) ?? null
   // The computers attached, offered as the person types one; a computer
   // not attached right now can still be named.
@@ -1889,6 +1894,9 @@ function KnowledgeSourcesCard() {
     const sourceType = allSourceTypes.find((candidate) => candidate.name === name)
     setDrafts(sourceType ? settingDrafts(sourceType) : {})
     setSecretDrafts({})
+    // Another type's kept values are forgotten when the source is saved,
+    // so they are not shown as kept for this one.
+    if (name !== editing?.specification.type) setSecretsKept({})
     // What was wrong with the last type's form says nothing about this one.
     setProblem(null)
   }
@@ -1898,15 +1906,19 @@ function KnowledgeSourcesCard() {
   const openEdit = (source: KnowledgeSource) => {
     setSecretDrafts({})
     setSecretsKept({})
+    setMadeSourceId(null)
+    openSourceId.current = source.id
     if (source.specification.type) {
       void graphql<{ ListAgentKnowledgeSourceSecrets: { key: string; isSet: boolean }[] }>(LIST_SOURCE_SECRETS, {
         sourceId: source.id,
       })
-        .then((answer) =>
+        .then((answer) => {
+          // Only while this source is still the one open.
+          if (openSourceId.current !== source.id) return
           setSecretsKept(
             Object.fromEntries(answer.ListAgentKnowledgeSourceSecrets.map((secret) => [secret.key, secret.isSet])),
-          ),
-        )
+          )
+        })
         .catch(() => undefined)
     }
     setName(source.name)
@@ -1964,7 +1976,7 @@ function KnowledgeSourcesCard() {
     setProblem(null)
     try {
       const saved = await graphql<{ SaveAgentKnowledgeSource: { id: string } }>(SAVE_KNOWLEDGE_SOURCE, {
-        sourceId: editing?.id,
+        sourceId: editing?.id ?? madeSourceId ?? undefined,
         name: name.trim(),
         type: sourceType.name,
         settings,
@@ -1976,6 +1988,7 @@ function KnowledgeSourcesCard() {
         rootPath: rootPath.trim() || undefined,
         cron: cron.trim() || undefined,
       })
+      setMadeSourceId(saved.SaveAgentKnowledgeSource.id)
       // Kept after the source exists, one at a time; a box left empty
       // keeps what was there.
       for (const secret of sourceType.secrets ?? []) {
@@ -2071,6 +2084,8 @@ function KnowledgeSourcesCard() {
               setProblem(null)
               setEditing(null)
               setSecretsKept({})
+              setMadeSourceId(null)
+              openSourceId.current = null
               setAdding(true)
             }}
           >
@@ -2235,6 +2250,8 @@ function KnowledgeSourcesCard() {
           onClose={() => {
             setAdding(false)
             setEditing(null)
+            setMadeSourceId(null)
+            openSourceId.current = null
           }}
           onSubmit={() => {
             void (async () => {
@@ -2242,6 +2259,8 @@ function KnowledgeSourcesCard() {
                 if (await saveTyped(chosenSourceType)) {
                   setAdding(false)
                   setEditing(null)
+                  setMadeSourceId(null)
+                  openSourceId.current = null
                 }
                 return
               }
