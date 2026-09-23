@@ -67,3 +67,19 @@ func TestAnOlderComputerSaysToUpdate(t *testing.T) {
 		t.Errorf("the error was %v", err)
 	}
 }
+
+// truncatingComputer answers as the program does when an answer was longer
+// than it would read.
+type truncatingComputer struct{ fakeComputer }
+
+func (self *truncatingComputer) Ask(context.Context, string, any, time.Duration) (json.RawMessage, error) {
+	return json.Marshal(&computer.HTTPResult{Status: 200, Body: []byte("the start of it"), Truncated: true})
+}
+
+// An answer cut short is an error, never a response: a part of a file saved
+// as the file is a corrupt file.
+func TestAnAnswerCutShortIsAnError(t *testing.T) {
+	if _, err := HTTPClient(&truncatingComputer{}).Get("http://example.com/large"); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Errorf("a cut answer came back as %v", err)
+	}
+}

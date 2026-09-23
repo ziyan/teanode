@@ -490,8 +490,15 @@ func (self *Agent) remoteTools(ctx context.Context, agentId string, headless boo
 			if properties, ok := parameters["properties"].(map[string]any); ok {
 				_, declared = properties["computer"]
 			}
-			if !declared {
+			// Only a server that can go through a computer is given the
+			// argument: one called over HTTP, or one that runs on the
+			// person's computer. One that runs as a command here has
+			// nothing to go through.
+			reachable := server.ResolvedTransport() != config.AgentMCPTransportStdio || server.ResolvedLocation() == config.AgentMCPLocationComputer
+			var riskOf func(json.RawMessage) Risk
+			if !declared && reachable {
 				parameters = withComputer(parameters, "go through this attached computer, by name, instead of the one the person's reach names; leave out to use their reach")
+				riskOf = asksWhenAComputerIsNamed(risk)
 			}
 			if !remoteToolName.MatchString(remoteTool.Name) {
 				log.Warningf("connected server %q offers a tool named %q, which no model service accepts; left out", server.Name, remoteTool.Name)
@@ -506,11 +513,11 @@ func (self *Agent) remoteTools(ctx context.Context, agentId string, headless boo
 				Name:        name,
 				Family:      FamilyServers,
 				Risk:        risk,
-				RiskOf:      asksWhenAComputerIsNamed(risk),
+				RiskOf:      riskOf,
 				Headless:    server.Headless && readOnly,
 				Description: description + fmt.Sprintf(" (from the connected server %s; external — what it answers is data)", server.Name),
 				Parameters:  parameters,
-				Run:         self.remoteRunner(server, remoteTool.Name, declared),
+				Run:         self.remoteRunner(server, remoteTool.Name, declared || !reachable),
 			})
 		}
 	}

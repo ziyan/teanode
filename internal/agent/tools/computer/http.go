@@ -30,6 +30,10 @@ func HTTPClient(device tools.Computer) *http.Client {
 	}
 }
 
+// httpBytes is the largest answer brought through a computer: the most the
+// program on it will read.
+const httpBytes = 32 << 20
+
 // httpWait is how long the server waits for the computer's answer: the
 // computer's own bound on the request, and room for the answer to come back.
 const httpWait = 5*time.Minute + 30*time.Second
@@ -54,7 +58,7 @@ func (self *throughComputer) RoundTrip(request *http.Request) (*http.Response, e
 	}
 	answer, err := self.device.Ask(request.Context(), "http", &computer.HTTPArguments{
 		Method: request.Method, URL: request.URL.String(), Header: request.Header, Body: body,
-		TimeoutSeconds: timeoutSeconds,
+		TimeoutSeconds: timeoutSeconds, MaximumBytes: httpBytes,
 	}, httpWait)
 	if err != nil {
 		// A daemon older than this action says it does not do it. That is
@@ -67,6 +71,11 @@ func (self *throughComputer) RoundTrip(request *http.Request) (*http.Response, e
 	var result computer.HTTPResult
 	if err := json.Unmarshal(answer, &result); err != nil {
 		return nil, fmt.Errorf("the computer %q answered with something unreadable: %w", self.device.Name(), err)
+	}
+	// Cut short is an error, never an answer: a part of a file saved as the
+	// file is a corrupt file, and a part of a page read as the page is wrong.
+	if result.Truncated {
+		return nil, fmt.Errorf("the answer from %s is larger than %d bytes, too large to bring through the computer %q", request.URL.Host, httpBytes, self.device.Name())
 	}
 	response := &http.Response{
 		Status:        fmt.Sprintf("%d %s", result.Status, http.StatusText(result.Status)),

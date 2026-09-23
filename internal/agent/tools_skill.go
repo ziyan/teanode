@@ -115,7 +115,7 @@ func (self *Agent) skillTool(skill *skills.Skill, settled string, declared *skil
 	if risk == tools.RiskDestructive {
 		parameters = withComputer(parameters, "which attached computer to run on; leave out to use the person's reach, or the only one attached")
 		description += " It runs a command on the person's own computer."
-	} else {
+	} else if !skillDeclaresComputer(declared) {
 		// Its requests go through this server unless the person's reach for
 		// the skill names a computer, and a call may name another computer
 		// for itself; see the runner below.
@@ -221,16 +221,16 @@ func (self *Agent) skillRunner(skill *skills.Skill, settled, toolName string) fu
 			// it is reached at, named by the operator one host at a time.
 			Unverified: safefetch.ParseAllowance(configuration.Agent.SkipCertificateCheck),
 		}
-		if !runsCommandsNamed(skill, toolName) {
+		// A skill with a computer argument of its own means something of its
+		// own by it, and is left alone: no computer, and no reach.
+		if !runsCommandsNamed(skill, toolName) && !declaresComputer(skill, toolName) {
 			// Through a computer when the call names one, or else when the
 			// person's reach for this skill names one; through this server
 			// otherwise. The computer makes the request on its own network,
 			// which is how a service that answers only inside one is reached
 			// at all.
 			named, _ := arguments["computer"].(string)
-			if !declaresComputer(skill, toolName) {
-				delete(arguments, "computer")
-			}
+			delete(arguments, "computer")
 			var attached tools.Computer
 			if named = strings.TrimSpace(named); named != "" {
 				// The agent's own choice: held to the rule for acting on
@@ -422,7 +422,12 @@ func safeSkillName(name string) string {
 // declaresComputer says whether the skill's own schema takes a parameter
 // of that name, which withComputer leaves alone.
 func declaresComputer(skill *skills.Skill, toolName string) bool {
-	declared := skill.Tool(toolName)
+	return skillDeclaresComputer(skill.Tool(toolName))
+}
+
+// skillDeclaresComputer says whether a skill's tool has a computer argument
+// of its own, which is the skill's to use and not this server's.
+func skillDeclaresComputer(declared *skills.Tool) bool {
 	if declared == nil {
 		return false
 	}

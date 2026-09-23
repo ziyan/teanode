@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/skills"
 )
 
 // The computer argument is this server's, and comes off before a connected
@@ -56,5 +57,26 @@ func TestAServerOnTheComputerRunsWhereItIsSet(t *testing.T) {
 	}
 	if _, err := worker.computerForServer("a1", "tracker", "gamma"); err == nil {
 		t.Error("a computer that is not attached was used")
+	}
+}
+
+// A skill with a computer argument of its own keeps it, unraised.
+//
+// That argument is the skill's and means something of its own; this server
+// must not read it as a computer to go through, nor ask first because of it.
+func TestASkillsOwnComputerArgumentIsLeftAlone(t *testing.T) {
+	declared := &skills.Tool{Name: "status", Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"computer": map[string]any{"type": "string", "description": "the host to look up"},
+		},
+	}}
+	tool := (&Agent{}).skillTool(&skills.Skill{Name: "inventory"}, "server", declared)
+	if tool.RiskOf != nil {
+		t.Error("naming the skill's own computer argument would ask first")
+	}
+	properties := tool.Parameters["properties"].(map[string]any)
+	if description := properties["computer"].(map[string]any)["description"]; description != "the host to look up" {
+		t.Errorf("the skill's own argument was replaced: %v", description)
 	}
 }
