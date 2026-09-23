@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-09-23
+
+### Added
+
+- Source types: install a kind of knowledge source from the signed source types registry, or add one of your own, and add sources of it from the dashboard or `teanode agent knowledge add --type`. (#127)
+
+### Fixed
+
+- A source whose computer was busy reading another source waited until its next scheduled hour instead of its turn. (#127)
+
 ## [0.53.1] - 2026-09-23
 
 ### Fixed
