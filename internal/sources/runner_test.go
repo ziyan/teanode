@@ -427,3 +427,49 @@ records:
 		t.Errorf("a set token was not sent: %v", fake.headers[1])
 	}
 }
+
+// A service that says it is asked too often is asked again after a wait,
+// and a type's pace spaces its calls out.
+func TestABusyServiceIsAskedAgain(t *testing.T) {
+	kind := mustParse(t, `
+name: busy
+description: a service that turns the first call away
+pace: 50ms
+settings: []
+containers:
+  - {fixed: [{}], name: one.jsonl}
+records:
+  - {command: [service, list], parse: jsonl, record: {id: "{{item.id}}"}}
+`)
+	calls := 0
+	busy := &scriptedExecutor{answer: func(words []string) ([]byte, error) {
+		calls++
+		if calls == 1 {
+			return nil, &CommandError{Words: words, ExitCode: 7, Said: "Google API error (403 rateLimitExceeded): Quota exceeded"}
+		}
+		return []byte(`{"id":"one"}`), nil
+	}}
+	var waited []time.Duration
+	runner := &Runner{Type: kind, Executor: busy, State: t.TempDir(), Sleep: func(duration time.Duration) { waited = append(waited, duration) }}
+	containers, _ := runner.List(context.Background())
+	records, err := runner.Read(context.Background(), containers[0])
+	if err != nil || len(records) != 1 {
+		t.Fatalf("the busy service was not asked again: %v, %v", ids(records), err)
+	}
+	// The retry's wait, then the pace before the call it retries.
+	if len(waited) != 2 || waited[0] != retryPauses[0] || waited[1] <= 0 || waited[1] > 50*time.Millisecond {
+		t.Errorf("the waits were %v", waited)
+	}
+}
+
+type scriptedExecutor struct {
+	answer func([]string) ([]byte, error)
+}
+
+func (self *scriptedExecutor) Command(ctx context.Context, words []string) ([]byte, error) {
+	return self.answer(words)
+}
+
+func (self *scriptedExecutor) Request(ctx context.Context, request *PreparedRequest) (int, []byte, error) {
+	return 404, nil, nil
+}

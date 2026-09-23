@@ -77,6 +77,11 @@ func (self *Type) validate() error {
 	if len(self.Containers) == 0 || len(self.Records) == 0 {
 		return fmt.Errorf("a type says how to list its containers and how to read them")
 	}
+	if self.Pace != "" {
+		if _, err := parseDuration(self.Pace); err != nil {
+			return fmt.Errorf("pace: %w", err)
+		}
+	}
 	if self.RunsCommands() && self.RunsOn(RunsServer) {
 		return fmt.Errorf("a type that runs commands runs on a computer, never on the server")
 	}

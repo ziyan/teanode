@@ -50,6 +50,10 @@ type Type struct {
 	Containers []Listing `yaml:"containers"`
 	Records    []Reading `yaml:"records"`
 
+	// Pace is the least time between two calls a type makes, for a service
+	// that counts calls a minute, such as "100ms".
+	Pace string `yaml:"pace"`
+
 	// Prose is what follows the header, for people.
 	Prose string `yaml:"-"`
 }

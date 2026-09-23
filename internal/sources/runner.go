@@ -85,8 +85,57 @@ type Runner struct {
 	// Now is the clock, for tests.
 	Now func() time.Time
 
+	// Sleep waits, for tests; time.Sleep by default.
+	Sleep func(time.Duration)
+
 	templates  map[string]compiled
 	conditions map[string]condition
+	lastCall   time.Time
+}
+
+// retryPauses are the waits before each retry of a call a service turned
+// away for coming too often.
+var retryPauses = []time.Duration{10 * time.Second, 30 * time.Second, 90 * time.Second, 3 * time.Minute}
+
+// busyAnswer is how a service says it is being asked too often, or is
+// briefly unable to answer.
+var busyAnswer = regexp.MustCompile(`(?i)\b429\b|\b503\b|rate ?limit|quota|too many requests|try again later|temporarily unavailable`)
+
+func (self *Runner) sleep(duration time.Duration) {
+	if self.Sleep != nil {
+		self.Sleep(duration)
+		return
+	}
+	time.Sleep(duration)
+}
+
+// paced waits out the type's pace since the last call.
+func (self *Runner) paced() {
+	if self.Type.Pace == "" {
+		return
+	}
+	pace, err := parseDuration(self.Type.Pace)
+	if err != nil || pace <= 0 {
+		return
+	}
+	if wait := pace - self.now().Sub(self.lastCall); wait > 0 && !self.lastCall.IsZero() {
+		self.sleep(wait)
+	}
+	self.lastCall = self.now()
+}
+
+// isBusy says a call failed because the service was asked too often, which
+// waiting answers.
+func isBusy(err error) bool {
+	var failed *CommandError
+	if errors.As(err, &failed) {
+		return busyAnswer.MatchString(failed.Said)
+	}
+	var status *statusError
+	if errors.As(err, &status) {
+		return status.code == 429 || status.code == 503
+	}
+	return false
 }
 
 // Record is one record, in the shape the records reader files.
@@ -711,6 +760,7 @@ func (self *Runner) attachments(ctx context.Context, container Container, readin
 				if err != nil {
 					return nil, err
 				}
+				self.paced()
 				if _, err := self.Executor.Command(ctx, words); err != nil {
 					// One file that will not come is one file left out,
 					// not a container that cannot be read.
@@ -813,8 +863,24 @@ func (self *statusError) Error() string {
 	return fmt.Sprintf("the request was answered %d: %s", self.code, self.body)
 }
 
-// call runs one command or request, with the page token where there is one.
+// call runs one command or request, with the page token where there is
+// one, waiting out the type's pace and retrying what a service turned away
+// for coming too often.
 func (self *Runner) call(ctx context.Context, command []string, request *Request, paging Paging, token string, scope Scope) ([]byte, error) {
+	for attempt := 0; ; attempt++ {
+		self.paced()
+		output, err := self.callOnce(ctx, command, request, paging, token, scope)
+		if err == nil || !isBusy(err) || attempt >= len(retryPauses) {
+			return output, err
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		self.sleep(retryPauses[attempt])
+	}
+}
+
+func (self *Runner) callOnce(ctx context.Context, command []string, request *Request, paging Paging, token string, scope Scope) ([]byte, error) {
 	if request != nil {
 		prepared, err := self.prepare(request, scope)
 		if err != nil {
