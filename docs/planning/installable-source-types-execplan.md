@@ -22,9 +22,12 @@ and within a minute the source page shows messages being read, with no file crea
 - [x] (2026-09-23) Milestone 1: the runner (`internal/sources`) and `teanode computer try-source`, run against `gh`, `gog` (Gmail and Drive), `mm` and `confluence` on a real computer.
 - [x] (2026-09-23) Milestone 2: the format as a package, parsed and validated, with requests, secrets, pace and retries; files a tool keeps on disk, lookups, a refresh command, walks named by path, and the filters the scripts' text needed.
 - [x] (2026-09-23) Milestone 3: `agent_source_type`, install from the signed registry or add a local type, sources of a type (`type` and `settings` on the source), the typed scan, and `teanode agent source-type`. The registry publishes nine types, signed.
-- [ ] Milestone 4: the types that replace the five scripts. Checked record by record against each script (see Artifacts); switching the live sources remains.
-- [ ] Milestone 5: the dashboard: types under Settings, a type picker and settings form on the Knowledge page.
-- [ ] Milestone 6: the scripts retired; the records contract kept for anything a type cannot say.
+- [x] (2026-09-23) Milestone 4: the types that replace the five scripts, each checked record by record against its script (see Artifacts), and every live source switched: folders to `folder`, the chat archive to `mattermost-mm`, the drive to `google-drive-gog`, the code host to `github-gh`, the two exports to local types. The self-hosted code host later moved to `gitlab-glab` on another computer, at the person's request.
+- [x] (2026-09-23) Milestone 5: the dashboard: Source types under Agents (installed, the registry, local types, each type's guide), a Sources tab on the agent page with a type picker and a settings form, and a typed source's settings when it is edited. Checked at desktop and phone widths.
+- [x] (2026-09-23) The agent's knowledge tool lists types and adds a source of one; `teanode agent source-type` and `knowledge add/set --type --setting --computer`.
+- [x] (2026-09-23) Code review of the whole change; its findings fixed (see Outcomes), shipped as #127 and #128.
+- [ ] Milestone 6: the scripts retired. The records folders are left on the person's computer, unread, until a week of passes shows no sweep larger than the day's changes; the records contract stays for anything a type cannot say.
+- [ ] Secrets carried to where a type runs, so a type that needs a credential (a wiki's own web API) can be read. Until then such a type is refused when a source of it is saved.
 
 ## Surprises & Discoveries
 
@@ -40,6 +43,12 @@ and within a minute the source page shows messages being read, with no file crea
   Evidence: a sync run on 2026-09-23, stopped before it fetched anything.
 - Observation: a document's hash is the hash of its text, so a type must reproduce a script's text exactly, down to the dash in a generated heading, a date cut to ten characters and Windows line endings turned into newlines, or everything is read again.
   Evidence: the comparisons in Artifacts found each of these before the switch.
+- Observation: a wiki's command line tool cannot list a large site completely. It lists at most 500 spaces, a search answers at most 250 results whatever limit is asked for, and in its newer version the flag that says where to start is ignored for query searches, so every page is the first. A bulk edit changed thousands of pages in one hour, so no window of time is small enough either.
+  Evidence: a switch of the wiki source to the live type on 2026-09-23, paused before its pass finished; nothing was deleted and the source went back to its export.
+- Observation: a source that found its computer busy reading another source was put off to its hour the next day, not retried when the other finished, so behind one long source the rest never ran.
+  Evidence: `internal/agent/ingest.go`, the waiting branch; four sources were found scheduled for the next night after the switch.
+- Observation: the review found several ways a pass could still delete what it had not really lost: a container that failed to read was sent as one refused entry and its documents swept; a cursor naming an item gone since the last page skipped the rest of its container; a comparison with an empty time held, skipping readings; an error object with no list read as an empty listing.
+  Evidence: the review of #127; each is now an unfinished pass, a failure, or a test.
 - Observation: `skill` and `web` source kinds are declared in `internal/models/knowledge.go` and accepted by the API but cannot be read (`internal/agent/ingest.go` fails them as "not built yet").
 
 ## Decision Log
@@ -92,9 +101,27 @@ and within a minute the source page shows messages being read, with no file crea
   Rationale: a first read of a large mailbox or chat takes many pages; a pass cut short is not a pass that saw everything.
   Date/Author: 2026-09-23, agent.
 
+- Decision: the dry run the plan called `knowledge try` was not built; each type was compared with its script by running both over the same containers with `teanode computer try-source` and diffing the records field by field.
+  Rationale: the comparison had to cover text and attachments, not only identifiers, and the scripts were on the same computer. A dry run on the server remains worth building for sources whose script is gone.
+  Date/Author: 2026-09-23, agent.
+
+- Decision: a computer forgets what a source's directory learned (its listing, its marks, its kept records) when the source's type or settings change, keeping fetched files, whose names already say what they are.
+  Rationale: a mailbox pointed at another account must not keep reporting the first account's mail, and a reading that starts from where the last stopped must start again.
+  Date/Author: 2026-09-23, agent, from the review.
+
+- Decision: the wiki source stays on its export; the registry's `confluence` type fails when an answer may have been cut instead of passing for complete, and the runner fails a tool that answers the same page when asked for the next.
+  Rationale: see Surprises. Reading that site live needs its web API with cursor paging, which needs secrets carried to the computer.
+  Date/Author: 2026-09-23, agent.
+
 ## Outcomes & Retrospective
 
-Nothing implemented yet.
+Shipped on 2026-09-23 in #127 and #128. Every knowledge source on the deployed server is now a source of a type; nine types are published in the signed registry, and two local types read one-off exports. The switch kept identifiers and hashes wherever the type replaced a script: the drive's first typed pass saw all 1,958 documents and filed three new ones; the chat, export and folder sources re-saw what their first typed passes reached without re-reading any of it. The one source moved to a different reading (the self-hosted code host, from its export to `glab`) was re-read on purpose.
+
+What worked: comparing each type record by record before switching found every difference that would have changed a hash (a dash, a date cut to ten characters, line endings, a label's case), and carrying the scripts' caches over (video sheets, exported workbooks) kept the files' identities too.
+
+What was learned: the sweep is the risk in everything here. Every defect of consequence the review found was a path by which a pass that had not seen everything could still delete, and the fix each time was the same rule: a pass that is not sure it saw everything is unfinished, and an unfinished pass deletes nothing. A tool's limits are the other risk: a tool that caps or ignores paging must make the reading fail, never pass for complete.
+
+Left to do: carrying secrets to typed sources, the `website` reader, a server-side dry run, and retiring the records folders after a week of quiet passes.
 
 ## Context and Orientation
 
@@ -112,7 +139,7 @@ Terms used below. A *source type* is the YAML file. A *source* is one configured
 
 A type is a markdown file whose YAML header describes the type; the prose under it is for people. The header has:
 
-`name` and `description`, as for a skill. `settings`: what a person fills in when adding a source of this type, each with a name, a description, a JSON Schema type, an optional default, and an optional pattern the value must match (a setting is a word passed to a command, so a pattern such as `^[A-Za-z0-9_.@-]+$` keeps a value from becoming a flag). `requires`: the command line tools the type calls, checked on the computer before the first pass so a missing tool is reported as that rather than as a failed listing.
+`name` and `description`, as for a skill. `settings`: what a person fills in when adding a source of this type, each with a name, a description, a type (`string`, `path`, `array`, `boolean` or `integer`), an optional default, and an optional pattern the value must match (a setting is a word passed to a command, so a pattern such as `^[A-Za-z0-9_.@-]+$` keeps a value from becoming a flag); a setting with no default is required. `requires`: the command line tools the type calls, checked on the computer before the first pass so a missing tool is reported as that rather than as a failed listing. `refresh`: commands run once at the start of a pass, before anything is listed, for a tool that keeps its own copy of a service. `lookups`: tables read from files, reached as `lookup.<name>[key]`. `pace`: the least time between two calls.
 
 `containers`: how to list the containers. One or more *listings*, each a `command` (a list of words, with `{{setting}}` references), a `parse` block, and a `paging` block, and a `name` template giving each container's name from the fields of what was listed. All listings run; their results are joined and deduplicated by name. If any listing fails, the pass fails.
 
@@ -122,7 +149,9 @@ A type is a markdown file whose YAML header describes the type; the prose under 
 
 `attachments` (optional): a command that writes one file for an item to a path the runner gives it, cached the same way, with a maximum size.
 
-`parse` says what the command prints: `json` with an `items` path to the list (dotted keys, as skills use), `jsonl`, or `lines` with a regular expression whose named groups become the item's fields. `paging` is one of `none`, `token` (the field holding the next page's token and the flag that passes it), `all` (the tool pages by itself, such as `gh ... --paginate`), or `limit` (a flag and a number; a page that comes back full is treated as possibly cut and fails the pass rather than being trusted).
+`parse` says what the command prints: `json` or `xml` with an `items` path to the list (dotted keys, as skills use), `jsonl`, `lines` with a regular expression whose named groups become the item's fields, `markdown` (a header of fields and a body), or `text`. `paging` is one of `none`, `token` (the field holding the next page's token and the flag that passes it), `offset` (the flag that says where to start, and the size of a full page), `all` (the tool pages by itself, such as `gh ... --paginate`), or `limit` (a page that comes back full is treated as possibly cut and fails the pass rather than being trusted). A listing may also be `files` under a directory, `fixed` items, or a `walk` down a tree; a reading may read a `file` or `files` instead of running a command. The registry's README is the full reference.
+
+Templates name where a value comes from: `{{settings.account}}`, `{{container.name}}`, `{{item.id}}`, `{{each}}`, `{{pass.since}}`, `{{detail.text}}`, `{{lookup.users[item.user_id]}}`, `{{secret:key}}`, with filters such as `{{item.create_at | epoch-ms | local-time}}`. Conditions (`skip`, `when`, a record's `private`) compare them with `== != < <= > >= in matches` and `&& || !`.
 
 An abridged type for a mailbox read with the `gog` Google command line tool, as it might be written:
 
@@ -139,28 +168,25 @@ An abridged type for a mailbox read with the `gog` Google command line tool, as 
         description: which messages, in Gmail's search words
         type: string
         default: "newer_than:365d"
+    pace: 250ms
     containers:
-      - command: [gog, --account, "{{account}}", --json, gmail, labels, list]
-        parse: {json: {items: labels}}
-        paging: none
-        name: "labels/{{name}}"
+      - fixed: [{}]
+        name: threads.jsonl
     records:
-      command: [gog, --account, "{{account}}", --json, gmail, search, "label:{{container.name}} {{query}}", --max, "100"]
-      parse: {json: {items: threads}}
-      paging: {token: {field: nextPageToken, flag: --page}}
-      record:
-        id: "{{id}}"
-        kind: mail
-        title: "{{subject}}"
-        at: "{{date}}"
-        author: "{{from}}"
-        version: "{{historyId}}"
-    detail:
-      command: [gog, --account, "{{account}}", --json, gmail, get, "{{id}}", --format, full]
-      text: "{{body.text}}"
+      - command: [gog, --account, "{{settings.account}}", --json, gmail, search, "{{settings.query}}", --max, "500", --timezone, UTC]
+        parse: {json: {items: threads}}
+        paging: {token: {field: nextPageToken, flag: --page}}
+        unseen: keep
+        record:
+          id: "{{item.id}}"
+          kind: mail
+          title: "{{item.subject}}"
+          at: "{{item.date | time}}"
+          author: "{{item.from}}"
+          version: "{{item.messageCount}}/{{item.date}}"
     ---
 
-Whether `gog` answers with these exact field names is what Milestone 1 finds out; the format is settled by it, not by this example.
+The published type is `sources/gmail-gog/source.md` in the registry, with the detail call that reads each thread in full; its field names and paging were read from the tool in Milestone 1.
 
 ## Plan of Work
 
@@ -186,14 +212,20 @@ Milestone 6 retires the scripts. With every source switched and a week of passes
 
 ## Concrete Steps
 
-For Milestone 1, from the repository root:
+Trying a type on a computer, without the server:
 
     make build
-    ./build/teanode computer try-source ~/scratch/gmail.yaml --setting account=someone@example.com --limit 5
+    ./build/teanode computer try-source sources/gmail-gog/source.md --setting account=someone@example.com --containers 1 --records 5
 
-Expected: five JSON lines, each with an `id`, a `title` and a non-empty `text`, then a summary line such as `2 containers, 5 records, nothing refused`. With `--setting account=-x`, expected: `the setting account does not match ^[^-][^ ]*@[^ ]+$` and no command run.
+It prints each record as a JSON line, with the container it came from, and the containers and counts on standard error; `--only <container>` reads chosen containers and `--records -1` prints every record, which is how each type was compared with its script.
 
-Later milestones add their commands to this section as they are built.
+Installing a type and adding a source of it:
+
+    teanode agent source-type search
+    teanode agent source-type install gmail-gog
+    teanode agent source-type add-local ./my-type/source.md
+    teanode agent knowledge add --type gmail-gog --computer laptop --setting account=someone@example.com inbox
+    teanode agent knowledge set inbox --setting query=newer_than:30d
 
 ## Validation and Acceptance
 
@@ -226,13 +258,12 @@ In `internal/sources/source.go`:
     }
 
     func Parse(content []byte) (*Type, error)
-    func (self *Type) CheckSettings(values map[string]string) error
+    func (self *Type) CheckSettings(values map[string]any) (map[string]any, error)
+    func (self *Type) Specify(source *models.AgentKnowledgeSource, values map[string]any) error
 
-In `internal/computer/scan_typed.go`:
+The runner is `sources.Runner` (`List`, `Read`) in `internal/sources/runner.go`, with an `Executor` that runs commands and requests. In `internal/computer/scan_typed.go`, `openTyped` builds one for a scan page, and `scanRecords` reads a typed source as it reads a records folder. `ScanArguments` gains `SourceType`, `Settings`, `Secrets` and `SourceKey`, sent only when `Format` is `typed`; `ScanResult` gains `IsUnfinished`. No new third-party libraries: YAML parsing uses the library `internal/skills` already uses.
 
-    func runTyped(ctx context.Context, options *Options, arguments *ScanArguments) (*ScanResult, error)
-
-`ScanArguments` gains `TypeContent string` and `Settings map[string]string`, sent only when `Format` is `typed`. No new third-party libraries: YAML parsing uses the library `internal/skills` already uses.
+Revision note (2026-09-23, after shipping): progress, discoveries, decisions and outcomes brought up to what shipped in #127 and #128; the format section, the example, the steps and the interfaces describe the code as it is.
 
 Revision note (2026-09-23, later): folders, journals and websites are types in the registry too, each naming a reader built into TeaNode; a type can make web requests with secrets, and can run on the server.
 
