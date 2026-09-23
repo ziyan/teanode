@@ -15,9 +15,11 @@ type Token struct {
 	LastUsed   *time.Time `json:"lastUsed"`
 	LastUsedIP string     `json:"lastUsedIp"`
 	Revoked    *time.Time `json:"revoked"`
+
+	IsHeldByProgram bool `json:"isHeldByProgram"`
 }
 
-const tokenFields = `id name username created expires lastUsed lastUsedIp revoked`
+const tokenFields = `id name username created expires lastUsed lastUsedIp revoked isHeldByProgram`
 
 // ListTokens returns the tokens belonging to the account this client is
 // authenticated as.
@@ -68,6 +70,32 @@ func CreateToken(ctx context.Context, connection *Client, name, username, lifeti
 		return nil, "", err
 	}
 	return result.CreateToken.Token, result.CreateToken.Secret, nil
+}
+
+// UpdateToken renames a token or gives it a new lifetime counted from now,
+// "never" for one that does not expire. An empty name or lifetime leaves
+// that as it is.
+func UpdateToken(ctx context.Context, connection *Client, id, username, name, lifetime string) (*Token, error) {
+	var result struct {
+		UpdateToken *Token `json:"UpdateToken"`
+	}
+	query := `mutation ($tokenId: String!, $username: String, $name: String, $lifetime: String) {
+		UpdateToken(tokenId: $tokenId, username: $username, name: $name, lifetime: $lifetime) { ` + tokenFields + ` }
+	}`
+	variables := map[string]any{"tokenId": id}
+	if username != "" {
+		variables["username"] = username
+	}
+	if name != "" {
+		variables["name"] = name
+	}
+	if lifetime != "" {
+		variables["lifetime"] = lifetime
+	}
+	if err := connection.Execute(ctx, query, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.UpdateToken, nil
 }
 
 // DeleteToken revokes a token.
