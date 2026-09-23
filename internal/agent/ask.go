@@ -219,6 +219,10 @@ type AskRun struct {
 	loaded  map[string]bool
 	offered []*Tool
 
+	// promptData is the part of the prompt read from the person's data,
+	// kept for the turn's rounds; see systemPrompt.
+	promptData *turnPromptData
+
 	// previous is the turn of the same conversation this one waits for;
 	// done closes when this one is over.
 	previous *AskRun
@@ -1273,6 +1277,19 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 		}
 	}
 	deferredLines := deferredCatalog(deferred)
+	// What is read from the person's data is read once a turn. Every round
+	// sends the prompt again, and the provider serves the unchanged front
+	// of a request from its cache: the facts on the self page are ordered
+	// by when they were last used, and recall marks them used after the
+	// first round, so a prompt read afresh each round differed from the
+	// second round on and the whole of it was paid for again every time.
+	if self.promptData == nil {
+		self.promptData = &turnPromptData{
+			situation: self.situation(ctx, configuration),
+			knowledge: self.carryIndex(ctx, indexTokens),
+			self:      self.agent.selfLines(ctx, settings.Agent, settings.Owner),
+		}
+	}
 	return render("ask.txt", map[string]any{
 		"AgentName":         settings.Agent.DisplayName(),
 		"PersonName":        personName(settings.Owner),
@@ -1280,16 +1297,24 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 		"Language":          languageName(Language(settings.Agent, settings.Owner)),
 		"Short":             short,
 		"HouseInstructions": strings.TrimSpace(configuration.Agent.Instructions),
-		"Situation":         self.situation(ctx, configuration),
+		"Situation":         self.promptData.situation,
 		"Instructions":      strings.TrimSpace(settings.Agent.Instructions),
-		"Knowledge":         self.carryIndex(ctx, indexTokens),
+		"Knowledge":         self.promptData.knowledge,
 		// The month as a path, so the prompt can say where this month's
 		// page is without the clock itself going into the cacheable part.
 		"ThisMonth": time.Now().In(tools.Location(settings.Owner)).Format("2006/01"),
-		"Self":      self.agent.selfLines(ctx, settings.Agent, settings.Owner),
+		"Self":      self.promptData.self,
 		"Guidance":  guidance,
 		"Deferred":  deferredLines,
 	})
+}
+
+// turnPromptData is what the prompt reads from the person's data, read
+// once for a turn.
+type turnPromptData struct {
+	situation string
+	knowledge []string
+	self      []string
 }
 
 // deferredCatalog is a line for each tool not loaded, and one for each
