@@ -85,6 +85,7 @@ func NewComputerCommand() *cli.Command {
 				Usage:  "end the program running in the background",
 				Action: runComputerStop,
 			},
+			newComputerBackgroundCommand(),
 		},
 	}
 }

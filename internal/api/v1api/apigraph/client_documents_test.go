@@ -85,6 +85,10 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ListAgentSchedules":      client.DocumentListAgentSchedules,
 		"SaveAgentSchedule":       client.DocumentSaveAgentSchedule,
 		"SaveAgentNode":           client.DocumentSaveAgentNode,
+		// What the agent's shell left running on the person's computers.
+		"ListAgentBackgroundCommands": client.DocumentListAgentBackgroundCommands,
+		"ReadAgentBackgroundCommand":  client.DocumentReadAgentBackgroundCommand,
+		"StopAgentBackgroundCommand":  client.DocumentStopAgentBackgroundCommand,
 	}
 
 	for name, document := range documents {

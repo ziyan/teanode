@@ -435,6 +435,9 @@ queueing it.
 | `teanode computer status` | whether the program runs here, and which computers of yours the server sees |
 | `teanode computer stop` | end the program |
 | `teanode computer daemon [--name NAME]` | the same program in the foreground, reconnecting when the connection drops, until interrupted — for a terminal, or a service manager |
+| `teanode computer background list [--conversation ID]` | the commands the agent's shell left running in the background on your computers, and the ones that ended lately, newest first: one line each with its id, the computer, where it stands (`running`, `exit N`, `stopped`, or `stopped after 24 hours` when it ran as long as a background command may), when it started in your local time, and the command. `--conversation` keeps to the ones one conversation started |
+| `teanode computer background read <computer> <id> [--tail BYTES]` | the last of what one of them wrote: its output on standard output, then its errors on standard error, with a line saying when either was cut and a last line saying where it stands. `--tail` is how much of the end of each stream to print, 64 KiB by default and 256 KiB at most |
+| `teanode computer background stop <computer> <id>` | end one of them. The agent that started it hears that it ended, as it does of any ending it did not ask for |
 
 The operator can keep computers off for the whole server with
 `agent.features.computer`.
