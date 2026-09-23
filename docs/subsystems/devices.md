@@ -30,7 +30,8 @@ signs in with their own token, not the server's, and the command refuses the
 local profile for exactly that reason.
 
 It offers two actions. `shell` runs a command and returns both streams, an exit
-code, and whether either was cut. `filesystem` reads, writes, appends, edits by
+code, and whether either was cut. What is kept of a stream is its first 64 KiB
+and its last 192 KiB, with a line saying how much was left out between them. `filesystem` reads, writes, appends, edits by
 exact text, lists, says what one file is, copies, moves, deletes, makes
 directories, globs for files, and greps.
 
@@ -52,10 +53,13 @@ Bounds it applies itself:
 | largest file read | 4 MiB |
 | largest file fetched whole | 32 MiB |
 | requests at once | 4 |
+| background commands running | 16 |
 
-A fifth request is refused rather than queued. A command that starts something
-long is killed as a process group, so a shell that spawned a server does not
-leave it holding the pipes.
+A fifth request is refused rather than queued; reading, listing and stopping
+background commands take no place among the four.
+
+A command that is killed is killed as a process group, so a shell that
+spawned a server does not leave it holding the pipes.
 
 **There is no directory it is confined to.** `~` and a relative path are
 resolved against the person's home because that is convenient, and an absolute
@@ -94,6 +98,38 @@ it would have done.
 
 **The rule is the server's alone.** The program runs what it is sent. An
 attached computer trusts its server the way a terminal trusts the person at it.
+
+### Background commands
+
+A command still running when its call's wait runs out is not killed: it goes
+on in the background, and the answer says so with its id and what it printed
+so far. The agent can also start one there on purpose (a build, a server, a
+loop that waits for something), and `shell` reads one's progress, lists them
+and stops one. The program keeps up to sixteen running and remembers
+sixty-four; each is stopped after twenty-four hours, and an ended one can be
+read for a day. The person sees them, with their output, in the drawer and on
+the agent page, and can stop one there too.
+
+The program holds them, not the connection: a network that drops or a server
+that restarts does not end a build, and stopping the program does. When one
+ends, the program says so without being asked, carrying the origin the server
+gave it: the agent and the conversation that started it. It says so again
+after every reconnect until the server acknowledges it, so nothing about them
+is kept in the database.
+
+An ending wakes that conversation: a turn opens with a message marked
+`[background command]`, saying how it ended and carrying the end of its output
+as untrusted data, and the drawer draws that line muted, as it does a goal's
+check-in. Endings that arrive within two seconds of each other are one turn,
+and the ending is acknowledged when that turn is over. A run with nobody
+present never leaves a command running, and a conversation takes at most
+twenty woken turns before the person writes there again. Why, and what it
+costs:
+`docs/decisions/20260923-a-background-command-wakes-the-conversation-that-started-it.md`.
+
+A program that predates background commands does not name them in its hello,
+and the server asks it for none: its commands are killed at the end of their
+wait, as before.
 
 ## A program held open
 
