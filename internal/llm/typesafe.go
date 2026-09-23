@@ -51,7 +51,10 @@ func newTypeSafe(baseUrl, apiKey string, timeout time.Duration) (*typeSafe, erro
 	if baseUrl == "" {
 		baseUrl = typeSafeBaseUrl
 	}
-	client, err := decide.New(baseUrl, apiKey, "", timeout)
+	// Named on every request: the service used to fall back to its own
+	// default when none was given, and now refuses the request instead,
+	// which sent every decision to a language model.
+	client, err := decide.New(baseUrl, apiKey, typeSafeModels[0], timeout)
 	if err != nil {
 		return nil, err
 	}

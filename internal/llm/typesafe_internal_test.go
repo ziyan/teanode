@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -65,13 +66,20 @@ func TestTheChatProvidersStillChat(test *testing.T) {
 
 // A decision goes out and comes back through the provider, so the wiring
 // between this package and the client underneath is exercised and not just
-// assumed.
+// assumed. It names its model: the service used to fall back to its own
+// default when none was given, and now refuses the request.
 func TestADecisionGoesThroughTheProvider(test *testing.T) {
 	test.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/v1/systemone" {
 			test.Errorf("it asked at %q", request.URL.Path)
+		}
+		var body struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil || body.Model != "jev-latest" {
+			test.Errorf("it named the model %q (%v)", body.Model, err)
 		}
 		_, _ = io.WriteString(writer, `{"answers":{"open":{"type":"noul","noul":0.87}}}`)
 	}))

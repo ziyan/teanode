@@ -47,9 +47,9 @@ type Client struct {
 
 // New builds a client. It opens no connection; the first question does.
 //
-// The model may be empty, in which case the service's own default is used.
-// Naming a version pins it, which is worth doing where an answer is stored
-// and compared with later ones.
+// The model is required by the service, which refuses a request that names
+// none. Naming a dated version rather than the latest pins it, which is
+// worth doing where an answer is stored and compared with later ones.
 func New(baseUrl, apiKey, model string, timeout time.Duration) (*Client, error) {
 	baseUrl = strings.TrimRight(strings.TrimSpace(baseUrl), "/")
 	if baseUrl == "" {
