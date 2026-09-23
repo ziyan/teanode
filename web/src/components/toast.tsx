@@ -119,15 +119,21 @@ function ToastRow({
   const { t } = useTranslation()
   const [held, setHeld] = useState(false)
 
+  // The latest onDismiss, called when the clock runs out. The list passes a
+  // new function at every render, and a clock that depended on it started
+  // again each time another toast arrived.
+  const dismissRef = useRef(onDismiss)
+  dismissRef.current = onDismiss
+
   // The clock stops while the pointer is on it. Somebody reaching for "undo"
   // should not have it taken away as they arrive.
   useEffect(() => {
     if (held) {
       return
     }
-    const timer = window.setTimeout(onDismiss, LINGER[toast.kind])
+    const timer = window.setTimeout(() => dismissRef.current(), LINGER[toast.kind])
     return () => window.clearTimeout(timer)
-  }, [held, toast.kind, onDismiss])
+  }, [held, toast.kind])
 
   return (
     <div

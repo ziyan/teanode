@@ -1577,6 +1577,12 @@ textarea {
   width: 100%;
 }
 
+/* A text box is as wide as its row, and dragged wider it spills out of the
+   form it sits in; only its height is the reader's to change. */
+textarea {
+  resize: vertical;
+}
+
 input:hover:not(:disabled),
 select:hover:not(:disabled),
 textarea:hover:not(:disabled) {

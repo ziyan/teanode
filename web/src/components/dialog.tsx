@@ -47,23 +47,30 @@ export function FormDialog({
 }) {
   const { t } = useTranslation()
   const form = useRef<HTMLFormElement>(null)
+  // The latest onClose, read when Escape is pressed. A caller passes a new
+  // function on every render, and an effect that depended on it ran again
+  // at every keystroke, putting the cursor back in the first field.
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       // An Escape a list inside the dialog already took closes the list,
       // not the dialog.
       if (event.key === 'Escape' && !event.defaultPrevented) {
-        onClose()
+        closeRef.current()
       }
     }
     document.addEventListener('keydown', onKeyDown)
-
-    // Put the cursor where the reader is about to type. Opening a dialog and
-    // then having to click into it is a step nobody wants.
-    form.current?.querySelector<HTMLInputElement>('input, select, textarea, [role="combobox"]')?.focus()
-
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+  }, [])
+
+  // Put the cursor where the reader is about to type, once, when the dialog
+  // opens. Opening a dialog and then having to click into it is a step
+  // nobody wants.
+  useEffect(() => {
+    form.current?.querySelector<HTMLInputElement>('input, select, textarea, [role="combobox"]')?.focus()
+  }, [])
 
   return (
     <div className="dialog-scrim" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
