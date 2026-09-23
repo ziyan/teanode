@@ -6,6 +6,22 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-09-23
+
+### Added
+
+- An Apps page to rename or disconnect the apps acting as you, and `teanode app`. (#124)
+- The chat box can be moved and resized on a wide screen. (#124)
+
+### Changed
+
+- The primary conversation is called the main chat, and the others side chats. (#124)
+
+### Fixed
+
+- Typing in a form dialog no longer moves the cursor back to the first field. (#124)
+- Searching chats is fast again, and each round of a turn no longer pays for the whole prompt again. (#124)
+
 ## [0.52.0] - 2026-09-23
 
 ### Added
