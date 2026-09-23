@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-09-23
+
+### Removed
+
+- `teanode computer allow`, `forget` and `allowed`. A knowledge source on an attached computer can read any folder there; update `teanode` on each computer, since an older one still refuses folders not on its list. (#122)
+
+### Fixed
+
+- The agent no longer loses a tool it used earlier in the same conversation. (#122)
+
 ## [0.50.0] - 2026-09-23
 
 ### Added
