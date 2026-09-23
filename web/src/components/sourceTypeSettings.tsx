@@ -347,7 +347,7 @@ export function settingLabel(name: string): string {
 }
 
 // asSentence is a description written as a phrase, as a sentence.
-function asSentence(description: string): string {
+export function asSentence(description: string): string {
   const trimmed = description.trim()
   const capitalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
   return /[.!?)]$/.test(capitalized) ? capitalized : `${capitalized}.`

@@ -36,6 +36,7 @@ import {
   SourceType,
   SourceTypeSettingsFields,
   isReadOnComputer,
+  asSentence,
   orderedSourceTypes,
   settingLabel,
   settingDrafts,
@@ -2337,7 +2338,7 @@ function KnowledgeSourcesCard() {
                     />
                   </label>
                   <p className="muted field-hint">
-                    {secret.description ? `${secret.description} ` : ''}
+                    {secret.description ? `${asSentence(secret.description)} ` : ''}
                     {t('sourceTypes.secretHint')}
                   </p>
                 </div>

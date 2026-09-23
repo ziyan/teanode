@@ -1827,7 +1827,7 @@ func runKnowledgeSecretList(ctx context.Context, command *cli.Command) error {
 		}
 		rows = append(rows, []string{secret.Key, state, secret.Description})
 	}
-	return printTable([]string{"key", "", "what it is"}, rows)
+	return printTable([]string{"key", "state", "what it is"}, rows)
 }
 
 func runKnowledgeSecretSet(ctx context.Context, command *cli.Command) error {
