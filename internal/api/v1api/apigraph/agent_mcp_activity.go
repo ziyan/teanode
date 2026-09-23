@@ -27,6 +27,9 @@ import (
 // conversations or file what they taught, so nothing here is turned into
 // memory.
 
+// mcpSecretNotKept stands in the record for an answer that carried a secret.
+const mcpSecretNotKept = "[not kept: this answer can carry a token or a password, which is shown once and kept nowhere]"
+
 // mcpRunKind is what these runs are filed under, and what the activity list
 // filters them by.
 const mcpRunKind = "mcp"
@@ -42,7 +45,13 @@ const (
 // record files one call. A failure to file it is logged and goes no further:
 // the program asked for a tool, not for a record, and it gets its answer
 // either way.
-func (self *mcpCatalog) record(name string, arguments json.RawMessage, answer string, failure error) {
+//
+// A call that can carry a secret is filed by name alone: a tool that makes a
+// token, a password or an account takes the password in its arguments or
+// shows the token once in its answer, and a record is read long after and by
+// whoever opens the activity list.
+func (self *mcpCatalog) record(name string, arguments json.RawMessage, answer string, failure error, isSecret bool) {
+	arguments, answer = keptOf(arguments, answer, failure, isSecret)
 	title, messages := mcpTranscript(self.caller.name, name, arguments, answer, failure)
 	err := self.graph.database.Transaction(func(tx db.Transaction) error {
 		run, err := tx.CreateAgentConversation(&models.AgentConversation{
@@ -67,6 +76,19 @@ func (self *mcpCatalog) record(name string, arguments json.RawMessage, answer st
 	if err != nil {
 		log.Warningf("could not file a call to %s over MCP by %q: %s", name, self.caller.name, err)
 	}
+}
+
+// keptOf is what of a call is kept: all of it, or for a call that can carry a
+// secret, neither its arguments nor its answer. A failure is kept either way,
+// since a failure carries no token.
+func keptOf(arguments json.RawMessage, answer string, failure error, isSecret bool) (json.RawMessage, string) {
+	if !isSecret {
+		return arguments, answer
+	}
+	if failure == nil {
+		answer = mcpSecretNotKept
+	}
+	return json.RawMessage(`{}`), answer
 }
 
 // mcpTranscript is a call as a title and the messages a run is read as.

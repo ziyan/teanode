@@ -60,3 +60,22 @@ func TestALargeCallIsCutToWhatIsWorthKeeping(test *testing.T) {
 		}
 	}
 }
+
+// A call that can carry a secret keeps neither its arguments nor its answer.
+//
+// A token made through a tool is shown once and kept nowhere, and a password
+// goes in as an argument; a record of the call is read long after, by
+// whoever opens the activity list.
+func TestASecretIsNotKeptInTheRecord(test *testing.T) {
+	arguments, answer := keptOf(json.RawMessage(`{"password":"a-password-for-a-test"}`), `{"secret":"a-token-for-a-test"}`, nil, true)
+	if strings.Contains(string(arguments), "a-password") || strings.Contains(answer, "a-token") {
+		test.Errorf("kept %s and %q", arguments, answer)
+	}
+	if answer != mcpSecretNotKept {
+		test.Errorf("the answer reads %q", answer)
+	}
+	ordinary, kept := keptOf(json.RawMessage(`{"command":"ls"}`), "total 0", nil, false)
+	if string(ordinary) != `{"command":"ls"}` || kept != "total 0" {
+		test.Errorf("an ordinary call was changed: %s, %q", ordinary, kept)
+	}
+}
