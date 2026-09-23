@@ -2940,6 +2940,19 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   aria-label={t('agentDrawer.search')}
                   onChange={(event) => setSearch(event.target.value)}
                 />
+                {found !== null && found.length === 0 && (
+                  <div className="agent-drawer-list-row muted">
+                    <span className="agent-drawer-list-title">{t('agentDrawer.nothingFound')}</span>
+                  </div>
+                )}
+                {/* The main chat first, whatever was said last, with the way
+                    to start a side chat under it: it is the one the drawer
+                    opens to, and a side chat is started from beside it. The
+                    rest by when they were last spoken in, because that is
+                    how somebody looks for one. */}
+                {(found ?? conversations)
+                  .filter((conversation) => conversation.kind === 'main')
+                  .map((conversation) => conversationRow(conversation))}
                 {found === null && (
                   <>
                     <button
@@ -2956,21 +2969,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     </button>
                   </>
                 )}
-                {found !== null && found.length === 0 && (
-                  <div className="agent-drawer-list-row muted">
-                    <span className="agent-drawer-list-title">{t('agentDrawer.nothingFound')}</span>
-                  </div>
-                )}
                 {[...(found ?? conversations)]
-                  // The main conversation first, whatever was said last,
-                  // and a rule under it: it is the one the drawer opens to.
-                  // The rest by when they were last spoken in, because
-                  // that is how somebody looks for one.
-                  .sort(
-                    (first, second) =>
-                      Number(second.kind === 'main') - Number(first.kind === 'main') ||
-                      (second.lastAt ?? '').localeCompare(first.lastAt ?? ''),
-                  )
+                  .filter((conversation) => conversation.kind !== 'main')
+                  .sort((first, second) => (second.lastAt ?? '').localeCompare(first.lastAt ?? ''))
                   .map((conversation) => conversationRow(conversation))}
                 {/* What has been put away, under everything else and shut
                     until it is asked for. */}

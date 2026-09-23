@@ -489,7 +489,7 @@ func (self *chatState) command(ctx context.Context, channel *models.AgentChannel
 		if err := self.freshMain(found); err != nil {
 			reply = "A fresh conversation could not be started: " + err.Error()
 		} else {
-			reply = "A fresh primary conversation. The old one is kept, named, in the drawer."
+			reply = "A fresh main chat. The old one is kept as a side chat in the drawer."
 		}
 	case "status":
 		found, owner, err := self.person(channel)
@@ -513,7 +513,7 @@ func (self *chatState) command(ctx context.Context, channel *models.AgentChannel
 		}
 		title := conversation.Title
 		if title == "" {
-			title = "the primary conversation"
+			title = "the main chat"
 		}
 		reply = fmt.Sprintf("Agent: %s, %s's\nConversation: %s\nApp: %s, bot %s\nState: %s", found.Name, owner.Name, title, self.kind, self.bot.Name(), state)
 	default:
@@ -966,7 +966,7 @@ func cut(text string, limit int) int {
 
 // The commands a chat may send.
 var commands = []struct{ name, description string }{
-	{"new", "start a fresh primary conversation; the old one is kept"},
+	{"new", "start a fresh main chat; the old one is kept as a side chat"},
 	{"stop", "stop what the agent is doing"},
 	{"status", "which agent, which conversation, what it is doing"},
 	{"unlink", "drop this chat's link to the bot"},
