@@ -1495,13 +1495,13 @@ const CATEGORY_LABELS: Record<string, Key> = {
 
 // InsightChips is what the agent worked out about a message, in the width
 // of a word or two: a mark when it said the message matters today, the
-// category, and whether somebody is waiting on an answer. The summary rides
-// on the title, where a hover finds it without the row growing a line.
+// category, and whether somebody is waiting on an answer. The summary is
+// its tooltip, where a hover finds it without the row growing a line.
 export function InsightChips({ insight }: { insight: MailInsight }) {
   const { t } = useTranslation()
   const label = CATEGORY_LABELS[insight.category]
-  return (
-    <span className="mailbox-row-insight" title={insight.summary || undefined}>
+  const chips = (
+    <span className="mailbox-row-insight">
       {insight.priority === 'high' && (
         <span className="mailbox-row-priority" aria-label={t('mailbox.priorityHigh')}>
           !
@@ -1513,6 +1513,7 @@ export function InsightChips({ insight }: { insight: MailInsight }) {
       {insight.needsReply && <span className="mailbox-row-chip">{t('mailbox.needsReply')}</span>}
     </span>
   )
+  return insight.summary ? <Tooltip label={insight.summary}>{chips}</Tooltip> : chips
 }
 
 const CANCEL_REPLY = `
