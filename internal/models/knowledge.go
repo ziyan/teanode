@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 )
@@ -66,10 +67,15 @@ const (
 	// wrote it, what it says. It is how everything that is not one of the
 	// shapes above gets in without a reader being written for it.
 	FormatRecords = "records"
+
+	// FormatTyped is read by running the source's type: the commands and
+	// requests it declares, run on the computer. Specification.Type names
+	// the type and Specification.Settings holds what the person filled in.
+	FormatTyped = "typed"
 )
 
 // AgentKnowledgeFormats is every format a source may be read in.
-var AgentKnowledgeFormats = []string{FormatFiles, FormatJournal, FormatRecords}
+var AgentKnowledgeFormats = []string{FormatFiles, FormatJournal, FormatRecords, FormatTyped}
 
 // IsAgentKnowledgeFormat says whether a word names a format.
 func IsAgentKnowledgeFormat(format string) bool {
@@ -84,6 +90,14 @@ func IsAgentKnowledgeFormat(format string) bool {
 // AgentKnowledgeSpecification is what to read. Which fields mean anything
 // depends on the kind; the rest are empty.
 type AgentKnowledgeSpecification struct {
+	// Type is the installed source type this source is one of, and
+	// Settings what the person filled in for it, as a JSON object. A
+	// type that names a reader built into TeaNode is read by that reader,
+	// with its settings copied into the fields below; any other is read
+	// with the typed format.
+	Type     string          `json:"type,omitempty"`
+	Settings json.RawMessage `json:"settings,omitempty"`
+
 	// Computer and Path: the device the person attached and where on it.
 	Computer string `json:"computer,omitempty"`
 	Path     string `json:"path,omitempty"`
@@ -235,7 +249,7 @@ func (self *AgentKnowledgeSource) Validate() error {
 		if strings.TrimSpace(self.Specification.Computer) == "" {
 			errors.add("specification.computer", "required: which computer")
 		}
-		if strings.TrimSpace(self.Specification.Path) == "" {
+		if strings.TrimSpace(self.Specification.Path) == "" && self.Specification.Format != FormatTyped {
 			errors.add("specification.path", "required: where on it")
 		}
 	case SourceSkill:
@@ -256,8 +270,11 @@ func (self *AgentKnowledgeSource) Validate() error {
 	// more. A typo is refused here, where the person is still looking at
 	// what they typed.
 	if format := self.Specification.Format; format != "" && !IsAgentKnowledgeFormat(format) {
-		errors.add("specification.format", "%q is not a format: %s, %s or %s",
-			format, FormatFiles, FormatJournal, FormatRecords)
+		errors.add("specification.format", "%q is not a format: %s, %s, %s or %s",
+			format, FormatFiles, FormatJournal, FormatRecords, FormatTyped)
+	}
+	if self.Specification.Format == FormatTyped && strings.TrimSpace(self.Specification.Type) == "" {
+		errors.add("specification.type", "required: which source type")
 	}
 	if self.RootPath != "" {
 		if err := ValidPath(self.RootPath); err != nil {
@@ -276,6 +293,9 @@ func (self *AgentKnowledgeSource) Validate() error {
 func (self *AgentKnowledgeSource) Describe() string {
 	switch self.Kind {
 	case SourceComputer, SourceArchive:
+		if self.Specification.Format == FormatTyped {
+			return self.Specification.Type + " on " + self.Specification.Computer
+		}
 		where := self.Specification.Path + " on " + self.Specification.Computer
 		if format := self.Specification.Format; format != "" && format != FormatFiles {
 			return where + " (" + format + ")"

@@ -140,6 +140,13 @@ type MemoryOperation interface {
 	PutAgentSkill(skill *models.AgentSkill) (*models.AgentSkill, error)
 	DeleteAgentSkill(name string) error
 
+	// The source types installed on this server, offered to everyone.
+	ListAgentSourceTypes() ([]*models.AgentSourceType, error)
+	GetAgentSourceType(name string) (*models.AgentSourceType, error)
+	PutAgentSourceType(sourceType *models.AgentSourceType) (*models.AgentSourceType, error)
+	DeleteAgentSourceType(name string) error
+	CountAgentSourcesOfType(name string) (int64, error)
+
 	CreateAgentTodo(todo *models.AgentTodo) (*models.AgentTodo, error)
 	UpdateAgentTodo(todoId string, modify func(*models.AgentTodo) error) (*models.AgentTodo, error)
 	DeleteAgentTodo(conversationId, todoId string) error

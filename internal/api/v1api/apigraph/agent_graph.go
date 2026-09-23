@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -331,6 +332,14 @@ type SaveAgentKnowledgeSourceArguments struct {
 
 	// MailboxID is which mailbox a sent source reads.
 	MailboxID string `json:"mailboxId" graphapi:"nullable"`
+
+	// Type is the installed source type to read this source as, and
+	// Settings what is filled in for it, as a JSON object. A type naming
+	// a reader built into TeaNode sets the kind, format and fields that
+	// reader takes from its settings; any other is read by running it on
+	// the computer. Settings not given keep what the source had.
+	Type     string          `json:"type" graphapi:"nullable"`
+	Settings json.RawMessage `json:"settings" graphapi:"nullable"`
 
 	// MaxAttachmentBytes is the largest file this source carries off the
 	// person's machine. Not given leaves it alone; zero puts it back to
@@ -1736,6 +1745,11 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 		}
 		source.Specification.OwnCommitsAtLeast = *arguments.OwnCommitsAtLeast
 	}
+	if arguments.Type != "" || (source.Specification.Type != "" && len(arguments.Settings) > 0) {
+		if err := self.applySourceType(ctx, tx, source, arguments.Type, arguments.Settings); err != nil {
+			return nil, err
+		}
+	}
 	if arguments.RootPath != "" {
 		source.RootPath = models.NormalizePath(arguments.RootPath)
 	}
@@ -1747,6 +1761,9 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 	}
 	if source.Name == "" {
 		source.Name = models.Slug(source.Specification.Path)
+		if source.Name == "" {
+			source.Name = source.Specification.Type
+		}
 		if source.Name == "" {
 			source.Name = string(source.Kind)
 		}

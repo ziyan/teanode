@@ -26,13 +26,14 @@ func TestAFormatThatIsNotAFormatIsRefused(t *testing.T) {
 	if err == nil {
 		t.Fatalf("%q was accepted as a format", source.Specification.Format)
 	}
-	want := `"recrods" is not a format: files, journal or records`
+	want := `"recrods" is not a format: files, journal, records or typed`
 	if !strings.Contains(err.Error(), want) {
 		t.Errorf("the message does not say what the formats are: %s", err)
 	}
 
 	// Every format the program reads, and an empty one for a source that
 	// never says, are all accepted.
+	source.Specification.Type = "invented-type"
 	for _, format := range append([]string{""}, models.AgentKnowledgeFormats...) {
 		source.Specification.Format = format
 		if err := source.Validate(); err != nil {

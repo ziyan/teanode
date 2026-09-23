@@ -300,3 +300,42 @@ func TestFilters(t *testing.T) {
 		}
 	}
 }
+
+func TestSettingsAreChecked(t *testing.T) {
+	kind := mustParse(t, `
+name: checked
+description: an invented type with every kind of setting
+settings:
+  - {name: path, type: string, pattern: "^[^-].*$"}
+  - {name: labels, type: array, items: {type: string, pattern: "^[a-z]+$"}, default: []}
+  - {name: bots, type: boolean, default: false}
+  - {name: most, type: integer, minimum: 1, maximum: 10, default: 5}
+containers:
+  - fixed: [{}]
+    name: all.jsonl
+records:
+  - command: [tool, "{{settings.path}}"]
+    parse: jsonl
+    record: {id: "{{item.id}}"}
+`)
+	checked, err := kind.CheckSettings(map[string]any{"path": "~/notes", "labels": "red, blue", "bots": "true", "most": float64(3)})
+	if err != nil {
+		t.Fatalf("CheckSettings: %s", err)
+	}
+	if want := map[string]any{"path": "~/notes", "labels": []any{"red", "blue"}, "bots": true, "most": 3}; !reflect.DeepEqual(checked, want) {
+		t.Fatalf("checked %v, want %v", checked, want)
+	}
+	for _, refused := range []map[string]any{
+		{},
+		{"path": "-x"},
+		{"path": "a", "colour": "red"},
+		{"path": "a", "labels": []any{"Red"}},
+		{"path": "a", "most": float64(11)},
+		{"path": "a", "most": 2.5},
+		{"path": "a", "bots": "perhaps"},
+	} {
+		if _, err := kind.CheckSettings(refused); err == nil {
+			t.Errorf("%v was accepted", refused)
+		}
+	}
+}
