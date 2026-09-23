@@ -10,11 +10,12 @@ import (
 var scopeNames = map[string]bool{
 	"container": true, "item": true, "each": true, "parent": true, "folder": true,
 	"response": true, "detail": true, "output": true, "pass": true, "record": true,
+	"lookup": true, "file": true,
 }
 
 var (
-	settingTypes  = map[string]bool{"string": true, "array": true, "boolean": true, "integer": true}
-	parseKinds    = map[string]bool{"json": true, "xml": true, "jsonl": true, "lines": true, "text": true}
+	settingTypes  = map[string]bool{"string": true, "path": true, "array": true, "boolean": true, "integer": true}
+	parseKinds    = map[string]bool{"json": true, "xml": true, "jsonl": true, "lines": true, "markdown": true, "text": true}
 	pagingKinds   = map[string]bool{"": true, "none": true, "all": true, "token": true, "limit": true}
 	settingName   = regexp.MustCompile(`^[a-z][A-Za-z0-9]*$`)
 	knownReaders  = map[string]bool{ReaderFiles: true, ReaderJournal: true, ReaderSent: true, ReaderWeb: true}
@@ -102,7 +103,10 @@ func (self *Type) validate() error {
 			if name == "settings" {
 				return fmt.Errorf("%s refers to settings without saying which", where)
 			}
-			if !scopeNames[name] || (allowed != nil && !allowed[name]) {
+			if name == "lookup" && len(self.Lookups) > 0 && allowed != nil && allowed["lookup"] {
+				continue
+			}
+			if !scopeNames[name] || name == "lookup" || (allowed != nil && !allowed[name]) {
 				return fmt.Errorf("%s refers to %q, which is not there", where, name)
 			}
 		}
@@ -127,9 +131,23 @@ func (self *Type) validate() error {
 		}
 		return nil
 	}
+	checkFiles := func(where string, files *Files, allowed map[string]bool) error {
+		if strings.TrimSpace(files.In) == "" {
+			return fmt.Errorf("%s: files names the directory they are in", where)
+		}
+		if strings.Contains(files.Match, "..") {
+			return fmt.Errorf("%s: files match inside their directory", where)
+		}
+		for _, template := range []string{files.In, files.Match} {
+			if err := check(where, template, allowed); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	checkCall := func(where string, command []string, request *Request, shape Parsing, paging Paging, allowed map[string]bool) error {
 		if (len(command) > 0) == (request != nil) {
-			return fmt.Errorf("%s gives a command or a request, one of them", where)
+			return fmt.Errorf("%s gives a command, a request or files, one of them", where)
 		}
 		if err := checkCommand(where, command); err != nil {
 			return err
@@ -164,10 +182,56 @@ func (self *Type) validate() error {
 		return nil
 	}
 
+	for index, refresh := range self.Refresh {
+		where := fmt.Sprintf("refresh %d", index+1)
+		if len(refresh.Command) == 0 {
+			return fmt.Errorf("%s runs no command", where)
+		}
+		if err := checkCommand(where, refresh.Command); err != nil {
+			return err
+		}
+		for _, word := range refresh.Command {
+			if err := check(where, word, map[string]bool{}); err != nil {
+				return err
+			}
+		}
+		if err := checkCondition(where, refresh.When, map[string]bool{}); err != nil {
+			return err
+		}
+	}
+	for _, name := range sortedKeys(self.Lookups) {
+		lookup := self.Lookups[name]
+		where := "the lookup " + name
+		if !settingName.MatchString(name) {
+			return fmt.Errorf("%s is not a name", where)
+		}
+		if (lookup.File != "") == (lookup.Files != nil) {
+			return fmt.Errorf("%s reads a file or the names of files, one of them", where)
+		}
+		if lookup.File != "" {
+			if !parseKinds[lookup.Parse.Kind] {
+				return fmt.Errorf("%s: parse is %q", where, lookup.Parse.Kind)
+			}
+			if err := check(where, lookup.File, map[string]bool{}); err != nil {
+				return err
+			}
+		} else if err := checkFiles(where, lookup.Files, map[string]bool{}); err != nil {
+			return err
+		}
+		if lookup.Key == "" {
+			return fmt.Errorf("%s says what its key is", where)
+		}
+		for _, template := range []string{lookup.Key, lookup.Value} {
+			if err := check(where, template, map[string]bool{"item": true}); err != nil {
+				return err
+			}
+		}
+	}
+
 	listings := map[string]bool{}
 	for index, listing := range self.Containers {
 		where := fmt.Sprintf("listing %d", index+1)
-		allowed := map[string]bool{"item": true, "response": true}
+		allowed := map[string]bool{"item": true, "response": true, "lookup": true}
 		if err := checkCondition(where, listing.When, map[string]bool{}); err != nil {
 			return err
 		}
@@ -198,8 +262,22 @@ func (self *Type) validate() error {
 			if err := checkCondition(where, listing.Walk.Branch, allowed); err != nil {
 				return err
 			}
+			for _, template := range []string{listing.Walk.Step, listing.Walk.Distinct} {
+				if err := check(where, template, allowed); err != nil {
+					return err
+				}
+			}
 		}
-		if listing.Fixed == nil {
+		switch {
+		case listing.Fixed != nil:
+		case listing.Files != nil:
+			if len(listing.Command) > 0 || listing.Request != nil {
+				return fmt.Errorf("%s gives a command, a request or files, one of them", where)
+			}
+			if err := checkFiles(where, listing.Files, allowed); err != nil {
+				return err
+			}
+		default:
 			if err := checkCall(where, listing.Command, listing.Request, listing.Parse, listing.Paging, allowed); err != nil {
 				return err
 			}
@@ -225,9 +303,35 @@ func (self *Type) validate() error {
 
 	for index, reading := range self.Records {
 		where := fmt.Sprintf("reading %d", index+1)
-		allowed := map[string]bool{"container": true, "item": true, "response": true, "each": true, "pass": true}
-		if err := checkCall(where, reading.Command, reading.Request, reading.Parse, reading.Paging, allowed); err != nil {
-			return err
+		allowed := map[string]bool{"container": true, "item": true, "response": true, "each": true, "pass": true, "lookup": true}
+		switch {
+		case reading.File != "" || reading.Files != nil:
+			if len(reading.Command) > 0 || reading.Request != nil || (reading.File != "" && reading.Files != nil) {
+				return fmt.Errorf("%s gives a command, a request, a file or files, one of them", where)
+			}
+			if !parseKinds[reading.Parse.Kind] {
+				return fmt.Errorf("%s: parse is %q", where, reading.Parse.Kind)
+			}
+			if reading.Files != nil {
+				if err := checkFiles(where, reading.Files, allowed); err != nil {
+					return err
+				}
+				allowed["file"] = true
+			} else if err := check(where, reading.File, allowed); err != nil {
+				return err
+			}
+		default:
+			if err := checkCall(where, reading.Command, reading.Request, reading.Parse, reading.Paging, allowed); err != nil {
+				return err
+			}
+		}
+		if reading.DropWhenMostly != nil {
+			if reading.DropWhenMostly.Share <= 0 || reading.DropWhenMostly.Share >= 1 {
+				return fmt.Errorf("%s: dropWhenMostly takes a share between 0 and 1", where)
+			}
+			if err := checkCondition(where, reading.DropWhenMostly.Items, allowed); err != nil {
+				return err
+			}
 		}
 		if err := checkCondition(where, reading.Skip, allowed); err != nil {
 			return err
@@ -240,7 +344,18 @@ func (self *Type) validate() error {
 			withDetail[key] = value
 		}
 		for field, template := range reading.Record {
+			if field == "private" {
+				if err := checkCondition(where+" private", template, withDetail); err != nil {
+					return err
+				}
+				continue
+			}
 			if err := check(where+" "+field, template, withDetail); err != nil {
+				return err
+			}
+		}
+		for field, template := range reading.Metadata {
+			if err := check(where+" metadata "+field, template, withDetail); err != nil {
 				return err
 			}
 		}
@@ -262,7 +377,14 @@ func (self *Type) validate() error {
 			if shape.Kind == "" {
 				shape.Kind = "text"
 			}
-			if err := checkCall(where+" detail", reading.Detail.Command, reading.Detail.Request, shape, Paging{}, withDetail); err != nil {
+			withOutput := map[string]bool{"output": true}
+			for key, value := range withDetail {
+				withOutput[key] = value
+			}
+			if err := checkCall(where+" detail", reading.Detail.Command, reading.Detail.Request, shape, Paging{}, withOutput); err != nil {
+				return err
+			}
+			if err := checkCondition(where+" detail", reading.Detail.When, allowed); err != nil {
 				return err
 			}
 			if err := check(where+" detail", reading.Detail.Text, withDetail); err != nil {
@@ -274,8 +396,19 @@ func (self *Type) validate() error {
 			for key, value := range allowed {
 				withOutput[key] = value
 			}
-			if len(attachment.Command) == 0 {
-				return fmt.Errorf("%s: an attachment is a command", where)
+			given := 0
+			for _, present := range []bool{len(attachment.Command) > 0, attachment.Path != "", attachment.Content != ""} {
+				if present {
+					given++
+				}
+			}
+			if given != 1 {
+				return fmt.Errorf("%s: an attachment is a command, a path or content, one of them", where)
+			}
+			for _, template := range []string{attachment.Path, attachment.Content, attachment.Name, attachment.Version} {
+				if err := check(where+" attachment", template, withOutput); err != nil {
+					return err
+				}
 			}
 			if err := checkCommand(where+" attachment", attachment.Command); err != nil {
 				return err

@@ -47,6 +47,16 @@ type Type struct {
 	Secrets                []skills.Secret           `yaml:"secrets"`
 	AuthenticationProfiles map[string]skills.Profile `yaml:"authenticationProfiles"`
 
+	// Refresh is the commands run once at the start of every pass, before
+	// anything is listed: a tool that keeps its own copy of a service
+	// brings it up to date, and the type reads the copy.
+	Refresh []Refresh `yaml:"refresh"`
+
+	// Lookups are tables read from files once a pass, which templates
+	// reach as lookup.<name>[key]: the people an archive names by
+	// identifier, the files a post had with it.
+	Lookups map[string]Lookup `yaml:"lookups"`
+
 	Containers []Listing `yaml:"containers"`
 	Records    []Reading `yaml:"records"`
 
@@ -76,6 +86,34 @@ type SettingItem struct {
 	Pattern string `yaml:"pattern"`
 }
 
+// Refresh is one command run at the start of a pass, where its condition
+// holds or it has none.
+type Refresh struct {
+	When    string   `yaml:"when"`
+	Command []string `yaml:"command"`
+}
+
+// Lookup is a table read from a file, or from the names of the files in
+// a directory, keyed by a template over each item.
+type Lookup struct {
+	File  string  `yaml:"file"`
+	Files *Files  `yaml:"files"`
+	Parse Parsing `yaml:"parse"`
+	Key   string  `yaml:"key"`
+	// Value is what each key holds; the whole item where it is left out.
+	Value string `yaml:"value"`
+	// Many keeps every item under a key, as a list, rather than the last.
+	Many bool `yaml:"many"`
+}
+
+// Files is the files under a directory on the computer whose path,
+// relative to it, matches a pattern: * is any part of one name, ** any
+// number of directories. Names beginning with a dot are passed over.
+type Files struct {
+	In    string `yaml:"in"`
+	Match string `yaml:"match"`
+}
+
 // Listing is one way of listing the containers a source holds.
 type Listing struct {
 	ID      string            `yaml:"id"`
@@ -84,6 +122,7 @@ type Listing struct {
 	Over    string            `yaml:"over"`
 	Walk    *Walk             `yaml:"walk"`
 	Fixed   []map[string]any  `yaml:"fixed"`
+	Files   *Files            `yaml:"files"`
 	Command []string          `yaml:"command"`
 	Request *Request          `yaml:"request"`
 	Parse   Parsing           `yaml:"parse"`
@@ -103,6 +142,13 @@ type Walk struct {
 	Start  map[string]string `yaml:"start"`
 	Branch string            `yaml:"branch"`
 	Child  map[string]string `yaml:"child"`
+
+	// Step, where it is given, is a child's name within its parent: the
+	// child's path is its parent's and this, and two children of one
+	// parent with the same step are told apart by Distinct, which says
+	// something of each that does not change, in brackets after it.
+	Step     string `yaml:"step"`
+	Distinct string `yaml:"distinct"`
 }
 
 // Reading is one way of reading the records of a container.
@@ -110,9 +156,18 @@ type Reading struct {
 	Each    any      `yaml:"each"`
 	Command []string `yaml:"command"`
 	Request *Request `yaml:"request"`
-	Parse   Parsing  `yaml:"parse"`
-	Paging  Paging   `yaml:"paging"`
-	Skip    string   `yaml:"skip"`
+	// File is one file on the computer to read, and Files several, each
+	// parsed on its own with the file in scope as file.
+	File   string  `yaml:"file"`
+	Files  *Files  `yaml:"files"`
+	Parse  Parsing `yaml:"parse"`
+	Paging Paging  `yaml:"paging"`
+	Skip   string  `yaml:"skip"`
+
+	// DropWhenMostly leaves a whole container out when more than a share
+	// of its items meet a condition: a channel that is an integration
+	// talking to itself.
+	DropWhenMostly *Mostly `yaml:"dropWhenMostly"`
 
 	// Missing is "empty" where a command's not-found answer means there
 	// is nothing to read rather than that something went wrong.
@@ -122,9 +177,17 @@ type Reading struct {
 	Unseen string `yaml:"unseen"`
 
 	Record      map[string]string `yaml:"record"`
+	Metadata    map[string]string `yaml:"metadata"`
 	Detail      *Detail           `yaml:"detail"`
 	Attachments Attachments       `yaml:"attachments"`
 	MaxBytes    int64             `yaml:"maxBytes"`
+}
+
+// Mostly is a condition and the share of items above which it drops a
+// container.
+type Mostly struct {
+	Items string  `yaml:"items"`
+	Share float64 `yaml:"share"`
 }
 
 // Since reads only what changed since the last complete pass over a
@@ -136,22 +199,31 @@ type Since struct {
 }
 
 // Detail is a command or request run for each item whose version changed,
-// supplying its text.
+// supplying its text. A command that is told where to write, with
+// {{output}}, is read from that file; any other is read from what it
+// prints.
 type Detail struct {
+	// When, where it is given, is the items it runs for.
+	When    string   `yaml:"when"`
 	Command []string `yaml:"command"`
 	Request *Request `yaml:"request"`
 	Parse   Parsing  `yaml:"parse"`
 	Text    string   `yaml:"text"`
 }
 
-// Attachment is a command that writes one file of an item.
+// Attachment is a command that writes one file of an item -- to
+// {{output}}, or by printing it where the command is not told where --
+// a file the computer already has, or text the reading already fetched.
 type Attachment struct {
-	When     string   `yaml:"when"`
-	Each     string   `yaml:"each"`
-	Command  []string `yaml:"command"`
-	Name     string   `yaml:"name"`
-	Version  string   `yaml:"version"`
-	MaxBytes int64    `yaml:"maxBytes"`
+	When    string   `yaml:"when"`
+	Each    string   `yaml:"each"`
+	Command []string `yaml:"command"`
+	Path    string   `yaml:"path"`
+	// Content is a file's bytes where the reading already fetched them.
+	Content  string `yaml:"content"`
+	Name     string `yaml:"name"`
+	Version  string `yaml:"version"`
+	MaxBytes int64  `yaml:"maxBytes"`
 }
 
 // Attachments is one attachment command or a list of them.
@@ -188,7 +260,7 @@ type Request struct {
 
 // Parsing is what a command or request prints and how its items are found.
 type Parsing struct {
-	// Kind is json, xml, jsonl, lines or text.
+	// Kind is json, xml, jsonl, lines, markdown or text.
 	Kind string
 	// Items is where the list is, for json and xml: dotted keys, ".*"
 	// for the values of a map, "a | b" to try each in turn.
@@ -210,7 +282,7 @@ func (self *Parsing) UnmarshalYAML(node *yaml.Node) error {
 		return err
 	}
 	if len(shaped) != 1 {
-		return fmt.Errorf("parse is one of json, xml, jsonl, lines or text")
+		return fmt.Errorf("parse is one of json, xml, jsonl, lines, markdown or text")
 	}
 	for kind, shape := range shaped {
 		self.Kind, self.Items, self.Pattern = kind, shape.Items, shape.Pattern
@@ -303,16 +375,19 @@ func (self *Type) RunsOn(where string) bool {
 	return false
 }
 
-// RunsCommands says whether any part of the type runs a command, which
-// only a computer can do.
+// RunsCommands says whether any part of the type runs a command or reads
+// a file, which only a computer can do.
 func (self *Type) RunsCommands() bool {
+	if len(self.Refresh) > 0 || len(self.Lookups) > 0 {
+		return true
+	}
 	for _, listing := range self.Containers {
-		if len(listing.Command) > 0 {
+		if len(listing.Command) > 0 || listing.Files != nil {
 			return true
 		}
 	}
 	for _, reading := range self.Records {
-		if len(reading.Command) > 0 || len(reading.Attachments) > 0 || (reading.Detail != nil && len(reading.Detail.Command) > 0) {
+		if len(reading.Command) > 0 || reading.File != "" || reading.Files != nil || len(reading.Attachments) > 0 || (reading.Detail != nil && len(reading.Detail.Command) > 0) {
 			return true
 		}
 	}

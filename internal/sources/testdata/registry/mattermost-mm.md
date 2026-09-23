@@ -1,81 +1,89 @@
 ---
 name: mattermost-mm
-description: A Mattermost server's channels - their posts, threads and files - read with the mm command line tool, signed in as the person.
+description: A Mattermost server's channels - their posts, threads and files - from the copy the mm command line tool keeps with mm archive, brought up to date at the start of every pass.
 requires: [mm]
 
 settings:
-  - name: teams
-    description: the teams whose channels are read, by name; empty reads every team the account is in
-    type: array
-    items: {type: string, pattern: "^[a-z0-9][a-z0-9_-]*$"}
-    default: []
-  - name: exclude
-    description: channels left unread, by name
-    type: array
-    items: {type: string, pattern: "^[a-z0-9][a-z0-9_-]*$"}
-    default: []
-  - name: bots
-    description: read what bots and integrations post, as well as people
+  - name: archive
+    description: the directory mm archive keeps its copy in
+    type: path
+    default: "~/mattermost-archive"
+  - name: sync
+    description: bring the copy up to date with mm archive sync before reading it; off reads the copy as it is
     type: boolean
-    default: false
+    default: true
+  - name: channels
+    description: which channels a sync reads - mine, public or all
+    type: string
+    pattern: "^(mine|public|all)$"
+    default: mine
+  - name: files
+    description: which attachments a sync downloads - none, mine or all
+    type: string
+    pattern: "^(none|mine|all)$"
+    default: mine
+  - name: largestFileMB
+    description: attachments larger than this many megabytes are not downloaded
+    type: integer
+    minimum: 1
+    maximum: 1024
+    default: 10
+
+refresh:
+  # Incremental: each channel is asked only for what is newer than the
+  # last post the copy holds. Channels listed by mm archive exclude are
+  # left alone.
+  - when: "{{settings.sync}}"
+    command: [mm, archive, sync, "{{settings.archive}}", --channels, "{{settings.channels}}", --files, "{{settings.files}}", --max-file-mb, "{{settings.largestFileMB}}"]
+
+lookups:
+  users: {file: "{{settings.archive}}/users.json", parse: json, key: "{{item.id}}", value: "{{item.username}}"}
+  channels: {file: "{{settings.archive}}/channels.json", parse: json, key: "{{item.id}}"}
+  # An attachment is kept as <file id>__<its name>.
+  stored: {files: {in: "{{settings.archive}}/files", match: "*"}, key: "{{item.name | before '__'}}", value: "{{item.name}}"}
 
 containers:
-  - id: teams
-    command: [mm, team, list, --json]
-    parse: {json: {items: "."}}
-    paging: none
-    skip: "!({{settings.teams | empty}} || {{item.name}} in {{settings.teams}})"
-    name: "teams/{{item.name}}"
-    fields: {team: "{{item.name}}"}
-    only: parents           # a team is listed to be walked into, not read
-
-  - over: teams
-    command: [mm, channel, list, --team, "{{parent.team}}", --json]
-    parse: {json: {items: "."}}
-    paging: none
-    skip: "{{item.name}} in {{settings.exclude}}"
-    name: "posts/{{parent.team}}/{{item.name}}.jsonl"
-    fields: {channel: "{{item.id}}", channelName: "{{item.name}}", title: "{{item.display_name}}", private: "{{item.type}} != O", lastPost: "{{item.last_post_at | epoch-ms}}"}
+  - files: {in: "{{settings.archive}}", match: "posts/*/*.jsonl"}
+    name: "{{item.path}}"
+    fields: {path: "{{item.path}}", team: "{{item.directory | after 'posts/'}}", channel: "{{item.stem}}"}
 
 records:
-  # Only what changed since the last complete pass over the channel, so a
-  # post this pass does not see is kept rather than deleted.
-  - command: [mm, post, list, "{{container.channel}}", --since, "{{pass.since}}", --full-id, --json]
-    parse: {json: {items: "posts.*"}}
-    paging: none
-    since: {first: "1970-01-01T00:00:00Z", unchangedWhen: "{{container.lastPost}} <= {{pass.since}}"}
-    skip: "{{item.type}} != '' || (!{{settings.bots}} && {{item.props.from_bot}} == true)"
+  - file: "{{settings.archive}}/{{container.path}}"
+    parse: jsonl
+    # A channel that is mostly an integration talking to itself is left out.
+    dropWhenMostly: {items: "{{item.type}} == slack_attachment", share: 0.8}
+    skip: "{{item.type}} matches ^system_ || {{item.type}} == slack_attachment || {{item.message | empty}}"
     record:
       id: "{{item.id}}"
       kind: chat
-      channel: "{{container.channelName}}"
-      thread: "{{item.root_id | or item.id}}"
-      at: "{{item.create_at | epoch-ms}}"
-      modifiedAt: "{{item.update_at | epoch-ms}}"
-      author: "{{response.users[item.user_id].username}}"
-      private: "{{container.private}}"
+      channel: "{{container.channel}}"
+      thread: "{{item.root_id}}{{item.id | if item.reply_count | unless item.root_id}}"
+      # In the computer's own zone, as the hour of a post is read.
+      at: "{{item.create_at | epoch-ms | local-time}}"
+      author: "{{lookup.users[item.user_id] | or 'somebody'}}"
+      private: "{{lookup.channels[item.channel_id].type}} in [P, D, G]"
       text: "{{item.message}}"
+    metadata:
+      team: "{{container.team}}"
+      purpose: "{{lookup.channels[item.channel_id].purpose}}"
     attachments:
       each: item.file_ids
-      command: [mm, file, download, "{{each}}", --output, "{{output}}"]
-      version: "{{each}}"
-      maxBytes: 26214400
+      path: "{{settings.archive}}/files/{{lookup.stored[each]}}"
+      name: "{{lookup.stored[each] | after '__'}}"
 ---
 
 # Mattermost
 
-Reads the channels the person is in on a Mattermost server, through `mm`, which is signed in on their computer as them. A post is a record; replies carry their thread, and TeaNode reads a thread as one conversation.
+Reads the channels the person is in on a Mattermost server from the copy `mm archive` keeps on their computer. Every pass first runs `mm archive sync`, which asks each channel only for posts newer than the copy holds, so a pass over a quiet server is quick; the first sync reads everything and can take hours, and a pass that runs out of time goes on from where it stopped.
 
-A pass reads only what was posted or edited since the last complete pass over each channel, and a channel with nothing new is not asked at all (`unchangedWhen`), so a pass over a quiet server is a few seconds of listing. The first pass reads everything.
+The copy is the person's own: `mm archive search` reads it without the server, and `mm archive exclude` names the channels a sync leaves alone. Turning `sync` off reads the copy as it is, for a copy some other schedule keeps.
 
-System messages (joins, leaves, header changes) are left out, and so, unless the setting says otherwise, are posts by bots and integrations, which in a busy server outnumber people.
-
-Files posted with a message are fetched once each, by their identifier, up to 25 MB; pictures and videos are described later by TeaNode itself.
+A post is a record; replies carry their thread, and TeaNode reads a thread as one conversation. System messages (joins, leaves, header changes) and integration posts are left out, and so is a channel whose posts are mostly an integration's. Files posted with a message are named where the archive keeps them; how large a file TeaNode reads is its own setting.
 
 ## Document identifiers
 
-A channel is the file `posts/<team>/<channel>.jsonl` and a post is its 26-character identifier within it: the names the records script this replaces used, so a source switched to this type keeps what it has read.
+A channel is the file the archive keeps it in, `posts/<team>/<channel>.jsonl`; direct messages are under the team `direct` and group messages under `group`. A post is its 26-character identifier within it.
 
 ## Checked against the tool
 
-`mm team list --json`, `mm channel list --json` and the shape of `mm post list --json` (an `order` list, a `posts` map by identifier, a `users` map) were read from `mm` 0.5. Not yet checked: that `--since` with no count returns every post since then rather than a first page, that `users` in the answer maps a post's `user_id` to a name, and the arguments of `mm file download`.
+Read against `mm` 0.5's archive layout: `posts/`, `users.json`, `channels.json` and `files/<file id>__<name>`.

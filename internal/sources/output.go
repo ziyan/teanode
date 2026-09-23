@@ -25,6 +25,9 @@ func parseOutput(shape Parsing, output []byte) (*parsed, error) {
 	switch shape.Kind {
 	case "text":
 		return &parsed{items: []map[string]any{{"text": string(output)}}, response: string(output)}, nil
+	case "markdown":
+		item := markdownItem(string(output))
+		return &parsed{items: []map[string]any{item}, response: item}, nil
 	case "jsonl":
 		var items []map[string]any
 		scanner := bufio.NewScanner(bytes.NewReader(output))
@@ -236,4 +239,34 @@ func decodeXML(data []byte) (any, error) {
 		}
 	}
 	return root.children, nil
+}
+
+// markdownItem is a Markdown file with a header between two lines of
+// three dashes: each "key: value" line of the header a field, with one
+// pair of quotes around a value taken off, and what follows it as body,
+// trimmed. The header is read line by line rather than as YAML, since the
+// exporters that write these do not quote a title with a colon in it. A
+// file with no header is all body.
+func markdownItem(content string) map[string]any {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	item := map[string]any{}
+	body := content
+	if strings.HasPrefix(content, "---\n") {
+		if end := strings.Index(content[4:], "\n---"); end >= 0 {
+			for _, line := range strings.Split(content[4:4+end], "\n") {
+				key, value, found := strings.Cut(line, ":")
+				if !found || strings.TrimSpace(key) == "" {
+					continue
+				}
+				value = strings.TrimSpace(value)
+				if len(value) > 1 && value[0] == value[len(value)-1] && (value[0] == '"' || value[0] == '\'') {
+					value = value[1 : len(value)-1]
+				}
+				item[strings.TrimSpace(key)] = value
+			}
+			body = content[4+end+len("\n---"):]
+		}
+	}
+	item["body"] = strings.TrimSpace(body)
+	return item
 }

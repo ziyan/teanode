@@ -91,6 +91,7 @@ type Runner struct {
 	templates  map[string]compiled
 	conditions map[string]condition
 	lastCall   time.Time
+	lookups    map[string]any
 }
 
 // retryPauses are the waits before each retry of a call a service turned
@@ -98,8 +99,8 @@ type Runner struct {
 var retryPauses = []time.Duration{10 * time.Second, 30 * time.Second, 90 * time.Second, 3 * time.Minute}
 
 // busyAnswer is how a service says it is being asked too often, or is
-// briefly unable to answer.
-var busyAnswer = regexp.MustCompile(`(?i)\b429\b|\b503\b|rate ?limit|quota|too many requests|try again later|temporarily unavailable`)
+// briefly unable to answer, and how a network that dropped a call says so.
+var busyAnswer = regexp.MustCompile(`(?i)\b429\b|\b50[234]\b|rate ?limit|quota|too many requests|try again later|temporarily unavailable|handshake timeout|i/o timeout|connection reset`)
 
 func (self *Runner) sleep(duration time.Duration) {
 	if self.Sleep != nil {
@@ -133,9 +134,10 @@ func isBusy(err error) bool {
 	}
 	var status *statusError
 	if errors.As(err, &status) {
-		return status.code == 429 || status.code == 503
+		return status.code == 429 || status.code == 502 || status.code == 503 || status.code == 504
 	}
-	return false
+	// A request the network dropped on the way.
+	return err != nil && busyAnswer.MatchString(err.Error())
 }
 
 // Record is one record, in the shape the records reader files.
@@ -148,16 +150,29 @@ func (self *Runner) now() time.Time {
 	return time.Now()
 }
 
-func (self *Runner) scope() Scope {
+// settings is every setting's value, its default where the source gives
+// none, and a path's leading ~ as the home directory.
+func (self *Runner) settings() map[string]any {
 	settings := map[string]any{}
 	for _, setting := range self.Type.Settings {
-		if value, ok := self.Settings[setting.Name]; ok {
-			settings[setting.Name] = value
-		} else {
-			settings[setting.Name] = setting.Default
+		value, ok := self.Settings[setting.Name]
+		if !ok {
+			value = setting.Default
 		}
+		if setting.Type == "path" {
+			value = expandHome(text(value))
+		}
+		settings[setting.Name] = value
 	}
-	return Scope{Values: map[string]any{"settings": settings}, Secrets: self.Secrets}
+	return settings
+}
+
+func (self *Runner) scope() Scope {
+	values := map[string]any{"settings": self.settings()}
+	if self.lookups != nil {
+		values["lookup"] = self.lookups
+	}
+	return Scope{Values: values, Secrets: self.Secrets}
 }
 
 func (self *Runner) template(text string) (compiled, error) {
@@ -213,10 +228,19 @@ func (self *Runner) holds(text string, scope Scope) (bool, error) {
 // that fails fails the whole list, since a list with a gap in it is a
 // pass that deletes what was in the gap.
 func (self *Runner) List(ctx context.Context) ([]Container, error) {
+	if err := self.refresh(ctx, self.scope()); err != nil {
+		return nil, err
+	}
+	if err := self.loadLookups(ctx); err != nil {
+		return nil, err
+	}
 	base := self.scope()
 	byListing := map[string][]map[string]any{}
 	var order []string
 	containers := map[string]*Container{}
+	// A container listed once for each of its files is one member, not
+	// as many as it has files.
+	members := map[string]bool{}
 	add := func(listing Listing, index int, name string, fields map[string]any) {
 		key := listing.ID
 		if key == "" {
@@ -226,6 +250,11 @@ func (self *Runner) List(ctx context.Context) ([]Container, error) {
 		if listing.Only == "parents" || name == "" {
 			return
 		}
+		encoded, _ := json.Marshal(fields)
+		if members[name+"\x00"+string(encoded)] {
+			return
+		}
+		members[name+"\x00"+string(encoded)] = true
 		existing, ok := containers[name]
 		if !ok {
 			existing = &Container{Name: name}
@@ -269,11 +298,20 @@ func (self *Runner) List(ctx context.Context) ([]Container, error) {
 				continue
 			}
 			var fetched []fetchedItem
-			if listing.Fixed != nil {
+			switch {
+			case listing.Fixed != nil:
 				for _, item := range listing.Fixed {
 					fetched = append(fetched, fetchedItem{item: item})
 				}
-			} else {
+			case listing.Files != nil:
+				files, err := self.files(ctx, listing.Files, scope)
+				if err != nil {
+					return nil, err
+				}
+				for _, item := range files {
+					fetched = append(fetched, fetchedItem{item: item})
+				}
+			default:
 				var err error
 				if fetched, err = self.fetch(ctx, listing.Command, listing.Request, listing.Parse, listing.Paging, "", scope); err != nil {
 					return nil, err
@@ -356,6 +394,8 @@ func (self *Runner) walk(ctx context.Context, listing Listing, scope Scope, add 
 		if err != nil {
 			return err
 		}
+		var children []map[string]any
+		steps := map[string]int{}
 		for _, each := range fetched {
 			itemScope := folderScope.with("item", each.item).with("response", each.response)
 			branch, err := self.holds(listing.Walk.Branch, itemScope)
@@ -373,6 +413,30 @@ func (self *Runner) walk(ctx context.Context, listing Listing, scope Scope, add 
 				}
 				child[key] = value
 			}
+			if listing.Walk.Step != "" {
+				step, err := self.render(listing.Walk.Step, itemScope)
+				if err != nil {
+					return err
+				}
+				distinct, err := self.render(listing.Walk.Distinct, itemScope)
+				if err != nil {
+					return err
+				}
+				child["step"], child["distinct"] = step, distinct
+				steps[step]++
+			}
+			children = append(children, child)
+		}
+		for _, child := range children {
+			if listing.Walk.Step != "" {
+				step := text(child["step"])
+				if steps[step] > 1 && text(child["distinct"]) != "" {
+					step += " (" + text(child["distinct"]) + ")"
+				}
+				child["path"] = text(folder["path"]) + "/" + step
+				delete(child, "step")
+				delete(child, "distinct")
+			}
 			queue = append(queue, child)
 		}
 	}
@@ -384,6 +448,9 @@ func (self *Runner) walk(ctx context.Context, listing Listing, scope Scope, add 
 // collected, with what it read this time folded in. ErrUnfinished comes
 // back with the records read so far when the deadline passed part way.
 func (self *Runner) Read(ctx context.Context, container Container) ([]Record, error) {
+	if err := self.loadLookups(ctx); err != nil {
+		return nil, err
+	}
 	base := self.scope()
 	collected := map[string]Record{}
 	var order []string
@@ -563,13 +630,43 @@ func sinceKey(container string, readingIndex int, scope Scope) string {
 
 // readItems runs a reading's call and makes a record of each item.
 func (self *Runner) readItems(ctx context.Context, container Container, reading Reading, scope Scope) ([]Record, error) {
-	fetched, err := self.fetch(ctx, reading.Command, reading.Request, reading.Parse, reading.Paging, reading.Missing, scope)
-	if err != nil {
+	var fetched []fetchedItem
+	var err error
+	switch {
+	case reading.File != "":
+		file, err := self.render(reading.File, scope)
+		if err != nil {
+			return nil, err
+		}
+		if fetched, err = self.readFile(ctx, file, reading.Parse, reading.Missing); err != nil {
+			return nil, err
+		}
+	case reading.Files != nil:
+		files, err := self.files(ctx, reading.Files, scope)
+		if err != nil {
+			return nil, err
+		}
+		for _, file := range files {
+			read, err := self.readFile(ctx, text(file["absolute"]), reading.Parse, "empty")
+			if err != nil {
+				return nil, err
+			}
+			for _, each := range read {
+				each.file = file
+				fetched = append(fetched, each)
+			}
+		}
+	default:
+		if fetched, err = self.fetch(ctx, reading.Command, reading.Request, reading.Parse, reading.Paging, reading.Missing, scope); err != nil {
+			return nil, err
+		}
+	}
+	if dropped, err := self.mostly(reading.DropWhenMostly, fetched, scope); err != nil || dropped {
 		return nil, err
 	}
 	records := make([]Record, 0, len(fetched))
 	for _, each := range fetched {
-		itemScope := scope.with("item", each.item).with("response", each.response)
+		itemScope := each.scope(scope)
 		skip, err := self.holds(reading.Skip, itemScope)
 		if err != nil {
 			return nil, err
@@ -609,11 +706,19 @@ func (self *Runner) record(ctx context.Context, container Container, reading Rea
 		}
 	}
 	if reading.Detail != nil {
-		detail, err := self.detail(ctx, container, reading.Detail, scope, id, version)
-		if err != nil {
-			return nil, err
+		wanted := true
+		if reading.Detail.When != "" {
+			if wanted, err = self.holds(reading.Detail.When, scope); err != nil {
+				return nil, err
+			}
 		}
-		scope = scope.with("detail", detail)
+		if wanted {
+			detail, err := self.detail(ctx, container, reading.Detail, scope, id, version)
+			if err != nil {
+				return nil, err
+			}
+			scope = scope.with("detail", detail)
+		}
 	}
 	record := Record{"id": id}
 	for _, field := range recordFields[1:] {
@@ -639,13 +744,28 @@ func (self *Runner) record(ctx context.Context, container Container, reading Rea
 	}
 	private := true
 	if template, ok := reading.Record["private"]; ok {
-		value, err := self.value(template, scope)
-		if err != nil {
+		// A condition, so a record can be private where its channel is
+		// anything but open.
+		if private, err = self.holds(template, scope); err != nil {
 			return nil, err
 		}
-		private = truthy(value)
 	}
 	record["private"] = private
+	if len(reading.Metadata) > 0 {
+		metadata := map[string]any{}
+		for _, key := range sortedKeys(reading.Metadata) {
+			value, err := self.value(reading.Metadata[key], scope)
+			if err != nil {
+				return nil, err
+			}
+			if !isEmpty(value) {
+				metadata[key] = value
+			}
+		}
+		if len(metadata) > 0 {
+			record["metadata"] = metadata
+		}
+	}
 	if len(reading.Attachments) > 0 {
 		attachments, err := self.attachments(ctx, container, reading, scope, id, version)
 		if err != nil {
@@ -669,9 +789,31 @@ func (self *Runner) detail(ctx context.Context, container Container, detail *Det
 	if shape.Kind == "" {
 		shape.Kind = "text"
 	}
-	fetched, err := self.fetch(ctx, detail.Command, detail.Request, shape, Paging{Kind: "none"}, "", scope)
-	if err != nil {
-		return nil, err
+	var fetched []fetchedItem
+	if writesOutput(detail.Command) {
+		room := path + ".room"
+		defer func() { _ = os.RemoveAll(room) }()
+		if err := os.MkdirAll(room, 0o700); err != nil {
+			return nil, err
+		}
+		written := filepath.Join(room, "detail."+shape.Kind)
+		words, err := self.words(detail.Command, scope.with("output", written))
+		if err != nil {
+			return nil, err
+		}
+		self.paced()
+		if _, err := self.Executor.Command(ctx, words); err != nil || !tookWritten(written) {
+			// Text that will not come is text left out, as a file is.
+			return map[string]any{}, nil
+		}
+		if fetched, err = self.readFile(ctx, written, shape, "empty"); err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		if fetched, err = self.fetch(ctx, detail.Command, detail.Request, shape, Paging{Kind: "none"}, "", scope); err != nil {
+			return nil, err
+		}
 	}
 	result := map[string]any{}
 	if len(fetched) > 0 {
@@ -738,6 +880,29 @@ func (self *Runner) attachments(ctx context.Context, container Container, readin
 				}
 				attachmentVersion = rendered
 			}
+			if attachment.Path != "" {
+				// A file the computer already has: named where it is,
+				// never copied.
+				local, err := self.render(attachment.Path, attachmentScope)
+				if err != nil {
+					return nil, err
+				}
+				local = expandHome(local)
+				information, err := os.Stat(local)
+				// Only a limit the type sets: the reader has its own, and
+				// says so of a file over it rather than leaving it out.
+				if local == "" || err != nil || !information.Mode().IsRegular() || (attachment.MaxBytes > 0 && information.Size() > attachment.MaxBytes) {
+					continue
+				}
+				name := filepath.Base(local)
+				if attachment.Name != "" {
+					if name, err = self.render(attachment.Name, attachmentScope); err != nil {
+						return nil, err
+					}
+				}
+				found = append(found, map[string]any{"path": local, "name": name})
+				continue
+			}
 			name := text(each)
 			if attachment.Name != "" {
 				rendered, err := self.render(attachment.Name, attachmentScope)
@@ -752,6 +917,18 @@ func (self *Runner) attachments(ctx context.Context, container Container, readin
 			}
 			directory := filepath.Join(self.State, "files", cacheName(self.Type.Name, container.Name, id, text(each), attachmentVersion))
 			path := filepath.Join(directory, name)
+			if attachment.Content != "" {
+				content, err := self.render(attachment.Content, attachmentScope)
+				if err != nil {
+					return nil, err
+				}
+				if content == "" {
+					continue
+				}
+				if err := writeFile(path, []byte(content)); err != nil {
+					return nil, err
+				}
+			}
 			if information, err := os.Stat(path); err != nil || information.Size() == 0 {
 				if err := os.MkdirAll(directory, 0o700); err != nil {
 					return nil, err
@@ -761,7 +938,14 @@ func (self *Runner) attachments(ctx context.Context, container Container, readin
 					return nil, err
 				}
 				self.paced()
-				if _, err := self.Executor.Command(ctx, words); err != nil {
+				printed, err := self.Executor.Command(ctx, words)
+				if err == nil && !writesOutput(attachment.Command) {
+					err = writeFile(path, printed)
+				}
+				if err == nil && !tookWritten(path) {
+					err = fmt.Errorf("%s wrote nothing", words[0])
+				}
+				if err != nil {
 					// One file that will not come is one file left out,
 					// not a container that cannot be read.
 					_ = os.RemoveAll(directory)
@@ -782,15 +966,92 @@ func (self *Runner) attachments(ctx context.Context, container Container, readin
 	return found, nil
 }
 
+// tookWritten makes sure a command wrote where it was told. A tool may
+// name the file itself -- one puts its own extension on the name it was
+// given -- so where the name is not there and the command's directory,
+// which is its own, holds one other file, that is the file.
+func tookWritten(path string) bool {
+	if information, err := os.Stat(path); err == nil && information.Mode().IsRegular() {
+		return true
+	}
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		return false
+	}
+	var written []string
+	for _, entry := range entries {
+		if entry.Type().IsRegular() {
+			written = append(written, entry.Name())
+		}
+	}
+	if len(written) != 1 {
+		return false
+	}
+	return os.Rename(filepath.Join(filepath.Dir(path), written[0]), path) == nil
+}
+
+// writesOutput says whether a command is told where to write, rather than
+// printing what it fetched.
+func writesOutput(command []string) bool {
+	for _, word := range command {
+		if strings.Contains(word, "{{output") {
+			return true
+		}
+	}
+	return false
+}
+
 func cacheName(parts ...string) string {
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return hex.EncodeToString(sum[:16])
 }
 
-// fetchedItem is one item a call answered, with the answer it came in.
+// fetchedItem is one item a call answered, with the answer it came in,
+// and the file it was read from where it was.
 type fetchedItem struct {
 	item     map[string]any
 	response any
+	file     map[string]any
+}
+
+func (self fetchedItem) scope(scope Scope) Scope {
+	scope = scope.with("item", self.item).with("response", self.response)
+	if self.file != nil {
+		scope = scope.with("file", self.file)
+	}
+	return scope
+}
+
+// files lists the files a template names.
+func (self *Runner) files(ctx context.Context, files *Files, scope Scope) ([]map[string]any, error) {
+	directory, err := self.render(files.In, scope)
+	if err != nil {
+		return nil, err
+	}
+	match, err := self.render(files.Match, scope)
+	if err != nil {
+		return nil, err
+	}
+	return matchFiles(ctx, directory, match)
+}
+
+// mostly says whether more than a share of the items meet a condition,
+// which leaves their container out.
+func (self *Runner) mostly(mostly *Mostly, fetched []fetchedItem, scope Scope) (bool, error) {
+	if mostly == nil || len(fetched) == 0 {
+		return false, nil
+	}
+	count := 0
+	for _, each := range fetched {
+		held, err := self.holds(mostly.Items, each.scope(scope))
+		if err != nil {
+			return false, err
+		}
+		if held {
+			count++
+		}
+	}
+	return float64(count)/float64(len(fetched)) > mostly.Share, nil
 }
 
 // pagesLimit is the most pages one listing follows.
@@ -840,7 +1101,9 @@ func (self *Runner) fetch(ctx context.Context, command []string, request *Reques
 
 // missingAnswer is what a tool says when what it was asked for is not
 // there.
-var missingAnswer = regexp.MustCompile(`(?i)\b404\b|not found`)
+// A feature the owner turned off, such as a repository's issues, is
+// nothing there as well.
+var missingAnswer = regexp.MustCompile(`(?i)\b404\b|not found|has disabled|is disabled`)
 
 func isMissing(err error) bool {
 	var failed *CommandError

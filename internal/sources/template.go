@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"mime"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -148,6 +150,8 @@ func parseExpression(text string) (*expression, error) {
 var knownFilters = map[string]bool{
 	"epoch-ms": true, "date": true, "time": true, "join": true, "replace": true, "urlencode": true,
 	"html-text": true, "or": true, "empty": true, "present": true, "flag": true,
+	"local-time": true, "if": true, "unless": true, "before": true, "after": true,
+	"newlines": true, "lower": true, "trim": true, "first": true, "path-step": true, "size": true, "file-kind": true,
 }
 
 func parseOperand(text string) (operand, error) {
@@ -165,6 +169,10 @@ func parseOperand(text string) (operand, error) {
 	}
 	if key, isSecret := strings.CutPrefix(text, "secret:"); isSecret {
 		return operand{secret: key}, nil
+	}
+	if _, err := strconv.ParseFloat(text, 64); err == nil {
+		// A number stands for itself.
+		return operand{literal: &text}, nil
 	}
 	path, err := parsePath(text)
 	if err != nil {
@@ -369,7 +377,9 @@ func (self filter) apply(value any, scope Scope) (any, error) {
 		if err != nil || milliseconds == 0 {
 			return "", nil
 		}
-		return time.UnixMilli(int64(milliseconds)).UTC().Format(time.RFC3339), nil
+		// A time, which is text in UTC to the second and keeps its
+		// milliseconds for local-time.
+		return time.UnixMilli(int64(milliseconds)).UTC(), nil
 	case "date", "time":
 		when, ok := asTime(value)
 		if !ok {
@@ -379,6 +389,93 @@ func (self filter) apply(value any, scope Scope) (any, error) {
 			return when.Format("2006-01-02"), nil
 		}
 		return when.UTC().Format(time.RFC3339), nil
+	case "local-time":
+		// In the computer's own zone, to the millisecond, as a tool that
+		// writes local times does.
+		when, ok := asTime(value)
+		if !ok {
+			return "", nil
+		}
+		return when.Local().Format("2006-01-02T15:04:05.000-07:00"), nil
+	case "if", "unless":
+		// The value where the argument holds (or, for unless, does not),
+		// and nothing otherwise.
+		condition, err := argument(0)
+		if err != nil {
+			return nil, err
+		}
+		if truthy(condition) == (self.name == "if") {
+			return value, nil
+		}
+		return "", nil
+	case "before", "after":
+		// What comes before or after the first separator; the whole value
+		// before one that is not there, and nothing after it.
+		separator, err := argument(0)
+		if err != nil {
+			return nil, err
+		}
+		head, tail, found := strings.Cut(text(value), text(separator))
+		if self.name == "before" {
+			return head, nil
+		}
+		if !found {
+			return "", nil
+		}
+		return tail, nil
+	case "newlines":
+		// Every line ending as a newline alone, as a file read as text is.
+		return strings.ReplaceAll(strings.ReplaceAll(text(value), "\r\n", "\n"), "\r", "\n"), nil
+	case "lower":
+		return strings.ToLower(text(value)), nil
+	case "trim":
+		// White space at both ends, and a byte order mark at the start,
+		// which an exported text file often begins with.
+		return strings.TrimSpace(strings.TrimLeft(text(value), "\ufeff")), nil
+	case "first":
+		// The first so many characters.
+		count, err := argument(0)
+		if err != nil {
+			return nil, err
+		}
+		limit, err := strconv.Atoi(text(count))
+		if err != nil || limit < 0 {
+			return nil, fmt.Errorf("first takes a number of characters")
+		}
+		runes := []rune(text(value))
+		if len(runes) > limit {
+			runes = runes[:limit]
+		}
+		return string(runes), nil
+	case "path-step":
+		// A name made fit to be one step of a path: a separator inside
+		// it becomes a hyphen, and dots and spaces at its ends go.
+		step := pathSeparators.ReplaceAllString(strings.TrimSpace(text(value)), "-")
+		step = strings.Trim(step, ". ")
+		if step == "" {
+			step = "unnamed"
+		}
+		return step, nil
+	case "size":
+		// A number of bytes as a person says it: 512 bytes, 1.2 MB.
+		count, err := strconv.ParseFloat(text(value), 64)
+		if err != nil || count <= 0 {
+			return "", nil
+		}
+		return humanSize(count), nil
+	case "file-kind":
+		// What to call a file in a sentence, from its content type, or
+		// from the name given as the argument where there is none.
+		kind := text(value)
+		if kind == "" && len(self.arguments) > 0 {
+			name, err := argument(0)
+			if err != nil {
+				return nil, err
+			}
+			kind = mime.TypeByExtension(strings.ToLower(filepath.Ext(text(name))))
+			kind, _, _ = strings.Cut(kind, ";")
+		}
+		return fileKind(kind), nil
 	case "join":
 		separator, err := argument(0)
 		if err != nil {
@@ -541,4 +638,50 @@ func htmlText(value string) string {
 	value = blankRuns.ReplaceAllString(value, " ")
 	value = lineRuns.ReplaceAllString(value, "\n\n")
 	return strings.TrimSpace(value)
+}
+
+var pathSeparators = regexp.MustCompile(`[/\\\r\n\t]+`)
+
+// humanSize is a number of bytes in the largest unit that keeps it above
+// one, to a tenth.
+func humanSize(count float64) string {
+	for _, unit := range []string{"bytes", "KB", "MB", "GB"} {
+		if count < 1024 || unit == "GB" {
+			if unit == "bytes" {
+				return fmt.Sprintf("%.0f %s", count, unit)
+			}
+			return fmt.Sprintf("%.1f %s", count, unit)
+		}
+		count /= 1024
+	}
+	return ""
+}
+
+// fileKind is what to call a file of a content type in a sentence.
+func fileKind(kind string) string {
+	switch {
+	case kind == "application/vnd.google-apps.document":
+		return "a document"
+	case kind == "application/vnd.google-apps.drawing":
+		return "a drawing"
+	case strings.HasPrefix(kind, "image/"):
+		return "a picture"
+	case strings.HasPrefix(kind, "video/"):
+		return "a video"
+	case strings.HasPrefix(kind, "audio/"):
+		return "a sound recording"
+	case kind == "application/pdf":
+		return "a PDF"
+	case strings.Contains(kind, "spreadsheet") || kind == "text/csv":
+		return "a spreadsheet"
+	case strings.Contains(kind, "presentation"):
+		return "a slide deck"
+	case strings.Contains(kind, "wordprocessing") || kind == "application/msword" || kind == "application/rtf":
+		return "a document"
+	case kind == "application/zip" || kind == "application/gzip" || kind == "application/x-tar":
+		return "an archive"
+	case strings.HasPrefix(kind, "text/"):
+		return "a text file"
+	}
+	return "a file"
 }
