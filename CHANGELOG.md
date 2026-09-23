@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-09-23
+
+### Added
+
+- Rename an API token, or change when it expires, without issuing a new one. (#123)
+
+### Fixed
+
+- A token lifetime given in days, such as `30d`, is accepted. (#123)
+
 ## [0.51.0] - 2026-09-23
 
 ### Removed
