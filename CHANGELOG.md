@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-09-23
+
+### Added
+
+- Source types can declare secrets, such as an API token, which you fill in for each source from the dashboard or `teanode agent knowledge secret set`. (#129)
+
 ## [0.54.1] - 2026-09-23
 
 ### Fixed
