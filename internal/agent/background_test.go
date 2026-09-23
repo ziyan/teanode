@@ -1,13 +1,16 @@
 package agent_test
 
 import (
+	"context"
 	"encoding/json"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
+	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
@@ -145,4 +148,141 @@ func TestAnEndingFromARunWithNobodyPresentWakesNothing(t *testing.T) {
 	if len(*world.requests) != 0 {
 		t.Fatalf("no turn: %d model requests", len(*world.requests))
 	}
+}
+
+// bridge is the websocket between the program on the computer and the
+// agent, without a network: what the program writes goes where the server's
+// handler would send it, and what the agent sends arrives as the program's
+// next read.
+type bridge struct {
+	worker   *agent.Agent
+	agentId  string
+	incoming chan []byte
+}
+
+// Send is the agent writing to the program.
+func (self *bridge) Send(message []byte) error {
+	self.incoming <- message
+	return nil
+}
+
+// ReadJSON is the program reading what the agent wrote.
+func (self *bridge) ReadJSON(value any) error {
+	message, ok := <-self.incoming
+	if !ok {
+		return context.Canceled
+	}
+	return json.Unmarshal(message, value)
+}
+
+// WriteJSON is the program writing, routed the way the server's handler
+// routes it.
+func (self *bridge) WriteJSON(value any) error {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	var message struct {
+		Type     string          `json:"type"`
+		Name     string          `json:"name"`
+		System   string          `json:"system"`
+		Home     string          `json:"home"`
+		ID       int64           `json:"id"`
+		OK       bool            `json:"ok"`
+		Data     json.RawMessage `json:"data"`
+		Error    string          `json:"error"`
+		Event    string          `json:"event"`
+		Features []string        `json:"features"`
+	}
+	_ = json.Unmarshal(encoded, &message)
+	switch message.Type {
+	case "hello":
+		self.worker.AttachComputer(self.agentId, self, agent.ComputerIdentity{Name: message.Name, System: message.System, Home: message.Home, Features: message.Features})
+		welcome, _ := json.Marshal(map[string]any{"type": "welcome"})
+		self.incoming <- welcome
+	case "result":
+		self.worker.ComputerAnswered(self.agentId, self, message.ID, message.OK, message.Data, message.Error)
+	case "background":
+		if message.Event == "ended" {
+			self.worker.ComputerBackgroundEnded(self.agentId, self, message.Data)
+		}
+	}
+	return nil
+}
+
+// The whole way round, with the real program on the other end: the
+// person's turn starts a command in the background and ends; the command
+// ends a second later; the conversation is woken with what it printed.
+func TestABackgroundCommandTheAgentStartedWakesItWhenItEnds(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the shell here is sh")
+	}
+	startRound := `{"id":"b1","model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"shell","arguments":"{\"command\":\"sleep 1; echo built the thing\",\"background\":true}"}}]},"finish_reason":"tool_calls"}]}
+{"id":"b1","choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10}}`
+	world := startGoalWorld(t, []string{startRound, answerRound, answerRound}, "")
+	defer world.close()
+
+	link := &bridge{worker: world.worker, agentId: world.found.ID, incoming: make(chan []byte, 16)}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	background := computer.NewBackgroundCommands()
+	defer background.Close()
+	go func() {
+		_ = computer.Serve(ctx, link, &computer.Options{Token: "t", Name: "laptop", Home: t.TempDir(), Background: background})
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for len(world.worker.ComputersAttached(world.found.ID)) == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	operations := &fakeOperations{permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailRead}})}
+	turn, err := world.worker.Ask(&agent.AskSettings{Agent: world.found, Owner: world.owner, Operations: operations, Conversation: world.conversation, Message: "build the thing and tell me when it is done", Surface: "drawer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, unsubscribe := turn.Subscribe()
+	for range events {
+	}
+	unsubscribe()
+
+	// The turn that started it has ended; the command has not, yet.
+	var woken string
+	deadline = time.Now().Add(20 * time.Second)
+	for woken == "" && time.Now().Before(deadline) {
+		time.Sleep(200 * time.Millisecond)
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			messages, _ := tx.ListAgentMessages(world.conversation.ID, nil)
+			for _, message := range messages {
+				if message.Role == "user" && strings.HasPrefix(message.Content, models.BackgroundCommandMarker) {
+					woken = message.Content
+				}
+			}
+		})
+	}
+	if !strings.Contains(woken, "built the thing") || !strings.Contains(woken, "exit code: 0") || !strings.Contains(woken, "computer: laptop") {
+		t.Fatalf("the conversation is woken with how it ended: %q", woken)
+	}
+	// And what the tool answered when it started said it would be.
+	var started string
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		messages, _ := tx.ListAgentMessages(world.conversation.ID, nil)
+		for _, message := range messages {
+			if message.Role == "tool" && message.Name == "shell" {
+				started = message.Content
+			}
+		}
+	})
+	if !strings.Contains(started, "started in the background") || !strings.Contains(started, "woken when it ends") {
+		t.Fatalf("the start says what happens next: %s", started)
+	}
+	// The ending is acknowledged once the woken turn is over.
+	deadline = time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		commands, _ := world.worker.BackgroundCommands(context.Background(), world.found.ID)
+		if len(commands) == 1 && commands[0].IsAcknowledged {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("the ending was not acknowledged")
 }

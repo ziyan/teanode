@@ -48,6 +48,11 @@ const (
 
 	// backgroundSurface is the surface of a turn an ended command wakes.
 	backgroundSurface = "background"
+
+	// backgroundListWait is how long listing waits for each computer. The
+	// program answers from memory, so a computer slower than this is one
+	// that is not answering.
+	backgroundListWait = 10 * time.Second
 )
 
 // backgroundEnding is one ended command waiting for its turn.
@@ -327,18 +332,22 @@ type BackgroundCommand struct {
 // BackgroundCommands are the background commands on a person's computers,
 // newest first on each.
 func (self *Agent) BackgroundCommands(ctx context.Context, agentId string) ([]*BackgroundCommand, error) {
-	var listed []*BackgroundCommand
+	listed := []*BackgroundCommand{}
 	for _, attached := range self.computersFor(agentId) {
 		if !attached.HasBackground() {
 			continue
 		}
-		answer, err := attached.Ask(ctx, "background_list", struct{}{}, deviceAnswerWait)
+		// A computer that does not answer is left out rather than taking
+		// the others' list down with it; the dashboard asks again soon.
+		answer, err := attached.Ask(ctx, "background_list", struct{}{}, backgroundListWait)
 		if err != nil {
-			return nil, err
+			log.Noticef("cannot list the background commands on %q: %s", attached.name, err)
+			continue
 		}
 		var statuses []*computer.BackgroundStatus
 		if err := json.Unmarshal(answer, &statuses); err != nil {
-			return nil, fmt.Errorf("%s answered something unreadable: %w", attached.what, err)
+			log.Warningf("%s answered the list of background commands unreadably: %s", attached.what, err)
+			continue
 		}
 		for _, status := range statuses {
 			listed = append(listed, backgroundCommandOf(attached, status))
