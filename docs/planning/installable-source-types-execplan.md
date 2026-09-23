@@ -19,10 +19,10 @@ and within a minute the source page shows messages being read, with no file crea
 - [x] (2026-09-23) Surveyed the skills system, the source model, the scan and records path, and the five records scripts in use; wrote this plan.
 - [x] (2026-09-23) Created `github.com/teanode/teanode-sources` with its own signing key and draft types for GitHub, GitLab, Mattermost, Confluence, Google Drive and Gmail, their field names and paging read from each tool; not yet runnable.
 - [x] (2026-09-23) Added `folder`, `journal` and `website` as types naming a built-in reader, and `rss` as the first type that makes a web request and can run on the server.
-- [ ] Milestone 1: prototype runner on the computer, driven by a local YAML file, no server change.
-- [ ] Milestone 2: the source type format as a package, parsed and validated like a skill.
-- [ ] Milestone 3: installing types and adding sources of a type, end to end, for one type.
-- [ ] Milestone 4: the types that replace the five scripts, each checked against the source it replaces before switching.
+- [x] (2026-09-23) Milestone 1: the runner (`internal/sources`) and `teanode computer try-source`, run against `gh`, `gog` (Gmail and Drive), `mm` and `confluence` on a real computer.
+- [x] (2026-09-23) Milestone 2: the format as a package, parsed and validated, with requests, secrets, pace and retries; files a tool keeps on disk, lookups, a refresh command, walks named by path, and the filters the scripts' text needed.
+- [x] (2026-09-23) Milestone 3: `agent_source_type`, install from the signed registry or add a local type, sources of a type (`type` and `settings` on the source), the typed scan, and `teanode agent source-type`. The registry publishes nine types, signed.
+- [ ] Milestone 4: the types that replace the five scripts. Checked record by record against each script (see Artifacts); switching the live sources remains.
 - [ ] Milestone 5: the dashboard: types under Settings, a type picker and settings form on the Knowledge page.
 - [ ] Milestone 6: the scripts retired; the records contract kept for anything a type cannot say.
 
@@ -34,6 +34,12 @@ and within a minute the source page shows messages being read, with no file crea
   Evidence: `internal/agent/ingest_pass.go`, `DeleteAgentDocumentsUnseen`; a script reviewed on 2026-09-22 did both.
 - Observation: some tools page only by a result limit, with no page token, and some answer in text rather than JSON.
   Evidence: the wiki command line tool used for Confluence searches with `--limit` only and prints `N. Title (ID: 123)` lines.
+- Observation: three of the five scripts did not call a service at all; they read an export or an archive a tool had written to disk (the chat archive `mm archive` keeps, and one-off exports of a wiki and a code host). A type had to be able to read files, not only run commands, or those sources could not move without every document being read again.
+  Evidence: the chat, code host and wiki scripts in the survey each walked a directory of files.
+- Observation: `mm archive sync --files all` fetches every attachment the archive lacks, not only those of new posts: 342,000 on the archive here, against 54,000 kept. `--files mine` is 36.
+  Evidence: a sync run on 2026-09-23, stopped before it fetched anything.
+- Observation: a document's hash is the hash of its text, so a type must reproduce a script's text exactly, down to the dash in a generated heading, a date cut to ten characters and Windows line endings turned into newlines, or everything is read again.
+  Evidence: the comparisons in Artifacts found each of these before the switch.
 - Observation: `skill` and `web` source kinds are declared in `internal/models/knowledge.go` and accepted by the API but cannot be read (`internal/agent/ingest.go` fails them as "not built yet").
 
 ## Decision Log
@@ -68,6 +74,22 @@ and within a minute the source page shows messages being read, with no file crea
 
 - Decision: a migrated source keeps its document identifiers.
   Rationale: identifiers are the container name plus the record id. A chat source here holds hundreds of thousands of documents with their embeddings; switching it to a type that names things differently would delete and re-read all of them. Each type used for a migration is checked with a dry run that reports how many identifiers match the existing source before the switch.
+  Date/Author: 2026-09-23, agent.
+
+- Decision: a type can read files on the computer it runs on (`files` in a listing, `file` or `files` in a reading, `lookups` read from files, a `refresh` command run first), and the Mattermost type reads the copy `mm archive` keeps rather than calling the server post by post.
+  Rationale: the archive already names direct and group channels, keeps exclusions and downloads attachments; reading it keeps every document identifier the chat source had, and `mm archive sync` does the incremental work. Reading files is refused for a type that runs on the server.
+  Date/Author: 2026-09-23, agent.
+
+- Decision: the one-off exports of a wiki and a code host are read by local types (`gitlab-export`, `confluence-export`) that stay off the public registry.
+  Rationale: their layout is that of a script nobody publishes, and the live types read the same services with different text, which would read 250,000 documents again. A local type replaces the script without that.
+  Date/Author: 2026-09-23, agent.
+
+- Decision: making a sheet of frames for a video moves into the computer program, for every typed source, cached by the hash of the video.
+  Rationale: the chat script did it for itself; a type cannot run ffmpeg. The script's sheets are carried over to the new cache so no sheet document changes.
+  Date/Author: 2026-09-23, agent.
+
+- Decision: a reading that runs out of time returns what it read and marks the pass unfinished, and an unfinished pass never deletes.
+  Rationale: a first read of a large mailbox or chat takes many pages; a pass cut short is not a pass that saw everything.
   Date/Author: 2026-09-23, agent.
 
 ## Outcomes & Retrospective
@@ -182,6 +204,8 @@ Each milestone's acceptance is stated with it. Across the whole plan: `make test
 Installing a type twice is an update. Switching a source to a type is a settings change on the source and can be reverted by setting its format back to `records` and its path to the old folder, which is kept until Milestone 6. A dry run changes nothing on the server. The migration adding `agent_source_type` has a reverse migration that drops the table; sources of a type fail to read until reverted, and nothing they filed is deleted by the failure, since a failed pass never sweeps.
 
 ## Artifacts and Notes
+
+Record-by-record comparisons of each type against the script it replaces, over the same containers on the same computer (2026-09-23): chat, 244,252 records in 300 channels, every field identical, attachments a superset (23 posts gain a file the script's index missed); GitLab export, 48,777 records identical; Confluence export, all 130,380 identifiers and texts identical (titles with quotes now read correctly); Google Drive, all 94 folders and 270 sampled records identical, re-exported sheets and decks carried over from the script's cache; GitHub, all 256 repositories and every sampled record identical.
 
 The survey behind this plan found these limits and behaviors worth keeping in the runner: listings cached for a pass so later pages do not list again; retries of a command whose output does not parse, three times with a growing pause; a per-pass budget of time and of fetches, as the shared script library had; a cache of fetched details and files keyed by item and version with a size limit; and records defaulting to private, so that nothing read from a service is shown as public unless the type says so.
 

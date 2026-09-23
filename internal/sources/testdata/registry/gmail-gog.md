@@ -2,6 +2,8 @@
 name: gmail-gog
 description: A Gmail mailbox's threads, read with the gog command line tool, each thread's messages in full.
 requires: [gog]
+# Google counts calls a minute for each person; a steady pace stays under it.
+pace: 250ms
 
 settings:
   - name: account
@@ -22,7 +24,8 @@ containers:
     name: threads.jsonl
 
 records:
-  - command: [gog, --account, "{{settings.account}}", --json, gmail, search, "{{settings.query}}", --max, "500"]
+  # Dates in UTC: without it gog prints local time with no zone.
+  - command: [gog, --account, "{{settings.account}}", --json, gmail, search, "{{settings.query}}", --max, "500", --timezone, UTC]
     parse: {json: {items: threads}}
     paging: {token: {field: nextPageToken, flag: --page}}
     # The query is usually a window of time, and a thread that ages out of
@@ -33,7 +36,7 @@ records:
       kind: mail
       title: "{{item.subject}}"
       url: "https://mail.google.com/mail/#all/{{item.id}}"
-      at: "{{item.date}}"
+      at: "{{item.date | time}}"
       author: "{{item.from}}"
       version: "{{item.messageCount}}/{{item.date}}"
       private: true

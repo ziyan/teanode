@@ -39,7 +39,7 @@ records:
       kind: page
       title: "{{item.title}}"
       url: "{{item.link.href | or item.link}}"
-      at: "{{item.pubDate | or item.updated | date}}"
+      at: "{{item.pubDate | or item.updated | time}}"
       author: "{{item.author.name | or item.author}}"
       private: false
       text: "{{item.title}}\n\n{{item.description | or item.summary | or item.content | html-text}}"

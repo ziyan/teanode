@@ -23,14 +23,14 @@ containers:
     parse: jsonl
     paging: all
     name: "{{item.path_with_namespace}}.jsonl"
-    fields: {project: "{{item.id}}", path: "{{item.path_with_namespace}}", url: "{{item.web_url}}", private: "{{item.visibility}} != public"}
+    fields: {project: "{{item.id}}", path: "{{item.path_with_namespace}}", url: "{{item.web_url}}", visibility: "{{item.visibility}}"}
 
   - each: settings.groups
     command: [glab, api, --hostname, "{{settings.hostname}}", "groups/{{each | urlencode}}/projects?include_subgroups=true&archived=false&per_page=100", --paginate, --output, ndjson]
     parse: jsonl
     paging: all
     name: "{{item.path_with_namespace}}.jsonl"
-    fields: {project: "{{item.id}}", path: "{{item.path_with_namespace}}", url: "{{item.web_url}}", private: "{{item.visibility}} != public"}
+    fields: {project: "{{item.id}}", path: "{{item.path_with_namespace}}", url: "{{item.web_url}}", visibility: "{{item.visibility}}"}
 
 records:
   - command: [glab, api, --hostname, "{{settings.hostname}}", "projects/{{container.project}}/issues?scope=all&per_page=100", --paginate, --output, ndjson]
@@ -45,7 +45,7 @@ records:
       modifiedAt: "{{item.updated_at}}"
       author: "{{item.author.username}}"
       channel: "{{container.path}}"
-      private: "{{container.private}}"
+      private: "{{container.visibility}} != public"
       text: "{{container.path}}#{{item.iid}}, issue, {{item.state}}. {{item.labels | join \", \"}}\n\n{{item.description}}"
 
   - command: [glab, api, --hostname, "{{settings.hostname}}", "projects/{{container.project}}/merge_requests?scope=all&per_page=100", --paginate, --output, ndjson]
@@ -60,7 +60,7 @@ records:
       modifiedAt: "{{item.updated_at}}"
       author: "{{item.author.username}}"
       channel: "{{container.path}}"
-      private: "{{container.private}}"
+      private: "{{container.visibility}} != public"
       text: "{{container.path}}!{{item.iid}}, merge request, {{item.state}}. {{item.labels | join \", \"}}\n\n{{item.description}}"
 ---
 

@@ -42,6 +42,9 @@ records:
       title: "{{item.title}}"
       channel: "{{container.spaceName}}"
       private: true
+      # A page is found again only in the window it was changed in, so the
+      # window is its version: its text is fetched again after an edit.
+      version: "{{pass.windowEnd}}"
     detail:
       command: [confluence, --profile, "{{settings.profile}}", read, "{{item.id}}", --format, markdown]
       parse: text
