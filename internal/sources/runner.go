@@ -1217,6 +1217,17 @@ func (self *Runner) fetchItems(ctx context.Context, command []string, request *R
 				return nil, fmt.Errorf("the answer came back full (%d), so it may have been cut; read a smaller window", paging.Size)
 			}
 			return all, nil
+		case "link":
+			next, _ := at(result.response, paging.Field)
+			link := strings.TrimSpace(text(next))
+			if link == "" {
+				return all, nil
+			}
+			if paging.Base != "" && !strings.Contains(link, "://") {
+				base, _ := at(result.response, paging.Base)
+				link = strings.TrimRight(text(base), "/") + "/" + strings.TrimLeft(link, "/")
+			}
+			token = link
 		case "offset":
 			// A page shorter than the size is the last; a full one may
 			// have more after it, asked for from where it ended.
@@ -1285,7 +1296,23 @@ func (self *Runner) callOnce(ctx context.Context, command []string, request *Req
 		if err != nil {
 			return nil, err
 		}
-		if token != "" {
+		if token != "" && paging.Kind == "link" {
+			// The next page is where the answer said, and only on the
+			// host the type sent the first request to: an answer never
+			// decides where the credential goes.
+			first, err := url.Parse(prepared.URL)
+			if err != nil {
+				return nil, err
+			}
+			next, err := first.Parse(token)
+			if err != nil {
+				return nil, err
+			}
+			if next.Scheme != first.Scheme || next.Host != first.Host {
+				return nil, fmt.Errorf("the answer gave its next page on %s, not %s, so it is not followed", next.Host, first.Host)
+			}
+			prepared.URL = next.String()
+		} else if token != "" {
 			parsed, err := url.Parse(prepared.URL)
 			if err != nil {
 				return nil, err

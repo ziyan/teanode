@@ -39,10 +39,26 @@ export type SourceType = {
   readable: boolean
   problem?: string | null
   settings: SourceTypeSetting[]
+  // Values each source keeps sealed, such as a token; filled in on the
+  // source, never shown again.
+  secrets: SourceTypeSecret[]
+}
+
+export type SourceTypeSecret = {
+  key: string
+  description: string
+  isOptional: boolean
 }
 
 export const SOURCE_TYPE_FIELDS = `name description version publisher url isLocal installedAt reader runs requires guide readable problem
-    settings { name description settingType pattern itemPattern default isRequired minimum maximum }`
+    settings { name description settingType pattern itemPattern default isRequired minimum maximum }
+    secrets { key description isOptional }`
+
+export const LIST_SOURCE_SECRETS = `query ($sourceId: String!) { ListAgentKnowledgeSourceSecrets(sourceId: $sourceId) { key isSet } }`
+
+export const SET_SOURCE_SECRET = `mutation ($sourceId: String!, $key: String!, $value: String!) {
+  SetAgentKnowledgeSourceSecret(sourceId: $sourceId, key: $key, value: $value) { key isSet }
+}`
 
 export const LIST_SOURCE_TYPES = `query { ListAgentSourceTypes { ${SOURCE_TYPE_FIELDS} } }`
 
@@ -172,7 +188,9 @@ export function settingProblem(
   }
   if (setting.settingType === 'array') {
     const refused = listOf(text).find((item) => !matches(setting.itemPattern, item))
-    return refused === undefined ? null : t('sourceTypes.settingItemRefused', { name: settingLabel(setting.name), item: refused })
+    return refused === undefined
+      ? null
+      : t('sourceTypes.settingItemRefused', { name: settingLabel(setting.name), item: refused })
   }
   return matches(setting.pattern, text) ? null : t('sourceTypes.settingRefused', { name: settingLabel(setting.name) })
 }

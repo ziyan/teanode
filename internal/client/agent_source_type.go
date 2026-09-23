@@ -18,6 +18,7 @@ type AgentSourceType struct {
 	Runs        []string                  `json:"runs"`
 	Requires    []string                  `json:"requires"`
 	Settings    []*AgentSourceTypeSetting `json:"settings"`
+	Secrets     []*AgentSourceSecret      `json:"secrets"`
 	Guide       string                    `json:"guide"`
 	Readable    bool                      `json:"readable"`
 	Problem     string                    `json:"problem,omitempty"`
@@ -48,7 +49,8 @@ type AgentSourceTypeOffer struct {
 
 const (
 	sourceTypeFields = `name description version publisher isLocal reader runs requires guide readable problem
-    settings { name description settingType pattern itemPattern default isRequired minimum maximum }`
+    settings { name description settingType pattern itemPattern default isRequired minimum maximum }
+    secrets { key description isOptional }`
 
 	DocumentListAgentSourceTypes = `query { ListAgentSourceTypes { ` + sourceTypeFields + ` } }`
 
@@ -117,4 +119,55 @@ func RemoveAgentSourceType(ctx context.Context, connection *Client, name string)
 		RemoveAgentSourceType bool `json:"RemoveAgentSourceType"`
 	}
 	return connection.Execute(ctx, DocumentRemoveAgentSourceType, map[string]any{"name": name}, &result)
+}
+
+// AgentSourceSecret is one secret a source's type asks for.
+type AgentSourceSecret struct {
+	Key         string `json:"key"`
+	Description string `json:"description"`
+	IsOptional  bool   `json:"isOptional"`
+	IsSet       bool   `json:"isSet"`
+}
+
+const (
+	DocumentListAgentKnowledgeSourceSecrets = `query ($sourceId: String!) {
+  ListAgentKnowledgeSourceSecrets(sourceId: $sourceId) { key description isOptional isSet }
+}`
+
+	DocumentSetAgentKnowledgeSourceSecret = `mutation ($sourceId: String!, $key: String!, $value: String!) {
+  SetAgentKnowledgeSourceSecret(sourceId: $sourceId, key: $key, value: $value) { key description isOptional isSet }
+}`
+
+	DocumentClearAgentKnowledgeSourceSecret = `mutation ($sourceId: String!, $key: String!) { ClearAgentKnowledgeSourceSecret(sourceId: $sourceId, key: $key) }`
+)
+
+// ListAgentKnowledgeSourceSecrets is what a source's type asks for, and
+// whether each is filled in.
+func ListAgentKnowledgeSourceSecrets(ctx context.Context, connection *Client, sourceId string) ([]*AgentSourceSecret, error) {
+	var result struct {
+		ListAgentKnowledgeSourceSecrets []*AgentSourceSecret `json:"ListAgentKnowledgeSourceSecrets"`
+	}
+	if err := connection.Execute(ctx, DocumentListAgentKnowledgeSourceSecrets, map[string]any{"sourceId": sourceId}, &result); err != nil {
+		return nil, err
+	}
+	return result.ListAgentKnowledgeSourceSecrets, nil
+}
+
+// SetAgentKnowledgeSourceSecret keeps one value for a source.
+func SetAgentKnowledgeSourceSecret(ctx context.Context, connection *Client, sourceId, key, value string) (*AgentSourceSecret, error) {
+	var result struct {
+		SetAgentKnowledgeSourceSecret *AgentSourceSecret `json:"SetAgentKnowledgeSourceSecret"`
+	}
+	if err := connection.Execute(ctx, DocumentSetAgentKnowledgeSourceSecret, map[string]any{"sourceId": sourceId, "key": key, "value": value}, &result); err != nil {
+		return nil, err
+	}
+	return result.SetAgentKnowledgeSourceSecret, nil
+}
+
+// ClearAgentKnowledgeSourceSecret forgets one value of a source.
+func ClearAgentKnowledgeSourceSecret(ctx context.Context, connection *Client, sourceId, key string) error {
+	var result struct {
+		ClearAgentKnowledgeSourceSecret bool `json:"ClearAgentKnowledgeSourceSecret"`
+	}
+	return connection.Execute(ctx, DocumentClearAgentKnowledgeSourceSecret, map[string]any{"sourceId": sourceId, "key": key}, &result)
 }

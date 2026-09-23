@@ -147,6 +147,11 @@ type MemoryOperation interface {
 	DeleteAgentSourceType(name string) error
 	CountAgentSourcesOfType(name string) (int64, error)
 
+	// The secrets a source's type declares, filled in for that source.
+	ListAgentSourceSecrets(sourceId string) ([]*models.AgentSourceSecret, error)
+	PutAgentSourceSecret(agentId string, secret *models.AgentSourceSecret) error
+	DeleteAgentSourceSecret(agentId, sourceId, key string) error
+
 	CreateAgentTodo(todo *models.AgentTodo) (*models.AgentTodo, error)
 	UpdateAgentTodo(todoId string, modify func(*models.AgentTodo) error) (*models.AgentTodo, error)
 	DeleteAgentTodo(conversationId, todoId string) error

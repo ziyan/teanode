@@ -42,6 +42,7 @@ type Query interface {
 	AgentReachQuery
 	AgentSkillQuery
 	AgentSourceTypeQuery
+	AgentSourceSecretQuery
 	AgentChannelQuery
 	AgentTabQuery
 	AgentComputerQuery
@@ -87,6 +88,7 @@ type Mutation interface {
 	AgentReachMutation
 	AgentSkillMutation
 	AgentSourceTypeMutation
+	AgentSourceSecretMutation
 	AgentChannelMutation
 	ServerMutation
 	UpgradeMutation

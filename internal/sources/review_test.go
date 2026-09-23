@@ -192,3 +192,35 @@ records:
 		t.Fatalf("a repeated page was not refused: %v", err)
 	}
 }
+
+// Link paging follows the address the answer gives for the next page, read
+// against the base it gives, and never to another host.
+func TestLinkPagingStaysOnItsHost(t *testing.T) {
+	kind := mustParse(t, `
+name: invented-wiki-api
+description: an invented wiki's web API
+containers:
+  - fixed: [{}]
+    name: pages.jsonl
+records:
+  - request: {url: "https://wiki.example.com/api/search?cql={{'type = page' | query-escape}}"}
+    parse: {json: {items: results}}
+    paging: {link: {field: _links.next, base: _links.base}}
+    record: {id: "{{item.id}}"}
+`)
+	executor := &fakeExecutor{requests: map[string]string{
+		"https://wiki.example.com/api/search?cql=type+%3D+page": `{"results": [{"id": "1"}], "_links": {"base": "https://wiki.example.com", "next": "/api/search?cursor=2"}}`,
+		"https://wiki.example.com/api/search?cursor=2":          `{"results": [{"id": "2"}], "_links": {"base": "https://wiki.example.com"}}`,
+	}}
+	runner := &Runner{Type: kind, Executor: executor, State: t.TempDir()}
+	records, err := runner.Read(context.Background(), Container{Name: "pages.jsonl", Members: []map[string]any{{}}})
+	if err != nil || strings.Join(ids(records), ",") != "1,2" {
+		t.Fatalf("read %v, %v (asked %v)", ids(records), err, executor.calls)
+	}
+
+	executor.requests["https://wiki.example.com/api/search?cql=type+%3D+page"] = `{"results": [{"id": "1"}], "_links": {"next": "https://elsewhere.example.net/steal"}}`
+	elsewhere := &Runner{Type: kind, Executor: executor, State: t.TempDir()}
+	if _, err := elsewhere.Read(context.Background(), Container{Name: "pages.jsonl", Members: []map[string]any{{}}}); err == nil || !strings.Contains(err.Error(), "not followed") {
+		t.Fatalf("a next page on another host was followed: %v", err)
+	}
+}

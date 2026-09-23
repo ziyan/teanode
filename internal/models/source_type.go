@@ -24,3 +24,16 @@ type AgentSourceType struct {
 	// from the registry, so nothing but the operator vouches for it.
 	IsLocal bool `json:"isLocal"`
 }
+
+// AgentSourceSecret is one secret a source's type declares, filled in by the
+// person whose source it is.
+type AgentSourceSecret struct {
+	SourceID   string    `json:"sourceId"`
+	Key        string    `json:"key"`
+	CreatedAt  time.Time `json:"createdAt"`
+	ModifiedAt time.Time `json:"modifiedAt"`
+
+	// Value is sealed with the server secret; it is opened only to be
+	// sent to the computer that reads the source.
+	Value string `json:"-"`
+}

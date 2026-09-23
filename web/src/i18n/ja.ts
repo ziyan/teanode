@@ -1580,6 +1580,10 @@ export const ja: Catalog = {
   'sourceTypes.settingRefused': '{name} の形式が違います',
   'sourceTypes.settingListHint': '複数ある場合はカンマで区切ります。',
   'sourceTypes.settingRequired': '必須',
+  'sourceTypes.secretMissing': 'このソースの {name} を入力してください。',
+  'sourceTypes.secretKept': '保存済み。ここに入力すると置き換えます',
+  'sourceTypes.secretHint':
+    'サーバーに封をして保存され、このソースを読むコンピューターにだけ送られます。二度と表示されません。',
   'sourceTypes.choose': '種類',
   'sourceTypes.computerMissing': 'どのコンピューターにあるか指定してください。',
   'sourceTypes.needsTools': 'そのコンピューターに {tools} が必要です。',

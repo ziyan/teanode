@@ -474,6 +474,11 @@ func typesAction(ctx context.Context, run tools.Run) (*tools.Result, error) {
 			}
 			fmt.Fprintf(&builder, "  setting %s (%s%s): %s\n", setting.Name, setting.Type, required, setting.Description)
 		}
+		for _, secret := range parsed.Secrets {
+			// A secret is the person's to type in, never the agent's to
+			// pass along: it is set on the source after it is added.
+			fmt.Fprintf(&builder, "  secret %s: %s; the person sets it on the source in the dashboard or with `teanode agent knowledge secret set`\n", secret.Key, secret.Description)
+		}
 	}
 	return tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), nil
 }

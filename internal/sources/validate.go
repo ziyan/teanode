@@ -16,7 +16,7 @@ var scopeNames = map[string]bool{
 var (
 	settingTypes  = map[string]bool{"string": true, "path": true, "array": true, "boolean": true, "integer": true}
 	parseKinds    = map[string]bool{"json": true, "xml": true, "jsonl": true, "lines": true, "markdown": true, "text": true}
-	pagingKinds   = map[string]bool{"": true, "none": true, "all": true, "token": true, "limit": true, "offset": true}
+	pagingKinds   = map[string]bool{"": true, "none": true, "all": true, "token": true, "limit": true, "offset": true, "link": true}
 	settingName   = regexp.MustCompile(`^[a-z][A-Za-z0-9]*$`)
 	knownReaders  = map[string]bool{ReaderFiles: true, ReaderJournal: true, ReaderSent: true, ReaderWeb: true}
 	knownRunsOn   = map[string]bool{RunsComputer: true, RunsServer: true}
@@ -178,6 +178,9 @@ func (self *Type) validate() error {
 		}
 		if paging.Kind == "limit" && paging.Size <= 0 {
 			return fmt.Errorf("%s: limit paging says the size of a full page", where)
+		}
+		if paging.Kind == "link" && (paging.Field == "" || request == nil) {
+			return fmt.Errorf("%s: link paging is for a request, and names the field the next address is in", where)
 		}
 		if paging.Kind == "offset" && (paging.Size <= 0 || paging.Flag == "") {
 			return fmt.Errorf("%s: offset paging names the flag that says where to start and the size of a full page", where)

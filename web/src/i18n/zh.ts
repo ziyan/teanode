@@ -1534,6 +1534,10 @@ export const zh: Catalog = {
   'sourceTypes.settingRefused': '{name} 的格式不对',
   'sourceTypes.settingListHint': '多个值用逗号分隔。',
   'sourceTypes.settingRequired': '必填',
+  'sourceTypes.secretMissing': '请为此来源填写 {name}。',
+  'sourceTypes.secretKept': '已保存；在此输入可替换',
+  'sourceTypes.secretHint':
+    '密封保存在服务器上，只发送给读取此来源的电脑，之后不再显示。',
   'sourceTypes.choose': '这是什么',
   'sourceTypes.computerMissing': '请说明它在哪台电脑上。',
   'sourceTypes.needsTools': '那台电脑上需要安装 {tools}。',

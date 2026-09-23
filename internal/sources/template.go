@@ -151,7 +151,7 @@ var knownFilters = map[string]bool{
 	"epoch-ms": true, "date": true, "time": true, "join": true, "replace": true, "urlencode": true,
 	"html-text": true, "or": true, "empty": true, "present": true, "flag": true,
 	"local-time": true, "if": true, "unless": true, "before": true, "after": true,
-	"newlines": true, "lower": true, "trim": true, "first": true, "path-step": true, "size": true, "file-kind": true,
+	"query-escape": true, "newlines": true, "lower": true, "trim": true, "first": true, "path-step": true, "size": true, "file-kind": true,
 }
 
 func parseOperand(text string) (operand, error) {
@@ -504,6 +504,10 @@ func (self filter) apply(value any, scope Scope) (any, error) {
 		return strings.ReplaceAll(text(value), text(old), text(replacement)), nil
 	case "urlencode":
 		return url.PathEscape(text(value)), nil
+	case "query-escape":
+		// A value for a query string: spaces, quotes, ampersands and
+		// equals signs all escaped.
+		return url.QueryEscape(text(value)), nil
 	case "html-text":
 		return htmlText(text(value)), nil
 	case "or":
