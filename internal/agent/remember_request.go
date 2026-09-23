@@ -23,7 +23,7 @@ func (self *Agent) askWhatWasLearned(ctx context.Context, run *Run, conversation
 		return nil, nil, err
 	}
 
-	thinking, err := self.oneShot(ctx, run, fmt.Sprintf("Filing what %q taught", conversation.Title), prompt, models.AgentJobRemember, config.AgentWorkScan)
+	thinking, err := self.oneShot(ctx, run, fmt.Sprintf("Filing what %s taught", chatName(conversation)), prompt, models.AgentJobRemember, config.AgentWorkScan)
 	if err != nil {
 		return nil, nil, fmt.Errorf("asking the model: %w", err)
 	}
