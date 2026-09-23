@@ -55,14 +55,24 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 	}
 	most := ingestEntries
 	format := source.Specification.Format
-	if format == computer.FormatRecords {
+	if format == computer.FormatRecords || format == computer.FormatTyped {
 		most = ingestRecordEntries
 	}
 	// The first page of a records pass is the one that runs the folder's
-	// refresh script, and that is the only page allowed to be slow.
+	// refresh script, and of a typed pass the one that brings a tool's
+	// copy up to date and lists; that is the only page allowed to be slow.
 	wait := ingestDeviceWait
-	if format == computer.FormatRecords && after == "" {
+	if (format == computer.FormatRecords || format == computer.FormatTyped) && after == "" {
 		wait = ingestRefreshWait
+	}
+	// A typed source is sent its type with every page, so the computer
+	// runs whatever this server holds and nothing is installed there.
+	var sourceType string
+	var settings map[string]any
+	if format == computer.FormatTyped {
+		if sourceType, settings, err = self.typedSourceParts(ctx, run, source); err != nil {
+			return "", counts, err
+		}
 	}
 
 	// One request to a computer at a time, across the sources that read
@@ -133,6 +143,11 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 			// hundred checkouts and a third of a million commits is
 			// paced by what the person set here.
 			CommitsPerPass: source.Specification.CommitsPerPass,
+			// A typed source's type and settings, and the name of the
+			// directory in the person's cache it keeps what it knows in.
+			SourceType: sourceType,
+			Settings:   settings,
+			SourceKey:  typedSourceKey(source),
 		}, wait)
 	}
 	answer, err := ask(known)
@@ -167,6 +182,12 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 	result, err := decodeIngestPage(answer, after)
 	if err != nil {
 		return "", counts, fmt.Errorf("the computer's answer is not readable: %w", err)
+	}
+	if result.IsUnfinished {
+		// Some of what this pass should have read ran out of time and
+		// is read next pass: this pass must not delete what it did not
+		// see.
+		cursor[cursorPassUnfinished] = true
 	}
 	return self.fileComputerPage(ctx, run, source, result, func(entry computer.ScanEntry) blobFetcher {
 		return func(ctx context.Context) ([]byte, error) {
@@ -253,4 +274,36 @@ func (self *Agent) releaseComputer(computer, sourceId string) {
 	if self.computersBusy[computer] == sourceId {
 		delete(self.computersBusy, computer)
 	}
+}
+
+// typedSourceKey names the directory a typed source keeps what it knows in
+// on the computer: the source's own identifier, so two sources of one type
+// never share it. Empty for any other source.
+func typedSourceKey(source *models.AgentKnowledgeSource) string {
+	if source.Specification.Format != computer.FormatTyped {
+		return ""
+	}
+	return strings.ToLower(source.ID)
+}
+
+// typedSourceParts is a typed source's type, as installed, and its
+// settings.
+func (self *Agent) typedSourceParts(ctx context.Context, run *Run, source *models.AgentKnowledgeSource) (string, map[string]any, error) {
+	var installed *models.AgentSourceType
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		installed, err = tx.GetAgentSourceType(source.Specification.Type)
+		return err
+	}); err != nil {
+		return "", nil, err
+	}
+	if installed == nil {
+		return "", nil, fmt.Errorf("the source type %q is not installed on this server", source.Specification.Type)
+	}
+	settings := map[string]any{}
+	if len(source.Specification.Settings) > 0 {
+		if err := json.Unmarshal(source.Specification.Settings, &settings); err != nil {
+			return "", nil, fmt.Errorf("the settings of this source are not readable: %w", err)
+		}
+	}
+	return installed.Content, settings, nil
 }

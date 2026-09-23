@@ -98,6 +98,11 @@ const (
 	// refused for a source whose reader no longer refused anything.
 	cursorPassRefused = "passRefused"
 
+	// cursorPassUnfinished says a page of this pass ran out of time part
+	// way through what it should have read, which it reads next pass; a
+	// pass that did not see everything must not delete what it missed.
+	cursorPassUnfinished = "passUnfinished"
+
 	// unknownAuthorsKept is how many unplaced commit addresses a source
 	// remembers. Enough to recognise yourself in the list, not a census
 	// of everybody who ever committed to a mirrored upstream.
@@ -239,6 +244,11 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 			break
 		}
 		if next == "" {
+			// A pass that ran out of time on part of what it read goes
+			// on with the next one straight away rather than at its hour.
+			if unfinished, _ := cursor[cursorPassUnfinished].(bool); unfinished {
+				more = true
+			}
 			completion, err := self.completeIngestPass(ctx, source, cursor, startedPass, counts)
 			if errors.Is(err, errIngestSourceChanged) {
 				return nil
