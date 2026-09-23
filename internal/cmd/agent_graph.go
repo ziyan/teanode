@@ -1104,6 +1104,10 @@ func runKnowledgeSet(ctx context.Context, command *cli.Command) error {
 		if err != nil {
 			return err
 		}
+		if settings == nil {
+			// A source without settings yet stores them as null.
+			settings = map[string]any{}
+		}
 		for name, value := range changed {
 			settings[name] = value
 		}

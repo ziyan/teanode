@@ -313,6 +313,8 @@ export function SourceTypeSettingsFields({
   )
 }
 
+const ACRONYMS = new Set(['url', 'id', 'api', 'cql', 'mb'])
+
 // settingLabel is a setting's name as a label: its words split and the
 // first one capitalized, a run of capitals such as MB kept whole.
 export function settingLabel(name: string): string {
@@ -320,6 +322,7 @@ export function settingLabel(name: string): string {
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
     .split(' ')
+    .map((word) => (ACRONYMS.has(word.toLowerCase()) ? word.toUpperCase() : word))
     .map((word, index) => (index > 0 && !/^[A-Z]{2,}$/.test(word) ? word.toLowerCase() : word))
     .join(' ')
   return words.charAt(0).toUpperCase() + words.slice(1)
