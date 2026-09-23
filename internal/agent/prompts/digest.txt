@@ -80,8 +80,10 @@ page, or under a person or a thing it names, not under a page whose name
 merely resembles a word in it.
 
 **message_id** is the `[id]` marker of the item a fact came from, and
-**quote** the words in it. A fact you cannot point at is one you are
-inventing: leave it out.
+**quote** one passage of it copied as it stands: a sentence, or a line of
+code. Never a list you put together from several places, never your own
+summary; shorten a long passage with `...` and nothing else. A fact you
+cannot point at is one you are inventing: leave it out.
 
 **Links are what make this a graph rather than a list.** A commit names
 its author and its repository, a thread names a channel and the people

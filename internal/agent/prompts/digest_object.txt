@@ -8,7 +8,8 @@ needed now is the same thing as the object that files it.
 
 Answer with this object and nothing else. Every fact comes from the
 reading above, with the `[id]` of the item it came from as `message_id`
-and its words as `quote` where the reading gives them; a fact the reading
+and as `quote` one passage copied as it stands where the reading gives
+one, never a list put together from several places; a fact the reading
 does not support is left out. `kind` is `fact`, `event` (with `happened`)
 or `howto`; never `preference` or `decision`.
 
