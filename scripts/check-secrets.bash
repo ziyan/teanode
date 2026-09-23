@@ -107,6 +107,12 @@ readonly ALLOWED_HOSTS=(
   .dictionaryapi.dev
   .newsapi.org
 
+  # The service the published source types link to, in the same way: the
+  # fixtures under internal/sources/testdata are the source types
+  # registry's files kept verbatim. The Gmail type links each thread to
+  # where Gmail shows it.
+  mail.google.com
+
   # Where Chrome sends an extension's sign-in back to: a fixed name of the
   # browser's, under which every extension has an address.
   .chromiumapp.org
