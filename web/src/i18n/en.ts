@@ -1590,6 +1590,10 @@ export const en = {
   'sourceTypes.settingRefused': '{name} is not in the form it asks for',
   'sourceTypes.settingListHint': 'Separate several with commas.',
   'sourceTypes.settingRequired': 'required',
+  'sourceTypes.secretMissing': 'Fill in {name} for this source.',
+  'sourceTypes.secretKept': 'Kept; type here to replace it',
+  'sourceTypes.secretHint':
+    'Kept sealed on the server and sent only to the computer that reads this source; it is never shown again.',
   'sourceTypes.choose': 'What it is',
   'sourceTypes.computerMissing': 'Say which computer it is on.',
   'sourceTypes.needsTools': 'Needs {tools} installed on that computer.',

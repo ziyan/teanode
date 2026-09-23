@@ -62,7 +62,7 @@ description: an invented API
 settings:
   - {name: host, type: string, default: "api.example.com"}
 secrets:
-  - {key: token, scope: operator}
+  - {key: token, scope: person}
 authenticationProfiles:
   api: {type: bearer, token: "{{secret:token}}"}
 containers:
@@ -74,8 +74,8 @@ records:
     record: {id: "{{item.id}}"}
 `
 	for _, refused := range []struct{ url, extra string }{
-		{"https://{{settings.host}}/items", ""},
 		{"https://{{item.next}}/items", ""},
+		{"https://api.example.com/items?key={{secret:token}}", ""},
 		{"http://api.example.com/items", ""},
 		{"https://api.example.com/items", `, headers: {X-Token: "{{secret:token}}"}`},
 	} {
@@ -83,8 +83,21 @@ records:
 			t.Errorf("%s %s was accepted", refused.url, refused.extra)
 		}
 	}
-	if _, err := Parse([]byte("---\n" + strings.Replace(strings.Replace(base, "%s", "https://api.example.com/{{settings.host}}", 1), "%s", "", 1) + "---\n")); err != nil {
-		t.Errorf("a settled host with a setting in its path was refused: %s", err)
+	for _, accepted := range []string{"https://api.example.com/{{settings.host}}", "https://{{settings.host}}/items"} {
+		if _, err := Parse([]byte("---\n" + strings.Replace(strings.Replace(base, "%s", accepted, 1), "%s", "", 1) + "---\n")); err != nil {
+			t.Errorf("%s, with the person's own secret, was refused: %s", accepted, err)
+		}
+	}
+	// A secret anywhere but a profile: a record's text, a command word.
+	for _, misplaced := range []string{
+		strings.Replace(base, `record: {id: "{{item.id}}"}`, `record: {id: "{{item.id}}", text: "{{secret:token}}"}`, 1),
+		strings.Replace(base, `secrets:
+  - {key: token, scope: person}`, `secrets:
+  - {key: token}`, 1),
+	} {
+		if _, err := Parse([]byte("---\n" + strings.Replace(strings.Replace(misplaced, "%s", "https://api.example.com/items", 1), "%s", "", 1) + "---\n")); err == nil {
+			t.Errorf("a misplaced or operator secret was accepted")
+		}
 	}
 }
 
@@ -190,5 +203,37 @@ records:
 	runner := &Runner{Type: kind, Executor: executor, State: t.TempDir()}
 	if _, err := runner.Read(context.Background(), Container{Name: "pages.jsonl", Members: []map[string]any{{}}}); err == nil || !strings.Contains(err.Error(), "same page") {
 		t.Fatalf("a repeated page was not refused: %v", err)
+	}
+}
+
+// Link paging follows the address the answer gives for the next page, read
+// against the base it gives, and never to another host.
+func TestLinkPagingStaysOnItsHost(t *testing.T) {
+	kind := mustParse(t, `
+name: invented-wiki-api
+description: an invented wiki's web API
+containers:
+  - fixed: [{}]
+    name: pages.jsonl
+records:
+  - request: {url: "https://wiki.example.com/api/search?cql={{'type = page' | query-escape}}"}
+    parse: {json: {items: results}}
+    paging: {link: {field: _links.next, base: _links.base}}
+    record: {id: "{{item.id}}"}
+`)
+	executor := &fakeExecutor{requests: map[string]string{
+		"https://wiki.example.com/api/search?cql=type+%3D+page": `{"results": [{"id": "1"}], "_links": {"base": "https://wiki.example.com", "next": "/api/search?cursor=2"}}`,
+		"https://wiki.example.com/api/search?cursor=2":          `{"results": [{"id": "2"}], "_links": {"base": "https://wiki.example.com"}}`,
+	}}
+	runner := &Runner{Type: kind, Executor: executor, State: t.TempDir()}
+	records, err := runner.Read(context.Background(), Container{Name: "pages.jsonl", Members: []map[string]any{{}}})
+	if err != nil || strings.Join(ids(records), ",") != "1,2" {
+		t.Fatalf("read %v, %v (asked %v)", ids(records), err, executor.calls)
+	}
+
+	executor.requests["https://wiki.example.com/api/search?cql=type+%3D+page"] = `{"results": [{"id": "1"}], "_links": {"next": "https://elsewhere.example.net/steal"}}`
+	elsewhere := &Runner{Type: kind, Executor: executor, State: t.TempDir()}
+	if _, err := elsewhere.Read(context.Background(), Container{Name: "pages.jsonl", Members: []map[string]any{{}}}); err == nil || !strings.Contains(err.Error(), "not followed") {
+		t.Fatalf("a next page on another host was followed: %v", err)
 	}
 }

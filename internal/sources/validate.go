@@ -16,7 +16,7 @@ var scopeNames = map[string]bool{
 var (
 	settingTypes  = map[string]bool{"string": true, "path": true, "array": true, "boolean": true, "integer": true}
 	parseKinds    = map[string]bool{"json": true, "xml": true, "jsonl": true, "lines": true, "markdown": true, "text": true}
-	pagingKinds   = map[string]bool{"": true, "none": true, "all": true, "token": true, "limit": true, "offset": true}
+	pagingKinds   = map[string]bool{"": true, "none": true, "all": true, "token": true, "limit": true, "offset": true, "link": true}
 	settingName   = regexp.MustCompile(`^[a-z][A-Za-z0-9]*$`)
 	knownReaders  = map[string]bool{ReaderFiles: true, ReaderJournal: true, ReaderSent: true, ReaderWeb: true}
 	knownRunsOn   = map[string]bool{RunsComputer: true, RunsServer: true}
@@ -61,6 +61,11 @@ func (self *Type) validate() error {
 	for _, secret := range self.Secrets {
 		if secret.Key == "" || secrets[secret.Key] {
 			return fmt.Errorf("a secret has no key, or one declared twice")
+		}
+		// Each source's owner fills its secrets in; a type has no value
+		// kept once for the whole server.
+		if secret.Scope != "person" {
+			return fmt.Errorf("the secret %q is the person's own, one for each source: say scope: person", secret.Key)
 		}
 		secrets[secret.Key] = true
 	}
@@ -111,6 +116,12 @@ func (self *Type) validate() error {
 			}
 		}
 		for _, key := range secretKeys {
+			// A secret is sent only by an authentication profile, which
+			// ties it to the address checked; anywhere else it would be
+			// in a command line, a record, or wherever a tool sent it.
+			if !allowed[secretsAllowed] {
+				return fmt.Errorf("%s uses the secret %q; a secret goes only in an authentication profile", where, key)
+			}
 			if !secrets[key] {
 				return fmt.Errorf("%s refers to the secret %q, which is not declared", where, key)
 			}
@@ -178,6 +189,9 @@ func (self *Type) validate() error {
 		}
 		if paging.Kind == "limit" && paging.Size <= 0 {
 			return fmt.Errorf("%s: limit paging says the size of a full page", where)
+		}
+		if paging.Kind == "link" && (paging.Field == "" || request == nil) {
+			return fmt.Errorf("%s: link paging is for a request, and names the field the next address is in", where)
 		}
 		if paging.Kind == "offset" && (paging.Size <= 0 || paging.Flag == "") {
 			return fmt.Errorf("%s: offset paging names the flag that says where to start and the size of a full page", where)
@@ -440,6 +454,10 @@ func (self *Type) validate() error {
 	return nil
 }
 
+// secretsAllowed marks the templates a secret may be used in: an
+// authentication profile's.
+const secretsAllowed = "secret:"
+
 var templateOperand = regexp.MustCompile(`\{\{[^}]*\}\}`)
 
 func itemPattern(setting Setting) string {
@@ -486,8 +504,8 @@ func (self *Type) checkRequest(where string, request *Request, secrets map[strin
 			return fmt.Errorf("%s puts a secret in a header or the body; use an authentication profile", where)
 		}
 	}
-	if strings.Contains(request.URL, "secret:") && request.Auth == "" {
-		return fmt.Errorf("%s puts a secret in the address; use an authentication profile", where)
+	if strings.Contains(request.URL, "secret:") {
+		return fmt.Errorf("%s puts a secret in the address, where every failure would repeat it; use an authentication profile", where)
 	}
 	if request.Auth == "" {
 		return nil
@@ -497,7 +515,7 @@ func (self *Type) checkRequest(where string, request *Request, secrets map[strin
 		return fmt.Errorf("%s uses the authentication profile %q, which is not declared", where, request.Auth)
 	}
 	for _, template := range []string{profile.Token, profile.Username, profile.Password, profile.Value, profile.Key} {
-		if err := check(where, template, map[string]bool{}); err != nil {
+		if err := check(where, template, map[string]bool{secretsAllowed: true}); err != nil {
 			return err
 		}
 	}
@@ -530,11 +548,8 @@ func (self *Type) checkRequest(where string, request *Request, secrets map[strin
 		switch {
 		case strings.HasPrefix(inner, "secret:"):
 		case strings.HasPrefix(inner, "settings.") && !strings.Contains(inner, "|"):
-			for _, secret := range self.Secrets {
-				if secret.Scope != "person" {
-					return fmt.Errorf("%s sends the operator's secret %q to an address from a setting", where, secret.Key)
-				}
-			}
+			// Every secret is the source owner's own, and so may go to
+			// an address that owner gave in the source's settings.
 		default:
 			return fmt.Errorf("%s sends a credential to an address the type does not settle", where)
 		}

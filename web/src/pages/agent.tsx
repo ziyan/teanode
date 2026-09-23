@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { AgentReply, graphql, openAgentConversation } from '../api'
 import {
@@ -29,11 +29,14 @@ import { useMailboxes } from '../mailboxes'
 import { Select } from '../components/select'
 import { PolicyTool, ToolPolicyAccordion } from '../components/toolPolicy'
 import {
+  LIST_SOURCE_SECRETS,
   LIST_SOURCE_TYPES,
+  SET_SOURCE_SECRET,
   SettingDrafts,
   SourceType,
   SourceTypeSettingsFields,
   isReadOnComputer,
+  asSentence,
   orderedSourceTypes,
   settingLabel,
   settingDrafts,
@@ -1863,6 +1866,16 @@ function KnowledgeSourcesCard() {
   // The type chosen in the form, by name; empty for the sorts of place.
   const [sourceTypeName, setSourceTypeName] = useState('')
   const [drafts, setDrafts] = useState<SettingDrafts>({})
+  // What is typed into a type's secret boxes, and which of the source's
+  // secrets are already kept. A kept value is never shown; a box left
+  // empty keeps it.
+  const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({})
+  const [secretsKept, setSecretsKept] = useState<Record<string, boolean>>({})
+  // The source this dialog is about, for an answer that arrives late, and
+  // the one it made: a save retried after a secret was refused saves that
+  // source again rather than making a second.
+  const openSourceId = useRef<string | null>(null)
+  const [madeSourceId, setMadeSourceId] = useState<string | null>(null)
   const chosenSourceType = allSourceTypes.find((sourceType) => sourceType.name === sourceTypeName) ?? null
   // The computers attached, offered as the person types one; a computer
   // not attached right now can still be named.
@@ -1880,6 +1893,10 @@ function KnowledgeSourcesCard() {
     setSourceTypeName(name)
     const sourceType = allSourceTypes.find((candidate) => candidate.name === name)
     setDrafts(sourceType ? settingDrafts(sourceType) : {})
+    setSecretDrafts({})
+    // Another type's kept values are forgotten when the source is saved,
+    // so they are not shown as kept for this one.
+    if (name !== editing?.specification.type) setSecretsKept({})
     // What was wrong with the last type's form says nothing about this one.
     setProblem(null)
   }
@@ -1887,6 +1904,23 @@ function KnowledgeSourcesCard() {
   // Opening the form on a source, which is the whole of Edit: every box
   // the add dialog has, holding what the source already says.
   const openEdit = (source: KnowledgeSource) => {
+    setSecretDrafts({})
+    setSecretsKept({})
+    setMadeSourceId(null)
+    openSourceId.current = source.id
+    if (source.specification.type) {
+      void graphql<{ ListAgentKnowledgeSourceSecrets: { key: string; isSet: boolean }[] }>(LIST_SOURCE_SECRETS, {
+        sourceId: source.id,
+      })
+        .then((answer) => {
+          // Only while this source is still the one open.
+          if (openSourceId.current !== source.id) return
+          setSecretsKept(
+            Object.fromEntries(answer.ListAgentKnowledgeSourceSecrets.map((secret) => [secret.key, secret.isSet])),
+          )
+        })
+        .catch(() => undefined)
+    }
     setName(source.name)
     setShape(shapeOf(source))
     setComputer(source.specification.computer)
@@ -1927,12 +1961,22 @@ function KnowledgeSourcesCard() {
       toast.failed(t('sourceTypes.computerMissing'))
       return false
     }
+    const missingSecret = (sourceType.secrets ?? []).find(
+      (secret) => !secret.isOptional && !secretsKept[secret.key] && (secretDrafts[secret.key] ?? '').trim() === '',
+    )
+    if (missingSecret) {
+      const refused = t('sourceTypes.secretMissing', { name: settingLabel(missingSecret.key) })
+      setProblem(refused)
+      toast.failed(refused)
+      return false
+    }
     const settings = settingValues(sourceType, drafts)
     if (isSent) settings.mailbox = readingMailboxId
-    return run(
-      SAVE_KNOWLEDGE_SOURCE,
-      {
-        sourceId: editing?.id,
+    setBusy(true)
+    setProblem(null)
+    try {
+      const saved = await graphql<{ SaveAgentKnowledgeSource: { id: string } }>(SAVE_KNOWLEDGE_SOURCE, {
+        sourceId: editing?.id ?? madeSourceId ?? undefined,
         name: name.trim(),
         type: sourceType.name,
         settings,
@@ -1943,9 +1987,26 @@ function KnowledgeSourcesCard() {
           : undefined,
         rootPath: rootPath.trim() || undefined,
         cron: cron.trim() || undefined,
-      },
-      t('agent.knowledgeSaved'),
-    )
+      })
+      setMadeSourceId(saved.SaveAgentKnowledgeSource.id)
+      // Kept after the source exists, one at a time; a box left empty
+      // keeps what was there.
+      for (const secret of sourceType.secrets ?? []) {
+        const value = secretDrafts[secret.key] ?? ''
+        if (value.trim() === '') continue
+        await graphql(SET_SOURCE_SECRET, { sourceId: saved.SaveAgentKnowledgeSource.id, key: secret.key, value })
+      }
+      setSecretDrafts({})
+      toast.done(t('agent.knowledgeSaved'))
+      await reload()
+      return true
+    } catch (caught) {
+      setProblem(messageOf(caught))
+      toast.failed(messageOf(caught))
+      return false
+    } finally {
+      setBusy(false)
+    }
   }
 
   // Which computer, typed, with the ones attached offered as it is.
@@ -2022,6 +2083,9 @@ function KnowledgeSourcesCard() {
               chooseSourceType(offeredSourceTypes[0]?.name ?? '')
               setProblem(null)
               setEditing(null)
+              setSecretsKept({})
+              setMadeSourceId(null)
+              openSourceId.current = null
               setAdding(true)
             }}
           >
@@ -2186,6 +2250,8 @@ function KnowledgeSourcesCard() {
           onClose={() => {
             setAdding(false)
             setEditing(null)
+            setMadeSourceId(null)
+            openSourceId.current = null
           }}
           onSubmit={() => {
             void (async () => {
@@ -2193,6 +2259,8 @@ function KnowledgeSourcesCard() {
                 if (await saveTyped(chosenSourceType)) {
                   setAdding(false)
                   setEditing(null)
+                  setMadeSourceId(null)
+                  openSourceId.current = null
                 }
                 return
               }
@@ -2269,6 +2337,31 @@ function KnowledgeSourcesCard() {
                 onChange={(settingName, draft) => setDrafts((previous) => ({ ...previous, [settingName]: draft }))}
                 replaced={chosenSourceType.reader === 'sent' ? { mailbox: mailboxPicker } : {}}
               />
+              {(chosenSourceType.secrets ?? []).map((secret) => (
+                <div key={secret.key}>
+                  <label>
+                    <span>
+                      {settingLabel(secret.key)}
+                      {secret.isOptional ? '' : ` · ${t('sourceTypes.settingRequired')}`}
+                    </span>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      spellCheck={false}
+                      value={secretDrafts[secret.key] ?? ''}
+                      placeholder={secretsKept[secret.key] ? t('sourceTypes.secretKept') : ''}
+                      onChange={(event) => {
+                        const value = event.target.value
+                        setSecretDrafts((previous) => ({ ...previous, [secret.key]: value }))
+                      }}
+                    />
+                  </label>
+                  <p className="muted field-hint">
+                    {secret.description ? `${asSentence(secret.description)} ` : ''}
+                    {t('sourceTypes.secretHint')}
+                  </p>
+                </div>
+              ))}
             </>
           ) : (
             <>

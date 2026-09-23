@@ -47,8 +47,16 @@ func (self *graph) applySourceType(ctx context.Context, tx db.Transaction, sourc
 	if err != nil {
 		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
+	previousType := source.Specification.Type
 	if err := parsed.Specify(source, values); err != nil {
 		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+	}
+	// Another type's secrets are not this one's: what was filled in for
+	// the old type is forgotten rather than sent where the new one goes.
+	if source.ID != "" && previousType != "" && previousType != parsed.Name {
+		if err := tx.DeleteAgentSourceSecret(source.AgentID, source.ID, ""); err != nil {
+			return err
+		}
 	}
 	if parsed.Reader == sources.ReaderSent {
 		// Theirs, and one that exists, as for a sent source added by its

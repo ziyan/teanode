@@ -64,8 +64,10 @@ type AgentSourceTypeView struct {
 	Runs     []string `json:"runs"`
 	Requires []string `json:"requires"`
 
-	// Settings are what a person fills in for a source of the type.
+	// Settings are what a person fills in for a source of the type, and
+	// Secrets the values it keeps sealed, such as a token.
 	Settings []*AgentSourceTypeSettingView `json:"settings"`
+	Secrets  []*AgentSourceTypeSecretView  `json:"secrets"`
 
 	// Guide is what the type says about itself, for people, in Markdown.
 	Guide string `json:"guide"`
@@ -92,6 +94,13 @@ type AgentSourceTypeSettingView struct {
 	IsRequired bool            `json:"isRequired"`
 	Minimum    *int            `json:"minimum" graphapi:"nullable"`
 	Maximum    *int            `json:"maximum" graphapi:"nullable"`
+}
+
+// AgentSourceTypeSecretView is one secret a type asks each source for.
+type AgentSourceTypeSecretView struct {
+	Key         string `json:"key"`
+	Description string `json:"description"`
+	IsOptional  bool   `json:"isOptional"`
 }
 
 // AgentSourceTypeOffer is one type the registry publishes.
@@ -131,6 +140,7 @@ func sourceTypeView(row *models.AgentSourceType) *AgentSourceTypeView {
 		Name: row.Name, Description: row.Description, Version: row.Version,
 		Publisher: row.Publisher, URL: row.URL, IsLocal: row.IsLocal, InstalledAt: row.CreatedAt,
 		Runs: []string{}, Requires: []string{}, Settings: []*AgentSourceTypeSettingView{},
+		Secrets: []*AgentSourceTypeSecretView{},
 	}
 	parsed, err := sources.Parse([]byte(row.Content))
 	if err != nil {
@@ -147,6 +157,9 @@ func sourceTypeView(row *models.AgentSourceType) *AgentSourceTypeView {
 		view.Runs = []string{sources.RunsComputer}
 	}
 	view.Requires = append(view.Requires, parsed.Requires...)
+	for _, secret := range parsed.Secrets {
+		view.Secrets = append(view.Secrets, &AgentSourceTypeSecretView{Key: secret.Key, Description: secret.Description, IsOptional: secret.Optional})
+	}
 	for _, setting := range parsed.Settings {
 		one := &AgentSourceTypeSettingView{
 			Name: setting.Name, Description: setting.Description, SettingType: setting.Type,
