@@ -23,6 +23,10 @@ type TokenMutation interface {
 	// because only a hash of it is kept.
 	CreateToken(ctx context.Context, arguments CreateTokenArguments) (*CreatedToken, error)
 
+	// Rename an API token, or give it a new lifetime counted from now. The
+	// token itself stays the same, so whatever holds it keeps working.
+	UpdateToken(ctx context.Context, arguments UpdateTokenArguments) (*Token, error)
+
 	// Revoke an API token. The row is kept for a while, marked revoked, so
 	// the list can say so rather than the token quietly disappearing.
 	DeleteToken(ctx context.Context, arguments DeleteTokenArguments) error
@@ -54,6 +58,10 @@ type Token struct {
 
 	// When it was revoked, or null while it still works
 	Revoked *time.Time `json:"revoked,omitempty"`
+
+	// IsHeldByProgram says a program the person authorized holds it. Such
+	// a token renews itself and cannot be renamed or given a lifetime.
+	IsHeldByProgram bool `json:"isHeldByProgram"`
 }
 
 // CreatedToken is a newly issued Token together with the secret, which is not
@@ -78,6 +86,8 @@ func describeToken(token *models.Token) *Token {
 		LastUsed:   optionalTime(token.UsedAt),
 		LastUsedIP: token.IP,
 		Revoked:    optionalTime(token.RevokedAt),
+
+		IsHeldByProgram: token.ClientID != "",
 	}
 }
 
@@ -129,9 +139,22 @@ type CreateTokenArguments struct {
 	// somebody else; see owner.
 	Username *string `json:"username" graphapi:"nullable"`
 
-	// How long it lasts, for example "720h". Omit for a token that does not
-	// expire.
+	// How long it lasts, for example "30d" or "720h". Omit for a token
+	// that does not expire.
 	Lifetime *string `json:"lifetime" graphapi:"nullable"`
+}
+
+// parseLifetime reads how long a token lasts: a length of time in days or
+// in anything Go reads as one, and never nothing or less.
+func parseLifetime(value string) (time.Duration, error) {
+	parsed, err := config.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %q is not a length of time, for example 30d or 720h", api.ErrInvalidArguments, value)
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("%w: a lifetime has to be in the future", api.ErrInvalidArguments)
+	}
+	return time.Duration(parsed), nil
 }
 
 func (self *graph) CreateToken(ctx context.Context, arguments CreateTokenArguments) (*CreatedToken, error) {
@@ -150,15 +173,9 @@ func (self *graph) CreateToken(ctx context.Context, arguments CreateTokenArgumen
 
 	var lifetime time.Duration
 	if arguments.Lifetime != nil && strings.TrimSpace(*arguments.Lifetime) != "" {
-		parsed, parseError := time.ParseDuration(strings.TrimSpace(*arguments.Lifetime))
-		err = parseError
-		if err != nil {
-			return nil, fmt.Errorf("apigraph: %q is not a length of time, for example 720h", *arguments.Lifetime)
+		if lifetime, err = parseLifetime(*arguments.Lifetime); err != nil {
+			return nil, err
 		}
-		if parsed <= 0 {
-			return nil, fmt.Errorf("apigraph: a lifetime has to be in the future")
-		}
-		lifetime = parsed
 	}
 
 	token, secret, err := self.authenticator.IssueToken(username, name, lifetime)
@@ -166,6 +183,54 @@ func (self *graph) CreateToken(ctx context.Context, arguments CreateTokenArgumen
 		return nil, err
 	}
 	return &CreatedToken{Token: describeToken(token), Secret: secret}, nil
+}
+
+type UpdateTokenArguments struct {
+	// ID of the Token to change
+	TokenID string `json:"tokenId"`
+
+	// Whose token. Only the console may name somebody else; see owner.
+	Username *string `json:"username" graphapi:"nullable"`
+
+	// A new name. Omit to keep the one it has.
+	Name *string `json:"name" graphapi:"nullable"`
+
+	// A new lifetime counted from now, for example "30d" or "720h", or
+	// "never" for a token that does not expire. Omit to keep the expiry it
+	// has.
+	Lifetime *string `json:"lifetime" graphapi:"nullable"`
+}
+
+// tokenLifetimeNever is the lifetime of a token that does not expire.
+const tokenLifetimeNever = "never"
+
+func (self *graph) UpdateToken(ctx context.Context, arguments UpdateTokenArguments) (*Token, error) {
+	if _, err := self.requireSignedIn(ctx); err != nil {
+		return nil, err
+	}
+
+	username, err := self.owner(ctx, arguments.Username)
+	if err != nil {
+		return nil, err
+	}
+	if arguments.Name == nil && arguments.Lifetime == nil {
+		return nil, fmt.Errorf("%w: say a new name, a new lifetime, or both", api.ErrInvalidArguments)
+	}
+	var lifetime *time.Duration
+	if arguments.Lifetime != nil {
+		var parsed time.Duration
+		if strings.TrimSpace(*arguments.Lifetime) != tokenLifetimeNever {
+			if parsed, err = parseLifetime(*arguments.Lifetime); err != nil {
+				return nil, err
+			}
+		}
+		lifetime = &parsed
+	}
+	token, err := self.authenticator.UpdateToken(username, arguments.TokenID, arguments.Name, lifetime)
+	if err != nil {
+		return nil, err
+	}
+	return describeToken(token), nil
 }
 
 type DeleteTokenArguments struct {

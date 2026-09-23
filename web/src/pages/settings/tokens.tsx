@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
-import { TrashIcon } from '../../components/icons'
+import { PencilIcon, TrashIcon } from '../../components/icons'
 import { RelativeTime } from '../../components/relativeTime'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
@@ -15,7 +15,7 @@ import { Select } from '../../components/select'
 const TOKENS = `
   query ($includeRevoked: Boolean) {
     ListTokens(includeRevoked: $includeRevoked) {
-      id name username created expires lastUsed lastUsedIp revoked
+      id name username created expires lastUsed lastUsedIp revoked isHeldByProgram
     }
   }`
 
@@ -25,6 +25,11 @@ const CREATE = `
       secret
       token { id name username created expires lastUsed lastUsedIp revoked }
     }
+  }`
+
+const UPDATE = `
+  mutation ($tokenId: String!, $name: String, $lifetime: String) {
+    UpdateToken(tokenId: $tokenId, name: $name, lifetime: $lifetime) { id }
   }`
 
 const REVOKE = `mutation ($tokenId: String!) { DeleteToken(tokenId: $tokenId) }`
@@ -38,6 +43,7 @@ type Token = {
   lastUsed?: string | null
   lastUsedIp?: string | null
   revoked?: string | null
+  isHeldByProgram?: boolean
 }
 
 // A handful of sensible answers rather than a number to type. A field that
@@ -48,6 +54,17 @@ const LIFETIMES = [
   { value: '2160h', label: 'tokens.lifetime90' },
   { value: '8760h', label: 'tokens.lifetime365' },
   { value: '', label: 'tokens.lifetimeNever' },
+] as const
+
+// Changing a token offers the same answers, counted from now, and leaving
+// the expiry as it is, which is what a rename wants.
+const KEEP_LIFETIME = 'keep'
+const NEW_LIFETIMES = [
+  { value: KEEP_LIFETIME, label: 'tokens.lifetimeKeep' },
+  { value: '720h', label: 'tokens.lifetime30FromNow' },
+  { value: '2160h', label: 'tokens.lifetime90FromNow' },
+  { value: '8760h', label: 'tokens.lifetime365FromNow' },
+  { value: 'never', label: 'tokens.lifetimeNever' },
 ] as const
 
 export function TokensPage() {
@@ -64,6 +81,9 @@ export function TokensPage() {
   const [lifetime, setLifetime] = useState<string>('2160h')
   const [issued, setIssued] = useState<string | null>(null)
   const [revoking, setRevoking] = useState<Token | null>(null)
+  const [editing, setEditing] = useState<Token | null>(null)
+  const [newName, setNewName] = useState('')
+  const [newLifetime, setNewLifetime] = useState<string>(KEEP_LIFETIME)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
@@ -134,16 +154,36 @@ export function TokensPage() {
             }
             actions={
               token.revoked ? undefined : (
-                <Tooltip label={t('tokens.revoke')}>
-                  <button
-                    className="icon-action danger"
-                    type="button"
-                    aria-label={`${token.name || t('tokens.unnamed')}: ${t('tokens.revoke')}`}
-                    onClick={() => setRevoking(token)}
-                  >
-                    <TrashIcon size={16} />
-                  </button>
-                </Tooltip>
+                <>
+                  {/* A program's token renews itself in a new row, so a
+                      name or an expiry set on this one would not last. */}
+                  {!token.isHeldByProgram && (
+                    <Tooltip label={t('common.edit')}>
+                      <button
+                        className="icon-action"
+                        type="button"
+                        aria-label={`${token.name || t('tokens.unnamed')}: ${t('common.edit')}`}
+                        onClick={() => {
+                          setEditing(token)
+                          setNewName(token.name)
+                          setNewLifetime(KEEP_LIFETIME)
+                        }}
+                      >
+                        <PencilIcon size={16} />
+                      </button>
+                    </Tooltip>
+                  )}
+                  <Tooltip label={t('tokens.revoke')}>
+                    <button
+                      className="icon-action danger"
+                      type="button"
+                      aria-label={`${token.name || t('tokens.unnamed')}: ${t('tokens.revoke')}`}
+                      onClick={() => setRevoking(token)}
+                    >
+                      <TrashIcon size={16} />
+                    </button>
+                  </Tooltip>
+                </>
               )
             }
           />
@@ -191,6 +231,53 @@ export function TokensPage() {
               onChange={setLifetime}
             />
           </label>
+        </FormDialog>
+      )}
+
+      {editing && (
+        <FormDialog
+          title={t('tokens.editTitle')}
+          submitLabel={t('common.save')}
+          busy={busy}
+          error={problem}
+          canSubmit={newName.trim().length > 0}
+          onClose={() => {
+            setEditing(null)
+            setProblem(null)
+          }}
+          onSubmit={() =>
+            void run(async () => {
+              await graphql(UPDATE, {
+                tokenId: editing.id,
+                name: newName.trim() === editing.name ? null : newName.trim(),
+                lifetime: newLifetime === KEEP_LIFETIME ? null : newLifetime,
+              })
+              setEditing(null)
+              toast.done(t('tokens.updated'))
+            })
+          }
+        >
+          <label>
+            <span>{t('tokens.name')}</span>
+            <input value={newName} onChange={(event) => setNewName(event.target.value)} />
+          </label>
+          <label>
+            <span>{t('tokens.lifetime')}</span>
+            <Select
+              block
+              value={newLifetime}
+              label={t('tokens.lifetime')}
+              options={NEW_LIFETIMES.map((option) => ({
+                value: option.value,
+                label:
+                  option.value === KEEP_LIFETIME
+                    ? t(option.label, { expiry: describeExpiry(editing, t) })
+                    : t(option.label),
+              }))}
+              onChange={setNewLifetime}
+            />
+          </label>
+          <p className="muted">{t('tokens.editKeepsSecret')}</p>
         </FormDialog>
       )}
 

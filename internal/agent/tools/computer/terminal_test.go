@@ -21,7 +21,7 @@ func (self *fakeHolder) StartSession(context.Context, string, string, []string, 
 }
 func (self *fakeHolder) WriteSession(context.Context, string, []byte) error { return nil }
 func (self *fakeHolder) ReadScreen(_ context.Context, id string) (*tools.Screen, error) {
-	return &tools.Screen{Columns: 80, Rows: 24, Text: "ziyan@gen7:~ $ ", CursorX: 15, CursorY: 0}, nil
+	return &tools.Screen{Columns: 80, Rows: 24, Text: "ziyan@laptop:~ $ ", CursorX: 15, CursorY: 0}, nil
 }
 func (self *fakeHolder) ResizeSession(context.Context, string, int, int) error { return nil }
 func (self *fakeHolder) SignalSession(context.Context, string, string) error   { return nil }
@@ -48,7 +48,7 @@ func TestTheAttachedTerminalIsReadAndNotClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("attached: %v", err)
 	}
-	if !strings.Contains(result.Content, `"attached"`) || !strings.Contains(result.Content, "ziyan@gen7") {
+	if !strings.Contains(result.Content, `"attached"`) || !strings.Contains(result.Content, "ziyan@laptop") {
 		t.Fatalf("its session and its screen: %s", result.Content)
 	}
 

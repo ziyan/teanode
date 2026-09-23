@@ -126,6 +126,11 @@ type Authenticator interface {
 	// RevokeToken ends one token belonging to an operator.
 	RevokeToken(username, tokenId string) error
 
+	// UpdateToken renames one of an operator's tokens or gives it a new
+	// lifetime, counted from now; a lifetime of zero never expires. Nil
+	// leaves either as it is.
+	UpdateToken(username, tokenId string, name *string, lifetime *time.Duration) (*models.Token, error)
+
 	// Scavenge removes sessions and tokens that are no longer worth keeping.
 	Scavenge() error
 
@@ -745,6 +750,69 @@ func (self *authenticator) RevokeToken(username, tokenId string) error {
 		return api.ErrNotFound
 	}
 	return self.database.RevokeToken(tokenId, time.Now())
+}
+
+// UpdateToken changes one token, checking it belongs to this operator for
+// the same reason RevokeToken does. The secret stays the same, so whatever
+// holds the token goes on working without being handed a new one.
+//
+// A program's token is refused: it expires within the hour and is renewed
+// in a new row each time, so a name or an expiry set on one would be gone
+// at the next renewal. Revoking it is how a program is stopped.
+func (self *authenticator) UpdateToken(username, tokenId string, name *string, lifetime *time.Duration) (*models.Token, error) {
+	user := self.findUser(username)
+	if user == nil {
+		return nil, ErrInvalidCredentials
+	}
+	token, _, err := self.database.GetToken(tokenId)
+	if err != nil {
+		return nil, err
+	}
+	if token == nil || token.UserID != user.ID {
+		return nil, api.ErrNotFound
+	}
+	if !token.RevokedAt.IsZero() {
+		return nil, fmt.Errorf("%w: that token was revoked, so there is nothing to change; issue a new one", api.ErrInvalidArguments)
+	}
+	if token.ClientID != "" {
+		return nil, fmt.Errorf("%w: that token belongs to a program, which renews it on its own; revoke it to stop the program", api.ErrInvalidArguments)
+	}
+	change := &db.TokenChange{}
+	if name != nil {
+		trimmed := strings.TrimSpace(*name)
+		if trimmed == "" {
+			return nil, fmt.Errorf("%w: a name is required, so that a token can be recognized later", api.ErrInvalidArguments)
+		}
+		change.Name = &trimmed
+	}
+	now := time.Now()
+	if lifetime != nil {
+		if *lifetime < 0 {
+			return nil, fmt.Errorf("%w: a lifetime has to be in the future", api.ErrInvalidArguments)
+		}
+		change.ShouldSetExpiry = true
+		if *lifetime > 0 {
+			change.ExpiresAt = now.Add(*lifetime)
+		}
+	}
+	updated, err := self.database.UpdateToken(tokenId, change, now)
+	if err != nil {
+		return nil, err
+	}
+	if updated == nil {
+		return nil, api.ErrNotFound
+	}
+	updated.Username = user.Username
+	log.Noticef("%s changed API token %s (%q, expires %s)", username, tokenId, updated.Name, describeExpiry(updated.ExpiresAt))
+	return updated, nil
+}
+
+// describeExpiry is an expiry for the log.
+func describeExpiry(expiresAt time.Time) string {
+	if expiresAt.IsZero() {
+		return "never"
+	}
+	return expiresAt.Format(time.RFC3339)
 }
 
 // Scavenge removes what is no longer worth keeping: sessions past their expiry

@@ -85,8 +85,8 @@ func init() {
 			},
 			{
 				Name: "token_manage", Family: tools.FamilyAccount, Risk: tools.RiskWrite,
-				Description: "The person's API tokens: make one (shown once, to them, exactly) or revoke one.",
-				Parameters:  tools.Object(map[string]any{"action": tools.EnumProperty("create or revoke", "create", "revoke"), "name": tools.StringProperty("for create: what the token is for"), "token_id": tools.StringProperty("for revoke: the token"), "lifetime": tools.StringProperty("for create: how long it lives, such as 30d")}, "action"),
+				Description: "The person's API tokens: make one (shown once, to them, exactly), rename one or give it a new lifetime from now, or revoke one.",
+				Parameters:  tools.Object(map[string]any{"action": tools.EnumProperty("create, update or revoke", "create", "update", "revoke"), "name": tools.StringProperty("for create: what the token is for; for update: its new name"), "token_id": tools.StringProperty("for update and revoke: the token"), "lifetime": tools.StringProperty("for create and update: how long it lives from now, such as 30d, or never")}, "action"),
 				Preview: tools.PreviewOf(func(call struct {
 					Action   string `json:"action"`
 					Name     string `json:"name"`
@@ -94,6 +94,12 @@ func init() {
 				}) string {
 					if call.Action == "revoke" {
 						return "Revoke one of your API tokens"
+					}
+					if call.Action == "update" {
+						if call.Lifetime != "" {
+							return "Change one of your API tokens to last " + call.Lifetime + " from now"
+						}
+						return "Rename one of your API tokens to " + tools.Named(call.Name, "something else")
 					}
 					lasting := ""
 					if call.Lifetime != "" {
@@ -109,9 +115,21 @@ func init() {
 				// the answer carries the token itself, so an agent
 				// following instructions it read in a message could mint
 				// one and nobody was ever asked anything.
+				//
+				// Giving a token a longer life is the same grant again, so
+				// it asks the same way; a new name alone is an ordinary
+				// write.
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
-					if tools.ActionOf(arguments) == "revoke" {
+					switch tools.ActionOf(arguments) {
+					case "revoke":
 						return tools.RiskDestructive
+					case "update":
+						var call struct {
+							Lifetime string `json:"lifetime"`
+						}
+						if json.Unmarshal(arguments, &call) == nil && call.Lifetime == "" {
+							return tools.RiskWrite
+						}
 					}
 					return tools.RiskGranting
 				},
@@ -141,6 +159,19 @@ func init() {
 						}
 						answer.ShowVerbatim = true
 						return answer, nil
+					case "update":
+						variables := map[string]any{"tokenId": arguments.TokenID}
+						if arguments.Name != "" {
+							variables["name"] = arguments.Name
+						}
+						if arguments.Lifetime != "" {
+							variables["lifetime"] = arguments.Lifetime
+						}
+						result, err := operator.Execute(ctx, `mutation ($tokenId: String!, $name: String, $lifetime: String) { UpdateToken(tokenId: $tokenId, name: $name, lifetime: $lifetime) { id name expires } }`, variables)
+						if err != nil {
+							return nil, err
+						}
+						return tools.JSONResult(result["UpdateToken"])
 					case "revoke":
 						if _, err := operator.Execute(ctx, `mutation ($tokenId: String!) { DeleteToken(tokenId: $tokenId) }`, map[string]any{"tokenId": arguments.TokenID}); err != nil {
 							return nil, err

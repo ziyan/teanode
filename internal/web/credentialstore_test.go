@@ -232,6 +232,24 @@ func (self *memoryStore) RevokeToken(tokenId string, at time.Time) error {
 	return nil
 }
 
+func (self *memoryStore) UpdateToken(tokenId string, change *db.TokenChange, at time.Time) (*models.Token, error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	found, ok := self.tokens[tokenId]
+	if !ok {
+		return nil, nil
+	}
+	if change.Name != nil {
+		found.token.Name = *change.Name
+	}
+	if change.ShouldSetExpiry {
+		found.token.ExpiresAt = change.ExpiresAt
+	}
+	copied := *found.token
+	return &copied, nil
+}
+
 func (self *memoryStore) RetireToken(tokenId string, at time.Time) (bool, error) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()

@@ -215,7 +215,7 @@ func TestAnUnchangedFileIsNotSentAgain(t *testing.T) {
 // log resolves to a file and a line.
 func TestSymbolsAreListedForLookingUp(t *testing.T) {
 	result := scanIn(t, map[string]string{
-		"executor.py": "import os\n\n\nclass Executor:\n    def ResetPayloadAngularOffset(self, value):\n        return value\n",
+		"executor.py": "import os\n\n\nclass Executor:\n    def ComputeShippingQuote(self, value):\n        return value\n",
 		"server.go":   "package main\n\nfunc HandleRequest() {}\n\ntype Settings struct{}\n",
 		"notes.md":    "Nothing to declare.\n",
 	}, nil)
@@ -228,7 +228,7 @@ func TestSymbolsAreListedForLookingUp(t *testing.T) {
 	for _, symbol := range byId["executor.py"].Symbols {
 		names[symbol.Symbol] = symbol.Line
 	}
-	if names["ResetPayloadAngularOffset"] != 5 {
+	if names["ComputeShippingQuote"] != 5 {
 		t.Fatalf("the method and its line: %v", names)
 	}
 	if names["Executor"] != 4 {
@@ -249,7 +249,7 @@ func TestSymbolsAreListedForLookingUp(t *testing.T) {
 // A word from a question is treated as an identifier only when it looks
 // like one, so an ordinary search does not hit the symbol table.
 func TestWhatLooksLikeASymbol(t *testing.T) {
-	for _, word := range []string{"ResetPayloadAngularOffset", "reset_payload_angle", "mwesexecutor.py", "getFtpId"} {
+	for _, word := range []string{"ComputeShippingQuote", "compute_shipping_quote", "quoteworker.py", "getFtpId"} {
 		if !LooksLikeSymbol(word) {
 			t.Fatalf("%q is an identifier", word)
 		}

@@ -683,3 +683,77 @@ func expireNow(t *testing.T, store *memoryStore, userId, name string) {
 	}
 	t.Fatalf("no token called %q", name)
 }
+
+// A token is renamed and given a new lifetime without its secret changing,
+// so whatever holds it goes on working, including one that had expired.
+func TestUpdateTokenKeepsTheSecret(t *testing.T) {
+	store := newStore(t)
+	if err := store.Update(func(configuration *config.Configuration) error {
+		configuration.Server.Secret = "a-server-secret-long-enough"
+		return nil
+	}); err != nil {
+		t.Fatalf("Update: %s", err)
+	}
+	credentials := newMemoryStore()
+	authenticator, err := web.NewAuthenticator(store, credentials)
+	if err != nil {
+		t.Fatalf("NewAuthenticator: %s", err)
+	}
+	if err := authenticator.CreateFirstUser(context.Background(), "ziyan", "a-password"); err != nil {
+		t.Fatalf("CreateFirstUser: %s", err)
+	}
+	credentials.addUser(&models.User{Username: "someone", PasswordHash: testPasswordHash})
+
+	token, secret, err := authenticator.IssueToken("ziyan", "old", time.Hour)
+	if err != nil {
+		t.Fatalf("IssueToken: %s", err)
+	}
+	expireNow(t, credentials, identifierOf(t, credentials, "ziyan"), "old")
+	authenticated := func() bool {
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/graphql", nil)
+		request.Header.Set("Authorization", "Bearer "+secret)
+		_, ok := authenticator.Authenticate(request)
+		return ok
+	}
+	if authenticated() {
+		t.Fatal("the expired token is refused before it is changed")
+	}
+
+	name, month := "  laptop  ", 30*24*time.Hour
+	updated, err := authenticator.UpdateToken("ziyan", token.ID, &name, &month)
+	if err != nil {
+		t.Fatalf("UpdateToken: %s", err)
+	}
+	if updated.Name != "laptop" {
+		t.Errorf("the name is trimmed: %q", updated.Name)
+	}
+	if left := time.Until(updated.ExpiresAt); left < month-time.Minute || left > month {
+		t.Errorf("the lifetime counts from now: expires in %s", left)
+	}
+	if !authenticated() {
+		t.Error("the same secret works again")
+	}
+
+	never := time.Duration(0)
+	if updated, err = authenticator.UpdateToken("ziyan", token.ID, nil, &never); err != nil || !updated.ExpiresAt.IsZero() || updated.Name != "laptop" {
+		t.Errorf("never expiring leaves the name: %+v, %v", updated, err)
+	}
+
+	blank := " "
+	if _, err := authenticator.UpdateToken("ziyan", token.ID, &blank, nil); !errors.Is(err, api.ErrInvalidArguments) {
+		t.Errorf("a blank name is refused: %v", err)
+	}
+	theirs, _, err := authenticator.IssueToken("someone", "theirs", 0)
+	if err != nil {
+		t.Fatalf("IssueToken: %s", err)
+	}
+	if _, err := authenticator.UpdateToken("ziyan", theirs.ID, &name, nil); !errors.Is(err, api.ErrNotFound) {
+		t.Errorf("somebody else's token is not found: %v", err)
+	}
+	if err := authenticator.RevokeToken("ziyan", token.ID); err != nil {
+		t.Fatalf("RevokeToken: %s", err)
+	}
+	if _, err := authenticator.UpdateToken("ziyan", token.ID, nil, &month); !errors.Is(err, api.ErrInvalidArguments) {
+		t.Errorf("a revoked token cannot be brought back: %v", err)
+	}
+}

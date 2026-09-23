@@ -24,6 +24,10 @@ type TokenOperation interface {
 	TouchToken(tokenId string, at time.Time, ip, userAgent string) error
 	RevokeToken(tokenId string, at time.Time) error
 
+	// UpdateToken renames a token or moves when it expires, leaving the
+	// secret alone, and is the token as it now stands.
+	UpdateToken(tokenId string, change *TokenChange, at time.Time) (*models.Token, error)
+
 	// RetireToken revokes a token and says whether this call was the one that
 	// did it, so that two callers racing to retire the same token cannot both
 	// go on as though they had.
@@ -187,6 +191,34 @@ func (self *database) RevokeToken(tokenId string, at time.Time) error {
 	return self.db.Model(&tokenModel{}).
 		Where("\"id\" = ? AND \"revoked_at\" IS NULL", tokenId).
 		Updates(map[string]any{"revoked_at": at.UTC(), "modified_at": at.UTC()}).Error
+}
+
+// TokenChange is what UpdateToken changes: a name when Name is set, and
+// the expiry when ShouldSetExpiry is, to ExpiresAt, or to never where that
+// is zero.
+type TokenChange struct {
+	Name            *string
+	ShouldSetExpiry bool
+	ExpiresAt       time.Time
+}
+
+func (self *database) UpdateToken(tokenId string, change *TokenChange, at time.Time) (*models.Token, error) {
+	updates := map[string]any{"modified_at": at.UTC()}
+	if change.Name != nil {
+		updates["name"] = *change.Name
+	}
+	if change.ShouldSetExpiry {
+		if change.ExpiresAt.IsZero() {
+			updates["expires_at"] = nil
+		} else {
+			updates["expires_at"] = change.ExpiresAt.UTC()
+		}
+	}
+	if err := self.db.Model(&tokenModel{}).Where("\"id\" = ?", tokenId).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	token, _, err := self.GetToken(tokenId)
+	return token, err
 }
 
 func (self *database) RetireToken(tokenId string, at time.Time) (bool, error) {

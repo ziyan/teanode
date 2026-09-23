@@ -62,7 +62,7 @@ func init() {
 					"mailboxId": tools.StringProperty("for add of a sent source: which of their mailboxes to read their own sent mail from, by name or by identifier"),
 					"cron":      tools.StringProperty("for add: how often to read it, as five cron fields in their own zone; nightly if left out"),
 				}, "action"),
-				Guidance: "knowledge: their own code, chat, notes and documents. Search it before answering a question about their work from memory alone, and cite what you used. An identifier from a log (ResetPayloadAngularOffset, mwesexecutor.py) is looked up exactly, so paste it in as it is. A passage marked private came from a channel or a message only they can see: say so if you quote it into something that leaves. When they point you at a folder to index, look inside it first with the terminal or filesystem tool when a computer is attached. journal is only for a folder of their own notes; an export of anything -- a wiki, a chat, a drive, a tracker -- has a shape of its own, and the way in is records: ask `shape`, write the script yourself in a records folder beside the export, run it on a subset, then add that folder as the source. Which script depends on where the records are. Files already on their computer are read where they lie by a `records` script, which prints the names of its files and then one file's records when asked for it; never copy an archive into a second copy of itself with a `refresh`, which is for records that have to be fetched from a service or a command line tool. \"Stop reading that\" is `pause`, never `remove`: pausing keeps every document and passage, and removing throws away the hours of reading and the embeddings that a first pass cost.",
+				Guidance: "knowledge: their own code, chat, notes and documents. Search it before answering a question about their work from memory alone, and cite what you used. An identifier from a log (a function name, a file name) is looked up exactly, so paste it in as it is. A passage marked private came from a channel or a message only they can see: say so if you quote it into something that leaves. When they point you at a folder to index, look inside it first with the terminal or filesystem tool when a computer is attached. journal is only for a folder of their own notes; an export of anything -- a wiki, a chat, a drive, a tracker -- has a shape of its own, and the way in is records: ask `shape`, write the script yourself in a records folder beside the export, run it on a subset, then add that folder as the source. Which script depends on where the records are. Files already on their computer are read where they lie by a `records` script, which prints the names of its files and then one file's records when asked for it; never copy an archive into a second copy of itself with a `refresh`, which is for records that have to be fetched from a service or a command line tool. \"Stop reading that\" is `pause`, never `remove`: pausing keeps every document and passage, and removing throws away the hours of reading and the embeddings that a first pass cost.",
 				Preview: tools.PreviewOf(func(call struct {
 					Action   string `json:"action"`
 					Query    string `json:"query"`
@@ -567,6 +567,17 @@ which fills the folder with real files. Put an executable named refresh
 in the folder's root; the daemon runs it at the start of every scan, and
 the scan then reads what it wrote. A folder with a records script needs
 no refresh.
+
+What either lists is all there is. A file the listing leaves out is taken
+as gone, and everything filed from it goes with it. So a listing is the
+whole of it or a failure, never part: follow every page a service or a
+command line tool returns (an API that answers a hundred at a time, a
+list command with a limit), and set any limit above what could be there
+rather than near it. When one part cannot be listed -- a second account,
+an organization, one repository asked for by name, a request that timed
+out -- exit non-zero, rather than print the rest and carry on: a failed
+pass is tried again, and a listing with a hole in it deletes what was in
+the hole. Check the count by hand before adding the source.
 
 Both run the same way: as the person, with the folder as the working
 directory, in their own environment, with thirty minutes. Each must be a

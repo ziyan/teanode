@@ -56,7 +56,7 @@ type listingComputer struct {
 	entries []computer.Entry
 }
 
-func (self *listingComputer) Name() string        { return "gen7" }
+func (self *listingComputer) Name() string        { return "laptop" }
 func (self *listingComputer) System() string      { return "linux" }
 func (self *listingComputer) Home() string        { return "/home/person" }
 func (self *listingComputer) Description() string { return "" }
@@ -80,7 +80,7 @@ func TestAddingAcceptsAFolderWithOnlyARecordsScript(t *testing.T) {
 	run := &listingRun{computer: &listingComputer{entries: []computer.Entry{
 		{Name: "records", Kind: "file"},
 	}}}
-	if err := lookBeforeAdding(context.Background(), run, "gen7", "~/chat-records", models.FormatRecords); err != nil {
+	if err := lookBeforeAdding(context.Background(), run, "laptop", "~/chat-records", models.FormatRecords); err != nil {
 		t.Fatalf("a folder with a records script is a records folder: %s", err)
 	}
 
@@ -88,7 +88,7 @@ func TestAddingAcceptsAFolderWithOnlyARecordsScript(t *testing.T) {
 	export := &listingRun{computer: &listingComputer{entries: []computer.Entry{
 		{Name: "posts", Kind: "directory"}, {Name: "users.json", Kind: "file"},
 	}}}
-	err := lookBeforeAdding(context.Background(), export, "gen7", "~/chat-archive", models.FormatRecords)
+	err := lookBeforeAdding(context.Background(), export, "laptop", "~/chat-archive", models.FormatRecords)
 	if err == nil {
 		t.Fatalf("an export is not a records folder")
 	}

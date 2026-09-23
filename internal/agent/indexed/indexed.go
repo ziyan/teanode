@@ -385,7 +385,7 @@ func lookUpSymbols(tx db.Transaction, agentId, words string) ([]*Definition, err
 		word = strings.Trim(word, ".:;")
 		if LooksLikeSymbol(word) {
 			names = append(names, word)
-			// A log line says "mwesexecutor.py:97 ResetPayloadAngularOffset";
+			// A log line says "quoteworker.py:97 ComputeShippingQuote";
 			// both halves are worth asking about.
 			if before, _, cut := strings.Cut(word, "."); cut && before != "" {
 				names = append(names, before)

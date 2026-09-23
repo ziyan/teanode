@@ -57,6 +57,27 @@ func NewTokenCommand() *cli.Command {
 				Action: runTokenList,
 			},
 			{
+				Name:      "update",
+				Usage:     "rename a token, or give it a new lifetime counted from now",
+				ArgsUsage: "<id>",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:  "user",
+						Usage: "whose token; required on the server's own console, where the caller is not an account",
+					},
+					&cli.StringFlag{
+						Name:  "name",
+						Usage: "a new name",
+					},
+					&cli.StringFlag{
+						Name:  "lifetime",
+						Usage: "how long it lasts from now, for example 30d or 720h, or never",
+					},
+					JSONFlag(),
+				},
+				Action: runTokenUpdate,
+			},
+			{
 				Name:      "revoke",
 				Usage:     "revoke a token",
 				ArgsUsage: "<id>",
@@ -144,6 +165,35 @@ func runTokenList(ctx context.Context, command *cli.Command) error {
 		})
 	}
 	return printTable([]string{"ID", "NAME", "ACTS AS", "CREATED", "EXPIRES", "LAST USED", "FROM", "STATE"}, rows)
+}
+
+func runTokenUpdate(ctx context.Context, command *cli.Command) error {
+	id := command.Args().First()
+	if id == "" {
+		return usage("which token? usage: teanode token update <id> --name <name> --lifetime 90d")
+	}
+	name, lifetime := command.String("name"), command.String("lifetime")
+	if name == "" && lifetime == "" {
+		return usage("what to change? give --name, --lifetime, or both")
+	}
+
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	username, err := tokenOwner(ctx, command, connection)
+	if err != nil {
+		return err
+	}
+	token, err := client.UpdateToken(ctx, connection, id, username, name, lifetime)
+	if err != nil {
+		return describeNotFound(command, err, "token "+id+" belonging to this account")
+	}
+	if command.Bool("json") {
+		return PrintJSON(token)
+	}
+	fmt.Printf("%s is now %q, expiring %s\n", token.ID, token.Name, formatTime(token.Expires))
+	return nil
 }
 
 func runTokenRevoke(ctx context.Context, command *cli.Command) error {
