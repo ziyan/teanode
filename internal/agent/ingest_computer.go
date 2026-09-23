@@ -11,6 +11,7 @@ import (
 	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/sources"
 )
 
 // readFromComputer asks the device to scan and files what comes back.
@@ -304,6 +305,16 @@ func (self *Agent) typedSourceParts(ctx context.Context, run *Run, source *model
 		if err := json.Unmarshal(source.Specification.Settings, &settings); err != nil {
 			return "", nil, fmt.Errorf("the settings of this source are not readable: %w", err)
 		}
+	}
+	// Checked again against the type as it is now: a type replaced or
+	// updated since the source was saved may ask for other settings, and
+	// its commands must not run with ones it never checked.
+	parsed, err := sources.Parse([]byte(installed.Content))
+	if err != nil {
+		return "", nil, fmt.Errorf("the installed %s cannot be read: %w", installed.Name, err)
+	}
+	if _, err := parsed.CheckSettings(settings); err != nil {
+		return "", nil, fmt.Errorf("the settings of this source no longer suit %s as installed: %w", installed.Name, err)
 	}
 	return installed.Content, settings, nil
 }

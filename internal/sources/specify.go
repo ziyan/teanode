@@ -18,6 +18,13 @@ import (
 // person may read that mailbox is the caller's to check, since only the
 // caller knows who is asking.
 func (self *Type) Specify(source *models.AgentKnowledgeSource, values map[string]any) error {
+	// Secrets are not yet carried to where a type runs, so a type that
+	// cannot run without one is refused here rather than run without it.
+	for _, secret := range self.Secrets {
+		if !secret.Optional {
+			return fmt.Errorf("%s needs the secret %s, and sources of a type with secrets cannot be read yet", self.Name, secret.Key)
+		}
+	}
 	checked, err := self.CheckSettings(values)
 	if err != nil {
 		return err
@@ -28,13 +35,24 @@ func (self *Type) Specify(source *models.AgentKnowledgeSource, values map[string
 	}
 	specification := &source.Specification
 	specification.Type, specification.Settings = self.Name, encoded
+	// What the reader is given is every setting, a default where the
+	// source said nothing; what is stored is only what it said, so a
+	// default the type later changes is the new one.
+	effective := map[string]any{}
+	for _, setting := range self.Settings {
+		if value, ok := checked[setting.Name]; ok {
+			effective[setting.Name] = value
+		} else if setting.Default != nil {
+			effective[setting.Name] = setting.Default
+		}
+	}
 	text := func(name string) string {
-		value, _ := checked[name].(string)
+		value, _ := effective[name].(string)
 		return value
 	}
 	list := func(name string) []string {
 		var found []string
-		for _, each := range asList(checked[name]) {
+		for _, each := range asList(effective[name]) {
 			if value, ok := each.(string); ok {
 				found = append(found, value)
 			}
@@ -42,11 +60,11 @@ func (self *Type) Specify(source *models.AgentKnowledgeSource, values map[string
 		return found
 	}
 	number := func(name string) int {
-		value, _ := checked[name].(int)
+		value, _ := effective[name].(int)
 		return value
 	}
 	flag := func(name string) bool {
-		value, _ := checked[name].(bool)
+		value, _ := effective[name].(bool)
 		return value
 	}
 	switch self.Reader {

@@ -372,7 +372,23 @@ func addAction(ctx context.Context, run tools.Run, arguments *knowledgeArguments
 		return nil, fmt.Errorf("an archive needs a format: %s or %s", models.FormatJournal, models.FormatRecords)
 	}
 	if typeName := strings.TrimSpace(arguments.Type); typeName != "" {
-		if err := specifyType(ctx, run, source, typeName, arguments.Settings); err != nil {
+		// A source of a type is its settings: a mailbox given beside them
+		// goes into them rather than disagreeing with them.
+		source.Specification.MailboxID = ""
+		settings := arguments.Settings
+		if named := strings.TrimSpace(arguments.MailboxID); named != "" {
+			values, err := sources.DecodeSettings(settings)
+			if err != nil {
+				return nil, err
+			}
+			if _, given := values["mailbox"]; !given {
+				values["mailbox"] = named
+			}
+			if settings, err = json.Marshal(values); err != nil {
+				return nil, err
+			}
+		}
+		if err := specifyType(ctx, run, source, typeName, settings); err != nil {
 			return nil, err
 		}
 		if strings.TrimSpace(arguments.Name) == "" {

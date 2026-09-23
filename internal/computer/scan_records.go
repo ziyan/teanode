@@ -284,6 +284,11 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 				Refused: "could not be read: " + err.Error(),
 			})
 			result.Refused++
+			// A container a type could not read this time is not one that
+			// is gone: its documents must outlive this pass.
+			if folder.typed != nil {
+				folder.typed.isUnfinished = true
+			}
 			continue
 		}
 		skipping := afterEntry != "" && relative == afterFile
@@ -304,7 +309,7 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 				// Mid-file: the cursor names the last entry sent, and the
 				// next page starts with the one after it.
 				result.Next = result.Entries[len(result.Entries)-1].ExternalID
-				result.Unfinished = folder.typed != nil && folder.typed.unfinished
+				result.IsUnfinished = folder.typed != nil && folder.typed.isUnfinished
 				return result, nil
 			}
 			// A file a record came with that this program will not hand
@@ -323,8 +328,14 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 			carried += len(entry.Text)
 			result.Entries = append(result.Entries, entry)
 		}
+		// The entry the last page stopped at is gone, or the tool now
+		// answers in another order: what came after it may not have been
+		// sent, so this pass cannot say it saw everything.
+		if skipping && folder.typed != nil {
+			folder.typed.isUnfinished = true
+		}
 	}
-	result.Unfinished = folder.typed != nil && folder.typed.unfinished
+	result.IsUnfinished = folder.typed != nil && folder.typed.isUnfinished
 	return result, nil
 }
 

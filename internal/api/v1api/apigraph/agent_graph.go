@@ -1698,6 +1698,21 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 		source.Kind = models.AgentKnowledgeKind(strings.TrimSpace(arguments.Kind))
 		source.Specification.Format = models.FormatFiles
 	}
+	// A source of a type is described by its settings alone: a path or a
+	// format set beside them would disagree with them, and the next save
+	// of the settings would put the old path back and sweep what was
+	// read from the new one.
+	if source.Specification.Type != "" || arguments.Type != "" {
+		for name, given := range map[string]bool{
+			"kind": arguments.Kind != "", "path": arguments.Path != "", "format": arguments.Format != "",
+			"mailboxId": arguments.MailboxID != "", "readEveryCheckout": arguments.ReadEveryCheckout != nil,
+			"commitsPerPass": arguments.CommitsPerPass != nil, "ownCommitsAtLeast": arguments.OwnCommitsAtLeast != nil,
+		} {
+			if given {
+				return nil, fmt.Errorf("%w: this source is of a type, so %s is one of its settings; change it there", api.ErrInvalidArguments, name)
+			}
+		}
+	}
 	if kind := models.AgentKnowledgeKind(strings.TrimSpace(arguments.Kind)); kind != "" {
 		source.Kind = kind
 	}

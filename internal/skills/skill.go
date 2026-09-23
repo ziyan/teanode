@@ -37,6 +37,11 @@ type Secret struct {
 	// their account with a service, their own key. A skill's author
 	// decides, because only they know which kind it is.
 	Scope string `yaml:"scope,omitempty"`
+
+	// Optional says what declares it can do without it: a source type
+	// whose request sends nothing while the value is unset, such as a
+	// public feed that also takes a token.
+	Optional bool `yaml:"optional,omitempty"`
 }
 
 // The scopes a declared secret may have, and that an operator may impose

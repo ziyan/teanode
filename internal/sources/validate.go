@@ -254,6 +254,9 @@ func (self *Type) validate() error {
 					return err
 				}
 			}
+			if strings.TrimSpace(listing.Walk.Child["id"]) == "" || strings.TrimSpace(listing.Walk.Start["id"]) == "" {
+				return fmt.Errorf("%s walks places without saying what tells them apart: start and child each need an id", where)
+			}
 			for _, template := range listing.Walk.Child {
 				if err := check(where, template, allowed); err != nil {
 					return err
@@ -373,6 +376,11 @@ func (self *Type) validate() error {
 			return fmt.Errorf("%s: unseen is keep or delete", where)
 		}
 		if reading.Detail != nil {
+			// Fetched once for each version of an item: an item with no
+			// version is fetched once, ever, and an edit never reaches it.
+			if strings.TrimSpace(reading.Record["version"]) == "" {
+				return fmt.Errorf("%s fetches a detail, so its records say their version", where)
+			}
 			shape := reading.Detail.Parse
 			if shape.Kind == "" {
 				shape.Kind = "text"
@@ -464,6 +472,17 @@ func (self *Type) checkRequest(where string, request *Request, secrets map[strin
 			return err
 		}
 	}
+	// A secret is sent only by an authentication profile, which is what
+	// ties it to the address checked below; one written into a header or
+	// the body would go wherever the address pointed.
+	for _, template := range append([]string{request.Body}, valuesOf(request.Headers)...) {
+		if strings.Contains(template, "secret:") {
+			return fmt.Errorf("%s puts a secret in a header or the body; use an authentication profile", where)
+		}
+	}
+	if strings.Contains(request.URL, "secret:") && request.Auth == "" {
+		return fmt.Errorf("%s puts a secret in the address; use an authentication profile", where)
+	}
 	if request.Auth == "" {
 		return nil
 	}
@@ -476,19 +495,45 @@ func (self *Type) checkRequest(where string, request *Request, secrets map[strin
 			return err
 		}
 	}
+	// Where a credential goes is its host, so the host is what is checked:
+	// written into the type, taken from a secret, or -- for a person's own
+	// secrets only -- from a setting that person filled in. Anything a tool
+	// answered never names it.
 	address := strings.TrimSpace(request.URL)
-	if strings.HasPrefix(address, "http://") || strings.HasPrefix(address, "https://") || strings.HasPrefix(address, "{{secret:") {
-		return nil
+	if strings.HasPrefix(address, "http://") {
+		return fmt.Errorf("%s sends a credential over plain http", where)
 	}
-	if strings.HasPrefix(address, "{{settings.") {
-		for _, secret := range self.Secrets {
-			if secret.Scope != "person" {
-				return fmt.Errorf("%s sends the operator's secret %q to an address from a setting", where, secret.Key)
-			}
+	host := address
+	if rest, isHTTPS := strings.CutPrefix(address, "https://"); isHTTPS {
+		host = rest
+	}
+	if end := strings.IndexAny(host, "/?#"); end >= 0 {
+		host = host[:end]
+	}
+	switch {
+	case !strings.Contains(host, "{{"):
+		if !strings.HasPrefix(address, "https://") {
+			return fmt.Errorf("%s sends a credential to an address the type does not settle", where)
 		}
 		return nil
+	case templateOperand.ReplaceAllString(host, "") != "" && !strings.HasPrefix(address, "https://"):
+		return fmt.Errorf("%s sends a credential to an address the type does not settle", where)
 	}
-	return fmt.Errorf("%s sends a credential to an address the type does not settle", where)
+	for _, template := range templateOperand.FindAllString(host, -1) {
+		inner := strings.TrimSpace(strings.Trim(template, "{}"))
+		switch {
+		case strings.HasPrefix(inner, "secret:"):
+		case strings.HasPrefix(inner, "settings.") && !strings.Contains(inner, "|"):
+			for _, secret := range self.Secrets {
+				if secret.Scope != "person" {
+					return fmt.Errorf("%s sends the operator's secret %q to an address from a setting", where, secret.Key)
+				}
+			}
+		default:
+			return fmt.Errorf("%s sends a credential to an address the type does not settle", where)
+		}
+	}
+	return nil
 }
 
 func valuesOf(values map[string]string) []string {

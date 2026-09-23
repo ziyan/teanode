@@ -183,7 +183,7 @@ records:
     parse: {lines: {pattern: "^\\d+\\. (?P<title>.+) \\(ID: (?P<id>\\d+)\\)$"}}
     paging: {limit: {size: 3}}
     since: {first: "2026-01-01", window: 10d}
-    record: {id: "page:{{item.id}}", title: "{{item.title}}"}
+    record: {id: "page:{{item.id}}", title: "{{item.title}}", version: "{{pass.windowEnd}}"}
     detail: {command: [wiki, read, "{{item.id}}"], text: "{{detail.text}}"}
 `)
 	fake := &fakeExecutor{commands: map[string]string{

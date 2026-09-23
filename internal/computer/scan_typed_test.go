@@ -70,3 +70,46 @@ func TestATypedSourceSaysWhatToolIsMissing(t *testing.T) {
 		t.Errorf("the error was %v", err)
 	}
 }
+
+// What a source's directory learned under one set of settings is
+// forgotten under another, and kept while they stay the same.
+func TestATypedSourceForgetsWhatOtherSettingsLearned(t *testing.T) {
+	root := t.TempDir()
+	write := func() {
+		for _, name := range []string{"containers.json", "since.json", "store/one.jsonl", "files/kept/file.txt"} {
+			path := filepath.Join(root, name)
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	exists := func(name string) bool {
+		_, err := os.Stat(filepath.Join(root, name))
+		return err == nil
+	}
+	write()
+	if err := forgetOtherSettings(root, "name: invented-mail", map[string]any{"account": "someone@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if !exists("containers.json") || !exists("store/one.jsonl") {
+		t.Fatalf("a directory from before settings were written down was cleared")
+	}
+	if err := forgetOtherSettings(root, "name: invented-mail", map[string]any{"account": "someone@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if !exists("since.json") {
+		t.Fatalf("the same settings cleared the directory")
+	}
+	if err := forgetOtherSettings(root, "name: invented-mail", map[string]any{"account": "another@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if exists("containers.json") || exists("since.json") || exists("store") {
+		t.Fatalf("other settings kept what the first ones learned")
+	}
+	if !exists("files/kept/file.txt") {
+		t.Fatalf("fetched files were thrown away")
+	}
+}

@@ -2,7 +2,10 @@ package computer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime"
 	"os"
@@ -55,14 +58,7 @@ func (self *recordsFolder) withVideoSheets(ctx context.Context, one *record) {
 		if !strings.HasPrefix(kind, "video/") || !filepath.IsAbs(attachment.Path) {
 			continue
 		}
-		about, ok := probeVideo(ctx, attachment.Path)
-		if !ok {
-			continue
-		}
-		if strings.TrimSpace(attachment.Text) == "" {
-			attachment.Text = describeVideo(about, attachment.Name)
-		}
-		if sheet := self.sheetFor(ctx, attachment.Path, about); sheet != "" {
+		if sheet := self.sheetFor(ctx, attachment); sheet != "" {
 			added = append(added, recordAttachment{Path: sheet, Name: attachment.Name + " (frames).jpg", ContentType: "image/jpeg"})
 		}
 	}
@@ -135,11 +131,34 @@ func (self *recordsFolder) framesDirectory() string {
 	return filepath.Join(self.options.Home, ".cache", "teanode", "frames")
 }
 
-// sheetFor is the sheet of a video's frames, made once and kept, or ""
-// where there is none and none can be made this page.
-func (self *recordsFolder) sheetFor(ctx context.Context, path string, about videoFacts) string {
+// videoHash is a video's hash, remembered by its path, size and time, so
+// a video already seen is not read again on every page.
+func (self *recordsFolder) videoHash(path string) (string, bool) {
+	information, err := os.Stat(path)
+	if err != nil || !information.Mode().IsRegular() || information.Size() > self.maxAttachmentBytes {
+		return "", false
+	}
+	seen := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%d\x00%d", path, information.Size(), information.ModTime().UnixNano())))
+	remembered := filepath.Join(self.framesDirectory(), "seen", hex.EncodeToString(seen[:16]))
+	if content, err := os.ReadFile(remembered); err == nil && len(strings.TrimSpace(string(content))) == 64 {
+		return strings.TrimSpace(string(content)), true
+	}
 	hash, _, err := hashOfFile(path)
 	if err != nil {
+		return "", false
+	}
+	if os.MkdirAll(filepath.Dir(remembered), 0o700) == nil {
+		_ = os.WriteFile(remembered, []byte(hash+"\n"), 0o600)
+	}
+	return hash, true
+}
+
+// sheetFor is the sheet of a video's frames, made once and kept, or ""
+// where there is none and none can be made this page. The video is given
+// its description where it has no text, when anything is learned of it.
+func (self *recordsFolder) sheetFor(ctx context.Context, attachment *recordAttachment) string {
+	hash, ok := self.videoHash(attachment.Path)
+	if !ok {
 		return ""
 	}
 	directory := self.framesDirectory()
@@ -157,11 +176,22 @@ func (self *recordsFolder) sheetFor(ctx context.Context, path string, about vide
 	if self.videos.made >= sheetsAPage || time.Now().After(self.videos.until) {
 		return ""
 	}
+	about, ok := probeVideo(ctx, attachment.Path)
+	if !ok {
+		return ""
+	}
+	if strings.TrimSpace(attachment.Text) == "" {
+		attachment.Text = describeVideo(about, attachment.Name)
+	}
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return ""
 	}
+	// A video is marked as one ffmpeg cannot read only when ffmpeg said
+	// so: a page cut short says nothing about the video.
 	refuse := func() string {
-		_ = os.WriteFile(refused, nil, 0o600)
+		if ctx.Err() == nil {
+			_ = os.WriteFile(refused, nil, 0o600)
+		}
 		return ""
 	}
 	if about.seconds <= 0 || about.width == 0 {
@@ -177,23 +207,31 @@ func (self *recordsFolder) sheetFor(ctx context.Context, path string, about vide
 			_ = os.Remove(leftover)
 		}
 	}()
+	timedOut := false
 	run := func(arguments ...string) bool {
 		commandContext, cancel := context.WithTimeout(ctx, sheetCommandTime)
 		defer cancel()
-		return exec.CommandContext(commandContext, "ffmpeg", arguments...).Run() == nil
+		err := exec.CommandContext(commandContext, "ffmpeg", arguments...).Run()
+		if errors.Is(commandContext.Err(), context.DeadlineExceeded) {
+			timedOut = true
+		}
+		return err == nil
 	}
 	for index := 0; index < 9; index++ {
 		// Just inside each ninth of the clip: the very first and last
 		// frames of a recording are usually a blank desktop.
 		at := about.seconds * (float64(index) + 0.5) / 9
 		frame := fmt.Sprintf("%s.%d.jpg", sheet, index)
-		if run("-nostdin", "-v", "error", "-ss", fmt.Sprintf("%.3f", at), "-i", path, "-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4", "-y", frame) {
+		if run("-nostdin", "-v", "error", "-ss", fmt.Sprintf("%.3f", at), "-i", attachment.Path, "-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4", "-y", frame) {
 			if information, err := os.Stat(frame); err == nil && information.Size() > 0 {
 				frames = append(frames, frame)
 			}
 		}
 	}
 	if len(frames) < 2 {
+		if timedOut {
+			return ""
+		}
 		return refuse()
 	}
 	var list strings.Builder
@@ -205,6 +243,9 @@ func (self *recordsFolder) sheetFor(ctx context.Context, path string, about vide
 	}
 	rows := (len(frames) + 2) / 3
 	if !run("-nostdin", "-v", "error", "-f", "concat", "-safe", "0", "-i", listing, "-vf", fmt.Sprintf("tile=3x%d", rows), "-frames:v", "1", "-q:v", "4", "-y", working) {
+		if timedOut {
+			return ""
+		}
 		return refuse()
 	}
 	if information, err := os.Stat(working); err != nil || information.Size() == 0 {

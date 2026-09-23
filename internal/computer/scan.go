@@ -338,7 +338,7 @@ type ScanResult struct {
 	// Unfinished says a typed source's reading ran out of time part way:
 	// what it read is here, and the pass this page belongs to must not
 	// delete what it did not see, since the reading goes on next pass.
-	Unfinished bool `json:"unfinished,omitempty"`
+	IsUnfinished bool `json:"unfinished,omitempty"`
 }
 
 // RepositoryProfile is what git says about a checkout: the first facts of

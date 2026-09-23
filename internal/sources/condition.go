@@ -348,6 +348,12 @@ func (self comparing) holds(scope Scope) (bool, error) {
 		}
 		return false, nil
 	}
+	// An ordering with nothing on one side holds for nothing: a time a
+	// tool left out is not earlier than every time there is, and reading
+	// it that way skipped what it was meant to read.
+	if self.operator != "==" && self.operator != "!=" && (strings.TrimSpace(text(left)) == "" || strings.TrimSpace(text(right)) == "") {
+		return false, nil
+	}
 	order := compare(left, right)
 	switch self.operator {
 	case "==":

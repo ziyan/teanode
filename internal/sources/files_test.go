@@ -223,6 +223,7 @@ records:
     record:
       id: "{{item.id}}"
       kind: "{{'page' | if detail.text | or 'file'}}"
+      version: "{{item.id}}"
       text: "{{item.name}} — {{item.mime | file-kind item.name}}{{', ' | if item.size}}{{item.size | size}}.\n\n{{detail.text}}"
 `)
 	executor := &writingExecutor{fakeExecutor: fakeExecutor{commands: map[string]string{

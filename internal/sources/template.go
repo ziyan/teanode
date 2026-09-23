@@ -24,7 +24,7 @@ type Scope struct {
 
 // with is the scope with one more name in it.
 func (self Scope) with(name string, value any) Scope {
-	values := make(map[string]any, len(self.Values)+1)
+	values := map[string]any{}
 	for key, each := range self.Values {
 		values[key] = each
 	}
@@ -159,6 +159,9 @@ func parseOperand(text string) (operand, error) {
 		return operand{}, fmt.Errorf("an expression is empty")
 	}
 	if text[0] == '"' || text[0] == '\'' {
+		if len(text) < 2 || text[len(text)-1] != text[0] {
+			return operand{}, fmt.Errorf("%s is a quoted string that never closes", text)
+		}
 		unquoted := text[1 : len(text)-1]
 		if text[0] == '"' {
 			if decoded, err := strconv.Unquote(text); err == nil {

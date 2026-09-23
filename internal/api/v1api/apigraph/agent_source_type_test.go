@@ -149,6 +149,11 @@ func TestASourceIsAddedOfAType(t *testing.T) {
 		if folder.Kind != models.SourceComputer || specification.Format != models.FormatFiles || specification.Path != "~/projects" || len(specification.Exclude) != 1 || !specification.ReadEveryCheckout {
 			t.Errorf("a folder of a type is %+v", folder)
 		}
+		// Its folder is one of its settings: set beside them, the two would
+		// disagree, and saving the settings would put the old one back.
+		if _, err := resolver.SaveAgentKnowledgeSource(ctx, SaveAgentKnowledgeSourceArguments{SourceID: folder.ID, Path: "~/elsewhere"}); !errors.Is(err, api.ErrInvalidArguments) {
+			t.Errorf("a path set beside a typed source's settings was taken: %v", err)
+		}
 	})
 
 	as(operator, func(ctx context.Context) {

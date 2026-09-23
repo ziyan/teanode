@@ -35,6 +35,9 @@ func expandHome(value string) string {
 // reads: path, name, stem, directory, absolute, bytes and modifiedAt.
 func matchFiles(ctx context.Context, directory, pattern string) ([]map[string]any, error) {
 	directory = expandHome(directory)
+	if climbs(directory) {
+		return nil, fmt.Errorf("%s has a .. in it, which steps out of its directory", directory)
+	}
 	if strings.TrimSpace(directory) == "" {
 		return nil, fmt.Errorf("files names no directory")
 	}
@@ -145,6 +148,9 @@ func (self *Runner) readFile(ctx context.Context, file string, shape Parsing, mi
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
+	if climbs(file) {
+		return nil, fmt.Errorf("%s has a .. in it, which steps out of its directory", file)
+	}
 	content, err := os.ReadFile(expandHome(file))
 	if err != nil {
 		if os.IsNotExist(err) && missing == "empty" {
@@ -248,4 +254,15 @@ func (self *Runner) refresh(ctx context.Context, scope Scope) error {
 		}
 	}
 	return nil
+}
+
+// climbs says whether a path has a .. in it: a path a type builds from what
+// a tool answered must stay where the type pointed.
+func climbs(path string) bool {
+	for _, step := range strings.Split(filepath.ToSlash(path), "/") {
+		if step == ".." {
+			return true
+		}
+	}
+	return false
 }

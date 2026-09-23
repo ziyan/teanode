@@ -313,7 +313,7 @@ func (self *Runner) List(ctx context.Context) ([]Container, error) {
 				}
 			default:
 				var err error
-				if fetched, err = self.fetch(ctx, listing.Command, listing.Request, listing.Parse, listing.Paging, "", scope); err != nil {
+				if fetched, err = self.fetchListing(ctx, listing.Command, listing.Request, listing.Parse, listing.Paging, scope); err != nil {
 					return nil, err
 				}
 			}
@@ -380,6 +380,9 @@ func (self *Runner) walk(ctx context.Context, listing Listing, scope Scope, add 
 		folder := queue[0]
 		queue = queue[1:]
 		identity := text(folder["id"])
+		if identity == "" {
+			return fmt.Errorf("the walk came to a place with no id, so it cannot tell it from the others")
+		}
 		if visited[identity] {
 			continue
 		}
@@ -543,13 +546,13 @@ func (self *Runner) eachOf(each any, scope Scope) ([]any, error) {
 func (self *Runner) readOnce(ctx context.Context, container Container, readingIndex int, reading Reading, scope Scope, store *recordStore) ([]Record, error) {
 	if reading.Since == nil {
 		records, err := self.readItems(ctx, container, reading, scope)
-		if err != nil {
+		if err != nil && !errors.Is(err, ErrUnfinished) {
 			return nil, err
 		}
 		if store != nil {
 			store.merge(records)
 		}
-		return records, nil
+		return records, err
 	}
 
 	key := sinceKey(container.Name, readingIndex, scope)
@@ -574,10 +577,25 @@ func (self *Runner) readOnce(ctx context.Context, container Container, readingIn
 	began := self.now()
 	if reading.Since.Window == "" {
 		records, err := self.readItems(ctx, container, reading, passScope)
+		if errors.Is(err, ErrUnfinished) {
+			// Kept, and the mark left where it was: the next pass reads
+			// the same span again rather than skipping what this one did
+			// not reach.
+			store.merge(records)
+			if saveErr := store.save(); saveErr != nil {
+				return nil, saveErr
+			}
+			return records, err
+		}
 		if err != nil {
 			return nil, err
 		}
 		store.merge(records)
+		// Kept before the mark moves: a mark saved over records that were
+		// not would skip them for good.
+		if err := store.save(); err != nil {
+			return nil, err
+		}
 		// A little before the read began, so that what changed while it
 		// was running is read again next time rather than missed.
 		return records, self.saveSince(key, began.Add(-sinceOverlap))
@@ -675,6 +693,9 @@ func (self *Runner) readItems(ctx context.Context, container Container, reading 
 			continue
 		}
 		record, err := self.record(ctx, container, reading, itemScope)
+		if errors.Is(err, ErrUnfinished) {
+			return records, err
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -713,7 +734,13 @@ func (self *Runner) record(ctx context.Context, container Container, reading Rea
 			}
 		}
 		if wanted {
+			if !self.Deadline.IsZero() && self.now().After(self.Deadline) {
+				return nil, ErrUnfinished
+			}
 			detail, err := self.detail(ctx, container, reading.Detail, scope, id, version)
+			if errors.Is(err, errDetailMissing) {
+				return nil, nil
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -767,6 +794,9 @@ func (self *Runner) record(ctx context.Context, container Container, reading Rea
 		}
 	}
 	if len(reading.Attachments) > 0 {
+		if !self.Deadline.IsZero() && self.now().After(self.Deadline) {
+			return nil, ErrUnfinished
+		}
 		attachments, err := self.attachments(ctx, container, reading, scope, id, version)
 		if err != nil {
 			return nil, err
@@ -781,8 +811,19 @@ func (self *Runner) record(ctx context.Context, container Container, reading Rea
 // detail is an item's text from its detail call, fetched once for each
 // version of the item and kept.
 func (self *Runner) detail(ctx context.Context, container Container, detail *Detail, scope Scope, id, version string) (map[string]any, error) {
-	path := filepath.Join(self.State, "detail", cacheName(self.Type.Name, container.Name, id, version)+".txt")
-	if cached, err := os.ReadFile(path); err == nil {
+	// Kept as the text alone where the type says what the text is, and
+	// as the whole answer where a template reads other fields of it.
+	stem := filepath.Join(self.State, "detail", cacheName(self.Type.Name, container.Name, id, version))
+	path := stem + ".txt"
+	if detail.Text == "" {
+		path = stem + ".json"
+		if cached, err := os.ReadFile(path); err == nil {
+			var result map[string]any
+			if json.Unmarshal(cached, &result) == nil {
+				return result, nil
+			}
+		}
+	} else if cached, err := os.ReadFile(path); err == nil {
 		return map[string]any{"text": string(cached)}, nil
 	}
 	shape := detail.Parse
@@ -812,6 +853,11 @@ func (self *Runner) detail(ctx context.Context, container Container, detail *Det
 	} else {
 		var err error
 		if fetched, err = self.fetch(ctx, detail.Command, detail.Request, shape, Paging{Kind: "none"}, "", scope); err != nil {
+			if isMissing(err) {
+				// Gone between the listing and now: the item is left out
+				// of this pass rather than failing its whole container.
+				return nil, errDetailMissing
+			}
 			return nil, err
 		}
 	}
@@ -826,11 +872,22 @@ func (self *Runner) detail(ctx context.Context, container Container, detail *Det
 		}
 		result = map[string]any{"text": value}
 	}
-	if err := writeFile(path, []byte(text(result["text"]))); err != nil {
+	content := []byte(text(result["text"]))
+	if detail.Text == "" {
+		encoded, err := json.Marshal(result)
+		if err != nil {
+			return nil, err
+		}
+		content = encoded
+	}
+	if err := writeFile(path, content); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
+
+// errDetailMissing is an item whose detail is no longer there.
+var errDetailMissing = errors.New("sources: the item is gone")
 
 // defaultAttachmentBytes is the largest file an attachment command keeps
 // where the type says nothing.
@@ -888,6 +945,11 @@ func (self *Runner) attachments(ctx context.Context, container Container, readin
 					return nil, err
 				}
 				local = expandHome(local)
+				if climbs(local) {
+					// A name a tool answered that steps out of where the
+					// type pointed is not followed.
+					continue
+				}
 				information, err := os.Stat(local)
 				// Only a limit the type sets: the reader has its own, and
 				// says so of a file over it rather than leaving it out.
@@ -929,26 +991,36 @@ func (self *Runner) attachments(ctx context.Context, container Container, readin
 					return nil, err
 				}
 			}
-			if information, err := os.Stat(path); err != nil || information.Size() == 0 {
-				if err := os.MkdirAll(directory, 0o700); err != nil {
+			if information, err := os.Stat(path); (err != nil || information.Size() == 0) && len(attachment.Command) > 0 {
+				// Written in a room of its own and moved into place: a
+				// tool that names the file itself is found there and
+				// nowhere else, and one that fails leaves nothing behind
+				// beside the files already kept for this item.
+				room := filepath.Join(directory, ".writing-"+cacheName(name))
+				if err := os.MkdirAll(room, 0o700); err != nil {
 					return nil, err
 				}
-				words, err := self.words(attachment.Command, attachmentScope.with("output", path))
+				written := filepath.Join(room, name)
+				words, err := self.words(attachment.Command, attachmentScope.with("output", written))
 				if err != nil {
+					_ = os.RemoveAll(room)
 					return nil, err
 				}
 				self.paced()
 				printed, err := self.Executor.Command(ctx, words)
 				if err == nil && !writesOutput(attachment.Command) {
-					err = writeFile(path, printed)
+					err = writeFile(written, printed)
 				}
-				if err == nil && !tookWritten(path) {
+				if err == nil && !tookWritten(written) {
 					err = fmt.Errorf("%s wrote nothing", words[0])
 				}
+				if err == nil {
+					err = os.Rename(written, path)
+				}
+				_ = os.RemoveAll(room)
 				if err != nil {
 					// One file that will not come is one file left out,
 					// not a container that cannot be read.
-					_ = os.RemoveAll(directory)
 					continue
 				}
 			}
@@ -957,7 +1029,7 @@ func (self *Runner) attachments(ctx context.Context, container Container, readin
 				continue
 			}
 			if information.Size() > most {
-				_ = os.RemoveAll(directory)
+				_ = os.Remove(path)
 				continue
 			}
 			found = append(found, map[string]any{"path": path, "name": name})
@@ -999,6 +1071,15 @@ func writesOutput(command []string) bool {
 		}
 	}
 	return false
+}
+
+// abbreviated is the start of what a tool answered, for an error.
+func abbreviated(output []byte) string {
+	said := strings.TrimSpace(string(output))
+	if len(said) > 200 {
+		said = said[:200] + "..."
+	}
+	return said
 }
 
 func cacheName(parts ...string) string {
@@ -1061,6 +1142,17 @@ const pagesLimit = 10000
 // every item. A page that comes back full where the type said the call
 // cannot page fails, since it may have been cut.
 func (self *Runner) fetch(ctx context.Context, command []string, request *Request, shape Parsing, paging Paging, missing string, scope Scope) ([]fetchedItem, error) {
+	return self.fetchItems(ctx, command, request, shape, paging, missing, scope, false)
+}
+
+// fetchListing is fetch for a listing, where an answer with nothing at the
+// items path fails rather than reading as no containers: a listing short
+// of what is there makes the pass delete what it left out.
+func (self *Runner) fetchListing(ctx context.Context, command []string, request *Request, shape Parsing, paging Paging, scope Scope) ([]fetchedItem, error) {
+	return self.fetchItems(ctx, command, request, shape, paging, "", scope, true)
+}
+
+func (self *Runner) fetchItems(ctx context.Context, command []string, request *Request, shape Parsing, paging Paging, missing string, scope Scope, strict bool) ([]fetchedItem, error) {
 	var all []fetchedItem
 	token := ""
 	for page := 0; ; page++ {
@@ -1077,6 +1169,9 @@ func (self *Runner) fetch(ctx context.Context, command []string, request *Reques
 		result, err := parseOutput(shape, output)
 		if err != nil {
 			return nil, err
+		}
+		if strict && result.isItemsMissing {
+			return nil, fmt.Errorf("the answer has nothing at %q, so it is not a listing this type understands: %s", shape.Items, abbreviated(output))
 		}
 		for _, item := range result.items {
 			all = append(all, fetchedItem{item: item, response: result.response})
@@ -1103,7 +1198,7 @@ func (self *Runner) fetch(ctx context.Context, command []string, request *Reques
 // there.
 // A feature the owner turned off, such as a repository's issues, is
 // nothing there as well.
-var missingAnswer = regexp.MustCompile(`(?i)\b404\b|not found|has disabled|is disabled`)
+var missingAnswer = regexp.MustCompile(`(?i)\b404\b|has disabled|is disabled`)
 
 func isMissing(err error) bool {
 	var failed *CommandError
@@ -1138,6 +1233,11 @@ func (self *Runner) call(ctx context.Context, command []string, request *Request
 		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
+		}
+		// A wait that would outlast the page is not waited: the reading
+		// stops, says it is unfinished, and the next pass asks again.
+		if !self.Deadline.IsZero() && self.now().Add(retryPauses[attempt]).After(self.Deadline) {
+			return nil, fmt.Errorf("%w: %s", ErrUnfinished, err)
 		}
 		self.sleep(retryPauses[attempt])
 	}
@@ -1349,10 +1449,10 @@ func (self *Runner) LoadContainers() ([]Container, error) {
 // recordStore is what a reading that keeps records has collected for one
 // container, one JSON line a record, by identifier.
 type recordStore struct {
-	path    string
-	byID    map[string]Record
-	order   []string
-	changed bool
+	path       string
+	byID       map[string]Record
+	order      []string
+	hasChanged bool
 }
 
 func (self *Runner) openStore(container string, readingIndex int) (*recordStore, error) {
@@ -1391,7 +1491,7 @@ func (self *recordStore) merge(records []Record) {
 			self.order = append(self.order, id)
 		}
 		self.byID[id] = record
-		self.changed = true
+		self.hasChanged = true
 	}
 }
 
@@ -1404,7 +1504,7 @@ func (self *recordStore) records() []Record {
 }
 
 func (self *recordStore) save() error {
-	if !self.changed {
+	if !self.hasChanged {
 		return nil
 	}
 	var built strings.Builder
@@ -1416,8 +1516,11 @@ func (self *recordStore) save() error {
 		built.Write(encoded)
 		built.WriteByte('\n')
 	}
-	self.changed = false
-	return writeFile(self.path, []byte(built.String()))
+	if err := writeFile(self.path, []byte(built.String())); err != nil {
+		return err
+	}
+	self.hasChanged = false
+	return nil
 }
 
 // writeFile writes a file whole or not at all.

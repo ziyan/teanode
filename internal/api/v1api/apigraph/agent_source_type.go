@@ -254,6 +254,18 @@ func (self *graph) InstallAgentSourceType(ctx context.Context, arguments AgentSo
 	if err != nil {
 		return nil, err
 	}
+	var existing *models.AgentSourceType
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		existing, err = tx.GetAgentSourceType(entry.Name)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	// The registry's type does not replace a local one of the same name:
+	// the sources of it were set up against the operator's file.
+	if existing != nil && existing.IsLocal {
+		return nil, fmt.Errorf("%w: %s is a local type here; remove it first to install the registry's", api.ErrInvalidArguments, entry.Name)
+	}
 	if !strings.EqualFold(parsed.Name, entry.Name) {
 		return nil, fmt.Errorf("sources: the registry calls this %q and the file calls itself %q", entry.Name, parsed.Name)
 	}

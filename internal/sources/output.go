@@ -18,6 +18,10 @@ import (
 type parsed struct {
 	items    []map[string]any
 	response any
+
+	// isItemsMissing says the answer had nothing at the items path at
+	// all, which a listing takes as an answer it does not understand.
+	isItemsMissing bool
 }
 
 // parseOutput reads what a command printed or a request answered.
@@ -76,21 +80,15 @@ func parseOutput(shape Parsing, output []byte) (*parsed, error) {
 		if err != nil {
 			return nil, fmt.Errorf("what it printed is not JSON: %w", err)
 		}
-		items, err := itemsAt(value, shape.Items)
-		if err != nil {
-			return nil, err
-		}
-		return &parsed{items: items, response: value}, nil
+		items, found := itemsAt(value, shape.Items)
+		return &parsed{items: items, response: value, isItemsMissing: !found}, nil
 	case "xml":
 		value, err := decodeXML(output)
 		if err != nil {
 			return nil, fmt.Errorf("what it answered is not XML: %w", err)
 		}
-		items, err := itemsAt(value, shape.Items)
-		if err != nil {
-			return nil, err
-		}
-		return &parsed{items: items, response: value}, nil
+		items, found := itemsAt(value, shape.Items)
+		return &parsed{items: items, response: value, isItemsMissing: !found}, nil
 	}
 	return nil, fmt.Errorf("%q is not a way of reading output", shape.Kind)
 }
@@ -111,7 +109,7 @@ func decodeJSON(data []byte) (any, error) {
 // whole answer, a path ending in ".*" for the values of a map, and
 // alternatives separated by " | ", the first that is there winning. A
 // single object where a list was expected is a list of one.
-func itemsAt(value any, path string) ([]map[string]any, error) {
+func itemsAt(value any, path string) ([]map[string]any, bool) {
 	if strings.TrimSpace(path) == "" {
 		path = "."
 	}
@@ -120,11 +118,12 @@ func itemsAt(value any, path string) ([]map[string]any, error) {
 		if !ok {
 			continue
 		}
-		return asItems(found), nil
+		return asItems(found), true
 	}
-	// Nothing at the path is an empty answer, not a malformed one: a
-	// search that matched nothing often leaves the list out.
-	return nil, nil
+	// Nothing at the path: to a reading an empty answer, since a search
+	// that matched nothing often leaves the list out; to a listing, an
+	// answer it does not understand.
+	return nil, false
 }
 
 func at(value any, path string) (any, bool) {

@@ -35,6 +35,7 @@ import {
   SourceTypeSettingsFields,
   isReadOnComputer,
   orderedSourceTypes,
+  settingLabel,
   settingDrafts,
   settingValues,
   settingsProblem,
@@ -1735,7 +1736,10 @@ function whereSourceReads(source: KnowledgeSource, views: { mailbox: MailboxNami
     where = Object.entries(storedSettings(source.specification.settings))
       .filter(([, value]) => value !== '' && value !== null && value !== false)
       .filter(([, value]) => !(Array.isArray(value) && value.length === 0))
-      .map(([settingName, value]) => `${settingName}: ${Array.isArray(value) ? value.join(', ') : String(value)}`)
+      .map(
+        ([settingName, value]) =>
+          `${settingLabel(settingName)}: ${Array.isArray(value) ? value.join(', ') : String(value)}`,
+      )
       .join(' · ')
   }
   return [where, source.specification.computer].filter((part) => part).join(' · ')
@@ -1873,6 +1877,8 @@ function KnowledgeSourcesCard() {
     setSourceTypeName(name)
     const sourceType = allSourceTypes.find((candidate) => candidate.name === name)
     setDrafts(sourceType ? settingDrafts(sourceType) : {})
+    // What was wrong with the last type's form says nothing about this one.
+    setProblem(null)
   }
 
   // Opening the form on a source, which is the whole of Edit: every box
@@ -2167,6 +2173,10 @@ function KnowledgeSourcesCard() {
           error={problem}
           canSubmit={
             name.trim() !== '' &&
+            // A source of a type is saved only through its type's form: the
+            // plain one, shown while the types load, would save a folder
+            // beside settings that still name the old one.
+            !(editing?.specification.type && chosenSourceType === null) &&
             (chosenSourceType !== null ||
               (kind === 'sent' ? readingMailboxId !== '' : path.trim() !== '' && computer.trim() !== ''))
           }

@@ -3,6 +3,8 @@ package computer
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -48,9 +50,9 @@ var sourceKeyPattern = regexp.MustCompile(`^[0-9a-z]{1,64}$`)
 
 // typedSource is one pass of a typed source.
 type typedSource struct {
-	runner     *sources.Runner
-	containers map[string]sources.Container
-	unfinished bool
+	runner       *sources.Runner
+	containers   map[string]sources.Container
+	isUnfinished bool
 }
 
 func openTyped(root string, arguments *ScanArguments) (*typedSource, error) {
@@ -73,6 +75,9 @@ func openTyped(root string, arguments *ScanArguments) (*typedSource, error) {
 		}
 	}
 	if err := os.MkdirAll(root, 0o700); err != nil {
+		return nil, err
+	}
+	if err := forgetOtherSettings(root, arguments.SourceType, arguments.Settings); err != nil {
 		return nil, err
 	}
 	deadline := time.Now().Add(typedPageTime)
@@ -122,7 +127,7 @@ func (self *typedSource) read(ctx context.Context, folder *recordsFolder, relati
 	}
 	records, err := self.runner.Read(ctx, container)
 	if errors.Is(err, sources.ErrUnfinished) {
-		self.unfinished = true
+		self.isUnfinished = true
 	} else if err != nil {
 		return nil, err
 	}
@@ -213,6 +218,35 @@ func (self *limitedWriter) Write(data []byte) (int, error) {
 	}
 	self.remaining -= int64(len(data))
 	return self.writer.Write(data)
+}
+
+// forgetOtherSettings clears what a source's directory knows when it was
+// learned under another type, another version of it, or other settings: the listing, when each
+// container was last read, and the records a reading kept. A mailbox read
+// as one account and then pointed at another must not keep reporting the
+// first account's threads, and a reading that starts from where the last
+// one stopped must start again. Fetched files and text stay: their names
+// already say which item and version they are. A directory from before
+// this was written down is taken to be the current settings'.
+func forgetOtherSettings(root, sourceType string, settings map[string]any) error {
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(append([]byte(sourceType+"\x00"), encoded...))
+	fingerprint := hex.EncodeToString(sum[:])
+	path := filepath.Join(root, "settings.sha256")
+	previous, err := os.ReadFile(path)
+	if err == nil && strings.TrimSpace(string(previous)) != fingerprint {
+		for _, name := range []string{"containers.json", "since.json", "store"} {
+			if err := os.RemoveAll(filepath.Join(root, name)); err != nil {
+				return err
+			}
+		}
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return os.WriteFile(path, []byte(fingerprint+"\n"), 0o600)
 }
 
 // typedRootFor resolves a typed source's directory under the person's
