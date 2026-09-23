@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.54.1] - 2026-09-23
+
+### Fixed
+
+- A source type whose tool ignores paging no longer pages for ever. (#128)
+
 ## [0.54.0] - 2026-09-23
 
 ### Added
