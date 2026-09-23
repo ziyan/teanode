@@ -2722,7 +2722,6 @@ export const ja: Catalog = {
   'agent.knowledgeCronHint': '5 つのフィールド、あなたのタイムゾーンで。空のままなら毎晩 1 回読みます。',
   'agent.knowledgeUnknownAuthors':
     'ここのコミットは {names} によるもので、どれもあなたではありません。あなたの仕事として数えられません。',
-  'agent.knowledgeWhichIsYou': 'どの連絡先があなたかを指定する',
   'agent.knowledgeRefused': '{count} 件がその機械で止められました',
   'agent.knowledgeKeptToProfile':
     'ここの {checkouts} 件のチェックアウトはあなたのコミットが少なすぎてあなたの仕事とは言えないため、何でありどこにあるかという概要だけを残し、その中の {files} 件のファイルは読んでいません。',
@@ -2731,7 +2730,7 @@ export const ja: Catalog = {
   'agent.filesDeclined': '{count} 件は開かないと判断しました',
   'agent.filesRead': '{count} 件は開いて読みました',
   'agent.filesWhich': 'どれですか？',
-  'agent.filesHide': '閉じる',
+  'agent.filesDeclinedTitle': '開かないと決めたファイル',
   'agent.filesNoneDeclined': 'ここではまだ何も見送っていません。',
   'agent.dream': '夢の整理',
   'agent.dreamHint':

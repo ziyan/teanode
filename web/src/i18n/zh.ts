@@ -2634,7 +2634,6 @@ export const zh: Catalog = {
   'agent.knowledgeCron': '多久读取一次（cron 格式）',
   'agent.knowledgeCronHint': '五个字段，按你所在的时区。留空则每晚读取一次。',
   'agent.knowledgeUnknownAuthors': '这里的提交来自 {names}，其中没有一个是你，所以这些都不算作你的工作。',
-  'agent.knowledgeWhichIsYou': '指定哪个联系人是你',
   'agent.knowledgeRefused': '有 {count} 项在本机被拦下',
   'agent.knowledgeKeptToProfile':
     '这里有 {checkouts} 个检出中属于你的提交太少，算不上你的工作，因此只保留它们的概要——是什么、在哪里——其中 {files} 个文件未被读取。',
@@ -2643,7 +2642,7 @@ export const zh: Catalog = {
   'agent.filesDeclined': '有 {count} 个它决定不打开',
   'agent.filesRead': '有 {count} 个它已打开并读过',
   'agent.filesWhich': '是哪些？',
-  'agent.filesHide': '收起',
+  'agent.filesDeclinedTitle': '决定不打开的文件',
   'agent.filesNoneDeclined': '它在这里还没有否决过任何文件。',
   'agent.dream': '它的梦境整理',
   'agent.dreamHint': '你睡着时，代理会处理新到的内容、写这个月的记录，并整理它所知道的。它绝不会自行删除任何东西。',

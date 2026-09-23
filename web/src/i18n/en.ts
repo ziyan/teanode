@@ -2753,7 +2753,6 @@ export const en = {
   'agent.knowledgeCronHint': 'Five fields, in your own zone. Leave it empty and it is read once a night.',
   'agent.knowledgeUnknownAuthors':
     'The commits here are by {names}, and none of those is you — so none of this counts as your work.',
-  'agent.knowledgeWhichIsYou': 'Say which contact is you',
   'agent.knowledgeRefused': '{count} held back on the machine',
   'agent.knowledgeKeptToProfile':
     '{checkouts} checkouts here hold too few of your commits to be your work, so they are kept to their profile — what they are and where they live — and {files} files in them are left unread.',
@@ -2763,7 +2762,7 @@ export const en = {
   'agent.filesDeclined': '{count} it decided against opening',
   'agent.filesRead': '{count} it opened and read',
   'agent.filesWhich': 'Which ones?',
-  'agent.filesHide': 'Hide them',
+  'agent.filesDeclinedTitle': 'Files it decided against opening',
   'agent.filesNoneDeclined': 'It has decided against nothing here yet.',
   'agent.dream': 'What it dreams',
   'agent.dreamHint':

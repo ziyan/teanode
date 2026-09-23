@@ -2099,10 +2099,7 @@ function KnowledgeSourcesCard() {
                     <br />
                     <span className="muted">
                       {t('agent.knowledgeUnknownAuthors', { names: source.unknownAuthors.join(', ') })}
-                    </span>{' '}
-                    <Link className="link" to="/mailbox/contacts">
-                      {t('agent.knowledgeWhichIsYou')}
-                    </Link>
+                    </span>
                   </>
                 ) : null}
               </>
@@ -2367,11 +2364,9 @@ function SourceFiles({ sourceId, files }: { sourceId: string; files?: SourceAtta
 
   // Asked for on the click rather than with the sources: a source may
   // have passed over tens of thousands, and most people never open this.
-  const toggle = async () => {
-    if (declined !== null) {
-      setDeclined(null)
-      return
-    }
+  // Shown in a dialog: listed under the source, it made one row of the
+  // list longer than every other row put together.
+  const open = async () => {
     setLoading(true)
     try {
       const answer = await graphql<{ ListAgentDeclinedAttachments: DeclinedFile[] }>(DECLINED_ATTACHMENTS, { sourceId })
@@ -2388,51 +2383,59 @@ function SourceFiles({ sourceId, files }: { sourceId: string; files?: SourceAtta
       <br />
       <span className="muted">{said.join(' · ')}</span>{' '}
       {files.declined > 0 ? (
-        <button type="button" className="link" onClick={() => void toggle()}>
-          {declined === null ? t('agent.filesWhich') : t('agent.filesHide')}
+        <button type="button" className="link" disabled={loading} onClick={() => void open()}>
+          {t('agent.filesWhich')}
         </button>
       ) : null}
-      {loading ? <Loading /> : null}
       {declined !== null ? (
-        declined.length === 0 ? (
-          <SettingsEmpty>{t('agent.filesNoneDeclined')}</SettingsEmpty>
-        ) : (
-          /* Said once over the files it was said about, rather than once
+        <ConfirmDialog
+          title={t('agent.filesDeclinedTitle')}
+          onClose={() => setDeclined(null)}
+          body={<div className="dialog-scroll">{declinedList(declined, t)}</div>}
+        />
+      ) : null}
+    </>
+  )
+}
+
+// declinedList is the files a source's reading passed over, grouped by why.
+function declinedList(declined: DeclinedFile[], t: ReturnType<typeof useTranslation>['t']) {
+  return declined.length === 0 ? (
+    <SettingsEmpty>{t('agent.filesNoneDeclined')}</SettingsEmpty>
+  ) : (
+    /* Said once over the files it was said about, rather than once
              a row. There are two reasons a file is passed over and a
              batch of forty shares one of them, so repeating it put the
              same twenty five words on every line and buried the only
              part that differed. */
-          <ul className="agent-declined-files">
-            {groupedByReason(declined).map(([reason, group]) => (
-              <li key={reason} className="agent-declined-group">
-                <p className="muted">{reason}</p>
-                <ul>
-                  {group.map((file) => (
-                    <li key={file.documentId}>
-                      {/* The file itself where its bytes are here, so a
+    <ul className="agent-declined-files">
+      {groupedByReason(declined).map(([reason, group]) => (
+        <li key={reason} className="agent-declined-group">
+          <p className="muted">{reason}</p>
+          <ul>
+            {group.map((file) => (
+              <li key={file.documentId}>
+                {/* The file itself where its bytes are here, so a
                           person who disagrees with the decision can look
                           at what was passed over. */}
-                      {file.path === '' ? (
-                        <span>{file.name}</span>
-                      ) : (
-                        <a href={file.path} target="_blank" rel="noreferrer">
-                          {file.name}
-                        </a>
-                      )}
-                      {[file.thread, file.channel].filter((part) => part.trim() !== '').length > 0 ? (
-                        <span className="muted">
-                          {[file.thread, file.channel].filter((part) => part.trim() !== '').join(' · ')}
-                        </span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
+                {file.path === '' ? (
+                  <span>{file.name}</span>
+                ) : (
+                  <a href={file.path} target="_blank" rel="noreferrer">
+                    {file.name}
+                  </a>
+                )}
+                {[file.thread, file.channel].filter((part) => part.trim() !== '').length > 0 ? (
+                  <span className="muted">
+                    {[file.thread, file.channel].filter((part) => part.trim() !== '').join(' · ')}
+                  </span>
+                ) : null}
               </li>
             ))}
           </ul>
-        )
-      ) : null}
-    </>
+        </li>
+      ))}
+    </ul>
   )
 }
 
