@@ -58,7 +58,7 @@ func endingOf(t *testing.T, id, conversationId, agentId string, isHeadless bool,
 	started := time.Now().Add(-90 * time.Second)
 	ended := time.Now()
 	encoded, err := json.Marshal(map[string]any{
-		"id": id, "command": "make test", "directory": "/home/alice/project",
+		"id": id, "command": "make test", "directory": "~/project",
 		"origin":    map[string]any{"agentId": agentId, "conversationId": conversationId, "isHeadless": isHeadless},
 		"startedAt": started, "endedAt": ended, "isRunning": false, "exitCode": 2,
 		"stdout": stdout, "stderr": "FAIL: two tests\n", "stdoutByteCount": len(stdout), "stderrByteCount": 16,
