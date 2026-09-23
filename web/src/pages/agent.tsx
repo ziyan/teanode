@@ -639,26 +639,28 @@ function CategoriesSection({ agent, view, busy, onSave }: SaveProps & { view: Ag
           subtitle={category.description}
           actions={
             <>
-              <button
-                type="button"
-                className="icon-action"
-                title={t('common.edit')}
-                aria-label={`${category.name}: ${t('common.edit')}`}
-                disabled={busy}
-                onClick={() => setEditing({ index, category: { ...category } })}
-              >
-                <PencilIcon size={16} />
-              </button>
-              <button
-                type="button"
-                className="icon-action danger"
-                title={t('common.remove')}
-                aria-label={`${category.name}: ${t('common.remove')}`}
-                disabled={busy}
-                onClick={() => setRemoving(index)}
-              >
-                <TrashIcon size={16} />
-              </button>
+              <Tooltip label={t('common.edit')}>
+                <button
+                  type="button"
+                  className="icon-action"
+                  aria-label={`${category.name}: ${t('common.edit')}`}
+                  disabled={busy}
+                  onClick={() => setEditing({ index, category: { ...category } })}
+                >
+                  <PencilIcon size={16} />
+                </button>
+              </Tooltip>
+              <Tooltip label={t('common.remove')}>
+                <button
+                  type="button"
+                  className="icon-action danger"
+                  aria-label={`${category.name}: ${t('common.remove')}`}
+                  disabled={busy}
+                  onClick={() => setRemoving(index)}
+                >
+                  <TrashIcon size={16} />
+                </button>
+              </Tooltip>
             </>
           }
         />
@@ -1890,48 +1892,54 @@ function KnowledgeSourcesCard() {
             }
             actions={
               <div className="row-actions">
-                <button
-                  type="button"
-                  className="icon-action"
-                  title={t('agent.editKnowledgeSource')}
-                  aria-label={`${source.name}: ${t('agent.editKnowledgeSource')}`}
-                  onClick={() => openEdit(source)}
-                >
-                  <PencilIcon size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-action"
-                  title={t('agent.knowledgeSync')}
-                  aria-label={`${source.name}: ${t('agent.knowledgeSync')}`}
-                  onClick={() => void run(SYNC_KNOWLEDGE_SOURCE, { sourceId: source.id }, t('agent.knowledgeSyncing'))}
-                >
-                  <RefreshIcon size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-action"
-                  title={source.enabled ? t('agent.knowledgePause') : t('agent.knowledgeResume')}
-                  aria-label={`${source.name}: ${source.enabled ? t('agent.knowledgePause') : t('agent.knowledgeResume')}`}
-                  onClick={() =>
-                    void run(
-                      SAVE_KNOWLEDGE_SOURCE,
-                      { sourceId: source.id, enabled: !source.enabled },
-                      source.enabled ? t('agent.knowledgePaused') : t('agent.knowledgeResumed'),
-                    )
-                  }
-                >
-                  {source.enabled ? <ToggleOnIcon size={16} /> : <ToggleOffIcon size={16} />}
-                </button>
-                <button
-                  type="button"
-                  className="icon-action danger"
-                  title={t('agent.knowledgeRemove')}
-                  aria-label={`${source.name}: ${t('agent.knowledgeRemove')}`}
-                  onClick={() => setRemoving(source)}
-                >
-                  <TrashIcon size={16} />
-                </button>
+                <Tooltip label={t('agent.editKnowledgeSource')}>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    aria-label={`${source.name}: ${t('agent.editKnowledgeSource')}`}
+                    onClick={() => openEdit(source)}
+                  >
+                    <PencilIcon size={16} />
+                  </button>
+                </Tooltip>
+                <Tooltip label={t('agent.knowledgeSync')}>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    aria-label={`${source.name}: ${t('agent.knowledgeSync')}`}
+                    onClick={() =>
+                      void run(SYNC_KNOWLEDGE_SOURCE, { sourceId: source.id }, t('agent.knowledgeSyncing'))
+                    }
+                  >
+                    <RefreshIcon size={16} />
+                  </button>
+                </Tooltip>
+                <Tooltip label={source.enabled ? t('agent.knowledgePause') : t('agent.knowledgeResume')}>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    aria-label={`${source.name}: ${source.enabled ? t('agent.knowledgePause') : t('agent.knowledgeResume')}`}
+                    onClick={() =>
+                      void run(
+                        SAVE_KNOWLEDGE_SOURCE,
+                        { sourceId: source.id, enabled: !source.enabled },
+                        source.enabled ? t('agent.knowledgePaused') : t('agent.knowledgeResumed'),
+                      )
+                    }
+                  >
+                    {source.enabled ? <ToggleOnIcon size={16} /> : <ToggleOffIcon size={16} />}
+                  </button>
+                </Tooltip>
+                <Tooltip label={t('agent.knowledgeRemove')}>
+                  <button
+                    type="button"
+                    className="icon-action danger"
+                    aria-label={`${source.name}: ${t('agent.knowledgeRemove')}`}
+                    onClick={() => setRemoving(source)}
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </Tooltip>
               </div>
             }
           />
@@ -2296,16 +2304,18 @@ function DreamCard({
       render: (dream) => {
         const did = whatItDid(dream, t)
         return (
-          <span title={did.join(' · ')}>
-            {did.length > 0
-              ? did.join(' · ')
-              : !dream.finishedAt
-                ? ''
-                : dream.lastError
-                  ? t('agent.dreamCutShort')
-                  : t('agent.dreamNothing')}
-            {dream.lastError ? <span className="muted"> · {dream.lastError}</span> : null}
-          </span>
+          <Tooltip label={did.join(' · ')}>
+            <span>
+              {did.length > 0
+                ? did.join(' · ')
+                : !dream.finishedAt
+                  ? ''
+                  : dream.lastError
+                    ? t('agent.dreamCutShort')
+                    : t('agent.dreamNothing')}
+              {dream.lastError ? <span className="muted"> · {dream.lastError}</span> : null}
+            </span>
+          </Tooltip>
         )
       },
     },
@@ -2666,42 +2676,46 @@ function SchedulesCard() {
             }
             actions={
               <div className="row-actions">
-                <button
-                  type="button"
-                  className="icon-action"
-                  title={t('agent.editSchedule')}
-                  aria-label={`${schedule.name}: ${t('agent.editSchedule')}`}
-                  onClick={() => open(schedule)}
-                >
-                  <PencilIcon size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-action"
-                  title={t('agent.scheduleRun')}
-                  aria-label={`${schedule.name}: ${t('agent.scheduleRun')}`}
-                  onClick={() => void run(schedule)}
-                >
-                  <RefreshIcon size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-action"
-                  title={schedule.enabled ? t('agent.scheduleDisable') : t('agent.scheduleEnable')}
-                  aria-label={`${schedule.name}: ${schedule.enabled ? t('agent.scheduleDisable') : t('agent.scheduleEnable')}`}
-                  onClick={() => void toggle(schedule)}
-                >
-                  {schedule.enabled ? <ToggleOnIcon size={16} /> : <ToggleOffIcon size={16} />}
-                </button>
-                <button
-                  type="button"
-                  className="icon-action danger"
-                  title={t('common.remove')}
-                  aria-label={`${schedule.name}: ${t('common.remove')}`}
-                  onClick={() => void remove(schedule)}
-                >
-                  <TrashIcon size={16} />
-                </button>
+                <Tooltip label={t('agent.editSchedule')}>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    aria-label={`${schedule.name}: ${t('agent.editSchedule')}`}
+                    onClick={() => open(schedule)}
+                  >
+                    <PencilIcon size={16} />
+                  </button>
+                </Tooltip>
+                <Tooltip label={t('agent.scheduleRun')}>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    aria-label={`${schedule.name}: ${t('agent.scheduleRun')}`}
+                    onClick={() => void run(schedule)}
+                  >
+                    <RefreshIcon size={16} />
+                  </button>
+                </Tooltip>
+                <Tooltip label={schedule.enabled ? t('agent.scheduleDisable') : t('agent.scheduleEnable')}>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    aria-label={`${schedule.name}: ${schedule.enabled ? t('agent.scheduleDisable') : t('agent.scheduleEnable')}`}
+                    onClick={() => void toggle(schedule)}
+                  >
+                    {schedule.enabled ? <ToggleOnIcon size={16} /> : <ToggleOffIcon size={16} />}
+                  </button>
+                </Tooltip>
+                <Tooltip label={t('common.remove')}>
+                  <button
+                    type="button"
+                    className="icon-action danger"
+                    aria-label={`${schedule.name}: ${t('common.remove')}`}
+                    onClick={() => void remove(schedule)}
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </Tooltip>
               </div>
             }
           />

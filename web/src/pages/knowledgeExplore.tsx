@@ -11,6 +11,7 @@ import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
 import { FormDialog } from '../components/dialog'
 import { MinusIcon, PlusIcon, SparkIcon } from '../components/icons'
+import { Tooltip } from '../components/tooltip'
 
 // The whole graph, walked rather than read.
 //
@@ -1222,24 +1223,26 @@ export function KnowledgeExplorePage() {
       </div>
 
       <div className="graph-explore-zoom">
-        <button
-          type="button"
-          className="icon-button"
-          title={t('knowledge.explore.zoomIn')}
-          aria-label={t('knowledge.explore.zoomIn')}
-          onClick={() => zoomBy(ZOOM_STEP)}
-        >
-          +
-        </button>
-        <button
-          type="button"
-          className="icon-button"
-          title={t('knowledge.explore.zoomOut')}
-          aria-label={t('knowledge.explore.zoomOut')}
-          onClick={() => zoomBy(1 / ZOOM_STEP)}
-        >
-          −
-        </button>
+        <Tooltip label={t('knowledge.explore.zoomIn')}>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={t('knowledge.explore.zoomIn')}
+            onClick={() => zoomBy(ZOOM_STEP)}
+          >
+            +
+          </button>
+        </Tooltip>
+        <Tooltip label={t('knowledge.explore.zoomOut')}>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={t('knowledge.explore.zoomOut')}
+            onClick={() => zoomBy(1 / ZOOM_STEP)}
+          >
+            −
+          </button>
+        </Tooltip>
         {/* Fitting the drawing and filling the screen are two ways of framing
             the same picture, so they are one set, drawn as the dashboard
             draws a set of related buttons everywhere else. */}
@@ -1286,45 +1289,48 @@ export function KnowledgeExplorePage() {
             // Icons, with the words as their titles: four worded buttons
             // did not fit a phone's width and broke their own words.
             <>
-              <button
-                type="button"
-                className="icon-action graph-explore-dialog-action"
-                title={t('knowledge.explore.expand')}
-                aria-label={t('knowledge.explore.expand')}
-                onClick={() => {
-                  void expand(chosen.path)
-                  setSelected('')
-                }}
-              >
-                <PlusIcon size={18} />
-              </button>
-              <button
-                type="button"
-                className="icon-action graph-explore-dialog-action"
-                title={t('knowledge.explore.collapse')}
-                aria-label={t('knowledge.explore.collapse')}
-                onClick={() => {
-                  collapse(chosen.path)
-                  setSelected('')
-                }}
-              >
-                <MinusIcon size={18} />
-              </button>
+              <Tooltip label={t('knowledge.explore.expand')}>
+                <button
+                  type="button"
+                  className="icon-action graph-explore-dialog-action"
+                  aria-label={t('knowledge.explore.expand')}
+                  onClick={() => {
+                    void expand(chosen.path)
+                    setSelected('')
+                  }}
+                >
+                  <PlusIcon size={18} />
+                </button>
+              </Tooltip>
+              <Tooltip label={t('knowledge.explore.collapse')}>
+                <button
+                  type="button"
+                  className="icon-action graph-explore-dialog-action"
+                  aria-label={t('knowledge.explore.collapse')}
+                  onClick={() => {
+                    collapse(chosen.path)
+                    setSelected('')
+                  }}
+                >
+                  <MinusIcon size={18} />
+                </button>
+              </Tooltip>
               {/* The agent, pointed at this page: the drawer opens with a
                   chip for it, and the person asks it to dig deeper, or to
                   change what the page says and links to. */}
-              <button
-                type="button"
-                className="icon-action graph-explore-dialog-action"
-                title={t('knowledge.askAgent')}
-                aria-label={t('knowledge.askAgent')}
-                onClick={() => {
-                  setSelected('')
-                  if (!askAgentAbout({ path: chosen.path, name: chosen.name })) navigate('/settings/agent')
-                }}
-              >
-                <SparkIcon size={18} />
-              </button>
+              <Tooltip label={t('knowledge.askAgent')}>
+                <button
+                  type="button"
+                  className="icon-action graph-explore-dialog-action"
+                  aria-label={t('knowledge.askAgent')}
+                  onClick={() => {
+                    setSelected('')
+                    if (!askAgentAbout({ path: chosen.path, name: chosen.name })) navigate('/settings/agent')
+                  }}
+                >
+                  <SparkIcon size={18} />
+                </button>
+              </Tooltip>
             </>
           }
         >

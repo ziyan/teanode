@@ -775,15 +775,16 @@ function ProviderDialog({
                   aria-label={`${named}: ${t('agentSettings.pricingCaching')}`}
                   onChange={(event) => change({ cacheWrite: asPrice(event.target.value) })}
                 />
-                <button
-                  type="button"
-                  className="icon-action danger"
-                  aria-label={`${named}: ${t('common.remove')}`}
-                  title={t('common.remove')}
-                  onClick={() => set({ modelPricing: draft.modelPricing.filter((_, at) => at !== index) })}
-                >
-                  <TrashIcon size={14} />
-                </button>
+                <Tooltip label={t('common.remove')}>
+                  <button
+                    type="button"
+                    className="icon-action danger"
+                    aria-label={`${named}: ${t('common.remove')}`}
+                    onClick={() => set({ modelPricing: draft.modelPricing.filter((_, at) => at !== index) })}
+                  >
+                    <TrashIcon size={14} />
+                  </button>
+                </Tooltip>
               </div>
             )
           })}

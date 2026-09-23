@@ -3829,7 +3829,8 @@ a.button.primary:hover {
   text-decoration: none;
 }
 
-.segmented > * + * {
+.segmented > * + *,
+.segmented > * + .tooltip-anchor > * {
   border-left: 1px solid var(--border);
 }
 
@@ -8980,6 +8981,7 @@ main.content:has(> .knowledge-frame) {
 /* The two controls keep their place beside a name that has wrapped, rather
    than stretching down the side of it. */
 .knowledge-trail.list-toolbar > .icon-action,
+.knowledge-trail.list-toolbar > .tooltip-anchor > .icon-action,
 .knowledge-trail-levels {
   flex: none;
   align-self: flex-start;

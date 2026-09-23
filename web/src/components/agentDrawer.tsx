@@ -1095,19 +1095,25 @@ function ReferenceChips({
   return (
     <div className="agent-references">
       {references.map((reference, index) => (
-        <span
+        <Tooltip
           key={`${reference.itemId ?? reference.path ?? ''}-${index}`}
-          className="agent-reference-chip"
-          title={reference.from ?? reference.path ?? ''}
+          label={reference.from ?? reference.path ?? ''}
         >
-          <SparkIcon size={11} />{' '}
-          {reference.subject || reference.name || reference.path || reference.itemId || reference.threadId}
-          {onRemove && (
-            <button type="button" className="link" aria-label={t('agentDrawer.remove')} onClick={() => onRemove(index)}>
-              ×
-            </button>
-          )}
-        </span>
+          <span className="agent-reference-chip">
+            <SparkIcon size={11} />{' '}
+            {reference.subject || reference.name || reference.path || reference.itemId || reference.threadId}
+            {onRemove && (
+              <button
+                type="button"
+                className="link"
+                aria-label={t('agentDrawer.remove')}
+                onClick={() => onRemove(index)}
+              >
+                ×
+              </button>
+            )}
+          </span>
+        </Tooltip>
       ))}
     </div>
   )
@@ -1155,16 +1161,17 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
       <div className="agent-artifact-head">
         <SparkIcon size={11} />
         <span className="agent-artifact-title">{artifact.title}</span>
-        <a
-          className="icon-button agent-artifact-open"
-          href={framed ?? undefined}
-          target="_blank"
-          rel="noreferrer"
-          aria-label={t('agentDrawer.openArtifact')}
-          title={t('agentDrawer.openArtifact')}
-        >
-          <ExternalIcon size={14} />
-        </a>
+        <Tooltip label={t('agentDrawer.openArtifact')}>
+          <a
+            className="icon-button agent-artifact-open"
+            href={framed ?? undefined}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={t('agentDrawer.openArtifact')}
+          >
+            <ExternalIcon size={14} />
+          </a>
+        </Tooltip>
       </div>
       {artifact.kind === 'markdown' ? (
         <div className="agent-artifact-body">
@@ -1205,16 +1212,17 @@ function FileCard({ file }: { file: SharedFile }) {
         <PaperclipIcon size={11} />
         <span className="agent-artifact-title">{file.name}</span>
         <span className="muted">{formatBytes(file.size)}</span>
-        <a
-          className="icon-button agent-artifact-open"
-          href={href}
-          target="_blank"
-          rel="noreferrer"
-          aria-label={t('agentDrawer.openArtifact')}
-          title={t('agentDrawer.openArtifact')}
-        >
-          <ExternalIcon size={14} />
-        </a>
+        <Tooltip label={t('agentDrawer.openArtifact')}>
+          <a
+            className="icon-button agent-artifact-open"
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={t('agentDrawer.openArtifact')}
+          >
+            <ExternalIcon size={14} />
+          </a>
+        </Tooltip>
       </div>
       {media}
       {file.caption ? <div className="agent-file-caption">{file.caption}</div> : null}
@@ -2432,82 +2440,87 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           />
         </form>
       ) : (
-        <button
-          type="button"
-          className="agent-drawer-list-title"
-          role="menuitem"
-          title={conversation.summary || undefined}
-          onClick={() => void switchTo(conversation.id)}
-        >
-          <span className="agent-drawer-list-name">
-            {/* A conversation working toward something is
+        <Tooltip label={conversation.summary || ''}>
+          <button
+            type="button"
+            className="agent-drawer-list-title"
+            role="menuitem"
+            onClick={() => void switchTo(conversation.id)}
+          >
+            <span className="agent-drawer-list-name">
+              {/* A conversation working toward something is
               marked before its name, in the colour of
               where it stands: the accent while it works,
               the warning colour while it waits for the
               person, muted once it is met. */}
-            {conversation.goal ? (
-              <TargetIcon size={12} className={`agent-drawer-list-goal ${goalStateOf(conversation)}`} />
-            ) : null}
-            {conversation.kind === 'main' ? (
-              <>
-                <StarIcon size={12} /> {t('agentDrawer.main')}
-              </>
-            ) : (
-              conversation.title || t('agentDrawer.untitled')
-            )}
-          </span>
-          {/* When the conversation was last spoken in,
+              {conversation.goal ? (
+                <TargetIcon size={12} className={`agent-drawer-list-goal ${goalStateOf(conversation)}`} />
+              ) : null}
+              {conversation.kind === 'main' ? (
+                <>
+                  <StarIcon size={12} /> {t('agentDrawer.main')}
+                </>
+              ) : (
+                conversation.title || t('agentDrawer.untitled')
+              )}
+            </span>
+            {/* When the conversation was last spoken in,
             which is what tells one of these apart from the
             next; a goal's note belongs in the dialog, not
             here in place of the time. The summary is the
             row's tooltip. */}
-          <span className="agent-drawer-list-summary muted">
-            <RelativeTime value={conversation.lastAt} />
-          </span>
-        </button>
+            <span className="agent-drawer-list-summary muted">
+              <RelativeTime value={conversation.lastAt} />
+            </span>
+          </button>
+        </Tooltip>
       )}
       {conversation.kind !== 'main' && renaming?.id !== conversation.id && (
         <span className="agent-drawer-list-actions">
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={t('agentDrawer.makeMain')}
-            title={t('agentDrawer.makeMain')}
-            onClick={() => void makeMain(conversation.id)}
-          >
-            <StarIcon size={14} />
-          </button>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={t('agentDrawer.rename')}
-            title={t('agentDrawer.rename')}
-            onClick={() => setRenaming({ id: conversation.id, title: conversation.title })}
-          >
-            <PencilIcon size={14} />
-          </button>
+          <Tooltip label={t('agentDrawer.makeMain')}>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t('agentDrawer.makeMain')}
+              onClick={() => void makeMain(conversation.id)}
+            >
+              <StarIcon size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip label={t('agentDrawer.rename')}>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t('agentDrawer.rename')}
+              onClick={() => setRenaming({ id: conversation.id, title: conversation.title })}
+            >
+              <PencilIcon size={14} />
+            </button>
+          </Tooltip>
           {/* Not on the main conversation: the server refuses to archive
               it, and an action that is always refused is worse than none. */}
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={`${conversation.title || t('agentDrawer.untitled')}: ${
-              conversation.archivedAt ? t('agentDrawer.unarchive') : t('agentDrawer.archive')
-            }`}
-            title={conversation.archivedAt ? t('agentDrawer.unarchive') : t('agentDrawer.archive')}
-            onClick={() => void archiveConversation(conversation, !conversation.archivedAt)}
-          >
-            {conversation.archivedAt ? <InboxIcon size={14} /> : <ArchiveIcon size={14} />}
-          </button>
-          <button
-            type="button"
-            className="icon-button danger"
-            aria-label={t('agentDrawer.delete')}
-            title={t('agentDrawer.delete')}
-            onClick={() => setDeleting(conversation)}
-          >
-            <TrashIcon size={14} />
-          </button>
+          <Tooltip label={conversation.archivedAt ? t('agentDrawer.unarchive') : t('agentDrawer.archive')}>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={`${conversation.title || t('agentDrawer.untitled')}: ${
+                conversation.archivedAt ? t('agentDrawer.unarchive') : t('agentDrawer.archive')
+              }`}
+              onClick={() => void archiveConversation(conversation, !conversation.archivedAt)}
+            >
+              {conversation.archivedAt ? <InboxIcon size={14} /> : <ArchiveIcon size={14} />}
+            </button>
+          </Tooltip>
+          <Tooltip label={t('agentDrawer.delete')}>
+            <button
+              type="button"
+              className="icon-button danger"
+              aria-label={t('agentDrawer.delete')}
+              onClick={() => setDeleting(conversation)}
+            >
+              <TrashIcon size={14} />
+            </button>
+          </Tooltip>
         </span>
       )}
     </div>
@@ -2833,15 +2846,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   return (
     <>
       {!open && !standalone && (
-        <button
-          type="button"
-          className="agent-drawer-toggle"
-          aria-label={t('agentDrawer.open')}
-          title={t('agentDrawer.open')}
-          onClick={toggle}
-        >
-          <SparkIcon size={20} />
-        </button>
+        <Tooltip label={t('agentDrawer.open')}>
+          <button type="button" className="agent-drawer-toggle" aria-label={t('agentDrawer.open')} onClick={toggle}>
+            <SparkIcon size={20} />
+          </button>
+        </Tooltip>
       )}
       {open && (
         <aside
@@ -2944,26 +2953,23 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 and opens the list, and the way back needs a place of its
                 own. */}
             {!standalone && chatBox.placement && (
-              <button
-                type="button"
-                className="icon-button"
-                aria-label={t('agentDrawer.putBack')}
-                title={t('agentDrawer.putBack')}
-                onClick={chatBox.reset}
-              >
-                <RestartIcon size={14} />
-              </button>
+              <Tooltip label={t('agentDrawer.putBack')}>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={t('agentDrawer.putBack')}
+                  onClick={chatBox.reset}
+                >
+                  <RestartIcon size={14} />
+                </button>
+              </Tooltip>
             )}
             {!standalone && (
-              <button
-                type="button"
-                className="icon-button"
-                aria-label={t('agentDrawer.close')}
-                title={t('agentDrawer.close')}
-                onClick={toggle}
-              >
-                ×
-              </button>
+              <Tooltip label={t('agentDrawer.close')}>
+                <button type="button" className="icon-button" aria-label={t('agentDrawer.close')} onClick={toggle}>
+                  ×
+                </button>
+              </Tooltip>
             )}
           </div>
           {showingList && (
@@ -3108,34 +3114,33 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 lines[lines.length - 1]?.kind === 'assistant' &&
                 (lines[lines.length - 1] as { streaming?: boolean }).streaming
               ) && (
-                <div
-                  className="agent-line thinking"
-                  aria-label={t('agentDrawer.thinking')}
-                  title={t('agentDrawer.thinking')}
-                >
-                  <span className="agent-dots" aria-hidden="true">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                </div>
+                <Tooltip label={t('agentDrawer.thinking')}>
+                  <div className="agent-line thinking" aria-label={t('agentDrawer.thinking')}>
+                    <span className="agent-dots" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                  </div>
+                </Tooltip>
               )}
           </div>
           {!atBottom && lines.length > 0 && (
-            <button
-              type="button"
-              className="icon-button agent-drawer-jump"
-              aria-label={t('agentDrawer.jumpToEnd')}
-              title={t('agentDrawer.jumpToEnd')}
-              onClick={() => {
-                const element = transcript.current
-                if (element) element.scrollTop = element.scrollHeight
-                sticking.current = true
-                setAtBottom(true)
-              }}
-            >
-              <ArrowDownIcon size={16} />
-            </button>
+            <Tooltip label={t('agentDrawer.jumpToEnd')}>
+              <button
+                type="button"
+                className="icon-button agent-drawer-jump"
+                aria-label={t('agentDrawer.jumpToEnd')}
+                onClick={() => {
+                  const element = transcript.current
+                  if (element) element.scrollTop = element.scrollHeight
+                  sticking.current = true
+                  setAtBottom(true)
+                }}
+              >
+                <ArrowDownIcon size={16} />
+              </button>
+            </Tooltip>
           )}
           {/* The task list, in the place it has always been: above what
               the person is about to type, under the transcript. On a
@@ -3166,16 +3171,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                             />
                             <span>{todo.text}</span>
                           </label>
-                          <button
-                            type="button"
-                            className="icon-action danger"
-                            disabled={busy}
-                            title={t('agentDrawer.todoRemove')}
-                            aria-label={`${todo.text}: ${t('agentDrawer.todoRemove')}`}
-                            onClick={() => void removeTodo(todo)}
-                          >
-                            <TrashIcon size={12} />
-                          </button>
+                          <Tooltip label={t('agentDrawer.todoRemove')}>
+                            <button
+                              type="button"
+                              className="icon-action danger"
+                              disabled={busy}
+                              aria-label={`${todo.text}: ${t('agentDrawer.todoRemove')}`}
+                              onClick={() => void removeTodo(todo)}
+                            >
+                              <TrashIcon size={12} />
+                            </button>
+                          </Tooltip>
                         </>
                       )}
                     </li>
@@ -3197,15 +3203,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     aria-label={t('agentDrawer.todoAdd')}
                     disabled={addingTodo}
                   />
-                  <button
-                    type="submit"
-                    className="icon-action"
-                    disabled={addingTodo || todoDraft.trim().length === 0}
-                    title={t('agentDrawer.todoAdd')}
-                    aria-label={t('agentDrawer.todoAdd')}
-                  >
-                    <PlusIcon size={14} />
-                  </button>
+                  <Tooltip label={t('agentDrawer.todoAdd')}>
+                    <button
+                      type="submit"
+                      className="icon-action"
+                      disabled={addingTodo || todoDraft.trim().length === 0}
+                      aria-label={t('agentDrawer.todoAdd')}
+                    >
+                      <PlusIcon size={14} />
+                    </button>
+                  </Tooltip>
                 </form>
               )}
             </div>
@@ -3274,15 +3281,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 event.target.value = ''
               }}
             />
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={t('agentDrawer.attach')}
-              title={t('agentDrawer.attach')}
-              onClick={() => filePicker.current?.click()}
-            >
-              <PaperclipIcon size={16} />
-            </button>
+            <Tooltip label={t('agentDrawer.attach')}>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={t('agentDrawer.attach')}
+                onClick={() => filePicker.current?.click()}
+              >
+                <PaperclipIcon size={16} />
+              </button>
+            </Tooltip>
             <textarea
               ref={input}
               rows={1}
@@ -3314,25 +3322,27 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               }}
             />
             {running && (
-              <button
-                type="button"
-                className="icon-button agent-stop"
-                aria-label={t('agentDrawer.stop')}
-                title={t('agentDrawer.stop')}
-                onClick={() => void stop()}
-              >
-                ■
-              </button>
+              <Tooltip label={t('agentDrawer.stop')}>
+                <button
+                  type="button"
+                  className="icon-button agent-stop"
+                  aria-label={t('agentDrawer.stop')}
+                  onClick={() => void stop()}
+                >
+                  ■
+                </button>
+              </Tooltip>
             )}
-            <button
-              type="submit"
-              className="icon-button agent-send"
-              aria-label={t('agentDrawer.send')}
-              title={t('agentDrawer.send')}
-              disabled={!canSend || isReadingConversation}
-            >
-              <ArrowUpIcon size={16} />
-            </button>
+            <Tooltip label={t('agentDrawer.send')}>
+              <button
+                type="submit"
+                className="icon-button agent-send"
+                aria-label={t('agentDrawer.send')}
+                disabled={!canSend || isReadingConversation}
+              >
+                <ArrowUpIcon size={16} />
+              </button>
+            </Tooltip>
           </form>
           <p className="agent-drawer-note muted">{t('agentDrawer.mistakes')}</p>
           {dragging && <div className="agent-drawer-drop">{t('agentDrawer.dropHere')}</div>}

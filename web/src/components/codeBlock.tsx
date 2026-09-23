@@ -1,6 +1,7 @@
 import { ReactNode, useState } from 'react'
 
 import { CheckIcon, CopyIcon } from './icons'
+import { Tooltip } from './tooltip'
 import { useTranslation } from '../i18n/i18n'
 
 // A block of code as the agent's answers and its tools carry it: coloured
@@ -74,21 +75,22 @@ export function CodeBlock({ text, language, tidy }: { text: string; language?: s
   return (
     <div className="agent-code">
       {language ? <span className="agent-code-language muted">{language}</span> : null}
-      <button
-        type="button"
-        className="icon-button agent-code-copy"
-        aria-label={copied ? t('common.copied') : t('common.copy')}
-        title={copied ? t('common.copied') : t('common.copy')}
-        onClick={() => {
-          if (!navigator.clipboard) return
-          void navigator.clipboard.writeText(shown).then(() => {
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1500)
-          })
-        }}
-      >
-        {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
-      </button>
+      <Tooltip label={copied ? t('common.copied') : t('common.copy')}>
+        <button
+          type="button"
+          className="icon-button agent-code-copy"
+          aria-label={copied ? t('common.copied') : t('common.copy')}
+          onClick={() => {
+            if (!navigator.clipboard) return
+            void navigator.clipboard.writeText(shown).then(() => {
+              setCopied(true)
+              setTimeout(() => setCopied(false), 1500)
+            })
+          }}
+        >
+          {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+        </button>
+      </Tooltip>
       <pre>{json ? highlight(shown) : shown}</pre>
     </div>
   )
