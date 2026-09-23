@@ -53,7 +53,8 @@ func newTypeSafe(baseUrl, apiKey string, timeout time.Duration) (*typeSafe, erro
 	}
 	// Named on every request: the service used to fall back to its own
 	// default when none was given, and now refuses the request instead,
-	// which sent every decision to a language model.
+	// which sent every decision to a language model. The model configured
+	// for deciding replaces this one; see forModel.
 	client, err := decide.New(baseUrl, apiKey, typeSafeModels[0], timeout)
 	if err != nil {
 		return nil, err
@@ -73,6 +74,12 @@ func (self *typeSafe) ListModels(_ context.Context) ([]ModelInformation, error) 
 		models = append(models, ModelInformation{ID: name})
 	}
 	return models, nil
+}
+
+// forModel is this provider asking the model the configuration names for
+// deciding, so that a dated version an operator pinned is the one asked.
+func (self *typeSafe) forModel(model string) Decider {
+	return &typeSafe{client: self.client.WithModel(model)}
 }
 
 // Decide answers questions about one state.

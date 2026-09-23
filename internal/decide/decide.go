@@ -69,6 +69,18 @@ func New(baseUrl, apiKey, model string, timeout time.Duration) (*Client, error) 
 	}, nil
 }
 
+// WithModel is the same client asking a different model, or itself where
+// the model is empty.
+func (self *Client) WithModel(model string) *Client {
+	model = strings.TrimSpace(model)
+	if model == "" || model == self.model {
+		return self
+	}
+	copied := *self
+	copied.model = model
+	return &copied
+}
+
 // Question is one thing asked about the state, and the answers it may have.
 //
 // The three kinds are the three shapes a decision comes in: yes or no, one

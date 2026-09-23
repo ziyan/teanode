@@ -206,6 +206,11 @@ func (self *Registry) Deciding() (Decider, string, error) {
 	if !ok {
 		return nil, "", fmt.Errorf("llm: provider %q cannot decide", entry.configuration.Name)
 	}
+	// A decider asks one model per request, and the one it asks is the one
+	// configured here rather than whatever it would name by itself.
+	if bound, ok := decider.(interface{ forModel(string) Decider }); ok {
+		decider = bound.forModel(model)
+	}
 	return decider, model, nil
 }
 
