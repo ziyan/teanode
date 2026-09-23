@@ -141,6 +141,10 @@ type recordsFolder struct {
 	options            *Options
 	root               string
 	maxAttachmentBytes int64
+
+	// typed is the source type run in place of a records script, for a
+	// typed source.
+	typed *typedSource
 }
 
 // scanRecords reads a folder of JSON lines, one record a line, in the
@@ -155,10 +159,17 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 		options: options, root: root,
 		maxAttachmentBytes: maxAttachmentBytes(arguments.MaxAttachmentBytes),
 	}
+	if strings.EqualFold(strings.TrimSpace(arguments.Format), FormatTyped) {
+		typed, err := openTyped(root, arguments)
+		if err != nil {
+			return nil, err
+		}
+		folder.typed = typed
+	}
 	// Only on the first page of a pass. The later pages are the same
 	// pass still being read, and a script run again under them would
 	// move the ground the cursor stands on.
-	if arguments.After == "" {
+	if arguments.After == "" && folder.typed == nil {
 		// A file the cache holds is checked against its modification
 		// time, and what a records script prints has none: nothing on
 		// disk changes when the archive behind it does. The start of a
@@ -177,34 +188,44 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 	// script keeps reading the copies until they are taken away.
 	onDisk := map[string]bool{}
 	var files []string
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if entry.IsDir() {
-			// A script keeps its state and its downloads somewhere; a
-			// dot-directory is where that belongs and is not read.
-			if strings.HasPrefix(entry.Name(), ".") && path != root {
-				return filepath.SkipDir
+	var err error
+	if folder.typed == nil {
+		err = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if entry.IsDir() {
+				// A script keeps its state and its downloads somewhere; a
+				// dot-directory is where that belongs and is not read.
+				if strings.HasPrefix(entry.Name(), ".") && path != root {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if strings.HasPrefix(entry.Name(), ".") {
+				return nil
+			}
+			switch strings.ToLower(filepath.Ext(path)) {
+			case ".jsonl", ".ndjson":
+				relative, _ := filepath.Rel(root, path)
+				relative = filepath.ToSlash(relative)
+				onDisk[relative] = true
+				files = append(files, relative)
 			}
 			return nil
-		}
-		if strings.HasPrefix(entry.Name(), ".") {
-			return nil
-		}
-		switch strings.ToLower(filepath.Ext(path)) {
-		case ".jsonl", ".ndjson":
-			relative, _ := filepath.Rel(root, path)
-			relative = filepath.ToSlash(relative)
-			onDisk[relative] = true
-			files = append(files, relative)
-		}
-		return nil
-	})
+		})
+	}
 	if err != nil {
 		return nil, err
 	}
-	named, err := recordsScriptFiles(root)
+	var named []string
+	if folder.typed != nil {
+		// The first page of a pass lists; the pages after it read what
+		// the first page listed, so the ground under the cursor holds.
+		named, err = folder.typed.names(ctx, arguments.After == "")
+	} else {
+		named, err = recordsScriptFiles(root)
+	}
 	if err != nil {
 		// The listing is the folder, the way a refresh is what fills it,
 		// so a script that cannot say what it holds fails the pass and
@@ -280,6 +301,7 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 				// Mid-file: the cursor names the last entry sent, and the
 				// next page starts with the one after it.
 				result.Next = result.Entries[len(result.Entries)-1].ExternalID
+				result.Unfinished = folder.typed != nil && folder.typed.unfinished
 				return result, nil
 			}
 			// A file a record came with that this program will not hand
@@ -299,6 +321,7 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 			result.Entries = append(result.Entries, entry)
 		}
 	}
+	result.Unfinished = folder.typed != nil && folder.typed.unfinished
 	return result, nil
 }
 
@@ -554,6 +577,9 @@ func recordEntries(ctx context.Context, folder *recordsFolder, relative string, 
 
 // readRecordsAnywhere is the one file, wherever it is kept.
 func readRecordsAnywhere(ctx context.Context, folder *recordsFolder, relative string, fromScript bool) ([]ScanEntry, error) {
+	if fromScript && folder.typed != nil {
+		return folder.typed.read(ctx, folder, relative)
+	}
 	if fromScript {
 		return readRecordsScript(ctx, folder, relative)
 	}

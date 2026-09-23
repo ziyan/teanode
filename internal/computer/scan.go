@@ -157,8 +157,19 @@ type ScanArguments struct {
 	// Root is the directory to read.
 	Root string `json:"root"`
 
-	// Format is how to read it: files (the default), journal, records.
+	// Format is how to read it: files (the default), journal, records,
+	// typed.
 	Format string `json:"format,omitempty"`
+
+	// SourceType is the source type's file, for the typed format, with
+	// Settings the source's values for it and Secrets the ones it
+	// declares. SourceKey names the directory under the person's cache
+	// the type keeps its state in; Root is not used for a typed source,
+	// so a request cannot point its writing anywhere else.
+	SourceType string            `json:"sourceType,omitempty"`
+	Settings   map[string]any    `json:"settings,omitempty"`
+	Secrets    map[string]string `json:"secrets,omitempty"`
+	SourceKey  string            `json:"sourceKey,omitempty"`
 
 	Include []string `json:"include,omitempty"`
 	Exclude []string `json:"exclude,omitempty"`
@@ -323,6 +334,11 @@ type ScanResult struct {
 	// has to be able to see it first.
 	CheckoutsKeptToProfile int `json:"checkoutsKeptToProfile,omitempty"`
 	FilesKeptToProfile     int `json:"filesKeptToProfile,omitempty"`
+
+	// Unfinished says a typed source's reading ran out of time part way:
+	// what it read is here, and the pass this page belongs to must not
+	// delete what it did not see, since the reading goes on next pass.
+	Unfinished bool `json:"unfinished,omitempty"`
 }
 
 // RepositoryProfile is what git says about a checkout: the first facts of
@@ -373,6 +389,15 @@ type ScanAuthor struct {
 // RunScan reads a tree and answers with a page of what it found.
 func RunScan(ctx context.Context, options *Options, arguments *ScanArguments) (*ScanResult, error) {
 	options = withDefaults(options)
+	if strings.EqualFold(strings.TrimSpace(arguments.Format), FormatTyped) {
+		if !sourceKeyPattern.MatchString(arguments.SourceKey) {
+			return nil, fmt.Errorf("a typed source needs a key naming its directory")
+		}
+		arguments.Root = typedRootFor(options, arguments.SourceKey)
+		if err := os.MkdirAll(arguments.Root, 0o700); err != nil {
+			return nil, err
+		}
+	}
 	root, err := scanRoot(options, arguments.Root)
 	if err != nil {
 		return nil, err
@@ -400,7 +425,7 @@ func RunScan(ctx context.Context, options *Options, arguments *ScanArguments) (*
 		return scanFiles(ctx, root, arguments, most)
 	case FormatJournal:
 		return scanJournal(root, arguments, most)
-	case FormatRecords:
+	case FormatRecords, FormatTyped:
 		return scanRecords(ctx, options, root, arguments, most)
 	}
 	return nil, fmt.Errorf("%q is not a shape this program can read", arguments.Format)
