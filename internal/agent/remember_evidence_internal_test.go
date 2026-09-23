@@ -7,7 +7,8 @@ import "testing"
 func TestAQuoteIsMatchedByItsWords(t *testing.T) {
 	text := "## Changes\n\n- Stop the `capacity` getter from allocating the **staging** buffer, it is not needed.\n" +
 		"- The count is now fetched on demand.\n\nverifier = 32 random bytes\nticket = base64url(verifier)\n" +
-		"会議は来週の火曜日に延期されました。"
+		"会議は来週の火曜日に延期されました。\n" +
+		"It said call(args...) and wait... then go. A cafe\u0301 au lait."
 	for _, check := range []struct {
 		quote  string
 		holds  bool
@@ -21,6 +22,9 @@ func TestAQuoteIsMatchedByItsWords(t *testing.T) {
 		{"fetched on demand... Stop the capacity getter", false, "pieces out of order"},
 		{"Stop... buffer", false, "a splice of single words"},
 		{"会議は再来週", false, "characters that are not there"},
+		{"call(args...) and wait... then go", true, "a quote whose own text says ..."},
+		{"会議...火曜", false, "a splice of two-character scraps"},
+		{"café au lait", true, "an accent written as its own mark in the text"},
 	} {
 		if holds := quoteOccursIn(check.quote, text); holds != check.holds {
 			t.Errorf("%s: %q held %v", check.reason, check.quote, holds)

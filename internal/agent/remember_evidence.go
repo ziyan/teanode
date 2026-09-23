@@ -5,6 +5,8 @@ import (
 	"strings"
 	"unicode"
 
+	normalization "golang.org/x/text/unicode/norm"
+
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -50,35 +52,39 @@ func evidenceLikeness(text string) string {
 // markdown, and a model quoting it drops the backticks and the asterisks
 // and closes a sentence with a full stop where the text had a comma; none
 // of that is a word it made up. A quote the model shortened with "..."
-// holds when each piece occurs, in the order given, and each is at least
-// evidenceSpliceWords long, so that a splice cannot be assembled out of
-// single words found anywhere.
+// holds when each piece occurs, in the order given, and each is long
+// enough (evidenceSpliceWords words, evidenceSpliceLetters letters) that
+// a splice cannot be assembled out of scraps found anywhere. The whole
+// quote is tried first, since "..." is also in text that says it.
 func quoteOccursIn(quote, text string) bool {
+	whole := evidenceWords(quote)
+	if len(whole) == 0 {
+		return true
+	}
+	body := " " + strings.Join(evidenceWords(text), " ") + " "
+	if strings.Contains(body, " "+strings.Join(whole, " ")+" ") {
+		return true
+	}
 	pieces := evidencePieces.Split(quote, -1)
-	spliced := len(pieces) > 1
-	var wanted []string
+	if len(pieces) < 2 {
+		return false
+	}
+	at := 0
 	for _, piece := range pieces {
 		words := evidenceWords(piece)
 		if len(words) == 0 {
 			continue
 		}
-		if spliced && len(words) < evidenceSpliceWords {
+		if len(words) < evidenceSpliceWords || len([]rune(strings.Join(words, ""))) < evidenceSpliceLetters {
 			return false
 		}
-		wanted = append(wanted, " "+strings.Join(words, " ")+" ")
-	}
-	if len(wanted) == 0 {
-		return true
-	}
-	body := " " + strings.Join(evidenceWords(text), " ") + " "
-	at := 0
-	for _, piece := range wanted {
-		found := strings.Index(body[at:], piece)
+		wanted := " " + strings.Join(words, " ") + " "
+		found := strings.Index(body[at:], wanted)
 		if found < 0 {
 			return false
 		}
 		// The space closing this piece may open the next.
-		at += found + len(piece) - 1
+		at += found + len(wanted) - 1
 	}
 	return true
 }
@@ -86,9 +92,13 @@ func quoteOccursIn(quote, text string) bool {
 // evidencePieces is where a model marks that it left words out of a quote.
 var evidencePieces = regexp.MustCompile(`\s*(?:\.\.\.|…|\[\.\.\.\])\s*`)
 
-// evidenceSpliceWords is how long each piece of a shortened quote has to
-// be for the quote to count.
-const evidenceSpliceWords = 2
+// How long each piece of a shortened quote has to be for the quote to
+// count: in words, and in letters, since a character of Japanese or
+// Chinese is a word of its own and two of them occur almost anywhere.
+const (
+	evidenceSpliceWords   = 2
+	evidenceSpliceLetters = 4
+)
 
 // evidenceWords is text as the words it says, lowercased, with everything
 // between them dropped: punctuation, markup, spacing. A character of a
@@ -103,12 +113,14 @@ func evidenceWords(text string) []string {
 			word.Reset()
 		}
 	}
-	for _, letter := range strings.ToLower(text) {
+	// One form for each letter: an accent written as its own mark after
+	// the letter and one written into it are the same word.
+	for _, letter := range strings.ToLower(normalization.NFKC.String(text)) {
 		switch {
 		case unicode.In(letter, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul):
 			flush()
 			words = append(words, string(letter))
-		case unicode.IsLetter(letter) || unicode.IsDigit(letter):
+		case unicode.IsLetter(letter) || unicode.IsDigit(letter) || unicode.IsMark(letter):
 			word.WriteRune(letter)
 		default:
 			flush()
