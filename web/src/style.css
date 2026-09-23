@@ -4000,7 +4000,8 @@ label.check-list-item {
 .check-list-item input {
   margin: 0;
 }
-.check-list-item input[type='checkbox'] {
+.check-list-item input[type='checkbox'],
+.check-list-item input[type='radio'] {
   width: 16px;
   height: 16px;
   /* Down onto the first line's centre, since the row is aligned to its top. */
