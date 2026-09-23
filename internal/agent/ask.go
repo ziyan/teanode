@@ -306,6 +306,11 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 	}
 	self.latest[settings.Conversation.ID] = run
 	self.runsMutex.Unlock()
+	// The person writing is what lets ended background commands wake the
+	// conversation again.
+	if !settings.Headless && settings.Surface != backgroundSurface {
+		self.personTookTurn(settings.Conversation.ID)
+	}
 	self.waitGroup.Add(1)
 	// A turn is the model's own instructions carried out against a stranger's
 	// mail, over tools that reach servers this program did not write. It is
@@ -1399,7 +1404,11 @@ func (self *AskRun) situation(ctx context.Context, configuration *config.Configu
 	} else {
 		lines = append(lines, "Search is by keyword only.")
 	}
-	if settings.Surface != "" {
+	switch settings.Surface {
+	case "":
+	case backgroundSurface:
+		lines = append(lines, "This turn was woken by a command you left running in the background, not by the person; what you say is read in the conversation when they look.")
+	default:
 		lines = append(lines, "You are talking through the "+settings.Surface+".")
 	}
 	// The goal on this conversation, where there is one. Rebuilt each

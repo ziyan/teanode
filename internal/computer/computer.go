@@ -266,6 +266,20 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 	for {
 		select {
 		case request := <-requests:
+			// Reading about background commands is answered from memory
+			// and takes no slot: the person watching one should not be
+			// told to wait because four builds are running.
+			if strings.HasPrefix(request.Action, "background_") {
+				go func() {
+					data, err := handleSafely(ctx, options, request.Action, request.Args, held, background, output, ended)
+					answer := message{Type: "result", ID: request.ID, OK: err == nil, Data: data}
+					if err != nil {
+						answer.Error = err.Error()
+					}
+					_ = write(answer)
+				}()
+				continue
+			}
 			// A few requests run at once; one more than that is answered
 			// at once rather than queued behind them, so the loop goes on
 			// pinging and reading whatever the requests do.

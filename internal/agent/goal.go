@@ -481,7 +481,7 @@ func firstWords(text string, characters int) string {
 // that answer as part of the conversation. A turn of the agent's own never
 // resumes anything -- only the person can.
 func (self *AskRun) resumeGoalAfterPerson() {
-	if self.settings.Headless {
+	if self.settings.Headless || self.settings.Surface == backgroundSurface {
 		return
 	}
 	conversationId := self.settings.Conversation.ID
