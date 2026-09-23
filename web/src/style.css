@@ -5279,9 +5279,9 @@ main.content:has(> .mailbox-frame) {
   flex-wrap: wrap;
 }
 
-/* The conversation's task list, between the transcript and the box the
-   person types in. The list scrolls when it is long; the line that adds to
-   it does not, so it stays in reach of an item near the top. */
+/* The agent's task list, between the transcript and the box the person
+   types in: read, not changed. One line an item, a long one cut with an
+   ellipsis and whole in its tooltip; the list scrolls when it is long. */
 .agent-drawer-todo {
   flex: none;
   padding: 6px 12px;
@@ -5299,50 +5299,42 @@ main.content:has(> .mailbox-frame) {
 
 .agent-drawer-todo li {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 20px;
 }
 
-.agent-drawer-todo li.done {
+/* The mark sits at the top of its line: a ring for a step still open, a
+   tick in a filled ring for one done. */
+.agent-drawer-todo-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border: 1.5px solid var(--muted);
+  border-radius: 50%;
+  color: var(--background);
+}
+
+.agent-drawer-todo li.done .agent-drawer-todo-mark {
+  border-color: var(--muted);
+  background: var(--muted);
+}
+
+.agent-drawer-todo-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.agent-drawer-todo li.done .agent-drawer-todo-text {
   color: var(--muted);
   text-decoration: line-through;
-}
-
-/* The box and its words are one target, at the size of the line rather
-   than of a settings form's label. */
-.agent-drawer-todo label.checkbox {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  gap: 6px;
-  font-size: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-
-.agent-drawer-todo label.checkbox input {
-  flex: none;
-}
-
-.agent-drawer-todo .icon-action {
-  width: 22px;
-  height: 22px;
-  flex: none;
-}
-
-.agent-drawer-todo-add {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.agent-drawer-todo-add input {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  padding: 3px 6px;
-  font-size: inherit;
 }
 
 /* The marks in the head for what of the person's own is attached. */

@@ -201,15 +201,6 @@ const (
 		SetAgentMainConversation(conversationId: $conversationId) ` + conversationFields + `
 	}`
 	DocumentListAgentTools = `query { ListAgentTools { name family risk description confirms core } }`
-	DocumentAddAgentTodo   = `mutation ($conversationId: String!, $text: String!) {
-		AddAgentTodo(conversationId: $conversationId, text: $text) ` + todoFields + `
-	}`
-	DocumentSetAgentTodo = `mutation ($conversationId: String!, $todoId: String!, $text: String, $done: Boolean) {
-		SetAgentTodo(conversationId: $conversationId, todoId: $todoId, text: $text, done: $done) ` + todoFields + `
-	}`
-	DocumentRemoveAgentTodo = `mutation ($conversationId: String!, $todoId: String!) {
-		RemoveAgentTodo(conversationId: $conversationId, todoId: $todoId)
-	}`
 )
 
 // AskAgent says something to the agent and returns the run to follow. A
@@ -471,44 +462,6 @@ func UpdateAgentConversation(ctx context.Context, connection *Client, conversati
 		return nil, err
 	}
 	return result.UpdateAgentConversation, nil
-}
-
-// AddAgentTodo puts an item on a conversation's task list.
-func AddAgentTodo(ctx context.Context, connection *Client, conversationId, text string) (*AgentTodo, error) {
-	var result struct {
-		AddAgentTodo *AgentTodo `json:"AddAgentTodo"`
-	}
-	if err := connection.Execute(ctx, DocumentAddAgentTodo, map[string]any{"conversationId": conversationId, "text": text}, &result); err != nil {
-		return nil, err
-	}
-	return result.AddAgentTodo, nil
-}
-
-// SetAgentTodo marks one done or open again, or rewrites its words.
-// Nothing given leaves the item as it stands.
-func SetAgentTodo(ctx context.Context, connection *Client, conversationId, todoId, text string, done *bool) (*AgentTodo, error) {
-	var result struct {
-		SetAgentTodo *AgentTodo `json:"SetAgentTodo"`
-	}
-	variables := map[string]any{"conversationId": conversationId, "todoId": todoId}
-	if text != "" {
-		variables["text"] = text
-	}
-	if done != nil {
-		variables["done"] = *done
-	}
-	if err := connection.Execute(ctx, DocumentSetAgentTodo, variables, &result); err != nil {
-		return nil, err
-	}
-	return result.SetAgentTodo, nil
-}
-
-// RemoveAgentTodo takes an item off the list.
-func RemoveAgentTodo(ctx context.Context, connection *Client, conversationId, todoId string) error {
-	var result struct {
-		RemoveAgentTodo bool `json:"RemoveAgentTodo"`
-	}
-	return connection.Execute(ctx, DocumentRemoveAgentTodo, map[string]any{"conversationId": conversationId, "todoId": todoId}, &result)
 }
 
 // ListAgentTools is the catalog as the caller sees it.

@@ -154,27 +154,18 @@ func TestTheTranscriptPrintsTheTaskList(test *testing.T) {
 func TestTheConversationTodoCommandsAreWired(t *testing.T) {
 	t.Parallel()
 
+	// The list is the agent's own: a person reads it and does not change
+	// it, so list is the only verb there is.
 	todo := commandNamed(t, commandNamed(t, NewAgentCommand(), "conversation"), "todo")
-	for _, verb := range []string{"list", "add", "done", "reopen", "remove"} {
-		command := commandNamed(t, todo, verb)
-		if flagNamed(command, "json") == nil {
-			t.Errorf("conversation todo %s offers --json, as every other listing does", verb)
-		}
+	list := commandNamed(t, todo, "list")
+	if flagNamed(list, "json") == nil {
+		t.Errorf("conversation todo list offers --json, as every other listing does")
 	}
-
-	// add takes the conversation and the words; the rest take the
-	// conversation and the item. Naming one without the other is the
-	// mistake worth catching, because a conversation identifier and an
-	// item identifier look alike.
 	for _, verb := range []string{"add", "done", "reopen", "remove"} {
-		command := commandNamed(t, todo, verb)
-		err := command.Run(t.Context(), []string{verb, "conversation-id"})
-		if err == nil {
-			t.Errorf("conversation todo %s with nothing but a conversation is refused", verb)
-			continue
-		}
-		if !strings.Contains(err.Error(), "conversation todo "+verb) {
-			t.Errorf("and the refusal shows the whole command: %s", err)
+		for _, command := range todo.Commands {
+			if command.Name == verb {
+				t.Errorf("conversation todo %s changes a list only the agent keeps", verb)
+			}
 		}
 	}
 }

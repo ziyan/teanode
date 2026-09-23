@@ -5,6 +5,7 @@ package askuser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -28,27 +29,30 @@ func init() {
 			},
 			{
 				Name: "todo", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "This conversation's task list, for work in several steps: add items, mark them done, reopen or remove them, list them. Shown to you every round, so you keep your place.",
+				Description: "This conversation's task list: yours, for work in several steps, to keep your place and show the person your progress; they can see it but not change it. `batch` makes every change in one call -- add the steps when you start, complete each as you finish it, update or delete one that changed; `list` shows it, `prune` clears the finished ones. Shown to you every round.",
 				Parameters: tools.Object(map[string]any{
-					"action": tools.EnumProperty("what to do", "add", "done", "reopen", "remove", "list"),
-					"text":   tools.StringProperty("for add: the item"),
-					"id":     tools.StringProperty("for done, reopen and remove: the item"),
+					"action": tools.EnumProperty("what to do", "batch", "list", "prune"),
+					"items": map[string]any{
+						"type": "array", "minItems": 1, "maxItems": todoBatchMost,
+						"description": "for batch: the changes, in order",
+						"items": tools.Object(map[string]any{
+							"op":   tools.EnumProperty("the change", "add", "update", "complete", "reopen", "delete"),
+							"id":   tools.StringProperty("for update, complete, reopen and delete: the item"),
+							"text": tools.StringProperty("for add and update: the step, short, in one line"),
+						}, "op"),
+					},
 				}, "action"),
 				Preview: tools.PreviewOf(func(call struct {
-					Action string `json:"action"`
-					Text   string `json:"text"`
+					Action string          `json:"action"`
+					Items  []todoBatchItem `json:"items"`
 				}) string {
 					switch call.Action {
-					case "add":
-						return "Add " + tools.Named(call.Text, "something") + " to what you are keeping track of"
-					case "done":
-						return "Mark one of your to-dos done"
-					case "remove":
-						return "Take one off your to-do list"
-					case "clear":
-						return "Clear your to-do list"
+					case "batch":
+						return describeTodoBatch(call.Items)
+					case "prune":
+						return "Clear the finished steps"
 					}
-					return "Change your to-do list"
+					return "Look at the steps"
 				}),
 				Run:     runTodo,
 				Overlay: todoOverlay,
@@ -84,10 +88,42 @@ func runAskUser(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	return tools.JSONResult(map[string]any{"answer": answer})
 }
 
+// todoBatchMost is the most changes one batch makes.
+const todoBatchMost = 50
+
+// todoTextMost is the longest a step may be: a line, not a paragraph.
+const todoTextMost = 200
+
+type todoBatchItem struct {
+	Op   string `json:"op"`
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
 type todoArguments struct {
-	Action string `json:"action"`
-	Text   string `json:"text"`
-	ID     string `json:"id"`
+	Action string          `json:"action"`
+	Items  []todoBatchItem `json:"items"`
+}
+
+// describeTodoBatch says what a batch does, for the line a person sees.
+func describeTodoBatch(items []todoBatchItem) string {
+	counts := map[string]int{}
+	for _, item := range items {
+		counts[item.Op]++
+	}
+	var parts []string
+	for _, op := range []string{"add", "complete", "update", "reopen", "delete"} {
+		if counts[op] == 0 {
+			continue
+		}
+		word := map[string]string{"add": "add", "complete": "finish", "update": "change", "reopen": "reopen", "delete": "drop"}[op]
+		parts = append(parts, fmt.Sprintf("%s %d", word, counts[op]))
+	}
+	if len(parts) == 0 {
+		return "Update the steps"
+	}
+	sentence := strings.Join(parts, ", ")
+	return strings.ToUpper(sentence[:1]) + sentence[1:] + " step" + map[bool]string{true: "", false: "s"}[len(items) == 1]
 }
 
 func runTodo(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -107,7 +143,7 @@ func runTodo(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if conversationId == "" {
 		return nil, fmt.Errorf("a to-do list belongs to a conversation, and this call is not part of one")
 	}
-	list := func() (*tools.Result, error) {
+	listed := func(extra map[string]any) (*tools.Result, error) {
 		var todos []*models.AgentTodo
 		if err := database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 			todos, err = tx.ListAgentTodos(conversationId)
@@ -116,53 +152,127 @@ func runTodo(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			return nil, err
 		}
 		rows := make([]map[string]any, 0, len(todos))
+		open := 0
 		for _, todo := range todos {
+			if todo.DoneAt == nil {
+				open++
+			}
 			rows = append(rows, map[string]any{"id": todo.ID, "text": todo.Text, "done": todo.DoneAt != nil})
 		}
-		return tools.JSONResult(map[string]any{"todo": rows})
+		answer := map[string]any{"todo": rows, "open": open, "done": len(todos) - open}
+		for key, value := range extra {
+			answer[key] = value
+		}
+		return tools.JSONResult(answer)
 	}
 	switch arguments.Action {
-	case "add":
-		if strings.TrimSpace(arguments.Text) == "" {
-			return nil, fmt.Errorf("an item needs text")
-		}
+	case "", "list":
+		return listed(nil)
+	case "prune":
+		pruned := 0
 		if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
-			_, err := tx.CreateAgentTodo(&models.AgentTodo{ConversationID: conversationId, Text: strings.TrimSpace(arguments.Text)})
-			return err
+			todos, err := tx.ListAgentTodos(conversationId)
+			if err != nil {
+				return err
+			}
+			for _, todo := range todos {
+				if todo.DoneAt == nil {
+					continue
+				}
+				if err := tx.DeleteAgentTodo(conversationId, todo.ID); err != nil {
+					return err
+				}
+				pruned++
+			}
+			return nil
 		}); err != nil {
 			return nil, err
 		}
-		return list()
-	case "done", "reopen":
-		if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
-			_, err := tx.UpdateAgentTodo(arguments.ID, func(todo *models.AgentTodo) error {
+		return listed(map[string]any{"pruned": pruned})
+	case "batch":
+		if len(arguments.Items) == 0 {
+			return nil, fmt.Errorf("a batch needs at least one change")
+		}
+		if len(arguments.Items) > todoBatchMost {
+			return nil, fmt.Errorf("a batch makes at most %d changes", todoBatchMost)
+		}
+		// Each change is its own: one that is refused says why and the
+		// rest still happen, as the result shows item by item.
+		results := make([]map[string]any, 0, len(arguments.Items))
+		failed := 0
+		for index, item := range arguments.Items {
+			id, err := applyTodo(ctx, database, conversationId, item)
+			result := map[string]any{"index": index, "op": item.Op}
+			if id != "" {
+				result["id"] = id
+			}
+			if err != nil {
+				result["error"] = err.Error()
+				failed++
+			}
+			results = append(results, result)
+		}
+		return listed(map[string]any{"results": results, "succeeded": len(results) - failed, "failed": failed})
+	}
+	return nil, fmt.Errorf("%q is not an action of todo: batch, list or prune", arguments.Action)
+}
+
+// applyTodo makes one change of a batch, and answers the item it touched.
+func applyTodo(ctx context.Context, database db.Database, conversationId string, item todoBatchItem) (string, error) {
+	text := strings.Join(strings.Fields(item.Text), " ")
+	if len([]rune(text)) > todoTextMost {
+		return "", fmt.Errorf("a step is a line, at most %d characters", todoTextMost)
+	}
+	var touched string
+	err := database.TransactionContext(ctx, func(tx db.Transaction) error {
+		switch item.Op {
+		case "add":
+			if text == "" {
+				return fmt.Errorf("a step needs text")
+			}
+			created, err := tx.CreateAgentTodo(&models.AgentTodo{ConversationID: conversationId, Text: text})
+			if err != nil {
+				return err
+			}
+			touched = created.ID
+			return nil
+		case "update", "complete", "reopen":
+			if item.Op == "update" && text == "" {
+				return fmt.Errorf("an update needs the new text")
+			}
+			updated, err := tx.UpdateAgentTodo(item.ID, func(todo *models.AgentTodo) error {
 				if todo.ConversationID != conversationId {
-					return fmt.Errorf("there is no item %q", arguments.ID)
+					return fmt.Errorf("there is no step %q", item.ID)
 				}
-				if arguments.Action == "done" {
+				switch item.Op {
+				case "update":
+					todo.Text = text
+				case "complete":
 					now := time.Now()
 					todo.DoneAt = &now
-				} else {
+				case "reopen":
 					todo.DoneAt = nil
 				}
 				return nil
 			})
-			return err
-		}); err != nil {
-			return nil, err
+			if err != nil {
+				return err
+			}
+			if updated == nil {
+				return fmt.Errorf("there is no step %q", item.ID)
+			}
+			touched = updated.ID
+			return nil
+		case "delete":
+			touched = item.ID
+			return tx.DeleteAgentTodo(conversationId, item.ID)
 		}
-		return list()
-	case "remove":
-		if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
-			return tx.DeleteAgentTodo(conversationId, arguments.ID)
-		}); err != nil {
-			return nil, err
-		}
-		return list()
-	case "", "list":
-		return list()
+		return fmt.Errorf("%q is not a change: add, update, complete, reopen or delete", item.Op)
+	})
+	if errors.Is(err, db.ErrNotFound) {
+		return "", fmt.Errorf("there is no step %q", item.ID)
 	}
-	return nil, fmt.Errorf("%q is not an action of todo", arguments.Action)
+	return touched, err
 }
 
 // todoOverlay is the open items, oldest first, capped, with counts.

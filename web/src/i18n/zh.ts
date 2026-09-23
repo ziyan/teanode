@@ -1042,6 +1042,9 @@ export const zh: Catalog = {
   'agent.corrections': '从你这里学到的',
   'agent.correctionsHint':
     '从你自己的操作记录下来的——你归到别处的邮件、你没让发出的回复——并在一段时间内作为例子提供给下一次处理。',
+  'agentDrawer.todoTitle': "智能体的步骤",
+  'agentDrawer.todoDone': '已完成',
+  'agentDrawer.todoOpen': '待完成',
   'agentDrawer.open': '和代理对话',
   'agentDrawer.tabAttached': '已附加你的标签页：{title}',
   'agentDrawer.framedNotSignedIn': '此抽屉由 TeaNode 浏览器扩展登录；请通过扩展的按钮打开它。',
@@ -1105,12 +1108,6 @@ export const zh: Catalog = {
   'agentDrawer.uploading': '上传中…',
   'agentDrawer.dropHere': '将文件拖放到这里',
   'agentDrawer.filesOnly': '（文件）',
-  'agentDrawer.todoAdd': '加入清单',
-  'agentDrawer.todoPlaceholder': '要做的事…',
-  'agentDrawer.todoRemove': '从清单移除',
-  'agentDrawer.todoAdded': '已加入清单。',
-  'agentDrawer.todoRemoved': '已从清单移除。',
-  'agentDrawer.todoFailed': '无法修改清单。',
   'agentDrawer.goal.set': '设定目标',
   'agentDrawer.goal.hint':
     '助手应持续努力的方向，一句话。它会自行进行回合，直到达成或你清除为止；也可以直接在对话中告诉它。',
