@@ -103,6 +103,9 @@ const PasskeysPage = lazyPage(async () => ({
 const TokensPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/settings/tokens')).TokensPage,
 }))
+const AppsPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/settings/apps')).AppsPage,
+}))
 const SessionsPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/settings/sessions')).SessionsPage,
 }))
@@ -406,6 +409,7 @@ export function App() {
                     <Route path="/settings/password" element={<ChangePasswordPage username={session.username} />} />
                     <Route path="/settings/passkeys" element={<PasskeysPage />} />
                     <Route path="/settings/tokens" element={<TokensPage />} />
+                    <Route path="/settings/apps" element={<AppsPage />} />
                     <Route path="/settings/sessions" element={<SessionsPage onSignedOut={refresh} />} />
 
                     {/* Where these used to live. Somebody's bookmark should not

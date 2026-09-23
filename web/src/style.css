@@ -1534,6 +1534,9 @@ button.link {
   padding: 0;
   font-weight: inherit;
   text-decoration: underline;
+  /* A button centers its text, which only shows once it wraps: a long
+     name in a list then sat centered under the short ones beside it. */
+  text-align: start;
 }
 
 button.link:hover:not(:disabled) {
@@ -1575,6 +1578,12 @@ textarea {
   background: var(--surface);
   color: var(--text);
   width: 100%;
+}
+
+/* A text box is as wide as its row, and dragged wider it spills out of the
+   form it sits in; only its height is the reader's to change. */
+textarea {
+  resize: vertical;
 }
 
 input:hover:not(:disabled),
@@ -3823,7 +3832,8 @@ a.button.primary:hover {
   text-decoration: none;
 }
 
-.segmented > * + * {
+.segmented > * + *,
+.segmented > * + .tooltip-anchor > * {
   border-left: 1px solid var(--border);
 }
 
@@ -5338,9 +5348,6 @@ main.content:has(> .mailbox-frame) {
 /* The day's budget as a ring in the drawer's head, and as a bar on the
    agent's page. One colour rule for both, in the tokens' own words. */
 .agent-drawer-budget {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px;
   color: var(--muted);
 }
 
@@ -5503,9 +5510,6 @@ main.content:has(> .mailbox-frame) {
 }
 
 .agent-drawer-device {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px;
   color: var(--muted);
 }
 
@@ -5626,6 +5630,105 @@ main.content:has(> .mailbox-frame) {
     height: 100dvh;
     border: 0;
     border-radius: 0;
+  }
+}
+
+/* On a wide window the box can be moved by its header and resized by its
+   edges. Where the person left it is written onto the element as custom
+   properties, and only this query reads them: on a phone the box takes
+   the screen whatever was remembered, with nothing to move. */
+.agent-drawer-grip {
+  display: none;
+}
+
+@media (min-width: 721px) {
+  .agent-drawer.placed:not(.standalone) {
+    top: var(--agent-drawer-top);
+    left: var(--agent-drawer-left);
+    right: auto;
+    bottom: auto;
+    width: var(--agent-drawer-width);
+    height: var(--agent-drawer-height);
+  }
+
+  .agent-drawer-head.movable {
+    cursor: move;
+    touch-action: none;
+  }
+
+  .agent-drawer.repositioning {
+    user-select: none;
+  }
+
+  .agent-drawer.repositioning iframe {
+    pointer-events: none;
+  }
+
+  .agent-drawer-grip {
+    display: block;
+    position: absolute;
+    z-index: 6;
+    touch-action: none;
+  }
+
+  .agent-drawer-grip.top,
+  .agent-drawer-grip.bottom {
+    left: 20px;
+    right: 20px;
+    height: 6px;
+    cursor: ns-resize;
+  }
+
+  .agent-drawer-grip.left,
+  .agent-drawer-grip.right {
+    top: 20px;
+    bottom: 20px;
+    width: 6px;
+    cursor: ew-resize;
+  }
+
+  /* Larger than the corner's rounding, which clips what can be pressed:
+     at the rounding's size a corner grip was almost all outside the box. */
+  .agent-drawer-grip.top-left,
+  .agent-drawer-grip.top-right,
+  .agent-drawer-grip.bottom-left,
+  .agent-drawer-grip.bottom-right {
+    width: 20px;
+    height: 20px;
+  }
+
+  .agent-drawer-grip.top,
+  .agent-drawer-grip.top-left,
+  .agent-drawer-grip.top-right {
+    top: 0;
+  }
+
+  .agent-drawer-grip.bottom,
+  .agent-drawer-grip.bottom-left,
+  .agent-drawer-grip.bottom-right {
+    bottom: 0;
+  }
+
+  .agent-drawer-grip.left,
+  .agent-drawer-grip.top-left,
+  .agent-drawer-grip.bottom-left {
+    left: 0;
+  }
+
+  .agent-drawer-grip.right,
+  .agent-drawer-grip.top-right,
+  .agent-drawer-grip.bottom-right {
+    right: 0;
+  }
+
+  .agent-drawer-grip.top-left,
+  .agent-drawer-grip.bottom-right {
+    cursor: nwse-resize;
+  }
+
+  .agent-drawer-grip.top-right,
+  .agent-drawer-grip.bottom-left {
+    cursor: nesw-resize;
   }
 }
 
@@ -8875,6 +8978,7 @@ main.content:has(> .knowledge-frame) {
 /* The two controls keep their place beside a name that has wrapped, rather
    than stretching down the side of it. */
 .knowledge-trail.list-toolbar > .icon-action,
+.knowledge-trail.list-toolbar > .tooltip-anchor > .icon-action,
 .knowledge-trail-levels {
   flex: none;
   align-self: flex-start;

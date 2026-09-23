@@ -596,17 +596,17 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   }, [view, on, loading])
 
   const entry = (event: CalendarEvent) => (
-    <button
-      key={event.id + event.startsAt}
-      type="button"
-      className={`calendar-entry${event.allDay ? ' all-day' : ''}${opening === event.id ? ' busy' : ''}`}
-      onClick={() => void edit(event)}
-      aria-disabled={!!submission.pending || submission.isWorking || busy}
-      title={event.summary || t('calendar.untitled')}
-    >
-      {!event.allDay && <span className="calendar-entry-time">{timeFormat.format(new Date(event.startsAt))}</span>}
-      <span className="calendar-entry-title">{event.summary || t('calendar.untitled')}</span>
-    </button>
+    <Tooltip key={event.id + event.startsAt} label={event.summary || t('calendar.untitled')}>
+      <button
+        type="button"
+        className={`calendar-entry${event.allDay ? ' all-day' : ''}${opening === event.id ? ' busy' : ''}`}
+        onClick={() => void edit(event)}
+        aria-disabled={!!submission.pending || submission.isWorking || busy}
+      >
+        {!event.allDay && <span className="calendar-entry-time">{timeFormat.format(new Date(event.startsAt))}</span>}
+        <span className="calendar-entry-title">{event.summary || t('calendar.untitled')}</span>
+      </button>
+    </Tooltip>
   )
 
   return (
@@ -714,30 +714,32 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
                   {/* The date opens the day, which is what a date in a month
                       is for. Making something on that day is the empty space
                       below it, so the two are not the same click. */}
-                  <button
-                    type="button"
-                    className="calendar-day-number"
-                    onClick={() => move({ view: 'day', on: day })}
-                    title={t('calendar.openDay', { day: dayFormat.format(day) })}
-                  >
-                    {day.getDate()}
-                  </button>
+                  <Tooltip label={t('calendar.openDay', { day: dayFormat.format(day) })}>
+                    <button
+                      type="button"
+                      className="calendar-day-number"
+                      onClick={() => move({ view: 'day', on: day })}
+                    >
+                      {day.getDate()}
+                    </button>
+                  </Tooltip>
                   <div className="calendar-day-entries">{(byDay.get(key) ?? []).map(entry)}</div>
                   {/* Behind the date and the entries rather than around them:
                       a button inside a button is not a thing, and the empty
                       part of a day is the natural place to press to put
                       something in it. */}
-                  <button
-                    type="button"
-                    className="calendar-day-add"
-                    disabled={!!submission.pending || submission.isWorking || busy}
-                    onClick={() => {
-                      setProblem(null)
-                      if (!busy && !submission.pending && !submission.isWorking) setDraft(blank(day))
-                    }}
-                    title={t('calendar.newOn', { day: dayFormat.format(day) })}
-                    aria-label={t('calendar.newOn', { day: dayFormat.format(day) })}
-                  />
+                  <Tooltip label={t('calendar.newOn', { day: dayFormat.format(day) })}>
+                    <button
+                      type="button"
+                      className="calendar-day-add"
+                      disabled={!!submission.pending || submission.isWorking || busy}
+                      onClick={() => {
+                        setProblem(null)
+                        if (!busy && !submission.pending && !submission.isWorking) setDraft(blank(day))
+                      }}
+                      aria-label={t('calendar.newOn', { day: dayFormat.format(day) })}
+                    />
+                  </Tooltip>
                 </div>
               )
             })}
@@ -767,16 +769,16 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
                 {days.map((day) => {
                   const key = dayKey(day)
                   return (
-                    <button
-                      key={`head-${key}`}
-                      type="button"
-                      className={`calendar-grid-head${key === today ? ' today' : ''}`}
-                      onClick={() => move({ view: 'day', on: day })}
-                      title={t('calendar.viewDay')}
-                    >
-                      <span className="calendar-grid-weekday">{weekdayFormat.format(day)}</span>
-                      <span className="calendar-grid-date">{day.getDate()}</span>
-                    </button>
+                    <Tooltip key={`head-${key}`} label={t('calendar.viewDay')}>
+                      <button
+                        type="button"
+                        className={`calendar-grid-head${key === today ? ' today' : ''}`}
+                        onClick={() => move({ view: 'day', on: day })}
+                      >
+                        <span className="calendar-grid-weekday">{weekdayFormat.format(day)}</span>
+                        <span className="calendar-grid-date">{day.getDate()}</span>
+                      </button>
+                    </Tooltip>
                   )
                 })}
 
@@ -826,33 +828,33 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
                         <div key={hour} className="calendar-slot" style={{ height: HOUR }} />
                       ))}
                       {placed.map(({ event, top, height, column, columns: across }) => (
-                        <button
-                          key={event.id + event.startsAt}
-                          type="button"
-                          className={[
-                            'calendar-placed',
-                            height < 34 ? 'compact' : '',
-                            opening === event.id ? 'busy' : '',
-                            event.status === 'CANCELLED' ? 'cancelled' : '',
-                          ]
-                            .filter(Boolean)
-                            .join(' ')}
-                          style={{
-                            top,
-                            height,
-                            left: `calc(${(column / across) * 100}% + 2px)`,
-                            width: `calc(${(1 / across) * 100}% - 4px)`,
-                          }}
-                          onClick={() => void edit(event)}
-                          aria-disabled={!!submission.pending || submission.isWorking || busy}
-                          title={event.summary || t('calendar.untitled')}
-                        >
-                          <span className="calendar-placed-time">{timeFormat.format(new Date(event.startsAt))}</span>
-                          <span className="calendar-placed-title">{event.summary || t('calendar.untitled')}</span>
-                          {event.location && height > 56 && (
-                            <span className="calendar-placed-where">{event.location}</span>
-                          )}
-                        </button>
+                        <Tooltip key={event.id + event.startsAt} label={event.summary || t('calendar.untitled')}>
+                          <button
+                            type="button"
+                            className={[
+                              'calendar-placed',
+                              height < 34 ? 'compact' : '',
+                              opening === event.id ? 'busy' : '',
+                              event.status === 'CANCELLED' ? 'cancelled' : '',
+                            ]
+                              .filter(Boolean)
+                              .join(' ')}
+                            style={{
+                              top,
+                              height,
+                              left: `calc(${(column / across) * 100}% + 2px)`,
+                              width: `calc(${(1 / across) * 100}% - 4px)`,
+                            }}
+                            onClick={() => void edit(event)}
+                            aria-disabled={!!submission.pending || submission.isWorking || busy}
+                          >
+                            <span className="calendar-placed-time">{timeFormat.format(new Date(event.startsAt))}</span>
+                            <span className="calendar-placed-title">{event.summary || t('calendar.untitled')}</span>
+                            {event.location && height > 56 && (
+                              <span className="calendar-placed-where">{event.location}</span>
+                            )}
+                          </button>
+                        </Tooltip>
                       ))}
                       {key === today && (
                         <div

@@ -98,6 +98,13 @@ export const SETTINGS_SURFACES: SettingsSurface[] = [
     category: 'account',
   },
   {
+    segment: 'apps',
+    path: '/settings/apps',
+    label: 'apps.title',
+    description: 'settings.apps.description',
+    category: 'account',
+  },
+  {
     segment: 'sessions',
     path: '/settings/sessions',
     label: 'sessions.title',

@@ -32,7 +32,7 @@ export function SettingsSection({
 }) {
   return (
     <section id={id} className={card ? 'settings-section card' : 'settings-section'}>
-      {(title || action) && (
+      {(title || description || action) && (
         <div className="settings-section-head">
           <div>
             {title && <h3>{title}</h3>}

@@ -15,11 +15,9 @@ type Token struct {
 	LastUsed   *time.Time `json:"lastUsed"`
 	LastUsedIP string     `json:"lastUsedIp"`
 	Revoked    *time.Time `json:"revoked"`
-
-	IsHeldByProgram bool `json:"isHeldByProgram"`
 }
 
-const tokenFields = `id name username created expires lastUsed lastUsedIp revoked isHeldByProgram`
+const tokenFields = `id name username created expires lastUsed lastUsedIp revoked`
 
 // ListTokens returns the tokens belonging to the account this client is
 // authenticated as.

@@ -614,10 +614,15 @@ func (self *transaction) SearchAgentConversations(agentId, query string, limit i
 	if limit <= 0 {
 		limit = 50
 	}
+	kinds := []string{string(models.AgentConversationMain), string(models.AgentConversationNamed)}
+	// The messages read are this agent's own chats only. Unbounded, the
+	// pattern was matched against every message on the server, nearly all
+	// of them from runs nobody searches, and a search took half a minute.
+	chats := self.tx.Model(&agentConversationModel{}).Select("\"id\"").Where("\"agent_id\" = ? AND \"kind\" IN ?", agentId, kinds)
 	var found []agentConversationModel
 	if err := self.tx.Where("\"agent_id\" = ? AND \"kind\" IN ? AND (\"title\" ILIKE ? OR \"summary\" ILIKE ? OR \"id\" IN (?))",
-		agentId, []string{string(models.AgentConversationMain), string(models.AgentConversationNamed)}, pattern, pattern,
-		self.tx.Model(&agentMessageModel{}).Select("\"conversation_id\"").Where("\"role\" IN ? AND \"content\" ILIKE ?", []string{"user", "assistant"}, pattern),
+		agentId, kinds, pattern, pattern,
+		self.tx.Model(&agentMessageModel{}).Select("\"conversation_id\"").Where("\"conversation_id\" IN (?) AND \"role\" IN ? AND \"content\" ILIKE ?", chats, []string{"user", "assistant"}, pattern),
 	).Order("\"last_at\" DESC").Limit(limit).Find(&found).Error; err != nil {
 		return nil, err
 	}

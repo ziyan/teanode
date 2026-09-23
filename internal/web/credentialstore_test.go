@@ -250,6 +250,34 @@ func (self *memoryStore) UpdateToken(tokenId string, change *db.TokenChange, at 
 	return &copied, nil
 }
 
+func (self *memoryStore) RenameClientTokens(userId, clientId, name string, at time.Time) (int64, error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	var count int64
+	for _, found := range self.tokens {
+		if found.token.UserID == userId && found.token.ClientID == clientId && found.token.RevokedAt.IsZero() {
+			found.token.Name = name
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (self *memoryStore) RevokeClientTokens(userId, clientId string, at time.Time) (int64, error) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	var count int64
+	for _, found := range self.tokens {
+		if found.token.UserID == userId && found.token.ClientID == clientId && found.token.RevokedAt.IsZero() {
+			found.token.RevokedAt = at
+			count++
+		}
+	}
+	return count, nil
+}
+
 func (self *memoryStore) RetireToken(tokenId string, at time.Time) (bool, error) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()

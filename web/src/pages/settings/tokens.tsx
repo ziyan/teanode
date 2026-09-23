@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
@@ -15,8 +16,9 @@ import { Select } from '../../components/select'
 const TOKENS = `
   query ($includeRevoked: Boolean) {
     ListTokens(includeRevoked: $includeRevoked) {
-      id name username created expires lastUsed lastUsedIp revoked isHeldByProgram
+      id name username created expires lastUsed lastUsedIp revoked
     }
+    ListApps { clientId }
   }`
 
 const CREATE = `
@@ -43,7 +45,6 @@ type Token = {
   lastUsed?: string | null
   lastUsedIp?: string | null
   revoked?: string | null
-  isHeldByProgram?: boolean
 }
 
 // A handful of sensible answers rather than a number to type. A field that
@@ -72,7 +73,7 @@ export function TokensPage() {
   const toast = useToast()
   const [includeRevoked, setIncludeRevoked] = useState(false)
   const { data, error, loading, reload } = useQuery(
-    () => graphql<{ ListTokens: Token[] }>(TOKENS, { includeRevoked }),
+    () => graphql<{ ListTokens: Token[]; ListApps: { clientId: string }[] }>(TOKENS, { includeRevoked }),
     [includeRevoked],
   )
 
@@ -101,7 +102,10 @@ export function TokensPage() {
     }
   }
 
+  // An app's tokens are listed by app, under Apps: each renewal replaces
+  // the token, so a row here would be a different one every month.
   const tokens = data?.ListTokens ?? []
+  const hasApps = (data?.ListApps.length ?? 0) > 0
 
   return (
     <>
@@ -128,6 +132,11 @@ export function TokensPage() {
         {loading && !data && <Loading />}
         {error ? <ErrorMessage error={error} /> : null}
         {data && tokens.length === 0 && <SettingsEmpty>{t('tokens.empty')}</SettingsEmpty>}
+        {hasApps && (
+          <p className="muted">
+            <Link to="/settings/apps">{t('tokens.appsElsewhere')}</Link>
+          </p>
+        )}
 
         {tokens.map((token) => (
           <SettingsRow
@@ -155,24 +164,20 @@ export function TokensPage() {
             actions={
               token.revoked ? undefined : (
                 <>
-                  {/* A program's token renews itself in a new row, so a
-                      name or an expiry set on this one would not last. */}
-                  {!token.isHeldByProgram && (
-                    <Tooltip label={t('common.edit')}>
-                      <button
-                        className="icon-action"
-                        type="button"
-                        aria-label={`${token.name || t('tokens.unnamed')}: ${t('common.edit')}`}
-                        onClick={() => {
-                          setEditing(token)
-                          setNewName(token.name)
-                          setNewLifetime(KEEP_LIFETIME)
-                        }}
-                      >
-                        <PencilIcon size={16} />
-                      </button>
-                    </Tooltip>
-                  )}
+                  <Tooltip label={t('common.edit')}>
+                    <button
+                      className="icon-action"
+                      type="button"
+                      aria-label={`${token.name || t('tokens.unnamed')}: ${t('common.edit')}`}
+                      onClick={() => {
+                        setEditing(token)
+                        setNewName(token.name)
+                        setNewLifetime(KEEP_LIFETIME)
+                      }}
+                    >
+                      <PencilIcon size={16} />
+                    </button>
+                  </Tooltip>
                   <Tooltip label={t('tokens.revoke')}>
                     <button
                       className="icon-action danger"

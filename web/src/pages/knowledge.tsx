@@ -564,12 +564,16 @@ export function KnowledgePage() {
           among. One segmented control because they are one set, the same
           control the mail list narrows itself with. */}
       <div className="segmented" role="group" aria-label={t('knowledge.waysIn')}>
-        <button type="button" onClick={() => setRecalling(true)} title={t('knowledge.recall.title')}>
-          {t('knowledge.recall.button')}
-        </button>
-        <button type="button" onClick={() => setSearchingDocuments(true)} title={t('knowledge.documents.title')}>
-          {t('knowledge.documents.button')}
-        </button>
+        <Tooltip label={t('knowledge.recall.title')}>
+          <button type="button" onClick={() => setRecalling(true)}>
+            {t('knowledge.recall.button')}
+          </button>
+        </Tooltip>
+        <Tooltip label={t('knowledge.documents.title')}>
+          <button type="button" onClick={() => setSearchingDocuments(true)}>
+            {t('knowledge.documents.button')}
+          </button>
+        </Tooltip>
         <Link to="/settings/knowledge/explore" title={t('knowledge.explore.go')}>
           {t('knowledge.explore.title')}
         </Link>
@@ -674,15 +678,11 @@ export function KnowledgePage() {
   const trail =
     !search && shownFolder ? (
       <div className="knowledge-trail list-toolbar">
-        <button
-          type="button"
-          className="icon-action"
-          title={t('knowledge.back')}
-          aria-label={t('knowledge.back')}
-          onClick={goUp}
-        >
-          <ChevronLeftIcon size={16} />
-        </button>
+        <Tooltip label={t('knowledge.back')}>
+          <button type="button" className="icon-action" aria-label={t('knowledge.back')} onClick={goUp}>
+            <ChevronLeftIcon size={16} />
+          </button>
+        </Tooltip>
         {ancestors.length > 0 ? (
           <MenuButton
             label={t('knowledge.levels')}
@@ -1062,15 +1062,16 @@ function NavigatorRow({
         <span className="knowledge-row-count">{row.children}</span>
       ) : null}
       {opensInto(row) ? (
-        <button
-          type="button"
-          className="knowledge-row-into"
-          title={t('knowledge.into', { name })}
-          aria-label={t('knowledge.into', { name })}
-          onClick={() => onInto(row.node.path)}
-        >
-          <ChevronRightIcon size={14} />
-        </button>
+        <Tooltip label={t('knowledge.into', { name })}>
+          <button
+            type="button"
+            className="knowledge-row-into"
+            aria-label={t('knowledge.into', { name })}
+            onClick={() => onInto(row.node.path)}
+          >
+            <ChevronRightIcon size={14} />
+          </button>
+        </Tooltip>
       ) : null}
     </div>
   )
@@ -1664,82 +1665,88 @@ function PageView({
             {node.pinned ? <Tag value={t('knowledge.pinned')} tone="good" /> : null}
           </div>
           <div className="row-actions">
-            <button
-              type="button"
-              className="icon-action"
-              title={t('knowledge.editPage')}
-              aria-label={`${node.path}: ${t('knowledge.editPage')}`}
-              onClick={() => setEditing(true)}
-            >
-              <PencilIcon size={16} />
-            </button>
-            {/* A root is where things are filed rather than a page about
-                anything, so there is nowhere above it to move it to. */}
-            {parentOf(node.path) ? (
+            <Tooltip label={t('knowledge.editPage')}>
               <button
                 type="button"
                 className="icon-action"
-                title={t('knowledge.movePage')}
-                aria-label={`${node.path}: ${t('knowledge.movePage')}`}
-                onClick={() => setMoving(true)}
+                aria-label={`${node.path}: ${t('knowledge.editPage')}`}
+                onClick={() => setEditing(true)}
               >
-                <MoveIcon size={16} />
+                <PencilIcon size={16} />
               </button>
+            </Tooltip>
+            {/* A root is where things are filed rather than a page about
+                anything, so there is nowhere above it to move it to. */}
+            {parentOf(node.path) ? (
+              <Tooltip label={t('knowledge.movePage')}>
+                <button
+                  type="button"
+                  className="icon-action"
+                  aria-label={`${node.path}: ${t('knowledge.movePage')}`}
+                  onClick={() => setMoving(true)}
+                >
+                  <MoveIcon size={16} />
+                </button>
+              </Tooltip>
             ) : null}
             {/* Merging is refused on a root for the same reason moving
                 one is: a root is where things are filed rather than a
                 page about anything. */}
             {parentOf(node.path) ? (
+              <Tooltip label={t('knowledge.mergePage')}>
+                <button
+                  type="button"
+                  className="icon-action"
+                  aria-label={`${node.path}: ${t('knowledge.mergePage')}`}
+                  onClick={() => setMerging(true)}
+                >
+                  <MergeIcon size={16} />
+                </button>
+              </Tooltip>
+            ) : null}
+            <Tooltip label={node.pinned ? t('knowledge.unpin') : t('knowledge.pin')}>
               <button
                 type="button"
-                className="icon-action"
-                title={t('knowledge.mergePage')}
-                aria-label={`${node.path}: ${t('knowledge.mergePage')}`}
-                onClick={() => setMerging(true)}
+                className={node.pinned ? 'icon-action pinned' : 'icon-action'}
+                aria-label={`${node.path}: ${node.pinned ? t('knowledge.unpin') : t('knowledge.pin')}`}
+                onClick={() =>
+                  void run(
+                    SAVE_NODE,
+                    { path: node.path, summary: node.summary, pinned: !node.pinned },
+                    node.pinned ? t('knowledge.unpinned') : t('knowledge.pinnedIt'),
+                  )
+                }
               >
-                <MergeIcon size={16} />
+                {node.pinned ? <PinOffIcon size={16} /> : <PinIcon size={16} />}
               </button>
-            ) : null}
-            <button
-              type="button"
-              className={node.pinned ? 'icon-action pinned' : 'icon-action'}
-              title={node.pinned ? t('knowledge.unpin') : t('knowledge.pin')}
-              aria-label={`${node.path}: ${node.pinned ? t('knowledge.unpin') : t('knowledge.pin')}`}
-              onClick={() =>
-                void run(
-                  SAVE_NODE,
-                  { path: node.path, summary: node.summary, pinned: !node.pinned },
-                  node.pinned ? t('knowledge.unpinned') : t('knowledge.pinnedIt'),
-                )
-              }
-            >
-              {node.pinned ? <PinOffIcon size={16} /> : <PinIcon size={16} />}
-            </button>
+            </Tooltip>
             {/* The agent, pointed at this page, the way the reader points
                 it at a thread: the drawer opens with a chip for it, and
                 the person asks it to dig deeper, or to change what the
                 page says and links to. */}
-            <button
-              type="button"
-              className="icon-action"
-              title={t('knowledge.askAgent')}
-              aria-label={`${node.path}: ${t('knowledge.askAgent')}`}
-              onClick={() => {
-                if (!askAgentAbout({ path: node.path, name: nameOf(node, me) }))
-                  window.location.assign('/settings/agent')
-              }}
-            >
-              <SparkIcon size={16} />
-            </button>
-            <button
-              type="button"
-              className="icon-action danger"
-              title={t('knowledge.forgetPage')}
-              aria-label={`${node.path}: ${t('knowledge.forgetPage')}`}
-              onClick={() => setRemovingPage(true)}
-            >
-              <TrashIcon size={16} />
-            </button>
+            <Tooltip label={t('knowledge.askAgent')}>
+              <button
+                type="button"
+                className="icon-action"
+                aria-label={`${node.path}: ${t('knowledge.askAgent')}`}
+                onClick={() => {
+                  if (!askAgentAbout({ path: node.path, name: nameOf(node, me) }))
+                    window.location.assign('/settings/agent')
+                }}
+              >
+                <SparkIcon size={16} />
+              </button>
+            </Tooltip>
+            <Tooltip label={t('knowledge.forgetPage')}>
+              <button
+                type="button"
+                className="icon-action danger"
+                aria-label={`${node.path}: ${t('knowledge.forgetPage')}`}
+                onClick={() => setRemovingPage(true)}
+              >
+                <TrashIcon size={16} />
+              </button>
+            </Tooltip>
           </div>
         </div>
       </header>
@@ -1795,33 +1802,36 @@ function PageView({
             subtitle={<Provenance fact={fact} attachments={page.attachments} />}
             actions={
               <div className="row-actions">
-                <button
-                  type="button"
-                  className="icon-action"
-                  title={t('knowledge.editFact')}
-                  aria-label={`#${fact.number}: ${t('knowledge.editFact')}`}
-                  onClick={() => setAdding(fact)}
-                >
-                  <PencilIcon size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-action"
-                  title={t('knowledge.moveFact')}
-                  aria-label={`#${fact.number}: ${t('knowledge.moveFact')}`}
-                  onClick={() => setMovingFact(fact)}
-                >
-                  <MoveIcon size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-action danger"
-                  title={t('knowledge.strike')}
-                  aria-label={`#${fact.number}: ${t('knowledge.strike')}`}
-                  onClick={() => setRemoving(fact)}
-                >
-                  <TrashIcon size={16} />
-                </button>
+                <Tooltip label={t('knowledge.editFact')}>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    aria-label={`#${fact.number}: ${t('knowledge.editFact')}`}
+                    onClick={() => setAdding(fact)}
+                  >
+                    <PencilIcon size={16} />
+                  </button>
+                </Tooltip>
+                <Tooltip label={t('knowledge.moveFact')}>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    aria-label={`#${fact.number}: ${t('knowledge.moveFact')}`}
+                    onClick={() => setMovingFact(fact)}
+                  >
+                    <MoveIcon size={16} />
+                  </button>
+                </Tooltip>
+                <Tooltip label={t('knowledge.strike')}>
+                  <button
+                    type="button"
+                    className="icon-action danger"
+                    aria-label={`#${fact.number}: ${t('knowledge.strike')}`}
+                    onClick={() => setRemoving(fact)}
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </Tooltip>
               </div>
             }
           />

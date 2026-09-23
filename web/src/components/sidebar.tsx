@@ -18,6 +18,7 @@ import {
   SettingsIcon,
   SetupIcon,
   ShieldIcon,
+  LinkIcon,
   TerminalIcon,
   ListIcon,
   UserIcon,
@@ -56,6 +57,7 @@ const ACCOUNT_ICONS: Record<string, React.ReactNode> = {
   password: <KeyIcon />,
   passkeys: <ShieldIcon />,
   tokens: <TerminalIcon />,
+  apps: <LinkIcon />,
   sessions: <LogoutIcon />,
 }
 

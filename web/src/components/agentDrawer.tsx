@@ -454,6 +454,298 @@ function remember(key: string, value: string) {
   }
 }
 
+// PLACEMENT_KEY holds where a person moved the box on a wide window and how
+// big they made it, as {left, top, width, height} in CSS pixels. Absent, the
+// box sits in its corner at the size the stylesheet gives it.
+const PLACEMENT_KEY = 'teanode.agentChatBox'
+// The width at which the box stops floating and takes the screen; the
+// stylesheet's media query for the drawer says the same number.
+const PHONE_QUERY = '(max-width: 720px)'
+const MINIMUM_WIDTH = 320
+const MINIMUM_HEIGHT = 360
+// How close to the window's edge the box may go, so that the edge it is
+// grabbed by is never outside the window.
+const VIEWPORT_MARGIN = 8
+
+type Placement = { left: number; top: number; width: number; height: number }
+
+// The edges a resize grip moves: one for a side, two for a corner.
+type ResizeEdges = { isTop: boolean; isLeft: boolean; isBottom: boolean; isRight: boolean }
+
+const RESIZE_GRIPS: { name: string; edges: ResizeEdges }[] = [
+  { name: 'top', edges: { isTop: true, isLeft: false, isBottom: false, isRight: false } },
+  { name: 'left', edges: { isTop: false, isLeft: true, isBottom: false, isRight: false } },
+  { name: 'bottom', edges: { isTop: false, isLeft: false, isBottom: true, isRight: false } },
+  { name: 'right', edges: { isTop: false, isLeft: false, isBottom: false, isRight: true } },
+  { name: 'top-left', edges: { isTop: true, isLeft: true, isBottom: false, isRight: false } },
+  { name: 'top-right', edges: { isTop: true, isLeft: false, isBottom: false, isRight: true } },
+  { name: 'bottom-left', edges: { isTop: false, isLeft: true, isBottom: true, isRight: false } },
+  { name: 'bottom-right', edges: { isTop: false, isLeft: false, isBottom: true, isRight: true } },
+]
+
+// A move or a resize in progress: which pointer, where it went down, and
+// where the box was then. Every step is measured from the start, so a
+// step the browser dropped costs nothing.
+type PlacementGesture = {
+  pointerId: number
+  startX: number
+  startY: number
+  startPlacement: Placement
+  edges: ResizeEdges | null
+  hasMoved: boolean
+}
+
+// How far a pointer goes before a press on the bar becomes a move: a click
+// that wobbles by a pixel is still a click, and pins nothing.
+const GESTURE_THRESHOLD = 3
+
+function isPhoneWidth(): boolean {
+  return window.matchMedia(PHONE_QUERY).matches
+}
+
+// clampPlacement keeps the box inside the window: no smaller than the
+// minimum where the window has room for it, no larger than the window, and
+// moved rather than cut when the window shrinks under it.
+function clampPlacement(placement: Placement): Placement {
+  const availableWidth = Math.max(0, window.innerWidth - 2 * VIEWPORT_MARGIN)
+  const availableHeight = Math.max(0, window.innerHeight - 2 * VIEWPORT_MARGIN)
+  const width = Math.min(Math.max(placement.width, Math.min(MINIMUM_WIDTH, availableWidth)), availableWidth)
+  const height = Math.min(Math.max(placement.height, Math.min(MINIMUM_HEIGHT, availableHeight)), availableHeight)
+  const left = Math.min(Math.max(placement.left, VIEWPORT_MARGIN), VIEWPORT_MARGIN + availableWidth - width)
+  const top = Math.min(Math.max(placement.top, VIEWPORT_MARGIN), VIEWPORT_MARGIN + availableHeight - height)
+  return { left, top, width, height }
+}
+
+function isSamePlacement(first: Placement, second: Placement): boolean {
+  return (
+    first.left === second.left &&
+    first.top === second.top &&
+    first.width === second.width &&
+    first.height === second.height
+  )
+}
+
+// resizedPlacement moves the edges a grip holds by how far the pointer
+// went, holding the opposite edge still: a box shrunk from its left keeps
+// its right edge where it was, including when it reaches its minimum.
+function resizedPlacement(start: Placement, edges: ResizeEdges, deltaX: number, deltaY: number): Placement {
+  let { left, top, width, height } = start
+  const right = start.left + start.width
+  const bottom = start.top + start.height
+  if (edges.isLeft) {
+    left = Math.min(Math.max(start.left + deltaX, VIEWPORT_MARGIN), right - MINIMUM_WIDTH)
+    width = right - left
+  }
+  if (edges.isRight) {
+    width = Math.min(Math.max(start.width + deltaX, MINIMUM_WIDTH), window.innerWidth - VIEWPORT_MARGIN - left)
+  }
+  if (edges.isTop) {
+    top = Math.min(Math.max(start.top + deltaY, VIEWPORT_MARGIN), bottom - MINIMUM_HEIGHT)
+    height = bottom - top
+  }
+  if (edges.isBottom) {
+    height = Math.min(Math.max(start.height + deltaY, MINIMUM_HEIGHT), window.innerHeight - VIEWPORT_MARGIN - top)
+  }
+  return clampPlacement({ left, top, width, height })
+}
+
+function rememberedPlacement(): Placement | null {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PLACEMENT_KEY) ?? 'null') as Partial<Placement> | null
+    if (
+      stored &&
+      [stored.left, stored.top, stored.width, stored.height].every(
+        (dimension) => typeof dimension === 'number' && Number.isFinite(dimension),
+      )
+    ) {
+      return clampPlacement(stored as Placement)
+    }
+  } catch {
+    // Unreadable or unparsable, the box sits in its corner.
+  }
+  return null
+}
+
+function rememberPlacement(placement: Placement | null) {
+  try {
+    if (placement) {
+      localStorage.setItem(PLACEMENT_KEY, JSON.stringify(placement))
+    } else {
+      localStorage.removeItem(PLACEMENT_KEY)
+    }
+  } catch {
+    // A browser that keeps nothing puts the box back in its corner next time.
+  }
+}
+
+// isGestureExempt says whether a pointer went down on something in the
+// header that is pressed rather than grabbed: the buttons, a link, and the
+// list the picker opens. The title, which opens the list, is not: it runs
+// most of the header's width, and exempting it left almost nothing to take
+// hold of. A press on it that moves is a move; one that does not is still
+// a click.
+function isGestureExempt(target: EventTarget | null): boolean {
+  if (!(target instanceof Element) || target.closest('[role="menu"]')) {
+    return target instanceof Element
+  }
+  const pressed = target.closest('button, a, input, select, textarea')
+  return pressed !== null && !pressed.classList.contains('agent-drawer-conversation')
+}
+
+// usePlacement lets a person move the floating box by its header and resize
+// it by its edges on a wide window, and remembers where they left it. The
+// steps of a gesture are written straight to the element's custom
+// properties rather than through state, because the drawer is a large tree
+// and a render per pointer move would lag behind the pointer; state, and
+// the stored copy, are brought up to date when the pointer comes up.
+function usePlacement(isEnabled: boolean) {
+  const [placement, setPlacement] = useState<Placement | null>(() => (isEnabled ? rememberedPlacement() : null))
+  const [isRepositioning, setIsRepositioning] = useState(false)
+  const boxElement = useRef<HTMLElement | null>(null)
+  const gesture = useRef<PlacementGesture | null>(null)
+  const livePlacement = useRef<Placement | null>(placement)
+
+  // A window made smaller brings the box back inside it. What is stored
+  // stays as the person left it, so a window made large again gets it back
+  // on the next load.
+  useEffect(() => {
+    if (!isEnabled) return
+    const onResize = () => {
+      const previous = livePlacement.current
+      if (!previous || gesture.current) return
+      const clamped = clampPlacement(previous)
+      if (isSamePlacement(clamped, previous)) return
+      livePlacement.current = clamped
+      setPlacement(clamped)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [isEnabled])
+
+  const writePlacement = (next: Placement) => {
+    livePlacement.current = next
+    const element = boxElement.current
+    if (!element) return
+    element.style.setProperty('--agent-drawer-left', `${next.left}px`)
+    element.style.setProperty('--agent-drawer-top', `${next.top}px`)
+    element.style.setProperty('--agent-drawer-width', `${next.width}px`)
+    element.style.setProperty('--agent-drawer-height', `${next.height}px`)
+  }
+
+  const begin = (pointerEvent: React.PointerEvent<HTMLElement>, edges: ResizeEdges | null) => {
+    if (!isEnabled || pointerEvent.button !== 0 || isPhoneWidth() || !boxElement.current) return
+    const bounds = boxElement.current.getBoundingClientRect()
+    const startPlacement = clampPlacement({
+      left: bounds.left,
+      top: bounds.top,
+      width: bounds.width,
+      height: bounds.height,
+    })
+    gesture.current = {
+      pointerId: pointerEvent.pointerId,
+      startX: pointerEvent.clientX,
+      startY: pointerEvent.clientY,
+      startPlacement,
+      edges,
+      hasMoved: false,
+    }
+    // A grip is a few pixels wide and has no click to keep, so it holds
+    // the pointer from the press; the header waits until it is a move.
+    if (edges) {
+      if (!pointerEvent.currentTarget.hasPointerCapture(pointerEvent.pointerId)) {
+        pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId)
+      }
+    }
+    // Held down, a pointer would otherwise select the title it drags across.
+    pointerEvent.preventDefault()
+  }
+
+  const onPointerMove = (pointerEvent: React.PointerEvent<HTMLElement>) => {
+    const current = gesture.current
+    if (!current || current.pointerId !== pointerEvent.pointerId) return
+    const deltaX = pointerEvent.clientX - current.startX
+    const deltaY = pointerEvent.clientY - current.startY
+    if (!current.hasMoved) {
+      if (Math.abs(deltaX) < GESTURE_THRESHOLD && Math.abs(deltaY) < GESTURE_THRESHOLD) return
+      current.hasMoved = true
+      // Captured only once it is a move: captured from the press, the
+      // click that follows a still press would go to the header rather
+      // than to the title under it, and the list would never open.
+      pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId)
+      // From here on the box is placed by its custom properties rather than
+      // docked by the stylesheet; they start where it already is.
+      writePlacement(current.startPlacement)
+      setPlacement(current.startPlacement)
+      setIsRepositioning(true)
+    }
+    const next = current.edges
+      ? resizedPlacement(current.startPlacement, current.edges, deltaX, deltaY)
+      : clampPlacement({
+          ...current.startPlacement,
+          left: current.startPlacement.left + deltaX,
+          top: current.startPlacement.top + deltaY,
+        })
+    writePlacement(next)
+  }
+
+  const onPointerEnd = (pointerEvent: React.PointerEvent<HTMLElement>) => {
+    const current = gesture.current
+    if (!current || current.pointerId !== pointerEvent.pointerId) return
+    gesture.current = null
+    if (pointerEvent.currentTarget.hasPointerCapture(pointerEvent.pointerId)) {
+      pointerEvent.currentTarget.releasePointerCapture(pointerEvent.pointerId)
+    }
+    if (!current.hasMoved) return
+    setIsRepositioning(false)
+    const finished = livePlacement.current
+    if (!finished) return
+    setPlacement(finished)
+    rememberPlacement(finished)
+  }
+
+  // reset puts the box back in its corner at its first size, and forgets
+  // where it was.
+  const reset = () => {
+    livePlacement.current = null
+    setPlacement(null)
+    rememberPlacement(null)
+  }
+
+  const headProps = {
+    onPointerDown: (pointerEvent: React.PointerEvent<HTMLElement>) => {
+      if (isGestureExempt(pointerEvent.target)) return
+      begin(pointerEvent, null)
+    },
+    onPointerMove,
+    onPointerUp: onPointerEnd,
+    onPointerCancel: onPointerEnd,
+    // A double click on the bar puts the box back in its corner at its
+    // first size, and forgets where it was.
+    onDoubleClick: (mouseEvent: React.MouseEvent<HTMLElement>) => {
+      if (!isEnabled || isPhoneWidth() || isGestureExempt(mouseEvent.target)) return
+      reset()
+    },
+  }
+
+  const gripProps = (edges: ResizeEdges) => ({
+    onPointerDown: (pointerEvent: React.PointerEvent<HTMLElement>) => begin(pointerEvent, edges),
+    onPointerMove,
+    onPointerUp: onPointerEnd,
+    onPointerCancel: onPointerEnd,
+  })
+
+  const style = placement
+    ? ({
+        '--agent-drawer-left': `${placement.left}px`,
+        '--agent-drawer-top': `${placement.top}px`,
+        '--agent-drawer-width': `${placement.width}px`,
+        '--agent-drawer-height': `${placement.height}px`,
+      } as React.CSSProperties)
+    : undefined
+
+  return { placement, isRepositioning, boxElement, style, headProps, gripProps, reset }
+}
+
 function formatBytes(size: number): string {
   if (size >= 1 << 20) return `${(size / (1 << 20)).toFixed(1)} MB`
   if (size >= 1 << 10) return `${Math.round(size / (1 << 10))} kB`
@@ -802,19 +1094,25 @@ function ReferenceChips({
   return (
     <div className="agent-references">
       {references.map((reference, index) => (
-        <span
+        <Tooltip
           key={`${reference.itemId ?? reference.path ?? ''}-${index}`}
-          className="agent-reference-chip"
-          title={reference.from ?? reference.path ?? ''}
+          label={reference.from ?? reference.path ?? ''}
         >
-          <SparkIcon size={11} />{' '}
-          {reference.subject || reference.name || reference.path || reference.itemId || reference.threadId}
-          {onRemove && (
-            <button type="button" className="link" aria-label={t('agentDrawer.remove')} onClick={() => onRemove(index)}>
-              ×
-            </button>
-          )}
-        </span>
+          <span className="agent-reference-chip">
+            <SparkIcon size={11} />{' '}
+            {reference.subject || reference.name || reference.path || reference.itemId || reference.threadId}
+            {onRemove && (
+              <button
+                type="button"
+                className="link"
+                aria-label={t('agentDrawer.remove')}
+                onClick={() => onRemove(index)}
+              >
+                ×
+              </button>
+            )}
+          </span>
+        </Tooltip>
       ))}
     </div>
   )
@@ -862,16 +1160,17 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
       <div className="agent-artifact-head">
         <SparkIcon size={11} />
         <span className="agent-artifact-title">{artifact.title}</span>
-        <a
-          className="icon-button agent-artifact-open"
-          href={framed ?? undefined}
-          target="_blank"
-          rel="noreferrer"
-          aria-label={t('agentDrawer.openArtifact')}
-          title={t('agentDrawer.openArtifact')}
-        >
-          <ExternalIcon size={14} />
-        </a>
+        <Tooltip label={t('agentDrawer.openArtifact')}>
+          <a
+            className="icon-button agent-artifact-open"
+            href={framed ?? undefined}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={t('agentDrawer.openArtifact')}
+          >
+            <ExternalIcon size={14} />
+          </a>
+        </Tooltip>
       </div>
       {artifact.kind === 'markdown' ? (
         <div className="agent-artifact-body">
@@ -912,16 +1211,17 @@ function FileCard({ file }: { file: SharedFile }) {
         <PaperclipIcon size={11} />
         <span className="agent-artifact-title">{file.name}</span>
         <span className="muted">{formatBytes(file.size)}</span>
-        <a
-          className="icon-button agent-artifact-open"
-          href={href}
-          target="_blank"
-          rel="noreferrer"
-          aria-label={t('agentDrawer.openArtifact')}
-          title={t('agentDrawer.openArtifact')}
-        >
-          <ExternalIcon size={14} />
-        </a>
+        <Tooltip label={t('agentDrawer.openArtifact')}>
+          <a
+            className="icon-button agent-artifact-open"
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={t('agentDrawer.openArtifact')}
+          >
+            <ExternalIcon size={14} />
+          </a>
+        </Tooltip>
       </div>
       {media}
       {file.caption ? <div className="agent-file-caption">{file.caption}</div> : null}
@@ -991,6 +1291,42 @@ function CitedPicture({ file }: { file: CitedFile }) {
   )
 }
 
+// DeviceButton is something of the person's that is attached, a browser
+// tab or a computer: a button the size of the others in the bar, with the
+// details on hover, that opens where attached things are listed.
+function DeviceButton({
+  label,
+  framed,
+  onLeaving,
+  children,
+}: {
+  label: string
+  framed: boolean
+  onLeaving: () => void
+  children: React.ReactNode
+}) {
+  const where = '/settings/agent/connections'
+  return (
+    <Tooltip label={label}>
+      {framed ? (
+        <a
+          className="icon-button agent-drawer-device"
+          href={`${window.location.origin}${where}`}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={label}
+        >
+          {children}
+        </a>
+      ) : (
+        <Link className="icon-button agent-drawer-device" to={where} aria-label={label} onClick={onLeaving}>
+          {children}
+        </Link>
+      )}
+    </Tooltip>
+  )
+}
+
 // BudgetRing is the day's tokens as a ring in the drawer's head: how much
 // of the budget has gone, coloured by how near the end of it the day is,
 // with the numbers and the hour it resets on hover, and the agent's own
@@ -1042,7 +1378,7 @@ function BudgetRing({
         // Framed into another site, the drawer sends the person to the
         // dashboard itself rather than drawing a settings page in here.
         <a
-          className="agent-drawer-budget"
+          className="icon-button agent-drawer-budget"
           href={`${window.location.origin}/settings/agent`}
           target="_blank"
           rel="noreferrer"
@@ -1051,7 +1387,7 @@ function BudgetRing({
           {ring}
         </a>
       ) : (
-        <Link className="agent-drawer-budget" to="/settings/agent" aria-label={label} onClick={onLeaving}>
+        <Link className="icon-button agent-drawer-budget" to="/settings/agent" aria-label={label} onClick={onLeaving}>
           {ring}
         </Link>
       )}
@@ -1143,6 +1479,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const { t } = useTranslation()
   const toast = useToast()
   const location = useLocation()
+  // Framed by the extension, the panel is the frame and is moved with it.
+  const chatBox = usePlacement(!standalone)
   const [available, setAvailable] = useState(false)
   const [agentName, setAgentName] = useState('')
   // What the box says before anybody types: the agent's own name where it
@@ -2137,82 +2475,87 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           />
         </form>
       ) : (
-        <button
-          type="button"
-          className="agent-drawer-list-title"
-          role="menuitem"
-          title={conversation.summary || undefined}
-          onClick={() => void switchTo(conversation.id)}
-        >
-          <span className="agent-drawer-list-name">
-            {/* A conversation working toward something is
+        <Tooltip label={conversation.summary || ''}>
+          <button
+            type="button"
+            className="agent-drawer-list-title"
+            role="menuitem"
+            onClick={() => void switchTo(conversation.id)}
+          >
+            <span className="agent-drawer-list-name">
+              {/* A conversation working toward something is
               marked before its name, in the colour of
               where it stands: the accent while it works,
               the warning colour while it waits for the
               person, muted once it is met. */}
-            {conversation.goal ? (
-              <TargetIcon size={12} className={`agent-drawer-list-goal ${goalStateOf(conversation)}`} />
-            ) : null}
-            {conversation.kind === 'main' ? (
-              <>
-                <StarIcon size={12} /> {t('agentDrawer.main')}
-              </>
-            ) : (
-              conversation.title || t('agentDrawer.untitled')
-            )}
-          </span>
-          {/* When the conversation was last spoken in,
+              {conversation.goal ? (
+                <TargetIcon size={12} className={`agent-drawer-list-goal ${goalStateOf(conversation)}`} />
+              ) : null}
+              {conversation.kind === 'main' ? (
+                <>
+                  <StarIcon size={12} /> {t('agentDrawer.main')}
+                </>
+              ) : (
+                conversation.title || t('agentDrawer.untitled')
+              )}
+            </span>
+            {/* When the conversation was last spoken in,
             which is what tells one of these apart from the
             next; a goal's note belongs in the dialog, not
             here in place of the time. The summary is the
             row's tooltip. */}
-          <span className="agent-drawer-list-summary muted">
-            <RelativeTime value={conversation.lastAt} />
-          </span>
-        </button>
+            <span className="agent-drawer-list-summary muted">
+              <RelativeTime value={conversation.lastAt} />
+            </span>
+          </button>
+        </Tooltip>
       )}
       {conversation.kind !== 'main' && renaming?.id !== conversation.id && (
         <span className="agent-drawer-list-actions">
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={t('agentDrawer.makeMain')}
-            title={t('agentDrawer.makeMain')}
-            onClick={() => void makeMain(conversation.id)}
-          >
-            <StarIcon size={14} />
-          </button>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={t('agentDrawer.rename')}
-            title={t('agentDrawer.rename')}
-            onClick={() => setRenaming({ id: conversation.id, title: conversation.title })}
-          >
-            <PencilIcon size={14} />
-          </button>
+          <Tooltip label={t('agentDrawer.makeMain')}>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t('agentDrawer.makeMain')}
+              onClick={() => void makeMain(conversation.id)}
+            >
+              <StarIcon size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip label={t('agentDrawer.rename')}>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t('agentDrawer.rename')}
+              onClick={() => setRenaming({ id: conversation.id, title: conversation.title })}
+            >
+              <PencilIcon size={14} />
+            </button>
+          </Tooltip>
           {/* Not on the main conversation: the server refuses to archive
               it, and an action that is always refused is worse than none. */}
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={`${conversation.title || t('agentDrawer.untitled')}: ${
-              conversation.archivedAt ? t('agentDrawer.unarchive') : t('agentDrawer.archive')
-            }`}
-            title={conversation.archivedAt ? t('agentDrawer.unarchive') : t('agentDrawer.archive')}
-            onClick={() => void archiveConversation(conversation, !conversation.archivedAt)}
-          >
-            {conversation.archivedAt ? <InboxIcon size={14} /> : <ArchiveIcon size={14} />}
-          </button>
-          <button
-            type="button"
-            className="icon-button danger"
-            aria-label={t('agentDrawer.delete')}
-            title={t('agentDrawer.delete')}
-            onClick={() => setDeleting(conversation)}
-          >
-            <TrashIcon size={14} />
-          </button>
+          <Tooltip label={conversation.archivedAt ? t('agentDrawer.unarchive') : t('agentDrawer.archive')}>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={`${conversation.title || t('agentDrawer.untitled')}: ${
+                conversation.archivedAt ? t('agentDrawer.unarchive') : t('agentDrawer.archive')
+              }`}
+              onClick={() => void archiveConversation(conversation, !conversation.archivedAt)}
+            >
+              {conversation.archivedAt ? <InboxIcon size={14} /> : <ArchiveIcon size={14} />}
+            </button>
+          </Tooltip>
+          <Tooltip label={t('agentDrawer.delete')}>
+            <button
+              type="button"
+              className="icon-button danger"
+              aria-label={t('agentDrawer.delete')}
+              onClick={() => setDeleting(conversation)}
+            >
+              <TrashIcon size={14} />
+            </button>
+          </Tooltip>
         </span>
       )}
     </div>
@@ -2538,21 +2881,25 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   return (
     <>
       {!open && !standalone && (
-        <button
-          type="button"
-          className="agent-drawer-toggle"
-          aria-label={t('agentDrawer.open')}
-          title={t('agentDrawer.open')}
-          onClick={toggle}
-        >
-          <SparkIcon size={20} />
-        </button>
+        <Tooltip label={t('agentDrawer.open')}>
+          <button type="button" className="agent-drawer-toggle" aria-label={t('agentDrawer.open')} onClick={toggle}>
+            <SparkIcon size={20} />
+          </button>
+        </Tooltip>
       )}
       {open && (
         <aside
-          className={['agent-drawer', dragging ? 'dragging' : '', standalone ? 'standalone' : '']
+          ref={chatBox.boxElement}
+          className={[
+            'agent-drawer',
+            dragging ? 'dragging' : '',
+            standalone ? 'standalone' : '',
+            chatBox.placement ? 'placed' : '',
+            chatBox.isRepositioning ? 'repositioning' : '',
+          ]
             .filter(Boolean)
             .join(' ')}
+          style={chatBox.style}
           aria-label={agentName || t('agent.title')}
           onDragOver={(event) => {
             if (event.dataTransfer.types.includes('Files')) {
@@ -2569,7 +2916,21 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             setDragging(false)
           }}
         >
-          <div className="agent-drawer-head">
+          {/* Grips for resizing on a wide window, for a pointer only: the
+              stylesheet hides them where the box takes the screen. */}
+          {!standalone &&
+            RESIZE_GRIPS.map((grip) => (
+              <div
+                key={grip.name}
+                className={`agent-drawer-grip ${grip.name}`}
+                aria-hidden="true"
+                {...chatBox.gripProps(grip.edges)}
+              />
+            ))}
+          <div
+            className={['agent-drawer-head', standalone ? '' : 'movable'].filter(Boolean).join(' ')}
+            {...chatBox.headProps}
+          >
             <button
               type="button"
               className="agent-drawer-conversation"
@@ -2589,49 +2950,37 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             {/* What of the person's own is attached, as a mark with the
                 details on hover: the transcript is for the conversation. */}
             {tab?.attached && (
-              <Tooltip label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}>
-                <span
-                  className="agent-drawer-device"
-                  aria-label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}
-                >
-                  <GlobeIcon size={14} />
-                </span>
-              </Tooltip>
+              <DeviceButton
+                label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}
+                framed={standalone}
+                onLeaving={leaving}
+              >
+                <GlobeIcon size={14} />
+              </DeviceButton>
             )}
             {computers.length > 0 && (
-              <Tooltip
+              <DeviceButton
                 label={
                   computers.length === 1
                     ? t('agentDrawer.computerAttached', { name: computers[0] })
                     : t('agentDrawer.computersAttached', { names: computers.join(', ') })
                 }
+                framed={standalone}
+                onLeaving={leaving}
               >
-                <span
-                  className="agent-drawer-device"
-                  aria-label={
-                    computers.length === 1
-                      ? t('agentDrawer.computerAttached', { name: computers[0] })
-                      : t('agentDrawer.computersAttached', { names: computers.join(', ') })
-                  }
-                >
-                  <ComputerIcon size={14} />
-                </span>
-              </Tooltip>
+                <ComputerIcon size={14} />
+              </DeviceButton>
             )}
             {budget && <BudgetRing budget={budget} zone={agentZone} framed={standalone} onLeaving={leaving} />}
             {/* Framed by the extension, the panel around this has a bar
                 of its own with the close on it; two of them, one under
                 the other, is one too many. */}
             {!standalone && (
-              <button
-                type="button"
-                className="icon-button"
-                aria-label={t('agentDrawer.close')}
-                title={t('agentDrawer.close')}
-                onClick={toggle}
-              >
-                ×
-              </button>
+              <Tooltip label={t('agentDrawer.close')}>
+                <button type="button" className="icon-button" aria-label={t('agentDrawer.close')} onClick={toggle}>
+                  ×
+                </button>
+              </Tooltip>
             )}
           </div>
           {showingList && (
@@ -2647,6 +2996,19 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   aria-label={t('agentDrawer.search')}
                   onChange={(event) => setSearch(event.target.value)}
                 />
+                {found !== null && found.length === 0 && (
+                  <div className="agent-drawer-list-row muted">
+                    <span className="agent-drawer-list-title">{t('agentDrawer.nothingFound')}</span>
+                  </div>
+                )}
+                {/* The main chat first, whatever was said last, with the way
+                    to start a side chat under it: it is the one the drawer
+                    opens to, and a side chat is started from beside it. The
+                    rest by when they were last spoken in, because that is
+                    how somebody looks for one. */}
+                {(found ?? conversations)
+                  .filter((conversation) => conversation.kind === 'main')
+                  .map((conversation) => conversationRow(conversation))}
                 {found === null && (
                   <>
                     <button
@@ -2663,21 +3025,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     </button>
                   </>
                 )}
-                {found !== null && found.length === 0 && (
-                  <div className="agent-drawer-list-row muted">
-                    <span className="agent-drawer-list-title">{t('agentDrawer.nothingFound')}</span>
-                  </div>
-                )}
                 {[...(found ?? conversations)]
-                  // The main conversation first, whatever was said last,
-                  // and a rule under it: it is the one the drawer opens to.
-                  // The rest by when they were last spoken in, because
-                  // that is how somebody looks for one.
-                  .sort(
-                    (first, second) =>
-                      Number(second.kind === 'main') - Number(first.kind === 'main') ||
-                      (second.lastAt ?? '').localeCompare(first.lastAt ?? ''),
-                  )
+                  .filter((conversation) => conversation.kind !== 'main')
+                  .sort((first, second) => (second.lastAt ?? '').localeCompare(first.lastAt ?? ''))
                   .map((conversation) => conversationRow(conversation))}
                 {/* What has been put away, under everything else and shut
                     until it is asked for. */}
@@ -2775,34 +3125,33 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 lines[lines.length - 1]?.kind === 'assistant' &&
                 (lines[lines.length - 1] as { streaming?: boolean }).streaming
               ) && (
-                <div
-                  className="agent-line thinking"
-                  aria-label={t('agentDrawer.thinking')}
-                  title={t('agentDrawer.thinking')}
-                >
-                  <span className="agent-dots" aria-hidden="true">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                </div>
+                <Tooltip label={t('agentDrawer.thinking')}>
+                  <div className="agent-line thinking" aria-label={t('agentDrawer.thinking')}>
+                    <span className="agent-dots" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                  </div>
+                </Tooltip>
               )}
           </div>
           {!atBottom && lines.length > 0 && (
-            <button
-              type="button"
-              className="icon-button agent-drawer-jump"
-              aria-label={t('agentDrawer.jumpToEnd')}
-              title={t('agentDrawer.jumpToEnd')}
-              onClick={() => {
-                const element = transcript.current
-                if (element) element.scrollTop = element.scrollHeight
-                sticking.current = true
-                setAtBottom(true)
-              }}
-            >
-              <ArrowDownIcon size={16} />
-            </button>
+            <Tooltip label={t('agentDrawer.jumpToEnd')}>
+              <button
+                type="button"
+                className="icon-button agent-drawer-jump"
+                aria-label={t('agentDrawer.jumpToEnd')}
+                onClick={() => {
+                  const element = transcript.current
+                  if (element) element.scrollTop = element.scrollHeight
+                  sticking.current = true
+                  setAtBottom(true)
+                }}
+              >
+                <ArrowDownIcon size={16} />
+              </button>
+            </Tooltip>
           )}
           {/* The task list, in the place it has always been: above what
               the person is about to type, under the transcript. On a
@@ -2833,16 +3182,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                             />
                             <span>{todo.text}</span>
                           </label>
-                          <button
-                            type="button"
-                            className="icon-action danger"
-                            disabled={busy}
-                            title={t('agentDrawer.todoRemove')}
-                            aria-label={`${todo.text}: ${t('agentDrawer.todoRemove')}`}
-                            onClick={() => void removeTodo(todo)}
-                          >
-                            <TrashIcon size={12} />
-                          </button>
+                          <Tooltip label={t('agentDrawer.todoRemove')}>
+                            <button
+                              type="button"
+                              className="icon-action danger"
+                              disabled={busy}
+                              aria-label={`${todo.text}: ${t('agentDrawer.todoRemove')}`}
+                              onClick={() => void removeTodo(todo)}
+                            >
+                              <TrashIcon size={12} />
+                            </button>
+                          </Tooltip>
                         </>
                       )}
                     </li>
@@ -2864,15 +3214,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     aria-label={t('agentDrawer.todoAdd')}
                     disabled={addingTodo}
                   />
-                  <button
-                    type="submit"
-                    className="icon-action"
-                    disabled={addingTodo || todoDraft.trim().length === 0}
-                    title={t('agentDrawer.todoAdd')}
-                    aria-label={t('agentDrawer.todoAdd')}
-                  >
-                    <PlusIcon size={14} />
-                  </button>
+                  <Tooltip label={t('agentDrawer.todoAdd')}>
+                    <button
+                      type="submit"
+                      className="icon-action"
+                      disabled={addingTodo || todoDraft.trim().length === 0}
+                      aria-label={t('agentDrawer.todoAdd')}
+                    >
+                      <PlusIcon size={14} />
+                    </button>
+                  </Tooltip>
                 </form>
               )}
             </div>
@@ -2941,15 +3292,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 event.target.value = ''
               }}
             />
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={t('agentDrawer.attach')}
-              title={t('agentDrawer.attach')}
-              onClick={() => filePicker.current?.click()}
-            >
-              <PaperclipIcon size={16} />
-            </button>
+            <Tooltip label={t('agentDrawer.attach')}>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={t('agentDrawer.attach')}
+                onClick={() => filePicker.current?.click()}
+              >
+                <PaperclipIcon size={16} />
+              </button>
+            </Tooltip>
             <textarea
               ref={input}
               rows={1}
@@ -2981,25 +3333,27 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               }}
             />
             {running && (
-              <button
-                type="button"
-                className="icon-button agent-stop"
-                aria-label={t('agentDrawer.stop')}
-                title={t('agentDrawer.stop')}
-                onClick={() => void stop()}
-              >
-                ■
-              </button>
+              <Tooltip label={t('agentDrawer.stop')}>
+                <button
+                  type="button"
+                  className="icon-button agent-stop"
+                  aria-label={t('agentDrawer.stop')}
+                  onClick={() => void stop()}
+                >
+                  ■
+                </button>
+              </Tooltip>
             )}
-            <button
-              type="submit"
-              className="icon-button agent-send"
-              aria-label={t('agentDrawer.send')}
-              title={t('agentDrawer.send')}
-              disabled={!canSend || isReadingConversation}
-            >
-              <ArrowUpIcon size={16} />
-            </button>
+            <Tooltip label={t('agentDrawer.send')}>
+              <button
+                type="submit"
+                className="icon-button agent-send"
+                aria-label={t('agentDrawer.send')}
+                disabled={!canSend || isReadingConversation}
+              >
+                <ArrowUpIcon size={16} />
+              </button>
+            </Tooltip>
           </form>
           <p className="agent-drawer-note muted">{t('agentDrawer.mistakes')}</p>
           {dragging && <div className="agent-drawer-drop">{t('agentDrawer.dropHere')}</div>}

@@ -296,3 +296,62 @@ func TestAReachIsSetMovedAndCleared(test *testing.T) {
 		test.Errorf("after clearing, the reaches are %v", got)
 	}
 }
+
+// A token is renamed and its expiry moved or cleared; an app's tokens are
+// renamed and revoked together, and only that app's, and only the person's.
+func TestTokensAreChangedOneByOneAndByApp(test *testing.T) {
+	database, release := dbtest.AcquireDatabase(test)
+	defer release()
+
+	now := time.Now()
+	owner := dbtest.CreateUser(test, database, "app-holder")
+	other := dbtest.CreateUser(test, database, "someone-else")
+	create := func(userId, clientId string) string {
+		id := security.NewULID()
+		token := &models.Token{ID: id, UserID: userId, Name: "a token", ExpiresAt: now.Add(time.Hour)}
+		var err error
+		if clientId == "" {
+			_, err = database.CreateToken(token, "a-hash")
+		} else {
+			token.ClientID, token.Resource = clientId, "/api/v1/mcp"
+			_, err = database.CreateAuthorizedToken(token, "a-hash", "a-refresh-hash")
+		}
+		if err != nil {
+			test.Fatalf("creating a token: %s", err)
+		}
+		return id
+	}
+	read := func(id string) *models.Token {
+		token, _, err := database.GetToken(id)
+		if err != nil || token == nil {
+			test.Fatalf("GetToken: %v, %v", token, err)
+		}
+		return token
+	}
+
+	handMinted := create(owner, "")
+	name := "laptop"
+	later := now.Add(30 * 24 * time.Hour)
+	updated, err := database.UpdateToken(handMinted, &db.TokenChange{Name: &name, ShouldSetExpiry: true, ExpiresAt: later}, now)
+	if err != nil || updated.Name != "laptop" || !updated.ExpiresAt.Equal(later.Truncate(time.Microsecond)) {
+		test.Fatalf("renamed and moved: %+v, %v", updated, err)
+	}
+	if updated, err = database.UpdateToken(handMinted, &db.TokenChange{ShouldSetExpiry: true}, now); err != nil || !updated.ExpiresAt.IsZero() || updated.Name != "laptop" {
+		test.Errorf("cleared, keeping the name: %+v, %v", updated, err)
+	}
+
+	first, second := create(owner, "an-app"), create(owner, "an-app")
+	another, theirs := create(owner, "another-app"), create(other, "an-app")
+	if renamed, err := database.RenameClientTokens(owner, "an-app", "my app", now); err != nil || renamed != 2 {
+		test.Fatalf("RenameClientTokens: %d, %v", renamed, err)
+	}
+	if read(first).Name != "my app" || read(second).Name != "my app" || read(another).Name != "a token" || read(theirs).Name != "a token" {
+		test.Error("only that app's tokens of that person are renamed")
+	}
+	if revoked, err := database.RevokeClientTokens(owner, "an-app", now); err != nil || revoked != 2 {
+		test.Fatalf("RevokeClientTokens: %d, %v", revoked, err)
+	}
+	if read(first).RevokedAt.IsZero() || read(second).RevokedAt.IsZero() || !read(another).RevokedAt.IsZero() || !read(theirs).RevokedAt.IsZero() {
+		test.Error("only that app's tokens of that person are revoked")
+	}
+}

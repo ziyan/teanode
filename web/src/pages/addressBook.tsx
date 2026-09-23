@@ -311,12 +311,22 @@ export function AddressBookPage() {
               </button>
             </Tooltip>
             <Tooltip label={t('common.edit')}>
-              <button type="button" disabled={busy || opening === contact.id} onClick={() => void edit(contact)}>
+              <button
+                type="button"
+                aria-label={`${contact.name}: ${t('common.edit')}`}
+                disabled={busy || opening === contact.id}
+                onClick={() => void edit(contact)}
+              >
                 <PencilIcon size={16} />
               </button>
             </Tooltip>
             <Tooltip label={t('common.delete')}>
-              <button type="button" disabled={busy} onClick={() => setDeleting(contact)}>
+              <button
+                type="button"
+                aria-label={`${contact.name}: ${t('common.delete')}`}
+                disabled={busy}
+                onClick={() => setDeleting(contact)}
+              >
                 <TrashIcon size={16} />
               </button>
             </Tooltip>

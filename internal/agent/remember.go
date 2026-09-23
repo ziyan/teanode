@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -184,7 +185,11 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 		func(tx db.Transaction, filed whatWasFiled) error {
 			note := "Filed nothing from this conversation"
 			if filed.Filed > 0 {
-				note = fmt.Sprintf("Filed %d thing(s) from %q", filed.Filed, conversation.Title)
+				things := "things"
+				if filed.Filed == 1 {
+					things = "thing"
+				}
+				note = fmt.Sprintf("Filed %d %s from %s", filed.Filed, things, chatName(conversation))
 			}
 			// How much of what it filed could not be shown to have been
 			// said. On the row rather than in a log line, because the
@@ -250,4 +255,17 @@ func worthReading(messages []*models.AgentMessage) []*models.AgentMessage {
 		}
 	}
 	return kept
+}
+
+// chatName is how a run names the conversation it read. The main chat is
+// shown as the main chat wherever the person sees it, and the title it
+// carries is whatever it was called before it became the main chat.
+func chatName(conversation *models.AgentConversation) string {
+	switch {
+	case conversation.Kind == models.AgentConversationMain:
+		return "the main chat"
+	case strings.TrimSpace(conversation.Title) == "":
+		return "an untitled chat"
+	}
+	return strconv.Quote(conversation.Title)
 }

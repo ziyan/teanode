@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { CloseIcon, ExternalIcon, MinusIcon, PlusIcon } from './icons'
+import { Tooltip } from './tooltip'
 import { useTranslation } from '../i18n/i18n'
 
 // A picture in the dashboard used to be a link to its own bytes: clicking
@@ -322,26 +323,28 @@ export function Lightbox({
             <strong>{name}</strong>
             {said ? <span className="muted">{said}</span> : null}
           </div>
-          <a
-            className="icon-button"
-            href={source}
-            target="_blank"
-            rel="noreferrer"
-            title={t('lightbox.openRaw')}
-            aria-label={t('lightbox.openRaw')}
-          >
-            <ExternalIcon size={16} />
-          </a>
-          <button
-            ref={closeButton}
-            type="button"
-            className="icon-button"
-            onClick={onClose}
-            title={t('common.close')}
-            aria-label={t('common.close')}
-          >
-            <CloseIcon size={18} />
-          </button>
+          <Tooltip label={t('lightbox.openRaw')}>
+            <a
+              className="icon-button"
+              href={source}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={t('lightbox.openRaw')}
+            >
+              <ExternalIcon size={16} />
+            </a>
+          </Tooltip>
+          <Tooltip label={t('common.close')}>
+            <button
+              ref={closeButton}
+              type="button"
+              className="icon-button"
+              onClick={onClose}
+              aria-label={t('common.close')}
+            >
+              <CloseIcon size={18} />
+            </button>
+          </Tooltip>
         </div>
         <div
           ref={stage}
@@ -369,27 +372,29 @@ export function Lightbox({
           />
         </div>
         <div className="lightbox-foot">
-          <button
-            type="button"
-            className="icon-button"
-            onClick={() => zoomBy(1 / STEP)}
-            disabled={view.scale <= SMALLEST_SCALE}
-            title={t('lightbox.zoomOut')}
-            aria-label={t('lightbox.zoomOut')}
-          >
-            <MinusIcon size={16} />
-          </button>
+          <Tooltip label={t('lightbox.zoomOut')}>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => zoomBy(1 / STEP)}
+              disabled={view.scale <= SMALLEST_SCALE}
+              aria-label={t('lightbox.zoomOut')}
+            >
+              <MinusIcon size={16} />
+            </button>
+          </Tooltip>
           <span className="lightbox-scale">{t('lightbox.scale', { percent: Math.round(view.scale * 100) })}</span>
-          <button
-            type="button"
-            className="icon-button"
-            onClick={() => zoomBy(STEP)}
-            disabled={view.scale >= LARGEST_SCALE}
-            title={t('lightbox.zoomIn')}
-            aria-label={t('lightbox.zoomIn')}
-          >
-            <PlusIcon size={16} />
-          </button>
+          <Tooltip label={t('lightbox.zoomIn')}>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => zoomBy(STEP)}
+              disabled={view.scale >= LARGEST_SCALE}
+              aria-label={t('lightbox.zoomIn')}
+            >
+              <PlusIcon size={16} />
+            </button>
+          </Tooltip>
           <button
             type="button"
             className="lightbox-fit"
@@ -434,31 +439,32 @@ export function ZoomablePicture({
   const [open, setOpen] = useState(false)
   return (
     <>
-      <a
-        ref={opener}
-        className="picture-opener"
-        href={source}
-        target="_blank"
-        rel="noreferrer"
-        title={openTitle}
-        onClick={(event) => {
-          // A middle click never reaches here, and a modified one is a
-          // deliberate ask for a tab of its own: both are left to the
-          // browser and the address on the anchor.
-          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-          event.preventDefault()
-          setOpen(true)
-        }}
-      >
-        {/* Loaded at once rather than lazily. A lazy picture is only fetched
+      <Tooltip label={openTitle}>
+        <a
+          ref={opener}
+          className="picture-opener"
+          href={source}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(event) => {
+            // A middle click never reaches here, and a modified one is a
+            // deliberate ask for a tab of its own: both are left to the
+            // browser and the address on the anchor.
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+            event.preventDefault()
+            setOpen(true)
+          }}
+        >
+          {/* Loaded at once rather than lazily. A lazy picture is only fetched
             when its box comes into view, and this box has no size until the
             picture is in it: width and height are auto under a maximum, so
             before the bytes arrive the element is three pixels square, never
             intersects anything, and the picture is never asked for. That
             shipped twice, and left a blank where every screenshot should
             be. */}
-        <img className={imageClassName} src={source} alt={name} />
-      </a>
+          <img className={imageClassName} src={source} alt={name} />
+        </a>
+      </Tooltip>
       {open ? (
         <Lightbox
           source={source}

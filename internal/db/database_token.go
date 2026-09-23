@@ -34,6 +34,14 @@ type TokenOperation interface {
 	RetireToken(tokenId string, at time.Time) (bool, error)
 	RevokeTokensByUser(userId string, at time.Time) (int64, error)
 
+	// RenameClientTokens renames every token one app holds for a person.
+	// A renewal carries the name over, so the name lasts.
+	RenameClientTokens(userId, clientId, name string, at time.Time) (int64, error)
+
+	// RevokeClientTokens ends every token one app holds for a person, which
+	// is disconnecting it: with no token left it has nothing to renew.
+	RevokeClientTokens(userId, clientId string, at time.Time) (int64, error)
+
 	ScavengeTokens(now time.Time) (int64, error)
 }
 
@@ -231,6 +239,20 @@ func (self *database) RetireToken(tokenId string, at time.Time) (bool, error) {
 func (self *database) RevokeTokensByUser(userId string, at time.Time) (int64, error) {
 	result := self.db.Model(&tokenModel{}).
 		Where("\"user_id\" = ? AND \"revoked_at\" IS NULL", userId).
+		Updates(map[string]any{"revoked_at": at.UTC(), "modified_at": at.UTC()})
+	return result.RowsAffected, result.Error
+}
+
+func (self *database) RenameClientTokens(userId, clientId, name string, at time.Time) (int64, error) {
+	result := self.db.Model(&tokenModel{}).
+		Where("\"user_id\" = ? AND \"client_id\" = ? AND \"revoked_at\" IS NULL", userId, clientId).
+		Updates(map[string]any{"name": name, "modified_at": at.UTC()})
+	return result.RowsAffected, result.Error
+}
+
+func (self *database) RevokeClientTokens(userId, clientId string, at time.Time) (int64, error) {
+	result := self.db.Model(&tokenModel{}).
+		Where("\"user_id\" = ? AND \"client_id\" = ? AND \"revoked_at\" IS NULL", userId, clientId).
 		Updates(map[string]any{"revoked_at": at.UTC(), "modified_at": at.UTC()})
 	return result.RowsAffected, result.Error
 }

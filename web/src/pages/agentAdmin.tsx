@@ -9,6 +9,7 @@ import { FormDialog } from '../components/dialog'
 import { PencilIcon, ToggleOffIcon, ToggleOnIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tabs } from '../components/tabs'
+import { Tooltip } from '../components/tooltip'
 import { AGENT_PARTS, AgentPart } from './settings/agentParts'
 import { IntegrationsSection } from './settings/integrations'
 import { useToast } from '../components/toast'
@@ -316,38 +317,42 @@ export function AgentAdminPage() {
                   subtitle={detailOf(summary)}
                   actions={
                     <div className="row-actions">
-                      <button
-                        type="button"
-                        className="icon-action"
-                        title={t('agentAdmin.setLimit')}
-                        aria-label={`${summary.username}: ${t('agentAdmin.setLimit')}`}
-                        onClick={() => {
-                          setLimit(summary.dailyTokens > 0 ? String(summary.dailyTokens) : '')
-                          setCost(summary.dailyCost > 0 ? String(summary.dailyCost) : '')
-                          setProblem(null)
-                          setLimiting(summary)
-                        }}
+                      <Tooltip label={t('agentAdmin.setLimit')}>
+                        <button
+                          type="button"
+                          className="icon-action"
+                          aria-label={`${summary.username}: ${t('agentAdmin.setLimit')}`}
+                          onClick={() => {
+                            setLimit(summary.dailyTokens > 0 ? String(summary.dailyTokens) : '')
+                            setCost(summary.dailyCost > 0 ? String(summary.dailyCost) : '')
+                            setProblem(null)
+                            setLimiting(summary)
+                          }}
+                        >
+                          <PencilIcon size={16} />
+                        </button>
+                      </Tooltip>
+                      <Tooltip
+                        label={summary.operatorDisabledAt ? t('agentAdmin.switchOn') : t('agentAdmin.switchOff')}
                       >
-                        <PencilIcon size={16} />
-                      </button>
-                      <button
-                        type="button"
-                        className={summary.operatorDisabledAt ? 'icon-action' : 'icon-action danger'}
-                        title={summary.operatorDisabledAt ? t('agentAdmin.switchOn') : t('agentAdmin.switchOff')}
-                        aria-label={`${summary.username}: ${summary.operatorDisabledAt ? t('agentAdmin.switchOn') : t('agentAdmin.switchOff')}`}
-                        onClick={() =>
-                          void act(
-                            () =>
-                              graphql(SET_DISABLED, {
-                                agentId: summary.agentId,
-                                disabled: !summary.operatorDisabledAt,
-                              }),
-                            t('agentAdmin.switched'),
-                          )
-                        }
-                      >
-                        {summary.operatorDisabledAt ? <ToggleOffIcon size={16} /> : <ToggleOnIcon size={16} />}
-                      </button>
+                        <button
+                          type="button"
+                          className={summary.operatorDisabledAt ? 'icon-action' : 'icon-action danger'}
+                          aria-label={`${summary.username}: ${summary.operatorDisabledAt ? t('agentAdmin.switchOn') : t('agentAdmin.switchOff')}`}
+                          onClick={() =>
+                            void act(
+                              () =>
+                                graphql(SET_DISABLED, {
+                                  agentId: summary.agentId,
+                                  disabled: !summary.operatorDisabledAt,
+                                }),
+                              t('agentAdmin.switched'),
+                            )
+                          }
+                        >
+                          {summary.operatorDisabledAt ? <ToggleOffIcon size={16} /> : <ToggleOnIcon size={16} />}
+                        </button>
+                      </Tooltip>
                     </div>
                   }
                 />
