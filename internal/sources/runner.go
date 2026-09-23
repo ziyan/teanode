@@ -562,7 +562,13 @@ func (self *Runner) readOnce(ctx context.Context, container Container, readingIn
 	}
 	since, ok := asTime(state[key])
 	if !ok {
-		since, _ = asTime(reading.Since.First)
+		first, err := self.render(reading.Since.First, scope)
+		if err != nil {
+			return nil, err
+		}
+		if since, ok = asTime(first); !ok {
+			return nil, fmt.Errorf("the reading starts from %q, which is not a time", first)
+		}
 	}
 	passScope := scope.with("pass", map[string]any{"since": since})
 	if reading.Since.UnchangedWhen != "" {
@@ -615,6 +621,15 @@ func (self *Runner) readOnce(ctx context.Context, container Container, readingIn
 		}
 		windowScope := scope.with("pass", map[string]any{"since": since, "windowStart": start, "windowEnd": end})
 		read, err := self.readItems(ctx, container, reading, windowScope)
+		if errors.Is(err, ErrUnfinished) {
+			// What the window got through is kept; its mark stays, so
+			// the next pass reads the window again, from the texts kept.
+			store.merge(read)
+			if saveErr := store.save(); saveErr != nil {
+				return records, saveErr
+			}
+			return append(records, read...), err
+		}
 		if err != nil {
 			return records, err
 		}
@@ -1155,11 +1170,25 @@ func (self *Runner) fetchListing(ctx context.Context, command []string, request 
 func (self *Runner) fetchItems(ctx context.Context, command []string, request *Request, shape Parsing, paging Paging, missing string, scope Scope, strict bool) ([]fetchedItem, error) {
 	var all []fetchedItem
 	token := ""
+	previous := ""
 	for page := 0; ; page++ {
 		if page >= pagesLimit {
 			return nil, fmt.Errorf("the listing passed %d pages and stopped", pagesLimit)
 		}
 		output, err := self.call(ctx, command, request, paging, token, scope)
+		// A tool that ignores where it was asked to start answers the
+		// first page again and again: a listing that would never end,
+		// and one whose later pages were never read.
+		if err == nil && page > 0 {
+			sum := sha256.Sum256(output)
+			if hex.EncodeToString(sum[:]) == previous {
+				return nil, fmt.Errorf("the tool answered the same page again when asked for the next one, so it cannot be paged")
+			}
+		}
+		if err == nil {
+			sum := sha256.Sum256(output)
+			previous = hex.EncodeToString(sum[:])
+		}
 		if err != nil {
 			if missing == "empty" && isMissing(err) {
 				return nil, nil
@@ -1188,6 +1217,13 @@ func (self *Runner) fetchItems(ctx context.Context, command []string, request *R
 				return nil, fmt.Errorf("the answer came back full (%d), so it may have been cut; read a smaller window", paging.Size)
 			}
 			return all, nil
+		case "offset":
+			// A page shorter than the size is the last; a full one may
+			// have more after it, asked for from where it ended.
+			if len(result.items) < paging.Size {
+				return all, nil
+			}
+			token = strconv.Itoa(len(all))
 		default:
 			return all, nil
 		}

@@ -140,3 +140,55 @@ settings:
 		t.Errorf("stored %s", source.Specification.Settings)
 	}
 }
+
+// Offset paging asks for the next page from where the last one ended,
+// until a page comes back short.
+func TestOffsetPagingReadsEveryPage(t *testing.T) {
+	kind := mustParse(t, `
+name: invented-wiki
+description: an invented wiki search
+containers:
+  - fixed: [{}]
+    name: pages.jsonl
+records:
+  - command: [wiki, search, --limit, "2", --json]
+    parse: {json: {items: results}}
+    paging: {offset: {flag: --start, size: 2}}
+    record: {id: "{{item.id}}"}
+`)
+	executor := &fakeExecutor{commands: map[string]string{
+		"wiki search --limit 2 --json":           `{"results": [{"id": "1"}, {"id": "2"}]}`,
+		"wiki search --limit 2 --json --start 2": `{"results": [{"id": "3"}, {"id": "4"}]}`,
+		"wiki search --limit 2 --json --start 4": `{"results": [{"id": "5"}]}`,
+	}}
+	runner := &Runner{Type: kind, Executor: executor, State: t.TempDir()}
+	records, err := runner.Read(context.Background(), Container{Name: "pages.jsonl", Members: []map[string]any{{}}})
+	if err != nil || strings.Join(ids(records), ",") != "1,2,3,4,5" {
+		t.Fatalf("read %v, %v", ids(records), err)
+	}
+}
+
+// A tool that ignores where it was asked to start fails the reading rather
+// than being paged for ever.
+func TestAToolThatRepeatsItsPageFails(t *testing.T) {
+	kind := mustParse(t, `
+name: invented-wiki
+description: an invented wiki search
+containers:
+  - fixed: [{}]
+    name: pages.jsonl
+records:
+  - command: [wiki, search]
+    parse: {json: {items: results}}
+    paging: {offset: {flag: --start, size: 2}}
+    record: {id: "{{item.id}}"}
+`)
+	executor := &fakeExecutor{commands: map[string]string{
+		"wiki search":           `{"results": [{"id": "1"}, {"id": "2"}]}`,
+		"wiki search --start 2": `{"results": [{"id": "1"}, {"id": "2"}]}`,
+	}}
+	runner := &Runner{Type: kind, Executor: executor, State: t.TempDir()}
+	if _, err := runner.Read(context.Background(), Container{Name: "pages.jsonl", Members: []map[string]any{{}}}); err == nil || !strings.Contains(err.Error(), "same page") {
+		t.Fatalf("a repeated page was not refused: %v", err)
+	}
+}
