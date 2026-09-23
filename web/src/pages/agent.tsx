@@ -16,6 +16,12 @@ import {
 import { Column, DataTable, Range } from '../components/dataTable'
 import { RUN_KINDS } from '../agentRuns'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
+import {
+  BackgroundCommand,
+  BackgroundCommandRows,
+  BackgroundOutputDialog,
+  useBackgroundCommands,
+} from '../components/backgroundCommands'
 import { PencilIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tabs, TabItem } from '../components/tabs'
@@ -369,6 +375,7 @@ export function AgentPage() {
           <HarnessCard />
           <SkillSecretsCard />
           <ReachCard />
+          <BackgroundCommandsCard />
           <ChatAppsCard />
         </>
       ) : null}
@@ -1468,6 +1475,25 @@ function ReachCard() {
           />
         )
       })}
+    </SettingsSection>
+  )
+}
+
+// BackgroundCommandsCard is what the agent left running on the person's
+// computers, from every conversation: each with its output and, while it
+// runs, a way to stop it. With nothing running or lately ended there is no
+// card, as there is no reach card without a reach.
+function BackgroundCommandsCard() {
+  const { t } = useTranslation()
+  const { commands, reload } = useBackgroundCommands(undefined, true)
+  const [output, setOutput] = useState<BackgroundCommand | null>(null)
+  if (commands.length === 0 && !output) return null
+  return (
+    <SettingsSection card title={t('agent.backgroundCommands')} description={t('agent.backgroundCommandsHint')}>
+      <BackgroundCommandRows commands={commands} onOutput={setOutput} onChanged={() => void reload(true)} />
+      {output ? (
+        <BackgroundOutputDialog command={output} onChanged={() => void reload(true)} onClose={() => setOutput(null)} />
+      ) : null}
     </SettingsSection>
   )
 }

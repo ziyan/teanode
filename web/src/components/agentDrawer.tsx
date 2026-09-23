@@ -37,9 +37,16 @@ import {
   PlusIcon,
   SparkIcon,
   TargetIcon,
+  TerminalIcon,
   TrashIcon,
   ExternalIcon,
 } from './icons'
+import {
+  BackgroundCommand,
+  BackgroundCommandRows,
+  BackgroundOutputDialog,
+  useBackgroundCommands,
+} from './backgroundCommands'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog, FormDialog } from './dialog'
 import { ZoomablePicture } from './lightbox'
@@ -100,6 +107,22 @@ interface Todo {
 // is the agent checking in against the goal, not the person, and the
 // transcript draws it as a line rather than as their bubble.
 const GOAL_CHECK_IN_MARKER = '[goal check-in]'
+
+// The marker a turn begins with when a command the agent left running in
+// the background has ended, which is models.BackgroundCommandMarker on the
+// server. Like a check-in it is the agent's own turn in the person's
+// shape, and is drawn the same quiet way.
+const BACKGROUND_COMMAND_MARKER = '[background command]'
+
+// Which kind of turn of the agent's own a user message opens, if it opens
+// one at all.
+type CheckInOrigin = 'goal' | 'background'
+
+function checkInOriginOf(text: string): CheckInOrigin | null {
+  if (text.startsWith(GOAL_CHECK_IN_MARKER)) return 'goal'
+  if (text.startsWith(BACKGROUND_COMMAND_MARKER)) return 'background'
+  return null
+}
 
 interface Artifact {
   artifact_id: string
@@ -305,9 +328,10 @@ type Line =
     }
   | { kind: 'note'; key: string; text: string; at?: string }
   | { kind: 'error'; key: string; text: string }
-  // A turn the agent started against the goal. Its words are framing for
-  // the model and were never the person's, so only the hour is drawn.
-  | { kind: 'checkin'; key: string; at?: string; text: string }
+  // A turn the agent started on its own: against the goal, or because a
+  // background command ended. Its words are framing for the model and were
+  // never the person's, so only the hour is drawn.
+  | { kind: 'checkin'; key: string; at?: string; text: string; origin: CheckInOrigin }
 
 const AGENT = `
   query {
@@ -938,9 +962,12 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
         closeTurn()
         // A check-in is a user message only because that is the shape a
         // turn starts in. Nobody typed it, so none of it is shown.
-        if (message.content.startsWith(GOAL_CHECK_IN_MARKER)) {
-          lines.push({ kind: 'checkin', key: message.id, at: message.createdAt, text: message.content })
-          break
+        {
+          const origin = checkInOriginOf(message.content)
+          if (origin) {
+            lines.push({ kind: 'checkin', key: message.id, at: message.createdAt, text: message.content, origin })
+            break
+          }
         }
         lines.push({
           kind: 'user',
@@ -1415,11 +1442,12 @@ function goalStateKey(state: GoalState): `agentDrawer.goal.${GoalState}` {
 // word moves into the tooltip: there is no room beside a title on a phone
 // for "waiting for you · next look 10:42", and the mark's colour already
 // says which of the three it is to anyone who has seen it once.
-// CheckInLine is one turn of the agent's own toward the goal, as a line
-// rather than a bubble; pressing it shows the words the turn was given,
-// because a person watching a goal wants to know what the agent was
-// told as much as what it did.
-function CheckInLine({ at, text }: { at?: string; text: string }) {
+// CheckInLine is one turn of the agent's own, toward the goal or on
+// hearing that a background command ended, as a line rather than a
+// bubble; pressing it shows the words the turn was given, because a
+// person watching the agent wants to know what it was told as much as
+// what it did.
+function CheckInLine({ at, text, origin }: { at?: string; text: string; origin: CheckInOrigin }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   return (
@@ -1430,8 +1458,8 @@ function CheckInLine({ at, text }: { at?: string; text: string }) {
         aria-expanded={open}
         onClick={() => setOpen((before) => !before)}
       >
-        <TargetIcon size={12} />
-        {t('agentDrawer.goal.checkIn')}
+        {origin === 'background' ? <TerminalIcon size={12} /> : <TargetIcon size={12} />}
+        {origin === 'background' ? t('agentDrawer.backgroundEnded') : t('agentDrawer.goal.checkIn')}
         {at ? ` · ${clockTime(at)}` : ''}
       </button>
       {open ? <pre className="agent-checkin-prompt">{text}</pre> : null}
@@ -1453,6 +1481,31 @@ function GoalChip({ conversation, onOpen }: { conversation: Conversation; onOpen
     <Tooltip label={label}>
       <button type="button" className={`icon-button agent-drawer-goal ${state}`} aria-label={label} onClick={onOpen}>
         <TargetIcon size={16} />
+      </button>
+    </Tooltip>
+  )
+}
+
+// BackgroundMark is the head's mark for the commands this conversation
+// left running in the background: a terminal, and how many still run.
+// It stays while ended ones are listed, so how one ended can be read.
+function BackgroundMark({ commands, onOpen }: { commands: BackgroundCommand[]; onOpen: () => void }) {
+  const { t } = useTranslation()
+  const runningCount = commands.filter((command) => command.isRunning).length
+  const label =
+    runningCount > 0 ? t('agentDrawer.backgroundRunning', { count: runningCount }) : t('agentDrawer.backgroundCommands')
+  return (
+    <Tooltip label={label}>
+      <button
+        type="button"
+        className={
+          runningCount > 0 ? 'icon-button agent-drawer-background running' : 'icon-button agent-drawer-background'
+        }
+        aria-label={label}
+        onClick={onOpen}
+      >
+        <TerminalIcon size={14} />
+        {runningCount > 0 ? <span>{runningCount}</span> : null}
       </button>
     </Tooltip>
   )
@@ -1722,6 +1775,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     readConversation: requestConversation,
     adoptConversation,
   } = useAgentConversation(initialConversationId, readConversationSnapshot, applyConversationSnapshot)
+
+  // What this conversation left running on the person's computers, kept up
+  // while the drawer is open. The main conversation is named by an empty
+  // id until it has been read, and the list wants its real one.
+  const backgroundConversationId = conversationId || loaded?.id || ''
+  const { commands: backgroundCommands, reload: reloadBackground } = useBackgroundCommands(
+    backgroundConversationId,
+    open && available && backgroundConversationId !== '',
+  )
+  const [isShowingBackground, setIsShowingBackground] = useState(false)
+  const [backgroundOutput, setBackgroundOutput] = useState<BackgroundCommand | null>(null)
 
   const readConversation = useCallback(
     (conversationId: string, isSelection = false) => {
@@ -2226,11 +2290,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     if (sending.current > 0 && event.note === surface()) return
     // A turn of the agent's own, arriving live: the line, not the bubble,
     // and nothing here to have said it twice.
-    if ((event.text ?? '').startsWith(GOAL_CHECK_IN_MARKER)) {
+    const origin = checkInOriginOf(event.text ?? '')
+    if (origin) {
       setLines((previous) => [
         ...previous,
-        { kind: 'checkin', key: `${event.runId}-asked`, at: event.at, text: event.text ?? '' },
+        { kind: 'checkin', key: `${event.runId}-asked`, at: event.at, text: event.text ?? '', origin },
       ])
+      // A background command has just ended: its row says so now rather
+      // than at the next poll.
+      if (origin === 'background') void reloadBackground(true)
       return
     }
     setLines((previous) => {
@@ -2841,7 +2909,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       case 'question':
         return <QuestionCard key={line.key} line={line} onAnswer={(text) => void answer(line, text)} />
       case 'checkin':
-        return <CheckInLine key={line.key} at={line.at} text={line.text} />
+        return <CheckInLine key={line.key} at={line.at} text={line.text} origin={line.origin} />
       case 'note':
         return (
           <div key={line.key} className="agent-line note muted">
@@ -2970,6 +3038,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               >
                 <ComputerIcon size={14} />
               </DeviceButton>
+            )}
+            {/* What this conversation left running on a computer, while
+                there is any: the count still running, and the list and
+                their output behind it. */}
+            {backgroundCommands.length > 0 && (
+              <BackgroundMark commands={backgroundCommands} onOpen={() => setIsShowingBackground(true)} />
             )}
             {budget && <BudgetRing budget={budget} zone={agentZone} framed={standalone} onLeaving={leaving} />}
             {/* Framed by the extension, the panel around this has a bar
@@ -3428,6 +3502,35 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             </dl>
           ) : null}
         </FormDialog>
+      ) : null}
+      {/* One dialog at a time: the output takes the list's place while it
+          is open, and closing it brings the list back. */}
+      {backgroundOutput ? (
+        <BackgroundOutputDialog
+          command={backgroundOutput}
+          onChanged={() => void reloadBackground(true)}
+          onClose={() => setBackgroundOutput(null)}
+        />
+      ) : isShowingBackground ? (
+        <ConfirmDialog
+          title={t('agentDrawer.backgroundCommands')}
+          wide
+          body={
+            <>
+              <p className="muted">{t('agentDrawer.backgroundCommandsHint')}</p>
+              {backgroundCommands.length === 0 ? (
+                <p className="muted">{t('backgroundCommands.none')}</p>
+              ) : (
+                <BackgroundCommandRows
+                  commands={backgroundCommands}
+                  onOutput={setBackgroundOutput}
+                  onChanged={() => void reloadBackground(true)}
+                />
+              )}
+            </>
+          }
+          onClose={() => setIsShowingBackground(false)}
+        />
       ) : null}
       {deleting ? (
         <ConfirmDialog
