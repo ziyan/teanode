@@ -25,7 +25,7 @@ To see it working: create an agent for a new account and open the dashboard; wit
 - [x] (2026-09-24) Milestone 4: the memory check conversation. The check-in asks the first question in the same message as the request, rather than asking whether now is good and waiting: the overlay then carries the check from its first reply, and "not now" is one word either way.
 - [x] (2026-09-24) Milestone 5: the evaluation runs as a job over the stored set, and its scores are kept. The per-source scores are one jsonb column on the run rather than a column per source and verdict.
 - [ ] Milestone 6: the Memory tab shows the questions, the answers and the scores.
-- [ ] Milestone 7: tips.
+- [x] (2026-09-24) Milestone 7: tips.
 
 ## Surprises & Discoveries
 
@@ -47,6 +47,10 @@ To see it working: create an agent for a new account and open the dashboard; wit
 
 - Decision: the rule "not within ten minutes of the person closing the drawer on a spoken-first message" was left out.
   Rationale: the server already allows one unprompted message a day and none within thirty minutes of the person's last message, which bounds how often the drawer can open by itself; the extra browser state was not worth it until somebody finds the drawer opening too often.
+  Date/Author: 2026-09-24, agent.
+
+- Decision: the tip is chosen by the server, not the model: the first entry of the catalog the person neither uses nor was told, recorded as given when the turn starts. The model only words it and ties it to what the person did lately.
+  Rationale: a model asked to choose and then report its choice will sometimes not report it, and the same tip comes round again; the catalog is short and ordered by usefulness, so the first candidate is the right one anyway.
   Date/Author: 2026-09-24, agent.
 
 - Decision: one tool, `agent_profile`, carries both the profile (name, language, a line added to the instructions) and the person's word about speaking first (`onboarding_done`, `not_now`, `no_more_tips`, `no_more_memory_checks`). It is a core tool, so its overlay is present in every main-conversation turn while the introduction is open.

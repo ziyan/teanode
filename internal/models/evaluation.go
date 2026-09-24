@@ -145,3 +145,12 @@ func EvaluationAnswerScore(questionKind EvaluationQuestionKind, answerVerdict st
 	}
 	return 0
 }
+
+// AgentTip is a tip the agent gave: which, when, and where.
+type AgentTip struct {
+	ID             string    `json:"id"`
+	AgentID        string    `json:"agentId"`
+	TipKey         string    `json:"tipKey"`
+	GivenAt        time.Time `json:"givenAt"`
+	ConversationID string    `json:"conversationId,omitempty" graphapi:"nullable"`
+}

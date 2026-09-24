@@ -57,6 +57,12 @@ type EvaluationOperation interface {
 
 	// ListAgentEvaluationAnswers is every answer of a run, oldest first.
 	ListAgentEvaluationAnswers(runId string) ([]*models.AgentEvaluationAnswer, error)
+
+	// AddAgentTip records a tip given; one given before is left as it was.
+	AddAgentTip(tip *models.AgentTip) error
+
+	// ListAgentTips is every tip the agent has given, newest first.
+	ListAgentTips(agentId string) ([]*models.AgentTip, error)
 }
 
 type agentEvaluationQuestionModel struct {
@@ -383,4 +389,36 @@ func (self *transaction) ListAgentEvaluationAnswers(runId string) ([]*models.Age
 		answers = append(answers, found[index].toModel())
 	}
 	return answers, nil
+}
+
+type agentTipModel struct {
+	ID             string    `gorm:"column:id;primaryKey"`
+	AgentID        string    `gorm:"column:agent_id"`
+	TipKey         string    `gorm:"column:tip_key"`
+	GivenAt        time.Time `gorm:"column:given_at"`
+	ConversationID string    `gorm:"column:conversation_id"`
+}
+
+func (agentTipModel) TableName() string { return "agent_tip" }
+
+func (self *transaction) AddAgentTip(tip *models.AgentTip) error {
+	givenAt := tip.GivenAt
+	if givenAt.IsZero() {
+		givenAt = time.Now()
+	}
+	return self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&agentTipModel{
+		ID: newID(), AgentID: tip.AgentID, TipKey: tip.TipKey, GivenAt: givenAt, ConversationID: tip.ConversationID,
+	}).Error
+}
+
+func (self *transaction) ListAgentTips(agentId string) ([]*models.AgentTip, error) {
+	var found []agentTipModel
+	if err := self.tx.Where(`"agent_id" = ?`, agentId).Order(`"given_at" DESC`).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	tips := make([]*models.AgentTip, 0, len(found))
+	for _, model := range found {
+		tips = append(tips, &models.AgentTip{ID: model.ID, AgentID: model.AgentID, TipKey: model.TipKey, GivenAt: model.GivenAt.In(time.Local), ConversationID: model.ConversationID})
+	}
+	return tips, nil
 }

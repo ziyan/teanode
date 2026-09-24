@@ -60,18 +60,3 @@ func (self *Agent) onboardingReason() speakFirstReason {
 		},
 	}
 }
-
-// tipReason is the agent telling an idle person about one thing they have
-// not tried. Not due until tips exist (Milestone 7).
-func (self *Agent) tipReason() speakFirstReason {
-	return speakFirstReason{
-		name:           SpeakFirstTip,
-		isDailyLimited: true,
-		isDue: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, idle time.Duration, now time.Time) (bool, error) {
-			return false, nil
-		},
-		checkIn: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time) (string, error) {
-			return "", nil
-		},
-	}
-}
