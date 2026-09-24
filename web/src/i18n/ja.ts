@@ -1099,7 +1099,6 @@ export const ja: Catalog = {
   'agentDrawer.answer': '答えを入力…',
   'agentDrawer.chatAboutIt': 'チャットで話す',
   'agentDrawer.submit': '送信',
-  'agentDrawer.answerBelow': '下の入力欄に回答を入力することもできます。',
   'agentDrawer.chattingInstead': 'チャットで話すことにしました',
   'agentDrawer.questionGone': 'このカードはすでに回答済みか、もう待っていません。',
   'agentDrawer.close': '閉じる',
