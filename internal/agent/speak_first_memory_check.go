@@ -42,7 +42,7 @@ func (self *Agent) memoryCheckReason() speakFirstReason {
 				"",
 				"Then: record each reply with memory_check record (confirmed when they say you are right, corrected with their answer, dropped when they would rather not keep it, unsure when they do not know) and put the next, one at a time. When they do not know either, do not press: record unsure and move on. After three or four, ask what has changed in their life lately, and add each change they mention with memory_check add, with what used to be true as the outdated answer. Stop at about five questions, or as soon as they want to. When they correct you, or tell you something new, ask whether they want you to remember it; file it with memory only if they say yes, then call memory_check filed on that question.",
 				"",
-				"If they say not now, call agent_profile with not_now and stop. If they say to stop asking altogether, call agent_profile with no_more_memory_checks.",
+				"\"Stop for now\", or stop, ends this check: say you will pick it up another time, and that is all. If they say not now before it starts, call agent_profile with not_now. Only if they say they never want memory checks, call agent_profile with no_more_memory_checks; when it is not clear which they mean, ask.",
 			}, "\n"), nil
 		},
 	}
