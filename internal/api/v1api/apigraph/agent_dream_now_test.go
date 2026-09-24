@@ -74,4 +74,60 @@ func TestADreamAskedForIsQueuedAtOnce(t *testing.T) {
 			t.Fatalf("one dream is queued at once outside the agent's hours, not %d", open)
 		}
 	})
+	// And the page can see it waiting.
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), principal), tx)
+		state, err := resolver.AgentDreamState(ctx)
+		if err != nil {
+			t.Fatalf("AgentDreamState: %s", err)
+		}
+		if state.DreamJobStatus != "queued" || state.QueuedAt == nil || state.StartedAt != nil {
+			t.Fatalf("the dream is shown as waiting: %+v", state)
+		}
+	})
+}
+
+// A dream is listed with what its model calls cost: the sum of its runs.
+func TestADreamIsListedWithWhatItCost(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+
+	var person *models.User
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if person, err = tx.CreateUser(&models.User{Username: "spender", Name: "Alice Example"}); err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		agent, err := tx.CreateAgent(&models.Agent{UserID: person.ID, Enabled: true, Name: "Bertie"})
+		if err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if _, err := tx.StartAgentDream(&models.AgentDream{AgentID: agent.ID, StartedAt: time.Now(), JobID: "job-of-the-dream"}); err != nil {
+			t.Fatalf("StartAgentDream: %s", err)
+		}
+		for _, cost := range []float64{0.25, 0.5} {
+			run, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: agent.ID, Kind: models.AgentConversationRun, JobID: "job-of-the-dream"})
+			if err != nil {
+				t.Fatalf("CreateAgentConversation: %s", err)
+			}
+			if _, err := tx.AppendAgentMessage(&models.AgentMessage{
+				ConversationID: run.ID, Role: "assistant", Content: "done", Usage: &models.AgentUsageNote{Cost: cost},
+			}); err != nil {
+				t.Fatalf("AppendAgentMessage: %s", err)
+			}
+		}
+	})
+	configuration := config.Default()
+	resolver := &graph{database: database, config: config.NewMemoryStore(configuration)}
+	principal := &api.Principal{User: person, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionAgentUse}})}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), principal), tx)
+		dreams, err := resolver.ListAgentDreams(ctx, ListAgentDreamsArguments{First: 5})
+		if err != nil {
+			t.Fatalf("ListAgentDreams: %s", err)
+		}
+		if len(dreams) != 1 || dreams[0].Cost != 0.75 || dreams[0].Currency == "" {
+			t.Fatalf("the dream costs 0.75 in the configured currency: %+v", dreams)
+		}
+	})
 }

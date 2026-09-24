@@ -532,6 +532,12 @@ type AgentDream struct {
 	Tokens    int64  `json:"tokens"`
 	Notes     string `json:"notes,omitempty"`
 	LastError string `json:"lastError,omitempty"`
+
+	// Cost is what the dream's model calls cost, at the prices the
+	// providers are configured with, and Currency what it is said in.
+	// Worked out from its runs when the dreams are listed, never stored.
+	Cost     float64 `json:"cost"`
+	Currency string  `json:"currency,omitempty"`
 }
 
 // DreamProposal is something the night wants the person to decide: where

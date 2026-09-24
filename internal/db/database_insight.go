@@ -67,6 +67,10 @@ type InsightOperation interface {
 	// SumAgentRunUsage is what each of these conversations cost: every
 	// message's usage added up, keyed by conversation.
 	SumAgentRunUsage(conversationIds []string) (map[string]models.AgentUsageNote, error)
+
+	// SumAgentJobCost is what the runs of each of these jobs cost, keyed
+	// by job: what a dream cost, for instance.
+	SumAgentJobCost(jobIds []string) (map[string]float64, error)
 	DeleteAgentConversation(conversationId string) error
 
 	// SearchAgentConversations finds a person's conversations by words in
@@ -577,6 +581,28 @@ func (self *transaction) SumAgentRunUsage(conversationIds []string) (map[string]
 		}
 	}
 	return totals, nil
+}
+
+func (self *transaction) SumAgentJobCost(jobIds []string) (map[string]float64, error) {
+	costs := map[string]float64{}
+	if len(jobIds) == 0 {
+		return costs, nil
+	}
+	var rows []struct {
+		JobID string
+		Cost  float64
+	}
+	if err := self.tx.Raw(`
+		SELECT c."job_id", coalesce(sum((m."usage"->>'cost')::double precision), 0) AS cost
+		FROM "agent_conversation" c JOIN "agent_message" m ON m."conversation_id" = c."id"
+		WHERE c."job_id" = ANY(?) AND m."usage" IS NOT NULL
+		GROUP BY c."job_id"`, pq.Array(jobIds)).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		costs[row.JobID] = row.Cost
+	}
+	return costs, nil
 }
 
 // CountAgentRuns is how many runs the filter leaves, for the pager.

@@ -68,6 +68,12 @@ type AgentGraphQuery interface {
 	// Needs agent:use.
 	AgentReadingProgress(ctx context.Context) (*reading.Progress, error)
 
+	// AgentDreamState is whether a dream is waiting to start or running
+	// now, and since when: cheap, for a page to ask every few seconds
+	// between pressing Dream now and the dream showing up. Needs
+	// agent:use.
+	AgentDreamState(ctx context.Context) (*AgentDreamState, error)
+
 	// The pictures and files behind citations the agent has already
 	// written -- "work/mcx#3" -- so that a conversation can show the
 	// evidence an answer rests on. Needs agent:use.
@@ -1118,7 +1124,62 @@ func (self *graph) ListAgentDreams(ctx context.Context, arguments ListAgentDream
 	if limit <= 0 || limit > 100 {
 		limit = 14
 	}
-	return self.transaction(ctx).ListAgentDreams(found.ID, limit)
+	tx := self.transaction(ctx)
+	dreams, err := tx.ListAgentDreams(found.ID, limit)
+	if err != nil {
+		return nil, err
+	}
+	// What each cost: the sum of its runs, the same numbers `agent dream
+	// runs` lists call by call.
+	jobIds := make([]string, 0, len(dreams))
+	for _, dream := range dreams {
+		if dream.JobID != "" {
+			jobIds = append(jobIds, dream.JobID)
+		}
+	}
+	costs, err := tx.SumAgentJobCost(jobIds)
+	if err != nil {
+		return nil, err
+	}
+	currency := self.config.Current().Agent.Currency
+	for _, dream := range dreams {
+		dream.Cost, dream.Currency = costs[dream.JobID], currency
+	}
+	return dreams, nil
+}
+
+// AgentDreamState is the dream job of the moment, if there is one.
+type AgentDreamState struct {
+	// DreamJobStatus is "queued" while a dream waits for a free worker,
+	// "running" while it works, and empty when there is neither.
+	DreamJobStatus string `json:"dreamJobStatus"`
+
+	// QueuedAt is when it was asked for or scheduled; StartedAt when a
+	// worker took it, while it runs.
+	QueuedAt  *time.Time `json:"queuedAt" graphapi:"nullable"`
+	StartedAt *time.Time `json:"startedAt" graphapi:"nullable"`
+}
+
+func (self *graph) AgentDreamState(ctx context.Context) (*AgentDreamState, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	jobs, err := self.transaction(ctx).ListAgentJobs(&db.AgentJobFilter{
+		AgentID:  found.ID,
+		Kinds:    []models.AgentJobKind{models.AgentJobDream},
+		Statuses: []models.AgentJobStatus{models.AgentJobQueued, models.AgentJobRunning},
+	}, &db.Options{Limit: 1})
+	if err != nil || len(jobs) == 0 {
+		return &AgentDreamState{}, err
+	}
+	job := jobs[0]
+	queuedAt := job.CreatedAt
+	state := &AgentDreamState{DreamJobStatus: string(job.Status), QueuedAt: &queuedAt}
+	if job.Status == models.AgentJobRunning {
+		state.StartedAt = job.ClaimedAt
+	}
+	return state, nil
 }
 
 func (self *graph) AgentReadingProgress(ctx context.Context) (*reading.Progress, error) {

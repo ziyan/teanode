@@ -1366,6 +1366,9 @@ func runDreamLog(ctx context.Context, command *cli.Command) error {
 			// The line under it says why there is nothing to count.
 			parts = []string{"cut short"}
 		}
+		if dream.Cost > 0 {
+			parts = append(parts, fmt.Sprintf("cost %.2f %s", dream.Cost, dream.Currency))
+		}
 		_, _ = fmt.Fprintf(command.Writer, "  %s\n", strings.Join(parts, ", "))
 		if dream.Backlog > 0 {
 			// The pace this run actually read at, and not a number
