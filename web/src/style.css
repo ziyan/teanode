@@ -6514,6 +6514,24 @@ main.content:has(> .mailbox-frame) {
   font-size: 12px;
 }
 
+/* The replies the last answer offered, just above the box: pressed, one
+   is sent as it reads. They wrap rather than scroll, and the longest is
+   still read whole. */
+.agent-suggested-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 0;
+}
+
+.agent-suggested-replies button {
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 13px;
+  text-align: left;
+  white-space: normal;
+}
+
 /* What the agent is waiting for, directly above the box: what it needs
    is read where the person is about to give it, rather than somewhere up
    the transcript they would have to scroll back for. It goes as soon as

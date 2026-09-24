@@ -531,6 +531,14 @@ func (self *AskRun) Resolve(callId string, approve bool) bool {
 	return true
 }
 
+// suggestedRepliesBlock asks for the replies the person would most likely
+// send next, where the dashboard can offer them as buttons.
+const suggestedRepliesBlock = `<suggested_replies>
+When your answer ends on a clear choice, a question with a few likely answers, or a few distinct next steps, end it with one more line holding two to six short replies the person could send as they are, which the dashboard shows as buttons:
+<!--suggestions:["Yes, go ahead","Not now"]-->
+Each is a whole message in their voice and their language, not a label. Leave the line out when the conversation is open-ended, when they are telling you something, or when you asked with a question card. Never mention it; they do not see it.
+</suggested_replies>`
+
 // Stop ends the run; the turn stays where it got to.
 func (self *AskRun) Stop() {
 	self.cancel()
@@ -1654,6 +1662,12 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 		if len(parts) > 0 {
 			blocks = append(blocks, "<viewing>\nThe person has open: "+strings.Join(parts, ", ")+". \"This\" means it.\n</viewing>")
 		}
+	}
+	// The dashboard draws the replies the model offers as buttons above the
+	// box, to send with a click; nowhere else does, and they are taken off
+	// what goes anywhere else (models.StripSuggestedReplies).
+	if settings.Surface == "drawer" || settings.Surface == "page" || strings.HasPrefix(settings.Surface, speakFirstSurfacePrefix) {
+		blocks = append(blocks, suggestedRepliesBlock)
 	}
 	switch settings.Surface {
 	case "phone":

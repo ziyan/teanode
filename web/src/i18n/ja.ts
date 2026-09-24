@@ -1098,6 +1098,7 @@ export const ja: Catalog = {
   'agentDrawer.usageUsed': '{limit} のうち {used}',
   'agentDrawer.answer': '答えを入力…',
   'agentDrawer.chatAboutIt': 'チャットで話す',
+  'agentDrawer.suggestedReplies': '返信の候補',
   'agentDrawer.submit': '送信',
   'agentDrawer.chattingInstead': 'チャットで話すことにしました',
   'agentDrawer.questionGone': 'このカードはすでに回答済みか、もう待っていません。',

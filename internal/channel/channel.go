@@ -693,10 +693,10 @@ func (self *chatState) follow(ctx context.Context, run *agent.AskRun, chat Chat,
 			}
 			switch event.Kind {
 			case agent.EventText:
-				live.update(ctx, event.Text)
+				live.update(ctx, models.StripSuggestedReplies(event.Text))
 			case agent.EventMessage:
 				answered = true
-				live.finish(ctx, event.Text)
+				live.finish(ctx, models.StripSuggestedReplies(event.Text))
 				live = &preview{chat: chat}
 			case agent.EventToolCall:
 				live.reset(ctx)

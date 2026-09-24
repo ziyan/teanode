@@ -178,7 +178,7 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 		}
 		switch event.Kind {
 		case EventMessage:
-			answer = event.Text
+			answer = models.StripSuggestedReplies(event.Text)
 		case EventError:
 			failure = event.Error
 		}
