@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.58.7] - 2026-09-24
+
+### Changed
+
+- A schedule that answers in the drawer answers in the conversation it was set in, as a turn of the agent's, instead of a copied note in the main conversation. (#140)
+
+### Fixed
+
+- A reminder for one moment ("in five minutes", "at 9:00") now runs; it was silently dropped. Once run, it is removed from the list of schedules. (#140)
+
 ## [0.58.6] - 2026-09-24
 
 ### Fixed
