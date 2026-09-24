@@ -1128,18 +1128,16 @@ function QuestionCard({
                 </button>
               ))}
             </div>
-          ) : (
-            <p className="muted">{t('agentDrawer.answerBelow')}</p>
-          )}
+          ) : null}
           <div className="agent-question-actions">
+            <button type="button" onClick={onChat}>
+              {t('agentDrawer.chatAboutIt')}
+            </button>
             {line.choices.length > 0 ? (
               <button type="button" className="primary" disabled={!chosen} onClick={() => onAnswer(chosen)}>
                 {t('agentDrawer.submit')}
               </button>
             ) : null}
-            <button type="button" onClick={onChat}>
-              {t('agentDrawer.chatAboutIt')}
-            </button>
           </div>
         </>
       )}

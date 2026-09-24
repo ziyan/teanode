@@ -1063,7 +1063,6 @@ export const zh: Catalog = {
   'agentDrawer.answer': '你的回答…',
   'agentDrawer.chatAboutIt': '聊一聊',
   'agentDrawer.submit': '提交',
-  'agentDrawer.answerBelow': '也可以在下方输入框中输入你的回答。',
   'agentDrawer.chattingInstead': '改为聊一聊',
   'agentDrawer.close': '关闭',
   'agentDrawer.main': '主聊天',
