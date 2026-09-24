@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.61.4] - 2026-09-24
+
+### Changed
+
+- A question or an approval from your agent now waits until you answer it, however long that takes: it is still in the chat after a reload, a restart or on another device, and answering it later carries the work on. It used to be dropped after ten minutes. (#155)
+
 ## [0.61.3] - 2026-09-24
 
 ### Changed
