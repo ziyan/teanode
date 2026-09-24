@@ -814,8 +814,9 @@ func (self *transaction) ListAgentMessages(conversationId string, options *Optio
 
 func (self *transaction) LastAgentPersonMessageAt(conversationId string) (*time.Time, error) {
 	var last []time.Time
-	if err := self.tx.Model(&agentMessageModel{}).
-		Where("\"conversation_id\" = ? AND \"role\" = ? AND \"content\" NOT LIKE ? AND \"content\" NOT LIKE ?", conversationId, "user", models.GoalCheckInMarker+"%", models.BackgroundCommandMarker+"%").
+	query := self.tx.Model(&agentMessageModel{}).
+		Where("\"conversation_id\" = ? AND \"role\" = ?", conversationId, "user")
+	if err := withoutOwnTurns(query, "\"content\"").
 		Order("\"created_at\" DESC").Limit(1).Pluck("created_at", &last).Error; err != nil {
 		return nil, err
 	}
@@ -827,10 +828,11 @@ func (self *transaction) LastAgentPersonMessageAt(conversationId string) (*time.
 
 func (self *transaction) LastAgentPersonWordAt(agentId string) (*time.Time, error) {
 	var last []time.Time
-	if err := self.tx.Model(&agentMessageModel{}).
+	query := self.tx.Model(&agentMessageModel{}).
 		Joins("JOIN \"agent_conversation\" ON \"agent_conversation\".\"id\" = \"agent_message\".\"conversation_id\"").
-		Where("\"agent_conversation\".\"agent_id\" = ? AND \"agent_conversation\".\"kind\" IN ? AND \"agent_message\".\"role\" = ? AND \"agent_message\".\"content\" NOT LIKE ? AND \"agent_message\".\"content\" NOT LIKE ?",
-			agentId, []string{string(models.AgentConversationMain), string(models.AgentConversationNamed)}, "user", models.GoalCheckInMarker+"%", models.BackgroundCommandMarker+"%").
+		Where("\"agent_conversation\".\"agent_id\" = ? AND \"agent_conversation\".\"kind\" IN ? AND \"agent_message\".\"role\" = ?",
+			agentId, []string{string(models.AgentConversationMain), string(models.AgentConversationNamed)}, "user")
+	if err := withoutOwnTurns(query, "\"agent_message\".\"content\"").
 		Order("\"agent_message\".\"created_at\" DESC").Limit(1).Pluck("\"agent_message\".\"created_at\"", &last).Error; err != nil {
 		return nil, err
 	}
@@ -838,6 +840,15 @@ func (self *transaction) LastAgentPersonWordAt(agentId string) (*time.Time, erro
 		return nil, nil
 	}
 	return &last[0], nil
+}
+
+// withoutOwnTurns leaves out the messages that open a turn the agent took
+// on its own: they are in the person's shape and are not the person.
+func withoutOwnTurns(query *gorm.DB, column string) *gorm.DB {
+	for _, marker := range models.OwnTurnMarkers {
+		query = query.Where(column+" NOT LIKE ?", escapeLike(marker)+"%")
+	}
+	return query
 }
 
 var _ = gorm.ErrRecordNotFound
