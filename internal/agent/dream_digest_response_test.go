@@ -17,6 +17,11 @@ func TestDigestResponseRejectsPartialAnswers(test *testing.T) {
 		`{"facts":"invalid"}`,
 		`{"facts":[{"text":"Do not retain a partially decoded fact."}],"links":"invalid"}`,
 		"<tool_call>" + strings.Repeat("fixture ", 40),
+		// Not a reading at all, which used to read as one that found
+		// nothing and so marked the batch read.
+		`{}`,
+		`{"error": "the model is overloaded"}`,
+		`{"facts": null}`,
 	} {
 		answer, err := (&Agent{}).parseDigestResponse(test.Context(), nil, nil, responseText)
 		if err == nil || answer != nil {
@@ -69,9 +74,17 @@ func TestDigestResponseRecoversProseWithinItsBudget(test *testing.T) {
 	}
 }
 
-func TestDigestResponseKeepsExistingJSONRepair(test *testing.T) {
-	answer, err := (&Agent{}).parseDigestResponse(test.Context(), nil, nil, `{"facts":`)
-	if err != nil || answer == nil || len(answer.Facts) != 0 {
-		test.Fatalf("repaired empty answer = %+v, %v", answer, err)
+// A cut-off answer is not repaired into an empty one: `{"facts":` is half
+// an answer, and taking it for "nothing found" marked the batch read.
+func TestDigestResponseRefusesACutOffAnswer(test *testing.T) {
+	for _, responseText := range []string{`{"facts":`, `{"facts": [{"text": "one"}, {"text": "tw`} {
+		if answer, err := (&Agent{}).parseDigestResponse(test.Context(), nil, nil, responseText); err == nil || answer != nil {
+			test.Fatalf("a cut-off answer was taken: %+v, %v", answer, err)
+		}
+	}
+	// The repair still mends what a model breaks in a whole answer.
+	answer, err := (&Agent{}).parseDigestResponse(test.Context(), nil, nil, `{"facts": [],}`)
+	if err != nil || answer == nil {
+		test.Fatalf("a trailing comma is still repaired: %+v, %v", answer, err)
 	}
 }

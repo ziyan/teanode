@@ -226,7 +226,7 @@ func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*model
 	}
 	answer, err := self.parseDigestResponse(ctx, run, budget, thinking.Text)
 	if err != nil {
-		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %d documents, and answered with no object", len(documents)))
+		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %d documents, and the answer could not be read: %s", len(documents), cutRunes(err.Error(), 160)))
 		return 0, self.givingUpOn(ctx, run, documents) && completeDigestWithoutFacts(ctx, run, documents, complete)
 	}
 	// Evidence points at the document rather than at a conversation:
