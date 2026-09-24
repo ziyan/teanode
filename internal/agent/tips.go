@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -17,11 +18,6 @@ import (
 // tipIdle is how long the person has to have been still before a tip: a
 // tip is for a pause, never for somebody in the middle of something.
 const tipIdle = 5 * time.Minute
-
-// tipRecentConversationCount is how many of the person's latest
-// conversations the check-in names, so the tip can be tied to what they
-// actually do.
-const tipRecentConversationCount = 5
 
 // Tip is one entry of the catalog.
 type Tip struct {
@@ -175,13 +171,24 @@ func tipsToGive(tx db.Transaction, agent *models.Agent, owner *models.User) ([]*
 	return candidates, nil
 }
 
+// tipDecisionApart is how long after one tip decision the next may be
+// made, whether the last one gave a tip or chose not to: a model asked
+// every minute would find a reason in the end.
+const tipDecisionApart = 24 * time.Hour
+
+// tipLatelyConversationCount is how many of the person's latest
+// conversations the decision is shown.
+const tipLatelyConversationCount = 10
+
 // tipReason is the agent telling an idle person about one thing they have
 // not tried.
 //
-// The tip is chosen here, not by the model: the first of the catalog they
-// do not use and were not told, recorded as given when the turn starts. A
-// model asked to pick one and say which would sometimes not say, and the
-// same tip would come round again.
+// The catalog's own checks only say what the person certainly uses
+// already. Whether a tip is worth giving now, and which, is decided by a
+// model shown what is left and what the person has been doing lately:
+// "has no schedule" says nothing about whether a schedule would help this
+// person. The tip it chose is recorded as given when the turn starts, so
+// it never comes round again whatever the turn then says.
 func (self *Agent) tipReason() speakFirstReason {
 	return speakFirstReason{
 		name:           SpeakFirstTip,
@@ -190,15 +197,27 @@ func (self *Agent) tipReason() speakFirstReason {
 			if !agent.IsTipsEnabled || agent.OnboardedAt == nil || idle < tipIdle {
 				return false, nil
 			}
+			decided, err := tx.CountAgentJobs(&db.AgentJobFilter{
+				AgentID: agent.ID, Kinds: []models.AgentJobKind{models.AgentJobSpeakFirst},
+				SubjectID: SpeakFirstTip, Since: now.Add(-tipDecisionApart),
+			})
+			if err != nil || decided > 0 {
+				return false, err
+			}
 			candidates, err := tipsToGive(tx, agent, owner)
 			return len(candidates) > 0, err
 		},
-		checkIn: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time) (string, error) {
-			candidates, err := tipsToGive(tx, agent, owner)
-			if err != nil || len(candidates) == 0 {
-				return "", err
+		prepare: self.chooseTip,
+		checkIn: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time, prepared map[string]string) (string, error) {
+			var tip *Tip
+			for _, candidate := range tipCatalog {
+				if candidate.TipKey == prepared["tipKey"] {
+					tip = candidate
+				}
 			}
-			tip := candidates[0]
+			if tip == nil {
+				return "", nil
+			}
 			main, err := scheduleConversation(tx, agent.ID, "")
 			if err != nil {
 				return "", err
@@ -206,24 +225,18 @@ func (self *Agent) tipReason() speakFirstReason {
 			if err := tx.AddAgentTip(&models.AgentTip{AgentID: agent.ID, TipKey: tip.TipKey, GivenAt: now, ConversationID: main.ID}); err != nil {
 				return "", err
 			}
-			lately, err := recentConversationLines(tx, agent)
-			if err != nil {
-				return "", err
-			}
 			lines := []string{
 				"They have the dashboard open and have been quiet for a while. Tell them about one thing you can do that they have not tried:",
 				"",
 				"- What: " + tip.Feature,
 				"- Where: " + tip.Where,
-				"",
 			}
-			if len(lately) > 0 {
-				lines = append(lines, "What they have been doing with you lately, so you can tie the tip to it where it fits:")
-				lines = append(lines, lately...)
-				lines = append(lines, "")
+			if tieIn := strings.TrimSpace(prepared["tieIn"]); tieIn != "" {
+				lines = append(lines, "- Why them: "+tieIn)
 			}
 			lines = append(lines,
-				"Two sentences at most: what it is, tied to something they actually did if you can, and where to find it. No greeting, no list, nothing else. Do not set anything up yourself.",
+				"",
+				"Two sentences at most: what it is, tied to what they did where you can, and where to find it. No greeting, no list, nothing else. Do not set anything up yourself.",
 				"",
 				"If they answer that they do not want tips, call agent_profile with no_more_tips. If they say not now, call agent_profile with not_now.",
 			)
@@ -232,10 +245,65 @@ func (self *Agent) tipReason() speakFirstReason {
 	}
 }
 
+// chooseTip asks a model whether a tip is worth giving now, and which.
+func (self *Agent) chooseTip(ctx context.Context, run *Run, now time.Time) (map[string]string, bool, error) {
+	var candidates []*Tip
+	var lately, given []string
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		if candidates, err = tipsToGive(tx, run.Agent, run.Owner); err != nil {
+			return err
+		}
+		if lately, err = recentConversationLines(tx, run.Agent, tipLatelyConversationCount); err != nil {
+			return err
+		}
+		tips, err := tx.ListAgentTips(run.Agent.ID)
+		for _, tip := range tips {
+			given = append(given, fmt.Sprintf("- %s, %s", tip.TipKey, tip.GivenAt.In(Location(run.Owner)).Format("2 January 2006")))
+		}
+		return err
+	}); err != nil || len(candidates) == 0 {
+		return nil, false, err
+	}
+	prompt, err := render("tip_choose.txt", map[string]any{
+		"PersonName": personName(run.Owner),
+		"Candidates": candidates,
+		"Lately":     lately,
+		"Given":      given,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	chose, err := self.oneShot(ctx, self.runFor(run.Agent, run.Owner, nil, ""), "Chose a tip", prompt, models.AgentJobSpeakFirst, config.AgentWorkAsk)
+	if err != nil {
+		return nil, false, err
+	}
+	decision := readModelAnswer[struct {
+		ShouldTip      bool   `json:"shouldTip"`
+		TipKey         string `json:"tipKey"`
+		TieIn          string `json:"tieIn"`
+		DecisionReason string `json:"decisionReason"`
+	}](chose.Text, "shouldTip")
+	if !decision.IsValid {
+		log.Warningf("the tip decision for agent %q could not be read: %s", run.Agent.ID, decision.Problem)
+		return nil, false, nil
+	}
+	if !decision.Value.ShouldTip {
+		log.Debugf("no tip for agent %q: %s", run.Agent.ID, decision.Value.DecisionReason)
+		return nil, false, nil
+	}
+	for _, candidate := range candidates {
+		if candidate.TipKey == decision.Value.TipKey {
+			return map[string]string{"tipKey": candidate.TipKey, "tieIn": decision.Value.TieIn}, true, nil
+		}
+	}
+	log.Warningf("the tip decision for agent %q named %q, which is not one it was offered", run.Agent.ID, decision.Value.TipKey)
+	return nil, false, nil
+}
+
 // recentConversationLines names the person's latest conversations, by
 // title and summary, as lines of a list.
-func recentConversationLines(tx db.Transaction, agent *models.Agent) ([]string, error) {
-	conversations, err := tx.ListAgentConversations(agent.ID, []models.AgentConversationKind{models.AgentConversationMain, models.AgentConversationNamed}, &db.Options{Limit: tipRecentConversationCount})
+func recentConversationLines(tx db.Transaction, agent *models.Agent, conversationCount uint64) ([]string, error) {
+	conversations, err := tx.ListAgentConversations(agent.ID, []models.AgentConversationKind{models.AgentConversationMain, models.AgentConversationNamed}, &db.Options{Limit: conversationCount})
 	if err != nil {
 		return nil, err
 	}

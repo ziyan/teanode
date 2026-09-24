@@ -55,8 +55,14 @@ type speakFirstReason struct {
 	// idle for idle. The common rules have already held.
 	isDue func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, idle time.Duration, now time.Time) (bool, error)
 
-	// checkIn is the turn's message.
-	checkIn func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time) (string, error)
+	// prepare, when set, runs before the turn and outside any
+	// transaction, for a reason that needs a model to decide whether to
+	// speak and about what. It returns what checkIn is handed, or false
+	// to say nothing this time.
+	prepare func(ctx context.Context, run *Run, now time.Time) (map[string]string, bool, error)
+
+	// checkIn is the turn's message, given what prepare returned.
+	checkIn func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time, prepared map[string]string) (string, error)
 }
 
 // speakFirstReasons is every reason, in the order they are asked: an
@@ -208,13 +214,20 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 		return err
 	}
 	now := time.Now()
+	var prepared map[string]string
+	if reason.prepare != nil {
+		var isSpeaking bool
+		if prepared, isSpeaking, err = reason.prepare(ctx, run, now); err != nil || !isSpeaking {
+			return err
+		}
+	}
 	var conversation *models.AgentConversation
 	var message string
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if conversation, err = scheduleConversation(tx, run.Agent.ID, ""); err != nil {
 			return err
 		}
-		if message, err = reason.checkIn(ctx, tx, run.Agent, run.Owner, now); err != nil || strings.TrimSpace(message) == "" {
+		if message, err = reason.checkIn(ctx, tx, run.Agent, run.Owner, now, prepared); err != nil || strings.TrimSpace(message) == "" {
 			return err
 		}
 		// Recorded before the turn rather than after it: a turn that

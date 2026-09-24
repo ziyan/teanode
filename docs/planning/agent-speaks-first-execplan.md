@@ -49,9 +49,9 @@ To see it working: create an agent for a new account and open the dashboard; wit
   Rationale: the server already allows one unprompted message a day and none within thirty minutes of the person's last message, which bounds how often the drawer can open by itself; the extra browser state was not worth it until somebody finds the drawer opening too often.
   Date/Author: 2026-09-24, agent.
 
-- Decision: the tip is chosen by the server, not the model: the first entry of the catalog the person neither uses nor was told, recorded as given when the turn starts. The model only words it and ties it to what the person did lately.
-  Rationale: a model asked to choose and then report its choice will sometimes not report it, and the same tip comes round again; the catalog is short and ordered by usefulness, so the first candidate is the right one anyway.
-  Date/Author: 2026-09-24, agent.
+- Decision: whether to give a tip, and which, is decided by a one-shot model call (`chooseTip`, prompt `tip_choose.txt`) before the turn, not by the catalog order and not by the turn itself. The catalog's own checks only remove what the person certainly uses already; the model sees what is left, the person's latest ten conversations and the tips given before, and may say no tip. The sweep asks at most once a day, whatever the answer. The chosen tip is recorded as given when the turn starts.
+  Rationale: the person asked for it. "Has no schedule" says nothing about whether a schedule would help this person, and a decision made apart from the turn can decline without writing anything in the conversation, and names its choice in a field the server reads rather than in prose.
+  Date/Author: 2026-09-24, the person and agent.
 
 - Decision: one tool, `agent_profile`, carries both the profile (name, language, a line added to the instructions) and the person's word about speaking first (`onboarding_done`, `not_now`, `no_more_tips`, `no_more_memory_checks`). It is a core tool, so its overlay is present in every main-conversation turn while the introduction is open.
   Rationale: one small tool costs fewer prompt tokens than two, and all five actions are the person saying something about how the agent should behave.
