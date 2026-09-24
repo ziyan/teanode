@@ -49,6 +49,9 @@ type DreamOperation interface {
 	// is not read at all -- it stays searchable, and is not counted as
 	// waiting.
 	ListAgentDocumentsToDigest(agentId string, names []string, limit int) ([]*models.AgentDocument, int64, error)
+
+	// MarkAgentDocumentsDigested says these have been read, and every
+	// unread document that says the same with them.
 	MarkAgentDocumentsDigested(documentIds []string, at time.Time) error
 
 	// MarkAgentDocumentsGarbled says the night could not make sense of
@@ -551,8 +554,24 @@ func (self *transaction) MarkAgentDocumentsDigested(documentIds []string, at tim
 	if len(documentIds) == 0 {
 		return nil
 	}
-	return self.tx.Exec(
+	if err := self.tx.Exec(
 		`UPDATE "agent_document" SET "metadata" = "metadata" || jsonb_build_object('digested', ?::text) WHERE "id" = ANY(?)`,
+		at.Format(time.RFC3339), pq.Array(documentIds)).Error; err != nil {
+		return err
+	}
+	// And every other copy of what they say, which is read now too: the
+	// same page copied from a template, the same file in two checkouts,
+	// one item under a new name after its source changed type. Each copy
+	// was read and filed again under its own name, and a site with a
+	// template used sixteen hundred times had its facts filed sixteen
+	// hundred times. sameAs says which document was actually read.
+	return self.tx.Exec(`
+		UPDATE "agent_document" AS "copy"
+		SET "metadata" = "copy"."metadata" || jsonb_build_object('digested', ?::text, 'sameAs', "read"."id")
+		FROM "agent_document" AS "read"
+		WHERE "read"."id" = ANY(?) AND "read"."hash" <> ''
+		  AND "copy"."agent_id" = "read"."agent_id" AND "copy"."hash" = "read"."hash"
+		  AND "copy"."id" <> "read"."id" AND NOT jsonb_exists("copy"."metadata", 'digested')`,
 		at.Format(time.RFC3339), pq.Array(documentIds)).Error
 }
 

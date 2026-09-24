@@ -452,3 +452,52 @@ func TestAFileNothingHasReadYetIsNotOfferedToANight(t *testing.T) {
 		}
 	})
 }
+
+// Reading a document reads every copy of what it says: the same page from
+// a template, the same file in two places. Each copy used to be read and
+// filed again under its own name.
+func TestReadingADocumentReadsItsCopies(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		source := knowledgeSource(test, tx)
+		put := func(externalId, hash string) *models.AgentDocument {
+			document, err := tx.PutAgentDocument(&models.AgentDocument{
+				AgentID: source.AgentID, SourceID: source.ID, ExternalID: externalId,
+				Kind: models.DocumentFile, Title: externalId, Hash: hash,
+			})
+			if err != nil {
+				test.Fatalf("PutAgentDocument %q: %s", externalId, err)
+			}
+			return document
+		}
+		read := put("templates/checklist.md", "hash-of-the-checklist")
+		copied := put("teams/north/checklist.md", "hash-of-the-checklist")
+		different := put("teams/south/notes.md", "hash-of-the-notes")
+		empty := put("teams/south/empty.md", "")
+		alsoEmpty := put("teams/north/empty.md", "")
+		if err := tx.MarkAgentDocumentsDigested([]string{read.ID, empty.ID}, time.Now()); err != nil {
+			test.Fatalf("MarkAgentDocumentsDigested: %s", err)
+		}
+		for _, each := range []struct {
+			document *models.AgentDocument
+			isRead   bool
+			sameAs   string
+		}{
+			{copied, true, read.ID},
+			{different, false, ""},
+			{alsoEmpty, false, ""},
+		} {
+			found, err := tx.GetAgentDocumentByExternal(source.ID, each.document.ExternalID)
+			if err != nil || found == nil {
+				test.Fatalf("GetAgentDocumentByExternal %q: %v %s", each.document.ExternalID, found, err)
+			}
+			_, isRead := found.Metadata["digested"]
+			sameAs, _ := found.Metadata["sameAs"].(string)
+			if isRead != each.isRead || sameAs != each.sameAs {
+				test.Errorf("%s: read %v as the copy of %q, want read %v as the copy of %q", found.ExternalID, isRead, sameAs, each.isRead, each.sameAs)
+			}
+		}
+	})
+}
