@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.61.3] - 2026-09-24
+
+### Changed
+
+- The agent's memory check tells you what it remembers about your own life and asks whether it is right, with choices to pick and a "Chat about it" button, rather than quizzing you, and no longer asks about things it read from work sources. (#154)
+
 ## [0.61.2] - 2026-09-24
 
 ### Changed
