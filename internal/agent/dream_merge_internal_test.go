@@ -185,6 +185,65 @@ func TestAMergeOfTwoRowsThatAreGoneIsSkipped(t *testing.T) {
 	}
 }
 
+// A merge keeps what the evidence establishes. The survivor stands where
+// the wording it keeps stands, and a richer sentence the agent only
+// inferred is not merged into one the person stated.
+func TestAMergeKeepsTheStandingOfTheWordsItKeeps(t *testing.T) {
+	for _, each := range []struct {
+		name               string
+		stated             string
+		inferred           string
+		isMerged           bool
+		survivorText       string
+		isSurvivorInferred bool
+	}{
+		{"a richer inferred sentence stays its own fact",
+			"Marigold is moored at the pier.", "Marigold is moored at the pier in Rivermouth.", false, "", false},
+		{"an inferred rewording merges, and the survivor is inferred",
+			"Marigold is moored at the pier.", "Marigold is kept at the pier.", true, "Marigold is kept at the pier.", true},
+	} {
+		t.Run(each.name, func(t *testing.T) {
+			world := newMergeWorld(t, each.stated, each.inferred)
+			dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+				for index, isInferred := range []bool{false, true} {
+					updated, err := tx.UpdateAgentFact(world.agent.ID, world.facts[index].ID, func(fact *models.AgentFact) error {
+						fact.Inferred, fact.Confidence = isInferred, 1
+						if isInferred {
+							fact.Confidence = 0.5
+						}
+						return nil
+					})
+					if err != nil {
+						t.Fatalf("UpdateAgentFact: %s", err)
+					}
+					world.facts[index] = updated
+				}
+			})
+			// The model gives the pair best first: the inferred wording.
+			merged := world.merge(t, [][]int{{2, 1}})
+			if (merged == 1) != each.isMerged {
+				t.Fatalf("merged %d, want merged %v", merged, each.isMerged)
+			}
+			stated := world.stated(t)
+			if !each.isMerged {
+				if len(stated) != 2 {
+					t.Fatalf("both facts stay, not %v", stated)
+				}
+				return
+			}
+			dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+				survivor, err := tx.GetAgentFact(world.agent.ID, world.page.ID, 1)
+				if err != nil || survivor == nil {
+					t.Fatalf("GetAgentFact: %v %s", survivor, err)
+				}
+				if survivor.Text != each.survivorText || survivor.Inferred != each.isSurvivorInferred || survivor.Confidence != 0.5 {
+					t.Fatalf("the survivor says %q, inferred %v at %v", survivor.Text, survivor.Inferred, survivor.Confidence)
+				}
+			})
+		})
+	}
+}
+
 // The nightly merge asks a model which lines say the same thing, but the
 // model does not get to call two occurrences of an event one: an event on
 // another day, or a state beside an event, stays its own fact.
