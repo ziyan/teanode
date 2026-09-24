@@ -154,6 +154,24 @@ func newAgentGraphCommands() []*cli.Command {
 			Action: runAgentGraphAnswers,
 		},
 		{
+			Name:  "check",
+			Usage: "the memory check: the questions your agent asked you about what it remembers, and the answers you gave",
+			Commands: []*cli.Command{
+				{
+					Name:   "list",
+					Usage:  "the questions on record, newest first",
+					Flags:  []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "state", Usage: "asked, confirmed, corrected, dropped or unsure; all by default"}},
+					Action: runAgentMemoryCheckList,
+				},
+				{
+					Name:      "import",
+					Usage:     "add the questions of a question file that have an expectedAnswer, as confirmed; those already on record are skipped",
+					ArgsUsage: "<file>",
+					Action:    runAgentMemoryCheckImport,
+				},
+			},
+		},
+		{
 			Name:  "learned",
 			Usage: "what the agent has filed lately, newest first",
 			Flags: []cli.Flag{
@@ -2052,5 +2070,72 @@ func runKnowledgeSecretClear(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "forgot %s for %s\n", command.Args().Get(1), source.Name)
+	return nil
+}
+
+func runAgentMemoryCheckList(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	var states []string
+	if state := strings.TrimSpace(command.String("state")); state != "" {
+		states = []string{state}
+	}
+	questions, err := client.ListAgentEvaluationQuestions(ctx, connection, states)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(questions)
+	}
+	if len(questions) == 0 {
+		_, _ = fmt.Fprintln(command.Writer, "no questions on record yet")
+		return nil
+	}
+	rows := make([][]string, 0, len(questions))
+	for _, question := range questions {
+		answer := question.ExpectedAnswer
+		if question.OutdatedAnswer != "" {
+			answer += " (was: " + question.OutdatedAnswer + ")"
+		}
+		if question.IsAnswerFiledAfter {
+			answer += " [filed after]"
+		}
+		rows = append(rows, []string{question.CreatedAt.Format("2006-01-02"), question.QuestionState, question.QuestionKind, question.QuestionText, answer})
+	}
+	return printTable([]string{"ASKED", "STATE", "KIND", "QUESTION", "ANSWER"}, rows)
+}
+
+func runAgentMemoryCheckImport(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 1 {
+		return fmt.Errorf("which question file? teanode agent memory check import <file>")
+	}
+	questions, err := readQuestionSet(command.Args().First())
+	if err != nil {
+		return err
+	}
+	imported := []client.ImportedEvaluationQuestion{}
+	for _, question := range questions {
+		if strings.TrimSpace(question.ExpectedAnswer) == "" {
+			continue
+		}
+		imported = append(imported, client.ImportedEvaluationQuestion{
+			QuestionKind: question.Kind, QuestionText: question.Question,
+			ExpectedAnswer: question.ExpectedAnswer, OutdatedAnswer: question.OutdatedAnswer,
+		})
+	}
+	if len(imported) == 0 {
+		return fmt.Errorf("no question in the file has an expectedAnswer; see docs/evaluation/README.md")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	addedCount, err := client.ImportAgentEvaluationQuestions(ctx, connection, imported)
+	if err != nil {
+		return describeError(command, err)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%d question(s) added, %d already on record\n", addedCount, len(imported)-addedCount)
 	return nil
 }

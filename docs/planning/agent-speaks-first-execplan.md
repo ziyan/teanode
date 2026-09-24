@@ -21,7 +21,7 @@ To see it working: create an agent for a new account and open the dashboard; wit
 - [x] (2026-09-24) Wrote this plan, after a first memory check done by hand: 48 questions drafted from one person's memory and corrected by them in chat, and a baseline of 46% from memory, 30% from sources and 58% from both (see `docs/planning/memory-write-invariants-execplan.md`, Outcomes).
 - [x] (2026-09-24) Milestone 1: the agent can speak first: an unprompted turn in the main conversation, the rules for when, presence from the dashboard, and the drawer opening on it.
 - [x] (2026-09-24) Milestone 2: onboarding.
-- [ ] Milestone 3: memory check questions stored per agent, with the tool the agent uses to draft, ask and record, and an import of an existing question file.
+- [x] (2026-09-24) Milestone 3: memory check questions stored per agent, with the tool the agent uses to draft, ask and record, and an import of an existing question file.
 - [ ] Milestone 4: the memory check conversation.
 - [ ] Milestone 5: the evaluation runs as a job over the stored set, and its scores are kept.
 - [ ] Milestone 6: the Memory tab shows the questions, the answers and the scores.
@@ -36,6 +36,8 @@ To see it working: create an agent for a new account and open the dashboard; wit
 - Observation: the dashboard hears nothing from the main conversation while the chat drawer is closed: the drawer subscribes to a conversation's events only while it is open (`web/src/components/agentDrawer.tsx`, the effect that calls `subscribe` with `AgentConversationEvents`). A message the agent writes on its own is invisible until the person opens the drawer, which is why the drawer has to be told.
 
 - Observation: a headless turn's overlays are sent with the conversation, not in the system prompt, so a test looking for the introduction's overlay has to search the whole request.
+
+- Observation: the facts a check can ask about are chosen by page path (`self`, `people/`, `things/`, `places/`), which leaves work pages out even when they sit under `self/`: the path `self/work` is the person's own and is included, so a check can still ask about a job.
 
 ## Decision Log
 

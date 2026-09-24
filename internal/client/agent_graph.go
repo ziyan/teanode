@@ -680,3 +680,58 @@ func SpeakFirstNow(ctx context.Context, connection *Client, speakFirstReason str
 	}
 	return connection.Execute(ctx, DocumentSpeakFirstNow, map[string]any{"speakFirstReason": speakFirstReason}, &result)
 }
+
+// DocumentListAgentEvaluationQuestions reads the memory check's questions.
+const DocumentListAgentEvaluationQuestions = `query ($questionStates: [String!]) { ListAgentEvaluationQuestions(questionStates: $questionStates) { id createdAt questionKind questionText expectedAnswer outdatedAnswer questionState isAnswerFiledAfter answeredAt } }`
+
+// DocumentImportAgentEvaluationQuestions adds questions from a file.
+const DocumentImportAgentEvaluationQuestions = `mutation ($questions: [ImportedEvaluationQuestionInput!]!) { ImportAgentEvaluationQuestions(questions: $questions) }`
+
+// AgentEvaluationQuestion is a memory check question as the API gives it.
+type AgentEvaluationQuestion struct {
+	ID                 string     `json:"id"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	QuestionKind       string     `json:"questionKind"`
+	QuestionText       string     `json:"questionText"`
+	ExpectedAnswer     string     `json:"expectedAnswer"`
+	OutdatedAnswer     string     `json:"outdatedAnswer,omitempty"`
+	QuestionState      string     `json:"questionState"`
+	IsAnswerFiledAfter bool       `json:"isAnswerFiledAfter"`
+	AnsweredAt         *time.Time `json:"answeredAt,omitempty"`
+}
+
+// ImportedEvaluationQuestion is one question to import.
+type ImportedEvaluationQuestion struct {
+	QuestionKind   string `json:"questionKind,omitempty"`
+	QuestionText   string `json:"questionText"`
+	ExpectedAnswer string `json:"expectedAnswer"`
+	OutdatedAnswer string `json:"outdatedAnswer,omitempty"`
+}
+
+// ListAgentEvaluationQuestions is the memory check's questions, newest
+// first, in the states given or in all of them.
+func ListAgentEvaluationQuestions(ctx context.Context, connection *Client, questionStates []string) ([]*AgentEvaluationQuestion, error) {
+	var result struct {
+		ListAgentEvaluationQuestions []*AgentEvaluationQuestion `json:"ListAgentEvaluationQuestions"`
+	}
+	variables := map[string]any{}
+	if len(questionStates) > 0 {
+		variables["questionStates"] = questionStates
+	}
+	if err := connection.Execute(ctx, DocumentListAgentEvaluationQuestions, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.ListAgentEvaluationQuestions, nil
+}
+
+// ImportAgentEvaluationQuestions adds questions as confirmed, skipping
+// those already on record, and says how many were added.
+func ImportAgentEvaluationQuestions(ctx context.Context, connection *Client, questions []ImportedEvaluationQuestion) (int, error) {
+	var result struct {
+		ImportAgentEvaluationQuestions int `json:"ImportAgentEvaluationQuestions"`
+	}
+	if err := connection.Execute(ctx, DocumentImportAgentEvaluationQuestions, map[string]any{"questions": questions}, &result); err != nil {
+		return 0, err
+	}
+	return result.ImportAgentEvaluationQuestions, nil
+}

@@ -146,3 +146,20 @@ An abstain question's `expectedAnswer` is `not known`.
 The questions that measure anything are about your own life, so keep that
 set out of any repository: `~/.config/teanode/evaluation/` is a good place
 for it, readable by you alone.
+
+## The memory check
+
+The agent also builds a question set of its own, by asking. Every so
+often it asks the person, in the main conversation, whether it may check
+a few things it remembers, puts them one at a time with the answer it
+believes, and records what the person says: right, corrected, skip, or
+not sure. What the person adds about things that changed is kept too.
+The questions are the person's and stay on their Memory tab.
+
+    teanode agent memory check list
+    teanode agent memory check import <file>
+
+`import` adds the questions of a file in the shape above that have an
+`expectedAnswer`, as confirmed, and skips any whose words are already on
+record, so a set written by hand and the one the agent asks for become
+one.
