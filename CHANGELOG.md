@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.58.8] - 2026-09-24
+
+### Changed
+
+- The goal, attached computer and tab, and usage marks in the agent drawer open dropdowns under its head; background commands show only what is running. (#141)
+
 ## [0.58.7] - 2026-09-24
 
 ### Changed
