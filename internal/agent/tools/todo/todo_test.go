@@ -1,12 +1,13 @@
-package askuser_test
+package todo_test
 
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
-	_ "github.com/ziyan/teanode/internal/agent/tools/askuser"
+	_ "github.com/ziyan/teanode/internal/agent/tools/todo"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
@@ -24,19 +25,19 @@ func (self *todoRun) Conversation() *models.AgentConversation { return self.conv
 
 type todoAnswer struct {
 	Todo []struct {
-		ID   string `json:"id"`
-		Text string `json:"text"`
-		Done bool   `json:"done"`
+		ID     string `json:"id"`
+		Text   string `json:"text"`
+		IsDone bool   `json:"isDone"`
 	} `json:"todo"`
-	Open      int `json:"open"`
-	Done      int `json:"done"`
-	Succeeded int `json:"succeeded"`
-	Failed    int `json:"failed"`
-	Pruned    int `json:"pruned"`
-	Results   []struct {
-		Op    string `json:"op"`
-		ID    string `json:"id"`
-		Error string `json:"error"`
+	OpenCount      int `json:"openCount"`
+	DoneCount      int `json:"doneCount"`
+	SucceededCount int `json:"succeededCount"`
+	FailedCount    int `json:"failedCount"`
+	PrunedCount    int `json:"prunedCount"`
+	Results        []struct {
+		Op           string `json:"op"`
+		ID           string `json:"id"`
+		ErrorMessage string `json:"errorMessage"`
 	} `json:"results"`
 }
 
@@ -80,19 +81,29 @@ func TestTheAgentKeepsItsStepsInBatches(t *testing.T) {
 	}
 
 	added := call(`{"action":"batch","items":[{"op":"add","text":"Read the notes"},{"op":"add","text":"Draft   the\nplan"},{"op":"add","text":""}]}`)
-	if added.Succeeded != 2 || added.Failed != 1 || len(added.Todo) != 2 || added.Todo[1].Text != "Draft the plan" {
+	if added.SucceededCount != 2 || added.FailedCount != 1 || len(added.Todo) != 2 || added.Todo[1].Text != "Draft the plan" {
 		t.Fatalf("added %+v", added)
 	}
 	first, second := added.Todo[0].ID, added.Todo[1].ID
 	changed := call(`{"action":"batch","items":[{"op":"complete","id":"` + first + `"},{"op":"update","id":"` + second + `","text":"Draft the plan for Monday"},{"op":"complete","id":"no-such-step"}]}`)
-	if changed.Succeeded != 2 || changed.Failed != 1 || changed.Done != 1 || changed.Open != 1 || changed.Todo[1].Text != "Draft the plan for Monday" {
+	if changed.SucceededCount != 2 || changed.FailedCount != 1 || changed.DoneCount != 1 || changed.OpenCount != 1 || changed.Todo[1].Text != "Draft the plan for Monday" {
 		t.Fatalf("changed %+v", changed)
 	}
-	if changed.Results[2].Error == "" {
+	if changed.Results[2].ErrorMessage == "" {
 		t.Fatalf("a step that is not there was not refused: %+v", changed.Results)
 	}
+	// The list comes back to the agent every round, with a reminder to keep
+	// it true.
+	overlay := todo.Overlay(tools.WithRun(context.Background(), run))
+	if !strings.Contains(overlay, "Draft the plan for Monday") || !strings.Contains(overlay, "Complete each step") || strings.Contains(overlay, "Read the notes") {
+		t.Fatalf("the overlay is %q", overlay)
+	}
+	// Deleting a step that is not there says so.
+	if missing := call(`{"action":"batch","items":[{"op":"delete","id":"no-such-step"}]}`); missing.FailedCount != 1 {
+		t.Fatalf("deleting a missing step was reported done: %+v", missing)
+	}
 	pruned := call(`{"action":"prune"}`)
-	if pruned.Pruned != 1 || len(pruned.Todo) != 1 || pruned.Todo[0].ID != second {
+	if pruned.PrunedCount != 1 || len(pruned.Todo) != 1 || pruned.Todo[0].ID != second {
 		t.Fatalf("pruned %+v", pruned)
 	}
 }
