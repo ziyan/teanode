@@ -170,16 +170,21 @@ func (self *database) EnsureVectorIndex(table VectorTable, model string, dimensi
 // that differ only in punctuation share one index before.
 func (self *database) hasVectorIndex(table VectorTable, model string, dimension int) (bool, error) {
 	var definitions []string
+	// The table as the search path finds it, which is the table the
+	// statement below would build on; not one of the same name elsewhere.
 	if err := self.db.Raw(`SELECT pg_get_indexdef(index.indexrelid) FROM pg_index index
-		JOIN pg_class indexed ON indexed.oid = index.indrelid
-		WHERE indexed.relname = ? AND index.indisvalid AND pg_get_indexdef(index.indexrelid) LIKE '%USING hnsw%'`, table.Table).
+		WHERE index.indrelid = to_regclass(?) AND index.indisvalid AND pg_get_indexdef(index.indexrelid) LIKE '%USING hnsw%'`, pq.QuoteIdentifier(table.Table)).
 		Scan(&definitions).Error; err != nil {
 		return false, fmt.Errorf("db: cannot list the vector indexes on %s: %w", table.Table, err)
 	}
-	width := fmt.Sprintf("::vector(%d))", dimension)
+	// The column, the width and the operator class together: an index
+	// for another distance serves no cosine search. A model name with a
+	// backslash is quoted differently by pq and by PostgreSQL, so it is
+	// not found here and is built again, which is safe.
+	indexed := fmt.Sprintf("(((vector)::vector(%d)) vector_cosine_ops)", dimension)
 	predicate := fmt.Sprintf("WHERE ((model)::text = %s::text)", pq.QuoteLiteral(model))
 	for _, definition := range definitions {
-		if strings.Contains(definition, width) && strings.HasSuffix(definition, predicate) {
+		if strings.Contains(definition, indexed) && strings.HasSuffix(definition, predicate) {
 			return true, nil
 		}
 	}

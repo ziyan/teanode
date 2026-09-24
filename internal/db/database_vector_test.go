@@ -176,3 +176,23 @@ func TestVectorIndexesKeepCollidingModelNames(test *testing.T) {
 		}
 	}
 }
+
+// An index for another distance, or another width, is not the index a
+// cosine search needs, whatever its predicate says: the right one is built
+// beside it.
+func TestAVectorIndexForAnotherDistanceIsNotTaken(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	if !database.VectorIndexing() {
+		test.Skip("vector extension is not installed")
+	}
+	dbtest.Exec(test, database, `CREATE INDEX fixture_l2_vector ON agent_node_vector USING hnsw ((vector::vector(32)) vector_l2_ops) WHERE model = 'fixture:l2'`)
+	dbtest.Exec(test, database, `CREATE INDEX fixture_wide_vector ON agent_node_vector USING hnsw ((vector::vector(64)) vector_cosine_ops) WHERE model = 'fixture:l2'`)
+	if err := database.EnsureVectorIndex(db.AgentNodeTable, "fixture:l2", 32); err != nil {
+		test.Fatal(err)
+	}
+	cosine := dbtest.QueryString(test, database, `SELECT count(*)::text FROM pg_indexes WHERE tablename = 'agent_node_vector' AND indexdef LIKE '%vector(32)) vector_cosine_ops)%' AND indexdef LIKE '%''fixture:l2''::text)'`)
+	if cosine != "1" {
+		test.Fatalf("a cosine index of width 32 is built beside the other two, and there are %s", cosine)
+	}
+}
