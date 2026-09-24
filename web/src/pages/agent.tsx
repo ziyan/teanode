@@ -24,6 +24,7 @@ import {
 import { PencilIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tabs, TabItem } from '../components/tabs'
+import { MemoryCheckSection } from '../components/memoryCheck'
 import { Tooltip } from '../components/tooltip'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
@@ -98,6 +99,8 @@ export type Agent = {
   dreamUntil?: string
   dailyTokens: number
   operatorDisabledAt?: string | null
+  isMemoryCheckEnabled: boolean
+  isTipsEnabled: boolean
 }
 export type AgentSource = { mailboxId: string; name: string; addresses: string[]; policy?: AgentMailboxPolicy | null }
 // A calendar or an address book as a source: a switch, and how much is in it.
@@ -123,6 +126,7 @@ export type AgentView = {
 
 const VIEW = `{
   agent { id name enabled instructions language knowledgeLanguage askModel dreamFrom dreamUntil dailyTokens operatorDisabledAt confirm
+    isMemoryCheckEnabled isTipsEnabled
     voice { tone length greeting signoff }
     categories { name description }
     notifications { heldReply highPriority runFailed } }
@@ -141,11 +145,12 @@ const UPDATE_AGENT = `
   mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String, $knowledgeLanguage: String,
     $voice: AgentVoiceInput,
     $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput, $confirm: [String!], $askModel: String,
-    $dreamFrom: String, $dreamUntil: String, $forget: Boolean) {
+    $dreamFrom: String, $dreamUntil: String, $isMemoryCheckEnabled: Boolean, $isTipsEnabled: Boolean, $forget: Boolean) {
     UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, knowledgeLanguage: $knowledgeLanguage,
       voice: $voice,
       categories: $categories, notifications: $notifications, confirm: $confirm, askModel: $askModel,
-      dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, forget: $forget) ${VIEW}
+      dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, isMemoryCheckEnabled: $isMemoryCheckEnabled,
+      isTipsEnabled: $isTipsEnabled, forget: $forget) ${VIEW}
   }`
 const GRANT = `mutation ($mailboxId: String!, $policy: AgentMailboxInput) { GrantAgentMailbox(mailboxId: $mailboxId, policy: $policy) ${VIEW} }`
 const REVOKE = `mutation ($mailboxId: String!) { RevokeAgentMailbox(mailboxId: $mailboxId) ${VIEW} }`
@@ -325,6 +330,43 @@ export function AgentPage() {
                 </label>
               ) : null}
             </div>
+            {/* The two things the agent says without being asked, beyond
+                its introduction. Each is a switch of its own because a
+                person may welcome one and not the other. */}
+            <div className="settings-subform">
+              <h4>{t('agent.speakFirst')}</h4>
+              <p className="muted">{t('agent.speakFirstHint')}</p>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={agent.isMemoryCheckEnabled}
+                  disabled={busy}
+                  onChange={(event) =>
+                    void update(
+                      { isMemoryCheckEnabled: event.target.checked },
+                      event.target.checked ? t('agent.memoryChecksOn') : t('agent.memoryChecksOff'),
+                    )
+                  }
+                />
+                {t('agent.memoryChecks')}
+              </label>
+              <p className="muted field-hint">{t('agent.memoryChecksHint')}</p>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={agent.isTipsEnabled}
+                  disabled={busy}
+                  onChange={(event) =>
+                    void update(
+                      { isTipsEnabled: event.target.checked },
+                      event.target.checked ? t('agent.tipsOn') : t('agent.tipsOff'),
+                    )
+                  }
+                />
+                {t('agent.tips')}
+              </label>
+              <p className="muted field-hint">{t('agent.tipsHint')}</p>
+            </div>
             <ConfirmForm agent={agent} busy={busy} onSave={update} />
             <div className="settings-subform">
               <h4>{t('agent.forget')}</h4>
@@ -353,6 +395,7 @@ export function AgentPage() {
       ) : null}
       {tab === 'memory' ? (
         <>
+          <MemoryCheckSection />
           <LearnedCard />
           <CorrectionsCard />
         </>

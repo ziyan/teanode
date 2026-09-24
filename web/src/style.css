@@ -6691,6 +6691,67 @@ main.content:has(> .mailbox-frame) {
   font-variant-numeric: tabular-nums;
 }
 
+/* The memory check's scores: one small panel a source, side by side where
+   there is room and one under another on a phone, each with the latest
+   score and a line of the ones before it. */
+.memory-check-scores {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.memory-check-score {
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+}
+
+.memory-check-score-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.memory-check-score-head strong {
+  font-size: var(--text-title);
+  font-variant-numeric: tabular-nums;
+}
+
+.memory-check-score-note {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-label);
+}
+
+/* Shrinks with its panel rather than pushing it wider; the height stays,
+   so the points keep their shape. */
+.memory-check-sparkline {
+  display: block;
+  max-width: 100%;
+  margin-top: var(--space-1);
+}
+
+.memory-check-sparkline-baseline {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.memory-check-sparkline-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.memory-check-sparkline-point {
+  fill: var(--accent);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
 .agent-code {
   position: relative;
   margin: 4px 0 6px;
