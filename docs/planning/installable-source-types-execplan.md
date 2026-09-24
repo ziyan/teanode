@@ -26,8 +26,11 @@ and within a minute the source page shows messages being read, with no file crea
 - [x] (2026-09-23) Milestone 5: the dashboard: Source types under Agents (installed, the registry, local types, each type's guide), a Sources tab on the agent page with a type picker and a settings form, and a typed source's settings when it is edited. Checked at desktop and phone widths.
 - [x] (2026-09-23) The agent's knowledge tool lists types and adds a source of one; `teanode agent source-type` and `knowledge add/set --type --setting --computer`.
 - [x] (2026-09-23) Code review of the whole change; its findings fixed (see Outcomes), shipped as #127 and #128.
-- [ ] Milestone 6: the scripts retired. The records folders are left on the person's computer, unread, until a week of passes shows no sweep larger than the day's changes; the records contract stays for anything a type cannot say.
-- [ ] Secrets carried to where a type runs, so a type that needs a credential (a wiki's own web API) can be read. Until then such a type is refused when a source of it is saved.
+- [x] (2026-09-23) Paging by offset, and a tool that answers the same page when asked for the next fails the reading; a source put off because its computer is busy with another source tries again in minutes, not the next night. Shipped as #128.
+- [x] (2026-09-23) Secrets carried to where a type runs: a type declares them as a skill does, the person fills them in for each source (dashboard, `teanode agent knowledge secret`, `try-source --secret`), they are kept sealed with the server secret and sent only in the scan request. `link` paging follows the next page an answer names, and neither it nor a redirect leaves the scheme and host it started on. Shipped as #129.
+- [x] (2026-09-23) `confluence-api` in the registry: a wiki read with its web API and a token, one container per space, a page's body fetched once for each version. The wiki source moved to it from its export and reads the whole site.
+- [x] (2026-09-23) Milestone 6, first half: the scripts retired, at the person's request on the day rather than after a week of quiet passes. The carried caches (video sheets, exported workbooks) were checked against the new ones before the scripts and their records folders were removed; the records contract stays for anything a type cannot say.
+- [ ] Milestone 6, second half: `docs/subsystems/memory.md` and the knowledge tool's `shape` text describe types first, and the `skill` and `web` kinds that were never built are removed.
 
 ## Surprises & Discoveries
 
@@ -49,6 +52,12 @@ and within a minute the source page shows messages being read, with no file crea
   Evidence: `internal/agent/ingest.go`, the waiting branch; four sources were found scheduled for the next night after the switch.
 - Observation: the review found several ways a pass could still delete what it had not really lost: a container that failed to read was sent as one refused entry and its documents swept; a cursor naming an item gone since the last page skipped the rest of its container; a comparison with an empty time held, skipping readings; an error object with no list read as an empty listing.
   Evidence: the review of #127; each is now an unfinished pass, a failure, or a test.
+- Observation: the wiki's web API could not be read as one container either. The first try listed every page of the site under one container, and the computer held the whole listing and its kept records in memory at once.
+  Evidence: the switch to `confluence-api` 1.0.0; 1.1.0 lists spaces as containers and reads each space's pages on its own.
+- Observation: a secret-backed source could not be given its secret in the same save that made it: the secrets API read the source in a transaction of its own, which did not see the source the save had just written.
+  Evidence: the review of #129; the secrets API now reads within the request's transaction.
+- Observation: the check for secrets in tracked files treats anything shaped like a host name as a leak, including a setting named `site` in a template (`settings.site`).
+  Evidence: CI on #129; the setting became `domain`.
 - Observation: `skill` and `web` source kinds are declared in `internal/models/knowledge.go` and accepted by the API but cannot be read (`internal/agent/ingest.go` fails them as "not built yet").
 
 ## Decision Log
@@ -111,17 +120,27 @@ and within a minute the source page shows messages being read, with no file crea
 
 - Decision: the wiki source stays on its export; the registry's `confluence` type fails when an answer may have been cut instead of passing for complete, and the runner fails a tool that answers the same page when asked for the next.
   Rationale: see Surprises. Reading that site live needs its web API with cursor paging, which needs secrets carried to the computer.
-  Date/Author: 2026-09-23, agent.
+  Date/Author: 2026-09-23, agent. Superseded the same day by the next decision.
+
+- Decision: a type's secrets are the person's and belong to one source: every secret a type declares is `scope: person`, kept for each source (two sources of one type are usually two accounts), and used only inside an authentication profile, never in a URL or a command line. The wiki source moved to `confluence-api` once they shipped.
+  Rationale: a URL ends up in logs and error messages, and a command line in the process list; a profile puts the secret in a header the runner builds. Keeping them for each source rather than each type is what lets a person read two accounts of one service.
+  Date/Author: 2026-09-23, the person (secrets as skills have them), agent (their scope and where they may appear).
+
+- Decision: the scripts and their records folders were removed on the day the last source moved, not after a week of passes.
+  Rationale: the person asked for it, and the carried caches had been checked against the new ones, so nothing a later pass needs came from the folders.
+  Date/Author: 2026-09-23, the person.
 
 ## Outcomes & Retrospective
 
-Shipped on 2026-09-23 in #127 and #128. Every knowledge source on the deployed server is now a source of a type; nine types are published in the signed registry, and two local types read one-off exports. The switch kept identifiers and hashes wherever the type replaced a script: the drive's first typed pass saw all 1,958 documents and filed three new ones; the chat, export and folder sources re-saw what their first typed passes reached without re-reading any of it. The one source moved to a different reading (the self-hosted code host, from its export to `glab`) was re-read on purpose.
+Shipped on 2026-09-23 in #127, #128 and #129. Every knowledge source on the deployed server is now a source of a type; nine types are published in the signed registry, and two local types read one-off exports. The switch kept identifiers and hashes wherever the type replaced a script: the drive's first typed pass saw all 1,958 documents and filed three new ones; the chat, export and folder sources re-saw what their first typed passes reached without re-reading any of it. The one source moved to a different reading (the self-hosted code host, from its export to `glab`) was re-read on purpose.
 
 What worked: comparing each type record by record before switching found every difference that would have changed a hash (a dash, a date cut to ten characters, line endings, a label's case), and carrying the scripts' caches over (video sheets, exported workbooks) kept the files' identities too.
 
 What was learned: the sweep is the risk in everything here. Every defect of consequence the review found was a path by which a pass that had not seen everything could still delete, and the fix each time was the same rule: a pass that is not sure it saw everything is unfinished, and an unfinished pass deletes nothing. A tool's limits are the other risk: a tool that caps or ignores paging must make the reading fail, never pass for complete.
 
-Left to do: carrying secrets to typed sources, the `website` reader, a server-side dry run, and retiring the records folders after a week of quiet passes.
+Secrets for typed sources followed in #129, and with them the wiki moved from a one-off export to its live web API; the scripts were retired the same day.
+
+Left to do: the rest of Milestone 6 (the memory document and the knowledge tool's text, and removing the unbuilt kinds), the `website` reader, and a server-side dry run.
 
 ## Context and Orientation
 
@@ -262,6 +281,8 @@ In `internal/sources/source.go`:
     func (self *Type) Specify(source *models.AgentKnowledgeSource, values map[string]any) error
 
 The runner is `sources.Runner` (`List`, `Read`) in `internal/sources/runner.go`, with an `Executor` that runs commands and requests. In `internal/computer/scan_typed.go`, `openTyped` builds one for a scan page, and `scanRecords` reads a typed source as it reads a records folder. `ScanArguments` gains `SourceType`, `Settings`, `Secrets` and `SourceKey`, sent only when `Format` is `typed`; `ScanResult` gains `IsUnfinished`. No new third-party libraries: YAML parsing uses the library `internal/skills` already uses.
+
+Revision note (2026-09-23, after #129): secrets for typed sources, the `confluence-api` type and the wiki's move to it, and the scripts' retirement recorded in Progress, Surprises, the Decision Log and Outcomes; Milestone 6 split into what was done and what is left.
 
 Revision note (2026-09-23, after shipping): progress, discoveries, decisions and outcomes brought up to what shipped in #127 and #128; the format section, the example, the steps and the interfaces describe the code as it is.
 
