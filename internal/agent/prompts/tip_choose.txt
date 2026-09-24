@@ -1,0 +1,20 @@
+You help {{.PersonName}} get more out of their assistant. They have the dashboard open and have been quiet for a few minutes. Decide whether this is a good moment to tell them about one thing the assistant can do that they have not tried, and if so, which.
+
+<not_tried>
+{{range .Candidates}}- {{.TipKey}}: {{.Feature}}
+{{end}}</not_tried>
+{{if .Lately}}
+<lately>
+What they have been doing with the assistant lately, newest first:
+{{range .Lately}}{{.}}
+{{end}}</lately>
+{{end}}{{if .Given}}
+<tips_given_before>
+{{range .Given}}{{.}}
+{{end}}</tips_given_before>
+{{end}}
+Choose the one that would help them most with what they actually do. A tip tied to something they did lately is worth more than a general one. Say no tip when none of them fits what they do, when the last tip was given only a few days ago and nothing lately calls for another, or when they have barely used the assistant yet and a tip would be noise.
+
+Answer with one JSON object and nothing else:
+
+{"shouldTip": true, "tipKey": "one of the keys above", "tieIn": "one line: what they did lately that the tip helps with, or empty", "decisionReason": "one short line"}

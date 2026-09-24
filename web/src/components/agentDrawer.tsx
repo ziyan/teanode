@@ -18,6 +18,7 @@ import {
 } from '../api'
 import { uploadFiles } from '../upload'
 import { useAgentConversation } from '../hooks/useAgentConversation'
+import { useAgentPresence } from '../hooks/useAgentPresence'
 import { budgetNearness, formatClock, formatCount, formatMoney, formatTime } from './common'
 import { useResolvedTheme } from './theme'
 import { Tooltip } from './tooltip'
@@ -116,14 +117,24 @@ const BACKGROUND_COMMAND_MARKER = '[background command]'
 // conversation, which is models.ScheduleMarker on the server.
 const SCHEDULE_MARKER = '[schedule]'
 
+// The marker a turn begins with when the agent starts a conversation on
+// its own, to introduce itself, check what it remembers or give a tip,
+// which is models.SpeakFirstMarker on the server.
+const SPEAK_FIRST_MARKER = '[speaking first]'
+
+// The surface such a turn is taken on, "speak_first:tip" and the like. A
+// turn that begins with it in the main conversation opens the drawer.
+const SPEAK_FIRST_SURFACE = 'speak_first:'
+
 // Which kind of turn of the agent's own a user message opens, if it opens
 // one at all.
-type CheckInOrigin = 'goal' | 'background' | 'schedule'
+type CheckInOrigin = 'goal' | 'background' | 'schedule' | 'speakFirst'
 
 function checkInOriginOf(text: string): CheckInOrigin | null {
   if (text.startsWith(GOAL_CHECK_IN_MARKER)) return 'goal'
   if (text.startsWith(BACKGROUND_COMMAND_MARKER)) return 'background'
   if (text.startsWith(SCHEDULE_MARKER)) return 'schedule'
+  if (text.startsWith(SPEAK_FIRST_MARKER)) return 'speakFirst'
   return null
 }
 
@@ -1660,11 +1671,13 @@ const CHECK_IN_LABEL = {
   goal: 'agentDrawer.goal.checkIn',
   background: 'agentDrawer.backgroundEnded',
   schedule: 'agentDrawer.scheduleTurn',
+  speakFirst: 'agentDrawer.speakFirstTurn',
 } as const
 
 function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
   if (origin === 'background') return <TerminalIcon size={12} />
   if (origin === 'schedule') return <CalendarIcon size={12} />
+  if (origin === 'speakFirst') return <SparkIcon size={12} />
   return <TargetIcon size={12} />
 }
 
@@ -2180,6 +2193,45 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     return () => window.removeEventListener(AGENT_OPEN_EVENT, listener)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [available])
+
+  // Whether this tab is in front of the person, told to the agent so that
+  // it starts a conversation on its own only with somebody who is there.
+  // Not from the extension's frame: the page behind it reports already.
+  useAgentPresence(available && !standalone)
+
+  // A turn the agent starts on its own in the main conversation -- its
+  // introduction, a memory check, a tip -- opens the drawer on it: a
+  // message nobody sees might as well not have been written. Followed
+  // whenever the drawer is not already showing the main conversation,
+  // which is when the drawer's own subscription would not hear it.
+  const isShowingMain = open && loaded?.kind === 'main'
+  useEffect(() => {
+    if (!available || standalone || isShowingMain) return
+    let stopped = false
+    const stop = subscribe<{ AgentConversationEvents: RunEvent }>(
+      FEED,
+      { conversationId: '' },
+      (data) => {
+        const event = data.AgentConversationEvents
+        if (stopped || event.kind !== 'asked' || !(event.note ?? '').startsWith(SPEAK_FIRST_SURFACE)) return
+        void loadConversations()
+          .then((listed) => {
+            const main = listed.find((conversation) => conversation.kind === 'main')
+            if (stopped || !main) return
+            setOpen(true)
+            remember(OPEN_KEY, '1')
+            void switchTo(main.id)
+          })
+          .catch(() => undefined)
+      },
+      () => undefined,
+    )
+    return () => {
+      stopped = true
+      stop()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [available, standalone, isShowingMain])
 
   // What of the person's own is attached, and what today has cost. Asked
   // when the drawer opens and before each turn -- and then kept up, because

@@ -6,6 +6,7 @@ package all
 
 import (
 	_ "github.com/ziyan/teanode/internal/agent/tools/account"
+	_ "github.com/ziyan/teanode/internal/agent/tools/agentprofile"
 	_ "github.com/ziyan/teanode/internal/agent/tools/artifact"
 	_ "github.com/ziyan/teanode/internal/agent/tools/askuser"
 	_ "github.com/ziyan/teanode/internal/agent/tools/browser"
@@ -29,6 +30,7 @@ import (
 	_ "github.com/ziyan/teanode/internal/agent/tools/mailsearch"
 	_ "github.com/ziyan/teanode/internal/agent/tools/mailsend"
 	_ "github.com/ziyan/teanode/internal/agent/tools/memory"
+	_ "github.com/ziyan/teanode/internal/agent/tools/memorycheck"
 	_ "github.com/ziyan/teanode/internal/agent/tools/people"
 	_ "github.com/ziyan/teanode/internal/agent/tools/replyqueue"
 	_ "github.com/ziyan/teanode/internal/agent/tools/rule"

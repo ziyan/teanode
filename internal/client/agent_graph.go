@@ -668,3 +668,119 @@ func RereadAgentDocuments(ctx context.Context, connection *Client, minutes int) 
 	}
 	return result.RereadAgentDocuments, nil
 }
+
+// DocumentSpeakFirstNow has the agent start a conversation now.
+const DocumentSpeakFirstNow = `mutation ($speakFirstReason: String!) { SpeakFirstNow(speakFirstReason: $speakFirstReason) }`
+
+// SpeakFirstNow has the agent start a conversation in the main one now,
+// for a reason: onboarding, memory_check or tip.
+func SpeakFirstNow(ctx context.Context, connection *Client, speakFirstReason string) error {
+	var result struct {
+		SpeakFirstNow bool `json:"SpeakFirstNow"`
+	}
+	return connection.Execute(ctx, DocumentSpeakFirstNow, map[string]any{"speakFirstReason": speakFirstReason}, &result)
+}
+
+// DocumentListAgentEvaluationQuestions reads the memory check's questions.
+const DocumentListAgentEvaluationQuestions = `query ($questionStates: [String!]) { ListAgentEvaluationQuestions(questionStates: $questionStates) { id createdAt questionKind questionText expectedAnswer outdatedAnswer questionState isAnswerFiledAfter answeredAt } }`
+
+// DocumentImportAgentEvaluationQuestions adds questions from a file.
+const DocumentImportAgentEvaluationQuestions = `mutation ($questions: [ImportedEvaluationQuestionInput!]!) { ImportAgentEvaluationQuestions(questions: $questions) }`
+
+// AgentEvaluationQuestion is a memory check question as the API gives it.
+type AgentEvaluationQuestion struct {
+	ID                 string     `json:"id"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	QuestionKind       string     `json:"questionKind"`
+	QuestionText       string     `json:"questionText"`
+	ExpectedAnswer     string     `json:"expectedAnswer"`
+	OutdatedAnswer     string     `json:"outdatedAnswer,omitempty"`
+	QuestionState      string     `json:"questionState"`
+	IsAnswerFiledAfter bool       `json:"isAnswerFiledAfter"`
+	AnsweredAt         *time.Time `json:"answeredAt,omitempty"`
+}
+
+// ImportedEvaluationQuestion is one question to import.
+type ImportedEvaluationQuestion struct {
+	QuestionKind   string `json:"questionKind,omitempty"`
+	QuestionText   string `json:"questionText"`
+	ExpectedAnswer string `json:"expectedAnswer"`
+	OutdatedAnswer string `json:"outdatedAnswer,omitempty"`
+}
+
+// ListAgentEvaluationQuestions is the memory check's questions, newest
+// first, in the states given or in all of them.
+func ListAgentEvaluationQuestions(ctx context.Context, connection *Client, questionStates []string) ([]*AgentEvaluationQuestion, error) {
+	var result struct {
+		ListAgentEvaluationQuestions []*AgentEvaluationQuestion `json:"ListAgentEvaluationQuestions"`
+	}
+	variables := map[string]any{}
+	if len(questionStates) > 0 {
+		variables["questionStates"] = questionStates
+	}
+	if err := connection.Execute(ctx, DocumentListAgentEvaluationQuestions, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.ListAgentEvaluationQuestions, nil
+}
+
+// ImportAgentEvaluationQuestions adds questions as confirmed, skipping
+// those already on record, and says how many were added.
+func ImportAgentEvaluationQuestions(ctx context.Context, connection *Client, questions []ImportedEvaluationQuestion) (int, error) {
+	var result struct {
+		ImportAgentEvaluationQuestions int `json:"ImportAgentEvaluationQuestions"`
+	}
+	if err := connection.Execute(ctx, DocumentImportAgentEvaluationQuestions, map[string]any{"questions": questions}, &result); err != nil {
+		return 0, err
+	}
+	return result.ImportAgentEvaluationQuestions, nil
+}
+
+// DocumentListAgentEvaluationRuns reads the memory check's runs.
+const DocumentListAgentEvaluationRuns = `query ($first: Int) { ListAgentEvaluationRuns(first: $first) { id startedAt finishedAt questionCount cost sourceScores { answerFrom answeredCount scorePercent scorePercentWithoutFiledAfter filedAfterCount verdictCounts } } }`
+
+// DocumentEvaluateAgentMemoryNow starts a run now.
+const DocumentEvaluateAgentMemoryNow = `mutation { EvaluateAgentMemoryNow { id startedAt } }`
+
+// AgentEvaluationRun is a run of the memory check as the API gives it.
+type AgentEvaluationRun struct {
+	ID            string                   `json:"id"`
+	StartedAt     time.Time                `json:"startedAt"`
+	FinishedAt    *time.Time               `json:"finishedAt,omitempty"`
+	QuestionCount int                      `json:"questionCount"`
+	Cost          float64                  `json:"cost"`
+	SourceScores  []*EvaluationSourceScore `json:"sourceScores"`
+}
+
+// EvaluationSourceScore is how the answers from one source scored.
+type EvaluationSourceScore struct {
+	AnswerFrom                    string         `json:"answerFrom"`
+	AnsweredCount                 int            `json:"answeredCount"`
+	ScorePercent                  float64        `json:"scorePercent"`
+	ScorePercentWithoutFiledAfter float64        `json:"scorePercentWithoutFiledAfter"`
+	FiledAfterCount               int            `json:"filedAfterCount"`
+	VerdictCounts                 map[string]int `json:"verdictCounts"`
+}
+
+// ListAgentEvaluationRuns is the memory check's runs, newest first.
+func ListAgentEvaluationRuns(ctx context.Context, connection *Client, first int) ([]*AgentEvaluationRun, error) {
+	var result struct {
+		ListAgentEvaluationRuns []*AgentEvaluationRun `json:"ListAgentEvaluationRuns"`
+	}
+	if err := connection.Execute(ctx, DocumentListAgentEvaluationRuns, map[string]any{"first": first}, &result); err != nil {
+		return nil, err
+	}
+	return result.ListAgentEvaluationRuns, nil
+}
+
+// EvaluateAgentMemoryNow starts a run of the memory check now, or returns
+// the one under way.
+func EvaluateAgentMemoryNow(ctx context.Context, connection *Client) (*AgentEvaluationRun, error) {
+	var result struct {
+		EvaluateAgentMemoryNow *AgentEvaluationRun `json:"EvaluateAgentMemoryNow"`
+	}
+	if err := connection.Execute(ctx, DocumentEvaluateAgentMemoryNow, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.EvaluateAgentMemoryNow, nil
+}

@@ -99,7 +99,12 @@ type Agent struct {
 	lastRemember time.Time
 	lastIngest   time.Time
 	lastDream    time.Time
+	lastSpeak    time.Time
+	lastEvaluate time.Time
 	describing   atomic.Bool
+
+	// presence is who has a dashboard open; see presence.go.
+	presence presence
 
 	// connections are the sessions with connected servers, per server and
 	// person.
@@ -223,6 +228,8 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobRemember, self.runRemember)
 	self.Register(models.AgentJobIngest, self.runIngest)
 	self.Register(models.AgentJobDream, self.runDream)
+	self.Register(models.AgentJobSpeakFirst, self.runSpeakFirst)
+	self.Register(models.AgentJobEvaluate, self.runEvaluation)
 	self.catalog = FullCatalog()
 	return self
 }
@@ -397,6 +404,8 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.queueRemembering(ctx, now)
 	self.queueIngestion(ctx, now)
 	self.queueDreaming(ctx, now)
+	self.queueSpeakingFirst(ctx, now)
+	self.queueEvaluating(ctx, now)
 	self.sweepBrowsers()
 	self.sweepSessions()
 

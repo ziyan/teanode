@@ -19,6 +19,10 @@ type AgentOperation interface {
 	GetAgentByUser(userId string) (*models.Agent, error)
 	CreateAgent(agent *models.Agent) (*models.Agent, error)
 	UpdateAgent(agentId string, modify func(*models.Agent) error) (*models.Agent, error)
+
+	// MarkAgentSpokeFirst records when the agent last spoke first, when its
+	// onboarding ended and until when it keeps quiet; nil leaves one alone.
+	MarkAgentSpokeFirst(agentId string, spokeFirstAt, onboardedAt, snoozedUntil *time.Time) error
 	DeleteAgent(agentId string) error
 	ListAgents(options *Options) ([]*models.Agent, error)
 
@@ -140,6 +144,12 @@ type agentModel struct {
 	DreamedAt      *time.Time `gorm:"column:dreamed_at"`
 	DreamBootstrap bool       `gorm:"column:dream_bootstrap"`
 
+	SpokeFirstAt           *time.Time `gorm:"column:spoke_first_at"`
+	OnboardedAt            *time.Time `gorm:"column:onboarded_at"`
+	IsMemoryCheckEnabled   bool       `gorm:"column:is_memory_check_enabled"`
+	IsTipsEnabled          bool       `gorm:"column:is_tips_enabled"`
+	SpeakFirstSnoozedUntil *time.Time `gorm:"column:speak_first_snoozed_until"`
+
 	// When the links were last faded. See migration 0084.
 	DecayedAt *time.Time `gorm:"column:decayed_at"`
 }
@@ -190,23 +200,28 @@ func (agentUsageModel) TableName() string { return "agent_usage" }
 
 func agentFromModel(model *agentModel) (*models.Agent, error) {
 	agent := &models.Agent{
-		ID:                model.ID,
-		CreatedAt:         model.CreatedAt.In(time.Local),
-		ModifiedAt:        model.ModifiedAt.In(time.Local),
-		UserID:            model.UserID,
-		Name:              model.Name,
-		Enabled:           model.Enabled,
-		Instructions:      model.Instructions,
-		Language:          model.Language,
-		KnowledgeLanguage: model.KnowledgeLanguage,
-		Categories:        []models.AgentCategory{},
-		Confirm:           []string{},
-		AskModel:          model.AskModel,
-		DailyTokens:       model.DailyTokens,
-		DailyCost:         model.DailyCost,
-		DreamFrom:         model.DreamFrom,
-		DreamUntil:        model.DreamUntil,
-		DreamBootstrap:    model.DreamBootstrap,
+		ID:                     model.ID,
+		CreatedAt:              model.CreatedAt.In(time.Local),
+		ModifiedAt:             model.ModifiedAt.In(time.Local),
+		UserID:                 model.UserID,
+		Name:                   model.Name,
+		Enabled:                model.Enabled,
+		Instructions:           model.Instructions,
+		Language:               model.Language,
+		KnowledgeLanguage:      model.KnowledgeLanguage,
+		Categories:             []models.AgentCategory{},
+		Confirm:                []string{},
+		AskModel:               model.AskModel,
+		DailyTokens:            model.DailyTokens,
+		DailyCost:              model.DailyCost,
+		DreamFrom:              model.DreamFrom,
+		DreamUntil:             model.DreamUntil,
+		DreamBootstrap:         model.DreamBootstrap,
+		SpokeFirstAt:           localTime(model.SpokeFirstAt),
+		OnboardedAt:            localTime(model.OnboardedAt),
+		IsMemoryCheckEnabled:   model.IsMemoryCheckEnabled,
+		IsTipsEnabled:          model.IsTipsEnabled,
+		SpeakFirstSnoozedUntil: localTime(model.SpeakFirstSnoozedUntil),
 	}
 	if model.DreamedAt != nil {
 		at := model.DreamedAt.In(time.Local)
@@ -243,24 +258,29 @@ func agentFromModel(model *agentModel) (*models.Agent, error) {
 
 func agentToModel(agent *models.Agent) (*agentModel, error) {
 	model := &agentModel{
-		ID:                 agent.ID,
-		CreatedAt:          agent.CreatedAt,
-		ModifiedAt:         agent.ModifiedAt,
-		UserID:             agent.UserID,
-		Name:               agent.Name,
-		Enabled:            agent.Enabled,
-		Instructions:       agent.Instructions,
-		Language:           agent.Language,
-		KnowledgeLanguage:  agent.KnowledgeLanguage,
-		AskModel:           agent.AskModel,
-		DailyTokens:        agent.DailyTokens,
-		DailyCost:          agent.DailyCost,
-		OperatorDisabledAt: agent.OperatorDisabledAt,
-		DreamFrom:          agent.DreamFrom,
-		DreamUntil:         agent.DreamUntil,
-		DreamedAt:          agent.DreamedAt,
-		DreamBootstrap:     agent.DreamBootstrap,
-		DecayedAt:          agent.DecayedAt,
+		ID:                     agent.ID,
+		CreatedAt:              agent.CreatedAt,
+		ModifiedAt:             agent.ModifiedAt,
+		UserID:                 agent.UserID,
+		Name:                   agent.Name,
+		Enabled:                agent.Enabled,
+		Instructions:           agent.Instructions,
+		Language:               agent.Language,
+		KnowledgeLanguage:      agent.KnowledgeLanguage,
+		AskModel:               agent.AskModel,
+		DailyTokens:            agent.DailyTokens,
+		DailyCost:              agent.DailyCost,
+		OperatorDisabledAt:     agent.OperatorDisabledAt,
+		DreamFrom:              agent.DreamFrom,
+		DreamUntil:             agent.DreamUntil,
+		DreamedAt:              agent.DreamedAt,
+		DreamBootstrap:         agent.DreamBootstrap,
+		SpokeFirstAt:           agent.SpokeFirstAt,
+		OnboardedAt:            agent.OnboardedAt,
+		IsMemoryCheckEnabled:   agent.IsMemoryCheckEnabled,
+		IsTipsEnabled:          agent.IsTipsEnabled,
+		SpeakFirstSnoozedUntil: agent.SpeakFirstSnoozedUntil,
+		DecayedAt:              agent.DecayedAt,
 	}
 	var err error
 	if model.Voice, err = encodeJSON(agent.Voice); err != nil {
@@ -373,6 +393,10 @@ func (self *transaction) CreateAgent(agent *models.Agent) (*models.Agent, error)
 	created.ID = newID()
 	created.CreatedAt = time.Now()
 	created.ModifiedAt = created.CreatedAt
+	// On, as the columns default: a new agent introduces itself, checks
+	// what it remembers and gives tips until the person says otherwise. A
+	// Go false here is the zero value nobody chose, not a choice.
+	created.IsMemoryCheckEnabled, created.IsTipsEnabled = true, true
 	model, err := agentToModel(&created)
 	if err != nil {
 		return nil, err
@@ -427,14 +451,37 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 			"confirm": model.Confirm, "ask_model": model.AskModel, "daily_tokens": model.DailyTokens, "daily_cost": model.DailyCost,
 			"operator_disabled_at": model.OperatorDisabledAt,
 			"dream_from":           model.DreamFrom, "dream_until": model.DreamUntil,
-			"dreamed_at":      model.DreamedAt,
-			"dream_bootstrap": model.DreamBootstrap,
-			"decayed_at":      model.DecayedAt,
+			"dreamed_at":              model.DreamedAt,
+			"dream_bootstrap":         model.DreamBootstrap,
+			"is_memory_check_enabled": model.IsMemoryCheckEnabled,
+			"is_tips_enabled":         model.IsTipsEnabled,
+			"decayed_at":              model.DecayedAt,
 		}).Error
 	}); err != nil {
 		return nil, err
 	}
 	return self.GetAgent(agentId)
+}
+
+// MarkAgentSpokeFirst records the agent's own bookkeeping about speaking
+// first -- when it last did, when onboarding ended, until when it keeps
+// quiet -- without going through UpdateAgent, whose every write is an
+// audited change of the person's settings. A nil leaves that column alone.
+func (self *transaction) MarkAgentSpokeFirst(agentId string, spokeFirstAt, onboardedAt, snoozedUntil *time.Time) error {
+	updates := map[string]any{}
+	if spokeFirstAt != nil {
+		updates["spoke_first_at"] = *spokeFirstAt
+	}
+	if onboardedAt != nil {
+		updates["onboarded_at"] = *onboardedAt
+	}
+	if snoozedUntil != nil {
+		updates["speak_first_snoozed_until"] = *snoozedUntil
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	return self.tx.Model(&agentModel{}).Where(`"id" = ?`, agentId).Updates(updates).Error
 }
 
 func (self *transaction) DeleteAgent(agentId string) error {

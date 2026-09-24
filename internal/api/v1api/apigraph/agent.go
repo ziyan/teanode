@@ -211,6 +211,11 @@ type UpdateAgentArguments struct {
 	DreamFrom  *string `json:"dreamFrom"`
 	DreamUntil *string `json:"dreamUntil"`
 
+	// IsMemoryCheckEnabled and IsTipsEnabled say whether the agent may
+	// start a conversation to check what it remembers, or to give a tip.
+	IsMemoryCheckEnabled *bool `json:"isMemoryCheckEnabled"`
+	IsTipsEnabled        *bool `json:"isTipsEnabled"`
+
 	// Forget deletes the agent and everything it holds; the other fields
 	// are ignored when it is set.
 	Forget *bool `json:"forget"`
@@ -536,6 +541,12 @@ func (self *graph) UpdateAgent(ctx context.Context, arguments UpdateAgentArgumen
 				return err
 			}
 			agent.DreamUntil = until
+		}
+		if arguments.IsMemoryCheckEnabled != nil {
+			agent.IsMemoryCheckEnabled = *arguments.IsMemoryCheckEnabled
+		}
+		if arguments.IsTipsEnabled != nil {
+			agent.IsTipsEnabled = *arguments.IsTipsEnabled
 		}
 		return nil
 	})

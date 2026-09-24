@@ -171,6 +171,7 @@ type Transaction interface {
 	MemoryOperation
 	ConnectionOperation
 	ChannelOperation
+	EvaluationOperation
 
 	DomainUsageOperation
 	AliasUsageOperation

@@ -225,7 +225,12 @@ const ScheduleMarker = "[schedule]"
 // OwnTurnMarkers are the markers of every turn the agent takes on its own
 // in a person's conversation: what anything looking for the person's own
 // last word must pass over.
-var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, ScheduleMarker}
+var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, ScheduleMarker, SpeakFirstMarker}
+
+// SpeakFirstMarker begins the message a turn the agent starts on its own
+// is given: an introduction, a memory check, a tip. Nobody wrote it; the
+// agent is about to speak first.
+const SpeakFirstMarker = "[speaking first]"
 
 // GoalChangeNote is the line the conversation gets when its goal changes
 // hands: set, changed, cleared, or met. Empty when nothing worth a line

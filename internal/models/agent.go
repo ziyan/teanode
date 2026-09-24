@@ -95,6 +95,17 @@ type Agent struct {
 	// wider limits, until nothing waits to be read: what a first ingest
 	// needs. The night clears it itself.
 	DreamBootstrap bool `json:"dreamBootstrap"`
+
+	// SpokeFirstAt is when the agent last started a conversation on its
+	// own, and OnboardedAt when its introduction ended, answered or not.
+	// IsMemoryCheckEnabled and IsTipsEnabled are the person's switches for
+	// two of the reasons it may, and SpeakFirstSnoozedUntil is how long
+	// they asked it to keep quiet. See internal/agent/speak_first.go.
+	SpokeFirstAt           *time.Time `json:"spokeFirstAt,omitempty" graphapi:"nullable"`
+	OnboardedAt            *time.Time `json:"onboardedAt,omitempty" graphapi:"nullable"`
+	IsMemoryCheckEnabled   bool       `json:"isMemoryCheckEnabled"`
+	IsTipsEnabled          bool       `json:"isTipsEnabled"`
+	SpeakFirstSnoozedUntil *time.Time `json:"speakFirstSnoozedUntil,omitempty" graphapi:"nullable"`
 }
 
 // DreamWindow is the hours of this person's night, filled in.
@@ -462,10 +473,16 @@ const (
 	AgentJobDescribe AgentJobKind = "describe"
 	AgentJobCompact  AgentJobKind = "compact"
 
-	// AgentJobEvaluate is never queued either: it names the calls a memory
-	// evaluation makes, answering a question from a set and grading the
-	// answer, so what an evaluation cost is apart from everything else.
+	// AgentJobEvaluate grades the agent against the person's memory check
+	// questions; its subject is the run it fills. The calls it makes, and
+	// the ones `teanode agent memory answers` makes, are runs of this kind,
+	// so what an evaluation cost is apart from everything else.
 	AgentJobEvaluate AgentJobKind = "evaluate"
+
+	// AgentJobSpeakFirst is a turn the agent takes in the main conversation
+	// with nobody having asked: to introduce itself, to check what it
+	// remembers, or to give a tip. Its subject is the reason.
+	AgentJobSpeakFirst AgentJobKind = "speak_first"
 )
 
 // AgentJobStatus is where a job is.
