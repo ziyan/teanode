@@ -248,6 +248,25 @@ func properNouns(text string) map[string]bool {
 	return names
 }
 
+// addsInformation says whether one sentence names something the other
+// does not: a name, a number, or a word of amount, date or frequency that
+// is in the richer and missing from the plainer. A rewording that says the
+// same thing adds none.
+func addsInformation(richer, plainer string) bool {
+	plainerNames, plainerQuantities := properNouns(plainer), quantitiesIn(plainer)
+	for name := range properNouns(richer) {
+		if !plainerNames[name] {
+			return true
+		}
+	}
+	for word := range quantitiesIn(richer) {
+		if plainerQuantities[word] == 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // cutRunes shortens text to a number of characters without cutting one in
 // half: a byte cut through a character embeds a replacement mark instead
 // of the word it was part of.

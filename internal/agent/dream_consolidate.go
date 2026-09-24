@@ -187,7 +187,18 @@ func mergeSaidTwice(tx db.Transaction, agentId string, facts []*models.AgentFact
 		if otherNow.Number < bestNow.Number {
 			keep, gone = otherNow, bestNow
 		}
-		wording := bestNow.Text
+		// The wording that survives brings its own standing with it. A
+		// sentence the agent inferred, moved onto a row the person stated,
+		// used to keep that row's standing: an inferred sentence ended up
+		// as a stated fact at full confidence. So the survivor stands where
+		// its words stand. And where those words say more than the other
+		// fact does and stand on softer ground, the two are not one
+		// statement said twice: the richer one keeps its own row, its own
+		// evidence and its own uncertainty.
+		wording := bestNow
+		if wording.ID != keep.ID && addsInformation(wording.Text, keep.Text) && !atLeastAsWellEvidenced(wording, keep) {
+			continue
+		}
 		if _, err := tx.UpdateAgentFact(agentId, gone.ID, func(fact *models.AgentFact) error {
 			fact.SupersededBy = keep.ID
 			return nil
@@ -195,7 +206,11 @@ func mergeSaidTwice(tx db.Transaction, agentId string, facts []*models.AgentFact
 			return merged, err
 		}
 		if _, err := tx.UpdateAgentFact(agentId, keep.ID, func(fact *models.AgentFact) error {
-			fact.Text = wording
+			fact.Text = wording.Text
+			fact.Inferred, fact.Confidence = wording.Inferred, wording.Confidence
+			if fact.HappenedAt == nil {
+				fact.HappenedAt = wording.HappenedAt
+			}
 			fact.Evidence = append(fact.Evidence, gone.Evidence...)
 			if len(fact.Evidence) > models.EvidenceCount {
 				fact.Evidence = fact.Evidence[:models.EvidenceCount]
