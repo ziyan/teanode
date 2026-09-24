@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
@@ -41,6 +42,11 @@ const (
 	// conversation before the person writes again.
 	backgroundWakesAlone = 20
 
+	// A wake that failed is tried again after backgroundWakeRetry, and
+	// given up after backgroundWakeAttempts in all.
+	backgroundWakeRetry    = time.Minute
+	backgroundWakeAttempts = 5
+
 	// backgroundTailCharacters is how much of each stream a wake carries.
 	// The notice brings a few thousand bytes of each; the model asks for
 	// more with the shell tool's read.
@@ -61,11 +67,13 @@ type backgroundEnding struct {
 	status   *computer.BackgroundStatus
 }
 
-// backgroundWake is what a conversation has waiting to wake it.
+// backgroundWake is what a conversation has waiting to wake it, and how
+// many times waking it has failed.
 type backgroundWake struct {
-	agentId  string
-	endings  []backgroundEnding
-	isQueued bool
+	agentId      string
+	endings      []backgroundEnding
+	isQueued     bool
+	attemptCount int
 }
 
 // ComputerBackgroundEnded is a computer saying a background command ended.
@@ -117,6 +125,12 @@ func (self *Agent) ComputerBackgroundEnded(agentId string, connection DeviceConn
 		self.backgroundWakes[origin.ConversationID] = wake
 	}
 	wake.endings = append(wake.endings, backgroundEnding{computer: found, status: &status})
+	self.queueWakeLocked(origin.ConversationID, wake, backgroundWakeGather)
+}
+
+// queueWakeLocked starts the wait before a conversation's wake, unless one
+// is already waiting. Called with the background lock held.
+func (self *Agent) queueWakeLocked(conversationId string, wake *backgroundWake, wait time.Duration) {
 	if wake.isQueued {
 		return
 	}
@@ -125,18 +139,20 @@ func (self *Agent) ComputerBackgroundEnded(agentId string, connection DeviceConn
 	go func() {
 		defer self.waitGroup.Done()
 		select {
-		case <-time.After(backgroundWakeGather):
+		case <-time.After(wait):
 		case <-self.ctx.Done():
 			return
 		}
-		self.wakeForBackground(origin.ConversationID)
+		self.wakeForBackground(conversationId)
 	}()
 }
 
-// wakeForBackground takes what is waiting for a conversation and starts
-// the turn that tells the agent, then acknowledges it once that turn is
-// over. A server that stops before then leaves it unacknowledged, and the
-// computer says it again: a turn twice is better than none.
+// wakeForBackground takes what is waiting for a conversation and wakes it.
+// A wake that fails for a passing reason -- the database, the model's
+// provider -- is tried again a minute later, a few times, with whatever
+// else ended meanwhile. After that the endings are let go of without
+// being acknowledged, and the computer says them again when it next
+// connects.
 func (self *Agent) wakeForBackground(conversationId string) {
 	self.backgroundMutex.Lock()
 	wake := self.backgroundWakes[conversationId]
@@ -145,16 +161,42 @@ func (self *Agent) wakeForBackground(conversationId string) {
 	if wake == nil || len(wake.endings) == 0 {
 		return
 	}
-	defer func() {
-		self.backgroundMutex.Lock()
-		for _, ending := range wake.endings {
-			delete(self.backgroundInFlight, ending.status.ID)
+	err := self.tryWakeForBackground(conversationId, wake)
+
+	self.backgroundMutex.Lock()
+	defer self.backgroundMutex.Unlock()
+	if err != nil && wake.attemptCount+1 < backgroundWakeAttempts && self.ctx.Err() == nil {
+		log.Warningf("cannot wake conversation %q for a background command that ended, trying again in %s: %s", conversationId, backgroundWakeRetry, err)
+		// What ended while this one failed joins it.
+		retry := &backgroundWake{agentId: wake.agentId, endings: wake.endings, attemptCount: wake.attemptCount + 1}
+		if waiting := self.backgroundWakes[conversationId]; waiting != nil {
+			retry.endings = append(retry.endings, waiting.endings...)
+			retry.isQueued = waiting.isQueued
 		}
-		self.backgroundMutex.Unlock()
-	}()
+		self.backgroundWakes[conversationId] = retry
+		self.queueWakeLocked(conversationId, retry, backgroundWakeRetry)
+		return
+	}
+	if err != nil {
+		log.Warningf("cannot wake conversation %q for a background command that ended; it is said again when the computer next connects: %s", conversationId, err)
+	}
+	for _, ending := range wake.endings {
+		delete(self.backgroundInFlight, ending.status.ID)
+	}
+}
+
+// tryWakeForBackground starts the turn that tells the agent, then
+// acknowledges the endings once that turn is over. A server that stops
+// before then leaves them unacknowledged, and the computer says them
+// again: a turn twice is better than none.
+func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundWake) error {
+	// Told to the computer as it is attached now: a turn can outlast the
+	// connection the ending came in on, and an acknowledgement sent to
+	// the one that went is lost, which has the ending said again at a
+	// later reconnect and the agent woken a second time for it.
 	acknowledge := func() {
 		for _, ending := range wake.endings {
-			self.acknowledgeBackground(ending.computer, ending.status.ID)
+			self.acknowledgeBackground(self.currentComputer(wake.agentId, ending.computer), ending.status.ID)
 		}
 	}
 
@@ -182,26 +224,22 @@ func (self *Agent) wakeForBackground(conversationId string) {
 		}
 		return nil
 	}); err != nil {
-		log.Warningf("cannot wake conversation %q for a background command that ended: %s", conversationId, err)
-		return
+		return err
 	}
 	// The conversation is gone, or the agent is off: there is nobody to
 	// tell, and the output can still be read on the computer.
 	if conversation == nil || !FeatureAllowed(configuration, "ask") || self.operations == nil {
 		acknowledge()
-		return
+		return nil
 	}
 
 	self.backgroundMutex.Lock()
-	woken := self.backgroundWakeCounts[conversationId]
-	if woken < backgroundWakesAlone && deferral == nil {
-		self.backgroundWakeCounts[conversationId] = woken + 1
-	}
+	wokenCount := self.backgroundWakeCounts[conversationId]
 	self.backgroundMutex.Unlock()
 	// Out of turns or out of budget: the endings are written into the
 	// transcript for the person and the next turn to read, and no model is
 	// asked anything.
-	if woken >= backgroundWakesAlone || deferral != nil {
+	if wokenCount >= backgroundWakesAlone || deferral != nil {
 		reason := fmt.Sprintf("%d turns since you last wrote were woken by background commands", backgroundWakesAlone)
 		if deferral != nil {
 			reason = deferral.Reason
@@ -211,17 +249,15 @@ func (self *Agent) wakeForBackground(conversationId string) {
 			_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversationId, Role: models.AgentMessageNote, Content: note})
 			return err
 		}); err != nil {
-			log.Warningf("cannot note background commands that ended on conversation %q: %s", conversationId, err)
-			return
+			return err
 		}
 		acknowledge()
-		return
+		return nil
 	}
 
 	operations, err := self.operations(ctx, owner)
 	if err != nil {
-		log.Warningf("cannot act as %q to wake conversation %q: %s", owner.Username, conversationId, err)
-		return
+		return fmt.Errorf("cannot act as %q: %w", owner.Username, err)
 	}
 	turn, err := self.Ask(&AskSettings{
 		Agent: agent, Owner: owner, Operations: operations, Conversation: conversation,
@@ -229,14 +265,19 @@ func (self *Agent) wakeForBackground(conversationId string) {
 		UsageKind: backgroundSurface,
 	})
 	if err != nil {
-		log.Warningf("cannot wake conversation %q for a background command that ended: %s", conversationId, err)
-		return
+		return err
 	}
+	// Counted once the turn is started, so a wake that failed does not
+	// spend one of the conversation's turns.
+	self.backgroundMutex.Lock()
+	self.backgroundWakeCounts[conversationId]++
+	self.backgroundMutex.Unlock()
 	events, unsubscribe := turn.Subscribe()
 	defer unsubscribe()
 	for range events {
 	}
 	acknowledge()
+	return nil
 }
 
 // acknowledgeBackground tells the computer the server has heard that one
@@ -247,6 +288,17 @@ func (self *Agent) acknowledgeBackground(attached *attachedComputer, id string) 
 	if _, err := attached.Ask(ctx, "background_acknowledge", &computer.BackgroundAcknowledgeArguments{IDs: []string{id}}, deviceAnswerWait); err != nil {
 		log.Warningf("cannot acknowledge background command %s on %q: %s", id, attached.name, err)
 	}
+}
+
+// currentComputer is the computer attached under the same name now, or
+// the one given when that name has none.
+func (self *Agent) currentComputer(agentId string, attached *attachedComputer) *attachedComputer {
+	self.computersMutex.Lock()
+	defer self.computersMutex.Unlock()
+	if current := self.computers[agentId][attached.name]; current != nil {
+		return current
+	}
+	return attached
 }
 
 // personTookTurn starts a conversation's count of woken turns again.
@@ -332,52 +384,70 @@ type BackgroundCommand struct {
 // BackgroundCommands are the background commands on a person's computers,
 // newest first on each.
 func (self *Agent) BackgroundCommands(ctx context.Context, agentId string) ([]*BackgroundCommand, error) {
+	// Every computer is asked at once, so one that does not answer costs
+	// the list its wait once rather than once per computer before it.
+	attached := self.computersFor(agentId)
+	answers := make([][]*BackgroundCommand, len(attached))
+	var waitGroup sync.WaitGroup
+	for index, one := range attached {
+		if !one.HasBackground() {
+			continue
+		}
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			// A computer that does not answer is left out rather than
+			// taking the others' list down with it; the dashboard asks
+			// again soon.
+			answer, err := one.Ask(ctx, "background_list", struct{}{}, backgroundListWait)
+			if err != nil {
+				log.Noticef("cannot list the background commands on %q: %s", one.name, err)
+				return
+			}
+			var statuses []*computer.BackgroundStatus
+			if err := json.Unmarshal(answer, &statuses); err != nil {
+				log.Warningf("%s answered the list of background commands unreadably: %s", one.what, err)
+				return
+			}
+			for _, status := range statuses {
+				answers[index] = append(answers[index], backgroundCommandOf(one, status))
+			}
+		}()
+	}
+	waitGroup.Wait()
 	listed := []*BackgroundCommand{}
-	for _, attached := range self.computersFor(agentId) {
-		if !attached.HasBackground() {
-			continue
-		}
-		// A computer that does not answer is left out rather than taking
-		// the others' list down with it; the dashboard asks again soon.
-		answer, err := attached.Ask(ctx, "background_list", struct{}{}, backgroundListWait)
-		if err != nil {
-			log.Noticef("cannot list the background commands on %q: %s", attached.name, err)
-			continue
-		}
-		var statuses []*computer.BackgroundStatus
-		if err := json.Unmarshal(answer, &statuses); err != nil {
-			log.Warningf("%s answered the list of background commands unreadably: %s", attached.what, err)
-			continue
-		}
-		for _, status := range statuses {
-			listed = append(listed, backgroundCommandOf(attached, status))
+	for _, commands := range answers {
+		// Only this agent's: what another server's agent left on the same
+		// machine is not this one's to show or to stop.
+		for _, command := range commands {
+			if command.Origin.AgentID == agentId {
+				listed = append(listed, command)
+			}
 		}
 	}
 	return listed, nil
 }
 
-// ReadBackgroundCommand is one, with the last tailBytes of each stream.
+// ReadBackgroundCommand is one of this agent's, with the last tailBytes of
+// each stream.
 func (self *Agent) ReadBackgroundCommand(ctx context.Context, agentId, computerName, id string, tailBytes int) (*BackgroundCommand, error) {
 	attached, err := self.backgroundComputer(agentId, computerName)
 	if err != nil {
 		return nil, err
 	}
-	answer, err := attached.Ask(ctx, "background_read", &computer.BackgroundReadArguments{ID: id, TailBytes: tailBytes}, deviceAnswerWait)
-	if err != nil {
-		return nil, err
-	}
-	var status computer.BackgroundStatus
-	if err := json.Unmarshal(answer, &status); err != nil {
-		return nil, fmt.Errorf("%s answered something unreadable: %w", attached.what, err)
-	}
-	return backgroundCommandOf(attached, &status), nil
+	return readBackground(ctx, attached, agentId, id, tailBytes)
 }
 
-// StopBackgroundCommand stops one for the person. The agent is told it
-// ended, as it is of any ending it did not ask for.
+// StopBackgroundCommand stops one of this agent's for the person. The
+// agent is told it ended, as it is of any ending it did not ask for.
 func (self *Agent) StopBackgroundCommand(ctx context.Context, agentId, computerName, id string) (*BackgroundCommand, error) {
 	attached, err := self.backgroundComputer(agentId, computerName)
 	if err != nil {
+		return nil, err
+	}
+	// Read first, for whose it is: the list shows only this agent's, and
+	// stopping must not reach further than seeing does.
+	if _, err := readBackground(ctx, attached, agentId, id, 1); err != nil {
 		return nil, err
 	}
 	answer, err := attached.Ask(ctx, "background_stop", &computer.BackgroundStopArguments{ID: id}, deviceAnswerWait)
@@ -389,6 +459,24 @@ func (self *Agent) StopBackgroundCommand(ctx context.Context, agentId, computerN
 		return nil, fmt.Errorf("%s answered something unreadable: %w", attached.what, err)
 	}
 	return backgroundCommandOf(attached, &status), nil
+}
+
+// readBackground reads one, and says there is no such command when it is
+// not this agent's.
+func readBackground(ctx context.Context, attached *attachedComputer, agentId, id string, tailBytes int) (*BackgroundCommand, error) {
+	answer, err := attached.Ask(ctx, "background_read", &computer.BackgroundReadArguments{ID: id, TailBytes: tailBytes}, deviceAnswerWait)
+	if err != nil {
+		return nil, err
+	}
+	var status computer.BackgroundStatus
+	if err := json.Unmarshal(answer, &status); err != nil {
+		return nil, fmt.Errorf("%s answered something unreadable: %w", attached.what, err)
+	}
+	command := backgroundCommandOf(attached, &status)
+	if command.Origin.AgentID != agentId {
+		return nil, fmt.Errorf("there is no background command %q on %s", id, attached.name)
+	}
+	return command, nil
 }
 
 func (self *Agent) backgroundComputer(agentId, computerName string) (*attachedComputer, error) {

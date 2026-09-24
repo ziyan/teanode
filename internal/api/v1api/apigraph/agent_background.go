@@ -98,11 +98,6 @@ func (self *graph) ListAgentBackgroundCommands(ctx context.Context, arguments Li
 	conversationId := strings.TrimSpace(arguments.ConversationID)
 	views := []*AgentBackgroundCommandView{}
 	for _, command := range commands {
-		// Only this agent's: a program on the person's computer is theirs,
-		// and what another server's agent left there is not shown here.
-		if command.Origin.AgentID != found.ID {
-			continue
-		}
 		if conversationId != "" && command.Origin.ConversationID != conversationId {
 			continue
 		}

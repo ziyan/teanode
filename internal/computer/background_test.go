@@ -81,7 +81,7 @@ func TestACommandPastItsWaitGoesOnInTheBackgroundAndSaysWhenItEnds(t *testing.T)
 	computer := serveForTest(t, ctx, background)
 
 	origin := json.RawMessage(`{"conversationId":"c1"}`)
-	answer := computer.ask(1, "shell", ShellArguments{Command: "echo started; sleep 2; echo finished; exit 4", Timeout: 1, KeepOnTimeout: true, Origin: origin})
+	answer := computer.ask(1, "shell", ShellArguments{Command: "echo started; sleep 2; echo finished; exit 4", Timeout: 1, ShouldKeepOnTimeout: true, Origin: origin})
 	var ran ShellResult
 	_ = json.Unmarshal(answer.Data, &ran)
 	if !answer.OK || ran.BackgroundID == "" || ran.TimedOut || ran.Stdout != "started\n" {
@@ -144,7 +144,7 @@ func TestABackgroundCommandIsStoppedWhenAsked(t *testing.T) {
 	defer cancel()
 	computer := serveForTest(t, ctx, background)
 
-	answer := computer.ask(1, "shell", ShellArguments{Command: "while true; do echo tick; sleep 0.1; done", Background: true})
+	answer := computer.ask(1, "shell", ShellArguments{Command: "while true; do echo tick; sleep 0.1; done", IsBackground: true})
 	var ran ShellResult
 	_ = json.Unmarshal(answer.Data, &ran)
 	if !answer.OK || ran.BackgroundID == "" {
@@ -163,7 +163,7 @@ func TestABackgroundCommandIsStoppedWhenAsked(t *testing.T) {
 		t.Fatalf("a stop the agent did not ask for is told: %+v", told)
 	}
 
-	answer = computer.ask(3, "shell", ShellArguments{Command: "sleep 30", Background: true})
+	answer = computer.ask(3, "shell", ShellArguments{Command: "sleep 30", IsBackground: true})
 	_ = json.Unmarshal(answer.Data, &ran)
 	answer = computer.ask(4, "background_stop", BackgroundStopArguments{ID: ran.BackgroundID, IsAcknowledged: true})
 	if !answer.OK {

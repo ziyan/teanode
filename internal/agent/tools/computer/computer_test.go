@@ -220,7 +220,7 @@ func TestACommandPastItsWaitGoesOnWhereTheProgramCanKeepIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(attached.asked[0], `"keepOnTimeout":true`) || !strings.Contains(attached.asked[0], `"origin":`) {
+	if !strings.Contains(attached.asked[0], `"shouldKeepOnTimeout":true`) || !strings.Contains(attached.asked[0], `"origin":`) {
 		t.Fatalf("the program is asked to keep it past its wait, and told whom to tell: %v", attached.asked)
 	}
 	if !strings.Contains(result.Content, "goes on in the background") || !strings.Contains(result.Content, "01BUILD") || strings.Contains(result.Content, "exitCode") {
@@ -233,10 +233,10 @@ func TestACommandPastItsWaitGoesOnWhereTheProgramCanKeepIt(t *testing.T) {
 	if _, err := shell.Run(tools.WithRun(context.Background(), night), &tools.Call{Arguments: json.RawMessage(`{"command":"make"}`)}); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(attached.asked[1], "keepOnTimeout") {
+	if strings.Contains(attached.asked[1], "shouldKeepOnTimeout") {
 		t.Fatalf("a run with nobody present does not leave a command running: %s", attached.asked[1])
 	}
-	if _, err := shell.Run(tools.WithRun(context.Background(), night), &tools.Call{Arguments: json.RawMessage(`{"command":"make","background":true}`)}); err == nil || !strings.Contains(err.Error(), "nobody present") {
+	if _, err := shell.Run(tools.WithRun(context.Background(), night), &tools.Call{Arguments: json.RawMessage(`{"command":"make","isBackground":true}`)}); err == nil || !strings.Contains(err.Error(), "nobody present") {
 		t.Fatalf("nor start one in the background: %v", err)
 	}
 
@@ -246,10 +246,10 @@ func TestACommandPastItsWaitGoesOnWhereTheProgramCanKeepIt(t *testing.T) {
 	if _, err := shell.Run(oldRun, &tools.Call{Arguments: json.RawMessage(`{"command":"make"}`)}); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(old.asked[0], "keepOnTimeout") || strings.Contains(old.asked[0], "origin") {
+	if strings.Contains(old.asked[0], "shouldKeepOnTimeout") || strings.Contains(old.asked[0], "origin") {
 		t.Fatalf("an old program is sent what it always was: %s", old.asked[0])
 	}
-	if _, err := shell.Run(oldRun, &tools.Call{Arguments: json.RawMessage(`{"command":"make","background":true}`)}); err == nil || !strings.Contains(err.Error(), "update") {
+	if _, err := shell.Run(oldRun, &tools.Call{Arguments: json.RawMessage(`{"command":"make","isBackground":true}`)}); err == nil || !strings.Contains(err.Error(), "update") {
 		t.Fatalf("and asking it for the background says to update it: %v", err)
 	}
 }
@@ -274,5 +274,23 @@ func TestStoppingACommandAcknowledgesItsEnding(t *testing.T) {
 	result, err = shell.Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"action":"list"}`)})
 	if err != nil || !strings.Contains(result.Content, "01LOOP") || strings.Contains(result.Content, "origin") || !result.Untrusted {
 		t.Fatalf("list: %+v %v", result, err)
+	}
+}
+
+// A command that printed more than an answer holds still says it is running
+// and under which id: the cut is made after the note, not before it.
+func TestALongOutputKeepsTheBackgroundId(t *testing.T) {
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	shell := find(t, "shell")
+	long := strings.Repeat("compiling a file\n", 5000)
+	encoded, _ := json.Marshal(map[string]any{"stdout": long, "stderr": "", "exitCode": 0, "seconds": 120, "backgroundId": "01LONG"})
+	attached := &backgroundComputer{fakeComputer{answers: map[string]string{"shell": string(encoded)}}}
+	result, err := shell.Run(tools.WithRun(context.Background(), &fakeRun{computer: attached, config: configuration}), &tools.Call{Arguments: json.RawMessage(`{"command":"make"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Content) > tools.ResultCharacters+100 || !strings.Contains(result.Content, "01LONG") || !strings.Contains(result.Content, "woken when it ends") {
+		t.Fatalf("the id and the note survive the cut: %d characters, %q", len(result.Content), result.Content[:200])
 	}
 }

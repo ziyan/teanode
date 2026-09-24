@@ -89,8 +89,7 @@ type Options struct {
 
 	// Background holds the commands running on after their call, across
 	// connections; a program that reconnects passes the same one each
-	// time. When nil, Serve keeps its own and ends them with the
-	// connection.
+	// time. When nil, the program does not offer background commands.
 	Background *BackgroundCommands
 
 	// Token is the person's, from `teanode auth login`.
@@ -191,6 +190,9 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 	// the person stopped the program, the network went -- the processes it
 	// started have nobody to answer and are not left running.
 	defer held.closeAll()
+	// Without one of the program's own, an empty one for this connection:
+	// the feature is not offered, and a server that asks anyway is
+	// answered rather than left to a panic.
 	background := options.Background
 	if background == nil {
 		background = NewBackgroundCommands()
@@ -203,7 +205,14 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 		_ = write(message{Type: "session", Session: session, Event: "ended", Code: code})
 	}
 
-	hello := message{Type: "hello", Protocol: Protocol, Token: options.Token, Name: options.Name, System: options.System, Home: options.Home, Description: strings.TrimSpace(options.Description), Features: []string{FeatureBackground}}
+	hello := message{Type: "hello", Protocol: Protocol, Token: options.Token, Name: options.Name, System: options.System, Home: options.Home, Description: strings.TrimSpace(options.Description)}
+	// Offered only by a program that keeps them across its connections.
+	// One that keeps them for this connection alone would kill them when
+	// it ends, before their endings could be told, and the agent, told it
+	// would be woken, would never hear.
+	if options.Background != nil {
+		hello.Features = []string{FeatureBackground}
+	}
 	// Closed when the shell the person attached ends. Leaving the shell is
 	// how they detach, so this program ends with it rather than sitting on
 	// a dead pty until they find the key that kills it.
@@ -506,12 +515,12 @@ type ShellArguments struct {
 	Timeout     int               `json:"timeout,omitempty"`
 	Environment map[string]string `json:"environment,omitempty"`
 
-	// Background starts it and answers at once, leaving it running.
-	// KeepOnTimeout leaves it running when the call's wait runs out,
-	// rather than killing it. Both hand it to the background commands,
-	// which a server that predates them never asks for.
-	Background    bool `json:"background,omitempty"`
-	KeepOnTimeout bool `json:"keepOnTimeout,omitempty"`
+	// IsBackground starts it and answers at once, leaving it running.
+	// ShouldKeepOnTimeout leaves it running when the call's wait runs
+	// out, rather than killing it. Both hand it to the background
+	// commands, which a server that predates them never asks for.
+	IsBackground        bool `json:"isBackground,omitempty"`
+	ShouldKeepOnTimeout bool `json:"shouldKeepOnTimeout,omitempty"`
 
 	// Origin is the server's own note of who started it, handed back
 	// untouched when it ends so the server knows whom to tell.
@@ -543,7 +552,7 @@ func RunShell(ctx context.Context, options *Options, background *BackgroundComma
 	if strings.TrimSpace(arguments.Command) == "" {
 		return nil, errors.New("there is no command")
 	}
-	if (arguments.Background || arguments.KeepOnTimeout) && background == nil {
+	if (arguments.IsBackground || arguments.ShouldKeepOnTimeout) && background == nil {
 		return nil, errors.New("this program holds no background commands")
 	}
 	timeout := defaultTimeout
@@ -554,19 +563,19 @@ func RunShell(ctx context.Context, options *Options, background *BackgroundComma
 	if err != nil {
 		return nil, err
 	}
-	if arguments.Background {
+	if arguments.IsBackground {
 		if err := background.adopt(held); err != nil {
 			held.stop()
 			<-held.done
 			return nil, err
 		}
-		return shellResultOf(held, false), nil
+		return shellResultOf(held, false, true), nil
 	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case <-held.done:
-		return shellResultOf(held, false), nil
+		return shellResultOf(held, false, false), nil
 	case <-timer.C:
 	case <-ctx.Done():
 		// The connection went with the call: nobody is waiting for the
@@ -575,25 +584,33 @@ func RunShell(ctx context.Context, options *Options, background *BackgroundComma
 		<-held.done
 		return nil, ctx.Err()
 	}
-	if arguments.KeepOnTimeout {
+	// Ended as the wait ran out: it did not time out, and it is not left
+	// in the background to be told about a second time.
+	if held.hasEnded() {
+		return shellResultOf(held, false, false), nil
+	}
+	if arguments.ShouldKeepOnTimeout {
 		if err := background.adopt(held); err == nil {
-			return shellResultOf(held, false), nil
+			return shellResultOf(held, false, true), nil
 		}
 		// No room in the background: stopped, as it always was.
 	}
 	held.stop()
 	<-held.done
-	return shellResultOf(held, true), nil
+	return shellResultOf(held, true, false), nil
 }
 
-// shellResultOf is the answer to a call: how it ended, or, while it is
-// still running, its name in the background and what it wrote so far.
-func shellResultOf(held *backgroundCommand, isTimedOut bool) *ShellResult {
+// shellResultOf is the answer to a call: how it ended, or, once it is in
+// the background, its name there and what it wrote so far. One adopted is
+// answered by its name even when it has ended in the meantime: its ending
+// is told as every background ending is, and an exit code here as well
+// would tell it twice.
+func shellResultOf(held *backgroundCommand, isTimedOut, isAdopted bool) *ShellResult {
 	result := &ShellResult{Seconds: time.Since(held.startedAt).Seconds(), TimedOut: isTimedOut}
 	result.Stdout, result.StdoutTruncated = held.stdout.text()
 	result.Stderr, result.StderrTruncated = held.stderr.text()
 	switch {
-	case !held.hasEnded():
+	case isAdopted:
 		result.BackgroundID = held.id
 	case isTimedOut:
 		result.ExitCode = -1

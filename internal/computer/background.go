@@ -191,13 +191,13 @@ func (self *BackgroundCommands) listen(notify func(*BackgroundStatus)) func() {
 func (self *BackgroundCommands) adopt(held *backgroundCommand) error {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
-	running := 0
+	runningCount := 0
 	for _, other := range self.commands {
 		if !other.hasEnded() {
-			running++
+			runningCount++
 		}
 	}
-	if running >= mostBackgroundRunning {
+	if runningCount >= mostBackgroundRunning {
 		return fmt.Errorf("%d commands are already running in the background on this computer; stop one first", mostBackgroundRunning)
 	}
 	self.forgetLocked()

@@ -217,7 +217,7 @@ func TestABackgroundCommandTheAgentStartedWakesItWhenItEnds(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the shell here is sh")
 	}
-	startRound := `{"id":"b1","model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"shell","arguments":"{\"command\":\"sleep 1; echo built the thing\",\"background\":true}"}}]},"finish_reason":"tool_calls"}]}
+	startRound := `{"id":"b1","model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"shell","arguments":"{\"command\":\"sleep 1; echo built the thing\",\"isBackground\":true}"}}]},"finish_reason":"tool_calls"}]}
 {"id":"b1","choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10}}`
 	world := startGoalWorld(t, []string{startRound, answerRound, answerRound}, "")
 	defer world.close()
