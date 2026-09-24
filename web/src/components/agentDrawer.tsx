@@ -2156,6 +2156,25 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     remember(draftKey(conversationId), draft)
   }, [draft, conversationId])
 
+  // Escape closes a dropdown -- the conversations, or one of the head's --
+  // wherever the focus is, not only from inside it: the one that opens a
+  // dropdown is a button in the head, and the focus stays there. A
+  // command's output in the background dropdown takes its Escape first,
+  // going back to the list, and a field that uses Escape marks it used.
+  useEffect(() => {
+    if (!headMenu && !showingList) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (document.querySelector('.dialog-scrim, .select-list')) return
+      event.preventDefault()
+      setHeadMenu(null)
+      setShowingList(false)
+      setGoalDraft(null)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [headMenu, showingList])
+
   // Escape toggles the drawer from anywhere on the page — unless a dialog
   // or a list is open, which Escape closes first.
   useEffect(() => {
