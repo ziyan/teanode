@@ -350,7 +350,7 @@ export function BackgroundPanel({
     : null
   return (
     <section
-      className="agent-drawer-list background-menu"
+      className={current ? 'agent-drawer-list background-menu showing-output' : 'agent-drawer-list background-menu'}
       aria-label={t('agentDrawer.backgroundCommands')}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
