@@ -374,6 +374,12 @@ func (self *AgentDocument) Cite() string {
 	return name
 }
 
+// Checkout is the checkout a commit was read from, as a directory
+// relative to its source, where the document says.
+func (self *AgentDocument) Checkout() string {
+	return self.metadataText("checkout")
+}
+
 // Author is who wrote it, where the document says.
 func (self *AgentDocument) Author() string {
 	return self.metadataText("author")

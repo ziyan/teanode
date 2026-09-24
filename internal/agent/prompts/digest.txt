@@ -51,6 +51,13 @@ at most twice, then answer. A fact goes on the page of the thing it is
 about: the items are unrelated to one another unless they say so, and
 the page the last item went to is no reason for the next.
 
+An item whose heading names a checkout is part of that checkout's
+project, and what it teaches about the project goes on the page the
+heading names or under it -- never on another project's page because
+that one is better known. A file in a folder of libraries, a copy of
+somebody else's code or an old experiment is about that, not about the
+project the folder happens to sit beside.
+
 Answer with this object and nothing else:
 
 {"facts": [{"path": "projects/portal", "node_kind": "project",
