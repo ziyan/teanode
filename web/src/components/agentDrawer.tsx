@@ -282,7 +282,17 @@ interface StoredMessage {
 
 interface RunEvent {
   kind:
-    'asked' | 'text' | 'message' | 'tool_call' | 'tool_result' | 'confirmation' | 'question' | 'note' | 'done' | 'error'
+    | 'asked'
+    | 'text'
+    | 'message'
+    | 'tool_call'
+    | 'tool_result'
+    | 'confirmation'
+    | 'question'
+    | 'note'
+    | 'titled'
+    | 'done'
+    | 'error'
   runId: string
   sequence: number
   at?: string
@@ -2448,6 +2458,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const applyEvent = (event: RunEvent) => {
     // What an event does beyond the transcript happens here, once: the
     // updater below may run twice under StrictMode.
+    //
+    // A new conversation is titled after its first turn has ended: the
+    // head and the list take the title as soon as it is written.
+    if (event.kind === 'titled') {
+      void loadConversations()
+      return
+    }
     //
     // A shell call may have left something running, or stopped it: the
     // head's mark says so now rather than at the next poll.
