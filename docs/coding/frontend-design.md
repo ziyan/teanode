@@ -91,6 +91,18 @@ An affordance that only appears on hover must sit behind `@media (hover:
 hover)`. On a phone the first tap reveals it and the second one acts, which
 turns every open into a double tap.
 
+## The agent drawer's head
+
+The marks in the agent drawer's head (the conversations, the goal, what is
+attached, the day's usage, what runs in the background) each open a dropdown
+under the head, the way the list of conversations does: `HeadMenu` in
+`components/agentDrawer.tsx`, with a backdrop that closes it and Escape from
+anywhere. Not a dialog: the drawer is where the person is looking, and a dialog
+over the page takes them out of it. Not a panel over the whole box: the head is
+what the box is dragged by and its edges what it is resized by. So the goal is
+set there with a small form of its own rather than a `FormDialog`, the one
+exception to the rule below.
+
 ## Making, changing, destroying
 
 Making a thing and changing it ask the same questions, so they are one

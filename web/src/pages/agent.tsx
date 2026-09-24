@@ -7,8 +7,6 @@ import {
   Loading,
   SaveRow,
   Tag,
-  budgetNearness,
-  formatClock,
   formatCount,
   formatMoney,
   formatTime,
@@ -16,6 +14,7 @@ import {
 import { Column, DataTable, Range } from '../components/dataTable'
 import { RUN_KINDS } from '../agentRuns'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
+import { BudgetBar } from '../components/budgetBar'
 import {
   BackgroundCommand,
   BackgroundCommandRows,
@@ -423,61 +422,6 @@ type SaveProps = {
 
 // AboutForm: what the agent is called, what it writes in, and the standing
 // instructions — the three things a person writes once and then leaves.
-// BudgetBar is the day against its budget: what has gone of it as a bar
-// in the colour of how near the end it is, the numbers beside it, and
-// when the day starts again. A budget can be set in tokens or in money;
-// where both are, the one nearer its end is the one drawn, since that is
-// the one that will stop the day.
-function BudgetBar({ budget, zone }: { budget: AgentView['budget']; zone: string }) {
-  const { t } = useTranslation()
-  if (!budget) return null
-  const tokens = budget.limit > 0 ? budget.used / budget.limit : -1
-  const money = budget.costLimit > 0 ? budget.cost / budget.costLimit : -1
-  if (tokens < 0 && money < 0) {
-    return (
-      <p className="muted">
-        {t('agent.budgetNone')}{' '}
-        {t('agent.budgetMoney', { used: formatMoney(budget.cost, budget.currency), limit: t('agent.unlimited') })}
-      </p>
-    )
-  }
-  const byMoney = money >= tokens
-  const fraction = Math.max(0, Math.min(1, byMoney ? money : tokens))
-  const said = byMoney
-    ? t('agent.budgetMoney', {
-        used: formatMoney(budget.cost, budget.currency),
-        limit: formatMoney(budget.costLimit, budget.currency),
-      })
-    : t('agent.budgetTokens', { used: formatCount(budget.used), limit: formatCount(budget.limit) })
-  return (
-    <div className="agent-budget">
-      <div className="agent-budget-said">
-        <span>
-          {said}
-          {/* What it came to, whichever way the budget is counted: a
-              number of tokens is not something anybody can act on. */}
-          {!byMoney && budget.cost > 0 ? (
-            <span className="muted"> · {formatMoney(budget.cost, budget.currency)}</span>
-          ) : null}
-        </span>
-        <span className="muted">{t('agent.budgetResets', { at: formatClock(budget.resetsAt, zone) })}</span>
-      </div>
-      <div
-        className="agent-budget-bar"
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(fraction * 100)}
-        aria-label={said}
-      >
-        <span
-          className={`agent-budget-bar-fill ${budgetNearness(fraction, 1)}`}
-          style={{ width: `${Math.round(fraction * 100)}%` }}
-        />
-      </div>
-    </div>
-  )
-}
 
 // The languages the server has a name for, each written in itself. A tag
 // it does not know is still allowed — the prompt says "the language with
@@ -1510,9 +1454,7 @@ function ReachCard() {
 // card, as there is no reach card without a reach.
 function BackgroundCommandsCard() {
   const { t } = useTranslation()
-  const { commands: listed, reload } = useBackgroundCommands(undefined, true)
-  // Only what still runs: how one ended is said in its conversation.
-  const commands = listed.filter((command) => command.isRunning)
+  const { commands, reload } = useBackgroundCommands(undefined, true)
   const [output, setOutput] = useState<BackgroundCommand | null>(null)
   if (commands.length === 0 && !output) return null
   return (

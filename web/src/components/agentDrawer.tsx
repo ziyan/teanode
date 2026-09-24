@@ -44,6 +44,7 @@ import {
   ExternalIcon,
 } from './icons'
 import { BackgroundCommand, BackgroundPanel, useBackgroundCommands } from './backgroundCommands'
+import { Budget, BudgetBar } from './budgetBar'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog, FormDialog } from './dialog'
 import { ZoomablePicture } from './lightbox'
@@ -216,14 +217,6 @@ const ATTACHMENT_PATH = '/api/v1/agent/attachments/'
 // Today's spend against the day's budget, in tokens and in money. A
 // limit of zero is no limit of that kind; where both are set, whichever
 // runs out first stops the day, and the ring shows that one.
-interface Budget {
-  used: number
-  limit: number
-  resetsAt: string
-  cost: number
-  costLimit: number
-  currency: string
-}
 
 // budgetShown is the budget the ring draws: the one nearer its end where
 // both are set, and null where neither is.
@@ -1546,39 +1539,15 @@ function siteOf(url: string | undefined): string {
   }
 }
 
-// UsageMenu is the day's budget: how much has gone, as words and as a bar
-// coloured by how near the end it is, what it came to, and when it starts
-// again.
+// UsageMenu is the day's budget, drawn as the agent's page draws it: how
+// much has gone, as words and as a bar coloured by how near the end it
+// is, what it came to, and when it starts again.
 function UsageMenu({ budget, zone, onClose }: { budget: Budget; zone: string; onClose: () => void }) {
   const { t } = useTranslation()
-  const shown = budgetShown(budget)
-  if (!shown) return null
-  const fraction = Math.max(0, Math.min(1, shown.fraction))
-  const percent = Math.round(fraction * 100)
-  const said = t('agentDrawer.usageUsed', { used: shown.used, limit: shown.limit })
   return (
     <HeadMenu title={t('agentDrawer.usageTitle')} onClose={onClose}>
       <div className="head-menu-usage">
-        <div className="head-menu-usage-said">
-          <span>{said}</span>
-          <span className="muted">{percent}%</span>
-        </div>
-        <div
-          className="agent-budget-bar"
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={percent}
-          aria-label={said}
-        >
-          <span className={`agent-budget-bar-fill ${budgetNearness(fraction, 1)}`} style={{ width: `${percent}%` }} />
-        </div>
-        <p className="muted">
-          {shown.money
-            ? null
-            : `${t('agentDrawer.budgetSpent', { spent: formatMoney(budget.cost, budget.currency) })} `}
-          {t('agentDrawer.budgetResets', { at: formatClock(budget.resetsAt, zone) })}
-        </p>
+        <BudgetBar budget={budget} zone={zone} />
       </div>
     </HeadMenu>
   )
@@ -1588,22 +1557,22 @@ function UsageMenu({ budget, zone, onClose }: { budget: Budget; zone: string; on
 // the dropdown: the words, and where it stands under them.
 function GoalMenu({
   conversation,
-  draft,
   isBusy,
-  turnsToday,
-  onDraft,
+  goalTurnsToday,
   onSave,
   onClose,
 }: {
   conversation: Conversation
-  draft: string
   isBusy: boolean
-  turnsToday: number
-  onDraft: (draft: string) => void
+  goalTurnsToday: number
   onSave: (goal: string) => void
   onClose: () => void
 }) {
   const { t } = useTranslation()
+  // The words being written, from the goal as it stands. The dropdown is
+  // made again for another conversation, so it never carries one's draft
+  // to the next.
+  const [draft, setDraft] = useState(conversation.goal ?? '')
   const canSave = draft.trim() !== '' && draft.trim() !== (conversation.goal ?? '')
   return (
     <HeadMenu title={t('agentDrawer.goal.title')} className="goal-menu" onClose={onClose}>
@@ -1620,7 +1589,7 @@ function GoalMenu({
           value={draft}
           aria-label={t('agentDrawer.goal.label')}
           autoFocus
-          onChange={(event) => onDraft(event.target.value)}
+          onChange={(event) => setDraft(event.target.value)}
         />
         {/* Where the goal stands, as the row says it: the state, since
             when, when the agent looks again, how many turns it has taken
@@ -1642,7 +1611,7 @@ function GoalMenu({
               </>
             ) : null}
             <dt>{t('agentDrawer.goal.turnsToday')}</dt>
-            <dd>{turnsToday}</dd>
+            <dd>{goalTurnsToday}</dd>
             {conversation.goalNote ? (
               <>
                 <dt>{t('agentDrawer.goal.lastNote')}</dt>
@@ -1860,7 +1829,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null)
   // The goal being typed, or null while the dialog is shut. An empty
   // string is a dialog open on a conversation that has no goal yet.
-  const [goalDraft, setGoalDraft] = useState<string | null>(null)
   const [goalBusy, setGoalBusy] = useState(false)
   const [goalTurnsToday, setGoalTurnsToday] = useState(0)
   // The goal a conversation about to be started is given, or null while
@@ -2025,13 +1993,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // while the drawer is open. The main conversation is named by an empty
   // id until it has been read, and the list wants its real one.
   const backgroundConversationId = conversationId || loaded?.id || ''
-  const { commands: backgroundCommands, reload: reloadBackground } = useBackgroundCommands(
+  const { commands: runningCommands, reload: reloadBackground } = useBackgroundCommands(
     backgroundConversationId,
     open && available && backgroundConversationId !== '',
   )
-  // Only what still runs: how a command ended is said in the conversation,
-  // in the turn its ending wakes.
-  const runningCommands = backgroundCommands.filter((command) => command.isRunning)
   // Which of the head's dropdowns is open, if any. One at a time, and none
   // while the list of conversations is.
   const [headMenu, setHeadMenu] = useState<HeadMenuName | null>(null)
@@ -2179,7 +2144,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       event.preventDefault()
       setHeadMenu(null)
       setShowingList(false)
-      setGoalDraft(null)
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
@@ -2996,7 +2960,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     setGoalBusy(true)
     try {
       await graphql(UPDATE, { conversationId, goal })
-      setGoalDraft(null)
       setHeadMenu(null)
       await loadConversations()
       await readConversation(conversationId)
@@ -3165,6 +3128,29 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
   }
 
+  // A dropdown whose mark has gone goes with it -- the tab detached, the
+  // last command ended, the limit taken away -- and none outlives the
+  // conversation it was opened in. Left, it stayed open with nothing to
+  // press to close it, and the backdrop under it took the next click.
+  const headConversation = conversations.find((conversation) => conversation.id === conversationId) ?? loaded
+  const isHeadMenuMarked =
+    headMenu === 'goal'
+      ? Boolean(headConversation && conversationId && headConversation.kind !== 'run')
+      : headMenu === 'tab'
+        ? Boolean(tab?.attached)
+        : headMenu === 'computers'
+          ? computers.length > 0
+          : headMenu === 'usage'
+            ? Boolean(budget && budgetShown(budget))
+            : headMenu === 'background'
+              ? runningCommands.length > 0
+              : true
+  useEffect(() => {
+    if (headMenu && !isHeadMenuMarked) setHeadMenu(null)
+  }, [headMenu, isHeadMenuMarked])
+  useEffect(() => {
+    setHeadMenu(null)
+  }, [conversationId])
   if (!available) {
     return null
   }
@@ -3254,14 +3240,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 here. A run has no goal: nobody talks it into one, and it
                 is over by the time it is read. */}
             {current && conversationId && !isRun && (
-              <GoalChip
-                conversation={current}
-                isOpen={headMenu === 'goal'}
-                onOpen={() => {
-                  setGoalDraft(current.goal ?? '')
-                  toggleHeadMenu('goal')
-                }}
-              />
+              <GoalChip conversation={current} isOpen={headMenu === 'goal'} onOpen={() => toggleHeadMenu('goal')} />
             )}
             {/* What of the person's own is attached, as a mark with the
                 details on hover and a line each under it on a press: the
@@ -3323,15 +3302,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           {/* What this chat left running, dropped down from the head the
               way the conversations are, so the head stays where the box is
               dragged from and its edges where it is resized. */}
-          {headMenu && (
-            <div
-              className="agent-drawer-backdrop"
-              onClick={() => {
-                setHeadMenu(null)
-                setGoalDraft(null)
-              }}
-            />
-          )}
+          {headMenu && <div className="agent-drawer-backdrop" onClick={() => setHeadMenu(null)} />}
           {headMenu === 'background' && (
             <BackgroundPanel
               commands={runningCommands}
@@ -3344,18 +3315,14 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           {headMenu === 'usage' && budget && (
             <UsageMenu budget={budget} zone={agentZone} onClose={() => setHeadMenu(null)} />
           )}
-          {headMenu === 'goal' && current && goalDraft !== null && (
+          {headMenu === 'goal' && current && (
             <GoalMenu
+              key={current.id}
               conversation={current}
-              draft={goalDraft}
               isBusy={goalBusy}
-              turnsToday={goalTurnsToday}
-              onDraft={setGoalDraft}
+              goalTurnsToday={goalTurnsToday}
               onSave={(goal) => void saveGoal(goal)}
-              onClose={() => {
-                setHeadMenu(null)
-                setGoalDraft(null)
-              }}
+              onClose={() => setHeadMenu(null)}
             />
           )}
           {showingList && (
