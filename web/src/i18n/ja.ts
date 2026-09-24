@@ -1098,6 +1098,8 @@ export const ja: Catalog = {
   'agentDrawer.usageUsed': '{limit} のうち {used}',
   'agentDrawer.answer': '答えを入力…',
   'agentDrawer.chatAboutIt': 'チャットで話す',
+  'agentDrawer.submit': '送信',
+  'agentDrawer.answerBelow': '下の入力欄に回答を入力することもできます。',
   'agentDrawer.chattingInstead': 'チャットで話すことにしました',
   'agentDrawer.close': '閉じる',
   'agentDrawer.main': 'メインチャット',

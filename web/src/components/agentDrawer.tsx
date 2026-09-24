@@ -1090,10 +1090,11 @@ function TodoLine({ todo }: { todo: Todo }) {
   )
 }
 
-// QuestionCard is the agent asking, with the choices it offered, a line
-// for anything else, and a way out: "Chat about it" closes the card and
-// hands the conversation back, for when none of the choices fits and the
-// answer wants more than a line.
+// QuestionCard is the agent asking: its choices to pick from, then Submit,
+// or "Chat about it", which closes the card and hands the conversation
+// back for an answer the choices do not hold. Anything else is typed in
+// the chat box below, which answers the card while it is fresh; a second
+// box on the card only made two places to type.
 function QuestionCard({
   line,
   onAnswer,
@@ -1104,7 +1105,7 @@ function QuestionCard({
   onChat: () => void
 }) {
   const { t } = useTranslation()
-  const [text, setText] = useState('')
+  const [chosen, setChosen] = useState('')
   return (
     <div className="agent-line confirmation">
       <p>{line.question}</p>
@@ -1112,33 +1113,34 @@ function QuestionCard({
         <p className="muted">{line.answered}</p>
       ) : (
         <>
-          <div className="row wrap">
-            {line.choices.map((choice) => (
-              <button key={choice} type="button" onClick={() => onAnswer(choice)}>
-                {choice}
+          {line.choices.length > 0 ? (
+            <div className="agent-question-choices" role="radiogroup" aria-label={line.question}>
+              {line.choices.map((choice) => (
+                <button
+                  key={choice}
+                  type="button"
+                  role="radio"
+                  aria-checked={chosen === choice}
+                  className={chosen === choice ? 'chosen' : undefined}
+                  onClick={() => setChosen(choice)}
+                >
+                  {choice}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">{t('agentDrawer.answerBelow')}</p>
+          )}
+          <div className="agent-question-actions">
+            {line.choices.length > 0 ? (
+              <button type="button" className="primary" disabled={!chosen} onClick={() => onAnswer(chosen)}>
+                {t('agentDrawer.submit')}
               </button>
-            ))}
-            <button type="button" className="link" onClick={onChat}>
+            ) : null}
+            <button type="button" onClick={onChat}>
               {t('agentDrawer.chatAboutIt')}
             </button>
           </div>
-          <form
-            className="row"
-            onSubmit={(event) => {
-              event.preventDefault()
-              onAnswer(text)
-            }}
-          >
-            <input
-              value={text}
-              placeholder={t('agentDrawer.answer')}
-              aria-label={t('agentDrawer.answer')}
-              onChange={(event) => setText(event.target.value)}
-            />
-            <button type="submit" className="primary" disabled={!text.trim()}>
-              {t('agentDrawer.send')}
-            </button>
-          </form>
         </>
       )}
     </div>
