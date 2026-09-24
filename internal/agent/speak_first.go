@@ -33,6 +33,16 @@ const (
 	// whose surface begins so.
 	speakFirstSurfacePrefix = "speak_first:"
 
+	// askedSuffix ends the subject of a job the person asked for, from the
+	// dashboard or the command line, rather than one the sweep queued: the
+	// turn is told, so that nothing it said earlier about waiting to be
+	// asked keeps it from starting.
+	askedSuffix = ":asked"
+
+	// preparedIsAsked is set in what a check-in is handed when the person
+	// asked for the turn.
+	preparedIsAsked = "isAsked"
+
 	// speakFirstLongest is how long a spoken-first turn may run: long
 	// enough for a check of five questions answered at a person's pace.
 	speakFirstLongest = 45 * time.Minute
@@ -199,7 +209,7 @@ func (self *Agent) SpeakFirstNow(tx db.Transaction, agent *models.Agent, reason 
 	if err != nil || open > 0 {
 		return err
 	}
-	_, err = self.Enqueue(tx, models.AgentJobSpeakFirst, agent.ID, "", reason)
+	_, err = self.Enqueue(tx, models.AgentJobSpeakFirst, agent.ID, "", reason+askedSuffix)
 	return err
 }
 
@@ -207,7 +217,8 @@ func (self *Agent) SpeakFirstNow(tx db.Transaction, agent *models.Agent, reason 
 // reason's message marked as the agent's own, and the surface the
 // dashboard opens the drawer on.
 func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
-	reason, ok := self.speakFirstReasonNamed(run.Job.SubjectID)
+	isAsked := strings.HasSuffix(run.Job.SubjectID, askedSuffix)
+	reason, ok := self.speakFirstReasonNamed(strings.TrimSuffix(run.Job.SubjectID, askedSuffix))
 	if !ok {
 		return nil
 	}
@@ -228,6 +239,12 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 		if prepared, isSpeaking, err = reason.prepare(ctx, run, now); err != nil || !isSpeaking {
 			return err
 		}
+	}
+	if isAsked {
+		if prepared == nil {
+			prepared = map[string]string{}
+		}
+		prepared[preparedIsAsked] = "true"
 	}
 	var conversation *models.AgentConversation
 	var message string
@@ -267,6 +284,14 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 		}
 	}
 	return nil
+}
+
+// askedLine is what a turn the person asked for is told first.
+func askedLine(prepared map[string]string) string {
+	if prepared[preparedIsAsked] != "true" {
+		return ""
+	}
+	return "They asked for this just now, with the button on their dashboard or by saying so. Whatever you said earlier about waiting until they ask, this is them asking: begin.\n\n"
 }
 
 // speakFirstMessage is the start every spoken-first turn's message shares:

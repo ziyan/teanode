@@ -191,8 +191,18 @@ func TestAMemoryCheckRecordsTheReplies(t *testing.T) {
 // out of a work archive, however it sits on a page about a person.
 func TestADraftLeavesOutWhatWasReadFromWork(t *testing.T) {
 	world := newCheckWorld(t)
-	var told, read *models.AgentFact
+	var told, read, readOnSelf *models.AgentFact
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		self, err := tx.GetAgentNode(world.run.agent.ID, "self")
+		if err != nil || self == nil {
+			t.Fatalf("self: %v %v", self, err)
+		}
+		// On the self page, but read out of a repository: not theirs to
+		// confirm offhand either.
+		if readOnSelf, err = tx.AddAgentFact(&models.AgentFact{AgentID: world.run.agent.ID, NodeID: self.ID, Kind: models.FactPlain, Text: "They reviewed a change to the build.",
+			Evidence: []models.Evidence{{Kind: models.EvidenceRepository, ID: "repository-1"}}}); err != nil {
+			t.Fatal(err)
+		}
 		page, err := tx.PutAgentNode(&models.AgentNode{AgentID: world.run.agent.ID, Path: "people/sam-rivers", Kind: models.NodePerson, Name: "Sam Rivers"})
 		if err != nil {
 			t.Fatal(err)
@@ -210,8 +220,8 @@ func TestADraftLeavesOutWhatWasReadFromWork(t *testing.T) {
 	for round := 0; round < 3; round++ {
 		for _, each := range world.call(t, `{"action":"draft"}`)["facts"].([]any) {
 			factId := each.(map[string]any)["fact_id"]
-			if factId == read.ID {
-				t.Fatal("a fact read from a commit is not asked about")
+			if factId == read.ID || factId == readOnSelf.ID {
+				t.Fatal("a fact read from a commit or a repository is not asked about")
 			}
 			if factId == told.ID {
 				sawTold = true
