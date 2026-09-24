@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.60.2] - 2026-09-24
+
+### Fixed
+
+- Filing and editing facts on the same memory page at the same time no longer fails with a database deadlock. (#151)
+
 ## [0.60.1] - 2026-09-24
 
 ### Fixed
