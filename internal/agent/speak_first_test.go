@@ -274,3 +274,34 @@ func TestAMemoryCheckIsAskedForWhenMemoryKnowsEnough(t *testing.T) {
 		t.Fatalf("a week later, a memory check: %+v", jobs)
 	}
 }
+
+// A memory check that puts no question is nudged once, and only once:
+// the person asked for it and would otherwise see the drawer open on
+// nothing.
+func TestAMemoryCheckThatAsksNothingIsNudgedOnce(t *testing.T) {
+	world := newSpeakFirstWorld(t)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		now := time.Now()
+		if err := tx.MarkAgentSpokeFirst(world.agent.ID, nil, &now, nil); err != nil {
+			t.Fatal(err)
+		}
+		found, _ := tx.GetAgent(world.agent.ID)
+		if err := world.worker.SpeakFirstNow(tx, found, agent.SpeakFirstMemoryCheck); err != nil {
+			t.Fatal(err)
+		}
+	})
+	world.tick(t)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		main, _ := tx.ListAgentConversations(world.agent.ID, []models.AgentConversationKind{models.AgentConversationMain}, nil)
+		messages, _ := tx.ListAgentMessages(main[0].ID, nil)
+		checkIns := 0
+		for _, message := range messages {
+			if message.Role == "user" && strings.HasPrefix(message.Content, models.SpeakFirstMarker) {
+				checkIns++
+			}
+		}
+		if checkIns != 2 {
+			t.Fatalf("the check-in and one nudge, not %d: %+v", checkIns, messages)
+		}
+	})
+}

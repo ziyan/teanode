@@ -26,6 +26,21 @@ func (self *Agent) memoryCheckReason() speakFirstReason {
 		name:           SpeakFirstMemoryCheck,
 		isDailyLimited: true,
 		canAsk:         true,
+		// A check that put no question did nothing.
+		didNothing: func(ctx context.Context, run *Run, started time.Time) (bool, error) {
+			var questions []*models.AgentEvaluationQuestion
+			err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+				questions, err = tx.ListAgentEvaluationQuestions(run.Agent.ID, nil)
+				return err
+			})
+			for _, question := range questions {
+				if question.CreatedAt.After(started) || (question.AnsweredAt != nil && question.AnsweredAt.After(started)) {
+					return false, err
+				}
+			}
+			return true, err
+		},
+		nudge: "You ended the memory check's turn without putting a question. Call memory_check with draft if you have not, and put the first one to them now with ask_user, as the check-in above says. Say nothing else first.",
 		isDue: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, idle time.Duration, now time.Time) (bool, error) {
 			if !agent.IsMemoryCheckEnabled || agent.OnboardedAt == nil {
 				return false, nil
