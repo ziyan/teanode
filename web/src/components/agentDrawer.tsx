@@ -17,6 +17,7 @@ import {
   sharedAttachment,
 } from '../api'
 import { uploadFiles } from '../upload'
+import { suggestedRepliesOf, withoutPartialMarker } from '../suggestions'
 import { useAgentConversation } from '../hooks/useAgentConversation'
 import { useAgentPresence } from '../hooks/useAgentPresence'
 import { budgetNearness, formatClock, formatCount, formatMoney, formatTime } from './common'
@@ -2520,6 +2521,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     return { page: location.pathname }
   }, [location.pathname, told])
 
+  // What the last answer offered to reply with: only when it is the last
+  // thing in the conversation, nothing is running, and no card is waiting.
+  const suggestedReplies = useMemo(() => {
+    if (runs.length > 0) return []
+    const last = [...lines].reverse().find((line) => line.kind !== 'note')
+    if (last?.kind !== 'assistant' || last.streaming) return []
+    return suggestedRepliesOf(last.text).suggestions
+  }, [lines, runs])
+
   // leaving is what a link out of the drawer does on the way: on a phone
   // the drawer is the whole screen, so the page it goes to would be
   // behind it, and going somewhere is leaving here.
@@ -2761,10 +2771,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     setPending((previous) => [...previous, ...added])
   }
 
-  const send = async () => {
-    const message = draft.trim()
-    const files = pending
-    const pointed = references
+  // send sends what is in the box, or a suggested reply clicked above it,
+  // which leaves the box, its files and its references as they were.
+  const send = async (suggestedReply?: string) => {
+    const isSuggested = suggestedReply !== undefined
+    const message = (isSuggested ? suggestedReply : draft).trim()
+    const files = isSuggested ? [] : pending
+    const pointed = isSuggested ? [] : references
     if ((!message && files.length === 0) || uploading || loading.current) return
     // A question card waiting for an answer takes what is typed here as
     // its answer. Sent as a turn of its own, it queued behind the turn
@@ -2786,11 +2799,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       }
     }
     const sendingConversationId = conversationRef.current
-    setDraft('')
-    remember(draftKey(conversationId), '')
-    setPending([])
-    setReferences([])
-    if (input.current) input.current.style.height = 'auto'
+    if (!isSuggested) {
+      setDraft('')
+      remember(draftKey(conversationId), '')
+      setPending([])
+      setReferences([])
+      if (input.current) input.current.style.height = 'auto'
+    }
     // Saying something is meaning to see it: wherever the transcript was
     // being read, it goes back to its end for the turn that follows.
     sticking.current = true
@@ -3254,7 +3269,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         return (
           <Tooltip key={line.key} label={line.at ? formatTime(line.at) : ''}>
             <div className={['agent-line assistant', line.streaming ? 'streaming' : ''].filter(Boolean).join(' ')}>
-              <Markdown text={line.text} onLeaving={leaving} />
+              <Markdown
+                text={line.streaming ? withoutPartialMarker(line.text) : suggestedRepliesOf(line.text).displayText}
+                onLeaving={leaving}
+              />
               <CitedEvidence files={citedIn(line.text, citedFiles)} />
               {showUsage && line.usage && (
                 <div className="agent-usage muted">
@@ -3781,6 +3799,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           {/* What the agent needs before it can go on, said where the
               person is about to type rather than somewhere up the
               transcript they would have to scroll back to. */}
+          {/* The replies the last answer offered, to send with a click,
+              while nothing is running. */}
+          {suggestedReplies.length > 0 ? (
+            <div className="agent-suggested-replies" role="group" aria-label={t('agentDrawer.suggestedReplies')}>
+              {suggestedReplies.map((reply) => (
+                <button key={reply} type="button" onClick={() => void send(reply)}>
+                  {reply}
+                </button>
+              ))}
+            </div>
+          ) : null}
           {waitingNote ? (
             <div className="agent-drawer-goal-waiting">
               <TargetIcon size={12} />

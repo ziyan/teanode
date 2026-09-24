@@ -156,7 +156,7 @@ func mcpCollect(ctx context.Context, events <-chan agent.Event, personName, conv
 				// The whole answer, once there is one. A turn can say more
 				// than one thing, so they are kept in order rather than
 				// the last one winning.
-				if text := strings.TrimSpace(event.Text); text != "" {
+				if text := strings.TrimSpace(models.StripSuggestedReplies(event.Text)); text != "" {
 					if answer.Len() > 0 {
 						answer.WriteString("\n\n")
 					}

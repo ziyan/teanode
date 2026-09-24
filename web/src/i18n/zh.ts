@@ -1062,6 +1062,7 @@ export const zh: Catalog = {
   'agentDrawer.usageUsed': '已用 {used} / {limit}',
   'agentDrawer.answer': '你的回答…',
   'agentDrawer.chatAboutIt': '聊一聊',
+  'agentDrawer.suggestedReplies': '建议的回复',
   'agentDrawer.submit': '提交',
   'agentDrawer.chattingInstead': '改为聊一聊',
   'agentDrawer.questionGone': '这张卡片已被回答，或已不再等待。',

@@ -13,6 +13,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // Talking to the agent from a terminal: one question, or a conversation
@@ -258,7 +259,7 @@ func askOnce(ctx context.Context, command *cli.Command, connection *client.Clien
 				if answered {
 					_, _ = fmt.Fprintln(command.Writer)
 				}
-				_, _ = fmt.Fprintln(command.Writer, strings.TrimSpace(event.Text))
+				_, _ = fmt.Fprintln(command.Writer, strings.TrimSpace(models.StripSuggestedReplies(event.Text)))
 				answered = true
 			case "tool_call":
 				if !quiet {
@@ -424,7 +425,7 @@ func printTranscript(command *cli.Command, view *client.AgentConversationView) e
 			_, _ = fmt.Fprintf(command.Writer, "[%s] you: %s\n", when, message.Content)
 		case "assistant":
 			if strings.TrimSpace(message.Content) != "" {
-				_, _ = fmt.Fprintf(command.Writer, "[%s] agent: %s\n", when, message.Content)
+				_, _ = fmt.Fprintf(command.Writer, "[%s] agent: %s\n", when, models.StripSuggestedReplies(message.Content))
 			}
 			for _, call := range message.ToolCalls {
 				_, _ = fmt.Fprintf(command.Writer, "[%s] → %s %s\n", when, call.Name, call.Arguments)

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"regexp"
 	"strings"
 	"time"
 )
@@ -451,4 +452,16 @@ type AgentInteraction struct {
 	CreatedAt         time.Time  `json:"createdAt"`
 	ResolvedAt        *time.Time `json:"resolvedAt,omitempty" graphapi:"nullable"`
 	InteractionAnswer string     `json:"interactionAnswer"`
+}
+
+// suggestedRepliesPattern is the hidden line a dashboard answer may end
+// with, offering replies the person can send with a click, or the start of
+// one still being written.
+var suggestedRepliesPattern = regexp.MustCompile(`\n?<!--suggestions:(?:\[[^\]]*\]-->|[^>]*)\s*$`)
+
+// StripSuggestedReplies takes the hidden suggested replies off an answer,
+// for anywhere but the dashboard, which reads them: a chat app, a mail, a
+// terminal. See web/src/suggestions.ts.
+func StripSuggestedReplies(text string) string {
+	return strings.TrimRight(suggestedRepliesPattern.ReplaceAllString(text, ""), " \n")
 }
