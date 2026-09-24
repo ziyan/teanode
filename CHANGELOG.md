@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.58.3] - 2026-09-24
+
+### Fixed
+
+- Memory keeps a repeated event on each date it happened, instead of folding a later occurrence behind the first. (#135)
+
 ## [0.58.2] - 2026-09-24
 
 ### Fixed
