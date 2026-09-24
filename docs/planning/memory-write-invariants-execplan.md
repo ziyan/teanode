@@ -89,6 +89,8 @@ After recall was changed to spend its room on what the question hit (a page show
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | memory | 61% | 22 | 3 | 6 | 15 | 0 | 2 | $0.31 |
 
+The review of that change found that a floor of 0.7 still let age move an old match down about twenty places, since fused scores are a sixtieth apart a place, and that it softened the penalty for an inferred fact too. At a floor of 0.95 with the inferred penalty kept whole, the same run gave 59% (21 correct, 3 partial, 15 missed, 2 wrong, 1 invented). Seven questions changed verdict between the two runs, in both directions, which is the noise of a single run; the question about who shares the car insurance was lost in both this run and a conversation, and is the one to watch.
+
 Every abstain question still answered "not known". The baseline was graded before `missed` was told apart from `wrong`, so its misses and wrong answers are summed there; the comparison is the score and the correct count. Part of the gain is the evaluation seeing the self page, which a turn always carried, rather than recall alone. What is still missed is mostly questions that name the person in the first person, dates asked by month, and answers spread over two pages.
 
 ## Context and Orientation
