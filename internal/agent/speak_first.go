@@ -69,6 +69,11 @@ type speakFirstReason struct {
 	// on them, as a conversation with somebody who is there.
 	canAsk bool
 
+	// didNothing, when set, says whether a turn begun at started did none
+	// of what it was for; it is then nudged once with nudge.
+	didNothing func(ctx context.Context, run *Run, started time.Time) (bool, error)
+	nudge      string
+
 	// isDue says whether the reason is due now, given the person has been
 	// idle for idle. The common rules have already held.
 	isDue func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, idle time.Duration, now time.Time) (bool, error)
@@ -264,26 +269,41 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 	if strings.TrimSpace(message) == "" {
 		return nil
 	}
-	turn, err := self.Ask(&AskSettings{
-		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
-		Message: message, Surface: speakFirstSurfacePrefix + reason.name, Headless: true, CanAsk: reason.canAsk,
-		UsageKind: string(models.AgentJobSpeakFirst),
-	})
-	if err != nil {
+	took := func(message string) error {
+		turn, err := self.Ask(&AskSettings{
+			Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
+			Message: message, Surface: speakFirstSurfacePrefix + reason.name, Headless: true, CanAsk: reason.canAsk,
+			UsageKind: string(models.AgentJobSpeakFirst),
+		})
+		if err != nil {
+			return err
+		}
+		events, unsubscribe := turn.Subscribe()
+		defer unsubscribe()
+		for event := range events {
+			if ctx.Err() != nil {
+				turn.Stop()
+				break
+			}
+			if event.Kind == EventError {
+				log.Warningf("the %s turn of agent %q failed: %s", reason.name, run.Agent.ID, event.Error)
+			}
+		}
+		return nil
+	}
+	started := time.Now()
+	if err := took(message); err != nil || ctx.Err() != nil || reason.didNothing == nil {
 		return err
 	}
-	events, unsubscribe := turn.Subscribe()
-	defer unsubscribe()
-	for event := range events {
-		if ctx.Err() != nil {
-			turn.Stop()
-			break
-		}
-		if event.Kind == EventError {
-			log.Warningf("the %s turn of agent %q failed: %s", reason.name, run.Agent.ID, event.Error)
-		}
+	// Once more, when the turn ended having done nothing it was for. A
+	// memory check whose history said to wait until asked answered its
+	// own check-in with nothing at all, twice, and the person saw the
+	// drawer open on silence.
+	if didNothing, err := reason.didNothing(ctx, run, started); err != nil || !didNothing {
+		return err
 	}
-	return nil
+	log.Noticef("the %s turn of agent %q did nothing; nudged once", reason.name, run.Agent.ID)
+	return took(models.SpeakFirstMarker + " " + reason.nudge)
 }
 
 // speakFirstMessage is the start every spoken-first turn's message shares:
@@ -293,7 +313,7 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 func speakFirstMessage(owner *models.User, now time.Time, what string, prepared map[string]string) string {
 	who := " Nobody asked for this turn: you are starting the conversation, and what you write is the first thing " + personName(owner) + " reads when they look at the chat. They have their dashboard open."
 	if prepared[preparedIsAsked] == "true" {
-		who = " " + personName(owner) + " asked for this just now, with the button on their dashboard or by saying so. Whatever was said earlier about waiting until they ask, this is them asking: begin now. They are looking at the chat."
+		who = " " + personName(owner) + " asked for this just now, with the button on their dashboard or by saying so. Whatever was said earlier, or is in the note on the earlier conversation, about waiting until they ask or only going on if they engage, this is them asking: begin now. They are looking at the chat."
 	}
 	return strings.Join([]string{
 		models.SpeakFirstMarker + " " + what + who,

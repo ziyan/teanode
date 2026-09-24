@@ -76,3 +76,42 @@ func TestAPersonsWorkIsClaimedBeforeTheReading(t *testing.T) {
 		}
 	}
 }
+
+// The reading never takes the last slot: with room for two long jobs, a
+// third waits even when a slot is free, and what a person asks for next
+// still has somewhere to run.
+func TestTheReadingLeavesASlot(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	var agent *models.Agent
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		user, err := tx.CreateUser(&models.User{Username: "robin"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if agent, err = tx.CreateAgent(&models.Agent{UserID: user.ID, Name: "Bertie", Enabled: true}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		for index, kind := range []models.AgentJobKind{models.AgentJobIngest, models.AgentJobDream, models.AgentJobIngest} {
+			if _, err := tx.EnqueueAgentJob(&models.AgentJob{AgentID: agent.ID, Kind: kind, SubjectID: string(kind) + string(rune('a'+index))}); err != nil {
+				t.Fatalf("EnqueueAgentJob %s: %s", kind, err)
+			}
+		}
+	})
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		claimed, err := tx.ClaimAgentJobsKeepingRoom("instance-a", 3, 2, time.Now())
+		if err != nil || len(claimed) != 2 {
+			t.Fatalf("two of the three long jobs, and a slot kept: %v %v", claimed, err)
+		}
+	})
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.EnqueueAgentJob(&models.AgentJob{AgentID: agent.ID, Kind: models.AgentJobSpeakFirst, SubjectID: "memory_check:asked"}); err != nil {
+			t.Fatalf("EnqueueAgentJob: %s", err)
+		}
+		claimed, err := tx.ClaimAgentJobsKeepingRoom("instance-a", 1, 2, time.Now())
+		if err != nil || len(claimed) != 1 || claimed[0].Kind != models.AgentJobSpeakFirst {
+			t.Fatalf("the kept slot goes to the check the person asked for: %v %v", claimed, err)
+		}
+	})
+}

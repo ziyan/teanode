@@ -72,7 +72,7 @@ func runAskUser(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return tools.JSONResult(map[string]any{
 			"answer":            "",
 			"isChattingInstead": true,
-			"note":              "They chose to chat about it instead of answering. Ask nothing more now: end your turn with at most one short line, and take up what they write next.",
+			"note":              "They chose to chat about it instead of answering. Ask nothing more now: end your turn with one short line inviting them to say what they want to about it, and take up what they write next.",
 		})
 	}
 	return tools.JSONResult(map[string]any{"answer": answer})
