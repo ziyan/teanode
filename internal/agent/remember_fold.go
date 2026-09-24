@@ -52,11 +52,19 @@ func (self *Agent) foldIntoWhatThePageSays(tx db.Transaction, written *models.Ag
 	if written == nil || node == nil {
 		return written, nil
 	}
-	twin := self.twinOf(tx, written, node, sense)
-	if twin == nil {
-		return written, nil
+	// Every near candidate is asked, not only the nearest: two lines in
+	// the same words about two days sit at the same distance, and a third
+	// saying of one of them must find its own day rather than stop at the
+	// other.
+	var twin *models.AgentFact
+	choice := foldKeepBoth
+	for _, candidate := range self.twinsOf(tx, written, node, sense) {
+		if choice = whatToFold(written, candidate); choice != foldKeepBoth {
+			twin = candidate
+			break
+		}
 	}
-	switch whatToFold(written, twin) {
+	switch choice {
 	case foldKeepBoth:
 		return written, nil
 
@@ -129,10 +137,20 @@ func whatThePageAlreadySays(tx db.Transaction, agentId string, node *models.Agen
 // answer in both directions: a sentence re-stated without its date adds
 // nothing by becoming a second row, and a sentence that arrives with a
 // date the page did not have should leave the page knowing it.
+//
+// It is the one answer to that question: the check before writing, the
+// fold after it (whatToFold) and the nightly merge (mergeSaidTwice) all
+// ask it, so none of them can call two occurrences one.
 func isTheSameFact(fact, said *models.AgentFact) bool {
-	if !saysItInTheSameWords(fact.Text, said.Text) {
-		return false
-	}
+	return saysItInTheSameWords(fact.Text, said.Text) && couldBeOneStatement(fact, said)
+}
+
+// couldBeOneStatement is the half of isTheSameFact that does not look at
+// the words: the same kind, and the same date where both give one. The
+// nightly merge asks only this half, because the model has already said
+// the two wordings mean the same; what it cannot overrule is a second
+// occurrence of an event on another day, or a state filed as an event.
+func couldBeOneStatement(fact, said *models.AgentFact) bool {
 	if fact.Kind != said.Kind {
 		return false
 	}
@@ -201,9 +219,10 @@ const (
 // Vector similarity and shared names do not prove that two facts agree.
 // Different amounts, dates, frequencies or responsibilities must remain distinct.
 //
-// So an automatic fold now needs the two to be the same sentence written
-// twice -- see saysItInTheSameWords -- where there is provably nothing
-// to lose. A paraphrase is left standing beside its twin; the nightly
+// So an automatic fold now needs the two to be the same fact written
+// twice -- see isTheSameFact: the same words, the same kind, and the same
+// day where both say one -- where there is provably nothing to lose. The
+// same sentence about a second occurrence a year later is a second fact. A paraphrase is left standing beside its twin; the nightly
 // pass that puts a page to a model (consolidatePage) is where a judgment
 // like that belongs, and until it runs the person hears both rather than
 // only the older.
@@ -228,7 +247,7 @@ func whatToFold(written, twin *models.AgentFact) foldChoice {
 		}
 		return foldTheOlderBehindTheNewer
 	}
-	if saysItInTheSameWords(written.Text, twin.Text) {
+	if isTheSameFact(twin, written) {
 		return foldTheNewerBehindTheOlder
 	}
 	return foldKeepBoth
@@ -256,8 +275,8 @@ func laterThan(fact, than *models.AgentFact) bool {
 	return fact.CreatedAt.After(than.CreatedAt)
 }
 
-// twinOf is the fact already on this page that a new one may be a second
-// saying of, or nil.
+// twinsOf is the facts already on this page that a new one may be a
+// second saying of, nearest first.
 //
 // A candidate and not a verdict: whether the two are really one
 // statement is whatToFold's to decide, and this only narrows the page
@@ -266,7 +285,7 @@ func laterThan(fact, than *models.AgentFact) bool {
 // Written after the fact rather than before it so that the vector is the
 // one the store holds, and so that a deployment with no embedding model
 // keeps everything rather than silently dropping what it cannot compare.
-func (self *Agent) twinOf(tx db.Transaction, fact *models.AgentFact, node *models.AgentNode, sense *meaning) *models.AgentFact {
+func (self *Agent) twinsOf(tx db.Transaction, fact *models.AgentFact, node *models.AgentNode, sense *meaning) []*models.AgentFact {
 	if sense == nil {
 		return nil
 	}
@@ -287,6 +306,7 @@ func (self *Agent) twinOf(tx db.Transaction, fact *models.AgentFact, node *model
 	if err != nil {
 		return nil
 	}
+	var twins []*models.AgentFact
 	// The page's own name is not evidence either way; see sharesAName.
 	itsOwn := append([]string{node.Name}, node.Aliases...)
 	for _, candidate := range orderFacts(candidates, idsOf(scores)) {
@@ -302,7 +322,7 @@ func (self *Agent) twinOf(tx db.Transaction, fact *models.AgentFact, node *model
 		if differsInQuantity(fact.Text, candidate.Text) {
 			continue
 		}
-		return candidate
+		twins = append(twins, candidate)
 	}
-	return nil
+	return twins
 }
