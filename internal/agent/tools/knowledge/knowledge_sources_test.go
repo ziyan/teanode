@@ -30,6 +30,7 @@ func (self *fakeRun) Agent() *models.Agent                    { return self.agen
 func (self *fakeRun) Owner() *models.User                     { return self.owner }
 func (self *fakeRun) Conversation() *models.AgentConversation { return nil }
 func (self *fakeRun) Headless() bool                          { return false }
+func (self *fakeRun) CanAsk() bool                            { return !self.Headless() }
 func (self *fakeRun) Configuration() *config.Configuration    { return config.Default() }
 func (self *fakeRun) Offered() []*tools.Tool                  { return nil }
 

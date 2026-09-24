@@ -1097,6 +1097,8 @@ export const ja: Catalog = {
   'agentDrawer.usageTitle': '今日の使用量',
   'agentDrawer.usageUsed': '{limit} のうち {used}',
   'agentDrawer.answer': '答えを入力…',
+  'agentDrawer.chatAboutIt': 'チャットで話す',
+  'agentDrawer.chattingInstead': 'チャットで話すことにしました',
   'agentDrawer.close': '閉じる',
   'agentDrawer.main': 'メインチャット',
   'agentDrawer.untitled': '無題',

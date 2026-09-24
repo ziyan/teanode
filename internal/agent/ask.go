@@ -85,6 +85,13 @@ type AskSettings struct {
 	Allow     map[string]bool
 	Headless  bool
 	MaxRounds int
+
+	// CanAsk says that a turn nobody typed may still put a question card
+	// to the person: they have the dashboard open, and the turn is the
+	// agent starting a conversation with them. Everything else about a
+	// headless turn stands; only ask_user and confirmations may wait for
+	// them.
+	CanAsk    bool
 	UsageKind string
 
 	// Work is the kind of work this turn is, which chooses the model: a
@@ -426,6 +433,7 @@ func (self *AskRun) Database() db.Database                { return self.agent.se
 func (self *AskRun) Configuration() *config.Configuration { return self.agent.settings.Configuration() }
 func (self *AskRun) Surface() string                      { return self.settings.Surface }
 func (self *AskRun) Headless() bool                       { return self.settings.Headless }
+func (self *AskRun) CanAsk() bool                         { return !self.settings.Headless || self.settings.CanAsk }
 
 // resultCharacters is how much of a tool's answer the history keeps.
 func (self *AskRun) resultCharacters() int {
@@ -1130,7 +1138,7 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 		return self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "%s is for looking things up in this run; say the change you want in the object you end with, and it will be filed with its evidence"}`, tool.Name))
 	}
 	if NeedsConfirmation(tool, call.Arguments, &configuration.Agent.Tools, self.settings.Agent) {
-		if self.settings.Headless || self.settings.Surface == "mail" || self.settings.Surface == "schedule" || self.settings.Surface == "research" {
+		if !self.CanAsk() || self.settings.Surface == "mail" || self.settings.Surface == "schedule" || self.settings.Surface == "research" {
 			return self.toolAnswer(toolCall, `{"error": "needs_confirmation: nobody is present to confirm this; tell the person what you would have done"}`)
 		}
 		approved, err := self.confirm(ctx, tool, call)

@@ -33,6 +33,7 @@ func (self *fakeRun) AttachedComputers() []tools.Computer {
 }
 
 func (self *fakeRun) Headless() bool                       { return self.headless }
+func (self *fakeRun) CanAsk() bool                         { return !self.Headless() }
 func (self *fakeRun) Configuration() *config.Configuration { return self.config }
 func (self *fakeRun) ComputersAllowed() bool               { return true }
 func (self *fakeRun) ComputersUnattended() bool            { return self.unattended }

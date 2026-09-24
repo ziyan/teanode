@@ -27,6 +27,7 @@ func (self *fakeRun) Database() db.Database                   { return self.data
 func (self *fakeRun) Agent() *models.Agent                    { return self.agent }
 func (self *fakeRun) Conversation() *models.AgentConversation { return self.conversation }
 func (self *fakeRun) Headless() bool                          { return false }
+func (self *fakeRun) CanAsk() bool                            { return !self.Headless() }
 func (self *fakeRun) Configuration() *config.Configuration    { return config.Default() }
 func (self *fakeRun) Offered() []*tools.Tool                  { return nil }
 

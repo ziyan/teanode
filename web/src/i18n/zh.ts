@@ -1061,6 +1061,8 @@ export const zh: Catalog = {
   'agentDrawer.usageTitle': '今日用量',
   'agentDrawer.usageUsed': '已用 {used} / {limit}',
   'agentDrawer.answer': '你的回答…',
+  'agentDrawer.chatAboutIt': '聊一聊',
+  'agentDrawer.chattingInstead': '改为聊一聊',
   'agentDrawer.close': '关闭',
   'agentDrawer.main': '主聊天',
   'agentDrawer.untitled': '未命名',

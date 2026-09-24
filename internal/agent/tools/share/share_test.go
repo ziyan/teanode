@@ -32,6 +32,7 @@ func (self *fakeRun) Storage() storage.Storage                { return self.stor
 func (self *fakeRun) Agent() *models.Agent                    { return self.agent }
 func (self *fakeRun) Conversation() *models.AgentConversation { return self.conversation }
 func (self *fakeRun) Headless() bool                          { return false }
+func (self *fakeRun) CanAsk() bool                            { return !self.Headless() }
 func (self *fakeRun) Configuration() *config.Configuration {
 	configuration := config.Default()
 	configuration.Agent.Enabled = true

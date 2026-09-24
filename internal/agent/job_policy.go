@@ -22,6 +22,10 @@ func jobTimeout(jobKind models.AgentJobKind) time.Duration {
 		return ingestLongest
 	case models.AgentJobEvaluate:
 		return evaluationLongest
+	case models.AgentJobSpeakFirst:
+		// A memory check is a conversation held in one turn, a question
+		// card at a time, each waited on for as long as a confirmation.
+		return speakFirstLongest
 	default:
 		return 10 * time.Minute
 	}

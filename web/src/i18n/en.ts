@@ -1103,6 +1103,8 @@ export const en = {
   'agentDrawer.usageTitle': 'Usage today',
   'agentDrawer.usageUsed': '{used} of {limit}',
   'agentDrawer.answer': 'Your answer…',
+  'agentDrawer.chatAboutIt': 'Chat about it',
+  'agentDrawer.chattingInstead': 'Chatting about it instead',
   'agentDrawer.close': 'Close',
   'agentDrawer.main': 'Main chat',
   'agentDrawer.untitled': 'Untitled',

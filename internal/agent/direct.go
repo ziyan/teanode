@@ -76,6 +76,7 @@ func (self *directRun) Conversation() *models.AgentConversation { return nil }
 // what may be reached, and it has already decided by the time a call gets
 // here.
 func (self *directRun) Headless() bool { return false }
+func (self *directRun) CanAsk() bool   { return true }
 func (self *directRun) ReadOnly() bool { return false }
 
 // Loaded says every tool is loaded, because there is no tool_search here

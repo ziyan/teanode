@@ -32,6 +32,10 @@ const (
 	// "speak_first:tip". The dashboard opens the chat drawer on a turn
 	// whose surface begins so.
 	speakFirstSurfacePrefix = "speak_first:"
+
+	// speakFirstLongest is how long a spoken-first turn may run: long
+	// enough for a check of five questions answered at a person's pace.
+	speakFirstLongest = 45 * time.Minute
 )
 
 // The reasons the agent speaks first, which are also the subjects of its
@@ -50,6 +54,10 @@ type speakFirstReason struct {
 	// isDailyLimited says it waits speakFirstApart after the last time the
 	// agent spoke first; only the introduction does not.
 	isDailyLimited bool
+
+	// canAsk says the turn may put question cards to the person and wait
+	// on them, as a conversation with somebody who is there.
+	canAsk bool
 
 	// isDue says whether the reason is due now, given the person has been
 	// idle for idle. The common rules have already held.
@@ -241,7 +249,7 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 	}
 	turn, err := self.Ask(&AskSettings{
 		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
-		Message: message, Surface: speakFirstSurfacePrefix + reason.name, Headless: true,
+		Message: message, Surface: speakFirstSurfacePrefix + reason.name, Headless: true, CanAsk: reason.canAsk,
 		UsageKind: string(models.AgentJobSpeakFirst),
 	})
 	if err != nil {
