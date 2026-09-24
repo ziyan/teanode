@@ -286,11 +286,29 @@ func laterThan(fact, than *models.AgentFact) bool {
 // one the store holds, and so that a deployment with no embedding model
 // keeps everything rather than silently dropping what it cannot compare.
 func (self *Agent) twinsOf(tx db.Transaction, fact *models.AgentFact, node *models.AgentNode, sense *meaning) []*models.AgentFact {
-	if sense == nil {
+	if sense == nil || node.ID != fact.NodeID {
 		return nil
 	}
-	if err := tx.PutAgentFactVector(fact.AgentID, fact.ID, sense.ModelName, sense.Vector); err != nil {
+	current, err := tx.GetAgentNodeByID(fact.AgentID, fact.NodeID)
+	if err != nil || current == nil {
+		return nil
+	}
+	// The embedding was prepared before this transaction. A page rename in
+	// between changes the fact's embedded text; neither its old vector nor
+	// neighbors found through that vector can be used for this filing.
+	if factText(fact, current.Path, current.Name) != factText(fact, node.Path, node.Name) {
+		return nil
+	}
+	written, err := tx.PutAgentGraphVectors(fact.AgentID, []db.AgentGraphVector{{
+		NodeID: current.ID, NodeModifiedAt: current.ModifiedAt,
+		FactID: fact.ID, FactModifiedAt: fact.ModifiedAt,
+		Model: sense.ModelName, Vector: sense.Vector,
+	}})
+	if err != nil {
 		log.Debugf("cannot keep a fact's vector: %s", err)
+		return nil
+	}
+	if written != 1 {
 		return nil
 	}
 	scores, err := tx.Nearest(db.AgentFactTable, fact.AgentID, sense.ModelName, sense.Vector, 6, db.VectorQuery{
@@ -308,7 +326,7 @@ func (self *Agent) twinsOf(tx db.Transaction, fact *models.AgentFact, node *mode
 	}
 	var twins []*models.AgentFact
 	// The page's own name is not evidence either way; see sharesAName.
-	itsOwn := append([]string{node.Name}, node.Aliases...)
+	itsOwn := append([]string{current.Name}, current.Aliases...)
 	for _, candidate := range orderFacts(candidates, idsOf(scores)) {
 		if !sharesAName(fact.Text, candidate.Text, itsOwn...) {
 			continue

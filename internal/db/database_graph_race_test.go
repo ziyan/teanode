@@ -78,6 +78,86 @@ func TestGraphTwoWritersOfOnePageSettle(t *testing.T) {
 	})
 }
 
+// Inserting a child keeps a foreign-key KEY SHARE lock on its parent until
+// commit. A content edit of that parent must be able to finish while the
+// child transaction is open. FOR UPDATE used to wait on the KEY SHARE,
+// completing a lock cycle when several writers built the same subtree.
+func TestGraphParentEditDoesNotWaitForChildForeignKeyLock(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	var agentId string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agentId = graphAgent(t, tx).ID
+		if _, err := tx.PutAgentNode(&models.AgentNode{
+			AgentID: agentId, Path: "work/northwind", Kind: models.NodeProject, Name: "Northwind",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	childInserted := make(chan struct{})
+	releaseChild := make(chan struct{})
+	defer releaseGraphWriter(releaseChild)
+	childDone := make(chan error, 1)
+	go func() {
+		childDone <- database.Transaction(func(tx db.Transaction) error {
+			if _, err := tx.PutAgentNode(&models.AgentNode{
+				AgentID: agentId, Path: "work/northwind/dev", Kind: models.NodeFolder, Name: "Dev",
+			}); err != nil {
+				return err
+			}
+			close(childInserted)
+			<-releaseChild
+			return nil
+		})
+	}()
+	select {
+	case <-childInserted:
+	case err := <-childDone:
+		t.Fatalf("child insert ended early: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("child insert did not finish")
+	}
+
+	parentDone := make(chan error, 1)
+	go func() {
+		parentDone <- database.Transaction(func(tx db.Transaction) error {
+			_, err := tx.PutAgentNode(&models.AgentNode{
+				AgentID: agentId, Path: "work/northwind", Kind: models.NodeProject,
+				Name: "Northwind", Summary: "Updated while a child is being filed.",
+			})
+			return err
+		})
+	}()
+	var parentErr error
+	select {
+	case parentErr = <-parentDone:
+	case <-time.After(2 * time.Second):
+		releaseGraphWriter(releaseChild)
+		_ = awaitGraphWriter(t, childDone)
+		_ = awaitGraphWriter(t, parentDone)
+		t.Fatal("page content edit waited for an unrelated child's foreign-key lock")
+	}
+	releaseGraphWriter(releaseChild)
+	if err := awaitGraphWriter(t, childDone); err != nil {
+		t.Fatal(err)
+	}
+	if parentErr != nil {
+		t.Fatal(parentErr)
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		parent, err := tx.GetAgentNode(agentId, "work/northwind")
+		if err != nil || parent == nil || parent.Summary != "Updated while a child is being filed." {
+			t.Fatalf("parent after concurrent writes: %v %v", parent, err)
+		}
+		child, err := tx.GetAgentNode(agentId, "work/northwind/dev")
+		if err != nil || child == nil || child.ParentID != parent.ID {
+			t.Fatalf("child after concurrent writes: %v %v", child, err)
+		}
+	})
+}
+
 // A page saved while a fact is being filed on it keeps the fact counter
 // where the fact left it.
 //
@@ -157,4 +237,77 @@ func TestGraphSavingAPageKeepsTheFactCounter(t *testing.T) {
 			t.Errorf("the next fact is #2, not #%d", next.Number)
 		}
 	})
+}
+
+// Filing a fact on a page and editing another fact on it, at once, both
+// commit.
+//
+// This is the ordinary shape of a night: one batch files a new line on a
+// page (AddAgentFact takes the page row, for its fact counter) and then
+// gives its evidence to the line already there (UpdateAgentFact takes that
+// fact), while another batch or the person edits that same line. Each
+// writer must take the page and the fact in the same order, or the two
+// wait on each other until the database gives up on one.
+func TestGraphFilingAndEditingOnePageDoNotDeadlock(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	var agentId string
+	var page *models.AgentNode
+	var standing *models.AgentFact
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agentId = graphAgent(t, tx).ID
+		var err error
+		if page, err = tx.PutAgentNode(&models.AgentNode{AgentID: agentId, Path: "things/marigold", Kind: models.NodeThing, Name: "Marigold"}); err != nil {
+			t.Fatal(err)
+		}
+		if standing, err = tx.AddAgentFact(&models.AgentFact{AgentID: agentId, NodeID: page.ID, Kind: models.FactPlain, Text: "Marigold is kept at the pier."}); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	filed := make(chan struct{})
+	carryOn := make(chan struct{})
+	defer releaseGraphWriter(carryOn)
+	filerDone := make(chan error, 1)
+	go func() {
+		filerDone <- database.Transaction(func(tx db.Transaction) error {
+			if _, err := tx.AddAgentFact(&models.AgentFact{AgentID: agentId, NodeID: page.ID, Kind: models.FactPlain, Text: "Marigold is kept at the pier."}); err != nil {
+				return err
+			}
+			close(filed)
+			<-carryOn
+			_, err := tx.UpdateAgentFact(agentId, standing.ID, func(fact *models.AgentFact) error {
+				fact.Confidence = 1
+				return nil
+			})
+			return err
+		})
+	}()
+	select {
+	case <-filed:
+	case err := <-filerDone:
+		t.Fatalf("the filing ended early: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the filing did not start")
+	}
+	editorDone := make(chan error, 1)
+	go func() {
+		editorDone <- database.Transaction(func(tx db.Transaction) error {
+			_, err := tx.UpdateAgentFact(agentId, standing.ID, func(fact *models.AgentFact) error {
+				fact.Text = "Marigold is moored at the pier."
+				return nil
+			})
+			return err
+		})
+	}()
+	// Let the edit reach whatever it waits on before the filing goes on.
+	time.Sleep(300 * time.Millisecond)
+	releaseGraphWriter(carryOn)
+	if err := awaitGraphWriter(t, filerDone); err != nil {
+		t.Fatalf("the filing failed: %v", err)
+	}
+	if err := awaitGraphWriter(t, editorDone); err != nil {
+		t.Fatalf("the edit failed: %v", err)
+	}
 }

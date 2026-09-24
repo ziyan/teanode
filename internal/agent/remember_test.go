@@ -38,6 +38,9 @@ type rememberWorld struct {
 	// model at once and the prompts are guarded.
 	asked   sync.Mutex
 	prompts []string
+	// Used by a race regression to change a page while its fact meaning
+	// is being prepared, before the filing transaction starts.
+	embeddingHook func(*http.Request)
 }
 
 // theirMessage finds the identifier of the person's own message in the
@@ -69,6 +72,9 @@ func rememberWorldFor(t *testing.T, embedding bool, answer func(prompt string) s
 	world := &rememberWorld{database: database}
 	provider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if strings.Contains(request.URL.Path, "embeddings") {
+			if world.embeddingHook != nil {
+				world.embeddingHook(request)
+			}
 			writeMeaning(writer, request)
 			return
 		}

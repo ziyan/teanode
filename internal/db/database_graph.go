@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -526,7 +527,9 @@ func (self *transaction) PutAgentNode(node *models.AgentNode) (*models.AgentNode
 		node.ParentID = ""
 	}
 
-	existing, err := self.GetAgentNode(node.AgentID, node.Path)
+	// Compare against the row we will actually replace. A plain read can go
+	// stale while this writer waits for another transaction's row lock.
+	existing, err := self.lockAgentNode(node.AgentID, node.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -561,40 +564,56 @@ func (self *transaction) PutAgentNode(node *models.AgentNode) (*models.AgentNode
 			return nil, err
 		}
 	} else {
-		// An upsert rather than an insert, because two transactions can
-		// reach here for the same path at once and both find nothing:
-		// a turn building its prompt makes the roots while a filing run
-		// is making them too, and one of them then hit the unique index.
-		// Making it a conflict the database settles is the only fix that
-		// does not depend on who got there first.
-		if err := self.tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "agent_id"}, {Name: "path"}},
-			DoUpdates: clause.AssignmentColumns([]string{
-				"modified_at", "kind", "name", "aliases", "summary", "parent_id",
-				// The build that wrote what is there now, so that a later
-				// one can find what an earlier one left.
-				"version",
-			}),
-		}).Create(row).Error; err != nil {
-			return nil, err
+		// Two transactions can both see a missing path. Let the unique
+		// index settle the insert, then lock and compare the winner before
+		// replacing it. Updating inside ON CONFLICT loses its old words.
+		result := self.tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "agent_id"}, {Name: "path"}},
+			DoNothing: true,
+		}).Create(row)
+		if result.Error != nil {
+			return nil, result.Error
 		}
-		// The row that is there may be the other transaction's, with its
-		// own identifier, so the answer is read back rather than assumed.
+		if result.RowsAffected == 0 {
+			existing, err = self.lockAgentNode(node.AgentID, node.Path)
+			if err != nil {
+				return nil, err
+			}
+			if existing == nil {
+				return nil, fmt.Errorf("db: conflicting page %q disappeared", node.Path)
+			}
+			written.ID, written.CreatedAt = existing.ID, existing.CreatedAt
+			// Keep the old conflict behavior: only the content and hierarchy
+			// columns are replaced. The winner owns its use and ranking state.
+			if err := self.tx.Model(&agentNodeModel{}).Where(`"id" = ?`, existing.ID).Updates(map[string]any{
+				"modified_at": written.ModifiedAt, "kind": row.Kind, "name": row.Name,
+				"aliases": row.Aliases, "summary": row.Summary, "parent_id": row.ParentID,
+				"version": row.Version,
+			}).Error; err != nil {
+				return nil, err
+			}
+		}
+		// The stored row may carry defaults set by nodeToModel, including
+		// its build version, even when this transaction won the insert.
 		settled, err := self.GetAgentNode(written.AgentID, written.Path)
 		if err != nil {
 			return nil, err
 		}
-		if settled != nil {
-			written = *settled
-		}
+		written = *settled
 	}
 	if err := self.indexNode(&written); err != nil {
 		return nil, err
 	}
 	// A page whose words changed no longer means what its vector says it
 	// means; dropping it puts the page back in the queue for a new one.
-	if existing != nil && (existing.Summary != written.Summary || existing.Name != written.Name) {
+	if existing != nil && (existing.Summary != written.Summary || existing.Name != written.Name || !slices.Equal(existing.Aliases, written.Aliases)) {
 		if err := self.tx.Exec(`DELETE FROM "agent_node_vector" WHERE "node_id" = ?`, written.ID).Error; err != nil {
+			return nil, err
+		}
+	}
+	if existing != nil && existing.Name != written.Name {
+		if err := self.tx.Exec(`DELETE FROM "agent_fact_vector" WHERE "fact_id" IN
+			(SELECT "id" FROM "agent_fact" WHERE "agent_id" = ? AND "node_id" = ?)`, written.AgentID, written.ID).Error; err != nil {
 			return nil, err
 		}
 	}
@@ -612,6 +631,18 @@ func (self *transaction) PutAgentNode(node *models.AgentNode) (*models.AgentNode
 			map[string]any{"text": written.Name}, "")
 	}
 	return &written, nil
+}
+
+func (self *transaction) lockAgentNode(agentId, path string) (*models.AgentNode, error) {
+	// Editing a page never changes its key. NO KEY UPDATE still excludes
+	// another page writer, but lets child inserts take their foreign-key
+	// KEY SHARE lock without reversing the ancestor/child lock order.
+	nodes, err := self.nodesFrom(self.tx.Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).
+		Where(`"agent_id" = ? AND "path" = ?`, agentId, path).Limit(1))
+	if err != nil || len(nodes) == 0 {
+		return nil, err
+	}
+	return nodes[0], nil
 }
 
 func (self *transaction) SetAgentNodeSummary(agentId, nodeId, summary string) (bool, error) {
@@ -974,16 +1005,65 @@ func (self *transaction) StrikeAgentFact(agentId, factId, reason string) (*model
 // the same for a merge, a write-time fold and a striking, and only the
 // caller knows which of them it just did. A page's history that calls
 // all three "merged two facts" is a history nobody can act on.
+// lockFactAndItsPages takes the pages first and then the fact: the fact's
+// own page, and any other pages named, in the order of their identifiers.
+//
+// Page before fact is the order AddAgentFact takes them in, since it bumps
+// the page's fact counter before the fact exists, and every writer that
+// touches a fact and its page has to take them in that one order. A writer
+// that took the fact first waited on a filing that held the page, while
+// the filing went on to the same fact -- one run giving its evidence to
+// the line already there while another edited that line -- and the
+// database ended one of them as a deadlock.
+//
+// The fact is read once without a lock to learn its page, then read again
+// under the locks; one that moved in between is looked up again.
+func (self *transaction) lockFactAndItsPages(agentId, factId string, otherPageIds ...string) (*agentFactModel, []agentNodeModel, error) {
+	for range 3 {
+		var unlocked []agentFactModel
+		if err := self.tx.Where(`"id" = ? AND "agent_id" = ?`, factId, agentId).Limit(1).Find(&unlocked).Error; err != nil {
+			return nil, nil, err
+		}
+		if len(unlocked) == 0 {
+			return nil, nil, nil
+		}
+		pageIds := []string{unlocked[0].NodeID}
+		for _, pageId := range otherPageIds {
+			if pageId != "" && !slices.Contains(pageIds, pageId) {
+				pageIds = append(pageIds, pageId)
+			}
+		}
+		var pages []agentNodeModel
+		if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where(`"agent_id" = ? AND "id" IN ?`, agentId, pageIds).Order(`"id"`).Find(&pages).Error; err != nil {
+			return nil, nil, err
+		}
+		var locked []agentFactModel
+		if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where(`"id" = ? AND "agent_id" = ?`, factId, agentId).Limit(1).Find(&locked).Error; err != nil {
+			return nil, nil, err
+		}
+		if len(locked) == 0 {
+			return nil, nil, nil
+		}
+		if locked[0].NodeID == unlocked[0].NodeID {
+			return &locked[0], pages, nil
+		}
+	}
+	return nil, nil, fmt.Errorf("db: fact %q kept moving between pages", factId)
+}
+
 func (self *transaction) writeAgentFact(agentId, factId string, modify func(*models.AgentFact) error, journal factJournal) (*models.AgentFact, error) {
-	var rows []agentFactModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where(`"id" = ? AND "agent_id" = ?`, factId, agentId).Limit(1).Find(&rows).Error; err != nil {
+	// The page as well as the fact: page renames remove fact vectors while
+	// holding the page row, and the revision below is written on the page.
+	locked, _, err := self.lockFactAndItsPages(agentId, factId)
+	if err != nil {
 		return nil, err
 	}
-	if len(rows) == 0 {
+	if locked == nil {
 		return nil, ErrNotFound
 	}
-	fact, err := rows[0].toModel()
+	fact, err := locked.toModel()
 	if err != nil {
 		return nil, err
 	}
@@ -1503,16 +1583,28 @@ func (self *transaction) SetUserContact(userId, contactId string) error {
 var ErrNoSuchFact = errors.New("db: no such fact")
 
 func (self *transaction) MoveAgentFact(agentId, factId, toNodeId string) (*models.AgentFact, error) {
-	facts, err := self.factsFrom(self.tx.Where(`"id" = ? AND "agent_id" = ?`, factId, agentId).Limit(1))
+	// Both pages, then the fact: the vector includes the page name, and
+	// see lockFactAndItsPages for the order.
+	row, pages, err := self.lockFactAndItsPages(agentId, factId, toNodeId)
 	if err != nil {
 		return nil, err
 	}
-	if len(facts) == 0 {
+	if row == nil {
 		return nil, fmt.Errorf("%w: %q", ErrNoSuchFact, factId)
 	}
-	fact := facts[0]
+	fact, err := row.toModel()
+	if err != nil {
+		return nil, err
+	}
 	if fact.NodeID == toNodeId {
 		return fact, nil
+	}
+	if len(pages) != 2 {
+		return nil, fmt.Errorf("db: no page %q to move a fact to", toNodeId)
+	}
+	oldPage, newPage := pages[0], pages[1]
+	if oldPage.ID != fact.NodeID {
+		oldPage, newPage = newPage, oldPage
 	}
 	var numbers []int
 	if err := self.tx.Raw(
@@ -1531,6 +1623,18 @@ func (self *transaction) MoveAgentFact(agentId, factId, toNodeId string) (*model
 		"node_id": fact.NodeID, "number": fact.Number, "modified_at": fact.ModifiedAt,
 	}).Error; err != nil {
 		return nil, err
+	}
+	oldLabel, newLabel := oldPage.Name, newPage.Name
+	if oldLabel == "" {
+		oldLabel = oldPage.Path
+	}
+	if newLabel == "" {
+		newLabel = newPage.Path
+	}
+	if oldLabel != newLabel {
+		if err := self.tx.Exec(`DELETE FROM "agent_fact_vector" WHERE "fact_id" = ?`, fact.ID).Error; err != nil {
+			return nil, err
+		}
 	}
 	paths := self.pathsOf(agentId, from, toNodeId)
 	self.note(agentId, from, models.RevisionFactGone, withOther(before, paths[toNodeId]), nil, "moved")
