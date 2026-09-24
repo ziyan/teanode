@@ -32,16 +32,17 @@ func (self *transaction) PutAgentGraphVectors(agentId string, vectors []AgentGra
 			factIds = append(factIds, vector.FactID)
 		}
 	}
-	// Fact edits also lock the fact before recording a revision on its page.
+	// Pages before facts, the order every writer of a fact and its page
+	// takes them in; see lockFactAndItsPages.
+	var nodes []agentNodeModel
+	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(`"agent_id" = ? AND "id" IN ?`, agentId, nodeIds).Order(`"id"`).Find(&nodes).Error; err != nil {
+		return 0, err
+	}
 	var facts []agentFactModel
 	if len(factIds) > 0 {
 		if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(`"agent_id" = ? AND "id" IN ?`, agentId, factIds).Order(`"id"`).Find(&facts).Error; err != nil {
 			return 0, err
 		}
-	}
-	var nodes []agentNodeModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(`"agent_id" = ? AND "id" IN ?`, agentId, nodeIds).Order(`"id"`).Find(&nodes).Error; err != nil {
-		return 0, err
 	}
 	nodeVersions := make(map[string]time.Time, len(nodes))
 	for _, node := range nodes {
