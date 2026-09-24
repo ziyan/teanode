@@ -1064,7 +1064,9 @@ func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAg
 		defer close(channel)
 		defer unsubscribe()
 		// An event replayed and then published again is told by its
-		// sequence: the feed delivers each of a run's events once.
+		// sequence: the feed delivers each of a run's events once. One of
+		// no run -- the conversation's title, written after its first turn
+		// ended -- is never replayed, and is delivered as it comes.
 		delivered := map[string]int{}
 		for {
 			select {
@@ -1072,10 +1074,12 @@ func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAg
 				if !ok {
 					return
 				}
-				if last, seen := delivered[event.RunID]; seen && event.Sequence <= last {
-					continue
+				if event.RunID != "" {
+					if last, seen := delivered[event.RunID]; seen && event.Sequence <= last {
+						continue
+					}
+					delivered[event.RunID] = event.Sequence
 				}
-				delivered[event.RunID] = event.Sequence
 				copied := event
 				select {
 				case channel <- &copied:

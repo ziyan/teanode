@@ -70,9 +70,10 @@ const STOP = `
     StopAgentBackgroundCommand(computer: $computer, id: $id) { id isRunning stopReason exitCode endedAt }
   }`
 
-// useBackgroundCommands lists the background commands of one conversation,
-// or of every conversation when conversationId is left out, and keeps the
-// list up while isActive. An inactive list asks nothing and is empty.
+// useBackgroundCommands lists the background commands still running for
+// one conversation, or for every conversation when conversationId is left
+// out, and keeps the list up while isActive. An inactive list asks nothing
+// and is empty.
 export function useBackgroundCommands(conversationId: string | undefined, isActive: boolean) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -101,7 +102,11 @@ export function useBackgroundCommands(conversationId: string | undefined, isActi
   if (!isActive || !data) return { commands: [], reload }
   // The last answer stays until the next arrives, and after a move to
   // another conversation it is the one left behind's.
-  const commands = conversationId ? data.filter((command) => command.conversationId === conversationId) : data
+  // Only what still runs: how one ended is said in the conversation, in
+  // the turn its ending woke.
+  const commands = data.filter(
+    (command) => command.isRunning && (!conversationId || command.conversationId === conversationId),
+  )
   return { commands, reload }
 }
 

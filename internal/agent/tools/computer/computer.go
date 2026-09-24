@@ -35,7 +35,7 @@ func init() {
 					"computer":     tools.StringProperty("which of their computers, by name, when more than one is attached"),
 					"command":      tools.StringProperty("for run: the command line, as typed into their shell"),
 					"directory":    tools.StringProperty("for run: where to run it; their home directory by default, which ~ also means"),
-					"timeout":      tools.IntegerProperty("for run: seconds to wait for it, 120 by default, 600 at most; one still running then goes on in the background"),
+					"timeout":      tools.IntegerProperty("only for a command you wait for: seconds to wait, at most 600, with a wait of two minutes when left out; one still running then goes on in the background. Leave it out with isBackground, which does not wait"),
 					"isBackground": tools.BooleanProperty("for run: start it in the background and answer at once, rather than waiting"),
 					"id":           tools.StringProperty("for read and stop: the background command's id"),
 					"environment":  map[string]any{"type": "object", "description": "for run: extra environment variables, by name", "additionalProperties": map[string]any{"type": "string"}},

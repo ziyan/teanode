@@ -152,6 +152,7 @@ const (
 	EventConfirmation EventKind = "confirmation" // waiting for the person
 	EventQuestion     EventKind = "question"     // the agent asked something
 	EventNote         EventKind = "note"         // compaction and the like
+	EventTitled       EventKind = "titled"       // the conversation was given a title: Text
 	EventDone         EventKind = "done"
 	EventError        EventKind = "error"
 )
@@ -941,8 +942,14 @@ func (self *AskRun) turn() error {
 					if err != nil {
 						log.Warningf("cannot title conversation %q: %s", settings.Conversation.ID, err)
 					}
+					// To the conversation's feed rather than the run's, and as
+					// the conversation's rather than the run's: the run has
+					// ended by the time a title comes back, and says nothing
+					// more; and an event carrying the run's name after its
+					// last is taken for a repeat and dropped. Either way the
+					// drawer went on calling the conversation Untitled.
 					if titled != "" {
-						self.emit(Event{Kind: EventNote, Note: "titled: " + titled})
+						self.agent.publish(Event{Kind: EventTitled, Text: titled, ConversationID: settings.Conversation.ID, At: time.Now()}, true)
 					}
 				}()
 			}

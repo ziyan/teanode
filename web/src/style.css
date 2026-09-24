@@ -5862,6 +5862,98 @@ main.content:has(> .mailbox-frame) {
   }
 }
 
+/* The head's dropdowns share the frame of the list of conversations
+   (.agent-drawer-list): a small muted title, then a line per thing, or a
+   short form. */
+.head-menu-title {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 8px;
+  flex-shrink: 0;
+}
+
+.head-menu-title strong {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.head-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.head-menu-row svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.head-menu-row-name {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 550;
+}
+
+.head-menu-row-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+
+.head-menu-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 8px 6px;
+}
+
+.head-menu-usage-said {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.head-menu-usage p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.head-menu-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 8px 6px;
+}
+
+.head-menu-goal p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.head-menu-goal textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.head-menu-goal .agent-drawer-goal-status {
+  margin: 0;
+}
+
+.head-menu-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* The background commands, dropped down from the head as the list of
    conversations is (.agent-drawer-list gives the frame): a small title,
    then the rows or one command's output. */
