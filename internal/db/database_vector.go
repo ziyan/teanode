@@ -134,6 +134,19 @@ func (self *database) EnsureVectorIndex(table VectorTable, model string, dimensi
 	if dimension <= 0 || dimension > 16000 {
 		return fmt.Errorf("db: %q writes vectors of %d, which is not a width an index can be built at", model, dimension)
 	}
+	// An index that is this one under another name serves as well. The
+	// name changed once, and every server that already had its indexes
+	// went on to build each a second time at start: over a large corpus
+	// that is gigabytes of index nobody needed, with writes to the table
+	// held for as long as it takes, or a build that fails for want of
+	// shared memory at every start.
+	isBuilt, err := self.hasVectorIndex(table, model, dimension)
+	if err != nil {
+		return err
+	}
+	if isBuilt {
+		return nil
+	}
 	name := vectorIndexName(table, model, dimension)
 	statement := fmt.Sprintf(
 		`CREATE INDEX IF NOT EXISTS %s ON %s USING hnsw ((%s::vector(%d)) vector_cosine_ops) WHERE %s = %s`,
@@ -148,6 +161,29 @@ func (self *database) EnsureVectorIndex(table VectorTable, model string, dimensi
 		log.Noticef("built the vector index for %s on %s in %s", model, table.Table, taken.Round(time.Millisecond))
 	}
 	return nil
+}
+
+// hasVectorIndex says whether a valid HNSW index for this table, model and
+// width exists under any name. Compared by what the index is -- its
+// width and the model its predicate names, as PostgreSQL writes the
+// definition back -- never by its name, which is what let two model names
+// that differ only in punctuation share one index before.
+func (self *database) hasVectorIndex(table VectorTable, model string, dimension int) (bool, error) {
+	var definitions []string
+	if err := self.db.Raw(`SELECT pg_get_indexdef(index.indexrelid) FROM pg_index index
+		JOIN pg_class indexed ON indexed.oid = index.indrelid
+		WHERE indexed.relname = ? AND index.indisvalid AND pg_get_indexdef(index.indexrelid) LIKE '%USING hnsw%'`, table.Table).
+		Scan(&definitions).Error; err != nil {
+		return false, fmt.Errorf("db: cannot list the vector indexes on %s: %w", table.Table, err)
+	}
+	width := fmt.Sprintf("::vector(%d))", dimension)
+	predicate := fmt.Sprintf("WHERE ((model)::text = %s::text)", pq.QuoteLiteral(model))
+	for _, definition := range definitions {
+		if strings.Contains(definition, width) && strings.HasSuffix(definition, predicate) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // vectorIndexName includes the full identity in its digest because readable

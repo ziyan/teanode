@@ -163,8 +163,16 @@ func TestVectorIndexesKeepCollidingModelNames(test *testing.T) {
 			}
 		}
 	}
+	// The legacy index serves its own model, so no second one is built
+	// beside it; each of the other four names gets its own.
 	indexCount := dbtest.QueryString(test, database, `SELECT count(*)::text FROM pg_indexes WHERE tablename = 'agent_node_vector' AND indexdef LIKE '%USING hnsw%'`)
-	if indexCount != "6" {
-		test.Fatalf("wanted five model indexes and the retained legacy index, got %s", indexCount)
+	if indexCount != "5" {
+		test.Fatalf("wanted the retained legacy index and four new ones, got %s", indexCount)
+	}
+	for _, modelName := range modelNames {
+		covered := dbtest.QueryString(test, database, `SELECT count(*)::text FROM pg_indexes WHERE tablename = 'agent_node_vector' AND indexdef LIKE '%USING hnsw%' AND indexdef LIKE '%= ' || quote_literal('`+modelName+`') || '::text)'`)
+		if covered != "1" {
+			test.Fatalf("%q is covered by %s indexes, not one", modelName, covered)
+		}
 	}
 }
