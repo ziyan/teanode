@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.61.1] - 2026-09-24
+
+### Fixed
+
+- The server no longer tries to build a second copy of each vector index at every start after the index name change, which on a large corpus either held writes while gigabytes of duplicate index were built or failed with "could not resize shared memory segment". The compose file's database now has room in shared memory for a parallel index build; set `POSTGRES_SHM_SIZE` to change it. (#153)
+- On a phone, the Memory check section's buttons no longer spread across the width, and a grading run's answers come into view when opened, with the answer on record beside each. (#156)
+- The agent can switch its memory checks and tips back on when asked, and no longer switches them off when asked only to stop the current one. (#156)
+
 ## [0.61.0] - 2026-09-24
 
 ### Added
