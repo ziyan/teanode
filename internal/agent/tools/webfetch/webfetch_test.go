@@ -45,6 +45,7 @@ func (self *deskRun) AttachedComputers() []tools.Computer  { return []tools.Comp
 func (self *deskRun) ComputersAllowed() bool               { return true }
 func (self *deskRun) ComputersUnattended() bool            { return false }
 func (self *deskRun) Headless() bool                       { return false }
+func (self *deskRun) CanAsk() bool                         { return !self.Headless() }
 func (self *deskRun) Configuration() *config.Configuration { return self.configuration }
 
 // An address only the person's network reaches is refused through this

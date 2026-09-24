@@ -185,3 +185,75 @@ func TestAMemoryCheckRecordsTheReplies(t *testing.T) {
 		t.Fatal("a correction without the answer is refused")
 	}
 }
+
+// A draft asks about what the person can confirm without looking it up:
+// a fact about somebody they know that they told the agent, not one read
+// out of a work archive, however it sits on a page about a person.
+func TestADraftLeavesOutWhatWasReadFromWork(t *testing.T) {
+	world := newCheckWorld(t)
+	var told, read, readOnSelf *models.AgentFact
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		self, err := tx.GetAgentNode(world.run.agent.ID, "self")
+		if err != nil || self == nil {
+			t.Fatalf("self: %v %v", self, err)
+		}
+		// On the self page, but read out of a repository: not theirs to
+		// confirm offhand either.
+		if readOnSelf, err = tx.AddAgentFact(&models.AgentFact{AgentID: world.run.agent.ID, NodeID: self.ID, Kind: models.FactPlain, Text: "They reviewed a change to the build.",
+			Evidence: []models.Evidence{{Kind: models.EvidenceRepository, ID: "repository-1"}}}); err != nil {
+			t.Fatal(err)
+		}
+		page, err := tx.PutAgentNode(&models.AgentNode{AgentID: world.run.agent.ID, Path: "people/sam-rivers", Kind: models.NodePerson, Name: "Sam Rivers"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if told, err = tx.AddAgentFact(&models.AgentFact{AgentID: world.run.agent.ID, NodeID: page.ID, Kind: models.FactPlain, Text: "Sam is their brother.",
+			Evidence: []models.Evidence{{Kind: models.EvidenceConversation, ID: "conversation-1"}}}); err != nil {
+			t.Fatal(err)
+		}
+		if read, err = tx.AddAgentFact(&models.AgentFact{AgentID: world.run.agent.ID, NodeID: page.ID, Kind: models.FactPlain, Text: "Sam changed the build script.",
+			Evidence: []models.Evidence{{Kind: models.EvidenceCommit, ID: "commit-1"}}}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	sawTold := false
+	for round := 0; round < 3; round++ {
+		for _, each := range world.call(t, `{"action":"draft"}`)["facts"].([]any) {
+			factId := each.(map[string]any)["fact_id"]
+			if factId == read.ID || factId == readOnSelf.ID {
+				t.Fatal("a fact read from a commit or a repository is not asked about")
+			}
+			if factId == told.ID {
+				sawTold = true
+			}
+		}
+	}
+	if !sawTold {
+		t.Fatal("what the person told the agent about somebody is asked about first")
+	}
+}
+
+// A check counts its questions from its own check-in: one asked for right
+// after another ended does not start out "five questions so far".
+func TestANewCheckCountsItsOwnQuestions(t *testing.T) {
+	world := newCheckWorld(t)
+	for _, question := range []string{"What do you keep on the roof?", "Where do you live?"} {
+		world.call(t, `{"action":"ask","question":"`+question+`","answer":"Something."}`)
+	}
+	if overlay := world.tool.Overlay(tools.WithRun(context.Background(), world.run)); !strings.Contains(overlay, "2 question(s)") {
+		t.Fatalf("the first check has put two: %s", overlay)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: world.run.conversation.ID, Role: "user",
+			Content: models.SpeakFirstMarker + " " + models.MemoryCheckOpening + ": a few questions."}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if overlay := world.tool.Overlay(tools.WithRun(context.Background(), world.run)); overlay != "" {
+		t.Fatalf("a new check has put none yet: %s", overlay)
+	}
+	world.call(t, `{"action":"ask","question":"What car do you drive?","answer":"A van."}`)
+	if overlay := world.tool.Overlay(tools.WithRun(context.Background(), world.run)); !strings.Contains(overlay, "1 question(s)") {
+		t.Fatalf("and one once it asks: %s", overlay)
+	}
+}

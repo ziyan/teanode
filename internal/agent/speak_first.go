@@ -32,6 +32,20 @@ const (
 	// "speak_first:tip". The dashboard opens the chat drawer on a turn
 	// whose surface begins so.
 	speakFirstSurfacePrefix = "speak_first:"
+
+	// askedSuffix ends the subject of a job the person asked for, from the
+	// dashboard or the command line, rather than one the sweep queued: the
+	// turn is told, so that nothing it said earlier about waiting to be
+	// asked keeps it from starting.
+	askedSuffix = ":asked"
+
+	// preparedIsAsked is set in what a check-in is handed when the person
+	// asked for the turn.
+	preparedIsAsked = "isAsked"
+
+	// speakFirstLongest is how long a spoken-first turn may run: long
+	// enough for a check of five questions answered at a person's pace.
+	speakFirstLongest = 45 * time.Minute
 )
 
 // The reasons the agent speaks first, which are also the subjects of its
@@ -50,6 +64,10 @@ type speakFirstReason struct {
 	// isDailyLimited says it waits speakFirstApart after the last time the
 	// agent spoke first; only the introduction does not.
 	isDailyLimited bool
+
+	// canAsk says the turn may put question cards to the person and wait
+	// on them, as a conversation with somebody who is there.
+	canAsk bool
 
 	// isDue says whether the reason is due now, given the person has been
 	// idle for idle. The common rules have already held.
@@ -191,7 +209,7 @@ func (self *Agent) SpeakFirstNow(tx db.Transaction, agent *models.Agent, reason 
 	if err != nil || open > 0 {
 		return err
 	}
-	_, err = self.Enqueue(tx, models.AgentJobSpeakFirst, agent.ID, "", reason)
+	_, err = self.Enqueue(tx, models.AgentJobSpeakFirst, agent.ID, "", reason+askedSuffix)
 	return err
 }
 
@@ -199,7 +217,8 @@ func (self *Agent) SpeakFirstNow(tx db.Transaction, agent *models.Agent, reason 
 // reason's message marked as the agent's own, and the surface the
 // dashboard opens the drawer on.
 func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
-	reason, ok := self.speakFirstReasonNamed(run.Job.SubjectID)
+	isAsked := strings.HasSuffix(run.Job.SubjectID, askedSuffix)
+	reason, ok := self.speakFirstReasonNamed(strings.TrimSuffix(run.Job.SubjectID, askedSuffix))
 	if !ok {
 		return nil
 	}
@@ -221,6 +240,12 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 			return err
 		}
 	}
+	if isAsked {
+		if prepared == nil {
+			prepared = map[string]string{}
+		}
+		prepared[preparedIsAsked] = "true"
+	}
 	var conversation *models.AgentConversation
 	var message string
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
@@ -241,7 +266,7 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 	}
 	turn, err := self.Ask(&AskSettings{
 		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
-		Message: message, Surface: speakFirstSurfacePrefix + reason.name, Headless: true,
+		Message: message, Surface: speakFirstSurfacePrefix + reason.name, Headless: true, CanAsk: reason.canAsk,
 		UsageKind: string(models.AgentJobSpeakFirst),
 	})
 	if err != nil {
@@ -262,10 +287,16 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 }
 
 // speakFirstMessage is the start every spoken-first turn's message shares:
-// the marker, what this turn is, and when.
-func speakFirstMessage(owner *models.User, now time.Time, what string) string {
+// the marker, what this turn is, who wanted it, and when. A turn the
+// person asked for says so in place of "nobody asked": told both, the
+// model believed the first and declined a check they had just asked for.
+func speakFirstMessage(owner *models.User, now time.Time, what string, prepared map[string]string) string {
+	who := " Nobody asked for this turn: you are starting the conversation, and what you write is the first thing " + personName(owner) + " reads when they look at the chat. They have their dashboard open."
+	if prepared[preparedIsAsked] == "true" {
+		who = " " + personName(owner) + " asked for this just now, with the button on their dashboard or by saying so. Whatever was said earlier about waiting until they ask, this is them asking: begin now. They are looking at the chat."
+	}
 	return strings.Join([]string{
-		models.SpeakFirstMarker + " " + what + " Nobody asked for this turn: you are starting the conversation, and what you write is the first thing " + personName(owner) + " reads when they look at the chat. They have their dashboard open.",
+		models.SpeakFirstMarker + " " + what + who,
 		"",
 		"It is " + now.In(Location(owner)).Format("Monday 2 January, 15:04") + " where they are.",
 		"",

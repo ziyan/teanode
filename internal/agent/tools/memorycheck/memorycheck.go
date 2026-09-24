@@ -39,11 +39,11 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "memory_check", Family: tools.FamilyGeneral, Risk: tools.RiskWrite,
-				Description: "The memory check: you ask the person about things you remember, one at a time, to learn how well your memory answers. `draft` gives you up to five facts from their own pages to ask about. `ask` records a question as you put it, with the answer you believe. `record` records their reply to it. `add` records a question they supply, usually about something that changed, with its answer. `filed` marks a question whose correction you filed into memory with their consent. `list` is what was asked and not yet answered.",
+				Description: "The memory check: you tell the person things you remember about them, one at a time, and they say whether you are right, so you learn how well your memory answers. Never quiz them. `draft` gives you up to five facts from their own pages to ask about. `ask` records a question as you put it, with the answer you believe. `record` records their reply to it. `add` records a question they supply, usually about something that changed, with its answer. `filed` marks a question whose correction you filed into memory with their consent. `list` is what was asked and not yet answered.",
 				Parameters: tools.Object(map[string]any{
 					"action":          tools.EnumProperty("what to do", "draft", "ask", "record", "add", "filed", "list"),
 					"question_id":     tools.StringProperty("for record and filed: the question, as ask or add gave it"),
-					"question":        tools.StringProperty("for ask and add: the question as you put it to them, in plain words"),
+					"question":        tools.StringProperty("for ask and add: the plain question the fact answers, for grading later (\"where do you live?\"), not the sentence you said to them"),
 					"answer":          tools.StringProperty("for ask: the answer you believe; for record with corrected, the answer they gave; for add, the answer"),
 					"outdated_answer": tools.StringProperty("for a question about something that changed: what used to be true"),
 					"question_kind":   tools.EnumProperty("for ask and add: what the question tests, direct by default", kindNames()...),
@@ -208,7 +208,7 @@ func draft(tx db.Transaction, current tools.Run, agent *models.Agent) (*tools.Re
 	}
 	return tools.JSONResult(map[string]any{
 		"facts": drafted,
-		"note":  "Write each as a question they can answer from their own life, without the answer in it. For a fact that changed, ask about now and keep what it used to be as outdated_answer. Put them one at a time with ask.",
+		"note":  "Put each to them as what you remember, and ask whether it is right and still true; they should never have to recall anything. Pass over any fact about somebody else's work or that they would have to look up. With ask, record the plain question the fact answers and the answer you believe; for a fact that changed, what it used to be as outdated_answer. One at a time.",
 	})
 }
 
@@ -353,13 +353,23 @@ func overlay(ctx context.Context) string {
 		return ""
 	}
 	var questions []*models.AgentEvaluationQuestion
+	var began *time.Time
 	if err := current.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		questions, err = tx.ListAgentEvaluationQuestions(current.Agent().ID, nil)
+		if questions, err = tx.ListAgentEvaluationQuestions(current.Agent().ID, nil); err != nil {
+			return err
+		}
+		began, err = tx.LastAgentMessageStartingWith(tools.ConversationIDOf(current), models.SpeakFirstMarker+" "+models.MemoryCheckOpening)
 		return err
 	}); err != nil {
 		return ""
 	}
+	// The current check's questions: those since it began, where it began
+	// with a check-in here. Counted over the last hours instead, a check
+	// asked for right after one ended was told it had already asked five.
 	since := time.Now().Add(-overlayLasts)
+	if began != nil && began.After(since) {
+		since = *began
+	}
 	conversationId := tools.ConversationIDOf(current)
 	waiting := []string{}
 	putCount := 0

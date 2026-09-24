@@ -126,6 +126,11 @@ const SPEAK_FIRST_MARKER = '[speaking first]'
 // turn that begins with it in the main conversation opens the drawer.
 const SPEAK_FIRST_SURFACE = 'speak_first:'
 
+// What a question card answers when the person would rather talk than
+// pick, which is askuser.ChatAboutIt on the server: the same in every
+// language, so the tool can tell it from an answer.
+const CHAT_ABOUT_IT = '[chat about it]'
+
 // Which kind of turn of the agent's own a user message opens, if it opens
 // one at all.
 type CheckInOrigin = 'goal' | 'background' | 'schedule' | 'speakFirst'
@@ -1085,17 +1090,22 @@ function TodoLine({ todo }: { todo: Todo }) {
   )
 }
 
-// QuestionCard is the agent asking, with the choices it offered and a line
-// for anything else.
+// QuestionCard is the agent asking: its choices to pick from, then Submit,
+// or "Chat about it", which closes the card and hands the conversation
+// back for an answer the choices do not hold. Anything else is typed in
+// the chat box below, which answers the card while it is fresh; a second
+// box on the card only made two places to type.
 function QuestionCard({
   line,
   onAnswer,
+  onChat,
 }: {
   line: Extract<Line, { kind: 'question' }>
   onAnswer: (text: string) => void
+  onChat: () => void
 }) {
   const { t } = useTranslation()
-  const [text, setText] = useState('')
+  const [chosen, setChosen] = useState('')
   return (
     <div className="agent-line confirmation">
       <p>{line.question}</p>
@@ -1103,32 +1113,32 @@ function QuestionCard({
         <p className="muted">{line.answered}</p>
       ) : (
         <>
-          {line.choices.length > 0 && (
-            <div className="row wrap">
+          {line.choices.length > 0 ? (
+            <div className="agent-question-choices" role="radiogroup" aria-label={line.question}>
               {line.choices.map((choice) => (
-                <button key={choice} type="button" onClick={() => onAnswer(choice)}>
+                <button
+                  key={choice}
+                  type="button"
+                  role="radio"
+                  aria-checked={chosen === choice}
+                  className={chosen === choice ? 'chosen' : undefined}
+                  onClick={() => setChosen(choice)}
+                >
                   {choice}
                 </button>
               ))}
             </div>
-          )}
-          <form
-            className="row"
-            onSubmit={(event) => {
-              event.preventDefault()
-              onAnswer(text)
-            }}
-          >
-            <input
-              value={text}
-              placeholder={t('agentDrawer.answer')}
-              aria-label={t('agentDrawer.answer')}
-              onChange={(event) => setText(event.target.value)}
-            />
-            <button type="submit" className="primary" disabled={!text.trim()}>
-              {t('agentDrawer.send')}
+          ) : null}
+          <div className="agent-question-actions">
+            <button type="button" onClick={onChat}>
+              {t('agentDrawer.chatAboutIt')}
             </button>
-          </form>
+            {line.choices.length > 0 ? (
+              <button type="button" className="primary" disabled={!chosen} onClick={() => onAnswer(chosen)}>
+                {t('agentDrawer.submit')}
+              </button>
+            ) : null}
+          </div>
         </>
       )}
     </div>
@@ -2651,6 +2661,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     const files = pending
     const pointed = references
     if ((!message && files.length === 0) || uploading || loading.current) return
+    // A question card waiting for an answer takes what is typed here as
+    // its answer. Sent as a turn of its own, it queued behind the turn
+    // that was waiting for it, and neither moved until the card timed out.
+    const waiting = [...lines].reverse().find((line) => line.kind === 'question' && !line.answered)
+    if (waiting && waiting.kind === 'question' && message && files.length === 0 && pointed.length === 0) {
+      setDraft('')
+      remember(draftKey(conversationId), '')
+      await answer(waiting, message)
+      return
+    }
     const sendingConversationId = conversationRef.current
     setDraft('')
     remember(draftKey(conversationId), '')
@@ -2746,11 +2766,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     if (!text.trim()) return
     try {
       await graphql(ANSWER, { runId: line.runId, callId: line.callId, answer: text.trim() })
+      const shown = text.trim() === CHAT_ABOUT_IT ? t('agentDrawer.chattingInstead') : text.trim()
       setLines((previous) =>
         previous.map((candidate) =>
-          candidate.key === line.key && candidate.kind === 'question'
-            ? { ...candidate, answered: text.trim() }
-            : candidate,
+          candidate.key === line.key && candidate.kind === 'question' ? { ...candidate, answered: shown } : candidate,
         ),
       )
     } catch (caught) {
@@ -3160,7 +3179,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           </div>
         )
       case 'question':
-        return <QuestionCard key={line.key} line={line} onAnswer={(text) => void answer(line, text)} />
+        return (
+          <QuestionCard
+            key={line.key}
+            line={line}
+            onAnswer={(text) => void answer(line, text)}
+            onChat={() => {
+              void answer(line, CHAT_ABOUT_IT)
+              setTimeout(() => input.current?.focus(), 50)
+            }}
+          />
+        )
       case 'checkin':
         return <CheckInLine key={line.key} at={line.at} text={line.text} origin={line.origin} />
       case 'note':

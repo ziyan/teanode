@@ -216,8 +216,8 @@ func TestNotNowKeepsTheAgentQuietUnlessAsked(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if jobs := world.speakFirstJobs(t); len(jobs) != 1 {
-		t.Fatalf("asked for, it is queued: %+v", jobs)
+	if jobs := world.speakFirstJobs(t); len(jobs) != 1 || jobs[0].SubjectID != agent.SpeakFirstOnboarding+":asked" {
+		t.Fatalf("asked for, it is queued, marked as asked for: %+v", jobs)
 	}
 }
 

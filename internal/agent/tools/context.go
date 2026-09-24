@@ -40,6 +40,10 @@ type Run interface {
 	// empty for a run with nobody present.
 	Surface() string
 	Headless() bool
+
+	// CanAsk says a question card may be put to the person and waited on:
+	// they are there, whether or not they started the turn.
+	CanAsk() bool
 	ReadOnly() bool
 
 	// Offered is every tool this run may use; Loaded is which of the

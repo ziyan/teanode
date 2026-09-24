@@ -25,6 +25,7 @@ func (self *fakeRun) Database() db.Database                   { return nil }
 func (self *fakeRun) Configuration() *config.Configuration    { return nil }
 func (self *fakeRun) Surface() string                         { return "cli" }
 func (self *fakeRun) Headless() bool                          { return false }
+func (self *fakeRun) CanAsk() bool                            { return !self.Headless() }
 func (self *fakeRun) ReadOnly() bool                          { return false }
 func (self *fakeRun) Offered() []*Tool                        { return nil }
 func (self *fakeRun) Loaded() map[string]bool                 { return self.loaded }
