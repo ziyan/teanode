@@ -70,6 +70,7 @@ func NewComputerCommand() *cli.Command {
 					&cli.StringSliceFlag{Name: "setting", Usage: "a setting, name=value; a list setting takes a comma-separated value"},
 					&cli.IntFlag{Name: "containers", Value: 2, Usage: "how many containers to read; 0 lists them and reads none"},
 					&cli.IntFlag{Name: "records", Value: 5, Usage: "how many records of each container to print; -1 prints every one"},
+					&cli.StringSliceFlag{Name: "secret", Usage: "a secret the type declares, key=VARIABLE, read from that environment variable so it is never on the command line (repeatable)"},
 					&cli.StringSliceFlag{Name: "only", Usage: "read only the container of this name (repeatable), however many --containers says"},
 					&cli.StringFlag{Name: "state", Usage: "where the type keeps what it knows between runs; a new directory by default"},
 				},
@@ -370,7 +371,19 @@ func runComputerTrySource(ctx context.Context, command *cli.Command) error {
 	if err := os.MkdirAll(state, 0o700); err != nil {
 		return err
 	}
-	runner := &sources.Runner{Type: kind, Settings: settings, Executor: computer.NewLocalExecutor(state), State: state}
+	secrets := map[string]string{}
+	for _, pair := range command.StringSlice("secret") {
+		key, variable, found := strings.Cut(pair, "=")
+		if !found {
+			return usage(fmt.Sprintf("%q is not key=VARIABLE", pair))
+		}
+		value, isSet := os.LookupEnv(variable)
+		if !isSet {
+			return usage(fmt.Sprintf("the environment variable %s is not set", variable))
+		}
+		secrets[key] = value
+	}
+	runner := &sources.Runner{Type: kind, Settings: settings, Secrets: secrets, Executor: computer.NewLocalExecutor(state), State: state}
 	containers, err := runner.List(ctx)
 	if err != nil {
 		return fmt.Errorf("listing: %w", err)

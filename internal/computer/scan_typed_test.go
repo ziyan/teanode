@@ -2,10 +2,14 @@ package computer
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ziyan/teanode/internal/sources"
 )
 
 // A typed source is read end to end by running its type's commands here,
@@ -111,5 +115,29 @@ func TestATypedSourceForgetsWhatOtherSettingsLearned(t *testing.T) {
 	}
 	if !exists("files/kept/file.txt") {
 		t.Fatalf("fetched files were thrown away")
+	}
+}
+
+// A type's request follows a redirect only on its own host, so the
+// credential it carries never reaches another, and a failure does not
+// repeat the address, which may say more than the host.
+func TestATypedRequestKeepsItsCredentialOnItsHost(t *testing.T) {
+	reached := false
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		reached = request.Header.Get("X-Api-Key") != ""
+	}))
+	defer elsewhere.Close()
+	here := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		http.Redirect(writer, request, elsewhere.URL+"/steal", http.StatusFound)
+	}))
+	defer here.Close()
+	// Two test servers share 127.0.0.1 and differ by port, which is a
+	// different host all the same.
+	_, _, err := DoRequest(context.Background(), &sources.PreparedRequest{Method: "GET", URL: here.URL + "/items?page=secret-looking", Headers: map[string]string{"X-Api-Key": "the-key"}})
+	if err == nil || reached {
+		t.Fatalf("the redirect was followed with the key: %v, reached %v", err, reached)
+	}
+	if strings.Contains(err.Error(), "secret-looking") {
+		t.Fatalf("the failure repeats the address: %s", err)
 	}
 }

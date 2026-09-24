@@ -18,13 +18,6 @@ import (
 // person may read that mailbox is the caller's to check, since only the
 // caller knows who is asking.
 func (self *Type) Specify(source *models.AgentKnowledgeSource, values map[string]any) error {
-	// Secrets are not yet carried to where a type runs, so a type that
-	// cannot run without one is refused here rather than run without it.
-	for _, secret := range self.Secrets {
-		if !secret.Optional {
-			return fmt.Errorf("%s needs the secret %s, and sources of a type with secrets cannot be read yet", self.Name, secret.Key)
-		}
-	}
 	checked, err := self.CheckSettings(values)
 	if err != nil {
 		return err

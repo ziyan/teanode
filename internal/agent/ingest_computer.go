@@ -70,8 +70,9 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 	// runs whatever this server holds and nothing is installed there.
 	var sourceType string
 	var settings map[string]any
+	var secrets map[string]string
 	if format == computer.FormatTyped {
-		if sourceType, settings, err = self.typedSourceParts(ctx, run, source); err != nil {
+		if sourceType, settings, secrets, err = self.typedSourceParts(ctx, run, source); err != nil {
 			return "", counts, err
 		}
 	}
@@ -148,6 +149,7 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 			// directory in the person's cache it keeps what it knows in.
 			SourceType: sourceType,
 			Settings:   settings,
+			Secrets:    secrets,
 			SourceKey:  typedSourceKey(source),
 		}, wait)
 	}
@@ -287,23 +289,27 @@ func typedSourceKey(source *models.AgentKnowledgeSource) string {
 	return strings.ToLower(source.ID)
 }
 
-// typedSourceParts is a typed source's type, as installed, and its
-// settings.
-func (self *Agent) typedSourceParts(ctx context.Context, run *Run, source *models.AgentKnowledgeSource) (string, map[string]any, error) {
+// typedSourceParts is a typed source's type, as installed, its settings,
+// and the secrets its type declares, opened to be sent with the request.
+func (self *Agent) typedSourceParts(ctx context.Context, run *Run, source *models.AgentKnowledgeSource) (string, map[string]any, map[string]string, error) {
 	var installed *models.AgentSourceType
+	var stored []*models.AgentSourceSecret
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		installed, err = tx.GetAgentSourceType(source.Specification.Type)
+		if installed, err = tx.GetAgentSourceType(source.Specification.Type); err != nil {
+			return err
+		}
+		stored, err = tx.ListAgentSourceSecrets(source.ID)
 		return err
 	}); err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 	if installed == nil {
-		return "", nil, fmt.Errorf("the source type %q is not installed on this server", source.Specification.Type)
+		return "", nil, nil, fmt.Errorf("the source type %q is not installed on this server", source.Specification.Type)
 	}
 	settings := map[string]any{}
 	if len(source.Specification.Settings) > 0 {
 		if err := json.Unmarshal(source.Specification.Settings, &settings); err != nil {
-			return "", nil, fmt.Errorf("the settings of this source are not readable: %w", err)
+			return "", nil, nil, fmt.Errorf("the settings of this source are not readable: %w", err)
 		}
 	}
 	// Checked again against the type as it is now: a type replaced or
@@ -311,12 +317,34 @@ func (self *Agent) typedSourceParts(ctx context.Context, run *Run, source *model
 	// its commands must not run with ones it never checked.
 	parsed, err := sources.Parse([]byte(installed.Content))
 	if err != nil {
-		return "", nil, fmt.Errorf("the installed %s cannot be read: %w", installed.Name, err)
+		return "", nil, nil, fmt.Errorf("the installed %s cannot be read: %w", installed.Name, err)
 	}
 	if _, err := parsed.CheckSettings(settings); err != nil {
-		return "", nil, fmt.Errorf("the settings of this source no longer suit %s as installed: %w", installed.Name, err)
+		return "", nil, nil, fmt.Errorf("the settings of this source no longer suit %s as installed: %w", installed.Name, err)
 	}
-	return installed.Content, settings, nil
+	// Only what the type declares, and every one it cannot do without.
+	filled := map[string]string{}
+	for _, secret := range stored {
+		opened, err := self.OpenSecret(secret.Value)
+		if err != nil {
+			return "", nil, nil, fmt.Errorf("the stored value of %s cannot be read: %w", secret.Key, err)
+		}
+		filled[secret.Key] = opened
+	}
+	secrets := map[string]string{}
+	var missing []string
+	for _, secret := range parsed.Secrets {
+		if value := filled[secret.Key]; strings.TrimSpace(value) != "" {
+			secrets[secret.Key] = value
+		} else if !secret.Optional {
+			missing = append(missing, secret.Key)
+		}
+	}
+	if len(missing) > 0 {
+		return "", nil, nil, fmt.Errorf("%s needs %s filled in for this source; set it on the source in the dashboard, or with `teanode agent knowledge secret set %q %s`",
+			parsed.Name, strings.Join(missing, " and "), source.Name, missing[0])
+	}
+	return installed.Content, settings, secrets, nil
 }
 
 // sourceName is a source's name, for saying which one a computer is busy

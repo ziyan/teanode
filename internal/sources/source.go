@@ -292,12 +292,17 @@ func (self *Parsing) UnmarshalYAML(node *yaml.Node) error {
 
 // Paging is how a command or request is asked for the next page.
 type Paging struct {
-	// Kind is none, all, token, limit or offset: token asks for the next
-	// page with what the answer said, offset with how many came before.
+	// Kind is none, all, token, limit, offset or link: token asks for the
+	// next page with what the answer said, offset with how many came
+	// before, and link at the address the answer gave, which for a request
+	// must be on the same host.
 	Kind  string
 	Field string
 	Flag  string
 	Size  int
+	// BaseField is where in the answer the address a relative link is
+	// read against is, for link paging.
+	BaseField string
 }
 
 func (self *Paging) UnmarshalYAML(node *yaml.Node) error {
@@ -309,15 +314,16 @@ func (self *Paging) UnmarshalYAML(node *yaml.Node) error {
 		Field string `yaml:"field"`
 		Flag  string `yaml:"flag"`
 		Size  int    `yaml:"size"`
+		Base  string `yaml:"base"`
 	}
 	if err := node.Decode(&shaped); err != nil {
 		return err
 	}
 	if len(shaped) != 1 {
-		return fmt.Errorf("paging is one of none, all, token, limit or offset")
+		return fmt.Errorf("paging is one of none, all, token, limit, offset or link")
 	}
 	for kind, shape := range shaped {
-		self.Kind, self.Field, self.Flag, self.Size = kind, shape.Field, shape.Flag, shape.Size
+		self.Kind, self.Field, self.Flag, self.Size, self.BaseField = kind, shape.Field, shape.Flag, shape.Size, shape.Base
 	}
 	return nil
 }

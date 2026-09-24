@@ -228,6 +228,31 @@ func newAgentKnowledgeCommand() *cli.Command {
 				Action: runKnowledgeSet,
 			},
 			{
+				Name:  "secret",
+				Usage: "the secrets a source's type asks for, such as a token for a service; yours, one set for each source",
+				Commands: []*cli.Command{
+					{
+						Name:      "list",
+						Usage:     "what a source asks for, and whether each is filled in",
+						ArgsUsage: "<source-id-or-name>",
+						Flags:     []cli.Flag{JSONFlag()},
+						Action:    runKnowledgeSecretList,
+					},
+					{
+						Name:      "set",
+						Usage:     "keep one value for a source; with no value it is read without echoing",
+						ArgsUsage: "<source-id-or-name> <key> [value]",
+						Action:    runKnowledgeSecretSet,
+					},
+					{
+						Name:      "clear",
+						Usage:     "forget one value of a source",
+						ArgsUsage: "<source-id-or-name> <key>",
+						Action:    runKnowledgeSecretClear,
+					},
+				},
+			},
+			{
 				Name:      "pause",
 				Usage:     "stop reading a source for now, keeping everything it found; resume puts it back",
 				ArgsUsage: "<source-id-or-name>",
@@ -1107,6 +1132,28 @@ func runKnowledgeSet(ctx context.Context, command *cli.Command) error {
 		if err != nil {
 			return err
 		}
+		// Only what the type declares now: a setting an update of the
+		// type renamed or dropped would otherwise make the save refused.
+		typeName := command.String("type")
+		if typeName == "" {
+			typeName = source.Specification.Type
+		}
+		if installed, err := client.ListAgentSourceTypes(ctx, connection); err == nil {
+			for _, sourceType := range installed {
+				if sourceType.Name != typeName {
+					continue
+				}
+				declared := map[string]bool{}
+				for _, setting := range sourceType.Settings {
+					declared[setting.Name] = true
+				}
+				for name := range settings {
+					if !declared[name] {
+						delete(settings, name)
+					}
+				}
+			}
+		}
 		if settings == nil {
 			// A source without settings yet stores them as null.
 			settings = map[string]any{}
@@ -1774,4 +1821,78 @@ func knowledgeSettings(pairs []string) (map[string]any, error) {
 		settings[strings.TrimSpace(name)] = value
 	}
 	return settings, nil
+}
+
+func runKnowledgeSecretList(ctx context.Context, command *cli.Command) error {
+	connection, source, err := knowledgeSourceNamed(ctx, command)
+	if err != nil {
+		return err
+	}
+	asked, err := client.ListAgentKnowledgeSourceSecrets(ctx, connection, source.ID)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(asked)
+	}
+	if len(asked) == 0 {
+		_, _ = fmt.Fprintf(command.Writer, "%s asks for no secrets\n", source.Name)
+		return nil
+	}
+	rows := make([][]string, 0, len(asked))
+	for _, secret := range asked {
+		secretState := "not set"
+		if secret.IsSet {
+			secretState = "set"
+		} else if secret.IsOptional {
+			secretState = "not set, optional"
+		}
+		rows = append(rows, []string{secret.Key, secretState, secret.Description})
+	}
+	return printTable([]string{"key", "state", "what it is"}, rows)
+}
+
+func runKnowledgeSecretSet(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 2 {
+		return fmt.Errorf("give the source and the key: teanode agent knowledge secret set feed token")
+	}
+	// A value on the command line is in the shell's history; with none
+	// given it is read from the terminal without echoing, or from standard
+	// input when there is no terminal.
+	given := command.Args().Get(2)
+	if given == "" || given == "-" {
+		typed, err := ReadSecret("value: ")
+		if err != nil {
+			return err
+		}
+		given = typed
+	}
+	if strings.TrimSpace(given) == "" {
+		return fmt.Errorf("give a value, or use `teanode agent knowledge secret clear` to take one away")
+	}
+	connection, source, err := knowledgeSourceNamed(ctx, command)
+	if err != nil {
+		return err
+	}
+	secret, err := client.SetAgentKnowledgeSourceSecret(ctx, connection, source.ID, command.Args().Get(1), given)
+	if err != nil {
+		return describeError(command, err)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "kept %s for %s\n", secret.Key, source.Name)
+	return nil
+}
+
+func runKnowledgeSecretClear(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 2 {
+		return fmt.Errorf("give the source and the key")
+	}
+	connection, source, err := knowledgeSourceNamed(ctx, command)
+	if err != nil {
+		return err
+	}
+	if err := client.ClearAgentKnowledgeSourceSecret(ctx, connection, source.ID, command.Args().Get(1)); err != nil {
+		return describeError(command, err)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "forgot %s for %s\n", command.Args().Get(1), source.Name)
+	return nil
 }

@@ -124,13 +124,13 @@ func newAgentConversationCommand() *cli.Command {
 	}
 }
 
-// newAgentConversationTodoCommand is the task list a conversation keeps,
-// which until now only the agent wrote. A verb first, then the
-// conversation, as every other subcommand here reads.
+// newAgentConversationTodoCommand is the task list a conversation keeps:
+// the agent's own, for its steps and its progress, which a person reads
+// and does not change.
 func newAgentConversationTodoCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "todo",
-		Usage: "the task list of a conversation: what the agent is keeping track of, and ticking one off yourself",
+		Usage: "the task list of a conversation: the steps the agent is keeping track of, and how far it has got",
 		Commands: []*cli.Command{
 			{
 				Name:      "list",
@@ -138,34 +138,6 @@ func newAgentConversationTodoCommand() *cli.Command {
 				ArgsUsage: "[conversation-id]",
 				Flags:     []cli.Flag{JSONFlag()},
 				Action:    runAgentConversationTodoList,
-			},
-			{
-				Name:      "add",
-				Usage:     "put an item on the list",
-				ArgsUsage: "<conversation-id> <text>",
-				Flags:     []cli.Flag{JSONFlag()},
-				Action:    runAgentConversationTodoAdd,
-			},
-			{
-				Name:      "done",
-				Usage:     "mark an item done",
-				ArgsUsage: "<conversation-id> <todo-id>",
-				Flags:     []cli.Flag{JSONFlag()},
-				Action:    runAgentConversationTodoDone,
-			},
-			{
-				Name:      "reopen",
-				Usage:     "open an item again",
-				ArgsUsage: "<conversation-id> <todo-id>",
-				Flags:     []cli.Flag{JSONFlag()},
-				Action:    runAgentConversationTodoReopen,
-			},
-			{
-				Name:      "remove",
-				Usage:     "take an item off the list",
-				ArgsUsage: "<conversation-id> <todo-id>",
-				Flags:     []cli.Flag{JSONFlag()},
-				Action:    runAgentConversationTodoRemove,
 			},
 		},
 	}
@@ -670,64 +642,7 @@ func runAgentConversationTodoList(ctx context.Context, command *cli.Command) err
 	return printTodoList(ctx, command, connection, command.Args().First())
 }
 
-func runAgentConversationTodoAdd(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() < 2 {
-		return fmt.Errorf("give the conversation id and the item: teanode agent conversation todo add <conversation-id> \"book the hall\"")
-	}
-	connection, err := openClient(command)
-	if err != nil {
-		return err
-	}
-	conversationId := command.Args().First()
-	if _, err := client.AddAgentTodo(ctx, connection, conversationId, strings.Join(command.Args().Slice()[1:], " ")); err != nil {
-		return describeError(command, err)
-	}
-	return printTodoList(ctx, command, connection, conversationId)
-}
-
-func runAgentConversationTodoDone(ctx context.Context, command *cli.Command) error {
-	return setConversationTodoDone(ctx, command, true)
-}
-
-func runAgentConversationTodoReopen(ctx context.Context, command *cli.Command) error {
-	return setConversationTodoDone(ctx, command, false)
-}
-
-func setConversationTodoDone(ctx context.Context, command *cli.Command, done bool) error {
-	if command.Args().Len() < 2 {
-		return fmt.Errorf("give the conversation id and the item's id: teanode agent conversation todo %s <conversation-id> <todo-id>", command.Name)
-	}
-	connection, err := openClient(command)
-	if err != nil {
-		return err
-	}
-	conversationId := command.Args().First()
-	if _, err := client.SetAgentTodo(ctx, connection, conversationId, command.Args().Get(1), "", &done); err != nil {
-		return describeError(command, err)
-	}
-	return printTodoList(ctx, command, connection, conversationId)
-}
-
-func runAgentConversationTodoRemove(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() < 2 {
-		return fmt.Errorf("give the conversation id and the item's id: teanode agent conversation todo remove <conversation-id> <todo-id>")
-	}
-	connection, err := openClient(command)
-	if err != nil {
-		return err
-	}
-	conversationId := command.Args().First()
-	if err := client.RemoveAgentTodo(ctx, connection, conversationId, command.Args().Get(1)); err != nil {
-		return describeError(command, err)
-	}
-	return printTodoList(ctx, command, connection, conversationId)
-}
-
-// printTodoList is the list as it stands, which every change ends with:
-// the agent's own tool answers each of its actions with the whole list
-// for the same reason — an item's identifier is what the next command
-// needs, and a person reading a list of five knows at once whether the
-// one they meant is the one that moved.
+// printTodoList is the list as it stands.
 func printTodoList(ctx context.Context, command *cli.Command, connection *client.Client, conversationId string) error {
 	// One message, because it is the todos that are wanted and a
 	// transcript of forty is paid for in bytes nobody reads.
