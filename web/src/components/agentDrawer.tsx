@@ -30,6 +30,7 @@ import {
   ArrowUpIcon,
   CheckIcon,
   ChevronDownIcon,
+  CloseIcon,
   ComputerIcon,
   GlobeIcon,
   InboxIcon,
@@ -133,14 +134,34 @@ const CHAT_ABOUT_IT = '[chat about it]'
 
 // Which kind of turn of the agent's own a user message opens, if it opens
 // one at all.
-type CheckInOrigin = 'goal' | 'background' | 'schedule' | 'speakFirst'
+type CheckInOrigin = 'goal' | 'background' | 'schedule' | 'speakFirst' | 'approved' | 'declined'
+
+// The markers a turn begins with when the person answers a card after the
+// turn that raised it had ended, which are agent.AnsweringMarker,
+// ApprovedMarker and DeclinedMarker on the server. An answer is drawn as
+// the person's own words under the question; an approval as a line.
+const ANSWERING_MARKER = '[answering]'
+const APPROVED_MARKER = '[approved]'
+const DECLINED_MARKER = '[declined]'
 
 function checkInOriginOf(text: string): CheckInOrigin | null {
   if (text.startsWith(GOAL_CHECK_IN_MARKER)) return 'goal'
   if (text.startsWith(BACKGROUND_COMMAND_MARKER)) return 'background'
   if (text.startsWith(SCHEDULE_MARKER)) return 'schedule'
   if (text.startsWith(SPEAK_FIRST_MARKER)) return 'speakFirst'
+  if (text.startsWith(APPROVED_MARKER)) return 'approved'
+  if (text.startsWith(DECLINED_MARKER)) return 'declined'
   return null
+}
+
+// answeringOf reads a late answer to a question: the question it answers
+// and the answer itself, or null for any other message.
+function answeringOf(text: string): { question: string; answer: string } | null {
+  if (!text.startsWith(ANSWERING_MARKER)) return null
+  const rest = text.slice(ANSWERING_MARKER.length).trim()
+  const split = rest.indexOf('\n\n')
+  if (split < 0) return { question: '', answer: rest }
+  return { question: rest.slice(0, split).trim(), answer: rest.slice(split + 2).trim() }
 }
 
 interface Artifact {
@@ -316,7 +337,16 @@ interface RunEvent {
 
 // A line of the transcript as the drawer draws it.
 type Line =
-  | { kind: 'user'; key: string; text: string; at?: string; attachments?: Attachment[]; references?: AgentReference[] }
+  // inReplyTo is the question a late answer answers.
+  | {
+      kind: 'user'
+      key: string
+      text: string
+      at?: string
+      attachments?: Attachment[]
+      references?: AgentReference[]
+      inReplyTo?: string
+    }
   | { kind: 'assistant'; key: string; text: string; at?: string; streaming?: boolean; usage?: Usage | null }
   | {
       kind: 'tool'
@@ -395,6 +425,7 @@ const CONVERSATION = `
       total
       todos { id text doneAt }
     }
+    ListAgentInteractions(conversationId: $conversationId) { runId callId interactionKind toolName interactionText interactionChoices toolRisk }
   }`
 
 // The files behind the citations an answer made. An assistant's line
@@ -976,10 +1007,12 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
             break
           }
         }
+        const answering = answeringOf(message.content)
         lines.push({
           kind: 'user',
           key: message.id,
-          text: message.content,
+          text: answering ? answering.answer : message.content,
+          inReplyTo: answering?.question || undefined,
           at: message.createdAt,
           attachments: message.attachments ?? undefined,
           references: message.references ?? undefined,
@@ -1682,12 +1715,16 @@ const CHECK_IN_LABEL = {
   background: 'agentDrawer.backgroundEnded',
   schedule: 'agentDrawer.scheduleTurn',
   speakFirst: 'agentDrawer.speakFirstTurn',
+  approved: 'agentDrawer.approvedLater',
+  declined: 'agentDrawer.declinedLater',
 } as const
 
 function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
   if (origin === 'background') return <TerminalIcon size={12} />
   if (origin === 'schedule') return <CalendarIcon size={12} />
   if (origin === 'speakFirst') return <SparkIcon size={12} />
+  if (origin === 'approved') return <CheckIcon size={12} />
+  if (origin === 'declined') return <CloseIcon size={12} />
   return <TargetIcon size={12} />
 }
 
@@ -1774,6 +1811,19 @@ function BackgroundMark({
   )
 }
 
+// A question or an approval the person has not answered, kept by the
+// server beyond the turn that raised it, so that it is still a card to
+// press after a reload, on another device, or an hour later.
+interface OpenInteraction {
+  runId: string
+  callId: string
+  interactionKind: 'question' | 'approval'
+  toolName: string
+  interactionText: string
+  interactionChoices: string[]
+  toolRisk: string
+}
+
 async function readConversationSnapshot(conversationId: string, signal: AbortSignal) {
   const response = await graphql<{
     ReadAgentConversation: {
@@ -1784,8 +1834,37 @@ async function readConversationSnapshot(conversationId: string, signal: AbortSig
       total?: number
       todos: Todo[]
     }
+    ListAgentInteractions: OpenInteraction[] | null
   }>(CONVERSATION, { conversationId: conversationId || undefined, first: 100 }, signal)
-  return response.ReadAgentConversation
+  return { ...response.ReadAgentConversation, interactions: response.ListAgentInteractions ?? [] }
+}
+
+// cardsOf draws the open cards after the transcript, keyed as the live
+// events key them, so a card that is both still waiting in a running turn
+// and read back is drawn once.
+function cardsOf(interactions: OpenInteraction[]): Line[] {
+  return interactions.map((interaction): Line => {
+    const key = `${interaction.runId}-${interaction.callId}`
+    if (interaction.interactionKind === 'question') {
+      return {
+        kind: 'question',
+        key,
+        runId: interaction.runId,
+        callId: interaction.callId,
+        question: interaction.interactionText,
+        choices: interaction.interactionChoices,
+      }
+    }
+    return {
+      kind: 'confirmation',
+      key,
+      runId: interaction.runId,
+      callId: interaction.callId,
+      tool: interaction.toolName,
+      summary: interaction.interactionText,
+      risk: interaction.toolRisk,
+    }
+  })
 }
 
 // standalone is the drawer as a page of its own, framed by the browser
@@ -1990,7 +2069,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       remember(CONVERSATION_KEY, snapshot.conversation.id)
       messages.current = snapshot.messages
       setTotal(snapshot.total ?? snapshot.messages.length)
-      setLines(linesOf(snapshot.messages, t))
+      setLines([...linesOf(snapshot.messages, t), ...cardsOf(snapshot.interactions)])
       setShowingGoalNote(true)
       // This read is how a step the agent finished during its turn
       // reaches the list.
@@ -2565,6 +2644,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           return next
         }
         case 'confirmation':
+          if (next.some((line) => line.key === `${event.runId}-${event.callId}`)) return next
           next.push({
             kind: 'confirmation',
             key: `${event.runId}-${event.callId}`,
@@ -2576,6 +2656,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           })
           return next
         case 'question':
+          // Read back with the conversation already, as a kept card.
+          if (next.some((line) => line.key === `${event.runId}-${event.callId}`)) return next
           next.push({
             kind: 'question',
             key: `${event.runId}-${event.callId}`,
@@ -2637,7 +2719,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         if (line.text === (event.text ?? '')) kept = previous.slice(0, index)
         break
       }
-      return [...kept, { kind: 'user', key: `${event.runId}-asked`, text: event.text ?? '', at: event.at }]
+      const answering = answeringOf(event.text ?? '')
+      return [
+        ...kept,
+        {
+          kind: 'user',
+          key: `${event.runId}-asked`,
+          text: answering ? answering.answer : (event.text ?? ''),
+          inReplyTo: answering?.question || undefined,
+          at: event.at,
+        },
+      ]
     })
   }
 
@@ -3093,6 +3185,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         return (
           <Tooltip key={line.key} label={line.at ? formatTime(line.at) : ''}>
             <div className="agent-line user">
+              {line.inReplyTo ? <div className="agent-in-reply-to">{line.inReplyTo}</div> : null}
               {line.references && line.references.length > 0 && <ReferenceChips references={line.references} />}
               {line.text}
               {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}

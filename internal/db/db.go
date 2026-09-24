@@ -172,6 +172,7 @@ type Transaction interface {
 	ConnectionOperation
 	ChannelOperation
 	EvaluationOperation
+	InteractionOperation
 
 	DomainUsageOperation
 	AliasUsageOperation

@@ -412,3 +412,43 @@ type AgentReply struct {
 	SentMailID string     `json:"sentMailId,omitempty"`
 	SentAt     *time.Time `json:"sentAt,omitempty"`
 }
+
+// InteractionKind is what the agent stopped to ask the person for.
+type InteractionKind string
+
+// The kinds: an answer to a question, or the word to go ahead with a
+// call that needs it.
+const (
+	InteractionQuestion InteractionKind = "question"
+	InteractionApproval InteractionKind = "approval"
+)
+
+// The answers an approval can have, and the one a card gets when the
+// turn waiting on it was stopped.
+const (
+	InteractionApproved = "approved"
+	InteractionDeclined = "declined"
+	InteractionStopped  = "stopped"
+)
+
+// AgentInteraction is a question or an approval card, kept until the
+// person answers it. See docs/planning/durable-interactions-execplan.md.
+type AgentInteraction struct {
+	ID              string          `json:"id"`
+	AgentID         string          `json:"agentId"`
+	ConversationID  string          `json:"conversationId"`
+	RunID           string          `json:"runId"`
+	CallID          string          `json:"callId"`
+	InteractionKind InteractionKind `json:"interactionKind"`
+	ToolName        string          `json:"toolName"`
+	ToolArguments   string          `json:"toolArguments"`
+
+	// InteractionText is the question, or the approval card's line.
+	InteractionText    string   `json:"interactionText"`
+	InteractionChoices []string `json:"interactionChoices"`
+	ToolRisk           string   `json:"toolRisk"`
+
+	CreatedAt         time.Time  `json:"createdAt"`
+	ResolvedAt        *time.Time `json:"resolvedAt,omitempty" graphapi:"nullable"`
+	InteractionAnswer string     `json:"interactionAnswer"`
+}

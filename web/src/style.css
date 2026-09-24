@@ -6603,6 +6603,16 @@ main.content:has(> .mailbox-frame) {
   margin: 0 0 6px;
 }
 
+/* The question a late answer answers, above it and quieter: the card it
+   was given on may be far up the conversation by the time it is answered. */
+.agent-line.user .agent-in-reply-to {
+  margin: 0 0 6px;
+  padding-left: 8px;
+  border-left: 2px solid currentColor;
+  opacity: 0.75;
+  font-size: 0.9em;
+}
+
 .agent-attachment-chip,
 .agent-reference-chip {
   display: inline-flex;

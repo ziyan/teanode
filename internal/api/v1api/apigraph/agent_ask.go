@@ -774,7 +774,11 @@ func (self *graph) ResolveAgentConfirmation(ctx context.Context, arguments Resol
 		return false, agent.ErrUnavailable
 	}
 	log.Noticef("%s %s what their agent asked to do", operatorName(ctx), map[bool]string{true: "approved", false: "declined"}[arguments.Approve])
-	return self.commandAgentRun(ctx, found, worker, agent.RunCommand{RunID: arguments.RunID, Action: agent.CommandResolve, CallID: arguments.CallID, Approve: arguments.Approve})
+	answer := models.InteractionDeclined
+	if arguments.Approve {
+		answer = models.InteractionApproved
+	}
+	return self.answerInteraction(ctx, found, worker, arguments.CallID, answer, agent.RunCommand{RunID: arguments.RunID, Action: agent.CommandResolve, CallID: arguments.CallID, Approve: arguments.Approve})
 }
 
 // commandAgentRun gives a run the person's word: applied here when the

@@ -39,6 +39,7 @@ type Query interface {
 	AgentMemoryQuery
 	AgentGraphQuery
 	AgentEvaluationQuery
+	AgentInteractionQuery
 	AgentConnectionQuery
 	AgentReachQuery
 	AgentSkillQuery

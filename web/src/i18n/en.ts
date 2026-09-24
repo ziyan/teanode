@@ -1185,6 +1185,8 @@ export const en = {
   'agentDrawer.backgroundEnded': 'Background command ended',
   'agentDrawer.scheduleTurn': 'Scheduled turn',
   'agentDrawer.speakFirstTurn': 'Started by the agent',
+  'agentDrawer.approvedLater': 'Approved after the turn ended',
+  'agentDrawer.declinedLater': 'Declined after the turn ended',
   'agentDrawer.backgroundCommands': 'Background commands',
   'agentDrawer.backgroundRunning': '{count} running in the background',
   'backgroundCommands.none': 'Nothing is running in the background.',
