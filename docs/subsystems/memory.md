@@ -767,8 +767,11 @@ measure at this scale.
 
 Words and meaning, both, merged by reciprocal rank fusion — a full-text
 search over pages, facts and passages, a vector search over the same, and
-one ranked list out. Decay multiplies the score, so a stale fact sinks
-without disappearing. There is no minimum word length any more; the
+one ranked list out. Age breaks ties: it takes at most a twentieth off a
+fused score, so an old exact match gives up a few places to recent ones
+almost as good and no more, where multiplying by the whole decay sank a
+years-old answer under every match from this month. That a fact was
+inferred rather than said still costs it in full. There is no minimum word length any more; the
 previous version needed a word of four letters before it would search by
 meaning at all, so "who is he?" recalled nothing.
 
@@ -786,10 +789,17 @@ happen to be oldest. The store hands a page's facts over by number, which
 was the whole page while a page held a handful; on a page of fifty to
 ninety it meant the five oldest sentences whatever had been asked, and
 the matched sentence was left to the loose-fact loop, which by then had
-neither a block nor a token to spare. So sixty are read and five are
-shown: the ones the search matched first, in the order it ranked them,
-then the rest by number. What is shown is laid out by number all the
-same, so the block still reads as a page and its `#n` references climb.
+neither a block nor a token to spare. So sixty are read, and a page shows
+the facts the search matched, up to five, in the order it ranked them,
+and its first fact as well where only one was matched; filling up to five
+with a page's oldest lines spent the room on opening remarks. A page the
+fact search matched nothing on, found by its name or its meaning, shows
+its opening and first two facts, and at most two such pages are carried:
+months with an opening and no facts of their own used to take every page
+slot. The facts the search matched on pages that were not expanded go in
+together, as one block, so up to ten of them fit where three used to.
+What is shown is laid out by number all the same, so the block still
+reads as a page and its `#n` references climb.
 A fact keeps its vector when it is struck, folded away or superseded, so
 that what a page used to say can still be found; recall is the side that
 leaves those out, since a sentence the page has taken back is not one to

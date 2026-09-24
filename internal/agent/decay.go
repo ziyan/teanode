@@ -88,6 +88,26 @@ func decayOf(age time.Duration, halfLife time.Duration) float64 {
 // coming back to is current whatever its date says, which is the one
 // signal available that the dates do not carry.
 func decayOfFact(fact *models.AgentFact, now time.Time) float64 {
+	if _, decays := halfLifeOf(fact.Kind); !decays {
+		return 1
+	}
+	return ageOfFact(fact, now) * inferredWeight(fact)
+}
+
+// inferredWeight is what a fact the agent put together, rather than was
+// told, costs: worth having, and worth ranking under something somebody
+// said.
+func inferredWeight(fact *models.AgentFact) float64 {
+	if fact.Inferred {
+		return 0.85
+	}
+	return 1
+}
+
+// ageOfFact is how much a fact's age costs it, lifted by recent use, and
+// nothing else: what ranking softens into a tie-breaker, where whether
+// the fact was inferred is kept whole.
+func ageOfFact(fact *models.AgentFact, now time.Time) float64 {
 	halfLife, decays := halfLifeOf(fact.Kind)
 	if !decays {
 		return 1
@@ -103,11 +123,6 @@ func decayOfFact(fact *models.AgentFact, now time.Time) float64 {
 		// to be new.
 		used := decayOf(now.Sub(*fact.UsedAt), statusHalfLife)
 		weight += (1 - weight) * used * 0.5
-	}
-	if fact.Inferred {
-		// An answer the agent put together rather than was told. Worth
-		// having, and worth ranking under something somebody said.
-		weight *= 0.85
 	}
 	return weight
 }

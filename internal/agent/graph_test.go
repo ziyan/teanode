@@ -147,16 +147,21 @@ func (self *recallWorld) overlay() string {
 func TestAPageOverTheBudgetIsPassedOver(t *testing.T) {
 	world := newRecallWorld(t)
 
-	// Five facts of nine hundred characters and an opening of six
-	// hundred: more than the whole recall budget on its own.
-	long := strings.Repeat("what this project decided and why, at length. ", 20)
-	big := world.page(t, "projects/big-one", "Big One", strings.Repeat("an opening at length. ", 40),
-		long, long, long, long, long)
+	// Two facts of nearly a thousand characters and an opening of six
+	// hundred: over half the recall budget a page. The first fits, the
+	// second does not fit after it, the short one behind it does.
+	long := strings.Repeat("what this project decided and why, at length. ", 21)
+	opening := strings.Repeat("an opening at length. ", 40)
+	first := world.page(t, "projects/first-one", "First One", opening, long, long)
+	big := world.page(t, "projects/big-one", "Big One", opening, long, long)
 	small := world.page(t, "projects/small-one", "Small One", "A short one.", "Ships on Fridays.")
 
-	world.run.writeRecalled(context.Background(), []*models.AgentNode{big, small}, nil)
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{first, big, small}, nil)
 
 	carried := world.overlay()
+	if !strings.Contains(carried, "projects/first-one") {
+		t.Fatalf("the first page fits and is carried:\n%s", carried)
+	}
 	if strings.Contains(carried, "projects/big-one") {
 		t.Fatalf("the page over the budget is not carried:\n%s", carried)
 	}
@@ -325,9 +330,11 @@ func TestAnExpandedPageShowsTheFactsTheQuestionHit(t *testing.T) {
 	}
 	// Nothing carried is left unmarked and nothing marked is left
 	// uncarried: the overlay and `used_at` are the same list.
+	// The fact it hit and the page's first, which says what the page is
+	// about; not the page's oldest lines up to five.
 	marked := world.markedFacts(t, node)
-	if len(marked) != pageFacts {
-		t.Fatalf("the page carried %d facts and marked %d", pageFacts, len(marked))
+	if len(marked) != pageFactsLeast {
+		t.Fatalf("the page carried %d facts and marked %d", pageFactsLeast, len(marked))
 	}
 	for _, fact := range marked {
 		if !strings.Contains(carried, fact.Text) {
@@ -356,20 +363,21 @@ func TestAnExpandedPageShowsItsFactsInNumberOrder(t *testing.T) {
 	facts := world.factsOf(t, node)
 	// The search ranked the tenth fact above the seventh. Neither the
 	// ranking nor the page's own numbering is allowed to be lost: the
-	// ranking picks the five, the numbering lays them out.
+	// ranking picks them, the numbering lays them out. Two hits are
+	// enough; the page's first lines are not added to them.
 	hits := []*models.AgentFact{facts[9], facts[6]}
 
 	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, hits)
 
 	carried := world.overlay()
 	shown := numbersShown(carried)
-	if want := []int{1, 2, 3, 7, 10}; fmt.Sprint(shown) != fmt.Sprint(want) {
+	if want := []int{7, 10}; fmt.Sprint(shown) != fmt.Sprint(want) {
 		t.Fatalf("the page shows %v and should show %v:\n%s", shown, want, carried)
 	}
 }
 
-// A page the search hit no fact on keeps what it always did: its first
-// facts, by number.
+// A page the search hit no fact on shows its opening and its first
+// facts, by number: enough to say what it is, not five of its lines.
 func TestAPageTheSearchDidNotHitShowsItsFirstFacts(t *testing.T) {
 	world := newRecallWorld(t)
 
@@ -383,11 +391,11 @@ func TestAPageTheSearchDidNotHitShowsItsFirstFacts(t *testing.T) {
 
 	carried := world.overlay()
 	shown := numbersShown(carried)
-	if want := []int{1, 2, 3, 4, 5}; fmt.Sprint(shown) != fmt.Sprint(want) {
+	if want := []int{1, 2}; fmt.Sprint(shown) != fmt.Sprint(want) {
 		t.Fatalf("the page shows %v and should show %v:\n%s", shown, want, carried)
 	}
-	if count := world.wanted(t, node); count != pageFacts {
-		t.Fatalf("the %d facts it carried are marked as used, and %d were", pageFacts, count)
+	if count := world.wanted(t, node); count != pageFactsLeast {
+		t.Fatalf("the %d facts it carried are marked as used, and %d were", pageFactsLeast, count)
 	}
 }
 
@@ -540,5 +548,65 @@ func TestRecallingForAQuestionStillFindsTheAnswer(t *testing.T) {
 	}
 	if !strings.Contains(carried, "Frankfurt") {
 		t.Fatalf("the fact the question is about is still carried:\n%s", carried)
+	}
+}
+
+// The loose facts go in together, so ten of them fit where three used to,
+// and pages the fact search hit nothing on take at most two page slots.
+//
+// Every recall used to carry four pages and three loose facts: the pages
+// were often months with an opening and no facts of their own, or pages
+// shown for their oldest lines, and the facts that answered the question
+// were the fourth and later loose ones that never went in.
+func TestLooseFactsGoInTogetherAndUnhitPagesAreBounded(t *testing.T) {
+	world := newRecallWorld(t)
+
+	var unhit []*models.AgentNode
+	for index := 1; index <= 4; index++ {
+		unhit = append(unhit, world.page(t, fmt.Sprintf("time/2020/%02d", index), fmt.Sprintf("Month %d", index), "A month of little note."))
+	}
+	// A page the question did hit, ranked after the months: still
+	// expanded once the months have used their two slots.
+	hitPage := world.page(t, "things/boat", "Boat", "The boat.", "The boat is blue.")
+	boatFact := world.factsOf(t, hitPage)[0]
+	unhit = append(unhit, hitPage)
+	var hits []*models.AgentFact
+	for index := 1; index <= 8; index++ {
+		// Two facts on each, the search hitting the second: a loose fact,
+		// since the page itself is not among those ranked.
+		page := world.page(t, fmt.Sprintf("things/item-%d", index), fmt.Sprintf("Item %d", index), "", "The first line.", fmt.Sprintf("Item %d is kept in the shed.", index))
+		facts := world.factsOf(t, page)
+		hits = append(hits, facts[len(facts)-1])
+	}
+
+	world.run.writeRecalled(context.Background(), unhit, append([]*models.AgentFact{boatFact}, hits...))
+
+	carried := world.overlay()
+	if !strings.Contains(carried, "things/boat") {
+		t.Fatalf("a page the question hit is expanded after the months:\n%s", carried)
+	}
+	months := 0
+	for _, page := range unhit[:len(unhit)-1] {
+		if strings.Contains(carried, page.Path) {
+			months++
+		}
+	}
+	if months != recallPagesUnhit {
+		t.Fatalf("%d pages without a hit are carried, not %d:\n%s", months, recallPagesUnhit, carried)
+	}
+	for _, fact := range hits {
+		if !strings.Contains(carried, fact.Text) {
+			t.Fatalf("every hit fact is carried, and %q is not:\n%s", fact.Text, carried)
+		}
+	}
+	if lines := len(world.run.Recalled()); lines > recallBlocks {
+		t.Fatalf("the overlay carries at most %d blocks, and carried %d", recallBlocks, lines)
+	}
+	// And what the block of loose facts carried is marked as used.
+	for _, fact := range hits {
+		page := &models.AgentNode{ID: fact.NodeID}
+		if marked := world.markedFacts(t, page); len(marked) != 1 || marked[0].ID != fact.ID {
+			t.Fatalf("the loose fact %q is marked as used: %v", fact.Text, marked)
+		}
 	}
 }

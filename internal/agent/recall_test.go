@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -39,6 +41,47 @@ func TestFusionOfFacts(t *testing.T) {
 	if len(ranked) != 2 || ranked[0].ID != "y" {
 		t.Fatalf("what both found comes first: %v", ranked)
 	}
+}
+
+// Age breaks ties and does not decide: a years-old status fact the search
+// ranked first gives up a few places to recent matches, where age
+// multiplied in whole put it under every recent match. That a
+// fact was inferred still counts whole: of two found alike, the one the
+// person said comes first.
+func TestAgeBreaksTiesAndInferenceStillCounts(t *testing.T) {
+	now := time.Now()
+	old, recent := now.AddDate(-6, 0, 0), now.Add(-24*time.Hour)
+	fact := func(id string, created time.Time, isInferred bool) *models.AgentFact {
+		return &models.AgentFact{ID: id, Kind: models.FactPlain, CreatedAt: created, Inferred: isInferred}
+	}
+	oldBest := fact("old-best", old, false)
+	var recentWeak []*models.AgentFact
+	for index := 0; index < 10; index++ {
+		recentWeak = append(recentWeak, fact(fmt.Sprintf("recent-%d", index), recent, false))
+	}
+	ranked := fuseFacts(20, append([]*models.AgentFact{oldBest}, recentWeak...))
+	// It gives up a few places to recent matches almost as good, and no
+	// more: the fifth recent match stays under it.
+	if position, fifth := indexOfFact(ranked, "old-best"), indexOfFact(ranked, "recent-4"); position > fifth {
+		t.Fatalf("the old best match (%d) ranks above the fifth recent one (%d)", position, fifth)
+	}
+
+	said, guessed := fact("said", recent, false), fact("guessed", recent, true)
+	// Both found by both searches at the same positions: only inference
+	// tells them apart.
+	ranked = fuseFacts(2, []*models.AgentFact{guessed, said}, []*models.AgentFact{said, guessed})
+	if ranked[0].ID != "said" {
+		t.Fatalf("a fact somebody said ranks above one the agent inferred: %v", ranked[0].ID)
+	}
+}
+
+func indexOfFact(facts []*models.AgentFact, id string) int {
+	for index, fact := range facts {
+		if fact.ID == id {
+			return index
+		}
+	}
+	return -1
 }
 
 // Two facts can be near in meaning and be about two different people. The

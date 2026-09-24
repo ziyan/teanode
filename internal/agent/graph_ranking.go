@@ -49,7 +49,7 @@ func fuseNodes(limit int, lists ...[]*models.AgentNode) []*models.AgentNode {
 		}
 	}
 	for id, node := range byId {
-		scores[id] *= decayOfNode(node, now)
+		scores[id] *= ageWeight(decayOfNode(node, now))
 	}
 	ids := make([]string, 0, len(scores))
 	for id := range scores {
@@ -71,6 +71,28 @@ func fuseNodes(limit int, lists ...[]*models.AgentNode) []*models.AgentNode {
 	return ranked
 }
 
+// ageFloor is the least an old fact or page keeps of its fused score.
+//
+// Age breaks ties; it does not decide. Multiplied in whole, a status fact
+// with a ninety-day half-life fell to a seventh of its score, so a
+// perfect match from years ago ranked under the twentieth match from this
+// month, and most of what a person asks about their own life -- where
+// they grew up, when a child was born, the job before this one -- is old.
+// A statement that is no longer true is superseded and left out anyway;
+// what age should settle is which of two equally good matches comes
+// first.
+//
+// Fused scores are close together: one place down the list is about a
+// sixtieth less. A floor of 0.7 still let age move an old match down
+// twenty places; at 0.95 it moves it three or four.
+const ageFloor = 0.95
+
+// ageWeight is what age costs a fused score. Age alone: that a fact was
+// inferred rather than told is applied whole, beside it.
+func ageWeight(decay float64) float64 {
+	return ageFloor + (1-ageFloor)*decay
+}
+
 // fuseFacts ranks by reciprocal rank and then by age.
 //
 // Age adjusts the fused score without removing older facts that may still
@@ -86,7 +108,7 @@ func fuseFacts(limit int, lists ...[]*models.AgentFact) []*models.AgentFact {
 		}
 	}
 	for id, fact := range byId {
-		scores[id] *= decayOfFact(fact, now)
+		scores[id] *= ageWeight(ageOfFact(fact, now)) * inferredWeight(fact)
 	}
 	ids := make([]string, 0, len(scores))
 	for id := range scores {
