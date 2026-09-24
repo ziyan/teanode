@@ -72,12 +72,13 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 		lines = append(lines, fmt.Sprintf("#%d %s", fact.Number, fact.Line()))
 	}
 	prompt, err := render("consolidate.txt", map[string]any{
-		"PersonName": personName(run.Owner),
-		"Path":       page.Path,
-		"Name":       page.Name,
-		"Kind":       string(page.Kind),
-		"Existing":   page.Summary,
-		"Facts":      lines,
+		"KnowledgeLanguage": languageName(KnowledgeLanguage(run.Agent, run.Owner)),
+		"PersonName":        personName(run.Owner),
+		"Path":              page.Path,
+		"Name":              page.Name,
+		"Kind":              string(page.Kind),
+		"Existing":          page.Summary,
+		"Facts":             lines,
 	})
 	if err != nil {
 		return false

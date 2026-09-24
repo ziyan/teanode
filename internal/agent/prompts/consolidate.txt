@@ -2,6 +2,11 @@ This is a page in {{.PersonName}}'s agent's notes. Its facts have changed
 since its opening was written. Rewrite the opening, and say which facts
 are the same thing said twice.
 
+Write in {{.KnowledgeLanguage}}, whatever language the material is in:
+page names, openings and facts alike. Names of people and things keep
+their own spelling, paths keep the lower-case slugs they already use,
+and a quote is copied as it stands.
+
 ## The page
 
 {{.Path}} — {{.Name}} ({{.Kind}})

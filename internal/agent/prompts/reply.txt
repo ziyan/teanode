@@ -1,6 +1,6 @@
 {{.PersonName}} is not here, and you answer this message for them under the policy below — or you decline. Answer with one JSON object and nothing else:
 
-{"reply": "the body of the reply, in {{.Language}}, as {{.PersonName}} would send it", "reason": null}
+{"reply": "the body of the reply, in the language the message is written in ({{.Language}} when it cannot be told), as {{.PersonName}} would send it", "reason": null}
 
 or, to decline:
 

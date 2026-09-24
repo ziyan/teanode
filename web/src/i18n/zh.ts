@@ -910,8 +910,11 @@ export const zh: Catalog = {
   'agent.operatorDisabled': '已被管理员关闭。在管理员解除前保持关闭。',
   'agent.aboutMe': '关于我',
   'agent.name': '称呼',
-  'agent.languageField': '书写语言',
+  'agent.languageField': '对话语言',
   'agent.languageFollows': '与账户相同',
+  'agent.knowledgeLanguageField': '工作语言',
+  'agent.knowledgeLanguageFollows': '与对话语言相同（如已设置）',
+  'agent.knowledgeLanguageHint': '对话跟随你说话和界面所用的语言。它自己做的一切（笔记、分拣、摘要、查找、草稿和简报）都用这一种语言写，所以它记下的内容始终是同一种语言。',
   'agent.instructions': '固定指示',
   'agent.instructionsPlaceholder':
     '你是谁、如何写作、什么重要。"我是帆船俱乐部的司库；来自俱乐部的邮件都重要；署名 Z。"',

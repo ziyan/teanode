@@ -34,6 +34,12 @@ type Agent struct {
 	// locale, chosen or learned.
 	Language string `json:"language,omitempty" graphapi:"nullable"`
 
+	// KnowledgeLanguage is what the agent's notes are written in: pages,
+	// openings, facts. Kept apart from Language so that notes stay in one
+	// language while the person reads the dashboard or answers mail in
+	// another; empty follows Language.
+	KnowledgeLanguage string `json:"knowledgeLanguage,omitempty" graphapi:"nullable"`
+
 	// Voice is structured style, for models that follow fields better than
 	// prose. Nil means neutral, medium, no greeting or sign-off.
 	Voice *AgentVoice `json:"voice,omitempty" graphapi:"nullable"`

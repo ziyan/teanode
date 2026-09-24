@@ -2,6 +2,11 @@ These pages in {{.PersonName}}'s agent's notes were filed under `notes`,
 which is where something goes when nobody knew where it belonged. Say
 where each one should live.
 
+Write in {{.KnowledgeLanguage}}, whatever language the material is in:
+page names, openings and facts alike. Names of people and things keep
+their own spelling, paths keep the lower-case slugs they already use,
+and a quote is copied as it stands.
+
 ## Where things live now
 
 {{range .Index}}{{.}}

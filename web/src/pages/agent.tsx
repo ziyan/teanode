@@ -89,6 +89,7 @@ export type Agent = {
   enabled: boolean
   instructions?: string
   language?: string
+  knowledgeLanguage?: string
   voice?: AgentVoice | null
   categories: AgentCategory[]
   notifications?: AgentNotifications | null
@@ -117,11 +118,12 @@ export type AgentView = {
   choices: string[]
   timezone: string
   language: string
+  knowledgeLanguage: string
   categories: string[]
 }
 
 const VIEW = `{
-  agent { id name enabled instructions language askModel dreamFrom dreamUntil dailyTokens operatorDisabledAt confirm
+  agent { id name enabled instructions language knowledgeLanguage askModel dreamFrom dreamUntil dailyTokens operatorDisabledAt confirm
     voice { tone length greeting signoff }
     categories { name description }
     notifications { heldReply highPriority runFailed } }
@@ -132,15 +134,17 @@ const VIEW = `{
   collections { id name kind granted items }
   allowed { enabled triage summaries draftReplies search research autoReply ask schedules browser connectedServers }
   budget { used limit resetsAt cost costLimit currency }
-  choices timezone language categories
+  choices timezone language knowledgeLanguage categories
 }`
 
 export const READ_AGENT = `query { ReadAgent ${VIEW} }`
 const UPDATE_AGENT = `
-  mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String, $voice: AgentVoiceInput,
+  mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String, $knowledgeLanguage: String,
+    $voice: AgentVoiceInput,
     $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput, $confirm: [String!], $askModel: String,
     $dreamFrom: String, $dreamUntil: String, $forget: Boolean) {
-    UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, voice: $voice,
+    UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, knowledgeLanguage: $knowledgeLanguage,
+      voice: $voice,
       categories: $categories, notifications: $notifications, confirm: $confirm, askModel: $askModel,
       dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, forget: $forget) ${VIEW}
   }`
@@ -498,20 +502,25 @@ function AboutForm({ agent, view, busy, onSave }: SaveProps & { view: AgentView 
   const [name, setName] = useState(agent.name)
   const [instructions, setInstructions] = useState(agent.instructions ?? '')
   const [language, setLanguage] = useState(agent.language ?? '')
+  const [knowledgeLanguage, setKnowledgeLanguage] = useState(agent.knowledgeLanguage ?? '')
   useEffect(() => {
     setName(agent.name)
     setInstructions(agent.instructions ?? '')
     setLanguage(agent.language ?? '')
+    setKnowledgeLanguage(agent.knowledgeLanguage ?? '')
     // On the values, not the object: the page reads the agent again every
     // few seconds, and a fresh copy of the same values must not put a
     // field back while somebody is typing into it.
-  }, [agent.name, agent.instructions, agent.language])
+  }, [agent.name, agent.instructions, agent.language, agent.knowledgeLanguage])
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault()
-        void onSave({ name: name.trim(), instructions, language: language.trim() }, t('agent.saved'))
+        void onSave(
+          { name: name.trim(), instructions, language: language.trim(), knowledgeLanguage: knowledgeLanguage.trim() },
+          t('agent.saved'),
+        )
       }}
     >
       <h3>{t('agent.aboutMe')}</h3>
@@ -533,7 +542,20 @@ function AboutForm({ agent, view, busy, onSave }: SaveProps & { view: AgentView 
               block
             />
           </label>
+          <label className="shrink">
+            <span>{t('agent.knowledgeLanguageField')}</span>
+            <Select
+              value={knowledgeLanguage}
+              label={t('agent.knowledgeLanguageField')}
+              options={[{ value: '', label: t('agent.knowledgeLanguageFollows') }, ...AGENT_LANGUAGES]}
+              onChange={setKnowledgeLanguage}
+              placeholder={view.knowledgeLanguage || 'en'}
+              allowCustom
+              block
+            />
+          </label>
         </div>
+        <p className="muted">{t('agent.knowledgeLanguageHint')}</p>
         <label>
           <span>{t('agent.instructions')}</span>
           <textarea

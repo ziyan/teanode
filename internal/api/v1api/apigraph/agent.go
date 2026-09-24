@@ -123,9 +123,11 @@ type AgentView struct {
 	// Choices are the models the caller may pick for conversations.
 	Choices []string `json:"choices"`
 
-	// Timezone and Language are what the agent resolves for the caller.
-	Timezone string `json:"timezone"`
-	Language string `json:"language"`
+	// Timezone and Language are what the agent resolves for the caller;
+	// KnowledgeLanguage is what its notes are written in.
+	Timezone          string `json:"timezone"`
+	Language          string `json:"language"`
+	KnowledgeLanguage string `json:"knowledgeLanguage"`
 
 	// Categories are the fixed vocabulary followed by the caller's own.
 	Categories []string `json:"categories"`
@@ -190,15 +192,17 @@ type AgentUsageArguments struct {
 
 // UpdateAgentArguments are what a person may change about their agent.
 type UpdateAgentArguments struct {
-	Enabled       *bool                      `json:"enabled"`
-	Name          *string                    `json:"name"`
-	Instructions  *string                    `json:"instructions"`
-	Language      *string                    `json:"language"`
-	Voice         *models.AgentVoice         `json:"voice"`
-	Categories    *[]models.AgentCategory    `json:"categories"`
-	Notifications *models.AgentNotifications `json:"notifications"`
-	Confirm       *[]string                  `json:"confirm"`
-	AskModel      *string                    `json:"askModel"`
+	Enabled      *bool   `json:"enabled"`
+	Name         *string `json:"name"`
+	Instructions *string `json:"instructions"`
+	Language     *string `json:"language"`
+	// KnowledgeLanguage is what the agent's notes are written in.
+	KnowledgeLanguage *string                    `json:"knowledgeLanguage"`
+	Voice             *models.AgentVoice         `json:"voice"`
+	Categories        *[]models.AgentCategory    `json:"categories"`
+	Notifications     *models.AgentNotifications `json:"notifications"`
+	Confirm           *[]string                  `json:"confirm"`
+	AskModel          *string                    `json:"askModel"`
 
 	// DreamFrom and DreamUntil are the hours of this person's night, as
 	// "HH:MM" in their own zone. The nightly run happens between them and
@@ -311,14 +315,15 @@ func (self *graph) agentView(ctx context.Context, tx db.Transaction, user *model
 		found.Confirm = agenttools.Rename(found.Confirm)
 	}
 	view := &AgentView{
-		Agent:       found,
-		Sources:     []*AgentSource{},
-		Collections: []*AgentCollection{},
-		Allowed:     self.allowed(),
-		Choices:     append([]string{}, self.config.Current().Agent.Models.Choices...),
-		Timezone:    agent.Location(user).String(),
-		Language:    agent.Language(found, user),
-		Categories:  found.CategoryNames(),
+		Agent:             found,
+		Sources:           []*AgentSource{},
+		Collections:       []*AgentCollection{},
+		Allowed:           self.allowed(),
+		Choices:           append([]string{}, self.config.Current().Agent.Models.Choices...),
+		Timezone:          agent.Location(user).String(),
+		Language:          agent.Language(found, user),
+		KnowledgeLanguage: agent.KnowledgeLanguage(found, user),
+		Categories:        found.CategoryNames(),
 	}
 	sources, err := self.sourcesOf(tx, user.ID)
 	if err != nil {
@@ -488,6 +493,9 @@ func (self *graph) UpdateAgent(ctx context.Context, arguments UpdateAgentArgumen
 		}
 		if arguments.Language != nil {
 			agent.Language = strings.TrimSpace(*arguments.Language)
+		}
+		if arguments.KnowledgeLanguage != nil {
+			agent.KnowledgeLanguage = strings.TrimSpace(*arguments.KnowledgeLanguage)
 		}
 		if arguments.Voice != nil {
 			voice := *arguments.Voice

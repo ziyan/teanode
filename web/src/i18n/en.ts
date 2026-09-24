@@ -948,8 +948,12 @@ export const en = {
   'agent.operatorDisabled': 'Switched off by your administrator. It stays off until they lift that.',
   'agent.aboutMe': 'About me',
   'agent.name': 'What to call it',
-  'agent.languageField': 'Writes in',
+  'agent.languageField': 'Talks with you in',
   'agent.languageFollows': 'Same as my account',
+  'agent.knowledgeLanguageField': 'Works in',
+  'agent.knowledgeLanguageFollows': 'Same as it talks in, if set',
+  'agent.knowledgeLanguageHint':
+    'Conversations follow the language you talk and read the dashboard in. Everything it does on its own (notes, sorting, summaries, research, drafts and briefs) is written in this one language, so what it keeps stays in one language.',
   'agent.instructions': 'Standing instructions',
   'agent.instructionsPlaceholder':
     'Who you are, how you write, what matters to you. "I am the treasurer of the sailing club; anything from the club is important; sign as Z."',

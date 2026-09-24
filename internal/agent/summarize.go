@@ -74,7 +74,7 @@ func SummarizePrompt(input *SummarizeInput) ([]llm.ChatMessage, error) {
 	user, err := render("summarize.txt", summarizeData{
 		PersonName:  personName(input.Owner),
 		MailboxName: input.Mailbox.Name,
-		Language:    languageName(Language(input.Agent, input.Owner)),
+		Language:    languageName(KnowledgeLanguage(input.Agent, input.Owner)),
 		Subject:     input.Subject,
 		Detailed:    input.Source != nil && input.Source.Summaries != nil && input.Source.Summaries.Style == "detailed",
 		Previous:    strings.TrimSpace(input.Previous),

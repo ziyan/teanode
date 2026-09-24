@@ -84,9 +84,11 @@ type AgentOperation interface {
 
 	// TouchUserLocation records where a person is and what they read in, as
 	// their browser or command line said. The zone is kept only while the
-	// account follows the browser. Not audited: crossing a border is not an
-	// administrative change.
-	TouchUserLocation(userId, timezone, locale string, at time.Time) error
+	// account follows the browser. A locale the person chose in the
+	// dashboard replaces the one kept; one a client only passed along, a
+	// browser's or a shell's, fills it in when nothing is kept yet. Not
+	// audited: crossing a border is not an administrative change.
+	TouchUserLocation(userId, timezone, locale string, isLocaleChosen bool, at time.Time) error
 }
 
 // AgentJobFilter narrows a job listing.
@@ -122,6 +124,7 @@ type agentModel struct {
 	Enabled            bool       `gorm:"column:enabled"`
 	Instructions       string     `gorm:"column:instructions"`
 	Language           string     `gorm:"column:language"`
+	KnowledgeLanguage  string     `gorm:"column:knowledge_language"`
 	Voice              []byte     `gorm:"column:voice;type:jsonb"`
 	Categories         []byte     `gorm:"column:categories;type:jsonb"`
 	Notifications      []byte     `gorm:"column:notifications;type:jsonb"`
@@ -187,22 +190,23 @@ func (agentUsageModel) TableName() string { return "agent_usage" }
 
 func agentFromModel(model *agentModel) (*models.Agent, error) {
 	agent := &models.Agent{
-		ID:             model.ID,
-		CreatedAt:      model.CreatedAt.In(time.Local),
-		ModifiedAt:     model.ModifiedAt.In(time.Local),
-		UserID:         model.UserID,
-		Name:           model.Name,
-		Enabled:        model.Enabled,
-		Instructions:   model.Instructions,
-		Language:       model.Language,
-		Categories:     []models.AgentCategory{},
-		Confirm:        []string{},
-		AskModel:       model.AskModel,
-		DailyTokens:    model.DailyTokens,
-		DailyCost:      model.DailyCost,
-		DreamFrom:      model.DreamFrom,
-		DreamUntil:     model.DreamUntil,
-		DreamBootstrap: model.DreamBootstrap,
+		ID:                model.ID,
+		CreatedAt:         model.CreatedAt.In(time.Local),
+		ModifiedAt:        model.ModifiedAt.In(time.Local),
+		UserID:            model.UserID,
+		Name:              model.Name,
+		Enabled:           model.Enabled,
+		Instructions:      model.Instructions,
+		Language:          model.Language,
+		KnowledgeLanguage: model.KnowledgeLanguage,
+		Categories:        []models.AgentCategory{},
+		Confirm:           []string{},
+		AskModel:          model.AskModel,
+		DailyTokens:       model.DailyTokens,
+		DailyCost:         model.DailyCost,
+		DreamFrom:         model.DreamFrom,
+		DreamUntil:        model.DreamUntil,
+		DreamBootstrap:    model.DreamBootstrap,
 	}
 	if model.DreamedAt != nil {
 		at := model.DreamedAt.In(time.Local)
@@ -247,6 +251,7 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		Enabled:            agent.Enabled,
 		Instructions:       agent.Instructions,
 		Language:           agent.Language,
+		KnowledgeLanguage:  agent.KnowledgeLanguage,
 		AskModel:           agent.AskModel,
 		DailyTokens:        agent.DailyTokens,
 		DailyCost:          agent.DailyCost,
@@ -417,7 +422,7 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 	if err := self.applyMutation(models.AuditResourceAgent, agentId, models.AuditActionUpdate, before, &after, func(tx *gorm.DB) error {
 		return tx.Model(&agentModel{}).Where("\"id\" = ?", agentId).Updates(map[string]any{
 			"modified_at": model.ModifiedAt, "name": model.Name, "enabled": model.Enabled,
-			"instructions": model.Instructions, "language": model.Language,
+			"instructions": model.Instructions, "language": model.Language, "knowledge_language": model.KnowledgeLanguage,
 			"voice": model.Voice, "categories": model.Categories, "notifications": model.Notifications,
 			"confirm": model.Confirm, "ask_model": model.AskModel, "daily_tokens": model.DailyTokens, "daily_cost": model.DailyCost,
 			"operator_disabled_at": model.OperatorDisabledAt,
@@ -893,13 +898,15 @@ func (self *transaction) ScavengeAgentUsage(before time.Time) (int64, error) {
 	return result.RowsAffected, result.Error
 }
 
-func (self *transaction) TouchUserLocation(userId, timezone, locale string, at time.Time) error {
+func (self *transaction) TouchUserLocation(userId, timezone, locale string, isLocaleChosen bool, at time.Time) error {
 	if userId == "" {
 		return nil
 	}
 	updates := map[string]any{"timezone_seen_at": at}
-	if locale != "" {
+	if locale != "" && isLocaleChosen {
 		updates["locale_seen"] = locale
+	} else if locale != "" {
+		updates["locale_seen"] = gorm.Expr(`CASE WHEN COALESCE("locale_seen", '') = '' THEN ? ELSE "locale_seen" END`, locale)
 	}
 	if timezone != "" {
 		// Only while the account follows the browser; a pinned zone stays.

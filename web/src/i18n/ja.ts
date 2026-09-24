@@ -943,8 +943,11 @@ export const ja: Catalog = {
   'agent.operatorDisabled': '管理者により停止されています。解除されるまで無効のままです。',
   'agent.aboutMe': '私について',
   'agent.name': '呼び名',
-  'agent.languageField': '書く言語',
+  'agent.languageField': '会話の言語',
   'agent.languageFollows': 'アカウントと同じ',
+  'agent.knowledgeLanguageField': '作業の言語',
+  'agent.knowledgeLanguageFollows': '会話の言語と同じ（設定時）',
+  'agent.knowledgeLanguageHint': '会話は、あなたが話し画面で使う言語に合わせます。自分で行うこと（メモ、仕分け、要約、調査、下書き、ブリーフ）はすべてこの一つの言語で書くので、残す内容は一つの言語にそろいます。',
   'agent.instructions': '常時の指示',
   'agent.instructionsPlaceholder':
     'あなたが誰で、どう書き、何が大事か。「私はヨットクラブの会計です。クラブからのものは重要。Z と署名する。」',

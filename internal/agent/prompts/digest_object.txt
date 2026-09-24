@@ -2,6 +2,11 @@ You read a batch of {{.PersonName}}'s files and chat and wrote up what is
 worth keeping, in words. The words are below. Nobody is waiting; what is
 needed now is the same thing as the object that files it.
 
+Write in {{.KnowledgeLanguage}}, whatever language the material is in:
+page names, openings and facts alike. Names of people and things keep
+their own spelling, paths keep the lower-case slugs they already use,
+and a quote is copied as it stands.
+
 <reading>
 {{.Reading}}
 </reading>

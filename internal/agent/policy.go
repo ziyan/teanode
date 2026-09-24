@@ -34,9 +34,10 @@ func SourceActive(agent *models.Agent, mailbox *models.Mailbox) bool {
 	return agent.Active() && mailbox != nil && mailbox.Agent != nil && mailbox.Agent.Granted
 }
 
-// Language is what the agent writes in for a person: the agent's own
-// setting, else the account's chosen locale, else the one its browser
-// said, else empty for the model's default.
+// Language is what the agent talks to a person in, in a conversation: the
+// agent's own setting, else the account's chosen locale, else the one the
+// dashboard said, else empty for the model's default. Only conversations
+// use it; work the agent does on its own uses KnowledgeLanguage.
 func Language(agent *models.Agent, user *models.User) string {
 	if agent != nil && agent.Language != "" {
 		return agent.Language
@@ -46,6 +47,25 @@ func Language(agent *models.Agent, user *models.User) string {
 			return user.Locale
 		}
 		return user.LocaleSeen
+	}
+	return ""
+}
+
+// KnowledgeLanguage is what the agent writes in when nobody is talking to
+// it: its notes, and the triage, summaries, research, drafts and briefs it
+// makes on its own. The agent's own setting for it, else the language the
+// agent or the account was set to, never the one the dashboard happens to
+// be shown in, so that switching the dashboard's language does not switch
+// what the agent keeps; else empty for the model's default.
+func KnowledgeLanguage(agent *models.Agent, user *models.User) string {
+	if agent != nil && agent.KnowledgeLanguage != "" {
+		return agent.KnowledgeLanguage
+	}
+	if agent != nil && agent.Language != "" {
+		return agent.Language
+	}
+	if user != nil {
+		return user.Locale
 	}
 	return ""
 }

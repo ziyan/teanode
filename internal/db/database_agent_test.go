@@ -131,7 +131,7 @@ func TestAgentQueueAndUsage(t *testing.T) {
 	})
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		if err := tx.TouchUserLocation(agent.UserID, "Europe/Berlin", "de", time.Now()); err != nil {
+		if err := tx.TouchUserLocation(agent.UserID, "Europe/Berlin", "de", true, time.Now()); err != nil {
 			t.Fatalf("TouchUserLocation: %s", err)
 		}
 		user, _ := tx.GetUser(agent.UserID)
@@ -144,7 +144,7 @@ func TestAgentQueueAndUsage(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("UpdateUser: %s", err)
 		}
-		if err := tx.TouchUserLocation(agent.UserID, "America/New_York", "en", time.Now()); err != nil {
+		if err := tx.TouchUserLocation(agent.UserID, "America/New_York", "en", true, time.Now()); err != nil {
 			t.Fatalf("TouchUserLocation: %s", err)
 		}
 		user, _ = tx.GetUser(agent.UserID)

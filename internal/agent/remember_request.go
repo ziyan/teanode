@@ -18,7 +18,7 @@ func (self *Agent) askWhatWasLearned(ctx context.Context, run *Run, conversation
 		return nil, nil, err
 	}
 
-	prompt, err := buildRememberPrompt(run.Owner, unread, material)
+	prompt, err := buildRememberPrompt(run.Owner, KnowledgeLanguage(run.Agent, run.Owner), unread, material)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -59,13 +59,14 @@ func shownText(message *models.AgentMessage) string {
 	return unclosable(cutRunes(message.Content, rememberMessageCharacters))
 }
 
-func buildRememberPrompt(owner *models.User, unread []*models.AgentMessage, material *rememberMaterial) (string, error) {
+func buildRememberPrompt(owner *models.User, knowledgeLanguage string, unread []*models.AgentMessage, material *rememberMaterial) (string, error) {
 	return render("remember.txt", map[string]any{
-		"PersonName": personName(owner),
-		"Index":      material.IndexLines,
-		"Pages":      material.PageBlocks,
-		"Unlearned":  material.UnlearnedStatements,
-		"Transcript": transcriptFor(unread),
-		"Most":       rememberFacts,
+		"KnowledgeLanguage": languageName(knowledgeLanguage),
+		"PersonName":        personName(owner),
+		"Index":             material.IndexLines,
+		"Pages":             material.PageBlocks,
+		"Unlearned":         material.UnlearnedStatements,
+		"Transcript":        transcriptFor(unread),
+		"Most":              rememberFacts,
 	})
 }
