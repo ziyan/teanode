@@ -529,9 +529,11 @@ that it did, so a later dream can go back over it finely.
 **Divide what has outgrown a page.** A page past forty facts is put to
 the model once — three to eight themed groups, a slug each, at least
 three facts a group — and the facts move to children under it
-(`projects/falcon-rosedale/wes-configuration`), keeping their
+(`projects/lantern/service-configuration`), keeping their
 identifiers and taking new numbers; both histories say so, and both
-pages are due a fresh opening. The person's own page divides the same
+pages are due a fresh opening. The model is shown the pages already
+under the one it divides, and a group that is one of them joins it
+rather than making a second page beside it. The person's own page divides the same
 way, into topics: who they are stays, their finances go under it. Five
 pages a dream. A turn reads twenty facts of a page and the tool shows
 sixty, most recently wanted or changed first — by number they were the

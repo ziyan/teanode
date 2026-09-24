@@ -736,9 +736,11 @@ func runAgentGraphForget(ctx context.Context, command *cli.Command) error {
 	// Without a number the whole subtree goes, and none of it is
 	// recoverable: the page, every fact on it, and whatever was filed
 	// underneath -- which for a root is most of what the agent knows.
-	// One fact is not asked about, because striking one sentence is what
-	// this command is mostly used for and the strike is recorded as
-	// feedback either way.
+	// One fact is not asked about, because taking out one sentence is what
+	// this command is mostly used for. That fact is deleted, not struck:
+	// what is left of it is its words in the page's history and a note to
+	// the agent that it was unlearned, and it comes back only by filing it
+	// again.
 	//
 	// Asked before the connection is opened, so that a refusal costs
 	// nothing and a script finds out what it needs from the first line
