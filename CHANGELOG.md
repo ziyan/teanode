@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.61.0] - 2026-09-24
+
+### Added
+
+- The agent introduces itself to a new person, asks now and then to check a few things it remembers, and gives an idle person the odd tip, each in the main conversation, which opens by itself. Memory checks and tips can be switched off in the agent's settings. (#150)
+- The Memory tab shows the memory check's questions and how the agent scored against them over time. (#150)
+
 ## [0.60.2] - 2026-09-24
 
 ### Fixed
