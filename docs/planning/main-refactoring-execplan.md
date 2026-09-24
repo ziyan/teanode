@@ -37,10 +37,18 @@ permission semantics, model behavior or schema contracts in one patch.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, agent calendar mutation retries, contact proposal acceptance and protocol adapters, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; sent ingestion now rejects missing stored bodies instead of indexing placeholder text; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; graph prompt context, recall, ranking, embedding, retrieval, indexing and note updates now live in separate files; dream scheduling, budget, requests, digest, timeline, consolidation, organization and splitting now have separate files; digest material retrieval, prompt construction and response decoding now have explicit boundaries; memory-tool page preparation now happens before its write transaction; HTTP recall now owns short read phases outside model calls; detached dream bookkeeping now has a completion deadline and digest fact writes, read markers and progress commit together; synthetic page/retrieval baselines now cover both database images; graph embedding reports only committed writes; embedding requests and stored identities now share a registry snapshot; periodic and interactive graph embedding reject results for changed or deleted inputs; existing page and fact vectors now follow graph metadata inputs; remaining job/model adapters and source-local measurements remain.
+- [x] (2026-09-24) Merge current main and guard the prepared fact embedding used by remember and digest folding against page-name and fact-version changes before storing or searching by it.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+- The shared fold path stored a prepared fact vector directly after a page
+  could be renamed. Its similarity search then used that stale vector and old
+  page aliases. A fact edited after preparation could also be retired using
+  the older in-memory text. A local-provider regression renames the page
+  during the remember embedding request; both it and a direct changed-fact
+  regression fail with the prior fold implementation.
 
 - Existing graph vectors could survive changes to their embedded words even
   after in-flight embedding writes were guarded. Aliases feed page embeddings,
@@ -237,6 +245,15 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+- Decision: compare a prepared fact's embedded text with its current page,
+  then use the guarded graph-vector writer before similarity retrieval in the
+  shared fold path. A rejected result skips both storage and the search; a
+  metadata-only page change with identical text retains normal folding.
+  Rationale: the fact was just inserted under the page row lock, while its
+  embedding was computed earlier. The existing guarded writer verifies the
+  fact and page versions without a provider call inside the transaction.
+  Date/Author: 2026-09-24, implementation review.
 
 - Decision: invalidate existing graph vectors only when the page or fact words
   used to create them change, comparing a locked page row and preserving the
@@ -2745,3 +2762,27 @@ It follows [merged PR #86](https://github.com/ziyan/teanode/pull/86), whose
 final corrections moved API file reads outside transactions and requeued jobs
 that hit their work deadline without charging a failure; those changes are
 already on main and are separate from this graph metadata follow-up.
+
+After merging main 6c2c2c75, the prepared-write audit found another vector
+writer in the shared remember/digest fold path. The fact meaning is requested
+after opening its page but before the transaction that files the fact. If the
+page is renamed during that request, the old code persisted a vector for the
+old name and used it to search for a twin. The fold now compares the exact
+embedded fact text against the current page, writes through
+PutAgentGraphVectors, and searches for twins only after that guarded write is
+accepted. It filters candidates with the current page aliases. A changed
+fact version is rejected; pinning a page without changing the embedded text
+still permits its normal fold. A provider-hook test exercises the complete
+remember preparation and filing path, and an internal test supplies a matching
+candidate and an edited fact to show the old path could retire changed words.
+Both tests pass against disposable vector PostgreSQL. A Go overlay of the
+pre-change remember_fold.go makes the stale-vector and changed-fact assertions
+fail. The full stock PostgreSQL suite on the merged tree passed 2,262 tests
+with four skips and 44.6% aggregate coverage; repository lint, naming checks
+and both binary builds passed. The final focused stock race run passed both
+new tests after their last edits. The full database and agent race suites also
+passed against disposable vector PostgreSQL (59.067s and 108.829s). Private-host,
+path and secret scans passed against the proposed PR files. This closes the
+prepared fact-vector path only; other model-write paths remain subject to
+their own audit. The newer memory-write invariants plan on main owns
+consolidation and evidence policy, which this change leaves intact.
