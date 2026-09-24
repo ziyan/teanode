@@ -108,7 +108,7 @@ func (self *Agent) runExtract(ctx context.Context, run *Run) error {
 	}
 	prompt, err := render("extract.txt", map[string]any{
 		"PersonName": personName(run.Owner),
-		"Language":   languageName(Language(run.Agent, run.Owner)),
+		"Language":   languageName(KnowledgeLanguage(run.Agent, run.Owner)),
 		"Today":      time.Now().In(Location(run.Owner)).Format("Monday 2 January 2006"),
 		"Zone":       Location(run.Owner).String(),
 		"Sender":     strings.TrimSpace(mail.From),

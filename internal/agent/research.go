@@ -77,7 +77,7 @@ func (self *Agent) runResearch(ctx context.Context, run *Run) error {
 	data := map[string]any{
 		"PersonName":  personName(run.Owner),
 		"MailboxName": run.Mailbox.Name,
-		"Language":    languageName(Language(run.Agent, run.Owner)),
+		"Language":    languageName(KnowledgeLanguage(run.Agent, run.Owner)),
 		"Memories":    memories,
 		"ItemID":      item,
 		"Message":     strings.TrimSpace(message.Render()),

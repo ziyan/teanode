@@ -234,7 +234,7 @@ func (self *Agent) deliverSchedule(ctx context.Context, run *Run, schedule *mode
 // actually want to hear each morning.
 func BriefPrompt(found *models.Agent, owner *models.User) string {
 	return strings.Join([]string{
-		"Tell me what today holds and what is waiting for me, in " + languageName(Language(found, owner)) + ", in a few short paragraphs.",
+		"Tell me what today holds and what is waiting for me, in " + languageName(KnowledgeLanguage(found, owner)) + ", in a few short paragraphs.",
 		"",
 		"What is on in my calendar today, in order, with times. What arrived since yesterday that needs an answer from me, with who it is from and what they want. Anything you are holding a reply for. What I asked you to keep an eye on.",
 		"",

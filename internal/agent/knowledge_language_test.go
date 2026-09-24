@@ -7,13 +7,20 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// The notes are written in their own language when one is set, and in the
-// language the agent writes to the person in otherwise; the prompts that
-// write notes say which.
+// The agent's own work is written in its notes language when one is set,
+// else in a language somebody set, never in the one the dashboard happens
+// to be shown in; the prompts that write notes say which.
 func TestNotesAreWrittenInTheirOwnLanguage(test *testing.T) {
 	owner := &models.User{Name: "Fixture Owner", LocaleSeen: "zh"}
-	if language := KnowledgeLanguage(&models.Agent{}, owner); language != "zh" {
-		test.Fatalf("with nothing set the notes follow the person's language, got %q", language)
+	if language := KnowledgeLanguage(&models.Agent{}, owner); language != "" {
+		test.Fatalf("the dashboard's language must not reach the agent's own work, got %q", language)
+	}
+	if language := Language(&models.Agent{}, owner); language != "zh" {
+		test.Fatalf("a conversation follows the dashboard's language, got %q", language)
+	}
+	chosen := &models.User{Name: "Fixture Owner", Locale: "de", LocaleSeen: "zh"}
+	if language := KnowledgeLanguage(&models.Agent{}, chosen); language != "de" {
+		test.Fatalf("with nothing set on the agent its work follows the account's chosen locale, got %q", language)
 	}
 	if language := KnowledgeLanguage(&models.Agent{Language: "ja"}, owner); language != "ja" {
 		test.Fatalf("with nothing set the notes follow the agent's language, got %q", language)
