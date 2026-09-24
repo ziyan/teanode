@@ -36,11 +36,16 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 4 (in progress): retry protection, storage modes, persistence, transactional exchange/composition, the submission coordinator and bounded recovery worker are implemented; the mailbox send API uses acceptance and recovery, and bounded dispatch wakes on commit; held automatic replies now commit acceptance and final reply state together; the mail-send tool retains identity across retries using either the stable draft key or its source item identifier; scheduled mail and goal notices now retain acceptance per job; durable cancellation now resolves uncertain sends before editing, and the dashboard retains its exact pending request through retries and reloads; the domain API and CLI now retain operator/console send identities and support identity-only acceptance lookup; deployment gates and cross-adapter review remain.
 - [x] (2026-09-20) Keep draft bytes through transaction rollback; committed item removal starts normal message retention.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, agent calendar mutation retries, contact proposal acceptance and protocol adapters, knowledge-source and rule-update commands remain.
-- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; sent ingestion now rejects missing stored bodies instead of indexing placeholder text; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; graph prompt context, recall, ranking, embedding, retrieval, indexing and note updates now live in separate files; dream scheduling, budget, requests, digest, timeline, consolidation, organization and splitting now have separate files; digest material retrieval, prompt construction and response decoding now have explicit boundaries; memory-tool page preparation now happens before its write transaction; HTTP recall now owns short read phases outside model calls; detached dream bookkeeping now has a completion deadline and digest fact writes, read markers and progress commit together; synthetic page/retrieval baselines now cover both database images; graph embedding reports only committed writes; embedding requests and stored identities now share a registry snapshot; periodic and interactive graph embedding reject results for changed or deleted inputs; remaining job/model adapters and source-local measurements remain.
+- [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; sent ingestion now rejects missing stored bodies instead of indexing placeholder text; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; graph prompt context, recall, ranking, embedding, retrieval, indexing and note updates now live in separate files; dream scheduling, budget, requests, digest, timeline, consolidation, organization and splitting now have separate files; digest material retrieval, prompt construction and response decoding now have explicit boundaries; memory-tool page preparation now happens before its write transaction; HTTP recall now owns short read phases outside model calls; detached dream bookkeeping now has a completion deadline and digest fact writes, read markers and progress commit together; synthetic page/retrieval baselines now cover both database images; graph embedding reports only committed writes; embedding requests and stored identities now share a registry snapshot; periodic and interactive graph embedding reject results for changed or deleted inputs; existing page and fact vectors now follow graph metadata inputs; remaining job/model adapters and source-local measurements remain.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+- Existing graph vectors could survive changes to their embedded words even
+  after in-flight embedding writes were guarded. Aliases feed page embeddings,
+  and a page's name feeds every fact on it. An insert conflict was a separate
+  gap: it overwrote words before the old row could be compared.
 
 - Interactive fact notes could return duplicate-fact suggestions based on words
   that changed during embedding, in addition to storing the stale vector. The
@@ -232,6 +237,14 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+- Decision: invalidate existing graph vectors only when the page or fact words
+  used to create them change, comparing a locked page row and preserving the
+  insert winner's unrelated state. Align fact-edit and fact-move locks with the
+  guarded writer's fact-then-page order.
+  Rationale: changed inputs must reenter backfill without reembedding pages
+  whose controls or paths changed but whose embedded text did not.
+  Date/Author: 2026-09-23, implementation review.
 
 - Decision: use the guarded graph-vector write for interactive page and fact
   notes, and skip duplicate retrieval when the write rejects a stale result.
@@ -2698,3 +2711,37 @@ runs 2,087 tests with two expected skips and 42.5% aggregate coverage. All agent
 packages pass race tests against the disposable vector database. Both binaries
 build, repository lint and gogolint pass, and added-text privacy and staged
 secret checks pass. No dashboard changes are included.
+
+The next graph follow-up compared existing vectors against the actual embedding
+inputs. A page vector includes its name, summary and aliases; a fact vector
+includes its sentence and page name. PutAgentNode previously retained page
+vectors after alias changes and fact vectors after page renames. MoveAgentFact,
+which MergeAgentNodes uses, retained a fact vector after a move to a differently
+named page. An insert conflict could also replace a page's words while keeping
+the first writer's vectors. These paths now delete only affected vectors in the
+same transaction, and a move between pages with the same embedded name retains
+its vector. Ordinary path moves do not change these inputs because pages have
+names; pinning, importance and other controls also leave vectors intact.
+
+PutAgentNode locks the current row before comparing content. Its insert-conflict
+path locks the winner and preserves the prior limited set of overwritten
+columns, including the winning row's use and ranking state. Both insert outcomes
+read back the stored row so the returned build version remains populated. Fact
+edits and fact moves take fact-then-page locks before vector changes, matching
+the guarded vector writer and preventing a rename/vector-delete lock inversion. A failed
+transaction restores both metadata and vectors. Focused tests pass against the
+disposable vector PostgreSQL image after rebasing on main d70d2e8e. A Go
+overlay of the original database_graph.go makes the alias/name, insert-conflict
+and moved-fact regressions fail, confirming they catch the prior behavior.
+The full stock PostgreSQL suite before the final successful-insert readback
+correction passed 2,186 tests with four expected skips and 43.3% aggregate
+coverage. The database and agent packages passed with the race detector
+against the vector PostgreSQL image. The focused database suite and its race
+run passed again after the readback correction. The final build, lint and naming checks
+passed. This governs subsequent writes; it does not identify or rebuild vectors
+that were already stale before the correction. It also does not close the remaining
+prepared conversation-memory/model-write audit.
+It follows [merged PR #86](https://github.com/ziyan/teanode/pull/86), whose
+final corrections moved API file reads outside transactions and requeued jobs
+that hit their work deadline without charging a failure; those changes are
+already on main and are separate from this graph metadata follow-up.
