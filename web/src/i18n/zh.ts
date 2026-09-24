@@ -2827,6 +2827,7 @@ export const zh: Catalog = {
   'memoryCheck.answersOther': '{count} 个回答',
   'memoryCheck.answerFrom': '来源',
   'memoryCheck.verdict': '判定',
+  'memoryCheck.expectedAnswer': '记录的答案',
   'memoryCheck.agentAnswer': '助手的回答',
   'memoryCheck.verdictReason': '理由',
   'memoryCheck.verdictCorrect': '正确',

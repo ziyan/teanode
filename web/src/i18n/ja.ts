@@ -2917,6 +2917,7 @@ export const ja: Catalog = {
   'memoryCheck.answersOther': '{count} 件の回答',
   'memoryCheck.answerFrom': '回答元',
   'memoryCheck.verdict': '判定',
+  'memoryCheck.expectedAnswer': '記録された回答',
   'memoryCheck.agentAnswer': 'エージェントの回答',
   'memoryCheck.verdictReason': '理由',
   'memoryCheck.verdictCorrect': '正解',

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { graphql } from '../api'
 import { ErrorMessage, Loading, Tag, formatMoney, formatTime } from './common'
@@ -310,6 +310,18 @@ export function MemoryCheckSection() {
   const [isAskingForCheck, setIsAskingForCheck] = useState(false)
   const [isAskingForGrading, setIsAskingForGrading] = useState(false)
   const [openRun, setOpenRun] = useState<EvaluationRun | null>(null)
+  // The run's answers open below the runs, off the screen on a phone:
+  // brought into view as they open, or pressing Answers looks like
+  // nothing happened.
+  const answersPanel = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    // Smoothly, and only when it is not in view already: a jump reads as
+    // the whole page flickering.
+    const panel = answersPanel.current
+    if (!openRun || !panel) return
+    const top = panel.getBoundingClientRect().top
+    if (top < 0 || top > window.innerHeight * 0.6) panel.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [openRun])
   const [isOnlyMissedOrWrong, setIsOnlyMissedOrWrong] = useState(true)
 
   const answersQuery = useQuery(
@@ -598,6 +610,22 @@ export function MemoryCheckSection() {
       render: (answer) => <Tag value={verdictLabel(answer.answerVerdict)} tone={verdictTone(answer.answerVerdict)} />,
     },
     {
+      // The answer on record beside the agent's, so a verdict can be
+      // judged without opening the question.
+      key: 'expectedAnswer',
+      header: t('memoryCheck.expectedAnswer'),
+      truncate: true,
+      value: (answer) => questionsById.get(answer.questionId)?.expectedAnswer ?? '',
+      render: (answer) => {
+        const expectedAnswer = questionsById.get(answer.questionId)?.expectedAnswer ?? ''
+        return (
+          <Tooltip label={expectedAnswer}>
+            <span>{expectedAnswer}</span>
+          </Tooltip>
+        )
+      },
+    },
+    {
       key: 'answerText',
       header: t('memoryCheck.agentAnswer'),
       truncate: true,
@@ -635,7 +663,10 @@ export function MemoryCheckSection() {
       title={t('memoryCheck.title')}
       description={t('memoryCheck.hint')}
       action={
-        <>
+        // One group: on a phone the section's head pushes each of its
+        // actions to the right on its own, which spread two buttons across
+        // the width with the line's whole slack between them.
+        <div className="row-actions memory-check-actions">
           <button type="button" disabled={isAskingForCheck} onClick={() => void askForCheck()}>
             {t('memoryCheck.checkNow')}
           </button>
@@ -648,7 +679,7 @@ export function MemoryCheckSection() {
               {hasRunInProgress ? t('memoryCheck.grading') : t('memoryCheck.gradeNow')}
             </button>
           ) : null}
-        </>
+        </div>
       }
     >
       <ErrorMessage error={questionsQuery.error} />
@@ -728,7 +759,7 @@ export function MemoryCheckSection() {
         </div>
       ) : null}
       {openRun ? (
-        <div className="settings-subform">
+        <div className="settings-subform" ref={answersPanel}>
           <div className="settings-section-head">
             <div>
               <h4>{t('memoryCheck.answersOf', { when: formatTime(openRun.startedAt) })}</h4>

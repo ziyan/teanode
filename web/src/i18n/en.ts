@@ -2954,6 +2954,7 @@ export const en = {
   'memoryCheck.answersOther': '{count} answers',
   'memoryCheck.answerFrom': 'From',
   'memoryCheck.verdict': 'Verdict',
+  'memoryCheck.expectedAnswer': 'Answer on record',
   'memoryCheck.agentAnswer': "Agent's answer",
   'memoryCheck.verdictReason': 'Why',
   'memoryCheck.verdictCorrect': 'Correct',

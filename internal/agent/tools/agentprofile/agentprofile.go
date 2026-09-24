@@ -31,9 +31,9 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "agent_profile", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "Your own profile, as the person tells it to you. `set` changes your name, the language you talk to them in, or adds a line to your standing instructions (never replaces them). `onboarding_done` ends your introduction. `not_now` keeps you from starting a conversation on your own for a day. `no_more_tips` and `no_more_memory_checks` switch those off. For the person's own name use account_update.",
+				Description: "Your own profile, as the person tells it to you. `set` changes your name, the language you talk to them in, or adds a line to your standing instructions (never replaces them). `onboarding_done` ends your introduction. `not_now` keeps you from starting a conversation on your own for a day. `no_more_tips` and `no_more_memory_checks` switch those off, only when they say they never want them; stopping one check or one tip is not that. `tips_on` and `memory_checks_on` switch them back on. For the person's own name use account_update.",
 				Parameters: tools.Object(map[string]any{
-					"action":          tools.EnumProperty("what to do", "set", "onboarding_done", "not_now", "no_more_tips", "no_more_memory_checks"),
+					"action":          tools.EnumProperty("what to do", "set", "onboarding_done", "not_now", "no_more_tips", "no_more_memory_checks", "tips_on", "memory_checks_on"),
 					"agent_name":      tools.StringProperty("for set: what they want to call you"),
 					"language":        tools.StringProperty("for set: the language to talk to them in, as a tag: en, ja, zh"),
 					"add_instruction": tools.StringProperty("for set: one line to add to your standing instructions, in their words: what they want help with, how they like to be written to"),
@@ -63,6 +63,10 @@ func init() {
 						return "Switch the agent's tips off"
 					case "no_more_memory_checks":
 						return "Switch the agent's memory checks off"
+					case "tips_on":
+						return "Switch the agent's tips on"
+					case "memory_checks_on":
+						return "Switch the agent's memory checks on"
 					}
 					return "Change the agent's profile"
 				}),
@@ -118,8 +122,18 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			return nil, err
 		}
 		return noted("memory checks are off; the person can switch them on again in the agent's settings"), nil
+	case "tips_on":
+		if _, err := operator.Execute(ctx, `mutation { UpdateAgent(isTipsEnabled: true) { agent { id } } }`, nil); err != nil {
+			return nil, err
+		}
+		return noted("tips are on"), nil
+	case "memory_checks_on":
+		if _, err := operator.Execute(ctx, `mutation { UpdateAgent(isMemoryCheckEnabled: true) { agent { id } } }`, nil); err != nil {
+			return nil, err
+		}
+		return noted("memory checks are on"), nil
 	default:
-		return nil, fmt.Errorf("%q is not set, onboarding_done, not_now, no_more_tips or no_more_memory_checks", action)
+		return nil, fmt.Errorf("%q is not set, onboarding_done, not_now, no_more_tips, no_more_memory_checks, tips_on or memory_checks_on", action)
 	}
 }
 
