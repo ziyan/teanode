@@ -41,6 +41,13 @@ type SupersededFact struct {
 	Path   string `json:"path"`
 	Number int    `json:"number"`
 
+	// ReplacedBy is which of this answer's facts replaces it, counting
+	// from 1. Without it, any fact the answer filed on the page stood in
+	// for the line being retired, whatever it said: a fact about something
+	// else retired a true one. Nil for a retraction, which carries a quote
+	// instead.
+	ReplacedBy *int `json:"replaced_by"`
+
 	// Quote and MessageID are what says the line is no longer true, for a
 	// retirement that files nothing in its place.
 	//

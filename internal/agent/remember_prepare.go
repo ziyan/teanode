@@ -43,8 +43,9 @@ func (self *Agent) prepareRememberedFacts(ctx context.Context, run *Run, answer 
 			models.AgentNodeKind(strings.ToLower(strings.TrimSpace(wanted.NodeKind))),
 			strings.TrimSpace(wanted.NodeName))
 		prepared = append(prepared, &preparedFact{
-			AskedPath: models.NormalizePath(wanted.Path),
-			Text:      text, Kind: kind,
+			AnswerIndex: index,
+			AskedPath:   models.NormalizePath(wanted.Path),
+			Text:        text, Kind: kind,
 			// The digest marks each item "[id]", and a model that copies
 			// the marker whole is answering as asked.
 			MessageID: strings.Trim(strings.TrimSpace(wanted.MessageID), "[]"),
