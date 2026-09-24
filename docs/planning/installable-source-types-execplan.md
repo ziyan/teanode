@@ -56,7 +56,7 @@ and within a minute the source page shows messages being read, with no file crea
   Evidence: the switch to `confluence-api` 1.0.0; 1.1.0 lists spaces as containers and reads each space's pages on its own.
 - Observation: a secret-backed source could not be given its secret in the same save that made it: the secrets API read the source in a transaction of its own, which did not see the source the save had just written.
   Evidence: the review of #129; the secrets API now reads within the request's transaction.
-- Observation: the check for secrets in tracked files treats anything shaped like a host name as a leak, including a setting named `site` in a template (`settings.site`).
+- Observation: the check for secrets in tracked files treats anything shaped like a host name as a leak, including a template that reads a setting named `site` from the settings.
   Evidence: CI on #129; the setting became `domain`.
 - Observation: `skill` and `web` source kinds are declared in `internal/models/knowledge.go` and accepted by the API but cannot be read (`internal/agent/ingest.go` fails them as "not built yet").
 
