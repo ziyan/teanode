@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.58.2] - 2026-09-24
+
+### Fixed
+
+- The background commands in the agent drawer drop down from its head, one line each, with the command and its output in a detail view where it can be stopped; the drawer's mark blinks while one runs. `teanode computer background` accepts `--json`. (#137)
+
 ## [0.58.1] - 2026-09-24
 
 ### Fixed
