@@ -27,6 +27,7 @@ import {
   ArchiveIcon,
   ArrowDownIcon,
   ArrowUpIcon,
+  CheckIcon,
   ChevronDownIcon,
   ComputerIcon,
   GlobeIcon,
@@ -328,6 +329,13 @@ const CONVERSATIONS = `
     }
   }`
 
+// The agent's task list alone, read again after each change its todo tool
+// makes, so the person watches the steps move while a turn is running.
+const CONVERSATION_TODOS = `
+  query ($conversationId: String) {
+    ReadAgentConversation(conversationId: $conversationId, first: 1) { todos { id text doneAt } }
+  }`
+
 const CONVERSATION = `
   query ($conversationId: String, $first: Int, $offset: Int) {
     ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
@@ -407,27 +415,6 @@ const DELETE = `
 const MAKE_MAIN = `
   mutation ($conversationId: String) {
     SetAgentMainConversation(conversationId: $conversationId) { id kind title summary lastAt archivedAt }
-  }`
-
-// The task list, written from this end as well as by the agent's own todo
-// tool. Each of the three answers with the item as it stands afterwards,
-// which is what the drawer puts in its list: a tick is one line of the
-// conversation changing, and reading the whole transcript back to learn it
-// would both cost a page of messages and race the ticks the agent makes
-// while a turn is running.
-const ADD_TODO = `
-  mutation ($conversationId: String!, $text: String!) {
-    AddAgentTodo(conversationId: $conversationId, text: $text) { id text doneAt }
-  }`
-
-const SET_TODO = `
-  mutation ($conversationId: String!, $todoId: String!, $done: Boolean) {
-    SetAgentTodo(conversationId: $conversationId, todoId: $todoId, done: $done) { id text doneAt }
-  }`
-
-const REMOVE_TODO = `
-  mutation ($conversationId: String!, $todoId: String!) {
-    RemoveAgentTodo(conversationId: $conversationId, todoId: $todoId)
   }`
 
 // The tools after which what the mailbox shows may have changed. The rules
@@ -1005,6 +992,57 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
   return lines
 }
 
+// TodoLine is one of the agent's steps on a single line. A step too long
+// for the line is cut with an ellipsis; its tooltip holds the whole of it,
+// and a tap or Enter opens it in place, for a phone that has no hover.
+function TodoLine({ todo }: { todo: Todo }) {
+  const { t } = useTranslation()
+  const text = useRef<HTMLSpanElement>(null)
+  const [isCut, setIsCut] = useState(false)
+  const [isOpen, setIsOpen] = useState(false)
+  const isDone = Boolean(todo.doneAt)
+  useEffect(() => {
+    const element = text.current
+    if (!element) return
+    const measure = () => setIsCut(element.scrollWidth > element.clientWidth)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [todo.text])
+  const canOpen = isCut || isOpen
+  return (
+    <li className={[isDone ? 'done' : '', isOpen ? 'open' : ''].filter(Boolean).join(' ')}>
+      <span className="agent-drawer-todo-mark">
+        {isDone ? <CheckIcon size={12} /> : null}
+        <span className="visually-hidden">{isDone ? t('agentDrawer.todoDone') : t('agentDrawer.todoOpen')}</span>
+      </span>
+      <Tooltip label={isCut && !isOpen ? todo.text : ''}>
+        <span
+          ref={text}
+          className="agent-drawer-todo-text"
+          role={canOpen ? 'button' : undefined}
+          tabIndex={canOpen ? 0 : undefined}
+          aria-expanded={canOpen ? isOpen : undefined}
+          onClick={canOpen ? () => setIsOpen((previous) => !previous) : undefined}
+          onKeyDown={
+            canOpen
+              ? (event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    setIsOpen((previous) => !previous)
+                  }
+                }
+              : undefined
+          }
+        >
+          {todo.text}
+        </span>
+      </Tooltip>
+    </li>
+  )
+}
+
 // QuestionCard is the agent asking, with the choices it offered and a line
 // for anything else.
 function QuestionCard({
@@ -1521,24 +1559,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const messages = useRef<StoredMessage[]>([])
   const [total, setTotal] = useState(0)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
+  // The agent's own task list for this conversation: its steps and how far
+  // it has got, which the person reads and does not change.
   const [todos, setTodos] = useState<Todo[]>([])
-  // What is being typed into the foot of the task list, and the items with
-  // a write of the person's in flight -- a second tick on a box already on
-  // its way to the server would ask for the opposite of what it shows.
-  const [todoDraft, setTodoDraft] = useState('')
-  const [todosBusy, setTodosBusy] = useState<string[]>([])
-  const [addingTodo, setAddingTodo] = useState(false)
-  // Whether the person has written to this conversation's list themselves.
-  // The list is drawn only when there is one, so taking the last item off
-  // would otherwise take away the box that puts one back.
-  const [todosTouched, setTodosTouched] = useState(false)
-  // When the person last wrote to the list. The agent ticks items off
-  // through its tool while a turn runs, and a read of the conversation is
-  // how those arrive -- so a read that was already outstanding when the
-  // person ticked one is older than what they did, and does not get to
-  // answer for the list. The next read settles it.
-  const todoWrittenAt = useRef(0)
-  const todosLoadedFor = useRef('')
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState<File[]>([])
   const [references, setReferences] = useState<AgentReference[]>([])
@@ -1683,7 +1706,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   }, [])
 
   const applyConversationSnapshot = useCallback(
-    (snapshot: Awaited<ReturnType<typeof readConversationSnapshot>>, askedAt: number) => {
+    (snapshot: Awaited<ReturnType<typeof readConversationSnapshot>>) => {
       setLoaded(snapshot.conversation)
       setActingAs(snapshot.actingAs ?? null)
       setGoalTurnsToday(snapshot.goalTurnsToday ?? 0)
@@ -1692,20 +1715,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       setTotal(snapshot.total ?? snapshot.messages.length)
       setLines(linesOf(snapshot.messages, t))
       setShowingGoalNote(true)
-      // This read is how a tick the agent made during its turn reaches the
-      // list; a tick of the person's own is already there, set from the
-      // answer their own mutation gave, and is the newer of the two. A
-      // conversation being opened is another list entirely, and takes what
-      // the server says whatever was written to the one before it.
-      const sameList = todosLoadedFor.current === snapshot.conversation.id
-      if (!sameList) {
-        todosLoadedFor.current = snapshot.conversation.id
-        setTodoDraft('')
-        setTodosTouched(false)
-      }
-      if (!sameList || todoWrittenAt.current < askedAt) {
-        setTodos(snapshot.todos ?? [])
-      }
+      // This read is how a step the agent finished during its turn
+      // reaches the list.
+      setTodos(snapshot.todos ?? [])
       if (draftLoadedFor.current !== snapshot.conversation.id) {
         setDraft(remembered(draftKey(snapshot.conversation.id)))
         draftLoadedFor.current = snapshot.conversation.id
@@ -2115,6 +2127,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [standalone])
 
+  // The conversation on screen now, for an answer that arrives after the
+  // person has moved to another one.
+  const shownConversationId = useRef(conversationId)
+  shownConversationId.current = conversationId
   const applyEvent = (event: RunEvent) => {
     // What an event does beyond the transcript happens here, once: the
     // updater below may run twice under StrictMode.
@@ -2125,6 +2141,19 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       !(event.text ?? '').startsWith('{"error"')
     ) {
       announceMailChanged()
+    }
+    if (
+      event.kind === 'tool_result' &&
+      event.tool === 'todo' &&
+      conversationId &&
+      !(event.text ?? '').startsWith('{"error"')
+    ) {
+      const readFor = conversationId
+      void graphql<{ ReadAgentConversation: { todos: Todo[] } }>(CONVERSATION_TODOS, { conversationId: readFor })
+        .then((answer) => {
+          if (readFor === shownConversationId.current) setTodos(answer.ReadAgentConversation.todos ?? [])
+        })
+        .catch(() => undefined)
     }
     if (event.kind === 'error') {
       toast.failed(event.error ?? t('agentDrawer.failed'))
@@ -2637,71 +2666,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
   }
 
-  // The person's own three writes to the task list. Each takes the item
-  // the server hands back and puts that one item in the list, so the
-  // transcript is left where it is and nothing else on screen moves. The
-  // hour of the write is kept so that a read already on its way cannot
-  // undo it; see todoWrittenAt.
-  const setTodoDone = async (todo: Todo, done: boolean) => {
-    if (!conversationId || todosBusy.includes(todo.id)) return
-    todoWrittenAt.current = Date.now()
-    setTodosBusy((previous) => [...previous, todo.id])
-    try {
-      const response = await graphql<{ SetAgentTodo: Todo }>(SET_TODO, {
-        conversationId,
-        todoId: todo.id,
-        done,
-      })
-      todoWrittenAt.current = Date.now()
-      setTodos((previous) =>
-        previous.map((candidate) => (candidate.id === todo.id ? response.SetAgentTodo : candidate)),
-      )
-    } catch (caught) {
-      toast.failure(caught, t('agentDrawer.todoFailed'))
-    } finally {
-      setTodosBusy((previous) => previous.filter((candidate) => candidate !== todo.id))
-    }
-  }
-
-  const addTodo = async () => {
-    const text = todoDraft.trim()
-    if (!conversationId || !text || addingTodo) return
-    todoWrittenAt.current = Date.now()
-    setAddingTodo(true)
-    try {
-      const response = await graphql<{ AddAgentTodo: Todo }>(ADD_TODO, { conversationId, text })
-      todoWrittenAt.current = Date.now()
-      const added = response.AddAgentTodo
-      setTodos((previous) => [...previous.filter((candidate) => candidate.id !== added.id), added])
-      setTodoDraft('')
-      setTodosTouched(true)
-      toast.done(t('agentDrawer.todoAdded'))
-    } catch (caught) {
-      toast.failure(caught, t('agentDrawer.todoFailed'))
-    } finally {
-      setAddingTodo(false)
-    }
-  }
-
-  // No question asked before it goes: the item is one line the person
-  // wrote, and typing it again costs less than a dialog.
-  const removeTodo = async (todo: Todo) => {
-    if (!conversationId || todosBusy.includes(todo.id)) return
-    todoWrittenAt.current = Date.now()
-    setTodosBusy((previous) => [...previous, todo.id])
-    try {
-      await graphql<{ RemoveAgentTodo: boolean }>(REMOVE_TODO, { conversationId, todoId: todo.id })
-      todoWrittenAt.current = Date.now()
-      setTodos((previous) => previous.filter((candidate) => candidate.id !== todo.id))
-      setTodosTouched(true)
-      toast.done(t('agentDrawer.todoRemoved'))
-    } catch (caught) {
-      toast.failure(caught, t('agentDrawer.todoFailed'))
-    } finally {
-      setTodosBusy((previous) => previous.filter((candidate) => candidate !== todo.id))
-    }
-  }
-
   // The hundred before the oldest loaded, put in front of what is shown,
   // with the transcript held where the person was reading: the new
   // lines add height above, so the scroll moves down by exactly that.
@@ -3153,79 +3117,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               </button>
             </Tooltip>
           )}
-          {/* The task list, in the place it has always been: above what
-              the person is about to type, under the transcript. On a
-              conversation it is theirs to change as well as the agent's;
-              a run's transcript is over and its list only says what
-              happened, which is also what the server answers, since the
-              todo mutations refuse a run. */}
-          {(todos.length > 0 || (!isRun && todosTouched)) && (
+          {/* The agent's task list, above what the person is about to
+              type: its steps and how far it has got, one line each, the
+              whole of a long one in its tooltip. The agent keeps it with
+              its todo tool; the person reads it. */}
+          {todos.length > 0 && (
             <div className="agent-drawer-todo">
-              <ul>
-                {todos.map((todo) => {
-                  const done = Boolean(todo.doneAt)
-                  const busy = todosBusy.includes(todo.id)
-                  return (
-                    <li key={todo.id} className={done ? 'done' : ''}>
-                      {isRun ? (
-                        <span>
-                          {done ? '☑' : '☐'} {todo.text}
-                        </span>
-                      ) : (
-                        <>
-                          <label className="checkbox">
-                            <input
-                              type="checkbox"
-                              checked={done}
-                              disabled={busy}
-                              onChange={() => void setTodoDone(todo, !done)}
-                            />
-                            <span>{todo.text}</span>
-                          </label>
-                          <Tooltip label={t('agentDrawer.todoRemove')}>
-                            <button
-                              type="button"
-                              className="icon-action danger"
-                              disabled={busy}
-                              aria-label={`${todo.text}: ${t('agentDrawer.todoRemove')}`}
-                              onClick={() => void removeTodo(todo)}
-                            >
-                              <TrashIcon size={12} />
-                            </button>
-                          </Tooltip>
-                        </>
-                      )}
-                    </li>
-                  )
-                })}
+              <ul aria-label={t('agentDrawer.todoTitle')}>
+                {todos.map((todo) => (
+                  <TodoLine key={todo.id} todo={todo} />
+                ))}
               </ul>
-              {!isRun && (
-                <form
-                  className="agent-drawer-todo-add"
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    void addTodo()
-                  }}
-                >
-                  <input
-                    value={todoDraft}
-                    onChange={(event) => setTodoDraft(event.target.value)}
-                    placeholder={t('agentDrawer.todoPlaceholder')}
-                    aria-label={t('agentDrawer.todoAdd')}
-                    disabled={addingTodo}
-                  />
-                  <Tooltip label={t('agentDrawer.todoAdd')}>
-                    <button
-                      type="submit"
-                      className="icon-action"
-                      disabled={addingTodo || todoDraft.trim().length === 0}
-                      aria-label={t('agentDrawer.todoAdd')}
-                    >
-                      <PlusIcon size={14} />
-                    </button>
-                  </Tooltip>
-                </form>
-              )}
             </div>
           )}
           {(references.length > 0 || pending.length > 0) && (

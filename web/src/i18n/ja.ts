@@ -1077,6 +1077,9 @@ export const ja: Catalog = {
   'agent.corrections': 'あなたから学んだこと',
   'agent.correctionsHint':
     'あなた自身の操作から記録されたもの — 別の場所に移したメッセージ、送らせなかった返信 — で、しばらくの間、次の処理に例として示されます。',
+  'agentDrawer.todoTitle': 'エージェントの手順',
+  'agentDrawer.todoDone': '完了',
+  'agentDrawer.todoOpen': '未完了',
   'agentDrawer.open': 'エージェントと話す',
   'agentDrawer.tabAttached': 'タブを接続中: {title}',
   'agentDrawer.framedNotSignedIn':
@@ -1142,12 +1145,6 @@ export const ja: Catalog = {
   'agentDrawer.uploading': 'アップロード中…',
   'agentDrawer.dropHere': 'ここにファイルをドロップ',
   'agentDrawer.filesOnly': '（ファイル）',
-  'agentDrawer.todoAdd': 'リストに追加',
-  'agentDrawer.todoPlaceholder': 'やること…',
-  'agentDrawer.todoRemove': 'リストから外す',
-  'agentDrawer.todoAdded': 'リストに追加しました。',
-  'agentDrawer.todoRemoved': 'リストから外しました。',
-  'agentDrawer.todoFailed': 'リストを変更できませんでした。',
   'agentDrawer.goal.set': '目標を設定',
   'agentDrawer.goal.hint':
     'エージェントが取り組み続けることを一文で。達成するか消すまで自分でターンを重ねます。会話で頼むこともできます。',
