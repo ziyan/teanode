@@ -126,11 +126,24 @@ func renderMessages(history []llm.ChatMessage, characters int) string {
 
 // compactCut is the index the verbatim tail starts at: the last
 // tailMessages messages, fewer while they weigh more than
-// compactTailTokens, and never a tool's answer without the call it
-// answers.
+// compactTailTokens, never a tool's answer without the call it answers,
+// and never past the message the turn began with.
+//
+// The turn's own message is what the model is working from. Shrunk past
+// it, a turn that opened with a long instruction and gathered long tool
+// results -- a memory check drafting facts -- had its instruction folded
+// into the note, and the model, left with tool results and no request,
+// ended the turn with nothing to say halfway through.
 func compactCut(history []llm.ChatMessage, tailMessages int) int {
-	cut := max(len(history)-tailMessages, 0)
-	for cut < len(history)-compactLeastTail && llm.EstimateTokens(renderHistory(history[cut:])) > compactTailTokens {
+	turnStart := len(history)
+	for index := len(history) - 1; index >= 0; index-- {
+		if history[index].Role == llm.RoleUser {
+			turnStart = index
+			break
+		}
+	}
+	cut := min(max(len(history)-tailMessages, 0), turnStart)
+	for cut < min(len(history)-compactLeastTail, turnStart) && llm.EstimateTokens(renderHistory(history[cut:])) > compactTailTokens {
 		cut++
 	}
 	for cut > 0 && history[cut].Role == llm.RoleTool {
