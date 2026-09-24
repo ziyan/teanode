@@ -546,7 +546,7 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 	if agent.OperatorDisabledAt != nil {
 		fields = append(fields, [2]string{"switched off by an operator", formatTime(agent.OperatorDisabledAt)})
 	}
-	fields = append(fields, [2]string{"language", view.Language}, [2]string{"notes written in", view.KnowledgeLanguage},
+	fields = append(fields, [2]string{"talks with you in", view.Language}, [2]string{"works in", view.KnowledgeLanguage},
 		[2]string{"time zone", view.Timezone})
 	if agent.AskModel != "" {
 		fields = append(fields, [2]string{"model for conversations", agent.AskModel})
