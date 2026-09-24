@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.58.1] - 2026-09-24
+
+### Fixed
+
+- The agent no longer retires a true fact because it filed something unrelated on the same page, or on the strength of its own reply. (#136)
+
 ## [0.58.0] - 2026-09-24
 
 ### Added
