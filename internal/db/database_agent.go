@@ -3,6 +3,7 @@ package db
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,6 +35,12 @@ type AgentOperation interface {
 	// ClaimAgentJobs takes up to limit due jobs for this instance, skipping
 	// any another instance has locked, and marks them running.
 	ClaimAgentJobs(instance string, limit int, now time.Time) ([]*models.AgentJob, error)
+
+	// ClaimAgentJobsKeepingRoom is ClaimAgentJobs with the background
+	// reading (ingest, dream, backfill) held to backgroundLimit jobs
+	// running on this instance at once, so a slot stays for work somebody
+	// is waiting on.
+	ClaimAgentJobsKeepingRoom(instance string, limit, backgroundLimit int, now time.Time) ([]*models.AgentJob, error)
 
 	// FinishAgentJob changes only the running claim named by claimId.
 	// False means that claim was released or replaced while its worker ran.
@@ -587,15 +594,48 @@ var backgroundLast = fmt.Sprintf(`CASE WHEN "kind" IN ('%s', '%s', '%s') THEN 1 
 	models.AgentJobIngest, models.AgentJobDream, models.AgentJobBackfill)
 
 func (self *transaction) ClaimAgentJobs(instance string, limit int, now time.Time) ([]*models.AgentJob, error) {
+	return self.ClaimAgentJobsKeepingRoom(instance, limit, limit, now)
+}
+
+// backgroundKinds are the long reading jobs backgroundLast puts last.
+var backgroundKinds = []string{string(models.AgentJobIngest), string(models.AgentJobDream), string(models.AgentJobBackfill)}
+
+// ClaimAgentJobsKeepingRoom keeps a slot from the reading. Putting what a
+// person waits for first in the queue was not enough: with every slot
+// held by a dream and two long ingests, a memory check the person had just
+// asked for sat first in the queue for five minutes with nowhere to run.
+func (self *transaction) ClaimAgentJobsKeepingRoom(instance string, limit, backgroundLimit int, now time.Time) ([]*models.AgentJob, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
-	var due []agentJobModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-		Where("\"status\" = ? AND (\"not_before\" IS NULL OR \"not_before\" <= ?)", string(models.AgentJobQueued), now).
-		Order(backgroundLast).Order("\"created_at\" ASC").Limit(limit).Find(&due).Error; err != nil {
+	var runningBackground int64
+	if err := self.tx.Model(&agentJobModel{}).
+		Where("\"status\" = ? AND \"claimed_by\" = ? AND \"kind\" IN ?", string(models.AgentJobRunning), instance, backgroundKinds).
+		Count(&runningBackground).Error; err != nil {
 		return nil, err
 	}
+	query := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		Where("\"status\" = ? AND (\"not_before\" IS NULL OR \"not_before\" <= ?)", string(models.AgentJobQueued), now)
+	backgroundRoom := backgroundLimit - int(runningBackground)
+	if backgroundRoom <= 0 {
+		query = query.Where("\"kind\" NOT IN ?", backgroundKinds)
+	}
+	var due []agentJobModel
+	if err := query.Order(backgroundLast).Order("\"created_at\" ASC").Limit(limit).Find(&due).Error; err != nil {
+		return nil, err
+	}
+	// Of the reading found, only as many as there is room for.
+	kept := due[:0]
+	for _, job := range due {
+		if slices.Contains(backgroundKinds, job.Kind) {
+			if backgroundRoom <= 0 {
+				continue
+			}
+			backgroundRoom--
+		}
+		kept = append(kept, job)
+	}
+	due = kept
 	jobs := make([]*models.AgentJob, 0, len(due))
 	for index := range due {
 		due[index].ClaimID = newID()

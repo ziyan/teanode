@@ -433,7 +433,9 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 		} else if released > 0 {
 			log.Warningf("put back %d job(s) whose instance never finished them", released)
 		}
-		claimed, err := tx.ClaimAgentJobs(self.settings.Instance, free, now)
+		// One slot is kept from the long reading, for whatever a person
+		// is waiting on: a turn, a triage, a check they asked for.
+		claimed, err := tx.ClaimAgentJobsKeepingRoom(self.settings.Instance, free, max(cap(self.slots)-1, 1), now)
 		jobs = claimed
 		return err
 	}); err != nil {
