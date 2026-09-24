@@ -1182,6 +1182,7 @@ export const en = {
   'backgroundCommands.stoppedState': 'stopped',
   'backgroundCommands.lifetime': 'stopped after 24 hours',
   'backgroundCommands.started': 'started {time}',
+  'backgroundCommands.back': 'Back',
   'backgroundCommands.output': 'Output',
   'backgroundCommands.outputTitle': 'Background command',
   'backgroundCommands.stop': 'Stop',

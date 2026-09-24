@@ -559,17 +559,9 @@ export function ComputerIcon(props: IconProps) {
 export function TerminalIcon(props: IconProps) {
   return (
     <Icon {...props}>
-      <path d="M4 17l6-5-6-5M12 19h8" />
-    </Icon>
-  )
-}
-
-// A square: stop, as on every player, and not a cross, which here means
-// close or remove.
-export function StopIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <rect x="6" y="6" width="12" height="12" rx="1.5" />
+      <path d="M4 17l6-5-6-5" />
+      {/* The cursor apart, so a running mark can make it blink. */}
+      <path className="terminal-icon-cursor" d="M12 19h8" />
     </Icon>
   )
 }

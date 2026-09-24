@@ -1140,6 +1140,7 @@ export const zh: Catalog = {
   'backgroundCommands.stoppedState': '已停止',
   'backgroundCommands.lifetime': '运行 24 小时后已停止',
   'backgroundCommands.started': '开始于 {time}',
+  'backgroundCommands.back': '返回',
   'backgroundCommands.output': '输出',
   'backgroundCommands.outputTitle': '后台命令',
   'backgroundCommands.stop': '停止',

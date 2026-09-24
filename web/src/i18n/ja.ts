@@ -1178,6 +1178,7 @@ export const ja: Catalog = {
   'backgroundCommands.stoppedState': '停止済み',
   'backgroundCommands.lifetime': '24 時間で停止',
   'backgroundCommands.started': '{time} に開始',
+  'backgroundCommands.back': '戻る',
   'backgroundCommands.output': '出力',
   'backgroundCommands.outputTitle': 'バックグラウンドのコマンド',
   'backgroundCommands.stop': '停止',

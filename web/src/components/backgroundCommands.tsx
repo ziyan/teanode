@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { graphql } from '../api'
-import { Loading, Tag, formatBytes, formatTime } from './common'
+import { Loading, Tag, formatBytes } from './common'
 import { ConfirmDialog } from './dialog'
-import { StopIcon, TerminalIcon } from './icons'
-import { SettingsRow } from './settingsList'
+import { ArrowLeftIcon } from './icons'
+import { RelativeTime } from './relativeTime'
 import { useToast } from './toast'
+import { Tooltip } from './tooltip'
 import { useQuery } from './useQuery'
-import { useTranslation } from '../i18n/i18n'
+import { Trans, useTranslation } from '../i18n/i18n'
 
 // What the agent's shell tool left running on the person's computers: the
 // commands it started in the background, or moved there when one outlived
@@ -140,10 +141,10 @@ function BackgroundCommandState({ command }: { command: BackgroundCommand }) {
   )
 }
 
-// BackgroundCommandRows is the list: a row per command, with its output a
-// press away and, while it runs, a way to stop it. onOutput is left to the
-// caller because the drawer already has a dialog open around the rows and
-// swaps it for the output rather than stacking one on the other.
+// BackgroundCommandRows is the list: a row per command, the command itself
+// first because that is what somebody scanning the list recognizes, and
+// under it how it stands, where, and since when. The row opens its output;
+// a running one has Stop beside it, the one action, as a word.
 export function BackgroundCommandRows({
   commands,
   onOutput,
@@ -156,61 +157,131 @@ export function BackgroundCommandRows({
   const { t } = useTranslation()
   const { stopping, stop } = useStopBackgroundCommand(onChanged)
   return (
-    <div className="background-commands">
+    <ul className="background-commands">
       {commands.map((command) => (
-        <SettingsRow
-          key={`${command.computer}/${command.id}`}
-          title={
-            <span className="mono background-command-text" title={command.command}>
-              {command.command}
+        <li key={`${command.computer}/${command.id}`} className="background-command">
+          <button
+            type="button"
+            className="background-command-open"
+            title={command.command}
+            aria-label={`${command.command}: ${t('backgroundCommands.output')}`}
+            onClick={() => onOutput(command)}
+          >
+            <code className="background-command-line">{command.command}</code>
+            <span className="background-command-meta muted">
+              <BackgroundCommandState command={command} />
+              <span>{command.computer}</span>
+              <span>
+                <Trans k="backgroundCommands.started" nodes={{ time: <RelativeTime value={command.startedAt} /> }} />
+              </span>
             </span>
-          }
-          badge={<BackgroundCommandState command={command} />}
-          subtitle={[
-            command.computer,
-            command.directory,
-            t('backgroundCommands.started', { time: formatTime(command.startedAt) }),
-          ]
-            .filter(Boolean)
-            .join(' · ')}
-          actions={
-            command.isRunning ? (
-              <div className="row-actions">
-                <button
-                  type="button"
-                  className="icon-action"
-                  title={t('backgroundCommands.output')}
-                  aria-label={`${command.command}: ${t('backgroundCommands.output')}`}
-                  onClick={() => onOutput(command)}
-                >
-                  <TerminalIcon size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-action danger"
-                  title={t('backgroundCommands.stop')}
-                  aria-label={`${command.command}: ${t('backgroundCommands.stop')}`}
-                  disabled={stopping === command.id}
-                  onClick={() => void stop(command)}
-                >
-                  <StopIcon size={16} />
-                </button>
-              </div>
-            ) : (
-              <button type="button" className="link" onClick={() => onOutput(command)}>
-                {t('backgroundCommands.output')}
-              </button>
-            )
-          }
-        />
+          </button>
+          {command.isRunning ? (
+            <button
+              type="button"
+              className="link danger background-command-stop"
+              aria-label={`${command.command}: ${t('backgroundCommands.stop')}`}
+              disabled={stopping === command.id}
+              onClick={() => void stop(command)}
+            >
+              {t('backgroundCommands.stop')}
+            </button>
+          ) : null}
+        </li>
       ))}
+    </ul>
+  )
+}
+
+// useBackgroundOutput reads what one command printed, again every couple
+// of seconds while it runs. readAgain reads once more at once, after a stop,
+// so how it ended shows without waiting for a poll it will no longer make.
+function useBackgroundOutput(command: BackgroundCommand) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const [output, setOutput] = useState<BackgroundCommandOutput | null>(null)
+  const [readCount, setReadCount] = useState(0)
+  const isRunning = output ? output.isRunning : command.isRunning
+  useEffect(() => {
+    let isStopped = false
+    const read = () => {
+      if (document.hidden) return
+      graphql<{ ReadAgentBackgroundCommand: BackgroundCommandOutput }>(READ, {
+        computer: command.computer,
+        id: command.id,
+      })
+        .then((response) => {
+          if (!isStopped) setOutput(response.ReadAgentBackgroundCommand)
+        })
+        .catch((caught) => {
+          if (isStopped) return
+          isStopped = true
+          window.clearInterval(every)
+          toast.failure(caught, t('backgroundCommands.readFailed'))
+        })
+    }
+    read()
+    // Once it has ended, what it printed will not change.
+    const every = isRunning ? window.setInterval(read, OUTPUT_EVERY) : undefined
+    return () => {
+      isStopped = true
+      window.clearInterval(every)
+    }
+    // toast and t are stable for the life of the view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [command.computer, command.id, isRunning, readCount])
+  return { output, isRunning, readAgain: () => setReadCount((previous) => previous + 1) }
+}
+
+// BackgroundOutput is what one command printed, stdout and stderr apart,
+// under the command and how it stands. The same view in the drawer's panel
+// and in the agent page's dialog; each puts Stop where its frame keeps
+// actions.
+function BackgroundOutput({ command, output }: { command: BackgroundCommand; output: BackgroundCommandOutput | null }) {
+  const { t } = useTranslation()
+  const shown = output ?? command
+  return (
+    <div className="background-output">
+      <code className="background-output-command">{shown.command}</code>
+      <p className="background-command-meta muted">
+        <BackgroundCommandState command={shown} />
+        <span>{shown.computer}</span>
+        {shown.directory ? <span className="mono">{shown.directory}</span> : null}
+        <span>
+          <Trans k="backgroundCommands.started" nodes={{ time: <RelativeTime value={shown.startedAt} /> }} />
+        </span>
+      </p>
+      {output === null ? (
+        <Loading />
+      ) : output.stdoutByteCount === 0 && output.stderrByteCount === 0 ? (
+        <p className="muted">{t('backgroundCommands.nothingPrinted')}</p>
+      ) : (
+        <>
+          {output.stdoutByteCount > 0 && (
+            <OutputStream
+              label={t('backgroundCommands.stdout')}
+              text={output.stdout}
+              isTruncated={output.isStdoutTruncated}
+              byteCount={output.stdoutByteCount}
+            />
+          )}
+          {output.stderrByteCount > 0 && (
+            <OutputStream
+              label={t('backgroundCommands.stderr')}
+              text={output.stderr}
+              isTruncated={output.isStderrTruncated}
+              byteCount={output.stderrByteCount}
+            />
+          )}
+        </>
+      )}
     </div>
   )
 }
 
-// BackgroundOutputDialog is what one command printed, stdout and stderr
-// apart, read again every couple of seconds while it runs. Stop is its one
-// action while there is something to stop.
+// BackgroundOutputDialog is the output in a dialog, for the agent page,
+// which has no panel to slide it into. Stop is its one action while there
+// is something to stop.
 export function BackgroundOutputDialog({
   command,
   onChanged,
@@ -221,92 +292,103 @@ export function BackgroundOutputDialog({
   onClose: () => void
 }) {
   const { t } = useTranslation()
-  const toast = useToast()
-  const [output, setOutput] = useState<BackgroundCommandOutput | null>(null)
+  const { output, isRunning, readAgain } = useBackgroundOutput(command)
   const { stopping, stop } = useStopBackgroundCommand(onChanged)
-  // Bumped by a stop, so the dialog reads once more and shows how it ended
-  // without waiting for a poll it will no longer make.
-  const [readAgain, setReadAgain] = useState(0)
-
-  const isRunning = output ? output.isRunning : command.isRunning
-  useEffect(() => {
-    let stopped = false
-    const read = () => {
-      if (document.hidden) return
-      graphql<{ ReadAgentBackgroundCommand: BackgroundCommandOutput }>(READ, {
-        computer: command.computer,
-        id: command.id,
-      })
-        .then((response) => {
-          if (!stopped) setOutput(response.ReadAgentBackgroundCommand)
-        })
-        .catch((caught) => {
-          if (stopped) return
-          stopped = true
-          window.clearInterval(every)
-          toast.failure(caught, t('backgroundCommands.readFailed'))
-        })
-    }
-    read()
-    // Once it has ended, what it printed will not change.
-    const every = isRunning ? window.setInterval(read, OUTPUT_EVERY) : undefined
-    return () => {
-      stopped = true
-      window.clearInterval(every)
-    }
-    // toast and t are stable for the life of the dialog.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [command.computer, command.id, isRunning, readAgain])
-
-  const shown = output ?? command
   return (
     <ConfirmDialog
       title={t('backgroundCommands.outputTitle')}
       wide
-      body={
-        <div className="background-output">
-          <p className="mono background-output-command">{shown.command}</p>
-          <p className="muted background-output-where">
-            <BackgroundCommandState command={shown} /> {[shown.computer, shown.directory].filter(Boolean).join(' · ')}
-          </p>
-          {output === null ? (
-            <Loading />
-          ) : output.stdoutByteCount === 0 && output.stderrByteCount === 0 ? (
-            <p className="muted">{t('backgroundCommands.nothingPrinted')}</p>
-          ) : (
-            <>
-              {output.stdoutByteCount > 0 && (
-                <OutputStream
-                  label={t('backgroundCommands.stdout')}
-                  text={output.stdout}
-                  isTruncated={output.isStdoutTruncated}
-                  byteCount={output.stdoutByteCount}
-                />
-              )}
-              {output.stderrByteCount > 0 && (
-                <OutputStream
-                  label={t('backgroundCommands.stderr')}
-                  text={output.stderr}
-                  isTruncated={output.isStderrTruncated}
-                  byteCount={output.stderrByteCount}
-                />
-              )}
-            </>
-          )}
-        </div>
-      }
+      body={<BackgroundOutput command={command} output={output} />}
       confirmLabel={isRunning ? t('backgroundCommands.stop') : undefined}
       busy={stopping === command.id}
-      onConfirm={
-        isRunning
-          ? () =>
-              void stop(shown).then(() => {
-                setReadAgain((previous) => previous + 1)
-              })
-          : undefined
-      }
+      onConfirm={isRunning ? () => void stop(output ?? command).then(readAgain) : undefined}
       onClose={onClose}
     />
+  )
+}
+
+// BackgroundPanel is the drawer's own view of its conversation's background
+// commands: a panel that slides over the conversation rather than a dialog
+// over the page, because the drawer is where the person is looking and a
+// dialog took them out of it. The list, and a command's output in the same
+// panel in its place; back goes from the output to the list, and from the
+// list to the conversation.
+export function BackgroundPanel({
+  commands,
+  onChanged,
+  onClose,
+}: {
+  commands: BackgroundCommand[]
+  onChanged: () => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const [opened, setOpened] = useState<BackgroundCommand | null>(null)
+  // The row as the list has it now, so the panel follows a command that
+  // ended while its output was open.
+  const current = opened
+    ? (commands.find((command) => command.computer === opened.computer && command.id === opened.id) ?? opened)
+    : null
+  const back = () => (current ? setOpened(null) : onClose())
+  return (
+    <section
+      className="agent-drawer-panel"
+      aria-label={t('agentDrawer.backgroundCommands')}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.stopPropagation()
+          back()
+        }
+      }}
+    >
+      <header className="agent-drawer-panel-head">
+        <Tooltip label={t('backgroundCommands.back')}>
+          <button type="button" className="icon-button" aria-label={t('backgroundCommands.back')} onClick={back}>
+            <ArrowLeftIcon size={16} />
+          </button>
+        </Tooltip>
+        <strong>{current ? t('backgroundCommands.outputTitle') : t('agentDrawer.backgroundCommands')}</strong>
+      </header>
+      <div className="agent-drawer-panel-body">
+        {current ? (
+          <BackgroundPanelOutput key={`${current.computer}/${current.id}`} command={current} onChanged={onChanged} />
+        ) : (
+          <>
+            <p className="muted background-commands-hint">{t('agentDrawer.backgroundCommandsHint')}</p>
+            {commands.length === 0 ? (
+              <p className="muted">{t('backgroundCommands.none')}</p>
+            ) : (
+              <BackgroundCommandRows commands={commands} onOutput={setOpened} onChanged={onChanged} />
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  )
+}
+
+// BackgroundPanelOutput is the output inside the panel, with Stop under it
+// while the command runs.
+function BackgroundPanelOutput({ command, onChanged }: { command: BackgroundCommand; onChanged: () => void }) {
+  const { t } = useTranslation()
+  const { output, isRunning, readAgain } = useBackgroundOutput(command)
+  const { stopping, stop } = useStopBackgroundCommand(onChanged)
+  return (
+    <>
+      <BackgroundOutput command={command} output={output} />
+      {isRunning ? (
+        <div className="agent-drawer-panel-actions">
+          <button
+            type="button"
+            className="danger"
+            disabled={stopping === command.id}
+            onClick={() => void stop(output ?? command).then(readAgain)}
+          >
+            {t('backgroundCommands.stop')}
+          </button>
+        </div>
+      ) : null}
+    </>
   )
 }
 
