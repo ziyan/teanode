@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import {
   AGENT_ASK_EVENT,
   AGENT_OPEN_EVENT,
@@ -1415,7 +1415,8 @@ function BudgetRing({
 // Every mark in the drawer's head -- the goal, what is attached, the day's
 // budget, what is running in the background -- opens the same way the
 // list of conversations does: a list dropped down under the head, over the
-// conversation, closed by anywhere outside it or Escape. Not a dialog over
+// conversation, closed by anywhere outside it or Escape. What is behind a
+// mark is on the settings pages, reached from the sidebar as ever. Not a dialog over
 // the page, because the drawer is where the person is looking; and not a
 // panel over the whole box, because the head is what the box is dragged by
 // and its edges what it is resized by.
@@ -1451,35 +1452,6 @@ function HeadMenu({
       </header>
       {children}
     </section>
-  )
-}
-
-// SettingsLink is the way from a dropdown to the page behind it: the
-// dashboard's own link, or, framed into another site, one that opens the
-// dashboard in a tab of its own rather than drawing it in here.
-function SettingsLink({
-  to,
-  framed,
-  onLeaving,
-  children,
-}: {
-  to: string
-  framed: boolean
-  onLeaving: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <div className="head-menu-foot">
-      {framed ? (
-        <a className="link" href={`${window.location.origin}${to}`} target="_blank" rel="noreferrer">
-          {children}
-        </a>
-      ) : (
-        <Link className="link" to={to} onClick={onLeaving}>
-          {children}
-        </Link>
-      )}
-    </div>
   )
 }
 
@@ -1521,17 +1493,7 @@ interface AttachedComputer {
 
 // ComputersMenu lists what is attached, a line each: the name, and the
 // person's own words about it, which is what tells two apart.
-function ComputersMenu({
-  computers,
-  framed,
-  onLeaving,
-  onClose,
-}: {
-  computers: AttachedComputer[]
-  framed: boolean
-  onLeaving: () => void
-  onClose: () => void
-}) {
+function ComputersMenu({ computers, onClose }: { computers: AttachedComputer[]; onClose: () => void }) {
   const { t } = useTranslation()
   return (
     <HeadMenu title={t('agentDrawer.computersTitle')} onClose={onClose}>
@@ -1544,32 +1506,14 @@ function ComputersMenu({
           </span>
         </div>
       ))}
-      <SettingsLink to="/settings/agent/connections" framed={framed} onLeaving={onLeaving}>
-        {t('agentDrawer.manageConnections')}
-      </SettingsLink>
     </HeadMenu>
   )
 }
 
 // TabMenu is the attached tab, a line: its title, and the site it is on.
-function TabMenu({
-  tab,
-  framed,
-  onLeaving,
-  onClose,
-}: {
-  tab: { title?: string; url?: string }
-  framed: boolean
-  onLeaving: () => void
-  onClose: () => void
-}) {
+function TabMenu({ tab, onClose }: { tab: { title?: string; url?: string }; onClose: () => void }) {
   const { t } = useTranslation()
-  let site = ''
-  try {
-    site = tab.url ? new URL(tab.url).host : ''
-  } catch {
-    site = tab.url ?? ''
-  }
+  const site = siteOf(tab.url)
   return (
     <HeadMenu title={t('agentDrawer.tabTitle')} onClose={onClose}>
       <div className="head-menu-row" title={tab.url}>
@@ -1577,29 +1521,25 @@ function TabMenu({
         <span className="head-menu-row-name">{tab.title || site}</span>
         <span className="head-menu-row-detail muted">{site}</span>
       </div>
-      <SettingsLink to="/settings/agent/connections" framed={framed} onLeaving={onLeaving}>
-        {t('agentDrawer.manageConnections')}
-      </SettingsLink>
     </HeadMenu>
   )
+}
+
+// siteOf is the host a tab is on, or the address as it came when it is
+// not one that can be read.
+function siteOf(url: string | undefined): string {
+  if (!url) return ''
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
 }
 
 // UsageMenu is the day's budget: how much has gone, as words and as a bar
 // coloured by how near the end it is, what it came to, and when it starts
 // again.
-function UsageMenu({
-  budget,
-  zone,
-  framed,
-  onLeaving,
-  onClose,
-}: {
-  budget: Budget
-  zone: string
-  framed: boolean
-  onLeaving: () => void
-  onClose: () => void
-}) {
+function UsageMenu({ budget, zone, onClose }: { budget: Budget; zone: string; onClose: () => void }) {
   const { t } = useTranslation()
   const shown = budgetShown(budget)
   if (!shown) return null
@@ -1630,9 +1570,6 @@ function UsageMenu({
           {t('agentDrawer.budgetResets', { at: formatClock(budget.resetsAt, zone) })}
         </p>
       </div>
-      <SettingsLink to="/settings/agent" framed={framed} onLeaving={onLeaving}>
-        {t('agentDrawer.usageSettings')}
-      </SettingsLink>
     </HeadMenu>
   )
 }
@@ -3366,25 +3303,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               onClose={() => setHeadMenu(null)}
             />
           )}
-          {headMenu === 'computers' && (
-            <ComputersMenu
-              computers={computers}
-              framed={standalone}
-              onLeaving={leaving}
-              onClose={() => setHeadMenu(null)}
-            />
-          )}
-          {headMenu === 'tab' && tab?.attached && (
-            <TabMenu tab={tab} framed={standalone} onLeaving={leaving} onClose={() => setHeadMenu(null)} />
-          )}
+          {headMenu === 'computers' && <ComputersMenu computers={computers} onClose={() => setHeadMenu(null)} />}
+          {headMenu === 'tab' && tab?.attached && <TabMenu tab={tab} onClose={() => setHeadMenu(null)} />}
           {headMenu === 'usage' && budget && (
-            <UsageMenu
-              budget={budget}
-              zone={agentZone}
-              framed={standalone}
-              onLeaving={leaving}
-              onClose={() => setHeadMenu(null)}
-            />
+            <UsageMenu budget={budget} zone={agentZone} onClose={() => setHeadMenu(null)} />
           )}
           {headMenu === 'goal' && current && goalDraft !== null && (
             <GoalMenu

@@ -5864,7 +5864,7 @@ main.content:has(> .mailbox-frame) {
 
 /* The head's dropdowns share the frame of the list of conversations
    (.agent-drawer-list): a small muted title, then a line per thing, or a
-   short form, and the way to the page behind it at the foot. */
+   short form. */
 .head-menu-title {
   display: flex;
   align-items: center;
@@ -5907,14 +5907,6 @@ main.content:has(> .mailbox-frame) {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 12px;
-}
-
-.head-menu-foot {
-  margin-top: 4px;
-  padding: 8px 8px 2px;
-  border-top: 1px solid var(--border);
-  font-size: 12px;
-  flex-shrink: 0;
 }
 
 .head-menu-usage {
