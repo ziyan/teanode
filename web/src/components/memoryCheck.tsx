@@ -315,7 +315,9 @@ export function MemoryCheckSection() {
   // nothing happened.
   const answersPanel = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (openRun) answersPanel.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    // At once rather than smoothly: a smooth scroll is dropped by a tab
+    // the browser counts as not shown, and then nothing moves at all.
+    if (openRun) answersPanel.current?.scrollIntoView({ block: 'start' })
   }, [openRun])
   const [isOnlyMissedOrWrong, setIsOnlyMissedOrWrong] = useState(true)
 
