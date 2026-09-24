@@ -206,6 +206,17 @@ func TestOutputKeepsTheFirstAndTheLast(t *testing.T) {
 		t.Fatalf("the tail is the end of the stream: %q", tail)
 	}
 
+	// One write far longer than the head and the tail together keeps its
+	// first and its last, and holds no more than the two of them.
+	long := &outputBuffer{}
+	_, _ = long.Write([]byte("start" + strings.Repeat("x", 4*outputBytes) + "finish"))
+	if text, isTruncated := long.text(); !isTruncated || !strings.HasPrefix(text, "start") || !strings.HasSuffix(text, "finish") {
+		t.Fatalf("one long write keeps its ends: truncated %v", isTruncated)
+	}
+	if kept := len(long.head) + len(long.tailRing); kept != outputBytes || cap(long.tailRing) > 2*outputTailBytes {
+		t.Fatalf("one long write holds %d bytes in a tail of capacity %d", kept, cap(long.tailRing))
+	}
+
 	short := &outputBuffer{}
 	_, _ = short.Write([]byte("one\ntwo\n"))
 	if tail, isTruncated := short.tail(4); tail != "two\n" || !isTruncated {

@@ -470,10 +470,15 @@ func (self *outputBuffer) Write(data []byte) (int, error) {
 	if len(rest) == 0 {
 		return len(data), nil
 	}
+	// Only the last of one long write can survive it, so a write of any
+	// size costs at most twice the tail.
+	if len(rest) > outputTailBytes {
+		rest = rest[len(rest)-outputTailBytes:]
+	}
 	self.tailRing = append(self.tailRing, rest...)
 	if excess := len(self.tailRing) - outputTailBytes; excess > 0 {
 		// Copied rather than resliced, so the dropped bytes are let go.
-		kept := make([]byte, outputTailBytes, outputTailBytes+len(data))
+		kept := make([]byte, outputTailBytes, 2*outputTailBytes)
 		copy(kept, self.tailRing[excess:])
 		self.tailRing = kept
 	}
