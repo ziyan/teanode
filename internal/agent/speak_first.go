@@ -286,19 +286,17 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 	return nil
 }
 
-// askedLine is what a turn the person asked for is told first.
-func askedLine(prepared map[string]string) string {
-	if prepared[preparedIsAsked] != "true" {
-		return ""
-	}
-	return "They asked for this just now, with the button on their dashboard or by saying so. Whatever you said earlier about waiting until they ask, this is them asking: begin.\n\n"
-}
-
 // speakFirstMessage is the start every spoken-first turn's message shares:
-// the marker, what this turn is, and when.
-func speakFirstMessage(owner *models.User, now time.Time, what string) string {
+// the marker, what this turn is, who wanted it, and when. A turn the
+// person asked for says so in place of "nobody asked": told both, the
+// model believed the first and declined a check they had just asked for.
+func speakFirstMessage(owner *models.User, now time.Time, what string, prepared map[string]string) string {
+	who := " Nobody asked for this turn: you are starting the conversation, and what you write is the first thing " + personName(owner) + " reads when they look at the chat. They have their dashboard open."
+	if prepared[preparedIsAsked] == "true" {
+		who = " " + personName(owner) + " asked for this just now, with the button on their dashboard or by saying so. Whatever was said earlier about waiting until they ask, this is them asking: begin now. They are looking at the chat."
+	}
 	return strings.Join([]string{
-		models.SpeakFirstMarker + " " + what + " Nobody asked for this turn: you are starting the conversation, and what you write is the first thing " + personName(owner) + " reads when they look at the chat. They have their dashboard open.",
+		models.SpeakFirstMarker + " " + what + who,
 		"",
 		"It is " + now.In(Location(owner)).Format("Monday 2 January, 15:04") + " where they are.",
 		"",
