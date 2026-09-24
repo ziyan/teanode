@@ -307,7 +307,7 @@ func newAgentDreamCommand() *cli.Command {
 			},
 			{
 				Name:   "now",
-				Usage:  "dream at the next tick, within the agent's hours, instead of waiting for its turn",
+				Usage:  "dream now, whatever the agent's hours, instead of waiting for its turn",
 				Action: runDreamNow,
 			},
 			{
@@ -371,7 +371,7 @@ func runDreamNow(ctx context.Context, command *cli.Command) error {
 	if err := client.DreamAgentNow(ctx, connection, nil); err != nil {
 		return describeError(command, err)
 	}
-	_, _ = fmt.Fprintln(command.Writer, "the dream starts within the minute, if it is within your agent's hours")
+	_, _ = fmt.Fprintln(command.Writer, "the dream starts within the minute")
 	return nil
 }
 

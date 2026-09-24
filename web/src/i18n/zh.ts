@@ -2715,7 +2715,7 @@ export const zh: Catalog = {
   'agent.runsOfDream': '{when} 那次梦境整理的运行记录：它对模型的每一次调用，最新的在前。打开一条即可阅读。',
   'agent.allRuns': '全部运行记录',
   'agent.dreamNow': '现在做梦',
-  'agent.dreamNowAsked': '梦境整理会在一分钟内开始，且只在你的助手的时段之内。',
+  'agent.dreamNowAsked': '梦境整理会在一分钟内开始。',
   'agent.reread': '重新读取…',
   'agent.rereadTitle': '重新读取梦境标记为已读的文档',
   'agent.rereadHint':

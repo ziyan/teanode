@@ -2596,9 +2596,9 @@ function DreamCard({
     }
   }
 
-  // Asking for the night now only moves it to the next tick, and only
-  // within the hours below: a run that rewrites pages while somebody is
-  // reading them is the thing those hours exist to prevent.
+  // Asking for a dream queues it at once, whatever the hours below say:
+  // those hours and the quiet after a conversation are for the dreams
+  // nobody asked for.
   const startNow = async () => {
     setStarting(true)
     try {
