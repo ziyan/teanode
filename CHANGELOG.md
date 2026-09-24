@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-09-24
+
+### Added
+
+- A work language for the agent: its notes and everything it does on its own stay in one language, whatever language the dashboard is shown in. (#132)
+
+### Fixed
+
+- Conversations with the agent follow the language chosen in the dashboard, and a new language or time zone is picked up at once. (#132)
+- Replies and drafts are written in the language of the message they answer. (#132)
+- The Chinese dashboard calls the agent 助手 everywhere. (#133)
+
 ## [0.57.0] - 2026-09-24
 
 ### Added
