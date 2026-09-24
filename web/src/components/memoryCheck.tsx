@@ -635,7 +635,10 @@ export function MemoryCheckSection() {
       title={t('memoryCheck.title')}
       description={t('memoryCheck.hint')}
       action={
-        <>
+        // One group: on a phone the section's head pushes each of its
+        // actions to the right on its own, which spread two buttons across
+        // the width with the line's whole slack between them.
+        <div className="row-actions">
           <button type="button" disabled={isAskingForCheck} onClick={() => void askForCheck()}>
             {t('memoryCheck.checkNow')}
           </button>
@@ -648,7 +651,7 @@ export function MemoryCheckSection() {
               {hasRunInProgress ? t('memoryCheck.grading') : t('memoryCheck.gradeNow')}
             </button>
           ) : null}
-        </>
+        </div>
       }
     >
       <ErrorMessage error={questionsQuery.error} />
