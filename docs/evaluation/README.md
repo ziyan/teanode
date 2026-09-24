@@ -92,3 +92,57 @@ each kind.
 To write one, ask the graph what it holds (`teanode agent memory get
 people/…`), pick the fact, then write the question the way you would have
 asked it rather than the way the fact is worded.
+
+## Grading the answers
+
+Recall says whether the facts reached the model. Whether the answer came
+out right is a second question, with a model and a bill:
+
+    teanode agent memory answers <file> --from memory,sources,both
+
+Each question is answered once for each source named, with the model a
+conversation uses and no tools:
+
+- **memory** — from the facts recall carries, as a turn gets them.
+- **sources** — from the passages the document search finds, as the
+  search tool returns them.
+- **both** — from both, as a turn that searches has them.
+
+The answer is then graded against the one the person gave, by the same
+model, as one of `correct`, `partial`, `not_known`, `stale` (it gave the
+answer that was true once), `invented` (it answered where the truth is
+"not known", or contradicted the right answer) or `wrong`. A grader whose
+answer cannot be read is `ungraded`, and counts as nothing rather than as
+a wrong answer the model never gave. An answer of "not known" is not put
+to the grader: it is `not_known` where the expected answer is "not known"
+too, and `missed` everywhere else, because then what the model was given
+did not hold the fact. A miss is recall's failure and a wrong answer is
+the model's, and the two are worked on apart.
+
+Each source's score counts a right answer, and a right "not known" to an
+abstain question, as one, and a partial answer as a half. Comparing the
+three says what the extracted memory is worth over the documents it was
+read from. The answers and the grades are runs of kind `evaluate`: listed
+and priced with the rest, and never written to a conversation or to the
+graph.
+
+A question takes part when it has an `expectedAnswer`, and a changed one
+may say what used to be true:
+
+```json
+{
+  "id": "changed-01",
+  "question": "where does Alice Chen live?",
+  "kind": "changed",
+  "expects": [],
+  "forbids": [],
+  "expectedAnswer": "Lisbon, since March.",
+  "outdatedAnswer": "Berlin."
+}
+```
+
+An abstain question's `expectedAnswer` is `not known`.
+
+The questions that measure anything are about your own life, so keep that
+set out of any repository: `~/.config/teanode/evaluation/` is a good place
+for it, readable by you alone.

@@ -275,6 +275,11 @@ const (
 			facts { fact ` + factFields + ` path name }
 		}
 	}`
+	DocumentEvaluateAgentAnswer = `mutation ($question: String!, $expectedAnswer: String!, $outdatedAnswer: String, $answerFrom: String!) {
+		EvaluateAgentAnswer(question: $question, expectedAnswer: $expectedAnswer, outdatedAnswer: $outdatedAnswer, answerFrom: $answerFrom) {
+			answerText answerVerdict verdictReason factCount passageCount cost currency answerDurationMS
+		}
+	}`
 	DocumentRecallAgentMemory = `query ($question: String!) {
 		RecallAgentMemory(question: $question) {
 			pages { path facts { number text } }
@@ -372,6 +377,35 @@ func RecallAgentMemory(ctx context.Context, connection *Client, question string)
 		return nil, err
 	}
 	return result.RecallAgentMemory, nil
+}
+
+// AgentAnswerEvaluation is one question of a memory evaluation, answered
+// and graded.
+type AgentAnswerEvaluation struct {
+	AnswerText       string  `json:"answerText"`
+	AnswerVerdict    string  `json:"answerVerdict"`
+	VerdictReason    string  `json:"verdictReason"`
+	FactCount        int     `json:"factCount"`
+	PassageCount     int     `json:"passageCount"`
+	Cost             float64 `json:"cost"`
+	Currency         string  `json:"currency"`
+	AnswerDurationMS int     `json:"answerDurationMS"`
+}
+
+// EvaluateAgentAnswer answers a question from memory, sources or both,
+// and grades the answer against the expected one.
+func EvaluateAgentAnswer(ctx context.Context, connection *Client, question, expectedAnswer, outdatedAnswer, answerFrom string) (*AgentAnswerEvaluation, error) {
+	var result struct {
+		EvaluateAgentAnswer *AgentAnswerEvaluation `json:"EvaluateAgentAnswer"`
+	}
+	variables := map[string]any{"question": question, "expectedAnswer": expectedAnswer, "answerFrom": answerFrom}
+	if outdatedAnswer != "" {
+		variables["outdatedAnswer"] = outdatedAnswer
+	}
+	if err := connection.Execute(ctx, DocumentEvaluateAgentAnswer, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.EvaluateAgentAnswer, nil
 }
 
 // ListAgentLearned is what has been filed lately.

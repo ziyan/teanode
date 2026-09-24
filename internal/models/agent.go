@@ -461,6 +461,11 @@ const (
 	AgentJobDraft    AgentJobKind = "draft"
 	AgentJobDescribe AgentJobKind = "describe"
 	AgentJobCompact  AgentJobKind = "compact"
+
+	// AgentJobEvaluate is never queued either: it names the calls a memory
+	// evaluation makes, answering a question from a set and grading the
+	// answer, so what an evaluation cost is apart from everything else.
+	AgentJobEvaluate AgentJobKind = "evaluate"
 )
 
 // AgentJobStatus is where a job is.
