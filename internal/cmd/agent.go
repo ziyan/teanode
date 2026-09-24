@@ -46,6 +46,14 @@ func NewAgentCommand() *cli.Command {
 			newAgentSourceCommand(),
 			newAgentBriefCommand(),
 			{
+				Name:  "speak-first",
+				Usage: "have your agent start a conversation now, as it would on its own: onboarding, memory_check or tip",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "reason", Usage: "onboarding, memory_check or tip", Required: true},
+				},
+				Action: runAgentSpeakFirst,
+			},
+			{
 				Name:  "usage",
 				Usage: "your tokens, by day, kind, mailbox or model",
 				Flags: []cli.Flag{
@@ -1225,5 +1233,17 @@ func runAgentAdminRetry(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(job)
 	}
 	fmt.Printf("job %s is queued again\n", job.ID)
+	return nil
+}
+
+func runAgentSpeakFirst(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if err := client.SpeakFirstNow(ctx, connection, command.String("reason")); err != nil {
+		return describeError(command, err)
+	}
+	_, _ = fmt.Fprintln(command.Writer, "your agent speaks within the minute, in the main conversation")
 	return nil
 }

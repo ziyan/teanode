@@ -85,6 +85,7 @@ type Mutation interface {
 	AgentAskMutation
 	AgentMemoryMutation
 	AgentGraphMutation
+	AgentSpeakFirstMutation
 	AgentConnectionMutation
 	AgentReachMutation
 	AgentSkillMutation

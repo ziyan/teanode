@@ -19,8 +19,8 @@ To see it working: create an agent for a new account and open the dashboard; wit
 ## Progress
 
 - [x] (2026-09-24) Wrote this plan, after a first memory check done by hand: 48 questions drafted from one person's memory and corrected by them in chat, and a baseline of 46% from memory, 30% from sources and 58% from both (see `docs/planning/memory-write-invariants-execplan.md`, Outcomes).
-- [ ] Milestone 1: the agent can speak first: an unprompted turn in the main conversation, the rules for when, presence from the dashboard, and the drawer opening on it.
-- [ ] Milestone 2: onboarding.
+- [x] (2026-09-24) Milestone 1: the agent can speak first: an unprompted turn in the main conversation, the rules for when, presence from the dashboard, and the drawer opening on it.
+- [x] (2026-09-24) Milestone 2: onboarding.
 - [ ] Milestone 3: memory check questions stored per agent, with the tool the agent uses to draft, ask and record, and an import of an existing question file.
 - [ ] Milestone 4: the memory check conversation.
 - [ ] Milestone 5: the evaluation runs as a job over the stored set, and its scores are kept.
@@ -35,7 +35,21 @@ To see it working: create an agent for a new account and open the dashboard; wit
 - Observation: "not known" is most of what goes wrong. Memory held the fact and recall did not carry it in 22 of memory's 25 failures, so the useful signal is which questions were missed, per source, over time.
 - Observation: the dashboard hears nothing from the main conversation while the chat drawer is closed: the drawer subscribes to a conversation's events only while it is open (`web/src/components/agentDrawer.tsx`, the effect that calls `subscribe` with `AgentConversationEvents`). A message the agent writes on its own is invisible until the person opens the drawer, which is why the drawer has to be told.
 
+- Observation: a headless turn's overlays are sent with the conversation, not in the system prompt, so a test looking for the introduction's overlay has to search the whole request.
+
 ## Decision Log
+
+- Decision: presence is a mutation, `ReportAgentPresence(isVisible, idleSeconds)`, sent by each tab every minute and on visibility change, rather than a subscription that also carries a `spokeFirst` event back. The drawer instead follows the main conversation's events (`AgentConversationEvents` with an empty conversation id) whenever it is not already showing it, and opens on an `asked` event whose surface begins `speak_first:`.
+  Rationale: both halves already existed. A second subscription would have duplicated what the conversation feed says, and a mutation needs no connection bookkeeping on the server.
+  Date/Author: 2026-09-24, agent.
+
+- Decision: the rule "not within ten minutes of the person closing the drawer on a spoken-first message" was left out.
+  Rationale: the server already allows one unprompted message a day and none within thirty minutes of the person's last message, which bounds how often the drawer can open by itself; the extra browser state was not worth it until somebody finds the drawer opening too often.
+  Date/Author: 2026-09-24, agent.
+
+- Decision: one tool, `agent_profile`, carries both the profile (name, language, a line added to the instructions) and the person's word about speaking first (`onboarding_done`, `not_now`, `no_more_tips`, `no_more_memory_checks`). It is a core tool, so its overlay is present in every main-conversation turn while the introduction is open.
+  Rationale: one small tool costs fewer prompt tokens than two, and all five actions are the person saying something about how the agent should behave.
+  Date/Author: 2026-09-24, agent.
 
 - Decision: one mechanism for everything the agent says unprompted, with onboarding, memory checks and tips as its three uses.
   Rationale: all three need the same things: a turn in the main conversation that nobody asked for, rules about when that is welcome, knowing whether the person is there, and the drawer opening. Built three times they would disagree about the rules, and the person would be interrupted three times as often.

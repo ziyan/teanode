@@ -1182,6 +1182,7 @@ export const en = {
   'agentDrawer.goal.checkIn': 'Goal check-in',
   'agentDrawer.backgroundEnded': 'Background command ended',
   'agentDrawer.scheduleTurn': 'Scheduled turn',
+  'agentDrawer.speakFirstTurn': 'Started by the agent',
   'agentDrawer.backgroundCommands': 'Background commands',
   'agentDrawer.backgroundRunning': '{count} running in the background',
   'backgroundCommands.none': 'Nothing is running in the background.',

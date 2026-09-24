@@ -668,3 +668,15 @@ func RereadAgentDocuments(ctx context.Context, connection *Client, minutes int) 
 	}
 	return result.RereadAgentDocuments, nil
 }
+
+// DocumentSpeakFirstNow has the agent start a conversation now.
+const DocumentSpeakFirstNow = `mutation ($speakFirstReason: String!) { SpeakFirstNow(speakFirstReason: $speakFirstReason) }`
+
+// SpeakFirstNow has the agent start a conversation in the main one now,
+// for a reason: onboarding, memory_check or tip.
+func SpeakFirstNow(ctx context.Context, connection *Client, speakFirstReason string) error {
+	var result struct {
+		SpeakFirstNow bool `json:"SpeakFirstNow"`
+	}
+	return connection.Execute(ctx, DocumentSpeakFirstNow, map[string]any{"speakFirstReason": speakFirstReason}, &result)
+}
