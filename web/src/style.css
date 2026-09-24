@@ -5866,7 +5866,7 @@ main.content:has(> .mailbox-frame) {
    conversations is (.agent-drawer-list gives the frame): a small title,
    then the rows or one command's output. */
 .background-menu {
-  gap: 4px;
+  gap: 0;
 }
 
 .background-menu-head {
@@ -5891,10 +5891,15 @@ main.content:has(> .mailbox-frame) {
   padding: 0 6px 6px;
 }
 
-.background-menu-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 6px 6px;
+.background-menu-stop {
+  margin-left: auto;
+  padding: 2px 4px;
+}
+
+/* Inside the list the output is shorter: the list is a dropdown, and the
+   conversation under it should still show below. */
+.background-menu .background-output-text {
+  max-height: min(28vh, 200px);
 }
 
 /* The list: rows divided by a rule rather than a card each, the command

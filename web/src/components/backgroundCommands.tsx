@@ -341,53 +341,66 @@ export function BackgroundPanel({
         }
       }}
     >
-      <header className="background-menu-head">
-        {current ? (
-          <Tooltip label={t('backgroundCommands.back')}>
-            <button
-              type="button"
-              className="icon-action"
-              aria-label={t('backgroundCommands.back')}
-              onClick={() => setOpened(null)}
-            >
-              <ArrowLeftIcon size={14} />
-            </button>
-          </Tooltip>
-        ) : null}
-        <strong>{current ? t('backgroundCommands.outputTitle') : t('agentDrawer.backgroundCommands')}</strong>
-      </header>
       {current ? (
-        <BackgroundPanelOutput key={`${current.computer}/${current.id}`} command={current} onChanged={onChanged} />
-      ) : commands.length === 0 ? (
-        <p className="muted background-menu-empty">{t('backgroundCommands.none')}</p>
+        <BackgroundPanelOutput
+          key={`${current.computer}/${current.id}`}
+          command={current}
+          onBack={() => setOpened(null)}
+          onChanged={onChanged}
+        />
       ) : (
-        <BackgroundCommandRows commands={commands} onOutput={setOpened} onChanged={onChanged} />
+        <>
+          <header className="background-menu-head">
+            <strong>{t('agentDrawer.backgroundCommands')}</strong>
+          </header>
+          {commands.length === 0 ? (
+            <p className="muted background-menu-empty">{t('backgroundCommands.none')}</p>
+          ) : (
+            <BackgroundCommandRows commands={commands} onOutput={setOpened} onChanged={onChanged} />
+          )}
+        </>
       )}
     </section>
   )
 }
 
-// BackgroundPanelOutput is the output inside the panel, with Stop under it
-// while the command runs.
-function BackgroundPanelOutput({ command, onChanged }: { command: BackgroundCommand; onChanged: () => void }) {
+// BackgroundPanelOutput is one command's output inside the list: back and
+// Stop on the title line, where they stay in reach however long the output
+// is, and the output under them.
+function BackgroundPanelOutput({
+  command,
+  onBack,
+  onChanged,
+}: {
+  command: BackgroundCommand
+  onBack: () => void
+  onChanged: () => void
+}) {
   const { t } = useTranslation()
   const { output, isRunning, readAgain } = useBackgroundOutput(command)
   const { stopping, stop } = useStopBackgroundCommand(onChanged)
   return (
     <>
-      <BackgroundOutput command={command} output={output} />
-      {isRunning ? (
-        <div className="background-menu-actions">
+      <header className="background-menu-head">
+        <Tooltip label={t('backgroundCommands.back')}>
+          <button type="button" className="icon-action" aria-label={t('backgroundCommands.back')} onClick={onBack}>
+            <ArrowLeftIcon size={14} />
+          </button>
+        </Tooltip>
+        <strong>{t('backgroundCommands.outputTitle')}</strong>
+        {isRunning ? (
           <button
             type="button"
-            className="danger"
+            className="link danger background-menu-stop"
+            aria-label={`${command.command}: ${t('backgroundCommands.stop')}`}
             disabled={stopping === command.id}
             onClick={() => void stop(output ?? command).then(readAgain)}
           >
             {t('backgroundCommands.stop')}
           </button>
-        </div>
-      ) : null}
+        ) : null}
+      </header>
+      <BackgroundOutput command={command} output={output} />
     </>
   )
 }
