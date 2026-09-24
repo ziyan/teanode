@@ -353,13 +353,23 @@ func overlay(ctx context.Context) string {
 		return ""
 	}
 	var questions []*models.AgentEvaluationQuestion
+	var began *time.Time
 	if err := current.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		questions, err = tx.ListAgentEvaluationQuestions(current.Agent().ID, nil)
+		if questions, err = tx.ListAgentEvaluationQuestions(current.Agent().ID, nil); err != nil {
+			return err
+		}
+		began, err = tx.LastAgentMessageStartingWith(tools.ConversationIDOf(current), models.SpeakFirstMarker+" "+models.MemoryCheckOpening)
 		return err
 	}); err != nil {
 		return ""
 	}
+	// The current check's questions: those since it began, where it began
+	// with a check-in here. Counted over the last hours instead, a check
+	// asked for right after one ended was told it had already asked five.
 	since := time.Now().Add(-overlayLasts)
+	if began != nil && began.After(since) {
+		since = *began
+	}
 	conversationId := tools.ConversationIDOf(current)
 	waiting := []string{}
 	putCount := 0

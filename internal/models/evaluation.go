@@ -2,6 +2,10 @@ package models
 
 import "time"
 
+// MemoryCheckOpening begins what a memory check's turn is told, after the
+// speak-first marker: where the questions of the current check start.
+const MemoryCheckOpening = "It is time for a memory check"
+
 // EvaluationQuestionKind is what a memory check question tests, the same
 // kinds a question file uses.
 type EvaluationQuestionKind string
