@@ -67,6 +67,12 @@ type InsightOperation interface {
 	// SumAgentRunUsage is what each of these conversations cost: every
 	// message's usage added up, keyed by conversation.
 	SumAgentRunUsage(conversationIds []string) (map[string]models.AgentUsageNote, error)
+
+	// SumAgentDreamCost is what each of these dreams cost, keyed by
+	// dream: its job's model calls made while it ran. By its own hours
+	// rather than its whole job, because a dream a restart cut short and
+	// the dream that took the job up again share one job.
+	SumAgentDreamCost(dreams []*models.AgentDream) (map[string]float64, error)
 	DeleteAgentConversation(conversationId string) error
 
 	// SearchAgentConversations finds a person's conversations by words in
@@ -577,6 +583,45 @@ func (self *transaction) SumAgentRunUsage(conversationIds []string) (map[string]
 		}
 	}
 	return totals, nil
+}
+
+func (self *transaction) SumAgentDreamCost(dreams []*models.AgentDream) (map[string]float64, error) {
+	costs := map[string]float64{}
+	var ids, jobIds, starts, ends []string
+	for _, dream := range dreams {
+		if dream.JobID == "" {
+			continue
+		}
+		end := "infinity"
+		if dream.FinishedAt != nil {
+			end = dream.FinishedAt.Format(time.RFC3339Nano)
+		}
+		ids = append(ids, dream.ID)
+		jobIds = append(jobIds, dream.JobID)
+		starts = append(starts, dream.StartedAt.Format(time.RFC3339Nano))
+		ends = append(ends, end)
+	}
+	if len(ids) == 0 {
+		return costs, nil
+	}
+	var rows []struct {
+		DreamID string
+		Cost    float64
+	}
+	if err := self.tx.Raw(`
+		SELECT d."dream_id", coalesce(sum((m."usage"->>'cost')::double precision), 0) AS cost
+		FROM unnest(?::text[], ?::text[], ?::timestamptz[], ?::timestamptz[]) AS d("dream_id", "job_id", "started_at", "finished_at")
+		JOIN "agent_conversation" c ON c."job_id" = d."job_id"
+		JOIN "agent_message" m ON m."conversation_id" = c."id"
+			AND m."created_at" >= d."started_at" AND m."created_at" <= d."finished_at"
+		WHERE m."usage" IS NOT NULL
+		GROUP BY d."dream_id"`, pq.Array(ids), pq.Array(jobIds), pq.Array(starts), pq.Array(ends)).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		costs[row.DreamID] = row.Cost
+	}
+	return costs, nil
 }
 
 // CountAgentRuns is how many runs the filter leaves, for the pager.

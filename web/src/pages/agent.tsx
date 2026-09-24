@@ -768,7 +768,7 @@ const DREAMS = `
   query ($first: Int) {
     ListAgentDreams(first: $first) {
       id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse
-      strengthened associated rehearsed gaps unknown revised notes lastError
+      strengthened associated rehearsed gaps unknown revised notes lastError cost currency
       proposals { kind path to reason }
     }
   }`
@@ -778,6 +778,9 @@ const DREAMS = `
 const REREAD_DOCUMENTS = `mutation ($minutes: Int!) { RereadAgentDocuments(minutes: $minutes) }`
 
 const DREAM_NOW = `mutation { DreamAgentNow }`
+// Whether a dream waits for a worker or runs now: cheap enough to ask on
+// every refresh, which the reading progress is not.
+const DREAM_STATE = `query { AgentDreamState { dreamJobStatus queuedAt startedAt } }`
 const DREAM_BOOTSTRAP = `mutation ($on: Boolean!) { DreamAgentNow(bootstrap: $on) }`
 const BOOTSTRAPPING = `query { ReadAgent { agent { dreamBootstrap } } }`
 const READING_PROGRESS = `query { AgentReadingProgress { waiting read perHour hoursLeft bootstrapping spent costLeft currency dreams } }`
@@ -896,6 +899,17 @@ type Dream = {
   notes: string
   lastError: string
   proposals: { kind: string; path: string; to: string; reason: string }[]
+  // What its model calls cost, and in what.
+  cost: number
+  currency: string | null
+}
+
+type DreamState = {
+  // 'queued' while it waits for a free worker, 'running' while it works,
+  // '' when there is neither.
+  dreamJobStatus: '' | 'queued' | 'running'
+  queuedAt: string | null
+  startedAt: string | null
 }
 
 const SCHEDULES = `
@@ -2585,6 +2599,21 @@ function DreamCard({
   })
   const reading = progress.data?.AgentReadingProgress
   const backlog = reading?.waiting ?? 0
+  // A dream asked for sits in the queue until a worker is free, which can
+  // be a minute or two while sources are being read, and the page used
+  // to show nothing at all in between. This is asked on every refresh,
+  // and when it changes -- queued, running, over -- the list is read
+  // again, so the new row appears and a finished one gets its numbers.
+  const dreamState = useQuery(() => graphql<{ AgentDreamState: DreamState }>(DREAM_STATE, {}), [])
+  const dreamJobStatus = dreamState.data?.AgentDreamState.dreamJobStatus ?? ''
+  const seenDreamJobStatus = useRef(dreamJobStatus)
+  useEffect(() => {
+    if (seenDreamJobStatus.current === dreamJobStatus) return
+    seenDreamJobStatus.current = dreamJobStatus
+    void reload()
+    if (dreamJobStatus === '') void progress.reload()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dreamJobStatus])
   const setBootstrap = async (on: boolean) => {
     try {
       await graphql(DREAM_BOOTSTRAP, { on })
@@ -2596,15 +2625,15 @@ function DreamCard({
     }
   }
 
-  // Asking for the night now only moves it to the next tick, and only
-  // within the hours below: a run that rewrites pages while somebody is
-  // reading them is the thing those hours exist to prevent.
+  // Asking for a dream queues it at once, whatever the hours below say:
+  // those hours and the quiet after a conversation are for the dreams
+  // nobody asked for.
   const startNow = async () => {
     setStarting(true)
     try {
       await graphql(DREAM_NOW, {})
       toast.done(t('agent.dreamNowAsked'))
-      await reload()
+      await Promise.all([reload(), dreamState.reload()])
     } catch (caught) {
       toast.failed(messageOf(caught))
     } finally {
@@ -2671,6 +2700,16 @@ function DreamCard({
       },
     },
     {
+      key: 'cost',
+      header: t('agent.dreamCost'),
+      width: '7rem',
+      optional: true,
+      value: (dream) => String(dream.cost),
+      render: (dream) => (
+        <span className="muted numeric">{dream.cost > 0 ? formatMoney(dream.cost, dream.currency) : ''}</span>
+      ),
+    },
+    {
       key: 'backlog',
       header: t('agent.dreamWaiting'),
       width: '7rem',
@@ -2703,8 +2742,12 @@ function DreamCard({
           <button type="button" disabled={rereading} onClick={() => setRereadMinutes('60')}>
             {t('agent.reread')}
           </button>
-          <button type="button" disabled={starting} onClick={() => void startNow()}>
-            {t('agent.dreamNow')}
+          <button type="button" disabled={starting || dreamJobStatus !== ''} onClick={() => void startNow()}>
+            {dreamJobStatus === 'queued'
+              ? t('agent.dreamQueued')
+              : dreamJobStatus === 'running'
+                ? t('agent.dreamRunning')
+                : t('agent.dreamNow')}
           </button>
         </>
       }
@@ -2783,6 +2826,12 @@ function DreamCard({
           </span>
         }
       />
+      {dreamJobStatus === 'queued' && dreamState.data?.AgentDreamState.queuedAt ? (
+        <p className="muted">
+          <Tag value={t('agent.dreamQueued')} tone="warn" />{' '}
+          {t('agent.dreamQueuedHint', { time: formatTime(dreamState.data.AgentDreamState.queuedAt) })}
+        </p>
+      ) : null}
       {error ? <ErrorMessage error={error} /> : null}
       {loading && !data ? <Loading /> : null}
       <DataTable

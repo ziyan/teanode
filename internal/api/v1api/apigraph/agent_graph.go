@@ -68,6 +68,12 @@ type AgentGraphQuery interface {
 	// Needs agent:use.
 	AgentReadingProgress(ctx context.Context) (*reading.Progress, error)
 
+	// AgentDreamState is whether a dream is waiting to start or running
+	// now, and since when: cheap, for a page to ask every few seconds
+	// between pressing Dream now and the dream showing up. Needs
+	// agent:use.
+	AgentDreamState(ctx context.Context) (*AgentDreamState, error)
+
 	// The pictures and files behind citations the agent has already
 	// written -- "work/mcx#3" -- so that a conversation can show the
 	// evidence an answer rests on. Needs agent:use.
@@ -1118,7 +1124,56 @@ func (self *graph) ListAgentDreams(ctx context.Context, arguments ListAgentDream
 	if limit <= 0 || limit > 100 {
 		limit = 14
 	}
-	return self.transaction(ctx).ListAgentDreams(found.ID, limit)
+	tx := self.transaction(ctx)
+	dreams, err := tx.ListAgentDreams(found.ID, limit)
+	if err != nil {
+		return nil, err
+	}
+	// What each cost: the model calls its job made while it ran, the
+	// same numbers `agent dream runs` lists call by call.
+	costs, err := tx.SumAgentDreamCost(dreams)
+	if err != nil {
+		return nil, err
+	}
+	currency := self.config.Current().Agent.Currency
+	for _, dream := range dreams {
+		dream.Cost, dream.Currency = costs[dream.ID], currency
+	}
+	return dreams, nil
+}
+
+// AgentDreamState is the dream job of the moment, if there is one.
+type AgentDreamState struct {
+	// DreamJobStatus is "queued" while a dream waits for a free worker,
+	// "running" while it works, and empty when there is neither.
+	DreamJobStatus string `json:"dreamJobStatus"`
+
+	// QueuedAt is when it was asked for or scheduled; StartedAt when a
+	// worker took it, while it runs.
+	QueuedAt  *time.Time `json:"queuedAt" graphapi:"nullable"`
+	StartedAt *time.Time `json:"startedAt" graphapi:"nullable"`
+}
+
+func (self *graph) AgentDreamState(ctx context.Context) (*AgentDreamState, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	jobs, err := self.transaction(ctx).ListAgentJobs(&db.AgentJobFilter{
+		AgentID:  found.ID,
+		Kinds:    []models.AgentJobKind{models.AgentJobDream},
+		Statuses: []models.AgentJobStatus{models.AgentJobQueued, models.AgentJobRunning},
+	}, &db.Options{Limit: 1})
+	if err != nil || len(jobs) == 0 {
+		return &AgentDreamState{}, err
+	}
+	job := jobs[0]
+	queuedAt := job.CreatedAt
+	state := &AgentDreamState{DreamJobStatus: string(job.Status), QueuedAt: &queuedAt}
+	if job.Status == models.AgentJobRunning {
+		state.StartedAt = job.ClaimedAt
+	}
+	return state, nil
 }
 
 func (self *graph) AgentReadingProgress(ctx context.Context) (*reading.Progress, error) {
@@ -1831,10 +1886,12 @@ func (self *graph) DreamAgentNow(ctx context.Context, arguments DreamAgentNowArg
 	if err != nil {
 		return false, err
 	}
-	// The night is due when it has not run for six hours; forgetting when
-	// it last ran makes it due at the next tick. The hours the person set
-	// still hold: a night asked for at noon runs when its hours begin.
-	_, err = self.writing(ctx).UpdateAgent(found.ID, func(agent *models.Agent) error {
+	tx := self.writing(ctx)
+	isAsked := arguments.Bootstrap == nil || *arguments.Bootstrap
+	if isAsked && !agent.FeatureAllowed(self.config.Current(), "dreaming") {
+		return false, fmt.Errorf("%w: dreaming is off on this server", api.ErrInvalidArguments)
+	}
+	if _, err = tx.UpdateAgent(found.ID, func(agent *models.Agent) error {
 		if arguments.Bootstrap != nil {
 			agent.DreamBootstrap = *arguments.Bootstrap
 			if !*arguments.Bootstrap {
@@ -1843,7 +1900,29 @@ func (self *graph) DreamAgentNow(ctx context.Context, arguments DreamAgentNowArg
 		}
 		agent.DreamedAt = nil
 		return nil
+	}); err != nil || !isAsked {
+		return err == nil, err
+	}
+	// Asked for, so it runs now: queued here rather than left for the
+	// sweep, which keeps to the person's dream hours and waits half an
+	// hour after they last spoke. Those are for the nights nobody asked
+	// for; somebody pressing the button is not asleep and does not want
+	// to be interrupted by it later, they want it now. Clearing when the
+	// last night ran is kept for a server with no worker here, whose
+	// sweep then queues it at its next tick.
+	worker := self.agentWorker()
+	if worker == nil {
+		return true, nil
+	}
+	open, err := tx.CountAgentJobs(&db.AgentJobFilter{
+		AgentID:  found.ID,
+		Kinds:    []models.AgentJobKind{models.AgentJobDream},
+		Statuses: []models.AgentJobStatus{models.AgentJobQueued, models.AgentJobRunning},
 	})
+	if err != nil || open > 0 {
+		return err == nil, err
+	}
+	_, err = worker.Enqueue(tx, models.AgentJobDream, found.ID, "", time.Now().Format("2006-01-02"))
 	return err == nil, err
 }
 

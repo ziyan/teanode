@@ -2833,12 +2833,16 @@ export const en = {
   'agent.dreamFromLabel': 'Earliest a dream may start',
   'agent.dreamUntilLabel': 'Latest a dream may start',
   'agent.earlierDreams': 'Earlier dreams',
+  'agent.dreamQueued': 'Queued',
+  'agent.dreamRunning': 'Dreaming',
+  'agent.dreamQueuedHint': 'Asked for at {time}. It starts as soon as a worker is free, usually within a minute or two.',
+  'agent.dreamCost': 'Cost',
   'agent.dreamRuns': 'Runs',
   'agent.runsOfDream':
     'The runs of the dream at {when}: every call it made to a model, newest first. Open one to read it.',
   'agent.allRuns': 'All runs',
   'agent.dreamNow': 'Dream now',
-  'agent.dreamNowAsked': "The dream starts within the minute, within your agent's hours.",
+  'agent.dreamNowAsked': 'The dream starts within the minute.',
   'agent.reread': 'Re-read…',
   'agent.rereadTitle': 'Read again what a dream marked read',
   'agent.rereadHint':

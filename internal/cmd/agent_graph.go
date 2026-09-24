@@ -307,7 +307,7 @@ func newAgentDreamCommand() *cli.Command {
 			},
 			{
 				Name:   "now",
-				Usage:  "dream at the next tick, within the agent's hours, instead of waiting for its turn",
+				Usage:  "dream now, whatever the agent's hours, instead of waiting for its turn",
 				Action: runDreamNow,
 			},
 			{
@@ -371,7 +371,7 @@ func runDreamNow(ctx context.Context, command *cli.Command) error {
 	if err := client.DreamAgentNow(ctx, connection, nil); err != nil {
 		return describeError(command, err)
 	}
-	_, _ = fmt.Fprintln(command.Writer, "the dream starts within the minute, if it is within your agent's hours")
+	_, _ = fmt.Fprintln(command.Writer, "the dream starts within the minute")
 	return nil
 }
 
@@ -1365,6 +1365,9 @@ func runDreamLog(ctx context.Context, command *cli.Command) error {
 		case len(parts) == 0:
 			// The line under it says why there is nothing to count.
 			parts = []string{"cut short"}
+		}
+		if dream.Cost > 0 {
+			parts = append(parts, fmt.Sprintf("cost %.2f %s", dream.Cost, dream.Currency))
 		}
 		_, _ = fmt.Fprintf(command.Writer, "  %s\n", strings.Join(parts, ", "))
 		if dream.Backlog > 0 {
