@@ -129,10 +129,20 @@ func whatThePageAlreadySays(tx db.Transaction, agentId string, node *models.Agen
 // answer in both directions: a sentence re-stated without its date adds
 // nothing by becoming a second row, and a sentence that arrives with a
 // date the page did not have should leave the page knowing it.
+//
+// It is the one answer to that question: the check before writing, the
+// fold after it (whatToFold) and the nightly merge (mergeSaidTwice) all
+// ask it, so none of them can call two occurrences one.
 func isTheSameFact(fact, said *models.AgentFact) bool {
-	if !saysItInTheSameWords(fact.Text, said.Text) {
-		return false
-	}
+	return saysItInTheSameWords(fact.Text, said.Text) && couldBeOneStatement(fact, said)
+}
+
+// couldBeOneStatement is the half of isTheSameFact that does not look at
+// the words: the same kind, and the same date where both give one. The
+// nightly merge asks only this half, because the model has already said
+// the two wordings mean the same; what it cannot overrule is a second
+// occurrence of an event on another day, or a state filed as an event.
+func couldBeOneStatement(fact, said *models.AgentFact) bool {
 	if fact.Kind != said.Kind {
 		return false
 	}
@@ -201,9 +211,10 @@ const (
 // Vector similarity and shared names do not prove that two facts agree.
 // Different amounts, dates, frequencies or responsibilities must remain distinct.
 //
-// So an automatic fold now needs the two to be the same sentence written
-// twice -- see saysItInTheSameWords -- where there is provably nothing
-// to lose. A paraphrase is left standing beside its twin; the nightly
+// So an automatic fold now needs the two to be the same fact written
+// twice -- see isTheSameFact: the same words, the same kind, and the same
+// day where both say one -- where there is provably nothing to lose. The
+// same sentence about a second occurrence a year later is a second fact. A paraphrase is left standing beside its twin; the nightly
 // pass that puts a page to a model (consolidatePage) is where a judgment
 // like that belongs, and until it runs the person hears both rather than
 // only the older.
@@ -228,7 +239,7 @@ func whatToFold(written, twin *models.AgentFact) foldChoice {
 		}
 		return foldTheOlderBehindTheNewer
 	}
-	if saysItInTheSameWords(written.Text, twin.Text) {
+	if isTheSameFact(twin, written) {
 		return foldTheNewerBehindTheOlder
 	}
 	return foldKeepBoth
