@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { graphql } from '../api'
 import { Loading, Tag, formatBytes } from './common'
 import { ConfirmDialog } from './dialog'
-import { ArrowLeftIcon } from './icons'
+import { ArrowLeftIcon, StopIcon } from './icons'
 import { RelativeTime } from './relativeTime'
 import { useToast } from './toast'
 import { Tooltip } from './tooltip'
@@ -177,19 +177,38 @@ export function BackgroundCommandRows({
             </span>
           </button>
           {command.isRunning ? (
-            <button
-              type="button"
-              className="link danger background-command-stop"
-              aria-label={`${command.command}: ${t('backgroundCommands.stop')}`}
-              disabled={stopping === command.id}
-              onClick={() => void stop(command)}
-            >
-              {t('backgroundCommands.stop')}
-            </button>
+            <StopButton command={command} isStopping={stopping === command.id} onStop={() => void stop(command)} />
           ) : null}
         </li>
       ))}
     </ul>
+  )
+}
+
+// StopButton stops a running command: small, red, with the square every
+// player uses for stop, so it reads as the one thing to press and not as
+// a link to somewhere.
+function StopButton({
+  command,
+  isStopping,
+  onStop,
+}: {
+  command: BackgroundCommand
+  isStopping: boolean
+  onStop: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <button
+      type="button"
+      className="background-stop"
+      aria-label={`${command.command}: ${t('backgroundCommands.stop')}`}
+      disabled={isStopping}
+      onClick={onStop}
+    >
+      <StopIcon size={12} />
+      {t('backgroundCommands.stop')}
+    </button>
   )
 }
 
@@ -389,15 +408,11 @@ function BackgroundPanelOutput({
         </Tooltip>
         <strong>{t('backgroundCommands.outputTitle')}</strong>
         {isRunning ? (
-          <button
-            type="button"
-            className="link danger background-menu-stop"
-            aria-label={`${command.command}: ${t('backgroundCommands.stop')}`}
-            disabled={stopping === command.id}
-            onClick={() => void stop(output ?? command).then(readAgain)}
-          >
-            {t('backgroundCommands.stop')}
-          </button>
+          <StopButton
+            command={command}
+            isStopping={stopping === command.id}
+            onStop={() => void stop(output ?? command).then(readAgain)}
+          />
         ) : null}
       </header>
       <BackgroundOutput command={command} output={output} />

@@ -5891,9 +5891,35 @@ main.content:has(> .mailbox-frame) {
   padding: 0 6px 6px;
 }
 
-.background-menu-stop {
+.background-menu-head .background-stop {
   margin-left: auto;
-  padding: 2px 4px;
+}
+
+/* Stop: a small red button with the stop square, not a link, because it
+   ends something running on the person's machine. */
+.background-stop {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--bad) 45%, transparent);
+  border-radius: 999px;
+  background: none;
+  color: var(--bad);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.background-stop:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 10%, transparent);
+}
+
+.background-stop:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 /* Inside the list the output is shorter: the list is a dropdown, and the
@@ -5950,7 +5976,9 @@ main.content:has(> .mailbox-frame) {
   -webkit-line-clamp: 2;
   font-size: 12.5px;
   line-height: 1.45;
-  overflow-wrap: anywhere;
+  /* Wrapped at the edge, the way a terminal wraps a long line, rather
+     than at a hyphen, which split --interval into - and -interval. */
+  word-break: break-all;
 }
 
 .background-command-meta {
@@ -5971,9 +5999,8 @@ main.content:has(> .mailbox-frame) {
   font-size: 11px;
 }
 
-.background-command-stop {
-  flex: none;
-  padding: 4px 6px;
+.background-command .background-stop {
+  margin-right: 4px;
 }
 
 .background-output-command {
@@ -5982,7 +6009,7 @@ main.content:has(> .mailbox-frame) {
   font-size: 12.5px;
   line-height: 1.45;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 .background-output .background-command-meta {
