@@ -134,17 +134,19 @@ A schedule is a name, a cron line, a prompt, and where the answer goes: the
 drawer or an email.
 
 Three forms are understood. Five cron fields in the person's own zone; `@at`
-and a moment, which runs once and then switches itself off; and `@in` and a
+and a moment, which runs once and is then removed; and `@in` and a
 distance, which is resolved to a moment when it is stored, so it does not move
 every time it is looked at.
 
 Due schedules are found under a row lock, their next run is computed and
 written, and a job is queued. A schedule whose agent is switched off still
 advances, so it skips its runs rather than firing them all at once when the
-agent comes back. A schedule with no time left (a moment that has come, or a
-cron line that stops making sense) is switched off by its run once that run is
-done, not when it is queued: switched off as it was queued, the run found it
-off and did nothing, and every reminder for one moment was dropped.
+agent comes back. A schedule with no time left is ended by its run once that
+run is done, not when it is queued: switched off as it was queued, the run
+found it off and did nothing, and every reminder for one moment was dropped.
+A schedule for one moment is then removed, having done what it was for; one
+whose cron line stops making sense is switched off, so it can be seen and
+mended.
 
 The run is a headless turn with the whole catalog the person's permissions
 allow — but nobody is present to confirm anything, so every destructive or

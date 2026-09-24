@@ -140,10 +140,9 @@ func TestScheduleRunsAndDeliversToTheConversation(t *testing.T) {
 }
 
 // A schedule for one moment, made in a side conversation, takes its turn
-// there when the moment comes, and only then switches itself off. It used
-// to be switched off as its run was queued, and the run, finding it off,
-// did nothing.
-func TestAScheduleForOneMomentRunsInItsConversationAndThenSwitchesOff(t *testing.T) {
+// there when the moment comes, and only then goes. It used to be switched
+// off as its run was queued, and the run, finding it off, did nothing.
+func TestAScheduleForOneMomentRunsInItsConversationAndThenGoes(t *testing.T) {
 	world := startGoalWorld(t, []string{answerRound}, "")
 	defer world.close()
 	past := time.Now().Add(-time.Minute)
@@ -173,13 +172,13 @@ func TestAScheduleForOneMomentRunsInItsConversationAndThenSwitchesOff(t *testing
 			after, _ = tx.GetAgentSchedule(schedule.ID)
 			messages, _ = tx.ListAgentMessages(side.ID, nil)
 		})
-		if !after.Enabled {
+		if after == nil {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	if after.Enabled || after.NextRunAt != nil {
-		t.Fatalf("after its one run it is off, with no next time: %+v", after)
+	if after != nil {
+		t.Fatalf("after its one run it is gone: %+v", after)
 	}
 	if len(messages) != 2 || !strings.HasPrefix(messages[0].Content, models.ScheduleMarker) || messages[1].Role != "assistant" {
 		t.Fatalf("the turn is in the conversation it was made in: %+v", messages)

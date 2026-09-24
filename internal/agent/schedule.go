@@ -212,20 +212,30 @@ func scheduleConversation(tx db.Transaction, agentId, conversationId string) (*m
 	return tx.CreateAgentConversation(&models.AgentConversation{AgentID: agentId, Kind: models.AgentConversationMain, LastAt: time.Now()})
 }
 
-// finishOnce switches off a schedule that has no time left, now that its
-// last run is done. Not before: the sweep that queued the run used to
-// switch it off as it queued it, and the run, finding it off, did nothing,
-// so every reminder for one moment was dropped without a word.
+// finishOnce ends a schedule that has no time left, now that its last run
+// is done. Not before: the sweep that queued the run used to switch it off
+// as it queued it, and the run, finding it off, did nothing, so every
+// reminder for one moment was dropped without a word.
+//
+// A schedule for one moment is removed: it has done what it was for, and
+// left behind it was one more row in the person's list of schedules, off,
+// that nobody would ever turn on again. One whose cron line stopped making
+// sense is only switched off, so the person can see it and mend the line.
 func (self *Agent) finishOnce(ctx context.Context, run *Run, scheduleId string) error {
 	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		_, err := tx.UpdateAgentSchedule(scheduleId, func(schedule *models.AgentSchedule) error {
-			if schedule.NextRunAt == nil {
-				schedule.Enabled = false
-			}
+		schedule, err := tx.GetAgentSchedule(scheduleId)
+		if err != nil || schedule == nil || schedule.NextRunAt != nil {
+			// Removed while it ran, or it has a next time.
+			return err
+		}
+		if strings.HasPrefix(strings.TrimSpace(schedule.Cron), "@at ") {
+			return tx.DeleteAgentSchedule(scheduleId)
+		}
+		_, err = tx.UpdateAgentSchedule(scheduleId, func(schedule *models.AgentSchedule) error {
+			schedule.Enabled = false
 			return nil
 		})
 		if errors.Is(err, db.ErrNotFound) {
-			// Removed while it ran.
 			return nil
 		}
 		return err
