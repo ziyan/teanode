@@ -132,7 +132,8 @@ function BackgroundCommandState({ command }: { command: BackgroundCommand }) {
   const { t } = useTranslation()
   if (command.isRunning) return <Tag value={t('backgroundCommands.running')} />
   if (command.stopReason === 'lifetime') return <Tag value={t('backgroundCommands.lifetime')} tone="warn" />
-  if (command.stopReason === 'stopped' || command.stopReason === 'shutdown') return <Tag value={t('backgroundCommands.stoppedState')} tone="warn" />
+  if (command.stopReason === 'stopped' || command.stopReason === 'shutdown')
+    return <Tag value={t('backgroundCommands.stoppedState')} tone="warn" />
   return (
     <Tag
       value={t('backgroundCommands.exited', { code: command.exitCode })}
@@ -142,9 +143,10 @@ function BackgroundCommandState({ command }: { command: BackgroundCommand }) {
 }
 
 // BackgroundCommandRows is the list: a row per command, the command itself
-// first because that is what somebody scanning the list recognizes, and
+// first, on one line cut short, because its start is what somebody
+// scanning the list recognizes; the whole of it is in its output. And
 // under it how it stands, where, and since when. The row opens its output;
-// a running one has Stop beside it, the one action, as a word.
+// a running one has Stop beside it, as the stop square alone.
 export function BackgroundCommandRows({
   commands,
   onOutput,
@@ -177,7 +179,12 @@ export function BackgroundCommandRows({
             </span>
           </button>
           {command.isRunning ? (
-            <StopButton command={command} isStopping={stopping === command.id} onStop={() => void stop(command)} />
+            <StopButton
+              command={command}
+              isIconOnly
+              isStopping={stopping === command.id}
+              onStop={() => void stop(command)}
+            />
           ) : null}
         </li>
       ))}
@@ -187,29 +194,33 @@ export function BackgroundCommandRows({
 
 // StopButton stops a running command: small, red, with the square every
 // player uses for stop, so it reads as the one thing to press and not as
-// a link to somewhere.
+// a link to somewhere. In a row it is the square alone, with its word in
+// the tooltip; on the output's title line there is room for the word.
 function StopButton({
   command,
+  isIconOnly = false,
   isStopping,
   onStop,
 }: {
   command: BackgroundCommand
+  isIconOnly?: boolean
   isStopping: boolean
   onStop: () => void
 }) {
   const { t } = useTranslation()
-  return (
+  const button = (
     <button
       type="button"
-      className="background-stop"
+      className={isIconOnly ? 'background-stop icon-only' : 'background-stop'}
       aria-label={`${command.command}: ${t('backgroundCommands.stop')}`}
       disabled={isStopping}
       onClick={onStop}
     >
       <StopIcon size={12} />
-      {t('backgroundCommands.stop')}
+      {isIconOnly ? null : t('backgroundCommands.stop')}
     </button>
   )
+  return isIconOnly ? <Tooltip label={t('backgroundCommands.stop')}>{button}</Tooltip> : button
 }
 
 // useBackgroundOutput reads what one command printed, again every couple

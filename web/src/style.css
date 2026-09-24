@@ -5917,6 +5917,13 @@ main.content:has(> .mailbox-frame) {
   background: color-mix(in srgb, var(--bad) 10%, transparent);
 }
 
+.background-stop.icon-only {
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
 .background-stop:disabled {
   opacity: 0.6;
   cursor: default;
@@ -5992,15 +5999,12 @@ main.content:has(> .mailbox-frame) {
 }
 
 .background-command-line {
-  display: -webkit-box;
+  display: block;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  font-size: 12.5px;
-  line-height: 1.45;
-  /* Wrapped at the edge, the way a terminal wraps a long line, rather
-     than at a hyphen, which split --interval into - and -interval. */
-  word-break: break-all;
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .background-command-meta {
@@ -6025,11 +6029,21 @@ main.content:has(> .mailbox-frame) {
   margin-right: 4px;
 }
 
+/* The whole command, however long: a command can be pages of pipeline,
+   so it scrolls in a box of its own rather than pushing the output out of
+   the list. */
 .background-output-command {
   display: block;
+  flex-shrink: 0;
+  max-height: 5.5em;
   margin: 0 0 6px;
-  font-size: 12.5px;
-  line-height: 1.45;
+  padding: 4px 8px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--field);
+  font-size: 12px;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
 }
