@@ -36,6 +36,12 @@ func (self *Agent) dreamConsolidate(ctx context.Context, run *Run, record *model
 
 // consolidatePage rewrites one page and merges what it says twice.
 func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models.AgentDream, page *models.AgentNode, budget *dreamBudget) bool {
+	// When the facts were read, which is what the page is marked with at
+	// the end: a fact added while the model was answering is newer than
+	// this, so the page is due again. Marking it with the time the write
+	// finished put such a fact behind the mark, and it was never summarized
+	// until it changed again.
+	readAt := time.Now()
 	var facts []*models.AgentFact
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		facts, err = tx.ListAgentFacts(run.Agent.ID, page.ID, false, 200)
@@ -52,12 +58,10 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 		}
 		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 			tx.AsActor(models.ActorDream)
-			empty := *page
-			empty.Summary = ""
-			if _, err := tx.PutAgentNode(&empty); err != nil {
+			if _, err := tx.SetAgentNodeSummary(page.AgentID, page.ID, ""); err != nil {
 				return err
 			}
-			return tx.MarkAgentNodeConsolidated(page.ID, time.Now())
+			return tx.MarkAgentNodeConsolidated(page.ID, readAt)
 		}); err != nil {
 			log.Warningf("cannot clear the opening of %q: %s", page.Path, err)
 			return false
@@ -114,17 +118,17 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 	// the migration and the dashboard, and every night reported none.
 	merged := 0
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		if _, err := tx.PutAgentNode(&models.AgentNode{
-			AgentID: page.AgentID, Path: page.Path, Kind: page.Kind, Name: page.Name,
-			Aliases: page.Aliases, ContactID: page.ContactID, Pinned: page.Pinned,
-			Importance: page.Importance, Summary: summary,
-		}); err != nil {
+		// The opening and nothing else. The whole page used to be saved
+		// from the copy read before the model was asked, which put back a
+		// rename, an alias, a pin made in the meantime, and brought back a
+		// page archived in the meantime by writing it as not dormant.
+		if _, err := tx.SetAgentNodeSummary(page.AgentID, page.ID, summary); err != nil {
 			return err
 		}
 		if merged, err = mergeSaidTwice(tx, page.AgentID, facts, answer.Same); err != nil {
 			return err
 		}
-		return tx.MarkAgentNodeConsolidated(page.ID, time.Now())
+		return tx.MarkAgentNodeConsolidated(page.ID, readAt)
 	}); err != nil {
 		log.Warningf("cannot rewrite %q: %s", page.Path, err)
 		return false
@@ -155,8 +159,25 @@ type consolidateAnswer struct {
 // stated neither of them and the citation trail led to a dormant row.
 func mergeSaidTwice(tx db.Transaction, agentId string, facts []*models.AgentFact, same [][]int) (int, error) {
 	byNumber := map[int]*models.AgentFact{}
+	readAt := map[string]time.Time{}
 	for _, fact := range facts {
 		byNumber[fact.Number] = fact
+		readAt[fact.ID] = fact.ModifiedAt
+	}
+	// The rows this pass itself has changed, which are as it left them
+	// rather than as they were read.
+	touched := map[string]bool{}
+	// isAsRead says whether a row is still what the model was shown, or
+	// what this pass made of it. A row changed by somebody else while the
+	// model was answering -- struck, edited, folded -- is not what the
+	// model judged, and a merge applied to it would be applied to a state
+	// nobody looked at.
+	isAsRead := func(fact *models.AgentFact) bool {
+		if touched[fact.ID] {
+			return true
+		}
+		seen, wasRead := readAt[fact.ID]
+		return wasRead && fact.ModifiedAt.Equal(seen)
 	}
 	merged := 0
 	for _, pair := range same {
@@ -180,6 +201,9 @@ func mergeSaidTwice(tx db.Transaction, agentId string, facts []*models.AgentFact
 		// Both rows already gone, or already folded into one another:
 		// there is nothing left of this pair to merge.
 		if bestNow == nil || otherNow == nil || bestNow.ID == otherNow.ID {
+			continue
+		}
+		if !isAsRead(bestNow) || !isAsRead(otherNow) {
 			continue
 		}
 		// The model reads the words; it does not get to call an event on
@@ -226,6 +250,7 @@ func mergeSaidTwice(tx db.Transaction, agentId string, facts []*models.AgentFact
 		}); err != nil {
 			return merged, err
 		}
+		touched[keep.ID], touched[gone.ID] = true, true
 		merged++
 	}
 	return merged, nil
