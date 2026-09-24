@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.62.2] - 2026-09-24
+
+### Fixed
+
+- A memory check no longer stops halfway without a word, and one you ask for starts within the minute even while your agent is reading in the background. (#159)
+
 ## [0.62.1] - 2026-09-24
 
 ### Fixed
