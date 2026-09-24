@@ -33,7 +33,7 @@ func (self *Agent) memoryCheckReason() speakFirstReason {
 			return memoryCheckDue(tx, agent, now)
 		},
 		checkIn: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time, prepared map[string]string) (string, error) {
-			return speakFirstMessage(owner, now, "It is time for a memory check: a few questions about things you remember about them, to learn how well your memory answers.") + askedLine(prepared) + strings.Join([]string{
+			return speakFirstMessage(owner, now, models.MemoryCheckOpening+": a few questions about things you remember about them, to learn how well your memory answers.") + askedLine(prepared) + strings.Join([]string{
 				"Call memory_check with draft (load it with tool_search first if it is not among your tools). Say in one short line that you would like to check a few things you remember about them, then put them one at a time with ask_user.",
 				"",
 				"This is not a quiz. They should only ever have to say whether you are right, never recall anything. Put each one as what you remember and ask whether it is right and still true: \"I have that you moved to Lisbon in 2023. Is that right, and still the case?\" Skip any drafted fact that is about somebody else's work or that they would have to look up; ask about their own life, their family, their home, their things. Record each with memory_check ask before you put it: the question it answers, as a plain question (\"where do you live?\"), and the answer you believe.",

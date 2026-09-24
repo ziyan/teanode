@@ -39,6 +39,10 @@ type EvaluationOperation interface {
 	// pages hold.
 	CountAgentFactsToCheck(agentId string) (int64, error)
 
+	// LastAgentMessageStartingWith is when a conversation's latest message
+	// that begins with the words given was written, or nil.
+	LastAgentMessageStartingWith(conversationId, opening string) (*time.Time, error)
+
 	// CreateAgentEvaluationRun starts a run of the memory check.
 	CreateAgentEvaluationRun(agentId string) (*models.AgentEvaluationRun, error)
 
@@ -437,4 +441,18 @@ func (self *transaction) ListAgentTips(agentId string) ([]*models.AgentTip, erro
 		tips = append(tips, &models.AgentTip{ID: model.ID, AgentID: model.AgentID, TipKey: model.TipKey, GivenAt: model.GivenAt.In(time.Local), ConversationID: model.ConversationID})
 	}
 	return tips, nil
+}
+
+func (self *transaction) LastAgentMessageStartingWith(conversationId, opening string) (*time.Time, error) {
+	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(opening)
+	var last []time.Time
+	if err := self.tx.Model(&agentMessageModel{}).
+		Where(`"conversation_id" = ? AND "content" LIKE ?`, conversationId, escaped+"%").
+		Order(`"created_at" DESC`).Limit(1).Pluck("created_at", &last).Error; err != nil {
+		return nil, err
+	}
+	if len(last) == 0 {
+		return nil, nil
+	}
+	return &last[0], nil
 }

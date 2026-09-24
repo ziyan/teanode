@@ -232,3 +232,28 @@ func TestADraftLeavesOutWhatWasReadFromWork(t *testing.T) {
 		t.Fatal("what the person told the agent about somebody is asked about first")
 	}
 }
+
+// A check counts its questions from its own check-in: one asked for right
+// after another ended does not start out "five questions so far".
+func TestANewCheckCountsItsOwnQuestions(t *testing.T) {
+	world := newCheckWorld(t)
+	for _, question := range []string{"What do you keep on the roof?", "Where do you live?"} {
+		world.call(t, `{"action":"ask","question":"`+question+`","answer":"Something."}`)
+	}
+	if overlay := world.tool.Overlay(tools.WithRun(context.Background(), world.run)); !strings.Contains(overlay, "2 question(s)") {
+		t.Fatalf("the first check has put two: %s", overlay)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: world.run.conversation.ID, Role: "user",
+			Content: models.SpeakFirstMarker + " " + models.MemoryCheckOpening + ": a few questions."}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if overlay := world.tool.Overlay(tools.WithRun(context.Background(), world.run)); overlay != "" {
+		t.Fatalf("a new check has put none yet: %s", overlay)
+	}
+	world.call(t, `{"action":"ask","question":"What car do you drive?","answer":"A van."}`)
+	if overlay := world.tool.Overlay(tools.WithRun(context.Background(), world.run)); !strings.Contains(overlay, "1 question(s)") {
+		t.Fatalf("and one once it asks: %s", overlay)
+	}
+}
