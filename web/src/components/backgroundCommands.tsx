@@ -145,21 +145,22 @@ function BackgroundCommandState({ command }: { command: BackgroundCommand }) {
 // BackgroundCommandRows is the list: a row per command, the command itself
 // first, on one line cut short, because its start is what somebody
 // scanning the list recognizes; the whole of it is in its output. And
-// under it how it stands, where, and since when. The row opens its output;
-// a running one has Stop beside it, as the stop square alone.
+// under it how it stands, where, and since when. The row opens its output,
+// and stopping a command is done there, with its output in view.
 export function BackgroundCommandRows({
   commands,
+  isCompact = false,
   onOutput,
-  onChanged,
 }: {
   commands: BackgroundCommand[]
+  // isCompact is the drawer's: one line a command, its state and then the
+  // command, with where and since when left to its output.
+  isCompact?: boolean
   onOutput: (command: BackgroundCommand) => void
-  onChanged: () => void
 }) {
   const { t } = useTranslation()
-  const { stopping, stop } = useStopBackgroundCommand(onChanged)
   return (
-    <ul className="background-commands">
+    <ul className={isCompact ? 'background-commands compact' : 'background-commands'}>
       {commands.map((command) => (
         <li key={`${command.computer}/${command.id}`} className="background-command">
           <button
@@ -169,23 +170,27 @@ export function BackgroundCommandRows({
             aria-label={`${command.command}: ${t('backgroundCommands.output')}`}
             onClick={() => onOutput(command)}
           >
-            <code className="background-command-line">{command.command}</code>
-            <span className="background-command-meta muted">
-              <BackgroundCommandState command={command} />
-              <span>{command.computer}</span>
-              <span>
-                <Trans k="backgroundCommands.started" nodes={{ time: <RelativeTime value={command.startedAt} /> }} />
-              </span>
-            </span>
+            {isCompact ? (
+              <>
+                <BackgroundCommandState command={command} />
+                <code className="background-command-line">{command.command}</code>
+              </>
+            ) : (
+              <>
+                <code className="background-command-line">{command.command}</code>
+                <span className="background-command-meta muted">
+                  <BackgroundCommandState command={command} />
+                  <span>{command.computer}</span>
+                  <span>
+                    <Trans
+                      k="backgroundCommands.started"
+                      nodes={{ time: <RelativeTime value={command.startedAt} /> }}
+                    />
+                  </span>
+                </span>
+              </>
+            )}
           </button>
-          {command.isRunning ? (
-            <StopButton
-              command={command}
-              isIconOnly
-              isStopping={stopping === command.id}
-              onStop={() => void stop(command)}
-            />
-          ) : null}
         </li>
       ))}
     </ul>
@@ -194,33 +199,30 @@ export function BackgroundCommandRows({
 
 // StopButton stops a running command: small, red, with the square every
 // player uses for stop, so it reads as the one thing to press and not as
-// a link to somewhere. In a row it is the square alone, with its word in
-// the tooltip; on the output's title line there is room for the word.
+// a link to somewhere. Only in a command's output, so what is being
+// stopped is in view when it is pressed.
 function StopButton({
   command,
-  isIconOnly = false,
   isStopping,
   onStop,
 }: {
   command: BackgroundCommand
-  isIconOnly?: boolean
   isStopping: boolean
   onStop: () => void
 }) {
   const { t } = useTranslation()
-  const button = (
+  return (
     <button
       type="button"
-      className={isIconOnly ? 'background-stop icon-only' : 'background-stop'}
+      className="background-stop"
       aria-label={`${command.command}: ${t('backgroundCommands.stop')}`}
       disabled={isStopping}
       onClick={onStop}
     >
       <StopIcon size={12} />
-      {isIconOnly ? null : t('backgroundCommands.stop')}
+      {t('backgroundCommands.stop')}
     </button>
   )
-  return isIconOnly ? <Tooltip label={t('backgroundCommands.stop')}>{button}</Tooltip> : button
 }
 
 // useBackgroundOutput reads what one command printed, again every couple
@@ -272,7 +274,6 @@ function BackgroundOutput({ command, output }: { command: BackgroundCommand; out
   const shown = output ?? command
   return (
     <div className="background-output">
-      <code className="background-output-command">{shown.command}</code>
       <p className="background-command-meta muted">
         <BackgroundCommandState command={shown} />
         <span>{shown.computer}</span>
@@ -281,10 +282,17 @@ function BackgroundOutput({ command, output }: { command: BackgroundCommand; out
           <Trans k="backgroundCommands.started" nodes={{ time: <RelativeTime value={shown.startedAt} /> }} />
         </span>
       </p>
+      <section className="background-output-section">
+        <h4>{t('backgroundCommands.command')}</h4>
+        <code className="background-output-command">{shown.command}</code>
+      </section>
       {output === null ? (
         <Loading />
       ) : output.stdoutByteCount === 0 && output.stderrByteCount === 0 ? (
-        <p className="muted">{t('backgroundCommands.nothingPrinted')}</p>
+        <section className="background-output-section">
+          <h4>{t('backgroundCommands.stdout')}</h4>
+          <p className="muted">{t('backgroundCommands.nothingPrinted')}</p>
+        </section>
       ) : (
         <>
           {output.stdoutByteCount > 0 && (
@@ -386,7 +394,7 @@ export function BackgroundPanel({
           {commands.length === 0 ? (
             <p className="muted background-menu-empty">{t('backgroundCommands.none')}</p>
           ) : (
-            <BackgroundCommandRows commands={commands} onOutput={setOpened} onChanged={onChanged} />
+            <BackgroundCommandRows commands={commands} isCompact onOutput={setOpened} />
           )}
         </>
       )}
@@ -459,7 +467,7 @@ function OutputStream({
     if (pre) isAtEnd.current = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 8
   }, [])
   return (
-    <section className="background-output-stream">
+    <section className="background-output-section background-output-stream">
       <h4>{label}</h4>
       {isTruncated ? (
         <p className="muted background-output-truncated">

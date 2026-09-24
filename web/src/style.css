@@ -5872,9 +5872,9 @@ main.content:has(> .mailbox-frame) {
 .background-menu-head {
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-height: 28px;
-  padding: 0 6px;
+  gap: 6px;
+  min-height: 32px;
+  padding: 2px 6px 6px;
   flex-shrink: 0;
 }
 
@@ -5887,9 +5887,6 @@ main.content:has(> .mailbox-frame) {
   margin: 4px 8px 8px;
 }
 
-.background-menu .background-output {
-  padding: 0 6px 6px;
-}
 
 .background-menu-head .background-stop {
   margin-left: auto;
@@ -5915,13 +5912,6 @@ main.content:has(> .mailbox-frame) {
 
 .background-stop:hover:not(:disabled) {
   background: color-mix(in srgb, var(--bad) 10%, transparent);
-}
-
-.background-stop.icon-only {
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
 }
 
 .background-stop:disabled {
@@ -5998,6 +5988,25 @@ main.content:has(> .mailbox-frame) {
   background: var(--sidebar-hover);
 }
 
+/* The drawer's rows: one line each, the state and then the command. */
+.background-commands.compact .background-command-open {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 6px;
+}
+
+.background-commands.compact .background-command-open .tag {
+  flex: none;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.background-commands.compact .background-command-line {
+  flex: 1;
+  min-width: 0;
+}
+
 .background-command-line {
   display: block;
   overflow: hidden;
@@ -6025,9 +6034,6 @@ main.content:has(> .mailbox-frame) {
   font-size: 11px;
 }
 
-.background-command .background-stop {
-  margin-right: 4px;
-}
 
 /* The whole command, however long: a command can be pages of pipeline,
    so it scrolls in a box of its own rather than pushing the output out of
@@ -6036,8 +6042,8 @@ main.content:has(> .mailbox-frame) {
   display: block;
   flex-shrink: 0;
   max-height: 5.5em;
-  margin: 0 0 6px;
-  padding: 4px 8px;
+  margin: 0;
+  padding: 6px 10px;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
@@ -6048,13 +6054,27 @@ main.content:has(> .mailbox-frame) {
   word-break: break-all;
 }
 
-.background-output .background-command-meta {
-  margin-bottom: var(--space-3);
+.background-menu .background-output {
+  padding: 4px 6px 8px;
 }
 
-.background-output-stream h4 {
-  margin: var(--space-3) 0 var(--space-1);
-  font-size: var(--text-label);
+/* The output view: how it stands, then the command, then what it
+   printed, each under a small heading with room between them. */
+.background-output {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.background-output-section h4 {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.background-output-section > p {
+  margin: 0;
 }
 
 .background-output-truncated {

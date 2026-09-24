@@ -1185,8 +1185,9 @@ export const ja: Catalog = {
   'backgroundCommands.listFailed': 'バックグラウンドのコマンドを読み込めませんでした。',
   'backgroundCommands.readFailed': '出力を読み込めませんでした。',
   'backgroundCommands.nothingPrinted': 'まだ何も出力されていません。',
-  'backgroundCommands.stdout': '標準出力',
-  'backgroundCommands.stderr': '標準エラー',
+  'backgroundCommands.command': 'コマンド',
+  'backgroundCommands.stdout': '出力',
+  'backgroundCommands.stderr': 'エラー出力',
   'backgroundCommands.truncated': '{total} のうち最後の {shown} を表示',
   'agent.answered': '代わりに返答したもの',
   'agent.repliesHint':

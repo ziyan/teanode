@@ -1493,7 +1493,7 @@ function BackgroundCommandsCard() {
   if (commands.length === 0 && !output) return null
   return (
     <SettingsSection card title={t('agent.backgroundCommands')} description={t('agent.backgroundCommandsHint')}>
-      <BackgroundCommandRows commands={commands} onOutput={setOutput} onChanged={() => void reload(true)} />
+      <BackgroundCommandRows commands={commands} onOutput={setOutput} />
       {output ? (
         <BackgroundOutputDialog command={output} onChanged={() => void reload(true)} onClose={() => setOutput(null)} />
       ) : null}
