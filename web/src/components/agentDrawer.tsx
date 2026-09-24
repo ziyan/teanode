@@ -1007,16 +1007,18 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
             break
           }
         }
-        const answering = answeringOf(message.content)
-        lines.push({
-          kind: 'user',
-          key: message.id,
-          text: answering ? answering.answer : message.content,
-          inReplyTo: answering?.question || undefined,
-          at: message.createdAt,
-          attachments: message.attachments ?? undefined,
-          references: message.references ?? undefined,
-        })
+        {
+          const answering = answeringOf(message.content)
+          lines.push({
+            kind: 'user',
+            key: message.id,
+            text: answering ? answering.answer : message.content,
+            inReplyTo: answering?.question || undefined,
+            at: message.createdAt,
+            attachments: message.attachments ?? undefined,
+            references: message.references ?? undefined,
+          })
+        }
         break
       case 'assistant':
         if (message.usage) {
