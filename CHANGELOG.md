@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-09-24
+
+### Changed
+
+- The conversation task list is kept by the agent alone; the dashboard shows it one line a step, live as the agent works, and no longer ticks items off or adds them. (#130)
+
+### Removed
+
+- **Breaking:** the `AddAgentTodo`, `SetAgentTodo` and `RemoveAgentTodo` mutations, and `teanode agent conversation todo add`, `done`, `reopen` and `remove`. Only `todo list` remains. (#130)
+
 ## [0.55.0] - 2026-09-23
 
 ### Added
