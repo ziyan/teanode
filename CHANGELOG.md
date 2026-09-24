@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.61.2] - 2026-09-24
+
+### Changed
+
+- The agent recalls more of what a question is about: the sentences it matched rather than the first lines of each page, up to ten of them, and older facts about the person's life are no longer ranked under recent unrelated ones. (#152)
+
 ## [0.61.1] - 2026-09-24
 
 ### Fixed
