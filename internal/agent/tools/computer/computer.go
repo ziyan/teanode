@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	deviceComputer "github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -28,19 +29,44 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "shell", Family: tools.FamilyComputer, Risk: tools.RiskWrite,
-				Description: "Run a command on the person's own computer, when they have attached it with `teanode computer`: through their shell, in a directory of theirs, with a timeout. The answer carries what it printed and its exit code; a non-zero code is an answer, not a failure. It runs as the person, anywhere on their machine, and does what it says: nothing here second-guesses a command. Without an attached computer the tool says so. To take a file off the computer, share_file with source computer does it in one call and hands back a link to download it; do not read a file out through the shell in pieces.",
+				Description: "Run a command on the person's own computer, when they have attached it with `teanode computer`: through their shell, in a directory of theirs. The answer carries what it printed and its exit code; a non-zero code is an answer, not a failure. It runs as the person, anywhere on their machine, and does what it says: nothing here second-guesses a command. A command still running when the timeout comes is not killed: it goes on in the background and the answer says so, with its id and what it printed so far. isBackground starts one that way on purpose and answers at once -- a build, a server, a loop that waits for something with sleep. When a background command ends, on its own or stopped by the person, you are woken with how it ended and the end of its output. read with the id shows its progress (the last of what it printed, and whether it still runs), list shows them all, stop ends one. Without an attached computer the tool says so. To take a file off the computer, share_file with source computer does it in one call and hands back a link to download it; do not read a file out through the shell in pieces.",
 				Parameters: tools.Object(map[string]any{
-					"computer":    tools.StringProperty("which of their computers, by name, when more than one is attached"),
-					"command":     tools.StringProperty("the command line, as typed into their shell"),
-					"directory":   tools.StringProperty("where to run it; their home directory by default, which ~ also means"),
-					"timeout":     tools.IntegerProperty("seconds before it is stopped, 120 by default, 600 at most"),
-					"environment": map[string]any{"type": "object", "description": "extra environment variables, by name", "additionalProperties": map[string]any{"type": "string"}},
-				}, "command"),
-				Guidance: "shell: one command per call, and read its output before the next; prefer a listing or a dry run before a change; never put a secret on a command line. This is the tool for a command that runs and ends, which is nearly every command; the terminal is for a program that keeps running or asks questions.",
+					"action":       tools.EnumProperty("run by default; read, list and stop are for background commands", "run", "read", "list", "stop"),
+					"computer":     tools.StringProperty("which of their computers, by name, when more than one is attached"),
+					"command":      tools.StringProperty("for run: the command line, as typed into their shell"),
+					"directory":    tools.StringProperty("for run: where to run it; their home directory by default, which ~ also means"),
+					"timeout":      tools.IntegerProperty("for run: seconds to wait for it, 120 by default, 600 at most; one still running then goes on in the background"),
+					"isBackground": tools.BooleanProperty("for run: start it in the background and answer at once, rather than waiting"),
+					"id":           tools.StringProperty("for read and stop: the background command's id"),
+					"environment":  map[string]any{"type": "object", "description": "for run: extra environment variables, by name", "additionalProperties": map[string]any{"type": "string"}},
+				}),
+				Guidance: "shell: one command per call, and read its output before the next; prefer a listing or a dry run before a change; never put a secret on a command line. Something slow -- a build, a test suite, a download -- or a wait for something to happen goes in the background: several at once if they are independent, then end your turn; you are woken when each ends, so do not sleep in the foreground or poll with read in a loop. Stop what you started and no longer need. The terminal is for a program that asks questions or draws a screen.",
 				Preview: func(arguments json.RawMessage) string {
 					var call shellArguments
 					_ = json.Unmarshal(arguments, &call)
+					switch strings.ToLower(strings.TrimSpace(call.Action)) {
+					case "read":
+						return "Read the output of background command " + call.ID
+					case "list":
+						return "List the background commands on your computer"
+					case "stop":
+						return "Stop background command " + call.ID + " on your computer"
+					}
+					if call.IsBackground {
+						return "Run in the background on your computer: " + tools.FirstWords(call.Command, 16)
+					}
 					return "Run on your computer: " + tools.FirstWords(call.Command, 16)
+				},
+				RiskOf: func(arguments json.RawMessage) tools.Risk {
+					var call shellArguments
+					_ = json.Unmarshal(arguments, &call)
+					switch strings.ToLower(strings.TrimSpace(call.Action)) {
+					case "read", "list":
+						return tools.RiskRead
+					}
+					// Stopping is of a command the agent may have started
+					// itself, and ends nothing a run could not.
+					return tools.RiskWrite
 				},
 				Run:     runShell,
 				Overlay: computerOverlay,
@@ -118,11 +144,14 @@ func init() {
 }
 
 type shellArguments struct {
-	Computer    string            `json:"computer,omitempty"`
-	Command     string            `json:"command"`
-	Directory   string            `json:"directory,omitempty"`
-	Timeout     int               `json:"timeout,omitempty"`
-	Environment map[string]string `json:"environment,omitempty"`
+	Action       string            `json:"action,omitempty"`
+	Computer     string            `json:"computer,omitempty"`
+	Command      string            `json:"command"`
+	Directory    string            `json:"directory,omitempty"`
+	Timeout      int               `json:"timeout,omitempty"`
+	IsBackground bool              `json:"isBackground,omitempty"`
+	ID           string            `json:"id,omitempty"`
+	Environment  map[string]string `json:"environment,omitempty"`
 }
 
 type filesystemArguments struct {
@@ -224,9 +253,20 @@ func names(computers []tools.Computer) string {
 // data, never as words the person said, and no longer than a result may
 // be.
 func carry(ctx context.Context, attached tools.Computer, action string, arguments any, wait time.Duration, note string) (*tools.Result, error) {
+	return carryReshaped(ctx, attached, action, arguments, wait, note, nil)
+}
+
+// carryReshaped is carry with the answer reshaped before it is cut to
+// size, so that what reshaping adds or takes out is not lost with the
+// part of a long answer that is cut.
+func carryReshaped(ctx context.Context, attached tools.Computer, action string, arguments any, wait time.Duration, note string,
+	reshape func(json.RawMessage) json.RawMessage) (*tools.Result, error) {
 	data, err := attached.Ask(ctx, action, arguments, wait)
 	if err != nil {
 		return nil, err
+	}
+	if reshape != nil {
+		data = reshape(data)
 	}
 	text := string(data)
 	if len(text) > tools.ResultCharacters {
@@ -240,8 +280,20 @@ func runShell(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(arguments.Command) == "" {
-		return nil, fmt.Errorf("a command is needed")
+	action := strings.ToLower(strings.TrimSpace(arguments.Action))
+	switch action {
+	case "", "run":
+		action = "run"
+		if strings.TrimSpace(arguments.Command) == "" {
+			return nil, fmt.Errorf("a command is needed")
+		}
+	case "read", "stop":
+		if strings.TrimSpace(arguments.ID) == "" {
+			return nil, fmt.Errorf("%s needs the id of a background command", action)
+		}
+	case "list":
+	default:
+		return nil, fmt.Errorf("%q is not run, read, list or stop", arguments.Action)
 	}
 	run, err := tools.RunFrom(ctx)
 	if err != nil {
@@ -251,13 +303,147 @@ func runShell(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The command may run for its timeout; the answer is waited for that
-	// long and a little more.
-	timeout := 120 * time.Second
-	if arguments.Timeout > 0 {
-		timeout = min(time.Duration(arguments.Timeout)*time.Second, 600*time.Second)
+	holder, _ := attached.(tools.BackgroundHolder)
+	hasBackground := holder != nil && holder.HasBackground()
+	if action != "run" || arguments.IsBackground {
+		if !hasBackground {
+			return nil, fmt.Errorf("the program on %s keeps no background commands; the person updates teanode there to have them", attached.Name())
+		}
+		// A run with nobody present has nobody to wake when one ends,
+		// and would leave it running for nobody.
+		if action == "run" && run.Headless() {
+			return nil, fmt.Errorf("a run with nobody present cannot leave a command running in the background")
+		}
 	}
-	return carry(ctx, attached, "shell", arguments, timeout+30*time.Second, "ran on "+attached.Name()+": "+tools.FirstWords(arguments.Command, 8))
+	switch action {
+	case "read":
+		return carryReshaped(ctx, attached, "background_read", &deviceComputer.BackgroundReadArguments{ID: arguments.ID, TailBytes: backgroundReadBytes}, deviceWait,
+			"read background command "+arguments.ID+" on "+attached.Name(), withoutOrigin)
+	case "list":
+		return listBackground(ctx, run, attached)
+	case "stop":
+		// Acknowledged as it is stopped: the agent asked, so it is not
+		// woken to be told.
+		return carryReshaped(ctx, attached, "background_stop", &deviceComputer.BackgroundStopArguments{ID: arguments.ID, IsAcknowledged: true}, deviceWait,
+			"stopped background command "+arguments.ID+" on "+attached.Name(), withoutOrigin)
+	}
+
+	request := &deviceComputer.ShellArguments{
+		Command: arguments.Command, Directory: arguments.Directory, Timeout: arguments.Timeout,
+		Environment: arguments.Environment, IsBackground: arguments.IsBackground,
+		// Past its wait a command goes on rather than being killed, where
+		// the program can keep it and somebody is there to be woken.
+		ShouldKeepOnTimeout: hasBackground && !run.Headless(),
+	}
+	if hasBackground {
+		origin, err := json.Marshal(tools.BackgroundOrigin{AgentID: run.Agent().ID, ConversationID: tools.ConversationIDOf(run), IsHeadless: run.Headless()})
+		if err != nil {
+			return nil, err
+		}
+		request.Origin = origin
+	}
+	// The command may run for its timeout; the answer is waited for that
+	// long and a little more. One started in the background answers at
+	// once.
+	wait := deviceWait
+	if !arguments.IsBackground {
+		timeout := 120 * time.Second
+		if arguments.Timeout > 0 {
+			timeout = min(time.Duration(arguments.Timeout)*time.Second, 600*time.Second)
+		}
+		wait = timeout + 30*time.Second
+	}
+	note := "ran on " + attached.Name() + ": " + tools.FirstWords(arguments.Command, 8)
+	if arguments.IsBackground {
+		note = "started in the background on " + attached.Name() + ": " + tools.FirstWords(arguments.Command, 8)
+	}
+	// Hinted before the answer is cut to size: a build that printed more
+	// than an answer holds would otherwise lose its id and the hint with
+	// the end of the answer. The hint's keys sort first.
+	return carryReshaped(ctx, attached, "shell", request, wait, note, func(data json.RawMessage) json.RawMessage {
+		return withBackgroundHint(data, arguments.IsBackground)
+	})
+}
+
+// The bounds of the background actions.
+const (
+	// deviceWait is how long a request that does not run a command waits.
+	deviceWait = 60 * time.Second
+	// backgroundReadBytes is how much of each stream read gives: the
+	// last of it, which is where progress and failures are.
+	backgroundReadBytes = 8 << 10
+)
+
+// withBackgroundHint says, of a command still running, what happens next.
+// Without it a model that sees output and no exit code has been seen to
+// assume the command ended, or to run it again.
+func withBackgroundHint(data json.RawMessage, isStarted bool) json.RawMessage {
+	var answer map[string]any
+	if json.Unmarshal(data, &answer) != nil {
+		return data
+	}
+	id, _ := answer["backgroundId"].(string)
+	if id == "" {
+		return data
+	}
+	delete(answer, "exitCode")
+	how := "still running when the timeout came, so it goes on in the background rather than being killed"
+	if isStarted {
+		how = "started in the background"
+	}
+	answer["backgroundNote"] = how + "; the output here is what it printed so far. You are woken when it ends. shell with action read and id " + id + " shows its progress; stop ends it."
+	if content, err := json.Marshal(answer); err == nil {
+		return content
+	}
+	return data
+}
+
+// withoutOrigin takes the server's own note out of a background command's
+// answer: the ids in it are nothing the model needs.
+func withoutOrigin(data json.RawMessage) json.RawMessage {
+	var answer map[string]any
+	if json.Unmarshal(data, &answer) != nil {
+		return data
+	}
+	delete(answer, "origin")
+	if content, err := json.Marshal(answer); err == nil {
+		return content
+	}
+	return data
+}
+
+// listBackground is the computer's background commands, each marked with
+// whether this conversation started it.
+func listBackground(ctx context.Context, run tools.Run, attached tools.Computer) (*tools.Result, error) {
+	answer, err := attached.Ask(ctx, "background_list", struct{}{}, deviceWait)
+	if err != nil {
+		return nil, err
+	}
+	var statuses []*deviceComputer.BackgroundStatus
+	if err := json.Unmarshal(answer, &statuses); err != nil {
+		return nil, fmt.Errorf("%s answered something unreadable: %w", attached.Name(), err)
+	}
+	conversationId := tools.ConversationIDOf(run)
+	type listed struct {
+		*deviceComputer.BackgroundStatus
+		Origin                 json.RawMessage `json:"origin,omitempty"`
+		IsFromThisConversation bool            `json:"isFromThisConversation"`
+	}
+	commands := make([]listed, 0, len(statuses))
+	for _, status := range statuses {
+		var origin tools.BackgroundOrigin
+		_ = json.Unmarshal(status.Origin, &origin)
+		commands = append(commands, listed{BackgroundStatus: status, IsFromThisConversation: conversationId != "" && origin.ConversationID == conversationId})
+	}
+	result, err := tools.JSONResult(map[string]any{"computer": attached.Name(), "commands": commands})
+	if err != nil {
+		return nil, err
+	}
+	// Command lines and directories are the machine's, not the person's
+	// words.
+	result.Untrusted = true
+	result.Note = "listed the background commands on " + attached.Name()
+	return result, nil
 }
 
 func runFilesystem(ctx context.Context, call *tools.Call) (*tools.Result, error) {

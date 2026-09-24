@@ -117,6 +117,7 @@ export function ConfirmDialog({
   busy,
   error,
   destructive = true,
+  wide,
   onConfirm,
   onClose,
 }: {
@@ -132,6 +133,9 @@ export function ConfirmDialog({
   // behind the scrim.
   error?: string | null
   destructive?: boolean
+  // For a body that is something to read rather than a sentence: a list,
+  // or what a command printed.
+  wide?: boolean
   onConfirm?: () => void
   onClose: () => void
 }) {
@@ -151,7 +155,7 @@ export function ConfirmDialog({
 
   return (
     <div className="dialog-scrim" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="dialog" role="alertdialog" aria-modal="true" aria-label={title}>
+      <div className={wide ? 'dialog dialog-wide' : 'dialog'} role="alertdialog" aria-modal="true" aria-label={title}>
         <h3>{title}</h3>
         {typeof body === 'string' ? <p className="muted">{body}</p> : body}
         <ErrorMessage error={error} />

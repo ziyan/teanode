@@ -815,7 +815,7 @@ func (self *transaction) ListAgentMessages(conversationId string, options *Optio
 func (self *transaction) LastAgentPersonMessageAt(conversationId string) (*time.Time, error) {
 	var last []time.Time
 	if err := self.tx.Model(&agentMessageModel{}).
-		Where("\"conversation_id\" = ? AND \"role\" = ? AND \"content\" NOT LIKE ?", conversationId, "user", models.GoalCheckInMarker+"%").
+		Where("\"conversation_id\" = ? AND \"role\" = ? AND \"content\" NOT LIKE ? AND \"content\" NOT LIKE ?", conversationId, "user", models.GoalCheckInMarker+"%", models.BackgroundCommandMarker+"%").
 		Order("\"created_at\" DESC").Limit(1).Pluck("created_at", &last).Error; err != nil {
 		return nil, err
 	}
@@ -829,8 +829,8 @@ func (self *transaction) LastAgentPersonWordAt(agentId string) (*time.Time, erro
 	var last []time.Time
 	if err := self.tx.Model(&agentMessageModel{}).
 		Joins("JOIN \"agent_conversation\" ON \"agent_conversation\".\"id\" = \"agent_message\".\"conversation_id\"").
-		Where("\"agent_conversation\".\"agent_id\" = ? AND \"agent_conversation\".\"kind\" IN ? AND \"agent_message\".\"role\" = ? AND \"agent_message\".\"content\" NOT LIKE ?",
-			agentId, []string{string(models.AgentConversationMain), string(models.AgentConversationNamed)}, "user", models.GoalCheckInMarker+"%").
+		Where("\"agent_conversation\".\"agent_id\" = ? AND \"agent_conversation\".\"kind\" IN ? AND \"agent_message\".\"role\" = ? AND \"agent_message\".\"content\" NOT LIKE ? AND \"agent_message\".\"content\" NOT LIKE ?",
+			agentId, []string{string(models.AgentConversationMain), string(models.AgentConversationNamed)}, "user", models.GoalCheckInMarker+"%", models.BackgroundCommandMarker+"%").
 		Order("\"agent_message\".\"created_at\" DESC").Limit(1).Pluck("\"agent_message\".\"created_at\"", &last).Error; err != nil {
 		return nil, err
 	}

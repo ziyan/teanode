@@ -211,6 +211,12 @@ const (
 // marker that drifts.
 const GoalCheckInMarker = "[goal check-in]"
 
+// BackgroundCommandMarker begins the message the agent is woken with when a
+// command it left running in the background on the person's computer
+// ends. Like the goal's marker, it tells the transcript's readers that the
+// person did not write it.
+const BackgroundCommandMarker = "[background command]"
+
 // GoalChangeNote is the line the conversation gets when its goal changes
 // hands: set, changed, cleared, or met. Empty when nothing worth a line
 // happened -- a check-in that only moved the next time, or the same goal

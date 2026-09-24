@@ -41,6 +41,23 @@ type Computer interface {
 	Description() string
 }
 
+// BackgroundHolder is a computer whose program keeps commands running in
+// the background: one started that way, and one left running when its wait
+// ran out. A program that predates them is not one.
+type BackgroundHolder interface {
+	HasBackground() bool
+}
+
+// BackgroundOrigin is who started a background command, as the shell tool
+// hands it to the computer and the computer hands it back when the command
+// ends: which agent and conversation to wake, and whether the turn that
+// started it had anybody present. The computer keeps it without reading it.
+type BackgroundOrigin struct {
+	AgentID        string `json:"agentId"`
+	ConversationID string `json:"conversationId"`
+	IsHeadless     bool   `json:"isHeadless,omitempty"`
+}
+
 // SessionHolder is a computer that can hold a program open: a terminal the
 // agent drives, a server spoken to over its standard input. Separate from
 // Computer so that what only asks and answers need not pretend to.

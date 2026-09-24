@@ -135,6 +135,7 @@ func (self *graph) computerView(response http.ResponseWriter, request *http.Requ
 			Event       string          `json:"event"`
 			Stream      string          `json:"stream"`
 			Code        int             `json:"code"`
+			Features    []string        `json:"features"`
 		}
 		if err := json.Unmarshal(data, &message); err != nil {
 			continue
@@ -162,6 +163,7 @@ func (self *graph) computerView(response http.ResponseWriter, request *http.Requ
 			worker.AttachComputer(found.ID, socket, agent.ComputerIdentity{
 				Name: message.Name, System: message.System, Home: message.Home,
 				Description: strings.TrimSpace(message.Description), Terminal: message.Session,
+				Features: message.Features,
 			})
 			attached = true
 			welcome, _ := json.Marshal(map[string]any{"type": "welcome", "protocol": computerProtocol, "username": username})
@@ -181,6 +183,13 @@ func (self *graph) computerView(response http.ResponseWriter, request *http.Requ
 			if attached {
 				worker.ComputerSessionSaid(found.ID, socket, message.Session, message.Event,
 					message.Stream, agent.DecodedSessionData(message.Data), message.Code)
+			}
+		case "background":
+			// A background command ended. Like a session's output it
+			// answers no request; unlike it, it may wake the agent, and it
+			// is said again after a reconnect until it is acknowledged.
+			if attached && message.Event == "ended" {
+				worker.ComputerBackgroundEnded(found.ID, socket, message.Data)
 			}
 		case "bye":
 			return
