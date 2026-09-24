@@ -285,7 +285,7 @@ func TestGraphGuardedVectorWriteAndPageEditSerialize(t *testing.T) {
 			return err
 		})
 	}()
-	waitForGraphLock(t, database, `query LIKE 'SELECT%FROM "agent_node"%' AND query LIKE '%FOR UPDATE%'`, editResult)
+	waitForGraphLock(t, database, `query LIKE 'SELECT%FROM "agent_node"%' AND query LIKE '%FOR NO KEY UPDATE%'`, editResult)
 	close(release)
 	if err := awaitGraphWriter(t, vectorResult); err != nil {
 		t.Fatal(err)

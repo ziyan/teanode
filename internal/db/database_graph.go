@@ -634,7 +634,10 @@ func (self *transaction) PutAgentNode(node *models.AgentNode) (*models.AgentNode
 }
 
 func (self *transaction) lockAgentNode(agentId, path string) (*models.AgentNode, error) {
-	nodes, err := self.nodesFrom(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+	// Editing a page never changes its key. NO KEY UPDATE still excludes
+	// another page writer, but lets child inserts take their foreign-key
+	// KEY SHARE lock without reversing the ancestor/child lock order.
+	nodes, err := self.nodesFrom(self.tx.Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).
 		Where(`"agent_id" = ? AND "path" = ?`, agentId, path).Limit(1))
 	if err != nil || len(nodes) == 0 {
 		return nil, err

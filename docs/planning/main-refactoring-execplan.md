@@ -38,10 +38,17 @@ permission semantics, model behavior or schema contracts in one patch.
 - [ ] Milestone 5 (in progress): folder commands share authorization and rollback scopes, and draft removal shares transactional cancellation and retention; draft saving now shares authorized atomic persistence and transaction-bound composition; contact save/delete, address-book metadata and calendar metadata now share authorized command scopes, locked field merging and grant preservation; calendar event save/delete and RSVP responses now commit notification acceptance with event/index changes; content preparation, remaining send adapters, agent calendar mutation retries, contact proposal acceptance and protocol adapters, knowledge-source and rule-update commands remain.
 - [ ] Milestone 6 (in progress): ingestion scheduling, device reading, page filing, document persistence, embedding, pass bookkeeping and repository interpretation are in separate files; page-write failures now stop continuation and current-source checks guard reads and writes; device pages and persisted device/sent cursors now have typed boundaries; completed-pass deletion and progress now commit together; the scanner separates authorization, manifests, cursors, extraction and history allocation; source saves now advance a persisted generation and source controls preserve locked progress; sent ingestion now rejects missing stored bodies instead of indexing placeholder text; conversation-memory retrieval, prompt construction, response parsing, preparation and transactional application now have explicit boundaries; graph prompt context, recall, ranking, embedding, retrieval, indexing and note updates now live in separate files; dream scheduling, budget, requests, digest, timeline, consolidation, organization and splitting now have separate files; digest material retrieval, prompt construction and response decoding now have explicit boundaries; memory-tool page preparation now happens before its write transaction; HTTP recall now owns short read phases outside model calls; detached dream bookkeeping now has a completion deadline and digest fact writes, read markers and progress commit together; synthetic page/retrieval baselines now cover both database images; graph embedding reports only committed writes; embedding requests and stored identities now share a registry snapshot; periodic and interactive graph embedding reject results for changed or deleted inputs; existing page and fact vectors now follow graph metadata inputs; remaining job/model adapters and source-local measurements remain.
 - [x] (2026-09-24) Merge current main and guard the prepared fact embedding used by remember and digest folding against page-name and fact-version changes before storing or searching by it.
+- [x] (2026-09-24) Narrow page-content row locks so a child insertion's foreign-key check can proceed concurrently, while preserving serialized content comparisons and graph-vector guards.
 - [ ] Milestone 7 (in progress): extract conversation selection and read ownership, guard stale reads and preserve drafts on refresh; stream reducer, remaining state and presentation extraction remain.
 - [ ] Milestone 8: regularize resource lifecycle, complete protocol reviews and update operating documentation.
 
 ## Surprises & Discoveries
+
+- The full stock suite exposed a deadlock in concurrent page creation: one
+  transaction's `SELECT ... FOR UPDATE` of an existing page conflicted with a
+  child insertion's self-referencing foreign-key `KEY SHARE` lock. A second
+  transaction updating a page's search column completed the cycle. A
+  deterministic child-insert/parent-edit test fails with the old lock strength.
 
 - The shared fold path stored a prepared fact vector directly after a page
   could be renamed. Its similarity search then used that stale vector and old
@@ -245,6 +252,12 @@ free slots, and ingest/dream deadlines differ from ordinary jobs. Do not spend
 a milestone fixing behavior that is already correct.
 
 ## Decision Log
+
+- Decision: lock an existing page for `PutAgentNode` with `FOR NO KEY UPDATE`.
+  Rationale: page content saves do not change the key, so this lock still
+  excludes competing content writers and the guarded graph-vector writer,
+  while remaining compatible with a child's foreign-key `KEY SHARE` check.
+  Date/Author: 2026-09-24, implementation review.
 
 - Decision: compare a prepared fact's embedded text with its current page,
   then use the guarded graph-vector writer before similarity retrieval in the
@@ -2786,3 +2799,21 @@ path and secret scans passed against the proposed PR files. This closes the
 prepared fact-vector path only; other model-write paths remain subject to
 their own audit. The newer memory-write invariants plan on main owns
 consolidation and evidence policy, which this change leaves intact.
+
+The next main merge surfaced a concurrency failure in
+TestGraphTwoWritersOfOnePageSettle: PostgreSQL reported a deadlock between a
+page's `FOR UPDATE` read and a search-column update while multiple writers
+built one subtree. `agent_node.parent_id` is a self-referencing foreign key;
+inserting a child keeps `KEY SHARE` on its parent. A content edit does not
+change the page key, so its pre-save lock is now `FOR NO KEY UPDATE`. That
+continues to serialize page edits and conflicts with the guarded vector
+writer's lock, while permitting a child to reference the page. A new test
+holds a child insertion open and proves the parent edit completes; an overlay
+of the old file makes it fail at the lock wait. The original same-path test
+passed 20 repeated stock runs, and focused stock tests cover conflict
+invalidation and guarded vector/edit serialization after the lock change.
+The focused concurrency group also passed ten repeated race-detector runs on
+each database image: 34.083s on stock PostgreSQL and 35.438s on pgvector.
+The full stock PostgreSQL suite after merging main 7e174eac and applying
+this lock correction passed 2,267 tests with four skips and 44.6% aggregate
+coverage. Repository lint, naming checks and both binary builds passed.
