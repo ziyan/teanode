@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.62.0] - 2026-09-24
+
+### Added
+
+- The chat suggests the replies you would most likely send next, as buttons you can press instead of typing. (#157)
+
 ## [0.61.4] - 2026-09-24
 
 ### Changed
