@@ -124,6 +124,21 @@ different service.
 
 Settings change in the dashboard from here on, or with `config import`.
 
+### Database memory
+
+The compose file sizes PostgreSQL for the vector indexes, and each size can
+be set in `.env`:
+
+| variable | default | what it is |
+| --- | --- | --- |
+| `POSTGRES_SHARED_BUFFERS` | `2GB` | PostgreSQL's cache |
+| `POSTGRES_MAINTENANCE_WORK_MEM` | `2GB` | the memory an index is built in |
+| `POSTGRES_WORK_MEM` | `32MB` | the memory one sort or join may use |
+| `POSTGRES_SHM_SIZE` | `3g` | the container's `/dev/shm`, which a parallel index build takes its memory from; keep it above `POSTGRES_MAINTENANCE_WORK_MEM`, or a build fails with "could not resize shared memory segment". A limit, not a reservation |
+
+A host with less memory should lower the first three together and keep the
+last above the second.
+
 ### Rotating the database password
 
 A deployment created before this file generated one is using `teanode`, which

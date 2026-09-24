@@ -7107,6 +7107,13 @@ main.content:has(> .mailbox-frame) {
   align-items: center;
 }
 
+/* Two labels that are long in some languages: they wrap under each other
+   on a narrow phone rather than run off it. */
+.memory-check-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 /* What a mail program is told: long, and better wrapped than clipped. */
 .program-settings td.mono {
   white-space: normal;

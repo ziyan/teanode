@@ -83,6 +83,16 @@ The first answer baseline, 48 questions of the person's own, on 2026-09-24:
 
 What it says: nothing was invented, and every question whose honest answer is "not known" got it, from every source. Memory answers half again as many questions as the raw sources, for less than half the cost, and the two together answer most. The loss is recall, not the model: of what memory got wrong, 22 of 25 were answers the graph holds and recall did not carry (a paraphrase such as "the boy" for a son, a question needing two pages, a date asked in other words), and 3 were a wrong fact. The one stale answer is an older car the graph still states as current, which is Milestone 7's case exactly: a claim with no end.
 
+After recall was changed to spend its room on what the question hit (a page shows the facts it hit rather than its oldest five, at most two pages without a hit, the loose facts as one block so ten fit rather than three, age as a tie-breaker rather than a multiplier) and the evaluation was given the self page and page openings as a turn is, the same 48 questions from memory, on 2026-09-24:
+
+| Answered from | Score | Correct | Partial | Right "not known" | Missed | Stale | Wrong | Cost |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| memory | 61% | 22 | 3 | 6 | 15 | 0 | 2 | $0.31 |
+
+The review of that change found that a floor of 0.7 still let age move an old match down about twenty places, since fused scores are a sixtieth apart a place, and that it softened the penalty for an inferred fact too. At a floor of 0.95 with the inferred penalty kept whole, the same run gave 59% (21 correct, 3 partial, 15 missed, 2 wrong, 1 invented). Seven questions changed verdict between the two runs, in both directions, which is the noise of a single run; the question about who shares the car insurance was lost in both this run and a conversation, and is the one to watch.
+
+Every abstain question still answered "not known". The baseline was graded before `missed` was told apart from `wrong`, so its misses and wrong answers are summed there; the comparison is the score and the correct count. Part of the gain is the evaluation seeing the self page, which a turn always carried, rather than recall alone. What is still missed is mostly questions that name the person in the first person, dates asked by month, and answers spread over two pages.
+
 ## Context and Orientation
 
 A *fact* is a row of `agent_fact`: a sentence on a page of the memory graph, with its evidence (quotes and where they came from), an `Inferred` flag (the model concluded it rather than someone saying it), a `Confidence`, a `Kind` (a state, an event, a preference) and, for events, `HappenedAt`. A *page* is a row of `agent_node` with a summary written by consolidation. Facts are retired, not deleted: an inactive fact stays for history and is left out of recall.

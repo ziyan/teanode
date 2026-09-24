@@ -163,8 +163,36 @@ func TestVectorIndexesKeepCollidingModelNames(test *testing.T) {
 			}
 		}
 	}
+	// The legacy index serves its own model, so no second one is built
+	// beside it; each of the other four names gets its own.
 	indexCount := dbtest.QueryString(test, database, `SELECT count(*)::text FROM pg_indexes WHERE tablename = 'agent_node_vector' AND indexdef LIKE '%USING hnsw%'`)
-	if indexCount != "6" {
-		test.Fatalf("wanted five model indexes and the retained legacy index, got %s", indexCount)
+	if indexCount != "5" {
+		test.Fatalf("wanted the retained legacy index and four new ones, got %s", indexCount)
+	}
+	for _, modelName := range modelNames {
+		covered := dbtest.QueryString(test, database, `SELECT count(*)::text FROM pg_indexes WHERE tablename = 'agent_node_vector' AND indexdef LIKE '%USING hnsw%' AND indexdef LIKE '%= ' || quote_literal('`+modelName+`') || '::text)'`)
+		if covered != "1" {
+			test.Fatalf("%q is covered by %s indexes, not one", modelName, covered)
+		}
+	}
+}
+
+// An index for another distance, or another width, is not the index a
+// cosine search needs, whatever its predicate says: the right one is built
+// beside it.
+func TestAVectorIndexForAnotherDistanceIsNotTaken(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	if !database.VectorIndexing() {
+		test.Skip("vector extension is not installed")
+	}
+	dbtest.Exec(test, database, `CREATE INDEX fixture_l2_vector ON agent_node_vector USING hnsw ((vector::vector(32)) vector_l2_ops) WHERE model = 'fixture:l2'`)
+	dbtest.Exec(test, database, `CREATE INDEX fixture_wide_vector ON agent_node_vector USING hnsw ((vector::vector(64)) vector_cosine_ops) WHERE model = 'fixture:l2'`)
+	if err := database.EnsureVectorIndex(db.AgentNodeTable, "fixture:l2", 32); err != nil {
+		test.Fatal(err)
+	}
+	cosine := dbtest.QueryString(test, database, `SELECT count(*)::text FROM pg_indexes WHERE tablename = 'agent_node_vector' AND indexdef LIKE '%vector(32)) vector_cosine_ops)%' AND indexdef LIKE '%''fixture:l2''::text)'`)
+	if cosine != "1" {
+		test.Fatalf("a cosine index of width 32 is built beside the other two, and there are %s", cosine)
 	}
 }

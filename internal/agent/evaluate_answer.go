@@ -80,14 +80,25 @@ func (self *Agent) EvaluateAnswer(ctx context.Context, found *models.Agent, owne
 	}
 	evaluation := &AnswerEvaluation{}
 	var memory, passages []string
+	factCount := 0
 	if answerFrom == AnswerFromMemory || answerFrom == AnswerFromBoth {
+		// What a turn carries before any recall: the self page, always
+		// first. Left out, a question the self page answers was graded as
+		// a miss that no turn would have made.
+		for _, line := range self.selfPageLines(ctx, found, owner) {
+			memory = append(memory, models.PathSelf+": "+strings.TrimPrefix(line, "- "))
+		}
 		recalled, err := self.RecallForQuestion(ctx, found, owner, question)
 		if err != nil {
 			return nil, err
 		}
 		for _, page := range recalled {
+			if page.Summary != "" {
+				memory = append(memory, page.Path+": "+page.Summary)
+			}
 			for _, fact := range page.Facts {
 				memory = append(memory, fmt.Sprintf("%s: %s", page.Path, fact.Line()))
+				factCount++
 			}
 		}
 	}
@@ -105,7 +116,9 @@ func (self *Agent) EvaluateAnswer(ctx context.Context, found *models.Agent, owne
 			return nil, err
 		}
 	}
-	evaluation.FactCount, evaluation.PassageCount = len(memory), len(passages)
+	// Facts recall carried, as before the self page and the openings were
+	// given too, so the count stays comparable with earlier runs.
+	evaluation.FactCount, evaluation.PassageCount = factCount, len(passages)
 
 	run := self.runFor(found, owner, nil, "")
 	prompt, err := render("evaluate_answer.txt", map[string]any{
