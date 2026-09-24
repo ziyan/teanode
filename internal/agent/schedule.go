@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -75,8 +76,8 @@ func (self *Agent) dueSchedules(ctx context.Context, now time.Time) error {
 				schedule.LastRunAt = &now
 				if nextErr != nil {
 					// No time left: a moment that has come, or a line that
-					// no longer makes sense. It stays on until the run it
-					// is queuing now has been done, which switches it off.
+					// no longer makes sense. It stays until the run it is
+					// queuing now has been done, which ends it.
 					schedule.NextRunAt = nil
 				} else {
 					schedule.NextRunAt = &next
@@ -86,6 +87,13 @@ func (self *Agent) dueSchedules(ctx context.Context, now time.Time) error {
 				return err
 			}
 			if agent == nil || !agent.Active() || owner == nil {
+				// Skipped, and with no time left, ended now: no run is
+				// coming to do it.
+				if nextErr != nil {
+					if err := endIfNoTimeLeft(tx, schedule.ID); err != nil {
+						return err
+					}
+				}
 				continue
 			}
 			if _, err := self.Enqueue(tx, models.AgentJobSchedule, agent.ID, "", schedule.ID); err != nil {
@@ -103,7 +111,8 @@ func (self *Agent) dueSchedules(ctx context.Context, now time.Time) error {
 func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 	configuration := run.Configuration()
 	if !FeatureAllowed(configuration, "schedules") || !FeatureAllowed(configuration, "ask") {
-		return nil
+		// Not run, and not left on with no time either.
+		return self.finishOnce(run, run.Job.SubjectID)
 	}
 	// A crash after acceptance must not run another model turn or mail another
 	// answer when the worker retries this same schedule occurrence.
@@ -137,12 +146,12 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 	if err != nil {
 		return err
 	}
-	surface := "schedule"
-	message := scheduledMessage(schedule)
-	if schedule.Deliver == models.AgentDeliverMail {
-		surface = "mail"
+	isMailed := schedule.Deliver == models.AgentDeliverMail
+	surface, turnMessage := "schedule", ""
+	if isMailed {
+		surface, turnMessage = "mail", scheduledMessage(schedule)
 	} else {
-		message = scheduleCheckIn(schedule, run.Owner, time.Now())
+		turnMessage = scheduleCheckIn(schedule, run.Owner, time.Now())
 	}
 	// A schedule the person wrote is the person asking. One the agent wrote
 	// through a tool is not: the agent writes on the strength of what it has
@@ -152,7 +161,7 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 	// a run holding the whole tool kit with that sentence as the person's own
 	// instruction. So the agent's own standing instructions arrive marked as
 	// what they are.
-	turn, err := self.Ask(&AskSettings{Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, Message: message, Surface: surface, Headless: true, UsageKind: string(models.AgentJobSchedule)})
+	turn, err := self.Ask(&AskSettings{Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, Message: turnMessage, Surface: surface, Headless: true, UsageKind: string(models.AgentJobSchedule)})
 	if err != nil {
 		return err
 	}
@@ -174,18 +183,36 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 			failure = event.Error
 		}
 	}
+	isCutShort := ctx.Err() != nil
+	if !isMailed {
+		// In the drawer the answer is already where it belongs: the turn
+		// wrote it into the conversation as it went, and a turn that failed
+		// or was cut short said so there too. It is not tried again: each
+		// try would be another turn in the person's own conversation,
+		// opened by the same schedule's message, which is what the goal's
+		// turns stopped doing for the same reason.
+		if failure != "" {
+			log.Warningf("the scheduled turn of %q failed: %s", schedule.Name, failure)
+		} else if isCutShort {
+			log.Warningf("the scheduled turn of %q ran out of time", schedule.Name)
+		}
+		return self.finishOnce(run, schedule.ID)
+	}
 	if failure != "" {
 		return fmt.Errorf("the scheduled turn failed: %s", failure)
 	}
-	if err := self.finishOnce(ctx, run, schedule.ID); err != nil {
-		return err
+	if isCutShort {
+		return ctx.Err()
 	}
-	// In the drawer the answer is already where it belongs: the turn wrote
-	// it into the conversation as it went.
-	if schedule.Deliver != models.AgentDeliverMail || strings.TrimSpace(answer) == "" {
-		return nil
+	// Mailed first and ended after: a mail that fails is tried again, and a
+	// schedule removed before its answer went out would leave the retry
+	// nothing to send.
+	if strings.TrimSpace(answer) != "" {
+		if err := self.deliverSchedule(ctx, run, schedule, answer); err != nil {
+			return err
+		}
 	}
-	return self.deliverSchedule(ctx, run, schedule, answer)
+	return self.finishOnce(run, schedule.ID)
 }
 
 // scheduleConversation is where a drawer schedule takes its turn: the
@@ -209,7 +236,9 @@ func scheduleConversation(tx db.Transaction, agentId, conversationId string) (*m
 	if len(main) > 0 {
 		return main[0], nil
 	}
-	return tx.CreateAgentConversation(&models.AgentConversation{AgentID: agentId, Kind: models.AgentConversationMain, LastAt: time.Now()})
+	// Made with the drawer as its surface, which is where the person reads
+	// it; left empty, the schedule's own turn would have named it.
+	return tx.CreateAgentConversation(&models.AgentConversation{AgentID: agentId, Kind: models.AgentConversationMain, Surface: "drawer", LastAt: time.Now()})
 }
 
 // finishOnce ends a schedule that has no time left, now that its last run
@@ -217,29 +246,37 @@ func scheduleConversation(tx db.Transaction, agentId, conversationId string) (*m
 // as it queued it, and the run, finding it off, did nothing, so every
 // reminder for one moment was dropped without a word.
 //
-// A schedule for one moment is removed: it has done what it was for, and
-// left behind it was one more row in the person's list of schedules, off,
-// that nobody would ever turn on again. One whose cron line stopped making
-// sense is only switched off, so the person can see it and mend the line.
-func (self *Agent) finishOnce(ctx context.Context, run *Run, scheduleId string) error {
+// In a context of its own rather than the job's, which may be what ran out.
+func (self *Agent) finishOnce(run *Run, scheduleId string) error {
+	ctx, cancel := context.WithTimeout(self.ctx, time.Minute)
+	defer cancel()
 	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		schedule, err := tx.GetAgentSchedule(scheduleId)
-		if err != nil || schedule == nil || schedule.NextRunAt != nil {
-			// Removed while it ran, or it has a next time.
-			return err
-		}
-		if strings.HasPrefix(strings.TrimSpace(schedule.Cron), "@at ") {
-			return tx.DeleteAgentSchedule(scheduleId)
-		}
-		_, err = tx.UpdateAgentSchedule(scheduleId, func(schedule *models.AgentSchedule) error {
-			schedule.Enabled = false
-			return nil
-		})
-		if errors.Is(err, db.ErrNotFound) {
-			return nil
-		}
-		return err
+		return endIfNoTimeLeft(tx, scheduleId)
 	})
+}
+
+// endIfNoTimeLeft ends a schedule with no next time. One for a single moment
+// is removed: it has done what it was for, and left behind it was one more
+// row in the person's list of schedules, off, that nobody would turn on
+// again. One whose cron line stopped making sense is only switched off, so
+// the person can see it and mend the line.
+func endIfNoTimeLeft(tx db.Transaction, scheduleId string) error {
+	schedule, err := tx.GetAgentSchedule(scheduleId)
+	if err != nil || schedule == nil || schedule.NextRunAt != nil {
+		// Removed while it ran, or it has a next time.
+		return err
+	}
+	if tools.IsOneMoment(schedule.Cron) {
+		return tx.DeleteAgentSchedule(scheduleId)
+	}
+	_, err = tx.UpdateAgentSchedule(scheduleId, func(schedule *models.AgentSchedule) error {
+		schedule.Enabled = false
+		return nil
+	})
+	if errors.Is(err, db.ErrNotFound) {
+		return nil
+	}
+	return err
 }
 
 // scheduleCheckIn is the message a drawer schedule's turn arrives as.

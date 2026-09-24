@@ -188,3 +188,91 @@ func TestAScheduleForOneMomentRunsInItsConversationAndThenGoes(t *testing.T) {
 		t.Fatalf("an agent's own prompt is fenced: %s", messages[0].Content)
 	}
 }
+
+// A drawer schedule whose turn fails is not tried again -- each try would
+// be another turn in the person's conversation, opened by the same message
+// -- and a schedule for one moment is still removed.
+func TestAFailedDrawerScheduleIsNotRepeatedInTheConversation(t *testing.T) {
+	world := startGoalWorld(t, []string{goalBrokenRound}, "")
+	defer world.close()
+	past := time.Now().Add(-time.Minute)
+	var schedule *models.AgentSchedule
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		if schedule, err = tx.CreateAgentSchedule(&models.AgentSchedule{
+			AgentID: world.found.ID, Name: "Reminder", Cron: "@at " + past.Format("2006-01-02 15:04"), Prompt: "Remind them.",
+			WrittenBy: models.WrittenByPerson, Deliver: "drawer", ConversationID: world.conversation.ID, Enabled: true, NextRunAt: &past,
+		}); err != nil {
+			t.Fatalf("CreateAgentSchedule: %s", err)
+		}
+	})
+	if err := world.worker.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	world.worker.Wait()
+	deadline := time.Now().Add(15 * time.Second)
+	var jobs []*models.AgentJob
+	var after *models.AgentSchedule
+	for time.Now().Before(deadline) {
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			jobs, _ = tx.ListAgentJobs(&db.AgentJobFilter{AgentID: world.found.ID, Kinds: []models.AgentJobKind{models.AgentJobSchedule}}, nil)
+			after, _ = tx.GetAgentSchedule(schedule.ID)
+		})
+		if len(jobs) == 1 && jobs[0].Status == models.AgentJobDone && after == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if len(jobs) != 1 || jobs[0].Status != models.AgentJobDone || jobs[0].Attempts != 1 {
+		t.Fatalf("one attempt, done, not retried: %+v", jobs)
+	}
+	if after != nil {
+		t.Fatalf("the schedule for one moment is gone: %+v", after)
+	}
+	var opened int
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		messages, _ := tx.ListAgentMessages(world.conversation.ID, nil)
+		for _, message := range messages {
+			if strings.HasPrefix(message.Content, models.ScheduleMarker) {
+				opened++
+			}
+		}
+	})
+	if opened != 1 {
+		t.Fatalf("the schedule opened one turn, not %d", opened)
+	}
+}
+
+// A schedule for one moment that comes due while the agent is switched off
+// is ended at the sweep: no run is coming to do it, and left, it would sit
+// on with no time for ever.
+func TestAScheduleForOneMomentDueWhileTheAgentIsOffIsEnded(t *testing.T) {
+	world := startGoalWorld(t, []string{answerRound}, "")
+	defer world.close()
+	past := time.Now().Add(-time.Minute)
+	var schedule *models.AgentSchedule
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		if schedule, err = tx.CreateAgentSchedule(&models.AgentSchedule{
+			AgentID: world.found.ID, Name: "Reminder", Cron: "@at " + past.Format("2006-01-02 15:04"), Prompt: "Remind them.",
+			WrittenBy: models.WrittenByPerson, Deliver: "drawer", Enabled: true, NextRunAt: &past,
+		}); err != nil {
+			t.Fatalf("CreateAgentSchedule: %s", err)
+		}
+		if _, err := tx.UpdateAgent(world.found.ID, func(agent *models.Agent) error {
+			agent.Enabled = false
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateAgent: %s", err)
+		}
+	})
+	if err := world.worker.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	world.worker.Wait()
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if after, _ := tx.GetAgentSchedule(schedule.ID); after != nil {
+			t.Fatalf("ended at the sweep: %+v", after)
+		}
+	})
+}

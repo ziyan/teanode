@@ -183,7 +183,7 @@ alike from the queue and are opposite everywhere else:
 | where the turn runs | the conversation it was made in (a `run` transcript when it mails) | the person's own conversation |
 | what it remembers | the conversation, when it answers there | everything, it is the same transcript |
 | when the next one is | the cron line says | the last turn says, within bounds |
-| how it ends | it does not; somebody switches it off | the agent says `met`, or the person clears it |
+| how it ends | one for a moment is removed once it has run; a repeating one when somebody switches it off | the agent says `met`, or the person clears it |
 
 The sweep, `dueGoals`, queues one job per conversation whose goal is
 `working` with its time passed, and writes nothing: the dedupe on the subject

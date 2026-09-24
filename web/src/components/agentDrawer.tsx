@@ -1481,11 +1481,6 @@ function goalStateKey(state: GoalState): `agentDrawer.goal.${GoalState}` {
 // word moves into the tooltip: there is no room beside a title on a phone
 // for "waiting for you · next look 10:42", and the mark's colour already
 // says which of the three it is to anyone who has seen it once.
-// CheckInLine is one turn of the agent's own, toward the goal or on
-// hearing that a background command ended, as a line rather than a
-// bubble; pressing it shows the words the turn was given, because a
-// person watching the agent wants to know what it was told as much as
-// what it did.
 // What each kind of turn of the agent's own is called, and drawn with.
 const CHECK_IN_LABEL = {
   goal: 'agentDrawer.goal.checkIn',
@@ -1499,6 +1494,11 @@ function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
   return <TargetIcon size={12} />
 }
 
+// CheckInLine is one turn of the agent's own -- toward the goal, on
+// hearing that a background command ended, or at a schedule's time -- as a
+// line rather than a bubble; pressing it shows the words the turn was
+// given, because a person watching the agent wants to know what it was told
+// as much as what it did.
 function CheckInLine({ at, text, origin }: { at?: string; text: string; origin: CheckInOrigin }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
