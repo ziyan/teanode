@@ -942,13 +942,14 @@ func (self *AskRun) turn() error {
 					if err != nil {
 						log.Warningf("cannot title conversation %q: %s", settings.Conversation.ID, err)
 					}
-					// To the conversation's feed rather than the run's: the
-					// run has ended by the time a title comes back, and a
-					// run that has ended says nothing more, so the drawer
-					// went on calling the conversation Untitled until it
-					// was opened again.
+					// To the conversation's feed rather than the run's, and as
+					// the conversation's rather than the run's: the run has
+					// ended by the time a title comes back, and says nothing
+					// more; and an event carrying the run's name after its
+					// last is taken for a repeat and dropped. Either way the
+					// drawer went on calling the conversation Untitled.
 					if titled != "" {
-						self.agent.publish(Event{Kind: EventTitled, Text: titled, RunID: self.ID, ConversationID: settings.Conversation.ID, At: time.Now()}, true)
+						self.agent.publish(Event{Kind: EventTitled, Text: titled, ConversationID: settings.Conversation.ID, At: time.Now()}, true)
 					}
 				}()
 			}
