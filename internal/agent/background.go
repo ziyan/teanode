@@ -340,10 +340,14 @@ func backgroundWakeMessage(endings []backgroundEnding) string {
 // backgroundOutcome is how one ended, in a line.
 func backgroundOutcome(status *computer.BackgroundStatus) string {
 	switch status.StopReason {
+	// Stopped when asked is the person: the agent's own stops are
+	// acknowledged as they are made, and never wake it.
 	case computer.BackgroundStopReasonStopped:
-		return "stopped before it ended: by the person, or with the computer's program"
+		return "stopped by the person before it ended"
 	case computer.BackgroundStopReasonLifetime:
-		return "stopped: it ran as long as a background command may"
+		return "stopped after running 24 hours, as long as a background command may"
+	case computer.BackgroundStopReasonShutdown:
+		return "stopped because teanode computer was stopped on that machine"
 	}
 	return fmt.Sprintf("exit code: %d", status.ExitCode)
 }

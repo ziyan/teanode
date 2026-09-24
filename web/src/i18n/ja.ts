@@ -1172,8 +1172,6 @@ export const ja: Catalog = {
   'agentDrawer.goal.checkIn': '目標のターン',
   'agentDrawer.backgroundEnded': 'バックグラウンドのコマンドが終了',
   'agentDrawer.backgroundCommands': 'バックグラウンドのコマンド',
-  'agentDrawer.backgroundCommandsHint':
-    'このチャットがあなたのコンピューターでバックグラウンドに残したコマンドと、最近終了したもの。',
   'agentDrawer.backgroundRunning': 'バックグラウンドで {count} 件実行中',
   'backgroundCommands.none': 'バックグラウンドで実行中のものはありません。',
   'backgroundCommands.running': '実行中',
@@ -1181,6 +1179,7 @@ export const ja: Catalog = {
   'backgroundCommands.stoppedState': '停止済み',
   'backgroundCommands.lifetime': '24 時間で停止',
   'backgroundCommands.started': '{time} に開始',
+  'backgroundCommands.back': '戻る',
   'backgroundCommands.output': '出力',
   'backgroundCommands.outputTitle': 'バックグラウンドのコマンド',
   'backgroundCommands.stop': '停止',
@@ -1189,8 +1188,9 @@ export const ja: Catalog = {
   'backgroundCommands.listFailed': 'バックグラウンドのコマンドを読み込めませんでした。',
   'backgroundCommands.readFailed': '出力を読み込めませんでした。',
   'backgroundCommands.nothingPrinted': 'まだ何も出力されていません。',
-  'backgroundCommands.stdout': '標準出力',
-  'backgroundCommands.stderr': '標準エラー',
+  'backgroundCommands.command': 'コマンド',
+  'backgroundCommands.stdout': '出力',
+  'backgroundCommands.stderr': 'エラー出力',
   'backgroundCommands.truncated': '{total} のうち最後の {shown} を表示',
   'agent.answered': '代わりに返答したもの',
   'agent.repliesHint':

@@ -42,12 +42,7 @@ import {
   TrashIcon,
   ExternalIcon,
 } from './icons'
-import {
-  BackgroundCommand,
-  BackgroundCommandRows,
-  BackgroundOutputDialog,
-  useBackgroundCommands,
-} from './backgroundCommands'
+import { BackgroundCommand, BackgroundPanel, useBackgroundCommands } from './backgroundCommands'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog, FormDialog } from './dialog'
 import { ZoomablePicture } from './lightbox'
@@ -1525,8 +1520,9 @@ function GoalChip({ conversation, onOpen }: { conversation: Conversation; onOpen
 }
 
 // BackgroundMark is the head's mark for the commands this conversation
-// left running in the background: a terminal, and how many still run.
-// It stays while ended ones are listed, so how one ended can be read.
+// left running in the background: a terminal whose cursor blinks while any
+// of them still runs, and sits still once they have all ended, so how they
+// ended can still be read behind it.
 function BackgroundMark({ commands, onOpen }: { commands: BackgroundCommand[]; onOpen: () => void }) {
   const { t } = useTranslation()
   const runningCount = commands.filter((command) => command.isRunning).length
@@ -1543,7 +1539,6 @@ function BackgroundMark({ commands, onOpen }: { commands: BackgroundCommand[]; o
         onClick={onOpen}
       >
         <TerminalIcon size={14} />
-        {runningCount > 0 ? <span>{runningCount}</span> : null}
       </button>
     </Tooltip>
   )
@@ -1797,7 +1792,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     open && available && backgroundConversationId !== '',
   )
   const [isShowingBackground, setIsShowingBackground] = useState(false)
-  const [backgroundOutput, setBackgroundOutput] = useState<BackgroundCommand | null>(null)
 
   const readConversation = useCallback(
     (conversationId: string, isSelection = false) => {
@@ -2198,6 +2192,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const applyEvent = (event: RunEvent) => {
     // What an event does beyond the transcript happens here, once: the
     // updater below may run twice under StrictMode.
+    //
+    // A shell call may have left something running, or stopped it: the
+    // head's mark says so now rather than at the next poll.
+    if (event.kind === 'tool_result' && event.tool === 'shell') {
+      void reloadBackground(true)
+    }
     if (
       event.kind === 'tool_result' &&
       event.tool &&
@@ -3007,7 +3007,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 there is any: the count still running, and the list and
                 their output behind it. */}
             {backgroundCommands.length > 0 && (
-              <BackgroundMark commands={backgroundCommands} onOpen={() => setIsShowingBackground(true)} />
+              <BackgroundMark
+                commands={backgroundCommands}
+                onOpen={() => {
+                  setShowingList(false)
+                  setIsShowingBackground((before) => !before)
+                }}
+              />
             )}
             {budget && <BudgetRing budget={budget} zone={agentZone} framed={standalone} onLeaving={leaving} />}
             {/* Framed by the extension, the panel around this has a bar
@@ -3021,6 +3027,19 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               </Tooltip>
             )}
           </div>
+          {/* What this chat left running, dropped down from the head the
+              way the conversations are, so the head stays where the box is
+              dragged from and its edges where it is resized. */}
+          {isShowingBackground && (
+            <>
+              <div className="agent-drawer-backdrop" onClick={() => setIsShowingBackground(false)} />
+              <BackgroundPanel
+                commands={backgroundCommands}
+                onChanged={() => void reloadBackground(true)}
+                onClose={() => setIsShowingBackground(false)}
+              />
+            </>
+          )}
           {showingList && (
             <>
               {/* Anywhere outside the list closes it. */}
@@ -3404,35 +3423,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             </dl>
           ) : null}
         </FormDialog>
-      ) : null}
-      {/* One dialog at a time: the output takes the list's place while it
-          is open, and closing it brings the list back. */}
-      {backgroundOutput ? (
-        <BackgroundOutputDialog
-          command={backgroundOutput}
-          onChanged={() => void reloadBackground(true)}
-          onClose={() => setBackgroundOutput(null)}
-        />
-      ) : isShowingBackground ? (
-        <ConfirmDialog
-          title={t('agentDrawer.backgroundCommands')}
-          wide
-          body={
-            <>
-              <p className="muted">{t('agentDrawer.backgroundCommandsHint')}</p>
-              {backgroundCommands.length === 0 ? (
-                <p className="muted">{t('backgroundCommands.none')}</p>
-              ) : (
-                <BackgroundCommandRows
-                  commands={backgroundCommands}
-                  onOutput={setBackgroundOutput}
-                  onChanged={() => void reloadBackground(true)}
-                />
-              )}
-            </>
-          }
-          onClose={() => setIsShowingBackground(false)}
-        />
       ) : null}
       {deleting ? (
         <ConfirmDialog
