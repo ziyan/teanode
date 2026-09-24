@@ -220,3 +220,57 @@ func TestNotNowKeepsTheAgentQuietUnlessAsked(t *testing.T) {
 		t.Fatalf("asked for, it is queued: %+v", jobs)
 	}
 }
+
+// A memory check is asked for once memory holds enough about the person,
+// they have been introduced, and checks are on; not again within the week
+// while the set is small.
+func TestAMemoryCheckIsAskedForWhenMemoryKnowsEnough(t *testing.T) {
+	world := newSpeakFirstWorld(t)
+	var self *models.AgentNode
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		now := time.Now()
+		if err := tx.MarkAgentSpokeFirst(world.agent.ID, nil, &now, nil); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		if self, err = tx.PutAgentNode(&models.AgentNode{AgentID: world.agent.ID, Path: "self", Kind: models.NodeSelf, Name: "Robin"}); err != nil {
+			t.Fatal(err)
+		}
+		for index := 0; index < 99; index++ {
+			if _, err := tx.AddAgentFact(&models.AgentFact{AgentID: world.agent.ID, NodeID: self.ID, Kind: models.FactPlain, Text: fmt.Sprintf("Robin has kept tomato plant number %d.", index)}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	present := func(at time.Time) {
+		world.worker.ReportPresence(world.owner.ID, true, 0, at)
+		if err := world.worker.TickAt(context.Background(), at); err != nil {
+			t.Fatalf("Tick: %s", err)
+		}
+		world.worker.Wait()
+	}
+	present(time.Now())
+	if jobs := world.speakFirstJobs(t); len(jobs) != 0 {
+		t.Fatalf("ninety-nine facts are not enough: %+v", jobs)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, err := tx.AddAgentFact(&models.AgentFact{AgentID: world.agent.ID, NodeID: self.ID, Kind: models.FactPlain, Text: "Robin keeps bees."}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.CreateAgentEvaluationQuestion(&models.AgentEvaluationQuestion{AgentID: world.agent.ID, QuestionText: "What does Robin keep?", QuestionState: models.EvaluationQuestionAsked}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	present(time.Now().Add(2 * time.Minute))
+	if jobs := world.speakFirstJobs(t); len(jobs) != 0 {
+		t.Fatalf("a question was put today: %+v", jobs)
+	}
+	world.tick(t)
+	later := time.Now().Add(8 * 24 * time.Hour)
+	present(later)
+	world.worker.Wait()
+	jobs := world.speakFirstJobs(t)
+	if len(jobs) != 1 || jobs[0].SubjectID != agent.SpeakFirstMemoryCheck {
+		t.Fatalf("a week later, a memory check: %+v", jobs)
+	}
+}

@@ -22,7 +22,7 @@ To see it working: create an agent for a new account and open the dashboard; wit
 - [x] (2026-09-24) Milestone 1: the agent can speak first: an unprompted turn in the main conversation, the rules for when, presence from the dashboard, and the drawer opening on it.
 - [x] (2026-09-24) Milestone 2: onboarding.
 - [x] (2026-09-24) Milestone 3: memory check questions stored per agent, with the tool the agent uses to draft, ask and record, and an import of an existing question file.
-- [ ] Milestone 4: the memory check conversation.
+- [x] (2026-09-24) Milestone 4: the memory check conversation. The check-in asks the first question in the same message as the request, rather than asking whether now is good and waiting: the overlay then carries the check from its first reply, and "not now" is one word either way.
 - [ ] Milestone 5: the evaluation runs as a job over the stored set, and its scores are kept.
 - [ ] Milestone 6: the Memory tab shows the questions, the answers and the scores.
 - [ ] Milestone 7: tips.

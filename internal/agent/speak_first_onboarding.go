@@ -61,22 +61,6 @@ func (self *Agent) onboardingReason() speakFirstReason {
 	}
 }
 
-// memoryCheckReason is the agent asking to check a few things it
-// remembers. Not due until the check exists (Milestone 4 of
-// docs/planning/agent-speaks-first-execplan.md).
-func (self *Agent) memoryCheckReason() speakFirstReason {
-	return speakFirstReason{
-		name:           SpeakFirstMemoryCheck,
-		isDailyLimited: true,
-		isDue: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, idle time.Duration, now time.Time) (bool, error) {
-			return false, nil
-		},
-		checkIn: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time) (string, error) {
-			return "", nil
-		},
-	}
-}
-
 // tipReason is the agent telling an idle person about one thing they have
 // not tried. Not due until tips exist (Milestone 7).
 func (self *Agent) tipReason() speakFirstReason {
