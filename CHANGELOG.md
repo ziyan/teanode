@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.58.5] - 2026-09-24
+
+### Fixed
+
+- Merging two facts that say the same thing no longer turns something the agent inferred into something the person said. (#139)
+
 ## [0.58.4] - 2026-09-24
 
 ### Fixed
