@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.58.6] - 2026-09-24
+
+### Fixed
+
+- The nightly rewrite of a page no longer undoes a rename, pin or archive made at the same time, and no longer misses a fact added while it ran. (#142)
+
 ## [0.58.5] - 2026-09-24
 
 ### Fixed
