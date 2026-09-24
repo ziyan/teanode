@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.59.0] - 2026-09-24
+
+### Added
+
+- The Dreams tab shows a dream waiting to start or running, and what each dream cost. (#148)
+
 ## [0.58.11] - 2026-09-24
 
 ### Changed
