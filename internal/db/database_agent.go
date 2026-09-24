@@ -84,9 +84,11 @@ type AgentOperation interface {
 
 	// TouchUserLocation records where a person is and what they read in, as
 	// their browser or command line said. The zone is kept only while the
-	// account follows the browser. Not audited: crossing a border is not an
-	// administrative change.
-	TouchUserLocation(userId, timezone, locale string, at time.Time) error
+	// account follows the browser. A locale the person chose in the
+	// dashboard replaces the one kept; one a client only passed along, a
+	// browser's or a shell's, fills it in when nothing is kept yet. Not
+	// audited: crossing a border is not an administrative change.
+	TouchUserLocation(userId, timezone, locale string, isLocaleChosen bool, at time.Time) error
 }
 
 // AgentJobFilter narrows a job listing.
@@ -896,13 +898,15 @@ func (self *transaction) ScavengeAgentUsage(before time.Time) (int64, error) {
 	return result.RowsAffected, result.Error
 }
 
-func (self *transaction) TouchUserLocation(userId, timezone, locale string, at time.Time) error {
+func (self *transaction) TouchUserLocation(userId, timezone, locale string, isLocaleChosen bool, at time.Time) error {
 	if userId == "" {
 		return nil
 	}
 	updates := map[string]any{"timezone_seen_at": at}
-	if locale != "" {
+	if locale != "" && isLocaleChosen {
 		updates["locale_seen"] = locale
+	} else if locale != "" {
+		updates["locale_seen"] = gorm.Expr(`CASE WHEN COALESCE("locale_seen", '') = '' THEN ? ELSE "locale_seen" END`, locale)
 	}
 	if timezone != "" {
 		// Only while the account follows the browser; a pinned zone stays.

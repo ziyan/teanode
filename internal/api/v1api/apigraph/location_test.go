@@ -10,8 +10,9 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// The language the dashboard is shown in wins over the browser's own, and
-// a change of language or zone is kept at once rather than an hour later.
+// The language the dashboard is shown in wins over the browser's own and
+// over a shell's, and a change of language or zone is kept at once rather
+// than an hour later.
 func TestTheAccountLearnsTheLanguageTheDashboardIsShownIn(t *testing.T) {
 	t.Parallel()
 	database, release := dbtest.AcquireDatabase(t)
@@ -54,9 +55,21 @@ func TestTheAccountLearnsTheLanguageTheDashboardIsShownIn(t *testing.T) {
 	if found := seen(); found.LocaleSeen != "ja" || found.Timezone != "Asia/Tokyo" {
 		t.Fatalf("a change should be kept at once: got %q in %q", found.LocaleSeen, found.Timezone)
 	}
-	// A client that does not say its language falls back to the browser's.
+	// A client that does not say which language was chosen, the command
+	// line say, does not replace the one the dashboard chose.
+	visit("", "fr-FR,fr;q=0.9", "Asia/Tokyo")
+	if found := seen(); found.LocaleSeen != "ja" {
+		t.Fatalf("a passed-along language replaced the chosen one: got %q", found.LocaleSeen)
+	}
+	// It does fill in an account that has none yet.
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if user, err = tx.CreateUser(&models.User{Username: "location-newcomer", Name: "Bob Example"}); err != nil {
+			t.Fatal(err)
+		}
+	})
 	visit("", "fr-FR,fr;q=0.9", "Asia/Tokyo")
 	if found := seen(); found.LocaleSeen != "fr-fr" {
-		t.Fatalf("want the Accept-Language fallback, got %q", found.LocaleSeen)
+		t.Fatalf("want the Accept-Language fallback for a new account, got %q", found.LocaleSeen)
 	}
 }

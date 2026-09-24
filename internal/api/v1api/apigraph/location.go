@@ -65,7 +65,8 @@ func (self *graph) touchLocation(request *http.Request) {
 		}
 	}
 	locale := firstLanguage(request.Header.Get(LanguageHeader))
-	if locale == "" {
+	isLocaleChosen := locale != ""
+	if !isLocaleChosen {
 		locale = firstLanguage(request.Header.Get("Accept-Language"))
 	}
 	if timezone == "" && locale == "" {
@@ -89,7 +90,7 @@ func (self *graph) touchLocation(request *http.Request) {
 		if err != nil || user == nil {
 			return err
 		}
-		return tx.TouchUserLocation(user.ID, timezone, locale, now)
+		return tx.TouchUserLocation(user.ID, timezone, locale, isLocaleChosen, now)
 	}); err != nil {
 		log.Warningf("cannot record where %s is: %s", username, err)
 	}
