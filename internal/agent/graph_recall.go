@@ -176,9 +176,16 @@ type recalledBlock struct {
 	// Text is what goes into the overlay.
 	Text string
 
+	// Summary is the page's opening as Text carries it, if it does.
+	Summary string
+
 	// Facts are the facts the block carried, in the order it carried
 	// them.
 	Facts []*models.AgentFact
+
+	// FactPaths is the page of each fact, by fact id, for the block of
+	// loose facts, which are from many pages.
+	FactPaths map[string]string
 }
 
 // stillStands says whether a fact the search found is one the page still
@@ -228,7 +235,8 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 	// leaves the pages the whole of it, as they had before.
 	reservedBlocks, reservedTokens := 0, 0
 	if len(facts) > 0 {
-		reservedBlocks, reservedTokens = recallFactBlocks, recallFactTokens
+		// One block: the loose facts go in together below.
+		reservedBlocks, reservedTokens = 1, recallFactTokens
 	}
 	pageBlocks := recallGraphBlocks - reservedBlocks
 	pageTokens := recallTokens - reservedTokens
@@ -237,7 +245,7 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 	shown := map[string]bool{}
 	expanded := map[string]bool{}
 	blocks := []*recalledBlock{}
-	pages := 0
+	pages, unhitPages := 0, 0
 	for _, node := range nodes {
 		// The overlay's budget as well as the page count: a block the
 		// overlay would drop is a block whose facts must not be marked
@@ -246,6 +254,10 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 			break
 		}
 		if expanded[node.ID] {
+			continue
+		}
+		isHit := len(hitOnPage[node.ID]) > 0
+		if !isHit && unhitPages >= recallPagesUnhit {
 			continue
 		}
 		considered, err := tx.ListAgentFacts(agentId, node.ID, false, pageFactsConsidered)
@@ -263,8 +275,10 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 		// same when the turn's words hit the page, and only the
 		// opening, which the index line already has the gist of, is
 		// left out.
-		if summary := strings.TrimSpace(node.Summary); summary != "" && !self.inPrompt(node.ID) {
-			text += "\n  " + cutRunes(summary, 600)
+		summary := ""
+		if opening := strings.TrimSpace(node.Summary); opening != "" && !self.inPrompt(node.ID) {
+			summary = cutRunes(opening, 600)
+			text += "\n  " + summary
 		}
 		for _, fact := range pageFactsFound {
 			text += "\n  #" + strconv.Itoa(fact.Number) + " " + fact.Line()
@@ -281,18 +295,24 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 			continue
 		}
 		spent += cost
-		blocks = append(blocks, &recalledBlock{NodeID: node.ID, Path: node.Path, Text: text, Facts: pageFactsFound})
+		blocks = append(blocks, &recalledBlock{NodeID: node.ID, Path: node.Path, Text: text, Summary: summary, Facts: pageFactsFound})
 		for _, fact := range pageFactsFound {
 			shown[fact.ID] = true
 		}
 		expanded[node.ID] = true
 		pages++
+		if !isHit {
+			unhitPages++
+		}
 	}
 	// Then the loose facts: ones whose page did not make the cut but
-	// which the turn's words hit directly.
-	kept := 0
+	// which the turn's words hit directly. Together, as one block: one
+	// block each spent the overlay's lines three facts in, and the rest
+	// of what the search found -- often the answer -- never went in.
+	loose := &recalledBlock{FactPaths: map[string]string{}}
+	var looseLines []string
 	for _, fact := range facts {
-		if kept >= recallFacts || len(blocks) >= recallGraphBlocks {
+		if len(loose.Facts) >= recallFacts || len(blocks) >= recallGraphBlocks {
 			break
 		}
 		if shown[fact.ID] || !stillStands(fact) {
@@ -309,15 +329,21 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 			continue
 		}
 		spent += cost
-		blocks = append(blocks, &recalledBlock{Path: paths[fact.NodeID], Text: line, Facts: []*models.AgentFact{fact}})
-		kept++
+		looseLines = append(looseLines, line)
+		loose.Facts = append(loose.Facts, fact)
+		loose.FactPaths[fact.ID] = paths[fact.NodeID]
+	}
+	if len(loose.Facts) > 0 {
+		loose.Text = strings.Join(looseLines, "\n")
+		blocks = append(blocks, loose)
 	}
 	return blocks, nil
 }
 
 // factsToShow picks which of a page's facts the overlay shows: the ones
-// the question hit, in the order the search ranked them, and then the
-// rest in the order the store gave them, until pageFacts are chosen. The
+// the question hit, in the order the search ranked them, up to pageFacts,
+// and then the page's first facts where fewer than pageFactsLeast were
+// hit. The
 // chosen are laid out by number, because selection is about relevance
 // and presentation is about reading as a page -- a block whose `#n`
 // references jump about is one the model cites back crookedly.
@@ -357,7 +383,7 @@ func factsToShow(considered, hit []*models.AgentFact) []*models.AgentFact {
 		}
 	}
 	for _, fact := range considered {
-		if len(chosen) >= pageFacts {
+		if len(chosen) >= pageFactsLeast {
 			break
 		}
 		if !taken[fact.ID] {
@@ -401,7 +427,12 @@ func (self *AskRun) writeRecalled(ctx context.Context, nodes []*models.AgentNode
 // RecalledPage is one page recall would carry and the facts it would
 // carry from it.
 type RecalledPage struct {
-	Path  string
+	Path string
+
+	// Summary is the page's opening as the overlay carried it, or empty
+	// where it carried none: a page the prompt's index already names.
+	Summary string
+
 	Facts []*models.AgentFact
 }
 
@@ -456,13 +487,25 @@ func (self *Agent) RecallForQuestion(ctx context.Context, found *models.Agent, o
 	// gathered by path rather than listed one for one.
 	pages := []*RecalledPage{}
 	byPath := map[string]*RecalledPage{}
-	for _, block := range blocks {
-		page := byPath[block.Path]
+	pageOf := func(path string) *RecalledPage {
+		page := byPath[path]
 		if page == nil {
-			page = &RecalledPage{Path: block.Path, Facts: []*models.AgentFact{}}
-			byPath[block.Path] = page
+			page = &RecalledPage{Path: path, Facts: []*models.AgentFact{}}
+			byPath[path] = page
 			pages = append(pages, page)
 		}
+		return page
+	}
+	for _, block := range blocks {
+		if block.NodeID == "" {
+			for _, fact := range block.Facts {
+				page := pageOf(block.FactPaths[fact.ID])
+				page.Facts = append(page.Facts, fact)
+			}
+			continue
+		}
+		page := pageOf(block.Path)
+		page.Summary = block.Summary
 		page.Facts = append(page.Facts, block.Facts...)
 	}
 	return pages, nil

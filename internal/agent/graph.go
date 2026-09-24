@@ -24,13 +24,9 @@ const (
 	// the fusion below.
 	recallCandidates = 20
 
-	// recallFactBlocks and recallFactTokens are what the overlay holds
-	// back for the facts the question matched outright, so that the
-	// pages cannot spend it all first.
-	//
-	// Reserve room for directly matched facts so expanded pages cannot consume
-	// the entire recall budget before those facts reach the prompt.
-	recallFactBlocks = 3
+	// recallFactTokens is what the overlay holds back for the facts the
+	// question matched outright, so that the pages cannot spend it all
+	// first. They go in as one block, which is held back too.
 	recallFactTokens = 400
 
 	// recallPages is how many pages the overlay expands, recallFacts how
@@ -44,6 +40,22 @@ const (
 	recallFacts         = 10
 	pageFacts           = 5
 	pageFactsConsidered = 60
+
+	// pageFactsLeast is how many facts a page the question hit shows at
+	// the least: the facts it hit, and its first facts where it hit fewer
+	// than this, so a single matched sentence still arrives with what the
+	// page is about. A page is no longer filled up to pageFacts with its
+	// oldest lines: on a long page those are its opening remarks, and
+	// they took the room of the sentences the question asked for.
+	pageFactsLeast = 2
+
+	// recallPagesUnhit is how many pages the overlay expands that the
+	// fact search hit nothing on: pages found by their name or their
+	// meaning alone. They carry their opening and pageFactsLeast facts.
+	// Bounded because such a page -- a month with a summary and no facts
+	// of its own, say -- ranked high and filled every page slot while the
+	// facts that answered the question were left out.
+	recallPagesUnhit = 2
 
 	// recallBlocks is how many lines the overlay carries in all, and
 	// recallGraphBlocks how many of them the graph may fill: the
