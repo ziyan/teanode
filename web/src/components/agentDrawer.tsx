@@ -343,7 +343,7 @@ const AGENT = `
 const TAB = `
   query {
     ReadAgentTab { attached title url }
-    ReadAgentComputers { computers { name } }
+    ReadAgentComputers { computers { name system description } }
     ReadAgent { budget { used limit resetsAt cost costLimit currency } timezone }
   }`
 
@@ -1357,56 +1357,21 @@ function CitedPicture({ file }: { file: CitedFile }) {
   )
 }
 
-// DeviceButton is something of the person's that is attached, a browser
-// tab or a computer: a button the size of the others in the bar, with the
-// details on hover, that opens where attached things are listed.
-function DeviceButton({
-  label,
-  framed,
-  onLeaving,
-  children,
-}: {
-  label: string
-  framed: boolean
-  onLeaving: () => void
-  children: React.ReactNode
-}) {
-  const where = '/settings/agent/connections'
-  return (
-    <Tooltip label={label}>
-      {framed ? (
-        <a
-          className="icon-button agent-drawer-device"
-          href={`${window.location.origin}${where}`}
-          target="_blank"
-          rel="noreferrer"
-          aria-label={label}
-        >
-          {children}
-        </a>
-      ) : (
-        <Link className="icon-button agent-drawer-device" to={where} aria-label={label} onClick={onLeaving}>
-          {children}
-        </Link>
-      )}
-    </Tooltip>
-  )
-}
-
 // BudgetRing is the day's tokens as a ring in the drawer's head: how much
 // of the budget has gone, coloured by how near the end of it the day is,
-// with the numbers and the hour it resets on hover, and the agent's own
-// page a click away. Nothing is drawn where there is no limit to be near.
+// with the numbers and the hour it resets on hover, and the usage dropped
+// down under the head on a press. Nothing is drawn where there is no limit
+// to be near.
 function BudgetRing({
   budget,
   zone,
-  framed,
-  onLeaving,
+  isOpen,
+  onToggle,
 }: {
   budget: Budget
   zone: string
-  framed: boolean
-  onLeaving: () => void
+  isOpen: boolean
+  onToggle: () => void
 }) {
   const { t } = useTranslation()
   const shown = budgetShown(budget)
@@ -1439,25 +1404,318 @@ function BudgetRing({
     </svg>
   )
   return (
-    <Tooltip label={label}>
+    <HeadMark label={label} className="agent-drawer-budget" isOpen={isOpen} onToggle={onToggle}>
+      {ring}
+    </HeadMark>
+  )
+}
+
+// The head's dropdowns.
+//
+// Every mark in the drawer's head -- the goal, what is attached, the day's
+// budget, what is running in the background -- opens the same way the
+// list of conversations does: a list dropped down under the head, over the
+// conversation, closed by anywhere outside it or Escape. Not a dialog over
+// the page, because the drawer is where the person is looking; and not a
+// panel over the whole box, because the head is what the box is dragged by
+// and its edges what it is resized by.
+
+// HeadMenuName is which of them is open.
+type HeadMenuName = 'goal' | 'computers' | 'tab' | 'usage' | 'background'
+
+// HeadMenu is the frame: a small title, and what is under it.
+function HeadMenu({
+  title,
+  className,
+  onClose,
+  children,
+}: {
+  title: string
+  className?: string
+  onClose: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <section
+      className={['agent-drawer-list', 'head-menu', className].filter(Boolean).join(' ')}
+      aria-label={title}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.stopPropagation()
+          onClose()
+        }
+      }}
+    >
+      <header className="head-menu-title">
+        <strong>{title}</strong>
+      </header>
+      {children}
+    </section>
+  )
+}
+
+// SettingsLink is the way from a dropdown to the page behind it: the
+// dashboard's own link, or, framed into another site, one that opens the
+// dashboard in a tab of its own rather than drawing it in here.
+function SettingsLink({
+  to,
+  framed,
+  onLeaving,
+  children,
+}: {
+  to: string
+  framed: boolean
+  onLeaving: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <div className="head-menu-foot">
       {framed ? (
-        // Framed into another site, the drawer sends the person to the
-        // dashboard itself rather than drawing a settings page in here.
-        <a
-          className="icon-button agent-drawer-budget"
-          href={`${window.location.origin}/settings/agent`}
-          target="_blank"
-          rel="noreferrer"
-          aria-label={label}
-        >
-          {ring}
+        <a className="link" href={`${window.location.origin}${to}`} target="_blank" rel="noreferrer">
+          {children}
         </a>
       ) : (
-        <Link className="icon-button agent-drawer-budget" to="/settings/agent" aria-label={label} onClick={onLeaving}>
-          {ring}
+        <Link className="link" to={to} onClick={onLeaving}>
+          {children}
         </Link>
       )}
+    </div>
+  )
+}
+
+// HeadMark is a mark in the head that opens its dropdown.
+function HeadMark({
+  label,
+  className,
+  isOpen,
+  onToggle,
+  children,
+}: {
+  label: string
+  className?: string
+  isOpen: boolean
+  onToggle: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <Tooltip label={label}>
+      <button
+        type="button"
+        className={['icon-button', className].filter(Boolean).join(' ')}
+        aria-label={label}
+        aria-expanded={isOpen}
+        onClick={onToggle}
+      >
+        {children}
+      </button>
     </Tooltip>
+  )
+}
+
+// AttachedComputer is one of the person's computers as the drawer lists it.
+interface AttachedComputer {
+  name: string
+  system?: string
+  description?: string
+}
+
+// ComputersMenu lists what is attached, a line each: the name, and the
+// person's own words about it, which is what tells two apart.
+function ComputersMenu({
+  computers,
+  framed,
+  onLeaving,
+  onClose,
+}: {
+  computers: AttachedComputer[]
+  framed: boolean
+  onLeaving: () => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <HeadMenu title={t('agentDrawer.computersTitle')} onClose={onClose}>
+      {computers.map((computer) => (
+        <div key={computer.name} className="head-menu-row" title={computer.description || computer.name}>
+          <ComputerIcon size={14} />
+          <span className="head-menu-row-name">{computer.name}</span>
+          <span className="head-menu-row-detail muted">
+            {[computer.description, computer.system].filter(Boolean).join(' · ')}
+          </span>
+        </div>
+      ))}
+      <SettingsLink to="/settings/agent/connections" framed={framed} onLeaving={onLeaving}>
+        {t('agentDrawer.manageConnections')}
+      </SettingsLink>
+    </HeadMenu>
+  )
+}
+
+// TabMenu is the attached tab, a line: its title, and the site it is on.
+function TabMenu({
+  tab,
+  framed,
+  onLeaving,
+  onClose,
+}: {
+  tab: { title?: string; url?: string }
+  framed: boolean
+  onLeaving: () => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  let site = ''
+  try {
+    site = tab.url ? new URL(tab.url).host : ''
+  } catch {
+    site = tab.url ?? ''
+  }
+  return (
+    <HeadMenu title={t('agentDrawer.tabTitle')} onClose={onClose}>
+      <div className="head-menu-row" title={tab.url}>
+        <GlobeIcon size={14} />
+        <span className="head-menu-row-name">{tab.title || site}</span>
+        <span className="head-menu-row-detail muted">{site}</span>
+      </div>
+      <SettingsLink to="/settings/agent/connections" framed={framed} onLeaving={onLeaving}>
+        {t('agentDrawer.manageConnections')}
+      </SettingsLink>
+    </HeadMenu>
+  )
+}
+
+// UsageMenu is the day's budget: how much has gone, as words and as a bar
+// coloured by how near the end it is, what it came to, and when it starts
+// again.
+function UsageMenu({
+  budget,
+  zone,
+  framed,
+  onLeaving,
+  onClose,
+}: {
+  budget: Budget
+  zone: string
+  framed: boolean
+  onLeaving: () => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const shown = budgetShown(budget)
+  if (!shown) return null
+  const fraction = Math.max(0, Math.min(1, shown.fraction))
+  const percent = Math.round(fraction * 100)
+  const said = t('agentDrawer.usageUsed', { used: shown.used, limit: shown.limit })
+  return (
+    <HeadMenu title={t('agentDrawer.usageTitle')} onClose={onClose}>
+      <div className="head-menu-usage">
+        <div className="head-menu-usage-said">
+          <span>{said}</span>
+          <span className="muted">{percent}%</span>
+        </div>
+        <div
+          className="agent-budget-bar"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent}
+          aria-label={said}
+        >
+          <span className={`agent-budget-bar-fill ${budgetNearness(fraction, 1)}`} style={{ width: `${percent}%` }} />
+        </div>
+        <p className="muted">
+          {shown.money
+            ? null
+            : `${t('agentDrawer.budgetSpent', { spent: formatMoney(budget.cost, budget.currency) })} `}
+          {t('agentDrawer.budgetResets', { at: formatClock(budget.resetsAt, zone) })}
+        </p>
+      </div>
+      <SettingsLink to="/settings/agent" framed={framed} onLeaving={onLeaving}>
+        {t('agentDrawer.usageSettings')}
+      </SettingsLink>
+    </HeadMenu>
+  )
+}
+
+// GoalMenu is the goal on this conversation, set, changed and cleared in
+// the dropdown: the words, and where it stands under them.
+function GoalMenu({
+  conversation,
+  draft,
+  isBusy,
+  turnsToday,
+  onDraft,
+  onSave,
+  onClose,
+}: {
+  conversation: Conversation
+  draft: string
+  isBusy: boolean
+  turnsToday: number
+  onDraft: (draft: string) => void
+  onSave: (goal: string) => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const canSave = draft.trim() !== '' && draft.trim() !== (conversation.goal ?? '')
+  return (
+    <HeadMenu title={t('agentDrawer.goal.title')} className="goal-menu" onClose={onClose}>
+      <form
+        className="head-menu-goal"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (canSave) onSave(draft.trim())
+        }}
+      >
+        <p className="muted">{t('agentDrawer.goal.hint')}</p>
+        <textarea
+          rows={3}
+          value={draft}
+          aria-label={t('agentDrawer.goal.label')}
+          autoFocus
+          onChange={(event) => onDraft(event.target.value)}
+        />
+        {/* Where the goal stands, as the row says it: the state, since
+            when, when the agent looks again, how many turns it has taken
+            today, and its last word. Read, not edited. */}
+        {conversation.goal ? (
+          <dl className="agent-drawer-goal-status">
+            <dt>{t('agentDrawer.goal.state')}</dt>
+            <dd>{t(goalStateKey(goalStateOf(conversation)))}</dd>
+            {conversation.goalSetAt ? (
+              <>
+                <dt>{t('agentDrawer.goal.since')}</dt>
+                <dd>{formatTime(conversation.goalSetAt)}</dd>
+              </>
+            ) : null}
+            {goalStateOf(conversation) === 'working' && conversation.goalNextAt ? (
+              <>
+                <dt>{t('agentDrawer.goal.next')}</dt>
+                <dd>{formatTime(conversation.goalNextAt)}</dd>
+              </>
+            ) : null}
+            <dt>{t('agentDrawer.goal.turnsToday')}</dt>
+            <dd>{turnsToday}</dd>
+            {conversation.goalNote ? (
+              <>
+                <dt>{t('agentDrawer.goal.lastNote')}</dt>
+                <dd>{conversation.goalNote}</dd>
+              </>
+            ) : null}
+          </dl>
+        ) : null}
+        <div className="head-menu-actions">
+          {conversation.goal ? (
+            <button type="button" className="danger" disabled={isBusy} onClick={() => onSave('')}>
+              {t('agentDrawer.goal.clear')}
+            </button>
+          ) : null}
+          <button type="submit" className="primary" disabled={isBusy || !canSave}>
+            {t('common.save')}
+          </button>
+        </div>
+      </form>
+    </HeadMenu>
   )
 }
 
@@ -1519,7 +1777,15 @@ function CheckInLine({ at, text, origin }: { at?: string; text: string; origin: 
   )
 }
 
-function GoalChip({ conversation, onOpen }: { conversation: Conversation; onOpen: () => void }) {
+function GoalChip({
+  conversation,
+  isOpen,
+  onOpen,
+}: {
+  conversation: Conversation
+  isOpen: boolean
+  onOpen: () => void
+}) {
   const { t } = useTranslation()
   // One icon, whatever the state: the head has the conversation's name,
   // the attached marks and the budget ring on it, and there is no room
@@ -1531,7 +1797,13 @@ function GoalChip({ conversation, onOpen }: { conversation: Conversation; onOpen
   const label = goal ? `${t(goalStateKey(state as GoalState))} · ${goal}` : t('agentDrawer.goal.set')
   return (
     <Tooltip label={label}>
-      <button type="button" className={`icon-button agent-drawer-goal ${state}`} aria-label={label} onClick={onOpen}>
+      <button
+        type="button"
+        className={`icon-button agent-drawer-goal ${state}`}
+        aria-label={label}
+        aria-expanded={isOpen}
+        onClick={onOpen}
+      >
         <TargetIcon size={16} />
       </button>
     </Tooltip>
@@ -1539,27 +1811,27 @@ function GoalChip({ conversation, onOpen }: { conversation: Conversation; onOpen
 }
 
 // BackgroundMark is the head's mark for the commands this conversation
-// left running in the background: a terminal whose cursor blinks while any
-// of them still runs, and sits still once they have all ended, so how they
-// ended can still be read behind it.
-function BackgroundMark({ commands, onOpen }: { commands: BackgroundCommand[]; onOpen: () => void }) {
+// has running in the background: a terminal whose cursor blinks. It is
+// there only while one runs; how one ended is said in the conversation.
+function BackgroundMark({
+  commands,
+  isOpen,
+  onToggle,
+}: {
+  commands: BackgroundCommand[]
+  isOpen: boolean
+  onToggle: () => void
+}) {
   const { t } = useTranslation()
-  const runningCount = commands.filter((command) => command.isRunning).length
-  const label =
-    runningCount > 0 ? t('agentDrawer.backgroundRunning', { count: runningCount }) : t('agentDrawer.backgroundCommands')
   return (
-    <Tooltip label={label}>
-      <button
-        type="button"
-        className={
-          runningCount > 0 ? 'icon-button agent-drawer-background running' : 'icon-button agent-drawer-background'
-        }
-        aria-label={label}
-        onClick={onOpen}
-      >
-        <TerminalIcon size={14} />
-      </button>
-    </Tooltip>
+    <HeadMark
+      label={t('agentDrawer.backgroundRunning', { count: commands.length })}
+      className="agent-drawer-background running"
+      isOpen={isOpen}
+      onToggle={onToggle}
+    >
+      <TerminalIcon size={14} />
+    </HeadMark>
   )
 }
 
@@ -1662,7 +1934,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // The bubbles whose time is shown: a tap on a phone, where there is no
   // pointer to hover with.
   const [tab, setTab] = useState<{ attached: boolean; title?: string; url?: string } | null>(null)
-  const [computers, setComputers] = useState<string[]>([])
+  const [computers, setComputers] = useState<AttachedComputer[]>([])
   // The day's tokens against the budget, read with the rest and so kept
   // current as turns start and finish.
   const [budget, setBudget] = useState<Budget | null>(null)
@@ -1810,7 +2082,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     backgroundConversationId,
     open && available && backgroundConversationId !== '',
   )
-  const [isShowingBackground, setIsShowingBackground] = useState(false)
+  // Only what still runs: how a command ended is said in the conversation,
+  // in the turn its ending wakes.
+  const runningCommands = backgroundCommands.filter((command) => command.isRunning)
+  // Which of the head's dropdowns is open, if any. One at a time, and none
+  // while the list of conversations is.
+  const [headMenu, setHeadMenu] = useState<HeadMenuName | null>(null)
+  const toggleHeadMenu = (name: HeadMenuName) => {
+    setShowingList(false)
+    setHeadMenu((before) => (before === name ? null : name))
+  }
 
   const readConversation = useCallback(
     (conversationId: string, isSelection = false) => {
@@ -1982,13 +2263,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       if (stopped || document.hidden) return
       graphql<{
         ReadAgentTab: { attached: boolean; title?: string; url?: string }
-        ReadAgentComputers: { computers: { name: string }[] }
+        ReadAgentComputers: { computers: AttachedComputer[] }
         ReadAgent: { budget: Budget | null; timezone: string }
       }>(TAB)
         .then((response) => {
           if (stopped) return
           setTab(response.ReadAgentTab)
-          setComputers(response.ReadAgentComputers.computers.map((computer) => computer.name))
+          setComputers(response.ReadAgentComputers.computers)
           setBudget(response.ReadAgent.budget)
           setAgentZone(response.ReadAgent.timezone)
         })
@@ -2743,6 +3024,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     try {
       await graphql(UPDATE, { conversationId, goal })
       setGoalDraft(null)
+      setHeadMenu(null)
       await loadConversations()
       await readConversation(conversationId)
       toast.done(goal ? t('agentDrawer.goal.saved') : t('agentDrawer.goal.cleared'))
@@ -2986,7 +3268,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               type="button"
               className="agent-drawer-conversation"
               aria-expanded={showingList}
-              onClick={() => setShowingList((previous) => !previous)}
+              onClick={() => {
+                setHeadMenu(null)
+                setShowingList((previous) => !previous)
+              }}
             >
               <SparkIcon size={14} />
               <span className="agent-drawer-title">{title}</span>
@@ -2996,45 +3281,61 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 here. A run has no goal: nobody talks it into one, and it
                 is over by the time it is read. */}
             {current && conversationId && !isRun && (
-              <GoalChip conversation={current} onOpen={() => setGoalDraft(current.goal ?? '')} />
-            )}
-            {/* What of the person's own is attached, as a mark with the
-                details on hover: the transcript is for the conversation. */}
-            {tab?.attached && (
-              <DeviceButton
-                label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}
-                framed={standalone}
-                onLeaving={leaving}
-              >
-                <GlobeIcon size={14} />
-              </DeviceButton>
-            )}
-            {computers.length > 0 && (
-              <DeviceButton
-                label={
-                  computers.length === 1
-                    ? t('agentDrawer.computerAttached', { name: computers[0] })
-                    : t('agentDrawer.computersAttached', { names: computers.join(', ') })
-                }
-                framed={standalone}
-                onLeaving={leaving}
-              >
-                <ComputerIcon size={14} />
-              </DeviceButton>
-            )}
-            {/* What this conversation left running on a computer, while
-                there is any: the count still running, and the list and
-                their output behind it. */}
-            {backgroundCommands.length > 0 && (
-              <BackgroundMark
-                commands={backgroundCommands}
+              <GoalChip
+                conversation={current}
+                isOpen={headMenu === 'goal'}
                 onOpen={() => {
-                  setShowingList(false)
-                  setIsShowingBackground((before) => !before)
+                  setGoalDraft(current.goal ?? '')
+                  toggleHeadMenu('goal')
                 }}
               />
             )}
-            {budget && <BudgetRing budget={budget} zone={agentZone} framed={standalone} onLeaving={leaving} />}
+            {/* What of the person's own is attached, as a mark with the
+                details on hover and a line each under it on a press: the
+                transcript is for the conversation. */}
+            {tab?.attached && (
+              <HeadMark
+                label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}
+                className="agent-drawer-device"
+                isOpen={headMenu === 'tab'}
+                onToggle={() => toggleHeadMenu('tab')}
+              >
+                <GlobeIcon size={14} />
+              </HeadMark>
+            )}
+            {computers.length > 0 && (
+              <HeadMark
+                label={
+                  computers.length === 1
+                    ? t('agentDrawer.computerAttached', { name: computers[0].name })
+                    : t('agentDrawer.computersAttached', {
+                        names: computers.map((computer) => computer.name).join(', '),
+                      })
+                }
+                className="agent-drawer-device"
+                isOpen={headMenu === 'computers'}
+                onToggle={() => toggleHeadMenu('computers')}
+              >
+                <ComputerIcon size={14} />
+              </HeadMark>
+            )}
+            {/* What this conversation has running on a computer, while
+                anything is: how one ended is said in the conversation. */}
+            {runningCommands.length > 0 && (
+              <BackgroundMark
+                commands={runningCommands}
+                isOpen={headMenu === 'background'}
+                onToggle={() => toggleHeadMenu('background')}
+              />
+            )}
+            {budget && (
+              <BudgetRing
+                budget={budget}
+                zone={agentZone}
+                isOpen={headMenu === 'usage'}
+                onToggle={() => toggleHeadMenu('usage')}
+              />
+            )}
             {/* Framed by the extension, the panel around this has a bar
                 of its own with the close on it; two of them, one under
                 the other, is one too many. */}
@@ -3049,15 +3350,55 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           {/* What this chat left running, dropped down from the head the
               way the conversations are, so the head stays where the box is
               dragged from and its edges where it is resized. */}
-          {isShowingBackground && (
-            <>
-              <div className="agent-drawer-backdrop" onClick={() => setIsShowingBackground(false)} />
-              <BackgroundPanel
-                commands={backgroundCommands}
-                onChanged={() => void reloadBackground(true)}
-                onClose={() => setIsShowingBackground(false)}
-              />
-            </>
+          {headMenu && (
+            <div
+              className="agent-drawer-backdrop"
+              onClick={() => {
+                setHeadMenu(null)
+                setGoalDraft(null)
+              }}
+            />
+          )}
+          {headMenu === 'background' && (
+            <BackgroundPanel
+              commands={runningCommands}
+              onChanged={() => void reloadBackground(true)}
+              onClose={() => setHeadMenu(null)}
+            />
+          )}
+          {headMenu === 'computers' && (
+            <ComputersMenu
+              computers={computers}
+              framed={standalone}
+              onLeaving={leaving}
+              onClose={() => setHeadMenu(null)}
+            />
+          )}
+          {headMenu === 'tab' && tab?.attached && (
+            <TabMenu tab={tab} framed={standalone} onLeaving={leaving} onClose={() => setHeadMenu(null)} />
+          )}
+          {headMenu === 'usage' && budget && (
+            <UsageMenu
+              budget={budget}
+              zone={agentZone}
+              framed={standalone}
+              onLeaving={leaving}
+              onClose={() => setHeadMenu(null)}
+            />
+          )}
+          {headMenu === 'goal' && current && goalDraft !== null && (
+            <GoalMenu
+              conversation={current}
+              draft={goalDraft}
+              isBusy={goalBusy}
+              turnsToday={goalTurnsToday}
+              onDraft={setGoalDraft}
+              onSave={(goal) => void saveGoal(goal)}
+              onClose={() => {
+                setHeadMenu(null)
+                setGoalDraft(null)
+              }}
+            />
           )}
           {showingList && (
             <>
@@ -3389,58 +3730,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             <span>{t('agentDrawer.newGoal')}</span>
             <textarea rows={3} value={startingGoal} onChange={(event) => setStartingGoal(event.target.value)} />
           </label>
-        </FormDialog>
-      ) : null}
-      {goalDraft !== null && current ? (
-        <FormDialog
-          title={t('agentDrawer.goal.title')}
-          submitLabel={t('common.save')}
-          busy={goalBusy}
-          canSubmit={goalDraft.trim() !== '' && goalDraft.trim() !== (current.goal ?? '')}
-          otherAction={
-            current.goal ? (
-              <button type="button" className="danger" disabled={goalBusy} onClick={() => void saveGoal('')}>
-                {t('agentDrawer.goal.clear')}
-              </button>
-            ) : undefined
-          }
-          onClose={() => setGoalDraft(null)}
-          onSubmit={() => void saveGoal(goalDraft.trim())}
-        >
-          <p className="muted">{t('agentDrawer.goal.hint')}</p>
-          <label>
-            <span>{t('agentDrawer.goal.label')}</span>
-            <textarea rows={3} value={goalDraft} onChange={(event) => setGoalDraft(event.target.value)} />
-          </label>
-          {/* Where the goal stands, as the row says it: the state, since
-              when, when the agent looks again, how many turns it has
-              taken today, and its last word. Read, not edited. */}
-          {current.goal ? (
-            <dl className="agent-drawer-goal-status">
-              <dt>{t('agentDrawer.goal.state')}</dt>
-              <dd>{t(goalStateKey(goalStateOf(current)))}</dd>
-              {current.goalSetAt ? (
-                <>
-                  <dt>{t('agentDrawer.goal.since')}</dt>
-                  <dd>{formatTime(current.goalSetAt)}</dd>
-                </>
-              ) : null}
-              {goalStateOf(current) === 'working' && current.goalNextAt ? (
-                <>
-                  <dt>{t('agentDrawer.goal.next')}</dt>
-                  <dd>{formatTime(current.goalNextAt)}</dd>
-                </>
-              ) : null}
-              <dt>{t('agentDrawer.goal.turnsToday')}</dt>
-              <dd>{goalTurnsToday}</dd>
-              {current.goalNote ? (
-                <>
-                  <dt>{t('agentDrawer.goal.lastNote')}</dt>
-                  <dd>{current.goalNote}</dd>
-                </>
-              ) : null}
-            </dl>
-          ) : null}
         </FormDialog>
       ) : null}
       {deleting ? (

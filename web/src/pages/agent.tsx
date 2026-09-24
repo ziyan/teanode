@@ -1510,7 +1510,9 @@ function ReachCard() {
 // card, as there is no reach card without a reach.
 function BackgroundCommandsCard() {
   const { t } = useTranslation()
-  const { commands, reload } = useBackgroundCommands(undefined, true)
+  const { commands: listed, reload } = useBackgroundCommands(undefined, true)
+  // Only what still runs: how one ended is said in its conversation.
+  const commands = listed.filter((command) => command.isRunning)
   const [output, setOutput] = useState<BackgroundCommand | null>(null)
   if (commands.length === 0 && !output) return null
   return (
