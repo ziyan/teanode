@@ -4,6 +4,7 @@ package askuser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -52,6 +53,15 @@ func runAskUser(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, fmt.Errorf("nobody is present to answer; state your assumption and go on, or say in the answer what you would have asked")
 	}
 	answer, err := run.Ask(ctx, call.ID, arguments.Question, arguments.Choices)
+	if errors.Is(err, tools.ErrLeftOpen) {
+		// Not a failure: they are not looking. The question waits for
+		// them, and their answer comes back as a turn of its own.
+		return tools.JSONResult(map[string]any{
+			"answer":     "",
+			"isLeftOpen": true,
+			"note":       "They have not answered yet. The question stays open on their screen, and their answer will start a new turn with it. End your turn now with at most a short line, and do not ask it again.",
+		})
+	}
 	if err != nil {
 		return nil, err
 	}

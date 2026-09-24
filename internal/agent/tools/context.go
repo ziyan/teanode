@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ziyan/teanode/internal/config"
@@ -81,6 +82,11 @@ type runKey struct{}
 func WithRun(ctx context.Context, run Run) context.Context {
 	return context.WithValue(ctx, runKey{}, run)
 }
+
+// ErrLeftOpen is what Run.Ask answers when the person did not answer
+// while the turn waited: the question card stays open for them, and a
+// late answer starts a new turn with it.
+var ErrLeftOpen = errors.New("the person has not answered yet; the card stays open")
 
 // RunFrom is the run a tool was called in. A tool called with none is a
 // programming error, said plainly rather than dereferenced.

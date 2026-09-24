@@ -10,6 +10,7 @@ import (
 	"github.com/ziyan/teanode/internal/browser"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ziyan/teanode/internal/config"
@@ -85,6 +86,11 @@ type AskSettings struct {
 	Allow     map[string]bool
 	Headless  bool
 	MaxRounds int
+
+	// PreApproved is the calls the person approved on a card whose turn
+	// had ended, by tool name and arguments: this turn may make each once
+	// without asking again. See interaction.go.
+	PreApproved map[string]bool
 
 	// CanAsk says that a turn nobody typed may still put a question card
 	// to the person: they have the dashboard open, and the turn is the
@@ -188,6 +194,11 @@ type AskRun struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// isStoppedByPerson says the person pressed Stop: a card the turn was
+	// waiting on is closed with it. A turn ended any other way -- a
+	// deploy, a deadline -- leaves its cards open for later.
+	isStoppedByPerson atomic.Bool
 
 	mutex          sync.Mutex
 	events         []Event
@@ -522,6 +533,13 @@ func (self *AskRun) Resolve(callId string, approve bool) bool {
 
 // Stop ends the run; the turn stays where it got to.
 func (self *AskRun) Stop() {
+	self.cancel()
+}
+
+// StopByPerson ends the run because the person asked, closing the cards it
+// was waiting on.
+func (self *AskRun) StopByPerson() {
+	self.isStoppedByPerson.Store(true)
 	self.cancel()
 }
 
@@ -1137,11 +1155,16 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 	if self.settings.ReadOnlyTools[tool.Name] && tool.RiskFor(call.Arguments) != RiskRead {
 		return self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "%s is for looking things up in this run; say the change you want in the object you end with, and it will be filed with its evidence"}`, tool.Name))
 	}
-	if NeedsConfirmation(tool, call.Arguments, &configuration.Agent.Tools, self.settings.Agent) {
+	if self.takePreApproval(tool.Name, call.Arguments) {
+		call.Confirmed = true
+	} else if NeedsConfirmation(tool, call.Arguments, &configuration.Agent.Tools, self.settings.Agent) {
 		if !self.CanAsk() || self.settings.Surface == "mail" || self.settings.Surface == "schedule" || self.settings.Surface == "research" {
 			return self.toolAnswer(toolCall, `{"error": "needs_confirmation: nobody is present to confirm this; tell the person what you would have done"}`)
 		}
 		approved, err := self.confirm(ctx, tool, call)
+		if errors.Is(err, ErrLeftOpen) {
+			return self.toolAnswer(toolCall, `{"error": "awaiting_approval: the person has not answered yet, and the card stays open on their screen. When they approve, a new turn will let you make exactly this call. End your turn now with at most a short line, and do not try another way."}`)
+		}
 		if err != nil {
 			return self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "needs_confirmation: %s"}`, err.Error()))
 		}
@@ -1191,28 +1214,76 @@ func (self *AskRun) confirm(ctx context.Context, tool *Tool, call *Call) (bool, 
 	// reading the one that started it -- so the card is shown there and
 	// answered there. Without this a subagent with the tools of its parent
 	// would raise a card into an empty room and wait out its timeout.
+	//
+	// Kept only as long as the subagent waits: resuming it later would
+	// mean making the subagent again.
 	if parent := self.settings.confirmVia; parent != nil {
-		return parent.confirm(ctx, tool, call)
+		return parent.confirmWaiting(ctx, tool, call, false)
 	}
+	return self.confirmWaiting(ctx, tool, call, true)
+}
+
+// confirmWaiting raises the approval card and waits for it; a card that is
+// kept outlives the wait, and ErrLeftOpen says so.
+func (self *AskRun) confirmWaiting(ctx context.Context, tool *Tool, call *Call, isKept bool) (bool, error) {
 	channel := make(chan bool, 1)
 	self.mutex.Lock()
 	self.confirmations[call.ID] = channel
 	self.mutex.Unlock()
-	self.emit(Event{Kind: EventConfirmation, Tool: tool.Name, CallID: call.ID, Arguments: string(call.Arguments), Risk: string(tool.RiskFor(call.Arguments)), Note: tool.PreviewLine(tools.WithRun(ctx, self), call.Arguments)})
-	timer := time.NewTimer(confirmationWait)
+	preview := tool.PreviewLine(tools.WithRun(ctx, self), call.Arguments)
+	risk := string(tool.RiskFor(call.Arguments))
+	var interaction *models.AgentInteraction
+	if isKept {
+		interaction = self.raiseInteraction(ctx, &models.AgentInteraction{
+			CallID: call.ID, InteractionKind: models.InteractionApproval, ToolName: tool.Name,
+			ToolArguments: string(call.Arguments), InteractionText: preview, ToolRisk: risk,
+		})
+	}
+	self.emit(Event{Kind: EventConfirmation, Tool: tool.Name, CallID: call.ID, Arguments: string(call.Arguments), Risk: risk, Note: preview})
+	wait := confirmationWait
+	if interaction != nil {
+		wait = interactionLiveWait
+	}
+	timer := time.NewTimer(wait)
 	defer timer.Stop()
 	select {
 	case approved, ok := <-channel:
 		if !ok {
 			return false, ctx.Err()
 		}
+		answer := models.InteractionDeclined
+		if approved {
+			answer = models.InteractionApproved
+		}
+		if !self.claimInteraction(interaction, answer) {
+			return false, ErrLeftOpen
+		}
 		return approved, nil
 	case <-timer.C:
 		self.mutex.Lock()
 		delete(self.confirmations, call.ID)
 		self.mutex.Unlock()
-		return false, fmt.Errorf("the person did not answer within %s", confirmationWait)
+		// An answer sent as the wait ran out is in the channel already,
+		// and the person was told it was taken.
+		select {
+		case approved := <-channel:
+			answer := models.InteractionDeclined
+			if approved {
+				answer = models.InteractionApproved
+			}
+			if self.claimInteraction(interaction, answer) {
+				return approved, nil
+			}
+		default:
+		}
+		if interaction != nil {
+			return false, ErrLeftOpen
+		}
+		return false, fmt.Errorf("the person did not answer within %s", wait)
 	case <-ctx.Done():
+		if self.isStoppedByPerson.Load() {
+			self.claimInteraction(interaction, models.InteractionStopped)
+		}
 		return false, ctx.Err()
 	}
 }
@@ -1626,21 +1697,47 @@ func (self *AskRun) Ask(ctx context.Context, callId, question string, choices []
 	}
 	self.questions[callId] = channel
 	self.mutex.Unlock()
+	interaction := self.raiseInteraction(ctx, &models.AgentInteraction{
+		CallID: callId, InteractionKind: models.InteractionQuestion, ToolName: "ask_user",
+		InteractionText: question, InteractionChoices: choices,
+	})
 	self.emit(Event{Kind: EventQuestion, CallID: callId, Tool: "ask_user", Note: question, Text: strings.Join(choices, "\n")})
-	timer := time.NewTimer(confirmationWait)
+	wait := confirmationWait
+	if interaction != nil {
+		wait = interactionLiveWait
+	}
+	timer := time.NewTimer(wait)
 	defer timer.Stop()
 	select {
 	case answer, ok := <-channel:
 		if !ok {
 			return "", ctx.Err()
 		}
+		if !self.claimInteraction(interaction, answer) {
+			return "", ErrLeftOpen
+		}
 		return answer, nil
 	case <-timer.C:
 		self.mutex.Lock()
 		delete(self.questions, callId)
 		self.mutex.Unlock()
-		return "", fmt.Errorf("the person did not answer within %s", confirmationWait)
+		// An answer sent as the wait ran out is in the channel already,
+		// and the person was told it was taken.
+		select {
+		case answer := <-channel:
+			if self.claimInteraction(interaction, answer) {
+				return answer, nil
+			}
+		default:
+		}
+		if interaction != nil {
+			return "", ErrLeftOpen
+		}
+		return "", fmt.Errorf("the person did not answer within %s", wait)
 	case <-ctx.Done():
+		if self.isStoppedByPerson.Load() {
+			self.claimInteraction(interaction, models.InteractionStopped)
+		}
 		return "", ctx.Err()
 	}
 }

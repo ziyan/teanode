@@ -304,7 +304,7 @@ func (self *graph) AnswerAgentQuestion(ctx context.Context, arguments AnswerAgen
 	if worker == nil {
 		return false, agent.ErrUnavailable
 	}
-	return self.commandAgentRun(ctx, found, worker, agent.RunCommand{RunID: arguments.RunID, Action: agent.CommandAnswer, CallID: arguments.CallID, Answer: arguments.Answer})
+	return self.answerInteraction(ctx, found, worker, arguments.CallID, arguments.Answer, agent.RunCommand{RunID: arguments.RunID, Action: agent.CommandAnswer, CallID: arguments.CallID, Answer: arguments.Answer})
 }
 
 // operationsFor is the API as a person, for a run nobody started from a

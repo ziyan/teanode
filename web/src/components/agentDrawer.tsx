@@ -30,6 +30,7 @@ import {
   ArrowUpIcon,
   CheckIcon,
   ChevronDownIcon,
+  CloseIcon,
   ComputerIcon,
   GlobeIcon,
   InboxIcon,
@@ -131,16 +132,39 @@ const SPEAK_FIRST_SURFACE = 'speak_first:'
 // language, so the tool can tell it from an answer.
 const CHAT_ABOUT_IT = '[chat about it]'
 
+// How long a question card takes what is typed in the box as its answer.
+const CARD_FRESH_MS = 60 * 60 * 1000
+
 // Which kind of turn of the agent's own a user message opens, if it opens
 // one at all.
-type CheckInOrigin = 'goal' | 'background' | 'schedule' | 'speakFirst'
+type CheckInOrigin = 'goal' | 'background' | 'schedule' | 'speakFirst' | 'approved' | 'declined'
+
+// The markers a turn begins with when the person answers a card after the
+// turn that raised it had ended, which are agent.AnsweringMarker,
+// ApprovedMarker and DeclinedMarker on the server. An answer is drawn as
+// the person's own words under the question; an approval as a line.
+const ANSWERING_MARKER = '[answering]'
+const APPROVED_MARKER = '[approved]'
+const DECLINED_MARKER = '[declined]'
 
 function checkInOriginOf(text: string): CheckInOrigin | null {
   if (text.startsWith(GOAL_CHECK_IN_MARKER)) return 'goal'
   if (text.startsWith(BACKGROUND_COMMAND_MARKER)) return 'background'
   if (text.startsWith(SCHEDULE_MARKER)) return 'schedule'
   if (text.startsWith(SPEAK_FIRST_MARKER)) return 'speakFirst'
+  if (text.startsWith(APPROVED_MARKER)) return 'approved'
+  if (text.startsWith(DECLINED_MARKER)) return 'declined'
   return null
+}
+
+// answeringOf reads a late answer to a question: the question it answers
+// and the answer itself, or null for any other message.
+function answeringOf(text: string): { question: string; answer: string } | null {
+  if (!text.startsWith(ANSWERING_MARKER)) return null
+  const rest = text.slice(ANSWERING_MARKER.length).trim()
+  const split = rest.indexOf('\n\n')
+  if (split < 0) return { question: '', answer: rest }
+  return { question: rest.slice(0, split).trim(), answer: rest.slice(split + 2).trim() }
 }
 
 interface Artifact {
@@ -316,7 +340,16 @@ interface RunEvent {
 
 // A line of the transcript as the drawer draws it.
 type Line =
-  | { kind: 'user'; key: string; text: string; at?: string; attachments?: Attachment[]; references?: AgentReference[] }
+  // inReplyTo is the question a late answer answers.
+  | {
+      kind: 'user'
+      key: string
+      text: string
+      at?: string
+      attachments?: Attachment[]
+      references?: AgentReference[]
+      inReplyTo?: string
+    }
   | { kind: 'assistant'; key: string; text: string; at?: string; streaming?: boolean; usage?: Usage | null }
   | {
       kind: 'tool'
@@ -346,6 +379,9 @@ type Line =
       question: string
       choices: string[]
       answered?: string
+      // When the card was raised: typing in the box answers only a card
+      // that is fresh, never one ignored days ago.
+      raisedAt?: string
     }
   | { kind: 'note'; key: string; text: string; at?: string }
   | { kind: 'error'; key: string; text: string }
@@ -395,6 +431,7 @@ const CONVERSATION = `
       total
       todos { id text doneAt }
     }
+    ListAgentInteractions(conversationId: $conversationId) { runId callId interactionKind toolName interactionText interactionChoices toolRisk createdAt }
   }`
 
 // The files behind the citations an answer made. An assistant's line
@@ -976,14 +1013,18 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
             break
           }
         }
-        lines.push({
-          kind: 'user',
-          key: message.id,
-          text: message.content,
-          at: message.createdAt,
-          attachments: message.attachments ?? undefined,
-          references: message.references ?? undefined,
-        })
+        {
+          const answering = answeringOf(message.content)
+          lines.push({
+            kind: 'user',
+            key: message.id,
+            text: answering ? answering.answer : message.content,
+            inReplyTo: answering?.question || undefined,
+            at: message.createdAt,
+            attachments: message.attachments ?? undefined,
+            references: message.references ?? undefined,
+          })
+        }
         break
       case 'assistant':
         if (message.usage) {
@@ -1682,12 +1723,16 @@ const CHECK_IN_LABEL = {
   background: 'agentDrawer.backgroundEnded',
   schedule: 'agentDrawer.scheduleTurn',
   speakFirst: 'agentDrawer.speakFirstTurn',
+  approved: 'agentDrawer.approvedLater',
+  declined: 'agentDrawer.declinedLater',
 } as const
 
 function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
   if (origin === 'background') return <TerminalIcon size={12} />
   if (origin === 'schedule') return <CalendarIcon size={12} />
   if (origin === 'speakFirst') return <SparkIcon size={12} />
+  if (origin === 'approved') return <CheckIcon size={12} />
+  if (origin === 'declined') return <CloseIcon size={12} />
   return <TargetIcon size={12} />
 }
 
@@ -1774,6 +1819,20 @@ function BackgroundMark({
   )
 }
 
+// A question or an approval the person has not answered, kept by the
+// server beyond the turn that raised it, so that it is still a card to
+// press after a reload, on another device, or an hour later.
+interface OpenInteraction {
+  runId: string
+  callId: string
+  interactionKind: 'question' | 'approval'
+  toolName: string
+  interactionText: string
+  interactionChoices: string[]
+  toolRisk: string
+  createdAt: string
+}
+
 async function readConversationSnapshot(conversationId: string, signal: AbortSignal) {
   const response = await graphql<{
     ReadAgentConversation: {
@@ -1784,8 +1843,40 @@ async function readConversationSnapshot(conversationId: string, signal: AbortSig
       total?: number
       todos: Todo[]
     }
+    ListAgentInteractions: OpenInteraction[] | null
   }>(CONVERSATION, { conversationId: conversationId || undefined, first: 100 }, signal)
-  return response.ReadAgentConversation
+  return { ...response.ReadAgentConversation, interactions: response.ListAgentInteractions ?? [] }
+}
+
+// cardsOf draws the open cards after the transcript, keyed as the live
+// events key them, so a card that is both still waiting in a running turn
+// and read back is drawn once. A card's key is its call's with "-card"
+// after it: the tool line for the same call has the call's own, and a
+// card that shared it was taken for that line and never drawn.
+function cardsOf(interactions: OpenInteraction[]): Line[] {
+  return interactions.map((interaction): Line => {
+    const key = `${interaction.runId}-${interaction.callId}-card`
+    if (interaction.interactionKind === 'question') {
+      return {
+        kind: 'question',
+        key,
+        runId: interaction.runId,
+        callId: interaction.callId,
+        question: interaction.interactionText,
+        choices: interaction.interactionChoices,
+        raisedAt: interaction.createdAt,
+      }
+    }
+    return {
+      kind: 'confirmation',
+      key,
+      runId: interaction.runId,
+      callId: interaction.callId,
+      tool: interaction.toolName,
+      summary: interaction.interactionText,
+      risk: interaction.toolRisk,
+    }
+  })
 }
 
 // standalone is the drawer as a page of its own, framed by the browser
@@ -1990,7 +2081,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       remember(CONVERSATION_KEY, snapshot.conversation.id)
       messages.current = snapshot.messages
       setTotal(snapshot.total ?? snapshot.messages.length)
-      setLines(linesOf(snapshot.messages, t))
+      setLines([...linesOf(snapshot.messages, t), ...cardsOf(snapshot.interactions)])
       setShowingGoalNote(true)
       // This read is how a step the agent finished during its turn
       // reaches the list.
@@ -2565,9 +2656,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           return next
         }
         case 'confirmation':
+          if (next.some((line) => line.key === `${event.runId}-${event.callId}-card`)) return next
           next.push({
             kind: 'confirmation',
-            key: `${event.runId}-${event.callId}`,
+            key: `${event.runId}-${event.callId}-card`,
             runId: event.runId,
             callId: event.callId ?? '',
             tool: event.tool ?? '',
@@ -2576,13 +2668,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           })
           return next
         case 'question':
+          // Read back with the conversation already, as a kept card.
+          if (next.some((line) => line.key === `${event.runId}-${event.callId}-card`)) return next
           next.push({
             kind: 'question',
-            key: `${event.runId}-${event.callId}`,
+            key: `${event.runId}-${event.callId}-card`,
             runId: event.runId,
             callId: event.callId ?? '',
             question: event.note ?? '',
             choices: (event.text ?? '').split('\n').filter(Boolean),
+            raisedAt: event.at,
           })
           return next
         case 'note': {
@@ -2637,7 +2732,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         if (line.text === (event.text ?? '')) kept = previous.slice(0, index)
         break
       }
-      return [...kept, { kind: 'user', key: `${event.runId}-asked`, text: event.text ?? '', at: event.at }]
+      const answering = answeringOf(event.text ?? '')
+      return [
+        ...kept,
+        {
+          kind: 'user',
+          key: `${event.runId}-asked`,
+          text: answering ? answering.answer : (event.text ?? ''),
+          inReplyTo: answering?.question || undefined,
+          at: event.at,
+        },
+      ]
     })
   }
 
@@ -2664,12 +2769,21 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // A question card waiting for an answer takes what is typed here as
     // its answer. Sent as a turn of its own, it queued behind the turn
     // that was waiting for it, and neither moved until the card timed out.
+    // Only a card that is fresh: raised by a turn still running, or in
+    // the last hour. One ignored for days would otherwise answer itself
+    // with whatever was typed next. And only if it was taken: what a card
+    // could not take goes out as the message it was.
     const waiting = [...lines].reverse().find((line) => line.kind === 'question' && !line.answered)
-    if (waiting && waiting.kind === 'question' && message && files.length === 0 && pointed.length === 0) {
-      setDraft('')
-      remember(draftKey(conversationId), '')
-      await answer(waiting, message)
-      return
+    const isFresh =
+      waiting?.kind === 'question' &&
+      (runs.includes(waiting.runId) ||
+        (waiting.raisedAt !== undefined && Date.now() - new Date(waiting.raisedAt).getTime() < CARD_FRESH_MS))
+    if (waiting && waiting.kind === 'question' && isFresh && message && files.length === 0 && pointed.length === 0) {
+      if (await answer(waiting, message, { isQuiet: true })) {
+        setDraft('')
+        remember(draftKey(conversationId), '')
+        return
+      }
     }
     const sendingConversationId = conversationRef.current
     setDraft('')
@@ -2749,7 +2863,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
 
   const resolve = async (line: Extract<Line, { kind: 'confirmation' }>, approve: boolean) => {
     try {
-      await graphql(RESOLVE, { runId: line.runId, callId: line.callId, approve })
+      const response = await graphql<{ ResolveAgentConfirmation: boolean }>(RESOLVE, {
+        runId: line.runId,
+        callId: line.callId,
+        approve,
+      })
+      if (!response.ResolveAgentConfirmation) {
+        setLines((previous) => previous.filter((candidate) => candidate.key !== line.key))
+        toast.failed(t('agentDrawer.questionGone'))
+        return
+      }
       setLines((previous) =>
         previous.map((candidate) =>
           candidate.key === line.key && candidate.kind === 'confirmation'
@@ -2762,18 +2885,39 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
   }
 
-  const answer = async (line: Extract<Line, { kind: 'question' }>, text: string) => {
-    if (!text.trim()) return
+  // answer gives a card its answer and says whether it was taken. A card
+  // nothing waits on any more -- answered on another device, or its wait
+  // over with no kept copy -- is taken off the screen rather than left to
+  // swallow what is typed next.
+  const answer = async (
+    line: Extract<Line, { kind: 'question' }>,
+    text: string,
+    { isQuiet = false }: { isQuiet?: boolean } = {},
+  ): Promise<boolean> => {
+    if (!text.trim()) return false
+    const dropCard = () => setLines((previous) => previous.filter((candidate) => candidate.key !== line.key))
     try {
-      await graphql(ANSWER, { runId: line.runId, callId: line.callId, answer: text.trim() })
+      const response = await graphql<{ AnswerAgentQuestion: boolean }>(ANSWER, {
+        runId: line.runId,
+        callId: line.callId,
+        answer: text.trim(),
+      })
+      if (!response.AnswerAgentQuestion) {
+        dropCard()
+        if (!isQuiet) toast.failed(t('agentDrawer.questionGone'))
+        return false
+      }
       const shown = text.trim() === CHAT_ABOUT_IT ? t('agentDrawer.chattingInstead') : text.trim()
       setLines((previous) =>
         previous.map((candidate) =>
           candidate.key === line.key && candidate.kind === 'question' ? { ...candidate, answered: shown } : candidate,
         ),
       )
+      return true
     } catch (caught) {
-      toast.failed(caught instanceof Error ? caught.message : String(caught))
+      dropCard()
+      if (!isQuiet) toast.failed(caught instanceof Error ? caught.message : String(caught))
+      return false
     }
   }
 
@@ -3060,7 +3204,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       messages.current = [...earlier, ...messages.current]
       setTotal(response.ReadAgentConversation.total ?? messages.current.length)
       sticking.current = false
-      setLines(linesOf(messages.current, t))
+      // The cards still waiting are kept: they are not in the messages.
+      setLines((previous) => [
+        ...linesOf(messages.current, t),
+        ...previous.filter(
+          (line) => (line.kind === 'question' && !line.answered) || (line.kind === 'confirmation' && !line.resolved),
+        ),
+      ])
       requestAnimationFrame(() => {
         if (element && conversationRef.current === conversationId) {
           element.scrollTop += element.scrollHeight - heightBefore
@@ -3093,6 +3243,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         return (
           <Tooltip key={line.key} label={line.at ? formatTime(line.at) : ''}>
             <div className="agent-line user">
+              {line.inReplyTo ? <div className="agent-in-reply-to">{line.inReplyTo}</div> : null}
               {line.references && line.references.length > 0 && <ReferenceChips references={line.references} />}
               {line.text}
               {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}

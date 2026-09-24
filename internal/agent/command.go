@@ -50,7 +50,7 @@ type foreignRun struct {
 func (self *Agent) Apply(run *AskRun, command RunCommand) bool {
 	switch command.Action {
 	case CommandStop:
-		run.Stop()
+		run.StopByPerson()
 		return true
 	case CommandAnswer:
 		return run.Answer(command.CallID, command.Answer)
