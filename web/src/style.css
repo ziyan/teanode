@@ -5337,6 +5337,16 @@ main.content:has(> .mailbox-frame) {
   text-decoration: line-through;
 }
 
+/* A cut step opens to its whole text on a tap or Enter, and closes again. */
+.agent-drawer-todo-text[role='button'] {
+  cursor: pointer;
+}
+
+.agent-drawer-todo li.open .agent-drawer-todo-text {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* The marks in the head for what of the person's own is attached. */
 /* The day's budget as a ring in the drawer's head, and as a bar on the
    agent's page. One colour rule for both, in the tokens' own words. */

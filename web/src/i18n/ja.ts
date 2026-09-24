@@ -1077,7 +1077,7 @@ export const ja: Catalog = {
   'agent.corrections': 'あなたから学んだこと',
   'agent.correctionsHint':
     'あなた自身の操作から記録されたもの — 別の場所に移したメッセージ、送らせなかった返信 — で、しばらくの間、次の処理に例として示されます。',
-  'agentDrawer.todoTitle': "エージェントの手順",
+  'agentDrawer.todoTitle': 'エージェントの手順',
   'agentDrawer.todoDone': '完了',
   'agentDrawer.todoOpen': '未完了',
   'agentDrawer.open': 'エージェントと話す',

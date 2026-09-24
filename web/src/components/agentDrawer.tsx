@@ -329,6 +329,13 @@ const CONVERSATIONS = `
     }
   }`
 
+// The agent's task list alone, read again after each change its todo tool
+// makes, so the person watches the steps move while a turn is running.
+const CONVERSATION_TODOS = `
+  query ($conversationId: String) {
+    ReadAgentConversation(conversationId: $conversationId, first: 1) { todos { id text doneAt } }
+  }`
+
 const CONVERSATION = `
   query ($conversationId: String, $first: Int, $offset: Int) {
     ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
@@ -983,6 +990,57 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
   }
   closeTurn()
   return lines
+}
+
+// TodoLine is one of the agent's steps on a single line. A step too long
+// for the line is cut with an ellipsis; its tooltip holds the whole of it,
+// and a tap or Enter opens it in place, for a phone that has no hover.
+function TodoLine({ todo }: { todo: Todo }) {
+  const { t } = useTranslation()
+  const text = useRef<HTMLSpanElement>(null)
+  const [isCut, setIsCut] = useState(false)
+  const [isOpen, setIsOpen] = useState(false)
+  const isDone = Boolean(todo.doneAt)
+  useEffect(() => {
+    const element = text.current
+    if (!element) return
+    const measure = () => setIsCut(element.scrollWidth > element.clientWidth)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [todo.text])
+  const canOpen = isCut || isOpen
+  return (
+    <li className={[isDone ? 'done' : '', isOpen ? 'open' : ''].filter(Boolean).join(' ')}>
+      <span className="agent-drawer-todo-mark">
+        {isDone ? <CheckIcon size={12} /> : null}
+        <span className="visually-hidden">{isDone ? t('agentDrawer.todoDone') : t('agentDrawer.todoOpen')}</span>
+      </span>
+      <Tooltip label={isCut && !isOpen ? todo.text : ''}>
+        <span
+          ref={text}
+          className="agent-drawer-todo-text"
+          role={canOpen ? 'button' : undefined}
+          tabIndex={canOpen ? 0 : undefined}
+          aria-expanded={canOpen ? isOpen : undefined}
+          onClick={canOpen ? () => setIsOpen((previous) => !previous) : undefined}
+          onKeyDown={
+            canOpen
+              ? (event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    setIsOpen((previous) => !previous)
+                  }
+                }
+              : undefined
+          }
+        >
+          {todo.text}
+        </span>
+      </Tooltip>
+    </li>
+  )
 }
 
 // QuestionCard is the agent asking, with the choices it offered and a line
@@ -2069,6 +2127,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [standalone])
 
+  // The conversation on screen now, for an answer that arrives after the
+  // person has moved to another one.
+  const shownConversationId = useRef(conversationId)
+  shownConversationId.current = conversationId
   const applyEvent = (event: RunEvent) => {
     // What an event does beyond the transcript happens here, once: the
     // updater below may run twice under StrictMode.
@@ -2079,6 +2141,19 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       !(event.text ?? '').startsWith('{"error"')
     ) {
       announceMailChanged()
+    }
+    if (
+      event.kind === 'tool_result' &&
+      event.tool === 'todo' &&
+      conversationId &&
+      !(event.text ?? '').startsWith('{"error"')
+    ) {
+      const readFor = conversationId
+      void graphql<{ ReadAgentConversation: { todos: Todo[] } }>(CONVERSATION_TODOS, { conversationId: readFor })
+        .then((answer) => {
+          if (readFor === shownConversationId.current) setTodos(answer.ReadAgentConversation.todos ?? [])
+        })
+        .catch(() => undefined)
     }
     if (event.kind === 'error') {
       toast.failed(event.error ?? t('agentDrawer.failed'))
@@ -3049,22 +3124,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           {todos.length > 0 && (
             <div className="agent-drawer-todo">
               <ul aria-label={t('agentDrawer.todoTitle')}>
-                {todos.map((todo) => {
-                  const done = Boolean(todo.doneAt)
-                  return (
-                    <li key={todo.id} className={done ? 'done' : ''}>
-                      <span
-                        className="agent-drawer-todo-mark"
-                        aria-label={done ? t('agentDrawer.todoDone') : t('agentDrawer.todoOpen')}
-                      >
-                        {done ? <CheckIcon size={12} /> : null}
-                      </span>
-                      <Tooltip label={todo.text}>
-                        <span className="agent-drawer-todo-text">{todo.text}</span>
-                      </Tooltip>
-                    </li>
-                  )
-                })}
+                {todos.map((todo) => (
+                  <TodoLine key={todo.id} todo={todo} />
+                ))}
               </ul>
             </div>
           )}

@@ -1042,7 +1042,7 @@ export const zh: Catalog = {
   'agent.corrections': '从你这里学到的',
   'agent.correctionsHint':
     '从你自己的操作记录下来的——你归到别处的邮件、你没让发出的回复——并在一段时间内作为例子提供给下一次处理。',
-  'agentDrawer.todoTitle': "智能体的步骤",
+  'agentDrawer.todoTitle': '智能体的步骤',
   'agentDrawer.todoDone': '已完成',
   'agentDrawer.todoOpen': '待完成',
   'agentDrawer.open': '和代理对话',
