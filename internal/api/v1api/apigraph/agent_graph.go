@@ -499,8 +499,11 @@ type RecallAgentMemoryResult struct {
 // RecalledAgentPage is one page of that, with the facts recall would have
 // put in front of the model from it.
 type RecalledAgentPage struct {
-	Path  string               `json:"path"`
-	Facts []*RecalledAgentFact `json:"facts"`
+	Path string `json:"path"`
+	// Summary is the page's opening as recall carried it, or empty where
+	// it carried none.
+	Summary string               `json:"summary" graphapi:"nullable"`
+	Facts   []*RecalledAgentFact `json:"facts"`
 }
 
 // RecalledAgentFact is a fact as the page cites it: its number and what
@@ -1041,7 +1044,7 @@ func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentM
 	}
 	result := &RecallAgentMemoryResult{Pages: make([]*RecalledAgentPage, 0, len(recalled))}
 	for _, page := range recalled {
-		carried := &RecalledAgentPage{Path: page.Path, Facts: make([]*RecalledAgentFact, 0, len(page.Facts))}
+		carried := &RecalledAgentPage{Path: page.Path, Summary: page.Summary, Facts: make([]*RecalledAgentFact, 0, len(page.Facts))}
 		for _, fact := range page.Facts {
 			carried.Facts = append(carried.Facts, &RecalledAgentFact{Number: fact.Number, Text: fact.Text})
 		}

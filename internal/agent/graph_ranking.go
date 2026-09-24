@@ -81,9 +81,14 @@ func fuseNodes(limit int, lists ...[]*models.AgentNode) []*models.AgentNode {
 // A statement that is no longer true is superseded and left out anyway;
 // what age should settle is which of two equally good matches comes
 // first.
-const ageFloor = 0.7
+//
+// Fused scores are close together: one place down the list is about a
+// sixtieth less. A floor of 0.7 still let age move an old match down
+// twenty places; at 0.95 it moves it three or four.
+const ageFloor = 0.95
 
-// ageWeight is what a decay costs a fused score.
+// ageWeight is what age costs a fused score. Age alone: that a fact was
+// inferred rather than told is applied whole, beside it.
 func ageWeight(decay float64) float64 {
 	return ageFloor + (1-ageFloor)*decay
 }
@@ -103,7 +108,7 @@ func fuseFacts(limit int, lists ...[]*models.AgentFact) []*models.AgentFact {
 		}
 	}
 	for id, fact := range byId {
-		scores[id] *= ageWeight(decayOfFact(fact, now))
+		scores[id] *= ageWeight(ageOfFact(fact, now)) * inferredWeight(fact)
 	}
 	ids := make([]string, 0, len(scores))
 	for id := range scores {

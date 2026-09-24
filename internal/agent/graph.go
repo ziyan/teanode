@@ -30,8 +30,8 @@ const (
 	recallFactTokens = 400
 
 	// recallPages is how many pages the overlay expands, recallFacts how
-	// many loose facts it carries beside them, and pageFacts how many
-	// facts of an expanded page are shown.
+	// many loose facts it carries beside them, and pageFacts the most of
+	// the facts the question hit on a page that its block shows.
 	//
 	// pageFactsConsidered bounds the rows read before choosing which facts to
 	// show. Reading more than pageFacts prevents the oldest rows from excluding
@@ -41,12 +41,13 @@ const (
 	pageFacts           = 5
 	pageFactsConsidered = 60
 
-	// pageFactsLeast is how many facts a page the question hit shows at
-	// the least: the facts it hit, and its first facts where it hit fewer
-	// than this, so a single matched sentence still arrives with what the
-	// page is about. A page is no longer filled up to pageFacts with its
-	// oldest lines: on a long page those are its opening remarks, and
-	// they took the room of the sentences the question asked for.
+	// pageFactsLeast is how many facts an expanded page shows at the
+	// least: the facts the question hit on it, and its first facts where
+	// it hit fewer than this (a page it hit nothing on shows its first),
+	// so a single matched sentence still arrives with what the page is
+	// about. A page is no longer filled up to pageFacts with its oldest
+	// lines: on a long page those are its opening remarks, and they took
+	// the room of the sentences the question asked for.
 	pageFactsLeast = 2
 
 	// recallPagesUnhit is how many pages the overlay expands that the

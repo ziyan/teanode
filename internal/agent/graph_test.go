@@ -565,6 +565,11 @@ func TestLooseFactsGoInTogetherAndUnhitPagesAreBounded(t *testing.T) {
 	for index := 1; index <= 4; index++ {
 		unhit = append(unhit, world.page(t, fmt.Sprintf("time/2020/%02d", index), fmt.Sprintf("Month %d", index), "A month of little note."))
 	}
+	// A page the question did hit, ranked after the months: still
+	// expanded once the months have used their two slots.
+	hitPage := world.page(t, "things/boat", "Boat", "The boat.", "The boat is blue.")
+	boatFact := world.factsOf(t, hitPage)[0]
+	unhit = append(unhit, hitPage)
 	var hits []*models.AgentFact
 	for index := 1; index <= 8; index++ {
 		// Two facts on each, the search hitting the second: a loose fact,
@@ -574,11 +579,14 @@ func TestLooseFactsGoInTogetherAndUnhitPagesAreBounded(t *testing.T) {
 		hits = append(hits, facts[len(facts)-1])
 	}
 
-	world.run.writeRecalled(context.Background(), unhit, hits)
+	world.run.writeRecalled(context.Background(), unhit, append([]*models.AgentFact{boatFact}, hits...))
 
 	carried := world.overlay()
+	if !strings.Contains(carried, "things/boat") {
+		t.Fatalf("a page the question hit is expanded after the months:\n%s", carried)
+	}
 	months := 0
-	for _, page := range unhit {
+	for _, page := range unhit[:len(unhit)-1] {
 		if strings.Contains(carried, page.Path) {
 			months++
 		}
@@ -593,5 +601,12 @@ func TestLooseFactsGoInTogetherAndUnhitPagesAreBounded(t *testing.T) {
 	}
 	if lines := len(world.run.Recalled()); lines > recallBlocks {
 		t.Fatalf("the overlay carries at most %d blocks, and carried %d", recallBlocks, lines)
+	}
+	// And what the block of loose facts carried is marked as used.
+	for _, fact := range hits {
+		page := &models.AgentNode{ID: fact.NodeID}
+		if marked := world.markedFacts(t, page); len(marked) != 1 || marked[0].ID != fact.ID {
+			t.Fatalf("the loose fact %q is marked as used: %v", fact.Text, marked)
+		}
 	}
 }

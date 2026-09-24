@@ -82,6 +82,20 @@ func (self *AskRun) carryIndex(ctx context.Context, budget int) []string {
 // telephone number changes it in one place, and the agent is right about
 // it on the next turn.
 func (self *Agent) selfLines(ctx context.Context, agent *models.Agent, owner *models.User) []string {
+	lines := self.selfPageLines(ctx, agent, owner)
+	if len(lines) == 0 && owner.ContactID == "" {
+		// Nothing is known and no card is chosen. Say so, with what to do
+		// about it, rather than leaving the section out: a model that is
+		// never told the page is empty answers as though it had read one.
+		lines = append(lines, "No contact is marked as being them, so their own addresses are not known. If it comes up, offer to set one on the Contacts page.")
+	}
+	return lines
+}
+
+// selfPageLines is what the self page and the person's card say, and
+// nothing about what to do when they say nothing: what an evaluation
+// hands the model as memory.
+func (self *Agent) selfPageLines(ctx context.Context, agent *models.Agent, owner *models.User) []string {
 	var lines []string
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		if owner.ContactID != "" {
@@ -111,12 +125,6 @@ func (self *Agent) selfLines(ctx context.Context, agent *models.Agent, owner *mo
 		return nil
 	}); err != nil {
 		log.Warningf("cannot read the self page of %q: %s", owner.Username, err)
-	}
-	if len(lines) == 0 && owner.ContactID == "" {
-		// Nothing is known and no card is chosen. Say so, with what to do
-		// about it, rather than leaving the section out: a model that is
-		// never told the page is empty answers as though it had read one.
-		lines = append(lines, "No contact is marked as being them, so their own addresses are not known. If it comes up, offer to set one on the Contacts page.")
 	}
 	return lines
 }

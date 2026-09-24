@@ -166,11 +166,12 @@ func (self *AskRun) SearchGraphByMeaning(ctx context.Context, words string, limi
 // would carry can be asked for without taking a turn, which is what
 // `teanode agent memory evaluate` replays a question set through.
 type recalledBlock struct {
-	// NodeID is the page this block expands. Empty for a loose fact,
-	// whose page did not make the cut and so was not used.
+	// NodeID is the page this block expands. Empty for the block of loose
+	// facts, whose pages did not make the cut and so were not used.
 	NodeID string
 
-	// Path is the page the block is about, which a loose fact has too.
+	// Path is the page the block expands; empty for the block of loose
+	// facts, which are from many pages: see FactPaths.
 	Path string
 
 	// Text is what goes into the overlay.
@@ -343,8 +344,7 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 // factsToShow picks which of a page's facts the overlay shows: the ones
 // the question hit, in the order the search ranked them, up to pageFacts,
 // and then the page's first facts where fewer than pageFactsLeast were
-// hit. The
-// chosen are laid out by number, because selection is about relevance
+// hit. The chosen are laid out by number, because selection is about relevance
 // and presentation is about reading as a page -- a block whose `#n`
 // references jump about is one the model cites back crookedly.
 //
