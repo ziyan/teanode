@@ -87,7 +87,9 @@ func TestADreamAskedForIsQueuedAtOnce(t *testing.T) {
 	})
 }
 
-// A dream is listed with what its model calls cost: the sum of its runs.
+// A dream is listed with what its model calls cost: its job's calls made
+// while it ran. A dream a restart cut short and the one that took the job
+// up again share the job, and each is charged only its own calls.
 func TestADreamIsListedWithWhatItCost(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
@@ -102,7 +104,13 @@ func TestADreamIsListedWithWhatItCost(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateAgent: %s", err)
 		}
-		if _, err := tx.StartAgentDream(&models.AgentDream{AgentID: agent.ID, StartedAt: time.Now(), JobID: "job-of-the-dream"}); err != nil {
+		cutShortAt := time.Now().Add(-time.Hour)
+		if _, err := tx.StartAgentDream(&models.AgentDream{
+			AgentID: agent.ID, StartedAt: cutShortAt.Add(-time.Hour), FinishedAt: &cutShortAt, JobID: "job-of-the-dream",
+		}); err != nil {
+			t.Fatalf("StartAgentDream: %s", err)
+		}
+		if _, err := tx.StartAgentDream(&models.AgentDream{AgentID: agent.ID, StartedAt: time.Now().Add(-time.Minute), JobID: "job-of-the-dream"}); err != nil {
 			t.Fatalf("StartAgentDream: %s", err)
 		}
 		for _, cost := range []float64{0.25, 0.5} {
@@ -126,8 +134,12 @@ func TestADreamIsListedWithWhatItCost(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListAgentDreams: %s", err)
 		}
-		if len(dreams) != 1 || dreams[0].Cost != 0.75 || dreams[0].Currency == "" {
-			t.Fatalf("the dream costs 0.75 in the configured currency: %+v", dreams)
+		if len(dreams) != 2 {
+			t.Fatalf("two dreams, not %d", len(dreams))
+		}
+		// Newest first: the dream running now made both calls.
+		if dreams[0].Cost != 0.75 || dreams[1].Cost != 0 || dreams[0].Currency == "" {
+			t.Fatalf("the running dream costs 0.75 and the one cut short nothing: %v and %v", dreams[0].Cost, dreams[1].Cost)
 		}
 	})
 }

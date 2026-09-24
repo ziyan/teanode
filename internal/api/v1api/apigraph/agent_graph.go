@@ -1129,21 +1129,15 @@ func (self *graph) ListAgentDreams(ctx context.Context, arguments ListAgentDream
 	if err != nil {
 		return nil, err
 	}
-	// What each cost: the sum of its runs, the same numbers `agent dream
-	// runs` lists call by call.
-	jobIds := make([]string, 0, len(dreams))
-	for _, dream := range dreams {
-		if dream.JobID != "" {
-			jobIds = append(jobIds, dream.JobID)
-		}
-	}
-	costs, err := tx.SumAgentJobCost(jobIds)
+	// What each cost: the model calls its job made while it ran, the
+	// same numbers `agent dream runs` lists call by call.
+	costs, err := tx.SumAgentDreamCost(dreams)
 	if err != nil {
 		return nil, err
 	}
 	currency := self.config.Current().Agent.Currency
 	for _, dream := range dreams {
-		dream.Cost, dream.Currency = costs[dream.JobID], currency
+		dream.Cost, dream.Currency = costs[dream.ID], currency
 	}
 	return dreams, nil
 }
