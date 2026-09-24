@@ -912,6 +912,9 @@ export const zh: Catalog = {
   'agent.name': '称呼',
   'agent.languageField': '书写语言',
   'agent.languageFollows': '与账户相同',
+  'agent.knowledgeLanguageField': '笔记语言',
+  'agent.knowledgeLanguageFollows': '与书写语言相同',
+  'agent.knowledgeLanguageHint': '页面和事实用什么语言保存。固定为一种语言，从多种语言的邮件和聊天中读到的内容就会记在同一种语言里。',
   'agent.instructions': '固定指示',
   'agent.instructionsPlaceholder':
     '你是谁、如何写作、什么重要。"我是帆船俱乐部的司库；来自俱乐部的邮件都重要；署名 Z。"',

@@ -945,6 +945,9 @@ export const ja: Catalog = {
   'agent.name': '呼び名',
   'agent.languageField': '書く言語',
   'agent.languageFollows': 'アカウントと同じ',
+  'agent.knowledgeLanguageField': 'メモの言語',
+  'agent.knowledgeLanguageFollows': '書く言語と同じ',
+  'agent.knowledgeLanguageHint': 'ページと事実を残す言語です。一つに決めておくと、いくつもの言語のメールやチャットから読んだことも一つの言語で残ります。',
   'agent.instructions': '常時の指示',
   'agent.instructionsPlaceholder':
     'あなたが誰で、どう書き、何が大事か。「私はヨットクラブの会計です。クラブからのものは重要。Z と署名する。」',

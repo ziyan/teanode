@@ -71,13 +71,14 @@ func (self *Agent) splitPage(ctx context.Context, run *Run, budget *dreamBudget,
 		lines = append(lines, fmt.Sprintf("#%d %s", fact.Number, cutRunes(fact.Text, 300)))
 	}
 	prompt, err := render("split.txt", map[string]any{
-		"PersonName": personName(run.Owner),
-		"Path":       page.Path,
-		"Name":       page.Name,
-		"Kind":       string(page.Kind),
-		"Opening":    cutRunes(page.Summary, 600),
-		"Facts":      lines,
-		"Self":       page.Path == models.PathSelf,
+		"KnowledgeLanguage": languageName(KnowledgeLanguage(run.Agent, run.Owner)),
+		"PersonName":        personName(run.Owner),
+		"Path":              page.Path,
+		"Name":              page.Name,
+		"Kind":              string(page.Kind),
+		"Opening":           cutRunes(page.Summary, 600),
+		"Facts":             lines,
+		"Self":              page.Path == models.PathSelf,
 	})
 	if err != nil {
 		return 0, err

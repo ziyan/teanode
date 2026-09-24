@@ -177,7 +177,7 @@ func newAgentSettingsCommand() *cli.Command {
 				Name:      "set",
 				Usage:     "change your agent; turns it on the first time",
 				ArgsUsage: "key=value [key=value ...]",
-				Description: "Keys: enabled, name, instructions, language, ask-model, confirm (comma list),\n" +
+				Description: "Keys: enabled, name, instructions, language, knowledge-language, ask-model, confirm (comma list),\n" +
 					"dream-from, dream-until (HH:MM in your zone: when it may dream),\n" +
 					"voice.tone (formal|neutral|casual), voice.length (short|medium|long), voice.greeting,\n" +
 					"voice.signoff, notify.held-reply, notify.high-priority, notify.run-failed (off|dashboard|mail).\n" +
@@ -546,7 +546,8 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 	if agent.OperatorDisabledAt != nil {
 		fields = append(fields, [2]string{"switched off by an operator", formatTime(agent.OperatorDisabledAt)})
 	}
-	fields = append(fields, [2]string{"language", view.Language}, [2]string{"time zone", view.Timezone})
+	fields = append(fields, [2]string{"language", view.Language}, [2]string{"notes written in", view.KnowledgeLanguage},
+		[2]string{"time zone", view.Timezone})
 	if agent.AskModel != "" {
 		fields = append(fields, [2]string{"model for conversations", agent.AskModel})
 	}
@@ -628,6 +629,8 @@ func runAgentSettingsSet(ctx context.Context, command *cli.Command) error {
 			variables["enabled"] = enabled
 		case "name", "instructions", "language":
 			variables[key] = value
+		case "knowledge-language":
+			variables["knowledgeLanguage"] = value
 		case "ask-model":
 			variables["askModel"] = value
 		case "dream-from":

@@ -122,6 +122,7 @@ type agentModel struct {
 	Enabled            bool       `gorm:"column:enabled"`
 	Instructions       string     `gorm:"column:instructions"`
 	Language           string     `gorm:"column:language"`
+	KnowledgeLanguage  string     `gorm:"column:knowledge_language"`
 	Voice              []byte     `gorm:"column:voice;type:jsonb"`
 	Categories         []byte     `gorm:"column:categories;type:jsonb"`
 	Notifications      []byte     `gorm:"column:notifications;type:jsonb"`
@@ -187,22 +188,23 @@ func (agentUsageModel) TableName() string { return "agent_usage" }
 
 func agentFromModel(model *agentModel) (*models.Agent, error) {
 	agent := &models.Agent{
-		ID:             model.ID,
-		CreatedAt:      model.CreatedAt.In(time.Local),
-		ModifiedAt:     model.ModifiedAt.In(time.Local),
-		UserID:         model.UserID,
-		Name:           model.Name,
-		Enabled:        model.Enabled,
-		Instructions:   model.Instructions,
-		Language:       model.Language,
-		Categories:     []models.AgentCategory{},
-		Confirm:        []string{},
-		AskModel:       model.AskModel,
-		DailyTokens:    model.DailyTokens,
-		DailyCost:      model.DailyCost,
-		DreamFrom:      model.DreamFrom,
-		DreamUntil:     model.DreamUntil,
-		DreamBootstrap: model.DreamBootstrap,
+		ID:                model.ID,
+		CreatedAt:         model.CreatedAt.In(time.Local),
+		ModifiedAt:        model.ModifiedAt.In(time.Local),
+		UserID:            model.UserID,
+		Name:              model.Name,
+		Enabled:           model.Enabled,
+		Instructions:      model.Instructions,
+		Language:          model.Language,
+		KnowledgeLanguage: model.KnowledgeLanguage,
+		Categories:        []models.AgentCategory{},
+		Confirm:           []string{},
+		AskModel:          model.AskModel,
+		DailyTokens:       model.DailyTokens,
+		DailyCost:         model.DailyCost,
+		DreamFrom:         model.DreamFrom,
+		DreamUntil:        model.DreamUntil,
+		DreamBootstrap:    model.DreamBootstrap,
 	}
 	if model.DreamedAt != nil {
 		at := model.DreamedAt.In(time.Local)
@@ -247,6 +249,7 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		Enabled:            agent.Enabled,
 		Instructions:       agent.Instructions,
 		Language:           agent.Language,
+		KnowledgeLanguage:  agent.KnowledgeLanguage,
 		AskModel:           agent.AskModel,
 		DailyTokens:        agent.DailyTokens,
 		DailyCost:          agent.DailyCost,
@@ -417,7 +420,7 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 	if err := self.applyMutation(models.AuditResourceAgent, agentId, models.AuditActionUpdate, before, &after, func(tx *gorm.DB) error {
 		return tx.Model(&agentModel{}).Where("\"id\" = ?", agentId).Updates(map[string]any{
 			"modified_at": model.ModifiedAt, "name": model.Name, "enabled": model.Enabled,
-			"instructions": model.Instructions, "language": model.Language,
+			"instructions": model.Instructions, "language": model.Language, "knowledge_language": model.KnowledgeLanguage,
 			"voice": model.Voice, "categories": model.Categories, "notifications": model.Notifications,
 			"confirm": model.Confirm, "ask_model": model.AskModel, "daily_tokens": model.DailyTokens, "daily_cost": model.DailyCost,
 			"operator_disabled_at": model.OperatorDisabledAt,

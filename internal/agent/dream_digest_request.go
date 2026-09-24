@@ -13,7 +13,7 @@ type digestRequest struct {
 
 // The evidence map retains the original text; the prompt escapes delimiters
 // so document contents cannot close the block that contains them.
-func buildDigestRequest(owner *models.User, material *digestMaterial, isCoarse bool) (*digestRequest, error) {
+func buildDigestRequest(owner *models.User, knowledgeLanguage string, material *digestMaterial, isCoarse bool) (*digestRequest, error) {
 	var builder strings.Builder
 	shown := make(map[string]string, len(material.Documents))
 	for _, document := range material.Documents {
@@ -25,13 +25,14 @@ func buildDigestRequest(owner *models.User, material *digestMaterial, isCoarse b
 		shown[document.DocumentID] = document.Heading + "\n" + document.Opening
 	}
 	prompt, err := render("digest.txt", map[string]any{
-		"SourceName": material.SourceName,
-		"SourceRoot": material.SourceRoot,
-		"PersonName": personName(owner),
-		"Index":      material.IndexLines,
-		"Items":      builder.String(),
-		"Most":       digestFacts,
-		"Coarse":     isCoarse,
+		"KnowledgeLanguage": languageName(knowledgeLanguage),
+		"SourceName":        material.SourceName,
+		"SourceRoot":        material.SourceRoot,
+		"PersonName":        personName(owner),
+		"Index":             material.IndexLines,
+		"Items":             builder.String(),
+		"Most":              digestFacts,
+		"Coarse":            isCoarse,
 	})
 	if err != nil {
 		return nil, err

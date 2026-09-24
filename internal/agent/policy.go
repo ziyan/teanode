@@ -50,6 +50,15 @@ func Language(agent *models.Agent, user *models.User) string {
 	return ""
 }
 
+// KnowledgeLanguage is what the agent's notes are written in: the agent's
+// own setting for them, else the language it writes to the person in.
+func KnowledgeLanguage(agent *models.Agent, user *models.User) string {
+	if agent != nil && agent.KnowledgeLanguage != "" {
+		return agent.KnowledgeLanguage
+	}
+	return Language(agent, user)
+}
+
 // Budget is what a person may still spend today, and when the day turns.
 // A budget can be said in tokens, in money, or in both; where both are
 // set, whichever runs out first stops the day.

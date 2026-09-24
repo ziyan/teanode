@@ -950,6 +950,10 @@ export const en = {
   'agent.name': 'What to call it',
   'agent.languageField': 'Writes in',
   'agent.languageFollows': 'Same as my account',
+  'agent.knowledgeLanguageField': 'Notes in',
+  'agent.knowledgeLanguageFollows': 'Same as it writes in',
+  'agent.knowledgeLanguageHint':
+    'What its pages and facts are kept in. Fix it to one language, so notes read from mail and chat in several languages stay in one.',
   'agent.instructions': 'Standing instructions',
   'agent.instructionsPlaceholder':
     'Who you are, how you write, what matters to you. "I am the treasurer of the sailing club; anything from the club is important; sign as Z."',

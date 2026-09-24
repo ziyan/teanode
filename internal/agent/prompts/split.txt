@@ -1,6 +1,11 @@
 This page in {{.PersonName}}'s agent's notes has grown past what one
 page should hold. Say how to divide it.
 
+Write in {{.KnowledgeLanguage}}, whatever language the material is in:
+page names, openings and facts alike. Names of people and things keep
+their own spelling, paths keep the lower-case slugs they already use,
+and a quote is copied as it stands.
+
 ## The page
 
 {{.Path}} — {{.Name}} ({{.Kind}})

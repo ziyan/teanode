@@ -28,8 +28,9 @@ func (self *Agent) parseDigestResponse(ctx context.Context, run *Run, budget *dr
 // reading in words should have ended with, and hands back the JSON in it.
 func (self *Agent) digestObjectFromWords(ctx context.Context, run *Run, budget *dreamBudget, words string) (string, error) {
 	prompt, err := render("digest_object.txt", map[string]any{
-		"PersonName": personName(run.Owner),
-		"Reading":    cutRunes(words, 12000),
+		"KnowledgeLanguage": languageName(KnowledgeLanguage(run.Agent, run.Owner)),
+		"PersonName":        personName(run.Owner),
+		"Reading":           cutRunes(words, 12000),
 	})
 	if err != nil {
 		return "", err

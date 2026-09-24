@@ -1,5 +1,10 @@
 Write up {{.Month}} for {{.PersonName}}, from the record of what they did.
 
+Write in {{.KnowledgeLanguage}}, whatever language the material is in:
+page names, openings and facts alike. Names of people and things keep
+their own spelling, paths keep the lower-case slugs they already use,
+and a quote is copied as it stands.
+
 This is their own page for that month, in their agent's notes. They will
 read it; nobody else will. It should be the page they would have written
 if they had kept a diary, and it is rewritten every night as the month

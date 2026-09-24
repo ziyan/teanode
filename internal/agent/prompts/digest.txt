@@ -2,6 +2,11 @@ You keep what {{.PersonName}}'s agent knows about them. Below is a batch
 of things from their own files, code, chat and notes that nobody has read
 yet. Read them and file what is worth keeping.
 
+Write in {{.KnowledgeLanguage}}, whatever language the material is in:
+page names, openings and facts alike. Names of people and things keep
+their own spelling, paths keep the lower-case slugs they already use,
+and a quote is copied as it stands.
+
 Nobody is waiting for this. Your whole output is the object at the end.
 
 {{if .Index}}## What is already known

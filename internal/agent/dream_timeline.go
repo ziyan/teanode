@@ -80,12 +80,13 @@ func (self *Agent) writeMonth(ctx context.Context, run *Run, record *models.Agen
 	}
 
 	prompt, err := render("timeline.txt", map[string]any{
-		"PersonName":   personName(run.Owner),
-		"Month":        from.Format("January 2006"),
-		"Digest":       digest,
-		"Existing":     existing,
-		"Style":        describeVoice(run.Agent.Voice),
-		"Instructions": strings.TrimSpace(run.Agent.Instructions),
+		"KnowledgeLanguage": languageName(KnowledgeLanguage(run.Agent, run.Owner)),
+		"PersonName":        personName(run.Owner),
+		"Month":             from.Format("January 2006"),
+		"Digest":            digest,
+		"Existing":          existing,
+		"Style":             describeVoice(run.Agent.Voice),
+		"Instructions":      strings.TrimSpace(run.Agent.Instructions),
 	})
 	if err != nil {
 		return

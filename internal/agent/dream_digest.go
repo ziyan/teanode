@@ -191,7 +191,7 @@ func (self *Agent) markTinyRead(ctx context.Context, run *Run, waiting []*models
 // digestBatch reads a handful of documents and files what they taught.
 func (self *Agent) digestBatch(ctx context.Context, run *Run, documents []*models.AgentDocument, budget *dreamBudget, coarse bool, complete digestCompletion) (int, bool) {
 	material := self.retrieveDigestMaterial(ctx, run, documents, coarse)
-	request, err := buildDigestRequest(run.Owner, material, coarse)
+	request, err := buildDigestRequest(run.Owner, KnowledgeLanguage(run.Agent, run.Owner), material, coarse)
 	if err != nil {
 		return 0, false
 	}
