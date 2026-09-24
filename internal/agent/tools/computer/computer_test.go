@@ -10,6 +10,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // fakeRun is a turn with the person present and a computer attached, or
@@ -36,6 +37,10 @@ func (self *fakeRun) Configuration() *config.Configuration { return self.config 
 func (self *fakeRun) ComputersAllowed() bool               { return true }
 func (self *fakeRun) ComputersUnattended() bool            { return self.unattended }
 func (self *fakeRun) Offered() []*tools.Tool               { return nil }
+func (self *fakeRun) Agent() *models.Agent                 { return &models.Agent{ID: "agent01"} }
+func (self *fakeRun) Conversation() *models.AgentConversation {
+	return &models.AgentConversation{ID: "c1"}
+}
 
 // Database is none: these tests are about the computer, and a reach is read
 // only to mention it.
@@ -45,11 +50,16 @@ type fakeComputer struct {
 	asked       []string
 	name        string
 	description string
+	// answers are what an action answers, when a test says.
+	answers map[string]string
 }
 
 func (self *fakeComputer) Ask(_ context.Context, action string, args any, _ time.Duration) (json.RawMessage, error) {
 	encoded, _ := json.Marshal(args)
 	self.asked = append(self.asked, action+" "+string(encoded))
+	if answer, found := self.answers[action]; found {
+		return json.RawMessage(answer), nil
+	}
 	if action == "shell" {
 		return json.RawMessage(`{"stdout":"hi\n","stderr":"","exitCode":0}`), nil
 	}
@@ -91,10 +101,17 @@ func TestShellReachesTheComputerAndRunsWhatItIsGiven(t *testing.T) {
 	if len(attached.asked) != 1 || !strings.HasPrefix(attached.asked[0], "shell ") {
 		t.Fatalf("asked %v", attached.asked)
 	}
-	// No call is judged by what the command looks like: the tool is a
-	// write and every command is one.
-	if shell.RiskOf != nil {
-		t.Fatal("a command is not classified by its shape")
+	// No call is judged by what the command looks like: every command is
+	// a write, and only reading about background commands is a read.
+	for _, command := range []string{"ls", "rm -rf ~", "cat notes.txt"} {
+		if risk := shell.RiskFor(json.RawMessage(`{"command":"` + command + `"}`)); risk != tools.RiskWrite {
+			t.Fatalf("%s is judged %s: a command is not classified by its shape", command, risk)
+		}
+	}
+	for action, want := range map[string]tools.Risk{"read": tools.RiskRead, "list": tools.RiskRead, "stop": tools.RiskWrite, "run": tools.RiskWrite} {
+		if risk := shell.RiskFor(json.RawMessage(`{"action":"` + action + `","id":"x"}`)); risk != want {
+			t.Fatalf("%s is judged %s, want %s", action, risk, want)
+		}
 	}
 	if preview := shell.Preview(json.RawMessage(`{"command":"apt-get install jq"}`)); !strings.Contains(preview, "apt-get install jq") {
 		t.Fatalf("the card says what will run: %s", preview)
@@ -177,5 +194,103 @@ func TestABinaryReadSaysHowToGetTheFile(t *testing.T) {
 	text := withBinaryHint(&tools.Result{Content: `{"path":"/tmp/notes.txt","content":"hello"}`}, "desk", "/tmp/notes.txt")
 	if strings.Contains(text.Content, "share_file") {
 		t.Errorf("a text read was given the hint: %s", text.Content)
+	}
+}
+
+// backgroundComputer is a computer whose program keeps background commands.
+type backgroundComputer struct {
+	fakeComputer
+}
+
+func (self *backgroundComputer) HasBackground() bool { return true }
+
+// A command past its wait goes on in the background where the program can
+// keep it, and the answer says so; a program that cannot is asked for
+// nothing it does not know.
+func TestACommandPastItsWaitGoesOnWhereTheProgramCanKeepIt(t *testing.T) {
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	shell := find(t, "shell")
+
+	attached := &backgroundComputer{fakeComputer{answers: map[string]string{
+		"shell": `{"stdout":"compiling\n","stderr":"","exitCode":0,"seconds":120,"backgroundId":"01BUILD"}`,
+	}}}
+	run := &fakeRun{computer: attached, config: configuration}
+	result, err := shell.Run(tools.WithRun(context.Background(), run), &tools.Call{Arguments: json.RawMessage(`{"command":"make"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(attached.asked[0], `"shouldKeepOnTimeout":true`) || !strings.Contains(attached.asked[0], `"origin":`) {
+		t.Fatalf("the program is asked to keep it past its wait, and told whom to tell: %v", attached.asked)
+	}
+	if !strings.Contains(result.Content, "goes on in the background") || !strings.Contains(result.Content, "01BUILD") || strings.Contains(result.Content, "exitCode") {
+		t.Fatalf("the answer says it is still running, without an exit code it does not have: %s", result.Content)
+	}
+
+	// Nobody present: past its wait it is killed as it always was, and it
+	// may not be started in the background at all.
+	night := &fakeRun{headless: true, unattended: true, computer: attached, config: configuration}
+	if _, err := shell.Run(tools.WithRun(context.Background(), night), &tools.Call{Arguments: json.RawMessage(`{"command":"make"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(attached.asked[1], "shouldKeepOnTimeout") {
+		t.Fatalf("a run with nobody present does not leave a command running: %s", attached.asked[1])
+	}
+	if _, err := shell.Run(tools.WithRun(context.Background(), night), &tools.Call{Arguments: json.RawMessage(`{"command":"make","isBackground":true}`)}); err == nil || !strings.Contains(err.Error(), "nobody present") {
+		t.Fatalf("nor start one in the background: %v", err)
+	}
+
+	// A program that predates background commands is asked for none.
+	old := &fakeComputer{}
+	oldRun := tools.WithRun(context.Background(), &fakeRun{computer: old, config: configuration})
+	if _, err := shell.Run(oldRun, &tools.Call{Arguments: json.RawMessage(`{"command":"make"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(old.asked[0], "shouldKeepOnTimeout") || strings.Contains(old.asked[0], "origin") {
+		t.Fatalf("an old program is sent what it always was: %s", old.asked[0])
+	}
+	if _, err := shell.Run(oldRun, &tools.Call{Arguments: json.RawMessage(`{"command":"make","isBackground":true}`)}); err == nil || !strings.Contains(err.Error(), "update") {
+		t.Fatalf("and asking it for the background says to update it: %v", err)
+	}
+}
+
+// The agent stopping its own command is not woken to hear that it ended.
+func TestStoppingACommandAcknowledgesItsEnding(t *testing.T) {
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	shell := find(t, "shell")
+	attached := &backgroundComputer{fakeComputer{answers: map[string]string{
+		"background_stop": `{"id":"01LOOP","isRunning":false,"stopReason":"stopped","origin":{"agentId":"a"}}`,
+		"background_list": `[{"id":"01LOOP","command":"sleep 60","isRunning":true,"origin":{"conversationId":"c1"}}]`,
+	}}}
+	ctx := tools.WithRun(context.Background(), &fakeRun{computer: attached, config: configuration})
+	result, err := shell.Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"action":"stop","id":"01LOOP"}`)})
+	if err != nil || !strings.Contains(attached.asked[0], `"isAcknowledged":true`) || strings.Contains(result.Content, "origin") {
+		t.Fatalf("stop: %v %v %+v", attached.asked, err, result)
+	}
+	if _, err := shell.Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"action":"read"}`)}); err == nil {
+		t.Fatal("read needs an id")
+	}
+	result, err = shell.Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"action":"list"}`)})
+	if err != nil || !strings.Contains(result.Content, "01LOOP") || strings.Contains(result.Content, "origin") || !result.Untrusted {
+		t.Fatalf("list: %+v %v", result, err)
+	}
+}
+
+// A command that printed more than an answer holds still says it is running
+// and under which id: the cut is made after the note, not before it.
+func TestALongOutputKeepsTheBackgroundId(t *testing.T) {
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	shell := find(t, "shell")
+	long := strings.Repeat("compiling a file\n", 5000)
+	encoded, _ := json.Marshal(map[string]any{"stdout": long, "stderr": "", "exitCode": 0, "seconds": 120, "backgroundId": "01LONG"})
+	attached := &backgroundComputer{fakeComputer{answers: map[string]string{"shell": string(encoded)}}}
+	result, err := shell.Run(tools.WithRun(context.Background(), &fakeRun{computer: attached, config: configuration}), &tools.Call{Arguments: json.RawMessage(`{"command":"make"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Content) > tools.ResultCharacters+100 || !strings.Contains(result.Content, "01LONG") || !strings.Contains(result.Content, "woken when it ends") {
+		t.Fatalf("the id and the note survive the cut: %d characters, %q", len(result.Content), result.Content[:200])
 	}
 }

@@ -138,8 +138,18 @@ type Agent struct {
 	// computers are the computers people attached with `teanode computer`.
 	computersMutex sync.Mutex
 	computers      map[string]map[string]*attachedComputer
-	contextsMutex  sync.Mutex
-	contextsOpen   int
+
+	// The background commands that ended and have a turn still to come,
+	// by command id; what each conversation has waiting to wake it; and
+	// how many turns ended commands have woken in each since the person
+	// last wrote there.
+	backgroundMutex      sync.Mutex
+	backgroundInFlight   map[string]bool
+	backgroundWakes      map[string]*backgroundWake
+	backgroundWakeCounts map[string]int
+
+	contextsMutex sync.Mutex
+	contextsOpen  int
 }
 
 // Catalog is every tool the server knows.

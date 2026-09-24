@@ -85,3 +85,10 @@ offers is worked out: once, on the pass's first page, rather than on
 every page of it. It also says what that buys — a page of a real tree
 cost twelve seconds of git before a file was read — and what it costs,
 which is that a pass sees the tree as it was when the pass began.
+
+`20260923-a-background-command-wakes-the-conversation-that-started-it.md`
+says what happens to a command that outlives its call: it goes on in the
+background on the person's computer rather than being killed, the program
+there holds it and is the only record of it, and when it ends the
+conversation that started it takes a turn to hear how. It also says why that
+turn is the person's rather than one with nobody present, and what bounds it.
