@@ -144,6 +144,16 @@ func newAgentGraphCommands() []*cli.Command {
 			Action:    runAgentGraphEvaluate,
 		},
 		{
+			Name: "answers",
+			Usage: "answer a set of questions from memory, from the sources, or both, and grade each answer against the expected one; " +
+				"two model calls a question and source, priced as runs of kind evaluate",
+			ArgsUsage: "<file>",
+			Flags: []cli.Flag{JSONFlag(),
+				&cli.StringFlag{Name: "from", Value: "memory,sources,both", Usage: "what to answer from: memory, sources, both, or a comma list of them"},
+			},
+			Action: runAgentGraphAnswers,
+		},
+		{
 			Name:  "learned",
 			Usage: "what the agent has filed lately, newest first",
 			Flags: []cli.Flag{
@@ -1446,6 +1456,12 @@ type evaluationQuestion struct {
 	Kind     string            `json:"kind"`
 	Expects  []evaluationClaim `json:"expects"`
 	Forbids  []evaluationClaim `json:"forbids"`
+
+	// ExpectedAnswer is the answer the person gave as right, for the
+	// answer evaluation; "not known" for an abstain question.
+	// OutdatedAnswer is what was true once, for a changed question.
+	ExpectedAnswer string `json:"expectedAnswer,omitempty"`
+	OutdatedAnswer string `json:"outdatedAnswer,omitempty"`
 }
 
 // evaluationClaim is a fact the question needs recall to carry, or must
@@ -1733,6 +1749,143 @@ func runAgentGraphEvaluate(ctx context.Context, command *cli.Command) error {
 	}
 	_, _ = fmt.Fprintf(command.Writer, "all: %d of %d\n", report.Hits, report.Asked)
 	return missedQuestions(report)
+}
+
+// answerResult is one question answered from one source, and graded.
+type answerResult struct {
+	ID               string  `json:"id"`
+	Kind             string  `json:"kind"`
+	AnswerFrom       string  `json:"answerFrom"`
+	AnswerVerdict    string  `json:"answerVerdict"`
+	VerdictReason    string  `json:"verdictReason"`
+	AnswerText       string  `json:"answerText"`
+	Cost             float64 `json:"cost"`
+	AnswerDurationMS int     `json:"answerDurationMS"`
+}
+
+// answerTotal is how one source did over the whole set.
+type answerTotal struct {
+	AnswerFrom string `json:"answerFrom"`
+	Asked      int    `json:"asked"`
+	// ScorePercent counts a right answer, and a right "not known" to an
+	// abstain question, as one, and a partial answer as a half.
+	ScorePercent float64        `json:"scorePercent"`
+	Verdicts     map[string]int `json:"verdicts"`
+	Cost         float64        `json:"cost"`
+	Currency     string         `json:"currency"`
+	// MeanAnswerMS is how long an answer took on average, grading aside.
+	MeanAnswerMS int `json:"meanAnswerMS"`
+}
+
+// answerScore is what one graded answer is worth.
+func answerScore(kind, verdict string) float64 {
+	switch {
+	case kind == questionAbstain:
+		if verdict == "not_known" {
+			return 1
+		}
+		return 0
+	case verdict == "correct":
+		return 1
+	case verdict == "partial":
+		return 0.5
+	}
+	return 0
+}
+
+// runAgentGraphAnswers answers each question from each source asked for,
+// has each answer graded against the one the person gave, and totals the
+// grades by source: the numbers that say what extracted memory is worth
+// over the documents it was read from.
+func runAgentGraphAnswers(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 1 {
+		return fmt.Errorf("which question set? teanode agent memory answers <file>")
+	}
+	questions, err := readQuestionSet(command.Args().First())
+	if err != nil {
+		return err
+	}
+	var sources []string
+	for _, source := range strings.Split(command.String("from"), ",") {
+		source = strings.TrimSpace(source)
+		switch source {
+		case "memory", "sources", "both":
+			sources = append(sources, source)
+		case "":
+		default:
+			return fmt.Errorf("--from %q: memory, sources or both", source)
+		}
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	results := []*answerResult{}
+	totals := map[string]*answerTotal{}
+	durations := map[string]int{}
+	for _, source := range sources {
+		totals[source] = &answerTotal{AnswerFrom: source, Verdicts: map[string]int{}}
+	}
+	for _, question := range questions {
+		if strings.TrimSpace(question.ExpectedAnswer) == "" {
+			continue
+		}
+		for _, source := range sources {
+			evaluated, err := client.EvaluateAgentAnswer(ctx, connection, question.Question, question.ExpectedAnswer, question.OutdatedAnswer, source)
+			if err != nil {
+				return describeError(command, err)
+			}
+			result := &answerResult{
+				ID: question.ID, Kind: question.Kind, AnswerFrom: source,
+				AnswerVerdict: evaluated.AnswerVerdict, VerdictReason: evaluated.VerdictReason, AnswerText: evaluated.AnswerText,
+				Cost: evaluated.Cost, AnswerDurationMS: evaluated.AnswerDurationMS,
+			}
+			results = append(results, result)
+			total := totals[source]
+			total.Asked++
+			total.ScorePercent += answerScore(question.Kind, evaluated.AnswerVerdict)
+			total.Verdicts[evaluated.AnswerVerdict]++
+			total.Cost += evaluated.Cost
+			total.Currency = evaluated.Currency
+			durations[source] += evaluated.AnswerDurationMS
+			if !command.Bool("json") {
+				_, _ = fmt.Fprintf(command.Writer, "%-8s %-14s %-9s %s\n", source, question.ID, evaluated.AnswerVerdict, firstRunesOf(evaluated.VerdictReason, 90))
+			}
+		}
+	}
+	ordered := make([]*answerTotal, 0, len(sources))
+	for _, source := range sources {
+		total := totals[source]
+		if total.Asked > 0 {
+			total.ScorePercent = total.ScorePercent / float64(total.Asked) * 100
+			total.MeanAnswerMS = durations[source] / total.Asked
+		}
+		ordered = append(ordered, total)
+	}
+	if command.Bool("json") {
+		return PrintJSON(map[string]any{"answers": results, "totals": ordered})
+	}
+	_, _ = fmt.Fprintln(command.Writer)
+	for _, total := range ordered {
+		verdicts := make([]string, 0, len(total.Verdicts))
+		for _, verdict := range []string{"correct", "partial", "not_known", "stale", "invented", "wrong", "ungraded"} {
+			if count := total.Verdicts[verdict]; count > 0 {
+				verdicts = append(verdicts, fmt.Sprintf("%d %s", count, verdict))
+			}
+		}
+		_, _ = fmt.Fprintf(command.Writer, "%s: %.0f%% of %d (%s), cost %.2f %s, %.1f s an answer\n",
+			total.AnswerFrom, total.ScorePercent, total.Asked, strings.Join(verdicts, ", "), total.Cost, total.Currency, float64(total.MeanAnswerMS)/1000)
+	}
+	return nil
+}
+
+// firstRunesOf is the start of a line, for a table cell.
+func firstRunesOf(text string, count int) string {
+	runes := []rune(strings.Join(strings.Fields(text), " "))
+	if len(runes) <= count {
+		return string(runes)
+	}
+	return string(runes[:count]) + "…"
 }
 
 // missedQuestions is the error a set with a miss in it ends on, so that a

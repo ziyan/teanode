@@ -140,9 +140,16 @@ type AgentGraphMutation interface {
 	// agent:use.
 	SyncAgentKnowledgeSource(ctx context.Context, arguments DeleteAgentKnowledgeSourceArguments) (bool, error)
 
-	// Run the night now, within the agent's own hours, rather than
-	// waiting for its next turn. Needs agent:use.
+	// Dream now, whatever the agent's hours, rather than waiting for its
+	// next turn. Needs agent:use.
 	DreamAgentNow(ctx context.Context, arguments DreamAgentNowArguments) (bool, error)
+
+	// Answer one question of a memory evaluation from memory, from the
+	// sources or from both, and grade the answer against the one the
+	// person gave. Two model calls, priced as runs of kind evaluate;
+	// nothing is written to a conversation or to the graph. Needs
+	// agent:use.
+	EvaluateAgentAnswer(ctx context.Context, arguments EvaluateAgentAnswerArguments) (*AgentAnswerEvaluation, error)
 
 	// Put back into the night's queue everything marked read in the last
 	// so many minutes, for a night that marked what it never read. Says
@@ -282,6 +289,28 @@ type MoveAgentNodeArguments struct {
 // tick with wider limits until nothing waits to be read.
 type DreamAgentNowArguments struct {
 	Bootstrap *bool `json:"bootstrap" graphapi:"nullable"`
+}
+
+type EvaluateAgentAnswerArguments struct {
+	Question       string `json:"question"`
+	ExpectedAnswer string `json:"expectedAnswer"`
+	// OutdatedAnswer is what was true once, for a question about
+	// something that changed; an answer giving it is stale.
+	OutdatedAnswer string `json:"outdatedAnswer" graphapi:"nullable"`
+	// AnswerFrom is memory, sources or both.
+	AnswerFrom string `json:"answerFrom"`
+}
+
+// AgentAnswerEvaluation is one question answered and graded.
+type AgentAnswerEvaluation struct {
+	AnswerText       string  `json:"answerText"`
+	AnswerVerdict    string  `json:"answerVerdict"`
+	VerdictReason    string  `json:"verdictReason"`
+	FactCount        int     `json:"factCount"`
+	PassageCount     int     `json:"passageCount"`
+	Cost             float64 `json:"cost"`
+	Currency         string  `json:"currency"`
+	AnswerDurationMS int     `json:"answerDurationMS"`
 }
 
 type RereadAgentDocumentsArguments struct {
@@ -1924,6 +1953,28 @@ func (self *graph) DreamAgentNow(ctx context.Context, arguments DreamAgentNowArg
 	}
 	_, err = worker.Enqueue(tx, models.AgentJobDream, found.ID, "", time.Now().Format("2006-01-02"))
 	return err == nil, err
+}
+
+func (self *graph) EvaluateAgentAnswer(ctx context.Context, arguments EvaluateAgentAnswerArguments) (*AgentAnswerEvaluation, error) {
+	principal, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	evaluation, err := worker.EvaluateAnswer(ctx, found, principal.User,
+		arguments.Question, arguments.ExpectedAnswer, arguments.OutdatedAnswer, strings.TrimSpace(arguments.AnswerFrom))
+	if err != nil {
+		return nil, err
+	}
+	return &AgentAnswerEvaluation{
+		AnswerText: evaluation.AnswerText, AnswerVerdict: evaluation.AnswerVerdict, VerdictReason: evaluation.VerdictReason,
+		FactCount: evaluation.FactCount, PassageCount: evaluation.PassageCount,
+		Cost: evaluation.Cost, Currency: self.config.Current().Agent.Currency,
+		AnswerDurationMS: int(evaluation.AnswerDurationMS),
+	}, nil
 }
 
 func (self *graph) LinkAgentNodes(ctx context.Context, arguments LinkAgentNodesArguments) (bool, error) {

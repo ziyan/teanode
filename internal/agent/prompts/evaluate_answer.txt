@@ -1,0 +1,24 @@
+Answer {{.PersonName}}'s question about their own life and work, from the notes below and from nothing else you know.
+
+{{if .Memory}}## What their agent's memory says
+
+<memory>
+{{range .Memory}}{{.}}
+{{end}}</memory>
+
+{{end}}{{if .Passages}}## Passages from what their agent has read
+
+<passages>
+{{range .Passages}}{{.}}
+
+{{end}}</passages>
+
+{{end}}{{if and (not .Memory) (not .Passages)}}There are no notes for this question.
+
+{{end}}## The question
+
+{{.Question}}
+
+## How to answer
+
+In a sentence or two, in {{.KnowledgeLanguage}}. When the notes disagree, the newer statement wins. When the notes do not say, answer exactly: not known. Never guess, and never fill a gap with what is usually true of people.

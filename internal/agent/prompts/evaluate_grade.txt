@@ -1,0 +1,34 @@
+Grade an answer to a question {{.PersonName}} asked about their own life and work, against the answer they gave as correct.
+
+<question>
+{{.Question}}
+</question>
+
+<correct_answer>
+{{.ExpectedAnswer}}
+</correct_answer>
+{{if .OutdatedAnswer}}
+<outdated_answer>
+{{.OutdatedAnswer}}
+</outdated_answer>
+
+The outdated answer was true once and is not now.
+{{end}}
+<answer_given>
+{{.AnswerText}}
+</answer_given>
+
+Answer with one JSON object and nothing else:
+
+{"answerVerdict": "correct", "verdictReason": "one short line"}
+
+answerVerdict is one of:
+
+- `correct`: it says what the correct answer says. Extra true detail is fine; different wording is fine.
+- `partial`: some of the correct answer and nothing wrong, with part missing.
+- `stale`: it gives the outdated answer as the present one.
+- `not_known`: it says it does not know. Right when the correct answer is itself "not known".
+- `invented`: it answers when the correct answer is "not known", or states something the correct answer contradicts that is not the outdated answer.
+- `wrong`: anything else that is not correct.
+
+When the correct answer is "not known", `not_known` is the only good verdict.

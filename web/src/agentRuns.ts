@@ -14,6 +14,8 @@ export const RUN_KINDS = [
   'draft',
   'describe',
   'compact',
+  // A question from a memory evaluation, answered and graded.
+  'evaluate',
   // A tool called, or a question asked, by a program over MCP.
   'mcp',
 ]
