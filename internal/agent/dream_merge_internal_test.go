@@ -2,6 +2,7 @@ package agent
 
 import (
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -240,5 +241,35 @@ func TestAMergeKeepsTheStandingOfTheWordsItKeeps(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+// The nightly merge asks a model which lines say the same thing, but the
+// model does not get to call two occurrences of an event one: an event on
+// another day, or a state beside an event, stays its own fact.
+func TestTheMergeKeepsTwoOccurrencesApart(t *testing.T) {
+	world := newMergeWorld(t,
+		"Completed the annual boiler inspection.",
+		"Finished this year's boiler inspection.",
+		"The boiler inspection is done.")
+	lastYear := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
+	thisYear := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		for index, when := range []time.Time{lastYear, thisYear} {
+			updated, err := tx.UpdateAgentFact(world.agent.ID, world.facts[index].ID, func(fact *models.AgentFact) error {
+				fact.Kind, fact.HappenedAt = models.FactEvent, &when
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("UpdateAgentFact: %s", err)
+			}
+			world.facts[index] = updated
+		}
+	})
+	if merged := world.merge(t, [][]int{{2, 1}, {3, 2}}); merged != 0 {
+		t.Fatalf("nothing is merged across days or kinds, but %d pairs were", merged)
+	}
+	if stated := world.stated(t); len(stated) != 3 {
+		t.Fatalf("the page still says all three, not %v", stated)
 	}
 }
