@@ -1171,6 +1171,7 @@ export const ja: Catalog = {
   'agentDrawer.goal.nextLook': '{state} · 次は {time}',
   'agentDrawer.goal.checkIn': '目標のターン',
   'agentDrawer.backgroundEnded': 'バックグラウンドのコマンドが終了',
+  'agentDrawer.scheduleTurn': 'スケジュールのターン',
   'agentDrawer.backgroundCommands': 'バックグラウンドのコマンド',
   'agentDrawer.backgroundRunning': 'バックグラウンドで {count} 件実行中',
   'backgroundCommands.none': 'バックグラウンドで実行中のものはありません。',

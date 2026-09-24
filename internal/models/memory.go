@@ -155,9 +155,14 @@ type AgentSchedule struct {
 	WrittenBy string `json:"writtenBy,omitempty"`
 
 	// Deliver is where the answer goes: mail, to the account's
-	// notification address, or drawer, into the main conversation.
+	// notification address, or drawer, a turn in ConversationID.
 	Deliver string `json:"deliver"`
-	Enabled bool   `json:"enabled"`
+
+	// ConversationID is the conversation the schedule was made in, where a
+	// drawer schedule takes its turn; empty, or a conversation since
+	// deleted, means the main one.
+	ConversationID string `json:"conversationId,omitempty"`
+	Enabled        bool   `json:"enabled"`
 
 	LastRunAt *time.Time `json:"lastRunAt,omitempty"`
 	NextRunAt *time.Time `json:"nextRunAt,omitempty"`

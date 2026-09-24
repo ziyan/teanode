@@ -1134,6 +1134,7 @@ export const zh: Catalog = {
   'agentDrawer.goal.nextLook': '{state} · 下次查看 {time}',
   'agentDrawer.goal.checkIn': '目标回合',
   'agentDrawer.backgroundEnded': '后台命令已结束',
+  'agentDrawer.scheduleTurn': '定时任务',
   'agentDrawer.backgroundCommands': '后台命令',
   'agentDrawer.backgroundRunning': '{count} 个在后台运行',
   'backgroundCommands.none': '后台没有在运行的命令。',

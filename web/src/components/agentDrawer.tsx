@@ -37,6 +37,7 @@ import {
   StarIcon,
   PlusIcon,
   SparkIcon,
+  CalendarIcon,
   TargetIcon,
   TerminalIcon,
   TrashIcon,
@@ -110,13 +111,18 @@ const GOAL_CHECK_IN_MARKER = '[goal check-in]'
 // shape, and is drawn the same quiet way.
 const BACKGROUND_COMMAND_MARKER = '[background command]'
 
+// The marker a schedule's turn begins with when it answers in a
+// conversation, which is models.ScheduleMarker on the server.
+const SCHEDULE_MARKER = '[schedule]'
+
 // Which kind of turn of the agent's own a user message opens, if it opens
 // one at all.
-type CheckInOrigin = 'goal' | 'background'
+type CheckInOrigin = 'goal' | 'background' | 'schedule'
 
 function checkInOriginOf(text: string): CheckInOrigin | null {
   if (text.startsWith(GOAL_CHECK_IN_MARKER)) return 'goal'
   if (text.startsWith(BACKGROUND_COMMAND_MARKER)) return 'background'
+  if (text.startsWith(SCHEDULE_MARKER)) return 'schedule'
   return null
 }
 
@@ -1480,6 +1486,19 @@ function goalStateKey(state: GoalState): `agentDrawer.goal.${GoalState}` {
 // bubble; pressing it shows the words the turn was given, because a
 // person watching the agent wants to know what it was told as much as
 // what it did.
+// What each kind of turn of the agent's own is called, and drawn with.
+const CHECK_IN_LABEL = {
+  goal: 'agentDrawer.goal.checkIn',
+  background: 'agentDrawer.backgroundEnded',
+  schedule: 'agentDrawer.scheduleTurn',
+} as const
+
+function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
+  if (origin === 'background') return <TerminalIcon size={12} />
+  if (origin === 'schedule') return <CalendarIcon size={12} />
+  return <TargetIcon size={12} />
+}
+
 function CheckInLine({ at, text, origin }: { at?: string; text: string; origin: CheckInOrigin }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -1491,8 +1510,8 @@ function CheckInLine({ at, text, origin }: { at?: string; text: string; origin: 
         aria-expanded={open}
         onClick={() => setOpen((before) => !before)}
       >
-        {origin === 'background' ? <TerminalIcon size={12} /> : <TargetIcon size={12} />}
-        {origin === 'background' ? t('agentDrawer.backgroundEnded') : t('agentDrawer.goal.checkIn')}
+        <CheckInIcon origin={origin} />
+        {t(CHECK_IN_LABEL[origin])}
         {at ? ` · ${clockTime(at)}` : ''}
       </button>
       {open ? <pre className="agent-checkin-prompt">{text}</pre> : null}

@@ -141,14 +141,23 @@ every time it is looked at.
 Due schedules are found under a row lock, their next run is computed and
 written, and a job is queued. A schedule whose agent is switched off still
 advances, so it skips its runs rather than firing them all at once when the
-agent comes back. A cron line that stops making sense switches the schedule
-off.
+agent comes back. A schedule with no time left (a moment that has come, or a
+cron line that stops making sense) is switched off by its run once that run is
+done, not when it is queued: switched off as it was queued, the run found it
+off and did nothing, and every reminder for one moment was dropped.
 
 The run is a headless turn with the whole catalog the person's permissions
 allow — but nobody is present to confirm anything, so every destructive or
-outward call is refused with an explanation rather than performed. The answer
-goes into the main conversation, or out as mail whose subject is the first line
-when that line is short enough.
+outward call is refused with an explanation rather than performed.
+
+A schedule that answers in the drawer takes that turn in the conversation it
+was made in, the way a goal's check-in does: the turn opens with a message
+marked `[schedule]`, which the drawer draws as a muted line, saying which
+schedule is due and what it says, fenced as a note when the agent wrote it.
+One made from the dashboard or the command line, or whose conversation is
+gone, takes it in the main conversation. A schedule that answers by mail runs
+in a `run` transcript of its own and mails what it said, the subject being the
+first line when that line is short enough.
 
 Mail notifications use the job identifier as a durable submission identity.
 Acceptance, Sent filing and the submission record commit in one transaction;
@@ -169,8 +178,8 @@ alike from the queue and are opposite everywhere else:
 
 | | schedule | goal |
 | --- | --- | --- |
-| where the turn runs | a fresh `run` transcript | the person's own conversation |
-| what it remembers | nothing of the last run | everything, it is the same transcript |
+| where the turn runs | the conversation it was made in (a `run` transcript when it mails) | the person's own conversation |
+| what it remembers | the conversation, when it answers there | everything, it is the same transcript |
 | when the next one is | the cron line says | the last turn says, within bounds |
 | how it ends | it does not; somebody switches it off | the agent says `met`, or the person clears it |
 

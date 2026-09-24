@@ -19,8 +19,9 @@ import (
 // Each ends by calling the goal tool: a note and when to look again, a
 // word that it needs the person, or that it is done.
 //
-// Unlike a schedule, which runs a fresh transcript on a clock and has no
-// way to say it has finished, a goal remembers and ends.
+// Unlike a schedule, which takes its turn on a clock whatever the last one
+// found and has no way to say it has finished, a goal decides when it looks
+// again, and ends.
 
 // The bounds a goal keeps to. The cadence is the agent's within them, and
 // they are constants: no operator has yet wanted a different number, and a

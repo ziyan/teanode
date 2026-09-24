@@ -458,28 +458,30 @@ func (self *transaction) ScavengeAgentFeedback(before time.Time) (int64, error) 
 }
 
 type agentScheduleModel struct {
-	ID         string     `gorm:"column:id;primaryKey"`
-	CreatedAt  time.Time  `gorm:"column:created_at"`
-	ModifiedAt time.Time  `gorm:"column:modified_at"`
-	AgentID    string     `gorm:"column:agent_id"`
-	Name       string     `gorm:"column:name"`
-	Cron       string     `gorm:"column:cron"`
-	Prompt     string     `gorm:"column:prompt"`
-	WrittenBy  string     `gorm:"column:written_by"`
-	Deliver    string     `gorm:"column:deliver"`
-	Enabled    bool       `gorm:"column:enabled"`
-	LastRunAt  *time.Time `gorm:"column:last_run_at"`
-	NextRunAt  *time.Time `gorm:"column:next_run_at"`
+	ID         string    `gorm:"column:id;primaryKey"`
+	CreatedAt  time.Time `gorm:"column:created_at"`
+	ModifiedAt time.Time `gorm:"column:modified_at"`
+	AgentID    string    `gorm:"column:agent_id"`
+	Name       string    `gorm:"column:name"`
+	Cron       string    `gorm:"column:cron"`
+	Prompt     string    `gorm:"column:prompt"`
+	WrittenBy  string    `gorm:"column:written_by"`
+	Deliver    string    `gorm:"column:deliver"`
+	// ConversationID is where a drawer schedule takes its turn.
+	ConversationID string     `gorm:"column:conversation_id"`
+	Enabled        bool       `gorm:"column:enabled"`
+	LastRunAt      *time.Time `gorm:"column:last_run_at"`
+	NextRunAt      *time.Time `gorm:"column:next_run_at"`
 }
 
 func (agentScheduleModel) TableName() string { return "agent_schedule" }
 
 func scheduleToModel(schedule *models.AgentSchedule) *agentScheduleModel {
-	return &agentScheduleModel{ID: schedule.ID, CreatedAt: schedule.CreatedAt, ModifiedAt: schedule.ModifiedAt, AgentID: schedule.AgentID, Name: schedule.Name, Cron: schedule.Cron, Prompt: schedule.Prompt, WrittenBy: schedule.WrittenBy, Deliver: schedule.Deliver, Enabled: schedule.Enabled, LastRunAt: schedule.LastRunAt, NextRunAt: schedule.NextRunAt}
+	return &agentScheduleModel{ID: schedule.ID, CreatedAt: schedule.CreatedAt, ModifiedAt: schedule.ModifiedAt, AgentID: schedule.AgentID, Name: schedule.Name, Cron: schedule.Cron, Prompt: schedule.Prompt, WrittenBy: schedule.WrittenBy, Deliver: schedule.Deliver, ConversationID: schedule.ConversationID, Enabled: schedule.Enabled, LastRunAt: schedule.LastRunAt, NextRunAt: schedule.NextRunAt}
 }
 
 func (self *agentScheduleModel) toModel() *models.AgentSchedule {
-	return &models.AgentSchedule{ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, Name: self.Name, Cron: self.Cron, Prompt: self.Prompt, WrittenBy: self.WrittenBy, Deliver: self.Deliver, Enabled: self.Enabled, LastRunAt: self.LastRunAt, NextRunAt: self.NextRunAt}
+	return &models.AgentSchedule{ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, Name: self.Name, Cron: self.Cron, Prompt: self.Prompt, WrittenBy: self.WrittenBy, Deliver: self.Deliver, ConversationID: self.ConversationID, Enabled: self.Enabled, LastRunAt: self.LastRunAt, NextRunAt: self.NextRunAt}
 }
 
 func (self *transaction) CreateAgentSchedule(schedule *models.AgentSchedule) (*models.AgentSchedule, error) {
