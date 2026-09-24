@@ -964,7 +964,7 @@ export const zh: Catalog = {
   'agent.reachFailed': '无法设置经由。',
   'agent.backgroundCommands': '后台运行',
   'agent.backgroundCommandsHint':
-    '智能体在你的电脑上留在后台运行的命令，来自所有对话。运行超过 24 小时的命令会被停止。',
+    '助手在你的电脑上留在后台运行的命令，来自所有对话。运行超过 24 小时的命令会被停止。',
   'agent.skillSecrets': '你的技能密钥',
   'agent.skillSecretsHint':
     '有些已安装的技能使用你自己的凭据，而不是服务器共享的那一份。它们会被加密保存，只供你的助手使用，设置后不再显示。',
