@@ -240,7 +240,7 @@ func (self *Agent) tipReason() speakFirstReason {
 				"",
 				"If they answer that they do not want tips, call agent_profile with no_more_tips. If they say not now, call agent_profile with not_now.",
 			)
-			return speakFirstMessage(owner, now, "A tip.") + strings.Join(lines, "\n"), nil
+			return speakFirstMessage(owner, now, "A tip.", prepared) + strings.Join(lines, "\n"), nil
 		},
 	}
 }
