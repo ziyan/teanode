@@ -228,20 +228,36 @@ const (
 	FactsToCheckChanged = "changed"
 )
 
-// ownPagesCondition keeps to the pages about the person and their world:
-// themselves, the people they know, their things and places. Work and
-// sources are left out: a memory check is about what the person can
-// answer without looking anything up.
-const ownPagesCondition = `"node_id" IN (SELECT "id" FROM "agent_node" WHERE "agent_id" = ? AND ("path" = 'self' OR "path" LIKE 'self/%' OR "path" LIKE 'people/%' OR "path" LIKE 'things/%' OR "path" LIKE 'places/%'))`
+// A memory check asks the person to confirm what the agent remembers
+// about their own life, so it keeps to facts they can confirm without
+// looking anything up. Being on a page about somebody is not enough: a
+// colleague's page read out of a work archive is the agent's reading,
+// not the person's memory, and questions drawn from it were a quiz about
+// other people's work.
 
-// ListAgentFactsToCheck is a random few of the facts on the person's own
-// pages that a memory check could ask about: of one sort, stated rather
-// than inferred, and none of those given.
+// toldByPersonCondition is a fact the person themselves gave: said in a
+// conversation, or written or corrected by hand.
+const toldByPersonCondition = `EXISTS (SELECT 1 FROM jsonb_array_elements("evidence") AS "given" WHERE "given"->>'kind' IN ('conversation', 'person', 'memory'))`
+
+// readFromWorkCondition is a fact with any evidence from the sources work
+// comes from: commits, repositories, chat archives, documents.
+const readFromWorkCondition = `EXISTS (SELECT 1 FROM jsonb_array_elements("evidence") AS "given" WHERE "given"->>'kind' IN ('commit', 'repository', 'chat', 'document'))`
+
+// checkableCondition is the facts a check may ask about: told by the
+// person, on a page about them, the people they know, their things or
+// places; or on the self page, a thing or a place and read from nothing
+// that work comes from.
+const checkableCondition = `(("node_id" IN (SELECT "id" FROM "agent_node" WHERE "agent_id" = ? AND ("path" = 'self' OR "path" LIKE 'self/%' OR "path" LIKE 'people/%' OR "path" LIKE 'things/%' OR "path" LIKE 'places/%')) AND ` + toldByPersonCondition + `)
+	OR ("node_id" IN (SELECT "id" FROM "agent_node" WHERE "agent_id" = ? AND ("path" = 'self' OR "path" LIKE 'things/%' OR "path" LIKE 'places/%')) AND NOT ` + readFromWorkCondition + `))`
+
+// ListAgentFactsToCheck is a random few of the facts a memory check may
+// ask about, of one sort, stated rather than inferred, and none of those
+// given: what the person told the agent first, then the rest.
 func (self *transaction) ListAgentFactsToCheck(agentId, factsToCheck string, excludeFactIds []string, limit int) ([]*models.AgentFact, error) {
 	if limit <= 0 {
 		limit = 5
 	}
-	query := self.tx.Where(`"agent_id" = ? AND NOT "dormant" AND NOT "inferred"`, agentId).Where(ownPagesCondition, agentId)
+	query := self.tx.Where(`"agent_id" = ? AND NOT "dormant" AND NOT "inferred"`, agentId).Where(checkableCondition, agentId, agentId)
 	switch factsToCheck {
 	case FactsToCheckStated:
 		query = query.Where(`"superseded_by" IS NULL`)
@@ -255,17 +271,17 @@ func (self *transaction) ListAgentFactsToCheck(agentId, factsToCheck string, exc
 	if excluded := uniqueStrings(excludeFactIds); len(excluded) > 0 {
 		query = query.Where(`"id" NOT IN ?`, excluded)
 	}
-	return self.factsFrom(query.Order(`random()`).Limit(limit))
+	return self.factsFrom(query.Order(toldByPersonCondition + ` DESC, random()`).Limit(limit))
 }
 
-// CountAgentFactsToCheck is how many stated facts the person's own pages
-// hold: whether memory knows enough about them for a check to be worth
-// their time.
+// CountAgentFactsToCheck is how many stated facts a check may ask about:
+// whether memory knows enough about the person for one to be worth their
+// time.
 func (self *transaction) CountAgentFactsToCheck(agentId string) (int64, error) {
 	var count int64
 	err := self.tx.Model(&agentFactModel{}).
 		Where(`"agent_id" = ? AND NOT "dormant" AND NOT "inferred" AND "superseded_by" IS NULL`, agentId).
-		Where(ownPagesCondition, agentId).Count(&count).Error
+		Where(checkableCondition, agentId, agentId).Count(&count).Error
 	return count, err
 }
 

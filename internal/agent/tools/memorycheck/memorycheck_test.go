@@ -185,3 +185,40 @@ func TestAMemoryCheckRecordsTheReplies(t *testing.T) {
 		t.Fatal("a correction without the answer is refused")
 	}
 }
+
+// A draft asks about what the person can confirm without looking it up:
+// a fact about somebody they know that they told the agent, not one read
+// out of a work archive, however it sits on a page about a person.
+func TestADraftLeavesOutWhatWasReadFromWork(t *testing.T) {
+	world := newCheckWorld(t)
+	var told, read *models.AgentFact
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		page, err := tx.PutAgentNode(&models.AgentNode{AgentID: world.run.agent.ID, Path: "people/sam-rivers", Kind: models.NodePerson, Name: "Sam Rivers"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if told, err = tx.AddAgentFact(&models.AgentFact{AgentID: world.run.agent.ID, NodeID: page.ID, Kind: models.FactPlain, Text: "Sam is their brother.",
+			Evidence: []models.Evidence{{Kind: models.EvidenceConversation, ID: "conversation-1"}}}); err != nil {
+			t.Fatal(err)
+		}
+		if read, err = tx.AddAgentFact(&models.AgentFact{AgentID: world.run.agent.ID, NodeID: page.ID, Kind: models.FactPlain, Text: "Sam changed the build script.",
+			Evidence: []models.Evidence{{Kind: models.EvidenceCommit, ID: "commit-1"}}}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	sawTold := false
+	for round := 0; round < 3; round++ {
+		for _, each := range world.call(t, `{"action":"draft"}`)["facts"].([]any) {
+			factId := each.(map[string]any)["fact_id"]
+			if factId == read.ID {
+				t.Fatal("a fact read from a commit is not asked about")
+			}
+			if factId == told.ID {
+				sawTold = true
+			}
+		}
+	}
+	if !sawTold {
+		t.Fatal("what the person told the agent about somebody is asked about first")
+	}
+}
