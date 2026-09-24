@@ -578,7 +578,7 @@ func ReadAgentReadingProgress(ctx context.Context, connection *Client) (*AgentRe
 	return result.AgentReadingProgress, nil
 }
 
-// DreamAgentNow asks for the night to run at the next tick. bootstrap,
+// DreamAgentNow queues a dream now, whatever the agent's hours. bootstrap,
 // when given, switches bootstrapping on or off: the night at every tick
 // with wider limits until nothing waits to be read.
 func DreamAgentNow(ctx context.Context, connection *Client, bootstrap *bool) error {

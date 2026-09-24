@@ -2804,7 +2804,7 @@ export const ja: Catalog = {
   'agent.runsOfDream': '{when} の夢の実行記録：モデルへの呼び出しひとつひとつが、新しい順に並びます。開くと読めます。',
   'agent.allRuns': 'すべての実行記録',
   'agent.dreamNow': 'いま夢を見る',
-  'agent.dreamNowAsked': '夢は 1 分以内に、エージェントの時間帯の中で始まります。',
+  'agent.dreamNowAsked': '夢は 1 分以内に始まります。',
   'agent.reread': '読み直す…',
   'agent.rereadTitle': '夢が既読にしたものを読み直す',
   'agent.rereadHint':

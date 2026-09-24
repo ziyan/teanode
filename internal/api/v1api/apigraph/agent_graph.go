@@ -1831,10 +1831,12 @@ func (self *graph) DreamAgentNow(ctx context.Context, arguments DreamAgentNowArg
 	if err != nil {
 		return false, err
 	}
-	// The night is due when it has not run for six hours; forgetting when
-	// it last ran makes it due at the next tick. The hours the person set
-	// still hold: a night asked for at noon runs when its hours begin.
-	_, err = self.writing(ctx).UpdateAgent(found.ID, func(agent *models.Agent) error {
+	tx := self.writing(ctx)
+	isAsked := arguments.Bootstrap == nil || *arguments.Bootstrap
+	if isAsked && !agent.FeatureAllowed(self.config.Current(), "dreaming") {
+		return false, fmt.Errorf("%w: dreaming is off on this server", api.ErrInvalidArguments)
+	}
+	if _, err = tx.UpdateAgent(found.ID, func(agent *models.Agent) error {
 		if arguments.Bootstrap != nil {
 			agent.DreamBootstrap = *arguments.Bootstrap
 			if !*arguments.Bootstrap {
@@ -1843,7 +1845,29 @@ func (self *graph) DreamAgentNow(ctx context.Context, arguments DreamAgentNowArg
 		}
 		agent.DreamedAt = nil
 		return nil
+	}); err != nil || !isAsked {
+		return err == nil, err
+	}
+	// Asked for, so it runs now: queued here rather than left for the
+	// sweep, which keeps to the person's dream hours and waits half an
+	// hour after they last spoke. Those are for the nights nobody asked
+	// for; somebody pressing the button is not asleep and does not want
+	// to be interrupted by it later, they want it now. Clearing when the
+	// last night ran is kept for a server with no worker here, whose
+	// sweep then queues it at its next tick.
+	worker := self.agentWorker()
+	if worker == nil {
+		return true, nil
+	}
+	open, err := tx.CountAgentJobs(&db.AgentJobFilter{
+		AgentID:  found.ID,
+		Kinds:    []models.AgentJobKind{models.AgentJobDream},
+		Statuses: []models.AgentJobStatus{models.AgentJobQueued, models.AgentJobRunning},
 	})
+	if err != nil || open > 0 {
+		return err == nil, err
+	}
+	_, err = worker.Enqueue(tx, models.AgentJobDream, found.ID, "", time.Now().Format("2006-01-02"))
 	return err == nil, err
 }
 
