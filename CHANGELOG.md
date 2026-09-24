@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.58.4] - 2026-09-24
+
+### Fixed
+
+- The agent no longer marks documents or conversation messages as read, or clears a page's summary, when the model's answer could not be read. (#138)
+
 ## [0.58.3] - 2026-09-24
 
 ### Fixed
