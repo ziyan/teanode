@@ -139,6 +139,8 @@ func backgroundCommandState(background *client.AgentBackgroundCommand) string {
 		return "running"
 	case background.StopReason == "stopped":
 		return "stopped"
+	case background.StopReason == "shutdown":
+		return "stopped with teanode computer"
 	case background.StopReason == "lifetime":
 		return "stopped after 24 hours"
 	case strings.TrimSpace(background.StopReason) != "":

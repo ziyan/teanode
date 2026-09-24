@@ -18,9 +18,9 @@ import { Trans, useTranslation } from '../i18n/i18n'
 // shows all of them.
 
 // Why a command ended without ending by itself: the person or the agent
-// stopped it, or it ran its full day and the computer stopped it. Empty
-// while it runs and when it exited on its own.
-type BackgroundStopReason = '' | 'stopped' | 'lifetime'
+// stopped it, it ran its full day, or teanode computer stopped with it.
+// Empty while it runs and when it exited on its own.
+type BackgroundStopReason = '' | 'stopped' | 'lifetime' | 'shutdown'
 
 export interface BackgroundCommand {
   computer: string
@@ -132,7 +132,7 @@ function BackgroundCommandState({ command }: { command: BackgroundCommand }) {
   const { t } = useTranslation()
   if (command.isRunning) return <Tag value={t('backgroundCommands.running')} />
   if (command.stopReason === 'lifetime') return <Tag value={t('backgroundCommands.lifetime')} tone="warn" />
-  if (command.stopReason === 'stopped') return <Tag value={t('backgroundCommands.stoppedState')} tone="warn" />
+  if (command.stopReason === 'stopped' || command.stopReason === 'shutdown') return <Tag value={t('backgroundCommands.stoppedState')} tone="warn" />
   return (
     <Tag
       value={t('backgroundCommands.exited', { code: command.exitCode })}
