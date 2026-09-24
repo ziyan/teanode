@@ -400,17 +400,49 @@ func TestAnAnswerThatIsNotAnObjectIsSurvived(t *testing.T) {
 	world := newRememberWorld(t, func(string) string {
 		return "I had a look and there is nothing much here, really."
 	})
+	markOf := func() string {
+		var mark string
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			conversation, err := tx.GetAgentConversation(world.conversation.ID)
+			if err != nil || conversation == nil {
+				t.Fatalf("GetAgentConversation: %v %s", conversation, err)
+			}
+			mark = conversation.RememberedThrough
+		})
+		return mark
+	}
+	// The first unreadable answer is not taken as one that found
+	// nothing: the mark stays, and the job is tried again.
 	world.remember(t)
-
+	if mark := markOf(); mark != "" {
+		t.Fatalf("the mark moved past a window nobody read: %q", mark)
+	}
+	// The second in a row lets the window go, so that one bad window does
+	// not block the conversation, and the run says it did.
+	world.rememberAgain(t, time.Now().Add(2*time.Hour))
+	if mark := markOf(); mark == "" {
+		t.Fatalf("after the second unreadable answer the window is let go")
+	}
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		conversation, err := tx.GetAgentConversation(world.conversation.ID)
-		if err != nil || conversation == nil {
-			t.Fatalf("GetAgentConversation: %v %s", conversation, err)
+		runs, err := tx.ListAgentConversations(world.agent.ID, []models.AgentConversationKind{models.AgentConversationRun}, nil)
+		if err != nil {
+			t.Fatalf("ListAgentConversations: %s", err)
 		}
-		if conversation.RememberedThrough == "" {
-			t.Fatalf("the mark moved all the same")
+		for _, run := range runs {
+			if strings.HasPrefix(run.Title, "Skipped ") && strings.Contains(run.Title, "could not be read twice") {
+				return
+			}
 		}
+		t.Fatalf("no run says what was skipped: %v", titlesOf(runs))
 	})
+}
+
+func titlesOf(conversations []*models.AgentConversation) []string {
+	titles := make([]string, 0, len(conversations))
+	for _, conversation := range conversations {
+		titles = append(titles, conversation.Title)
+	}
+	return titles
 }
 
 // A long backlog is read oldest first, sixty messages at a time, over as

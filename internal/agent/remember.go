@@ -153,10 +153,18 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 		unread = unread[:rememberMessages]
 	}
 
-	answer, transcript, err := self.askWhatWasLearned(ctx, run, conversation, unread)
+	read := unread[len(unread)-1]
+	said, transcript, err := self.askWhatWasLearned(ctx, run, conversation, unread)
 	if err != nil {
 		return err
 	}
+	if !said.IsValid {
+		if err := self.anUnreadableAnswer(ctx, run, conversation, transcript, read, len(unread), said.Problem); err != nil {
+			return err
+		}
+		return deferTheBacklog(backlog)
+	}
+	answer := &said.Value
 	theirWords := make(map[string]bool, len(unread))
 	// What the run put in front of the model, which is the only thing a
 	// fact from it may cite and the only words it may quote.
@@ -167,9 +175,6 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 		}
 		shown[message.ID] = shownText(message)
 	}
-	// The last message this run was actually given, so the mark never
-	// stands past something nobody read.
-	read := unread[len(unread)-1]
 	// The mark moves in the same transaction as the writes it is a
 	// promise about. It says that everything behind it has been filed,
 	// and it was moved separately and unconditionally: a fact whose write
@@ -213,20 +218,49 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 	if filed.Filed > 0 {
 		log.Debugf("filed %d fact(s) from conversation %s", filed.Filed, conversation.ID)
 	}
-	if backlog > 0 {
-		// Straight back into the queue rather than waiting for the sweep
-		// to offer the conversation again, which it does once a minute.
-		//
-		// A deferral and not another Enqueue: one job per agent, kind and
-		// subject is open at a time, and this job is the open one, so an
-		// Enqueue from inside it hands back the row it is already running
-		// and queues nothing at all.
-		return &Deferral{
-			Until:  time.Now(),
-			Reason: fmt.Sprintf("%d more message(s) of this conversation are unread", backlog),
-		}
+	return deferTheBacklog(backlog)
+}
+
+// deferTheBacklog puts the job straight back into the queue when there is
+// more of the conversation to read, rather than waiting for the sweep to
+// offer it again, which it does once a minute.
+//
+// A deferral and not another Enqueue: one job per agent, kind and subject
+// is open at a time, and this job is the open one, so an Enqueue from
+// inside it hands back the row it is already running and queues nothing
+// at all.
+func deferTheBacklog(backlog int) error {
+	if backlog <= 0 {
+		return nil
 	}
-	return nil
+	return &Deferral{
+		Until:  time.Now(),
+		Reason: fmt.Sprintf("%d more message(s) of this conversation are unread", backlog),
+	}
+}
+
+// unreadableRememberAnswer begins the error a filing run fails with when
+// its answer could not be read, which is how the next try knows it is
+// the second.
+const unreadableRememberAnswer = "the filing run's answer could not be read"
+
+// anUnreadableAnswer is what a filing run does when the model's answer
+// could not be read. The first time, the job fails and is tried again,
+// and the mark stays where it was. The second time in a row the window is
+// let go, because a window that blocks blocks the whole conversation --
+// but said: the run's title names how many messages were skipped and
+// why, where the person reading the runs will see it.
+func (self *Agent) anUnreadableAnswer(ctx context.Context, run *Run, conversation, transcript *models.AgentConversation, read *models.AgentMessage, messageCount int, problem string) error {
+	if !strings.HasPrefix(run.Job.Error, unreadableRememberAnswer) {
+		self.retitle(ctx, run, transcript, fmt.Sprintf("Filing %s: the answer could not be read, to be tried again", chatName(conversation)))
+		return fmt.Errorf("%s: %s", unreadableRememberAnswer, problem)
+	}
+	log.Warningf("skipping %d messages of conversation %s: the answer could not be read twice: %s", messageCount, conversation.ID, problem)
+	self.retitle(ctx, run, transcript, fmt.Sprintf("Skipped %d messages of %s: the answer could not be read twice (%s)",
+		messageCount, chatName(conversation), cutRunes(problem, 160)))
+	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		return tx.MarkAgentConversationRemembered(conversation.ID, read.ID, time.Now())
+	})
 }
 
 // markRemembered moves the mark without filing anything.

@@ -2,13 +2,11 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
-	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -91,19 +89,16 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 	// Said rather than shrugged at. A phase that gives up in silence is
 	// how a page with thirteen wordings of one sentence sat there for a
 	// week while the log reported six pages rewritten.
-	extracted, err := llm.ExtractJSON(said)
-	if err != nil {
-		log.Warningf("cannot rewrite %q: the answer is not an object: %s", page.Path, err)
+	//
+	// And an answer that could not be read leaves the page as it was.
+	// `{}` and an error object used to read as an empty opening, and the
+	// page's summary was blanked.
+	read := readModelAnswer[consolidateAnswer](said, "summary")
+	if !read.IsValid {
+		log.Warningf("cannot rewrite %q: %s", page.Path, read.Problem)
 		return false
 	}
-	var answer struct {
-		Summary string  `json:"summary"`
-		Same    [][]int `json:"same"`
-	}
-	if err := json.Unmarshal([]byte(extracted), &answer); err != nil {
-		log.Warningf("cannot rewrite %q: %s", page.Path, err)
-		return false
-	}
+	answer := read.Value
 	// An empty opening is an answer, not a failure: a page whose facts
 	// say no more than its own name is better with nothing at the top
 	// than with a paragraph saying so at length. The merges below are
@@ -136,6 +131,12 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 	}
 	record.Merged += merged
 	return true
+}
+
+// consolidateAnswer is what the rewrite of a page answers with.
+type consolidateAnswer struct {
+	Summary string  `json:"summary"`
+	Same    [][]int `json:"same"`
 }
 
 // mergeSaidTwice folds the pairs a rewrite called one statement, and says

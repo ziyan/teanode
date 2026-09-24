@@ -1,11 +1,5 @@
 package agent
 
-import (
-	"encoding/json"
-
-	"github.com/ziyan/teanode/internal/llm"
-)
-
 // RememberAnswer is what the run answers with.
 type RememberAnswer struct {
 	Facts      []RememberedFact `json:"facts"`
@@ -62,19 +56,10 @@ type SupersededFact struct {
 	MessageID string `json:"message_id"`
 }
 
-func parseRememberAnswer(responseText string) *RememberAnswer {
-	extracted, err := llm.ExtractJSON(responseText)
-	if err != nil {
-		// A run that answered with prose taught nothing this time. Not a
-		// failure: the mark still moves, and the next conversation is a
-		// fresh try.
-		log.Debugf("the filing run answered with no object: %s", err)
-		return &RememberAnswer{}
-	}
-	answer := &RememberAnswer{}
-	if err := json.Unmarshal([]byte(extracted), answer); err != nil {
-		log.Debugf("the filing run's object is not what was asked for: %s", err)
-		return &RememberAnswer{}
-	}
-	return answer
+// parseRememberAnswer reads the filing run's answer. One that is not an
+// object, was cut off, or has no `facts` is not valid, and is not taken
+// for an answer that found nothing: that moved the conversation's mark
+// past a window nobody had read, and nothing ever came back for it.
+func parseRememberAnswer(responseText string) modelAnswer[RememberAnswer] {
+	return readModelAnswer[RememberAnswer](responseText, "facts")
 }
