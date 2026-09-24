@@ -11,11 +11,12 @@ After this plan, every path that writes a fact obeys the same rules, a model ans
 ## Progress
 
 - [x] (2026-09-23) An outside review of main at v0.54.1 named five defects; each was checked against the code and four were reproduced with throwaway tests (see Surprises). Wrote this plan.
-- [ ] Milestone 1: one rule for "the same fact", used by every path that folds or merges.
-- [ ] Milestone 2: a supersession names what replaces what, and keeps both when unsure.
-- [ ] Milestone 3: a validated answer contract: valid and empty, valid with results, or invalid; invalid is retried and then shown as failed, never recorded as read.
-- [ ] Milestone 4: merging keeps what the evidence establishes: equivalent wording merges, additional information does not borrow another fact's standing.
-- [ ] Milestone 5: consolidation writes only what it owns, from what it read, and marks only what it read.
+- [x] (2026-09-23) Milestone 1: one rule for "the same fact", used by every path that folds or merges (#135). The fold now asks every near candidate, not only the nearest.
+- [x] (2026-09-23) Milestone 2: a supersession names what replaces what, and keeps both when unsure (#136).
+- [x] (2026-09-23) Milestone 3: a validated answer contract: valid and empty, valid with results, or invalid; invalid is retried and then shown as failed, never recorded as read (#138). Left: showing given-up documents on the source's page, and marking one oversized document failed rather than read.
+- [x] (2026-09-23) Milestone 4: merging keeps what the evidence establishes (#139).
+- [x] (2026-09-23) Milestone 5: consolidation writes only the opening, marks the page with the time it read the facts, and skips a merge of facts changed during the call.
+- [ ] Milestones 1 to 5 watched over a night's dream on the deployed server.
 - [ ] Milestone 6: evaluation: a deterministic regression suite, and a replay that compares answers with and without each dreaming stage.
 - [ ] Milestone 7: when a claim was true and where it came from: validity intervals, derivation, and no past tense by age alone.
 
@@ -43,13 +44,25 @@ After this plan, every path that writes a fact obeys the same rules, a model ans
   Rationale: a duplicate costs a line on a page; a wrongly retired or merged fact costs the truth, and nobody sees it happen. Every rule below prefers leaving two facts to losing one.
   Date/Author: 2026-09-23, agent.
 
+- Decision: a named pairing is trusted without the model check the plan described for a pair that shares no subject.
+  Rationale: the check would put a model call inside the transaction that files an answer, and the main defect, any fact on the page standing in for the retired one, is gone once the answer must name its replacement; kind, date and evidence are still checked.
+  Date/Author: 2026-09-23, agent.
+
+- Decision: a merge's survivor takes the standing of the fact whose wording it keeps, rather than always the weaker of the two; a richer wording on softer ground is not merged.
+  Rationale: always taking the weaker would downgrade a stated rewording of an inferred line; what the review found was an inferred wording borrowing a stated row's standing, and this rules that out.
+  Date/Author: 2026-09-23, agent.
+
+- Decision: after a consolidation that merged facts, the page is due once more, because the merge touched facts after the time the page is marked with.
+  Rationale: marking with the time the facts were read is what lets a fact added during the call be seen; the cost is one extra rewrite of a page whose facts were merged.
+  Date/Author: 2026-09-23, agent.
+
 - Decision: citation membership stays a deterministic check, but it is never taken as proof that a citation supports a correction.
   Rationale: a quote that occurs in the conversation shows the words were said, not that they retract a claim; the second question needs the pairing in Milestone 2 and, only where it stays ambiguous, a model check.
   Date/Author: 2026-09-23, agent.
 
 ## Outcomes & Retrospective
 
-Nothing implemented yet.
+Milestones 1 to 5 shipped on 2026-09-23, each with tests that fail on the code before it. Every defect the review named was reproduced by a test before it was fixed. The night's dream after the deploy has not been read yet.
 
 ## Context and Orientation
 
