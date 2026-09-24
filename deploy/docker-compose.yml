@@ -62,6 +62,13 @@ services:
     # docs/decisions/20260915-pgvector-when-present-never-required.md
     image: pgvector/pgvector:pg17
     restart: always
+    # Room in /dev/shm for a parallel index build. PostgreSQL gives its
+    # parallel workers maintenance_work_mem in shared memory, and Docker's
+    # default of 64MB made every vector index build over a real corpus
+    # fail with "could not resize shared memory segment". A limit, not a
+    # reservation: nothing is used until a build asks for it. Keep it
+    # above POSTGRES_MAINTENANCE_WORK_MEM.
+    shm_size: ${POSTGRES_SHM_SIZE:-3g}
     depends_on:
       postgres-certs:
         condition: service_completed_successfully
