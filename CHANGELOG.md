@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.58.10] - 2026-09-24
+
+### Fixed
+
+- The agent reads identical documents once instead of filing the same facts for every copy. (#145)
+
 ## [0.58.9] - 2026-09-24
 
 ### Fixed
