@@ -308,11 +308,11 @@ export function BackgroundOutputDialog({
 }
 
 // BackgroundPanel is the drawer's own view of its conversation's background
-// commands: a panel that slides over the conversation rather than a dialog
-// over the page, because the drawer is where the person is looking and a
-// dialog took them out of it. The list, and a command's output in the same
-// panel in its place; back goes from the output to the list, and from the
-// list to the conversation.
+// commands: a list dropped down from the drawer's head, as the list of
+// conversations is, rather than a dialog over the page, because the drawer
+// is where the person is looking. A command's output opens in the same
+// list in its place; back returns to the list, and Escape or anywhere
+// outside closes it.
 export function BackgroundPanel({
   commands,
   onChanged,
@@ -324,45 +324,45 @@ export function BackgroundPanel({
 }) {
   const { t } = useTranslation()
   const [opened, setOpened] = useState<BackgroundCommand | null>(null)
-  // The row as the list has it now, so the panel follows a command that
-  // ended while its output was open.
+  // The row as the list has it now, so the output follows a command that
+  // ended while it was open.
   const current = opened
     ? (commands.find((command) => command.computer === opened.computer && command.id === opened.id) ?? opened)
     : null
-  const back = () => (current ? setOpened(null) : onClose())
   return (
     <section
-      className="agent-drawer-panel"
+      className="agent-drawer-list background-menu"
       aria-label={t('agentDrawer.backgroundCommands')}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
           event.stopPropagation()
-          back()
+          if (current) setOpened(null)
+          else onClose()
         }
       }}
     >
-      <header className="agent-drawer-panel-head">
-        <Tooltip label={t('backgroundCommands.back')}>
-          <button type="button" className="icon-button" aria-label={t('backgroundCommands.back')} onClick={back}>
-            <ArrowLeftIcon size={16} />
-          </button>
-        </Tooltip>
+      <header className="background-menu-head">
+        {current ? (
+          <Tooltip label={t('backgroundCommands.back')}>
+            <button
+              type="button"
+              className="icon-action"
+              aria-label={t('backgroundCommands.back')}
+              onClick={() => setOpened(null)}
+            >
+              <ArrowLeftIcon size={14} />
+            </button>
+          </Tooltip>
+        ) : null}
         <strong>{current ? t('backgroundCommands.outputTitle') : t('agentDrawer.backgroundCommands')}</strong>
       </header>
-      <div className="agent-drawer-panel-body">
-        {current ? (
-          <BackgroundPanelOutput key={`${current.computer}/${current.id}`} command={current} onChanged={onChanged} />
-        ) : (
-          <>
-            <p className="muted background-commands-hint">{t('agentDrawer.backgroundCommandsHint')}</p>
-            {commands.length === 0 ? (
-              <p className="muted">{t('backgroundCommands.none')}</p>
-            ) : (
-              <BackgroundCommandRows commands={commands} onOutput={setOpened} onChanged={onChanged} />
-            )}
-          </>
-        )}
-      </div>
+      {current ? (
+        <BackgroundPanelOutput key={`${current.computer}/${current.id}`} command={current} onChanged={onChanged} />
+      ) : commands.length === 0 ? (
+        <p className="muted background-menu-empty">{t('backgroundCommands.none')}</p>
+      ) : (
+        <BackgroundCommandRows commands={commands} onOutput={setOpened} onChanged={onChanged} />
+      )}
     </section>
   )
 }
@@ -377,7 +377,7 @@ function BackgroundPanelOutput({ command, onChanged }: { command: BackgroundComm
     <>
       <BackgroundOutput command={command} output={output} />
       {isRunning ? (
-        <div className="agent-drawer-panel-actions">
+        <div className="background-menu-actions">
           <button
             type="button"
             className="danger"

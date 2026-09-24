@@ -1174,7 +1174,6 @@ export const en = {
   'agentDrawer.goal.checkIn': 'Goal check-in',
   'agentDrawer.backgroundEnded': 'Background command ended',
   'agentDrawer.backgroundCommands': 'Background commands',
-  'agentDrawer.backgroundCommandsHint': 'What this chat left running on your computers, and what ended lately.',
   'agentDrawer.backgroundRunning': '{count} running in the background',
   'backgroundCommands.none': 'Nothing is running in the background.',
   'backgroundCommands.running': 'running',

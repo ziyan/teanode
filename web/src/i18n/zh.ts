@@ -1132,7 +1132,6 @@ export const zh: Catalog = {
   'agentDrawer.goal.checkIn': '目标回合',
   'agentDrawer.backgroundEnded': '后台命令已结束',
   'agentDrawer.backgroundCommands': '后台命令',
-  'agentDrawer.backgroundCommandsHint': '这个对话在你的电脑上留在后台运行的命令，以及最近结束的。',
   'agentDrawer.backgroundRunning': '{count} 个在后台运行',
   'backgroundCommands.none': '后台没有在运行的命令。',
   'backgroundCommands.running': '运行中',

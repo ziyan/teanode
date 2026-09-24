@@ -1169,8 +1169,6 @@ export const ja: Catalog = {
   'agentDrawer.goal.checkIn': '目標のターン',
   'agentDrawer.backgroundEnded': 'バックグラウンドのコマンドが終了',
   'agentDrawer.backgroundCommands': 'バックグラウンドのコマンド',
-  'agentDrawer.backgroundCommandsHint':
-    'このチャットがあなたのコンピューターでバックグラウンドに残したコマンドと、最近終了したもの。',
   'agentDrawer.backgroundRunning': 'バックグラウンドで {count} 件実行中',
   'backgroundCommands.none': 'バックグラウンドで実行中のものはありません。',
   'backgroundCommands.running': '実行中',

@@ -3007,7 +3007,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 there is any: the count still running, and the list and
                 their output behind it. */}
             {backgroundCommands.length > 0 && (
-              <BackgroundMark commands={backgroundCommands} onOpen={() => setIsShowingBackground(true)} />
+              <BackgroundMark
+                commands={backgroundCommands}
+                onOpen={() => {
+                  setShowingList(false)
+                  setIsShowingBackground((before) => !before)
+                }}
+              />
             )}
             {budget && <BudgetRing budget={budget} zone={agentZone} framed={standalone} onLeaving={leaving} />}
             {/* Framed by the extension, the panel around this has a bar
@@ -3021,6 +3027,19 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               </Tooltip>
             )}
           </div>
+          {/* What this chat left running, dropped down from the head the
+              way the conversations are, so the head stays where the box is
+              dragged from and its edges where it is resized. */}
+          {isShowingBackground && (
+            <>
+              <div className="agent-drawer-backdrop" onClick={() => setIsShowingBackground(false)} />
+              <BackgroundPanel
+                commands={backgroundCommands}
+                onChanged={() => void reloadBackground(true)}
+                onClose={() => setIsShowingBackground(false)}
+              />
+            </>
+          )}
           {showingList && (
             <>
               {/* Anywhere outside the list closes it. */}
@@ -3333,13 +3352,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           </form>
           <p className="agent-drawer-note muted">{t('agentDrawer.mistakes')}</p>
           {dragging && <div className="agent-drawer-drop">{t('agentDrawer.dropHere')}</div>}
-          {isShowingBackground && (
-            <BackgroundPanel
-              commands={backgroundCommands}
-              onChanged={() => void reloadBackground(true)}
-              onClose={() => setIsShowingBackground(false)}
-            />
-          )}
         </aside>
       )}
       {/* A new conversation, with what it is for if there is one. The same

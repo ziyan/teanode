@@ -5862,60 +5862,39 @@ main.content:has(> .mailbox-frame) {
   }
 }
 
-/* A panel over the drawer's conversation, sliding in from its right edge:
-   the background commands, and one's output in their place. It covers the
-   head too, and has its own with the way back. */
-.agent-drawer-panel {
-  position: absolute;
-  inset: 0;
-  z-index: 6;
-  display: flex;
-  flex-direction: column;
-  background: var(--background);
-  animation: agent-drawer-panel-in 160ms ease-out;
+/* The background commands, dropped down from the head as the list of
+   conversations is (.agent-drawer-list gives the frame): a small title,
+   then the rows or one command's output. */
+.background-menu {
+  gap: 4px;
 }
 
-@keyframes agent-drawer-panel-in {
-  from {
-    transform: translateX(24px);
-    opacity: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .agent-drawer-panel {
-    animation: none;
-  }
-}
-
-.agent-drawer-panel-head {
+.background-menu-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 6px;
+  flex-shrink: 0;
 }
 
-.agent-drawer-panel-head strong {
-  font-size: 14px;
+.background-menu-head strong {
+  font-size: 12px;
+  color: var(--muted);
 }
 
-.agent-drawer-panel-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 12px;
+.background-menu-empty {
+  margin: 4px 8px 8px;
 }
 
-.agent-drawer-panel-actions {
+.background-menu .background-output {
+  padding: 0 6px 6px;
+}
+
+.background-menu-actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: var(--space-3);
-}
-
-.background-commands-hint {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-label);
+  padding: 0 6px 6px;
 }
 
 /* The list: rows divided by a rule rather than a card each, the command
@@ -5978,6 +5957,10 @@ main.content:has(> .mailbox-frame) {
   font-size: 12px;
 }
 
+.background-command-meta .mono {
+  font-size: inherit;
+}
+
 .background-command-meta .tag {
   padding: 0 6px;
   font-size: 11px;
@@ -6012,9 +5995,9 @@ main.content:has(> .mailbox-frame) {
 }
 
 /* What a command printed, wrapped rather than scrolled sideways, and
-   scrolled within itself so a long log does not run off the panel. */
+   scrolled within itself so a long log does not run off the list. */
 .background-output-text {
-  max-height: min(50vh, 420px);
+  max-height: min(36vh, 260px);
   margin: 0;
   padding: var(--space-2) var(--space-3);
   overflow-y: auto;
