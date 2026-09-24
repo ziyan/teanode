@@ -31,6 +31,11 @@ type KnowledgeOperation interface {
 	GetAgentSource(agentId, sourceId string) (*models.AgentKnowledgeSource, error)
 	LockAgentSource(agentId, sourceId string) (*models.AgentKnowledgeSource, error)
 	GetAgentSourceByName(agentId, name string) (*models.AgentKnowledgeSource, error)
+
+	// ListAgentSourceCheckouts is the checkouts a source's commits were
+	// read from, as directories relative to the source: where each of its
+	// files belongs, since a file does not say.
+	ListAgentSourceCheckouts(sourceId string) ([]string, error)
 	ListAgentSources(agentId string) ([]*models.AgentKnowledgeSource, error)
 	DeleteAgentSource(agentId, sourceId string) error
 
@@ -366,6 +371,14 @@ func (self *transaction) GetAgentSource(agentId, sourceId string) (*models.Agent
 		return nil, err
 	}
 	return sources[0], nil
+}
+
+func (self *transaction) ListAgentSourceCheckouts(sourceId string) ([]string, error) {
+	var checkouts []string
+	err := self.tx.Raw(`SELECT DISTINCT "metadata"->>'checkout' FROM "agent_document"
+		WHERE "source_id" = ? AND "kind" = 'commit' AND COALESCE("metadata"->>'checkout', '') <> ''`, sourceId).
+		Scan(&checkouts).Error
+	return checkouts, err
 }
 
 func (self *transaction) GetAgentSourceByName(agentId, name string) (*models.AgentKnowledgeSource, error) {

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"path"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/reading"
@@ -31,8 +32,37 @@ func (self *Agent) retrieveDigestMaterial(ctx context.Context, run *Run, documen
 	}); err != nil {
 		log.Debugf("cannot read the index for a dream: %s", err)
 	}
+	var source *models.AgentKnowledgeSource
+	var checkouts []string
+	if len(documents) > 0 {
+		_ = run.Database().TransactionContext(ctx, func(transaction db.Transaction) error {
+			found, err := transaction.GetAgentSource(run.Agent.ID, documents[0].SourceID)
+			if err != nil || found == nil {
+				return err
+			}
+			source = found
+			material.SourceName, material.SourceRoot = found.Name, strings.Trim(found.RootPath, "/")
+			checkouts, err = transaction.ListAgentSourceCheckouts(found.ID)
+			if err != nil {
+				log.Debugf("cannot list the checkouts of %q: %s", found.Name, err)
+			}
+			return nil
+		})
+	}
 	for _, document := range documents {
 		heading := document.Cite()
+		// Where a file is, and whose it is. A file was shown by its name
+		// alone -- "VMPCMac.java" -- and with nothing to say which of the
+		// dozens of checkouts under a folder it came from, the reading
+		// filed files from all of them on the page of the best-known
+		// project there, and then the nightly split divided that page
+		// into themes that had nothing to do with it.
+		if document.Kind == models.DocumentFile && document.ExternalID != "" && document.ExternalID != heading {
+			heading += " — at " + document.ExternalID
+		}
+		if checkout := checkoutOf(document, checkouts); checkout != "" && source != nil {
+			heading += " — in the checkout " + checkout + ", whose page is " + checkoutPage(source, checkout)
+		}
 		if author := document.Author(); author != "" {
 			heading += " — by " + author
 		}
@@ -41,16 +71,33 @@ func (self *Agent) retrieveDigestMaterial(ctx context.Context, run *Run, documen
 		}
 		material.Documents = append(material.Documents, digestDocument{DocumentID: document.ID, Heading: heading, Opening: self.openingOf(ctx, run, document, isCoarse)})
 	}
-	if len(documents) > 0 {
-		_ = run.Database().TransactionContext(ctx, func(transaction db.Transaction) error {
-			source, err := transaction.GetAgentSource(run.Agent.ID, documents[0].SourceID)
-			if err == nil && source != nil {
-				material.SourceName, material.SourceRoot = source.Name, strings.Trim(source.RootPath, "/")
-			}
-			return nil
-		})
-	}
 	return material
+}
+
+// checkoutOf is the checkout a document belongs to: the one a commit
+// names, or the deepest checkout whose directory holds the file.
+func checkoutOf(document *models.AgentDocument, checkouts []string) string {
+	if named := document.Checkout(); named != "" {
+		return named
+	}
+	deepest := ""
+	for _, checkout := range checkouts {
+		if strings.HasPrefix(document.ExternalID, checkout+"/") && len(checkout) > len(deepest) {
+			deepest = checkout
+		}
+	}
+	return deepest
+}
+
+// checkoutPage is the page a checkout's project is filed on, which is
+// where fileRepository puts it: under the source's root, by the name of
+// the checkout's own directory.
+func checkoutPage(source *models.AgentKnowledgeSource, checkout string) string {
+	root := strings.Trim(source.RootPath, "/")
+	if root == "" {
+		root = models.PathProjects
+	}
+	return models.JoinPath(root, path.Base(checkout))
 }
 
 // openingOf is as much of a document as the digest reads: its first
