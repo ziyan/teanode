@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.58.9] - 2026-09-24
+
+### Fixed
+
+- The agent files what it reads in a folder of many projects on the right project's page, instead of the best-known one. (#143)
+- The nightly split no longer fills a busy page with overlapping subpages; it adds to the ones already there. (#144)
+
 ## [0.58.8] - 2026-09-24
 
 ### Changed
