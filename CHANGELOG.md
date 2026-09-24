@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.58.11] - 2026-09-24
+
+### Changed
+
+- Dream now starts a dream within the minute at any time of day, even during a conversation or outside the dream hours. (#146)
+
 ## [0.58.10] - 2026-09-24
 
 ### Fixed
