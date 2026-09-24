@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.60.0] - 2026-09-24
+
+### Added
+
+- `teanode agent memory answers` grades the agent's answers to a question set against yours, from memory, from your sources and from both. (#149)
+
 ## [0.59.0] - 2026-09-24
 
 ### Added
