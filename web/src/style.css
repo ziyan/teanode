@@ -6487,6 +6487,27 @@ main.content:has(> .mailbox-frame) {
   gap: 6px;
 }
 
+/* A question's choices, one of which is picked and then submitted: two to
+   a row, so a long choice still reads whole. */
+.agent-question-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 6px;
+}
+
+.agent-question-choices button.chosen {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.agent-question-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .agent-line.error {
   border: 1px solid var(--danger, var(--warn));
   background: var(--field);

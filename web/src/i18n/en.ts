@@ -1104,6 +1104,8 @@ export const en = {
   'agentDrawer.usageUsed': '{used} of {limit}',
   'agentDrawer.answer': 'Your answer…',
   'agentDrawer.chatAboutIt': 'Chat about it',
+  'agentDrawer.submit': 'Submit',
+  'agentDrawer.answerBelow': 'Or type your answer in the box below.',
   'agentDrawer.chattingInstead': 'Chatting about it instead',
   'agentDrawer.questionGone': 'That card was already answered, or is no longer waiting.',
   'agentDrawer.close': 'Close',
