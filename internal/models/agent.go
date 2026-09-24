@@ -473,9 +473,10 @@ const (
 	AgentJobDescribe AgentJobKind = "describe"
 	AgentJobCompact  AgentJobKind = "compact"
 
-	// AgentJobEvaluate is never queued either: it names the calls a memory
-	// evaluation makes, answering a question from a set and grading the
-	// answer, so what an evaluation cost is apart from everything else.
+	// AgentJobEvaluate grades the agent against the person's memory check
+	// questions; its subject is the run it fills. The calls it makes, and
+	// the ones `teanode agent memory answers` makes, are runs of this kind,
+	// so what an evaluation cost is apart from everything else.
 	AgentJobEvaluate AgentJobKind = "evaluate"
 
 	// AgentJobSpeakFirst is a turn the agent takes in the main conversation

@@ -163,3 +163,12 @@ The questions are the person's and stay on their Memory tab.
 `expectedAnswer`, as confirmed, and skips any whose words are already on
 record, so a set written by hand and the one the agent asks for become
 one.
+
+The answered questions are graded like a file, from memory, from the
+sources and from both, by a weekly run, and sooner once five new answers
+are in. Each run keeps its answers and its scores, with and without the
+questions whose answers the agent filed after asking them: those are
+easy now, and a score that rises because of them measures the questions.
+
+    teanode agent memory check runs
+    teanode agent memory answers --stored

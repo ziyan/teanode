@@ -1,12 +1,14 @@
 package db
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/lib/pq"
+	"gorm.io/gorm/clause"
 
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -36,6 +38,25 @@ type EvaluationOperation interface {
 	// CountAgentFactsToCheck is how many stated facts the person's own
 	// pages hold.
 	CountAgentFactsToCheck(agentId string) (int64, error)
+
+	// CreateAgentEvaluationRun starts a run of the memory check.
+	CreateAgentEvaluationRun(agentId string) (*models.AgentEvaluationRun, error)
+
+	// GetAgentEvaluationRun is one of the agent's runs, or nil.
+	GetAgentEvaluationRun(agentId, runId string) (*models.AgentEvaluationRun, error)
+
+	// FinishAgentEvaluationRun writes what a run came to.
+	FinishAgentEvaluationRun(run *models.AgentEvaluationRun) error
+
+	// ListAgentEvaluationRuns is the agent's runs, newest first.
+	ListAgentEvaluationRuns(agentId string, limit int) ([]*models.AgentEvaluationRun, error)
+
+	// PutAgentEvaluationAnswer records one question answered from one
+	// source in a run, replacing an earlier answer to the same.
+	PutAgentEvaluationAnswer(answer *models.AgentEvaluationAnswer) (*models.AgentEvaluationAnswer, error)
+
+	// ListAgentEvaluationAnswers is every answer of a run, oldest first.
+	ListAgentEvaluationAnswers(runId string) ([]*models.AgentEvaluationAnswer, error)
 }
 
 type agentEvaluationQuestionModel struct {
@@ -240,4 +261,126 @@ func (self *transaction) CountAgentFactsToCheck(agentId string) (int64, error) {
 		Where(`"agent_id" = ? AND NOT "dormant" AND NOT "inferred" AND "superseded_by" IS NULL`, agentId).
 		Where(ownPagesCondition, agentId).Count(&count).Error
 	return count, err
+}
+
+type agentEvaluationRunModel struct {
+	ID            string     `gorm:"column:id;primaryKey"`
+	AgentID       string     `gorm:"column:agent_id"`
+	StartedAt     time.Time  `gorm:"column:started_at"`
+	FinishedAt    *time.Time `gorm:"column:finished_at"`
+	QuestionCount int        `gorm:"column:question_count"`
+	Cost          float64    `gorm:"column:cost"`
+	SourceScores  []byte     `gorm:"column:source_scores;type:jsonb"`
+}
+
+func (agentEvaluationRunModel) TableName() string { return "agent_evaluation_run" }
+
+func (self *agentEvaluationRunModel) toModel() (*models.AgentEvaluationRun, error) {
+	run := &models.AgentEvaluationRun{
+		ID: self.ID, AgentID: self.AgentID, StartedAt: self.StartedAt.In(time.Local), FinishedAt: localTime(self.FinishedAt),
+		QuestionCount: self.QuestionCount, Cost: self.Cost, SourceScores: []*models.EvaluationSourceScore{},
+	}
+	if len(self.SourceScores) > 0 {
+		if err := json.Unmarshal(self.SourceScores, &run.SourceScores); err != nil {
+			return nil, err
+		}
+	}
+	return run, nil
+}
+
+type agentEvaluationAnswerModel struct {
+	ID            string    `gorm:"column:id;primaryKey"`
+	RunID         string    `gorm:"column:run_id"`
+	QuestionID    string    `gorm:"column:question_id"`
+	CreatedAt     time.Time `gorm:"column:created_at"`
+	AnswerFrom    string    `gorm:"column:answer_from"`
+	AnswerVerdict string    `gorm:"column:answer_verdict"`
+	VerdictReason string    `gorm:"column:verdict_reason"`
+	AnswerText    string    `gorm:"column:answer_text"`
+	Cost          float64   `gorm:"column:cost"`
+}
+
+func (agentEvaluationAnswerModel) TableName() string { return "agent_evaluation_answer" }
+
+func (self *agentEvaluationAnswerModel) toModel() *models.AgentEvaluationAnswer {
+	return &models.AgentEvaluationAnswer{
+		ID: self.ID, RunID: self.RunID, QuestionID: self.QuestionID, CreatedAt: self.CreatedAt.In(time.Local),
+		AnswerFrom: self.AnswerFrom, AnswerVerdict: self.AnswerVerdict, VerdictReason: self.VerdictReason,
+		AnswerText: self.AnswerText, Cost: self.Cost,
+	}
+}
+
+func (self *transaction) CreateAgentEvaluationRun(agentId string) (*models.AgentEvaluationRun, error) {
+	model := &agentEvaluationRunModel{ID: newID(), AgentID: agentId, StartedAt: time.Now(), SourceScores: []byte("[]")}
+	if err := self.tx.Create(model).Error; err != nil {
+		return nil, err
+	}
+	return model.toModel()
+}
+
+func (self *transaction) GetAgentEvaluationRun(agentId, runId string) (*models.AgentEvaluationRun, error) {
+	var found []agentEvaluationRunModel
+	if err := self.tx.Where(`"id" = ? AND "agent_id" = ?`, runId, agentId).Limit(1).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return found[0].toModel()
+}
+
+func (self *transaction) FinishAgentEvaluationRun(run *models.AgentEvaluationRun) error {
+	scores, err := json.Marshal(run.SourceScores)
+	if err != nil {
+		return err
+	}
+	return self.tx.Model(&agentEvaluationRunModel{}).Where(`"id" = ? AND "agent_id" = ?`, run.ID, run.AgentID).Updates(map[string]any{
+		"finished_at": run.FinishedAt, "question_count": run.QuestionCount, "cost": run.Cost, "source_scores": scores,
+	}).Error
+}
+
+func (self *transaction) ListAgentEvaluationRuns(agentId string, limit int) ([]*models.AgentEvaluationRun, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	var found []agentEvaluationRunModel
+	if err := self.tx.Where(`"agent_id" = ?`, agentId).Order(`"started_at" DESC`).Limit(limit).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	runs := make([]*models.AgentEvaluationRun, 0, len(found))
+	for index := range found {
+		run, err := found[index].toModel()
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, run)
+	}
+	return runs, nil
+}
+
+func (self *transaction) PutAgentEvaluationAnswer(answer *models.AgentEvaluationAnswer) (*models.AgentEvaluationAnswer, error) {
+	model := &agentEvaluationAnswerModel{
+		ID: newID(), RunID: answer.RunID, QuestionID: answer.QuestionID, CreatedAt: time.Now(),
+		AnswerFrom: answer.AnswerFrom, AnswerVerdict: answer.AnswerVerdict, VerdictReason: answer.VerdictReason,
+		AnswerText: answer.AnswerText, Cost: answer.Cost,
+	}
+	if err := self.tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "run_id"}, {Name: "question_id"}, {Name: "answer_from"}},
+		DoUpdates: clause.AssignmentColumns([]string{"answer_verdict", "verdict_reason", "answer_text", "cost", "created_at"}),
+	}).Create(model).Error; err != nil {
+		return nil, err
+	}
+	return model.toModel(), nil
+}
+
+func (self *transaction) ListAgentEvaluationAnswers(runId string) ([]*models.AgentEvaluationAnswer, error) {
+	var found []agentEvaluationAnswerModel
+	if err := self.tx.Where(`"run_id" = ?`, runId).Order(`"created_at" ASC, "id" ASC`).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	answers := make([]*models.AgentEvaluationAnswer, 0, len(found))
+	for index := range found {
+		answers = append(answers, found[index].toModel())
+	}
+	return answers, nil
 }

@@ -76,3 +76,72 @@ type AgentEvaluationQuestion struct {
 	ConversationID string     `json:"conversationId,omitempty" graphapi:"nullable"`
 	AnsweredAt     *time.Time `json:"answeredAt,omitempty" graphapi:"nullable"`
 }
+
+// AgentEvaluationRun is one grading of the agent against the person's
+// memory check questions.
+type AgentEvaluationRun struct {
+	ID         string     `json:"id"`
+	AgentID    string     `json:"agentId"`
+	StartedAt  time.Time  `json:"startedAt"`
+	FinishedAt *time.Time `json:"finishedAt,omitempty" graphapi:"nullable"`
+
+	// QuestionCount is how many questions the run answered.
+	QuestionCount int     `json:"questionCount"`
+	Cost          float64 `json:"cost"`
+
+	// SourceScores is the score from each source, in the order memory,
+	// sources, both.
+	SourceScores []*EvaluationSourceScore `json:"sourceScores"`
+}
+
+// EvaluationSourceScore is how the answers from one source scored.
+type EvaluationSourceScore struct {
+	// AnswerFrom is memory, sources or both.
+	AnswerFrom string `json:"answerFrom"`
+
+	// AnsweredCount is how many questions were answered from it.
+	AnsweredCount int `json:"answeredCount"`
+
+	// ScorePercent counts a right answer, and a right "not known" to an
+	// abstain question, as one, and a partial answer as a half.
+	ScorePercent float64 `json:"scorePercent"`
+
+	// ScorePercentWithoutFiledAfter leaves out the questions whose answers
+	// were filed into memory after they were written, which are easy.
+	ScorePercentWithoutFiledAfter float64 `json:"scorePercentWithoutFiledAfter"`
+	FiledAfterCount               int     `json:"filedAfterCount"`
+
+	// VerdictCounts is how many answers had each verdict.
+	VerdictCounts map[string]int `json:"verdictCounts"`
+}
+
+// AgentEvaluationAnswer is one question answered from one source.
+type AgentEvaluationAnswer struct {
+	ID            string    `json:"id"`
+	RunID         string    `json:"runId"`
+	QuestionID    string    `json:"questionId"`
+	CreatedAt     time.Time `json:"createdAt"`
+	AnswerFrom    string    `json:"answerFrom"`
+	AnswerVerdict string    `json:"answerVerdict"`
+	VerdictReason string    `json:"verdictReason"`
+	AnswerText    string    `json:"answerText"`
+	Cost          float64   `json:"cost"`
+}
+
+// EvaluationAnswerScore is what one graded answer counts for: a right
+// answer, and a right "not known" to an abstain question, count one; a
+// partial answer a half; anything else nothing.
+func EvaluationAnswerScore(questionKind EvaluationQuestionKind, answerVerdict string) float64 {
+	switch {
+	case questionKind == EvaluationQuestionAbstain:
+		if answerVerdict == "not_known" {
+			return 1
+		}
+		return 0
+	case answerVerdict == "correct":
+		return 1
+	case answerVerdict == "partial":
+		return 0.5
+	}
+	return 0
+}

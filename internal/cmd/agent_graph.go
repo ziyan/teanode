@@ -150,6 +150,7 @@ func newAgentGraphCommands() []*cli.Command {
 			ArgsUsage: "<file>",
 			Flags: []cli.Flag{JSONFlag(),
 				&cli.StringFlag{Name: "from", Value: "memory,sources,both", Usage: "what to answer from: memory, sources, both, or a comma list of them"},
+				&cli.BoolFlag{Name: "stored", Usage: "grade against the memory check's questions on the server instead of a file, as the weekly run does; see 'agent memory check runs'"},
 			},
 			Action: runAgentGraphAnswers,
 		},
@@ -162,6 +163,12 @@ func newAgentGraphCommands() []*cli.Command {
 					Usage:  "the questions on record, newest first",
 					Flags:  []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "state", Usage: "asked, confirmed, corrected, dropped or unsure; all by default"}},
 					Action: runAgentMemoryCheckList,
+				},
+				{
+					Name:   "runs",
+					Usage:  "the runs that graded your agent against the questions, newest first, with the score from each source",
+					Flags:  []cli.Flag{JSONFlag(), &cli.IntFlag{Name: "first", Usage: "how many", Value: 10}},
+					Action: runAgentMemoryCheckRuns,
 				},
 				{
 					Name:      "import",
@@ -1816,6 +1823,9 @@ func answerScore(kind, verdict string) float64 {
 // grades by source: the numbers that say what extracted memory is worth
 // over the documents it was read from.
 func runAgentGraphAnswers(ctx context.Context, command *cli.Command) error {
+	if command.Bool("stored") {
+		return runAgentMemoryCheckEvaluate(ctx, command)
+	}
 	if command.Args().Len() < 1 {
 		return fmt.Errorf("which question set? teanode agent memory answers <file>")
 	}
@@ -2138,4 +2148,55 @@ func runAgentMemoryCheckImport(ctx context.Context, command *cli.Command) error 
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%d question(s) added, %d already on record\n", addedCount, len(imported)-addedCount)
 	return nil
+}
+
+func runAgentMemoryCheckEvaluate(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	run, err := client.EvaluateAgentMemoryNow(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(run)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "run %s started %s; its scores are in 'teanode agent memory check runs' when it finishes\n", run.ID, run.StartedAt.Format("15:04"))
+	return nil
+}
+
+func runAgentMemoryCheckRuns(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	runs, err := client.ListAgentEvaluationRuns(ctx, connection, int(command.Int("first")))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(runs)
+	}
+	if len(runs) == 0 {
+		_, _ = fmt.Fprintln(command.Writer, "no runs yet")
+		return nil
+	}
+	rows := make([][]string, 0, len(runs))
+	for _, run := range runs {
+		finished := "running"
+		if run.FinishedAt != nil {
+			finished = run.FinishedAt.Format("2006-01-02 15:04")
+		}
+		scores := []string{}
+		for _, scored := range run.SourceScores {
+			score := fmt.Sprintf("%s %.0f%%", scored.AnswerFrom, scored.ScorePercent)
+			if scored.FiledAfterCount > 0 {
+				score += fmt.Sprintf(" (%.0f%% without %d filed after)", scored.ScorePercentWithoutFiledAfter, scored.FiledAfterCount)
+			}
+			scores = append(scores, score)
+		}
+		rows = append(rows, []string{run.ID, finished, fmt.Sprint(run.QuestionCount), strings.Join(scores, ", "), fmt.Sprintf("%.2f", run.Cost)})
+	}
+	return printTable([]string{"RUN", "FINISHED", "QUESTIONS", "SCORES", "COST"}, rows)
 }

@@ -735,3 +735,52 @@ func ImportAgentEvaluationQuestions(ctx context.Context, connection *Client, que
 	}
 	return result.ImportAgentEvaluationQuestions, nil
 }
+
+// DocumentListAgentEvaluationRuns reads the memory check's runs.
+const DocumentListAgentEvaluationRuns = `query ($first: Int) { ListAgentEvaluationRuns(first: $first) { id startedAt finishedAt questionCount cost sourceScores { answerFrom answeredCount scorePercent scorePercentWithoutFiledAfter filedAfterCount verdictCounts } } }`
+
+// DocumentEvaluateAgentMemoryNow starts a run now.
+const DocumentEvaluateAgentMemoryNow = `mutation { EvaluateAgentMemoryNow { id startedAt } }`
+
+// AgentEvaluationRun is a run of the memory check as the API gives it.
+type AgentEvaluationRun struct {
+	ID            string                   `json:"id"`
+	StartedAt     time.Time                `json:"startedAt"`
+	FinishedAt    *time.Time               `json:"finishedAt,omitempty"`
+	QuestionCount int                      `json:"questionCount"`
+	Cost          float64                  `json:"cost"`
+	SourceScores  []*EvaluationSourceScore `json:"sourceScores"`
+}
+
+// EvaluationSourceScore is how the answers from one source scored.
+type EvaluationSourceScore struct {
+	AnswerFrom                    string         `json:"answerFrom"`
+	AnsweredCount                 int            `json:"answeredCount"`
+	ScorePercent                  float64        `json:"scorePercent"`
+	ScorePercentWithoutFiledAfter float64        `json:"scorePercentWithoutFiledAfter"`
+	FiledAfterCount               int            `json:"filedAfterCount"`
+	VerdictCounts                 map[string]int `json:"verdictCounts"`
+}
+
+// ListAgentEvaluationRuns is the memory check's runs, newest first.
+func ListAgentEvaluationRuns(ctx context.Context, connection *Client, first int) ([]*AgentEvaluationRun, error) {
+	var result struct {
+		ListAgentEvaluationRuns []*AgentEvaluationRun `json:"ListAgentEvaluationRuns"`
+	}
+	if err := connection.Execute(ctx, DocumentListAgentEvaluationRuns, map[string]any{"first": first}, &result); err != nil {
+		return nil, err
+	}
+	return result.ListAgentEvaluationRuns, nil
+}
+
+// EvaluateAgentMemoryNow starts a run of the memory check now, or returns
+// the one under way.
+func EvaluateAgentMemoryNow(ctx context.Context, connection *Client) (*AgentEvaluationRun, error) {
+	var result struct {
+		EvaluateAgentMemoryNow *AgentEvaluationRun `json:"EvaluateAgentMemoryNow"`
+	}
+	if err := connection.Execute(ctx, DocumentEvaluateAgentMemoryNow, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.EvaluateAgentMemoryNow, nil
+}

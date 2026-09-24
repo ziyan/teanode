@@ -17,6 +17,14 @@ type AgentEvaluationQuery interface {
 	// The questions of the caller's memory check, newest first, in the
 	// states asked for or in every state. Needs agent:use.
 	ListAgentEvaluationQuestions(ctx context.Context, arguments ListAgentEvaluationQuestionsArguments) ([]*models.AgentEvaluationQuestion, error)
+
+	// The runs that graded the caller's agent against those questions,
+	// newest first, with their scores. Needs agent:use.
+	ListAgentEvaluationRuns(ctx context.Context, arguments ListAgentEvaluationRunsArguments) ([]*models.AgentEvaluationRun, error)
+
+	// Every answer of one run: each question from each source, with its
+	// verdict. Needs agent:use.
+	ListAgentEvaluationAnswers(ctx context.Context, arguments ListAgentEvaluationAnswersArguments) ([]*models.AgentEvaluationAnswer, error)
 }
 
 // AgentEvaluationMutation changes it.
@@ -30,6 +38,21 @@ type AgentEvaluationMutation interface {
 	// question file; one whose words are already on record is skipped.
 	// Says how many were added. Needs agent:use.
 	ImportAgentEvaluationQuestions(ctx context.Context, arguments ImportAgentEvaluationQuestionsArguments) (int, error)
+
+	// Grade the caller's agent against their questions now, rather than
+	// at the week's end; a run already under way is the one returned.
+	// Needs agent:use.
+	EvaluateAgentMemoryNow(ctx context.Context) (*models.AgentEvaluationRun, error)
+}
+
+// ListAgentEvaluationRunsArguments bound the listing.
+type ListAgentEvaluationRunsArguments struct {
+	First int `json:"first" graphapi:"nullable"`
+}
+
+// ListAgentEvaluationAnswersArguments name the run.
+type ListAgentEvaluationAnswersArguments struct {
+	RunID string `json:"runId"`
 }
 
 // ListAgentEvaluationQuestionsArguments narrow the listing to some states.
@@ -142,4 +165,48 @@ func (self *graph) ImportAgentEvaluationQuestions(ctx context.Context, arguments
 		addedCount++
 	}
 	return addedCount, nil
+}
+
+func (self *graph) ListAgentEvaluationRuns(ctx context.Context, arguments ListAgentEvaluationRunsArguments) ([]*models.AgentEvaluationRun, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return self.transaction(ctx).ListAgentEvaluationRuns(found.ID, arguments.First)
+}
+
+func (self *graph) ListAgentEvaluationAnswers(ctx context.Context, arguments ListAgentEvaluationAnswersArguments) ([]*models.AgentEvaluationAnswer, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	run, err := tx.GetAgentEvaluationRun(found.ID, strings.TrimSpace(arguments.RunID))
+	if err != nil {
+		return nil, err
+	}
+	if run == nil {
+		return nil, api.ErrNotFound
+	}
+	return tx.ListAgentEvaluationAnswers(run.ID)
+}
+
+func (self *graph) EvaluateAgentMemoryNow(ctx context.Context) (*models.AgentEvaluationRun, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, fmt.Errorf("%w: no agent worker runs on this server", api.ErrInvalidArguments)
+	}
+	tx := self.writing(ctx)
+	questions, err := tx.ListAgentEvaluationQuestions(found.ID, []models.EvaluationQuestionState{models.EvaluationQuestionConfirmed, models.EvaluationQuestionCorrected})
+	if err != nil {
+		return nil, err
+	}
+	if len(questions) == 0 {
+		return nil, fmt.Errorf("%w: there are no answered questions to grade against yet", api.ErrInvalidArguments)
+	}
+	return worker.QueueEvaluation(tx, found)
 }
