@@ -113,7 +113,11 @@ model, as one of `correct`, `partial`, `not_known`, `stale` (it gave the
 answer that was true once), `invented` (it answered where the truth is
 "not known", or contradicted the right answer) or `wrong`. A grader whose
 answer cannot be read is `ungraded`, and counts as nothing rather than as
-a wrong answer the model never gave.
+a wrong answer the model never gave. An answer of "not known" is not put
+to the grader: it is `not_known` where the expected answer is "not known"
+too, and `missed` everywhere else, because then what the model was given
+did not hold the fact. A miss is recall's failure and a wrong answer is
+the model's, and the two are worked on apart.
 
 Each source's score counts a right answer, and a right "not known" to an
 abstain question, as one, and a partial answer as a half. Comparing the

@@ -29,6 +29,6 @@ answerVerdict is one of:
 - `stale`: it gives the outdated answer as the present one.
 - `not_known`: it says it does not know. Right when the correct answer is itself "not known".
 - `invented`: it answers when the correct answer is "not known", or states something the correct answer contradicts that is not the outdated answer.
-- `wrong`: anything else that is not correct.
+- `wrong`: anything else that is not correct, including an answer that says it does not know when the correct answer is known.
 
 When the correct answer is "not known", `not_known` is the only good verdict.

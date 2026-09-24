@@ -16,8 +16,9 @@ After this plan, every path that writes a fact obeys the same rules, a model ans
 - [x] (2026-09-23) Milestone 3: a validated answer contract: valid and empty, valid with results, or invalid; invalid is retried and then shown as failed, never recorded as read (#138). Left: showing given-up documents on the source's page, and marking one oversized document failed rather than read.
 - [x] (2026-09-23) Milestone 4: merging keeps what the evidence establishes (#139).
 - [x] (2026-09-23) Milestone 5: consolidation writes only the opening, marks the page with the time it read the facts, and skips a merge of facts changed during the call.
-- [ ] Milestones 1 to 5 watched over a night's dream on the deployed server.
-- [ ] Milestone 6: evaluation: a deterministic regression suite, and a replay that compares answers with and without each dreaming stage.
+- [x] (2026-09-24) Milestones 1 to 5 watched over the dreams since the deploy: the share of what was read that was filed held at 42 to 44% (43% before), merges fell from 141 a dream to between 5 and 79 as the new rules intend, and the only failures were dreams cut short by server restarts.
+- [x] (2026-09-24) Milestone 6, first half: the deterministic regression suite (the tests of milestones 1 to 5, plus a correction a week later and two consolidations of one page at once), the person's question set (48 questions, kept outside the repository), and `teanode agent memory answers`, which answers each question from memory, from the sources or from both on the live graph and grades each answer against the person's.
+- [ ] Milestone 6, second half: the replay on an isolated copy of a fixed history, with and without each dreaming stage, and a public benchmark slice.
 - [ ] Milestone 7: when a claim was true and where it came from: validity intervals, derivation, and no past tense by age alone.
 
 ## Surprises & Discoveries
@@ -56,13 +57,31 @@ After this plan, every path that writes a fact obeys the same rules, a model ans
   Rationale: marking with the time the facts were read is what lets a fact added during the call be seen; the cost is one extra rewrite of a page whose facts were merged.
   Date/Author: 2026-09-23, agent.
 
+- Decision: answers are graded on the live graph from three sources before the isolated replay.
+  Rationale: the replay needs a fixed copy of a history and the dreams re-run over it for each configuration, hours of model calls a run; the three-source comparison on the live graph costs about a dollar, measures the thing the replay's first two configurations measure, and has already said where the loss is (recall). The replay stays the way to measure each dreaming stage on its own.
+  Date/Author: 2026-09-24, agent.
+
+- Decision: an answer of "not known" is graded without a model, as a right abstention or a miss.
+  Rationale: a miss is recall's failure and a wrong answer is the model's; counting both as wrong hid that 22 of 25 of memory's failures were misses.
+  Date/Author: 2026-09-24, agent.
+
 - Decision: citation membership stays a deterministic check, but it is never taken as proof that a citation supports a correction.
   Rationale: a quote that occurs in the conversation shows the words were said, not that they retract a claim; the second question needs the pairing in Milestone 2 and, only where it stays ambiguous, a model check.
   Date/Author: 2026-09-23, agent.
 
 ## Outcomes & Retrospective
 
-Milestones 1 to 5 shipped on 2026-09-23, each with tests that fail on the code before it. Every defect the review named was reproduced by a test before it was fixed. The night's dream after the deploy has not been read yet.
+Milestones 1 to 5 shipped on 2026-09-23, each with tests that fail on the code before it. Every defect the review named was reproduced by a test before it was fixed. The dreams since have filed the same share of what they read and merged less.
+
+The first answer baseline, 48 questions of the person's own, on 2026-09-24:
+
+| Answered from | Score | Correct | Partial | Right "not known" | Missed | Stale | Wrong | Cost |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| memory | 46% | 15 | 2 | 6 | 22 | 0 | 3 | $0.18 |
+| sources | 30% | 7 | 3 | 6 | 23 | 1 | 8 | $0.40 |
+| both | 58% | 20 | 4 | 6 | 14 | 1 | 3 | $0.45 |
+
+What it says: nothing was invented, and every question whose honest answer is "not known" got it, from every source. Memory answers half again as many questions as the raw sources, for less than half the cost, and the two together answer most. The loss is recall, not the model: of what memory got wrong, 22 of 25 were answers the graph holds and recall did not carry (a paraphrase such as "the boy" for a son, a question needing two pages, a date asked in other words), and 3 were a wrong fact. The one stale answer is an older car the graph still states as current, which is Milestone 7's case exactly: a claim with no end.
 
 ## Context and Orientation
 

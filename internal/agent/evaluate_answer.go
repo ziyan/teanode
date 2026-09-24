@@ -31,6 +31,12 @@ const (
 	AnswerInvented = "invented"
 	AnswerWrong    = "wrong"
 
+	// AnswerMissed is "not known" where the person gave an answer: what
+	// the answer was given did not hold the fact, which is recall's
+	// failure rather than the model's, and is told apart from a wrong
+	// answer so the two can be worked on apart.
+	AnswerMissed = "missed"
+
 	// AnswerUngraded is a grader whose answer could not be read. It counts
 	// as nothing, rather than as a wrong answer the model did not give.
 	AnswerUngraded = "ungraded"
@@ -120,6 +126,17 @@ func (self *Agent) EvaluateAnswer(ctx context.Context, found *models.Agent, owne
 	evaluation.AnswerDurationMS = time.Since(started).Milliseconds()
 	evaluation.AnswerText = strings.TrimSpace(answered.Text)
 
+	// "not known" needs no grader either way: it is right where the
+	// person's answer is "not known" too, and a miss everywhere else.
+	if isNotKnown(evaluation.AnswerText) {
+		evaluation.AnswerVerdict, evaluation.VerdictReason = AnswerMissed, "it said not known"
+		if isNotKnown(expectedAnswer) {
+			evaluation.AnswerVerdict, evaluation.VerdictReason = AnswerNotKnown, "not known, as expected"
+		}
+		evaluation.Cost = self.costOfRuns(ctx, answered)
+		return evaluation, nil
+	}
+
 	grading, err := render("evaluate_grade.txt", map[string]any{
 		"PersonName":     personName(owner),
 		"Question":       question,
@@ -149,6 +166,12 @@ func (self *Agent) EvaluateAnswer(ctx context.Context, found *models.Agent, owne
 		}
 	}
 	return evaluation, nil
+}
+
+// isNotKnown says whether an answer is the prompt's "not known", allowing
+// for the case and the full stop a model adds.
+func isNotKnown(text string) bool {
+	return strings.Trim(strings.ToLower(strings.TrimSpace(text)), ".!") == "not known"
 }
 
 // costOfRuns is what these calls cost, as their runs recorded it: the

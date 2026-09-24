@@ -47,6 +47,32 @@ func TestAnAnswerIsGradedAgainstTheExpectedOne(t *testing.T) {
 	}
 }
 
+// "not known" is decided without a grader: right for an abstain question,
+// a miss for one with an answer.
+func TestNotKnownIsAMissOrARightAbstain(t *testing.T) {
+	for _, each := range []struct {
+		expected    string
+		wantVerdict string
+	}{
+		{"At the pier.", AnswerMissed},
+		{"not known", AnswerNotKnown},
+	} {
+		database, release := dbtest.AcquireDatabase(t)
+		content, _ := json.Marshal("Not known.")
+		provider := scriptedProvider([]string{fmt.Sprintf(`{"choices":[{"delta":{"content":%s},"finish_reason":"stop"}]}`, content)})
+		worker, run := digestSplitWorld(t, database, provider.URL)
+		evaluation, err := worker.EvaluateAnswer(t.Context(), run.Agent, run.Owner, "Where is Marigold moored?", each.expected, "", AnswerFromMemory)
+		provider.Close()
+		release()
+		if err != nil {
+			t.Fatalf("EvaluateAnswer: %s", err)
+		}
+		if evaluation.AnswerVerdict != each.wantVerdict {
+			t.Errorf("expected %q: graded %q, want %q", each.expected, evaluation.AnswerVerdict, each.wantVerdict)
+		}
+	}
+}
+
 // What to answer from is checked before anything is asked.
 func TestAnAnswerFromNowhereIsRefused(t *testing.T) {
 	if _, err := (&Agent{}).EvaluateAnswer(t.Context(), &models.Agent{}, &models.User{}, "Where?", "Here.", "", "rumour"); err == nil || !strings.Contains(err.Error(), "memory, sources or both") {

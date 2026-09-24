@@ -1868,7 +1868,7 @@ func runAgentGraphAnswers(ctx context.Context, command *cli.Command) error {
 	_, _ = fmt.Fprintln(command.Writer)
 	for _, total := range ordered {
 		verdicts := make([]string, 0, len(total.Verdicts))
-		for _, verdict := range []string{"correct", "partial", "not_known", "stale", "invented", "wrong", "ungraded"} {
+		for _, verdict := range []string{"correct", "partial", "not_known", "missed", "stale", "invented", "wrong", "ungraded"} {
 			if count := total.Verdicts[verdict]; count > 0 {
 				verdicts = append(verdicts, fmt.Sprintf("%d %s", count, verdict))
 			}
