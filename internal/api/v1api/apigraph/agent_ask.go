@@ -81,14 +81,6 @@ type AgentAskMutation interface {
 	// a fresh main one. The main conversation until now becomes a named
 	// one, keeping everything said in it. Needs agent:use.
 	SetAgentMainConversation(ctx context.Context, arguments SetAgentMainConversationArguments) (*models.AgentConversation, error)
-
-	// The conversation's task list: add an item, mark one done or open it
-	// again — or change its words — and take one off. The agent's own todo
-	// tool wrote this list and nothing else could, so the person watching
-	// it could not tick anything off. Needs agent:use.
-	AddAgentTodo(ctx context.Context, arguments AddAgentTodoArguments) (*models.AgentTodo, error)
-	SetAgentTodo(ctx context.Context, arguments SetAgentTodoArguments) (*models.AgentTodo, error)
-	RemoveAgentTodo(ctx context.Context, arguments RemoveAgentTodoArguments) (bool, error)
 }
 
 // AgentSubscription follows a turn as it happens.
@@ -236,34 +228,6 @@ type UpdateAgentConversationArguments struct {
 	// no goal any more" are different answers and a plain string cannot
 	// tell them apart.
 	Goal *string `json:"goal" graphapi:"nullable"`
-}
-
-// AddAgentTodoArguments put one item on a conversation's list.
-type AddAgentTodoArguments struct {
-	ConversationID string `json:"conversationId"`
-	Text           string `json:"text"`
-}
-
-// SetAgentTodoArguments change one item: its words, whether it is done,
-// or both. Nothing given leaves the item as it is.
-type SetAgentTodoArguments struct {
-	ConversationID string `json:"conversationId"`
-	TodoID         string `json:"todoId"`
-
-	// Text rewrites the item; empty leaves the words alone, because an
-	// item with no words is not an item.
-	Text string `json:"text" graphapi:"nullable"`
-
-	// Done is a pointer for the same reason the goal is: "leave it as it
-	// stands" and "open it again" are different answers, and a plain bool
-	// reads the first as the second.
-	Done *bool `json:"done" graphapi:"nullable"`
-}
-
-// RemoveAgentTodoArguments take one item off.
-type RemoveAgentTodoArguments struct {
-	ConversationID string `json:"conversationId"`
-	TodoID         string `json:"todoId"`
 }
 
 // asJSONValues is what a map of variables looks like once it has been through
@@ -1026,108 +990,6 @@ func (self *graph) UpdateAgentConversation(ctx context.Context, arguments Update
 	return updated, nil
 }
 
-// The task list, written by somebody other than the agent.
-//
-// It was the agent's alone: the `todo` tool added an item and ticked it
-// off, the drawer and `conversation show` printed the list, and a person
-// who had done one of the things on it had no way of saying so. These
-// three make the same three writes the tool makes, through the same
-// database calls, so an item ticked off here is the item the tool reads
-// on its next round.
-//
-// Whose list it is, is settled by the conversation rather than by the
-// item: an item is addressed by an identifier of its own, and the
-// conversation is looked up as the caller's first — the same check every
-// other conversation mutation makes.
-
-func (self *graph) AddAgentTodo(ctx context.Context, arguments AddAgentTodoArguments) (*models.AgentTodo, error) {
-	_, found, err := self.requireAgentPerson(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tx := self.transaction(ctx)
-	conversation, err := self.ownConversation(tx, found, arguments.ConversationID, false)
-	if err != nil {
-		return nil, err
-	}
-	text := strings.TrimSpace(arguments.Text)
-	if text == "" {
-		return nil, fmt.Errorf("%w: an item needs words", api.ErrInvalidArguments)
-	}
-	todo, err := tx.CreateAgentTodo(&models.AgentTodo{ConversationID: conversation.ID, Text: text})
-	if err != nil {
-		return nil, translateError(err)
-	}
-	return todo, nil
-}
-
-func (self *graph) SetAgentTodo(ctx context.Context, arguments SetAgentTodoArguments) (*models.AgentTodo, error) {
-	_, found, err := self.requireAgentPerson(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tx := self.transaction(ctx)
-	conversation, err := self.ownConversation(tx, found, arguments.ConversationID, false)
-	if err != nil {
-		return nil, err
-	}
-	updated, err := tx.UpdateAgentTodo(arguments.TodoID, func(todo *models.AgentTodo) error {
-		// The update is by identifier alone, so this is where an item on
-		// somebody else's list is refused; not found rather than
-		// forbidden, because whose it is would otherwise be answered by
-		// the error.
-		if todo.ConversationID != conversation.ID {
-			return api.ErrNotFound
-		}
-		if text := strings.TrimSpace(arguments.Text); text != "" {
-			todo.Text = text
-		}
-		if arguments.Done != nil {
-			if *arguments.Done {
-				now := time.Now()
-				todo.DoneAt = &now
-			} else {
-				todo.DoneAt = nil
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, translateError(err)
-	}
-	return updated, nil
-}
-
-func (self *graph) RemoveAgentTodo(ctx context.Context, arguments RemoveAgentTodoArguments) (bool, error) {
-	_, found, err := self.requireAgentPerson(ctx)
-	if err != nil {
-		return false, err
-	}
-	tx := self.transaction(ctx)
-	conversation, err := self.ownConversation(tx, found, arguments.ConversationID, false)
-	if err != nil {
-		return false, err
-	}
-	// The delete is scoped to the conversation and so removes nothing
-	// when the item is on another list — and says nothing either way. The
-	// list is read first so that an identifier naming no item of theirs
-	// is refused rather than answered yes.
-	todos, err := tx.ListAgentTodos(conversation.ID)
-	if err != nil {
-		return false, err
-	}
-	for _, todo := range todos {
-		if todo.ID != arguments.TodoID {
-			continue
-		}
-		if err := tx.DeleteAgentTodo(conversation.ID, todo.ID); err != nil {
-			return false, translateError(err)
-		}
-		return true, nil
-	}
-	return false, api.ErrNotFound
-}
-
 // AgentRunEvents follows a run over the websocket.
 func (self *graph) AgentRunEvents(ctx context.Context, arguments ReadAgentRunArguments) (<-chan *agent.Event, error) {
 	// The socket resolves the principal before starting the stream. This
@@ -1202,7 +1064,9 @@ func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAg
 		defer close(channel)
 		defer unsubscribe()
 		// An event replayed and then published again is told by its
-		// sequence: the feed delivers each of a run's events once.
+		// sequence: the feed delivers each of a run's events once. One of
+		// no run -- the conversation's title, written after its first turn
+		// ended -- is never replayed, and is delivered as it comes.
 		delivered := map[string]int{}
 		for {
 			select {
@@ -1210,10 +1074,12 @@ func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAg
 				if !ok {
 					return
 				}
-				if last, seen := delivered[event.RunID]; seen && event.Sequence <= last {
-					continue
+				if event.RunID != "" {
+					if last, seen := delivered[event.RunID]; seen && event.Sequence <= last {
+						continue
+					}
+					delivered[event.RunID] = event.Sequence
 				}
-				delivered[event.RunID] = event.Sequence
 				copied := event
 				select {
 				case channel <- &copied:

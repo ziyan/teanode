@@ -3,10 +3,12 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/db"
 )
 
@@ -27,6 +29,14 @@ type attachedComputer struct {
 	// terminal is the session of the terminal the person is sitting in,
 	// when they attached one; empty otherwise.
 	terminal string
+
+	// features are what the program said it offers beyond its protocol.
+	features []string
+}
+
+// HasBackground says the program keeps commands running in the background.
+func (self *attachedComputer) HasBackground() bool {
+	return slices.Contains(self.features, computer.FeatureBackground)
 }
 
 // AttachedTerminal is the session id of the terminal the person attached
@@ -50,6 +60,10 @@ type ComputerIdentity struct {
 	// Terminal is the session of the terminal the person attached it from,
 	// when they did.
 	Terminal string
+
+	// Features are what the program offers beyond its protocol, such as
+	// background commands.
+	Features []string
 }
 
 // AttachComputer records a person's computer by its name; a second attach
@@ -68,7 +82,7 @@ func (self *Agent) AttachComputer(agentId string, connection DeviceConnection, i
 	if previous := self.computers[agentId][name]; previous != nil {
 		previous.drop()
 	}
-	computer := &attachedComputer{deviceLink: newDeviceLink("the computer "+name, connection), name: name, system: system, home: home, description: identity.Description, terminal: terminal}
+	computer := &attachedComputer{deviceLink: newDeviceLink("the computer "+name, connection), name: name, system: system, home: home, description: identity.Description, terminal: terminal, features: identity.Features}
 	if terminal != "" {
 		// The device opened it before saying hello, so it is registered
 		// here without being asked for: reading and typing then work the

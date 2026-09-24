@@ -85,7 +85,7 @@ func DraftPrompt(input *DraftInput) ([]llm.ChatMessage, error) {
 	}
 	user, err := render("draft.txt", draftData{
 		PersonName:   personName(input.Owner),
-		Language:     languageName(Language(input.Agent, input.Owner)),
+		Language:     languageName(KnowledgeLanguage(input.Agent, input.Owner)),
 		Subject:      input.Subject,
 		Instructions: strings.TrimSpace(input.Instructions),
 		Memories:     input.Memories,

@@ -99,6 +99,7 @@ const AGENT_TABS: { id: string; label: Key }[] = [
   { id: 'models', label: 'agentAdmin.tabModels' },
   { id: 'tools', label: 'agentAdmin.tabTools' },
   { id: 'skills', label: 'agentAdmin.tabSkills' },
+  { id: 'sources', label: 'agentAdmin.tabSources' },
 ]
 
 export function AgentAdminPage() {

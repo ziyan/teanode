@@ -56,9 +56,10 @@ func (self *Agent) dreamOrganize(ctx context.Context, run *Run, record *models.A
 		lines = append(lines, orphan.IndexLine(140))
 	}
 	prompt, err := render("organize.txt", map[string]any{
-		"PersonName": personName(run.Owner),
-		"Index":      index,
-		"Orphans":    lines,
+		"KnowledgeLanguage": languageName(KnowledgeLanguage(run.Agent, run.Owner)),
+		"PersonName":        personName(run.Owner),
+		"Index":             index,
+		"Orphans":           lines,
 	})
 	if err != nil {
 		return

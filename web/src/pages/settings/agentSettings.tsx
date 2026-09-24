@@ -7,6 +7,7 @@ import { PencilIcon, TrashIcon } from '../../components/icons'
 import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { SkillsSection } from './skillsSection'
+import { SourceTypesSection } from './sourceTypesSection'
 import { Tag } from '../../components/common'
 import { useToast } from '../../components/toast'
 import { ToolPolicyAccordion } from '../../components/toolPolicy'
@@ -262,6 +263,7 @@ export function AgentForm({ settings, onSaved, part }: Props & { part?: AgentPar
         </>
       ) : null}
       {shows('skills') ? <SkillsSection /> : null}
+      {shows('sources') ? <SourceTypesSection /> : null}
     </>
   )
 }

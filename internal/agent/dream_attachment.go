@@ -195,6 +195,10 @@ func (self *Agent) dreamAttachments(ctx context.Context, run *Run, budget *dream
 	}
 }
 
+// emptyFileBytes is below the size of any file with something in it: a
+// blank line, a byte order mark.
+const emptyFileBytes = 8
+
 // unopenable is why nothing here can open this file, and "" for a picture
 // the night could put to a model.
 //
@@ -207,6 +211,15 @@ func unopenable(document *models.AgentDocument) string {
 		return "nothing said what kind of file it is, and only a picture can be read here"
 	}
 	if !IsImageAttachment(contentType) {
+		// A text file is read as text where it arrives; one that reached
+		// the night had nothing to read in it, which is the reason to
+		// give, not that it is not a picture.
+		if document.Bytes < emptyFileBytes {
+			return "it is empty, so there is nothing in it to read"
+		}
+		if strings.HasPrefix(contentType, "text/") {
+			return fmt.Sprintf("a %s file, and no words could be read out of it", contentType)
+		}
 		return fmt.Sprintf("a %s is not a picture, and only a picture can be read here", contentType)
 	}
 	if document.Bytes > pictureLargest {

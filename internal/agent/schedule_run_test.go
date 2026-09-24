@@ -15,10 +15,10 @@ import (
 	"github.com/ziyan/teanode/internal/storage"
 )
 
-// A schedule whose time has come is queued by the tick, runs a headless
-// turn with the person's operations, and delivers the answer into the
-// main conversation; the schedule moves on to its next time. Memories
-// addressed to the conversation reach the prompt.
+// A schedule whose time has come is queued by the tick and takes a
+// headless turn with the person's operations in the main conversation,
+// opened by a message marked as the schedule's; the schedule moves on to
+// its next time. Memories addressed to the conversation reach the prompt.
 func TestScheduleRunsAndDeliversToTheConversation(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
@@ -118,12 +118,16 @@ func TestScheduleRunsAndDeliversToTheConversation(t *testing.T) {
 			t.Fatalf("the answer should have made the main conversation: %d", len(main))
 		}
 		messages, _ := tx.ListAgentMessages(main[0].ID, nil)
-		if len(messages) != 2 || messages[0].Role != "note" || messages[1].Content != "Nothing needs you today." {
-			t.Fatalf("the answer should be in the conversation with a note: %+v", messages)
+		if len(messages) != 2 || messages[0].Role != "user" || !strings.HasPrefix(messages[0].Content, models.ScheduleMarker) ||
+			!strings.Contains(messages[0].Content, "What needs me today?") || messages[1].Content != "Nothing needs you today." {
+			t.Fatalf("the turn should be in the conversation, opened by the schedule's marked message: %+v", messages)
 		}
 		runs, _ := tx.ListAgentConversations(found.ID, []models.AgentConversationKind{models.AgentConversationRun}, nil)
-		if len(runs) != 1 || runs[0].JobKind != "schedule" {
-			t.Fatalf("a run transcript was expected: %+v", runs)
+		if len(runs) != 0 {
+			t.Fatalf("no transcript of its own: %+v", runs)
+		}
+		if spoke, _ := tx.LastAgentPersonMessageAt(main[0].ID); spoke != nil {
+			t.Fatalf("the schedule's message is not the person's: %v", spoke)
 		}
 	})
 	system := (*requests)[0]["messages"].([]any)[0].(map[string]any)["content"].(string)
@@ -133,4 +137,142 @@ func TestScheduleRunsAndDeliversToTheConversation(t *testing.T) {
 	if tools, _ := (*requests)[0]["tools"].([]any); len(tools) == 0 {
 		t.Fatal("the scheduled turn should have its tools")
 	}
+}
+
+// A schedule for one moment, made in a side conversation, takes its turn
+// there when the moment comes, and only then goes. It used to be switched
+// off as its run was queued, and the run, finding it off, did nothing.
+func TestAScheduleForOneMomentRunsInItsConversationAndThenGoes(t *testing.T) {
+	world := startGoalWorld(t, []string{answerRound}, "")
+	defer world.close()
+	past := time.Now().Add(-time.Minute)
+	var side *models.AgentConversation
+	var schedule *models.AgentSchedule
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		if side, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: world.found.ID, Kind: models.AgentConversationNamed, Title: "Invoices", LastAt: time.Now()}); err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		if schedule, err = tx.CreateAgentSchedule(&models.AgentSchedule{
+			AgentID: world.found.ID, Name: "Reminder", Cron: "@at " + past.Format("2006-01-02 15:04"), Prompt: "Remind them about the invoice.",
+			WrittenBy: models.WrittenByAgent, Deliver: "drawer", ConversationID: side.ID, Enabled: true, NextRunAt: &past,
+		}); err != nil {
+			t.Fatalf("CreateAgentSchedule: %s", err)
+		}
+	})
+	if err := world.worker.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	world.worker.Wait()
+	deadline := time.Now().Add(15 * time.Second)
+	var after *models.AgentSchedule
+	var messages []*models.AgentMessage
+	for time.Now().Before(deadline) {
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			after, _ = tx.GetAgentSchedule(schedule.ID)
+			messages, _ = tx.ListAgentMessages(side.ID, nil)
+		})
+		if after == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if after != nil {
+		t.Fatalf("after its one run it is gone: %+v", after)
+	}
+	if len(messages) != 2 || !strings.HasPrefix(messages[0].Content, models.ScheduleMarker) || messages[1].Role != "assistant" {
+		t.Fatalf("the turn is in the conversation it was made in: %+v", messages)
+	}
+	// The agent wrote it, so its words arrive fenced, as a note to itself.
+	if !strings.Contains(messages[0].Content, "<untrusted-data>") || !strings.Contains(messages[0].Content, "Remind them about the invoice.") {
+		t.Fatalf("an agent's own prompt is fenced: %s", messages[0].Content)
+	}
+}
+
+// A drawer schedule whose turn fails is not tried again -- each try would
+// be another turn in the person's conversation, opened by the same message
+// -- and a schedule for one moment is still removed.
+func TestAFailedDrawerScheduleIsNotRepeatedInTheConversation(t *testing.T) {
+	world := startGoalWorld(t, []string{goalBrokenRound}, "")
+	defer world.close()
+	past := time.Now().Add(-time.Minute)
+	var schedule *models.AgentSchedule
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		if schedule, err = tx.CreateAgentSchedule(&models.AgentSchedule{
+			AgentID: world.found.ID, Name: "Reminder", Cron: "@at " + past.Format("2006-01-02 15:04"), Prompt: "Remind them.",
+			WrittenBy: models.WrittenByPerson, Deliver: "drawer", ConversationID: world.conversation.ID, Enabled: true, NextRunAt: &past,
+		}); err != nil {
+			t.Fatalf("CreateAgentSchedule: %s", err)
+		}
+	})
+	if err := world.worker.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	world.worker.Wait()
+	deadline := time.Now().Add(15 * time.Second)
+	var jobs []*models.AgentJob
+	var after *models.AgentSchedule
+	for time.Now().Before(deadline) {
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			jobs, _ = tx.ListAgentJobs(&db.AgentJobFilter{AgentID: world.found.ID, Kinds: []models.AgentJobKind{models.AgentJobSchedule}}, nil)
+			after, _ = tx.GetAgentSchedule(schedule.ID)
+		})
+		if len(jobs) == 1 && jobs[0].Status == models.AgentJobDone && after == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if len(jobs) != 1 || jobs[0].Status != models.AgentJobDone || jobs[0].Attempts != 1 {
+		t.Fatalf("one attempt, done, not retried: %+v", jobs)
+	}
+	if after != nil {
+		t.Fatalf("the schedule for one moment is gone: %+v", after)
+	}
+	var opened int
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		messages, _ := tx.ListAgentMessages(world.conversation.ID, nil)
+		for _, message := range messages {
+			if strings.HasPrefix(message.Content, models.ScheduleMarker) {
+				opened++
+			}
+		}
+	})
+	if opened != 1 {
+		t.Fatalf("the schedule opened one turn, not %d", opened)
+	}
+}
+
+// A schedule for one moment that comes due while the agent is switched off
+// is ended at the sweep: no run is coming to do it, and left, it would sit
+// on with no time for ever.
+func TestAScheduleForOneMomentDueWhileTheAgentIsOffIsEnded(t *testing.T) {
+	world := startGoalWorld(t, []string{answerRound}, "")
+	defer world.close()
+	past := time.Now().Add(-time.Minute)
+	var schedule *models.AgentSchedule
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		if schedule, err = tx.CreateAgentSchedule(&models.AgentSchedule{
+			AgentID: world.found.ID, Name: "Reminder", Cron: "@at " + past.Format("2006-01-02 15:04"), Prompt: "Remind them.",
+			WrittenBy: models.WrittenByPerson, Deliver: "drawer", Enabled: true, NextRunAt: &past,
+		}); err != nil {
+			t.Fatalf("CreateAgentSchedule: %s", err)
+		}
+		if _, err := tx.UpdateAgent(world.found.ID, func(agent *models.Agent) error {
+			agent.Enabled = false
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateAgent: %s", err)
+		}
+	})
+	if err := world.worker.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	world.worker.Wait()
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if after, _ := tx.GetAgentSchedule(schedule.ID); after != nil {
+			t.Fatalf("ended at the sweep: %+v", after)
+		}
+	})
 }

@@ -11,21 +11,20 @@ import (
 )
 
 // askWhatWasLearned puts the conversation to the scan model.
-func (self *Agent) askWhatWasLearned(ctx context.Context, run *Run, conversation *models.AgentConversation, unread []*models.AgentMessage) (*RememberAnswer, *models.AgentConversation, error) {
-
+func (self *Agent) askWhatWasLearned(ctx context.Context, run *Run, conversation *models.AgentConversation, unread []*models.AgentMessage) (modelAnswer[RememberAnswer], *models.AgentConversation, error) {
 	material, err := self.retrieveRememberMaterial(ctx, run.Database(), run.Agent.ID, unread)
 	if err != nil {
-		return nil, nil, err
+		return modelAnswer[RememberAnswer]{}, nil, err
 	}
 
-	prompt, err := buildRememberPrompt(run.Owner, unread, material)
+	prompt, err := buildRememberPrompt(run.Owner, KnowledgeLanguage(run.Agent, run.Owner), unread, material)
 	if err != nil {
-		return nil, nil, err
+		return modelAnswer[RememberAnswer]{}, nil, err
 	}
 
 	thinking, err := self.oneShot(ctx, run, fmt.Sprintf("Filing what %s taught", chatName(conversation)), prompt, models.AgentJobRemember, config.AgentWorkScan)
 	if err != nil {
-		return nil, nil, fmt.Errorf("asking the model: %w", err)
+		return modelAnswer[RememberAnswer]{}, nil, fmt.Errorf("asking the model: %w", err)
 	}
 	return parseRememberAnswer(thinking.Text), thinking.Conversation, nil
 }
@@ -59,13 +58,14 @@ func shownText(message *models.AgentMessage) string {
 	return unclosable(cutRunes(message.Content, rememberMessageCharacters))
 }
 
-func buildRememberPrompt(owner *models.User, unread []*models.AgentMessage, material *rememberMaterial) (string, error) {
+func buildRememberPrompt(owner *models.User, knowledgeLanguage string, unread []*models.AgentMessage, material *rememberMaterial) (string, error) {
 	return render("remember.txt", map[string]any{
-		"PersonName": personName(owner),
-		"Index":      material.IndexLines,
-		"Pages":      material.PageBlocks,
-		"Unlearned":  material.UnlearnedStatements,
-		"Transcript": transcriptFor(unread),
-		"Most":       rememberFacts,
+		"KnowledgeLanguage": languageName(knowledgeLanguage),
+		"PersonName":        personName(owner),
+		"Index":             material.IndexLines,
+		"Pages":             material.PageBlocks,
+		"Unlearned":         material.UnlearnedStatements,
+		"Transcript":        transcriptFor(unread),
+		"Most":              rememberFacts,
 	})
 }

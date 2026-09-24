@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/computer"
+	"github.com/ziyan/teanode/internal/sources"
 )
 
 // NewComputerCommand builds "teanode computer": the program that attaches
@@ -56,6 +58,25 @@ func NewComputerCommand() *cli.Command {
 				Action: runComputerStart,
 			},
 			{
+				Name:      "try-source",
+				Usage:     "run a source type here and print the records it reads, without the server",
+				ArgsUsage: "<source.md>",
+				Description: "Runs a source type the way a pass does -- lists its containers, then reads\n" +
+					"them -- on this computer, and prints each record as a JSON line, with the container\n" +
+					"it came from as \"container\", and a summary at\n" +
+					"the end. For trying a type against the tool it calls before installing it. What\n" +
+					"the type keeps between passes goes in a directory of its own, left behind to look at.",
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{Name: "setting", Usage: "a setting, name=value; a list setting takes a comma-separated value"},
+					&cli.IntFlag{Name: "containers", Value: 2, Usage: "how many containers to read; 0 lists them and reads none"},
+					&cli.IntFlag{Name: "records", Value: 5, Usage: "how many records of each container to print; -1 prints every one"},
+					&cli.StringSliceFlag{Name: "secret", Usage: "a secret the type declares, key=VARIABLE, read from that environment variable so it is never on the command line (repeatable)"},
+					&cli.StringSliceFlag{Name: "only", Usage: "read only the container of this name (repeatable), however many --containers says"},
+					&cli.StringFlag{Name: "state", Usage: "where the type keeps what it knows between runs; a new directory by default"},
+				},
+				Action: runComputerTrySource,
+			},
+			{
 				Name:   "status",
 				Usage:  "say whether the program runs here and whether the server sees it",
 				Action: runComputerStatus,
@@ -65,6 +86,7 @@ func NewComputerCommand() *cli.Command {
 				Usage:  "end the program running in the background",
 				Action: runComputerStop,
 			},
+			newComputerBackgroundCommand(),
 		},
 	}
 }
@@ -100,6 +122,11 @@ func runComputerDaemon(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	options := &computer.Options{Token: resolved.Token, Name: command.String("name"), Description: command.String("description")}
+	// One for the life of the program rather than one per connection: a
+	// build left running in the background outlives a network that drops,
+	// and ends when the program does.
+	options.Background = computer.NewBackgroundCommands()
+	defer options.Background.Close()
 	// What it was asked and how long that took, beside where it connected.
 	// A daemon that logs only its connections leaves the server's "did
 	// not answer within ten minutes" with nothing to check it against.
@@ -290,4 +317,122 @@ func runningComputer(pidPath string) (int, bool) {
 		return pid, false
 	}
 	return pid, true
+}
+
+// runComputerTrySource runs a source type here, as a pass would, and
+// prints what it reads.
+func runComputerTrySource(ctx context.Context, command *cli.Command) error {
+	path := command.Args().First()
+	if path == "" {
+		return usage("which type? usage: teanode computer try-source <source.md>")
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	kind, err := sources.Parse(content)
+	if err != nil {
+		return err
+	}
+	if kind.Reader != "" {
+		return fmt.Errorf("%s is read by the %s reader built into TeaNode; there is nothing to try here", kind.Name, kind.Reader)
+	}
+	settings := map[string]any{}
+	for _, pair := range command.StringSlice("setting") {
+		name, value, found := strings.Cut(pair, "=")
+		if !found {
+			return usage(fmt.Sprintf("%q is not name=value", pair))
+		}
+		settings[name] = value
+		for _, setting := range kind.Settings {
+			if setting.Name != name {
+				continue
+			}
+			switch setting.Type {
+			case "array":
+				var list []any
+				for _, each := range strings.Split(value, ",") {
+					if each = strings.TrimSpace(each); each != "" {
+						list = append(list, each)
+					}
+				}
+				settings[name] = list
+			case "boolean":
+				settings[name] = value == "true" || value == "yes" || value == "1"
+			case "integer":
+				number, err := strconv.Atoi(value)
+				if err != nil {
+					return usage(fmt.Sprintf("%s is a whole number", name))
+				}
+				settings[name] = number
+			}
+		}
+	}
+	state := command.String("state")
+	if state == "" {
+		if state, err = os.MkdirTemp("", "teanode-source-"+kind.Name+"-"); err != nil {
+			return err
+		}
+	}
+	if err := os.MkdirAll(state, 0o700); err != nil {
+		return err
+	}
+	secrets := map[string]string{}
+	for _, pair := range command.StringSlice("secret") {
+		key, variable, found := strings.Cut(pair, "=")
+		if !found {
+			return usage(fmt.Sprintf("%q is not key=VARIABLE", pair))
+		}
+		value, isSet := os.LookupEnv(variable)
+		if !isSet {
+			return usage(fmt.Sprintf("the environment variable %s is not set", variable))
+		}
+		secrets[key] = value
+	}
+	runner := &sources.Runner{Type: kind, Settings: settings, Secrets: secrets, Executor: computer.NewLocalExecutor(state), State: state}
+	containers, err := runner.List(ctx)
+	if err != nil {
+		return fmt.Errorf("listing: %w", err)
+	}
+	if err := runner.SaveContainers(containers); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "%d containers\n", len(containers))
+	for index, container := range containers {
+		fmt.Fprintf(os.Stderr, "  %s\n", container.Name)
+		if index >= 20 {
+			fmt.Fprintf(os.Stderr, "  and %d more\n", len(containers)-index-1)
+			break
+		}
+	}
+	only := map[string]bool{}
+	for _, name := range command.StringSlice("only") {
+		only[name] = true
+	}
+	read := 0
+	for _, container := range containers {
+		if len(only) > 0 {
+			if !only[container.Name] {
+				continue
+			}
+		} else if read >= int(command.Int("containers")) {
+			break
+		}
+		read++
+		records, err := runner.Read(ctx, container)
+		if err != nil && !errors.Is(err, sources.ErrUnfinished) {
+			return fmt.Errorf("reading %s: %w", container.Name, err)
+		}
+		fmt.Fprintf(os.Stderr, "%s: %d records\n", container.Name, len(records))
+		for index, record := range records {
+			if limit := int(command.Int("records")); limit >= 0 && index >= limit {
+				break
+			}
+			record["container"] = container.Name
+			encoded, _ := json.Marshal(record)
+			fmt.Println(string(encoded))
+		}
+	}
+	fmt.Fprintf(os.Stderr, "state kept in %s\n", state)
+	return nil
 }

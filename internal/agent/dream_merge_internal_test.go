@@ -2,6 +2,7 @@ package agent
 
 import (
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -181,5 +182,94 @@ func TestAMergeOfTwoRowsThatAreGoneIsSkipped(t *testing.T) {
 	}
 	if stated := world.stated(t); len(stated) != 2 {
 		t.Fatalf("the page still states #1 and #3: %v", stated)
+	}
+}
+
+// A merge keeps what the evidence establishes. The survivor stands where
+// the wording it keeps stands, and a richer sentence the agent only
+// inferred is not merged into one the person stated.
+func TestAMergeKeepsTheStandingOfTheWordsItKeeps(t *testing.T) {
+	for _, each := range []struct {
+		name               string
+		stated             string
+		inferred           string
+		isMerged           bool
+		survivorText       string
+		isSurvivorInferred bool
+	}{
+		{"a richer inferred sentence stays its own fact",
+			"Marigold is moored at the pier.", "Marigold is moored at the pier in Rivermouth.", false, "", false},
+		{"an inferred rewording merges, and the survivor is inferred",
+			"Marigold is moored at the pier.", "Marigold is kept at the pier.", true, "Marigold is kept at the pier.", true},
+	} {
+		t.Run(each.name, func(t *testing.T) {
+			world := newMergeWorld(t, each.stated, each.inferred)
+			dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+				for index, isInferred := range []bool{false, true} {
+					updated, err := tx.UpdateAgentFact(world.agent.ID, world.facts[index].ID, func(fact *models.AgentFact) error {
+						fact.Inferred, fact.Confidence = isInferred, 1
+						if isInferred {
+							fact.Confidence = 0.5
+						}
+						return nil
+					})
+					if err != nil {
+						t.Fatalf("UpdateAgentFact: %s", err)
+					}
+					world.facts[index] = updated
+				}
+			})
+			// The model gives the pair best first: the inferred wording.
+			merged := world.merge(t, [][]int{{2, 1}})
+			if (merged == 1) != each.isMerged {
+				t.Fatalf("merged %d, want merged %v", merged, each.isMerged)
+			}
+			stated := world.stated(t)
+			if !each.isMerged {
+				if len(stated) != 2 {
+					t.Fatalf("both facts stay, not %v", stated)
+				}
+				return
+			}
+			dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+				survivor, err := tx.GetAgentFact(world.agent.ID, world.page.ID, 1)
+				if err != nil || survivor == nil {
+					t.Fatalf("GetAgentFact: %v %s", survivor, err)
+				}
+				if survivor.Text != each.survivorText || survivor.Inferred != each.isSurvivorInferred || survivor.Confidence != 0.5 {
+					t.Fatalf("the survivor says %q, inferred %v at %v", survivor.Text, survivor.Inferred, survivor.Confidence)
+				}
+			})
+		})
+	}
+}
+
+// The nightly merge asks a model which lines say the same thing, but the
+// model does not get to call two occurrences of an event one: an event on
+// another day, or a state beside an event, stays its own fact.
+func TestTheMergeKeepsTwoOccurrencesApart(t *testing.T) {
+	world := newMergeWorld(t,
+		"Completed the annual boiler inspection.",
+		"Finished this year's boiler inspection.",
+		"The boiler inspection is done.")
+	lastYear := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
+	thisYear := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		for index, when := range []time.Time{lastYear, thisYear} {
+			updated, err := tx.UpdateAgentFact(world.agent.ID, world.facts[index].ID, func(fact *models.AgentFact) error {
+				fact.Kind, fact.HappenedAt = models.FactEvent, &when
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("UpdateAgentFact: %s", err)
+			}
+			world.facts[index] = updated
+		}
+	})
+	if merged := world.merge(t, [][]int{{2, 1}, {3, 2}}); merged != 0 {
+		t.Fatalf("nothing is merged across days or kinds, but %d pairs were", merged)
+	}
+	if stated := world.stated(t); len(stated) != 3 {
+		t.Fatalf("the page still says all three, not %v", stated)
 	}
 }

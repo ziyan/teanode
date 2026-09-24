@@ -2,13 +2,11 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
-	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -38,6 +36,12 @@ func (self *Agent) dreamConsolidate(ctx context.Context, run *Run, record *model
 
 // consolidatePage rewrites one page and merges what it says twice.
 func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models.AgentDream, page *models.AgentNode, budget *dreamBudget) bool {
+	// When the facts were read, which is what the page is marked with at
+	// the end: a fact added while the model was answering is newer than
+	// this, so the page is due again. Marking it with the time the write
+	// finished put such a fact behind the mark, and it was never summarized
+	// until it changed again.
+	readAt := time.Now()
 	var facts []*models.AgentFact
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		facts, err = tx.ListAgentFacts(run.Agent.ID, page.ID, false, 200)
@@ -54,12 +58,10 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 		}
 		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 			tx.AsActor(models.ActorDream)
-			empty := *page
-			empty.Summary = ""
-			if _, err := tx.PutAgentNode(&empty); err != nil {
+			if _, err := tx.SetAgentNodeSummary(page.AgentID, page.ID, ""); err != nil {
 				return err
 			}
-			return tx.MarkAgentNodeConsolidated(page.ID, time.Now())
+			return tx.MarkAgentNodeConsolidated(page.ID, readAt)
 		}); err != nil {
 			log.Warningf("cannot clear the opening of %q: %s", page.Path, err)
 			return false
@@ -72,12 +74,13 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 		lines = append(lines, fmt.Sprintf("#%d %s", fact.Number, fact.Line()))
 	}
 	prompt, err := render("consolidate.txt", map[string]any{
-		"PersonName": personName(run.Owner),
-		"Path":       page.Path,
-		"Name":       page.Name,
-		"Kind":       string(page.Kind),
-		"Existing":   page.Summary,
-		"Facts":      lines,
+		"KnowledgeLanguage": languageName(KnowledgeLanguage(run.Agent, run.Owner)),
+		"PersonName":        personName(run.Owner),
+		"Path":              page.Path,
+		"Name":              page.Name,
+		"Kind":              string(page.Kind),
+		"Existing":          page.Summary,
+		"Facts":             lines,
 	})
 	if err != nil {
 		return false
@@ -90,19 +93,16 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 	// Said rather than shrugged at. A phase that gives up in silence is
 	// how a page with thirteen wordings of one sentence sat there for a
 	// week while the log reported six pages rewritten.
-	extracted, err := llm.ExtractJSON(said)
-	if err != nil {
-		log.Warningf("cannot rewrite %q: the answer is not an object: %s", page.Path, err)
+	//
+	// And an answer that could not be read leaves the page as it was.
+	// `{}` and an error object used to read as an empty opening, and the
+	// page's summary was blanked.
+	read := readModelAnswer[consolidateAnswer](said, "summary")
+	if !read.IsValid {
+		log.Warningf("cannot rewrite %q: %s", page.Path, read.Problem)
 		return false
 	}
-	var answer struct {
-		Summary string  `json:"summary"`
-		Same    [][]int `json:"same"`
-	}
-	if err := json.Unmarshal([]byte(extracted), &answer); err != nil {
-		log.Warningf("cannot rewrite %q: %s", page.Path, err)
-		return false
-	}
+	answer := read.Value
 	// An empty opening is an answer, not a failure: a page whose facts
 	// say no more than its own name is better with nothing at the top
 	// than with a paragraph saying so at length. The merges below are
@@ -118,23 +118,29 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 	// the migration and the dashboard, and every night reported none.
 	merged := 0
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		if _, err := tx.PutAgentNode(&models.AgentNode{
-			AgentID: page.AgentID, Path: page.Path, Kind: page.Kind, Name: page.Name,
-			Aliases: page.Aliases, ContactID: page.ContactID, Pinned: page.Pinned,
-			Importance: page.Importance, Summary: summary,
-		}); err != nil {
+		// The opening and nothing else. The whole page used to be saved
+		// from the copy read before the model was asked, which put back a
+		// rename, an alias, a pin made in the meantime, and brought back a
+		// page archived in the meantime by writing it as not dormant.
+		if _, err := tx.SetAgentNodeSummary(page.AgentID, page.ID, summary); err != nil {
 			return err
 		}
 		if merged, err = mergeSaidTwice(tx, page.AgentID, facts, answer.Same); err != nil {
 			return err
 		}
-		return tx.MarkAgentNodeConsolidated(page.ID, time.Now())
+		return tx.MarkAgentNodeConsolidated(page.ID, readAt)
 	}); err != nil {
 		log.Warningf("cannot rewrite %q: %s", page.Path, err)
 		return false
 	}
 	record.Merged += merged
 	return true
+}
+
+// consolidateAnswer is what the rewrite of a page answers with.
+type consolidateAnswer struct {
+	Summary string  `json:"summary"`
+	Same    [][]int `json:"same"`
 }
 
 // mergeSaidTwice folds the pairs a rewrite called one statement, and says
@@ -153,8 +159,25 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 // stated neither of them and the citation trail led to a dormant row.
 func mergeSaidTwice(tx db.Transaction, agentId string, facts []*models.AgentFact, same [][]int) (int, error) {
 	byNumber := map[int]*models.AgentFact{}
+	readAt := map[string]time.Time{}
 	for _, fact := range facts {
 		byNumber[fact.Number] = fact
+		readAt[fact.ID] = fact.ModifiedAt
+	}
+	// The rows this pass itself has changed, which are as it left them
+	// rather than as they were read.
+	touched := map[string]bool{}
+	// isAsRead says whether a row is still what the model was shown, or
+	// what this pass made of it. A row changed by somebody else while the
+	// model was answering -- struck, edited, folded -- is not what the
+	// model judged, and a merge applied to it would be applied to a state
+	// nobody looked at.
+	isAsRead := func(fact *models.AgentFact) bool {
+		if touched[fact.ID] {
+			return true
+		}
+		seen, wasRead := readAt[fact.ID]
+		return wasRead && fact.ModifiedAt.Equal(seen)
 	}
 	merged := 0
 	for _, pair := range same {
@@ -180,13 +203,33 @@ func mergeSaidTwice(tx db.Transaction, agentId string, facts []*models.AgentFact
 		if bestNow == nil || otherNow == nil || bestNow.ID == otherNow.ID {
 			continue
 		}
+		if !isAsRead(bestNow) || !isAsRead(otherNow) {
+			continue
+		}
+		// The model reads the words; it does not get to call an event on
+		// one day and the same event on another one statement, or a state
+		// and an event. See couldBeOneStatement.
+		if !couldBeOneStatement(bestNow, otherNow) {
+			continue
+		}
 		// Keep the lower number so existing citations still resolve.
 		// The better wording moves onto that row.
 		keep, gone := bestNow, otherNow
 		if otherNow.Number < bestNow.Number {
 			keep, gone = otherNow, bestNow
 		}
-		wording := bestNow.Text
+		// The wording that survives brings its own standing with it. A
+		// sentence the agent inferred, moved onto a row the person stated,
+		// used to keep that row's standing: an inferred sentence ended up
+		// as a stated fact at full confidence. So the survivor stands where
+		// its words stand. And where those words say more than the other
+		// fact does and stand on softer ground, the two are not one
+		// statement said twice: the richer one keeps its own row, its own
+		// evidence and its own uncertainty.
+		wording := bestNow
+		if wording.ID != keep.ID && addsInformation(wording.Text, keep.Text) && !atLeastAsWellEvidenced(wording, keep) {
+			continue
+		}
 		if _, err := tx.UpdateAgentFact(agentId, gone.ID, func(fact *models.AgentFact) error {
 			fact.SupersededBy = keep.ID
 			return nil
@@ -194,7 +237,11 @@ func mergeSaidTwice(tx db.Transaction, agentId string, facts []*models.AgentFact
 			return merged, err
 		}
 		if _, err := tx.UpdateAgentFact(agentId, keep.ID, func(fact *models.AgentFact) error {
-			fact.Text = wording
+			fact.Text = wording.Text
+			fact.Inferred, fact.Confidence = wording.Inferred, wording.Confidence
+			if fact.HappenedAt == nil {
+				fact.HappenedAt = wording.HappenedAt
+			}
 			fact.Evidence = append(fact.Evidence, gone.Evidence...)
 			if len(fact.Evidence) > models.EvidenceCount {
 				fact.Evidence = fact.Evidence[:models.EvidenceCount]
@@ -203,6 +250,7 @@ func mergeSaidTwice(tx db.Transaction, agentId string, facts []*models.AgentFact
 		}); err != nil {
 			return merged, err
 		}
+		touched[keep.ID], touched[gone.ID] = true, true
 		merged++
 	}
 	return merged, nil

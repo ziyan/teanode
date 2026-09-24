@@ -45,6 +45,10 @@ func (self *whatWasFiled) Describe() string {
 // transaction open they would hold a database connection, and every row
 // that transaction had locked, for as long as the provider took.
 type preparedFact struct {
+	// AnswerIndex is where this stood in the answer's facts, which is how
+	// a supersession names its replacement.
+	AnswerIndex int
+
 	// Text is what the model said, trimmed, and MessageID and Quote what
 	// it cited for it.
 	Text      string
@@ -146,7 +150,7 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 	tally = self.prepareRememberedEvidence(ctx, agentId, prepared, evidenceKind, shown)
 
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		if err := self.applyRememberedFacts(tx, run, answer, prepared, opened, selfPage, shown); err != nil {
+		if err := self.applyRememberedFacts(tx, run, answer, prepared, opened, selfPage, shown, theirWords); err != nil {
 			return err
 		}
 		if finish == nil {
@@ -261,12 +265,14 @@ func (self *Agent) openRememberedPages(ctx context.Context, run *Run, prepared [
 
 // applyRememberedFacts uses the caller's transaction so the read marker and
 // transcript title commit with facts, links and replacements.
-func (self *Agent) applyRememberedFacts(tx db.Transaction, run *Run, answer *RememberAnswer, prepared []*preparedFact, opened map[string]*models.AgentNode, selfPage *models.AgentNode, shown map[string]string) error {
+func (self *Agent) applyRememberedFacts(tx db.Transaction, run *Run, answer *RememberAnswer, prepared []*preparedFact, opened map[string]*models.AgentNode, selfPage *models.AgentNode, shown map[string]string, theirWords map[string]bool) error {
 	agentId := run.Agent.ID
 	tx.AsActor(models.ActorRemember)
-	// What this answer actually put on each page, which is what a
-	// supersession has to point at before anything is struck.
-	filed := map[string][]*models.AgentFact{}
+	// What each of the answer's facts became on its page, by its place in
+	// the answer: the row written, the one it folded into, or the one the
+	// page already stated it in. A supersession names its replacement by
+	// that place.
+	filed := map[int]*models.AgentFact{}
 	for _, ready := range prepared {
 		if ready.Fact == nil {
 			continue
@@ -281,24 +287,27 @@ func (self *Agent) applyRememberedFacts(tx db.Transaction, run *Run, answer *Rem
 			return fmt.Errorf("reading what %q already says: %w", ready.Node.Path, err)
 		}
 		if standing != nil {
-			if _, err := takeTheEvidenceOf(tx, standing, ready.Fact); err != nil {
+			kept, err := takeTheEvidenceOf(tx, standing, ready.Fact)
+			if err != nil {
 				return fmt.Errorf("giving what %q brought to the fact that says it: %w", ready.Text, err)
 			}
+			filed[ready.AnswerIndex] = kept
 			continue
 		}
 		written, err := tx.AddAgentFact(ready.Fact)
 		if err != nil {
 			return fmt.Errorf("filing %q: %w", ready.Text, err)
 		}
-		filed[ready.Node.ID] = append(filed[ready.Node.ID], written)
-		if _, err := self.foldIntoWhatThePageSays(tx, written, ready.Node, ready.Sense); err != nil {
+		became, err := self.foldIntoWhatThePageSays(tx, written, ready.Node, ready.Sense)
+		if err != nil {
 			return fmt.Errorf("folding %q into the page: %w", ready.Text, err)
 		}
+		filed[ready.AnswerIndex] = became
 	}
 	if err := linkWhatWasLearned(tx, agentId, answer.Links, opened, run.Owner, selfPage); err != nil {
 		return err
 	}
-	if err := supersedeWhatWasReplaced(tx, agentId, answer.Supersedes, filed, shown); err != nil {
+	if err := supersedeWhatWasReplaced(tx, agentId, answer.Supersedes, filed, shown, theirWords); err != nil {
 		return err
 	}
 

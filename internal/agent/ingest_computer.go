@@ -11,6 +11,7 @@ import (
 	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/sources"
 )
 
 // readFromComputer asks the device to scan and files what comes back.
@@ -55,14 +56,25 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 	}
 	most := ingestEntries
 	format := source.Specification.Format
-	if format == computer.FormatRecords {
+	if format == computer.FormatRecords || format == computer.FormatTyped {
 		most = ingestRecordEntries
 	}
 	// The first page of a records pass is the one that runs the folder's
-	// refresh script, and that is the only page allowed to be slow.
+	// refresh script, and of a typed pass the one that brings a tool's
+	// copy up to date and lists; that is the only page allowed to be slow.
 	wait := ingestDeviceWait
-	if format == computer.FormatRecords && after == "" {
+	if (format == computer.FormatRecords || format == computer.FormatTyped) && after == "" {
 		wait = ingestRefreshWait
+	}
+	// A typed source is sent its type with every page, so the computer
+	// runs whatever this server holds and nothing is installed there.
+	var sourceType string
+	var settings map[string]any
+	var secrets map[string]string
+	if format == computer.FormatTyped {
+		if sourceType, settings, secrets, err = self.typedSourceParts(ctx, run, source); err != nil {
+			return "", counts, err
+		}
 	}
 
 	// One request to a computer at a time, across the sources that read
@@ -78,7 +90,7 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 				break
 			}
 			if time.Since(waited) > ingestTurn {
-				return "", counts, &waitingForDevice{name: name + " (it is reading " + other + ")"}
+				return "", counts, &waitingForDevice{name: name, readingOther: self.sourceName(ctx, run, source.AgentID, other)}
 			}
 			select {
 			case <-ctx.Done():
@@ -133,6 +145,12 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 			// hundred checkouts and a third of a million commits is
 			// paced by what the person set here.
 			CommitsPerPass: source.Specification.CommitsPerPass,
+			// A typed source's type and settings, and the name of the
+			// directory in the person's cache it keeps what it knows in.
+			SourceType: sourceType,
+			Settings:   settings,
+			Secrets:    secrets,
+			SourceKey:  typedSourceKey(source),
 		}, wait)
 	}
 	answer, err := ask(known)
@@ -167,6 +185,12 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 	result, err := decodeIngestPage(answer, after)
 	if err != nil {
 		return "", counts, fmt.Errorf("the computer's answer is not readable: %w", err)
+	}
+	if result.IsUnfinished {
+		// Some of what this pass should have read ran out of time and
+		// is read next pass: this pass must not delete what it did not
+		// see.
+		cursor[cursorPassUnfinished] = true
 	}
 	return self.fileComputerPage(ctx, run, source, result, func(entry computer.ScanEntry) blobFetcher {
 		return func(ctx context.Context) ([]byte, error) {
@@ -253,4 +277,85 @@ func (self *Agent) releaseComputer(computer, sourceId string) {
 	if self.computersBusy[computer] == sourceId {
 		delete(self.computersBusy, computer)
 	}
+}
+
+// typedSourceKey names the directory a typed source keeps what it knows in
+// on the computer: the source's own identifier, so two sources of one type
+// never share it. Empty for any other source.
+func typedSourceKey(source *models.AgentKnowledgeSource) string {
+	if source.Specification.Format != computer.FormatTyped {
+		return ""
+	}
+	return strings.ToLower(source.ID)
+}
+
+// typedSourceParts is a typed source's type, as installed, its settings,
+// and the secrets its type declares, opened to be sent with the request.
+func (self *Agent) typedSourceParts(ctx context.Context, run *Run, source *models.AgentKnowledgeSource) (string, map[string]any, map[string]string, error) {
+	var installed *models.AgentSourceType
+	var stored []*models.AgentSourceSecret
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		if installed, err = tx.GetAgentSourceType(source.Specification.Type); err != nil {
+			return err
+		}
+		stored, err = tx.ListAgentSourceSecrets(source.ID)
+		return err
+	}); err != nil {
+		return "", nil, nil, err
+	}
+	if installed == nil {
+		return "", nil, nil, fmt.Errorf("the source type %q is not installed on this server", source.Specification.Type)
+	}
+	settings := map[string]any{}
+	if len(source.Specification.Settings) > 0 {
+		if err := json.Unmarshal(source.Specification.Settings, &settings); err != nil {
+			return "", nil, nil, fmt.Errorf("the settings of this source are not readable: %w", err)
+		}
+	}
+	// Checked again against the type as it is now: a type replaced or
+	// updated since the source was saved may ask for other settings, and
+	// its commands must not run with ones it never checked.
+	parsed, err := sources.Parse([]byte(installed.Content))
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("the installed %s cannot be read: %w", installed.Name, err)
+	}
+	if _, err := parsed.CheckSettings(settings); err != nil {
+		return "", nil, nil, fmt.Errorf("the settings of this source no longer suit %s as installed: %w", installed.Name, err)
+	}
+	// Only what the type declares, and every one it cannot do without.
+	filled := map[string]string{}
+	for _, secret := range stored {
+		opened, err := self.OpenSecret(secret.Value)
+		if err != nil {
+			return "", nil, nil, fmt.Errorf("the stored value of %s cannot be read: %w", secret.Key, err)
+		}
+		filled[secret.Key] = opened
+	}
+	secrets := map[string]string{}
+	var missing []string
+	for _, secret := range parsed.Secrets {
+		if value := filled[secret.Key]; strings.TrimSpace(value) != "" {
+			secrets[secret.Key] = value
+		} else if !secret.Optional {
+			missing = append(missing, secret.Key)
+		}
+	}
+	if len(missing) > 0 {
+		return "", nil, nil, fmt.Errorf("%s needs %s filled in for this source; set it on the source in the dashboard, or with `teanode agent knowledge secret set %q %s`",
+			parsed.Name, strings.Join(missing, " and "), source.Name, missing[0])
+	}
+	return installed.Content, settings, secrets, nil
+}
+
+// sourceName is a source's name, for saying which one a computer is busy
+// with; its identifier where it cannot be looked up.
+func (self *Agent) sourceName(ctx context.Context, run *Run, agentId, sourceId string) string {
+	var found *models.AgentKnowledgeSource
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		found, err = tx.GetAgentSource(agentId, sourceId)
+		return err
+	}); err != nil || found == nil {
+		return "another source"
+	}
+	return found.Name
 }

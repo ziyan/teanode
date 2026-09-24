@@ -211,6 +211,22 @@ const (
 // marker that drifts.
 const GoalCheckInMarker = "[goal check-in]"
 
+// BackgroundCommandMarker begins the message the agent is woken with when a
+// command it left running in the background on the person's computer
+// ends. Like the goal's marker, it tells the transcript's readers that the
+// person did not write it.
+const BackgroundCommandMarker = "[background command]"
+
+// ScheduleMarker begins the message a schedule's turn is given when it
+// answers in a conversation: the agent's own turn, at a time somebody set,
+// and not the person's words.
+const ScheduleMarker = "[schedule]"
+
+// OwnTurnMarkers are the markers of every turn the agent takes on its own
+// in a person's conversation: what anything looking for the person's own
+// last word must pass over.
+var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, ScheduleMarker}
+
 // GoalChangeNote is the line the conversation gets when its goal changes
 // hands: set, changed, cleared, or met. Empty when nothing worth a line
 // happened -- a check-in that only moved the next time, or the same goal

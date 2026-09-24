@@ -60,6 +60,60 @@ func ExtractJSON(text string) (string, error) {
 	return repaired, nil
 }
 
+// ExtractCompleteJSON is ExtractJSON for an answer that must have been
+// written to its end: one whose object or array was cut off, and which
+// the repair would close with whatever it held so far, is an error. A
+// cut-off answer repaired into shape reads as a whole one that said less,
+// and a caller that files what it says would take the missing half for
+// nothing at all.
+func ExtractCompleteJSON(text string) (string, error) {
+	if isCutOff(text) {
+		return "", fmt.Errorf("llm: the answer was cut off before its end: %s", excerpt(text))
+	}
+	return ExtractJSON(text)
+}
+
+// isCutOff says whether the first object or array in a text never closes:
+// its brackets, counted outside strings, do not come back to zero. A
+// fenced block is looked at on its own, as ExtractJSON does.
+func isCutOff(text string) bool {
+	candidate := strings.TrimSpace(text)
+	if start := strings.Index(candidate, "```"); start >= 0 {
+		rest := candidate[start+3:]
+		if newline := strings.IndexByte(rest, '\n'); newline >= 0 {
+			rest = rest[newline+1:]
+		}
+		if end := strings.Index(rest, "```"); end >= 0 {
+			rest = rest[:end]
+		}
+		candidate = rest
+	}
+	start := strings.IndexAny(candidate, "{[")
+	if start < 0 {
+		return false
+	}
+	depth, isInString, isEscaped := 0, false, false
+	for _, character := range candidate[start:] {
+		switch {
+		case isEscaped:
+			isEscaped = false
+		case isInString && character == '\\':
+			isEscaped = true
+		case character == '"':
+			isInString = !isInString
+		case isInString:
+		case character == '{' || character == '[':
+			depth++
+		case character == '}' || character == ']':
+			depth--
+			if depth == 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // Extract decodes the JSON a model was asked for into a value.
 func Extract[T any](text string) (T, error) {
 	var value T

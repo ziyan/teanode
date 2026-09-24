@@ -61,15 +61,20 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		// The agent's own, which the three surfaces reach the same way:
 		// what a source is, what a question would carry, and the task
 		// list a conversation keeps.
-		"ListAgentKnowledgeSources": client.DocumentListAgentKnowledgeSources,
-		"SaveAgentKnowledgeSource":  client.DocumentSaveAgentKnowledgeSource,
-		"SearchAgentDocuments":      client.DocumentSearchAgentDocuments,
-		"ReadAgentDocument":         client.DocumentReadAgentDocument,
-		"RecallAgentMemory":         client.DocumentRecallAgentMemory,
-		"ReadAgentConversation":     client.DocumentReadAgentConversation,
-		"AddAgentTodo":              client.DocumentAddAgentTodo,
-		"SetAgentTodo":              client.DocumentSetAgentTodo,
-		"RemoveAgentTodo":           client.DocumentRemoveAgentTodo,
+		"ListAgentKnowledgeSources":       client.DocumentListAgentKnowledgeSources,
+		"SaveAgentKnowledgeSource":        client.DocumentSaveAgentKnowledgeSource,
+		"ListAgentSourceTypes":            client.DocumentListAgentSourceTypes,
+		"SearchAgentSourceTypes":          client.DocumentSearchAgentSourceTypes,
+		"InstallAgentSourceType":          client.DocumentInstallAgentSourceType,
+		"AddLocalAgentSourceType":         client.DocumentAddLocalAgentSourceType,
+		"RemoveAgentSourceType":           client.DocumentRemoveAgentSourceType,
+		"ListAgentKnowledgeSourceSecrets": client.DocumentListAgentKnowledgeSourceSecrets,
+		"SetAgentKnowledgeSourceSecret":   client.DocumentSetAgentKnowledgeSourceSecret,
+		"ClearAgentKnowledgeSourceSecret": client.DocumentClearAgentKnowledgeSourceSecret,
+		"SearchAgentDocuments":            client.DocumentSearchAgentDocuments,
+		"ReadAgentDocument":               client.DocumentReadAgentDocument,
+		"RecallAgentMemory":               client.DocumentRecallAgentMemory,
+		"ReadAgentConversation":           client.DocumentReadAgentConversation,
 		// The agent's own documents, which the command line sends for the
 		// same things the drawer and the dashboard do.
 		"ListAgentConversations":  client.DocumentListAgentConversations,
@@ -80,6 +85,10 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ListAgentSchedules":      client.DocumentListAgentSchedules,
 		"SaveAgentSchedule":       client.DocumentSaveAgentSchedule,
 		"SaveAgentNode":           client.DocumentSaveAgentNode,
+		// What the agent's shell left running on the person's computers.
+		"ListAgentBackgroundCommands": client.DocumentListAgentBackgroundCommands,
+		"ReadAgentBackgroundCommand":  client.DocumentReadAgentBackgroundCommand,
+		"StopAgentBackgroundCommand":  client.DocumentStopAgentBackgroundCommand,
 	}
 
 	for name, document := range documents {

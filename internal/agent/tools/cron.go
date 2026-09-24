@@ -130,6 +130,12 @@ func NextCron(expression string, after time.Time, location *time.Location) (time
 // from now, which is how a person asks to be reminded.
 var relativePattern = regexp.MustCompile(`^@in\s+(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)$`)
 
+// IsOneMoment says a schedule's line is a single moment, "@at" and a time,
+// rather than one that repeats.
+func IsOneMoment(expression string) bool {
+	return strings.HasPrefix(strings.TrimSpace(expression), "@at ")
+}
+
 // ResolveRelative turns "@in 5m" into the "@at" moment it means from now,
 // so the schedule stores a moment and not a distance that would move with
 // every look. Anything else is returned as it came.

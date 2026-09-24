@@ -69,6 +69,11 @@ func TestServeAnswersTheAgentInsideWhatWasAllowed(t *testing.T) {
 	if hello.Protocol != Protocol || hello.Token != "t" || hello.Name != "laptop" || hello.System == "" || hello.Home != root {
 		t.Fatalf("hello %+v", hello)
 	}
+	// Without background commands of its own that outlive the
+	// connection, the program does not offer them.
+	if len(hello.Features) != 0 {
+		t.Fatalf("background commands offered by a program that would kill them with the connection: %+v", hello.Features)
+	}
 	connection.incoming <- message{Type: "welcome", Protocol: Protocol}
 
 	ask := func(id int64, action string, args any) message {

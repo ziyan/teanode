@@ -152,6 +152,7 @@ const (
 	EventConfirmation EventKind = "confirmation" // waiting for the person
 	EventQuestion     EventKind = "question"     // the agent asked something
 	EventNote         EventKind = "note"         // compaction and the like
+	EventTitled       EventKind = "titled"       // the conversation was given a title: Text
 	EventDone         EventKind = "done"
 	EventError        EventKind = "error"
 )
@@ -306,6 +307,11 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 	}
 	self.latest[settings.Conversation.ID] = run
 	self.runsMutex.Unlock()
+	// The person writing is what lets ended background commands wake the
+	// conversation again.
+	if !settings.Headless && settings.Surface != backgroundSurface {
+		self.personTookTurn(settings.Conversation.ID)
+	}
 	self.waitGroup.Add(1)
 	// A turn is the model's own instructions carried out against a stranger's
 	// mail, over tools that reach servers this program did not write. It is
@@ -936,8 +942,14 @@ func (self *AskRun) turn() error {
 					if err != nil {
 						log.Warningf("cannot title conversation %q: %s", settings.Conversation.ID, err)
 					}
+					// To the conversation's feed rather than the run's, and as
+					// the conversation's rather than the run's: the run has
+					// ended by the time a title comes back, and says nothing
+					// more; and an event carrying the run's name after its
+					// last is taken for a repeat and dropped. Either way the
+					// drawer went on calling the conversation Untitled.
 					if titled != "" {
-						self.emit(Event{Kind: EventNote, Note: "titled: " + titled})
+						self.agent.publish(Event{Kind: EventTitled, Text: titled, ConversationID: settings.Conversation.ID, At: time.Now()}, true)
 					}
 				}()
 			}
@@ -1399,7 +1411,11 @@ func (self *AskRun) situation(ctx context.Context, configuration *config.Configu
 	} else {
 		lines = append(lines, "Search is by keyword only.")
 	}
-	if settings.Surface != "" {
+	switch settings.Surface {
+	case "":
+	case backgroundSurface:
+		lines = append(lines, "This turn was woken by a command you left running in the background, not by the person; what you say is read in the conversation when they look.")
+	default:
 		lines = append(lines, "You are talking through the "+settings.Surface+".")
 	}
 	// The goal on this conversation, where there is one. Rebuilt each

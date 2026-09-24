@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import {
   AGENT_ASK_EVENT,
   AGENT_OPEN_EVENT,
@@ -27,6 +27,7 @@ import {
   ArchiveIcon,
   ArrowDownIcon,
   ArrowUpIcon,
+  CheckIcon,
   ChevronDownIcon,
   ComputerIcon,
   GlobeIcon,
@@ -36,10 +37,14 @@ import {
   StarIcon,
   PlusIcon,
   SparkIcon,
+  CalendarIcon,
   TargetIcon,
+  TerminalIcon,
   TrashIcon,
   ExternalIcon,
 } from './icons'
+import { BackgroundCommand, BackgroundPanel, useBackgroundCommands } from './backgroundCommands'
+import { Budget, BudgetBar } from './budgetBar'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog, FormDialog } from './dialog'
 import { ZoomablePicture } from './lightbox'
@@ -100,6 +105,27 @@ interface Todo {
 // is the agent checking in against the goal, not the person, and the
 // transcript draws it as a line rather than as their bubble.
 const GOAL_CHECK_IN_MARKER = '[goal check-in]'
+
+// The marker a turn begins with when a command the agent left running in
+// the background has ended, which is models.BackgroundCommandMarker on the
+// server. Like a check-in it is the agent's own turn in the person's
+// shape, and is drawn the same quiet way.
+const BACKGROUND_COMMAND_MARKER = '[background command]'
+
+// The marker a schedule's turn begins with when it answers in a
+// conversation, which is models.ScheduleMarker on the server.
+const SCHEDULE_MARKER = '[schedule]'
+
+// Which kind of turn of the agent's own a user message opens, if it opens
+// one at all.
+type CheckInOrigin = 'goal' | 'background' | 'schedule'
+
+function checkInOriginOf(text: string): CheckInOrigin | null {
+  if (text.startsWith(GOAL_CHECK_IN_MARKER)) return 'goal'
+  if (text.startsWith(BACKGROUND_COMMAND_MARKER)) return 'background'
+  if (text.startsWith(SCHEDULE_MARKER)) return 'schedule'
+  return null
+}
 
 interface Artifact {
   artifact_id: string
@@ -191,14 +217,6 @@ const ATTACHMENT_PATH = '/api/v1/agent/attachments/'
 // Today's spend against the day's budget, in tokens and in money. A
 // limit of zero is no limit of that kind; where both are set, whichever
 // runs out first stops the day, and the ring shows that one.
-interface Budget {
-  used: number
-  limit: number
-  resetsAt: string
-  cost: number
-  costLimit: number
-  currency: string
-}
 
 // budgetShown is the budget the ring draws: the one nearer its end where
 // both are set, and null where neither is.
@@ -257,7 +275,17 @@ interface StoredMessage {
 
 interface RunEvent {
   kind:
-    'asked' | 'text' | 'message' | 'tool_call' | 'tool_result' | 'confirmation' | 'question' | 'note' | 'done' | 'error'
+    | 'asked'
+    | 'text'
+    | 'message'
+    | 'tool_call'
+    | 'tool_result'
+    | 'confirmation'
+    | 'question'
+    | 'note'
+    | 'titled'
+    | 'done'
+    | 'error'
   runId: string
   sequence: number
   at?: string
@@ -305,9 +333,10 @@ type Line =
     }
   | { kind: 'note'; key: string; text: string; at?: string }
   | { kind: 'error'; key: string; text: string }
-  // A turn the agent started against the goal. Its words are framing for
-  // the model and were never the person's, so only the hour is drawn.
-  | { kind: 'checkin'; key: string; at?: string; text: string }
+  // A turn the agent started on its own: against the goal, or because a
+  // background command ended. Its words are framing for the model and were
+  // never the person's, so only the hour is drawn.
+  | { kind: 'checkin'; key: string; at?: string; text: string; origin: CheckInOrigin }
 
 const AGENT = `
   query {
@@ -317,7 +346,7 @@ const AGENT = `
 const TAB = `
   query {
     ReadAgentTab { attached title url }
-    ReadAgentComputers { computers { name } }
+    ReadAgentComputers { computers { name system description } }
     ReadAgent { budget { used limit resetsAt cost costLimit currency } timezone }
   }`
 
@@ -326,6 +355,13 @@ const CONVERSATIONS = `
     ListAgentConversations(archived: $archived, query: $query) {
       id kind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt
     }
+  }`
+
+// The agent's task list alone, read again after each change its todo tool
+// makes, so the person watches the steps move while a turn is running.
+const CONVERSATION_TODOS = `
+  query ($conversationId: String) {
+    ReadAgentConversation(conversationId: $conversationId, first: 1) { todos { id text doneAt } }
   }`
 
 const CONVERSATION = `
@@ -407,27 +443,6 @@ const DELETE = `
 const MAKE_MAIN = `
   mutation ($conversationId: String) {
     SetAgentMainConversation(conversationId: $conversationId) { id kind title summary lastAt archivedAt }
-  }`
-
-// The task list, written from this end as well as by the agent's own todo
-// tool. Each of the three answers with the item as it stands afterwards,
-// which is what the drawer puts in its list: a tick is one line of the
-// conversation changing, and reading the whole transcript back to learn it
-// would both cost a page of messages and race the ticks the agent makes
-// while a turn is running.
-const ADD_TODO = `
-  mutation ($conversationId: String!, $text: String!) {
-    AddAgentTodo(conversationId: $conversationId, text: $text) { id text doneAt }
-  }`
-
-const SET_TODO = `
-  mutation ($conversationId: String!, $todoId: String!, $done: Boolean) {
-    SetAgentTodo(conversationId: $conversationId, todoId: $todoId, done: $done) { id text doneAt }
-  }`
-
-const REMOVE_TODO = `
-  mutation ($conversationId: String!, $todoId: String!) {
-    RemoveAgentTodo(conversationId: $conversationId, todoId: $todoId)
   }`
 
 // The tools after which what the mailbox shows may have changed. The rules
@@ -938,9 +953,12 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
         closeTurn()
         // A check-in is a user message only because that is the shape a
         // turn starts in. Nobody typed it, so none of it is shown.
-        if (message.content.startsWith(GOAL_CHECK_IN_MARKER)) {
-          lines.push({ kind: 'checkin', key: message.id, at: message.createdAt, text: message.content })
-          break
+        {
+          const origin = checkInOriginOf(message.content)
+          if (origin) {
+            lines.push({ kind: 'checkin', key: message.id, at: message.createdAt, text: message.content, origin })
+            break
+          }
         }
         lines.push({
           kind: 'user',
@@ -1003,6 +1021,57 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
   }
   closeTurn()
   return lines
+}
+
+// TodoLine is one of the agent's steps on a single line. A step too long
+// for the line is cut with an ellipsis; its tooltip holds the whole of it,
+// and a tap or Enter opens it in place, for a phone that has no hover.
+function TodoLine({ todo }: { todo: Todo }) {
+  const { t } = useTranslation()
+  const text = useRef<HTMLSpanElement>(null)
+  const [isCut, setIsCut] = useState(false)
+  const [isOpen, setIsOpen] = useState(false)
+  const isDone = Boolean(todo.doneAt)
+  useEffect(() => {
+    const element = text.current
+    if (!element) return
+    const measure = () => setIsCut(element.scrollWidth > element.clientWidth)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [todo.text])
+  const canOpen = isCut || isOpen
+  return (
+    <li className={[isDone ? 'done' : '', isOpen ? 'open' : ''].filter(Boolean).join(' ')}>
+      <span className="agent-drawer-todo-mark">
+        {isDone ? <CheckIcon size={12} /> : null}
+        <span className="visually-hidden">{isDone ? t('agentDrawer.todoDone') : t('agentDrawer.todoOpen')}</span>
+      </span>
+      <Tooltip label={isCut && !isOpen ? todo.text : ''}>
+        <span
+          ref={text}
+          className="agent-drawer-todo-text"
+          role={canOpen ? 'button' : undefined}
+          tabIndex={canOpen ? 0 : undefined}
+          aria-expanded={canOpen ? isOpen : undefined}
+          onClick={canOpen ? () => setIsOpen((previous) => !previous) : undefined}
+          onKeyDown={
+            canOpen
+              ? (event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    setIsOpen((previous) => !previous)
+                  }
+                }
+              : undefined
+          }
+        >
+          {todo.text}
+        </span>
+      </Tooltip>
+    </li>
+  )
 }
 
 // QuestionCard is the agent asking, with the choices it offered and a line
@@ -1291,56 +1360,21 @@ function CitedPicture({ file }: { file: CitedFile }) {
   )
 }
 
-// DeviceButton is something of the person's that is attached, a browser
-// tab or a computer: a button the size of the others in the bar, with the
-// details on hover, that opens where attached things are listed.
-function DeviceButton({
-  label,
-  framed,
-  onLeaving,
-  children,
-}: {
-  label: string
-  framed: boolean
-  onLeaving: () => void
-  children: React.ReactNode
-}) {
-  const where = '/settings/agent/connections'
-  return (
-    <Tooltip label={label}>
-      {framed ? (
-        <a
-          className="icon-button agent-drawer-device"
-          href={`${window.location.origin}${where}`}
-          target="_blank"
-          rel="noreferrer"
-          aria-label={label}
-        >
-          {children}
-        </a>
-      ) : (
-        <Link className="icon-button agent-drawer-device" to={where} aria-label={label} onClick={onLeaving}>
-          {children}
-        </Link>
-      )}
-    </Tooltip>
-  )
-}
-
 // BudgetRing is the day's tokens as a ring in the drawer's head: how much
 // of the budget has gone, coloured by how near the end of it the day is,
-// with the numbers and the hour it resets on hover, and the agent's own
-// page a click away. Nothing is drawn where there is no limit to be near.
+// with the numbers and the hour it resets on hover, and the usage dropped
+// down under the head on a press. Nothing is drawn where there is no limit
+// to be near.
 function BudgetRing({
   budget,
   zone,
-  framed,
-  onLeaving,
+  isOpen,
+  onToggle,
 }: {
   budget: Budget
   zone: string
-  framed: boolean
-  onLeaving: () => void
+  isOpen: boolean
+  onToggle: () => void
 }) {
   const { t } = useTranslation()
   const shown = budgetShown(budget)
@@ -1373,25 +1407,231 @@ function BudgetRing({
     </svg>
   )
   return (
+    <HeadMark label={label} className="agent-drawer-budget" isOpen={isOpen} onToggle={onToggle}>
+      {ring}
+    </HeadMark>
+  )
+}
+
+// The head's dropdowns.
+//
+// Every mark in the drawer's head -- the goal, what is attached, the day's
+// budget, what is running in the background -- opens the same way the
+// list of conversations does: a list dropped down under the head, over the
+// conversation, closed by anywhere outside it or Escape. What is behind a
+// mark is on the settings pages, reached from the sidebar as ever. Not a dialog over
+// the page, because the drawer is where the person is looking; and not a
+// panel over the whole box, because the head is what the box is dragged by
+// and its edges what it is resized by.
+
+// HeadMenuName is which of them is open.
+type HeadMenuName = 'goal' | 'computers' | 'tab' | 'usage' | 'background'
+
+// HeadMenu is the frame: a small title, and what is under it.
+function HeadMenu({
+  title,
+  className,
+  onClose,
+  children,
+}: {
+  title: string
+  className?: string
+  onClose: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <section
+      className={['agent-drawer-list', 'head-menu', className].filter(Boolean).join(' ')}
+      aria-label={title}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.stopPropagation()
+          onClose()
+        }
+      }}
+    >
+      <header className="head-menu-title">
+        <strong>{title}</strong>
+      </header>
+      {children}
+    </section>
+  )
+}
+
+// HeadMark is a mark in the head that opens its dropdown.
+function HeadMark({
+  label,
+  className,
+  isOpen,
+  onToggle,
+  children,
+}: {
+  label: string
+  className?: string
+  isOpen: boolean
+  onToggle: () => void
+  children: React.ReactNode
+}) {
+  return (
     <Tooltip label={label}>
-      {framed ? (
-        // Framed into another site, the drawer sends the person to the
-        // dashboard itself rather than drawing a settings page in here.
-        <a
-          className="icon-button agent-drawer-budget"
-          href={`${window.location.origin}/settings/agent`}
-          target="_blank"
-          rel="noreferrer"
-          aria-label={label}
-        >
-          {ring}
-        </a>
-      ) : (
-        <Link className="icon-button agent-drawer-budget" to="/settings/agent" aria-label={label} onClick={onLeaving}>
-          {ring}
-        </Link>
-      )}
+      <button
+        type="button"
+        className={['icon-button', className].filter(Boolean).join(' ')}
+        aria-label={label}
+        aria-expanded={isOpen}
+        onClick={onToggle}
+      >
+        {children}
+      </button>
     </Tooltip>
+  )
+}
+
+// AttachedComputer is one of the person's computers as the drawer lists it.
+interface AttachedComputer {
+  name: string
+  system?: string
+  description?: string
+}
+
+// ComputersMenu lists what is attached, a line each: the name, and the
+// person's own words about it, which is what tells two apart.
+function ComputersMenu({ computers, onClose }: { computers: AttachedComputer[]; onClose: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <HeadMenu title={t('agentDrawer.computersTitle')} onClose={onClose}>
+      {computers.map((computer) => (
+        <div key={computer.name} className="head-menu-row" title={computer.description || computer.name}>
+          <ComputerIcon size={14} />
+          <span className="head-menu-row-name">{computer.name}</span>
+          <span className="head-menu-row-detail muted">
+            {[computer.description, computer.system].filter(Boolean).join(' · ')}
+          </span>
+        </div>
+      ))}
+    </HeadMenu>
+  )
+}
+
+// TabMenu is the attached tab, a line: its title, and the site it is on.
+function TabMenu({ tab, onClose }: { tab: { title?: string; url?: string }; onClose: () => void }) {
+  const { t } = useTranslation()
+  const site = siteOf(tab.url)
+  return (
+    <HeadMenu title={t('agentDrawer.tabTitle')} onClose={onClose}>
+      <div className="head-menu-row" title={tab.url}>
+        <GlobeIcon size={14} />
+        <span className="head-menu-row-name">{tab.title || site}</span>
+        <span className="head-menu-row-detail muted">{site}</span>
+      </div>
+    </HeadMenu>
+  )
+}
+
+// siteOf is the host a tab is on, or the address as it came when it is
+// not one that can be read.
+function siteOf(url: string | undefined): string {
+  if (!url) return ''
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
+}
+
+// UsageMenu is the day's budget, drawn as the agent's page draws it: how
+// much has gone, as words and as a bar coloured by how near the end it
+// is, what it came to, and when it starts again.
+function UsageMenu({ budget, zone, onClose }: { budget: Budget; zone: string; onClose: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <HeadMenu title={t('agentDrawer.usageTitle')} onClose={onClose}>
+      <div className="head-menu-usage">
+        <BudgetBar budget={budget} zone={zone} />
+      </div>
+    </HeadMenu>
+  )
+}
+
+// GoalMenu is the goal on this conversation, set, changed and cleared in
+// the dropdown: the words, and where it stands under them.
+function GoalMenu({
+  conversation,
+  isBusy,
+  goalTurnsToday,
+  onSave,
+  onClose,
+}: {
+  conversation: Conversation
+  isBusy: boolean
+  goalTurnsToday: number
+  onSave: (goal: string) => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  // The words being written, from the goal as it stands. The dropdown is
+  // made again for another conversation, so it never carries one's draft
+  // to the next.
+  const [draft, setDraft] = useState(conversation.goal ?? '')
+  const canSave = draft.trim() !== '' && draft.trim() !== (conversation.goal ?? '')
+  return (
+    <HeadMenu title={t('agentDrawer.goal.title')} className="goal-menu" onClose={onClose}>
+      <form
+        className="head-menu-goal"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (canSave) onSave(draft.trim())
+        }}
+      >
+        <p className="muted">{t('agentDrawer.goal.hint')}</p>
+        <textarea
+          rows={3}
+          value={draft}
+          aria-label={t('agentDrawer.goal.label')}
+          autoFocus
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        {/* Where the goal stands, as the row says it: the state, since
+            when, when the agent looks again, how many turns it has taken
+            today, and its last word. Read, not edited. */}
+        {conversation.goal ? (
+          <dl className="agent-drawer-goal-status">
+            <dt>{t('agentDrawer.goal.state')}</dt>
+            <dd>{t(goalStateKey(goalStateOf(conversation)))}</dd>
+            {conversation.goalSetAt ? (
+              <>
+                <dt>{t('agentDrawer.goal.since')}</dt>
+                <dd>{formatTime(conversation.goalSetAt)}</dd>
+              </>
+            ) : null}
+            {goalStateOf(conversation) === 'working' && conversation.goalNextAt ? (
+              <>
+                <dt>{t('agentDrawer.goal.next')}</dt>
+                <dd>{formatTime(conversation.goalNextAt)}</dd>
+              </>
+            ) : null}
+            <dt>{t('agentDrawer.goal.turnsToday')}</dt>
+            <dd>{goalTurnsToday}</dd>
+            {conversation.goalNote ? (
+              <>
+                <dt>{t('agentDrawer.goal.lastNote')}</dt>
+                <dd>{conversation.goalNote}</dd>
+              </>
+            ) : null}
+          </dl>
+        ) : null}
+        <div className="head-menu-actions">
+          {conversation.goal ? (
+            <button type="button" className="danger" disabled={isBusy} onClick={() => onSave('')}>
+              {t('agentDrawer.goal.clear')}
+            </button>
+          ) : null}
+          <button type="submit" className="primary" disabled={isBusy || !canSave}>
+            {t('common.save')}
+          </button>
+        </div>
+      </form>
+    </HeadMenu>
   )
 }
 
@@ -1415,11 +1655,25 @@ function goalStateKey(state: GoalState): `agentDrawer.goal.${GoalState}` {
 // word moves into the tooltip: there is no room beside a title on a phone
 // for "waiting for you · next look 10:42", and the mark's colour already
 // says which of the three it is to anyone who has seen it once.
-// CheckInLine is one turn of the agent's own toward the goal, as a line
-// rather than a bubble; pressing it shows the words the turn was given,
-// because a person watching a goal wants to know what the agent was
-// told as much as what it did.
-function CheckInLine({ at, text }: { at?: string; text: string }) {
+// What each kind of turn of the agent's own is called, and drawn with.
+const CHECK_IN_LABEL = {
+  goal: 'agentDrawer.goal.checkIn',
+  background: 'agentDrawer.backgroundEnded',
+  schedule: 'agentDrawer.scheduleTurn',
+} as const
+
+function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
+  if (origin === 'background') return <TerminalIcon size={12} />
+  if (origin === 'schedule') return <CalendarIcon size={12} />
+  return <TargetIcon size={12} />
+}
+
+// CheckInLine is one turn of the agent's own -- toward the goal, on
+// hearing that a background command ended, or at a schedule's time -- as a
+// line rather than a bubble; pressing it shows the words the turn was
+// given, because a person watching the agent wants to know what it was told
+// as much as what it did.
+function CheckInLine({ at, text, origin }: { at?: string; text: string; origin: CheckInOrigin }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   return (
@@ -1430,8 +1684,8 @@ function CheckInLine({ at, text }: { at?: string; text: string }) {
         aria-expanded={open}
         onClick={() => setOpen((before) => !before)}
       >
-        <TargetIcon size={12} />
-        {t('agentDrawer.goal.checkIn')}
+        <CheckInIcon origin={origin} />
+        {t(CHECK_IN_LABEL[origin])}
         {at ? ` · ${clockTime(at)}` : ''}
       </button>
       {open ? <pre className="agent-checkin-prompt">{text}</pre> : null}
@@ -1439,7 +1693,15 @@ function CheckInLine({ at, text }: { at?: string; text: string }) {
   )
 }
 
-function GoalChip({ conversation, onOpen }: { conversation: Conversation; onOpen: () => void }) {
+function GoalChip({
+  conversation,
+  isOpen,
+  onOpen,
+}: {
+  conversation: Conversation
+  isOpen: boolean
+  onOpen: () => void
+}) {
   const { t } = useTranslation()
   // One icon, whatever the state: the head has the conversation's name,
   // the attached marks and the budget ring on it, and there is no room
@@ -1451,10 +1713,41 @@ function GoalChip({ conversation, onOpen }: { conversation: Conversation; onOpen
   const label = goal ? `${t(goalStateKey(state as GoalState))} · ${goal}` : t('agentDrawer.goal.set')
   return (
     <Tooltip label={label}>
-      <button type="button" className={`icon-button agent-drawer-goal ${state}`} aria-label={label} onClick={onOpen}>
+      <button
+        type="button"
+        className={`icon-button agent-drawer-goal ${state}`}
+        aria-label={label}
+        aria-expanded={isOpen}
+        onClick={onOpen}
+      >
         <TargetIcon size={16} />
       </button>
     </Tooltip>
+  )
+}
+
+// BackgroundMark is the head's mark for the commands this conversation
+// has running in the background: a terminal whose cursor blinks. It is
+// there only while one runs; how one ended is said in the conversation.
+function BackgroundMark({
+  commands,
+  isOpen,
+  onToggle,
+}: {
+  commands: BackgroundCommand[]
+  isOpen: boolean
+  onToggle: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <HeadMark
+      label={t('agentDrawer.backgroundRunning', { count: commands.length })}
+      className="agent-drawer-background running"
+      isOpen={isOpen}
+      onToggle={onToggle}
+    >
+      <TerminalIcon size={14} />
+    </HeadMark>
   )
 }
 
@@ -1521,24 +1814,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const messages = useRef<StoredMessage[]>([])
   const [total, setTotal] = useState(0)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
+  // The agent's own task list for this conversation: its steps and how far
+  // it has got, which the person reads and does not change.
   const [todos, setTodos] = useState<Todo[]>([])
-  // What is being typed into the foot of the task list, and the items with
-  // a write of the person's in flight -- a second tick on a box already on
-  // its way to the server would ask for the opposite of what it shows.
-  const [todoDraft, setTodoDraft] = useState('')
-  const [todosBusy, setTodosBusy] = useState<string[]>([])
-  const [addingTodo, setAddingTodo] = useState(false)
-  // Whether the person has written to this conversation's list themselves.
-  // The list is drawn only when there is one, so taking the last item off
-  // would otherwise take away the box that puts one back.
-  const [todosTouched, setTodosTouched] = useState(false)
-  // When the person last wrote to the list. The agent ticks items off
-  // through its tool while a turn runs, and a read of the conversation is
-  // how those arrive -- so a read that was already outstanding when the
-  // person ticked one is older than what they did, and does not get to
-  // answer for the list. The next read settles it.
-  const todoWrittenAt = useRef(0)
-  const todosLoadedFor = useRef('')
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState<File[]>([])
   const [references, setReferences] = useState<AgentReference[]>([])
@@ -1551,7 +1829,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null)
   // The goal being typed, or null while the dialog is shut. An empty
   // string is a dialog open on a conversation that has no goal yet.
-  const [goalDraft, setGoalDraft] = useState<string | null>(null)
   const [goalBusy, setGoalBusy] = useState(false)
   const [goalTurnsToday, setGoalTurnsToday] = useState(0)
   // The goal a conversation about to be started is given, or null while
@@ -1572,7 +1849,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // The bubbles whose time is shown: a tap on a phone, where there is no
   // pointer to hover with.
   const [tab, setTab] = useState<{ attached: boolean; title?: string; url?: string } | null>(null)
-  const [computers, setComputers] = useState<string[]>([])
+  const [computers, setComputers] = useState<AttachedComputer[]>([])
   // The day's tokens against the budget, read with the rest and so kept
   // current as turns start and finish.
   const [budget, setBudget] = useState<Budget | null>(null)
@@ -1683,7 +1960,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   }, [])
 
   const applyConversationSnapshot = useCallback(
-    (snapshot: Awaited<ReturnType<typeof readConversationSnapshot>>, askedAt: number) => {
+    (snapshot: Awaited<ReturnType<typeof readConversationSnapshot>>) => {
       setLoaded(snapshot.conversation)
       setActingAs(snapshot.actingAs ?? null)
       setGoalTurnsToday(snapshot.goalTurnsToday ?? 0)
@@ -1692,20 +1969,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       setTotal(snapshot.total ?? snapshot.messages.length)
       setLines(linesOf(snapshot.messages, t))
       setShowingGoalNote(true)
-      // This read is how a tick the agent made during its turn reaches the
-      // list; a tick of the person's own is already there, set from the
-      // answer their own mutation gave, and is the newer of the two. A
-      // conversation being opened is another list entirely, and takes what
-      // the server says whatever was written to the one before it.
-      const sameList = todosLoadedFor.current === snapshot.conversation.id
-      if (!sameList) {
-        todosLoadedFor.current = snapshot.conversation.id
-        setTodoDraft('')
-        setTodosTouched(false)
-      }
-      if (!sameList || todoWrittenAt.current < askedAt) {
-        setTodos(snapshot.todos ?? [])
-      }
+      // This read is how a step the agent finished during its turn
+      // reaches the list.
+      setTodos(snapshot.todos ?? [])
       if (draftLoadedFor.current !== snapshot.conversation.id) {
         setDraft(remembered(draftKey(snapshot.conversation.id)))
         draftLoadedFor.current = snapshot.conversation.id
@@ -1722,6 +1988,22 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     readConversation: requestConversation,
     adoptConversation,
   } = useAgentConversation(initialConversationId, readConversationSnapshot, applyConversationSnapshot)
+
+  // What this conversation left running on the person's computers, kept up
+  // while the drawer is open. The main conversation is named by an empty
+  // id until it has been read, and the list wants its real one.
+  const backgroundConversationId = conversationId || loaded?.id || ''
+  const { commands: runningCommands, reload: reloadBackground } = useBackgroundCommands(
+    backgroundConversationId,
+    open && available && backgroundConversationId !== '',
+  )
+  // Which of the head's dropdowns is open, if any. One at a time, and none
+  // while the list of conversations is.
+  const [headMenu, setHeadMenu] = useState<HeadMenuName | null>(null)
+  const toggleHeadMenu = (name: HeadMenuName) => {
+    setShowingList(false)
+    setHeadMenu((before) => (before === name ? null : name))
+  }
 
   const readConversation = useCallback(
     (conversationId: string, isSelection = false) => {
@@ -1849,6 +2131,24 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     remember(draftKey(conversationId), draft)
   }, [draft, conversationId])
 
+  // Escape closes a dropdown -- the conversations, or one of the head's --
+  // wherever the focus is, not only from inside it: the one that opens a
+  // dropdown is a button in the head, and the focus stays there. A
+  // command's output in the background dropdown takes its Escape first,
+  // going back to the list, and a field that uses Escape marks it used.
+  useEffect(() => {
+    if (!headMenu && !showingList) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (document.querySelector('.dialog-scrim, .select-list')) return
+      event.preventDefault()
+      setHeadMenu(null)
+      setShowingList(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [headMenu, showingList])
+
   // Escape toggles the drawer from anywhere on the page — unless a dialog
   // or a list is open, which Escape closes first.
   useEffect(() => {
@@ -1893,13 +2193,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       if (stopped || document.hidden) return
       graphql<{
         ReadAgentTab: { attached: boolean; title?: string; url?: string }
-        ReadAgentComputers: { computers: { name: string }[] }
+        ReadAgentComputers: { computers: AttachedComputer[] }
         ReadAgent: { budget: Budget | null; timezone: string }
       }>(TAB)
         .then((response) => {
           if (stopped) return
           setTab(response.ReadAgentTab)
-          setComputers(response.ReadAgentComputers.computers.map((computer) => computer.name))
+          setComputers(response.ReadAgentComputers.computers)
           setBudget(response.ReadAgent.budget)
           setAgentZone(response.ReadAgent.timezone)
         })
@@ -2115,9 +2415,26 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [standalone])
 
+  // The conversation on screen now, for an answer that arrives after the
+  // person has moved to another one.
+  const shownConversationId = useRef(conversationId)
+  shownConversationId.current = conversationId
   const applyEvent = (event: RunEvent) => {
     // What an event does beyond the transcript happens here, once: the
     // updater below may run twice under StrictMode.
+    //
+    // A new conversation is titled after its first turn has ended: the
+    // head and the list take the title as soon as it is written.
+    if (event.kind === 'titled') {
+      void loadConversations()
+      return
+    }
+    //
+    // A shell call may have left something running, or stopped it: the
+    // head's mark says so now rather than at the next poll.
+    if (event.kind === 'tool_result' && event.tool === 'shell') {
+      void reloadBackground(true)
+    }
     if (
       event.kind === 'tool_result' &&
       event.tool &&
@@ -2125,6 +2442,19 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       !(event.text ?? '').startsWith('{"error"')
     ) {
       announceMailChanged()
+    }
+    if (
+      event.kind === 'tool_result' &&
+      event.tool === 'todo' &&
+      conversationId &&
+      !(event.text ?? '').startsWith('{"error"')
+    ) {
+      const readFor = conversationId
+      void graphql<{ ReadAgentConversation: { todos: Todo[] } }>(CONVERSATION_TODOS, { conversationId: readFor })
+        .then((answer) => {
+          if (readFor === shownConversationId.current) setTodos(answer.ReadAgentConversation.todos ?? [])
+        })
+        .catch(() => undefined)
     }
     if (event.kind === 'error') {
       toast.failed(event.error ?? t('agentDrawer.failed'))
@@ -2226,11 +2556,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     if (sending.current > 0 && event.note === surface()) return
     // A turn of the agent's own, arriving live: the line, not the bubble,
     // and nothing here to have said it twice.
-    if ((event.text ?? '').startsWith(GOAL_CHECK_IN_MARKER)) {
+    const origin = checkInOriginOf(event.text ?? '')
+    if (origin) {
       setLines((previous) => [
         ...previous,
-        { kind: 'checkin', key: `${event.runId}-asked`, at: event.at, text: event.text ?? '' },
+        { kind: 'checkin', key: `${event.runId}-asked`, at: event.at, text: event.text ?? '', origin },
       ])
+      // A background command has just ended: its row says so now rather
+      // than at the next poll.
+      if (origin === 'background') void reloadBackground(true)
       return
     }
     setLines((previous) => {
@@ -2626,7 +2960,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     setGoalBusy(true)
     try {
       await graphql(UPDATE, { conversationId, goal })
-      setGoalDraft(null)
+      setHeadMenu(null)
       await loadConversations()
       await readConversation(conversationId)
       toast.done(goal ? t('agentDrawer.goal.saved') : t('agentDrawer.goal.cleared'))
@@ -2634,71 +2968,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       toast.failure(caught, t('agentDrawer.goal.clearFailed'))
     } finally {
       setGoalBusy(false)
-    }
-  }
-
-  // The person's own three writes to the task list. Each takes the item
-  // the server hands back and puts that one item in the list, so the
-  // transcript is left where it is and nothing else on screen moves. The
-  // hour of the write is kept so that a read already on its way cannot
-  // undo it; see todoWrittenAt.
-  const setTodoDone = async (todo: Todo, done: boolean) => {
-    if (!conversationId || todosBusy.includes(todo.id)) return
-    todoWrittenAt.current = Date.now()
-    setTodosBusy((previous) => [...previous, todo.id])
-    try {
-      const response = await graphql<{ SetAgentTodo: Todo }>(SET_TODO, {
-        conversationId,
-        todoId: todo.id,
-        done,
-      })
-      todoWrittenAt.current = Date.now()
-      setTodos((previous) =>
-        previous.map((candidate) => (candidate.id === todo.id ? response.SetAgentTodo : candidate)),
-      )
-    } catch (caught) {
-      toast.failure(caught, t('agentDrawer.todoFailed'))
-    } finally {
-      setTodosBusy((previous) => previous.filter((candidate) => candidate !== todo.id))
-    }
-  }
-
-  const addTodo = async () => {
-    const text = todoDraft.trim()
-    if (!conversationId || !text || addingTodo) return
-    todoWrittenAt.current = Date.now()
-    setAddingTodo(true)
-    try {
-      const response = await graphql<{ AddAgentTodo: Todo }>(ADD_TODO, { conversationId, text })
-      todoWrittenAt.current = Date.now()
-      const added = response.AddAgentTodo
-      setTodos((previous) => [...previous.filter((candidate) => candidate.id !== added.id), added])
-      setTodoDraft('')
-      setTodosTouched(true)
-      toast.done(t('agentDrawer.todoAdded'))
-    } catch (caught) {
-      toast.failure(caught, t('agentDrawer.todoFailed'))
-    } finally {
-      setAddingTodo(false)
-    }
-  }
-
-  // No question asked before it goes: the item is one line the person
-  // wrote, and typing it again costs less than a dialog.
-  const removeTodo = async (todo: Todo) => {
-    if (!conversationId || todosBusy.includes(todo.id)) return
-    todoWrittenAt.current = Date.now()
-    setTodosBusy((previous) => [...previous, todo.id])
-    try {
-      await graphql<{ RemoveAgentTodo: boolean }>(REMOVE_TODO, { conversationId, todoId: todo.id })
-      todoWrittenAt.current = Date.now()
-      setTodos((previous) => previous.filter((candidate) => candidate.id !== todo.id))
-      setTodosTouched(true)
-      toast.done(t('agentDrawer.todoRemoved'))
-    } catch (caught) {
-      toast.failure(caught, t('agentDrawer.todoFailed'))
-    } finally {
-      setTodosBusy((previous) => previous.filter((candidate) => candidate !== todo.id))
     }
   }
 
@@ -2841,7 +3110,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       case 'question':
         return <QuestionCard key={line.key} line={line} onAnswer={(text) => void answer(line, text)} />
       case 'checkin':
-        return <CheckInLine key={line.key} at={line.at} text={line.text} />
+        return <CheckInLine key={line.key} at={line.at} text={line.text} origin={line.origin} />
       case 'note':
         return (
           <div key={line.key} className="agent-line note muted">
@@ -2859,6 +3128,29 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
   }
 
+  // A dropdown whose mark has gone goes with it -- the tab detached, the
+  // last command ended, the limit taken away -- and none outlives the
+  // conversation it was opened in. Left, it stayed open with nothing to
+  // press to close it, and the backdrop under it took the next click.
+  const headConversation = conversations.find((conversation) => conversation.id === conversationId) ?? loaded
+  const isHeadMenuMarked =
+    headMenu === 'goal'
+      ? Boolean(headConversation && conversationId && headConversation.kind !== 'run')
+      : headMenu === 'tab'
+        ? Boolean(tab?.attached)
+        : headMenu === 'computers'
+          ? computers.length > 0
+          : headMenu === 'usage'
+            ? Boolean(budget && budgetShown(budget))
+            : headMenu === 'background'
+              ? runningCommands.length > 0
+              : true
+  useEffect(() => {
+    if (headMenu && !isHeadMenuMarked) setHeadMenu(null)
+  }, [headMenu, isHeadMenuMarked])
+  useEffect(() => {
+    setHeadMenu(null)
+  }, [conversationId])
   if (!available) {
     return null
   }
@@ -2935,7 +3227,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               type="button"
               className="agent-drawer-conversation"
               aria-expanded={showingList}
-              onClick={() => setShowingList((previous) => !previous)}
+              onClick={() => {
+                setHeadMenu(null)
+                setShowingList((previous) => !previous)
+              }}
             >
               <SparkIcon size={14} />
               <span className="agent-drawer-title">{title}</span>
@@ -2945,33 +3240,54 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 here. A run has no goal: nobody talks it into one, and it
                 is over by the time it is read. */}
             {current && conversationId && !isRun && (
-              <GoalChip conversation={current} onOpen={() => setGoalDraft(current.goal ?? '')} />
+              <GoalChip conversation={current} isOpen={headMenu === 'goal'} onOpen={() => toggleHeadMenu('goal')} />
             )}
             {/* What of the person's own is attached, as a mark with the
-                details on hover: the transcript is for the conversation. */}
+                details on hover and a line each under it on a press: the
+                transcript is for the conversation. */}
             {tab?.attached && (
-              <DeviceButton
+              <HeadMark
                 label={t('agentDrawer.tabAttached', { title: tab.title || tab.url || '' })}
-                framed={standalone}
-                onLeaving={leaving}
+                className="agent-drawer-device"
+                isOpen={headMenu === 'tab'}
+                onToggle={() => toggleHeadMenu('tab')}
               >
                 <GlobeIcon size={14} />
-              </DeviceButton>
+              </HeadMark>
             )}
             {computers.length > 0 && (
-              <DeviceButton
+              <HeadMark
                 label={
                   computers.length === 1
-                    ? t('agentDrawer.computerAttached', { name: computers[0] })
-                    : t('agentDrawer.computersAttached', { names: computers.join(', ') })
+                    ? t('agentDrawer.computerAttached', { name: computers[0].name })
+                    : t('agentDrawer.computersAttached', {
+                        names: computers.map((computer) => computer.name).join(', '),
+                      })
                 }
-                framed={standalone}
-                onLeaving={leaving}
+                className="agent-drawer-device"
+                isOpen={headMenu === 'computers'}
+                onToggle={() => toggleHeadMenu('computers')}
               >
                 <ComputerIcon size={14} />
-              </DeviceButton>
+              </HeadMark>
             )}
-            {budget && <BudgetRing budget={budget} zone={agentZone} framed={standalone} onLeaving={leaving} />}
+            {/* What this conversation has running on a computer, while
+                anything is: how one ended is said in the conversation. */}
+            {runningCommands.length > 0 && (
+              <BackgroundMark
+                commands={runningCommands}
+                isOpen={headMenu === 'background'}
+                onToggle={() => toggleHeadMenu('background')}
+              />
+            )}
+            {budget && (
+              <BudgetRing
+                budget={budget}
+                zone={agentZone}
+                isOpen={headMenu === 'usage'}
+                onToggle={() => toggleHeadMenu('usage')}
+              />
+            )}
             {/* Framed by the extension, the panel around this has a bar
                 of its own with the close on it; two of them, one under
                 the other, is one too many. */}
@@ -2983,6 +3299,32 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               </Tooltip>
             )}
           </div>
+          {/* What this chat left running, dropped down from the head the
+              way the conversations are, so the head stays where the box is
+              dragged from and its edges where it is resized. */}
+          {headMenu && <div className="agent-drawer-backdrop" onClick={() => setHeadMenu(null)} />}
+          {headMenu === 'background' && (
+            <BackgroundPanel
+              commands={runningCommands}
+              onChanged={() => void reloadBackground(true)}
+              onClose={() => setHeadMenu(null)}
+            />
+          )}
+          {headMenu === 'computers' && <ComputersMenu computers={computers} onClose={() => setHeadMenu(null)} />}
+          {headMenu === 'tab' && tab?.attached && <TabMenu tab={tab} onClose={() => setHeadMenu(null)} />}
+          {headMenu === 'usage' && budget && (
+            <UsageMenu budget={budget} zone={agentZone} onClose={() => setHeadMenu(null)} />
+          )}
+          {headMenu === 'goal' && current && (
+            <GoalMenu
+              key={current.id}
+              conversation={current}
+              isBusy={goalBusy}
+              goalTurnsToday={goalTurnsToday}
+              onSave={(goal) => void saveGoal(goal)}
+              onClose={() => setHeadMenu(null)}
+            />
+          )}
           {showingList && (
             <>
               {/* Anywhere outside the list closes it. */}
@@ -3153,79 +3495,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               </button>
             </Tooltip>
           )}
-          {/* The task list, in the place it has always been: above what
-              the person is about to type, under the transcript. On a
-              conversation it is theirs to change as well as the agent's;
-              a run's transcript is over and its list only says what
-              happened, which is also what the server answers, since the
-              todo mutations refuse a run. */}
-          {(todos.length > 0 || (!isRun && todosTouched)) && (
+          {/* The agent's task list, above what the person is about to
+              type: its steps and how far it has got, one line each, the
+              whole of a long one in its tooltip. The agent keeps it with
+              its todo tool; the person reads it. */}
+          {todos.length > 0 && (
             <div className="agent-drawer-todo">
-              <ul>
-                {todos.map((todo) => {
-                  const done = Boolean(todo.doneAt)
-                  const busy = todosBusy.includes(todo.id)
-                  return (
-                    <li key={todo.id} className={done ? 'done' : ''}>
-                      {isRun ? (
-                        <span>
-                          {done ? '☑' : '☐'} {todo.text}
-                        </span>
-                      ) : (
-                        <>
-                          <label className="checkbox">
-                            <input
-                              type="checkbox"
-                              checked={done}
-                              disabled={busy}
-                              onChange={() => void setTodoDone(todo, !done)}
-                            />
-                            <span>{todo.text}</span>
-                          </label>
-                          <Tooltip label={t('agentDrawer.todoRemove')}>
-                            <button
-                              type="button"
-                              className="icon-action danger"
-                              disabled={busy}
-                              aria-label={`${todo.text}: ${t('agentDrawer.todoRemove')}`}
-                              onClick={() => void removeTodo(todo)}
-                            >
-                              <TrashIcon size={12} />
-                            </button>
-                          </Tooltip>
-                        </>
-                      )}
-                    </li>
-                  )
-                })}
+              <ul aria-label={t('agentDrawer.todoTitle')}>
+                {todos.map((todo) => (
+                  <TodoLine key={todo.id} todo={todo} />
+                ))}
               </ul>
-              {!isRun && (
-                <form
-                  className="agent-drawer-todo-add"
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    void addTodo()
-                  }}
-                >
-                  <input
-                    value={todoDraft}
-                    onChange={(event) => setTodoDraft(event.target.value)}
-                    placeholder={t('agentDrawer.todoPlaceholder')}
-                    aria-label={t('agentDrawer.todoAdd')}
-                    disabled={addingTodo}
-                  />
-                  <Tooltip label={t('agentDrawer.todoAdd')}>
-                    <button
-                      type="submit"
-                      className="icon-action"
-                      disabled={addingTodo || todoDraft.trim().length === 0}
-                      aria-label={t('agentDrawer.todoAdd')}
-                    >
-                      <PlusIcon size={14} />
-                    </button>
-                  </Tooltip>
-                </form>
-              )}
             </div>
           )}
           {(references.length > 0 || pending.length > 0) && (
@@ -3375,58 +3655,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             <span>{t('agentDrawer.newGoal')}</span>
             <textarea rows={3} value={startingGoal} onChange={(event) => setStartingGoal(event.target.value)} />
           </label>
-        </FormDialog>
-      ) : null}
-      {goalDraft !== null && current ? (
-        <FormDialog
-          title={t('agentDrawer.goal.title')}
-          submitLabel={t('common.save')}
-          busy={goalBusy}
-          canSubmit={goalDraft.trim() !== '' && goalDraft.trim() !== (current.goal ?? '')}
-          otherAction={
-            current.goal ? (
-              <button type="button" className="danger" disabled={goalBusy} onClick={() => void saveGoal('')}>
-                {t('agentDrawer.goal.clear')}
-              </button>
-            ) : undefined
-          }
-          onClose={() => setGoalDraft(null)}
-          onSubmit={() => void saveGoal(goalDraft.trim())}
-        >
-          <p className="muted">{t('agentDrawer.goal.hint')}</p>
-          <label>
-            <span>{t('agentDrawer.goal.label')}</span>
-            <textarea rows={3} value={goalDraft} onChange={(event) => setGoalDraft(event.target.value)} />
-          </label>
-          {/* Where the goal stands, as the row says it: the state, since
-              when, when the agent looks again, how many turns it has
-              taken today, and its last word. Read, not edited. */}
-          {current.goal ? (
-            <dl className="agent-drawer-goal-status">
-              <dt>{t('agentDrawer.goal.state')}</dt>
-              <dd>{t(goalStateKey(goalStateOf(current)))}</dd>
-              {current.goalSetAt ? (
-                <>
-                  <dt>{t('agentDrawer.goal.since')}</dt>
-                  <dd>{formatTime(current.goalSetAt)}</dd>
-                </>
-              ) : null}
-              {goalStateOf(current) === 'working' && current.goalNextAt ? (
-                <>
-                  <dt>{t('agentDrawer.goal.next')}</dt>
-                  <dd>{formatTime(current.goalNextAt)}</dd>
-                </>
-              ) : null}
-              <dt>{t('agentDrawer.goal.turnsToday')}</dt>
-              <dd>{goalTurnsToday}</dd>
-              {current.goalNote ? (
-                <>
-                  <dt>{t('agentDrawer.goal.lastNote')}</dt>
-                  <dd>{current.goalNote}</dd>
-                </>
-              ) : null}
-            </dl>
-          ) : null}
         </FormDialog>
       ) : null}
       {deleting ? (

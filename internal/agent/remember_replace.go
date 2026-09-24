@@ -15,7 +15,12 @@ import (
 // strike that lands without its replacement is the one shape of this
 // that loses something: the page stops saying the old thing and never
 // starts saying the new one.
-func supersedeWhatWasReplaced(tx db.Transaction, agentId string, supersedes []SupersededFact, filed map[string][]*models.AgentFact, shown map[string]string) error {
+//
+// filed is what each of the answer's facts became, by its place in the
+// answer; theirWords, when given, is the messages the person wrote, which
+// are the only ones a retraction may quote. Nil for documents, where
+// every item shown is a source.
+func supersedeWhatWasReplaced(tx db.Transaction, agentId string, supersedes []SupersededFact, filed map[int]*models.AgentFact, shown map[string]string, theirWords map[string]bool) error {
 	for _, superseded := range supersedes {
 		path := models.NormalizePath(superseded.Path)
 		if path == "" || superseded.Number <= 0 {
@@ -47,14 +52,18 @@ func supersedeWhatWasReplaced(tx db.Transaction, agentId string, supersedes []Su
 		// line the person had stated, and an answer carrying nothing but
 		// `supersedes` could empty a page without filing a word.
 		//
-		// So a supersession has to be one of two things. Either this
-		// answer filed something on the same page standing at least as
-		// firmly as what it would replace -- a replacement -- or it
-		// carries words from what the run was shown saying the line is
-		// done with, which is a retraction. Neither, and the line stays
-		// and the run says why.
-		if replacementFor(fact, filed[node.ID]) == nil && !retractionHolds(superseded, shown) {
-			log.Noticef("not superseding %s#%d: nothing was filed to replace it and nothing shown to retract it",
+		// So a supersession has to be one of two things. Either it names
+		// the fact in this answer that replaces the line, and that fact
+		// can -- see replacementHolds -- or it carries the person's own
+		// words saying the line is done with, which is a retraction.
+		// Neither, and the line stays and the run says why: a duplicate
+		// costs a line on a page, a wrong retirement costs the truth.
+		var replacement *models.AgentFact
+		if superseded.ReplacedBy != nil {
+			replacement = filed[*superseded.ReplacedBy-1]
+		}
+		if !replacementHolds(fact, replacement) && !retractionHolds(superseded, shown, theirWords) {
+			log.Noticef("not superseding %s#%d: no replacement that can stand in for it was named, and nothing the person said retracts it",
 				path, superseded.Number)
 			continue
 		}
@@ -74,18 +83,22 @@ func supersedeWhatWasReplaced(tx db.Transaction, agentId string, supersedes []Su
 	return nil
 }
 
-// replacementFor is the fact this answer filed that may stand in for one
-// it asked to retire, or nil where it filed none that could.
-func replacementFor(retiring *models.AgentFact, candidates []*models.AgentFact) *models.AgentFact {
-	for _, candidate := range candidates {
-		if candidate == nil || candidate.ID == retiring.ID {
-			continue
-		}
-		if atLeastAsWellEvidenced(candidate, retiring) {
-			return candidate
-		}
+// replacementHolds says whether the fact an answer named can stand in
+// for the line it asked to retire: on the same page, another fact than
+// the line itself, standing on ground at least as firm, of the same kind,
+// and, where both are dated, not about an earlier day. Anything else is
+// an answer naming the wrong fact, and both stay.
+func replacementHolds(retiring, replacement *models.AgentFact) bool {
+	if replacement == nil || replacement.ID == retiring.ID || replacement.NodeID != retiring.NodeID {
+		return false
 	}
-	return nil
+	if replacement.Kind != retiring.Kind {
+		return false
+	}
+	if replacement.HappenedAt != nil && retiring.HappenedAt != nil && replacement.HappenedAt.Before(*retiring.HappenedAt) {
+		return false
+	}
+	return atLeastAsWellEvidenced(replacement, retiring)
 }
 
 // retractionHolds says whether a retirement that files nothing in its
@@ -94,17 +107,23 @@ func replacementFor(retiring *models.AgentFact, candidates []*models.AgentFact) 
 // The same test a fact's citation gets, and for the same reason: words
 // that are not in the thing they are said to be from are words nobody
 // said. A message named but never shown to this run is nothing at all.
-func retractionHolds(superseded SupersededFact, shown map[string]string) bool {
-	id := strings.TrimSpace(superseded.MessageID)
+//
+// In a conversation the words must be the person's. The agent's own reply
+// is in the transcript too, and a quote of its "Quite." retired a fact
+// with nothing in its place. And there must be words: a message the run
+// kept no text for has nothing in it to retract anything with.
+func retractionHolds(superseded SupersededFact, shown map[string]string, theirWords map[string]bool) bool {
+	id := strings.Trim(strings.TrimSpace(superseded.MessageID), "[]")
 	quote := strings.TrimSpace(superseded.Quote)
 	if id == "" || quote == "" {
 		return false
 	}
-	source, known := shown[id]
-	if !known {
+	if theirWords != nil && !theirWords[id] {
 		return false
 	}
-	// An empty source is a message the run knows it showed but kept no
-	// text for, which is nothing to check rather than something to doubt.
-	return source == "" || quoteOccursIn(quote, source)
+	source, known := shown[id]
+	if !known || strings.TrimSpace(source) == "" {
+		return false
+	}
+	return quoteOccursIn(quote, source)
 }

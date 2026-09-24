@@ -50,6 +50,13 @@ type GraphOperation interface {
 	// identifier and the times.
 	PutAgentNode(node *models.AgentNode) (*models.AgentNode, error)
 
+	// SetAgentNodeSummary writes a page's opening and nothing else, and
+	// says whether it changed. For a writer that owns only the opening,
+	// the nightly rewrite: saving the whole page from a copy read before a
+	// model call put back whatever a rename, an alias, a pin or an archive
+	// had changed in the meantime.
+	SetAgentNodeSummary(agentId, nodeId, summary string) (bool, error)
+
 	// MoveAgentNode puts a page under another, rewriting the paths of
 	// everything beneath it.
 	MoveAgentNode(agentId, path, newParentPath string) (*models.AgentNode, error)
@@ -633,6 +640,33 @@ func (self *transaction) lockAgentNode(agentId, path string) (*models.AgentNode,
 		return nil, err
 	}
 	return nodes[0], nil
+}
+
+func (self *transaction) SetAgentNodeSummary(agentId, nodeId, summary string) (bool, error) {
+	existing, err := self.GetAgentNodeByID(agentId, nodeId)
+	if err != nil || existing == nil {
+		return false, err
+	}
+	if existing.Summary == summary {
+		return false, nil
+	}
+	now := time.Now().Truncate(time.Microsecond)
+	if err := self.tx.Exec(`UPDATE "agent_node" SET "summary" = ?, "modified_at" = ? WHERE "id" = ? AND "agent_id" = ?`,
+		summary, now, nodeId, agentId).Error; err != nil {
+		return false, err
+	}
+	if err := self.indexNodesWhere(`"id" = ?`, nodeId); err != nil {
+		return false, err
+	}
+	// The same as a summary changed through PutAgentNode: the vector no
+	// longer says what the page says, and the change is in its history.
+	if err := self.tx.Exec(`DELETE FROM "agent_node_vector" WHERE "node_id" = ?`, nodeId).Error; err != nil {
+		return false, err
+	}
+	self.note(agentId, nodeId, models.RevisionPage,
+		map[string]any{"text": existing.Summary},
+		map[string]any{"text": summary}, "")
+	return true, nil
 }
 
 // indexNode writes the page's full-text column. Written on the way in

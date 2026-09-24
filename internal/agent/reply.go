@@ -59,7 +59,7 @@ func ReplyPrompt(input *DraftInput, guidance string) ([]llm.ChatMessage, error) 
 	}
 	user, err := render("reply.txt", replyData{
 		PersonName:  personName(input.Owner),
-		Language:    languageName(Language(input.Agent, input.Owner)),
+		Language:    languageName(KnowledgeLanguage(input.Agent, input.Owner)),
 		Guidance:    strings.TrimSpace(guidance),
 		Memories:    input.Memories,
 		Exemplars:   input.Exemplars,

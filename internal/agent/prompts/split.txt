@@ -1,12 +1,21 @@
 This page in {{.PersonName}}'s agent's notes has grown past what one
 page should hold. Say how to divide it.
 
+Write in {{.KnowledgeLanguage}}, whatever language the material is in:
+page names, openings and facts alike. Names of people and things keep
+their own spelling, paths keep the lower-case slugs they already use,
+and a quote is copied as it stands.
+
 ## The page
 
 {{.Path}} — {{.Name}} ({{.Kind}})
 
 {{if .Opening}}{{.Opening}}
 
+{{end}}{{if .Children}}## The pages already under it
+
+{{range .Children}}{{.}}
+{{end}}
 {{end}}## Its facts
 
 <facts>
@@ -19,8 +28,14 @@ Three to eight groups, each a theme a reader would look for by name:
 one part of the thing, one period of its life, one kind of concern. Each
 group gets a short name, a slug for its path (lower-case words joined by
 dashes), and the numbers of the facts that belong in it. A fact that fits
-nowhere stays where it is: leave it out. Every group needs at least three
+nowhere stays where it is: leave it out. A new group needs at least three
 facts, or it is not a page.
+{{if .Children}}
+Where a group is what one of the pages already under it is about, give
+that page's slug and name, and its facts join the page that is there, however
+few they are. Make a new group only for a theme none of them covers; a
+second page beside one that already says the same is what this is not for.
+{{end}}
 
 {{if .Self}}This is {{.PersonName}}'s own page. Who they are, what they
 prefer and how they work stay here; what belongs on a group is the
@@ -29,4 +44,4 @@ detail.
 
 {{end}}Answer with this object and nothing else:
 
-{"groups": [{"name": "Service configuration", "slug": "wes-configuration", "facts": [4, 7, 12]}]}
+{"groups": [{"name": "Service configuration", "slug": "service-configuration", "facts": [4, 7, 12]}]}

@@ -61,6 +61,9 @@ type ingestCompletion struct {
 }
 
 func shouldSweepIngestPass(cursor map[string]any, startedPass, now time.Time) bool {
+	if unfinished, _ := cursor[cursorPassUnfinished].(bool); unfinished {
+		return false
+	}
 	return !startedPass.IsZero() && !startedPass.After(now) && countInCursor(cursor, cursorPassSeen) > 0
 }
 
@@ -85,7 +88,7 @@ func (self *Agent) completeIngestPass(ctx context.Context, source *models.AgentK
 			return err
 		}
 		completion.Counts.Documents, completion.Counts.Chunks = documents, chunks
-		for _, key := range []string{"after", "before", cursorKnownID, cursorKnownSent, cursorPassStarted, cursorPassSeen, cursorPassRefused} {
+		for _, key := range []string{"after", "before", cursorKnownID, cursorKnownSent, cursorPassStarted, cursorPassSeen, cursorPassRefused, cursorPassUnfinished} {
 			delete(completion.Cursor, key)
 		}
 		// A crash before embedding/final bookkeeping must still leave the source due.

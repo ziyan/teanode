@@ -36,13 +36,14 @@ type ConductData struct {
 	Voice             string
 }
 
-// RenderConduct renders the system message for a run.
+// RenderConduct renders the system message for a run nobody is present
+// for, in the language of the agent's own work.
 func RenderConduct(configuration *config.Configuration, agent *models.Agent, owner *models.User, short bool) (string, error) {
 	data := ConductData{
 		AgentName:         agent.DisplayName(),
 		PersonName:        personName(owner),
 		ServerName:        configuration.Server.Name,
-		Language:          languageName(Language(agent, owner)),
+		Language:          languageName(KnowledgeLanguage(agent, owner)),
 		Short:             short,
 		HouseInstructions: strings.TrimSpace(configuration.Agent.Instructions),
 		Instructions:      strings.TrimSpace(agent.Instructions),

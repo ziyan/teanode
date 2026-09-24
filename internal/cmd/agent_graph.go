@@ -191,10 +191,12 @@ func newAgentKnowledgeCommand() *cli.Command {
 			},
 			{
 				Name:      "add",
-				Usage:     "point the agent at a directory on one of your computers",
-				ArgsUsage: "<name> <path>",
+				Usage:     "point the agent at a directory on one of your computers, or add a source of an installed type",
+				ArgsUsage: "<name> [path]",
 				Flags: []cli.Flag{
 					JSONFlag(),
+					&cli.StringFlag{Name: "type", Usage: "an installed source type (teanode agent source-type list); its settings are given with --setting"},
+					&cli.StringSliceFlag{Name: "setting", Usage: "one of the type's settings, name=value; a list is comma-separated (repeatable)"},
 					&cli.StringFlag{Name: "computer", Usage: "which of your computers it is on"},
 					&cli.StringFlag{Name: "kind", Usage: "computer, archive or sent", Value: "computer"},
 					&cli.StringFlag{Name: "format", Usage: "files, journal or records", Value: "files"},
@@ -216,11 +218,39 @@ func newAgentKnowledgeCommand() *cli.Command {
 					&cli.StringFlag{Name: "cron", Usage: "how often to read it, five fields in your zone"},
 					&cli.StringFlag{Name: "format", Usage: "files, journal or records"},
 					&cli.StringFlag{Name: "mailbox", Usage: "for a sent source: which mailbox"},
+					&cli.StringFlag{Name: "type", Usage: "read it as another installed source type"},
+					&cli.StringFlag{Name: "computer", Usage: "read it on another of your computers"},
+					&cli.StringSliceFlag{Name: "setting", Usage: "change one of its type's settings, name=value; the others stay as they are (repeatable)"},
 					&cli.BoolFlag{Name: "read-every-checkout", Usage: "read the files of checkouts barely any of which is your work, not only their profile"},
 					&cli.IntFlag{Name: "commits-per-pass", Usage: "how many commits one pass over the tree carries, shared among its checkouts; 0 is the program's own pace"},
 					&cli.IntFlag{Name: "own-commits-at-least", Usage: "how many commits of your own a checkout needs before its files are read, however long its history; 0 lets the program work it out, which asks more of a long one"},
 				},
 				Action: runKnowledgeSet,
+			},
+			{
+				Name:  "secret",
+				Usage: "the secrets a source's type asks for, such as a token for a service; yours, one set for each source",
+				Commands: []*cli.Command{
+					{
+						Name:      "list",
+						Usage:     "what a source asks for, and whether each is filled in",
+						ArgsUsage: "<source-id-or-name>",
+						Flags:     []cli.Flag{JSONFlag()},
+						Action:    runKnowledgeSecretList,
+					},
+					{
+						Name:      "set",
+						Usage:     "keep one value for a source; with no value it is read without echoing",
+						ArgsUsage: "<source-id-or-name> <key> [value]",
+						Action:    runKnowledgeSecretSet,
+					},
+					{
+						Name:      "clear",
+						Usage:     "forget one value of a source",
+						ArgsUsage: "<source-id-or-name> <key>",
+						Action:    runKnowledgeSecretClear,
+					},
+				},
 			},
 			{
 				Name:      "pause",
@@ -706,9 +736,11 @@ func runAgentGraphForget(ctx context.Context, command *cli.Command) error {
 	// Without a number the whole subtree goes, and none of it is
 	// recoverable: the page, every fact on it, and whatever was filed
 	// underneath -- which for a root is most of what the agent knows.
-	// One fact is not asked about, because striking one sentence is what
-	// this command is mostly used for and the strike is recorded as
-	// feedback either way.
+	// One fact is not asked about, because taking out one sentence is what
+	// this command is mostly used for. That fact is deleted, not struck:
+	// what is left of it is its words in the page's history and a note to
+	// the agent that it was unlearned, and it comes back only by filing it
+	// again.
 	//
 	// Asked before the connection is opened, so that a refusal costs
 	// nothing and a script finds out what it needs from the first line
@@ -850,8 +882,14 @@ func knowledgeSourceRow(source *client.AgentKnowledgeSource) []string {
 		state = "waiting"
 	}
 	where := source.Specification.Path
+	if source.Specification.Format == models.FormatTyped || where == "" {
+		where = source.Specification.Type
+	}
 	if source.Specification.Computer != "" {
 		where += " on " + source.Specification.Computer
+	}
+	if source.Specification.Type != "" && source.Specification.Format != models.FormatTyped {
+		where += " (" + source.Specification.Type + ")"
 	}
 	note := source.LastError
 	// Whose commits it could not place comes first: it is the one
@@ -999,6 +1037,14 @@ func runKnowledgeAdd(ctx context.Context, command *cli.Command) error {
 		"kind":   command.String("kind"),
 		"format": command.String("format"),
 	}
+	if sourceType := command.String("type"); sourceType != "" {
+		// The type says the kind and the format; its settings say the rest.
+		settings, err := knowledgeSettings(command.StringSlice("setting"))
+		if err != nil {
+			return err
+		}
+		fields = map[string]any{"name": command.Args().First(), "type": sourceType, "settings": settings}
+	}
 	if command.Args().Len() > 1 {
 		fields["path"] = command.Args().Get(1)
 	}
@@ -1016,7 +1062,11 @@ func runKnowledgeAdd(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(source)
 	}
-	_, _ = fmt.Fprintf(command.Writer, "indexing %s as %q; the first pass starts within the minute\n", command.Args().Get(1), source.Name)
+	what := command.Args().Get(1)
+	if what == "" {
+		what = source.Specification.Type
+	}
+	_, _ = fmt.Fprintf(command.Writer, "indexing %s as %q; the first pass starts within the minute\n", what, source.Name)
 	// A records folder is empty until something fills it, and a person who
 	// adds one and waits for documents that never come has no way of
 	// knowing that from the source's page. Say here what has to happen
@@ -1044,7 +1094,7 @@ func runKnowledgeSet(ctx context.Context, command *cli.Command) error {
 	fields := map[string]any{"sourceId": source.ID}
 	for flag, name := range map[string]string{
 		"name": "name", "path": "path", "under": "rootPath",
-		"cron": "cron", "format": "format", "mailbox": "mailboxId",
+		"cron": "cron", "format": "format", "mailbox": "mailboxId", "computer": "computer",
 	} {
 		if value := command.String(flag); value != "" {
 			fields[name] = value
@@ -1065,8 +1115,58 @@ func runKnowledgeSet(ctx context.Context, command *cli.Command) error {
 	if command.IsSet("own-commits-at-least") {
 		fields["ownCommitsAtLeast"] = command.Int("own-commits-at-least")
 	}
+	if sourceType := command.String("type"); sourceType != "" {
+		fields["type"] = sourceType
+	}
+	if given := command.StringSlice("setting"); len(given) > 0 {
+		// The settings the source has, with the ones given changed: the
+		// server keeps them whole, so the ones not given are sent as
+		// they are.
+		settings := map[string]any{}
+		// Another type's settings mean nothing to this one.
+		sameType := command.String("type") == "" || command.String("type") == source.Specification.Type
+		if sameType && len(source.Specification.Settings) > 0 {
+			if err := json.Unmarshal(source.Specification.Settings, &settings); err != nil {
+				return err
+			}
+		}
+		changed, err := knowledgeSettings(given)
+		if err != nil {
+			return err
+		}
+		// Only what the type declares now: a setting an update of the
+		// type renamed or dropped would otherwise make the save refused.
+		typeName := command.String("type")
+		if typeName == "" {
+			typeName = source.Specification.Type
+		}
+		if installed, err := client.ListAgentSourceTypes(ctx, connection); err == nil {
+			for _, sourceType := range installed {
+				if sourceType.Name != typeName {
+					continue
+				}
+				declared := map[string]bool{}
+				for _, setting := range sourceType.Settings {
+					declared[setting.Name] = true
+				}
+				for name := range settings {
+					if !declared[name] {
+						delete(settings, name)
+					}
+				}
+			}
+		}
+		if settings == nil {
+			// A source without settings yet stores them as null.
+			settings = map[string]any{}
+		}
+		for name, value := range changed {
+			settings[name] = value
+		}
+		fields["settings"] = settings
+	}
 	if len(fields) == 1 {
-		return fmt.Errorf("what should change? --name, --path, --under, --cron, --format, --mailbox, --read-every-checkout, --commits-per-pass or --own-commits-at-least")
+		return fmt.Errorf("what should change? --name, --path, --under, --cron, --format, --mailbox, --type, --setting, --computer, --read-every-checkout, --commits-per-pass or --own-commits-at-least")
 	}
 	changed, err := client.SaveAgentKnowledgeSource(ctx, connection, fields)
 	if err != nil {
@@ -1708,4 +1808,93 @@ func dreamsLeft(backlog, digested int, finished bool) (int, bool) {
 		return 0, false
 	}
 	return (backlog + digested - 1) / digested, true
+}
+
+// knowledgeSettings reads --setting name=value flags. Every value goes as
+// text; the server reads it as the type says, a list from a line with
+// commas in it and a number or a flag from its spelling.
+func knowledgeSettings(pairs []string) (map[string]any, error) {
+	settings := map[string]any{}
+	for _, pair := range pairs {
+		name, value, found := strings.Cut(pair, "=")
+		if !found || strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("%q is not name=value", pair)
+		}
+		settings[strings.TrimSpace(name)] = value
+	}
+	return settings, nil
+}
+
+func runKnowledgeSecretList(ctx context.Context, command *cli.Command) error {
+	connection, source, err := knowledgeSourceNamed(ctx, command)
+	if err != nil {
+		return err
+	}
+	asked, err := client.ListAgentKnowledgeSourceSecrets(ctx, connection, source.ID)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(asked)
+	}
+	if len(asked) == 0 {
+		_, _ = fmt.Fprintf(command.Writer, "%s asks for no secrets\n", source.Name)
+		return nil
+	}
+	rows := make([][]string, 0, len(asked))
+	for _, secret := range asked {
+		secretState := "not set"
+		if secret.IsSet {
+			secretState = "set"
+		} else if secret.IsOptional {
+			secretState = "not set, optional"
+		}
+		rows = append(rows, []string{secret.Key, secretState, secret.Description})
+	}
+	return printTable([]string{"key", "state", "what it is"}, rows)
+}
+
+func runKnowledgeSecretSet(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 2 {
+		return fmt.Errorf("give the source and the key: teanode agent knowledge secret set feed token")
+	}
+	// A value on the command line is in the shell's history; with none
+	// given it is read from the terminal without echoing, or from standard
+	// input when there is no terminal.
+	given := command.Args().Get(2)
+	if given == "" || given == "-" {
+		typed, err := ReadSecret("value: ")
+		if err != nil {
+			return err
+		}
+		given = typed
+	}
+	if strings.TrimSpace(given) == "" {
+		return fmt.Errorf("give a value, or use `teanode agent knowledge secret clear` to take one away")
+	}
+	connection, source, err := knowledgeSourceNamed(ctx, command)
+	if err != nil {
+		return err
+	}
+	secret, err := client.SetAgentKnowledgeSourceSecret(ctx, connection, source.ID, command.Args().Get(1), given)
+	if err != nil {
+		return describeError(command, err)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "kept %s for %s\n", secret.Key, source.Name)
+	return nil
+}
+
+func runKnowledgeSecretClear(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 2 {
+		return fmt.Errorf("give the source and the key")
+	}
+	connection, source, err := knowledgeSourceNamed(ctx, command)
+	if err != nil {
+		return err
+	}
+	if err := client.ClearAgentKnowledgeSourceSecret(ctx, connection, source.ID, command.Args().Get(1)); err != nil {
+		return describeError(command, err)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "forgot %s for %s\n", command.Args().Get(1), source.Name)
+	return nil
 }

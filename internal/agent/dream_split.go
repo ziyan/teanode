@@ -58,11 +58,35 @@ func (self *Agent) dreamSplit(ctx context.Context, run *Run, record *models.Agen
 
 func (self *Agent) splitPage(ctx context.Context, run *Run, budget *dreamBudget, page *models.AgentNode) (int, error) {
 	var facts []*models.AgentFact
+	var children []*models.AgentNode
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		facts, err = tx.ListAgentFacts(run.Agent.ID, page.ID, false, 400)
+		if facts, err = tx.ListAgentFacts(run.Agent.ID, page.ID, false, 400); err != nil {
+			return err
+		}
+		children, err = tx.ListAgentNodeChildren(run.Agent.ID, page.ID)
 		return err
 	}); err != nil {
 		return 0, err
+	}
+	// The pages already under it, which a group joins rather than sits
+	// beside. The split was shown only the facts, so a page that keeps
+	// growing -- a project whose every reading lands on it -- was divided
+	// night after night into new themes with new names, beside the ones
+	// the nights before had made: "spam filtering", then "spam filtering
+	// and learning", then the same again one level down.
+	existing := map[string]bool{}
+	var childLines []string
+	for _, child := range children {
+		if child.Dormant {
+			continue
+		}
+		slug := models.LastSegment(child.Path)
+		existing[slug] = true
+		line := fmt.Sprintf("%s — %s", slug, child.Name)
+		if summary := strings.TrimSpace(child.Summary); summary != "" {
+			line += ": " + cutRunes(summary, 160)
+		}
+		childLines = append(childLines, line)
 	}
 	byNumber := map[int]*models.AgentFact{}
 	lines := make([]string, 0, len(facts))
@@ -71,13 +95,15 @@ func (self *Agent) splitPage(ctx context.Context, run *Run, budget *dreamBudget,
 		lines = append(lines, fmt.Sprintf("#%d %s", fact.Number, cutRunes(fact.Text, 300)))
 	}
 	prompt, err := render("split.txt", map[string]any{
-		"PersonName": personName(run.Owner),
-		"Path":       page.Path,
-		"Name":       page.Name,
-		"Kind":       string(page.Kind),
-		"Opening":    cutRunes(page.Summary, 600),
-		"Facts":      lines,
-		"Self":       page.Path == models.PathSelf,
+		"KnowledgeLanguage": languageName(KnowledgeLanguage(run.Agent, run.Owner)),
+		"PersonName":        personName(run.Owner),
+		"Path":              page.Path,
+		"Name":              page.Name,
+		"Kind":              string(page.Kind),
+		"Opening":           cutRunes(page.Summary, 600),
+		"Facts":             lines,
+		"Children":          childLines,
+		"Self":              page.Path == models.PathSelf,
 	})
 	if err != nil {
 		return 0, err
@@ -117,7 +143,9 @@ func (self *Agent) splitPage(ctx context.Context, run *Run, budget *dreamBudget,
 				selectedNumbers[number] = true
 			}
 		}
-		if len(chosen) < splitLeast {
+		// A new page needs enough to be a page; a page already there takes
+		// whatever belongs on it.
+		if len(chosen) < splitLeast && !existing[slug] {
 			continue
 		}
 		childPath := models.JoinPath(page.Path, slug)

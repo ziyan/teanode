@@ -6,6 +6,121 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.58.10] - 2026-09-24
+
+### Fixed
+
+- The agent reads identical documents once instead of filing the same facts for every copy. (#145)
+
+## [0.58.9] - 2026-09-24
+
+### Fixed
+
+- The agent files what it reads in a folder of many projects on the right project's page, instead of the best-known one. (#143)
+- The nightly split no longer fills a busy page with overlapping subpages; it adds to the ones already there. (#144)
+
+## [0.58.8] - 2026-09-24
+
+### Changed
+
+- The goal, attached computer and tab, and usage marks in the agent drawer open dropdowns under its head; background commands show only what is running. (#141)
+
+## [0.58.7] - 2026-09-24
+
+### Changed
+
+- A schedule that answers in the drawer answers in the conversation it was set in, as a turn of the agent's, instead of a copied note in the main conversation. (#140)
+
+### Fixed
+
+- A reminder for one moment ("in five minutes", "at 9:00") now runs; it was silently dropped. Once run, it is removed from the list of schedules. (#140)
+
+## [0.58.6] - 2026-09-24
+
+### Fixed
+
+- The nightly rewrite of a page no longer undoes a rename, pin or archive made at the same time, and no longer misses a fact added while it ran. (#142)
+
+## [0.58.5] - 2026-09-24
+
+### Fixed
+
+- Merging two facts that say the same thing no longer turns something the agent inferred into something the person said. (#139)
+
+## [0.58.4] - 2026-09-24
+
+### Fixed
+
+- The agent no longer marks documents or conversation messages as read, or clears a page's summary, when the model's answer could not be read. (#138)
+
+## [0.58.3] - 2026-09-24
+
+### Fixed
+
+- Memory keeps a repeated event on each date it happened, instead of folding a later occurrence behind the first. (#135)
+
+## [0.58.2] - 2026-09-24
+
+### Fixed
+
+- The background commands in the agent drawer drop down from its head, one line each, with the command and its output in a detail view where it can be stopped; the drawer's mark blinks while one runs. `teanode computer background` accepts `--json`. (#137)
+
+## [0.58.1] - 2026-09-24
+
+### Fixed
+
+- The agent no longer retires a true fact because it filed something unrelated on the same page, or on the strength of its own reply. (#136)
+
+## [0.58.0] - 2026-09-24
+
+### Added
+
+- A work language for the agent: its notes and everything it does on its own stay in one language, whatever language the dashboard is shown in. (#132)
+
+### Fixed
+
+- Conversations with the agent follow the language chosen in the dashboard, and a new language or time zone is picked up at once. (#132)
+- Replies and drafts are written in the language of the message they answer. (#132)
+- The Chinese dashboard calls the agent 助手 everywhere. (#133)
+
+## [0.57.0] - 2026-09-24
+
+### Added
+
+- The agent's shell tool keeps a command running in the background when it outlives its timeout, instead of killing it, and can start one there on purpose. When one ends, the agent is woken in the conversation that started it. The drawer, the agent page and `teanode computer background` show these commands with their output and can stop them. This needs `teanode computer` updated on the person's machine; an older program keeps the old behavior. (#131)
+
+## [0.56.0] - 2026-09-24
+
+### Changed
+
+- The conversation task list is kept by the agent alone; the dashboard shows it one line a step, live as the agent works, and no longer ticks items off or adds them. (#130)
+
+### Removed
+
+- **Breaking:** the `AddAgentTodo`, `SetAgentTodo` and `RemoveAgentTodo` mutations, and `teanode agent conversation todo add`, `done`, `reopen` and `remove`. Only `todo list` remains. (#130)
+
+## [0.55.0] - 2026-09-23
+
+### Added
+
+- Source types can declare secrets, such as an API token, which you fill in for each source from the dashboard or `teanode agent knowledge secret set`. (#129)
+
+## [0.54.1] - 2026-09-23
+
+### Fixed
+
+- A source type whose tool ignores paging no longer pages for ever. (#128)
+
+## [0.54.0] - 2026-09-23
+
+### Added
+
+- Source types: install a kind of knowledge source from the signed source types registry, or add one of your own, and add sources of it from the dashboard or `teanode agent knowledge add --type`. (#127)
+
+### Fixed
+
+- A source whose computer was busy reading another source waited until its next scheduled hour instead of its turn. (#127)
+
 ## [0.53.1] - 2026-09-23
 
 ### Fixed

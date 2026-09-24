@@ -22,7 +22,9 @@ type AgentView struct {
 	Choices     []string           `json:"choices"`
 	Timezone    string             `json:"timezone"`
 	Language    string             `json:"language"`
-	Categories  []string           `json:"categories"`
+	// KnowledgeLanguage is what the agent's notes are written in.
+	KnowledgeLanguage string   `json:"knowledgeLanguage"`
+	Categories        []string `json:"categories"`
 }
 
 // AgentCollection is one calendar or address book as a source: a switch, and
@@ -99,7 +101,7 @@ type AgentJob struct {
 }
 
 const agentViewSelection = `{
-	agent { id name enabled instructions language askModel dreamFrom dreamUntil dreamedAt
+	agent { id name enabled instructions language knowledgeLanguage askModel dreamFrom dreamUntil dreamedAt
 		dailyTokens dailyCost operatorDisabledAt confirm
 		voice { tone length greeting signoff }
 		categories { name description }
@@ -111,7 +113,7 @@ const agentViewSelection = `{
 	collections { id name kind granted items }
 	allowed { enabled triage summaries draftReplies search research autoReply ask schedules browser connectedServers }
 	budget { used limit resetsAt cost costLimit currency }
-	choices timezone language categories
+	choices timezone language knowledgeLanguage categories
 }`
 
 const agentSummarySelection = `{
@@ -126,11 +128,11 @@ const agentJobSelection = `{ id createdAt agentId mailboxId kind subjectId statu
 const (
 	DocumentReadAgent = `query { ReadAgent ` + agentViewSelection + ` }`
 
-	DocumentUpdateAgent = `mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String,
+	DocumentUpdateAgent = `mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String, $knowledgeLanguage: String,
 		$voice: AgentVoiceInput, $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput,
 		$confirm: [String!], $askModel: String, $dreamFrom: String, $dreamUntil: String,
 		$forget: Boolean) {
-		UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language,
+		UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, knowledgeLanguage: $knowledgeLanguage,
 			voice: $voice, categories: $categories, notifications: $notifications, confirm: $confirm,
 			askModel: $askModel, dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, forget: $forget) ` + agentViewSelection + `
 	}`
