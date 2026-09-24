@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-09-24
+
+### Added
+
+- The agent's shell tool keeps a command running in the background when it outlives its timeout, instead of killing it, and can start one there on purpose. When one ends, the agent is woken in the conversation that started it. The drawer, the agent page and `teanode computer background` show these commands with their output and can stop them. This needs `teanode computer` updated on the person's machine; an older program keeps the old behavior. (#131)
+
 ## [0.56.0] - 2026-09-24
 
 ### Changed
