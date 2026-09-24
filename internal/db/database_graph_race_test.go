@@ -238,3 +238,76 @@ func TestGraphSavingAPageKeepsTheFactCounter(t *testing.T) {
 		}
 	})
 }
+
+// Filing a fact on a page and editing another fact on it, at once, both
+// commit.
+//
+// This is the ordinary shape of a night: one batch files a new line on a
+// page (AddAgentFact takes the page row, for its fact counter) and then
+// gives its evidence to the line already there (UpdateAgentFact takes that
+// fact), while another batch or the person edits that same line. Each
+// writer must take the page and the fact in the same order, or the two
+// wait on each other until the database gives up on one.
+func TestGraphFilingAndEditingOnePageDoNotDeadlock(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	var agentId string
+	var page *models.AgentNode
+	var standing *models.AgentFact
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agentId = graphAgent(t, tx).ID
+		var err error
+		if page, err = tx.PutAgentNode(&models.AgentNode{AgentID: agentId, Path: "things/marigold", Kind: models.NodeThing, Name: "Marigold"}); err != nil {
+			t.Fatal(err)
+		}
+		if standing, err = tx.AddAgentFact(&models.AgentFact{AgentID: agentId, NodeID: page.ID, Kind: models.FactPlain, Text: "Marigold is kept at the pier."}); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	filed := make(chan struct{})
+	carryOn := make(chan struct{})
+	defer releaseGraphWriter(carryOn)
+	filerDone := make(chan error, 1)
+	go func() {
+		filerDone <- database.Transaction(func(tx db.Transaction) error {
+			if _, err := tx.AddAgentFact(&models.AgentFact{AgentID: agentId, NodeID: page.ID, Kind: models.FactPlain, Text: "Marigold is kept at the pier."}); err != nil {
+				return err
+			}
+			close(filed)
+			<-carryOn
+			_, err := tx.UpdateAgentFact(agentId, standing.ID, func(fact *models.AgentFact) error {
+				fact.Confidence = 1
+				return nil
+			})
+			return err
+		})
+	}()
+	select {
+	case <-filed:
+	case err := <-filerDone:
+		t.Fatalf("the filing ended early: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the filing did not start")
+	}
+	editorDone := make(chan error, 1)
+	go func() {
+		editorDone <- database.Transaction(func(tx db.Transaction) error {
+			_, err := tx.UpdateAgentFact(agentId, standing.ID, func(fact *models.AgentFact) error {
+				fact.Text = "Marigold is moored at the pier."
+				return nil
+			})
+			return err
+		})
+	}()
+	// Let the edit reach whatever it waits on before the filing goes on.
+	time.Sleep(300 * time.Millisecond)
+	releaseGraphWriter(carryOn)
+	if err := awaitGraphWriter(t, filerDone); err != nil {
+		t.Fatalf("the filing failed: %v", err)
+	}
+	if err := awaitGraphWriter(t, editorDone); err != nil {
+		t.Fatalf("the edit failed: %v", err)
+	}
+}

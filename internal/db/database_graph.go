@@ -1005,25 +1005,66 @@ func (self *transaction) StrikeAgentFact(agentId, factId, reason string) (*model
 // the same for a merge, a write-time fold and a striking, and only the
 // caller knows which of them it just did. A page's history that calls
 // all three "merged two facts" is a history nobody can act on.
+// lockFactAndItsPages takes the pages first and then the fact: the fact's
+// own page, and any other pages named, in the order of their identifiers.
+//
+// Page before fact is the order AddAgentFact takes them in, since it bumps
+// the page's fact counter before the fact exists, and every writer that
+// touches a fact and its page has to take them in that one order. A writer
+// that took the fact first waited on a filing that held the page, while
+// the filing went on to the same fact -- one run giving its evidence to
+// the line already there while another edited that line -- and the
+// database ended one of them as a deadlock.
+//
+// The fact is read once without a lock to learn its page, then read again
+// under the locks; one that moved in between is looked up again.
+func (self *transaction) lockFactAndItsPages(agentId, factId string, otherPageIds ...string) (*agentFactModel, []agentNodeModel, error) {
+	for range 3 {
+		var unlocked []agentFactModel
+		if err := self.tx.Where(`"id" = ? AND "agent_id" = ?`, factId, agentId).Limit(1).Find(&unlocked).Error; err != nil {
+			return nil, nil, err
+		}
+		if len(unlocked) == 0 {
+			return nil, nil, nil
+		}
+		pageIds := []string{unlocked[0].NodeID}
+		for _, pageId := range otherPageIds {
+			if pageId != "" && !slices.Contains(pageIds, pageId) {
+				pageIds = append(pageIds, pageId)
+			}
+		}
+		var pages []agentNodeModel
+		if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where(`"agent_id" = ? AND "id" IN ?`, agentId, pageIds).Order(`"id"`).Find(&pages).Error; err != nil {
+			return nil, nil, err
+		}
+		var locked []agentFactModel
+		if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where(`"id" = ? AND "agent_id" = ?`, factId, agentId).Limit(1).Find(&locked).Error; err != nil {
+			return nil, nil, err
+		}
+		if len(locked) == 0 {
+			return nil, nil, nil
+		}
+		if locked[0].NodeID == unlocked[0].NodeID {
+			return &locked[0], pages, nil
+		}
+	}
+	return nil, nil, fmt.Errorf("db: fact %q kept moving between pages", factId)
+}
+
 func (self *transaction) writeAgentFact(agentId, factId string, modify func(*models.AgentFact) error, journal factJournal) (*models.AgentFact, error) {
-	var rows []agentFactModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where(`"id" = ? AND "agent_id" = ?`, factId, agentId).Limit(1).Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	if len(rows) == 0 {
-		return nil, ErrNotFound
-	}
-	fact, err := rows[0].toModel()
+	// The page as well as the fact: page renames remove fact vectors while
+	// holding the page row, and the revision below is written on the page.
+	locked, _, err := self.lockFactAndItsPages(agentId, factId)
 	if err != nil {
 		return nil, err
 	}
-	// Page renames remove fact vectors while holding the page row. Take
-	// that row before touching this fact's vector or revision, preserving
-	// the fact-then-page order used by guarded vector writes.
-	var page agentNodeModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where(`"agent_id" = ? AND "id" = ?`, agentId, fact.NodeID).Take(&page).Error; err != nil {
+	if locked == nil {
+		return nil, ErrNotFound
+	}
+	fact, err := locked.toModel()
+	if err != nil {
 		return nil, err
 	}
 	wasSaying := fact.Text
@@ -1542,25 +1583,21 @@ func (self *transaction) SetUserContact(userId, contactId string) error {
 var ErrNoSuchFact = errors.New("db: no such fact")
 
 func (self *transaction) MoveAgentFact(agentId, factId, toNodeId string) (*models.AgentFact, error) {
-	facts, err := self.factsFrom(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where(`"id" = ? AND "agent_id" = ?`, factId, agentId).Limit(1))
+	// Both pages, then the fact: the vector includes the page name, and
+	// see lockFactAndItsPages for the order.
+	row, pages, err := self.lockFactAndItsPages(agentId, factId, toNodeId)
 	if err != nil {
 		return nil, err
 	}
-	if len(facts) == 0 {
+	if row == nil {
 		return nil, fmt.Errorf("%w: %q", ErrNoSuchFact, factId)
 	}
-	fact := facts[0]
+	fact, err := row.toModel()
+	if err != nil {
+		return nil, err
+	}
 	if fact.NodeID == toNodeId {
 		return fact, nil
-	}
-	// The vector includes the page name. Lock both pages after the fact,
-	// in the same order as guarded graph-vector writes, before comparing.
-	var pages []agentNodeModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where(`"agent_id" = ? AND "id" IN ?`, agentId, []string{fact.NodeID, toNodeId}).
-		Order(`"id"`).Find(&pages).Error; err != nil {
-		return nil, err
 	}
 	if len(pages) != 2 {
 		return nil, fmt.Errorf("db: no page %q to move a fact to", toNodeId)
