@@ -1666,7 +1666,11 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 	// The dashboard draws the replies the model offers as buttons above the
 	// box, to send with a click; nowhere else does, and they are taken off
 	// what goes anywhere else (models.StripSuggestedReplies).
-	if settings.Surface == "drawer" || settings.Surface == "page" || strings.HasPrefix(settings.Surface, speakFirstSurfacePrefix) {
+	// The drawer says "phone" on a narrow screen and "extension" in the
+	// browser extension; both draw them.
+	switch {
+	case settings.Surface == "drawer", settings.Surface == "phone", settings.Surface == "extension", settings.Surface == "page",
+		strings.HasPrefix(settings.Surface, speakFirstSurfacePrefix):
 		blocks = append(blocks, suggestedRepliesBlock)
 	}
 	switch settings.Surface {
