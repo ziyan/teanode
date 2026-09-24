@@ -6,6 +6,30 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.58.2] - 2026-09-24
+
+### Fixed
+
+- The background commands in the agent drawer drop down from its head, one line each, with the command and its output in a detail view where it can be stopped; the drawer's mark blinks while one runs. `teanode computer background` accepts `--json`. (#137)
+
+## [0.58.1] - 2026-09-24
+
+### Fixed
+
+- The agent no longer retires a true fact because it filed something unrelated on the same page, or on the strength of its own reply. (#136)
+
+## [0.58.0] - 2026-09-24
+
+### Added
+
+- A work language for the agent: its notes and everything it does on its own stay in one language, whatever language the dashboard is shown in. (#132)
+
+### Fixed
+
+- Conversations with the agent follow the language chosen in the dashboard, and a new language or time zone is picked up at once. (#132)
+- Replies and drafts are written in the language of the message they answer. (#132)
+- The Chinese dashboard calls the agent 助手 everywhere. (#133)
+
 ## [0.57.0] - 2026-09-24
 
 ### Added

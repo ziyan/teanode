@@ -136,3 +136,26 @@ func TestANegationThatAlsoChangesTheAmountKeepsBoth(t *testing.T) {
 		t.Fatal("4200 and 3100 are not the same amount")
 	}
 }
+
+// One rule for the same fact: the same words about another day, or filed
+// as another kind, are a second fact, at the fold as before writing.
+func TestTheSameWordsOnAnotherDayAreAnotherFact(t *testing.T) {
+	lastYear := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
+	thisYear := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	event := func(when *time.Time) *models.AgentFact {
+		return &models.AgentFact{Text: "Completed the annual boiler inspection.", Kind: models.FactEvent, HappenedAt: when, Confidence: 1}
+	}
+	if got := whatToFold(event(&thisYear), event(&lastYear)); got != foldKeepBoth {
+		t.Errorf("an event on another day is kept beside the first, not %d", got)
+	}
+	if got := whatToFold(event(&thisYear), event(&thisYear)); got != foldTheNewerBehindTheOlder {
+		t.Errorf("the same event on the same day is said once, not %d", got)
+	}
+	if got := whatToFold(event(&thisYear), event(nil)); got != foldTheNewerBehindTheOlder {
+		t.Errorf("a date learned for an undated line is the same fact, not %d", got)
+	}
+	state := &models.AgentFact{Text: "Completed the annual boiler inspection.", Kind: models.FactPlain, Confidence: 1}
+	if got := whatToFold(event(&thisYear), state); got != foldKeepBoth {
+		t.Errorf("an event and a state in the same words are two facts, not %d", got)
+	}
+}

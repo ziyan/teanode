@@ -182,6 +182,12 @@ func mergeSaidTwice(tx db.Transaction, agentId string, facts []*models.AgentFact
 		if bestNow == nil || otherNow == nil || bestNow.ID == otherNow.ID {
 			continue
 		}
+		// The model reads the words; it does not get to call an event on
+		// one day and the same event on another one statement, or a state
+		// and an event. See couldBeOneStatement.
+		if !couldBeOneStatement(bestNow, otherNow) {
+			continue
+		}
 		// Keep the lower number so existing citations still resolve.
 		// The better wording moves onto that row.
 		keep, gone := bestNow, otherNow

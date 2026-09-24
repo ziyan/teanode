@@ -65,10 +65,13 @@ const (
 	outputTailBytes = outputBytes - outputHeadBytes
 )
 
-// Why a background command was ended by somebody other than itself.
+// Why a background command was ended by somebody other than itself:
+// stopped when asked (by the person, or by the agent, which then needs no
+// word of it), out of lifetime, or with this program as it shut down.
 const (
 	BackgroundStopReasonStopped  = "stopped"
 	BackgroundStopReasonLifetime = "lifetime"
+	BackgroundStopReasonShutdown = "shutdown"
 )
 
 // BackgroundStatus is one background command as the server is told about it.
@@ -333,7 +336,7 @@ func (self *BackgroundCommands) Close() {
 	var running []*backgroundCommand
 	for _, held := range self.commands {
 		if !held.hasEnded() {
-			held.stopReason = BackgroundStopReasonStopped
+			held.stopReason = BackgroundStopReasonShutdown
 			running = append(running, held)
 		}
 	}

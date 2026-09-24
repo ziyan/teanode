@@ -5840,50 +5840,241 @@ main.content:has(> .mailbox-frame) {
   font-size: var(--text-label);
 }
 
-/* The drawer's mark for what this chat left running on a computer: the
-   terminal, and beside it how many are still running, in the accent
-   while any are. */
-.agent-drawer-background {
-  width: auto;
-  min-width: 34px;
-  gap: 2px;
-  padding: 0 6px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
+/* The drawer's mark for what this chat left running on a computer: a
+   terminal whose cursor blinks while anything still runs. */
 .agent-drawer-background.running {
   color: var(--accent);
 }
 
-/* A background command's row: the command on one line, cut short with its
-   whole text on hover, so a long pipeline does not push the state and the
-   actions off a phone. */
-.background-commands .settings-row-title > strong {
-  min-width: 0;
-  max-width: 100%;
+.agent-drawer-background.running .terminal-icon-cursor {
+  animation: terminal-cursor-blink 1.1s steps(1, end) infinite;
 }
 
-.background-command-text {
+@keyframes terminal-cursor-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-drawer-background.running .terminal-icon-cursor {
+    animation: none;
+  }
+}
+
+/* The background commands, dropped down from the head as the list of
+   conversations is (.agent-drawer-list gives the frame): a small title,
+   then the rows or one command's output. */
+.background-menu {
+  gap: 0;
+}
+
+.background-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 2px 6px 6px;
+  flex-shrink: 0;
+}
+
+.background-menu-head strong {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.background-menu-empty {
+  margin: 4px 8px 8px;
+}
+
+
+.background-menu-head .background-stop {
+  margin-left: auto;
+}
+
+/* Stop: a small red button with the stop square, not a link, because it
+   ends something running on the person's machine. */
+.background-stop {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--bad) 45%, transparent);
+  border-radius: 999px;
+  background: none;
+  color: var(--bad);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.background-stop:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 10%, transparent);
+}
+
+.background-stop:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* One command's output fills the dropdown and scrolls within itself: the
+   title with back and Stop, and the command above it, stay where they are
+   however much it printed. */
+.background-menu.showing-output {
+  height: min(60vh, 420px);
+  overflow: hidden;
+}
+
+.background-menu.showing-output .background-output {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.background-menu.showing-output .background-output-stream {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.background-menu.showing-output .background-output-text {
+  flex: 1;
+  min-height: 48px;
+  max-height: none;
+}
+
+/* The list: rows divided by a rule rather than a card each, the command
+   first in the code face, two lines at most with the whole of it on
+   hover, and how it stands under it in small muted type. */
+.background-commands {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.background-command {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.background-command:last-child {
+  border-bottom: none;
+}
+
+.background-command-open {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 6px;
+  border: none;
+  border-radius: var(--radius-1);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.background-command-open:hover {
+  background: var(--sidebar-hover);
+}
+
+/* The drawer's rows: one line each, the state and then the command. */
+.background-commands.compact .background-command-open {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 6px;
+}
+
+.background-commands.compact .background-command-open .tag {
+  flex: none;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.background-commands.compact .background-command-line {
+  flex: 1;
+  min-width: 0;
+}
+
+.background-command-line {
   display: block;
   overflow: hidden;
+  font-size: 12px;
+  line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.background-command-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.background-command-meta .mono {
+  font-size: inherit;
+}
+
+.background-command-meta .tag {
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+
+/* The whole command, however long: a command can be pages of pipeline,
+   so it scrolls in a box of its own rather than pushing the output out of
+   the list. */
 .background-output-command {
-  margin: 0 0 var(--space-1);
+  display: block;
+  flex-shrink: 0;
+  max-height: 5.5em;
+  margin: 0;
+  padding: 6px 10px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--field);
+  font-size: 12px;
+  line-height: 1.5;
   white-space: pre-wrap;
+  word-break: break-all;
 }
 
-.background-output-where {
-  margin: 0 0 var(--space-3);
-  font-size: var(--text-label);
+.background-menu .background-output {
+  padding: 4px 6px 8px;
 }
 
-.background-output-stream h4 {
-  margin: var(--space-3) 0 var(--space-1);
-  font-size: var(--text-label);
+/* The output view: how it stands, then the command, then what it
+   printed, each under a small heading with room between them. */
+.background-output {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.background-output-section h4 {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.background-output-section > p {
+  margin: 0;
 }
 
 .background-output-truncated {
@@ -5892,10 +6083,9 @@ main.content:has(> .mailbox-frame) {
 }
 
 /* What a command printed, wrapped rather than scrolled sideways, and
-   scrolled within itself so a long log does not make the dialog taller
-   than the screen. */
+   scrolled within itself so a long log does not run off the list. */
 .background-output-text {
-  max-height: min(40vh, 360px);
+  max-height: min(36vh, 260px);
   margin: 0;
   padding: var(--space-2) var(--space-3);
   overflow-y: auto;
@@ -5904,6 +6094,7 @@ main.content:has(> .mailbox-frame) {
   background: var(--field);
   font-size: 12px;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* Where the goal stands, in the dialog: a term and its value a line. */

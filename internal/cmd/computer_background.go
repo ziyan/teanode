@@ -26,6 +26,7 @@ func newComputerBackgroundCommand() *cli.Command {
 				Usage: "the commands running, or ended lately, newest first",
 				Flags: []cli.Flag{
 					&cli.StringFlag{Name: "conversation", Usage: "only the ones this conversation started, by id"},
+					JSONFlag(),
 				},
 				Action: runComputerBackgroundList,
 			},
@@ -35,6 +36,7 @@ func newComputerBackgroundCommand() *cli.Command {
 				ArgsUsage: "<computer> <id>",
 				Flags: []cli.Flag{
 					&cli.IntFlag{Name: "tail", Usage: "how many bytes of the end of each stream to print; 64 KiB by default, 256 KiB at most"},
+					JSONFlag(),
 				},
 				Action: runComputerBackgroundRead,
 			},
@@ -42,6 +44,7 @@ func newComputerBackgroundCommand() *cli.Command {
 				Name:      "stop",
 				Usage:     "end one command",
 				ArgsUsage: "<computer> <id>",
+				Flags:     []cli.Flag{JSONFlag()},
 				Action:    runComputerBackgroundStop,
 			},
 		},
@@ -136,6 +139,8 @@ func backgroundCommandState(background *client.AgentBackgroundCommand) string {
 		return "running"
 	case background.StopReason == "stopped":
 		return "stopped"
+	case background.StopReason == "shutdown":
+		return "stopped with teanode computer"
 	case background.StopReason == "lifetime":
 		return "stopped after 24 hours"
 	case strings.TrimSpace(background.StopReason) != "":
