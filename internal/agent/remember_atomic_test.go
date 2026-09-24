@@ -98,7 +98,7 @@ func fileWithAFailingWrite(t *testing.T, failing string) (whatThePageKept, *mode
 		if found := theirSentence.FindStringSubmatch(prompt); len(found) > 2 {
 			answer = fmt.Sprintf(
 				`{"facts": [{"path": "things/marigold", "node_kind": "thing", "node_name": "Marigold", "kind": "fact", "text": %q, "message_id": %q, "quote": %q}],`+
-					` "supersedes": [{"path": "things/marigold", "number": 1}]}`,
+					` "supersedes": [{"path": "things/marigold", "number": 1, "replaced_by": 1}]}`,
 				found[2], found[1], found[2])
 		}
 		content, _ := json.Marshal(answer)
