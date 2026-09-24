@@ -10,6 +10,7 @@ import (
 	"github.com/ziyan/teanode/internal/browser"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ziyan/teanode/internal/config"
@@ -193,6 +194,11 @@ type AskRun struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// isStoppedByPerson says the person pressed Stop: a card the turn was
+	// waiting on is closed with it. A turn ended any other way -- a
+	// deploy, a deadline -- leaves its cards open for later.
+	isStoppedByPerson atomic.Bool
 
 	mutex          sync.Mutex
 	events         []Event
@@ -527,6 +533,13 @@ func (self *AskRun) Resolve(callId string, approve bool) bool {
 
 // Stop ends the run; the turn stays where it got to.
 func (self *AskRun) Stop() {
+	self.cancel()
+}
+
+// StopByPerson ends the run because the person asked, closing the cards it
+// was waiting on.
+func (self *AskRun) StopByPerson() {
+	self.isStoppedByPerson.Store(true)
 	self.cancel()
 }
 
@@ -1250,12 +1263,27 @@ func (self *AskRun) confirmWaiting(ctx context.Context, tool *Tool, call *Call, 
 		self.mutex.Lock()
 		delete(self.confirmations, call.ID)
 		self.mutex.Unlock()
+		// An answer sent as the wait ran out is in the channel already,
+		// and the person was told it was taken.
+		select {
+		case approved := <-channel:
+			answer := models.InteractionDeclined
+			if approved {
+				answer = models.InteractionApproved
+			}
+			if self.claimInteraction(interaction, answer) {
+				return approved, nil
+			}
+		default:
+		}
 		if interaction != nil {
 			return false, ErrLeftOpen
 		}
 		return false, fmt.Errorf("the person did not answer within %s", wait)
 	case <-ctx.Done():
-		self.claimInteraction(interaction, models.InteractionStopped)
+		if self.isStoppedByPerson.Load() {
+			self.claimInteraction(interaction, models.InteractionStopped)
+		}
 		return false, ctx.Err()
 	}
 }
@@ -1693,12 +1721,23 @@ func (self *AskRun) Ask(ctx context.Context, callId, question string, choices []
 		self.mutex.Lock()
 		delete(self.questions, callId)
 		self.mutex.Unlock()
+		// An answer sent as the wait ran out is in the channel already,
+		// and the person was told it was taken.
+		select {
+		case answer := <-channel:
+			if self.claimInteraction(interaction, answer) {
+				return answer, nil
+			}
+		default:
+		}
 		if interaction != nil {
 			return "", ErrLeftOpen
 		}
 		return "", fmt.Errorf("the person did not answer within %s", wait)
 	case <-ctx.Done():
-		self.claimInteraction(interaction, models.InteractionStopped)
+		if self.isStoppedByPerson.Load() {
+			self.claimInteraction(interaction, models.InteractionStopped)
+		}
 		return "", ctx.Err()
 	}
 }

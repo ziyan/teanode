@@ -1105,6 +1105,7 @@ export const en = {
   'agentDrawer.answer': 'Your answer…',
   'agentDrawer.chatAboutIt': 'Chat about it',
   'agentDrawer.chattingInstead': 'Chatting about it instead',
+  'agentDrawer.questionGone': 'That card was already answered, or is no longer waiting.',
   'agentDrawer.close': 'Close',
   'agentDrawer.main': 'Main chat',
   'agentDrawer.untitled': 'Untitled',

@@ -66,8 +66,11 @@ func (self *AskRun) claimInteraction(interaction *models.AgentInteraction, answe
 		isClaimed, err = tx.ClaimAgentInteraction(interaction.ID, answer)
 		return err
 	}); err != nil {
+		// Left open rather than taken twice: the card is answered again
+		// later, where a guess here could let the turn and a late answer
+		// both act on it.
 		log.Warningf("cannot resolve the card for call %q: %s", interaction.CallID, err)
-		return true
+		return false
 	}
 	return isClaimed
 }

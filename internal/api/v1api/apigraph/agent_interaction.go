@@ -9,6 +9,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/agent/tools/askuser"
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -53,13 +54,25 @@ func (self *graph) ListAgentInteractions(ctx context.Context, arguments ListAgen
 // takes it where it still waits; a card whose turn has ended is resolved
 // here and a new turn carries the answer on. A call with no kept card goes
 // to its run as it always did.
+//
+// The card is read and claimed in transactions of their own, committed at
+// once, rather than in the request's: a claim held open until the request
+// ended kept the turn's own claim waiting on it, and a turn started before
+// the claim committed would have gone on if the commit failed.
 func (self *graph) answerInteraction(ctx context.Context, found *models.Agent, worker *agent.Agent, callId, answer string, command agent.RunCommand) (bool, error) {
 	principal, _, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return false, err
 	}
-	tx := self.transaction(ctx)
-	interaction, err := tx.GetAgentInteractionByCall(found.ID, callId)
+	readCard := func() (*models.AgentInteraction, error) {
+		var interaction *models.AgentInteraction
+		err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			interaction, err = tx.GetAgentInteractionByCall(found.ID, command.RunID, callId)
+			return err
+		})
+		return interaction, err
+	}
+	interaction, err := readCard()
 	if err != nil {
 		return false, err
 	}
@@ -69,7 +82,6 @@ func (self *graph) answerInteraction(ctx context.Context, found *models.Agent, w
 	if interaction.ResolvedAt != nil {
 		return false, fmt.Errorf("%w: this was already answered", api.ErrInvalidArguments)
 	}
-	command.RunID = interaction.RunID
 	if run := worker.FindRun(interaction.RunID); run != nil {
 		if worker.Apply(run, command) {
 			return true, nil
@@ -78,25 +90,40 @@ func (self *graph) answerInteraction(ctx context.Context, found *models.Agent, w
 		// Another instance may still be waiting on it. Given a moment to
 		// take it; what it does not take is taken here.
 		if err := worker.Forward(command); err == nil {
-			deadline := time.Now().Add(interactionForwardWait)
-			for time.Now().Before(deadline) {
-				time.Sleep(200 * time.Millisecond)
-				again, err := tx.GetAgentInteractionByCall(found.ID, callId)
-				if err == nil && again != nil && again.ResolvedAt != nil {
-					return true, nil
+			deadline := time.NewTimer(interactionForwardWait)
+			defer deadline.Stop()
+			ticker := time.NewTicker(200 * time.Millisecond)
+			defer ticker.Stop()
+		polling:
+			for {
+				select {
+				case <-ctx.Done():
+					return false, ctx.Err()
+				case <-deadline.C:
+					break polling
+				case <-ticker.C:
+					if again, err := readCard(); err == nil && again != nil && again.ResolvedAt != nil {
+						return true, nil
+					}
 				}
 			}
 		}
 	}
-	isClaimed, err := tx.ClaimAgentInteraction(interaction.ID, answer)
-	if err != nil {
+	var conversation *models.AgentConversation
+	isClaimed := false
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		if isClaimed, err = tx.ClaimAgentInteraction(interaction.ID, answer); err != nil || !isClaimed {
+			return err
+		}
+		conversation, err = tx.GetAgentConversation(interaction.ConversationID)
+		return err
+	}); err != nil {
 		return false, err
 	}
 	if !isClaimed {
 		return false, fmt.Errorf("%w: this was already answered", api.ErrInvalidArguments)
 	}
-	conversation, err := tx.GetAgentConversation(interaction.ConversationID)
-	if err != nil || conversation == nil {
+	if conversation == nil {
 		return false, api.ErrNotFound
 	}
 	if _, err := worker.ResumeInteraction(&agent.ResumeSettings{

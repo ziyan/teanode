@@ -14,8 +14,10 @@ type InteractionOperation interface {
 	// CreateAgentInteraction records a card as it is raised.
 	CreateAgentInteraction(interaction *models.AgentInteraction) (*models.AgentInteraction, error)
 
-	// GetAgentInteractionByCall is the card a tool call raised, or nil.
-	GetAgentInteractionByCall(agentId, callId string) (*models.AgentInteraction, error)
+	// GetAgentInteractionByCall is the card a tool call raised in a run,
+	// or nil. By the run as well as the call: some providers number calls
+	// afresh in every answer, so a call id alone names many cards.
+	GetAgentInteractionByCall(agentId, runId, callId string) (*models.AgentInteraction, error)
 
 	// ListOpenAgentInteractions is a conversation's unanswered cards,
 	// oldest first.
@@ -76,9 +78,9 @@ func (self *transaction) CreateAgentInteraction(interaction *models.AgentInterac
 	return model.toModel(), nil
 }
 
-func (self *transaction) GetAgentInteractionByCall(agentId, callId string) (*models.AgentInteraction, error) {
+func (self *transaction) GetAgentInteractionByCall(agentId, runId, callId string) (*models.AgentInteraction, error) {
 	var found []agentInteractionModel
-	if err := self.tx.Where(`"agent_id" = ? AND "call_id" = ?`, agentId, callId).Order(`"created_at" DESC`).Limit(1).Find(&found).Error; err != nil {
+	if err := self.tx.Where(`"agent_id" = ? AND "run_id" = ? AND "call_id" = ?`, agentId, runId, callId).Order(`"created_at" DESC`).Limit(1).Find(&found).Error; err != nil {
 		return nil, err
 	}
 	if len(found) == 0 {
