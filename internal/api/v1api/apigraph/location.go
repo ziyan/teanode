@@ -12,16 +12,21 @@ import (
 
 // Where a person is and what they read in, learned from the browser.
 //
-// The dashboard sends the browser's time zone and language with every API
-// call, the way it already sends the language for the page itself. The
-// server keeps them on the account so that a run with nobody present — a
-// scheduled brief, a held reply's notification — tells time and writes in
-// the person's own terms. Written at most once an hour per account: a
+// The dashboard sends the browser's time zone and the language the person
+// reads it in with every API call. The server keeps them on the account so
+// that a run with nobody present, a scheduled brief or a held reply's
+// notification, tells time and writes in the person's own terms. Written
+// when either changes, and otherwise at most once an hour per account: a
 // person crossing a border is not an administrative change, and a write on
 // every request would be a write on every request.
 
 // TimezoneHeader carries the browser's IANA zone name.
 const TimezoneHeader = "X-Timezone"
+
+// LanguageHeader carries the language the dashboard is shown in, which the
+// person may have chosen over the browser's own; Accept-Language is only
+// the fallback for a client that does not send it.
+const LanguageHeader = "X-Language"
 
 // locationTouchInterval is how often, at most, one account's location is
 // written.
@@ -29,7 +34,14 @@ const locationTouchInterval = time.Hour
 
 type locationTouches struct {
 	mutex sync.Mutex
-	last  map[string]time.Time
+	last  map[string]locationTouch
+}
+
+// locationTouch is what was last written for one account, and when.
+type locationTouch struct {
+	at       time.Time
+	timezone string
+	locale   string
 }
 
 // withLocation wraps a handler so that a signed-in request's zone and
@@ -52,20 +64,24 @@ func (self *graph) touchLocation(request *http.Request) {
 			timezone = ""
 		}
 	}
-	locale := firstLanguage(request.Header.Get("Accept-Language"))
+	locale := firstLanguage(request.Header.Get(LanguageHeader))
+	if locale == "" {
+		locale = firstLanguage(request.Header.Get("Accept-Language"))
+	}
 	if timezone == "" && locale == "" {
 		return
 	}
 	now := time.Now()
 	self.locations.mutex.Lock()
 	if self.locations.last == nil {
-		self.locations.last = map[string]time.Time{}
+		self.locations.last = map[string]locationTouch{}
 	}
-	if last, ok := self.locations.last[username]; ok && now.Sub(last) < locationTouchInterval {
+	if last, ok := self.locations.last[username]; ok && now.Sub(last.at) < locationTouchInterval &&
+		last.timezone == timezone && last.locale == locale {
 		self.locations.mutex.Unlock()
 		return
 	}
-	self.locations.last[username] = now
+	self.locations.last[username] = locationTouch{at: now, timezone: timezone, locale: locale}
 	self.locations.mutex.Unlock()
 
 	if err := self.database.Transaction(func(tx db.Transaction) error {

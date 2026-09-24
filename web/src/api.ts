@@ -3,6 +3,8 @@
 // screens needs, and a self-hosted server should not ship a megabyte of
 // dependency to display a list of messages.
 
+import { detectLanguage } from './i18n/i18n'
+
 export class APIError extends Error {
   readonly unauthenticated: boolean
 
@@ -13,17 +15,20 @@ export class APIError extends Error {
   }
 }
 
-// Where this browser is, sent with every call so the server can tell time in
-// the person's own zone when nobody is looking — a scheduled brief, a held
-// reply's notification. The language goes as Accept-Language, which the
-// browser sends on its own.
+// Where this browser is and the language the dashboard is shown in, sent
+// with every call so the server can tell time and write in the person's own
+// terms when nobody is looking: a scheduled brief, a held reply's
+// notification. The language is the one chosen here, which the browser's
+// own Accept-Language knows nothing about.
 function locationHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'X-Language': detectLanguage() }
   try {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
-    return zone ? { 'X-Timezone': zone } : {}
+    if (zone) headers['X-Timezone'] = zone
   } catch {
-    return {}
+    // A browser that cannot say its zone leaves the account's as it was.
   }
+  return headers
 }
 
 // A page framed by another site — the drawer the browser extension puts
