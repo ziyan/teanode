@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.62.1] - 2026-09-24
+
+### Fixed
+
+- A memory check shows its first question straight away instead of waiting for a reply to its opening line. (#158)
+
 ## [0.62.0] - 2026-09-24
 
 ### Added
