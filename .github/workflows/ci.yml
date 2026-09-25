@@ -55,6 +55,12 @@ jobs:
           # actually depends on.
           cache: false
 
+      # The readers the computer uses on a PDF and on a scan, so the tests
+      # of reading them run here rather than skipping: without these they
+      # skip, and nothing would say reading a scan had stopped working.
+      - name: Install the PDF and OCR readers
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends poppler-utils tesseract-ocr
+
       # What the compiler already did, kept. Every run used to rebuild the
       # whole dependency graph twice -- once plainly and once instrumented
       # for the race detector -- before a single test ran. The key changes
