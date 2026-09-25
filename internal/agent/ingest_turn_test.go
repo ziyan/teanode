@@ -51,26 +51,29 @@ func TestTheLongestWaitingSourceReadsNext(t *testing.T) {
 	}
 }
 
-// A source that could not reach its computer tries again at its next
-// scheduled time only when the computer is away; cut off by a restart,
-// waiting for another source, or with more to read, it tries again soon.
+// A source that could not reach its computer tries again soon; one whose
+// computer is away tries again in a few minutes, or at its scheduled time
+// if that comes first, rather than waiting for its hour.
 func TestASourceThatCouldNotReachItsComputerTriesAgainSoon(t *testing.T) {
 	now := time.Date(2026, 8, 14, 9, 0, 0, 0, time.UTC)
-	scheduled := now.Add(20 * time.Hour)
+	tomorrow, shortly := now.Add(20*time.Hour), now.Add(time.Minute)
 	for _, each := range []struct {
 		what       string
 		waiting    waitingForDevice
 		isAttached bool
 		hasMore    bool
+		scheduled  time.Time
 		want       time.Time
 	}{
-		{"a laptop that is closed", waitingForDevice{name: "laptop"}, false, false, scheduled},
-		{"a laptop that is closed partway through", waitingForDevice{name: "laptop"}, false, true, now.Add(ingestSoon)},
-		{"an answer cut off by a restart", waitingForDevice{name: "laptop"}, true, false, now.Add(ingestSoon)},
-		{"another source reading", waitingForDevice{name: "laptop", readingOther: "chat"}, true, false, now.Add(ingestSoon)},
-		{"another source waiting longer", waitingForDevice{name: "laptop", behindOther: "drive"}, true, false, now.Add(ingestSoon)},
+		{"a laptop that is closed", waitingForDevice{name: "laptop"}, false, false, tomorrow, now.Add(ingestRetry)},
+		{"a laptop that is closed, due sooner anyway", waitingForDevice{name: "laptop"}, false, false, shortly, shortly},
+		{"a laptop that is closed, with no schedule", waitingForDevice{name: "laptop"}, false, false, time.Time{}, now.Add(ingestRetry)},
+		{"a laptop that is closed partway through", waitingForDevice{name: "laptop"}, false, true, tomorrow, now.Add(ingestSoon)},
+		{"an answer cut off by a restart", waitingForDevice{name: "laptop"}, true, false, tomorrow, now.Add(ingestSoon)},
+		{"another source reading", waitingForDevice{name: "laptop", readingOther: "chat"}, true, false, tomorrow, now.Add(ingestSoon)},
+		{"another source waiting longer", waitingForDevice{name: "laptop", behindOther: "drive"}, true, false, tomorrow, now.Add(ingestSoon)},
 	} {
-		if got := waitedUntil(&each.waiting, each.isAttached, each.hasMore, scheduled, now); !got.Equal(each.want) {
+		if got := waitedUntil(&each.waiting, each.isAttached, each.hasMore, each.scheduled, now); !got.Equal(each.want) {
 			t.Errorf("%s: tries again at %s, want %s", each.what, got, each.want)
 		}
 	}

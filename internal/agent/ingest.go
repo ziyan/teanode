@@ -315,8 +315,8 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 }
 
 // waitedUntil is when a source that could not reach its computer tries
-// again: at its next scheduled time, where the computer is away, and soon
-// in every other case.
+// again: soon where the computer is there, and where it is away, at its
+// next scheduled time or in a few minutes, whichever comes first.
 func waitedUntil(waiting *waitingForDevice, isAttached, hasMore bool, scheduled, now time.Time) time.Time {
 	switch {
 	case waiting.readingOther != "" || waiting.behindOther != "":
@@ -338,6 +338,13 @@ func waitedUntil(waiting *waitingForDevice, isAttached, hasMore bool, scheduled,
 		return now.Add(ingestSoon)
 	case hasMore:
 		return now.Add(ingestSoon)
+	}
+	// Away. Not only until the hour: the daemon restarting is away too,
+	// for the seconds it takes, and a source whose first pass it cut off
+	// was put off to three in the morning. Asking a computer that is not
+	// there every few minutes costs a job that ends at once.
+	if retry := now.Add(ingestRetry); scheduled.IsZero() || retry.Before(scheduled) {
+		return retry
 	}
 	return scheduled
 }
