@@ -16,6 +16,10 @@ settings:
     type: string
     pattern: "^[^-].*$"
     default: "newer_than:2y -category:promotions -category:social"
+  - name: attachments
+    description: fetch the files the messages came with, so their text is read and pictures can be looked at
+    type: boolean
+    default: true
 
 containers:
   # One file for the mailbox. A thread can carry several labels, so labels
@@ -45,6 +49,20 @@ records:
       command: [gog, --account, "{{settings.account}}", gmail, thread, get, "{{item.id}}", --full]
       parse: text
       text: "{{detail.text}}"
+    # The thread's files, named by gog, which finds them however deep in
+    # a message they are. Listed once for each version of the thread;
+    # Gmail gives a file a new identifier each time it is asked, so a
+    # file is known by its message and its name, and a reply to the
+    # thread does not fetch its files again.
+    attachments:
+      when: "{{settings.attachments}}"
+      list:
+        command: [gog, --account, "{{settings.account}}", --json, gmail, thread, attachments, "{{item.id}}"]
+        parse: {json: {items: attachments}}
+      key: "{{each.messageId}}/{{each.filename}}"
+      version: "{{each.size}}"
+      name: "{{each.filename}}"
+      command: [gog, --account, "{{settings.account}}", gmail, attachment, "{{each.messageId}}", "{{each.attachmentId}}", --out, "{{output}}"]
 ---
 
 # Gmail
@@ -53,7 +71,7 @@ Reads the threads of a Gmail mailbox that match a search, through `gog`, which i
 
 This is for a Gmail account the person does not receive through TeaNode itself; mail that arrives at TeaNode is already read where it lands.
 
-Attachments are not fetched. `gog gmail thread get --download` can write them, and a later version may, once it is clear which of a mailbox's attachments are worth the space.
+The files messages came with are fetched too, unless `attachments` is off: a PDF, an office document or a text file is read on the computer, a scan with OCR where it has tesseract, and a picture waits for the night, which decides whether it is worth looking at. Signature logos and other small inline pictures are among them; the night passes those over.
 
 ## Document identifiers
 
@@ -61,4 +79,4 @@ The mailbox is the file `threads.jsonl` and a thread is its Gmail thread identif
 
 ## Checked against the tool
 
-`gog gmail search --json` (a `threads` list with `id`, `date`, `from`, `subject`, `labels`, `messageCount`, and `nextPageToken`), `--max`, `--page`, and `gmail thread get --full` printing each message's headers and body as text were read from `gog` 0.11.
+`gog gmail search --json` (a `threads` list with `id`, `date`, `from`, `subject`, `labels`, `messageCount`, and `nextPageToken`), `--max`, `--page`, `gmail thread get --full` printing each message's headers and body as text, `gmail thread attachments --json` (an `attachments` list with `messageId`, `attachmentId`, `filename`, `mimeType` and `size`) and `gmail attachment <message> <attachment> --out` were read from `gog` 0.11.
