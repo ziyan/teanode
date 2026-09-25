@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.65.1] - 2026-09-25
+
+### Fixed
+
+- A source whose computer was briefly away, such as while its daemon restarted, tries again within minutes rather than at its next scheduled time. (#165)
+
 ## [0.65.0] - 2026-09-25
 
 ### Added
