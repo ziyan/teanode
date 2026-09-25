@@ -93,6 +93,46 @@ func TestADocumentIsSeenWhenItIsFiledAndWhenItIsNamed(test *testing.T) {
 	})
 }
 
+// A conversation renamed after it was filed takes the new name where it
+// is, keeping what the night wrote on it; one whose name did not change
+// is not written to.
+func TestAnUnchangedDocumentTakesItsNewName(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		source := knowledgeSource(test, tx)
+		renamed := knowledgeDocument(test, tx, source, "sessions/one.jsonl#1")
+		kept := knowledgeDocument(test, tx, source, "sessions/two.jsonl#1")
+		if err := tx.MarkAgentDocumentsDigested([]string{renamed.ID}, time.Now()); err != nil {
+			test.Fatalf("MarkAgentDocumentsDigested: %s", err)
+		}
+
+		changed, err := tx.RetitleAgentDocuments(source.ID, []*models.AgentDocument{
+			{ExternalID: renamed.ExternalID, Title: "Upload retries", Metadata: map[string]any{"channel": "Upload retries"}},
+			{ExternalID: kept.ExternalID, Title: kept.Title, Metadata: map[string]any{"channel": "ignored"}},
+			{ExternalID: "sessions/never.jsonl#1", Title: "Nothing here"},
+		})
+		if err != nil || changed != 1 {
+			test.Fatalf("one document was renamed, %d were: %v", changed, err)
+		}
+		found, err := tx.GetAgentDocumentByExternal(source.ID, renamed.ExternalID)
+		if err != nil || found == nil {
+			test.Fatalf("GetAgentDocumentByExternal: %v %s", found, err)
+		}
+		if found.Title != "Upload retries" || found.Metadata["channel"] != "Upload retries" || found.Hash != renamed.Hash {
+			test.Fatalf("the renamed document is %+v", found)
+		}
+		if _, ok := found.Metadata["digested"]; !ok {
+			test.Fatalf("the rename took away what the night wrote: %+v", found.Metadata)
+		}
+		untouched, err := tx.GetAgentDocumentByExternal(source.ID, kept.ExternalID)
+		if err != nil || untouched.Metadata["channel"] != nil {
+			test.Fatalf("a document whose name did not change was written to: %+v %v", untouched, err)
+		}
+	})
+}
+
 // A pass that walked the whole tree takes away what it did not see, with
 // the passages and the symbols under it, and leaves everything it did.
 func TestAPassRemovesTheDocumentsItHasNotSeen(test *testing.T) {

@@ -73,6 +73,11 @@ type KnowledgeOperation interface {
 	// scan, because a page of an archive is two thousand names.
 	MarkAgentDocumentsSeen(sourceId string, externalIds []string, at time.Time) error
 
+	// RetitleAgentDocuments writes the title and metadata a source now
+	// gives documents whose text it still has unchanged, where the title
+	// is not the one stored, and says how many it changed.
+	RetitleAgentDocuments(sourceId string, documents []*models.AgentDocument) (int64, error)
+
 	// CountAgentSourceDocuments is how many documents and passages a
 	// source holds, counted rather than kept: a pass adds what it files,
 	// and a document filed again under the same name was added twice.
@@ -576,6 +581,46 @@ func (self *transaction) ListAgentDocumentHashes(sourceId string) (map[string]st
 		hashes[row.ExternalID] = row.Hash
 	}
 	return hashes, nil
+}
+
+// RetitleAgentDocuments writes a new title, and the metadata beside it,
+// on documents a source still has with the same text: a conversation
+// renamed after it was filed. Only where the title differs, in one
+// statement for the page, since nearly every unchanged document is also
+// unrenamed. The metadata is merged into what is stored rather than put
+// in its place, so what the night wrote there (digested, declined) stays.
+func (self *transaction) RetitleAgentDocuments(sourceId string, documents []*models.AgentDocument) (int64, error) {
+	if sourceId == "" || len(documents) == 0 {
+		return 0, nil
+	}
+	externalIds := make([]string, 0, len(documents))
+	titles := make([]string, 0, len(documents))
+	metadatas := make([]string, 0, len(documents))
+	for _, document := range documents {
+		if document.ExternalID == "" || document.Title == "" {
+			continue
+		}
+		metadata, err := json.Marshal(orEmptyMap(document.Metadata))
+		if err != nil {
+			return 0, err
+		}
+		// Cut the same way they were written, or a long name would not
+		// match the row it named.
+		externalIds = append(externalIds, truncateRunes(document.ExternalID, 500))
+		titles = append(titles, truncateRunes(document.Title, 500))
+		metadatas = append(metadatas, string(metadata))
+	}
+	if len(externalIds) == 0 {
+		return 0, nil
+	}
+	result := self.tx.Exec(
+		`UPDATE "agent_document" AS "document"
+		 SET "title" = "renamed"."title", "metadata" = "document"."metadata" || "renamed"."metadata"::jsonb
+		 FROM unnest(?::text[], ?::text[], ?::text[]) AS "renamed"("external_id", "title", "metadata")
+		 WHERE "document"."source_id" = ? AND "document"."external_id" = "renamed"."external_id"
+		   AND "document"."title" IS DISTINCT FROM "renamed"."title"`,
+		pq.Array(externalIds), pq.Array(titles), pq.Array(metadatas), sourceId)
+	return result.RowsAffected, result.Error
 }
 
 // MarkAgentDocumentsSeen says the source still has these things.

@@ -146,6 +146,7 @@ type MemoryOperation interface {
 	PutAgentSourceType(sourceType *models.AgentSourceType) (*models.AgentSourceType, error)
 	DeleteAgentSourceType(name string) error
 	CountAgentSourcesOfType(name string) (int64, error)
+	ListAgentSourcesOfType(name string) ([]*models.AgentKnowledgeSource, error)
 
 	// The secrets a source's type declares, filled in for that source.
 	ListAgentSourceSecrets(sourceId string) ([]*models.AgentSourceSecret, error)

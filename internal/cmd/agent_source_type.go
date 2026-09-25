@@ -34,7 +34,7 @@ func newAgentSourceTypeCommand() *cli.Command {
 			},
 			{
 				Name:      "install",
-				Usage:     "install a type, or replace the installed one with a newer version",
+				Usage:     "install a type, or replace the installed one with a newer version, or a local one of that name with the registry's signed file",
 				ArgsUsage: "<name>",
 				Flags:     []cli.Flag{JSONFlag()},
 				Action:    runAgentSourceTypeInstall,

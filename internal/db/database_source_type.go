@@ -91,6 +91,11 @@ func (self *transaction) DeleteAgentSourceType(name string) error {
 	return self.tx.Where("\"name\" = ?", strings.ToLower(strings.TrimSpace(name))).Delete(&agentSourceTypeModel{}).Error
 }
 
+// ListAgentSourcesOfType is every source, of anybody's, of a type.
+func (self *transaction) ListAgentSourcesOfType(name string) ([]*models.AgentKnowledgeSource, error) {
+	return self.sourcesFrom(self.tx.Where("\"specification\"->>'type' = ?", strings.ToLower(strings.TrimSpace(name))).Order(`"created_at" ASC`))
+}
+
 // CountAgentSourcesOfType is how many sources, of anybody's, are of a type:
 // a type in use is not taken away from under them.
 func (self *transaction) CountAgentSourcesOfType(name string) (int64, error) {
