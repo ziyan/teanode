@@ -50,3 +50,28 @@ func TestTheLongestWaitingSourceReadsNext(t *testing.T) {
 		t.Fatalf("a source that stopped asking a minute and a half ago is not waited for: %+v", turn)
 	}
 }
+
+// A source that could not reach its computer tries again at its next
+// scheduled time only when the computer is away; cut off by a restart,
+// waiting for another source, or with more to read, it tries again soon.
+func TestASourceThatCouldNotReachItsComputerTriesAgainSoon(t *testing.T) {
+	now := time.Date(2026, 8, 14, 9, 0, 0, 0, time.UTC)
+	scheduled := now.Add(20 * time.Hour)
+	for _, each := range []struct {
+		what       string
+		waiting    waitingForDevice
+		isAttached bool
+		hasMore    bool
+		want       time.Time
+	}{
+		{"a laptop that is closed", waitingForDevice{name: "laptop"}, false, false, scheduled},
+		{"a laptop that is closed partway through", waitingForDevice{name: "laptop"}, false, true, now.Add(ingestSoon)},
+		{"an answer cut off by a restart", waitingForDevice{name: "laptop"}, true, false, now.Add(ingestSoon)},
+		{"another source reading", waitingForDevice{name: "laptop", readingOther: "chat"}, true, false, now.Add(ingestSoon)},
+		{"another source waiting longer", waitingForDevice{name: "laptop", behindOther: "drive"}, true, false, now.Add(ingestSoon)},
+	} {
+		if got := waitedUntil(&each.waiting, each.isAttached, each.hasMore, scheduled, now); !got.Equal(each.want) {
+			t.Errorf("%s: tries again at %s, want %s", each.what, got, each.want)
+		}
+	}
+}

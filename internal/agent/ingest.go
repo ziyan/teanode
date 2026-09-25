@@ -233,22 +233,8 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 				// pass before its pause, lost the computer on its first
 				// page, and sat until its hour with the cursor halfway.
 				midway := partWayThroughTree(cursor)
-				when := self.nextRunOf(source, run.Owner)
-				if waiting.readingOther != "" || waiting.behindOther != "" {
-					// The computer is there and busy with another source:
-					// this one's turn comes when that one is done, not at
-					// its hour tomorrow, which is where a pass that had
-					// not started was put, and so never ran while one
-					// long source was reading. Soon, too: at five minutes
-					// it asked so seldom that sources partway through a
-					// pass, which ask again at once, had the computer
-					// every time it came free, and a pass that had not
-					// started waited behind them for hours.
-					when = time.Now().Add(ingestSoon)
-				}
-				if source.More || midway {
-					when = time.Now().Add(ingestSoon)
-				}
+				isAttached := self.computerNamed(source.AgentID, waiting.name) != nil
+				when := waitedUntil(waiting, isAttached, source.More || midway, self.nextRunOf(source, run.Owner), time.Now())
 				return self.markSource(ctx, source, cursor, counts, source.More || midway, waiting.Error(), when)
 			}
 			failure = err.Error()
@@ -326,6 +312,34 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 		return nil
 	}
 	return err
+}
+
+// waitedUntil is when a source that could not reach its computer tries
+// again: at its next scheduled time, where the computer is away, and soon
+// in every other case.
+func waitedUntil(waiting *waitingForDevice, isAttached, hasMore bool, scheduled, now time.Time) time.Time {
+	switch {
+	case waiting.readingOther != "" || waiting.behindOther != "":
+		// The computer is there and busy with another source: this one's
+		// turn comes when that one is done, not at its hour tomorrow,
+		// which is where a pass that had not started was put, and so
+		// never ran while one long source was reading. Soon, too: at five
+		// minutes it asked so seldom that sources partway through a pass,
+		// which ask again at once, had the computer every time it came
+		// free, and a pass that had not started waited behind them for
+		// hours.
+		return now.Add(ingestSoon)
+	case isAttached:
+		// Attached again already: the answer was cut off by the server
+		// restarting or the connection dropping, not by a laptop
+		// closing. A pass cut off on its first page has no cursor and
+		// nothing marked as more, so it was put off to its hour though
+		// the computer was back within seconds.
+		return now.Add(ingestSoon)
+	case hasMore:
+		return now.Add(ingestSoon)
+	}
+	return scheduled
 }
 
 // waitingForDevice is a source whose computer is not attached.
