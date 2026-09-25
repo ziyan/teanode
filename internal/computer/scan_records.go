@@ -111,6 +111,11 @@ type recordAttachment struct {
 	Text        string `json:"text,omitempty"`
 }
 
+// PersonAuthor is the author a record gives the person whose computer it
+// is, when the source knows a post is theirs but not their name: the
+// server files it under their username.
+const PersonAuthor = "@you"
+
 // record is one line of a records file.
 type record struct {
 	ID         string         `json:"id"`
@@ -172,15 +177,19 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 	// Only on the first page of a pass. The later pages are the same
 	// pass still being read, and a script run again under them would
 	// move the ground the cursor stands on.
-	if arguments.After == "" && folder.typed == nil {
+	if arguments.After == "" {
 		// A file the cache holds is checked against its modification
-		// time, and what a records script prints has none: nothing on
-		// disk changes when the archive behind it does. The start of a
-		// pass is the one moment the answer is certainly wanted fresh,
-		// so it is where the cache is dropped.
+		// time, and what a records script or a type prints has none:
+		// nothing on disk changes when the archive behind it does. The
+		// start of a pass is the one moment the answer is certainly
+		// wanted fresh, so it is where the cache is dropped. A type's
+		// too: kept, a type with one container read it once and never
+		// again.
 		forgetRecords()
-		if err := refreshRecords(root); err != nil {
-			return nil, err
+		if folder.typed == nil {
+			if err := refreshRecords(root); err != nil {
+				return nil, err
+			}
 		}
 	}
 
