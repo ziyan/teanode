@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.64.2] - 2026-09-25
+
+### Fixed
+
+- Claude Code sources keep the messages sent while Claude Code was working, which were left out. (#163)
+
 ## [0.64.1] - 2026-09-25
 
 ### Fixed
