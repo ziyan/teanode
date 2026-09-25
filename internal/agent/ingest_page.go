@@ -38,6 +38,7 @@ func (self *Agent) fileComputerPage(ctx context.Context, run *Run, source *model
 	// need their seen time written by hand, where a document that is
 	// filed has it written by the filing.
 	named := make([]string, 0, len(result.Entries))
+	var renamed []*models.AgentDocument
 	for _, entry := range result.Entries {
 		if ctx.Err() != nil {
 			return "", counts, ctx.Err()
@@ -78,6 +79,12 @@ func (self *Agent) fileComputerPage(ctx context.Context, run *Run, source *model
 		}
 		if entry.Unchanged {
 			named = append(named, entry.ExternalID)
+			// The same text under a new name -- a conversation titled
+			// after it was filed -- is renamed where it is, without being
+			// read or embedded again.
+			if entry.Title != "" {
+				renamed = append(renamed, unchangedDocument(source, entry))
+			}
 			continue
 		}
 		if strings.TrimSpace(entry.Text) == "" {
@@ -99,12 +106,27 @@ func (self *Agent) fileComputerPage(ctx context.Context, run *Run, source *model
 			if err := lockIngestSource(tx, source); err != nil {
 				return err
 			}
-			return tx.MarkAgentDocumentsSeen(source.ID, named, time.Now())
+			if err := tx.MarkAgentDocumentsSeen(source.ID, named, time.Now()); err != nil {
+				return err
+			}
+			_, err := tx.RetitleAgentDocuments(source.ID, renamed)
+			return err
 		}); err != nil {
 			return "", counts, fmt.Errorf("recording what %s still has of %s: %w", source.Specification.Computer, source.Specification.Path, err)
 		}
 	}
 	return result.NextCursor, counts, nil
+}
+
+// unchangedDocument is what an unchanged entry says about its document
+// besides its text: its title, and its metadata as fileDocument files it.
+func unchangedDocument(source *models.AgentKnowledgeSource, entry computer.ScanEntry) *models.AgentDocument {
+	metadata := map[string]any{}
+	for key, value := range entry.Metadata {
+		metadata[key] = value
+	}
+	metadata["source"] = source.Name
+	return &models.AgentDocument{ExternalID: entry.ExternalID, Title: entry.Title, Metadata: metadata}
 }
 
 // personAuthorLine is a post by computer.PersonAuthor as a chat unit

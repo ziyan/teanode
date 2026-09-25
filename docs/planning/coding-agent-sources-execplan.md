@@ -16,6 +16,7 @@ After this change a person adds a source of type `claude-code` or `codex` from t
 - [x] (2026-09-24) Milestone 2: the server files a post whose author is `@you` under the owner's username (`namePerson` in `internal/agent/ingest_page.go`).
 - [x] (2026-09-24) Found and fixed on the way: the daemon's one-file records cache was not dropped at the start of a typed source's pass, so a type with one container never read it again.
 - [x] (2026-09-24) Installing a type from the registry now replaces a local type of the same name when every source of it fits the registry's file. Before, a type tried out with `add-local` could only become the signed one by removing its sources and everything they had filed.
+- [x] (2026-09-24) Review: sessions are titled as the tools title them (Claude Code's `ai-title` when the person gave none, Codex's `session_index.jsonl`), and a document whose text is unchanged but whose title changed is renamed in place (`RetitleAgentDocuments`), so a conversation renamed after it was filed shows its new name without being read or embedded again.
 - [ ] Milestone 3: the two types in the registry repository, signed; the daemon and server deployed; a real pass on the development computer and a search that finds something said in a session.
 
 ## Surprises & Discoveries
