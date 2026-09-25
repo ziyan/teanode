@@ -69,8 +69,13 @@ var ocrLanguagesOnce struct {
 // ocrLanguages is every language tesseract has here, joined the way it
 // takes them: a person with the Japanese data installed has Japanese
 // documents, and reading them as English makes nothing of them.
-func ocrLanguages(ctx context.Context) string {
+func ocrLanguages() string {
 	ocrLanguagesOnce.Do(func() {
+		// Its own time and not the caller's: asked once for the life of
+		// the program, a first caller whose page was cut short would
+		// leave every file after it read in no language at all.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 		output, err := exec.CommandContext(ctx, "tesseract", "--list-langs").Output()
 		if err != nil {
 			return
@@ -101,7 +106,7 @@ func readPages(ctx context.Context, pdfPath, key string) (string, error) {
 	if !canReadPages() {
 		return "", fmt.Errorf("pdftoppm and tesseract are not both installed here")
 	}
-	languages := ocrLanguages(ctx)
+	languages := ocrLanguages()
 	if languages == "" {
 		return "", fmt.Errorf("tesseract has no languages here")
 	}
