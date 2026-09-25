@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 	"unicode/utf8"
 )
 
@@ -72,12 +73,23 @@ func textOf(ctx context.Context, path string, content []byte) (string, string, e
 	if !hasNul(head) && utf8.Valid(trimPartialRune(head)) {
 		return string(content), "file", nil
 	}
+	sum := sha256.Sum256(content)
+	key := hex.EncodeToString(sum[:])
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".pdf":
 		text, err := extract(ctx, "pdftotext", "-q", "-enc", "UTF-8", path, "-")
+		if err == nil && strings.TrimSpace(text) == "" {
+			// No text layer: a scan. Its pages are read as pictures where
+			// this computer can.
+			if read, err := readPages(ctx, path, key); err == nil {
+				text = read
+			}
+		}
 		return text, "file", err
-	case ".docx", ".doc", ".odt", ".rtf", ".pptx", ".ppt", ".odp", ".xlsx", ".xls", ".ods":
-		text, err := extractOffice(ctx, path)
+	case ".docx", ".docm", ".doc", ".dotx", ".odt", ".rtf",
+		".pptx", ".pptm", ".ppsx", ".potx", ".ppt", ".odp",
+		".xlsx", ".xlsm", ".xlsb", ".xltx", ".xls", ".ods":
+		text, err := extractOffice(ctx, path, key)
 		return text, "file", err
 	}
 	return "", "", fmt.Errorf("not text")
@@ -108,7 +120,7 @@ func trimPartialRune(content []byte) []byte {
 // the source's page can say what it cannot read here.
 func availableExtractors() []string {
 	var found []string
-	for _, program := range []string{"pdftotext", "soffice", "libreoffice"} {
+	for _, program := range []string{"pdftotext", "soffice", "libreoffice", "pdftoppm", "tesseract"} {
 		if _, err := exec.LookPath(program); err == nil {
 			found = append(found, program)
 		}
@@ -150,16 +162,30 @@ func extract(ctx context.Context, program string, arguments ...string) (string, 
 // the text filter had returned nothing at all.
 func officeConversion(path string) (filter, extension string) {
 	switch strings.ToLower(filepath.Ext(path)) {
-	case ".docx", ".doc", ".odt", ".rtf":
+	case ".docx", ".docm", ".doc", ".dotx", ".odt", ".rtf":
 		return "txt:Text", ".txt"
 	default:
 		return "pdf", ".pdf"
 	}
 }
 
+// officeTimeout is how long LibreOffice is given for a file of this size:
+// the bound for a PDF, and more for a large one, since a workbook of
+// twelve megabytes takes longer than thirty seconds to print and came back
+// with no text at all.
+func officeTimeout(path string) time.Duration {
+	timeout := scanExtractTimeout
+	if information, err := os.Stat(path); err == nil {
+		timeout += time.Duration(information.Size()>>20) * 10 * time.Second
+	}
+	return min(timeout, 5*time.Minute)
+}
+
 // extractOffice converts a document to text through LibreOffice, which is
-// the only thing that reads these formats and has to write to a file.
-func extractOffice(ctx context.Context, path string) (string, error) {
+// the only thing that reads these formats and has to write to a file. key
+// names the document, for the pages of one that prints with no text on
+// them -- a deck of screenshots -- which are read as pictures.
+func extractOffice(ctx context.Context, path, key string) (string, error) {
 	program := "soffice"
 	if _, err := exec.LookPath(program); err != nil {
 		program = "libreoffice"
@@ -172,7 +198,8 @@ func extractOffice(ctx context.Context, path string) (string, error) {
 		return "", err
 	}
 	defer func() { _ = os.RemoveAll(directory) }()
-	callContext, cancel := context.WithTimeout(ctx, scanExtractTimeout)
+	timeout := officeTimeout(path)
+	callContext, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	// A profile of its own, inside the directory that is removed at the
 	// end. Without one every call shares the account's single profile,
@@ -204,7 +231,7 @@ func extractOffice(ctx context.Context, path string) (string, error) {
 			_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
 		}
 		<-finished
-		return "", fmt.Errorf("%s did not finish within %s", program, scanExtractTimeout)
+		return "", fmt.Errorf("%s did not finish within %s", program, timeout)
 	}
 	// Named for what was asked for, because soffice reports a filter it
 	// could not apply by exiting successfully and writing nothing. The
@@ -216,7 +243,13 @@ func extractOffice(ctx context.Context, path string) (string, error) {
 		return "", fmt.Errorf("%s wrote nothing converting %s with %s", program, filepath.Ext(path), filter)
 	}
 	if extension == ".pdf" {
-		return extract(ctx, "pdftotext", "-q", "-enc", "UTF-8", written, "-")
+		text, err := extract(ctx, "pdftotext", "-q", "-enc", "UTF-8", written, "-")
+		if err == nil && strings.TrimSpace(text) == "" {
+			if read, err := readPages(ctx, written, key); err == nil {
+				text = read
+			}
+		}
+		return text, err
 	}
 	content, err := os.ReadFile(written)
 	if err != nil {
