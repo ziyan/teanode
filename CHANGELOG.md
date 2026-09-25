@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.65.3] - 2026-09-25
+
+### Fixed
+
+- Sources that read the same computer take turns page by page; a source starting a pass no longer waits for hours behind ones with long pages. (#167)
+
 ## [0.65.2] - 2026-09-25
 
 ### Fixed
