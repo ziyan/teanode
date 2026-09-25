@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.65.5] - 2026-09-25
+
+### Fixed
+
+- A source type that reads for a long time before it has anything to send (a large mailbox) sends a full page of what it read, not one item. (#170)
+
 ## [0.65.4] - 2026-09-25
 
 ### Changed
