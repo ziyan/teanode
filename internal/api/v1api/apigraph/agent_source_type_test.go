@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/sources"
 )
 
 const inventedSourceType = `---
@@ -179,4 +181,62 @@ func sameJSON(got json.RawMessage, want string) bool {
 		return false
 	}
 	return reflect.DeepEqual(left, right)
+}
+
+// The registry's file of a type takes the place of a local one of the same
+// name only where every source of it still fits: how a type tried out from
+// a file becomes the signed one without its sources being removed.
+func TestTheRegistrysTypeReplacesALocalOneItsSourcesFit(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+
+	var owner *models.User
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if owner, err = tx.CreateUser(&models.User{Username: "local-owner", Name: "Carol Example"}); err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if _, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Dot"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+	})
+	operator := &api.Principal{User: owner, Permissions: models.NewEffectivePermissions([]models.Grant{
+		{Permission: models.PermissionAgentUse}, {Permission: models.PermissionServerManage},
+	})}
+	resolver := &graph{database: database}
+	as := func(run func(ctx context.Context)) {
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			run(api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), operator), tx))
+		})
+	}
+	as(func(ctx context.Context) {
+		if _, err := resolver.AddLocalAgentSourceType(ctx, AddLocalAgentSourceTypeArguments{Content: inventedSourceType}); err != nil {
+			t.Fatalf("AddLocalAgentSourceType: %s", err)
+		}
+		if _, err := resolver.SaveAgentKnowledgeSource(ctx, SaveAgentKnowledgeSourceArguments{
+			Type: "invented-notes", Computer: "laptop", Settings: json.RawMessage(`{"notebook": "work", "tags": "a, b"}`),
+		}); err != nil {
+			t.Fatalf("SaveAgentKnowledgeSource: %s", err)
+		}
+	})
+	as(func(ctx context.Context) {
+		same, err := sources.Parse([]byte(inventedSourceType))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := resolver.sourcesFitType(ctx, same); err != nil {
+			t.Errorf("the registry's copy of the same file was refused: %s", err)
+		}
+
+		// The registry's file dropped a setting a source filled in.
+		narrower, err := sources.Parse([]byte(strings.Replace(inventedSourceType,
+			"  - {name: tags, description: only these tags, type: array, items: {type: string}, default: []}\n", "", 1)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := resolver.sourcesFitType(ctx, narrower); !errors.Is(err, api.ErrInvalidArguments) {
+			t.Errorf("a file the source does not fit replaced the local type: %v", err)
+		}
+	})
 }

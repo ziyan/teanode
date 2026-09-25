@@ -15,6 +15,7 @@ After this change a person adds a source of type `claude-code` or `codex` from t
 - [x] (2026-09-24) Milestone 1: `claude-code.md` and `codex.md` in `internal/sources/testdata/registry`, each a `jq` program over the tool's files; end to end tests with invented sessions in `internal/computer/scan_coding_agent_types_test.go`.
 - [x] (2026-09-24) Milestone 2: the server files a post whose author is `@you` under the owner's username (`namePerson` in `internal/agent/ingest_page.go`).
 - [x] (2026-09-24) Found and fixed on the way: the daemon's one-file records cache was not dropped at the start of a typed source's pass, so a type with one container never read it again.
+- [x] (2026-09-24) Installing a type from the registry now replaces a local type of the same name when every source of it fits the registry's file. Before, a type tried out with `add-local` could only become the signed one by removing its sources and everything they had filed.
 - [ ] Milestone 3: the two types in the registry repository, signed; the daemon and server deployed; a real pass on the development computer and a search that finds something said in a session.
 
 ## Surprises & Discoveries
@@ -50,6 +51,10 @@ After this change a person adds a source of type `claude-code` or `codex` from t
 - Decision: a record whose author is `@you` (`computer.PersonAuthor`) is the person's; the server writes their username in its place, in the text and among the participants, for any source. The hash is left as the daemon made it.
   Rationale: the night's rule that a chat is read only if the person was in it stays as it is, and a type need not know who the person is. Any other type reading the person's own tools can use it.
   Date/Author: 2026-09-24, agent.
+
+- Decision: `source-type install` replaces a local type of the same name, keeping its sources, when each source's settings pass the registry file's `CheckSettings`; otherwise it refuses as before and names the source that does not fit. A local file still never replaces a signed type.
+  Rationale: going from an unvouched file to the signed one only adds assurance, and the old refusal left removing every source as the only path, with all it had filed.
+  Date/Author: 2026-09-24, the person and agent.
 
 ## Context and Orientation
 

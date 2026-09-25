@@ -34,8 +34,9 @@ type AgentSourceTypeQuery interface {
 // AgentSourceTypeMutation installs and removes them.
 type AgentSourceTypeMutation interface {
 	// Install a type from the registry, or replace the installed one with
-	// a newer version. The signature and the hash are checked before
-	// anything is stored. Needs server:manage.
+	// a newer version, or a local one of that name where every source of
+	// it fits the registry's file. The signature and the hash are checked
+	// before anything is stored. Needs server:manage.
 	InstallAgentSourceType(ctx context.Context, arguments AgentSourceTypeArguments) (*AgentSourceTypeView, error)
 
 	// Add a type from the operator's own file, unsigned, marked local; or
@@ -274,10 +275,13 @@ func (self *graph) InstallAgentSourceType(ctx context.Context, arguments AgentSo
 	}); err != nil {
 		return nil, err
 	}
-	// The registry's type does not replace a local one of the same name:
-	// the sources of it were set up against the operator's file.
+	// The registry's type replaces a local one of the same name, which is
+	// how a type tried out from a file becomes the signed one, but only
+	// where every source set up against the operator's file still fits it.
 	if existing != nil && existing.IsLocal {
-		return nil, fmt.Errorf("%w: %s is a local type here; remove it first to install the registry's", api.ErrInvalidArguments, entry.Name)
+		if err := self.sourcesFitType(ctx, parsed); err != nil {
+			return nil, err
+		}
 	}
 	if !strings.EqualFold(parsed.Name, entry.Name) {
 		return nil, fmt.Errorf("sources: the registry calls this %q and the file calls itself %q", entry.Name, parsed.Name)
@@ -286,6 +290,30 @@ func (self *graph) InstallAgentSourceType(ctx context.Context, arguments AgentSo
 		Name: entry.Name, Version: entry.Version, Publisher: sources.OfficialPublisher,
 		URL: entry.URL, SHA256: entry.SHA256, Description: parsed.Description, Content: string(content),
 	})
+}
+
+// sourcesFitType says whether every source of a type has settings another
+// file of that type accepts, naming the first one that does not.
+func (self *graph) sourcesFitType(ctx context.Context, parsed *sources.Type) error {
+	var using []*models.AgentKnowledgeSource
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		using, err = tx.ListAgentSourcesOfType(parsed.Name)
+		return err
+	}); err != nil {
+		return err
+	}
+	for _, source := range using {
+		settings := map[string]any{}
+		if len(source.Specification.Settings) > 0 {
+			if err := json.Unmarshal(source.Specification.Settings, &settings); err != nil {
+				return err
+			}
+		}
+		if _, err := parsed.CheckSettings(settings); err != nil {
+			return fmt.Errorf("%w: %s is a local type here, and the source %q does not fit the registry's: %s; remove the local type first", api.ErrInvalidArguments, parsed.Name, source.Name, err)
+		}
+	}
+	return nil
 }
 
 func (self *graph) AddLocalAgentSourceType(ctx context.Context, arguments AddLocalAgentSourceTypeArguments) (*AgentSourceTypeView, error) {
