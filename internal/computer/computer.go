@@ -269,6 +269,14 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 		}
 		_ = write(message{Type: "background", Session: status.ID, Event: "ended", Code: status.ExitCode, Data: data})
 	})()
+	// A request belongs to the connection that asked it. When the
+	// connection ends -- the server restarted, the network went -- its
+	// answer has nowhere to go, and a scan left running took the computer
+	// for up to half an hour outside the server's turns, while the server,
+	// reconnected, asked for the same thing again beside it. Commands
+	// started to run in the background are not requests and are kept.
+	requestContext, cancelRequests := context.WithCancel(ctx)
+	defer cancelRequests()
 	pings := time.NewTicker(pingEvery)
 	defer pings.Stop()
 	slots := make(chan struct{}, concurrentAtMost)
@@ -280,7 +288,7 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 			// told to wait because four builds are running.
 			if strings.HasPrefix(request.Action, "background_") {
 				go func() {
-					data, err := handleSafely(ctx, options, request.Action, request.Args, held, background, output, ended)
+					data, err := handleSafely(requestContext, options, request.Action, request.Args, held, background, output, ended)
 					answer := message{Type: "result", ID: request.ID, OK: err == nil, Data: data}
 					if err != nil {
 						answer.Error = err.Error()
@@ -299,7 +307,7 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 					started := time.Now()
 					what := request.Action + whatWasAsked(request.Args)
 					options.Notice("asked to " + what)
-					data, err := handleSafely(ctx, options, request.Action, request.Args, held, background, output, ended)
+					data, err := handleSafely(requestContext, options, request.Action, request.Args, held, background, output, ended)
 					answer := message{Type: "result", ID: request.ID, OK: err == nil, Data: data}
 					if err != nil {
 						answer.Error = err.Error()
