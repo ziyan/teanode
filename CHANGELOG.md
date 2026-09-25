@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.65.4] - 2026-09-25
+
+### Changed
+
+- Notices ("saved", errors) appear in the top right corner, under the bar, so they no longer cover the user menu. (#169)
+
+### Fixed
+
+- A computer stops work the server asked for when its connection to the server drops, instead of carrying on for an answer nobody will read. (#168)
+
 ## [0.65.3] - 2026-09-25
 
 ### Fixed
