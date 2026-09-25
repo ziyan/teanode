@@ -6,6 +6,21 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.63.0] - 2026-09-25
+
+### Added
+
+- Sources can read Claude Code and Codex conversations and memory from a computer running `teanode computer` with `jq` installed. (#160)
+- Installing a source type from the registry replaces a local type of the same name, keeping its sources, when their settings fit the registry's file. (#160)
+
+### Changed
+
+- A document its source renames takes the new title on the next pass, without being read again. (#160)
+
+### Fixed
+
+- A source type that reads a single file or feed now reads it again on every pass, not only the first. (#160)
+
 ## [0.62.2] - 2026-09-24
 
 ### Fixed
