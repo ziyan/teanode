@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.65.0] - 2026-09-25
+
+### Added
+
+- Gmail sources fetch the files messages came with: documents are read on the computer and pictures wait for the night to decide on them. An `attachments` setting turns it off. (#164)
+
 ## [0.64.2] - 2026-09-25
 
 ### Fixed
