@@ -19,6 +19,8 @@ func TestAnUnopenableFileSaysWhy(t *testing.T) {
 		{"text/markdown", 1, "it is empty"},
 		{"text/plain", 4096, "no words could be read"},
 		{"application/zip", 4096, "is not a picture"},
+		{"application/pdf", 4096, "a PDF with no text the computer could read"},
+		{"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 4096, "a spreadsheet with no text"},
 		{"image/png", 4096, ""},
 	} {
 		document := &models.AgentDocument{Bytes: each.bytes, Metadata: map[string]any{"contentType": each.contentType}}

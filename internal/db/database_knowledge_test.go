@@ -93,6 +93,59 @@ func TestADocumentIsSeenWhenItIsFiledAndWhenItIsNamed(test *testing.T) {
 	})
 }
 
+// A PDF that came with a record and that nothing was read out of is not
+// named as held, so the computer sends it whole and it is filed again once
+// something there can read it; a picture with no text is named as held,
+// since pictures are read at night, and so is a PDF that was read.
+func TestAnUnreadFileIsNotNamedAsHeld(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		source := knowledgeSource(test, tx)
+		put := func(externalId, title, contentType string) *models.AgentDocument {
+			document, err := tx.PutAgentDocument(&models.AgentDocument{
+				AgentID: source.AgentID, SourceID: source.ID, ExternalID: externalId,
+				Kind: models.DocumentAttachment, Title: title, Hash: "hash-of-" + externalId,
+				Metadata: map[string]any{"contentType": contentType},
+			})
+			if err != nil {
+				test.Fatalf("PutAgentDocument %q: %s", externalId, err)
+			}
+			return document
+		}
+		put("posts/a.jsonl#scan", "receipt.pdf", "application/pdf")
+		put("posts/a.jsonl#deck", "slides.pptx", "")
+		put("posts/a.jsonl#picture", "screenshot.png", "image/png")
+		read := put("posts/a.jsonl#read", "notes.pdf", "application/pdf")
+		if err := tx.ReplaceAgentChunks(read, []*models.AgentChunk{{Text: "what the notes say", Segmented: true}}); err != nil {
+			test.Fatalf("ReplaceAgentChunks: %s", err)
+		}
+		knowledgeDocument(test, tx, source, "posts/a.jsonl#1")
+
+		held, err := tx.ListAgentDocumentHashes(source.ID)
+		if err != nil {
+			test.Fatalf("ListAgentDocumentHashes: %s", err)
+		}
+		for _, externalId := range []string{"posts/a.jsonl#scan", "posts/a.jsonl#deck"} {
+			if _, found := held[externalId]; found {
+				test.Errorf("an unread %s is named as held", externalId)
+			}
+		}
+		for _, externalId := range []string{"posts/a.jsonl#picture", "posts/a.jsonl#read", "posts/a.jsonl#1"} {
+			if _, found := held[externalId]; !found {
+				test.Errorf("%s is not named as held", externalId)
+			}
+		}
+		for externalId, want := range map[string]bool{"posts/a.jsonl#read": true, "posts/a.jsonl#scan": false} {
+			document, _ := tx.GetAgentDocumentByExternal(source.ID, externalId)
+			if found, err := tx.HasAgentChunks(source.AgentID, document.ID); err != nil || found != want {
+				test.Errorf("HasAgentChunks %s: %v %v", externalId, found, err)
+			}
+		}
+	})
+}
+
 // A conversation renamed after it was filed takes the new name where it
 // is, keeping what the night wrote on it; one whose name did not change
 // is not written to.
