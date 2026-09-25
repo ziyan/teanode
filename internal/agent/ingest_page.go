@@ -23,6 +23,7 @@ func (self *Agent) fileComputerPage(ctx context.Context, run *Run, source *model
 	}
 	for index := range result.Entries {
 		takeTheNullsOut(&result.Entries[index])
+		namePerson(&result.Entries[index], run.Owner)
 	}
 	// What the device left where it was: the checkouts under this source
 	// nobody here has ever committed to, kept to their profile. Whole-tree
@@ -103,4 +104,33 @@ func (self *Agent) fileComputerPage(ctx context.Context, run *Run, source *model
 		}
 	}
 	return result.NextCursor, counts, nil
+}
+
+// namePerson writes the owner's username where a source marked the
+// person's own posts as computer.PersonAuthor, in the text and among the
+// participants, so the night, which reads only the chat the person was
+// in, reads them. A source that reads the person's own tools (a coding
+// agent's sessions) knows which turns are theirs but not what they are
+// called here. The hash is
+// left as the reader made it, so an unchanged conversation still matches.
+func namePerson(entry *computer.ScanEntry, owner *models.User) {
+	if owner == nil || owner.Username == "" || entry.Kind != string(models.DocumentChat) {
+		return
+	}
+	marker, username := computer.PersonAuthor, strings.ToLower(owner.Username)
+	entry.Text = strings.ReplaceAll(entry.Text, " "+marker+": ", " "+username+": ")
+	switch participants := entry.Metadata["participants"].(type) {
+	case []any:
+		for index, participant := range participants {
+			if participant == marker {
+				participants[index] = username
+			}
+		}
+	case []string:
+		for index, participant := range participants {
+			if participant == marker {
+				participants[index] = username
+			}
+		}
+	}
 }
