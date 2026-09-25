@@ -37,8 +37,9 @@ func TestTheLongestWaitingSourceReadsNext(t *testing.T) {
 	}
 	worker.releaseComputer("laptop", "chat")
 
-	// A source that asked long ago and has stopped asking is not waited
-	// for: the computer would stand idle.
+	// A source that asked a while ago keeps its place for as long as its
+	// job takes to come round again, and no longer: the computer would
+	// stand idle.
 	if turn := worker.claimComputerAt("laptop", "github", at(5)); !turn.isFree {
 		t.Fatalf("github reads: %+v", turn)
 	}
@@ -46,8 +47,13 @@ func TestTheLongestWaitingSourceReadsNext(t *testing.T) {
 		t.Fatalf("codex waits for github: %+v", turn)
 	}
 	worker.releaseComputer("laptop", "github")
-	if turn := worker.claimComputerAt("laptop", "chat", at(6+90)); !turn.isFree {
-		t.Fatalf("a source that stopped asking a minute and a half ago is not waited for: %+v", turn)
+	// Codex asked four minutes ago and its job is on its way back: its
+	// place is kept.
+	if turn := worker.claimComputerAt("laptop", "chat", at(6+240)); turn.isFree || turn.other != "codex" || turn.isReading {
+		t.Fatalf("a source that asked four minutes ago keeps its place: %+v", turn)
+	}
+	if turn := worker.claimComputerAt("laptop", "chat", at(6+360)); !turn.isFree {
+		t.Fatalf("a source that stopped asking six minutes ago is not waited for: %+v", turn)
 	}
 }
 

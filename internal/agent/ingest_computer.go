@@ -89,7 +89,11 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 			if turn.isFree {
 				break
 			}
-			if time.Since(waited) > ingestTurn {
+			// Behind a source that has waited longer: stepping aside at
+			// once frees this job's slot for that source's job, where
+			// waiting out the turn kept one of the few slots asking for a
+			// computer it was not going to be given.
+			if !turn.isReading || time.Since(waited) > ingestTurn {
 				other := self.sourceName(ctx, run, source.AgentID, turn.other)
 				if turn.isReading {
 					return "", counts, &waitingForDevice{name: name, readingOther: other}
@@ -267,11 +271,15 @@ type computerWait struct {
 }
 
 const (
-	// computerWaitAsking is how recently a waiting source must have asked
-	// to be let go first. One that has stopped asking -- its job is back
-	// in the queue behind others -- is not waited for, or the computer
-	// would stand idle for it.
-	computerWaitAsking = time.Minute
+	// computerWaitAsking is how long a waiting source keeps its place
+	// after it last asked. Long enough for its job to come round the
+	// queue again: a source asks for thirty seconds and then goes back
+	// in line, and a computer reading pages that take minutes each was
+	// never free in those thirty seconds, so at a minute the place was
+	// lost before the job came back and it waited behind the sources
+	// partway through a pass all day. Short enough that a source that
+	// does not come back does not leave the computer standing idle long.
+	computerWaitAsking = 5 * time.Minute
 
 	// computerWaitForgotten is how long a source may go without asking
 	// before its place is forgotten, and it waits from the start again.
