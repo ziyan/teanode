@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.65.2] - 2026-09-25
+
+### Fixed
+
+- A large Gmail mailbox is read over several passes, a month at a time, instead of never finishing its first. (#166)
+
 ## [0.65.1] - 2026-09-25
 
 ### Fixed
