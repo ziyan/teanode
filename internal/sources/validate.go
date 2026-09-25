@@ -449,6 +449,24 @@ func (self *Type) validate() error {
 			if err := checkCondition(where+" attachment", attachment.When, allowed); err != nil {
 				return err
 			}
+			if attachment.List != nil {
+				// A list is what each is: one or the other.
+				if attachment.Each != "" {
+					return fmt.Errorf("%s: an attachment takes each or list, not both", where)
+				}
+				if strings.TrimSpace(reading.Record["version"]) == "" {
+					return fmt.Errorf("%s lists its attachments, so its records say their version", where)
+				}
+				if err := checkCall(where+" attachment list", attachment.List.Command, nil, attachment.List.Parse, Paging{}, withOutput); err != nil {
+					return err
+				}
+			}
+			if attachment.Key != "" && attachment.List == nil && attachment.Each == "" {
+				return fmt.Errorf("%s: an attachment's key names one of several, so it needs each or list", where)
+			}
+			if err := check(where+" attachment", attachment.Key, withOutput); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

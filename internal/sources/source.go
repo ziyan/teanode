@@ -215,8 +215,18 @@ type Detail struct {
 // {{output}}, or by printing it where the command is not told where --
 // a file the computer already has, or text the reading already fetched.
 type Attachment struct {
-	When    string   `yaml:"when"`
-	Each    string   `yaml:"each"`
+	When string `yaml:"when"`
+	Each string `yaml:"each"`
+
+	// List names an item's files with a call of its own, where what the
+	// reading already has does not: each item it answers is an each. It
+	// is asked once for each version of the item and kept, as a detail
+	// is. Key, with it, names one file the same way from one listing to
+	// the next, where the listing's own names for it change -- a mailbox
+	// gives an attachment a new identifier each time it is asked.
+	List *AttachmentList `yaml:"list"`
+	Key  string          `yaml:"key"`
+
 	Command []string `yaml:"command"`
 	Path    string   `yaml:"path"`
 	// Content is a file's bytes where the reading already fetched them.
@@ -224,6 +234,12 @@ type Attachment struct {
 	Name     string `yaml:"name"`
 	Version  string `yaml:"version"`
 	MaxBytes int64  `yaml:"maxBytes"`
+}
+
+// AttachmentList is the call that names an item's files.
+type AttachmentList struct {
+	Command []string `yaml:"command"`
+	Parse   Parsing  `yaml:"parse"`
 }
 
 // Attachments is one attachment command or a list of them.

@@ -914,7 +914,7 @@ var fileNameUnsafe = regexp.MustCompile(`[/\\\x00]+`)
 // the runner's state, and answers where each is.
 func (self *Runner) attachments(ctx context.Context, container Container, reading Reading, scope Scope, id, version string) ([]map[string]any, error) {
 	var found []map[string]any
-	for _, attachment := range reading.Attachments {
+	for index, attachment := range reading.Attachments {
 		if attachment.When != "" {
 			held, err := self.holds(attachment.When, scope)
 			if err != nil {
@@ -931,6 +931,9 @@ func (self *Runner) attachments(ctx context.Context, container Container, readin
 				return nil, err
 			}
 			eaches = asList(values)
+		}
+		if attachment.List != nil {
+			eaches = self.attachmentList(ctx, container, attachment.List, index, scope, id, version)
 		}
 		most := attachment.MaxBytes
 		if most == 0 {
@@ -992,7 +995,18 @@ func (self *Runner) attachments(ctx context.Context, container Container, readin
 			if name == "" || name == "." || name == ".." {
 				name = "file"
 			}
-			directory := filepath.Join(self.State, "files", cacheName(self.Type.Name, container.Name, id, text(each), attachmentVersion))
+			// Where a listing's names for a file change from call to call,
+			// the key names it instead, so a file already fetched is not
+			// fetched again because the listing was asked again.
+			key := text(each)
+			if attachment.Key != "" {
+				rendered, err := self.render(attachment.Key, attachmentScope)
+				if err != nil {
+					return nil, err
+				}
+				key = rendered
+			}
+			directory := filepath.Join(self.State, "files", cacheName(self.Type.Name, container.Name, id, key, attachmentVersion))
 			path := filepath.Join(directory, name)
 			if attachment.Content != "" {
 				content, err := self.render(attachment.Content, attachmentScope)
@@ -1051,6 +1065,35 @@ func (self *Runner) attachments(ctx context.Context, container Container, readin
 		}
 	}
 	return found, nil
+}
+
+// attachmentList is what an item's list call names, asked once for each
+// version of the item and kept, as a detail is: a mailbox of fifty
+// thousand threads is not asked fifty thousand times on every pass.
+//
+// A call that fails names nothing and is not kept, so the next pass asks
+// again: one item whose files will not come is not a container that cannot
+// be read.
+func (self *Runner) attachmentList(ctx context.Context, container Container, list *AttachmentList, index int, scope Scope, id, version string) []any {
+	path := filepath.Join(self.State, "attachments", cacheName(self.Type.Name, container.Name, id, version, strconv.Itoa(index))+".json")
+	if cached, err := os.ReadFile(path); err == nil {
+		var items []any
+		if json.Unmarshal(cached, &items) == nil {
+			return items
+		}
+	}
+	fetched, err := self.fetch(ctx, list.Command, nil, list.Parse, Paging{Kind: "none"}, "empty", scope)
+	if err != nil {
+		return nil
+	}
+	items := make([]any, 0, len(fetched))
+	for _, each := range fetched {
+		items = append(items, each.item)
+	}
+	if encoded, err := json.Marshal(items); err == nil {
+		_ = writeFile(path, encoded)
+	}
+	return items
 }
 
 // tookWritten makes sure a command wrote where it was told. A tool may

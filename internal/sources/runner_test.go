@@ -473,3 +473,150 @@ func (self *scriptedExecutor) Command(ctx context.Context, words []string) ([]by
 func (self *scriptedExecutor) Request(ctx context.Context, request *PreparedRequest) (int, []byte, error) {
 	return 404, nil, nil
 }
+
+// A mailbox names a thread's files with a call of its own, which is asked
+// once for each version of the thread; each file is fetched once, even
+// when a new message makes the thread listed again and the listing gives
+// its files new identifiers.
+func TestAttachmentsAreListedByACallOfTheirOwn(t *testing.T) {
+	kind := mustParse(t, `
+name: mailbox
+description: an invented mailbox
+settings: []
+containers:
+  - {fixed: [{}], name: threads.jsonl}
+records:
+  - command: [mail, search]
+    parse: jsonl
+    record:
+      id: "{{item.id}}"
+      kind: mail
+      version: "{{item.messages}}"
+      text: "{{item.subject}}"
+    attachments:
+      list:
+        command: [mail, files, "{{item.id}}"]
+        parse: {json: {items: files}}
+      key: "{{each.message}}/{{each.name}}"
+      version: "{{each.size}}"
+      name: "{{each.name}}"
+      command: [mail, fetch, "{{each.message}}", "{{each.file}}"]
+`)
+	fake := &fakeExecutor{commands: map[string]string{
+		"mail search":            `{"id":"t1","subject":"The invoice","messages":1}`,
+		"mail files t1":          `{"files":[{"message":"m1","file":"first-id","name":"invoice.pdf","size":12}]}`,
+		"mail fetch m1 first-id": "%PDF invented",
+	}}
+	runner := &Runner{Type: kind, Executor: fake, State: t.TempDir()}
+	read := func() Record {
+		t.Helper()
+		containers, err := runner.List(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		records, err := runner.Read(context.Background(), containers[0])
+		if err != nil || len(records) != 1 {
+			t.Fatalf("Read: %v %s", records, err)
+		}
+		return records[0]
+	}
+	count := func(call string) int {
+		found := 0
+		for _, each := range fake.calls {
+			if each == call {
+				found++
+			}
+		}
+		return found
+	}
+
+	first := read()
+	attachments, _ := first["attachments"].([]map[string]any)
+	if len(attachments) != 1 || attachments[0]["name"] != "invoice.pdf" {
+		t.Fatalf("the listed file is fetched and named: %v", first["attachments"])
+	}
+	read()
+	if count("mail files t1") != 1 || count("mail fetch m1 first-id") != 1 {
+		t.Fatalf("an unchanged thread is not listed or fetched again: %v", fake.calls)
+	}
+
+	// A reply: the thread is listed again, and the mailbox gives the same
+	// file another identifier; the key says it is the same file.
+	fake.commands["mail search"] = `{"id":"t1","subject":"The invoice","messages":2}`
+	fake.commands["mail files t1"] = `{"files":[{"message":"m1","file":"second-id","name":"invoice.pdf","size":12}]}`
+	fake.commands["mail fetch m1 second-id"] = "%PDF invented"
+	second := read()
+	if count("mail files t1") != 2 {
+		t.Fatalf("a changed thread is listed again: %v", fake.calls)
+	}
+	if count("mail fetch m1 second-id") != 0 {
+		t.Fatalf("a file already fetched was fetched again under its new identifier: %v", fake.calls)
+	}
+	if attachments, _ := second["attachments"].([]map[string]any); len(attachments) != 1 {
+		t.Fatalf("and it is still the thread's file: %v", second["attachments"])
+	}
+}
+
+// A listing that fails names nothing and is asked again next time; the
+// thread itself is still read.
+func TestAFailedAttachmentListIsAskedAgain(t *testing.T) {
+	kind := mustParse(t, `
+name: mailbox
+description: an invented mailbox
+settings: []
+containers:
+  - {fixed: [{}], name: threads.jsonl}
+records:
+  - command: [mail, search]
+    parse: jsonl
+    record: {id: "{{item.id}}", kind: mail, version: "1", text: "{{item.subject}}"}
+    attachments:
+      list: {command: [mail, files, "{{item.id}}"], parse: {json: {items: files}}}
+      name: "{{each.name}}"
+      command: [mail, fetch, "{{each.name}}"]
+`)
+	fake := &fakeExecutor{
+		commands: map[string]string{"mail search": `{"id":"t1","subject":"Hello"}`},
+		failing:  map[string]*CommandError{"mail files t1": {Words: []string{"mail"}, ExitCode: 1, Said: "busy"}},
+	}
+	runner := &Runner{Type: kind, Executor: fake, State: t.TempDir()}
+	for pass := 0; pass < 2; pass++ {
+		containers, _ := runner.List(context.Background())
+		records, err := runner.Read(context.Background(), containers[0])
+		if err != nil || len(records) != 1 || records[0]["text"] != "Hello" {
+			t.Fatalf("the thread is read though its files are not: %v %s", records, err)
+		}
+	}
+	listed := 0
+	for _, each := range fake.calls {
+		if each == "mail files t1" {
+			listed++
+		}
+	}
+	if listed != 2 {
+		t.Fatalf("a failed listing is asked again on the next pass, asked %d times", listed)
+	}
+}
+
+// A list and an each are two ways to say the same thing; a type gives one.
+func TestAnAttachmentTakesEachOrList(t *testing.T) {
+	_, err := Parse([]byte(`---
+name: mailbox
+description: an invented mailbox
+settings: []
+containers:
+  - {fixed: [{}], name: threads.jsonl}
+records:
+  - command: [mail, search]
+    parse: jsonl
+    record: {id: "{{item.id}}", version: "1", text: "{{item.subject}}"}
+    attachments:
+      each: item.files
+      list: {command: [mail, files, "{{item.id}}"], parse: {json: {items: files}}}
+      command: [mail, fetch, "{{each}}"]
+---
+`))
+	if err == nil || !strings.Contains(err.Error(), "each or list") {
+		t.Fatalf("both were accepted: %v", err)
+	}
+}
