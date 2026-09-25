@@ -230,3 +230,35 @@ func TestFilesystemPutsAFileWhole(t *testing.T) {
 		t.Fatal("content that is not base64 is refused")
 	}
 }
+
+// A request belongs to the connection that asked it: when the connection
+// ends, what it started is stopped rather than left running for an answer
+// nobody will read.
+func TestARequestEndsWithItsConnection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the shell here is sh")
+	}
+	root := t.TempDir()
+	connection := &fakeConnection{incoming: make(chan message, 8), outgoing: make(chan message, 8)}
+	done := make(chan error, 1)
+	go func() {
+		done <- Serve(context.Background(), connection, &Options{Token: "t", Name: "laptop", Home: root})
+	}()
+	connection.next(t, "hello")
+	connection.incoming <- message{Type: "welcome", Protocol: Protocol}
+
+	marker := filepath.Join(root, "finished")
+	encoded, _ := json.Marshal(ShellArguments{Command: "sleep 3 && touch " + marker, Timeout: 60})
+	connection.incoming <- message{Type: "act", ID: 1, Action: "shell", Args: encoded}
+	time.Sleep(500 * time.Millisecond)
+	close(connection.incoming)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Serve did not return when the connection ended")
+	}
+	time.Sleep(4 * time.Second)
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatalf("the request went on after its connection ended")
+	}
+}
