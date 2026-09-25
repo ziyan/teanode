@@ -81,6 +81,11 @@ var claudeCodeSession = strings.Join([]string{
 	`{"type":"ai-title","aiTitle":"Retrying failed uploads","sessionId":"session-one"}`,
 	`{"type":"custom-title","customTitle":"Upload retries","sessionId":"session-one"}`,
 	`{"type":"pr-link","prUrl":"https://example.com/garden-app/pull/7","sessionId":"session-one"}`,
+	`{"type":"attachment","uuid":"q1","timestamp":"2026-08-14T09:02:00Z","attachment":{"type":"queued_command","commandMode":"prompt","origin":{"kind":"human"},"prompt":"Also log each retry, please."}}`,
+	`{"type":"attachment","uuid":"q2","timestamp":"2026-08-14T09:02:10Z","attachment":{"type":"queued_command","commandMode":"task-notification","prompt":"TASKNOTICE the build finished"}}`,
+	`{"type":"attachment","uuid":"q3","timestamp":"2026-08-14T09:02:20Z","attachment":{"type":"queued_command","commandMode":"prompt","origin":{"kind":"peer","from":"another-session"},"prompt":"PEERMESSAGE from another session"}}`,
+	`{"type":"attachment","uuid":"q4","timestamp":"2026-08-14T09:02:30Z","attachment":{"type":"queued_command","commandMode":"prompt","origin":{"kind":"auto-continuation"},"prompt":"AUTOCONTINUE keep going"}}`,
+	`{"type":"attachment","uuid":"q5","timestamp":"2026-08-14T09:02:40Z","attachment":{"type":"hook_success","content":"HOOKOUTPUT ok"}}`,
 	`{"type":"assistant","uuid":"a2","timestamp":"2026-08-14T09:03:00Z","message":{"role":"assistant","content":[{"type":"text","text":"Done: three tries, doubling the wait."}]}}`,
 	`{"type":"user","uuid":"u5","timestamp":"2026-08-14T09:04:00Z","message":{"role":"user","content":[{"type":"text","text":"<system-reminder>REMINDER injected</system-reminder>Thanks, ship it."},{"type":"image","source":{"type":"base64","data":"IMAGEDATA"}}]}}`,
 }, "\n") + "\n"
@@ -135,17 +140,17 @@ func TestTheClaudeCodeTypeKeepsOnlyWhatWasSaid(t *testing.T) {
 			t.Fatalf("a memory page says what it is: %+v", page)
 		}
 	}
-	for _, said := range []string{"Add a retry to the upload step.", "I will wrap the upload in a retry with backoff.", "Done: three tries, doubling the wait.", "Thanks, ship it."} {
+	for _, said := range []string{"Add a retry to the upload step.", "I will wrap the upload in a retry with backoff.", "Also log each retry, please.", "Done: three tries, doubling the wait.", "Thanks, ship it."} {
 		if !strings.Contains(unit.Text, said) {
 			t.Fatalf("what was said is kept (%q): %q", said, unit.Text)
 		}
 	}
-	for _, dropped := range []string{"THINKING", "TOOLCALL", "TOOLRESULT", "METALINE", "/clear", "SIDECHAIN", "COMPACTSUMMARY", "SYSTEMLINE", "REMINDER", "IMAGEDATA", "SUBAGENTFILE"} {
+	for _, dropped := range []string{"THINKING", "TOOLCALL", "TOOLRESULT", "METALINE", "/clear", "SIDECHAIN", "COMPACTSUMMARY", "SYSTEMLINE", "REMINDER", "IMAGEDATA", "SUBAGENTFILE", "TASKNOTICE", "PEERMESSAGE", "AUTOCONTINUE", "HOOKOUTPUT"} {
 		if strings.Contains(unit.Text, dropped) {
 			t.Fatalf("%s is left out: %q", dropped, unit.Text)
 		}
 	}
-	if !strings.Contains(unit.Text, PersonAuthor+": Add a retry") || !strings.Contains(unit.Text, "Claude Code: Done") {
+	if !strings.Contains(unit.Text, PersonAuthor+": Add a retry") || !strings.Contains(unit.Text, PersonAuthor+": Also log each retry") || !strings.Contains(unit.Text, "Claude Code: Done") {
 		t.Fatalf("with who said what: %q", unit.Text)
 	}
 	participants, _ := unit.Metadata["participants"].([]string)

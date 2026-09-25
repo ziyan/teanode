@@ -27,6 +27,8 @@ After this change a person adds a source of type `claude-code` or `codex` from t
 - Observation: a command word that renders empty is dropped with its flag, which is how a type leaves an unset option out. An empty `--arg exclude ""` therefore shifted jq's arguments; the types pass `({{settings.exclude}})` so the word is always there.
 - Observation: the night reads a chat unit only if its participants include the person's username or name (`reading.ChatNamesOf`), and a type on the person's computer does not know their TeaNode username.
 
+- Observation (2026-09-25): a message the person sends while Claude Code is working is written as an `attachment` line of type `queued_command`, not a `user` line, so the first version of the type left all of them out: in one long session, 375 of the person's 758 messages. They are now read where `origin.kind` is `human`; task notifications, messages from other sessions and automatic continuations share the line type and stay out.
+
 ## Decision Log
 
 - Decision: two registry types running `jq`, not readers written in Go.

@@ -67,6 +67,14 @@ records:
                 {id: (.uuid // "line-\(input_line_number)"), at: .timestamp, directory: .cwd, branch: .gitBranch,
                  author: (if .type == "user" then "@you" else "Claude Code" end),
                  text: (if .type == "user" then .message.content | said | spoken else .message.content | said | trimmed end)}
+              # A message the person sent while the assistant was working
+              # is kept as an attachment line, not a user line. Only the
+              # person's own: not a background task's notice, another
+              # session's message, or an automatic continuation.
+              elif .type == "attachment" and .attachment.type? == "queued_command" and .attachment.commandMode? == "prompt"
+                   and .attachment.origin.kind? == "human" and (.attachment.isMeta | not) and (.isSidechain | not) then
+                {id: (.uuid // "line-\(input_line_number)"), at: .timestamp, directory: .cwd, branch: .gitBranch,
+                 author: "@you", text: (.attachment.prompt | said | spoken)}
               else empty end] as $items
           | ([$items[] | .directory // empty] | first // "") as $directory
           | select(($directory | excluded) | not)
@@ -100,7 +108,7 @@ records:
 
 # Claude Code
 
-Reads what the person said to Claude Code and what it answered, from the folder it keeps on their computer, with `jq`. Only the conversation is kept: the person's typed messages and the assistant's visible replies. Tool calls and their output, thinking, images, hook and system messages, what the tool puts into the person's turn, subagents and the tool's own compaction summaries are left out; they are most of a session's size and little of what was said.
+Reads what the person said to Claude Code and what it answered, from the folder it keeps on their computer, with `jq`. Only the conversation is kept: the person's typed messages, including those sent while the assistant was working, and the assistant's visible replies. Tool calls and their output, thinking, images, hook and system messages, what the tool puts into the person's turn, subagents and the tool's own compaction summaries are left out; they are most of a session's size and little of what was said.
 
 A conversation is read the way a chat is: cut at a half hour of silence or at a size, so a session that runs for days sends only its newest part on each pass. It is named by the session's title (the one the person gave it, or else the one Claude Code made up), and carries its working directory, branch and the pull requests it opened. The person's own turns are written by `@you`, which TeaNode files under the person's own name.
 
@@ -114,4 +122,4 @@ A file is its path under the folder. A memory page is its file; a conversation's
 
 ## Checked against the tool
 
-Read against Claude Code 2's session files: one JSON object a line, of type `user`, `assistant`, `custom-title`, `ai-title`, `pr-link` and others, with `isSidechain`, `isMeta` and `isCompactSummary` marking what is not the conversation.
+Read against Claude Code 2's session files: one JSON object a line, of type `user`, `assistant`, `attachment` (a message sent mid-turn is a `queued_command` there), `custom-title`, `ai-title`, `pr-link` and others, with `isSidechain`, `isMeta` and `isCompactSummary` marking what is not the conversation.
