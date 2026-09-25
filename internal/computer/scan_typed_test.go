@@ -6,8 +6,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/sources"
 )
@@ -139,5 +141,37 @@ func TestATypedRequestKeepsItsCredentialOnItsHost(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "secret-looking") {
 		t.Fatalf("the failure repeats the address: %s", err)
+	}
+}
+
+// A type that takes longer than a page's clock to read its container still
+// sends what it read in one page, rather than one entry and then out of
+// time: the reading had a deadline of its own.
+func TestATypedContainerSlowerThanThePageClockIsSentWhole(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the command here is sh")
+	}
+	was := scanPageTime
+	scanPageTime = 300 * time.Millisecond
+	t.Cleanup(func() { scanPageTime = was })
+	kind := `---
+name: slow
+description: a container slower to read than a page's clock
+containers:
+  - {fixed: [{}], name: threads.jsonl}
+records:
+  - command: [sh, -c, 'sleep 0.6; for i in 1 2 3 4 5 6; do printf "{\"id\":\"t%s\",\"text\":\"thread %s\"}\n" $i $i; done']
+    parse: jsonl
+    record: {id: "{{item.id}}", text: "{{item.text}}", kind: page}
+---
+`
+	result, err := RunScan(context.Background(), &Options{Home: t.TempDir()}, &ScanArguments{
+		Format: FormatTyped, SourceType: kind, SourceKey: "source03", Known: map[string]string{}, KnownID: "pass-1",
+	})
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	if len(result.Entries) != 6 || result.Next != "" {
+		t.Fatalf("the container is one page of six: %d entries, next %q", len(result.Entries), result.Next)
 	}
 }

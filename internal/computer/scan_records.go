@@ -283,7 +283,19 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 			result.Next = relative
 			break
 		}
+		reading := time.Now()
 		entries, err := recordEntries(ctx, folder, relative, !onDisk[relative])
+		// A type reads a whole container before it has an entry to give,
+		// under a deadline of its own, and a mailbox read a month at a
+		// time spends that whole deadline reading. Counted against the
+		// page, it left the page out of time at its first entry: twenty-
+		// five minutes of reading, and one thread sent. The reading of the
+		// page's first container is its own; the page's clock starts when
+		// it is done. Only the first: after that a container that is slow
+		// to read ends the page as before, inside the server's wait.
+		if folder.typed != nil && len(result.Entries) == 0 {
+			begun = begun.Add(time.Since(reading))
+		}
 		if err != nil {
 			// A file this program cannot read is reported as one entry
 			// saying so, rather than silently missing from the folder
