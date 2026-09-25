@@ -177,7 +177,7 @@ func lookAtFile(ctx context.Context, store storage.Files, document *models.Agent
 	case contentType == "":
 		return name + ": nothing said what kind of file it is, and only a picture can be shown to you", nil
 	case !tools.IsImage(contentType):
-		return fmt.Sprintf("%s: a %s is not a picture, and only a picture can be shown to you", name, contentType), nil
+		return fmt.Sprintf("%s: a file of type %s is not a picture, and only a picture can be shown to you", name, contentType), nil
 	case document.Bytes > tools.PictureLargest:
 		return fmt.Sprintf("%s: %d bytes, more than the %d a picture may be to be shown to you",
 			name, document.Bytes, tools.PictureLargest), nil

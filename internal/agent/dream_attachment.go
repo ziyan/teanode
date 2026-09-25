@@ -220,13 +220,44 @@ func unopenable(document *models.AgentDocument) string {
 		if strings.HasPrefix(contentType, "text/") {
 			return fmt.Sprintf("a %s file, and no words could be read out of it", contentType)
 		}
-		return fmt.Sprintf("a %s is not a picture, and only a picture can be read here", contentType)
+		// A PDF or an office file is read on the computer, and one that
+		// arrives here empty is one it could not read: a scan, most often,
+		// which it reads once it has an OCR program, and then files again.
+		if isReadOnTheComputer(contentType) {
+			return fmt.Sprintf("a %s with no text the computer could read in it; a scan is read there "+
+				"once pdftoppm and tesseract are installed, and filed again", documentKindName(contentType))
+		}
+		return fmt.Sprintf("a file of type %s is not a picture, and only a picture can be read here", contentType)
 	}
 	if document.Bytes > pictureLargest {
 		return fmt.Sprintf("%s, larger than the %s a picture may be to be worth sending to a model",
 			formatBytes(document.Bytes), formatBytes(pictureLargest))
 	}
 	return ""
+}
+
+// isReadOnTheComputer says whether a kind of file is one the computer
+// turns into text itself: a PDF or an office document.
+func isReadOnTheComputer(contentType string) bool {
+	for _, marker := range []string{"pdf", "officedocument", "msword", "ms-excel", "ms-powerpoint", "opendocument", "rtf"} {
+		if strings.Contains(contentType, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// documentKindName is what to call a PDF or an office file in a sentence.
+func documentKindName(contentType string) string {
+	switch {
+	case strings.Contains(contentType, "pdf"):
+		return "PDF"
+	case strings.Contains(contentType, "presentation"), strings.Contains(contentType, "powerpoint"):
+		return "presentation"
+	case strings.Contains(contentType, "sheet"), strings.Contains(contentType, "excel"):
+		return "spreadsheet"
+	}
+	return "document"
 }
 
 // chooseAttachments asks which of a batch are worth opening, and answers

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/computer"
@@ -130,9 +131,18 @@ func (self *Agent) fileAttachment(ctx context.Context, run *Run, source *models.
 	entry computer.ScanEntry, fetch blobFetcher) (bool, error) {
 	var existing *models.AgentDocument
 	var stored string
+	wasRead := true
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if existing, err = tx.GetAgentDocumentByExternal(source.ID, entry.ExternalID); err != nil {
 			return err
+		}
+		// Asked only where the computer read something out of it this
+		// time: whether it had been read before decides whether it is
+		// filed again.
+		if existing != nil && strings.TrimSpace(entry.Text) != "" {
+			if wasRead, err = tx.HasAgentChunks(source.AgentID, existing.ID); err != nil {
+				return err
+			}
 		}
 		stored, err = tx.AgentDocumentStorageKey(source.AgentID, entry.Hash)
 		return err
@@ -143,7 +153,14 @@ func (self *Agent) fileAttachment(ctx context.Context, run *Run, source *models.
 	// pass above; an unchanged attachment is only skipped here, because
 	// "unchanged" says the text is the same and the thing that matters
 	// about this one is whether its bytes ever arrived.
-	if existing != nil && existing.Hash == entry.Hash && existing.StorageKey != "" {
+	//
+	// Unless the computer can now read what it could not when the file was
+	// filed -- a scan, once it has an OCR program, or a workbook LibreOffice
+	// once ran out of time on. The bytes are the same, so the hash is, and
+	// the text is the only thing that says so. Filed again, it takes that
+	// text and loses the night's "not a picture" with the rest of its old
+	// row, and the night reads it like any other document.
+	if existing != nil && existing.Hash == entry.Hash && existing.StorageKey != "" && wasRead {
 		return false, nil
 	}
 	key, err := keepAttachmentBytes(ctx, run.Storage(), entry.Hash, stored, fetch)

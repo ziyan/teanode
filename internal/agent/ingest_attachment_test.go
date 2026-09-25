@@ -230,6 +230,29 @@ func TestFilingAnAttachmentWritesTheKeyOnTheDocument(t *testing.T) {
 		t.Fatalf("a second pass: filed %v, asked %d, %v", filed, asked, err)
 	}
 
+	// The computer can read it now -- a scan, once it has an OCR program.
+	// The bytes are the same, so is the hash, and the text is filed
+	// anyway, once: after that it is a document that was read.
+	readable := entry
+	readable.Text = "Receipt 4471: three bags of compost"
+	filed, err = worker.fileAttachment(ctx, run, source, readable, fetch)
+	if err != nil || !filed || asked != 1 {
+		t.Fatalf("a file that can now be read: filed %v, asked %d, %v", filed, asked, err)
+	}
+	if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
+		read, err := tx.HasAgentChunks(source.AgentID, document.ID)
+		if err == nil && !read {
+			t.Errorf("what the computer read out of it was not filed")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	filed, err = worker.fileAttachment(ctx, run, source, readable, fetch)
+	if err != nil || filed {
+		t.Fatalf("a file read already is filed again: filed %v, %v", filed, err)
+	}
+
 	// The same picture in another file of the same folder: a document of
 	// its own, under the key this server already holds.
 	elsewhere := entry

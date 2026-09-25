@@ -83,7 +83,7 @@ func TestASpreadsheetAndAPresentationComeBackWithTheirWordsInThem(test *testing.
 		test.Skip("this machine's converter wrote no spreadsheet to read")
 	}
 
-	text, err := extractOffice(context.Background(), spreadsheet)
+	text, err := extractOffice(context.Background(), spreadsheet, "")
 	if err != nil {
 		test.Fatalf("reading a spreadsheet: %s", err)
 	}

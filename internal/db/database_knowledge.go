@@ -97,6 +97,10 @@ type KnowledgeOperation interface {
 	ReplaceAgentChunks(document *models.AgentDocument, chunks []*models.AgentChunk) error
 	GetAgentChunks(agentId string, chunkIds []string) ([]*models.AgentChunk, error)
 	ListAgentChunks(agentId, documentId string) ([]*models.AgentChunk, error)
+
+	// HasAgentChunks says whether a document has any passages: whether
+	// anything was read out of it.
+	HasAgentChunks(agentId, documentId string) (bool, error)
 	SearchAgentChunks(agentId string, sourceIds []string, query string, limit int) ([]*models.AgentChunk, error)
 
 	// ListAgentChunksWithoutVector is what is still waiting to be
@@ -573,7 +577,19 @@ func (self *transaction) ListAgentDocumentHashes(sourceId string) (map[string]st
 		ExternalID string `gorm:"column:external_id"`
 		Hash       string `gorm:"column:hash"`
 	}
-	if err := self.tx.Raw(`SELECT "external_id", "hash" FROM "agent_document" WHERE "source_id" = ?`, sourceId).Scan(&rows).Error; err != nil {
+	// Left out: a PDF or an office file that came with a record and that
+	// nothing was read out of. Its bytes are what they were, so named
+	// here it would be sent without text for ever; left out, the
+	// computer sends it whole each pass, with text once it has a way to
+	// read it -- an OCR program installed, a longer time for LibreOffice
+	// -- and it is filed again. A picture is not left out: those are read
+	// at night, not by the computer, and there are tens of thousands.
+	if err := self.tx.Raw(`SELECT "external_id", "hash" FROM "agent_document" AS "document"
+		WHERE "source_id" = ?
+		  AND NOT ("kind" = 'attachment'
+		       AND (lower(coalesce("metadata"->>'contentType', '')) ~ '(pdf|officedocument|msword|ms-excel|ms-powerpoint|opendocument|rtf)'
+		            OR lower("title") ~ '\.(pdf|docx?|docm|dotx|xlsx?|xlsm|xlsb|xltx|pptx?|pptm|ppsx|potx|odt|ods|odp|rtf)$')
+		       AND NOT EXISTS (SELECT 1 FROM "agent_chunk" WHERE "agent_chunk"."document_id" = "document"."id"))`, sourceId).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	hashes := make(map[string]string, len(rows))
@@ -741,6 +757,12 @@ func (self *transaction) GetAgentChunks(agentId string, chunkIds []string) ([]*m
 		return nil, nil
 	}
 	return self.chunksFrom(self.tx.Where(`"agent_id" = ? AND "id" IN ?`, agentId, chunkIds))
+}
+
+func (self *transaction) HasAgentChunks(agentId, documentId string) (bool, error) {
+	var found bool
+	err := self.tx.Raw(`SELECT EXISTS (SELECT 1 FROM "agent_chunk" WHERE "agent_id" = ? AND "document_id" = ?)`, agentId, documentId).Scan(&found).Error
+	return found, err
 }
 
 func (self *transaction) ListAgentChunks(agentId, documentId string) ([]*models.AgentChunk, error) {
