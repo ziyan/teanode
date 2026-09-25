@@ -85,12 +85,16 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 	if name := source.Specification.Computer; source.Kind == models.SourceComputer && name != "" {
 		waited := time.Now()
 		for {
-			other, free := self.claimComputer(name, source.ID)
-			if free {
+			turn := self.claimComputer(name, source.ID)
+			if turn.isFree {
 				break
 			}
 			if time.Since(waited) > ingestTurn {
-				return "", counts, &waitingForDevice{name: name, readingOther: self.sourceName(ctx, run, source.AgentID, other)}
+				other := self.sourceName(ctx, run, source.AgentID, turn.other)
+				if turn.isReading {
+					return "", counts, &waitingForDevice{name: name, readingOther: other}
+				}
+				return "", counts, &waitingForDevice{name: name, behindOther: other}
 			}
 			select {
 			case <-ctx.Done():
@@ -256,19 +260,79 @@ func (self *Agent) notedUnknownAuthors(ctx context.Context, source *models.Agent
 	}
 }
 
-// claimComputer says this source is reading from the computer now, or
-// which source already is.
-func (self *Agent) claimComputer(computer, sourceId string) (string, bool) {
+// computerWait is one source waiting for a computer: since when, and when
+// it last asked.
+type computerWait struct {
+	since, asked time.Time
+}
+
+const (
+	// computerWaitAsking is how recently a waiting source must have asked
+	// to be let go first. One that has stopped asking -- its job is back
+	// in the queue behind others -- is not waited for, or the computer
+	// would stand idle for it.
+	computerWaitAsking = time.Minute
+
+	// computerWaitForgotten is how long a source may go without asking
+	// before its place is forgotten, and it waits from the start again.
+	computerWaitForgotten = 30 * time.Minute
+)
+
+// computerTurn is the answer to a source asking for a computer.
+type computerTurn struct {
+	// isFree is whether it has the computer now.
+	isFree bool
+
+	// other is the source that has it, or that goes first, and isReading
+	// whether that one has it now rather than having waited longer.
+	other     string
+	isReading bool
+}
+
+// claimComputer gives this source the computer, or says which source has
+// it or goes first.
+//
+// The one that has waited longest goes first. Taking turns by who asked
+// first after the computer came free let a source partway through a pass,
+// which asks again within seconds, have the computer every time, while one
+// starting a pass asked every few minutes and waited behind them all
+// evening.
+func (self *Agent) claimComputer(computer, sourceId string) computerTurn {
+	return self.claimComputerAt(computer, sourceId, time.Now())
+}
+
+func (self *Agent) claimComputerAt(computer, sourceId string, now time.Time) computerTurn {
 	self.readingMutex.Lock()
 	defer self.readingMutex.Unlock()
 	if self.computersBusy == nil {
 		self.computersBusy = map[string]string{}
 	}
+	if self.computersWanted == nil {
+		self.computersWanted = map[string]map[string]computerWait{}
+	}
+	waiting := self.computersWanted[computer]
+	if waiting == nil {
+		waiting = map[string]computerWait{}
+		self.computersWanted[computer] = waiting
+	}
+	mine, found := waiting[sourceId]
+	if !found || now.Sub(mine.asked) > computerWaitForgotten {
+		mine.since = now
+	}
+	mine.asked = now
+	waiting[sourceId] = mine
+
 	if other, busy := self.computersBusy[computer]; busy && other != sourceId {
-		return other, false
+		return computerTurn{other: other, isReading: true}
+	}
+	for other, wait := range waiting {
+		if other != sourceId && now.Sub(wait.asked) <= computerWaitAsking && wait.since.Before(mine.since) {
+			return computerTurn{other: other}
+		}
 	}
 	self.computersBusy[computer] = sourceId
-	return "", true
+	delete(waiting, sourceId)
+	return computerTurn{isFree: true}
 }
 
 func (self *Agent) releaseComputer(computer, sourceId string) {

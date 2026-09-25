@@ -125,6 +125,10 @@ type Agent struct {
 	// once on one laptop took it down every hundred seconds.
 	readingMutex  sync.Mutex
 	computersBusy map[string]string
+
+	// computersWanted is, for each computer, the sources waiting for it
+	// and since when, so the one that has waited longest has it next.
+	computersWanted map[string]map[string]computerWait
 	// feeds are the subscribers to each conversation's events, by
 	// conversation; the relay queue is what this instance's runs emitted
 	// and the others have not heard yet.
