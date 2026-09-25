@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.64.0] - 2026-09-25
+
+### Added
+
+- A computer with `pdftoppm` and `tesseract` installed reads scanned PDFs, and office files made of pictures, with OCR, in every language tesseract has there. (#161)
+
+### Fixed
+
+- PDFs and office files that could not be read when they were first filed are filed again once the computer can read them. (#161)
+- Macro-enabled office files (`.xlsm`, `.xlsb`, `.pptm`, `.docm`) are read, and large office files get more time to convert. (#161)
+
 ## [0.63.0] - 2026-09-25
 
 ### Added
