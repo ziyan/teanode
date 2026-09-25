@@ -234,13 +234,17 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 				// page, and sat until its hour with the cursor halfway.
 				midway := partWayThroughTree(cursor)
 				when := self.nextRunOf(source, run.Owner)
-				if waiting.readingOther != "" {
+				if waiting.readingOther != "" || waiting.behindOther != "" {
 					// The computer is there and busy with another source:
 					// this one's turn comes when that one is done, not at
 					// its hour tomorrow, which is where a pass that had
 					// not started was put, and so never ran while one
-					// long source was reading.
-					when = time.Now().Add(ingestRetry)
+					// long source was reading. Soon, too: at five minutes
+					// it asked so seldom that sources partway through a
+					// pass, which ask again at once, had the computer
+					// every time it came free, and a pass that had not
+					// started waited behind them for hours.
+					when = time.Now().Add(ingestSoon)
 				}
 				if source.More || midway {
 					when = time.Now().Add(ingestSoon)
@@ -329,13 +333,18 @@ type waitingForDevice struct {
 	name string
 
 	// readingOther is the source the computer is busy reading, by its
-	// name, when it is attached and this source is waiting its turn.
+	// name, when it is attached and this source is waiting its turn; and
+	// behindOther the one that has waited longer and goes first.
 	readingOther string
+	behindOther  string
 }
 
 func (self *waitingForDevice) Error() string {
 	if self.readingOther != "" {
 		return "waiting its turn on " + self.name + ", which is reading " + self.readingOther
+	}
+	if self.behindOther != "" {
+		return "waiting its turn on " + self.name + ", after " + self.behindOther + ", which has waited longer"
 	}
 	return "waiting for the computer " + self.name + " to be attached"
 }
