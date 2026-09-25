@@ -241,7 +241,9 @@ func TestARequestEndsWithItsConnection(t *testing.T) {
 	root := t.TempDir()
 	connection := &fakeConnection{incoming: make(chan message, 8), outgoing: make(chan message, 8)}
 	done := make(chan error, 1)
-	go func() { done <- Serve(context.Background(), connection, &Options{Token: "t", Name: "laptop", Home: root}) }()
+	go func() {
+		done <- Serve(context.Background(), connection, &Options{Token: "t", Name: "laptop", Home: root})
+	}()
 	connection.next(t, "hello")
 	connection.incoming <- message{Type: "welcome", Protocol: Protocol}
 
