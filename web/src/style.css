@@ -7529,13 +7529,15 @@ p.notice.domain-logo-note {
   white-space: nowrap;
 }
 
-/* Where the program says what just happened: at the foot of the window, out
-   of the way of what is being read, and never over the thing that was acted
-   on. Stacked upward, newest nearest the reader. */
+/* Where the program says what just happened: the top right corner, just
+   under the bar, out of the way of what is being read and never over the
+   thing that was acted on. It used to be the foot of the window on the left,
+   where it covered the person's own menu at the bottom of the rail, which is
+   what they reach for next. Stacked downward, newest at the top. */
 .toasts {
   position: fixed;
-  left: var(--space-4);
-  bottom: var(--space-4);
+  top: calc(56px + env(safe-area-inset-top) + var(--space-2));
+  right: var(--space-4);
   z-index: 80;
   display: flex;
   flex-direction: column-reverse;
@@ -7608,7 +7610,7 @@ p.notice.domain-logo-note {
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(-6px);
   }
 }
 
@@ -7624,7 +7626,6 @@ p.notice.domain-logo-note {
   .toasts {
     left: var(--space-2);
     right: var(--space-2);
-    bottom: var(--space-2);
   }
 }
 

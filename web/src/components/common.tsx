@@ -208,8 +208,8 @@ export function Loading() {
 // Whatever went wrong, said in the one place the eye already looks for it.
 // Nothing is drawn when there is nothing wrong, so a caller can render it
 // unconditionally instead of writing the same guard on every page.
-// ErrorMessage says what went wrong through the toasts at the foot of the
-// window — the one place every failure is said — and draws nothing where
+// ErrorMessage says what went wrong through the toasts in the top right of
+// the window — the one place every failure is said — and draws nothing where
 // it sits. It keeps its old name and shape so a page can still put it
 // where the thing that failed is; what changed is where the words appear.
 export function ErrorMessage({ error }: { error: unknown }) {
@@ -242,7 +242,7 @@ export function ErrorMessage({ error }: { error: unknown }) {
 // restart, and that is the one thing the reader needs to be told here.
 // useSaySaved says a save happened, once, at the moment it happens.
 //
-// That it saved belongs at the foot of the window with everything else that
+// That it saved belongs in the corner of the window with everything else that
 // has just happened, rather than being a word beside the button that stays
 // there until something takes it back. What the note says beyond "saved" —
 // "this needs a restart" — travels with it.
