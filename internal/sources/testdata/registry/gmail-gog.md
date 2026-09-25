@@ -29,11 +29,18 @@ containers:
 
 records:
   # Dates in UTC: without it gog prints local time with no zone.
-  - command: [gog, --account, "{{settings.account}}", --json, gmail, search, "{{settings.query}}", --max, "500", --timezone, UTC]
+  #
+  # A month at a time, from when Gmail began, and after that from the last
+  # pass to now: a mailbox of years is more threads than one turn can list,
+  # and a listing cut short keeps nothing, so a whole mailbox asked for at
+  # once was asked for again every turn and never read. In seconds, since
+  # Gmail's dates are whole days and "before today" leaves out today.
+  - command: [gog, --account, "{{settings.account}}", --json, gmail, search, "{{settings.query}} after:{{pass.windowStart | epoch}} before:{{pass.windowEnd | epoch}}", --max, "500", --timezone, UTC]
     parse: {json: {items: threads}}
     paging: {token: {field: nextPageToken, flag: --page}}
-    # The query is usually a window of time, and a thread that ages out of
-    # it has not left the mailbox: keep what is no longer listed.
+    since: {first: "2004-04-01T00:00:00Z", window: "30d"}
+    # A thread that ages out of the query, or that the last window did not
+    # list again, has not left the mailbox: keep what is no longer listed.
     unseen: keep
     record:
       id: "{{item.id}}"
@@ -68,6 +75,8 @@ records:
 # Gmail
 
 Reads the threads of a Gmail mailbox that match a search, through `gog`, which is signed in on the person's computer. A thread is a record, its text every message in it with its headers, read again only when a message is added to it.
+
+The first pass reads the mailbox a month at a time from 2004, each month kept as it is read, so a mailbox of many years is read over several turns rather than asked for whole every turn; later passes read from the last one to now.
 
 This is for a Gmail account the person does not receive through TeaNode itself; mail that arrives at TeaNode is already read where it lands.
 

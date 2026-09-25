@@ -148,7 +148,7 @@ func parseExpression(text string) (*expression, error) {
 }
 
 var knownFilters = map[string]bool{
-	"epoch-ms": true, "date": true, "time": true, "join": true, "replace": true, "urlencode": true,
+	"epoch-ms": true, "epoch": true, "date": true, "time": true, "join": true, "replace": true, "urlencode": true,
 	"html-text": true, "or": true, "empty": true, "present": true, "flag": true,
 	"local-time": true, "if": true, "unless": true, "before": true, "after": true,
 	"query-escape": true, "newlines": true, "lower": true, "trim": true, "first": true, "path-step": true, "size": true, "file-kind": true,
@@ -383,6 +383,15 @@ func (self filter) apply(value any, scope Scope) (any, error) {
 		// A time, which is text in UTC to the second and keeps its
 		// milliseconds for local-time.
 		return time.UnixMilli(int64(milliseconds)).UTC(), nil
+	case "epoch":
+		// A time as the seconds since 1970, which is how a search that
+		// takes only whole days as dates is asked for part of one: a
+		// mailbox's search, asked "before today", leaves out today.
+		when, ok := asTime(value)
+		if !ok {
+			return "", nil
+		}
+		return strconv.FormatInt(when.Unix(), 10), nil
 	case "date", "time":
 		when, ok := asTime(value)
 		if !ok {
