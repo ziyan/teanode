@@ -310,7 +310,7 @@ func (self *graph) sourcesFitType(ctx context.Context, parsed *sources.Type) err
 			}
 		}
 		if _, err := parsed.CheckSettings(settings); err != nil {
-			return fmt.Errorf("%w: %s is a local type here, and the source %q does not fit the registry's: %s; remove the local type first", api.ErrInvalidArguments, parsed.Name, source.Name, err)
+			return fmt.Errorf("%w: %s is a local type here, and the registry's does not fit the source %q (%s); change or remove that source first", api.ErrInvalidArguments, parsed.Name, source.Name, err)
 		}
 	}
 	return nil

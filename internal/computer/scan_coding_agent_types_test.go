@@ -78,6 +78,7 @@ var claudeCodeSession = strings.Join([]string{
 	`{"type":"assistant","uuid":"s1","timestamp":"2026-08-14T09:00:09Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"SIDECHAIN a subagent's answer"}]}}`,
 	`{"type":"user","uuid":"c1","timestamp":"2026-08-14T09:00:10Z","isCompactSummary":true,"message":{"role":"user","content":"COMPACTSUMMARY of the session so far"}}`,
 	`{"type":"system","uuid":"y1","timestamp":"2026-08-14T09:00:11Z","content":"SYSTEMLINE hook ran"}`,
+	`{"type":"ai-title","aiTitle":"Retrying failed uploads","sessionId":"session-one"}`,
 	`{"type":"custom-title","customTitle":"Upload retries","sessionId":"session-one"}`,
 	`{"type":"pr-link","prUrl":"https://example.com/garden-app/pull/7","sessionId":"session-one"}`,
 	`{"type":"assistant","uuid":"a2","timestamp":"2026-08-14T09:03:00Z","message":{"role":"assistant","content":[{"type":"text","text":"Done: three tries, doubling the wait."}]}}`,
@@ -107,9 +108,25 @@ func TestTheClaudeCodeTypeKeepsOnlyWhatWasSaid(t *testing.T) {
 		"projects/-work-garden-app/memory/testing.md":                 "Run the tests before pushing.\n",
 		"projects/-work-garden-app/session-one.jsonl":                 claudeCodeSession,
 		"projects/-work-garden-app/session-one/subagents/agent.jsonl": `{"type":"assistant","uuid":"x1","timestamp":"2026-08-14T09:00:00Z","message":{"content":[{"type":"text","text":"SUBAGENTFILE"}]}}`,
+		// Titled only by the tool.
+		"projects/-work-garden-app/session-two.jsonl": `{"type":"user","uuid":"v1","timestamp":"2026-08-16T09:00:00Z","cwd":"/work/garden-app","message":{"role":"user","content":"Rename the config file."}}` + "\n" +
+			`{"type":"ai-title","aiTitle":"Renaming the config file","sessionId":"session-two"}` + "\n",
 		"settings.json": `{"theme":"dark"}`,
 	})
 	pages, units := entriesByKind(scanRegistryType(t, "claude-code", folder, nil, "claude01"))
+	if len(units) != 2 {
+		t.Fatalf("two conversations, one unit each: %+v", units)
+	}
+	var unit ScanEntry
+	for _, each := range units {
+		if strings.HasPrefix(each.ExternalID, "projects/-work-garden-app/session-two.jsonl#") {
+			if each.Metadata["channel"] != "Renaming the config file" {
+				t.Fatalf("a session the person did not title is named by the tool's title: %+v", each.Metadata)
+			}
+		} else {
+			unit = each
+		}
+	}
 	if len(pages) != 2 {
 		t.Fatalf("the standing instructions and the project memory are pages: %+v", pages)
 	}
@@ -118,10 +135,6 @@ func TestTheClaudeCodeTypeKeepsOnlyWhatWasSaid(t *testing.T) {
 			t.Fatalf("a memory page says what it is: %+v", page)
 		}
 	}
-	if len(units) != 1 {
-		t.Fatalf("one conversation, one unit: %+v", units)
-	}
-	unit := units[0]
 	for _, said := range []string{"Add a retry to the upload step.", "I will wrap the upload in a retry with backoff.", "Done: three tries, doubling the wait.", "Thanks, ship it."} {
 		if !strings.Contains(unit.Text, said) {
 			t.Fatalf("what was said is kept (%q): %q", said, unit.Text)
@@ -189,16 +202,31 @@ func TestTheCodexTypeKeepsOnlyWhatWasSaid(t *testing.T) {
 			`{"timestamp":"2026-08-15T10:05:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"SUBAGENTTASK read the log"}]}}` + "\n",
 		"sessions/2026/08/15/rollout-2026-08-15T10-06-00-session-five.jsonl": `{"timestamp":"2026-08-15T10:06:00Z","type":"session_meta","payload":{"id":"session-five","cwd":"/work/garden-app","source":"exec"}}` + "\n" +
 			`{"timestamp":"2026-08-15T10:06:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"SCRIPTED summarize the log"}]}}` + "\n",
+		// Never named.
+		"sessions/2026/08/16/rollout-2026-08-16T09-00-00-session-six.jsonl": `{"timestamp":"2026-08-16T09:00:00Z","type":"session_meta","payload":{"id":"session-six","cwd":"/work/garden-app","source":"cli"}}` + "\n" +
+			`{"timestamp":"2026-08-16T09:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Add a  changelog\nentry for the cache fix and nothing else, please, before the release goes out"}]}}` + "\n",
 		"config.toml": "model = \"invented\"\n",
+		// Named, then renamed: the later line is the name.
+		"session_index.jsonl": `{"id":"session-three","thread_name":"Slow build","updated_at":"2026-08-15T10:00:00Z"}` + "\n" +
+			`{"id":"session-three","thread_name":"Why the build is slow","updated_at":"2026-08-15T11:00:00Z"}` + "\n",
 	})
 	pages, units := entriesByKind(scanRegistryType(t, "codex", folder, nil, "codex01"))
 	if len(pages) != 2 {
 		t.Fatalf("AGENTS.md and the memory file are pages: %+v", pages)
 	}
-	if len(units) != 1 {
-		t.Fatalf("one conversation; a subagent's session and a script's are not: %+v", units)
+	if len(units) != 2 {
+		t.Fatalf("two conversations; a subagent's session and a script's are not: %+v", units)
 	}
-	unit := units[0]
+	var unit ScanEntry
+	for _, each := range units {
+		if strings.Contains(each.ExternalID, "session-six") {
+			if each.Metadata["channel"] != "Add a changelog entry for the cache fix and nothing else, pl…" {
+				t.Fatalf("an unnamed session is named by its first words, cut to a line: %+v", each.Metadata)
+			}
+		} else {
+			unit = each
+		}
+	}
 	for _, said := range []string{"Why is the build slow?", "The cache is cleared on every run."} {
 		if !strings.Contains(unit.Text, said) {
 			t.Fatalf("what was said is kept (%q): %q", said, unit.Text)
@@ -209,7 +237,7 @@ func TestTheCodexTypeKeepsOnlyWhatWasSaid(t *testing.T) {
 			t.Fatalf("%s is left out: %q", dropped, unit.Text)
 		}
 	}
-	if unit.Metadata["channel"] != "Why is the build slow?" || unit.Metadata["branch"] != "faster-build" {
-		t.Fatalf("an untitled session is named by its first words: %+v", unit.Metadata)
+	if unit.Metadata["channel"] != "Why the build is slow" || unit.Metadata["branch"] != "faster-build" {
+		t.Fatalf("a session is named by its latest name: %+v", unit.Metadata)
 	}
 }

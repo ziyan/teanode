@@ -14,11 +14,11 @@ func TestAPostMarkedYouIsThePersons(t *testing.T) {
 	owner := &models.User{Username: "sam"}
 	entry := computer.ScanEntry{
 		Kind: "chat", Hash: "unchanged-hash",
-		Text:     "Codex conversation in /work/garden-app\n\n10:00 @you: Why is the build slow?\n10:01 Codex: The cache is cleared.",
+		Text:     "Codex conversation in /work/garden-app\n\n10:00 @you: Why is the build slow?\n10:01 Codex: The cache is cleared.\n10:02 @you: Tell @you: nothing.",
 		Metadata: map[string]any{"participants": []any{"@you", "Codex"}},
 	}
 	namePerson(&entry, owner)
-	if entry.Text != "Codex conversation in /work/garden-app\n\n10:00 sam: Why is the build slow?\n10:01 Codex: The cache is cleared." {
+	if entry.Text != "Codex conversation in /work/garden-app\n\n10:00 sam: Why is the build slow?\n10:01 Codex: The cache is cleared.\n10:02 sam: Tell @you: nothing." {
 		t.Fatalf("the person's turns are theirs: %q", entry.Text)
 	}
 	if participants := entry.Metadata["participants"].([]any); participants[0] != "sam" || participants[1] != "Codex" {

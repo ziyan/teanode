@@ -13,6 +13,10 @@ settings:
     type: string
     default: ""
 
+# The names sessions were given, by session: a later line is a rename.
+lookups:
+  titles: {file: "{{settings.path}}/session_index.jsonl", parse: jsonl, key: "{{item.id}}", value: "{{item.thread_name}}"}
+
 containers:
   - files: {in: "{{settings.path}}", match: "AGENTS.md"}
     name: "{{item.path}}"
@@ -66,11 +70,11 @@ records:
           | ($meta.cwd // "") as $directory
           | select(($directory | excluded) | not)
           | [$items[] | select(.author and (.text | test("\\S")))] as $posts
-          # Codex does not title a session: the person's first words do.
+          # A session nobody named is named by the person's first words.
           | ([$posts[] | select(.author == "@you") | .text] | first // "" | gsub("\\s+"; " ")) as $opening
           | (if ($opening | length) > 60 then $opening[0:60] + "…" elif $opening == "" then "Codex in " + $directory else $opening end) as $title
           | $posts[]
-          | {id, kind: "chat", at, author, text, channel: $title,
+          | {id, kind: "chat", at, author, text, channel: $title, session: ($meta.id // ""),
              directory: $directory, branch: ($meta.git.branch // "")}
         end
       - "{{container.absolute}}"
@@ -80,7 +84,7 @@ records:
       id: "{{item.id}}"
       kind: "{{item.kind}}"
       title: "{{item.title}}"
-      channel: "{{item.channel}}"
+      channel: "{{lookup.titles[item.session] | or item.channel}}"
       at: "{{item.at}}"
       modifiedAt: "{{container.modifiedAt}}"
       author: "{{item.author}}"
@@ -95,7 +99,7 @@ records:
 
 Reads what the person said to Codex and what it answered, from the folder it keeps on their computer, with `jq`. Only the conversation is kept: the person's typed messages and the assistant's visible replies. Reasoning, tool calls and their output, developer instructions and the context Codex puts into the person's turn (the repository's `AGENTS.md`, the environment, skills and plugins) are left out, and so are sessions another session started and sessions a script ran with `codex exec`.
 
-A conversation is read the way a chat is: cut at a half hour of silence or at a size, so a session that runs for days sends only its newest part on each pass. Codex does not title a session, so it is named by the person's first words, and carries its working directory and branch. The person's own turns are written by `@you`, which TeaNode files under the person's own name.
+A conversation is read the way a chat is: cut at a half hour of silence or at a size, so a session that runs for days sends only its newest part on each pass. It is named by the session's name in `session_index.jsonl`, or else by the person's first words, and carries its working directory and branch. The person's own turns are written by `@you`, which TeaNode files under the person's own name.
 
 `AGENTS.md` and the Markdown under `memories/` are read as pages. The per-session summaries Codex keeps in `memories_1.sqlite` are not: they are made from the sessions, which are read.
 

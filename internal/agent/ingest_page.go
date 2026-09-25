@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -106,19 +107,25 @@ func (self *Agent) fileComputerPage(ctx context.Context, run *Run, source *model
 	return result.NextCursor, counts, nil
 }
 
+// personAuthorLine is a post by computer.PersonAuthor as a chat unit
+// renders it: its time, the author and a colon, at the start of a line.
+var personAuthorLine = regexp.MustCompile(`(?m)^(\d{2}:\d{2} )` + regexp.QuoteMeta(computer.PersonAuthor) + `: `)
+
 // namePerson writes the owner's username where a source marked the
 // person's own posts as computer.PersonAuthor, in the text and among the
 // participants, so the night, which reads only the chat the person was
 // in, reads them. A source that reads the person's own tools (a coding
 // agent's sessions) knows which turns are theirs but not what they are
-// called here. The hash is
-// left as the reader made it, so an unchanged conversation still matches.
+// called here. The hash is left as the reader made it, so an unchanged
+// conversation still matches.
 func namePerson(entry *computer.ScanEntry, owner *models.User) {
 	if owner == nil || owner.Username == "" || entry.Kind != string(models.DocumentChat) {
 		return
 	}
 	marker, username := computer.PersonAuthor, strings.ToLower(owner.Username)
-	entry.Text = strings.ReplaceAll(entry.Text, " "+marker+": ", " "+username+": ")
+	// Only as the author of a post, which opens its line with its time:
+	// the same words inside what somebody wrote are theirs to keep.
+	entry.Text = personAuthorLine.ReplaceAllString(entry.Text, "${1}"+username+": ")
 	switch participants := entry.Metadata["participants"].(type) {
 	case []any:
 		for index, participant := range participants {

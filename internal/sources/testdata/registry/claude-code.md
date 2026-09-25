@@ -61,6 +61,7 @@ records:
         else
           [inputs | fromjson? | select(type == "object")
             | if .type == "custom-title" then {title: .customTitle}
+              elif .type == "ai-title" then {aiTitle: .aiTitle}
               elif .type == "pr-link" then {pullRequest: .prUrl}
               elif (.type == "user" or .type == "assistant") and (.isSidechain | not) and (.isMeta | not) and (.isCompactSummary | not) then
                 {id: (.uuid // "line-\(input_line_number)"), at: .timestamp, directory: .cwd, branch: .gitBranch,
@@ -69,7 +70,8 @@ records:
               else empty end] as $items
           | ([$items[] | .directory // empty] | first // "") as $directory
           | select(($directory | excluded) | not)
-          | ([$items[] | .title // empty] | last) as $title
+          # The title the person gave it, or else the one the tool made up.
+          | ([$items[] | .title // empty] | last // ([$items[] | .aiTitle // empty] | last)) as $title
           | ([$items[] | .branch // empty | select(. != "HEAD")] | last // "") as $branch
           | ([$items[] | .pullRequest // empty] | unique | join(" ")) as $pullRequests
           | $items[] | select(.author and (.text | test("\\S")))
@@ -100,7 +102,7 @@ records:
 
 Reads what the person said to Claude Code and what it answered, from the folder it keeps on their computer, with `jq`. Only the conversation is kept: the person's typed messages and the assistant's visible replies. Tool calls and their output, thinking, images, hook and system messages, what the tool puts into the person's turn, subagents and the tool's own compaction summaries are left out; they are most of a session's size and little of what was said.
 
-A conversation is read the way a chat is: cut at a half hour of silence or at a size, so a session that runs for days sends only its newest part on each pass. It is named by the session's title, and carries its working directory, branch and the pull requests it opened. The person's own turns are written by `@you`, which TeaNode files under the person's own name.
+A conversation is read the way a chat is: cut at a half hour of silence or at a size, so a session that runs for days sends only its newest part on each pass. It is named by the session's title (the one the person gave it, or else the one Claude Code made up), and carries its working directory, branch and the pull requests it opened. The person's own turns are written by `@you`, which TeaNode files under the person's own name.
 
 `CLAUDE.md` and each project's `memory/` notes are read as pages.
 
@@ -112,4 +114,4 @@ A file is its path under the folder. A memory page is its file; a conversation's
 
 ## Checked against the tool
 
-Read against Claude Code 2's session files: one JSON object a line, of type `user`, `assistant`, `custom-title`, `pr-link` and others, with `isSidechain`, `isMeta` and `isCompactSummary` marking what is not the conversation.
+Read against Claude Code 2's session files: one JSON object a line, of type `user`, `assistant`, `custom-title`, `ai-title`, `pr-link` and others, with `isSidechain`, `isMeta` and `isCompactSummary` marking what is not the conversation.
