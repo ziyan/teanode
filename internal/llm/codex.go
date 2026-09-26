@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -61,6 +62,7 @@ type codex struct {
 		shortWindowPercent int
 		weeklyPercent      int
 		isKnown            bool
+		hasSaidHeaders     bool
 	}
 
 	// isNoReasoningRefused is set once the plan has refused an effort of
@@ -245,10 +247,11 @@ func (self *codex) post(ctx context.Context, body []byte) (*http.Response, error
 }
 
 // notePlanUsage reads how much of the plan's allowance is used, which the
-// service says on every answer: the primary window is the short one of a
+// service says on its answers: the primary window is the short one of a
 // few hours, the secondary the week. It is said in the log when either
 // moves by a whole percent, so an operator can see the reading spend the
-// week without opening anything.
+// week without opening anything. A window an answer does not mention keeps
+// what was last said of it, rather than reading as nothing used.
 func (self *codex) notePlanUsage(header http.Header) {
 	shortWindow, isShortKnown := usedPercent(header, "X-Codex-Primary-Used-Percent")
 	weekly, isWeeklyKnown := usedPercent(header, "X-Codex-Secondary-Used-Percent")
@@ -257,6 +260,25 @@ func (self *codex) notePlanUsage(header http.Header) {
 	}
 	usage := &self.planUsage
 	usage.Lock()
+	if !usage.hasSaidHeaders {
+		// Once, the names the service uses for this, so that a window
+		// it never reports is known to be unreported, not unused.
+		var names []string
+		for name := range header {
+			if strings.HasPrefix(strings.ToLower(name), "x-codex-") {
+				names = append(names, name)
+			}
+		}
+		sort.Strings(names)
+		usage.hasSaidHeaders = true
+		log.Infof("the %s plan reports its usage in %s", config.AgentProviderKindCodex, strings.Join(names, ", "))
+	}
+	if !isShortKnown {
+		shortWindow = usage.shortWindowPercent
+	}
+	if !isWeeklyKnown {
+		weekly = usage.weeklyPercent
+	}
 	isChanged := !usage.isKnown || shortWindow != usage.shortWindowPercent || weekly != usage.weeklyPercent
 	usage.shortWindowPercent, usage.weeklyPercent, usage.isKnown = shortWindow, weekly, true
 	usage.Unlock()
