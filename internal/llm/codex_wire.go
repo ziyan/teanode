@@ -85,8 +85,10 @@ func (self *codex) encode(request *ChatRequest) ([]byte, error) {
 		// to decide.
 		Store:       false,
 		Stream:      true,
-		MaxTokens:   request.MaxTokens,
 		Temperature: request.Temperature,
+	}
+	if self.doesTakeOutputLimit {
+		body.MaxTokens = request.MaxTokens
 	}
 	if request.ReasoningEffort != "" {
 		body.Reasoning = &codexReasoning{Effort: request.ReasoningEffort}

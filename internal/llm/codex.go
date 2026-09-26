@@ -50,6 +50,12 @@ type codex struct {
 	account string
 	signIn  *signIn
 	http    *http.Client
+
+	// doesTakeOutputLimit says the endpoint takes max_output_tokens. The
+	// keyed Responses endpoint does; the plan's refuses the whole request
+	// with "Unsupported parameter: max_output_tokens", so a turn that
+	// bounds its answer, which is every turn, would never be answered.
+	doesTakeOutputLimit bool
 }
 
 func newCodex(baseUrl, refreshToken, account string, client *http.Client) (*codex, error) {
