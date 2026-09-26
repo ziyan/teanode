@@ -25,7 +25,7 @@ func (self *Agent) dreamConsolidate(ctx context.Context, run *Run, record *model
 		return
 	}
 	for _, page := range pages {
-		if ctx.Err() != nil || !budget.left() {
+		if ctx.Err() != nil || !budget.left() || !budget.consolidatingTimeLeft() {
 			break
 		}
 		if self.consolidatePage(ctx, run, record, page, budget) {
