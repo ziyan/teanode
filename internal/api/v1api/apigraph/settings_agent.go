@@ -83,10 +83,14 @@ type AgentSettings struct {
 
 // AgentProviderSettings is one provider, without its key.
 type AgentProviderSettings struct {
-	Name              string   `json:"name"`
-	Kind              string   `json:"kind"`
-	BaseURL           string   `json:"baseUrl"`
-	HasAPIKey         bool     `json:"hasApiKey"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	BaseURL   string `json:"baseUrl"`
+	HasAPIKey bool   `json:"hasApiKey"`
+	// HasRefreshToken says a provider that is signed in to rather than
+	// keyed has been, and Account is the account it bills to.
+	HasRefreshToken   bool     `json:"hasRefreshToken"`
+	Account           string   `json:"account"`
 	Enabled           bool     `json:"enabled"`
 	Allow             []string `json:"allow"`
 	Deny              []string `json:"deny"`
@@ -341,7 +345,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 		},
 		MCPServers: []*AgentMCPServerSettings{},
 		Families:   config.AgentToolFamilies,
-		Kinds:      []string{config.AgentProviderKindOpenAI, config.AgentProviderKindAnthropic, config.AgentProviderKindGemini},
+		Kinds:      []string{config.AgentProviderKindOpenAI, config.AgentProviderKindAnthropic, config.AgentProviderKindGemini, config.AgentProviderKindCodex},
 	}
 	for _, work := range config.AgentWorks {
 		settings.Works = append(settings.Works, string(work))
@@ -357,6 +361,8 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			Kind:              provider.Kind,
 			BaseURL:           provider.BaseURL,
 			HasAPIKey:         provider.APIKey != "",
+			HasRefreshToken:   provider.RefreshToken != "",
+			Account:           provider.Account,
 			Enabled:           provider.IsEnabled(),
 			Allow:             nonNil(provider.Models.Allow),
 			Deny:              nonNil(provider.Models.Deny),
@@ -609,9 +615,12 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		agent.Effort = strings.ToLower(strings.TrimSpace(*parameters.Effort))
 	}
 	if parameters.Providers != nil {
-		previous := map[string]string{}
+		// What each provider holds that the page never sends back: its key,
+		// or, for one signed in to, its refresh token and account. A save
+		// that dropped them would sign a provider out by editing its prices.
+		previous := map[string]config.AgentProvider{}
 		for _, provider := range agent.Providers {
-			previous[provider.Name] = provider.APIKey
+			previous[provider.Name] = provider
 		}
 		providers := make([]config.AgentProvider, 0, len(*parameters.Providers))
 		for _, given := range *parameters.Providers {
@@ -619,18 +628,20 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 				continue
 			}
 			enabled := given.Enabled
-			kept := previous[strings.TrimSpace(given.Name)]
-			if before := strings.TrimSpace(given.PreviousName); before != "" && kept == "" {
+			kept, isKept := previous[strings.TrimSpace(given.Name)]
+			if before := strings.TrimSpace(given.PreviousName); before != "" && !isKept {
 				kept = previous[before]
 			}
 			provider := config.AgentProvider{
-				Name:    strings.TrimSpace(given.Name),
-				Kind:    strings.TrimSpace(given.Kind),
-				BaseURL: strings.TrimSpace(given.BaseURL),
-				APIKey:  kept,
-				Enabled: &enabled,
-				Models:  config.AgentProviderModels{Allow: trimmed(given.Allow), Deny: trimmed(given.Deny)},
-				Pricing: config.AgentPricing{Input: given.PricingInput, Output: given.PricingOutput, CacheRead: given.PricingCacheRead, CacheWrite: given.PricingCacheWrite},
+				Name:         strings.TrimSpace(given.Name),
+				Kind:         strings.TrimSpace(given.Kind),
+				BaseURL:      strings.TrimSpace(given.BaseURL),
+				APIKey:       kept.APIKey,
+				RefreshToken: kept.RefreshToken,
+				Account:      kept.Account,
+				Enabled:      &enabled,
+				Models:       config.AgentProviderModels{Allow: trimmed(given.Allow), Deny: trimmed(given.Deny)},
+				Pricing:      config.AgentPricing{Input: given.PricingInput, Output: given.PricingOutput, CacheRead: given.PricingCacheRead, CacheWrite: given.PricingCacheWrite},
 			}
 			for _, priced := range given.ModelPricing {
 				if priced == nil || strings.TrimSpace(priced.Model) == "" {
@@ -642,6 +653,14 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 			}
 			if key := strings.TrimSpace(given.APIKey); key != "" && key != config.Redacted {
 				provider.APIKey = key
+			}
+			// A provider changing kind keeps only the credential the new
+			// kind takes: a key is refused on a signed-in provider, and a
+			// refresh token means nothing to a keyed one.
+			if provider.Kind == config.AgentProviderKindCodex {
+				provider.APIKey = ""
+			} else {
+				provider.RefreshToken, provider.Account = "", ""
 			}
 			providers = append(providers, provider)
 		}
@@ -913,7 +932,13 @@ func listProviderModels(ctx context.Context, declared *config.AgentProvider, tim
 	if timeout <= 0 || timeout > 20*time.Second {
 		timeout = 20 * time.Second
 	}
-	provider, err := llm.NewProvider(declared.Kind, declared.BaseURL, declared.APIKey, timeout)
+	var provider llm.Service
+	var err error
+	if declared.Kind == config.AgentProviderKindCodex {
+		provider, err = llm.NewSignedInProvider(declared.Kind, declared.BaseURL, declared.RefreshToken, declared.Account, timeout)
+	} else {
+		provider, err = llm.NewProvider(declared.Kind, declared.BaseURL, declared.APIKey, timeout)
+	}
 	if err != nil {
 		return nil, err
 	}
