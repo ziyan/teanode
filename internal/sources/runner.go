@@ -82,6 +82,13 @@ type Runner struct {
 	// rather than keep a page waiting. The zero time is no deadline.
 	Deadline time.Time
 
+	// Stored is a later page of a pass over a container already read in
+	// it: a reading that keeps what it read answers from what it kept,
+	// without asking again. A container of a month-by-month mailbox read
+	// again on every page spent each page's minutes reading the next
+	// months, and sent nothing new.
+	Stored bool
+
 	// Now is the clock, for tests.
 	Now func() time.Time
 
@@ -472,6 +479,12 @@ func (self *Runner) Read(ctx context.Context, container Container) ([]Record, er
 			var err error
 			if store, err = self.openStore(container.Name, readingIndex); err != nil {
 				return nil, err
+			}
+			if self.Stored {
+				for _, record := range store.records() {
+					keep(record)
+				}
+				continue
 			}
 		}
 		for _, member := range container.Members {

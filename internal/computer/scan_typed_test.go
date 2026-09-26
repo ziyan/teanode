@@ -175,3 +175,58 @@ records:
 		t.Fatalf("the container is one page of six: %d entries, next %q", len(result.Entries), result.Next)
 	}
 }
+
+// The pages after the first of a pass answer a container the pass has read
+// from what was kept, rather than reading it again: a mailbox read a month
+// at a time spent every page reading the next months and sent nothing new.
+// A new pass reads again.
+func TestLaterPagesOfAPassAnswerFromWhatWasKept(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the command here is sh")
+	}
+	home := t.TempDir()
+	calls := filepath.Join(home, "calls")
+	kind := `---
+name: counted
+description: a container that keeps what it read
+containers:
+  - {fixed: [{}], name: threads.jsonl}
+records:
+  - command: [sh, -c, 'echo x >> ` + calls + `; for i in 1 2 3; do printf "{\"id\":\"t%s\",\"text\":\"thread %s\"}\n" $i $i; done']
+    parse: jsonl
+    since: {first: "2026-01-01T00:00:00Z"}
+    record: {id: "{{item.id}}", text: "{{item.text}}", kind: page}
+---
+`
+	scan := func(after, pass string) *ScanResult {
+		t.Helper()
+		result, err := RunScan(context.Background(), &Options{Home: home}, &ScanArguments{
+			Format: FormatTyped, SourceType: kind, SourceKey: "source04", After: after, Most: 1,
+			Known: map[string]string{}, KnownID: pass,
+		})
+		if err != nil {
+			t.Fatalf("RunScan: %s", err)
+		}
+		return result
+	}
+	counted := func() int {
+		content, _ := os.ReadFile(calls)
+		return strings.Count(string(content), "x")
+	}
+
+	first := scan("", "pass-1")
+	if len(first.Entries) != 1 || first.Next == "" || counted() != 1 {
+		t.Fatalf("the first page reads and sends one: %d entries, next %q, %d calls", len(first.Entries), first.Next, counted())
+	}
+	// Another source read in between, and what this one read is no
+	// longer held in memory.
+	forgetRecords()
+	second := scan(first.Next, "pass-1")
+	if len(second.Entries) != 1 || counted() != 1 {
+		t.Fatalf("a later page answers from what was kept: %d entries, %d calls", len(second.Entries), counted())
+	}
+	scan("", "pass-2")
+	if counted() != 2 {
+		t.Fatalf("a new pass reads again: %d calls", counted())
+	}
+}
