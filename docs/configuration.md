@@ -702,10 +702,9 @@ adding one does not duplicate mail that already has somewhere to go.
 
 `openai-codex` is OpenAI reached with a personal sign-in rather than a key:
 a ChatGPT plan, through the Codex API that the Codex command line also runs
-on (for one release it was called `openai-oauth`, which is still read as
-this name). It answers at a different
-address, speaks the responses protocol rather than chat completions, and
-bills against the plan's allowance instead of credits. It takes
+on. It answers at a different address, speaks the responses protocol rather
+than chat completions, and bills against the plan's allowance instead of
+credits. It takes
 `refreshToken` and `account` and no `apiKey`, and it offers only the models
 the plan answers to (`gpt-5.5`, `gpt-5.6-terra` and `gpt-5.6-luna`): every
 other name is refused outright. It has no embeddings,

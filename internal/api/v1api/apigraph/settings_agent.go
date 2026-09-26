@@ -634,7 +634,7 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 			}
 			provider := config.AgentProvider{
 				Name:         strings.TrimSpace(given.Name),
-				Kind:         config.CanonicalProviderKind(strings.TrimSpace(given.Kind)),
+				Kind:         strings.TrimSpace(given.Kind),
 				BaseURL:      strings.TrimSpace(given.BaseURL),
 				APIKey:       kept.APIKey,
 				RefreshToken: kept.RefreshToken,

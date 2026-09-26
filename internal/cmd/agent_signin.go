@@ -38,7 +38,7 @@ func newAgentSignInCommand() *cli.Command {
 }
 
 func runAgentSignIn(ctx context.Context, command *cli.Command) error {
-	kind := config.CanonicalProviderKind(strings.TrimSpace(command.Args().First()))
+	kind := strings.TrimSpace(command.Args().First())
 	if kind == "" {
 		kind = config.AgentProviderKindCodex
 	}
