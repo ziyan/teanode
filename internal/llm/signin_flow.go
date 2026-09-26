@@ -274,7 +274,7 @@ func accountOfToken(token string) (account, plan string) {
 // signInEndpoints is where a kind signs in.
 func signInEndpoints(kind string) (clientId, tokenUrl, authorizeUrl string, err error) {
 	switch kind {
-	case config.AgentProviderKindCodex:
+	case config.AgentProviderKindOAuth:
 		return codexClientId, codexTokenUrl, codexIssuer + "/oauth/authorize", nil
 	}
 	return "", "", "", fmt.Errorf("llm: %q is not a provider kind that signs in", kind)

@@ -345,7 +345,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 		},
 		MCPServers: []*AgentMCPServerSettings{},
 		Families:   config.AgentToolFamilies,
-		Kinds:      []string{config.AgentProviderKindOpenAI, config.AgentProviderKindAnthropic, config.AgentProviderKindGemini, config.AgentProviderKindCodex},
+		Kinds:      []string{config.AgentProviderKindOpenAI, config.AgentProviderKindAnthropic, config.AgentProviderKindGemini, config.AgentProviderKindOAuth},
 	}
 	for _, work := range config.AgentWorks {
 		settings.Works = append(settings.Works, string(work))
@@ -634,7 +634,7 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 			}
 			provider := config.AgentProvider{
 				Name:         strings.TrimSpace(given.Name),
-				Kind:         strings.TrimSpace(given.Kind),
+				Kind:         config.CanonicalProviderKind(strings.TrimSpace(given.Kind)),
 				BaseURL:      strings.TrimSpace(given.BaseURL),
 				APIKey:       kept.APIKey,
 				RefreshToken: kept.RefreshToken,
@@ -657,7 +657,7 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 			// A provider changing kind keeps only the credential the new
 			// kind takes: a key is refused on a signed-in provider, and a
 			// refresh token means nothing to a keyed one.
-			if provider.Kind == config.AgentProviderKindCodex {
+			if provider.Kind == config.AgentProviderKindOAuth {
 				provider.APIKey = ""
 			} else {
 				provider.RefreshToken, provider.Account = "", ""
@@ -934,7 +934,7 @@ func listProviderModels(ctx context.Context, declared *config.AgentProvider, tim
 	}
 	var provider llm.Service
 	var err error
-	if declared.Kind == config.AgentProviderKindCodex {
+	if declared.Kind == config.AgentProviderKindOAuth {
 		provider, err = llm.NewSignedInProvider(declared.Kind, declared.BaseURL, declared.RefreshToken, declared.Account, timeout)
 	} else {
 		provider, err = llm.NewProvider(declared.Kind, declared.BaseURL, declared.APIKey, timeout)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/llm"
 )
 
@@ -37,9 +38,9 @@ func newAgentSignInCommand() *cli.Command {
 }
 
 func runAgentSignIn(ctx context.Context, command *cli.Command) error {
-	kind := strings.TrimSpace(command.Args().First())
+	kind := config.CanonicalProviderKind(strings.TrimSpace(command.Args().First()))
 	if kind == "" {
-		kind = "openai-codex"
+		kind = config.AgentProviderKindOAuth
 	}
 
 	flow, err := llm.BeginSignIn(kind)

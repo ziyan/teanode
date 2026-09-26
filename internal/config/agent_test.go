@@ -3,6 +3,8 @@ package config
 import (
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // A model is priced by its own entry where it has one, by a pattern that
@@ -130,5 +132,21 @@ func TestPricingForIgnoresTheWidthSuffix(t *testing.T) {
 	}
 	if got := provider.PricingFor("gpt-x").Input; got != 0.15 {
 		t.Fatalf("an unpriced model falls back to the provider's rate, not %v", got)
+	}
+}
+
+// A provider written under the kind's first name is read under its current
+// one, and so written back under it.
+func TestAFormerProviderKindIsReadUnderItsName(t *testing.T) {
+	var providers []AgentProvider
+	written := "- name: plan\n  kind: openai-codex\n  refreshToken: a-refresh-token\n- name: keyed\n  kind: openai\n"
+	if err := yaml.Unmarshal([]byte(written), &providers); err != nil {
+		t.Fatal(err)
+	}
+	if providers[0].Kind != AgentProviderKindOAuth || providers[0].RefreshToken != "a-refresh-token" || providers[1].Kind != AgentProviderKindOpenAI {
+		t.Errorf("read as %+v", providers)
+	}
+	if CanonicalProviderKind("openai-codex") != "openai-oauth" || CanonicalProviderKind("gemini") != "gemini" {
+		t.Error("the kind's names do not map")
 	}
 }

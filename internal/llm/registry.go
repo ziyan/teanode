@@ -74,7 +74,7 @@ func Open(configuration *config.Agent) (*Registry, error) {
 		var service Service
 		var err error
 		switch declared.Kind {
-		case config.AgentProviderKindCodex:
+		case config.AgentProviderKindOAuth:
 			service, err = NewSignedInProvider(declared.Kind, declared.BaseURL,
 				declared.RefreshToken, declared.Account, timeout)
 		default:

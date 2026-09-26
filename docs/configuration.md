@@ -700,8 +700,10 @@ adding one does not duplicate mail that already has somewhere to go.
 
 **`kind`** — Kind is one of null, email, webhook or mailServer.
 
-`openai-codex` is OpenAI reached with a personal sign-in rather than a key:
-the subscription behind the Codex command line. It answers at a different
+`openai-oauth` is OpenAI reached with a personal sign-in rather than a key
+(it was called `openai-codex` at first, which is still read as this name):
+a ChatGPT plan, the subscription the Codex command line also runs on. It
+answers at a different
 address, speaks the responses protocol rather than chat completions, and
 bills against the plan's allowance instead of credits. It takes
 `refreshToken` and `account` and no `apiKey`, and it offers only the models
@@ -1138,13 +1140,13 @@ endpoint; a local server is `http://ollama:11434/v1`.
 redacted, kept when a settings update leaves it blank.
 
 **`refreshToken`** — Authenticates a provider that is signed in to rather
-than keyed, which at present means `openai-codex`. A secret, shown redacted
+than keyed, which at present means `openai-oauth`. A secret, shown redacted
 and kept when a settings update leaves it blank.
 
 It is the long half of a pair: the server trades it for a short-lived access
 token before each run of requests, and never writes that token down. The
 dashboard fills it in: Settings, Agent, Providers, a provider of kind
-`openai-codex`, and "Sign in with ChatGPT", which shows a one-time code to
+`openai-oauth`, and "Sign in with ChatGPT", which shows a one-time code to
 enter on OpenAI's page from any device. `teanode agent signin` gets one at a
 browser on the machine it runs on, for pasting here instead.
 

@@ -100,7 +100,7 @@ func NewProvider(kind, baseUrl, apiKey string, timeout time.Duration) (Service, 
 func NewSignedInProvider(kind, baseUrl, refreshToken, account string, timeout time.Duration) (Provider, error) {
 	client := &http.Client{Timeout: timeout}
 	switch kind {
-	case config.AgentProviderKindCodex:
+	case config.AgentProviderKindOAuth:
 		return newCodex(baseUrl, refreshToken, account, client)
 	}
 	return nil, fmt.Errorf("llm: %q is not a provider kind that signs in", kind)

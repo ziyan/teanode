@@ -63,7 +63,7 @@ type DeviceSignIn struct {
 // BeginDeviceSignIn asks the service for a one-time code.
 func BeginDeviceSignIn(ctx context.Context, kind string) (*DeviceSignIn, error) {
 	switch kind {
-	case config.AgentProviderKindCodex:
+	case config.AgentProviderKindOAuth:
 		return beginDeviceSignIn(ctx, codexIssuer, codexClientId, codexTokenUrl, nil)
 	}
 	return nil, fmt.Errorf("llm: %q is not a provider kind that signs in", kind)
