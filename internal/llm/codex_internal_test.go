@@ -325,15 +325,15 @@ func TestThePlanSaysHowMuchOfItIsUsed(test *testing.T) {
 	header.Set("X-Codex-Secondary-Used-Percent", "3")
 	made := &codex{}
 	made.notePlanUsage(header)
-	if !made.planUsage.isKnown || made.planUsage.shortWindowPercent != 12 || made.planUsage.weeklyPercent != 3 {
-		test.Errorf("it read %d%% and %d%%", made.planUsage.shortWindowPercent, made.planUsage.weeklyPercent)
+	if !made.planUsage.isKnown || made.planUsage.primaryPercent != 12 || made.planUsage.secondaryPercent != 3 {
+		test.Errorf("it read %d%% and %d%%", made.planUsage.primaryPercent, made.planUsage.secondaryPercent)
 	}
 	// An answer that mentions only one window leaves the other as it was.
 	onlyShort := http.Header{}
 	onlyShort.Set("X-Codex-Primary-Used-Percent", "20")
 	made.notePlanUsage(onlyShort)
-	if made.planUsage.shortWindowPercent != 20 || made.planUsage.weeklyPercent != 3 {
-		test.Errorf("after one window it read %d%% and %d%%", made.planUsage.shortWindowPercent, made.planUsage.weeklyPercent)
+	if made.planUsage.primaryPercent != 20 || made.planUsage.secondaryPercent != 3 {
+		test.Errorf("after one window it read %d%% and %d%%", made.planUsage.primaryPercent, made.planUsage.secondaryPercent)
 	}
 	if _, isKnown := usedPercent(http.Header{}, "X-Codex-Secondary-Used-Percent"); isKnown {
 		test.Error("a missing header was read as a percentage")

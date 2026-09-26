@@ -21,7 +21,7 @@ import (
 // It is the same company and not the same service. The subscription behind
 // the Codex command line answers at another address, speaks the responses
 // protocol rather than chat completions, wants the account named in a
-// header, and bills against a plan's weekly allowance instead of credits.
+// header, and bills against a plan's secondary allowance instead of credits.
 // A key opens none of it and a sign-in opens nothing else, so it is its own
 // provider kind rather than a base address on the existing one.
 //
@@ -59,8 +59,8 @@ type codex struct {
 	// was used, so that a change is said once rather than on every answer.
 	planUsage struct {
 		sync.Mutex
-		shortWindowPercent int
-		weeklyPercent      int
+		primaryPercent int
+		secondaryPercent      int
 		isKnown            bool
 		hasSaidHeaders     bool
 	}
@@ -247,15 +247,16 @@ func (self *codex) post(ctx context.Context, body []byte) (*http.Response, error
 }
 
 // notePlanUsage reads how much of the plan's allowance is used, which the
-// service says on its answers: the primary window is the short one of a
-// few hours, the secondary the week. It is said in the log when either
-// moves by a whole percent, so an operator can see the reading spend the
-// week without opening anything. A window an answer does not mention keeps
-// what was last said of it, rather than reading as nothing used.
+// service says on its answers in two windows whose lengths it also says:
+// on a plan measured by the week, the primary window is the week. It is
+// said in the log when either moves by a whole percent, so an operator can
+// see the reading spend the allowance without opening anything. A window
+// an answer does not mention keeps what was last said of it, rather than
+// reading as nothing used.
 func (self *codex) notePlanUsage(header http.Header) {
-	shortWindow, isShortKnown := usedPercent(header, "X-Codex-Primary-Used-Percent")
-	weekly, isWeeklyKnown := usedPercent(header, "X-Codex-Secondary-Used-Percent")
-	if !isShortKnown && !isWeeklyKnown {
+	primary, isPrimaryKnown := usedPercent(header, "X-Codex-Primary-Used-Percent")
+	secondary, isSecondaryKnown := usedPercent(header, "X-Codex-Secondary-Used-Percent")
+	if !isPrimaryKnown && !isSecondaryKnown {
 		return
 	}
 	usage := &self.planUsage
@@ -273,20 +274,20 @@ func (self *codex) notePlanUsage(header http.Header) {
 		usage.hasSaidHeaders = true
 		log.Infof("the %s plan reports its usage in %s", config.AgentProviderKindCodex, strings.Join(names, ", "))
 	}
-	if !isShortKnown {
-		shortWindow = usage.shortWindowPercent
+	if !isPrimaryKnown {
+		primary = usage.primaryPercent
 	}
-	if !isWeeklyKnown {
-		weekly = usage.weeklyPercent
+	if !isSecondaryKnown {
+		secondary = usage.secondaryPercent
 	}
-	isChanged := !usage.isKnown || shortWindow != usage.shortWindowPercent || weekly != usage.weeklyPercent
-	usage.shortWindowPercent, usage.weeklyPercent, usage.isKnown = shortWindow, weekly, true
+	isChanged := !usage.isKnown || primary != usage.primaryPercent || secondary != usage.secondaryPercent
+	usage.primaryPercent, usage.secondaryPercent, usage.isKnown = primary, secondary, true
 	usage.Unlock()
 	if isChanged {
 		log.Noticef("the %s plan has used %d%% of its %s window and %d%% of its %s one (they reset in %s and %s)",
 			config.AgentProviderKindCodex,
-			shortWindow, windowOf(header, "X-Codex-Primary-Window-Minutes"),
-			weekly, windowOf(header, "X-Codex-Secondary-Window-Minutes"),
+			primary, windowOf(header, "X-Codex-Primary-Window-Minutes"),
+			secondary, windowOf(header, "X-Codex-Secondary-Window-Minutes"),
 			resetOf(header, "X-Codex-Primary-Reset-After-Seconds"), resetOf(header, "X-Codex-Secondary-Reset-After-Seconds"))
 	}
 }
