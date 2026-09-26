@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.66.0] - 2026-09-26
+
+### Added
+
+- An `agent.effort` setting: with `auto`, the agent judges each message and looks harder, with more reasoning and a research procedure, when the message deserves it, such as a problem to diagnose or a pushback on its last answer. (#173)
+
 ## [0.65.7] - 2026-09-26
 
 ### Changed
