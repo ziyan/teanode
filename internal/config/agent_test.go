@@ -135,18 +135,18 @@ func TestPricingForIgnoresTheWidthSuffix(t *testing.T) {
 	}
 }
 
-// A provider written under the kind's first name is read under its current
-// one, and so written back under it.
-func TestAFormerProviderKindIsReadUnderItsName(t *testing.T) {
+// A provider saved while the kind had another name is read under its
+// name, and so written back under it.
+func TestABriefProviderKindNameIsReadUnderItsName(t *testing.T) {
 	var providers []AgentProvider
-	written := "- name: plan\n  kind: openai-codex\n  refreshToken: a-refresh-token\n- name: keyed\n  kind: openai\n"
+	written := "- name: plan\n  kind: openai-oauth\n  refreshToken: a-refresh-token\n- name: keyed\n  kind: openai\n"
 	if err := yaml.Unmarshal([]byte(written), &providers); err != nil {
 		t.Fatal(err)
 	}
-	if providers[0].Kind != AgentProviderKindOAuth || providers[0].RefreshToken != "a-refresh-token" || providers[1].Kind != AgentProviderKindOpenAI {
+	if providers[0].Kind != AgentProviderKindCodex || providers[0].RefreshToken != "a-refresh-token" || providers[1].Kind != AgentProviderKindOpenAI {
 		t.Errorf("read as %+v", providers)
 	}
-	if CanonicalProviderKind("openai-codex") != "openai-oauth" || CanonicalProviderKind("gemini") != "gemini" {
+	if CanonicalProviderKind("openai-oauth") != "openai-codex" || CanonicalProviderKind("gemini") != "gemini" {
 		t.Error("the kind's names do not map")
 	}
 }

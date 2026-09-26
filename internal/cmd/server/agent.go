@@ -92,7 +92,7 @@ func (self *server) keepSignIns(registry *llm.Registry) {
 	})
 	self.onClose(self.store.Subscribe(func(configuration *config.Configuration) {
 		for _, provider := range configuration.Agent.Providers {
-			if provider.Kind == config.AgentProviderKindOAuth {
+			if provider.Kind == config.AgentProviderKindCodex {
 				registry.AdoptRefreshToken(provider.Name, provider.RefreshToken)
 			}
 		}

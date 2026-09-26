@@ -14,11 +14,11 @@ func TestSavingProvidersKeepsTheirCredentials(t *testing.T) {
 	configuration := &config.Configuration{}
 	configuration.Agent.Providers = []config.AgentProvider{
 		{Name: "keyed", Kind: config.AgentProviderKindOpenAI, APIKey: "a-key"},
-		{Name: "plan", Kind: config.AgentProviderKindOAuth, RefreshToken: "a-refresh-token", Account: "an-account"},
+		{Name: "plan", Kind: config.AgentProviderKindCodex, RefreshToken: "a-refresh-token", Account: "an-account"},
 	}
 	providers := []*AgentProviderParameters{
 		{Name: "keyed", Kind: config.AgentProviderKindOpenAI, Enabled: true},
-		{Name: "subscription", PreviousName: "plan", Kind: config.AgentProviderKindOAuth, Enabled: true, PricingInput: 1},
+		{Name: "subscription", PreviousName: "plan", Kind: config.AgentProviderKindCodex, Enabled: true, PricingInput: 1},
 	}
 	if err := applyAgentSettings(configuration, &AgentParameters{Providers: &providers}); err != nil {
 		t.Fatal(err)
@@ -33,7 +33,7 @@ func TestSavingProvidersKeepsTheirCredentials(t *testing.T) {
 
 	// Changing kind keeps only what the new kind takes.
 	providers = []*AgentProviderParameters{
-		{Name: "keyed", Kind: config.AgentProviderKindOAuth, Enabled: true},
+		{Name: "keyed", Kind: config.AgentProviderKindCodex, Enabled: true},
 		{Name: "subscription", Kind: config.AgentProviderKindOpenAI, Enabled: true},
 	}
 	if err := applyAgentSettings(configuration, &AgentParameters{Providers: &providers}); err != nil {
@@ -51,7 +51,7 @@ func TestAFinishedSignInIsSavedToItsProvider(t *testing.T) {
 	configuration := &config.Configuration{}
 	configuration.Agent.Providers = []config.AgentProvider{
 		{Name: "keyed", Kind: config.AgentProviderKindOpenAI, APIKey: "a-key"},
-		{Name: "plan", Kind: config.AgentProviderKindOAuth, RefreshToken: "the-old", Account: "the-old-account"},
+		{Name: "plan", Kind: config.AgentProviderKindCodex, RefreshToken: "the-old", Account: "the-old-account"},
 	}
 	signedIn := &llm.SignInResult{RefreshToken: "the-new", Account: "an-account"}
 	if err := keepSignIn(configuration, "plan", signedIn); err != nil {
@@ -67,7 +67,7 @@ func TestAFinishedSignInIsSavedToItsProvider(t *testing.T) {
 	if len(providers) != 3 || providers[1].RefreshToken != "the-new" || providers[1].Account != "an-account" {
 		t.Errorf("the existing provider was not signed in again: %+v", providers)
 	}
-	if created := providers[2]; created.Name != "another" || created.Kind != config.AgentProviderKindOAuth || !created.IsEnabled() || created.RefreshToken != "the-new" {
+	if created := providers[2]; created.Name != "another" || created.Kind != config.AgentProviderKindCodex || !created.IsEnabled() || created.RefreshToken != "the-new" {
 		t.Errorf("the new provider is %+v", created)
 	}
 	if providers[0].RefreshToken != "" || providers[0].APIKey != "a-key" {

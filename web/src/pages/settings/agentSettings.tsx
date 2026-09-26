@@ -645,7 +645,7 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
 
 // SIGNED_IN_KIND runs on a person's plan and is signed in to rather than
 // given a key.
-const SIGNED_IN_KIND = 'openai-oauth'
+const SIGNED_IN_KIND = 'openai-codex'
 
 function ProviderDialog({
   draft,

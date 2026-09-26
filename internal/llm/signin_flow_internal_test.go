@@ -13,7 +13,7 @@ import (
 // secret: that is the whole of what this grant buys, since a program anyone
 // can read cannot keep a client secret and so is given none.
 func TestTheSignInAsksWithAFingerprintOfItsSecret(test *testing.T) {
-	flow, err := BeginSignIn("openai-oauth")
+	flow, err := BeginSignIn("openai-codex")
 	if err != nil {
 		test.Skipf("port 1455 is not free here: %s", err)
 	}
@@ -55,14 +55,14 @@ func TestTheSignInAsksWithAFingerprintOfItsSecret(test *testing.T) {
 
 // Two sign-ins never share a secret or a state.
 func TestEverySignInInventsItsOwnSecret(test *testing.T) {
-	first, err := BeginSignIn("openai-oauth")
+	first, err := BeginSignIn("openai-codex")
 	if err != nil {
 		test.Skipf("port 1455 is not free here: %s", err)
 	}
 	verifier, state := first.verifier, first.state
 	first.Close()
 
-	second, err := BeginSignIn("openai-oauth")
+	second, err := BeginSignIn("openai-codex")
 	if err != nil {
 		test.Skipf("port 1455 did not come back: %s", err)
 	}
