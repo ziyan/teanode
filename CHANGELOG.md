@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.65.6] - 2026-09-26
+
+### Fixed
+
+- A large source type (a Gmail mailbox) keeps sending what it has read on every page of a pass, instead of reading again and sending nothing new when other sources share the computer. (#171)
+
 ## [0.65.5] - 2026-09-25
 
 ### Fixed
