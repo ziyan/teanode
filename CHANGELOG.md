@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.66.1] - 2026-09-26
+
+### Changed
+
+- A skill that runs a command on your computer no longer asks before every call. A fast model judges each call: lookups and local changes run, and anything that would speak for you to other people or cannot be undone still asks. What these judgements cost is now included in each turn's cost. (#174)
+
 ## [0.66.0] - 2026-09-26
 
 ### Added
