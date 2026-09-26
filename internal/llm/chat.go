@@ -96,7 +96,21 @@ type ChatRequest struct {
 	// call this round, for the round that has to end in words; empty
 	// leaves the choice to the model.
 	ToolChoice string
+
+	// ReasoningEffort is how hard a model that reasons should think before
+	// it answers: "low", "medium" or "high". Empty is the provider's own
+	// default, which for OpenAI's newer models with tools is no reasoning
+	// at all. Only providers that can take it with tools read it; the rest
+	// leave it out.
+	ReasoningEffort string
 }
+
+// Reasoning efforts a request may ask for.
+const (
+	EffortLow    = "low"
+	EffortMedium = "medium"
+	EffortHigh   = "high"
+)
 
 // ChatResponse is what the model answered.
 type ChatResponse struct {

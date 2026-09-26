@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -20,6 +21,10 @@ type openAI struct {
 	apiKey  string
 	client  *http.Client
 
+	// speaksResponses is whether the service has the Responses endpoint,
+	// which is OpenAI's own: a compatible server has chat completions only.
+	speaksResponses bool
+
 	mu          sync.Mutex
 	noReasoning map[string]bool
 	// systemFirst is the models whose chat template takes one system
@@ -35,7 +40,9 @@ func newOpenAI(baseUrl, apiKey string, client *http.Client) *openAI {
 	if baseUrl == "" {
 		baseUrl = openAIDefaultBaseURL
 	}
-	return &openAI{baseUrl: strings.TrimRight(baseUrl, "/"), apiKey: apiKey, client: client}
+	made := &openAI{baseUrl: strings.TrimRight(baseUrl, "/"), apiKey: apiKey, client: client}
+	made.speaksResponses = made.official()
+	return made
 }
 
 func (self *openAI) Kind() string { return "openai" }
@@ -257,6 +264,21 @@ type openAIResponse struct {
 }
 
 func (self *openAI) Chat(ctx context.Context, request *ChatRequest) (*ChatResponse, error) {
+	if self.reasonsThroughResponses(request) {
+		events, err := self.responses(ctx, request)
+		if err != nil {
+			return nil, err
+		}
+		for event := range events {
+			switch event.Kind {
+			case StreamError:
+				return nil, event.Err
+			case StreamDone:
+				return event.Response, nil
+			}
+		}
+		return nil, errors.New("llm: the model answered nothing")
+	}
 	var response openAIResponse
 	if self.wantsSystemFirst(request.Model) {
 		request = systemsMerged(request)
@@ -348,6 +370,9 @@ type openAIChunk struct {
 }
 
 func (self *openAI) ChatStream(ctx context.Context, request *ChatRequest) (<-chan StreamEvent, error) {
+	if self.reasonsThroughResponses(request) {
+		return self.responses(ctx, request)
+	}
 	if self.wantsSystemFirst(request.Model) {
 		request = systemsMerged(request)
 	}
@@ -529,4 +554,48 @@ func (self *openAI) Embed(ctx context.Context, request EmbedRequest) ([][]float3
 		usage = response.Usage.usage()
 	}
 	return vectors, usage, nil
+}
+
+// reasonsThroughResponses says whether a request goes to the Responses
+// endpoint rather than chat completions: one that asks for reasoning, to
+// OpenAI itself. Chat completions refuses function tools while a newer
+// model reasons, so every turn with tools went out with reasoning "none",
+// and the agent answered from the first thing a search turned up. The
+// Responses endpoint takes both.
+func (self *openAI) reasonsThroughResponses(request *ChatRequest) bool {
+	return request.ReasoningEffort != "" && self.speaksResponses
+}
+
+// responses sends a request to the Responses endpoint, in the same shape
+// the ChatGPT sign-in speaks, and reads the answer as it streams.
+func (self *openAI) responses(ctx context.Context, request *ChatRequest) (<-chan StreamEvent, error) {
+	wire := &codex{}
+	body, err := wire.encode(request)
+	if err != nil {
+		return nil, err
+	}
+	post, err := http.NewRequestWithContext(ctx, http.MethodPost, self.baseUrl+"/responses", strings.NewReader(string(body)))
+	if err != nil {
+		return nil, fmt.Errorf("llm: %w", err)
+	}
+	for key, value := range self.headers() {
+		post.Header.Set(key, value)
+	}
+	post.Header.Set("Content-Type", "application/json")
+	post.Header.Set("Accept", "text/event-stream")
+	answer, err := self.client.Do(post)
+	if err != nil {
+		return nil, fmt.Errorf("llm: %w", err)
+	}
+	if answer.StatusCode/100 != 2 {
+		defer func() { _ = answer.Body.Close() }()
+		return nil, wire.refused(answer)
+	}
+	events := make(chan StreamEvent, 16)
+	go func() {
+		defer close(events)
+		defer func() { _ = answer.Body.Close() }()
+		wire.read(answer, request.Model, events)
+	}()
+	return events, nil
 }
