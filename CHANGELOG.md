@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.67.3] - 2026-09-26
+
+### Changed
+
+- The provider kind for a ChatGPT plan is called `openai-oauth`. A configuration that says `openai-codex` keeps working and is saved under the new name. (#178)
+
 ## [0.67.2] - 2026-09-26
 
 ### Fixed
