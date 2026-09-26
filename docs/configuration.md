@@ -705,7 +705,8 @@ the subscription behind the Codex command line. It answers at a different
 address, speaks the responses protocol rather than chat completions, and
 bills against the plan's allowance instead of credits. It takes
 `refreshToken` and `account` and no `apiKey`, and it offers only the model
-that plan allows: every other name is refused outright.
+that plan allows: every other name is refused outright. It has no embeddings,
+so `models.embedding` still needs a keyed provider or a local one.
 
 **`email`** — Email is the destination address when kind is email.
 
@@ -1140,12 +1141,15 @@ than keyed, which at present means `openai-codex`. A secret, shown redacted
 and kept when a settings update leaves it blank.
 
 It is the long half of a pair: the server trades it for a short-lived access
-token before each run of requests, and never writes that token down. Sign in
-with the service's own tool and give the refresh token it hands back.
+token before each run of requests, and never writes that token down. The
+dashboard fills it in: Settings, Agent, Providers, a provider of kind
+`openai-codex`, and "Sign in with ChatGPT", which shows a one-time code to
+enter on OpenAI's page from any device. `teanode agent signin` gets one at a
+browser on the machine it runs on, for pasting here instead.
 
-Where the service rotates these, the one written here goes stale, and the
-server keeps the newer one for as long as it runs. Restarting after that
-means signing in again, which is why it is worth writing the newer one back.
+Where the service rotates these, the server writes the newer one back here, so
+the sign-in survives a restart; a new one written here is taken up by the
+running provider without a restart.
 
 **`account`** — Which of a signed-in person's accounts the work is billed
 to, where the service asks for it. Not a secret: it names an account, it

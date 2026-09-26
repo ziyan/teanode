@@ -2699,6 +2699,18 @@ body,
 /* Prices for particular models: a row per model, with the columns named
    once above them rather than four labels repeated down the dialog. The
    fields are the form's own; only the grid is here. */
+/* Signing a provider in to a plan: the steps, the page, and the one-time
+   code large enough to copy by eye onto another device. */
+.provider-sign-in {
+  margin-bottom: 10px;
+}
+
+.provider-sign-in-code {
+  font-size: 1.6rem;
+  letter-spacing: 0.12em;
+  user-select: all;
+}
+
 .priced-models {
   display: flex;
   flex-direction: column;

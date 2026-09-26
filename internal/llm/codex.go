@@ -27,7 +27,8 @@ import (
 // filter naming something else leaves the provider with nothing to offer.
 const (
 	codexBaseUrl  = "https://chatgpt.com/backend-api"
-	codexTokenUrl = "https://auth.openai.com/oauth/token"
+	codexIssuer   = "https://auth.openai.com"
+	codexTokenUrl = codexIssuer + "/oauth/token"
 
 	// The sign-in this speaks for. It is the Codex command line's own,
 	// because the allowance being spent is the one that command line is
@@ -49,6 +50,12 @@ type codex struct {
 	account string
 	signIn  *signIn
 	http    *http.Client
+
+	// doesTakeOutputLimit says the endpoint takes max_output_tokens. The
+	// keyed Responses endpoint does; the plan's refuses the whole request
+	// with "Unsupported parameter: max_output_tokens", so a turn that
+	// bounds its answer, which is every turn, would never be answered.
+	doesTakeOutputLimit bool
 }
 
 func newCodex(baseUrl, refreshToken, account string, client *http.Client) (*codex, error) {
@@ -62,19 +69,17 @@ func newCodex(baseUrl, refreshToken, account string, client *http.Client) (*code
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Minute}
 	}
-	// A rotated refresh token is kept for as long as the server runs and
-	// then lost, because nothing here writes the configuration: it may be
-	// a file somebody edits, a file something else manages, or a row in
-	// the database, and a provider guessing at which would be wrong in at
-	// least two of the three.
-	//
-	// So it is said instead, once, where an operator will see it. The cost
-	// of not saying it is a server that signs in perfectly well until it
+	// A rotated refresh token is kept for as long as the server runs, and
+	// nothing here writes the configuration: a provider does not know
+	// where its configuration lives. The registry that built it does, and
+	// replaces this with a write back (see Registry.KeepRefreshTokens).
+	// Without one it is said, where an operator will see it: the cost of
+	// not saying it is a server that signs in perfectly well until it
 	// restarts and then cannot, with nothing to connect the two.
 	signer.rotated = func(string) {
 		log.Warningf(
 			"the %s provider was given a new refresh token; the one in the configuration is now stale "+
-				"and will not work after a restart. Run \"teanode agent signin\" and put the new one in.",
+				"and will not work after a restart. Sign in again from the dashboard.",
 			config.AgentProviderKindCodex)
 	}
 
@@ -84,6 +89,25 @@ func newCodex(baseUrl, refreshToken, account string, client *http.Client) (*code
 		signIn:  signer,
 		http:    client,
 	}, nil
+}
+
+// adoptRefreshToken takes a refresh token from a new sign-in or a written
+// back rotation; see signIn.adopt.
+func (self *codex) adoptRefreshToken(refreshToken string) {
+	self.signIn.adopt(refreshToken)
+}
+
+// onRotated replaces what is done with a rotated refresh token. It is
+// called with the sign-in held, so it must not wait on the sign-in.
+func (self *codex) onRotated(rotated func(refreshToken string)) {
+	self.signIn.mutex.Lock()
+	defer self.signIn.mutex.Unlock()
+	self.signIn.rotated = rotated
+}
+
+// refreshToken is the refresh token held now.
+func (self *codex) refreshToken() string {
+	return self.signIn.current()
 }
 
 func (self *codex) Kind() string {

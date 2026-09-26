@@ -14,6 +14,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/ziyan/teanode/internal/config"
 )
 
 // Signing in for the first time, to get the refresh token everything else
@@ -182,14 +184,20 @@ func (self *SignInFlow) Wait(ctx context.Context) (*SignInResult, error) {
 
 // redeem trades the code for tokens.
 func (self *SignInFlow) redeem(ctx context.Context, code string) (*SignInResult, error) {
+	return redeemCode(ctx, self.tokenUrl, self.clientId, code, signInRedirect, self.verifier)
+}
+
+// redeemCode trades an authorization code for tokens: the last step of a
+// sign-in at a browser and of one with a code typed on another device.
+func redeemCode(ctx context.Context, tokenUrl, clientId, code, redirect, verifier string) (*SignInResult, error) {
 	form := url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
-		"redirect_uri":  {signInRedirect},
-		"client_id":     {self.clientId},
-		"code_verifier": {self.verifier},
+		"redirect_uri":  {redirect},
+		"client_id":     {clientId},
+		"code_verifier": {verifier},
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, self.tokenUrl, strings.NewReader(form.Encode()))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenUrl, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("llm: %w", err)
 	}
@@ -266,8 +274,8 @@ func accountOfToken(token string) (account, plan string) {
 // signInEndpoints is where a kind signs in.
 func signInEndpoints(kind string) (clientId, tokenUrl, authorizeUrl string, err error) {
 	switch kind {
-	case "openai-codex":
-		return codexClientId, codexTokenUrl, "https://auth.openai.com/oauth/authorize", nil
+	case config.AgentProviderKindCodex:
+		return codexClientId, codexTokenUrl, codexIssuer + "/oauth/authorize", nil
 	}
 	return "", "", "", fmt.Errorf("llm: %q is not a provider kind that signs in", kind)
 }

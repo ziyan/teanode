@@ -569,7 +569,7 @@ func (self *openAI) reasonsThroughResponses(request *ChatRequest) bool {
 // responses sends a request to the Responses endpoint, in the same shape
 // the ChatGPT sign-in speaks, and reads the answer as it streams.
 func (self *openAI) responses(ctx context.Context, request *ChatRequest) (<-chan StreamEvent, error) {
-	wire := &codex{}
+	wire := &codex{doesTakeOutputLimit: true}
 	body, err := wire.encode(request)
 	if err != nil {
 		return nil, err

@@ -261,3 +261,72 @@ func asSignInError(err error, target **SignInError) bool {
 	}
 	return false
 }
+
+// A refresh token given from outside replaces the one held and the access
+// token it bought; the one already held changes nothing.
+func TestAGivenRefreshTokenIsAdopted(test *testing.T) {
+	test.Parallel()
+
+	var mutex sync.Mutex
+	var askedWith []string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		form, _ := url.ParseQuery(string(body))
+		mutex.Lock()
+		askedWith = append(askedWith, form.Get("refresh_token"))
+		mutex.Unlock()
+		_, _ = io.WriteString(writer, `{"access_token":"an-access-token","expires_in":3600}`)
+	}))
+	defer server.Close()
+
+	signer, err := newSignIn(server.URL, "a-client", "the-first", server.Client())
+	if err != nil {
+		test.Fatalf("newSignIn: %s", err)
+	}
+	if _, err := signer.token(context.Background()); err != nil {
+		test.Fatal(err)
+	}
+	signer.adopt("the-first")
+	if _, err := signer.token(context.Background()); err != nil {
+		test.Fatal(err)
+	}
+	signer.adopt("the-second")
+	if _, err := signer.token(context.Background()); err != nil {
+		test.Fatal(err)
+	}
+	if strings.Join(askedWith, ",") != "the-first,the-second" {
+		test.Errorf("it signed in with %v", askedWith)
+	}
+}
+
+// A rotated refresh token is handed to whoever keeps the configuration, by
+// the provider's name, without holding up the refresh that received it.
+func TestARotatedRefreshTokenIsHandedOnToKeep(test *testing.T) {
+	test.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(writer, `{"access_token":"an-access-token","refresh_token":"the-rotated","expires_in":3600}`)
+	}))
+	defer server.Close()
+
+	signer, err := newSignIn(server.URL, "a-client", "the-first", server.Client())
+	if err != nil {
+		test.Fatalf("newSignIn: %s", err)
+	}
+	registry := &Registry{providers: map[string]*providerEntry{"plan": {service: &codex{signIn: signer}}}}
+	kept := make(chan string, 1)
+	registry.KeepRefreshTokens(func(provider, refreshToken string) {
+		kept <- provider + "=" + refreshToken
+	})
+	if _, err := signer.token(context.Background()); err != nil {
+		test.Fatal(err)
+	}
+	select {
+	case said := <-kept:
+		if said != "plan=the-rotated" {
+			test.Errorf("it kept %q", said)
+		}
+	case <-time.After(5 * time.Second):
+		test.Fatal("the rotated refresh token was never handed on")
+	}
+}

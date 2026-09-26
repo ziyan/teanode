@@ -145,10 +145,10 @@ type AgentProvider struct {
 	// than keyed: the long half of the pair, traded for a short-lived
 	// access token before each run of requests. A secret.
 	//
-	// Where the service rotates these, the one here goes stale and the
-	// server keeps the newer one for as long as it runs. An operator who
-	// restarts after that signs in again, which is why what it gives is
-	// worth writing back here.
+	// Where the service rotates these, the server writes the newer one
+	// back here, so the sign-in survives a restart; a new one given here
+	// is taken up by the running provider without one. Signing in from
+	// the dashboard fills it in.
 	RefreshToken string `yaml:"refreshToken,omitempty" secret:"true"`
 
 	// Account names which of a signed-in person's accounts the work is

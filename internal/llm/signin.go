@@ -110,6 +110,29 @@ func (self *signIn) forget() {
 	self.expires = time.Time{}
 }
 
+// adopt takes a refresh token given from outside -- a new sign-in, or the
+// one this server wrote back after a rotation -- and drops the access token
+// the old one bought, which may belong to another account. The one already
+// held is left alone, access token and all.
+func (self *signIn) adopt(refresh string) {
+	refresh = strings.TrimSpace(refresh)
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if refresh == "" || refresh == self.refresh {
+		return
+	}
+	self.refresh = refresh
+	self.access = ""
+	self.expires = time.Time{}
+}
+
+// current is the refresh token held now, the newest a rotation gave.
+func (self *signIn) current() string {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.refresh
+}
+
 // fetch trades the refresh token for an access token. The mutex is held.
 func (self *signIn) fetch(ctx context.Context) (string, error) {
 	form := url.Values{

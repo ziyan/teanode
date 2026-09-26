@@ -77,7 +77,8 @@ func TestAConversationBecomesResponseItems(test *testing.T) {
 	if !body.Stream {
 		test.Error("the protocol streams, and it did not ask to")
 	}
-	if body.MaxTokens != 256 || body.Temperature == nil || *body.Temperature != 0.5 {
+	// No output limit: the plan's endpoint refuses one.
+	if body.MaxTokens != 0 || body.Temperature == nil || *body.Temperature != 0.5 {
 		test.Errorf("the bounds came out %d %v", body.MaxTokens, body.Temperature)
 	}
 
@@ -291,4 +292,24 @@ func TestARotationIsReportedByTheProvider(test *testing.T) {
 	// It says something rather than panicking on a nil logger or writing
 	// the token out, which would put a secret in the log.
 	made.signIn.rotated("the-next-one")
+}
+
+// The plan's endpoint refuses an output limit and the keyed one takes it,
+// so only the keyed one is sent it.
+func TestOnlyTheKeyedEndpointIsSentAnOutputLimit(test *testing.T) {
+	request := &ChatRequest{Model: "gpt-5.5", MaxTokens: 8000, Messages: []ChatMessage{{Role: RoleUser, Content: "hello"}}}
+	onPlan, err := (&codex{}).encode(request)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if strings.Contains(string(onPlan), "max_output_tokens") {
+		test.Errorf("the plan's endpoint was sent a limit: %s", onPlan)
+	}
+	keyed, err := (&codex{doesTakeOutputLimit: true}).encode(request)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(string(keyed), `"max_output_tokens":8000`) {
+		test.Errorf("the keyed endpoint was not sent the limit: %s", keyed)
+	}
 }
