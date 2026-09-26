@@ -1003,7 +1003,7 @@ func startupOnly(configuration *config.Configuration) map[string]any {
 		// these; a provider, a key or a model changed on the settings page
 		// waits for a restart, and the page says so.
 		"agent.enabled":   configuration.Agent.Enabled,
-		"agent.providers": configuration.Agent.Providers,
+		"agent.providers": withoutRefreshTokens(configuration.Agent.Providers),
 		"agent.models":    configuration.Agent.Models,
 		// The worker sizes its slots once, when it starts. Raising the
 		// number to let an ingest run beside a dream did nothing until a
@@ -1023,6 +1023,19 @@ func startupOnly(configuration *config.Configuration) map[string]any {
 		// asking, because the pending list is only ever appended to.
 		"upgrade.checkInterval": configuration.Upgrade.CheckInterval,
 	}
+}
+
+// withoutRefreshTokens is the providers as a restart would see them change.
+// A signed-in provider's refresh token is left out: the running provider
+// adopts a new one (see keepSignIns), and a service that rotates it on every
+// refresh would otherwise ask for a restart every hour.
+func withoutRefreshTokens(providers []config.AgentProvider) []config.AgentProvider {
+	copied := make([]config.AgentProvider, len(providers))
+	for index, provider := range providers {
+		provider.RefreshToken = ""
+		copied[index] = provider
+	}
+	return copied
 }
 
 // warnOnStartupOnlyChanges says which of those changed, once per change.

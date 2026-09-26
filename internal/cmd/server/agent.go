@@ -47,6 +47,7 @@ func (self *server) openAgentWorker(configuration *config.Configuration) error {
 		return nil
 	}
 	self.agentRegistry = registry
+	self.keepSignIns(registry)
 	self.agentWorker = agent.New(&agent.Settings{
 		Database:      self.database,
 		Storage:       self.storage,
@@ -67,6 +68,35 @@ func (self *server) openAgentWorker(configuration *config.Configuration) error {
 	channels.Start()
 	self.onClose(channels.Stop)
 	return nil
+}
+
+// keepSignIns ties the signed-in providers' refresh tokens to the
+// configuration both ways: a token the service rotates is written back, so
+// the sign-in survives a restart, and a token the configuration is given --
+// a new sign-in from the dashboard -- is adopted by the running provider.
+func (self *server) keepSignIns(registry *llm.Registry) {
+	registry.KeepRefreshTokens(func(provider, refreshToken string) {
+		err := self.store.Update(func(configuration *config.Configuration) error {
+			for index := range configuration.Agent.Providers {
+				if configuration.Agent.Providers[index].Name == provider {
+					configuration.Agent.Providers[index].RefreshToken = refreshToken
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			log.Warningf("the %s provider was given a new refresh token and it could not be kept; it will need signing in again after a restart: %s", provider, err)
+			return
+		}
+		log.Noticef("kept the new refresh token of the %s provider", provider)
+	})
+	self.onClose(self.store.Subscribe(func(configuration *config.Configuration) {
+		for _, provider := range configuration.Agent.Providers {
+			if provider.Kind == config.AgentProviderKindCodex {
+				registry.AdoptRefreshToken(provider.Name, provider.RefreshToken)
+			}
+		}
+	}))
 }
 
 // agentService is the worker as the API sees it: nil when agents are off,

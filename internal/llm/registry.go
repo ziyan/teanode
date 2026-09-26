@@ -91,6 +91,49 @@ func Open(configuration *config.Agent) (*Registry, error) {
 	return registry, nil
 }
 
+// signedInService is a provider that holds a refresh token rather than a key.
+type signedInService interface {
+	adoptRefreshToken(refreshToken string)
+	onRotated(rotated func(refreshToken string))
+	refreshToken() string
+}
+
+// AdoptRefreshToken hands a signed-in provider a refresh token the
+// configuration now holds: a new sign-in, or a rotation written back. The
+// one it already holds changes nothing.
+func (self *Registry) AdoptRefreshToken(provider, refreshToken string) {
+	entry := self.providers[provider]
+	if entry == nil {
+		return
+	}
+	if signer, isSignedIn := entry.service.(signedInService); isSignedIn {
+		signer.adoptRefreshToken(refreshToken)
+	}
+}
+
+// KeepRefreshTokens has every signed-in provider hand a rotated refresh
+// token to keep, by the provider's name, so that whoever holds the
+// configuration can write it down. It is called on a goroutine of its own,
+// with the newest token the provider holds by then: a rotation arrives in
+// the middle of a refresh, which must not wait on a write.
+func (self *Registry) KeepRefreshTokens(keep func(provider, refreshToken string)) {
+	var serialized sync.Mutex
+	for name, entry := range self.providers {
+		signer, isSignedIn := entry.service.(signedInService)
+		if !isSignedIn {
+			continue
+		}
+		name := name
+		signer.onRotated(func(string) {
+			go func() {
+				serialized.Lock()
+				defer serialized.Unlock()
+				keep(name, signer.refreshToken())
+			}()
+		})
+	}
+}
+
 // Configuration is what the registry was built from.
 func (self *Registry) Configuration() *config.Agent {
 	return &self.configuration
