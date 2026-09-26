@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.67.0] - 2026-09-26
+
+### Added
+
+- Sign in to a ChatGPT plan from the dashboard: add a provider of kind `openai-codex` and choose "Sign in with ChatGPT" to get a one-time code to enter on OpenAI's page from any device. The agent then runs on the plan instead of an API key (embeddings still need a keyed or local provider). (#175)
+
+### Fixed
+
+- Saving the providers from the dashboard no longer signs an `openai-codex` provider out, and a refresh token the service rotates is kept across restarts. (#175)
+- Turns on an `openai-codex` provider were refused with "Unsupported parameter: max_output_tokens"; they are answered again. (#175)
+
 ## [0.66.1] - 2026-09-26
 
 ### Changed
