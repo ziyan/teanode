@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.65.7] - 2026-09-26
+
+### Changed
+
+- The agent answers how-to and can-it-be-done questions from what your sources say when its memory has only related facts, and files answered questions from chat as how-tos for next time. (#172)
+
 ## [0.65.6] - 2026-09-26
 
 ### Fixed
