@@ -59,10 +59,10 @@ type codex struct {
 	// was used, so that a change is said once rather than on every answer.
 	planUsage struct {
 		sync.Mutex
-		primaryPercent int
-		secondaryPercent      int
-		isKnown            bool
-		hasSaidHeaders     bool
+		primaryPercent   int
+		secondaryPercent int
+		isKnown          bool
+		hasSaidHeaders   bool
 	}
 
 	// isNoReasoningRefused is set once the plan has refused an effort of
