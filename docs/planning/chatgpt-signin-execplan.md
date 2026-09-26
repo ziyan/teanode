@@ -10,13 +10,14 @@ After this change, the operator opens Settings, Agent, Providers and adds a prov
 
 ## Progress
 
-- [ ] Settings keep a signed-in provider's refresh token and account through a save from the dashboard, show whether it is signed in, offer the kind, and list its models.
-- [ ] A rotated refresh token is written back to the configuration, and a changed one is adopted by the running provider without a restart.
-- [ ] Device-code sign-in in `internal/llm` (request a code, wait for it, redeem it).
-- [ ] GraphQL mutations to begin and finish a sign-in for a named provider, needing `server:manage`.
-- [ ] Dashboard: the kind in the provider dialog, a sign-in button showing the code and link, the row saying who is signed in.
-- [ ] Docs: configuration, command line, a note on embeddings.
-- [ ] End to end on the development server with a real plan.
+- [x] (2026-09-26) Settings keep a signed-in provider's refresh token and account through a save from the dashboard, show whether it is signed in, offer the kind, and list its models.
+- [x] (2026-09-26) A rotated refresh token is written back to the configuration, and a changed one is adopted by the running provider without a restart.
+- [x] (2026-09-26) Device-code sign-in in `internal/llm` (request a code, wait for it, redeem it).
+- [x] (2026-09-26) GraphQL mutations to begin and finish a sign-in for a named provider, needing `server:manage`.
+- [x] (2026-09-26) Dashboard: the kind in the provider dialog, a sign-in button showing the code and link, the row saying who is signed in.
+- [x] (2026-09-26) Docs: configuration, a note on embeddings.
+- [x] (2026-09-26) End to end on the development server with a real plan: signed in with a code through the mutations, restarted to load the new provider, the server wrote back the first rotated refresh token a minute later, and a turn on `chatgpt:gpt-5.5` was answered.
+- [ ] The dialog itself, clicked through in a browser (the browser session was stuck at a narrow window; the mutations it calls were exercised directly).
 
 ## Surprises & Discoveries
 
@@ -24,6 +25,9 @@ After this change, the operator opens Settings, Agent, Providers and adds a prov
   Evidence: `"agent.providers": configuration.Agent.Providers` in the startup-only list.
 - Observation: the Codex command line has a device-code sign-in for machines without a browser, against the same client.
   Evidence: the binary names `/api/accounts/deviceauth/usercode`, `/deviceauth/token`, `/deviceauth/callback` and `/codex/device`, and says "device code login is not enabled" when the account has not allowed it.
+
+- Observation: the plan's endpoint refuses `max_output_tokens`, which every turn has sent since turns were bounded by effort, so no turn on the plan was answered.
+  Evidence: "the provider answered 400: Unsupported parameter: max_output_tokens". Only the keyed Responses endpoint is sent the limit now.
 
 ## Decision Log
 
@@ -39,7 +43,7 @@ After this change, the operator opens Settings, Agent, Providers and adds a prov
 
 ## Outcomes & Retrospective
 
-(To be written.)
+An operator can sign a provider in to a ChatGPT plan without editing configuration, and the sign-in survives dashboard saves, rotations and restarts. Adding a new provider still waits for a restart, as every provider does; a new sign-in to an existing one does not. The plan offers one model and no embeddings.
 
 ## Context and Orientation
 
