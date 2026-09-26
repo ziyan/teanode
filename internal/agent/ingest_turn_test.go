@@ -84,3 +84,20 @@ func TestASourceThatCouldNotReachItsComputerTriesAgainSoon(t *testing.T) {
 		}
 	}
 }
+
+// An evaluation answered by the agent itself names its effort after an @.
+func TestAnAgentAnswerNamesItsEffort(t *testing.T) {
+	for answerFrom, want := range map[string]struct {
+		effort            string
+		research, isAgent bool
+	}{
+		"agent": {"", false, true}, "agent@high": {"high", false, true}, "agent@low": {"low", false, true},
+		"agent+research": {"", true, true}, "agent@medium+research": {"medium", true, true},
+		"agent@loud": {"", false, false}, "memory": {"", false, false}, "both": {"", false, false},
+	} {
+		effort, research, isAgent := agentEffortOf(answerFrom)
+		if effort != want.effort || research != want.research || isAgent != want.isAgent {
+			t.Errorf("%s: %q %v %v", answerFrom, effort, research, isAgent)
+		}
+	}
+}

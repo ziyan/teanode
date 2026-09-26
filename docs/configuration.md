@@ -1077,6 +1077,14 @@ service is ever contacted and nothing below is constructed.
 this server, read after the fixed conduct and before a person's own —
 "this is a school; never answer a parent automatically".
 
+**`effort`** — How hard a turn somebody typed thinks and looks before it
+answers: empty for the model's own default, `low`, `medium` or `high` for
+every turn alike, or `auto` for a model to judge each message with the
+conversation before it. A thanks is answered at once, a question about how
+their own systems work is researched, and a pushback on the last answer or a
+request for care gets the most.
+Runs with nobody present keep their own.
+
 **`providers`** — The model services this server may call, one entry each.
 
 **`models`** — Which model does which work.

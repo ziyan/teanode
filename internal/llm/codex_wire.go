@@ -30,6 +30,13 @@ type codexRequest struct {
 	MaxTokens    int          `json:"max_output_tokens,omitempty"`
 	Temperature  *float64     `json:"temperature,omitempty"`
 	Text         *codexFormat `json:"text,omitempty"`
+
+	Reasoning *codexReasoning `json:"reasoning,omitempty"`
+}
+
+// codexReasoning is how hard the model thinks before it answers.
+type codexReasoning struct {
+	Effort string `json:"effort"`
 }
 
 type codexFormat struct {
@@ -80,6 +87,11 @@ func (self *codex) encode(request *ChatRequest) ([]byte, error) {
 		Stream:      true,
 		MaxTokens:   request.MaxTokens,
 		Temperature: request.Temperature,
+	}
+	if request.ReasoningEffort != "" {
+		body.Reasoning = &codexReasoning{Effort: request.ReasoningEffort}
+		// A model that reasons takes no temperature.
+		body.Temperature = nil
 	}
 	if request.JSONObject {
 		body.Text = &codexFormat{}

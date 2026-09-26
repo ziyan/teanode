@@ -1,0 +1,25 @@
+Before {{.AgentName}} answers {{.PersonName}}, decide how much looking into their newest message deserves: how much {{.PersonName}} would want their assistant to search, read and think before it answers.
+
+{{if .Recent}}## The conversation so far, newest last
+
+<conversation>
+{{range .Recent}}{{.}}
+{{end}}</conversation>
+
+{{end}}## Their newest message
+
+<message>
+{{.Message}}
+</message>
+
+## How to decide
+
+- `answer`: nothing needs finding. A thanks, a greeting, small talk, an instruction to carry out, or a question the conversation above already answers.
+- `look`: a question about their own work, life or things with one clear answer that their notes or a single search most likely hold.
+- `dig`: they would want it looked into properly. How or why something works in their own systems or projects, a problem to diagnose, a decision to weigh, evidence to gather from several places; or the last answer was wrong, thin or not what they asked, and they are pushing back; or they ask, in any words, for more care, depth or a second look.
+
+When you are unsure between two, choose the deeper one: a careful answer to a quick question costs a little time, and a quick answer to a question that needed care costs their trust.
+
+Answer with this JSON object and nothing else:
+
+{"depth": "answer", "reason": "one short sentence"}

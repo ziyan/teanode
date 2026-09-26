@@ -100,6 +100,17 @@ type AskSettings struct {
 	CanAsk    bool
 	UsageKind string
 
+	// Effort is how hard the model thinks before each round: "low",
+	// "medium" or "high", or empty for the provider's default, which for
+	// a newer model with tools is no reasoning at all.
+	Effort string
+
+	// Research gives the turn a procedure for answering a question about
+	// the person's own work: search more than once and everywhere, read
+	// the whole thread, prefer what their people wrote over what is
+	// generally true, and say where the sources do not answer.
+	Research bool
+
 	// Work is the kind of work this turn is, which chooses the model: a
 	// dream runs on the operator's scan model, sorting on the triage one.
 	// Empty means the person's own choice, or the ask model, which is
@@ -188,6 +199,10 @@ type Event struct {
 
 // AskRun is one turn in flight.
 type AskRun struct {
+	// depthNote is what the judgement of this message said, written under
+	// the message once it is stored; see chooseDepth.
+	depthNote string
+
 	ID       string
 	settings *AskSettings
 	agent    *Agent
@@ -624,6 +639,7 @@ func (self *AskRun) loop() {
 			return
 		}
 	}
+	self.chooseDepth()
 	if err := self.turn(); err != nil {
 		if errors.Is(err, context.Canceled) {
 			// Said in the transcript too, so that the words cut short
@@ -692,6 +708,9 @@ func (self *AskRun) turn() error {
 			return err
 		}
 		savedTurn = saved
+		if err := self.sayDepth(tx); err != nil {
+			return err
+		}
 		_, err = tx.UpdateAgentConversation(settings.Conversation.ID, func(conversation *models.AgentConversation) error {
 			conversation.LastAt = time.Now()
 			if conversation.Surface == "" {
@@ -899,7 +918,7 @@ func (self *AskRun) turn() error {
 			toolChoice = "none"
 		}
 
-		response, err := self.chat(ctx, provider, &llm.ChatRequest{Model: model, Messages: messages, Tools: definitions, MaxTokens: 4000, ToolChoice: toolChoice})
+		response, err := self.chat(ctx, provider, &llm.ChatRequest{Model: model, Messages: messages, Tools: definitions, MaxTokens: roundTokens(settings.Effort), ToolChoice: toolChoice, ReasoningEffort: settings.Effort})
 		if response != nil {
 			self.usage = self.usage.Add(response.Usage)
 			RecordUsage(self.agent.settings.Database, settings.Agent.ID, "", modelName, usageKind, response.Usage)
@@ -1405,6 +1424,8 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 		"Self":      self.promptData.self,
 		"Guidance":  guidance,
 		"Deferred":  deferredLines,
+		// A turn asked to research gets a procedure for it; see Research.
+		"Researching": settings.Research,
 	})
 }
 
@@ -1801,4 +1822,19 @@ func calledIn(history []llm.ChatMessage) map[string]bool {
 		}
 	}
 	return called
+}
+
+// roundTokens is how much one round may write. Reasoning is written too,
+// and counted against the same bound, so a round that thinks hard is
+// given room to think and still answer.
+func roundTokens(effort string) int {
+	switch effort {
+	case llm.EffortLow:
+		return 8000
+	case llm.EffortMedium:
+		return 16000
+	case llm.EffortHigh:
+		return 32000
+	}
+	return 4000
 }

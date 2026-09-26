@@ -100,6 +100,10 @@ type AskAgentRequest struct {
 	Surface        string
 	AttachmentIDs  []string
 	References     []AgentReference
+
+	// Effort is how hard the model thinks: low, medium or high; empty
+	// leaves it to the agent.
+	Effort string
 }
 
 // AgentToolCall is a tool the model asked for.
@@ -171,8 +175,8 @@ const todoFields = `{ id conversationId text createdAt doneAt }`
 
 // The documents.
 const (
-	DocumentAskAgent = `mutation ($conversationId: String, $message: String!, $surface: String, $readOnly: Boolean, $attachmentIds: [String!], $references: [AgentReferenceInput!]) {
-		AskAgent(conversationId: $conversationId, message: $message, surface: $surface, readOnly: $readOnly, attachmentIds: $attachmentIds, references: $references) { runId conversationId }
+	DocumentAskAgent = `mutation ($conversationId: String, $message: String!, $surface: String, $readOnly: Boolean, $attachmentIds: [String!], $references: [AgentReferenceInput!], $effort: String) {
+		AskAgent(conversationId: $conversationId, message: $message, surface: $surface, readOnly: $readOnly, attachmentIds: $attachmentIds, references: $references, effort: $effort) { runId conversationId }
 	}`
 	DocumentReadAgentRun = `query ($runId: String!, $after: Int, $wait: Int) {
 		ReadAgentRun(runId: $runId, after: $after, wait: $wait) { runId done events { kind runId sequence text tool callId arguments risk note error at } }
@@ -224,6 +228,9 @@ func AskAgentWith(ctx context.Context, connection *Client, request *AskAgentRequ
 	}
 	if len(request.References) > 0 {
 		variables["references"] = request.References
+	}
+	if request.Effort != "" {
+		variables["effort"] = request.Effort
 	}
 	if err := connection.executeAllowed(ctx, DocumentAskAgent, variables, &result); err != nil {
 		return nil, err

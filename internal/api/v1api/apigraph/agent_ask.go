@@ -14,6 +14,7 @@ import (
 	agenttools "github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -190,6 +191,10 @@ type AskAgentArguments struct {
 	// threads the person pointed at.
 	AttachmentIDs []string                `json:"attachmentIds" graphapi:"nullable"`
 	References    []models.AgentReference `json:"references" graphapi:"nullable"`
+
+	// Effort is how hard the model thinks before it answers: low, medium
+	// or high. Empty leaves it to the agent.
+	Effort string `json:"effort" graphapi:"nullable"`
 }
 
 // AgentTurnView is the run to follow.
@@ -732,6 +737,11 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 	if surface == "" {
 		surface = "drawer"
 	}
+	switch arguments.Effort {
+	case "", llm.EffortLow, llm.EffortMedium, llm.EffortHigh:
+	default:
+		return nil, fmt.Errorf("%w: effort is low, medium or high", api.ErrInvalidArguments)
+	}
 	// The files, which must be this agent's own and not yet another
 	// turn's.
 	attachments, err := tx.GetAgentAttachments(arguments.AttachmentIDs)
@@ -757,6 +767,7 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 		ReadOnly:     arguments.ReadOnly,
 		Attachments:  attachments,
 		References:   arguments.References,
+		Effort:       arguments.Effort,
 	})
 	if err != nil {
 		return nil, translateError(err)
