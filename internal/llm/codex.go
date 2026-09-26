@@ -283,9 +283,11 @@ func (self *codex) notePlanUsage(header http.Header) {
 	usage.shortWindowPercent, usage.weeklyPercent, usage.isKnown = shortWindow, weekly, true
 	usage.Unlock()
 	if isChanged {
-		log.Noticef("the %s plan has used %d%% of its short window and %d%% of its week (resets %s and %s)",
-			config.AgentProviderKindCodex, shortWindow, weekly,
-			resetOf(header, "X-Codex-Primary-Reset-At"), resetOf(header, "X-Codex-Secondary-Reset-At"))
+		log.Noticef("the %s plan has used %d%% of its %s window and %d%% of its %s one (they reset in %s and %s)",
+			config.AgentProviderKindCodex,
+			shortWindow, windowOf(header, "X-Codex-Primary-Window-Minutes"),
+			weekly, windowOf(header, "X-Codex-Secondary-Window-Minutes"),
+			resetOf(header, "X-Codex-Primary-Reset-After-Seconds"), resetOf(header, "X-Codex-Secondary-Reset-After-Seconds"))
 	}
 }
 
@@ -298,13 +300,22 @@ func usedPercent(header http.Header, name string) (int, bool) {
 	return int(value), true
 }
 
-// resetOf reads when a window resets, given in seconds since the epoch.
+// resetOf reads how long until a window resets, given in seconds.
 func resetOf(header http.Header, name string) string {
-	seconds, err := strconv.ParseInt(strings.TrimSpace(header.Get(name)), 10, 64)
-	if err != nil || seconds <= 0 {
-		return "at a time not said"
+	seconds, err := strconv.ParseFloat(strings.TrimSpace(header.Get(name)), 64)
+	if err != nil || seconds < 0 {
+		return "a time not said"
 	}
-	return time.Unix(seconds, 0).Format("Mon 15:04")
+	return time.Duration(seconds * float64(time.Second)).Round(time.Minute).String()
+}
+
+// windowOf reads how long a window is, given in minutes.
+func windowOf(header http.Header, name string) string {
+	minutes, err := strconv.ParseFloat(strings.TrimSpace(header.Get(name)), 64)
+	if err != nil || minutes <= 0 {
+		return "unsaid"
+	}
+	return time.Duration(minutes * float64(time.Minute)).String()
 }
 
 // refused turns a non-2xx into an error carrying what the service said.

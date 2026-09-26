@@ -378,3 +378,20 @@ func TestAPlanThatMustReasonIsAskedForLittle(test *testing.T) {
 		test.Errorf("it asked for %v", efforts)
 	}
 }
+
+// How long a window is and when it resets are read as the service says
+// them: minutes for the one, seconds from now for the other.
+func TestAPlanWindowSaysItsLengthAndReset(test *testing.T) {
+	header := http.Header{}
+	header.Set("X-Codex-Primary-Window-Minutes", "300")
+	header.Set("X-Codex-Primary-Reset-After-Seconds", "7260")
+	if got := windowOf(header, "X-Codex-Primary-Window-Minutes"); got != "5h0m0s" {
+		test.Errorf("the window read %q", got)
+	}
+	if got := resetOf(header, "X-Codex-Primary-Reset-After-Seconds"); got != "2h1m0s" {
+		test.Errorf("the reset read %q", got)
+	}
+	if got := resetOf(header, "X-Codex-Secondary-Reset-After-Seconds"); got != "a time not said" {
+		test.Errorf("a missing reset read %q", got)
+	}
+}
