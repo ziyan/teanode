@@ -90,8 +90,17 @@ func (self *codex) encode(request *ChatRequest) ([]byte, error) {
 	if self.doesTakeOutputLimit {
 		body.MaxTokens = request.MaxTokens
 	}
-	if request.ReasoningEffort != "" {
-		body.Reasoning = &codexReasoning{Effort: request.ReasoningEffort}
+	effort := request.ReasoningEffort
+	if effort == "" && !self.doesTakeOutputLimit {
+		// The plan's endpoint reasons unless told not to, where a keyed
+		// request that says nothing is sent "none". Left unsaid, every
+		// call of a night reasoned first: three times the output, two to
+		// three times as long, and the allowance spent on thinking nobody
+		// asked for.
+		effort = self.unaskedEffort()
+	}
+	if effort != "" {
+		body.Reasoning = &codexReasoning{Effort: effort}
 		// A model that reasons takes no temperature.
 		body.Temperature = nil
 	}

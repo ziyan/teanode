@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ziyan/teanode/internal/config"
@@ -50,6 +53,19 @@ type codex struct {
 	account string
 	signIn  *signIn
 	http    *http.Client
+
+	// planUsage is how much of the plan's allowance the service last said
+	// was used, so that a change is said once rather than on every answer.
+	planUsage struct {
+		sync.Mutex
+		shortWindowPercent int
+		weeklyPercent      int
+		isKnown            bool
+	}
+
+	// isNoReasoningRefused is set once the plan has refused an effort of
+	// "none", after which a request that asks for none is sent "low".
+	isNoReasoningRefused atomic.Bool
 
 	// doesTakeOutputLimit says the endpoint takes max_output_tokens. The
 	// keyed Responses endpoint does; the plan's refuses the whole request
@@ -145,6 +161,14 @@ func (self *codex) Chat(ctx context.Context, request *ChatRequest) (*ChatRespons
 	return nil, errors.New("llm: the sign-in answered nothing")
 }
 
+// unaskedEffort is the effort sent for a request that asked for none.
+func (self *codex) unaskedEffort() string {
+	if self.isNoReasoningRefused.Load() {
+		return EffortLow
+	}
+	return "none"
+}
+
 // ChatStream sends a conversation and returns the answer as it comes.
 func (self *codex) ChatStream(ctx context.Context, request *ChatRequest) (<-chan StreamEvent, error) {
 	body, err := self.encode(request)
@@ -152,6 +176,16 @@ func (self *codex) ChatStream(ctx context.Context, request *ChatRequest) (<-chan
 		return nil, err
 	}
 	response, err := self.post(ctx, body)
+	if err != nil && request.ReasoningEffort == "" && !self.isNoReasoningRefused.Load() && strings.Contains(strings.ToLower(err.Error()), "reasoning") {
+		// A model on the plan that will not go without reasoning: ask for
+		// the least it takes from now on.
+		log.Noticef("the %s plan will not answer without reasoning (%s); asking for low from now on", config.AgentProviderKindCodex, err)
+		self.isNoReasoningRefused.Store(true)
+		if body, err = self.encode(request); err != nil {
+			return nil, err
+		}
+		response, err = self.post(ctx, body)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +234,7 @@ func (self *codex) post(ctx context.Context, body []byte) (*http.Response, error
 			self.signIn.forget()
 			continue
 		}
+		self.notePlanUsage(answer.Header)
 		if answer.StatusCode/100 != 2 {
 			defer func() { _ = answer.Body.Close() }()
 			return nil, self.refused(answer)
@@ -207,6 +242,47 @@ func (self *codex) post(ctx context.Context, body []byte) (*http.Response, error
 		return answer, nil
 	}
 	return nil, errors.New("llm: the sign-in would not authorize the request")
+}
+
+// notePlanUsage reads how much of the plan's allowance is used, which the
+// service says on every answer: the primary window is the short one of a
+// few hours, the secondary the week. It is said in the log when either
+// moves by a whole percent, so an operator can see the reading spend the
+// week without opening anything.
+func (self *codex) notePlanUsage(header http.Header) {
+	shortWindow, isShortKnown := usedPercent(header, "X-Codex-Primary-Used-Percent")
+	weekly, isWeeklyKnown := usedPercent(header, "X-Codex-Secondary-Used-Percent")
+	if !isShortKnown && !isWeeklyKnown {
+		return
+	}
+	usage := &self.planUsage
+	usage.Lock()
+	isChanged := !usage.isKnown || shortWindow != usage.shortWindowPercent || weekly != usage.weeklyPercent
+	usage.shortWindowPercent, usage.weeklyPercent, usage.isKnown = shortWindow, weekly, true
+	usage.Unlock()
+	if isChanged {
+		log.Noticef("the %s plan has used %d%% of its short window and %d%% of its week (resets %s and %s)",
+			config.AgentProviderKindCodex, shortWindow, weekly,
+			resetOf(header, "X-Codex-Primary-Reset-At"), resetOf(header, "X-Codex-Secondary-Reset-At"))
+	}
+}
+
+// usedPercent reads a used-percent header, which may carry a fraction.
+func usedPercent(header http.Header, name string) (int, bool) {
+	value, err := strconv.ParseFloat(strings.TrimSpace(header.Get(name)), 64)
+	if err != nil {
+		return 0, false
+	}
+	return int(value), true
+}
+
+// resetOf reads when a window resets, given in seconds since the epoch.
+func resetOf(header http.Header, name string) string {
+	seconds, err := strconv.ParseInt(strings.TrimSpace(header.Get(name)), 10, 64)
+	if err != nil || seconds <= 0 {
+		return "at a time not said"
+	}
+	return time.Unix(seconds, 0).Format("Mon 15:04")
 }
 
 // refused turns a non-2xx into an error carrying what the service said.
