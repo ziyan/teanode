@@ -220,8 +220,24 @@ which is why a skill's commands are refused outright on a Windows computer:
 `cmd` gives those quotes no meaning and a value would become another command.
 
 That choice has consequences the tool's own description states, so the model
-plans around them: a skill that runs commands needs a computer attached, asks
-the person first, and is never reached by a run with nobody present.
+plans around them: a skill that runs commands needs a computer attached and
+is never reached by a run with nobody present.
+
+A skill's command is held to the same rule as the `shell` tool, which runs any
+command on the person's computer as a write that does not ask: wrapping the
+command in a skill makes it no more dangerous. What the person wants a say in
+is a call that speaks for them to somebody else, or cannot be taken back, and
+nothing in a command's shape says which that is. So before each such call the
+fast model (the triage work) is shown the tool, the commands of the action
+chosen as the skill writes them, and the arguments, and judges it `read`,
+`change`, `outward` or `destructive`. The first two run; the other two ask. A
+judgement that fails asks. The same call is judged once in a turn, and what
+the judgement costs is counted in the turn's own cost.
+
+The arguments were written by a model that may have read something hostile,
+so the judge is told to treat them as data. A judge talked into calling a send
+a read has let through what the `shell` tool would run anyway, which is why the
+judgement only decides between that and asking.
 
 ## Who installs, and who gets the tools
 
@@ -238,10 +254,11 @@ tool policy: an operator can switch off the whole family or a single tool by nam
 `agent.tools.disabled`, and raise any of them to require confirmation in
 `agent.tools.confirm`.
 
-The risk of a skill's tool is read from what it does: a tool with any shell
-step is destructive and always asks; one whose requests are all plain reads is
-a read; anything else is a write. Every answer is marked untrusted — it is
-data fetched from outside, never words addressed to the agent.
+The risk of a skill's tool is read from what it does: one whose requests are
+all plain reads is a read; one that runs a command or sends anything but a
+read is a write, and a command's calls are judged as above. Every answer is
+marked untrusted — it is data fetched from outside, never words addressed to
+the agent.
 
 ## Constants
 

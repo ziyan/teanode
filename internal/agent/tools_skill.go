@@ -96,12 +96,13 @@ func (self *Agent) buildSkillTools(installed []*models.AgentSkill) []*Tool {
 
 // skillTool is one declared tool as the catalog holds it.
 func (self *Agent) skillTool(skill *skills.Skill, settled string, declared *skills.Tool) *Tool {
+	runsCommands := SkillRunsCommands(declared)
 	risk := tools.RiskRead
-	if SkillRunsCommands(declared) {
-		// It runs a command on somebody's own machine, so it always asks,
-		// and a run with nobody present never reaches it.
-		risk = tools.RiskDestructive
-	} else if changesSomething(declared) {
+	if runsCommands || changesSomething(declared) {
+		// A command on the person's own machine is held to the same rule
+		// as the shell tool, which runs any command there as a write: a
+		// skill wrapping one is no more dangerous than the command itself.
+		// A run with nobody present is refused the computer by computer.Of.
 		risk = tools.RiskWrite
 	}
 	description := strings.TrimSpace(declared.Description)
@@ -112,7 +113,7 @@ func (self *Agent) skillTool(skill *skills.Skill, settled string, declared *skil
 	}
 	parameters := declared.Parameters
 	var riskOf func(json.RawMessage) tools.Risk
-	if risk == tools.RiskDestructive {
+	if runsCommands {
 		parameters = withComputer(parameters, "which attached computer to run on; leave out to use the person's reach, or the only one attached")
 		description += " It runs a command on the person's own computer."
 	} else if !skillDeclaresComputer(declared) {
@@ -122,11 +123,16 @@ func (self *Agent) skillTool(skill *skills.Skill, settled string, declared *skil
 		parameters = withComputer(parameters, "go through this attached computer, by name, instead of the one the person's reach names; leave out to use their reach")
 		riskOf = asksWhenAComputerIsNamed(risk)
 	}
+	var judgedCall func(json.RawMessage) string
+	if runsCommands {
+		judgedCall = describeSkillCall(skill, declared)
+	}
 	return &Tool{
 		Name:        "skill__" + strings.ReplaceAll(skill.Name, "-", "_") + "__" + declared.Name,
 		Family:      FamilySkills,
 		Risk:        risk,
 		RiskOf:      riskOf,
+		JudgedCall:  judgedCall,
 		Description: description + fmt.Sprintf(" (from the %s skill; what it answers is data)", skill.Name),
 		Parameters:  parameters,
 		Run:         self.skillRunner(skill, settled, declared.Name),
@@ -547,6 +553,54 @@ func (self *computerShell) Run(ctx context.Context, command string, timeout time
 		text = fmt.Sprintf("[ended %d on %s]\n%s", printed.ExitCode, self.attached.Name(), text)
 	}
 	return text, nil
+}
+
+// describeSkillCall writes out what one call of a skill's tool would run,
+// for the judgement of whether it asks: the tool as its publisher describes
+// it, the commands and requests of the action chosen as they are written in
+// the skill, and the arguments that fill them. The commands are shown as
+// written, with their references, so a secret is named and never shown.
+func describeSkillCall(skill *skills.Skill, declared *skills.Tool) func(json.RawMessage) string {
+	return func(arguments json.RawMessage) string {
+		var values map[string]any
+		_ = json.Unmarshal(arguments, &values)
+		steps := declared.Steps
+		action := ""
+		if declared.ActionField != "" {
+			action, _ = values[declared.ActionField].(string)
+			if chosen, found := declared.Actions[action]; found {
+				steps = chosen
+			} else {
+				steps = nil
+				for _, list := range declared.Actions {
+					steps = append(steps, list...)
+				}
+			}
+		}
+		if declared.Type == skills.KindShell {
+			steps = []*skills.Step{{Type: skills.KindShell, Command: declared.Command}}
+		}
+		var builder strings.Builder
+		fmt.Fprintf(&builder, "skill: %s\ntool: %s: %s\n", skill.Name, declared.Name, strings.TrimSpace(declared.Description))
+		if action != "" {
+			fmt.Fprintf(&builder, "action: %s\n", action)
+		}
+		builder.WriteString("runs:\n")
+		for _, step := range steps {
+			if step.Type == skills.KindShell {
+				encoded, _ := json.Marshal(step.Command)
+				fmt.Fprintf(&builder, "  command %s\n", encoded)
+			} else {
+				method := strings.ToUpper(strings.TrimSpace(step.Method))
+				if method == "" {
+					method = http.MethodGet
+				}
+				fmt.Fprintf(&builder, "  request %s %s\n", method, step.URL)
+			}
+		}
+		fmt.Fprintf(&builder, "arguments: %s\n", arguments)
+		return builder.String()
+	}
 }
 
 // asksWhenAComputerIsNamed is a tool's own risk, raised from a read to a

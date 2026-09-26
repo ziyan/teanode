@@ -80,3 +80,16 @@ func TestASkillsOwnComputerArgumentIsLeftAlone(t *testing.T) {
 		t.Errorf("the skill's own argument was replaced: %v", description)
 	}
 }
+
+// A skill's command is held to the shell tool's rule, a write that does not
+// ask by its class; whether a call asks is judged (see judgedToAsk).
+func TestASkillsCommandIsHeldToTheShellRule(t *testing.T) {
+	declared := &skills.Tool{Name: "notes", Type: skills.KindShell, Command: []string{"notes"}, Parameters: map[string]any{"type": "object"}}
+	tool := (&Agent{}).skillTool(&skills.Skill{Name: "notebook"}, "server", declared)
+	if tool.Risk != tools.RiskWrite || tools.NeedsConfirmation(tool, json.RawMessage(`{}`), nil, nil) {
+		t.Errorf("the tool is %v and asks by its class", tool.Risk)
+	}
+	if tool.JudgedCall == nil {
+		t.Error("its calls are not judged")
+	}
+}
