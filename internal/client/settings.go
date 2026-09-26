@@ -35,7 +35,7 @@ const settingsSelection = `{
 	storage { directory spoolRetention }
 	geoip { enabled databaseFile }
 	agent {
-		enabled instructions currency allowPrivateAddresses skipCertificateCheck
+		enabled instructions currency effort allowPrivateAddresses skipCertificateCheck
 		providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
 		skillSecrets { skill key hasValue }
 		models { default fast embedding triage research summarize reply ask schedule compact choices scan decide embeddingDimensions }

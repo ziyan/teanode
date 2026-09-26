@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/urfave/cli/v3"
 
@@ -149,7 +150,7 @@ func newAgentGraphCommands() []*cli.Command {
 				"two model calls a question and source, priced as runs of kind evaluate",
 			ArgsUsage: "<file>",
 			Flags: []cli.Flag{JSONFlag(),
-				&cli.StringFlag{Name: "from", Value: "memory,sources,both", Usage: "what to answer from: memory, sources, both, or a comma list of them"},
+				&cli.StringFlag{Name: "from", Value: "memory,sources,both", Usage: "what to answer from: memory, sources, both, or a turn of the agent itself (agent, or agent@low, agent@medium, agent@high to set how hard it thinks); a comma list of them"},
 				&cli.BoolFlag{Name: "stored", Usage: "grade against the memory check's questions on the server instead of a file, as the weekly run does; see 'agent memory check runs'"},
 			},
 			Action: runAgentGraphAnswers,
@@ -1839,14 +1840,25 @@ func runAgentGraphAnswers(ctx context.Context, command *cli.Command) error {
 		switch source {
 		case "memory", "sources", "both":
 			sources = append(sources, source)
+		case "agent", "agent@low", "agent@medium", "agent@high",
+			"agent+research", "agent@low+research", "agent@medium+research", "agent@high+research":
+			sources = append(sources, source)
 		case "":
 		default:
-			return fmt.Errorf("--from %q: memory, sources or both", source)
+			return fmt.Errorf("--from %q: memory, sources, both, or the agent's own turn: agent, agent@low, agent@medium, agent@high", source)
 		}
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
+	}
+	// A turn of the agent itself, thinking hard, runs longer than the
+	// minute a request is otherwise given.
+	for _, source := range sources {
+		if strings.HasPrefix(source, "agent") {
+			connection.SetTimeout(10 * time.Minute)
+			break
+		}
 	}
 	results := []*answerResult{}
 	totals := map[string]*answerTotal{}

@@ -24,6 +24,15 @@ type Agent struct {
 	// Read by every run, after the conduct and before the person's own.
 	Instructions string `yaml:"instructions,omitempty"`
 
+	// Effort is how hard a turn somebody typed thinks and looks before it
+	// answers: empty for the model's own default, "low", "medium" or
+	// "high" for every turn alike, or "auto" for a model to judge each message
+	// with the conversation before it -- a thanks is answered at once, a
+	// question about how their own systems work is researched, and a
+	// pushback on the last answer or a request for care gets the most.
+	// Runs with nobody present keep theirs.
+	Effort string `yaml:"effort,omitempty"`
+
 	// Providers are the model services this server may call, by name. A
 	// model is always named "provider:model".
 	Providers []AgentProvider `yaml:"providers"`
@@ -944,6 +953,11 @@ func (self *Configuration) validateAgent(validator *validator) {
 	}
 	if agent.Enabled && enabledProviders == 0 {
 		validator.add("agent.providers", "required when the agent is enabled: at least one enabled provider")
+	}
+	switch agent.Effort {
+	case "", "auto", "low", "medium", "high":
+	default:
+		validator.add("agent.effort", "empty, auto, low, medium or high")
 	}
 	if agent.Enabled && agent.Models.Default == "" {
 		validator.add("agent.models.default", "required when the agent is enabled: the model for anything not assigned elsewhere")

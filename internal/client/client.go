@@ -33,6 +33,14 @@ type Client struct {
 	readOnly bool
 }
 
+// SetTimeout changes how long a single request may take, for the few that
+// run a whole agent turn before they answer.
+func (self *Client) SetTimeout(timeout time.Duration) {
+	if self.client != nil && timeout > 0 {
+		self.client.Timeout = timeout
+	}
+}
+
 // Options configure a Client.
 type Options struct {
 	// URL of the server, for example https://mail.example.com. The API path

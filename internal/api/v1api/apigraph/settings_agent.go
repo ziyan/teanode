@@ -50,6 +50,10 @@ type AgentSettings struct {
 	Instructions string `json:"instructions"`
 	Currency     string `json:"currency"`
 
+	// Effort is how hard a turn somebody typed thinks and looks: empty,
+	// low, medium, high, or auto to judge each message.
+	Effort string `json:"effort"`
+
 	// AllowPrivateAddresses is equipment on the operator's own network the
 	// agent may reach: what a skill's endpoint and the headless browser
 	// are let through to, and nothing else.
@@ -256,6 +260,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 		Enabled:      agent.Enabled,
 		Instructions: agent.Instructions,
 		Currency:     agent.CurrencyOf(),
+		Effort:       agent.Effort,
 		// What the operator has allowed, without the browser's own older
 		// list folded in: this is the box they edit, and showing it holding
 		// entries they did not put there is how a list edits itself.
@@ -409,6 +414,7 @@ type AgentParameters struct {
 	Enabled               *bool     `json:"enabled"`
 	Instructions          *string   `json:"instructions"`
 	Currency              *string   `json:"currency"`
+	Effort                *string   `json:"effort"`
 	AllowPrivateAddresses *[]string `json:"allowPrivateAddresses"`
 	SkipCertificateCheck  *[]string `json:"skipCertificateCheck"`
 
@@ -598,6 +604,9 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 	}
 	if parameters.Instructions != nil {
 		agent.Instructions = strings.TrimSpace(*parameters.Instructions)
+	}
+	if parameters.Effort != nil {
+		agent.Effort = strings.ToLower(strings.TrimSpace(*parameters.Effort))
 	}
 	if parameters.Providers != nil {
 		previous := map[string]string{}

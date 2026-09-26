@@ -297,7 +297,8 @@ type EvaluateAgentAnswerArguments struct {
 	// OutdatedAnswer is what was true once, for a question about
 	// something that changed; an answer giving it is stale.
 	OutdatedAnswer string `json:"outdatedAnswer" graphapi:"nullable"`
-	// AnswerFrom is memory, sources or both.
+	// AnswerFrom is memory, sources or both, or agent (agent@low,
+	// agent@medium, agent@high) for a turn of the agent itself.
 	AnswerFrom string `json:"answerFrom"`
 }
 

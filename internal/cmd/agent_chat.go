@@ -32,6 +32,7 @@ func newAgentAskCommand() *cli.Command {
 			JSONFlag(),
 			&cli.StringFlag{Name: "conversation", Usage: "the conversation, by id; the main one by default"},
 			&cli.BoolFlag{Name: "new", Usage: "start a named conversation for this"},
+			&cli.StringFlag{Name: "effort", Usage: "how hard the model thinks before it answers: low, medium or high; the agent's own choice by default"},
 			&cli.BoolFlag{Name: "quiet", Usage: "print the answer only, not what the agent did on the way"},
 			&cli.StringSliceFlag{Name: "attach", Usage: "a file to hand the agent with the message; a picture is shown to it, a text file read to it, anything else named"},
 		},
@@ -229,7 +230,7 @@ func runAgentAsk(ctx context.Context, command *cli.Command) error {
 		}
 		attachmentIds = append(attachmentIds, attachment.ID)
 	}
-	return askOnce(ctx, command, connection, &client.AskAgentRequest{ConversationID: conversationId, Message: message, Surface: "cli", AttachmentIDs: attachmentIds}, command.Bool("json"), command.Bool("quiet"))
+	return askOnce(ctx, command, connection, &client.AskAgentRequest{ConversationID: conversationId, Message: message, Surface: "cli", AttachmentIDs: attachmentIds, Effort: command.String("effort")}, command.Bool("json"), command.Bool("quiet"))
 }
 
 // askOnce says one thing and follows the run to its end, answering

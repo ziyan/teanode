@@ -75,7 +75,7 @@ func TestNotKnownIsAMissOrARightAbstain(t *testing.T) {
 
 // What to answer from is checked before anything is asked.
 func TestAnAnswerFromNowhereIsRefused(t *testing.T) {
-	if _, err := (&Agent{}).EvaluateAnswer(t.Context(), &models.Agent{}, &models.User{}, "Where?", "Here.", "", "rumour"); err == nil || !strings.Contains(err.Error(), "memory, sources or both") {
+	if _, err := (&Agent{}).EvaluateAnswer(t.Context(), &models.Agent{}, &models.User{}, "Where?", "Here.", "", "rumour"); err == nil || !strings.Contains(err.Error(), "memory, sources, both") {
 		t.Fatalf("an unknown source was not refused: %v", err)
 	}
 }

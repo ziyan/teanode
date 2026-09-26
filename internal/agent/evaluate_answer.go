@@ -9,6 +9,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/indexed"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -20,6 +21,11 @@ const (
 	AnswerFromMemory  = "memory"  // the facts recall carries, as a turn would get them
 	AnswerFromSources = "sources" // passages from the documents, as the search tool finds them
 	AnswerFromBoth    = "both"    // both, the way a turn that searches has them
+
+	// AnswerFromAgent is a turn of the agent itself, with its tools, the
+	// way a person asking in a conversation is answered; "agent@high"
+	// asks it to think at that effort.
+	AnswerFromAgent = "agent"
 )
 
 // The verdicts a graded answer can have. See prompts/evaluate_grade.txt.
@@ -75,8 +81,19 @@ func (self *Agent) EvaluateAnswer(ctx context.Context, found *models.Agent, owne
 	if question == "" || strings.TrimSpace(expectedAnswer) == "" {
 		return nil, fmt.Errorf("a question and its expected answer are both needed")
 	}
-	if answerFrom != AnswerFromMemory && answerFrom != AnswerFromSources && answerFrom != AnswerFromBoth {
-		return nil, fmt.Errorf("answer from %q: memory, sources or both", answerFrom)
+	effort, research, isAgent := agentEffortOf(answerFrom)
+	if !isAgent && answerFrom != AnswerFromMemory && answerFrom != AnswerFromSources && answerFrom != AnswerFromBoth {
+		return nil, fmt.Errorf("answer from %q: memory, sources, both, or agent (agent@low, agent@medium, agent@high, each with +research)", answerFrom)
+	}
+	if isAgent {
+		started := time.Now()
+		answered, err := self.answerAsAgent(ctx, found, owner, question, effort, research)
+		if err != nil {
+			return nil, err
+		}
+		return self.gradeAnswer(ctx, found, owner, &AnswerEvaluation{
+			AnswerText: answered.Text, AnswerDurationMS: time.Since(started).Milliseconds(),
+		}, question, expectedAnswer, outdatedAnswer, answered)
 	}
 	evaluation := &AnswerEvaluation{}
 	var memory, passages []string
@@ -138,6 +155,13 @@ func (self *Agent) EvaluateAnswer(ctx context.Context, found *models.Agent, owne
 	}
 	evaluation.AnswerDurationMS = time.Since(started).Milliseconds()
 	evaluation.AnswerText = strings.TrimSpace(answered.Text)
+	return self.gradeAnswer(ctx, found, owner, evaluation, question, expectedAnswer, outdatedAnswer, answered)
+}
+
+// gradeAnswer grades an answer against the one the person gave, and adds
+// what answering and grading cost.
+func (self *Agent) gradeAnswer(ctx context.Context, found *models.Agent, owner *models.User, evaluation *AnswerEvaluation, question, expectedAnswer, outdatedAnswer string, answered *thought) (*AnswerEvaluation, error) {
+	run := self.runFor(found, owner, nil, "")
 
 	// "not known" needs no grader either way: it is right where the
 	// person's answer is "not known" too, and a miss everywhere else.
@@ -208,4 +232,69 @@ func (self *Agent) costOfRuns(ctx context.Context, thoughts ...*thought) float64
 		log.Debugf("cannot read what an evaluation cost: %s", err)
 	}
 	return cost
+}
+
+// agentEffortOf reads "agent", "agent@high" or "agent@high+research":
+// whether an answer is the agent's own turn, at what effort, and whether
+// it is given the research procedure.
+func agentEffortOf(answerFrom string) (string, bool, bool) {
+	answerFrom, research := strings.CutSuffix(answerFrom, "+research")
+	name, effort, _ := strings.Cut(answerFrom, "@")
+	if name != AnswerFromAgent {
+		return "", false, false
+	}
+	switch effort {
+	case "", llm.EffortLow, llm.EffortMedium, llm.EffortHigh:
+		return effort, research, true
+	}
+	return "", false, false
+}
+
+// answerAsAgent asks the agent the question in a turn of its own, with its
+// tools and the prompt a person's turn gets, headless and unable to change
+// anything, and answers with what it said.
+func (self *Agent) answerAsAgent(ctx context.Context, found *models.Agent, owner *models.User, question, effort string, research bool) (*thought, error) {
+	var conversation *models.AgentConversation
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		conversation, err = tx.CreateAgentConversation(&models.AgentConversation{
+			AgentID: found.ID, Kind: models.AgentConversationRun,
+			Title: "Answered an evaluation question as the agent", JobKind: string(models.AgentJobEvaluate),
+			Surface: string(models.AgentJobEvaluate), LastAt: time.Now(),
+		})
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	operations, err := self.operations(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	turn, err := self.Ask(&AskSettings{
+		Agent: found, Owner: owner, Operations: operations, Conversation: conversation,
+		Message: question, Surface: string(models.AgentJobEvaluate), ReadOnly: true, Headless: true,
+		UsageKind: string(models.AgentJobEvaluate), Work: config.AgentWorkAsk, Effort: effort, Research: research,
+	})
+	if err != nil {
+		return nil, err
+	}
+	events, unsubscribe := turn.Subscribe()
+	defer unsubscribe()
+	said, failure := "", ""
+	for event := range events {
+		if ctx.Err() != nil {
+			turn.Stop()
+			break
+		}
+		switch event.Kind {
+		case EventMessage:
+			said = event.Text
+		case EventError:
+			failure = event.Error
+		}
+	}
+	answered := &thought{Conversation: conversation, Text: strings.TrimSpace(said), Usage: turn.Usage()}
+	if failure != "" {
+		return answered, fmt.Errorf("the agent's turn failed: %s", failure)
+	}
+	return answered, nil
 }
