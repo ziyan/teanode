@@ -704,8 +704,9 @@ adding one does not duplicate mail that already has somewhere to go.
 the subscription behind the Codex command line. It answers at a different
 address, speaks the responses protocol rather than chat completions, and
 bills against the plan's allowance instead of credits. It takes
-`refreshToken` and `account` and no `apiKey`, and it offers only the model
-that plan allows: every other name is refused outright. It has no embeddings,
+`refreshToken` and `account` and no `apiKey`, and it offers only the models
+the plan answers to (`gpt-5.5`, `gpt-5.6-terra` and `gpt-5.6-luna`): every
+other name is refused outright. It has no embeddings,
 so `models.embedding` still needs a keyed provider or a local one.
 
 **`email`** — Email is the destination address when kind is email.

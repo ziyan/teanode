@@ -41,9 +41,9 @@ const (
 //
 // Short because the service says so. Asked for anything else it refuses
 // with a sentence naming the model, which is how this list was arrived at:
-// every other name known to the command line is refused, and this one is
-// answered.
-var codexModels = []string{"gpt-5.5"}
+// each name here was asked for and answered. The first is what a request
+// naming no model gets.
+var codexModels = []string{"gpt-5.5", "gpt-5.6-terra", "gpt-5.6-luna"}
 
 type codex struct {
 	baseUrl string
