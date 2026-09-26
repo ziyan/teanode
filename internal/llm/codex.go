@@ -98,7 +98,7 @@ func newCodex(baseUrl, refreshToken, account string, client *http.Client) (*code
 		log.Warningf(
 			"the %s provider was given a new refresh token; the one in the configuration is now stale "+
 				"and will not work after a restart. Sign in again from the dashboard.",
-			config.AgentProviderKindCodex)
+			config.AgentProviderKindOAuth)
 	}
 
 	return &codex{
@@ -129,7 +129,7 @@ func (self *codex) refreshToken() string {
 }
 
 func (self *codex) Kind() string {
-	return config.AgentProviderKindCodex
+	return config.AgentProviderKindOAuth
 }
 
 // ListModels is what the subscription answers to. It asks nothing: there is
@@ -181,7 +181,7 @@ func (self *codex) ChatStream(ctx context.Context, request *ChatRequest) (<-chan
 	if err != nil && request.ReasoningEffort == "" && !self.isNoReasoningRefused.Load() && strings.Contains(strings.ToLower(err.Error()), "reasoning") {
 		// A model on the plan that will not go without reasoning: ask for
 		// the least it takes from now on.
-		log.Noticef("the %s plan will not answer without reasoning (%s); asking for low from now on", config.AgentProviderKindCodex, err)
+		log.Noticef("the %s plan will not answer without reasoning (%s); asking for low from now on", config.AgentProviderKindOAuth, err)
 		self.isNoReasoningRefused.Store(true)
 		if body, err = self.encode(request); err != nil {
 			return nil, err
@@ -272,7 +272,7 @@ func (self *codex) notePlanUsage(header http.Header) {
 		}
 		sort.Strings(names)
 		usage.hasSaidHeaders = true
-		log.Infof("the %s plan reports its usage in %s", config.AgentProviderKindCodex, strings.Join(names, ", "))
+		log.Infof("the %s plan reports its usage in %s", config.AgentProviderKindOAuth, strings.Join(names, ", "))
 	}
 	if !isPrimaryKnown {
 		primary = usage.primaryPercent
@@ -285,7 +285,7 @@ func (self *codex) notePlanUsage(header http.Header) {
 	usage.Unlock()
 	if isChanged {
 		log.Noticef("the %s plan has used %d%% of its %s window and %d%% of its %s one (they reset in %s and %s)",
-			config.AgentProviderKindCodex,
+			config.AgentProviderKindOAuth,
 			primary, windowOf(header, "X-Codex-Primary-Window-Minutes"),
 			secondary, windowOf(header, "X-Codex-Secondary-Window-Minutes"),
 			resetOf(header, "X-Codex-Primary-Reset-After-Seconds"), resetOf(header, "X-Codex-Secondary-Reset-After-Seconds"))

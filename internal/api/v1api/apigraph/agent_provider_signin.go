@@ -86,10 +86,10 @@ func (self *graph) BeginAgentProviderSignIn(ctx context.Context, arguments Begin
 	if provider == "" || strings.Contains(provider, ":") {
 		return nil, errors.New("name the provider to sign in, without a colon")
 	}
-	if declared := self.config.Current().Agent.Provider(provider); declared != nil && declared.Kind != config.AgentProviderKindCodex {
+	if declared := self.config.Current().Agent.Provider(provider); declared != nil && declared.Kind != config.AgentProviderKindOAuth {
 		return nil, fmt.Errorf("the provider %q takes a key, not a sign-in", provider)
 	}
-	started, err := llm.BeginDeviceSignIn(ctx, config.AgentProviderKindCodex)
+	started, err := llm.BeginDeviceSignIn(ctx, config.AgentProviderKindOAuth)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +157,7 @@ func keepSignIn(configuration *config.Configuration, provider string, result *ll
 		if declared.Name != provider {
 			continue
 		}
-		if declared.Kind != config.AgentProviderKindCodex {
+		if declared.Kind != config.AgentProviderKindOAuth {
 			return fmt.Errorf("the provider %q takes a key, not a sign-in", provider)
 		}
 		declared.RefreshToken, declared.Account = result.RefreshToken, result.Account
@@ -165,7 +165,7 @@ func keepSignIn(configuration *config.Configuration, provider string, result *ll
 	}
 	isEnabled := true
 	configuration.Agent.Providers = append(configuration.Agent.Providers, config.AgentProvider{
-		Name: provider, Kind: config.AgentProviderKindCodex, Enabled: &isEnabled,
+		Name: provider, Kind: config.AgentProviderKindOAuth, Enabled: &isEnabled,
 		RefreshToken: result.RefreshToken, Account: result.Account,
 	})
 	return nil
