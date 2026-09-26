@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.67.2] - 2026-09-26
+
+### Fixed
+
+- A dream that runs out of time still embeds what it filed and records what it did, instead of being marked as cut short by a restart. (#177)
+- Calls to a ChatGPT plan no longer reason unless asked to, which made dreams on the plan two to three times slower. (#177)
+
 ## [0.67.1] - 2026-09-26
 
 ### Changed
