@@ -114,6 +114,12 @@ type Tool struct {
 	// actions differ: mail_act is a write until it is delete_forever.
 	RiskOf func(arguments json.RawMessage) Risk
 
+	// JudgedCall, when set, is what one call would do, written out for a
+	// fast model to judge whether it only reads or changes something on the
+	// person's own machine, and so runs, or speaks for them or destroys
+	// something, and so asks. Empty says there is nothing to judge.
+	JudgedCall func(arguments json.RawMessage) string
+
 	// Run does it.
 	Run func(ctx context.Context, call *Call) (*Result, error)
 

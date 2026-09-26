@@ -225,6 +225,10 @@ type AskRun struct {
 	// confirmations are the calls waiting for the person, by call id.
 	confirmations map[string]chan bool
 
+	// judgedCalls are the calls this turn has already judged, by what the
+	// judge was shown, and whether each asks; see judgedToAsk.
+	judgedCalls map[string]bool
+
 	// questions are the ask_user cards waiting for an answer, by call id.
 	questions map[string]chan string
 
@@ -1184,7 +1188,7 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 	}
 	if self.takePreApproval(tool.Name, call.Arguments) {
 		call.Confirmed = true
-	} else if NeedsConfirmation(tool, call.Arguments, &configuration.Agent.Tools, self.settings.Agent) {
+	} else if NeedsConfirmation(tool, call.Arguments, &configuration.Agent.Tools, self.settings.Agent) || self.judgedToAsk(ctx, tool, call.Arguments) {
 		if !self.CanAsk() || self.settings.Surface == "mail" || self.settings.Surface == "schedule" || self.settings.Surface == "research" {
 			return self.toolAnswer(toolCall, `{"error": "needs_confirmation: nobody is present to confirm this; tell the person what you would have done"}`)
 		}
