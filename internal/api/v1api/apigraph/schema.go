@@ -92,6 +92,7 @@ type Mutation interface {
 	AgentConnectionMutation
 	AgentReachMutation
 	AgentSkillMutation
+	AgentProviderSignInMutation
 	AgentSourceTypeMutation
 	AgentSourceSecretMutation
 	AgentChannelMutation
