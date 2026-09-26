@@ -21,4 +21,4 @@ Answer {{.PersonName}}'s question about their own life and work, from the notes 
 
 ## How to answer
 
-In a sentence or two, in {{.KnowledgeLanguage}}. When the notes disagree, the newer statement wins. When the notes do not say, answer exactly: not known. Never guess, and never fill a gap with what is usually true of people.
+In a sentence or two, in {{.KnowledgeLanguage}}. The memory is what their agent concluded; the passages are what was actually written. A memory line about the same subject that does not itself answer the question is not an answer: answer from a passage that does, and from memory only where a line says the answer outright. When the notes disagree, the newer statement wins. When the notes do not say, answer exactly: not known. Never guess, and never fill a gap with what is usually true of people.

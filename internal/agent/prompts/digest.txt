@@ -79,6 +79,18 @@ or `howto`.
 decision somebody recorded and why. How something is done that would take
 an afternoon to work out again. A date that anchors a period.
 
+**A question somebody answered is a `howto`.** Where a thread has one
+person asking how to do something, whether something can be done, or why
+something happens, and another answering, file the answer as a `howto` on
+the page of the thing asked about, written so that the same question
+asked again would find it: what was wanted, then the answer. "To stop
+cases leaning on a pallet, lower `stackSpeed` to 0.6 in the station
+profile." "Webhook payloads cannot be signed with a custom key; only the
+shared secret is supported." Keep every name as it was written -- a
+setting, a signal, a command, a file, a function -- because that name is
+what the next person will need. A "no" is kept as well as a "yes". This
+is not what a commit changed; it is what somebody would ask again.
+
 **What is not.** Anything the index above already says. Anything the page
 itself already says: that it exists, what kind of thing it is, that it
 was active lately. The content of one commit or one message as such --
