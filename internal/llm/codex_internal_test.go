@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -77,9 +78,11 @@ func TestAConversationBecomesResponseItems(test *testing.T) {
 	if !body.Stream {
 		test.Error("the protocol streams, and it did not ask to")
 	}
-	// No output limit: the plan's endpoint refuses one.
-	if body.MaxTokens != 0 || body.Temperature == nil || *body.Temperature != 0.5 {
-		test.Errorf("the bounds came out %d %v", body.MaxTokens, body.Temperature)
+	// No output limit: the plan's endpoint refuses one. And no reasoning
+	// unless asked, which the plan must be told; a model told how to
+	// reason takes no temperature.
+	if body.MaxTokens != 0 || body.Temperature != nil || body.Reasoning == nil || body.Reasoning.Effort != "none" {
+		test.Errorf("the bounds came out %d %v %+v", body.MaxTokens, body.Temperature, body.Reasoning)
 	}
 
 	kinds := make([]string, 0, len(body.Input))
@@ -311,5 +314,84 @@ func TestOnlyTheKeyedEndpointIsSentAnOutputLimit(test *testing.T) {
 	}
 	if !strings.Contains(string(keyed), `"max_output_tokens":8000`) {
 		test.Errorf("the keyed endpoint was not sent the limit: %s", keyed)
+	}
+}
+
+// The plan's usage is read from the answer's headers, fractions and all,
+// and a missing header is no reading.
+func TestThePlanSaysHowMuchOfItIsUsed(test *testing.T) {
+	header := http.Header{}
+	header.Set("X-Codex-Primary-Used-Percent", "12.5")
+	header.Set("X-Codex-Secondary-Used-Percent", "3")
+	made := &codex{}
+	made.notePlanUsage(header)
+	if !made.planUsage.isKnown || made.planUsage.primaryPercent != 12 || made.planUsage.secondaryPercent != 3 {
+		test.Errorf("it read %d%% and %d%%", made.planUsage.primaryPercent, made.planUsage.secondaryPercent)
+	}
+	// An answer that mentions only one window leaves the other as it was.
+	onlyShort := http.Header{}
+	onlyShort.Set("X-Codex-Primary-Used-Percent", "20")
+	made.notePlanUsage(onlyShort)
+	if made.planUsage.primaryPercent != 20 || made.planUsage.secondaryPercent != 3 {
+		test.Errorf("after one window it read %d%% and %d%%", made.planUsage.primaryPercent, made.planUsage.secondaryPercent)
+	}
+	if _, isKnown := usedPercent(http.Header{}, "X-Codex-Secondary-Used-Percent"); isKnown {
+		test.Error("a missing header was read as a percentage")
+	}
+}
+
+// A plan that will not go without reasoning is asked for the least it
+// takes, once refused and from then on.
+func TestAPlanThatMustReasonIsAskedForLittle(test *testing.T) {
+	test.Parallel()
+
+	var mutex sync.Mutex
+	var efforts []string
+	made, server := signedIn(test, func(writer http.ResponseWriter, request *http.Request) {
+		var body codexRequest
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		effort := ""
+		if body.Reasoning != nil {
+			effort = body.Reasoning.Effort
+		}
+		mutex.Lock()
+		efforts = append(efforts, effort)
+		mutex.Unlock()
+		if effort == "none" {
+			writer.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(writer, `{"error":{"message":"Unsupported value: 'none' is not supported with this model for reasoning.effort"}}`)
+			return
+		}
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(writer, "data: "+`{"type":"response.output_text.delta","delta":"Fine."}`+"\n\n")
+		_, _ = io.WriteString(writer, "data: "+`{"type":"response.completed","response":{"id":"resp-1","usage":{"input_tokens":10,"output_tokens":2}}}`+"\n\n")
+	})
+	defer server.Close()
+
+	for attempt := 0; attempt < 2; attempt++ {
+		answer, err := made.Chat(context.Background(), &ChatRequest{Model: "gpt-5.5", Messages: []ChatMessage{{Role: RoleUser, Content: "well?"}}})
+		if err != nil || answer.Message.Content != "Fine." {
+			test.Fatalf("attempt %d: %+v, %v", attempt, answer, err)
+		}
+	}
+	if strings.Join(efforts, ",") != "none,low,low" {
+		test.Errorf("it asked for %v", efforts)
+	}
+}
+
+// How long a window is and when it resets are read as the service says
+// them: minutes for the one, seconds from now for the other.
+func TestAPlanWindowSaysItsLengthAndReset(test *testing.T) {
+	header := http.Header{}
+	header.Set("X-Codex-Primary-Window-Minutes", "300")
+	header.Set("X-Codex-Primary-Reset-After-Seconds", "7260")
+	if got := windowOf(header, "X-Codex-Primary-Window-Minutes"); got != "5h0m0s" {
+		test.Errorf("the window read %q", got)
+	}
+	if got := resetOf(header, "X-Codex-Primary-Reset-After-Seconds"); got != "2h1m0s" {
+		test.Errorf("the reset read %q", got)
+	}
+	if got := resetOf(header, "X-Codex-Secondary-Reset-After-Seconds"); got != "a time not said" {
+		test.Errorf("a missing reset read %q", got)
 	}
 }

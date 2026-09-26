@@ -178,6 +178,8 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 	// passages tonight and is read like anything else tomorrow.
 	self.dreamAttachments(ctx, run, budget)
 	self.dreamTimeline(ctx, run, record, budget)
+	// Half of what is left, so the phases after it still run.
+	budget.consolidateUntil = halfway(ctx, time.Now())
 	self.dreamConsolidate(ctx, run, record, budget)
 	self.dreamOrganize(ctx, run, record, budget)
 	self.dreamSplit(ctx, run, record, budget)
@@ -188,13 +190,29 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 	// The other way round, a night's own work was invisible to the phase
 	// whose whole job is to notice what the graph cannot answer, and
 	// every question about it came back as a gap.
-	self.dreamEmbed(ctx, run, record)
+	//
+	// Given time of its own when the night has run out: what was filed
+	// tonight and has no vector cannot be found by meaning, and a run of
+	// nights that each ran out before this point left a day of filing
+	// unfindable.
+	embedding, stopEmbedding := graceAfter(ctx, dreamGrace)
+	self.dreamEmbed(embedding, run, record)
+	stopEmbedding()
 	self.dreamRehearse(ctx, run, record, budget)
 
 	finished := time.Now()
 	record.FinishedAt = &finished
 	record.Tokens = budget.spent
-	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+	if ctx.Err() != nil && record.LastError == "" {
+		// Said as what it is. Left unwritten, the next night found this
+		// one still marked as working and blamed a restart.
+		record.LastError = dreamOutOfTime
+	}
+	// Written whatever is left of the night: the record of what it did is
+	// worth more than the last minute of it.
+	finishing, stopFinishing := graceAfter(ctx, time.Minute)
+	defer stopFinishing()
+	return run.Database().TransactionContext(finishing, func(tx db.Transaction) error {
 		if err := tx.FinishAgentDream(record); err != nil {
 			return err
 		}
@@ -213,6 +231,24 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 		})
 		return err
 	})
+}
+
+// dreamGrace is how long the vectors may take after the night has run
+// out, and dreamOutOfTime what such a night says.
+const (
+	dreamGrace     = 5 * time.Minute
+	dreamOutOfTime = "the night ran out of time before every phase had run; the next one carries on"
+)
+
+// graceAfter is the night's own context while it has at least the grace
+// left, and the grace of its own once it has not: for the work that must
+// be done however the night went.
+func graceAfter(ctx context.Context, grace time.Duration) (context.Context, context.CancelFunc) {
+	deadline, hasDeadline := ctx.Deadline()
+	if ctx.Err() == nil && (!hasDeadline || time.Until(deadline) >= grace) {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), grace)
 }
 
 // caughtUp says whether a finished night means there is nothing left to

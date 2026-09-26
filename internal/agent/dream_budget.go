@@ -46,6 +46,11 @@ type dreamBudget struct {
 	// night gets its turn; zero means the night has no deadline.
 	digestUntil time.Time
 
+	// consolidateUntil is when rewriting pages has to stop, for the same
+	// reason: on a slower model it took the rest of the night, and the
+	// vectors and the night's own record never came.
+	consolidateUntil time.Time
+
 	// refused is a provider that will not answer anything, because the
 	// account it bills cannot pay. Nothing the night does next changes
 	// that, so it counts as having nothing left to spend.
@@ -128,6 +133,11 @@ func partway(ctx context.Context, now time.Time, share float64) time.Time {
 // halfway is partway at a half.
 func halfway(ctx context.Context, now time.Time) time.Time {
 	return partway(ctx, now, 0.5)
+}
+
+// consolidatingTimeLeft says whether rewriting pages may go on.
+func (self *dreamBudget) consolidatingTimeLeft() bool {
+	return self.consolidateUntil.IsZero() || time.Now().Before(self.consolidateUntil)
 }
 
 // readingTimeLeft says whether the reading may go on.
