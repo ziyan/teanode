@@ -119,22 +119,24 @@ const (
 	// else: assigning it to work that writes is refused below.
 	AgentProviderKindTypeSafe = "typesafe"
 
-	// AgentProviderKindOAuth is OpenAI reached with a person's sign-in
-	// rather than a key: a ChatGPT plan, which speaks a different protocol
-	// at a different address and bills against the plan's allowance
-	// instead of credits.
-	AgentProviderKindOAuth = "openai-oauth"
+	// AgentProviderKindCodex is OpenAI reached with a person's sign-in
+	// rather than a key: a ChatGPT plan, through the Codex API, which
+	// speaks a different protocol at a different address and bills
+	// against the plan's allowance instead of credits. The kind is named
+	// for that API because it is what the provider speaks, and the only
+	// thing the sign-in is good for.
+	AgentProviderKindCodex = "openai-codex"
 
-	// agentProviderKindOAuthFormerly is what openai-oauth was first called.
-	// A configuration written then still says it, and is read as the new
-	// name, which is what it is written back as.
-	agentProviderKindOAuthFormerly = "openai-codex"
+	// agentProviderKindCodexBriefly is what openai-codex was called for a
+	// release. A configuration saved then says it, and is read as
+	// openai-codex, which is what it is written back as.
+	agentProviderKindCodexBriefly = "openai-oauth"
 )
 
 // CanonicalProviderKind is a provider kind under its current name.
 func CanonicalProviderKind(kind string) string {
-	if strings.TrimSpace(kind) == agentProviderKindOAuthFormerly {
-		return AgentProviderKindOAuth
+	if strings.TrimSpace(kind) == agentProviderKindCodexBriefly {
+		return AgentProviderKindCodex
 	}
 	return kind
 }
@@ -157,7 +159,7 @@ type AgentProvider struct {
 	Name string `yaml:"name"`
 
 	// Kind is the API the service speaks: openai, anthropic, gemini, or
-	// openai-oauth for one signed in to rather than keyed.
+	// openai-codex for one signed in to rather than keyed.
 	Kind string `yaml:"kind"`
 
 	// BaseURL is where it listens; empty means the service's public
@@ -955,7 +957,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 		names[provider.Name] = true
 		switch provider.Kind {
 		case AgentProviderKindOpenAI, AgentProviderKindAnthropic, AgentProviderKindGemini, AgentProviderKindTypeSafe:
-		case AgentProviderKindOAuth:
+		case AgentProviderKindCodex:
 			// Signed in, not keyed: the refresh token is what it needs, and
 			// a key here would be quietly ignored, which is worse than
 			// being told.
@@ -968,7 +970,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 			}
 		default:
 			validator.add(prefix+".kind",
-				`must be "openai" (also every compatible server), "anthropic", "gemini", "typesafe" or "openai-oauth"`)
+				`must be "openai" (also every compatible server), "anthropic", "gemini", "typesafe" or "openai-codex"`)
 		}
 		if provider.Kind == AgentProviderKindTypeSafe {
 			deciders[provider.Name] = true

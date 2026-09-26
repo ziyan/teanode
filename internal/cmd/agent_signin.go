@@ -40,7 +40,7 @@ func newAgentSignInCommand() *cli.Command {
 func runAgentSignIn(ctx context.Context, command *cli.Command) error {
 	kind := config.CanonicalProviderKind(strings.TrimSpace(command.Args().First()))
 	if kind == "" {
-		kind = config.AgentProviderKindOAuth
+		kind = config.AgentProviderKindCodex
 	}
 
 	flow, err := llm.BeginSignIn(kind)
