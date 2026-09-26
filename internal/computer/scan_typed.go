@@ -54,6 +54,11 @@ type typedSource struct {
 	runner       *sources.Runner
 	containers   map[string]sources.Container
 	isUnfinished bool
+
+	// pass names the pass this page belongs to, and readNotes is where it
+	// is noted which containers the pass has read already.
+	pass      string
+	readNotes string
 }
 
 func openTyped(root string, arguments *ScanArguments) (*typedSource, error) {
@@ -85,10 +90,17 @@ func openTyped(root string, arguments *ScanArguments) (*typedSource, error) {
 	if arguments.After == "" {
 		deadline = time.Now().Add(typedFirstPageTime)
 	}
+	// What a pass has read is forgotten when a new one starts.
+	read := filepath.Join(root, "read")
+	if arguments.After == "" {
+		if err := os.RemoveAll(read); err != nil {
+			return nil, err
+		}
+	}
 	return &typedSource{runner: &sources.Runner{
 		Type: parsed, Settings: arguments.Settings, Secrets: arguments.Secrets,
 		Executor: &localExecutor{directory: root}, State: root, Deadline: deadline,
-	}}, nil
+	}, pass: arguments.KnownID, readNotes: read}, nil
 }
 
 // names is the pass's containers: listed on its first page and kept, so
@@ -126,7 +138,20 @@ func (self *typedSource) read(ctx context.Context, folder *recordsFolder, relati
 	if !ok {
 		return nil, fmt.Errorf("%s was not in this pass's listing", relative)
 	}
+	// A container this pass has read already is answered from what was
+	// kept, on the pages after the one that read it: the page's entries
+	// are the same entries, and reading again would spend the page on
+	// the next months of a mailbox while sending nothing new.
+	sum := sha256.Sum256([]byte(self.pass + "\x00" + relative))
+	marker := filepath.Join(self.readNotes, hex.EncodeToString(sum[:16]))
+	_, noted := os.Stat(marker)
+	self.runner.Stored = self.pass != "" && noted == nil
 	records, err := self.runner.Read(ctx, container)
+	if !self.runner.Stored && self.pass != "" && (err == nil || errors.Is(err, sources.ErrUnfinished)) {
+		if mkdirErr := os.MkdirAll(self.readNotes, 0o700); mkdirErr == nil {
+			_ = os.WriteFile(marker, nil, 0o600)
+		}
+	}
 	if errors.Is(err, sources.ErrUnfinished) {
 		self.isUnfinished = true
 	} else if err != nil {
