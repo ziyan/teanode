@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.67.1] - 2026-09-26
+
+### Changed
+
+- A provider of kind `openai-codex` offers `gpt-5.6-terra` and `gpt-5.6-luna` as well as `gpt-5.5`. (#176)
+
 ## [0.67.0] - 2026-09-26
 
 ### Added
