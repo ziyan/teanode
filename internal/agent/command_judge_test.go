@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/skills"
 )
 
@@ -71,5 +72,21 @@ func TestACallIsJudgedOncePerTurn(t *testing.T) {
 	}
 	if run.judgedToAsk(context.Background(), &Tool{Name: "plain", Risk: tools.RiskWrite}, nil) {
 		t.Error("a tool with nothing to judge asked")
+	}
+}
+
+// What the judgements cost is carried once, by the next answer, so that the
+// turn's cost includes them and no answer counts them twice.
+func TestJudgementsAreCarriedByTheNextAnswer(t *testing.T) {
+	run := &AskRun{judgementUsage: models.AgentUsageNote{PromptTokens: 300, CompletionTokens: 40, Cost: 0.002}}
+	first := &models.AgentUsageNote{PromptTokens: 1000, CompletionTokens: 100, Cost: 0.01}
+	run.carryJudgements(first)
+	if first.PromptTokens != 1300 || first.CompletionTokens != 140 || first.Cost < 0.0119 || first.Cost > 0.0121 {
+		t.Errorf("the first answer carries %+v", first)
+	}
+	second := &models.AgentUsageNote{PromptTokens: 1000}
+	run.carryJudgements(second)
+	if second.PromptTokens != 1000 || second.Cost != 0 {
+		t.Errorf("the second answer counted them again: %+v", second)
 	}
 }

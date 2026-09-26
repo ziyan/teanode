@@ -83,7 +83,7 @@ func (self *AskRun) judgeCall(ctx context.Context, call string) (string, string)
 	if err != nil {
 		return callRiskDestructive, "could not judge: " + err.Error()
 	}
-	RecordUsage(self.agent.settings.Database, settings.Agent.ID, "", self.agent.settings.Registry.Configuration().Models.ForWork(config.AgentWorkTriage), "ask", response.Usage)
+	self.countJudgement(self.agent.settings.Registry.Configuration().Models.ForWork(config.AgentWorkTriage), response.Usage)
 	return readCallRisk(response.Message.Content)
 }
 

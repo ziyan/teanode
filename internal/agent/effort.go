@@ -144,7 +144,7 @@ func (self *AskRun) judgeDepth() (string, string) {
 		log.Infof("could not judge how deep to look: %s", err)
 		return depthAnswer, ""
 	}
-	RecordUsage(self.agent.settings.Database, settings.Agent.ID, "", self.agent.settings.Registry.Configuration().Models.ForWork(config.AgentWorkTriage), "ask", response.Usage)
+	self.countJudgement(self.agent.settings.Registry.Configuration().Models.ForWork(config.AgentWorkTriage), response.Usage)
 	depth, reason := readDepth(response.Message.Content)
 	if reason == "" {
 		log.Infof("could not read how deep to look from %q", cutRunes(response.Message.Content, 200))

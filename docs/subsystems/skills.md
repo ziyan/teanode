@@ -231,7 +231,8 @@ nothing in a command's shape says which that is. So before each such call the
 fast model (the triage work) is shown the tool, the commands of the action
 chosen as the skill writes them, and the arguments, and judges it `read`,
 `change`, `outward` or `destructive`. The first two run; the other two ask. A
-judgement that fails asks. The same call is judged once in a turn.
+judgement that fails asks. The same call is judged once in a turn, and what
+the judgement costs is counted in the turn's own cost.
 
 The arguments were written by a model that may have read something hostile,
 so the judge is told to treat them as data. A judge talked into calling a send

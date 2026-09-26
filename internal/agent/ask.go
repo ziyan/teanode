@@ -229,6 +229,10 @@ type AskRun struct {
 	// judge was shown, and whether each asks; see judgedToAsk.
 	judgedCalls map[string]bool
 
+	// judgementUsage is what the judgements made for this turn cost and no
+	// answer carries yet; see countJudgement.
+	judgementUsage models.AgentUsageNote
+
 	// questions are the ask_user cards waiting for an answer, by call id.
 	questions map[string]chan string
 
@@ -952,15 +956,17 @@ func (self *AskRun) turn() error {
 		answer := response.Message
 		answer.Role = llm.RoleAssistant
 		history = append(history, answer)
+		answerUsage := &models.AgentUsageNote{Model: modelName, Kind: usageKind, PromptTokens: response.Usage.PromptTokens, CompletionTokens: response.Usage.CompletionTokens,
+			CacheReadTokens: response.Usage.CacheReadTokens, CacheWriteTokens: response.Usage.CacheWriteTokens,
+			Cost: configuration.Agent.CostOf(modelName, response.Usage.PromptTokens, response.Usage.CompletionTokens, response.Usage.CacheReadTokens, response.Usage.CacheWriteTokens)}
+		self.carryJudgements(answerUsage)
 		if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 			saved, err := tx.AppendAgentMessage(&models.AgentMessage{
 				ConversationID: settings.Conversation.ID,
 				Role:           string(llm.RoleAssistant),
 				Content:        answer.Content,
 				ToolCalls:      toolCallsOf(answer.ToolCalls),
-				Usage: &models.AgentUsageNote{Model: modelName, Kind: usageKind, PromptTokens: response.Usage.PromptTokens, CompletionTokens: response.Usage.CompletionTokens,
-					CacheReadTokens: response.Usage.CacheReadTokens, CacheWriteTokens: response.Usage.CacheWriteTokens,
-					Cost: configuration.Agent.CostOf(modelName, response.Usage.PromptTokens, response.Usage.CompletionTokens, response.Usage.CacheReadTokens, response.Usage.CacheWriteTokens)},
+				Usage:          answerUsage,
 			})
 			if err != nil {
 				return err
