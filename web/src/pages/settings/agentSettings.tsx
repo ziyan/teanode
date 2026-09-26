@@ -12,6 +12,7 @@ import { Tag } from '../../components/common'
 import { useToast } from '../../components/toast'
 import { ToolPolicyAccordion } from '../../components/toolPolicy'
 import { Tooltip } from '../../components/tooltip'
+import { ProviderSignIn } from './providerSignIn'
 import { useTranslation } from '../../i18n/i18n'
 import { UPDATE, useSaver } from './integrations'
 
@@ -32,6 +33,9 @@ export type AgentProvider = {
   kind: string
   baseUrl: string
   hasApiKey: boolean
+  // A provider that runs on a person's plan is signed in to, not keyed.
+  hasRefreshToken: boolean
+  account: string
   enabled: boolean
   allow: string[]
   deny: string[]
@@ -136,7 +140,7 @@ export type Agent = {
 
 export const AGENT_SELECTION = `agent {
   enabled instructions allowPrivateAddresses skipCertificateCheck
-  providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
+  providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
   models { default fast embedding triage research summarize reply ask schedule compact scan embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
   limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay }
@@ -352,6 +356,7 @@ type ProviderDraft = {
   baseUrl: string
   apiKey: string
   hasApiKey: boolean
+  hasRefreshToken: boolean
   enabled: boolean
   allow: string
   deny: string
@@ -370,6 +375,7 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
         baseUrl: provider.baseUrl,
         apiKey: '',
         hasApiKey: provider.hasApiKey,
+        hasRefreshToken: provider.hasRefreshToken,
         enabled: provider.enabled,
         allow: list(provider.allow),
         deny: list(provider.deny),
@@ -391,6 +397,7 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
         baseUrl: '',
         apiKey: '',
         hasApiKey: false,
+        hasRefreshToken: false,
         enabled: true,
         allow: '',
         deny: '',
@@ -488,10 +495,13 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
     >
       {settings.providers.length === 0 ? <SettingsEmpty>{t('agentSettings.noProviders')}</SettingsEmpty> : null}
       {settings.providers.map((provider, index) => {
-        const detail = [
-          provider.baseUrl || t('agentSettings.publicService'),
-          provider.hasApiKey ? t('agentSettings.keySet') : t('agentSettings.keyMissing'),
-        ]
+        const detail =
+          provider.kind === SIGNED_IN_KIND
+            ? [provider.hasRefreshToken ? t('agentSettings.signedIn') : t('agentSettings.notSignedIn')]
+            : [
+                provider.baseUrl || t('agentSettings.publicService'),
+                provider.hasApiKey ? t('agentSettings.keySet') : t('agentSettings.keyMissing'),
+              ]
         if (provider.allow.length > 0) detail.push(t('agentSettings.offers', { patterns: list(provider.allow) }))
         if (provider.deny.length > 0) detail.push(t('agentSettings.hides', { patterns: list(provider.deny) }))
         if (provider.pricingInput || provider.pricingOutput) {
@@ -519,7 +529,11 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
               <>
                 <button
                   type="button"
-                  disabled={busy || testing !== null || (!provider.hasApiKey && provider.kind !== 'openai')}
+                  disabled={
+                    busy ||
+                    testing !== null ||
+                    (!provider.hasApiKey && !provider.hasRefreshToken && provider.kind !== 'openai')
+                  }
                   onClick={() => void test(provider.name)}
                 >
                   {testing === provider.name ? t('agentSettings.testing') : t('agentSettings.test')}
@@ -559,6 +573,12 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
           busy={busy}
           onChange={(draft) => setEditing({ ...editing, draft })}
           onClose={() => setEditing(null)}
+          onSignedIn={() => {
+            // A sign-in saves the provider on the server, creating it when
+            // it is new; what is left in the dialog would save over it.
+            setEditing(null)
+            void onSaved()
+          }}
           onSubmit={() => {
             const values: (ReturnType<typeof providerValues> & { previousName?: string })[] =
               settings.providers.map(providerValues)
@@ -623,6 +643,10 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
   )
 }
 
+// SIGNED_IN_KIND runs on a person's plan and is signed in to rather than
+// given a key.
+const SIGNED_IN_KIND = 'openai-codex'
+
 function ProviderDialog({
   draft,
   kinds,
@@ -631,6 +655,7 @@ function ProviderDialog({
   onChange,
   onClose,
   onSubmit,
+  onSignedIn,
 }: {
   draft: ProviderDraft
   kinds: string[]
@@ -639,15 +664,19 @@ function ProviderDialog({
   onChange: (draft: ProviderDraft) => void
   onClose: () => void
   onSubmit: () => void
+  onSignedIn: () => void
 }) {
   const { t } = useTranslation()
   const set = (change: Partial<ProviderDraft>) => onChange({ ...draft, ...change })
+  const isSignedInKind = draft.kind === SIGNED_IN_KIND
   return (
     <FormDialog
       title={adding ? t('agentSettings.addProvider') : t('agentSettings.editProvider')}
       submitLabel={t('common.save')}
       busy={busy}
-      canSubmit={draft.name.trim() !== ''}
+      // A provider on a plan exists once it is signed in; until then there
+      // is nothing to save, and the sign-in saves it.
+      canSubmit={draft.name.trim() !== '' && (!isSignedInKind || draft.hasRefreshToken)}
       wide
       onClose={onClose}
       onSubmit={onSubmit}
@@ -668,27 +697,38 @@ function ProviderDialog({
           />
         </label>
       </div>
-      <label>
-        <span>{t('agentSettings.providerBaseUrl')}</span>
-        <input
-          value={draft.baseUrl}
-          placeholder={t('agentSettings.providerBaseUrlPlaceholder')}
-          onChange={(event) => set({ baseUrl: event.target.value })}
+      {isSignedInKind ? (
+        <ProviderSignIn
+          provider={draft.name}
+          isSignedIn={draft.hasRefreshToken}
+          disabled={busy}
+          onSignedIn={onSignedIn}
         />
-      </label>
-      <label>
-        <span>
-          {t('agentSettings.providerApiKey')}
-          {draft.hasApiKey ? <span className="muted"> {t('agentSettings.secretKept')}</span> : null}
-        </span>
-        <input
-          type="password"
-          autoComplete="off"
-          value={draft.apiKey}
-          placeholder={draft.hasApiKey ? '••••••••' : ''}
-          onChange={(event) => set({ apiKey: event.target.value })}
-        />
-      </label>
+      ) : (
+        <>
+          <label>
+            <span>{t('agentSettings.providerBaseUrl')}</span>
+            <input
+              value={draft.baseUrl}
+              placeholder={t('agentSettings.providerBaseUrlPlaceholder')}
+              onChange={(event) => set({ baseUrl: event.target.value })}
+            />
+          </label>
+          <label>
+            <span>
+              {t('agentSettings.providerApiKey')}
+              {draft.hasApiKey ? <span className="muted"> {t('agentSettings.secretKept')}</span> : null}
+            </span>
+            <input
+              type="password"
+              autoComplete="off"
+              value={draft.apiKey}
+              placeholder={draft.hasApiKey ? '••••••••' : ''}
+              onChange={(event) => set({ apiKey: event.target.value })}
+            />
+          </label>
+        </>
+      )}
       <div className="row">
         <label>
           <span>{t('agentSettings.providerAllow')}</span>
