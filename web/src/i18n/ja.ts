@@ -1492,6 +1492,7 @@ export const ja: Catalog = {
   'agentSettings.limit.concurrency': '同時実行数',
   'agentSettings.limit.maxRoundsPerDream': '夢の 1 回の呼び出しあたりのラウンド数',
   'agentSettings.limit.scanConcurrency': '同時に行う読み取り呼び出し数',
+  'agentSettings.limit.rewriteConcurrency': '同時に書き直すページ数',
   'agentSettings.limit.dreamShare': '夜間が使える 1 日の予算の割合（既定 0.3）',
   'agentSettings.limit.ingestChunksPerRun': '取り込み 1 回あたりの埋め込み段落数',
   'agentSettings.limit.embeddingTokensPerDay': '1 日の埋め込みトークン数（0 で上限なし）',

@@ -1448,6 +1448,7 @@ export const zh: Catalog = {
   'agentSettings.limit.concurrency': '并发运行数',
   'agentSettings.limit.maxRoundsPerDream': '每次夜间调用的轮数',
   'agentSettings.limit.scanConcurrency': '同时进行的阅读调用数',
+  'agentSettings.limit.rewriteConcurrency': '同时改写的页面数',
   'agentSettings.limit.dreamShare': '夜间可用的每日预算份额（默认 0.3）',
   'agentSettings.limit.ingestChunksPerRun': '每次导入嵌入的段落数',
   'agentSettings.limit.embeddingTokensPerDay': '每日嵌入令牌数（0 为不限）',
