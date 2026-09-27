@@ -1408,6 +1408,11 @@ One for a service metered by the call; as many as it has slots for a
 model of the person's own, where the reading is bound by nothing but the
 machine. Zero and one both mean one at a time.
 
+**`rewriteConcurrency`** — How many pages the nightly run rewrites at once,
+after the reading. One when unset. Each rewrite changes only its own page,
+so pages can be rewritten side by side; on a model that answers slowly, a
+few at once is what leaves the rest of the night its time.
+
 **`ingestChunksPerRun`** — How many chunks one pass of an ingest job
 embeds before it hands the queue back, so that one enormous source does
 not hold the worker. Zero resolves to `2000`.

@@ -1492,6 +1492,7 @@ export const en = {
   'agentSettings.limit.concurrency': 'Runs at once',
   'agentSettings.limit.maxRoundsPerDream': 'Rounds per dream call',
   'agentSettings.limit.scanConcurrency': 'Reading calls at once',
+  'agentSettings.limit.rewriteConcurrency': 'Page rewrites at once',
   'agentSettings.limit.dreamShare': 'Share of the day the night may spend (0.3 by default)',
   'agentSettings.limit.ingestChunksPerRun': 'Passages embedded per ingest run',
   'agentSettings.limit.embeddingTokensPerDay': 'Embedding tokens per day (0 for no cap)',

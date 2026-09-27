@@ -189,6 +189,7 @@ type AgentLimitsSettings struct {
 	DreamShare            float64 `json:"dreamShare"`
 	IngestChunksPerRun    int     `json:"ingestChunksPerRun"`
 	ScanConcurrency       int     `json:"scanConcurrency"`
+	RewriteConcurrency    int     `json:"rewriteConcurrency"`
 }
 
 // AgentRetentionSettings says how long records are kept.
@@ -324,6 +325,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			DreamShare:             agent.Limits.DreamShare,
 			IngestChunksPerRun:     agent.Limits.IngestChunksPerRun,
 			ScanConcurrency:        agent.Limits.ScanConcurrency,
+			RewriteConcurrency:     agent.Limits.RewriteConcurrency,
 		},
 		Retention: &AgentRetentionSettings{
 			Runs:        agent.Retention.Runs.String(),
@@ -533,6 +535,7 @@ type AgentLimitsParameters struct {
 	DreamShare             *float64 `json:"dreamShare"`
 	IngestChunksPerRun     *int     `json:"ingestChunksPerRun"`
 	ScanConcurrency        *int     `json:"scanConcurrency"`
+	RewriteConcurrency     *int     `json:"rewriteConcurrency"`
 }
 
 // AgentRetentionParameters change how long records are kept.
@@ -740,6 +743,9 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		}
 		if parameters.Limits.ScanConcurrency != nil {
 			limits.ScanConcurrency = *parameters.Limits.ScanConcurrency
+		}
+		if parameters.Limits.RewriteConcurrency != nil {
+			limits.RewriteConcurrency = *parameters.Limits.RewriteConcurrency
 		}
 		if parameters.Limits.DailyTokensPerAgent != nil {
 			limits.DailyTokensPerAgent = *parameters.Limits.DailyTokensPerAgent

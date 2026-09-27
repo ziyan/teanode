@@ -490,6 +490,10 @@ type AgentLimits struct {
 	// by nothing but the machine.
 	ScanConcurrency int `yaml:"scanConcurrency,omitempty"`
 
+	// RewriteConcurrency is how many pages the nightly run rewrites at
+	// once, after the reading. One when unset.
+	RewriteConcurrency int `yaml:"rewriteConcurrency,omitempty"`
+
 	// DreamShare is how much of the daily budget the nightly run may
 	// spend, so that a night never eats the day. Zero resolves to 0.3.
 	DreamShare float64 `yaml:"dreamShare,omitempty"`

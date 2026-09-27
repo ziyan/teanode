@@ -116,6 +116,7 @@ export type Agent = {
     concurrency: number
     maxRoundsPerDream: number
     scanConcurrency: number
+    rewriteConcurrency: number
     dreamShare: number
     ingestChunksPerRun: number
     embeddingTokensPerDay: number
@@ -143,7 +144,7 @@ export const AGENT_SELECTION = `agent {
   providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
   models { default fast embedding triage research summarize reply ask schedule compact scan embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
-  limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay }
+  limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay }
   retention { runs corrections }
   currency
   search { kind hasApiKey }
@@ -1045,6 +1046,7 @@ function limitFields(settings: Agent) {
     concurrency: String(settings.limits.concurrency),
     maxRoundsPerDream: String(settings.limits.maxRoundsPerDream),
     scanConcurrency: String(settings.limits.scanConcurrency),
+    rewriteConcurrency: String(settings.limits.rewriteConcurrency),
     dreamShare: String(settings.limits.dreamShare),
     ingestChunksPerRun: String(settings.limits.ingestChunksPerRun),
     embeddingTokensPerDay: String(settings.limits.embeddingTokensPerDay),
@@ -1097,6 +1099,7 @@ function LimitsForm({ settings, onSaved }: Props) {
               concurrency: number(limits.concurrency),
               maxRoundsPerDream: number(limits.maxRoundsPerDream),
               scanConcurrency: number(limits.scanConcurrency),
+              rewriteConcurrency: number(limits.rewriteConcurrency),
               dreamShare: Number(limits.dreamShare) || 0,
               ingestChunksPerRun: number(limits.ingestChunksPerRun),
               embeddingTokensPerDay: number(limits.embeddingTokensPerDay),
@@ -1129,7 +1132,9 @@ function LimitsForm({ settings, onSaved }: Props) {
       </div>
       {/* The night and the ingest: what the reading may spend and how
           wide it runs, beside the caps a conversation lives under. */}
-      <div className="row">{(['maxRoundsPerDream', 'scanConcurrency', 'dreamShare'] as const).map(numeric)}</div>
+      <div className="row">
+        {(['maxRoundsPerDream', 'scanConcurrency', 'rewriteConcurrency', 'dreamShare'] as const).map(numeric)}
+      </div>
       <div className="row">{(['ingestChunksPerRun', 'embeddingTokensPerDay'] as const).map(numeric)}</div>
       <div className="row">
         {(['requestTimeout', 'concurrency'] as const).map(numeric)}
