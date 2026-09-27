@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -183,7 +184,7 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 		// conversation as waiting, with the person's three ways on in
 		// the note, and the stop is written into the transcript because
 		// no turn ran to say it there.
-		note := fmt.Sprintf("Goal stalled: %d turns since you last wrote and it is not met. Write to keep going, or clear or change it.", goalTurnsAlone)
+		note := models.NoteText(models.NoteGoalStalled, strconv.Itoa(goalTurnsAlone))
 		var stalled *models.AgentConversation
 		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 			stalled, err = tx.UpdateAgentConversation(conversation.ID, func(conversation *models.AgentConversation) error {
@@ -196,7 +197,7 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 			if err != nil || stalled == nil || stalled.GoalState != models.GoalWaiting {
 				return err
 			}
-			_, err = tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: models.AgentMessageNote, Content: note})
+			_, err = tx.AppendAgentMessage(models.NewAgentNote(conversation.ID, models.NoteGoalStalled, strconv.Itoa(goalTurnsAlone)))
 			return err
 		}); err != nil {
 			return err

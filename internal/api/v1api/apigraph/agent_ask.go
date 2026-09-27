@@ -847,8 +847,8 @@ func (self *graph) StartAgentConversation(ctx context.Context, arguments StartAg
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if note := models.GoalChangeNote(nil, conversation); note != "" {
-		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: models.AgentMessageNote, Content: note}); err != nil {
+	if kind, detail := models.GoalChangeNote(nil, conversation); kind != "" {
+		if _, err := tx.AppendAgentMessage(models.NewAgentNote(conversation.ID, kind, detail)); err != nil {
 			return nil, translateError(err)
 		}
 	}
@@ -989,8 +989,8 @@ func (self *graph) UpdateAgentConversation(ctx context.Context, arguments Update
 	}
 	// The goal's beginning and end, in the transcript where they
 	// happened; the chip beside it shows only where it stands now.
-	if note := models.GoalChangeNote(conversation, updated); note != "" {
-		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: models.AgentMessageNote, Content: note}); err != nil {
+	if kind, detail := models.GoalChangeNote(conversation, updated); kind != "" {
+		if _, err := tx.AppendAgentMessage(models.NewAgentNote(conversation.ID, kind, detail)); err != nil {
 			return nil, translateError(err)
 		}
 	}

@@ -206,6 +206,9 @@ func (self *AskRun) compact(ctx context.Context, provider llm.Provider, model, m
 	// Each chunk's note is a run of its own, on the compact model: a turn
 	// inside a turn, with no tools and one round, that the person can
 	// open like any other.
+	// Said before the first call, since writing the note takes a while
+	// and the turn is quiet meanwhile.
+	self.sayNote(models.NoteCompacting, "")
 	note := ""
 	for _, chunk := range chunkHistory(older, compactChunkTokens) {
 		prompt, err := render("compact.txt", map[string]any{"Previous": note, "Conversation": renderMessages(chunk, compactMessageCharacters)})
@@ -235,6 +238,6 @@ func (self *AskRun) compact(ctx context.Context, provider llm.Provider, model, m
 		return nil, err
 	}
 	self.settings.Conversation.CompactedThrough = through
-	self.emit(Event{Kind: EventNote, Note: "the earlier conversation was compacted into a note"})
+	self.sayNote(models.NoteCompacted, note)
 	return append([]llm.ChatMessage{compactionNote(note)}, tail...), nil
 }

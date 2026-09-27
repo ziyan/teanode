@@ -6734,6 +6734,32 @@ main.content:has(> .mailbox-frame) {
   background: var(--field);
 }
 
+/* A compaction still being written: the line breathes until the note is
+   done, since the turn is otherwise quiet for a while. */
+.agent-line.note.pending {
+  animation: agent-note-pending 1.6s ease-in-out infinite;
+}
+
+@keyframes agent-note-pending {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-line.note.pending {
+    animation: none;
+  }
+}
+
+/* A compaction's line opens to the note it wrote, read as prose. */
+.agent-note-detail {
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+  font-size: 13px;
+  color: var(--text);
+}
+
 /* A tool line opens to what was asked and what came back. */
 .agent-tool-toggle {
   padding: 0;

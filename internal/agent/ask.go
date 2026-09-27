@@ -193,15 +193,27 @@ type Event struct {
 	Arguments      string    `json:"arguments,omitempty"`
 	Risk           string    `json:"risk,omitempty"`
 	Note           string    `json:"note,omitempty"`
-	Error          string    `json:"error,omitempty"`
-	At             time.Time `json:"at"`
+	// NoteKind and NoteDetail are a note's kind and detail, for a client
+	// that words it in the person's language; Note is it in English.
+	NoteKind   string    `json:"noteKind,omitempty"`
+	NoteDetail string    `json:"noteDetail,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	At         time.Time `json:"at"`
+}
+
+// sayNote tells whoever is watching a note of a kind: in English, and by
+// its kind and detail for a client that words it in the person's language.
+func (self *AskRun) sayNote(kind models.AgentNoteKind, detail string) {
+	self.emit(Event{Kind: EventNote, Note: models.NoteText(kind, detail), NoteKind: string(kind), NoteDetail: detail})
 }
 
 // AskRun is one turn in flight.
 type AskRun struct {
-	// depthNote is what the judgement of this message said, written under
-	// the message once it is stored; see chooseDepth.
-	depthNote string
+	// hasDepthNote says this message was judged worth looking into
+	// carefully, and depthReason why, written under the message once it is
+	// stored; see chooseDepth.
+	hasDepthNote bool
+	depthReason  string
 
 	// modelName is the model the turn runs on, written provider:model, so
 	// the agent can say which it is when asked rather than guess.
@@ -642,11 +654,11 @@ func (self *AskRun) loop() {
 	// conversation shows the words a phone or a chat app sent.
 	self.emit(Event{Kind: EventAsked, Text: self.settings.Message, Note: self.settings.Surface})
 	if previous := self.previous; previous != nil && !previous.isFinished() {
-		self.emit(Event{Kind: EventNote, Note: "queued behind the turn before it"})
+		self.sayNote(models.NoteQueued, "")
 		select {
 		case <-previous.done:
 		case <-self.ctx.Done():
-			self.emit(Event{Kind: EventNote, Note: "stopped"})
+			self.sayNote(models.NoteStopped, "")
 			self.emit(Event{Kind: EventDone})
 			return
 		}
@@ -657,17 +669,17 @@ func (self *AskRun) loop() {
 			// Said in the transcript too, so that the words cut short
 			// read as cut short after a reload.
 			_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
-				_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: self.settings.Conversation.ID, Role: models.AgentMessageNote, Content: "stopped"})
+				_, err := tx.AppendAgentMessage(models.NewAgentNote(self.settings.Conversation.ID, models.NoteStopped, ""))
 				return err
 			})
-			self.emit(Event{Kind: EventNote, Note: "stopped"})
+			self.sayNote(models.NoteStopped, "")
 		} else {
 			// In the transcript too: a run that failed used to hold its
 			// prompt and nothing else, and the reason was in the server
 			// log where the person never looks.
 			log.Warningf("the agent of %q failed a turn: %s", self.settings.Owner.Username, err)
 			_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
-				_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: self.settings.Conversation.ID, Role: models.AgentMessageNote, Content: "failed: " + err.Error()})
+				_, err := tx.AppendAgentMessage(models.NewAgentNote(self.settings.Conversation.ID, models.NoteFailed, err.Error()))
 				return err
 			})
 			self.emit(Event{Kind: EventError, Error: err.Error()})
@@ -873,7 +885,7 @@ func (self *AskRun) turn() error {
 				return err
 			}
 			if deferral != nil {
-				self.emit(Event{Kind: EventNote, Note: "stopped: " + deferral.Reason})
+				self.sayNote(models.NoteStopped, deferral.Reason)
 				return nil
 			}
 		}
@@ -991,9 +1003,9 @@ func (self *AskRun) turn() error {
 			// only when it is well formed, and two calls in one breath, or
 			// one cut short, come back as mangled text with no call in it.
 			// Told, and asked again, rather than taken as the answer.
-			self.emit(Event{Kind: EventNote, Note: "a tool call the server could not read; asked again"})
+			self.sayNote(models.NoteCallUnreadable, "")
 			_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
-				_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: settings.Conversation.ID, Role: models.AgentMessageNote, Content: "a tool call the server could not read; asked again"})
+				_, err := tx.AppendAgentMessage(models.NewAgentNote(settings.Conversation.ID, models.NoteCallUnreadable, ""))
 				return err
 			})
 			history = append(history, llm.ChatMessage{Role: llm.RoleUser, Content: unreadableCallNotice})
@@ -1047,7 +1059,7 @@ func (self *AskRun) turn() error {
 				return err
 			}
 			if stuck {
-				self.emit(Event{Kind: EventNote, Note: "stopped: the same call failed three times"})
+				self.sayNote(models.NoteRepeatedFailure, "")
 				return nil
 			}
 		}
@@ -1069,7 +1081,7 @@ func (self *AskRun) turn() error {
 			self.lookingAt = nil
 		}
 	}
-	self.emit(Event{Kind: EventNote, Note: "stopped after the most rounds a turn may take"})
+	self.sayNote(models.NoteRoundLimit, "")
 	return nil
 }
 

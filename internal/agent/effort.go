@@ -55,7 +55,10 @@ func deepenedTurn(depth string) (effort string, research bool) {
 // with nobody present -- is left as it is.
 func (self *AskRun) chooseDepth() {
 	settings := self.settings
-	if settings.Headless || settings.Effort != "" || settings.Research {
+	// A turn a finished background command woke was not typed, and its
+	// message is the wake's framing: judged, the fast model restated the
+	// person's earlier request and the note said so a second time.
+	if settings.Headless || settings.Surface == backgroundSurface || settings.Effort != "" || settings.Research {
 		return
 	}
 	switch setting := self.agent.settings.Configuration().Agent.Effort; setting {
@@ -78,10 +81,7 @@ func (self *AskRun) chooseDepth() {
 	// person reading the conversation later, can see why this answer took
 	// longer and looked further than the others. Written once the message
 	// it is about is, by the turn; see sayDepth.
-	self.depthNote = "looking into this carefully"
-	if reason != "" {
-		self.depthNote += ": " + reason
-	}
+	self.hasDepthNote, self.depthReason = true, reason
 }
 
 // judgeDepth asks the fast model how deep the message deserves, from the
@@ -172,12 +172,12 @@ func readDepth(text string) (string, string) {
 // it live: called by the turn once that message is in the transcript, so
 // that a reload shows the note after the words that asked for the care.
 func (self *AskRun) sayDepth(tx db.Transaction) error {
-	if self.depthNote == "" {
+	if !self.hasDepthNote {
 		return nil
 	}
-	if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: self.settings.Conversation.ID, Role: models.AgentMessageNote, Content: self.depthNote}); err != nil {
+	if _, err := tx.AppendAgentMessage(models.NewAgentNote(self.settings.Conversation.ID, models.NoteDepth, self.depthReason)); err != nil {
 		return err
 	}
-	self.emit(Event{Kind: EventNote, Note: self.depthNote})
+	self.sayNote(models.NoteDepth, self.depthReason)
 	return nil
 }
