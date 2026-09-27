@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.71.0] - 2026-09-27
+
+### Added
+
+- A dream rewrites several pages at once: "Page rewrites at once" in the agent's limits (`agent.limits.rewriteConcurrency`). (#190)
+
+### Changed
+
+- The New message button is only in the sidebar, not also above each folder. (#191)
+
 ## [0.70.0] - 2026-09-27
 
 ### Added
