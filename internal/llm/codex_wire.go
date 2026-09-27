@@ -33,6 +33,11 @@ type codexRequest struct {
 	Text         *codexFormat `json:"text,omitempty"`
 
 	Reasoning *codexReasoning `json:"reasoning,omitempty"`
+
+	// PromptCacheKey routes the rounds of one conversation to one cache,
+	// and ParallelToolCalls lets a round ask for several tools at once.
+	PromptCacheKey    string `json:"prompt_cache_key,omitempty"`
+	ParallelToolCalls *bool  `json:"parallel_tool_calls,omitempty"`
 }
 
 // codexReasoning is how hard the model thinks before it answers.
@@ -118,12 +123,31 @@ func (self *codex) encode(request *ChatRequest) ([]byte, error) {
 			Description: tool.Description, Parameters: tool.Parameters,
 		})
 	}
+	if len(body.Tools) > 0 {
+		// Independent searches and reads in one round rather than one a
+		// round, each of which sends the whole conversation again.
+		parallel := true
+		body.ParallelToolCalls = &parallel
+	}
+	body.PromptCacheKey = request.CacheKey
 
 	for _, message := range request.Messages {
 		switch message.Role {
 		case RoleSystem:
-			// Not a message here but a field, and more than one of them is
-			// joined rather than the last winning.
+			// The system messages before anything else was said are not
+			// messages here but the instructions field, joined rather than
+			// the last winning. One after the conversation -- what is true
+			// this round, the time among it -- stays where it was put, as
+			// the developer's message: joined into the instructions, which
+			// come first, it changed the start of every request each round,
+			// and nothing after it was ever read from the cache.
+			if len(body.Input) > 0 {
+				body.Input = append(body.Input, codexItem{
+					Type: "message", Role: "developer",
+					Content: []codexContent{{Type: "input_text", Text: message.Content}},
+				})
+				continue
+			}
 			if body.Instructions != "" {
 				body.Instructions += "\n\n"
 			}

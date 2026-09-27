@@ -991,7 +991,7 @@ func (self *AskRun) turn() error {
 			toolChoice = "none"
 		}
 
-		response, err := self.chat(ctx, provider, &llm.ChatRequest{Model: model, Messages: messages, Tools: definitions, MaxTokens: roundTokens(settings.Effort), ToolChoice: toolChoice, ReasoningEffort: settings.Effort})
+		response, err := self.chat(ctx, provider, &llm.ChatRequest{Model: model, Messages: messages, Tools: definitions, MaxTokens: roundTokens(settings.Effort), ToolChoice: toolChoice, ReasoningEffort: settings.Effort, CacheKey: settings.Conversation.ID})
 		if response != nil {
 			self.usage = self.usage.Add(response.Usage)
 			RecordUsage(self.agent.settings.Database, settings.Agent.ID, "", modelName, usageKind, response.Usage)

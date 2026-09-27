@@ -463,3 +463,42 @@ func TestThePlanListsItsOwnModels(test *testing.T) {
 		test.Errorf("it offered %+v", models)
 	}
 }
+
+// What is true this round goes after the conversation, where the loop put
+// it, not into the instructions: they come first, and a line in them that
+// changes every round -- the time -- left nothing after it to be read from
+// the cache. The rounds of one conversation share a cache key, and a round
+// may ask for several tools at once.
+func TestTheRoundsOverlayStaysAfterTheConversation(test *testing.T) {
+	provider := &codex{}
+	const conversationId = "conversation-1"
+	encoded, err := provider.encode(&ChatRequest{
+		Model: "plan-model",
+		Messages: []ChatMessage{
+			{Role: RoleSystem, Content: "Be brief."},
+			{Role: RoleUser, Content: "What is on today?"},
+			{Role: RoleSystem, Content: "<now>Saturday 14:06</now>"},
+		},
+		Tools:    []ToolDefinition{{Name: "calendar", Description: "What is on", Parameters: map[string]any{"type": "object"}}},
+		CacheKey: conversationId,
+	})
+	if err != nil {
+		test.Fatalf("encode: %s", err)
+	}
+	var body codexRequest
+	if err := json.Unmarshal(encoded, &body); err != nil {
+		test.Fatalf("what it sent was not readable: %s", err)
+	}
+	if body.Instructions != "Be brief." {
+		test.Errorf("the instructions should be the prompt alone, came out %q", body.Instructions)
+	}
+	if len(body.Input) != 2 || body.Input[1].Role != "developer" || body.Input[1].Content[0].Text != "<now>Saturday 14:06</now>" {
+		test.Fatalf("the overlay should follow the conversation as the developer's message: %+v", body.Input)
+	}
+	if body.PromptCacheKey != conversationId {
+		test.Errorf("the cache key came out %q", body.PromptCacheKey)
+	}
+	if body.ParallelToolCalls == nil || !*body.ParallelToolCalls {
+		test.Error("a round with tools should be able to call several at once")
+	}
+}
