@@ -270,3 +270,32 @@ func TestTheActionsOfAToolComeFromItsOwnSchema(t *testing.T) {
 		t.Fatalf("and nothing at all is nothing: %v", got)
 	}
 }
+
+// A merged tool says what each action would have said on its own: the
+// group's guidance, then each action's, once each; and every action's
+// overlay, asked each time, with the silent ones left out.
+func TestAMergedToolKeepsItsActionsGuidanceAndOverlays(t *testing.T) {
+	var ran string
+	actions := exampleActions(&ran)
+	actions[0].Tool.Guidance = "Listing is cheap; list before adding."
+	actions[1].Tool.Guidance = "Adding is for things the person named."
+	actions[2].Tool.Guidance = "Listing is cheap; list before adding."
+	actions[0].Tool.Overlay = func(context.Context) string { return "<things>three</things>" }
+	actions[1].Tool.Overlay = func(context.Context) string { return "" }
+	actions[2].Tool.Overlay = func(context.Context) string { return "<removed>none today</removed>" }
+	merged := Merge(MergedTool{Name: "thing", Family: FamilyPeople, Description: "The things.", Guidance: "Things belong to the person.", Actions: actions})
+
+	want := "Things belong to the person.\n\nListing is cheap; list before adding.\n\nAdding is for things the person named."
+	if merged.Guidance != want {
+		t.Errorf("guidance:\n%s\nwant:\n%s", merged.Guidance, want)
+	}
+	if merged.Overlay == nil {
+		t.Fatal("the actions' overlays were dropped")
+	}
+	if got := merged.Overlay(context.Background()); got != "<things>three</things>\n<removed>none today</removed>" {
+		t.Errorf("overlay: %q", got)
+	}
+	if plain := exampleMerged(&ran); plain.Overlay != nil || plain.Guidance != "" {
+		t.Errorf("a merged tool whose actions say nothing says nothing: %q", plain.Guidance)
+	}
+}

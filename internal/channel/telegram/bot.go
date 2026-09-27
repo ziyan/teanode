@@ -126,7 +126,7 @@ type chat struct {
 
 func (self *chat) Send(ctx context.Context, text, replyTo string) (string, error) {
 	reply, _ := strconv.ParseInt(replyTo, 10, 64)
-	id, err := self.client.Send(ctx, self.chatId, text, reply, true)
+	id, err := self.client.Send(ctx, self.chatId, telegramMarkdown(text), reply, true)
 	if err != nil {
 		return "", err
 	}
@@ -138,7 +138,7 @@ func (self *chat) Edit(ctx context.Context, messageId, text string) error {
 	if err != nil {
 		return err
 	}
-	return self.client.Edit(ctx, self.chatId, id, text, true)
+	return self.client.Edit(ctx, self.chatId, id, telegramMarkdown(text), true)
 }
 
 func (self *chat) Delete(ctx context.Context, messageId string) error {

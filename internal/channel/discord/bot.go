@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/ziyan/teanode/internal/channel"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // Bot is a Discord bot as the channel manager runs it: what is said to
@@ -102,11 +103,13 @@ type chat struct {
 }
 
 func (self *chat) Send(ctx context.Context, text, replyTo string) (string, error) {
-	return self.client.Send(ctx, self.channelId, text, replyTo)
+	// Discord reads common Markdown; only a cited message, whose mail:
+	// link opens nothing there, is left as its subject.
+	return self.client.Send(ctx, self.channelId, models.UnlinkMailCitations(text), replyTo)
 }
 
 func (self *chat) Edit(ctx context.Context, messageId, text string) error {
-	return self.client.Edit(ctx, self.channelId, messageId, text)
+	return self.client.Edit(ctx, self.channelId, messageId, models.UnlinkMailCitations(text))
 }
 
 func (self *chat) Delete(ctx context.Context, messageId string) error {

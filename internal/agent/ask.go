@@ -944,7 +944,7 @@ func (self *AskRun) turn() error {
 		messages := make([]llm.ChatMessage, 0, len(history)+2)
 		messages = append(messages, llm.ChatMessage{Role: llm.RoleSystem, Content: system, CacheBreakpoint: true})
 		messages = append(messages, history...)
-		if overlays := self.overlays(ctx, configuration); overlays != "" {
+		if overlays := self.overlays(ctx, configuration, sent); overlays != "" {
 			messages = append(messages, llm.ChatMessage{Role: llm.RoleSystem, Content: overlays})
 		}
 		definitions := make([]llm.ToolDefinition, 0, len(sent))
@@ -1451,6 +1451,16 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 		}
 	}
 	deferredLines := deferredCatalog(deferred)
+	// Which tools this round has, for the lines of the prompt that name
+	// one: said where the tool is sent, said with how to load it where it
+	// waits behind tool_search, and left out where it is not offered.
+	toolStates := make(map[string]string, len(sent)+len(deferred))
+	for _, tool := range deferred {
+		toolStates[tool.Name] = "deferred"
+	}
+	for _, tool := range sent {
+		toolStates[tool.Name] = "sent"
+	}
 	// What is read from the person's data is read once a turn. Every round
 	// sends the prompt again, and the provider serves the unchanged front
 	// of a request from its cache: the facts on the self page are ordered
@@ -1481,6 +1491,7 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 		"Self":      self.promptData.self,
 		"Guidance":  guidance,
 		"Deferred":  deferredLines,
+		"Tools":     toolStates,
 		// A turn asked to research gets a procedure for it; see Research.
 		"Researching": settings.Research,
 	})
@@ -1576,12 +1587,8 @@ func (self *AskRun) situation(ctx context.Context, configuration *config.Configu
 	} else {
 		lines = append(lines, "Search is by keyword only.")
 	}
-	switch settings.Surface {
-	case "":
-	case backgroundSurface:
-		lines = append(lines, "This turn was woken by a command you left running in the background, not by the person; what you say is read in the conversation when they look.")
-	default:
-		lines = append(lines, "You are talking through the "+settings.Surface+".")
+	if line := surfaceOf(settings.Surface).situationLine; line != "" {
+		lines = append(lines, line)
 	}
 	// The goal on this conversation, where there is one. Rebuilt each
 	// round from the row rather than from the conversation the turn
@@ -1709,7 +1716,7 @@ func (self *AskRun) sources(ctx context.Context) (granted []string, others []str
 }
 
 // overlays is what is true now, appended after the history each round.
-func (self *AskRun) overlays(ctx context.Context, configuration *config.Configuration) string {
+func (self *AskRun) overlays(ctx context.Context, configuration *config.Configuration, sent []*Tool) string {
 	settings := self.settings
 	var blocks []string
 	if viewing := settings.Viewing; viewing != nil {
@@ -1741,27 +1748,21 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 			blocks = append(blocks, "<viewing>\nThe person has open: "+strings.Join(parts, ", ")+". \"This\" means it.\n</viewing>")
 		}
 	}
-	// The dashboard draws the replies the model offers as buttons above the
-	// box, to send with a click; nowhere else does, and they are taken off
-	// what goes anywhere else (models.StripSuggestedReplies).
-	// The drawer says "phone" on a narrow screen and "extension" in the
-	// browser extension; both draw them.
-	switch {
-	case settings.Surface == "drawer", settings.Surface == "phone", settings.Surface == "extension", settings.Surface == "page",
-		strings.HasPrefix(settings.Surface, speakFirstSurfacePrefix):
+	// How to write for where the answer goes, and on the dashboard the
+	// replies it draws as buttons above the box, to send with a click.
+	where := surfaceOf(settings.Surface)
+	if where.hasSuggestedReplies {
 		blocks = append(blocks, suggestedRepliesBlock)
 	}
-	switch settings.Surface {
-	case "phone":
-		blocks = append(blocks, "<surface>\nA phone: keep it short, no tables.\n</surface>")
-	case "cli", "api":
-		blocks = append(blocks, "<surface>\nA terminal: plain text, no markdown tables wider than eighty columns, no suggestions of what to click.\n</surface>")
-	case "mail":
-		blocks = append(blocks, "<surface>\nThe answer goes out as a mail message: plain paragraphs, and the first line is its subject.\n</surface>")
-	case "telegram", "discord":
-		blocks = append(blocks, "<surface>\nA chat app on a phone: short, plain paragraphs, no tables, no headings; a list is one item per line. Something you make (a page, a chart) reaches them as a file.\n</surface>")
+	if where.overlay != "" {
+		blocks = append(blocks, where.overlay)
 	}
-	for _, tool := range self.offered {
+	// What each tool in this round's request says is true now. Only the
+	// ones sent, like their guidance: a tool still behind tool_search has
+	// neither its definition nor its guidance in the request, and an
+	// overlay about it described machines or a tab the model had no tool
+	// for.
+	for _, tool := range sent {
 		if tool.Overlay != nil {
 			if block := strings.TrimSpace(tool.Overlay(tools.WithRun(ctx, self))); block != "" {
 				blocks = append(blocks, block)
