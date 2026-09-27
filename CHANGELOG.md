@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.71.4] - 2026-09-27
+
+### Fixed
+
+- A month's page in the agent's notes no longer describes code, files or posts from that time as your own work unless the record says you did them, and a copyright year in someone else's code no longer dates anything. Pages written before this are rewritten, and month pages the agent had emptied are written again first. (#183)
+
 ## [0.71.3] - 2026-09-27
 
 ### Changed
