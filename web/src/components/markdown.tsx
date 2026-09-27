@@ -63,9 +63,13 @@ const PictureSource = createContext<(address: string) => string | null>(() => nu
 // Picture is an image the text showed, fetched from where the reader of
 // this markdown allows, and a link when it cannot be.
 function Picture({ address, alt, href }: { address: string; alt: string; href: string }) {
-  const source = useContext(PictureSource)(address)
+  // Checked here as well as where the text was read, so no caller can hand
+  // a picture an address that is not http or https.
+  const picture = webAddress(address)
+  const source = useContext(PictureSource)(picture)
   const [failed, setFailed] = useState(false)
-  const target = href || address
+  const target = webAddress(href) || picture
+  if (!picture) return <>{alt}</>
   if (!source || failed) {
     return (
       <a href={target} target="_blank" rel="noopener noreferrer nofollow">
