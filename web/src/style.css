@@ -5074,12 +5074,6 @@ main.content:has(> .mailbox-frame) {
   margin: 0;
   white-space: nowrap;
 }
-.mailbox-new {
-  padding: 8px 8px 0;
-}
-.mailbox-new button {
-  width: 100%;
-}
 .compose-editor-switch {
   margin: 12px 0 6px;
 }
