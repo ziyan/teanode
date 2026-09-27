@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.70.0] - 2026-09-27
+
+### Added
+
+- The agents' usage tab shows a chart above the table: by day, tokens (split into fresh input, cached input and output), cost or calls; otherwise the largest groups as bars. (#189)
+
+### Changed
+
+- Usage is grouped by user rather than by agent, and no longer by mailbox. (#189)
+
 ## [0.69.0] - 2026-09-27
 
 ### Added
