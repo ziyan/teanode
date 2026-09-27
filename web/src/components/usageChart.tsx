@@ -253,16 +253,18 @@ function DailyColumns({
   const labelEvery = Math.max(1, Math.ceil(items.length / Math.max(2, Math.floor(plotWidth / 64))))
   const grid = [0, 0.25, 0.5, 0.75, 1]
 
+  // The drawing is scaled to the width it is shown at, so a pointer is
+  // turned back into the drawing's own units first.
   const pointAt = (clientX: number, element: SVGSVGElement) => {
     const bounds = element.getBoundingClientRect()
-    const index = Math.floor((clientX - bounds.left - AXIS_WIDTH) / slot)
+    const x = ((clientX - bounds.left) * width) / Math.max(1, bounds.width)
+    const index = Math.floor((x - AXIS_WIDTH) / slot)
     onHover(index >= 0 && index < items.length ? index : null)
   }
 
   return (
     <svg
-      width={width}
-      height={HEIGHT}
+      viewBox={`0 0 ${width} ${HEIGHT}`}
       role="img"
       aria-label={items.map((item) => `${item.key}: ${format(measure(item.row, metric))}`).join(', ')}
       onPointerMove={(event) => pointAt(event.clientX, event.currentTarget)}
@@ -308,7 +310,12 @@ function DailyColumns({
               )
             })}
             {index % labelEvery === 0 && (
-              <text className="usage-chart-axis" x={x + columnWidth / 2} y={HEIGHT - 6} textAnchor="middle">
+              <text
+                className="usage-chart-axis"
+                x={x + columnWidth / 2}
+                y={HEIGHT - 6}
+                textAnchor={index + labelEvery >= items.length ? 'end' : 'middle'}
+              >
                 {dayLabel(item.key)}
               </text>
             )}
@@ -398,12 +405,13 @@ function DayTip({
   const slot = (width - AXIS_WIDTH) / Math.max(1, count)
   const center = AXIS_WIDTH + index * slot + slot / 2
   // Kept inside the chart: flipped to the left of the column past halfway.
+  // In proportions, since the drawing is scaled to the width it is shown at.
   const isLeft = center > width / 2
   const parts = partsOf(item.row)
   return (
     <div
-      className="usage-chart-tip"
-      style={isLeft ? { right: width - center + 10 } : { left: center + 10 }}
+      className={`usage-chart-tip ${isLeft ? 'left' : 'right'}`}
+      style={isLeft ? { right: `${((width - center) / width) * 100}%` } : { left: `${(center / width) * 100}%` }}
       role="status"
     >
       <div className="usage-chart-tip-day">{dayLabel(item.key)}</div>

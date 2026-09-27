@@ -8449,13 +8449,16 @@ button.with-icon {
   min-width: 9.5rem;
 }
 
-/* The usage, drawn above its table: shades of the leaf on the page's own
-   ground, so it reads in either theme. Fresh input is the middle shade,
-   cached input the palest (it costs a tenth), output the full leaf. */
+/* The usage, drawn above its table, in the page's own colours so it reads
+   in either theme: output the full leaf, fresh input a paler leaf, and
+   cached input a neutral grey, the part that costs a tenth. */
 .usage-chart {
-  --usage-input: color-mix(in srgb, var(--leaf) 58%, var(--surface));
-  --usage-cached: color-mix(in srgb, var(--leaf) 24%, var(--surface));
+  --usage-input: color-mix(in srgb, var(--leaf) 62%, var(--surface));
+  --usage-cached: color-mix(in srgb, var(--muted) 45%, var(--surface));
   --usage-output: var(--leaf);
+  /* Its width is the card's, never its own drawing's: sized by what it
+     drew, the chart could not shrink with a narrowing window. */
+  min-width: 0;
   margin-bottom: var(--space-4);
 }
 
@@ -8482,10 +8485,14 @@ button.with-icon {
 .usage-chart-plot {
   position: relative;
   width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .usage-chart-plot svg {
   display: block;
+  width: 100%;
+  height: auto;
   overflow: visible;
 }
 
@@ -8567,6 +8574,14 @@ button.with-icon {
   box-shadow: var(--shadow-floating);
   font-size: var(--text-label);
   pointer-events: none;
+}
+
+.usage-chart-tip.right {
+  margin-left: 10px;
+}
+
+.usage-chart-tip.left {
+  margin-right: 10px;
 }
 
 .usage-chart-tip-day {
