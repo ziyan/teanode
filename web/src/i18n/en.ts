@@ -1341,7 +1341,7 @@ export const en = {
   'agentAdmin.tabModels': 'Models',
   'agentAdmin.tabTools': 'Tools',
   'agentAdmin.tabSkills': 'Skills',
-  'agentAdmin.tabSources': 'Source types',
+  'agentAdmin.tabSources': 'Sources',
   'agentAdmin.openConversation': 'Open the conversation',
   'agentAdmin.jobRuns': 'Runs',
   'agentAdmin.runsOfJob': 'The runs of one job given up on: every call it made before it stopped, newest first.',

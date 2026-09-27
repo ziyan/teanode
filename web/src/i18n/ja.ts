@@ -1333,7 +1333,7 @@ export const ja: Catalog = {
   'agentAdmin.tabModels': 'モデル',
   'agentAdmin.tabTools': 'ツール',
   'agentAdmin.tabSkills': 'スキル',
-  'agentAdmin.tabSources': 'ソースの種類',
+  'agentAdmin.tabSources': 'ソース',
   'agentAdmin.openConversation': '会話を開く',
   'agentAdmin.jobRuns': '実行記録',
   'agentAdmin.runsOfJob': '断念したジョブの実行記録：止まるまでに行った呼び出しを、新しい順に。',

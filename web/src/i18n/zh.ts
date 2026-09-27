@@ -1292,7 +1292,7 @@ export const zh: Catalog = {
   'agentAdmin.tabModels': '模型',
   'agentAdmin.tabTools': '工具',
   'agentAdmin.tabSkills': '技能',
-  'agentAdmin.tabSources': '来源类型',
+  'agentAdmin.tabSources': '来源',
   'agentAdmin.openConversation': '打开对话',
   'agentAdmin.jobRuns': '运行记录',
   'agentAdmin.runsOfJob': '一项已放弃任务的运行记录：它停止之前的每一次调用，最新的在前。',
