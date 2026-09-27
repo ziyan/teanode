@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.67.5] - 2026-09-27
+
+### Changed
+
+- A provider whose kind is `openai-oauth` is no longer accepted; it is called `openai-codex`. (#180)
+
 ## [0.67.4] - 2026-09-26
 
 ### Changed
