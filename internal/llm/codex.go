@@ -142,7 +142,7 @@ func (self *codex) Kind() string {
 // marks as offered to nobody. The registry keeps the answer for a few
 // minutes, so this is asked when a settings page opens, not per request.
 func (self *codex) ListModels(ctx context.Context) ([]ModelInformation, error) {
-	answer, err := self.send(ctx, http.MethodGet, "/codex/models?client_version="+codexCatalogVersion, nil, "application/json")
+	answer, err := self.send(ctx, http.MethodGet, "/codex/models?client_version="+codexCatalogVersion, nil, "application/json", "")
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +201,7 @@ func (self *codex) ChatStream(ctx context.Context, request *ChatRequest) (<-chan
 	if err != nil {
 		return nil, err
 	}
-	response, err := self.post(ctx, body)
+	response, err := self.post(ctx, body, request.CacheKey)
 	if err != nil && request.ReasoningEffort == "" && !self.isNoReasoningRefused.Load() && strings.Contains(strings.ToLower(err.Error()), "reasoning") {
 		// A model on the plan that will not go without reasoning: ask for
 		// the least it takes from now on.
@@ -210,7 +210,7 @@ func (self *codex) ChatStream(ctx context.Context, request *ChatRequest) (<-chan
 		if body, err = self.encode(request); err != nil {
 			return nil, err
 		}
-		response, err = self.post(ctx, body)
+		response, err = self.post(ctx, body, request.CacheKey)
 	}
 	if err != nil {
 		return nil, err
@@ -225,14 +225,18 @@ func (self *codex) ChatStream(ctx context.Context, request *ChatRequest) (<-chan
 	return events, nil
 }
 
-// post sends a conversation to the plan.
-func (self *codex) post(ctx context.Context, body []byte) (*http.Response, error) {
-	return self.send(ctx, http.MethodPost, "/codex/responses", body, "text/event-stream")
+// post sends a conversation to the plan. The session names the
+// conversation, the way the plan's own client names its session: the
+// service routes the requests of one session to the machine that has its
+// beginning cached, and without it each round of a turn landed wherever,
+// and read only the instructions from a cache.
+func (self *codex) post(ctx context.Context, body []byte, session string) (*http.Response, error) {
+	return self.send(ctx, http.MethodPost, "/codex/responses", body, "text/event-stream", session)
 }
 
 // send makes one request of the plan, signing in first and once more where
 // the answer says the token is no good.
-func (self *codex) send(ctx context.Context, method, path string, body []byte, accept string) (*http.Response, error) {
+func (self *codex) send(ctx context.Context, method, path string, body []byte, accept string, session string) (*http.Response, error) {
 	for attempt := 0; attempt < 2; attempt++ {
 		token, err := self.signIn.token(ctx)
 		if err != nil {
@@ -257,6 +261,10 @@ func (self *codex) send(ctx context.Context, method, path string, body []byte, a
 		request.Header.Set("originator", "codex_cli_rs")
 		if self.account != "" {
 			request.Header.Set("ChatGPT-Account-Id", self.account)
+		}
+		if session != "" {
+			request.Header.Set("session_id", session)
+			request.Header.Set("conversation_id", session)
 		}
 
 		answer, err := self.http.Do(request)
