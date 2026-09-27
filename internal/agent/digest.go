@@ -170,9 +170,12 @@ func (self *Agent) Digest(ctx context.Context, agent *models.Agent, owner *model
 	}
 
 	// Mail worth mentioning, and everything else the graph already knows
-	// happened then.
+	// happened then -- which is what was so then, not what they did: a
+	// library copied into a repository carries its copyright year, and
+	// written up under the plain heading it came out as their month's
+	// work. The heading says so, as the prompt does.
 	if len(facts) > 0 {
-		builder.WriteString("## already known about this time, by page\n\n")
+		builder.WriteString("## what the record says about this time, by page (not all of it theirs)\n\n")
 		for index, fact := range facts {
 			if index >= 100 {
 				break

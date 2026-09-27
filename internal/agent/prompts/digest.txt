@@ -75,6 +75,13 @@ nothing here may be a `preference` or a `decision`: those come only from
 their own words in a conversation. Use `fact`, `event` (with `happened`)
 or `howto`.
 
+**`happened` is when it happened, as the item shows it happening**: the
+date on a message, a commit or a note that records something being done.
+A year in a copyright, licence or version header is when somebody wrote
+that code, not something that happened in {{.PersonName}}'s world. A
+date inside a test fixture, a sample record or a generated file is data,
+not an event. A fact that says how something is has no `happened`.
+
 **What is worth keeping.** What a project is for. Who works on what. A
 decision somebody recorded and why. How something is done that would take
 an afternoon to work out again. A date that anchors a period.

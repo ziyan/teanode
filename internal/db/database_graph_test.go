@@ -512,19 +512,28 @@ func TestGraphAGuessedMonthIsOwedAgain(t *testing.T) {
 			}
 		}
 		guessed := `\m(suggests?|likely)\M`
-		owed, err := tx.ListAgentMonthsToWriteUp(agent.ID, nil, 1, 10, guessed)
+		owed, err := tx.ListAgentMonthsToWriteUp(agent.ID, nil, 1, 10, guessed, time.Time{})
 		if err != nil {
 			t.Fatalf("ListAgentMonthsToWriteUp: %s", err)
 		}
 		if len(owed) != 2 || owed[0] != "2025/04" || owed[1] != "2025/05" {
 			t.Fatalf("expected the unwritten month then the guessed one, got %v", owed)
 		}
-		owed, err = tx.ListAgentMonthsToWriteUp(agent.ID, nil, 1, 10, "")
+		owed, err = tx.ListAgentMonthsToWriteUp(agent.ID, nil, 1, 10, "", time.Time{})
 		if err != nil {
 			t.Fatalf("ListAgentMonthsToWriteUp without a pattern: %s", err)
 		}
 		if len(owed) != 1 || owed[0] != "2025/04" {
 			t.Fatalf("expected only the unwritten month, got %v", owed)
+		}
+		// Pages written before the rules changed are owed again, after
+		// the unwritten month and newest first.
+		owed, err = tx.ListAgentMonthsToWriteUp(agent.ID, nil, 1, 10, "", time.Now().Add(time.Hour))
+		if err != nil {
+			t.Fatalf("ListAgentMonthsToWriteUp with the rules changed: %s", err)
+		}
+		if len(owed) != 3 || owed[0] != "2025/04" || owed[1] != "2025/05" || owed[2] != "2025/03" {
+			t.Fatalf("expected the unwritten month then every page written before, got %v", owed)
 		}
 	})
 }
