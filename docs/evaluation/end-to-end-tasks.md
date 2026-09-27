@@ -48,6 +48,35 @@ What is checked on every run, whatever the task:
 - [ ] Phone, tablet and desktop widths, light and dark: nothing overflows
       sideways, pictures fit the column.
 
+And what it cost, noted beside the checklist: seconds from the message to
+the answer, rounds, tool calls by tool, and input tokens read fresh and
+from the cache. The usage line under the answer has the tokens; the
+transcript has the rest. What to look for:
+
+- [ ] Independent searches and page reads asked for together, several calls
+      in a round, not one a round.
+- [ ] A detail such as a price or an opening hour read from the page, not
+      searched for again and again in the snippets.
+- [ ] A follow-up in the same conversation reads most of its input from the
+      cache (the rounds of one turn come too close together to).
+
+## Baseline
+
+One run of each on the plan, once the fixes it found were in, for the next
+run to be compared against. Cached is the share of input read from the
+cache.
+
+| Task | Seconds | Rounds | Calls | Input tokens | Cached |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| shopping-01, options with pictures | 135 | 24 | 23 | 443k | 55% |
+| shopping-01, add to cart with a correction | 72 | | | 167k | |
+| shopping-02 | 82 | | 24 | 161k | |
+| travel-01, the plan | 323 | 40 | 56 | 2.1M | 18% |
+| travel-01, the follow-up | 96 | 18 | 17 | 1.8M | 76% |
+| weekend-01 | 99 | 17 | 23 | 476k | 47% |
+| remind-01 | 13 | 2 | 1 | 33k | 65% |
+| computer-01, after the person chose the computer | 22 | 2 | 2 | 34k | 62% |
+
 ## The tasks
 
 ### shopping-01: find a gift and put it in the cart
