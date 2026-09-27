@@ -2776,13 +2776,17 @@ body,
 
 .settings-section-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: var(--space-3);
   margin-bottom: var(--space-5);
 }
 
+/* The title keeps room to be read: squeezed by a row of controls beside
+   it, "Use and cost" went a word to a line under the date fields. The
+   controls go below it instead. */
 .settings-section-head > div:first-child {
-  flex: 1;
+  flex: 1 1 14rem;
   min-width: 0;
 }
 
@@ -2807,8 +2811,12 @@ body,
   border-radius: var(--radius-3);
 }
 
+/* The description keeps room to be read: with no basis, a row whose
+   controls were a key button, a dropdown and two more squeezed it to a
+   column three words wide. When the two do not fit side by side the
+   controls go onto their own line, on the right. */
 .settings-row-body {
-  flex: 1;
+  flex: 1 1 20rem;
   min-width: 0;
 }
 
@@ -2846,6 +2854,7 @@ body,
      this changes nothing, because a row that fits never wraps. */
   flex-wrap: wrap;
   justify-content: flex-end;
+  margin-left: auto;
 }
 
 /* Boxes inside boxes, on a screen with no room for them.
@@ -6751,6 +6760,14 @@ main.content:has(> .mailbox-frame) {
 .numbers-table .numeric {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* A table wider than its panel scrolls sideways inside it, staying a
+   table. Without this the usage table pushed its card, and then the whole
+   page, wider than the window. */
+.table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 /* The memory check's scores: one small panel a source, side by side where

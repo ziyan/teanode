@@ -148,7 +148,9 @@ export function UsageChart({
   }, [rows, isDaily, since, until, metric])
 
   const values = items.map((item) => measure(item.row, metric))
-  const ceiling = niceCeiling(Math.max(0, ...values))
+  // Columns over time get a round scale with gridlines on it; bars ranked
+  // against each other are scaled to the largest, which fills its track.
+  const ceiling = isDaily ? niceCeiling(Math.max(0, ...values)) : Math.max(1e-9, ...values)
   const sum = rows.reduce((total, row) => total + measure(row, metric), 0)
   const format = (value: number) => (metric === 'cost' ? formatMoney(value, currency) : compact(value))
 
