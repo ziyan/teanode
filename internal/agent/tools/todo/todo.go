@@ -34,7 +34,7 @@ func init() {
 						}, "op"),
 					},
 				}, "action"),
-				Guidance: "todo: for work of three steps or more -- research, a change in several places, anything that takes more than a couple of tool calls -- put the steps on the list in one batch before you start, a short line each; complete each in the batch that follows its work, add or update steps when the plan changes, and delete the ones that no longer apply. The person watches the list as your progress, so keep it true: never leave a finished step open or a step marked done that was not. A single question or a one-call answer needs no list. Prune finished steps when a new piece of work begins.",
+				Guidance: "todo: for work of three steps or more -- research, a change in several places, anything that takes more than a couple of tool calls -- put the steps on the list in one batch before you start, a short line each. The answer itself is not a step: list the work that leads to it, and have every step done before you answer, since a step left open reads as work still going on. Complete each in the batch that follows its work, add or update steps when the plan changes, and delete the ones that no longer apply. The person watches the list as your progress, so keep it true: never leave a finished step open or a step marked done that was not. A single question or a one-call answer needs no list. Prune finished steps when a new piece of work begins.",
 				Preview: tools.PreviewOf(func(call struct {
 					Action string          `json:"action"`
 					Items  []todoBatchItem `json:"items"`

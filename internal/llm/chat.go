@@ -103,6 +103,11 @@ type ChatRequest struct {
 	// at all. Only providers that can take it with tools read it; the rest
 	// leave it out.
 	ReasoningEffort string
+
+	// CacheKey names requests that share a beginning -- the rounds of one
+	// conversation -- so a provider that routes by it serves them from the
+	// same cache. Empty leaves the routing to the provider.
+	CacheKey string
 }
 
 // Reasoning efforts a request may ask for.

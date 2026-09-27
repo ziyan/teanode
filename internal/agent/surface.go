@@ -24,7 +24,10 @@ type surface struct {
 
 // dashboardOverlay is how to write for the dashboard, which renders
 // Markdown.
-const dashboardOverlay = "<surface>\nThe dashboard: Markdown renders, and a table suits a list of like things.\n</surface>"
+const dashboardOverlay = "<surface>\nThe dashboard: Markdown renders, and a table suits a list of like things. " + picturesLine + "\n</surface>"
+
+// picturesLine is how a picture is shown where the dashboard draws one.
+const picturesLine = "A picture shows in the answer when written as ![what it shows](address), with an address a tool showed you (an image on a page you read, a search result's picture) and never one you put together; [![what it shows](address)](page) links it to its page. Show a picture when it helps choose or recognize something, not as a link to one."
 
 // surfaces is every surface the prompt says something particular about.
 // A surface not listed is named in the situation and nothing more.
@@ -36,7 +39,7 @@ var surfaces = map[string]surface{
 	"page":      {situationLine: talkingThrough("page"), overlay: dashboardOverlay, hasSuggestedReplies: true},
 	"phone": {
 		situationLine:       talkingThrough("phone"),
-		overlay:             "<surface>\nA phone: keep it short, no tables.\n</surface>",
+		overlay:             "<surface>\nA phone: keep it short, no tables. " + picturesLine + "\n</surface>",
 		hasSuggestedReplies: true,
 	},
 	"cli": {
