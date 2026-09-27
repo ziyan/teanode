@@ -590,6 +590,11 @@ func (self *transaction) ListAgentNodesToConsolidate(agentId string, limit int) 
 	// or by the pass that goes back over what an older build wrote -- and
 	// without this clause such a page is never looked at again, because
 	// the test for "due" was the existence of a fact that had changed.
+	//
+	// Not a folder or a month: their openings are written from what is
+	// under them and from the month's record, never from facts of their
+	// own, and clearing them blanked every month the timeline wrote, which
+	// made the month owed again, to be written and blanked the next night.
 	return self.nodesFrom(self.tx.Raw(`
 		SELECT n.* FROM "agent_node" n
 		WHERE n."agent_id" = ? AND NOT n."dormant"
@@ -600,7 +605,7 @@ func (self *transaction) ListAgentNodesToConsolidate(agentId string, limit int) 
 				  AND f."modified_at" > COALESCE(n."consolidated_at", to_timestamp(0))
 			)
 			OR (
-				n."summary" <> ''
+				n."summary" <> '' AND n."kind" NOT IN (?, ?)
 				AND NOT EXISTS (
 					SELECT 1 FROM "agent_fact" f
 					WHERE f."node_id" = n."id" AND NOT f."dormant"
@@ -608,7 +613,7 @@ func (self *transaction) ListAgentNodesToConsolidate(agentId string, limit int) 
 			)
 		  )
 		ORDER BY n."pinned" DESC, n."used_at" DESC NULLS LAST, n."modified_at" DESC
-		LIMIT ?`, agentId, limit))
+		LIMIT ?`, agentId, models.NodeFolder, models.NodePeriod, limit))
 }
 
 func (self *transaction) MarkAgentNodeConsolidated(nodeId string, at time.Time) error {
