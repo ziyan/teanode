@@ -61,7 +61,7 @@ func (self *Agent) dreamTimeline(ctx context.Context, run *Run, record *models.A
 // the record held about a month as the person's own doing, so a library
 // copied into a repository, carrying its copyright year, came out as a
 // month they spent working on it.
-var timelineRulesSince = time.Date(2026, 9, 27, 0, 0, 0, 0, time.UTC)
+var timelineRulesSince = time.Date(2026, 9, 27, 1, 0, 0, 0, time.UTC)
 
 // writeMonth writes or rewrites one month's page from its record, and
 // links the page to what the month was about.
