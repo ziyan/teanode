@@ -1,10 +1,12 @@
 package llm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -21,14 +23,15 @@ import (
 // It is the same company and not the same service. The subscription behind
 // the Codex command line answers at another address, speaks the responses
 // protocol rather than chat completions, wants the account named in a
-// header, and bills against a plan's secondary allowance instead of credits.
+// header, and bills against a plan's allowance instead of credits.
 // A key opens none of it and a sign-in opens nothing else, so it is its own
 // provider kind rather than a base address on the existing one.
 //
 // What it will not do is accept any model but the plan's own. Every other
 // name is refused outright -- "not supported when using Codex with a
-// ChatGPT account" -- which is why the list below is short and why a model
-// filter naming something else leaves the provider with nothing to offer.
+// ChatGPT account" -- so the models offered are the ones the service lists
+// for the account, asked each time rather than written down here: they
+// change more often than this program is released.
 const (
 	codexBaseUrl  = "https://chatgpt.com/backend-api"
 	codexIssuer   = "https://auth.openai.com"
@@ -39,15 +42,19 @@ const (
 	// entitled to: a different client is a different application to the
 	// service, and is not offered the subscription at all.
 	codexClientId = "app_EMoamEEZ73f0CkXaXp7hrann"
-)
 
-// codexModels is what a subscription answers to.
-//
-// Short because the service says so. Asked for anything else it refuses
-// with a sentence naming the model, which is how this list was arrived at:
-// each name here was asked for and answered. The first is what a request
-// naming no model gets.
-var codexModels = []string{"gpt-5.5", "gpt-5.6-terra", "gpt-5.6-luna"}
+	// codexCatalogVersion is the client version the model list is asked
+	// for. The service leaves out of its list any model an older version
+	// of the Codex command line cannot use, and a list asked for without
+	// a version is refused. This program speaks the plain protocol and has
+	// no version of that command line, so it asks for the whole list: a
+	// model it cannot use says so when it is called, which is better than
+	// a new model never being offered.
+	codexCatalogVersion = "999.0.0"
+
+	// codexHidden is how the list marks a model it offers to nobody.
+	codexHidden = "hide"
+)
 
 type codex struct {
 	baseUrl string
@@ -131,13 +138,31 @@ func (self *codex) Kind() string {
 	return config.AgentProviderKindCodex
 }
 
-// ListModels is what the subscription answers to. It asks nothing: there is
-// no list endpoint behind this sign-in, and a provider contributing nothing
-// to the model list reads on the settings page as one that is unreachable.
-func (self *codex) ListModels(_ context.Context) ([]ModelInformation, error) {
-	models := make([]ModelInformation, 0, len(codexModels))
-	for _, name := range codexModels {
-		models = append(models, ModelInformation{ID: name})
+// ListModels is what the service lists for the account, less the models it
+// marks as offered to nobody. The registry keeps the answer for a few
+// minutes, so this is asked when a settings page opens, not per request.
+func (self *codex) ListModels(ctx context.Context) ([]ModelInformation, error) {
+	answer, err := self.send(ctx, http.MethodGet, "/codex/models?client_version="+codexCatalogVersion, nil, "application/json")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = answer.Body.Close() }()
+	var catalog struct {
+		Models []struct {
+			Slug          string `json:"slug"`
+			Visibility    string `json:"visibility"`
+			ContextWindow int    `json:"context_window"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(answer.Body).Decode(&catalog); err != nil {
+		return nil, fmt.Errorf("llm: the plan's model list could not be read: %w", err)
+	}
+	models := make([]ModelInformation, 0, len(catalog.Models))
+	for _, listed := range catalog.Models {
+		if strings.TrimSpace(listed.Slug) == "" || listed.Visibility == codexHidden {
+			continue
+		}
+		models = append(models, ModelInformation{ID: listed.Slug, ContextLength: listed.ContextWindow})
 	}
 	return models, nil
 }
@@ -200,22 +225,32 @@ func (self *codex) ChatStream(ctx context.Context, request *ChatRequest) (<-chan
 	return events, nil
 }
 
-// post sends the request, signing in first and once more where the answer
-// says the token is no good.
+// post sends a conversation to the plan.
 func (self *codex) post(ctx context.Context, body []byte) (*http.Response, error) {
+	return self.send(ctx, http.MethodPost, "/codex/responses", body, "text/event-stream")
+}
+
+// send makes one request of the plan, signing in first and once more where
+// the answer says the token is no good.
+func (self *codex) send(ctx context.Context, method, path string, body []byte, accept string) (*http.Response, error) {
 	for attempt := 0; attempt < 2; attempt++ {
 		token, err := self.signIn.token(ctx)
 		if err != nil {
 			return nil, err
 		}
-		request, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			self.baseUrl+"/codex/responses", strings.NewReader(string(body)))
+		var reader io.Reader
+		if body != nil {
+			reader = bytes.NewReader(body)
+		}
+		request, err := http.NewRequestWithContext(ctx, method, self.baseUrl+path, reader)
 		if err != nil {
 			return nil, fmt.Errorf("llm: %w", err)
 		}
 		request.Header.Set("Authorization", "Bearer "+token)
-		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set("Accept", "text/event-stream")
+		if body != nil {
+			request.Header.Set("Content-Type", "application/json")
+		}
+		request.Header.Set("Accept", accept)
 		// The protocol is behind a flag, and the service wants to know
 		// which client is spending the allowance.
 		request.Header.Set("OpenAI-Beta", "responses=experimental")

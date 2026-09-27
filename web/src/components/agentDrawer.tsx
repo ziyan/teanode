@@ -585,6 +585,12 @@ function clampPlacement(placement: Placement): Placement {
   return { left, top, width, height }
 }
 
+// fullScreenPlacement is the whole window, less the margin every placement
+// keeps from its edges.
+function fullScreenPlacement(): Placement {
+  return clampPlacement({ left: 0, top: 0, width: window.innerWidth, height: window.innerHeight })
+}
+
 function isSamePlacement(first: Placement, second: Placement): boolean {
   return (
     first.left === second.left &&
@@ -780,6 +786,20 @@ function usePlacement(isEnabled: boolean) {
     rememberPlacement(null)
   }
 
+  // toggleFullScreen fills the window with the box, or, when it already
+  // fills it, puts it back in its corner.
+  const toggleFullScreen = () => {
+    const full = fullScreenPlacement()
+    const current = livePlacement.current
+    if (current && isSamePlacement(current, full)) {
+      reset()
+      return
+    }
+    writePlacement(full)
+    setPlacement(full)
+    rememberPlacement(full)
+  }
+
   const headProps = {
     onPointerDown: (pointerEvent: React.PointerEvent<HTMLElement>) => {
       if (isGestureExempt(pointerEvent.target)) return
@@ -788,11 +808,11 @@ function usePlacement(isEnabled: boolean) {
     onPointerMove,
     onPointerUp: onPointerEnd,
     onPointerCancel: onPointerEnd,
-    // A double click on the bar puts the box back in its corner at its
-    // first size, and forgets where it was.
+    // A double click on the bar fills the window with the box, and a
+    // second puts it back in its corner at its first size.
     onDoubleClick: (mouseEvent: React.MouseEvent<HTMLElement>) => {
       if (!isEnabled || isPhoneWidth() || isGestureExempt(mouseEvent.target)) return
-      reset()
+      toggleFullScreen()
     },
   }
 
@@ -3896,7 +3916,14 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               </button>
             </Tooltip>
           </form>
-          <p className="agent-drawer-note muted">{t('agentDrawer.mistakes')}</p>
+          {/* The note is a bar across the foot of the box, and moves the
+              box the way the head does, so it can be taken by either end. */}
+          <p
+            className={['agent-drawer-note', 'muted', standalone ? '' : 'movable'].filter(Boolean).join(' ')}
+            {...chatBox.headProps}
+          >
+            {t('agentDrawer.mistakes')}
+          </p>
           {dragging && <div className="agent-drawer-drop">{t('agentDrawer.dropHere')}</div>}
         </aside>
       )}

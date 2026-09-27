@@ -254,8 +254,8 @@ func TestATokenTheServiceRefusesIsFetchedAgainOnce(test *testing.T) {
 	}
 }
 
-// It is a provider that chats, and says what it answers to without asking.
-func TestTheSignedInProviderChatsAndNamesItsModels(test *testing.T) {
+// It is a provider that chats.
+func TestTheSignedInProviderChats(test *testing.T) {
 	test.Parallel()
 
 	service, err := NewSignedInProvider("openai-codex", "", "a-refresh-token-for-"+test.Name(), "an-account", time.Second)
@@ -264,10 +264,6 @@ func TestTheSignedInProviderChatsAndNamesItsModels(test *testing.T) {
 	}
 	if _, ok := any(service).(Provider); !ok {
 		test.Error("a signed-in provider does not hold a conversation")
-	}
-	models, err := service.ListModels(context.Background())
-	if err != nil || len(models) == 0 {
-		test.Fatalf("ListModels: %v %v", models, err)
 	}
 
 	// Without a refresh token there is nothing to sign in with, and that is
@@ -437,5 +433,33 @@ func TestProvidersFromOneTokenShareTheSignIn(test *testing.T) {
 	}
 	if other.signIn == first.signIn {
 		test.Error("a different token was given the same sign-in")
+	}
+}
+
+// The models offered are the ones the service lists for the account, asked
+// for as the whole list, less those it offers to nobody.
+func TestThePlanListsItsOwnModels(test *testing.T) {
+	test.Parallel()
+
+	made, server := signedIn(test, func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/codex/models" || request.URL.Query().Get("client_version") != codexCatalogVersion {
+			test.Errorf("the list was asked for at %s", request.URL)
+		}
+		if got := request.Header.Get("ChatGPT-Account-Id"); got != "an-account" {
+			test.Errorf("the account went as %q", got)
+		}
+		_, _ = io.WriteString(writer, `{"models":[`+
+			`{"slug":"model-new","visibility":"list","context_window":272000},`+
+			`{"slug":"model-internal","visibility":"hide","context_window":272000},`+
+			`{"slug":"model-old","visibility":"list"}]}`)
+	})
+	defer server.Close()
+
+	models, err := made.ListModels(context.Background())
+	if err != nil {
+		test.Fatal(err)
+	}
+	if len(models) != 2 || models[0].ID != "model-new" || models[0].ContextLength != 272000 || models[1].ID != "model-old" {
+		test.Errorf("it offered %+v", models)
 	}
 }
