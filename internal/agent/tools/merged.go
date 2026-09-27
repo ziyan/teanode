@@ -63,6 +63,11 @@ type MergedTool struct {
 // The permissions are the union, because they decide only whether the tool is
 // offered; each action checks its own before it runs, and says so in words the
 // model can relay when it does not hold.
+//
+// Each action's guidance and overlay are kept too, after the merged tool's
+// own: a tool says what the prompt needs to know about it whether or not it
+// was folded into another, and a folded rule_add lost its advice to prefer a
+// rule over remembering to do it by hand.
 func Merge(merged MergedTool) *Tool {
 	if len(merged.Actions) == 0 {
 		panic("tools: a merged tool with no actions")
@@ -73,6 +78,17 @@ func Merge(merged MergedTool) *Tool {
 	properties := map[string]any{}
 	descriptions := map[string][]string{}
 	permissions := mergedPermissions(merged.Actions)
+	guidance := []string{}
+	seenGuidance := map[string]bool{}
+	addGuidance := func(text string) {
+		text = strings.TrimSpace(text)
+		if text != "" && !seenGuidance[text] {
+			seenGuidance[text] = true
+			guidance = append(guidance, text)
+		}
+	}
+	addGuidance(merged.Guidance)
+	var overlays []func(context.Context) string
 	headless := true
 	for _, action := range merged.Actions {
 		if action.Tool == nil || action.Name == "" {
@@ -90,6 +106,10 @@ func Merge(merged MergedTool) *Tool {
 		verbs = append(verbs, action.Name)
 		lines = append(lines, action.Name+" — "+strings.TrimSpace(action.Tool.Description))
 		mergeProperties(properties, descriptions, action.Tool.Parameters)
+		addGuidance(action.Tool.Guidance)
+		if action.Tool.Overlay != nil {
+			overlays = append(overlays, action.Tool.Overlay)
+		}
 		if !action.Tool.Headless {
 			headless = false
 		}
@@ -118,7 +138,8 @@ func Merge(merged MergedTool) *Tool {
 		Permissions: permissions,
 		Core:        merged.Core,
 		Headless:    headless,
-		Guidance:    strings.TrimSpace(merged.Guidance),
+		Guidance:    strings.Join(guidance, "\n\n"),
+		Overlay:     joinedOverlay(overlays),
 		Preview: func(arguments json.RawMessage) string {
 			name, err := actionOf(arguments)
 			tool := byAction[name]
@@ -401,4 +422,21 @@ func Rename(names []string) []string {
 		renamed = append(renamed, name)
 	}
 	return renamed
+}
+
+// joinedOverlay is the actions' overlays as one: each asked in turn, and
+// what they say kept in order. Nil when no action has one.
+func joinedOverlay(overlays []func(context.Context) string) func(context.Context) string {
+	if len(overlays) == 0 {
+		return nil
+	}
+	return func(ctx context.Context) string {
+		blocks := make([]string, 0, len(overlays))
+		for _, overlay := range overlays {
+			if block := strings.TrimSpace(overlay(ctx)); block != "" {
+				blocks = append(blocks, block)
+			}
+		}
+		return strings.Join(blocks, "\n")
+	}
 }

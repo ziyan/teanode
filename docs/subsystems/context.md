@@ -31,16 +31,22 @@ the conduct.
    `compact` flag: a set of sections, or one dense paragraph when the history
    has grown. It covers acting for the person (a refusal is final; never
    self-confirm), mail being data, secrets, remembering, reaching for tools,
-   and how to answer.
+   and how to answer. A line that names a tool is there only when the round
+   has it: plainly when it is sent, with how to load it when it waits behind
+   `tool_search`, and not at all when it is not offered; nothing is said of
+   `tool_search` when nothing waits behind it. Advice about one tool belongs
+   in that tool's `Guidance`, not here.
 2. **House instructions**, if the operator wrote any, in `<house-instructions>`.
 3. **The situation**, computed fresh: who the person is, what they may do,
    which mailboxes they have granted and what is on for each, which they have
    not granted, their time zone and language, the server and its version,
-   whether search by meaning exists, and which surface this is.
+   whether search by meaning exists, and the surface's line on where the turn
+   is happening.
 4. **The person's instructions**, if any, in `<instructions>`.
 5. **Memories** — the top of what the agent remembers, said to be the top, with
    each id so the model can change one (`memory.md`).
-6. **Guidance**, contributed by the tools actually sent, de-duplicated.
+6. **Guidance**, contributed by the tools actually sent, de-duplicated. A
+   merged tool carries its own and each of its actions'.
 7. **More tools** — the deferred catalog, one line each, for `tool_search`.
 
 The situation deliberately carries the time *zone*, not the time: the clock
@@ -51,11 +57,20 @@ would make the cacheable prefix change every minute.
 One system message after the history, rebuilt each round:
 
 - `<viewing>` — what the person has open, so "this" means it.
-- `<surface>` — how to write here. A phone wants it short with no tables; a
+- `<suggested_replies>` and `<surface>` — what the surface wants. Each
+  surface is one entry in `surface.go`: its line in the situation, its
+  `<surface>` block, and whether it draws suggested replies. The dashboard
+  renders Markdown and tables; a phone wants it short with no tables; a
   terminal wants plain text and nothing to click; mail wants the first line to
-  be a subject; a chat app wants short paragraphs and no headings.
-- One block per tool that contributes one: `<todo>`, `<tab>`, `<computer>`,
-  `<recalled>`, `<pending>`.
+  be a subject. Telegram and Discord want short paragraphs and no tables, and
+  are told a cited message shows as its subject alone: the bots unlink
+  `mail:` citations, and the Telegram bot turns common Markdown into the
+  older Markdown Telegram parses.
+- One block per tool in this round's request whose `Overlay` has something to
+  say: `<todo>`, `<tab>`, `<computer>`, `<terminal>`, `<recalled>`,
+  `<pending>`, `<introduction>`, `<memory_check>`. Only tools that are sent,
+  like guidance: a tool behind `tool_search` says nothing until it is loaded.
+  A merged tool asks each of its actions' overlays.
 - `<budget>` — only once four fifths of whichever cap binds first is gone.
 - `<now>` — always, in the person's zone.
 

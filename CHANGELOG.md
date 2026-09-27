@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.71.2] - 2026-09-27
+
+### Changed
+
+- The agent's notes in a conversation (stopped, looking into this carefully, goal changes, compaction) are shown in the person's language, and a compaction shows while it runs and opens to the note it wrote. (#193)
+
+### Fixed
+
+- A turn woken by a finished background command no longer repeats the "looking into this carefully" note. (#193)
+- The agent's todo list is put away once every step is done and the turn has ended. (#193)
+
 ## [0.71.1] - 2026-09-27
 
 ### Fixed
