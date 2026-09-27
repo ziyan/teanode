@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"sync/atomic"
 )
 
 // The tab relay: the person's own browser tab, attached through the
@@ -17,15 +18,29 @@ type TabConnection = DeviceConnection
 // tabMessage is what goes over the relay, either way.
 type tabMessage = deviceMessage
 
-// attachedTab is one person's attached tab.
+// attachedTab is one person's browser, connected through the extension:
+// with a tab the actions go to, or, until the agent opens one or the person
+// attaches one, with none.
 type attachedTab struct {
 	*deviceLink
 	title string
 	url   string
+
+	// hasTab says there is a tab the actions go to: the person's own,
+	// attached, or one the agent opened. Read by the tool while the socket
+	// says otherwise.
+	hasTab atomic.Bool
 }
 
 // AttachTab records a person's tab; a second attach replaces the first.
 func (self *Agent) AttachTab(agentId string, connection TabConnection, title, url string) {
+	self.ConnectBrowser(agentId, connection, title, url, true)
+}
+
+// ConnectBrowser records a person's browser, connected through the
+// extension, with a tab to act in or with none yet; a second connection
+// replaces the first.
+func (self *Agent) ConnectBrowser(agentId string, connection TabConnection, title, url string, hasTab bool) {
 	self.tabsMutex.Lock()
 	defer self.tabsMutex.Unlock()
 	if self.tabs == nil {
@@ -36,7 +51,18 @@ func (self *Agent) AttachTab(agentId string, connection TabConnection, title, ur
 	if previous := self.tabs[agentId]; previous != nil {
 		previous.drop()
 	}
-	self.tabs[agentId] = &attachedTab{deviceLink: newDeviceLink("the attached tab", connection), title: title, url: url}
+	connected := &attachedTab{deviceLink: newDeviceLink("the person's browser", connection), title: title, url: url}
+	connected.hasTab.Store(hasTab)
+	self.tabs[agentId] = connected
+}
+
+// SetTabHeld is the browser saying whether it has a tab the actions go to.
+func (self *Agent) SetTabHeld(agentId string, hasTab bool) {
+	self.tabsMutex.Lock()
+	defer self.tabsMutex.Unlock()
+	if tab := self.tabs[agentId]; tab != nil {
+		tab.hasTab.Store(hasTab)
+	}
 }
 
 // UpdateTab is the tab saying where it went.
@@ -72,16 +98,27 @@ func (self *Agent) tabFor(agentId string) *attachedTab {
 	return self.tabs[agentId]
 }
 
-// TabAttached says whether a person has a tab attached, for the API.
+// TabAttached says whether a person has a tab to act in, for the API.
 func (self *Agent) TabAttached(agentId string) (bool, string, string) {
 	tab := self.tabFor(agentId)
-	if tab == nil {
+	if tab == nil || !tab.HasTab() {
 		return false, "", ""
 	}
 	return true, tab.title, tab.url
+}
+
+// BrowserConnected says whether a person's browser is connected through the
+// extension, with a tab to act in or not.
+func (self *Agent) BrowserConnected(agentId string) bool {
+	return self.tabFor(agentId) != nil
 }
 
 // Title and URL are what the tab said it shows, for the tool and the
 // overlay.
 func (self *attachedTab) Title() string { return self.title }
 func (self *attachedTab) URL() string   { return self.url }
+
+// HasTab says whether there is a tab the actions go to.
+func (self *attachedTab) HasTab() bool {
+	return self.hasTab.Load()
+}

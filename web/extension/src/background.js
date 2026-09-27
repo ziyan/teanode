@@ -1,23 +1,29 @@
-// The extension attaches one tab to the person's agent over the server's
-// websocket, saying who it is with the token the options page signed in
-// with. The server never touches the page: every action arrives here as a
-// request, is done by the content script in the page, and its answer goes
-// back.
+// The extension connects the person's browser to their agent over the
+// server's websocket whenever it is signed in, saying who it is with the
+// token the options page signed in with. The server never touches a page:
+// every action arrives here as a request, is done by the content script in
+// the page, and its answer goes back.
 //
-// It is the person's own tab and their own session, so the agent acts as
-// they would and nothing here refuses on their behalf. Two lines are held
-// all the same, because neither is about what the agent may do in this
-// tab: a password already filled in on the page is not read back into the
-// conversation, and the DevTools relay refuses the handful of methods
-// that reach past this tab into the whole browser.
+// Connected, the agent may open a tab in the person's browser, in a
+// "TeaNode" tab group, and act there with their session. The person may
+// also attach a tab of their own, which the agent then acts in; attaching
+// and detaching say which tab is theirs, and the connection stays either
+// way.
+//
+// It is the person's own browser and their own session, so the agent acts
+// as they would and nothing here refuses on their behalf. Two lines are held
+// all the same, because neither is about what the agent may do in a tab: a
+// password already filled in on the page is not read back into the
+// conversation, and the DevTools relay refuses the handful of methods that
+// reach past a tab into the whole browser.
 
-const PROTOCOL = 2
+const PROTOCOL = 3
 
 let socket = null
-// attached is the person's tab and, while the agent has opened tabs of
-// its own, which of them is current: ownTabId is theirs, tabId the one
-// actions go to.
-let attached = null // { tabId, ownTabId, title, url }
+// attached is the tab the actions go to and the person's own tab, either of
+// which may be none: ownTabId is theirs, attached through the panel, and
+// tabId the one actions go to -- theirs, or one the agent opened.
+const attached = { tabId: null, ownTabId: null, title: '', url: '' }
 // groups are the "TeaNode" tab groups the agent's tabs live in, by window.
 // Kept in the session's storage beside the opened tabs: the worker is
 // started and stopped freely, and a group remembered only in memory was
@@ -28,47 +34,34 @@ const groups = new Map()
 // close. Kept in the session's storage, so that a worker started again
 // still knows them; a tab the person moved into the group is not one.
 const opened = new Set()
-const restored = chrome.storage.session.get(['opened', 'groups']).then(({ opened: kept, groups: keptGroups }) => {
+const restored = chrome.storage.session.get(['opened', 'groups', 'ownTabId']).then(({ opened: kept, groups: keptGroups, ownTabId }) => {
   for (const id of kept || []) opened.add(id)
   for (const [windowId, groupId] of keptGroups || []) groups.set(Number(windowId), groupId)
+  // The person's own tab, if they had attached one before the worker was
+  // stopped, and it is still there.
+  if (ownTabId && attached.ownTabId === null) {
+    return chrome.tabs.get(ownTabId).then(() => {
+      attached.ownTabId = ownTabId
+      if (attached.tabId === null) attached.tabId = ownTabId
+    }).catch(() => chrome.storage.session.remove('ownTabId'))
+  }
 })
 const rememberOpened = () => chrome.storage.session.set({ opened: [...opened] })
 const rememberGroups = () => chrome.storage.session.set({ groups: [...groups] })
-// A worker starts with nothing attached, whatever the badge said before.
-setBadge('')
+const rememberOwn = () => chrome.storage.session.set({ ownTabId: attached.ownTabId })
 let pings = null
-// wanted is the attachment the person asked for, kept so that a dropped
-// socket can be put back; retry is the timer that does it.
-let wanted = null
+// attempt counts the connections that did not last, for waiting longer
+// before each next one; retry is the timer that makes it.
+let attempt = 0
 let retry = null
-
-// reconnect opens the socket again for the tab the person attached, if
-// that tab is still there.
-async function reconnect() {
-  if (!wanted) return
-  const origin = await serverOrigin()
-  const secret = await token()
-  if (!origin || !secret) {
-    wanted = null
-    setBadge('')
-    return
-  }
-  const still = await chrome.tabs.get(wanted.tabId).catch(() => null)
-  if (!still) {
-    // The tab it was attached to is gone; there is nothing to go back to.
-    wanted = null
-    setBadge('')
-    return
-  }
-  connect(origin, secret)
-}
+setBadge('')
 
 async function serverOrigin() {
   const { server } = await chrome.storage.sync.get('server')
   return (server || '').replace(/\/+$/, '')
 }
 
-// The token the options page signed in with: what the tab says it is.
+// The token the options page signed in with: what the browser says it is.
 async function token() {
   const { token } = await chrome.storage.local.get('token')
   return token || ''
@@ -79,45 +72,133 @@ function setBadge(text, color) {
   if (color) chrome.action.setBadgeBackgroundColor({ color })
 }
 
+// showState is the badge for how things stand: "on" with a tab of theirs
+// attached, a dot while connected with none, nothing while not connected.
+function showState() {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return
+  if (attached.ownTabId !== null) setBadge('on', '#2a7')
+  else setBadge('·', '#777')
+}
+
+// connectIfSignedIn opens the connection when the extension is signed in
+// and none is open: when the worker starts, when the browser starts, and
+// when the person signs in.
+// connecting is the attempt under way, so that the worker starting and the
+// browser starting at once open one connection rather than two.
+let connecting = null
+function connectIfSignedIn() {
+  if (!connecting) {
+    connecting = (async () => {
+      await restored
+      if (socket) return
+      const origin = await serverOrigin()
+      const secret = await token()
+      if (!origin || !secret || !/^https?:\/\//i.test(origin)) return
+      connect(origin, secret)
+    })().finally(() => {
+      connecting = null
+    })
+  }
+  return connecting
+}
+
+// attach makes a tab the person's own: the agent's actions go to it, beside
+// the tabs it opens. The connection is opened first where it is not.
 async function attach(tab) {
   const origin = await serverOrigin()
   const secret = await token()
-  if (!origin || !secret) {
-    chrome.runtime.openOptionsPage()
-    return
-  }
-  detach()
-  if (!/^https?:\/\//i.test(origin)) {
+  if (!origin || !secret || !/^https?:\/\//i.test(origin)) {
     // Typed without a scheme, the address builds a WebSocket URL that
     // throws, and the button did nothing with nothing said.
     chrome.runtime.openOptionsPage()
     return
   }
-  wanted = { tabId: tab.id, attempt: 0 }
-  connect(origin, secret)
+  attached.ownTabId = tab.id
+  attached.tabId = tab.id
+  attached.title = tab.title || ''
+  attached.url = tab.url || ''
+  await rememberOwn()
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    tellServer()
+    showState()
+  } else if (!socket) {
+    connect(origin, secret)
+  }
+  tellPanels()
 }
 
-// connect opens the socket and puts it back when it drops. A closed lid,
-// a server restarted, a proxy that times out an idle socket: the
-// attachment used to end there, with nothing but a blank badge to say so.
+// detach gives the person's tab back. The connection stays: the agent can
+// still open a tab of its own when one is wanted.
+async function detach() {
+  const own = attached.ownTabId
+  if (own === null) return
+  // The protocol goes with the tab: otherwise Chrome's own "is debugging
+  // this browser" bar stays up on a tab the agent can no longer reach.
+  await letDebuggerGo(own)
+  attached.ownTabId = null
+  await rememberOwn()
+  if (attached.tabId === own) {
+    const mine = await agentTabs()
+    attached.tabId = mine.length > 0 ? mine[mine.length - 1].id : null
+  }
+  await current().catch(() => {})
+  showState()
+  tellPanels()
+}
+
+// disconnect closes the connection for good, as signing out does.
+function disconnect() {
+  clearTimeout(retry)
+  retry = null
+  letEveryDebuggerGo()
+  const closing = socket
+  socket = null
+  if (closing) {
+    try {
+      closing.close()
+    } catch {
+      // Already gone.
+    }
+  }
+  clearInterval(pings)
+  attached.ownTabId = null
+  attached.tabId = null
+  void rememberOwn()
+  setBadge('')
+  tellPanels()
+}
+
+// tellServer says which tab the actions go to, and whether there is one.
+function tellServer() {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return
+  socket.send(JSON.stringify({ type: 'update', title: attached.title, url: attached.url, hasTab: attached.tabId !== null }))
+}
+
+// connect opens the socket and puts it back when it drops, for as long as
+// the extension is signed in. A closed lid, a server restarted, a proxy
+// that times out an idle socket: none of them should need the person to do
+// anything.
 function connect(origin, secret) {
   const address = origin.replace(/^http/, 'ws') + '/api/v1/agent/tab'
+  let opening
   try {
-    socket = new WebSocket(address)
+    opening = new WebSocket(address)
   } catch {
     setBadge('!', '#c33')
     return
   }
-  const tab = { id: wanted.tabId }
-  attached = { tabId: wanted.tabId, ownTabId: wanted.tabId, title: '', url: '' }
-  void chrome.tabs.get(wanted.tabId).then((found) => {
-    if (attached) {
-      attached.title = found.title || ''
-      attached.url = found.url || ''
+  socket = opening
+  opening.onopen = async () => {
+    if (attached.tabId !== null) {
+      const found = await chrome.tabs.get(attached.tabId).catch(() => null)
+      if (found) {
+        attached.title = found.title || ''
+        attached.url = found.url || ''
+      } else {
+        attached.tabId = null
+      }
     }
-  }).catch(() => {})
-  socket.onopen = async () => {
-    socket.send(JSON.stringify({ type: 'hello', protocol: PROTOCOL, token: secret, title: attached.title, url: attached.url }))
+    opening.send(JSON.stringify({ type: 'hello', protocol: PROTOCOL, token: secret, title: attached.title, url: attached.url, hasTab: attached.tabId !== null }))
     // A word every so often keeps this worker, and the socket, alive
     // while nothing else is said.
     clearInterval(pings)
@@ -125,7 +206,7 @@ function connect(origin, secret) {
       if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'ping' }))
     }, 20000)
   }
-  socket.onmessage = async (event) => {
+  opening.onmessage = async (event) => {
     let message
     try {
       message = JSON.parse(event.data)
@@ -134,18 +215,18 @@ function connect(origin, secret) {
     }
     if (message.type === 'welcome') {
       if (message.protocol !== PROTOCOL) {
-        socket.send(JSON.stringify({ type: 'bye', reason: 'protocol ' + message.protocol + ' is not known to this extension' }))
-        detach()
+        opening.send(JSON.stringify({ type: 'bye', reason: 'protocol ' + message.protocol + ' is not known to this extension' }))
+        disconnect()
         return
       }
-      if (wanted) wanted.attempt = 0
-      setBadge('on', '#2a7')
+      attempt = 0
+      showState()
       tellPanels()
       return
     }
     if (message.type === 'refused') {
+      disconnect()
       setBadge('!', '#c33')
-      detach()
       // A token the server no longer takes: sign in again.
       if (/token|sign in/i.test(message.reason || '')) chrome.runtime.openOptionsPage()
       return
@@ -155,67 +236,61 @@ function connect(origin, secret) {
       socket?.send(JSON.stringify({ type: 'result', id: message.id, ...answer }))
     }
   }
-  socket.onclose = () => {
+  opening.onclose = () => {
+    // A connection closed on purpose has already been let go of.
+    if (socket !== opening) return
     clearInterval(pings)
     letEveryDebuggerGo()
     socket = null
-    attached = null
     tellPanels()
-    if (!wanted) {
-      setBadge('')
-      return
-    }
-    // Put it back, slower each time, up to half a minute: a server being
-    // restarted should not need the person to press the button again.
+    // Put it back, slower each time, up to half a minute, while the
+    // extension is still signed in.
     setBadge('…', '#a80')
-    const waiting = Math.min(30000, 1000 * 2 ** Math.min(5, wanted.attempt++))
+    const waiting = Math.min(30000, 1000 * 2 ** Math.min(5, attempt++))
     clearTimeout(retry)
     retry = setTimeout(() => {
-      if (wanted) void reconnect()
+      retry = null
+      void connectIfSignedIn().then(() => {
+        if (!socket) setBadge('')
+      })
     }, waiting)
   }
-  socket.onerror = () => setBadge('!', '#c33')
+  opening.onerror = () => setBadge('!', '#c33')
 }
 
-function detach() {
-  // Asked for: it does not come back on its own.
-  wanted = null
-  clearTimeout(retry)
-  retry = null
-  // The protocol goes with the attachment: otherwise Chrome's own
-  // "is debugging this browser" bar stays up on a tab the agent can no
-  // longer reach.
-  letEveryDebuggerGo()
-  if (socket) {
-    try {
-      socket.close()
-    } catch {
-      // Already gone.
-    }
-  }
-  clearInterval(pings)
-  socket = null
-  attached = null
-  setBadge('')
-  tellPanels()
-}
+// Connected whenever signed in: when the worker starts, when the browser
+// starts, and when the person signs in or out.
+void connectIfSignedIn()
+chrome.runtime.onStartup.addListener(() => void connectIfSignedIn())
+chrome.runtime.onInstalled.addListener(() => void connectIfSignedIn())
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (!(area === 'local' && changes.token) && !(area === 'sync' && changes.server)) return
+  disconnect()
+  void connectIfSignedIn()
+})
 
-// tellPanels says to the open panels whether a tab is attached, so their
-// button reads right; a page without a panel does not mind.
+// tellPanels says to the open panels whether their tab is the one attached,
+// so their button reads right; a page without a panel does not mind.
 async function tellPanels() {
   const tabs = await chrome.tabs.query({})
   for (const tab of tabs) {
-    chrome.tabs.sendMessage(tab.id, { type: 'state', attached: !!attached && attached.ownTabId === tab.id }).catch(() => {})
+    chrome.tabs.sendMessage(tab.id, { type: 'state', attached: attached.ownTabId === tab.id }).catch(() => {})
   }
 }
 
-// current is what the tab the actions go to shows now, told to the server
-// so the agent's overlay names it.
+// current is what the tab the actions go to shows now, or that there is
+// none, told to the server so the agent's overlay names it.
 async function current() {
+  if (attached.tabId === null) {
+    attached.title = ''
+    attached.url = ''
+    tellServer()
+    return { tab: null }
+  }
   const tab = await chrome.tabs.get(attached.tabId)
   attached.title = tab.title || ''
   attached.url = tab.url || ''
-  socket?.send(JSON.stringify({ type: 'update', title: attached.title, url: attached.url }))
+  tellServer()
   return { tab: tab.id, url: attached.url, title: attached.title }
 }
 
@@ -262,7 +337,7 @@ async function groupFor(windowId, tabId) {
 // address or a title, or the fallback when nothing was said. Only the
 // person's own tab and the ones the agent opened count.
 async function pickTab(args, fallback) {
-  const own = await chrome.tabs.get(attached.ownTabId).catch(() => null)
+  const own = attached.ownTabId === null ? null : await chrome.tabs.get(attached.ownTabId).catch(() => null)
   const candidates = [...(own ? [own] : []), ...(await agentTabs())]
   if (args.tab !== undefined && args.tab !== null && args.tab !== '') {
     const wanted = Number(args.tab)
@@ -400,8 +475,36 @@ chrome.debugger.onDetach.addListener((source) => {
 // else in the page through the content script; fetch through the tab's
 // own session.
 async function act(action, args) {
-  if (!attached) return { ok: false, error: 'no tab is attached' }
+  await restored
   try {
+    if (action === 'open') {
+      if (!/^https?:\/\//i.test(args.url || '')) return { ok: false, error: 'only http and https addresses' }
+      // Beside the tab the actions go to, or, with none, in the window the
+      // person last used; a browser with no window gets one.
+      const beside = attached.tabId === null ? null : await chrome.tabs.get(attached.tabId).catch(() => null)
+      let windowId = beside ? beside.windowId : null
+      if (windowId === null) {
+        const window = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => null)
+        windowId = window ? window.id : (await chrome.windows.create({ focused: false })).id
+      }
+      const made = await chrome.tabs.create({ url: args.url, windowId, active: true })
+      opened.add(made.id)
+      await rememberOpened()
+      await groupFor(windowId, made.id)
+      attached.tabId = made.id
+      await waitForLoad(made.id)
+      return { ok: true, data: await current() }
+    }
+    if (action === 'tabs') {
+      const own = attached.ownTabId === null ? null : await chrome.tabs.get(attached.ownTabId).catch(() => null)
+      const listed = []
+      if (own) listed.push({ tab: own.id, title: own.title || '', url: own.url || '', own: true, current: own.id === attached.tabId })
+      for (const opened of await agentTabs()) {
+        listed.push({ tab: opened.id, title: opened.title || '', url: opened.url || '', own: false, current: opened.id === attached.tabId })
+      }
+      return { ok: true, data: { tabs: listed } }
+    }
+    if (attached.tabId === null) return { ok: false, error: 'no tab is open for you in this browser yet; open one first' }
     const tab = await chrome.tabs.get(attached.tabId)
     if (action === 'navigate') {
       if (!/^https?:\/\//i.test(args.url || '')) return { ok: false, error: 'only http and https addresses' }
@@ -410,27 +513,8 @@ async function act(action, args) {
       const updated = await chrome.tabs.get(tab.id)
       attached.title = updated.title || ''
       attached.url = updated.url || ''
-      socket?.send(JSON.stringify({ type: 'update', title: attached.title, url: attached.url }))
+      tellServer()
       return { ok: true, data: { url: attached.url, title: attached.title } }
-    }
-    if (action === 'open') {
-      if (!/^https?:\/\//i.test(args.url || '')) return { ok: false, error: 'only http and https addresses' }
-      const made = await chrome.tabs.create({ url: args.url, windowId: tab.windowId, active: true })
-      opened.add(made.id)
-      await rememberOpened()
-      await groupFor(tab.windowId, made.id)
-      attached.tabId = made.id
-      await waitForLoad(made.id)
-      return { ok: true, data: await current() }
-    }
-    if (action === 'tabs') {
-      const own = await chrome.tabs.get(attached.ownTabId).catch(() => null)
-      const listed = []
-      if (own) listed.push({ tab: own.id, title: own.title || '', url: own.url || '', own: true, current: own.id === attached.tabId })
-      for (const opened of await agentTabs()) {
-        listed.push({ tab: opened.id, title: opened.title || '', url: opened.url || '', own: false, current: opened.id === attached.tabId })
-      }
-      return { ok: true, data: { tabs: listed } }
     }
     if (action === 'switch') {
       // By number from tabs, by a piece of its address, or, given nothing,
@@ -452,8 +536,10 @@ async function act(action, args) {
       opened.delete(wanted)
       await rememberOpened()
       if (attached.tabId === wanted) {
-        attached.tabId = attached.ownTabId
-        await chrome.tabs.update(attached.ownTabId, { active: true })
+        // Back to the person's own tab, or the last one opened, or none.
+        const left = await agentTabs()
+        attached.tabId = attached.ownTabId !== null ? attached.ownTabId : left.length > 0 ? left[left.length - 1].id : null
+        if (attached.tabId !== null) await chrome.tabs.update(attached.tabId, { active: true })
       }
       return { ok: true, data: await current() }
     }
@@ -745,41 +831,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message && message.type) {
     case 'panel:token':
       Promise.all([serverOrigin(), token(), chrome.storage.local.get('username')]).then(([server, secret, { username }]) => {
-        sendResponse({ server, token: secret, username: username || '', attached: !!attached && !!tab && attached.ownTabId === tab.id })
+        sendResponse({ server, token: secret, username: username || '', attached: !!tab && attached.ownTabId === tab.id })
       })
       return true
     case 'panel:options':
       chrome.runtime.openOptionsPage()
       return false
     case 'panel:attach':
-      if (tab) attach(tab).then(() => sendResponse({ attached: !!attached && attached.ownTabId === tab.id }))
+      if (tab) attach(tab).then(() => sendResponse({ attached: attached.ownTabId === tab.id }))
       return true
     case 'panel:detach':
-      detach()
-      sendResponse({ attached: false })
-      return false
+      detach().then(() => sendResponse({ attached: false }))
+      return true
   }
   return false
 })
 
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
-  if (attached && attached.tabId === tabId && info.status === 'complete' && socket) {
+  if (attached.tabId === tabId && info.status === 'complete') {
     attached.title = tab.title || ''
     attached.url = tab.url || ''
-    socket.send(JSON.stringify({ type: 'update', title: attached.title, url: attached.url }))
+    tellServer()
   }
 })
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (opened.delete(tabId)) rememberOpened()
-  if (!attached) return
+  // Their own tab, closed: it is detached, and the connection stays.
   if (attached.ownTabId === tabId) {
-    detach()
+    void detach()
     return
   }
-  // A tab the agent opened, closed by the person: back to their own.
+  // A tab the agent opened, closed by the person: back to their own, or to
+  // the last one it opened, or to none.
   if (attached.tabId === tabId) {
-    attached.tabId = attached.ownTabId
-    current().catch(() => {})
+    void agentTabs().then((left) => {
+      attached.tabId = attached.ownTabId !== null ? attached.ownTabId : left.length > 0 ? left[left.length - 1].id : null
+      return current()
+    }).catch(() => {})
   }
 })

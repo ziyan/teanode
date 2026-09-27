@@ -2,6 +2,9 @@ package browser
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
@@ -69,4 +72,22 @@ func handScreenshot(ctx context.Context, image []byte) *models.AgentAttachment {
 		return nil
 	}
 	return attachment
+}
+
+// pictureOf reads a PNG out of the data address the extension answers a
+// screenshot with, sent as a JSON string.
+func pictureOf(data json.RawMessage) ([]byte, bool) {
+	var address string
+	if json.Unmarshal(data, &address) != nil {
+		return nil, false
+	}
+	const prefix = "data:image/png;base64,"
+	if !strings.HasPrefix(address, prefix) {
+		return nil, false
+	}
+	image, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(address, prefix))
+	if err != nil || len(image) == 0 {
+		return nil, false
+	}
+	return image, true
 }
