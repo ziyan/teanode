@@ -943,11 +943,6 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
     <div className="mailbox-frame">
       <div className={['mailbox', itemId ? 'reading' : ''].filter(Boolean).join(' ')}>
         <div className="mailbox-list">
-          <div className="mailbox-new">
-            <button type="button" className="primary" onClick={() => navigate('/mailbox/compose')}>
-              {t('mailbox.newMessage')}
-            </button>
-          </div>
           <form
             className="list-toolbar"
             onSubmit={(event) => {

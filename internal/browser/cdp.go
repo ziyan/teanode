@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -55,7 +56,9 @@ type commandError struct {
 
 func dial(ctx context.Context, address string) (*connection, error) {
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second, ReadBufferSize: 1 << 20, WriteBufferSize: 1 << 20}
-	socket, response, err := dialer.DialContext(ctx, address, http.Header{})
+	// Chrome refuses a debugger connection whose Host is a name, as it
+	// would be across a compose network, and takes one that says localhost.
+	socket, response, err := dialer.DialContext(ctx, address, http.Header{"Host": {"localhost"}})
 	if err != nil {
 		return nil, fmt.Errorf("browser: cannot connect to %s: %w", address, err)
 	}
@@ -184,17 +187,28 @@ func (self *connection) close() error {
 	return self.socket.Close()
 }
 
-// endpointAddress turns an endpoint — http://host:9222, or a ws:// address
-// — into the browser's websocket address.
+// endpointAddress turns an endpoint — host:9222, http://host:9222, or a
+// ws:// address — into the browser's websocket address.
 func endpointAddress(ctx context.Context, endpoint string) (string, error) {
 	endpoint = strings.TrimSpace(endpoint)
 	if strings.HasPrefix(endpoint, "ws://") || strings.HasPrefix(endpoint, "wss://") {
 		return endpoint, nil
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(endpoint, "/")+"/json/version", nil)
+	// host:port is what the configuration asks for; the address needs a
+	// scheme.
+	if !strings.Contains(endpoint, "://") {
+		endpoint = "http://" + endpoint
+	}
+	base, err := url.Parse(strings.TrimSuffix(endpoint, "/"))
+	if err != nil || base.Host == "" {
+		return "", fmt.Errorf("browser: %q is not a debugger address", endpoint)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base.String()+"/json/version", nil)
 	if err != nil {
 		return "", err
 	}
+	// Chrome answers only a Host that is an address or localhost.
+	request.Host = "localhost"
 	client := &http.Client{Timeout: 10 * time.Second}
 	response, err := client.Do(request)
 	if err != nil {
@@ -210,5 +224,17 @@ func endpointAddress(ctx context.Context, endpoint string) (string, error) {
 	if version.WebSocketDebuggerURL == "" {
 		return "", fmt.Errorf("browser: %s names no debugger address", endpoint)
 	}
-	return version.WebSocketDebuggerURL, nil
+	return reachableDebugger(version.WebSocketDebuggerURL, base.Host)
+}
+
+// reachableDebugger is the debugger's websocket address at the host it was
+// found at. Asked as localhost, Chrome names itself localhost, which from
+// this server is this server rather than the Chrome beside it.
+func reachableDebugger(address, host string) (string, error) {
+	debugger, err := url.Parse(address)
+	if err != nil {
+		return "", fmt.Errorf("browser: the debugger address %q cannot be read: %w", address, err)
+	}
+	debugger.Host = host
+	return debugger.String(), nil
 }

@@ -282,6 +282,27 @@ func (self *Registry) ListModels(ctx context.Context) []ProviderModel {
 	return models
 }
 
+// ContextLength is the window of a "provider:model", from the provider's
+// cached model list, or zero when the provider does not say or cannot be
+// reached.
+func (self *Registry) ContextLength(ctx context.Context, name string) int {
+	providerName, model := config.SplitModelName(name)
+	entry := self.providers[providerName]
+	if entry == nil {
+		return 0
+	}
+	listed, err := self.listProvider(ctx, providerName, entry, false)
+	if err != nil {
+		return 0
+	}
+	for _, candidate := range listed {
+		if candidate.Model == model {
+			return candidate.ContextLength
+		}
+	}
+	return 0
+}
+
 // TestProvider asks one provider for its models now, ignoring the cache,
 // which is what the settings page's Test button does.
 func (self *Registry) TestProvider(ctx context.Context, name string) ([]ProviderModel, error) {

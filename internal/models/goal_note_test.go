@@ -29,8 +29,34 @@ func TestGoalChangeNote(t *testing.T) {
 		{"a new goal after met", met, changed, "Goal set: tidy the archive"},
 	}
 	for _, testCase := range cases {
-		if got := GoalChangeNote(testCase.before, testCase.after); got != testCase.want {
+		kind, detail := GoalChangeNote(testCase.before, testCase.after)
+		got := ""
+		if kind != "" {
+			got = NoteText(kind, detail)
+		}
+		if got != testCase.want {
 			t.Errorf("%s: got %q, want %q", testCase.name, got, testCase.want)
+		}
+	}
+}
+
+// A note of a kind reads in English for whoever has no kinds: the kind's
+// words, then the detail, and a compaction without the note it stands for.
+func TestNoteText(t *testing.T) {
+	for _, testCase := range []struct {
+		kind   AgentNoteKind
+		detail string
+		want   string
+	}{
+		{NoteStopped, "", "stopped"},
+		{NoteStopped, "the daily budget is spent", "stopped: the daily budget is spent"},
+		{NoteDepth, "a problem to diagnose", "looking into this carefully: a problem to diagnose"},
+		{NoteCompacted, "Decided: the regatta is on the 21st.", "the earlier conversation was compacted into a note"},
+		{NoteGoalStalled, "24", "Goal stalled: 24 turns since you last wrote and it is not met. Write to keep going, or clear or change it."},
+		{"", "written as it is", "written as it is"},
+	} {
+		if got := NoteText(testCase.kind, testCase.detail); got != testCase.want {
+			t.Errorf("%s: got %q, want %q", testCase.kind, got, testCase.want)
 		}
 	}
 }

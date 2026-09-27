@@ -25,8 +25,18 @@ a question starts an ordinary turn in it.
 
 One row per user turn, per round's answer, and per tool result, oldest first,
 with the tool calls and a usage note on the answer. Two other roles appear:
-`note` for a stopped turn, and `compaction` for the note that stands in for
-everything before it (`context.md`). Neither is sent to a model.
+`note` for what a turn did beside answering (stopped, failed, looked into
+carefully, a goal set or met), and `compaction` for the note that stands in
+for everything before it (`context.md`). Neither is sent to a model.
+
+A note has a kind (`models.AgentNoteKind`) in its `name`, and only its
+detail in `content`: the goal, the reason, the count. The drawer words each
+kind in the person's language, and `models.NoteText` words it in English
+for the command line and the chat channels. A run's `note` event carries the
+same `noteKind` and `noteDetail` beside the English `note`, and a
+compaction says `compacting` while it writes and `compacted`, with the note
+as its detail, when it is done. A note without a kind is prose, shown as
+written.
 
 Reading a conversation returns the **newest** page — a drawer opens at the end
 — along with the conversation's open todos.
@@ -86,8 +96,9 @@ words, and says in the same breath that nobody is speaking.
 The goal's beginning and end are lines of the transcript as well: setting,
 changing or clearing it, and the agent calling `met`, each append a `note`
 message -- "Goal set: …", "Goal changed: …", "Goal cleared: …", "Goal met:
-…" with the agent's note -- worded by `models.GoalChangeNote` so the
-dialog, a new conversation and the tool say the same thing. A `note` or a
+…" with the agent's note -- whose kind and detail come from
+`models.GoalChangeNote`, so the dialog, a new conversation and the tool say
+the same thing. A `note` or a
 `wait` from the tool adds no line; the chip and the bar carry those.
 
 How the turns are queued, bounded and delivered is in

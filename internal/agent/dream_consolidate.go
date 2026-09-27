@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -24,14 +25,33 @@ func (self *Agent) dreamConsolidate(ctx context.Context, run *Run, record *model
 		log.Warningf("cannot list the pages to rewrite: %s", err)
 		return
 	}
+	// A few pages at once, as many as the operator allows: each rewrite
+	// changes its own page and the facts on it and nothing else, so two
+	// pages rewritten side by side touch no row in common. One at a time,
+	// a night on a slower model spent its whole share on a hundred pages.
+	concurrency := run.Configuration().Agent.Limits.RewriteConcurrency
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	slots := make(chan struct{}, concurrency)
+	var group sync.WaitGroup
 	for _, page := range pages {
 		if ctx.Err() != nil || !budget.left() || !budget.consolidatingTimeLeft() {
 			break
 		}
-		if self.consolidatePage(ctx, run, record, page, budget) {
-			record.Rewritten++
-		}
+		slots <- struct{}{}
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			defer func() { <-slots }()
+			if self.consolidatePage(ctx, run, record, page, budget) {
+				budget.mutex.Lock()
+				record.Rewritten++
+				budget.mutex.Unlock()
+			}
+		}()
 	}
+	group.Wait()
 }
 
 // consolidatePage rewrites one page and merges what it says twice.
@@ -133,7 +153,11 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 		log.Warningf("cannot rewrite %q: %s", page.Path, err)
 		return false
 	}
+	// Under the budget's lock: pages are rewritten several at once, and
+	// the night's counts are shared between them.
+	budget.mutex.Lock()
 	record.Merged += merged
+	budget.mutex.Unlock()
 	return true
 }
 

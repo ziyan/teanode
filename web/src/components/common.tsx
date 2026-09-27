@@ -400,6 +400,8 @@ export function budgetNearness(used: number, limit: number): 'good' | 'warn' | '
 
 export function formatCount(count?: number | null): string {
   const value = count ?? 0
+  // A month of the agents' tokens runs past a thousand million.
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(value >= 10_000_000_000 ? 0 : 1)}B`
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`
   if (value >= 1000) return `${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)}k`
   return String(value)

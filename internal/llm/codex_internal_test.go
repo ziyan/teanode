@@ -24,11 +24,13 @@ func signedIn(test *testing.T, handle http.HandlerFunc) (*codex, *httptest.Serve
 		}
 		handle(writer, request)
 	}))
-	made, err := newCodex(server.URL, "a-refresh-token", "an-account", server.Client())
+	// A sign-in of its own, at the fake service: the process-wide ones are
+	// shared by token, and a test must not point another's elsewhere.
+	signer, err := newSignIn(server.URL+"/token", codexClientId, "a-refresh-token", server.Client())
 	if err != nil {
-		test.Fatalf("newCodex: %s", err)
+		test.Fatalf("newSignIn: %s", err)
 	}
-	made.signIn.tokenUrl = server.URL + "/token"
+	made := &codex{baseUrl: server.URL, account: "an-account", signIn: signer, http: server.Client()}
 	return made, server
 }
 
@@ -236,7 +238,7 @@ func TestATokenTheServiceRefusesIsFetchedAgainOnce(test *testing.T) {
 	}))
 	defer server.Close()
 
-	made, _ := newCodex(server.URL, "a-refresh-token", "an-account", server.Client())
+	made, _ := newCodex(server.URL, "a-refresh-token-for-"+test.Name(), "an-account", server.Client())
 	made.signIn.tokenUrl = server.URL + "/token"
 
 	if _, err := made.Chat(context.Background(), &ChatRequest{
@@ -252,20 +254,16 @@ func TestATokenTheServiceRefusesIsFetchedAgainOnce(test *testing.T) {
 	}
 }
 
-// It is a provider that chats, and says what it answers to without asking.
-func TestTheSignedInProviderChatsAndNamesItsModels(test *testing.T) {
+// It is a provider that chats.
+func TestTheSignedInProviderChats(test *testing.T) {
 	test.Parallel()
 
-	service, err := NewSignedInProvider("openai-codex", "", "a-refresh-token", "an-account", time.Second)
+	service, err := NewSignedInProvider("openai-codex", "", "a-refresh-token-for-"+test.Name(), "an-account", time.Second)
 	if err != nil {
 		test.Fatalf("NewSignedInProvider: %s", err)
 	}
 	if _, ok := any(service).(Provider); !ok {
 		test.Error("a signed-in provider does not hold a conversation")
-	}
-	models, err := service.ListModels(context.Background())
-	if err != nil || len(models) == 0 {
-		test.Fatalf("ListModels: %v %v", models, err)
 	}
 
 	// Without a refresh token there is nothing to sign in with, and that is
@@ -285,7 +283,7 @@ func TestTheSignedInProviderChatsAndNamesItsModels(test *testing.T) {
 func TestARotationIsReportedByTheProvider(test *testing.T) {
 	test.Parallel()
 
-	made, err := newCodex("https://example.test", "a-refresh-token", "an-account", nil)
+	made, err := newCodex("https://example.test", "a-refresh-token-for-"+test.Name(), "an-account", nil)
 	if err != nil {
 		test.Fatalf("newCodex: %s", err)
 	}
@@ -393,5 +391,75 @@ func TestAPlanWindowSaysItsLengthAndReset(test *testing.T) {
 	}
 	if got := resetOf(header, "X-Codex-Secondary-Reset-After-Seconds"); got != "a time not said" {
 		test.Errorf("a missing reset read %q", got)
+	}
+}
+
+// Providers built from one refresh token share one sign-in, and so does one
+// built from a token the sign-in held before it was rotated: a second holder
+// that refreshed on its own would leave the first holding a token the
+// service no longer honours. The first holder's handling of a rotation is
+// kept.
+func TestProvidersFromOneTokenShareTheSignIn(test *testing.T) {
+	first, err := newCodex("https://example.test", "a-token-for-"+test.Name(), "an-account", nil)
+	if err != nil {
+		test.Fatal(err)
+	}
+	kept := ""
+	first.onRotated(func(refreshToken string) { kept = refreshToken })
+
+	second, err := newCodex("https://example.test", "a-token-for-"+test.Name(), "an-account", nil)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if second.signIn != first.signIn {
+		test.Fatal("two providers from one token hold two sign-ins")
+	}
+	second.signIn.rotated("the-rotated")
+	if kept != "the-rotated" {
+		test.Error("the second provider replaced the first one's handling of a rotation")
+	}
+
+	first.adoptRefreshToken("a-newer-token-for-" + test.Name())
+	behind, err := newCodex("https://example.test", "a-token-for-"+test.Name(), "an-account", nil)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if behind.signIn != first.signIn {
+		test.Error("a provider built from a token the sign-in held before was given its own")
+	}
+	other, err := newCodex("https://example.test", "another-token-for-"+test.Name(), "an-account", nil)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if other.signIn == first.signIn {
+		test.Error("a different token was given the same sign-in")
+	}
+}
+
+// The models offered are the ones the service lists for the account, asked
+// for as the whole list, less those it offers to nobody.
+func TestThePlanListsItsOwnModels(test *testing.T) {
+	test.Parallel()
+
+	made, server := signedIn(test, func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/codex/models" || request.URL.Query().Get("client_version") != codexCatalogVersion {
+			test.Errorf("the list was asked for at %s", request.URL)
+		}
+		if got := request.Header.Get("ChatGPT-Account-Id"); got != "an-account" {
+			test.Errorf("the account went as %q", got)
+		}
+		_, _ = io.WriteString(writer, `{"models":[`+
+			`{"slug":"model-new","visibility":"list","context_window":272000},`+
+			`{"slug":"model-internal","visibility":"hide","context_window":272000},`+
+			`{"slug":"model-old","visibility":"list"}]}`)
+	})
+	defer server.Close()
+
+	models, err := made.ListModels(context.Background())
+	if err != nil {
+		test.Fatal(err)
+	}
+	if len(models) != 2 || models[0].ID != "model-new" || models[0].ContextLength != 272000 || models[1].ID != "model-old" {
+		test.Errorf("it offered %+v", models)
 	}
 }

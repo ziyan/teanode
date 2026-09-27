@@ -6,6 +6,63 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.71.1] - 2026-09-27
+
+### Fixed
+
+- Long conversations are no longer compacted at 30000 tokens on models with a larger context window: the line is now half the window the provider lists. (#192)
+
+## [0.71.0] - 2026-09-27
+
+### Added
+
+- A dream rewrites several pages at once: "Page rewrites at once" in the agent's limits (`agent.limits.rewriteConcurrency`). (#190)
+
+### Changed
+
+- The New message button is only in the sidebar, not also above each folder. (#191)
+
+## [0.70.0] - 2026-09-27
+
+### Added
+
+- The agents' usage tab shows a chart above the table: by day, tokens (split into fresh input, cached input and output), cost or calls; otherwise the largest groups as bars. (#189)
+
+### Changed
+
+- Usage is grouped by user rather than by agent, and no longer by mailbox. (#189)
+
+## [0.69.0] - 2026-09-27
+
+### Added
+
+- Signed in, the browser extension keeps your browser connected to your agent, which can open a tab there when a page needs your session, without you attaching one first. Update the extension to 3.0.0. (#187)
+
+### Changed
+
+- The agent settings tab for sources is called "Sources". (#188)
+
+### Fixed
+
+- Listing or testing a ChatGPT plan's models no longer risks signing the running provider out. (#184)
+
+## [0.68.0] - 2026-09-27
+
+### Added
+
+- The agent knows which model it is running on and says so when asked. (#186)
+
+### Changed
+
+- A provider of kind `openai-codex` offers whatever models the ChatGPT plan lists for the account, instead of a fixed list. (#181)
+- The chat drawer can be moved by dragging the note at its bottom as well as its title bar. (#182)
+- A double click on the chat drawer's title bar or bottom note fills the window; another puts the drawer back in its corner. (#182)
+
+### Fixed
+
+- The headless browser reaches the Chrome the compose file's `browser` profile runs, and `agent.browser.cdpEndpoint` may be given as `host:port`. (#185)
+- A browser screenshot is shown to the agent as a picture, and the agent can hand it to you in the conversation. (#185)
+
 ## [0.67.5] - 2026-09-27
 
 ### Changed

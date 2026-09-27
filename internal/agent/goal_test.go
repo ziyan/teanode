@@ -444,7 +444,7 @@ func TestGoalStopsAfterTurnsAlone(t *testing.T) {
 			t.Fatalf("ListAgentMessages: %s", err)
 		}
 		last := messages[len(messages)-1]
-		if last.Role != models.AgentMessageNote || last.Content != after.GoalNote {
+		if last.Role != models.AgentMessageNote || models.NoteText(models.AgentNoteKind(last.Name), last.Content) != after.GoalNote {
 			t.Fatalf("the stall should be the transcript's last line: %+v", last)
 		}
 	})

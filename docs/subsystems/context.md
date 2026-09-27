@@ -82,7 +82,10 @@ A long conversation is folded into a note so the turn can continue.
 
 ### When
 
-- **Before a round**, when the rendered history passes 30000 estimated tokens.
+- **Before a round**, when the rendered history passes half the model's
+  window, as the provider's model list gives it, or 30000 estimated tokens
+  when that is smaller or the provider does not say. The window is looked up
+  only once the history passes 15000, so a short run asks nothing.
   If that compaction fails, the flag is set and it is not tried again this
   turn.
 - **After a refusal**, once per turn, when the provider says the request is too
@@ -129,8 +132,10 @@ can all leave one.
 
 | Name | Value | What it bounds |
 | --- | --- | --- |
-| `askHistoryTokens` | 30000 | history before a round compacts |
-| `askHistoryTokens/2` | 15000 | the short prompt, forced deferral, the tail's ceiling |
+| `askHistoryTokens` | 30000 | history before a round compacts, the least of it |
+| window / `askHistoryWindowShare` | half the window | history before a round compacts, when larger |
+| history limit / 2 | 15000 or more | the short prompt, forced deferral |
+| `askHistoryTokens/2` | 15000 | the tail's ceiling |
 | `askTailMessages` | 12 | messages kept verbatim |
 | `compactLeastTail` | 2 | fewest kept, and the tail after an overflow |
 | `compactChunkTokens` | 12000 | conversation per note-writing call |

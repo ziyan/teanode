@@ -53,7 +53,7 @@ import { ConfirmDialog, FormDialog } from './dialog'
 import { ZoomablePicture } from './lightbox'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
-import { useTranslation } from '../i18n/i18n'
+import { useTranslation, type Key, type Values } from '../i18n/i18n'
 
 // DEVICES_EVERY is how often the drawer asks what is attached while it is
 // open. Attaching and detaching happen outside this page, so there is
@@ -336,6 +336,8 @@ interface RunEvent {
   arguments?: string
   risk?: string
   note?: string
+  noteKind?: string
+  noteDetail?: string
   error?: string
 }
 
@@ -384,7 +386,9 @@ type Line =
       // that is fresh, never one ignored days ago.
       raisedAt?: string
     }
-  | { kind: 'note'; key: string; text: string; at?: string }
+  // detail is what a compaction's line opens to: the note itself.
+  // isPending marks the line of a compaction still being written.
+  | { kind: 'note'; key: string; text: string; at?: string; detail?: string; isPending?: boolean }
   | { kind: 'error'; key: string; text: string }
   // A turn the agent started on its own: against the goal, or because a
   // background command ended. Its words are framing for the model and were
@@ -456,7 +460,7 @@ const ASK = `
 
 const FEED = `
   subscription ($conversationId: String!) {
-    AgentConversationEvents(conversationId: $conversationId) { kind runId sequence at text tool callId arguments risk note error }
+    AgentConversationEvents(conversationId: $conversationId) { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error }
   }`
 
 const ANSWER = `
@@ -583,6 +587,12 @@ function clampPlacement(placement: Placement): Placement {
   const left = Math.min(Math.max(placement.left, VIEWPORT_MARGIN), VIEWPORT_MARGIN + availableWidth - width)
   const top = Math.min(Math.max(placement.top, VIEWPORT_MARGIN), VIEWPORT_MARGIN + availableHeight - height)
   return { left, top, width, height }
+}
+
+// fullScreenPlacement is the whole window, less the margin every placement
+// keeps from its edges.
+function fullScreenPlacement(): Placement {
+  return clampPlacement({ left: 0, top: 0, width: window.innerWidth, height: window.innerHeight })
 }
 
 function isSamePlacement(first: Placement, second: Placement): boolean {
@@ -780,6 +790,20 @@ function usePlacement(isEnabled: boolean) {
     rememberPlacement(null)
   }
 
+  // toggleFullScreen fills the window with the box, or, when it already
+  // fills it, puts it back in its corner.
+  const toggleFullScreen = () => {
+    const full = fullScreenPlacement()
+    const current = livePlacement.current
+    if (current && isSamePlacement(current, full)) {
+      reset()
+      return
+    }
+    writePlacement(full)
+    setPlacement(full)
+    rememberPlacement(full)
+  }
+
   const headProps = {
     onPointerDown: (pointerEvent: React.PointerEvent<HTMLElement>) => {
       if (isGestureExempt(pointerEvent.target)) return
@@ -788,11 +812,11 @@ function usePlacement(isEnabled: boolean) {
     onPointerMove,
     onPointerUp: onPointerEnd,
     onPointerCancel: onPointerEnd,
-    // A double click on the bar puts the box back in its corner at its
-    // first size, and forgets where it was.
+    // A double click on the bar fills the window with the box, and a
+    // second puts it back in its corner at its first size.
     onDoubleClick: (mouseEvent: React.MouseEvent<HTMLElement>) => {
       if (!isEnabled || isPhoneWidth() || isGestureExempt(mouseEvent.target)) return
-      reset()
+      toggleFullScreen()
     },
   }
 
@@ -977,7 +1001,66 @@ function AttachedPicture({ attachment }: { attachment: Attachment }) {
 // linesOf turns stored messages into what the drawer draws: the person's
 // turns with what came with them, the agent's answers with what they cost,
 // and a line per tool it used, with what the tool answered.
-function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => string): Line[] {
+// The kinds of note the server words by kind, and the words for each. A
+// note of a kind carries only its detail -- the goal, the reason -- and is
+// worded here in the person's language; a note without one is the
+// server's prose, shown as written.
+const NOTE_WORDS: Record<string, { plain: Key; withDetail?: Key }> = {
+  queued: { plain: 'agentDrawer.note.queued' },
+  stopped: { plain: 'agentDrawer.note.stopped', withDetail: 'agentDrawer.note.stoppedBecause' },
+  failed: { plain: 'agentDrawer.note.failed', withDetail: 'agentDrawer.note.failedBecause' },
+  call_unreadable: { plain: 'agentDrawer.note.callUnreadable' },
+  repeated_failure: { plain: 'agentDrawer.note.repeatedFailure' },
+  round_limit: { plain: 'agentDrawer.note.roundLimit' },
+  compacting: { plain: 'agentDrawer.note.compacting' },
+  compacted: { plain: 'agentDrawer.note.compacted' },
+  depth: { plain: 'agentDrawer.note.depth', withDetail: 'agentDrawer.note.depthBecause' },
+  goal_set: { plain: 'agentDrawer.note.goalSet', withDetail: 'agentDrawer.note.goalSet' },
+  goal_set_again: { plain: 'agentDrawer.note.goalSetAgain', withDetail: 'agentDrawer.note.goalSetAgain' },
+  goal_changed: { plain: 'agentDrawer.note.goalChanged', withDetail: 'agentDrawer.note.goalChanged' },
+  goal_cleared: { plain: 'agentDrawer.note.goalCleared', withDetail: 'agentDrawer.note.goalCleared' },
+  goal_met: { plain: 'agentDrawer.note.goalMet', withDetail: 'agentDrawer.note.goalMet' },
+  goal_stalled: { plain: 'agentDrawer.note.goalStalled', withDetail: 'agentDrawer.note.goalStalled' },
+}
+
+// LEGACY_NOTES is the English each kind was written in before notes had
+// kinds, and the kind it was.
+const LEGACY_NOTES: [string, string][] = [
+  ['stopped', 'stopped'],
+  ['looking into this carefully', 'depth'],
+  ['a tool call the server could not read; asked again', 'call_unreadable'],
+  ['failed', 'failed'],
+  ['Goal set again', 'goal_set_again'],
+  ['Goal set', 'goal_set'],
+  ['Goal changed', 'goal_changed'],
+  ['Goal cleared', 'goal_cleared'],
+  ['Goal met', 'goal_met'],
+]
+
+// noteWords is a note as the drawer shows it. A compaction's detail is the
+// note it wrote, which its line opens to rather than repeats.
+function noteWords(
+  t: (key: Key, values?: Values) => string,
+  noteKind: string,
+  noteDetail: string,
+  prose: string,
+): string {
+  if (!NOTE_WORDS[noteKind]) {
+    // Written before notes had kinds, in English: read the kind back from
+    // the words it was written with, so an old transcript is worded too.
+    const legacy = LEGACY_NOTES.find(([english]) => prose === english || prose.startsWith(english + ': '))
+    if (!legacy) return prose
+    ;[, noteKind] = legacy
+    noteDetail = prose.slice(legacy[0].length + 2)
+  }
+  const words = NOTE_WORDS[noteKind]
+  if (noteDetail && words.withDetail) {
+    return t(words.withDetail, { detail: noteDetail })
+  }
+  return t(words.plain, { detail: noteDetail })
+}
+
+function linesOf(messages: StoredMessage[], t: (key: Key, values?: Values) => string): Line[] {
   const lines: Line[] = []
   const results = new Map<string, string>()
   for (const message of messages) {
@@ -1060,7 +1143,13 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
         }
         break
       case 'compaction':
-        lines.push({ kind: 'note', key: message.id, text: '' })
+        lines.push({
+          kind: 'note',
+          key: message.id,
+          text: t('agentDrawer.note.compacted'),
+          detail: message.content,
+          at: message.createdAt,
+        })
         break
       case 'note':
         // Timed, so that the day divider counts a note that opens a day
@@ -1069,7 +1158,7 @@ function linesOf(messages: StoredMessage[], t: (key: 'agentDrawer.stopped') => s
         lines.push({
           kind: 'note',
           key: message.id,
-          text: message.content === 'stopped' ? t('agentDrawer.stopped') : message.content,
+          text: noteWords(t, message.name ?? '', message.content, message.content),
           at: message.createdAt,
         })
         break
@@ -2693,15 +2782,28 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         case 'note': {
           // A queued turn says so once, and the line goes when it starts.
           const queuedKey = `${event.runId}-queued`
-          if (event.note === 'queued behind the turn before it') {
-            next.push({ kind: 'note', key: queuedKey, text: t('agentDrawer.queued') })
+          if (event.noteKind === 'queued' || event.note === 'queued behind the turn before it') {
+            next.push({ kind: 'note', key: queuedKey, text: t('agentDrawer.note.queued') })
             return next
           }
-          const withoutQueued = next.filter((line) => line.key !== queuedKey)
+          // A compaction says so while the note is written, and the line
+          // becomes the finished one, which opens to the note.
+          const compactingKey = `${event.runId}-compacting`
+          const withoutQueued = next.filter((line) => line.key !== queuedKey && line.key !== compactingKey)
+          if (event.noteKind === 'compacting') {
+            withoutQueued.push({
+              kind: 'note',
+              key: compactingKey,
+              text: t('agentDrawer.note.compacting'),
+              isPending: true,
+            })
+            return withoutQueued
+          }
           withoutQueued.push({
             kind: 'note',
             key: `${event.runId}-${event.sequence}`,
-            text: event.note === 'stopped' ? t('agentDrawer.stopped') : (event.note ?? ''),
+            text: noteWords(t, event.noteKind ?? '', event.noteDetail ?? '', event.note ?? ''),
+            detail: event.noteKind === 'compacted' ? event.noteDetail : undefined,
           })
           return withoutQueued
         }
@@ -3362,9 +3464,35 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       case 'checkin':
         return <CheckInLine key={line.key} at={line.at} text={line.text} origin={line.origin} />
       case 'note':
+        if (line.detail) {
+          return (
+            <div
+              key={line.key}
+              className={['agent-line note', expanded.has(line.key) ? 'open' : ''].filter(Boolean).join(' ')}
+            >
+              <button
+                type="button"
+                className="agent-tool-toggle"
+                aria-expanded={expanded.has(line.key)}
+                onClick={() => toggleExpanded(line.key)}
+              >
+                {line.text}
+              </button>
+              {expanded.has(line.key) && (
+                <div className="agent-tool-detail agent-note-detail">
+                  <Markdown text={line.detail} onLeaving={leaving} />
+                </div>
+              )}
+            </div>
+          )
+        }
         return (
-          <div key={line.key} className="agent-line note muted">
-            {line.text || t('agentDrawer.compacted')}
+          <div
+            key={line.key}
+            className={['agent-line note muted', line.isPending ? 'pending' : ''].filter(Boolean).join(' ')}
+            role={line.isPending ? 'status' : undefined}
+          >
+            {line.text}
           </div>
         )
       case 'error':
@@ -3415,6 +3543,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // history. A line above the box says what they are looking at.
   const isRun = current?.kind === 'run'
   const running = runs.length > 0
+  // A list with every step done is put away once the turn ends: it has
+  // nothing left to track and was taking the room above the box.
+  const showTodos = todos.length > 0 && (running || todos.some((todo) => !todo.doneAt))
   const canSend = (draft.trim().length > 0 || pending.length > 0) && !uploading
   // What the agent said it needs, while it is still waiting for it and
   // the person has not yet written back.
@@ -3749,7 +3880,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               type: its steps and how far it has got, one line each, the
               whole of a long one in its tooltip. The agent keeps it with
               its todo tool; the person reads it. */}
-          {todos.length > 0 && (
+          {showTodos && (
             <div className="agent-drawer-todo">
               <ul aria-label={t('agentDrawer.todoTitle')}>
                 {todos.map((todo) => (
@@ -3896,7 +4027,14 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               </button>
             </Tooltip>
           </form>
-          <p className="agent-drawer-note muted">{t('agentDrawer.mistakes')}</p>
+          {/* The note is a bar across the foot of the box, and moves the
+              box the way the head does, so it can be taken by either end. */}
+          <p
+            className={['agent-drawer-note', 'muted', standalone ? '' : 'movable'].filter(Boolean).join(' ')}
+            {...chatBox.headProps}
+          >
+            {t('agentDrawer.mistakes')}
+          </p>
           {dragging && <div className="agent-drawer-drop">{t('agentDrawer.dropHere')}</div>}
         </aside>
       )}

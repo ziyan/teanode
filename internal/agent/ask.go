@@ -193,15 +193,31 @@ type Event struct {
 	Arguments      string    `json:"arguments,omitempty"`
 	Risk           string    `json:"risk,omitempty"`
 	Note           string    `json:"note,omitempty"`
-	Error          string    `json:"error,omitempty"`
-	At             time.Time `json:"at"`
+	// NoteKind and NoteDetail are a note's kind and detail, for a client
+	// that words it in the person's language; Note is it in English.
+	NoteKind   string    `json:"noteKind,omitempty"`
+	NoteDetail string    `json:"noteDetail,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	At         time.Time `json:"at"`
+}
+
+// sayNote tells whoever is watching a note of a kind: in English, and by
+// its kind and detail for a client that words it in the person's language.
+func (self *AskRun) sayNote(kind models.AgentNoteKind, detail string) {
+	self.emit(Event{Kind: EventNote, Note: models.NoteText(kind, detail), NoteKind: string(kind), NoteDetail: detail})
 }
 
 // AskRun is one turn in flight.
 type AskRun struct {
-	// depthNote is what the judgement of this message said, written under
-	// the message once it is stored; see chooseDepth.
-	depthNote string
+	// hasDepthNote says this message was judged worth looking into
+	// carefully, and depthReason why, written under the message once it is
+	// stored; see chooseDepth.
+	hasDepthNote bool
+	depthReason  string
+
+	// modelName is the model the turn runs on, written provider:model, so
+	// the agent can say which it is when asked rather than guess.
+	modelName string
 
 	ID       string
 	settings *AskSettings
@@ -283,9 +299,15 @@ const (
 	confirmationWait = 10 * time.Minute
 
 	// askHistoryTokens is the most history a round carries before the
-	// older turns are compacted. A third of a small model's window, which
-	// leaves room for the prompt, the tools and the answer.
+	// older turns are compacted when the model's window is not known, or
+	// is small. A third of a small model's window, which leaves room for
+	// the prompt, the tools and the answer.
 	askHistoryTokens = 30000
+
+	// askHistoryWindowShare is the part of a known window the history may
+	// fill before it is compacted: the rest is the prompt, the tools and
+	// the answer, and the estimate is rough.
+	askHistoryWindowShare = 2
 
 	// askReadThenAnswerTokens is the history at which a read-then-answer
 	// run is told to answer. Lower than the compaction line, because the
@@ -638,11 +660,11 @@ func (self *AskRun) loop() {
 	// conversation shows the words a phone or a chat app sent.
 	self.emit(Event{Kind: EventAsked, Text: self.settings.Message, Note: self.settings.Surface})
 	if previous := self.previous; previous != nil && !previous.isFinished() {
-		self.emit(Event{Kind: EventNote, Note: "queued behind the turn before it"})
+		self.sayNote(models.NoteQueued, "")
 		select {
 		case <-previous.done:
 		case <-self.ctx.Done():
-			self.emit(Event{Kind: EventNote, Note: "stopped"})
+			self.sayNote(models.NoteStopped, "")
 			self.emit(Event{Kind: EventDone})
 			return
 		}
@@ -653,17 +675,17 @@ func (self *AskRun) loop() {
 			// Said in the transcript too, so that the words cut short
 			// read as cut short after a reload.
 			_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
-				_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: self.settings.Conversation.ID, Role: models.AgentMessageNote, Content: "stopped"})
+				_, err := tx.AppendAgentMessage(models.NewAgentNote(self.settings.Conversation.ID, models.NoteStopped, ""))
 				return err
 			})
-			self.emit(Event{Kind: EventNote, Note: "stopped"})
+			self.sayNote(models.NoteStopped, "")
 		} else {
 			// In the transcript too: a run that failed used to hold its
 			// prompt and nothing else, and the reason was in the server
 			// log where the person never looks.
 			log.Warningf("the agent of %q failed a turn: %s", self.settings.Owner.Username, err)
 			_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
-				_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: self.settings.Conversation.ID, Role: models.AgentMessageNote, Content: "failed: " + err.Error()})
+				_, err := tx.AppendAgentMessage(models.NewAgentNote(self.settings.Conversation.ID, models.NoteFailed, err.Error()))
 				return err
 			})
 			self.emit(Event{Kind: EventError, Error: err.Error()})
@@ -690,6 +712,19 @@ func (self *AskRun) turn() error {
 		modelName = registry.Configuration().Models.ForWork(settings.Work)
 	case settings.Agent.AskModel != "":
 		modelName = settings.Agent.AskModel
+	}
+	self.modelName = modelName
+	// The model's window is asked for only once the history passes what
+	// any window holds, which most runs never do.
+	historyLimitTokens := 0
+	historyLimitFor := func(historyTokens int) int {
+		if historyLimitTokens == 0 {
+			if historyTokens <= askHistoryTokens/2 {
+				return askHistoryTokens
+			}
+			historyLimitTokens = historyLimit(registry.ContextLength(ctx, modelName))
+		}
+		return historyLimitTokens
 	}
 
 	// The person's turn, kept before anything is asked.
@@ -769,9 +804,10 @@ func (self *AskRun) turn() error {
 		}
 	}
 	// The browser tool goes when the operator switched the browser off,
-	// and when there is neither a headless browser nor an attached tab to
-	// drive; a person's attached tab needs no Chrome beside the server,
-	// and while one is attached the tool is in the round from the start.
+	// and when there is neither a headless browser nor the person's own
+	// browser to drive; their browser, connected through the extension
+	// with a tab attached or none, needs no Chrome beside the server, and
+	// while it is connected the tool is in the round from the start.
 	tabAttached := !settings.Headless && self.TabsAllowed() && self.AttachedTab() != nil
 	if !FeatureAllowed(configuration, "browser") || (!configuration.Agent.Browser.Enabled && !tabAttached) {
 		withoutBrowser := self.offered[:0:0]
@@ -867,7 +903,7 @@ func (self *AskRun) turn() error {
 				return err
 			}
 			if deferral != nil {
-				self.emit(Event{Kind: EventNote, Note: "stopped: " + deferral.Reason})
+				self.sayNote(models.NoteStopped, deferral.Reason)
 				return nil
 			}
 		}
@@ -877,7 +913,7 @@ func (self *AskRun) turn() error {
 		historyTokens := llm.EstimateTokens(renderHistory(history))
 		if settings.ReadThenAnswer && historyTokens > askReadThenAnswerTokens {
 			answerNow = true
-		} else if historyTokens > askHistoryTokens {
+		} else if historyTokens > historyLimitFor(historyTokens) {
 			if settings.ReadThenAnswer {
 				answerNow = true
 			} else if !compactFailed {
@@ -890,7 +926,8 @@ func (self *AskRun) turn() error {
 				}
 			}
 		}
-		compact := settings.Short || llm.EstimateTokens(renderHistory(history)) > askHistoryTokens/2
+		compactedTokens := llm.EstimateTokens(renderHistory(history))
+		compact := settings.Short || compactedTokens > historyLimitFor(compactedTokens)/2
 		sent, deferred := Split(self.offered, self.loaded, compact)
 		system, err := self.systemPrompt(ctx, configuration, sent, deferred, compact)
 		if err != nil {
@@ -985,9 +1022,9 @@ func (self *AskRun) turn() error {
 			// only when it is well formed, and two calls in one breath, or
 			// one cut short, come back as mangled text with no call in it.
 			// Told, and asked again, rather than taken as the answer.
-			self.emit(Event{Kind: EventNote, Note: "a tool call the server could not read; asked again"})
+			self.sayNote(models.NoteCallUnreadable, "")
 			_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
-				_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: settings.Conversation.ID, Role: models.AgentMessageNote, Content: "a tool call the server could not read; asked again"})
+				_, err := tx.AppendAgentMessage(models.NewAgentNote(settings.Conversation.ID, models.NoteCallUnreadable, ""))
 				return err
 			})
 			history = append(history, llm.ChatMessage{Role: llm.RoleUser, Content: unreadableCallNotice})
@@ -1041,7 +1078,7 @@ func (self *AskRun) turn() error {
 				return err
 			}
 			if stuck {
-				self.emit(Event{Kind: EventNote, Note: "stopped: the same call failed three times"})
+				self.sayNote(models.NoteRepeatedFailure, "")
 				return nil
 			}
 		}
@@ -1063,13 +1100,22 @@ func (self *AskRun) turn() error {
 			self.lookingAt = nil
 		}
 	}
-	self.emit(Event{Kind: EventNote, Note: "stopped after the most rounds a turn may take"})
+	self.sayNote(models.NoteRoundLimit, "")
 	return nil
 }
 
 // chooseModel is the provider and model for this turn: the one for its
 // kind of work when the turn is a job's, else the person's own choice
 // when the operator offers choices, else the one for ask work.
+// historyLimit is the most history a round carries before the older turns
+// are compacted, for a model whose window is contextLength tokens, or zero
+// when it is not known. Never below askHistoryTokens: a small window is
+// what that was chosen for, and a request that still overflows is
+// compacted when the provider refuses it.
+func historyLimit(contextLength int) int {
+	return max(askHistoryTokens, contextLength/askHistoryWindowShare)
+}
+
 func (self *AskRun) chooseModel(configuration *config.Configuration, registry *llm.Registry) (llm.Provider, string, error) {
 	if self.settings.Work != "" {
 		return registry.ForWork(self.settings.Work)
@@ -1422,6 +1468,7 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 		"AgentName":         settings.Agent.DisplayName(),
 		"PersonName":        personName(settings.Owner),
 		"ServerName":        configuration.Server.Name,
+		"Model":             self.modelName,
 		"Language":          languageName(Language(settings.Agent, settings.Owner)),
 		"Short":             short,
 		"HouseInstructions": strings.TrimSpace(configuration.Agent.Instructions),
