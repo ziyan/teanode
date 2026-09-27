@@ -4,6 +4,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { RUN_KINDS } from '../agentRuns'
 import { graphql, openAgentConversation } from '../api'
 import { ErrorMessage, Loading, Tag, formatCount, formatMoney, formatTime } from '../components/common'
+import { UsageChart } from '../components/usageChart'
 import { Column, DataTable, Range } from '../components/dataTable'
 import { FormDialog } from '../components/dialog'
 import { PencilIcon, ToggleOffIcon, ToggleOnIcon } from '../components/icons'
@@ -262,42 +263,45 @@ export function AgentAdminPage() {
             {usage.length === 0 ? (
               <SettingsEmpty>{t('agentAdmin.noUsage')}</SettingsEmpty>
             ) : (
-              <div className="table-wrap">
-                <table className="numbers-table">
-                  <thead>
-                    <tr>
-                      <th>
-                        {{
-                          day: t('agentAdmin.byDay'),
-                          kind: t('agentAdmin.byKind'),
-                          model: t('agentAdmin.byModel'),
-                          agent: t('agentAdmin.byAgent'),
-                          mailbox: t('agentAdmin.byMailbox'),
-                        }[by as 'day' | 'kind' | 'model' | 'agent' | 'mailbox'] ?? t('agentAdmin.key')}
-                      </th>
-                      <th className="numeric">{t('agentAdmin.prompt')}</th>
-                      <th className="numeric">{t('agentAdmin.completion')}</th>
-                      <th className="numeric">{t('agentAdmin.cached')}</th>
-                      <th className="numeric">{t('agentAdmin.total')}</th>
-                      <th className="numeric">{t('agentAdmin.cost')}</th>
-                      <th className="numeric">{t('agentAdmin.calls')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usage.map((row) => (
-                      <tr key={row.key}>
-                        <td>{keyLabel(row.key)}</td>
-                        <td className="numeric">{formatCount(row.totals.promptTokens)}</td>
-                        <td className="numeric">{formatCount(row.totals.completionTokens)}</td>
-                        <td className="numeric">{formatCount(row.totals.cacheReadTokens)}</td>
-                        <td className="numeric">{formatCount(total(row.totals))}</td>
-                        <td className="numeric">{formatMoney(row.cost, row.currency)}</td>
-                        <td className="numeric">{row.totals.calls}</td>
+              <>
+                <UsageChart rows={usage} by={by} since={since} until={until} label={keyLabel} />
+                <div className="table-wrap">
+                  <table className="numbers-table">
+                    <thead>
+                      <tr>
+                        <th>
+                          {{
+                            day: t('agentAdmin.byDay'),
+                            kind: t('agentAdmin.byKind'),
+                            model: t('agentAdmin.byModel'),
+                            agent: t('agentAdmin.byAgent'),
+                            mailbox: t('agentAdmin.byMailbox'),
+                          }[by as 'day' | 'kind' | 'model' | 'agent' | 'mailbox'] ?? t('agentAdmin.key')}
+                        </th>
+                        <th className="numeric">{t('agentAdmin.prompt')}</th>
+                        <th className="numeric">{t('agentAdmin.completion')}</th>
+                        <th className="numeric">{t('agentAdmin.cached')}</th>
+                        <th className="numeric">{t('agentAdmin.total')}</th>
+                        <th className="numeric">{t('agentAdmin.cost')}</th>
+                        <th className="numeric">{t('agentAdmin.calls')}</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {usage.map((row) => (
+                        <tr key={row.key}>
+                          <td>{keyLabel(row.key)}</td>
+                          <td className="numeric">{formatCount(row.totals.promptTokens)}</td>
+                          <td className="numeric">{formatCount(row.totals.completionTokens)}</td>
+                          <td className="numeric">{formatCount(row.totals.cacheReadTokens)}</td>
+                          <td className="numeric">{formatCount(total(row.totals))}</td>
+                          <td className="numeric">{formatMoney(row.cost, row.currency)}</td>
+                          <td className="numeric">{row.totals.calls}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </SettingsSection>
         </>

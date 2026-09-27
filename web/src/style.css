@@ -8449,6 +8449,189 @@ button.with-icon {
   min-width: 9.5rem;
 }
 
+/* The usage, drawn above its table: shades of the leaf on the page's own
+   ground, so it reads in either theme. Fresh input is the middle shade,
+   cached input the palest (it costs a tenth), output the full leaf. */
+.usage-chart {
+  --usage-input: color-mix(in srgb, var(--leaf) 58%, var(--surface));
+  --usage-cached: color-mix(in srgb, var(--leaf) 24%, var(--surface));
+  --usage-output: var(--leaf);
+  margin-bottom: var(--space-4);
+}
+
+.usage-chart-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.usage-chart-total {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-chart-caption {
+  font-size: var(--text-label);
+}
+
+.usage-chart-plot {
+  position: relative;
+  width: 100%;
+}
+
+.usage-chart-plot svg {
+  display: block;
+  overflow: visible;
+}
+
+.usage-chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.usage-chart-axis {
+  fill: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-chart-column {
+  transition: opacity 120ms ease;
+}
+
+.usage-chart-column.input,
+.usage-chart-rank-bar.input,
+.usage-chart-swatch.input {
+  fill: var(--usage-input);
+  background: var(--usage-input);
+}
+
+.usage-chart-column.cached,
+.usage-chart-rank-bar.cached,
+.usage-chart-swatch.cached {
+  fill: var(--usage-cached);
+  background: var(--usage-cached);
+}
+
+.usage-chart-column.output,
+.usage-chart-column.single,
+.usage-chart-rank-bar.output,
+.usage-chart-rank-bar.single,
+.usage-chart-swatch.output {
+  fill: var(--usage-output);
+  background: var(--usage-output);
+}
+
+.usage-chart-dim .usage-chart-column {
+  opacity: 0.35;
+}
+
+.usage-chart-legend {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+
+.usage-chart-legend span,
+.usage-chart-tip-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.usage-chart-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.usage-chart-tip {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  min-width: 11rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+  font-size: var(--text-label);
+  pointer-events: none;
+}
+
+.usage-chart-tip-day {
+  font-weight: 650;
+  margin-bottom: 4px;
+}
+
+.usage-chart-tip-line {
+  display: flex;
+  width: 100%;
+}
+
+.usage-chart-tip-line span {
+  color: var(--muted);
+}
+
+.usage-chart-tip-line strong {
+  margin-left: auto;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-chart-ranked {
+  display: grid;
+  gap: 8px;
+}
+
+.usage-chart-rank {
+  display: grid;
+  grid-template-columns: minmax(6rem, 14rem) 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-label);
+}
+
+.usage-chart-rank-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-chart-rank-track {
+  display: flex;
+  height: 12px;
+  border-radius: var(--radius-round);
+  background: var(--field);
+  overflow: hidden;
+}
+
+.usage-chart-rank-bar {
+  height: 100%;
+}
+
+.usage-chart-rank-value {
+  min-width: 4.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 600px) {
+  .usage-chart-rank {
+    grid-template-columns: minmax(4rem, 8rem) 1fr auto;
+  }
+}
+
 /* The calendar.
    Every colour here comes from a token, so the month grid reads in both
    themes without a second palette. The grid is the only place that draws its
