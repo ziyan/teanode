@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.72.2] - 2026-09-27
+
+### Changed
+
+- The agent answers faster and spends less on a ChatGPT plan: more of each conversation is read from the plan's cache, and it asks for independent searches together. (#199)
+- Pictures of products and places are shown in the agent's answers rather than linked. (#199)
+
 ## [0.72.1] - 2026-09-27
 
 ### Changed
