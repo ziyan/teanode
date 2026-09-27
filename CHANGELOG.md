@@ -6,6 +6,23 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.68.0] - 2026-09-27
+
+### Added
+
+- The agent knows which model it is running on and says so when asked. (#186)
+
+### Changed
+
+- A provider of kind `openai-codex` offers whatever models the ChatGPT plan lists for the account, instead of a fixed list. (#181)
+- The chat drawer can be moved by dragging the note at its bottom as well as its title bar. (#182)
+- A double click on the chat drawer's title bar or bottom note fills the window; another puts the drawer back in its corner. (#182)
+
+### Fixed
+
+- The headless browser reaches the Chrome the compose file's `browser` profile runs, and `agent.browser.cdpEndpoint` may be given as `host:port`. (#185)
+- A browser screenshot is shown to the agent as a picture, and the agent can hand it to you in the conversation. (#185)
+
 ## [0.67.5] - 2026-09-27
 
 ### Changed

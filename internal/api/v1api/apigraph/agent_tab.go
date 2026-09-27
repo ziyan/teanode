@@ -22,9 +22,16 @@ import (
 // taken too. The server carries the agent's requests across and the
 // extension's answers back; the page stays on the person's screen.
 
-// tabProtocol is the version the extension must speak. 2 says who it is
-// with a token in the hello.
-const tabProtocol = 2
+// tabProtocol is the newest version the extension may speak. 2 says who it
+// is with a token in the hello and always comes with a tab attached; 3
+// connects whenever the extension is signed in and says with hasTab whether
+// there is a tab to act in, so the agent can open one in the person's
+// browser when none is attached. An extension still speaking 2 is welcomed
+// in 2.
+const tabProtocol = 3
+
+// tabProtocolOldest is the oldest version still taken.
+const tabProtocolOldest = 2
 
 // tabSocket is the websocket as the relay sends to it.
 type tabSocket struct {
@@ -48,10 +55,13 @@ type AgentTabQuery interface {
 
 // AgentTabView is the attached tab, if any.
 type AgentTabView struct {
-	Attached bool   `json:"attached"`
-	Title    string `json:"title,omitempty"`
-	URL      string `json:"url,omitempty"`
-	Allowed  bool   `json:"allowed"`
+	// Connected says the person's browser is connected through the
+	// extension, whether or not a tab is attached.
+	Connected bool   `json:"connected"`
+	Attached  bool   `json:"attached"`
+	Title     string `json:"title,omitempty"`
+	URL       string `json:"url,omitempty"`
+	Allowed   bool   `json:"allowed"`
 }
 
 func (self *graph) ReadAgentTab(ctx context.Context) (*AgentTabView, error) {
@@ -64,6 +74,7 @@ func (self *graph) ReadAgentTab(ctx context.Context) (*AgentTabView, error) {
 	view := &AgentTabView{Allowed: allowed && agent.FeatureAllowed(configuration, "browser")}
 	if worker := self.agentWorker(); worker != nil {
 		view.Attached, view.Title, view.URL = worker.TabAttached(found.ID)
+		view.Connected = worker.BrowserConnected(found.ID)
 	}
 	return view, nil
 }
@@ -104,7 +115,7 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 	defer func() {
 		if attached {
 			worker.DetachTab(found.ID, socket)
-			log.Noticef("%s detached their browser tab", username)
+			log.Noticef("%s's browser disconnected", username)
 		}
 	}()
 	for {
@@ -127,6 +138,7 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 			ID       int64           `json:"id"`
 			Title    string          `json:"title"`
 			URL      string          `json:"url"`
+			HasTab   *bool           `json:"hasTab"`
 			OK       bool            `json:"ok"`
 			Data     json.RawMessage `json:"data"`
 			Error    string          `json:"error"`
@@ -139,8 +151,8 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 			if attached {
 				continue
 			}
-			if message.Protocol != tabProtocol {
-				refuse(fmt.Sprintf("this server speaks protocol %d; update the extension", tabProtocol))
+			if message.Protocol < tabProtocolOldest || message.Protocol > tabProtocol {
+				refuse(fmt.Sprintf("this server speaks protocol %d to %d; update the extension", tabProtocolOldest, tabProtocol))
 				return
 			}
 			switch {
@@ -162,14 +174,23 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 				refuse(err.Error())
 				return
 			}
-			worker.AttachTab(found.ID, socket, message.Title, message.URL)
+			// Protocol 2 connects only with a tab attached.
+			hasTab := message.HasTab == nil || *message.HasTab
+			worker.ConnectBrowser(found.ID, socket, message.Title, message.URL, hasTab)
 			attached = true
-			welcome, _ := json.Marshal(map[string]any{"type": "welcome", "protocol": tabProtocol})
+			welcome, _ := json.Marshal(map[string]any{"type": "welcome", "protocol": message.Protocol})
 			_ = socket.Send(welcome)
-			log.Noticef("%s attached their browser tab %q", username, message.Title)
+			if hasTab {
+				log.Noticef("%s attached their browser tab %q", username, message.Title)
+			} else {
+				log.Noticef("%s connected their browser, with no tab attached", username)
+			}
 		case "update":
 			if attached {
 				worker.UpdateTab(found.ID, message.Title, message.URL)
+				if message.HasTab != nil {
+					worker.SetTabHeld(found.ID, *message.HasTab)
+				}
 			}
 		case "ping":
 			// What keeps the extension's worker, and this socket, alive

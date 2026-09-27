@@ -22,3 +22,15 @@ func TestAScreenshotIsAPicture(t *testing.T) {
 		t.Errorf("the answer read %s", result.Content)
 	}
 }
+
+// The extension's screenshot, a data address in a JSON string, is read as
+// the picture it is; anything else is not a picture.
+func TestATabScreenshotIsReadAsAPicture(t *testing.T) {
+	image, ok := pictureOf([]byte(`"data:image/png;base64,YSBwaWN0dXJl"`))
+	if !ok || string(image) != "a picture" {
+		t.Errorf("read %q, %v", image, ok)
+	}
+	if _, ok := pictureOf([]byte(`{"error":"no"}`)); ok {
+		t.Error("an object was read as a picture")
+	}
+}

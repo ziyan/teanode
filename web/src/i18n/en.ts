@@ -1341,7 +1341,7 @@ export const en = {
   'agentAdmin.tabModels': 'Models',
   'agentAdmin.tabTools': 'Tools',
   'agentAdmin.tabSkills': 'Skills',
-  'agentAdmin.tabSources': 'Source types',
+  'agentAdmin.tabSources': 'Sources',
   'usageChart.tokens': 'Tokens',
   'usageChart.cost': 'Cost',
   'usageChart.calls': 'Calls',

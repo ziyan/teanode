@@ -79,3 +79,26 @@ func TestTabRelayCarriesRequestsAndAnswers(t *testing.T) {
 	}
 	worker.DetachTab("a1", nil)
 }
+
+// A browser connected through the extension with no tab attached is
+// connected but has no tab to act in, until it says it has one.
+func TestABrowserConnectsWithoutATab(t *testing.T) {
+	worker := &Agent{}
+	browser := &fakeTab{agent: worker, agentId: "a1", answers: func(string, json.RawMessage) (bool, string) { return true, "{}" }}
+	worker.ConnectBrowser("a1", browser, "", "", false)
+	if !worker.BrowserConnected("a1") {
+		t.Fatal("a connected browser is not connected")
+	}
+	if attached, _, _ := worker.TabAttached("a1"); attached || worker.tabFor("a1").HasTab() {
+		t.Fatal("a browser with no tab reads as attached")
+	}
+	worker.SetTabHeld("a1", true)
+	worker.UpdateTab("a1", "Opened", "https://opened.example/")
+	if attached, title, _ := worker.TabAttached("a1"); !attached || title != "Opened" {
+		t.Fatalf("after a tab was opened: %v %q", attached, title)
+	}
+	worker.DetachTab("a1", browser)
+	if worker.BrowserConnected("a1") {
+		t.Fatal("a closed connection still reads as connected")
+	}
+}

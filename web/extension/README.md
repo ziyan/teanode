@@ -16,15 +16,19 @@ press Authorize there, and a token comes back to the extension, which
 keeps it in the browser's own storage. *Sign out* on the options page
 revokes the token.
 
+Signed in, the extension keeps your browser connected to your agent, and
+the badge shows a dot. The agent can then open a tab in your browser when a
+page needs your session, in a "TeaNode" tab group, and act there; it can
+list the tabs it opened, switch between them and close them, never yours.
+
 The extension's button opens a panel on the page: the dashboard's own
 drawer, framed from the server and signed in by the extension — the same
 conversation you would have on the dashboard. On the dashboard's own
 pages the button opens the built-in drawer instead. The panel's bar has
-*Attach this tab*; while a tab is attached the badge says *on*, and the
-agent can read and act in it. It may also open tabs beside yours, which
-sit in a "TeaNode" tab group; it can list them, switch between them and
-close the ones it opened, never yours. An operator can switch attaching
-off for the whole server with `agent.browser.attachTabs`.
+*Attach this tab*; while a tab of yours is attached the badge says *on*,
+and the agent reads and acts in that tab, beside any it opens. *Detach*
+gives the tab back and leaves the browser connected. An operator can
+switch the whole thing off for the server with `agent.browser.attachTabs`.
 
 The agent acts in the tab as you would, with your session, and the
 extension does not refuse things on your behalf: filling in a form,

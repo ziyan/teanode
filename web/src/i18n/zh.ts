@@ -1292,7 +1292,7 @@ export const zh: Catalog = {
   'agentAdmin.tabModels': '模型',
   'agentAdmin.tabTools': '工具',
   'agentAdmin.tabSkills': '技能',
-  'agentAdmin.tabSources': '来源类型',
+  'agentAdmin.tabSources': '来源',
   'usageChart.tokens': 'Token',
   'usageChart.cost': '费用',
   'usageChart.calls': '调用',

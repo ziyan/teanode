@@ -61,6 +61,11 @@ type signIn struct {
 	access  string
 	expires time.Time
 
+	// held is every refresh token this sign-in has held, so that a
+	// provider built from one of them -- the configuration a moment behind
+	// a rotation -- is given this sign-in rather than a second one.
+	held map[string]bool
+
 	// rotated is called when the service answers with a new refresh token,
 	// so that whoever keeps the configuration can write it down. A service
 	// that rotates and a caller that does not store the new one is signed
@@ -83,7 +88,50 @@ func newSignIn(tokenUrl, clientId, refresh string, client *http.Client) (*signIn
 		clientId: strings.TrimSpace(clientId),
 		refresh:  strings.TrimSpace(refresh),
 		http:     client,
+		held:     map[string]bool{strings.TrimSpace(refresh): true},
 	}, nil
+}
+
+// signIns are the sign-ins this process holds, one per refresh token.
+//
+// A service that rotates refresh tokens gives a new one each time an old one
+// is used, and the old one stops working. Two sign-ins built from the same
+// token are two holders of one credential: the first to refresh leaves the
+// other holding a token the service no longer honours, and if the one that
+// refreshed was a throwaway -- a provider built to list the models on a
+// settings page -- the new token went nowhere. So there is one sign-in per
+// token, and everything built from that token uses it.
+var signIns = struct {
+	sync.Mutex
+	held []*signIn
+}{}
+
+// sharedSignIn is the sign-in already held for this refresh token, or a new
+// one. unsaid is what a new one does with a rotated token until whoever keeps
+// the configuration says otherwise; a sign-in already held keeps its own.
+func sharedSignIn(tokenUrl, clientId, refresh string, client *http.Client, unsaid func(string)) (*signIn, error) {
+	refresh = strings.TrimSpace(refresh)
+	signIns.Lock()
+	defer signIns.Unlock()
+	for _, existing := range signIns.held {
+		if existing.tokenUrl == strings.TrimSpace(tokenUrl) && existing.clientId == strings.TrimSpace(clientId) && existing.hasHeld(refresh) {
+			return existing, nil
+		}
+	}
+	made, err := newSignIn(tokenUrl, clientId, refresh, client)
+	if err != nil {
+		return nil, err
+	}
+	made.rotated = unsaid
+	signIns.held = append(signIns.held, made)
+	return made, nil
+}
+
+// hasHeld says whether this sign-in holds, or once held, a refresh token.
+func (self *signIn) hasHeld(refresh string) bool {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return refresh != "" && self.held[refresh]
 }
 
 // token is an access token good for the next moment, fetching one where
@@ -122,6 +170,7 @@ func (self *signIn) adopt(refresh string) {
 		return
 	}
 	self.refresh = refresh
+	self.held[refresh] = true
 	self.access = ""
 	self.expires = time.Time{}
 }
@@ -196,6 +245,7 @@ func (self *signIn) fetch(ctx context.Context) (string, error) {
 	// A rotated refresh token has to be kept or the next refresh signs out.
 	if rotated := strings.TrimSpace(answer.RefreshToken); rotated != "" && rotated != self.refresh {
 		self.refresh = rotated
+		self.held[rotated] = true
 		if self.rotated != nil {
 			self.rotated(rotated)
 		}

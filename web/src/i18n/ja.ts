@@ -1333,7 +1333,7 @@ export const ja: Catalog = {
   'agentAdmin.tabModels': 'モデル',
   'agentAdmin.tabTools': 'ツール',
   'agentAdmin.tabSkills': 'スキル',
-  'agentAdmin.tabSources': 'ソースの種類',
+  'agentAdmin.tabSources': 'ソース',
   'usageChart.tokens': 'トークン',
   'usageChart.cost': '費用',
   'usageChart.calls': '呼び出し',
