@@ -36,7 +36,7 @@ func (self *Agent) dreamTimeline(ctx context.Context, run *Run, record *models.A
 		if run.Agent.DreamBootstrap {
 			months = timelineBackfill * 2
 		}
-		owed, err = tx.ListAgentMonthsToWriteUp(run.Agent.ID, chatNamesOf(run.Owner), timelineLeast, months, guessedPattern)
+		owed, err = tx.ListAgentMonthsToWriteUp(run.Agent.ID, chatNamesOf(run.Owner), timelineLeast, months, guessedPattern, timelineRulesSince)
 		return err
 	}); err != nil {
 		log.Warningf("cannot list the months owed a page: %s", err)
@@ -53,6 +53,15 @@ func (self *Agent) dreamTimeline(ctx context.Context, run *Run, record *models.A
 		self.writeMonth(ctx, run, record, budget, start, start.AddDate(0, 1, 0))
 	}
 }
+
+// timelineRulesSince is when the rules a month is written by last changed.
+// A page written before it is owed again, and written from nothing rather
+// than revised: revising keeps what the page already says, and what was
+// wrong with the pages before it was what they said. They wrote everything
+// the record held about a month as the person's own doing, so a library
+// copied into a repository, carrying its copyright year, came out as a
+// month they spent working on it.
+var timelineRulesSince = time.Date(2026, 9, 27, 1, 0, 0, 0, time.UTC)
 
 // writeMonth writes or rewrites one month's page from its record, and
 // links the page to what the month was about.
@@ -73,7 +82,9 @@ func (self *Agent) writeMonth(ctx context.Context, run *Run, record *models.Agen
 		if err != nil || node == nil {
 			return err
 		}
-		existing = node.Summary
+		if !node.ModifiedAt.Before(timelineRulesSince) {
+			existing = node.Summary
+		}
 		return nil
 	}); err != nil {
 		log.Debugf("cannot read the month's page: %s", err)

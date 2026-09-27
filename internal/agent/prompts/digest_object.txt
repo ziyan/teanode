@@ -16,7 +16,9 @@ reading above, with the `[id]` of the item it came from as `message_id`
 and as `quote` one passage copied as it stands where the reading gives
 one, never a list put together from several places; a fact the reading
 does not support is left out. `kind` is `fact`, `event` (with `happened`)
-or `howto`; never `preference` or `decision`.
+or `howto`; never `preference` or `decision`. `happened` is when something
+was done, as the reading shows it: never a year from a copyright, licence
+or version header, or a date inside a test fixture or sample record.
 
 {"facts": [{"path": "projects/portal", "node_kind": "project",
             "node_name": "Portal", "kind": "fact",

@@ -44,6 +44,15 @@ Every claim comes from the record above. Where the record does not say
 why something was done, say what was done and stop. Do not invent a
 reason, a person or a date.
 
+Only part of the record is theirs. Their commits, the chat they took part
+in and their own notes are what they did. What the record says about this
+time is what was so then -- a library copied into a repository, an order
+in a test file, somebody else's code or post -- and is written as that,
+never as something they did, unless the fact itself says they did it.
+"A vendored XML parser carries a 2006 copyright" is not "I worked on
+the XML parser". A month whose record has nothing of theirs in it is a
+short page that says so.
+
 Much of the record is counts: threads in a channel, commits in a
 repository. A count is a count. "The Lakeside channel had 359 threads" may
 be said once, and nothing follows from it -- not what the work was, not

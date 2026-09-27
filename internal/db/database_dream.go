@@ -107,8 +107,9 @@ type DreamOperation interface {
 	// the person's own record -- facts placed in them, their commits,
 	// threads they took part in -- and have no page yet, or a page that
 	// is blank or reads like a guess (matches the pattern), as
-	// "2025/08". Months with no page come first, then most recent first.
-	ListAgentMonthsToWriteUp(agentId string, names []string, least, limit int, guessed string) ([]string, error)
+	// "2025/08". Months with no page or a blank one come first, then most
+	// recent first.
+	ListAgentMonthsToWriteUp(agentId string, names []string, least, limit int, guessed string, writtenBefore time.Time) ([]string, error)
 
 	// ListAgentNodesCrowded is the pages holding more than so many facts,
 	// most crowded first, never a folder.
@@ -590,6 +591,11 @@ func (self *transaction) ListAgentNodesToConsolidate(agentId string, limit int) 
 	// or by the pass that goes back over what an older build wrote -- and
 	// without this clause such a page is never looked at again, because
 	// the test for "due" was the existence of a fact that had changed.
+	//
+	// Not a folder or a month: their openings are written from what is
+	// under them and from the month's record, never from facts of their
+	// own, and clearing them blanked every month the timeline wrote, which
+	// made the month owed again, to be written and blanked the next night.
 	return self.nodesFrom(self.tx.Raw(`
 		SELECT n.* FROM "agent_node" n
 		WHERE n."agent_id" = ? AND NOT n."dormant"
@@ -600,7 +606,7 @@ func (self *transaction) ListAgentNodesToConsolidate(agentId string, limit int) 
 				  AND f."modified_at" > COALESCE(n."consolidated_at", to_timestamp(0))
 			)
 			OR (
-				n."summary" <> ''
+				n."summary" <> '' AND n."kind" NOT IN (?, ?)
 				AND NOT EXISTS (
 					SELECT 1 FROM "agent_fact" f
 					WHERE f."node_id" = n."id" AND NOT f."dormant"
@@ -608,7 +614,7 @@ func (self *transaction) ListAgentNodesToConsolidate(agentId string, limit int) 
 			)
 		  )
 		ORDER BY n."pinned" DESC, n."used_at" DESC NULLS LAST, n."modified_at" DESC
-		LIMIT ?`, agentId, limit))
+		LIMIT ?`, agentId, models.NodeFolder, models.NodePeriod, limit))
 }
 
 func (self *transaction) MarkAgentNodeConsolidated(nodeId string, at time.Time) error {
@@ -948,7 +954,7 @@ func (self *transaction) UnmarkAgentDocumentsDigested(agentId string, since time
 	return result.RowsAffected, result.Error
 }
 
-func (self *transaction) ListAgentMonthsToWriteUp(agentId string, names []string, least, limit int, guessed string) ([]string, error) {
+func (self *transaction) ListAgentMonthsToWriteUp(agentId string, names []string, least, limit int, guessed string, writtenBefore time.Time) ([]string, error) {
 	if limit <= 0 {
 		limit = 3
 	}
@@ -970,7 +976,10 @@ func (self *transaction) ListAgentMonthsToWriteUp(agentId string, names []string
 			GROUP BY 1
 		)
 		, owed AS (
-			SELECT month, EXISTS (SELECT 1 FROM "agent_node" n WHERE n."agent_id" = ? AND n."path" = 'time/' || month) AS written
+			-- A blank page is as unwritten as none, and goes first with it:
+			-- an empty month reads worse than one written by older rules.
+			SELECT month, EXISTS (SELECT 1 FROM "agent_node" n WHERE n."agent_id" = ? AND n."path" = 'time/' || month
+			                      AND btrim(n."summary") <> '') AS written
 			FROM record
 			GROUP BY month
 			HAVING sum(how_many) >= ?
@@ -978,9 +987,9 @@ func (self *transaction) ListAgentMonthsToWriteUp(agentId string, names []string
 		SELECT month FROM owed
 		WHERE NOT written
 		   OR EXISTS (SELECT 1 FROM "agent_node" n WHERE n."agent_id" = ? AND n."path" = 'time/' || month
-		              AND (btrim(n."summary") = '' OR (? <> '' AND n."summary" ~* ?)))
+		              AND (btrim(n."summary") = '' OR (? <> '' AND n."summary" ~* ?) OR n."modified_at" < ?))
 		ORDER BY written ASC, month DESC
-		LIMIT ?`, agentId, agentId, pq.Array(names), agentId, least, agentId, guessed, guessed, limit).Scan(&months).Error; err != nil {
+		LIMIT ?`, agentId, agentId, pq.Array(names), agentId, least, agentId, guessed, guessed, writtenBefore, limit).Scan(&months).Error; err != nil {
 		return nil, err
 	}
 	return months, nil
