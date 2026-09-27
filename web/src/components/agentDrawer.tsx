@@ -585,6 +585,12 @@ function clampPlacement(placement: Placement): Placement {
   return { left, top, width, height }
 }
 
+// fullScreenPlacement is the whole window, less the margin every placement
+// keeps from its edges.
+function fullScreenPlacement(): Placement {
+  return clampPlacement({ left: 0, top: 0, width: window.innerWidth, height: window.innerHeight })
+}
+
 function isSamePlacement(first: Placement, second: Placement): boolean {
   return (
     first.left === second.left &&
@@ -780,6 +786,20 @@ function usePlacement(isEnabled: boolean) {
     rememberPlacement(null)
   }
 
+  // toggleFullScreen fills the window with the box, or, when it already
+  // fills it, puts it back in its corner.
+  const toggleFullScreen = () => {
+    const full = fullScreenPlacement()
+    const current = livePlacement.current
+    if (current && isSamePlacement(current, full)) {
+      reset()
+      return
+    }
+    writePlacement(full)
+    setPlacement(full)
+    rememberPlacement(full)
+  }
+
   const headProps = {
     onPointerDown: (pointerEvent: React.PointerEvent<HTMLElement>) => {
       if (isGestureExempt(pointerEvent.target)) return
@@ -788,11 +808,11 @@ function usePlacement(isEnabled: boolean) {
     onPointerMove,
     onPointerUp: onPointerEnd,
     onPointerCancel: onPointerEnd,
-    // A double click on the bar puts the box back in its corner at its
-    // first size, and forgets where it was.
+    // A double click on the bar fills the window with the box, and a
+    // second puts it back in its corner at its first size.
     onDoubleClick: (mouseEvent: React.MouseEvent<HTMLElement>) => {
       if (!isEnabled || isPhoneWidth() || isGestureExempt(mouseEvent.target)) return
-      reset()
+      toggleFullScreen()
     },
   }
 
