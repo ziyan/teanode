@@ -157,15 +157,11 @@ export function AgentAdminPage() {
   // is, a mailbox by its name, never an id.
   const keyLabel = (key: string): string => {
     if (!key) return t('agentAdmin.total')
+    // One agent a person, so the agents' usage is the people's: named by
+    // the person, as the operator knows them.
     if (by === 'agent') {
       const agent = agents.find((candidate) => candidate.agentId === key)
-      return agent ? agent.name || agent.username : key
-    }
-    if (by === 'mailbox') {
-      for (const agent of agents) {
-        const source = agent.sources.find((candidate) => candidate.mailboxId === key)
-        if (source) return `${source.name} (${agent.username})`
-      }
+      return agent ? agent.username : key
     }
     return key
   }
@@ -251,8 +247,7 @@ export function AgentAdminPage() {
                       { value: 'day', label: t('agentAdmin.byDay') },
                       { value: 'kind', label: t('agentAdmin.byKind') },
                       { value: 'model', label: t('agentAdmin.byModel') },
-                      { value: 'agent', label: t('agentAdmin.byAgent') },
-                      { value: 'mailbox', label: t('agentAdmin.byMailbox') },
+                      { value: 'agent', label: t('agentAdmin.byUser') },
                     ]}
                     onChange={setBy}
                   />
@@ -274,9 +269,8 @@ export function AgentAdminPage() {
                             day: t('agentAdmin.byDay'),
                             kind: t('agentAdmin.byKind'),
                             model: t('agentAdmin.byModel'),
-                            agent: t('agentAdmin.byAgent'),
-                            mailbox: t('agentAdmin.byMailbox'),
-                          }[by as 'day' | 'kind' | 'model' | 'agent' | 'mailbox'] ?? t('agentAdmin.key')}
+                            agent: t('agentAdmin.byUser'),
+                          }[by as 'day' | 'kind' | 'model' | 'agent'] ?? t('agentAdmin.key')}
                         </th>
                         <th className="numeric">{t('agentAdmin.prompt')}</th>
                         <th className="numeric">{t('agentAdmin.completion')}</th>
