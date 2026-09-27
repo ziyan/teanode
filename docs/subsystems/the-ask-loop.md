@@ -44,8 +44,9 @@ by `settings.MaxRounds`. Each round:
    than an error. (The same check runs once before round 0, inside the
    transaction that stores the person's message — and there it surfaces as an
    error event instead. Two shapes for one condition; see the caveats.)
-2. **Compaction**, if the rendered history is over `askHistoryTokens` (30000
-   estimated tokens) and no compaction has already failed this turn. See
+2. **Compaction**, if the rendered history is over half the model's window
+   (as its provider lists it), or `askHistoryTokens` (30000 estimated
+   tokens) when that is smaller or not known, and no compaction has already failed this turn. See
    `context.md`. A run whose settings say `ReadThenAnswer` (every headless
    run made by `think`: a dream reading a batch, an ingest describing a
    checkout) is never compacted: a compaction note would stand in for the
@@ -188,7 +189,7 @@ deliberately absent.
 | --- | --- | --- |
 | `askEventBacklog` | 500 | events kept for replay to a late subscriber |
 | `confirmationWait` | 10 minutes | a card and an `ask_user` question |
-| `askHistoryTokens` | 30000 | history before a round compacts |
+| `askHistoryTokens` | 30000 | history before a round compacts, when half the window is smaller or not known |
 | `askTailMessages` | 12 | messages kept verbatim by a compaction |
 | `askResultCharacters` | 24000 | one tool answer in the history |
 | `attachmentImagesPerTurn` | 8 | pictures in one turn |
