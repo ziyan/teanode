@@ -80,13 +80,6 @@ func newCodex(baseUrl, refreshToken, account string, client *http.Client) (*code
 	if baseUrl == "" {
 		baseUrl = codexBaseUrl
 	}
-	signer, err := newSignIn(codexTokenUrl, codexClientId, refreshToken, client)
-	if err != nil {
-		return nil, err
-	}
-	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Minute}
-	}
 	// A rotated refresh token is kept for as long as the server runs, and
 	// nothing here writes the configuration: a provider does not know
 	// where its configuration lives. The registry that built it does, and
@@ -94,11 +87,17 @@ func newCodex(baseUrl, refreshToken, account string, client *http.Client) (*code
 	// Without one it is said, where an operator will see it: the cost of
 	// not saying it is a server that signs in perfectly well until it
 	// restarts and then cannot, with nothing to connect the two.
-	signer.rotated = func(string) {
+	signer, err := sharedSignIn(codexTokenUrl, codexClientId, refreshToken, client, func(string) {
 		log.Warningf(
 			"the %s provider was given a new refresh token; the one in the configuration is now stale "+
 				"and will not work after a restart. Sign in again from the dashboard.",
 			config.AgentProviderKindCodex)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Minute}
 	}
 
 	return &codex{
