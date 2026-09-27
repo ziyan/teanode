@@ -172,3 +172,9 @@ easy now, and a score that rises because of them measures the questions.
 
     teanode agent memory check runs
     teanode agent memory answers --stored
+
+## Whole tasks
+
+This set checks one step of a turn. `end-to-end-tasks.md` is the other end:
+whole tasks given to the agent through its real surfaces, run by hand and
+judged by a checklist.
