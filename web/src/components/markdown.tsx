@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { framedDrawer } from '../api'
 
@@ -52,12 +52,46 @@ function MailLink({ itemId, children }: { itemId: string; children: React.ReactN
   )
 }
 
+// PictureSource is where whoever draws this markdown has a picture fetched
+// from, given the address the text wrote; null draws it as a link. A picture
+// is never fetched by the browser from where the text says: the text may be
+// a model's, and an address it put together can carry what it read to
+// whoever runs that server. The drawer has the server fetch it, and only an
+// address a tool showed the agent (see the picture endpoint).
+const PictureSource = createContext<(address: string) => string | null>(() => null)
+
+// Picture is an image the text showed, fetched from where the reader of
+// this markdown allows, and a link when it cannot be.
+function Picture({ address, alt, href }: { address: string; alt: string; href: string }) {
+  // Checked here as well as where the text was read, so no caller can hand
+  // a picture an address that is not http or https.
+  const picture = webAddress(address)
+  const source = useContext(PictureSource)(picture)
+  const [failed, setFailed] = useState(false)
+  const target = webAddress(href) || picture
+  if (!picture) return <>{alt}</>
+  if (!source || failed) {
+    return (
+      <a href={target} target="_blank" rel="noopener noreferrer nofollow">
+        {alt || target}
+      </a>
+    )
+  }
+  return (
+    <a className="markdown-picture" href={target} target="_blank" rel="noopener noreferrer nofollow">
+      <img src={source} alt={alt} loading="lazy" onError={() => setFailed(true)} />
+    </a>
+  )
+}
+
 function inline(text: string, keyPrefix: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = []
   // No lookbehind: what precedes an italic run is captured and put back,
   // since a lookbehind is a syntax error for a browser that predates it and
-  // takes the whole bundle down with it.
-  const pattern = /`([^`]+)`|\*\*([^*]+)\*\*|(^|[\s(])[*_]([^*_\n]+)[*_](?=[\s.,;:!?)]|$)|\[([^\]]+)\]\(([^)]+)\)/g
+  // takes the whole bundle down with it. A picture comes first, linked or
+  // not, so its brackets are not read as a link's.
+  const pattern =
+    /\[!\[([^\]]*)\]\(([^)\s]+)\)\]\(([^)\s]+)\)|!\[([^\]]*)\]\(([^)\s]+)\)|`([^`]+)`|\*\*([^*]+)\*\*|(^|[\s(])[*_]([^*_\n]+)[*_](?=[\s.,;:!?)]|$)|\[([^\]]+)\]\(([^)]+)\)/g
   let index = 0
   let match: RegExpExecArray | null
   let count = 0
@@ -67,37 +101,63 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
       nodes.push(text.slice(index, match.index))
     }
     const key = `${keyPrefix}-${count++}`
-    if (match[1] !== undefined) {
-      nodes.push(<code key={key}>{match[1]}</code>)
-    } else if (match[2] !== undefined) {
-      nodes.push(<strong key={key}>{match[2]}</strong>)
-    } else if (match[4] !== undefined) {
-      if (match[3]) nodes.push(match[3])
-      nodes.push(<em key={key}>{match[4]}</em>)
+    const [
+      ,
+      linkedAlt,
+      linkedPicture,
+      pictureHref,
+      alt,
+      picture,
+      codeSpan,
+      bold,
+      beforeItalic,
+      italic,
+      linkText,
+      linkAddress,
+    ] = match
+    if (linkedPicture !== undefined || picture !== undefined) {
+      // A picture whose address is not http or https is its words.
+      const address = webAddress(linkedPicture ?? picture)
+      const href = pictureHref !== undefined ? webAddress(pictureHref) : ''
+      nodes.push(
+        address ? <Picture key={key} address={address} alt={linkedAlt ?? alt} href={href} /> : (linkedAlt ?? alt),
+      )
+    } else if (codeSpan !== undefined) {
+      nodes.push(<code key={key}>{codeSpan}</code>)
+    } else if (bold !== undefined) {
+      nodes.push(<strong key={key}>{bold}</strong>)
+    } else if (italic !== undefined) {
+      if (beforeItalic) nodes.push(beforeItalic)
+      nodes.push(<em key={key}>{italic}</em>)
     } else {
       // Only http and https. A link in a release note is a link somebody
       // else wrote, and javascript: is a scheme nothing here should follow.
-      const href = webAddress(match[6])
-      const mail = /^mail:([A-Za-z0-9]+)$/.exec(match[6])
+      const href = webAddress(linkAddress)
+      const mail = /^mail:([A-Za-z0-9]+)$/.exec(linkAddress)
       nodes.push(
         mail && framedDrawer ? (
           // Framed into another site, the drawer sends the person to the
           // dashboard itself: nothing of it but the drawer is drawn here.
-          <a key={key} href={`${window.location.origin}/mailbox/starred/${encodeURIComponent(mail[1])}`} target="_blank" rel="noopener noreferrer">
-            {match[5]}
+          <a
+            key={key}
+            href={`${window.location.origin}/mailbox/starred/${encodeURIComponent(mail[1])}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {linkText}
           </a>
         ) : mail ? (
           // The agent cites a message as mail:ITEM_ID; Starred opens any
           // item by id whichever folder it is in.
           <MailLink key={key} itemId={mail[1]}>
-            {match[5]}
+            {linkText}
           </MailLink>
         ) : href ? (
           <a key={key} href={href} target="_blank" rel="noopener noreferrer nofollow">
-            {match[5]}
+            {linkText}
           </a>
         ) : (
-          match[5]
+          linkText
         ),
       )
     }
@@ -258,13 +318,27 @@ function parse(source: string): Block[] {
   return blocks
 }
 
-export function Markdown({ text, onLeaving }: { text: string; onLeaving?: () => void }) {
+export function Markdown({
+  text,
+  onLeaving,
+  pictureSource,
+}: {
+  text: string
+  onLeaving?: () => void
+  pictureSource?: (address: string) => string | null
+}) {
   return (
     <Leaving.Provider value={onLeaving ?? noLeaving}>
-      <MarkdownBlocks text={text} />
+      <PictureSource.Provider value={pictureSource ?? noPictures}>
+        <MarkdownBlocks text={text} />
+      </PictureSource.Provider>
     </Leaving.Provider>
   )
 }
+
+// noPictures draws every picture as a link: what anything but the drawer
+// gets, having no server to fetch through.
+const noPictures = () => null
 
 // noLeaving is the default: a link goes where it goes and nothing else
 // happens. Kept out of the render so the provider's value is stable.

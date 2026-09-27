@@ -102,6 +102,10 @@ type InsightOperation interface {
 
 	AppendAgentMessage(message *models.AgentMessage) (*models.AgentMessage, error)
 	ListAgentMessages(conversationId string, options *Options) ([]*models.AgentMessage, error)
+	// HasAgentToolAnswerContaining says whether a tool's answer in the
+	// conversation holds any of the texts: what a page, a search or a
+	// message showed the agent, as opposed to what the agent wrote.
+	HasAgentToolAnswerContaining(conversationId string, texts ...string) (bool, error)
 	// LastAgentPersonMessageAt is when the person last wrote in the
 	// conversation: their own words, not a goal check-in the agent was
 	// handed as a user turn. Nil when they never have.
@@ -855,6 +859,23 @@ func (self *transaction) ListAgentMessages(conversationId string, options *Optio
 		messages = append(messages, message)
 	}
 	return messages, nil
+}
+
+func (self *transaction) HasAgentToolAnswerContaining(conversationId string, texts ...string) (bool, error) {
+	for _, text := range texts {
+		if text == "" {
+			continue
+		}
+		var found bool
+		if err := self.tx.Raw(`SELECT EXISTS (SELECT 1 FROM "agent_message" WHERE "conversation_id" = ? AND "role" = 'tool' AND strpos("content", ?) > 0)`,
+			conversationId, text).Scan(&found).Error; err != nil {
+			return false, err
+		}
+		if found {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (self *transaction) LastAgentPersonMessageAt(conversationId string) (*time.Time, error) {

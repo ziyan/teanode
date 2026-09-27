@@ -119,6 +119,9 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	// And the file behind a document a knowledge source indexed, so that
 	// a page citing a screenshot can show the screenshot.
 	router.Path(api.PathAgentDocumentFile).Methods(http.MethodGet).HandlerFunc(self.agentDocumentFileView)
+	// And a picture the agent put in an answer, fetched here rather than by
+	// the browser.
+	router.Path(api.PathAgentPicture).Methods(http.MethodGet).HandlerFunc(self.agentPictureView)
 	// A contact's picture, which is inside its card and far too large to
 	// carry through a listing.
 	router.Path(api.PathContactPhoto).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.contactPhotoView)

@@ -1,11 +1,9 @@
 package apimail
 
 import (
-	"context"
-	"io"
+	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gorilla/mux"
 
@@ -32,16 +30,10 @@ import (
 // images stay blocked until somebody presses the button, which is the same
 // decision as before; this only changes who does the fetching.
 
-const (
-	// A fetch that has not answered by now is not going to. Short, because a
-	// page of blocked images makes one of these per image and a reader is
-	// waiting for all of them.
-	remoteTimeout = 10 * time.Second
-
-	// Enough for any image a message legitimately embeds, and small enough
-	// that a hostile server cannot use this to fill a disk or a pipe.
-	remoteMaximumSize = 8 << 20
-)
+// remoteMaximumSize is enough for any image a message legitimately embeds,
+// and small enough that a hostile server cannot use this to fill a disk or
+// a pipe. The time a fetch may take is safefetch's.
+const remoteMaximumSize = 8 << 20
 
 // remoteView fetches one image a message linked to, for a reader who asked.
 //
@@ -82,43 +74,19 @@ func (self *mail) remoteView(response http.ResponseWriter, request *http.Request
 		return
 	}
 
-	timed, cancel := context.WithTimeout(request.Context(), remoteTimeout)
-	defer cancel()
-
-	outgoing, err := http.NewRequestWithContext(timed, http.MethodGet, target.String(), nil)
-	if err != nil {
-		http.Error(response, "not a fetchable address", http.StatusBadRequest)
+	contentType, body, err := safefetch.Image(request.Context(), target, remoteMaximumSize, func(contentType string) bool {
+		return displayable[contentType]
+	})
+	switch {
+	case errors.Is(err, safefetch.ErrNotImage):
+		// Served as an image or not at all. Without this the proxy would
+		// happily relay an internal service's JSON to whoever wrote the
+		// message — which is the same hole SSRF opens, one step later.
+		http.Error(response, "not an image", http.StatusUnsupportedMediaType)
 		return
-	}
-	// No cookies, no authorization, no referer: nothing that could carry this
-	// server's identity to a stranger, and nothing that says which message
-	// was open.
-	outgoing.Header.Set("User-Agent", "teanode")
-	outgoing.Header.Set("Accept", "image/*")
-
-	fetched, err := safefetch.Client().Do(outgoing)
-	if err != nil {
+	case err != nil:
 		log.Debugf("failed to fetch remote image %q: %s", target.Redacted(), err)
 		http.Error(response, "could not fetch it", http.StatusBadGateway)
-		return
-	}
-	defer func() {
-		if err := fetched.Body.Close(); err != nil {
-			log.Debugf("failed to close remote image body: %s", err)
-		}
-	}()
-
-	if fetched.StatusCode != http.StatusOK {
-		http.Error(response, "could not fetch it", http.StatusBadGateway)
-		return
-	}
-
-	// Served as an image or not at all. Without this the proxy would happily
-	// relay an internal service's JSON to whoever wrote the message — which
-	// is the same hole SSRF opens, one step later.
-	contentType := strings.ToLower(strings.TrimSpace(strings.Split(fetched.Header.Get("Content-Type"), ";")[0]))
-	if !displayable[contentType] || !strings.HasPrefix(contentType, "image/") {
-		http.Error(response, "not an image", http.StatusUnsupportedMediaType)
 		return
 	}
 
@@ -128,8 +96,7 @@ func (self *mail) remoteView(response http.ResponseWriter, request *http.Request
 	// which message somebody opened.
 	response.Header().Set("Cache-Control", "private, max-age=300")
 	response.WriteHeader(http.StatusOK)
-
-	if _, err := io.Copy(response, io.LimitReader(fetched.Body, remoteMaximumSize)); err != nil {
+	if _, err := response.Write(body); err != nil {
 		log.Debugf("failed to write remote image %q: %s", target.Redacted(), err)
 	}
 }

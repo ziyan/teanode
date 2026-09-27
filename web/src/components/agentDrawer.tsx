@@ -2197,6 +2197,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // while the drawer is open. The main conversation is named by an empty
   // id until it has been read, and the list wants its real one.
   const backgroundConversationId = conversationId || loaded?.id || ''
+  // Where a picture in an answer is fetched from: the server, which fetches
+  // only an address a tool showed the agent in this conversation. Framed
+  // into another site the drawer has no cookie to send with a picture, so
+  // there it stays a link.
+  const pictureSource = useCallback(
+    (address: string) =>
+      framedDrawer || !backgroundConversationId
+        ? null
+        : `/api/v1/agent/conversations/${encodeURIComponent(backgroundConversationId)}/picture?url=${encodeURIComponent(address)}`,
+    [backgroundConversationId],
+  )
   const { commands: runningCommands, reload: reloadBackground } = useBackgroundCommands(
     backgroundConversationId,
     open && available && backgroundConversationId !== '',
@@ -3374,6 +3385,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               <Markdown
                 text={line.streaming ? withoutPartialMarker(line.text) : suggestedRepliesOf(line.text).displayText}
                 onLeaving={leaving}
+                pictureSource={pictureSource}
               />
               <CitedEvidence files={citedIn(line.text, citedFiles)} />
               {showUsage && line.usage && (
@@ -3843,6 +3855,19 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 drawn
               )
             })}
+            {/* The replies the last answer offered, under it, to send with
+                a click while nothing is running. In the transcript rather
+                than on the box: they belong to that answer, and scroll away
+                with it. */}
+            {suggestedReplies.length > 0 ? (
+              <div className="agent-suggested-replies" role="group" aria-label={t('agentDrawer.suggestedReplies')}>
+                {suggestedReplies.map((reply) => (
+                  <button key={reply} type="button" onClick={() => void send(reply)}>
+                    {reply}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {running &&
               !(
                 lines[lines.length - 1]?.kind === 'assistant' &&
@@ -3930,17 +3955,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           {/* What the agent needs before it can go on, said where the
               person is about to type rather than somewhere up the
               transcript they would have to scroll back to. */}
-          {/* The replies the last answer offered, to send with a click,
-              while nothing is running. */}
-          {suggestedReplies.length > 0 ? (
-            <div className="agent-suggested-replies" role="group" aria-label={t('agentDrawer.suggestedReplies')}>
-              {suggestedReplies.map((reply) => (
-                <button key={reply} type="button" onClick={() => void send(reply)}>
-                  {reply}
-                </button>
-              ))}
-            </div>
-          ) : null}
           {waitingNote ? (
             <div className="agent-drawer-goal-waiting">
               <TargetIcon size={12} />
