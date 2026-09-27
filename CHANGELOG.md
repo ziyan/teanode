@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.72.0] - 2026-09-27
+
+### Added
+
+- Pictures in the agent's answers are shown in the chat, fetched by the server and only from addresses the agent was shown by a tool. (#196)
+
+### Changed
+
+- Suggested replies appear under the agent's answer instead of above the message box. (#196)
+
 ## [0.71.5] - 2026-09-27
 
 ### Changed
