@@ -7,8 +7,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Agent is the personal agent: the model providers it may talk to, which
@@ -126,31 +124,7 @@ const (
 	// for that API because it is what the provider speaks, and the only
 	// thing the sign-in is good for.
 	AgentProviderKindCodex = "openai-codex"
-
-	// agentProviderKindCodexBriefly is what openai-codex was called for a
-	// release. A configuration saved then says it, and is read as
-	// openai-codex, which is what it is written back as.
-	agentProviderKindCodexBriefly = "openai-oauth"
 )
-
-// CanonicalProviderKind is a provider kind under its current name.
-func CanonicalProviderKind(kind string) string {
-	if strings.TrimSpace(kind) == agentProviderKindCodexBriefly {
-		return AgentProviderKindCodex
-	}
-	return kind
-}
-
-// UnmarshalYAML reads a provider under the current name of its kind,
-// wherever it was read from: the database, a file, an import.
-func (self *AgentProvider) UnmarshalYAML(node *yaml.Node) error {
-	type plain AgentProvider
-	if err := node.Decode((*plain)(self)); err != nil {
-		return err
-	}
-	self.Kind = CanonicalProviderKind(self.Kind)
-	return nil
-}
 
 // AgentProvider is one model service.
 type AgentProvider struct {

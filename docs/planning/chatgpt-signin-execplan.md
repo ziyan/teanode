@@ -87,4 +87,4 @@ In `internal/llm/registry.go`:
 
 Revision (2026-09-26): the provider kind is now called `openai-oauth`, named for how it signs in rather than for the product that first used the sign-in. `openai-codex` is still read, and written back under the new name.
 
-Revision (2026-09-26, later): the kind is `openai-codex` again. The provider speaks the Codex API and nothing else, so the name says what it is; `openai-oauth`, which one release saved, is read as `openai-codex`.
+Revision (2026-09-26, later): the kind is `openai-codex` again. The provider speaks the Codex API and nothing else, so the name says what it is. `openai-oauth` is not read any more: the one server that saved it was saved again under `openai-codex`.
