@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.71.1] - 2026-09-27
+
+### Fixed
+
+- Long conversations are no longer compacted at 30000 tokens on models with a larger context window: the line is now half the window the provider lists. (#192)
+
 ## [0.71.0] - 2026-09-27
 
 ### Added
