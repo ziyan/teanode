@@ -1023,14 +1023,37 @@ const NOTE_WORDS: Record<string, { plain: Key; withDetail?: Key }> = {
   goal_stalled: { plain: 'agentDrawer.note.goalStalled', withDetail: 'agentDrawer.note.goalStalled' },
 }
 
+// LEGACY_NOTES is the English each kind was written in before notes had
+// kinds, and the kind it was.
+const LEGACY_NOTES: [string, string][] = [
+  ['stopped', 'stopped'],
+  ['looking into this carefully', 'depth'],
+  ['a tool call the server could not read; asked again', 'call_unreadable'],
+  ['failed', 'failed'],
+  ['Goal set again', 'goal_set_again'],
+  ['Goal set', 'goal_set'],
+  ['Goal changed', 'goal_changed'],
+  ['Goal cleared', 'goal_cleared'],
+  ['Goal met', 'goal_met'],
+]
+
 // noteWords is a note as the drawer shows it. A compaction's detail is the
 // note it wrote, which its line opens to rather than repeats.
-function noteWords(t: (key: Key, values?: Values) => string, noteKind: string, noteDetail: string, prose: string): string {
-  const words = NOTE_WORDS[noteKind]
-  if (!words) {
-    // Written before notes had kinds: the one fixed word is still worded.
-    return prose === 'stopped' ? t('agentDrawer.note.stopped') : prose
+function noteWords(
+  t: (key: Key, values?: Values) => string,
+  noteKind: string,
+  noteDetail: string,
+  prose: string,
+): string {
+  if (!NOTE_WORDS[noteKind]) {
+    // Written before notes had kinds, in English: read the kind back from
+    // the words it was written with, so an old transcript is worded too.
+    const legacy = LEGACY_NOTES.find(([english]) => prose === english || prose.startsWith(english + ': '))
+    if (!legacy) return prose
+    ;[, noteKind] = legacy
+    noteDetail = prose.slice(legacy[0].length + 2)
   }
+  const words = NOTE_WORDS[noteKind]
   if (noteDetail && words.withDetail) {
     return t(words.withDetail, { detail: noteDetail })
   }
@@ -2768,7 +2791,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           const compactingKey = `${event.runId}-compacting`
           const withoutQueued = next.filter((line) => line.key !== queuedKey && line.key !== compactingKey)
           if (event.noteKind === 'compacting') {
-            withoutQueued.push({ kind: 'note', key: compactingKey, text: t('agentDrawer.note.compacting'), isPending: true })
+            withoutQueued.push({
+              kind: 'note',
+              key: compactingKey,
+              text: t('agentDrawer.note.compacting'),
+              isPending: true,
+            })
             return withoutQueued
           }
           withoutQueued.push({
@@ -3438,7 +3466,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       case 'note':
         if (line.detail) {
           return (
-            <div key={line.key} className={['agent-line note', expanded.has(line.key) ? 'open' : ''].filter(Boolean).join(' ')}>
+            <div
+              key={line.key}
+              className={['agent-line note', expanded.has(line.key) ? 'open' : ''].filter(Boolean).join(' ')}
+            >
               <button
                 type="button"
                 className="agent-tool-toggle"
