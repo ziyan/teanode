@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.71.5] - 2026-09-27
+
+### Changed
+
+- A message you send while the agent is working is read at its next step, not after it finishes, and the agent answers it in the same turn. Telegram and Discord accept a message mid-turn instead of asking you to wait. (#195)
+
 ## [0.71.4] - 2026-09-27
 
 ### Fixed
