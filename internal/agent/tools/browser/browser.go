@@ -6,7 +6,6 @@ package browser
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -30,6 +29,7 @@ func init() {
 					"mode":           tools.EnumProperty("for snapshot: interactive with refs, or the page's text", "interactive", "text"),
 					"max_characters": tools.IntegerProperty("for snapshot and evaluate: a bound, 20000 by default"),
 					"full_page":      tools.BooleanProperty("for screenshot: the whole page rather than the viewport"),
+					"show":           tools.BooleanProperty("for screenshot: also hand the picture to the person, in the conversation, when they would want to see it; you see it either way"),
 					"ref":            tools.IntegerProperty("the element, from the last snapshot"),
 					"selector":       tools.StringProperty("a CSS selector instead of a ref"),
 					"value":          tools.StringProperty("for select: the option's value or text"),
@@ -144,6 +144,7 @@ type browserArguments struct {
 	Mode          string            `json:"mode"`
 	MaxCharacters int               `json:"max_characters"`
 	FullPage      bool              `json:"full_page"`
+	Show          bool              `json:"show"`
 	Ref           int               `json:"ref"`
 	Selector      string            `json:"selector"`
 	Value         string            `json:"value"`
@@ -257,7 +258,7 @@ func runBrowser(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if len(image) > 2<<20 {
 			return nil, fmt.Errorf("the screenshot is too large to send; take a snapshot instead")
 		}
-		return &tools.Result{Content: "data:image/png;base64," + base64.StdEncoding.EncodeToString(image), Untrusted: true, Note: "took a screenshot"}, nil
+		return screenshotResult(ctx, image, arguments.Show)
 	case "click":
 		name, location, err := page.Click(ctx, where)
 		if err != nil {
