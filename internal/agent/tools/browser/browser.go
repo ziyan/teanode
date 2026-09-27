@@ -381,5 +381,5 @@ func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArgum
 	if len(text) > tools.ResultCharacters {
 		text = text[:tools.ResultCharacters] + "\n[cut here: the answer goes on]"
 	}
-	return &tools.Result{Content: text, Untrusted: true, Note: "in the attached tab: " + arguments.Action}, nil
+	return &tools.Result{Content: text, Untrusted: true, Note: "in their browser: " + arguments.Action}, nil
 }
