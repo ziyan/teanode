@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.72.1] - 2026-09-27
+
+### Changed
+
+- While your browser is connected through the extension, the agent does its browsing there, so a cart or a form it fills in is in your own session. (#197)
+
 ## [0.72.0] - 2026-09-27
 
 ### Added
