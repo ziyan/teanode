@@ -26,4 +26,7 @@ type Tab interface {
 	Ask(ctx context.Context, action string, args any) (json.RawMessage, error)
 	Title() string
 	URL() string
+	// HasTab says there is a tab to act in: a browser connected through
+	// the extension may have none until one is opened or attached.
+	HasTab() bool
 }

@@ -769,9 +769,10 @@ func (self *AskRun) turn() error {
 		}
 	}
 	// The browser tool goes when the operator switched the browser off,
-	// and when there is neither a headless browser nor an attached tab to
-	// drive; a person's attached tab needs no Chrome beside the server,
-	// and while one is attached the tool is in the round from the start.
+	// and when there is neither a headless browser nor the person's own
+	// browser to drive; their browser, connected through the extension
+	// with a tab attached or none, needs no Chrome beside the server, and
+	// while it is connected the tool is in the round from the start.
 	tabAttached := !settings.Headless && self.TabsAllowed() && self.AttachedTab() != nil
 	if !FeatureAllowed(configuration, "browser") || (!configuration.Agent.Browser.Enabled && !tabAttached) {
 		withoutBrowser := self.offered[:0:0]

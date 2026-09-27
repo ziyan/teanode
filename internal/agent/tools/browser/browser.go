@@ -331,12 +331,16 @@ func browserTarget(ref int, selector string) devtools.Target {
 	return devtools.Target{Ref: ref, Selector: selector}
 }
 
-// browserOverlay says a tab is attached, when one is.
+// browserOverlay says the person's browser is there to use: a tab attached,
+// or connected with none, when one of those is so.
 func browserOverlay(ctx context.Context) string {
 	run := tools.MustRun(ctx)
 	attached := tabOf(run)
 	if attached == nil || run.Headless() {
 		return ""
+	}
+	if !attached.HasTab() {
+		return "<tab>\nThe person's own browser is connected through the extension, with no tab of theirs attached. When a page needs their session -- a site they are signed into, or one that shows little to a browser signed in as nobody -- open it there with target tab and action open: it opens in their browser, in a TeaNode tab group, signed in as they are, and your actions go to it. Say which page you are opening. What you do there is done as them: say what you are about to do before you do something they cannot undo. For a public page the headless browser does as well.\n</tab>"
 	}
 	return fmt.Sprintf("<tab>\nThe person has attached their own browser tab: %q at %s. It carries their session; prefer target tab over the headless browser while it is attached. You may open more tabs beside it (open), which sit in a TeaNode group on their screen; tabs lists them, switch chooses which one your actions go to, close closes one you opened. It is signed in as they are, so what you do there is done as them: say what you are about to do before you do something they cannot undo. The DevTools protocol is there too (cdp): real mouse and keyboard events, and what the page asks the network for.\n</tab>", attached.Title(), attached.URL())
 }
@@ -351,7 +355,11 @@ func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArgum
 	}
 	tab := tabOf(run)
 	if tab == nil {
-		return nil, fmt.Errorf("no tab is attached; ask the person to attach one with the extension, or use the headless browser")
+		return nil, fmt.Errorf("the person's browser is not connected; ask them to sign the extension in, or use the headless browser")
+	}
+	// Connected with no tab: the one thing to do is open one.
+	if !tab.HasTab() && arguments.Action != "open" && arguments.Action != "tabs" {
+		return nil, fmt.Errorf("no tab is open in the person's browser for you yet; open one with action open and the page's address")
 	}
 	switch arguments.Action {
 	case "navigate", "snapshot", "screenshot", "click", "hover", "select", "type", "press", "scroll", "wait", "back", "evaluate", "fetch", "storage", "tabs", "open", "switch", "close", "cdp", "cdp_events", "cdp_stop":
@@ -361,6 +369,13 @@ func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArgum
 	data, err := tab.Ask(ctx, arguments.Action, arguments)
 	if err != nil {
 		return nil, err
+	}
+	// The extension answers a screenshot as a data address; it is a
+	// picture, and is handed over as one.
+	if arguments.Action == "screenshot" {
+		if image, ok := pictureOf(data); ok {
+			return screenshotResult(ctx, image, arguments.Show)
+		}
 	}
 	text := string(data)
 	if len(text) > tools.ResultCharacters {
