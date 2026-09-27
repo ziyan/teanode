@@ -4,6 +4,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { RUN_KINDS } from '../agentRuns'
 import { graphql, openAgentConversation } from '../api'
 import { ErrorMessage, Loading, Tag, formatCount, formatMoney, formatTime } from '../components/common'
+import { UsageChart } from '../components/usageChart'
 import { Column, DataTable, Range } from '../components/dataTable'
 import { FormDialog } from '../components/dialog'
 import { PencilIcon, ToggleOffIcon, ToggleOnIcon } from '../components/icons'
@@ -156,15 +157,11 @@ export function AgentAdminPage() {
   // is, a mailbox by its name, never an id.
   const keyLabel = (key: string): string => {
     if (!key) return t('agentAdmin.total')
+    // One agent a person, so the agents' usage is the people's: named by
+    // the person, as the operator knows them.
     if (by === 'agent') {
       const agent = agents.find((candidate) => candidate.agentId === key)
-      return agent ? agent.name || agent.username : key
-    }
-    if (by === 'mailbox') {
-      for (const agent of agents) {
-        const source = agent.sources.find((candidate) => candidate.mailboxId === key)
-        if (source) return `${source.name} (${agent.username})`
-      }
+      return agent ? agent.username : key
     }
     return key
   }
@@ -250,8 +247,7 @@ export function AgentAdminPage() {
                       { value: 'day', label: t('agentAdmin.byDay') },
                       { value: 'kind', label: t('agentAdmin.byKind') },
                       { value: 'model', label: t('agentAdmin.byModel') },
-                      { value: 'agent', label: t('agentAdmin.byAgent') },
-                      { value: 'mailbox', label: t('agentAdmin.byMailbox') },
+                      { value: 'agent', label: t('agentAdmin.byUser') },
                     ]}
                     onChange={setBy}
                   />
@@ -262,42 +258,44 @@ export function AgentAdminPage() {
             {usage.length === 0 ? (
               <SettingsEmpty>{t('agentAdmin.noUsage')}</SettingsEmpty>
             ) : (
-              <div className="table-wrap">
-                <table className="numbers-table">
-                  <thead>
-                    <tr>
-                      <th>
-                        {{
-                          day: t('agentAdmin.byDay'),
-                          kind: t('agentAdmin.byKind'),
-                          model: t('agentAdmin.byModel'),
-                          agent: t('agentAdmin.byAgent'),
-                          mailbox: t('agentAdmin.byMailbox'),
-                        }[by as 'day' | 'kind' | 'model' | 'agent' | 'mailbox'] ?? t('agentAdmin.key')}
-                      </th>
-                      <th className="numeric">{t('agentAdmin.prompt')}</th>
-                      <th className="numeric">{t('agentAdmin.completion')}</th>
-                      <th className="numeric">{t('agentAdmin.cached')}</th>
-                      <th className="numeric">{t('agentAdmin.total')}</th>
-                      <th className="numeric">{t('agentAdmin.cost')}</th>
-                      <th className="numeric">{t('agentAdmin.calls')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usage.map((row) => (
-                      <tr key={row.key}>
-                        <td>{keyLabel(row.key)}</td>
-                        <td className="numeric">{formatCount(row.totals.promptTokens)}</td>
-                        <td className="numeric">{formatCount(row.totals.completionTokens)}</td>
-                        <td className="numeric">{formatCount(row.totals.cacheReadTokens)}</td>
-                        <td className="numeric">{formatCount(total(row.totals))}</td>
-                        <td className="numeric">{formatMoney(row.cost, row.currency)}</td>
-                        <td className="numeric">{row.totals.calls}</td>
+              <>
+                <UsageChart rows={usage} by={by} since={since} until={until} label={keyLabel} />
+                <div className="table-wrap">
+                  <table className="numbers-table">
+                    <thead>
+                      <tr>
+                        <th>
+                          {{
+                            day: t('agentAdmin.byDay'),
+                            kind: t('agentAdmin.byKind'),
+                            model: t('agentAdmin.byModel'),
+                            agent: t('agentAdmin.byUser'),
+                          }[by as 'day' | 'kind' | 'model' | 'agent'] ?? t('agentAdmin.key')}
+                        </th>
+                        <th className="numeric">{t('agentAdmin.prompt')}</th>
+                        <th className="numeric">{t('agentAdmin.completion')}</th>
+                        <th className="numeric">{t('agentAdmin.cached')}</th>
+                        <th className="numeric">{t('agentAdmin.total')}</th>
+                        <th className="numeric">{t('agentAdmin.cost')}</th>
+                        <th className="numeric">{t('agentAdmin.calls')}</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {usage.map((row) => (
+                        <tr key={row.key}>
+                          <td>{keyLabel(row.key)}</td>
+                          <td className="numeric">{formatCount(row.totals.promptTokens)}</td>
+                          <td className="numeric">{formatCount(row.totals.completionTokens)}</td>
+                          <td className="numeric">{formatCount(row.totals.cacheReadTokens)}</td>
+                          <td className="numeric">{formatCount(total(row.totals))}</td>
+                          <td className="numeric">{formatMoney(row.cost, row.currency)}</td>
+                          <td className="numeric">{row.totals.calls}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </SettingsSection>
         </>
