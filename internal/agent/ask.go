@@ -203,6 +203,10 @@ type AskRun struct {
 	// the message once it is stored; see chooseDepth.
 	depthNote string
 
+	// modelName is the model the turn runs on, written provider:model, so
+	// the agent can say which it is when asked rather than guess.
+	modelName string
+
 	ID       string
 	settings *AskSettings
 	agent    *Agent
@@ -691,6 +695,7 @@ func (self *AskRun) turn() error {
 	case settings.Agent.AskModel != "":
 		modelName = settings.Agent.AskModel
 	}
+	self.modelName = modelName
 
 	// The person's turn, kept before anything is asked.
 	var history []llm.ChatMessage
@@ -1423,6 +1428,7 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 		"AgentName":         settings.Agent.DisplayName(),
 		"PersonName":        personName(settings.Owner),
 		"ServerName":        configuration.Server.Name,
+		"Model":             self.modelName,
 		"Language":          languageName(Language(settings.Agent, settings.Owner)),
 		"Short":             short,
 		"HouseInstructions": strings.TrimSpace(configuration.Agent.Instructions),

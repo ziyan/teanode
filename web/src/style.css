@@ -5671,7 +5671,8 @@ main.content:has(> .mailbox-frame) {
     height: var(--agent-drawer-height);
   }
 
-  .agent-drawer-head.movable {
+  .agent-drawer-head.movable,
+  .agent-drawer-note.movable {
     cursor: move;
     touch-action: none;
   }
