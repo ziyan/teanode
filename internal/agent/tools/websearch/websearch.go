@@ -24,6 +24,7 @@ func init() {
 				Core:        true,
 				Risk:        tools.RiskRead,
 				Description: "Search the web. Returns titles, addresses and a line each. Only offered when the operator configured a search service.",
+				Guidance:    "web_search and web_fetch look things up in the world; mail_search searches only the person's mail.",
 				Parameters: tools.Object(map[string]any{
 					"query":     tools.StringProperty("the search"),
 					"count":     tools.IntegerProperty("how many results, 5 by default, 20 at most"),
