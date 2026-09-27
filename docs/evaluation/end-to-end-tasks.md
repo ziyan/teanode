@@ -320,8 +320,9 @@ Surface: drawer. Covers `artifact`, `share_file`.
 Surface: drawer, with the extension signed in. Covers `browser` on the
 person's tab (type, select, click).
 
-1. "Open https://httpbin.org/forms/post and fill it in for a medium pizza
-   with mushrooms for <invented name>, but don't submit it."
+1. "Open <a public sample order form, one made for testing> and fill it in
+   for a medium pizza with mushrooms for <invented name>, but don't submit
+   it."
 
 - [ ] Every field is filled in the person's browser, and it stops before
       the submit button, saying so.
