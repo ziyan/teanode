@@ -705,8 +705,8 @@ a ChatGPT plan, through the Codex API that the Codex command line also runs
 on. It answers at a different address, speaks the responses protocol rather
 than chat completions, and bills against the plan's allowance instead of
 credits. It takes
-`refreshToken` and `account` and no `apiKey`, and it offers only the models
-the plan answers to (`gpt-5.5`, `gpt-5.6-terra` and `gpt-5.6-luna`): every
+`refreshToken` and `account` and no `apiKey`, and it offers the models the
+plan lists for the account, asked each time the model list is read: every
 other name is refused outright. It has no embeddings,
 so `models.embedding` still needs a keyed provider or a local one.
 

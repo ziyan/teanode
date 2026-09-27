@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -76,7 +77,7 @@ type codexTool struct {
 func (self *codex) encode(request *ChatRequest) ([]byte, error) {
 	model := strings.TrimSpace(request.Model)
 	if model == "" {
-		model = codexModels[0]
+		return nil, errors.New("llm: a request to the plan names no model")
 	}
 	body := codexRequest{
 		Model: model,
