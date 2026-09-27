@@ -286,6 +286,15 @@ type AskRun struct {
 	previous *AskRun
 	done     chan struct{}
 
+	// steeredInto is the running turn this message was handed to, and
+	// isTakenIn says that turn read it. steering is what the person wrote
+	// while this turn runs, taken in at its next round, and
+	// isClosedToSteering that it has decided to end; see steer.go.
+	steeredInto        *AskRun
+	isTakenIn          bool
+	steering           []*AskRun
+	isClosedToSteering bool
+
 	usage llm.Usage
 }
 
@@ -364,11 +373,19 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 	self.runs[run.ID] = run
 	// One turn at a time per conversation: a second one waits for the
 	// one before it, so the history the model reads is never two turns
-	// interleaved.
+	// interleaved. What the person writes while a turn of theirs runs is
+	// handed to that turn instead, which reads it at its next round; the
+	// running turn stays the latest, so a third message goes to it too.
 	if previous := self.latest[settings.Conversation.ID]; previous != nil && !previous.isFinished() {
-		run.previous = previous
+		if isSteerable(settings) && isSteerable(previous.settings) && previous.steer(run) {
+			run.steeredInto = previous
+		} else {
+			run.previous = previous
+		}
 	}
-	self.latest[settings.Conversation.ID] = run
+	if run.steeredInto == nil {
+		self.latest[settings.Conversation.ID] = run
+	}
 	self.runsMutex.Unlock()
 	// The person writing is what lets ended background commands wake the
 	// conversation again.
@@ -625,6 +642,7 @@ func (self *AskRun) emit(event Event) {
 }
 
 func (self *AskRun) finish() {
+	self.handBackSteering()
 	// The browser goes first, so that whoever is watching the events sees
 	// the turn end with its context already discarded.
 	self.mutex.Lock()
@@ -659,6 +677,18 @@ func (self *AskRun) loop() {
 	// The turn begins with what was said, so that a drawer following the
 	// conversation shows the words a phone or a chat app sent.
 	self.emit(Event{Kind: EventAsked, Text: self.settings.Message, Note: self.settings.Surface})
+	if into := self.steeredInto; into != nil {
+		if self.followSteered(into) {
+			self.emit(Event{Kind: EventDone})
+			return
+		}
+		// The running turn ended before it read this: answered on its own.
+		if self.ctx.Err() != nil {
+			self.sayNote(models.NoteStopped, "")
+			self.emit(Event{Kind: EventDone})
+			return
+		}
+	}
 	if previous := self.previous; previous != nil && !previous.isFinished() {
 		self.sayNote(models.NoteQueued, "")
 		select {
@@ -737,17 +767,8 @@ func (self *AskRun) turn() error {
 		if history, err = self.loadHistory(tx); err != nil {
 			return err
 		}
-		stored := &models.AgentMessage{ConversationID: settings.Conversation.ID, Role: string(llm.RoleUser), Content: settings.Message, References: settings.References}
-		attachmentIds := make([]string, 0, len(settings.Attachments))
-		for _, attachment := range settings.Attachments {
-			stored.Attachments = append(stored.Attachments, *attachment)
-			attachmentIds = append(attachmentIds, attachment.ID)
-		}
-		saved, err := tx.AppendAgentMessage(stored)
+		saved, err := keepPersonTurn(tx, settings)
 		if err != nil {
-			return err
-		}
-		if err := tx.ClaimAgentAttachments(attachmentIds, settings.Conversation.ID, saved.ID); err != nil {
 			return err
 		}
 		savedTurn = saved
@@ -889,6 +910,13 @@ func (self *AskRun) turn() error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		// What the person wrote since the last round, read before the
+		// model decides what to do next.
+		steered, err := self.takeSteering(ctx)
+		history = append(history, steered...)
+		if err != nil {
+			return err
+		}
 		if round > 0 {
 			// A turn of many rounds is measured as it goes, not only when
 			// it starts: the budget is a cap, not a suggestion.
@@ -1028,6 +1056,12 @@ func (self *AskRun) turn() error {
 				return err
 			})
 			history = append(history, llm.ChatMessage{Role: llm.RoleUser, Content: unreadableCallNotice})
+			continue
+		}
+		if len(answer.ToolCalls) == 0 && self.closeToSteering() {
+			// The person wrote while this was being answered: one round
+			// more, which reads it, rather than an end that leaves it for
+			// a turn of its own.
 			continue
 		}
 		if len(answer.ToolCalls) == 0 {
