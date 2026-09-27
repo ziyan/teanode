@@ -304,7 +304,10 @@ services:
     image: chromedp/headless-shell:latest
     profiles: [browser]
     restart: unless-stopped
-    command: ["--no-sandbox", "--disable-gpu", "--remote-debugging-address=0.0.0.0", "--remote-debugging-port=9222", "--disable-dev-shm-usage", "--hide-scrollbars"]
+    # The image runs Chrome on 9223 and relays 9222 to it; naming a debugging
+    # port here moves Chrome onto the relay's and leaves the relay talking to
+    # nothing.
+    command: ["--disable-dev-shm-usage", "--hide-scrollbars"]
     shm_size: 512m
 
   teanode:
