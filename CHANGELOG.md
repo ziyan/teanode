@@ -6,6 +6,20 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.69.0] - 2026-09-27
+
+### Added
+
+- Signed in, the browser extension keeps your browser connected to your agent, which can open a tab there when a page needs your session, without you attaching one first. Update the extension to 3.0.0. (#187)
+
+### Changed
+
+- The agent settings tab for sources is called "Sources". (#188)
+
+### Fixed
+
+- Listing or testing a ChatGPT plan's models no longer risks signing the running provider out. (#184)
+
 ## [0.68.0] - 2026-09-27
 
 ### Added
