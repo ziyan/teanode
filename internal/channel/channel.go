@@ -387,7 +387,9 @@ func (self *chatState) handle(ctx context.Context, incoming *Incoming, chat Chat
 	self.mutex.Lock()
 	if self.turning {
 		self.mutex.Unlock()
-		_, _ = chat.Send(ctx, "Still working on the last one; /stop ends it.", incoming.MessageID)
+		// Written while a turn runs: handed to it, which reads it at its
+		// next round and answers in the reply it is already writing.
+		self.turn(ctx, channel, incoming, chat, text)
 		return
 	}
 	self.turning = true
@@ -667,6 +669,10 @@ func (self *chatState) turn(ctx context.Context, channel *models.AgentChannel, i
 		return
 	}
 	_ = chat.Typing(ctx)
+	// Handed to the turn already running, whose reply is being followed.
+	if run.SteeredInto() != nil {
+		return
+	}
 	self.follow(ctx, run, chat, incoming)
 }
 

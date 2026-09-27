@@ -22,11 +22,26 @@ and the bounds a caller may impose — `ReadOnly`, `Allow` (only these tools),
 ### One turn at a time, per conversation
 
 When a turn starts, the agent looks at `latest[conversationID]`. If that run
-has not finished, it becomes the new run's `previous`, and the new run waits on
-it. So a person who types twice does not get two turns interleaving over the
-same history: the second says `queued behind the turn before it` and starts
-when the first is done. Stopping a queued turn ends it before it begins,
-writing nothing.
+has not finished, two things can happen, and neither lets two turns interleave
+over the same history (`steer.go`).
+
+**The person typed it while a turn of theirs runs: it is steered in.** The
+running turn takes the message at the start of its next round, once the tool
+calls it is making have come back, stores it after their results, and the
+model reads it before deciding what to do next. A turn that gives its final
+answer while a message waits goes one round more rather than ending. The
+message's own run relays the running turn's events to whoever follows it, so
+the command line and the chat apps still see the answer; the chat apps no
+longer refuse a message mid-turn. A message stopped before it is read is never
+said, and if the running turn ends without reading what it was handed (an
+error, a stop, the round limit), each message becomes a turn of its own, one
+after another.
+
+**Anything else waits.** A turn nobody typed (headless, or woken by a
+background command), or one arriving behind such a turn, becomes the new run's
+`previous` and waits on it: it says `queued behind the turn before it` and
+starts when the first is done. Stopping a queued turn ends it before it
+begins, writing nothing.
 
 The queue is in memory, per process. **Two instances running turns of the same
 conversation do not serialize.** In practice a conversation is driven from one
