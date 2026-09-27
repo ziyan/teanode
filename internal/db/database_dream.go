@@ -107,7 +107,8 @@ type DreamOperation interface {
 	// the person's own record -- facts placed in them, their commits,
 	// threads they took part in -- and have no page yet, or a page that
 	// is blank or reads like a guess (matches the pattern), as
-	// "2025/08". Months with no page come first, then most recent first.
+	// "2025/08". Months with no page or a blank one come first, then most
+	// recent first.
 	ListAgentMonthsToWriteUp(agentId string, names []string, least, limit int, guessed string, writtenBefore time.Time) ([]string, error)
 
 	// ListAgentNodesCrowded is the pages holding more than so many facts,
@@ -975,7 +976,10 @@ func (self *transaction) ListAgentMonthsToWriteUp(agentId string, names []string
 			GROUP BY 1
 		)
 		, owed AS (
-			SELECT month, EXISTS (SELECT 1 FROM "agent_node" n WHERE n."agent_id" = ? AND n."path" = 'time/' || month) AS written
+			-- A blank page is as unwritten as none, and goes first with it:
+			-- an empty month reads worse than one written by older rules.
+			SELECT month, EXISTS (SELECT 1 FROM "agent_node" n WHERE n."agent_id" = ? AND n."path" = 'time/' || month
+			                      AND btrim(n."summary") <> '') AS written
 			FROM record
 			GROUP BY month
 			HAVING sum(how_many) >= ?
