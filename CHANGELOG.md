@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.71.3] - 2026-09-27
+
+### Changed
+
+- The agent writes for Telegram and Discord in the formatting each shows, and a message it cites there appears as its subject instead of a link that does not open. (#194)
+- The agent's instructions mention a tool only when that tool is available in the turn. (#194)
+
+### Fixed
+
+- Guidance for the rule tool's add action reaches the agent again. (#194)
+
 ## [0.71.2] - 2026-09-27
 
 ### Changed
