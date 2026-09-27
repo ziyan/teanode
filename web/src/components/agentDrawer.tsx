@@ -3896,7 +3896,14 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               </button>
             </Tooltip>
           </form>
-          <p className="agent-drawer-note muted">{t('agentDrawer.mistakes')}</p>
+          {/* The note is a bar across the foot of the box, and moves the
+              box the way the head does, so it can be taken by either end. */}
+          <p
+            className={['agent-drawer-note', 'muted', standalone ? '' : 'movable'].filter(Boolean).join(' ')}
+            {...chatBox.headProps}
+          >
+            {t('agentDrawer.mistakes')}
+          </p>
           {dragging && <div className="agent-drawer-drop">{t('agentDrawer.dropHere')}</div>}
         </aside>
       )}
