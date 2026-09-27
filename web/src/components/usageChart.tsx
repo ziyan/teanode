@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import { formatCount, formatMoney } from './common'
+import { formatMoney } from './common'
 import { useTranslation } from '../i18n/i18n'
 
 // The usage above its table: what the agents spent, drawn. By day it is a
@@ -86,17 +86,31 @@ function dayLabel(key: string): string {
   return day.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-// useWidth is the width the chart has, followed as the page is resized.
+// useWidth is the width the chart has, followed as the page is resized. Read
+// at once as well as observed: an observer reports only when the page is
+// painted, and a page opened in a tab nobody is looking at would otherwise
+// draw nothing until it was.
 function useWidth(): [React.RefObject<HTMLDivElement | null>, number] {
   const element = useRef<HTMLDivElement | null>(null)
   const [width, setWidth] = useState(0)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!element.current) return
+    setWidth(Math.floor(element.current.getBoundingClientRect().width))
     const observer = new ResizeObserver((entries) => setWidth(Math.floor(entries[0].contentRect.width)))
     observer.observe(element.current)
     return () => observer.disconnect()
   }, [])
   return [element, width]
+}
+
+// compact is a count in a few characters, to the billions: the tokens of a
+// month of reading run past a thousand million.
+function compact(value: number): string {
+  const size = Math.abs(value)
+  if (size >= 1e9) return `${(value / 1e9).toFixed(size >= 1e10 ? 0 : 1)}B`
+  if (size >= 1e6) return `${(value / 1e6).toFixed(size >= 1e7 ? 0 : 1)}M`
+  if (size >= 1e3) return `${(value / 1e3).toFixed(size >= 1e4 ? 0 : 1)}k`
+  return String(Math.round(value))
 }
 
 export function UsageChart({
@@ -136,7 +150,7 @@ export function UsageChart({
   const values = items.map((item) => measure(item.row, metric))
   const ceiling = niceCeiling(Math.max(0, ...values))
   const sum = rows.reduce((total, row) => total + measure(row, metric), 0)
-  const format = (value: number) => (metric === 'cost' ? formatMoney(value, currency) : formatCount(Math.round(value)))
+  const format = (value: number) => (metric === 'cost' ? formatMoney(value, currency) : compact(value))
 
   const metrics: { id: Metric; label: string }[] = [
     { id: 'tokens', label: t('usageChart.tokens') },
@@ -397,7 +411,7 @@ function DayTip({
         <div key={part} className="usage-chart-tip-line">
           <i className={`usage-chart-swatch ${part}`} />
           <span>{partLabel[part]}</span>
-          <strong>{formatCount(parts[part])}</strong>
+          <strong>{compact(parts[part])}</strong>
         </div>
       ))}
       <div className="usage-chart-tip-line">
