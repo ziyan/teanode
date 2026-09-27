@@ -29,3 +29,15 @@ func TestTheDepthJudgementIsReadOrLeftAlone(t *testing.T) {
 		t.Errorf("a question to dig into is researched and thought about: %q %v", effort, research)
 	}
 }
+
+// A turn a finished background command woke is not judged: nobody typed
+// it, and a judgement of it restated the person's earlier request as a
+// second note.
+func TestABackgroundWakeIsNotJudged(t *testing.T) {
+	// No agent: a judgement would reach for its fast model and fail.
+	run := &AskRun{settings: &AskSettings{Surface: backgroundSurface}}
+	run.chooseDepth()
+	if run.hasDepthNote || run.settings.Effort != "" || run.settings.Research {
+		t.Fatalf("a background wake was judged: %+v", run.settings)
+	}
+}

@@ -133,8 +133,8 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		after = updated
 		// Set and met are moments of the conversation, so they are
 		// written into it; a note or a wait is the chip's and the bar's.
-		if note := models.GoalChangeNote(here, updated); note != "" {
-			if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: here.ID, Role: models.AgentMessageNote, Content: note}); err != nil {
+		if kind, detail := models.GoalChangeNote(here, updated); kind != "" {
+			if _, err := tx.AppendAgentMessage(models.NewAgentNote(here.ID, kind, detail)); err != nil {
 				return err
 			}
 		}

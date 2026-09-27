@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -242,7 +243,7 @@ const SpeakFirstMarker = "[speaking first]"
 // person reading the transcript later would not see it begin or end. The
 // note puts those moments in the flow where they happened, in the words
 // the goal was given in, the way a schedule's run says which schedule.
-func GoalChangeNote(before, after *AgentConversation) string {
+func GoalChangeNote(before, after *AgentConversation) (AgentNoteKind, string) {
 	var was, now string
 	var wasState AgentGoalState
 	if before != nil {
@@ -253,24 +254,24 @@ func GoalChangeNote(before, after *AgentConversation) string {
 	}
 	switch {
 	case now == "" && was == "":
-		return ""
+		return "", ""
 	case now == "":
-		return "Goal cleared: " + was
+		return NoteGoalCleared, was
 	case was == "", now != was && wasState == GoalMet:
 		// A goal after one that was met is a new goal, not a change
 		// to the old one.
-		return "Goal set: " + now
+		return NoteGoalSet, now
 	case now != was:
-		return "Goal changed: " + now
+		return NoteGoalChanged, now
 	case after.GoalState == GoalMet && wasState != GoalMet:
 		if note := strings.TrimSpace(after.GoalNote); note != "" {
-			return "Goal met: " + note
+			return NoteGoalMet, note
 		}
-		return "Goal met: " + now
+		return NoteGoalMet, now
 	case after.GoalState == GoalWorking && wasState == GoalMet:
-		return "Goal set again: " + now
+		return NoteGoalSetAgain, now
 	}
-	return ""
+	return "", ""
 }
 
 // AgentMessage is one turn, tool call or result in a conversation.
@@ -347,6 +348,72 @@ type AgentUsageNote struct {
 // AgentMessageNote is the role of a message that is neither side of the
 // conversation: what a run did, in its own words, for the activity view.
 const AgentMessageNote = "note"
+
+// AgentNoteKind names a note, so that a client words it in the person's
+// language. A note of a kind keeps the kind in the message's Name and only
+// its detail in Content: the goal, the reason, the count. A note without
+// one is prose, shown as written.
+type AgentNoteKind string
+
+// The kinds of note a conversation carries.
+const (
+	NoteQueued          AgentNoteKind = "queued"           // the turn waits behind the one before it
+	NoteStopped         AgentNoteKind = "stopped"          // stopped, by the person or for the detail's reason
+	NoteFailed          AgentNoteKind = "failed"           // the turn failed: the error
+	NoteCallUnreadable  AgentNoteKind = "call_unreadable"  // a tool call the server could not read
+	NoteRepeatedFailure AgentNoteKind = "repeated_failure" // the same call failed three times
+	NoteRoundLimit      AgentNoteKind = "round_limit"      // the most rounds a turn may take
+	NoteCompacting      AgentNoteKind = "compacting"       // the earlier conversation is being folded into a note
+	NoteCompacted       AgentNoteKind = "compacted"        // it was: the detail is the note
+	NoteDepth           AgentNoteKind = "depth"            // looked into carefully: the detail is why
+	NoteGoalSet         AgentNoteKind = "goal_set"         // the detail is the goal
+	NoteGoalSetAgain    AgentNoteKind = "goal_set_again"
+	NoteGoalChanged     AgentNoteKind = "goal_changed"
+	NoteGoalCleared     AgentNoteKind = "goal_cleared"
+	NoteGoalMet         AgentNoteKind = "goal_met"     // the detail is what was said of it, or the goal
+	NoteGoalStalled     AgentNoteKind = "goal_stalled" // the detail is how many turns went by alone
+)
+
+// noteEnglish is each kind in English, for whoever reads a note without
+// the kinds: the command line, a chat channel, an old client.
+var noteEnglish = map[AgentNoteKind]string{
+	NoteQueued:          "queued behind the turn before it",
+	NoteStopped:         "stopped",
+	NoteFailed:          "failed",
+	NoteCallUnreadable:  "a tool call the server could not read; asked again",
+	NoteRepeatedFailure: "stopped: the same call failed three times",
+	NoteRoundLimit:      "stopped after the most rounds a turn may take",
+	NoteCompacting:      "compacting the earlier conversation into a note",
+	NoteCompacted:       "the earlier conversation was compacted into a note",
+	NoteDepth:           "looking into this carefully",
+	NoteGoalSet:         "Goal set",
+	NoteGoalSetAgain:    "Goal set again",
+	NoteGoalChanged:     "Goal changed",
+	NoteGoalCleared:     "Goal cleared",
+	NoteGoalMet:         "Goal met",
+	NoteGoalStalled:     "Goal stalled",
+}
+
+// NoteText is a note in English: the kind's words, then its detail. The
+// compaction's detail is the whole note, which is not repeated here.
+func NoteText(kind AgentNoteKind, detail string) string {
+	english, ok := noteEnglish[kind]
+	if !ok {
+		return detail
+	}
+	switch {
+	case kind == NoteGoalStalled:
+		return fmt.Sprintf("Goal stalled: %s turns since you last wrote and it is not met. Write to keep going, or clear or change it.", detail)
+	case detail == "" || kind == NoteCompacted:
+		return english
+	}
+	return english + ": " + detail
+}
+
+// NewAgentNote is a note of a kind for a conversation.
+func NewAgentNote(conversationId string, kind AgentNoteKind, detail string) *AgentMessage {
+	return &AgentMessage{ConversationID: conversationId, Role: AgentMessageNote, Name: string(kind), Content: detail}
+}
 
 // NeedsInsight says whether a rule has a condition only the agent's
 // insight can answer, which is why such a rule runs in the second phase.
