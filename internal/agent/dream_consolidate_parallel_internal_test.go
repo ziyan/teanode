@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +32,16 @@ func TestPagesAreRewrittenSideBySide(t *testing.T) {
 		mutex.Lock()
 		inFlight--
 		mutex.Unlock()
+		// Streamed or not, whichever the call asked for.
+		var body struct {
+			Stream bool `json:"stream"`
+		}
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		if body.Stream {
+			writer.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprint(writer, "data: {\"choices\":[{\"delta\":{\"content\":\"{\\\"summary\\\":\\\"Rewritten.\\\",\\\"same\\\":[]}\"},\"finish_reason\":\"stop\"}],\"usage\":{}}\n\ndata: [DONE]\n\n")
+			return
+		}
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprint(writer, `{"choices":[{"message":{"role":"assistant","content":"{\"summary\":\"Rewritten.\",\"same\":[]}"},"finish_reason":"stop"}],"usage":{}}`)
 	}))

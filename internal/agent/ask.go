@@ -299,9 +299,15 @@ const (
 	confirmationWait = 10 * time.Minute
 
 	// askHistoryTokens is the most history a round carries before the
-	// older turns are compacted. A third of a small model's window, which
-	// leaves room for the prompt, the tools and the answer.
+	// older turns are compacted when the model's window is not known, or
+	// is small. A third of a small model's window, which leaves room for
+	// the prompt, the tools and the answer.
 	askHistoryTokens = 30000
+
+	// askHistoryWindowShare is the part of a known window the history may
+	// fill before it is compacted: the rest is the prompt, the tools and
+	// the answer, and the estimate is rough.
+	askHistoryWindowShare = 2
 
 	// askReadThenAnswerTokens is the history at which a read-then-answer
 	// run is told to answer. Lower than the compaction line, because the
@@ -708,6 +714,18 @@ func (self *AskRun) turn() error {
 		modelName = settings.Agent.AskModel
 	}
 	self.modelName = modelName
+	// The model's window is asked for only once the history passes what
+	// any window holds, which most runs never do.
+	historyLimitTokens := 0
+	historyLimitFor := func(historyTokens int) int {
+		if historyLimitTokens == 0 {
+			if historyTokens <= askHistoryTokens/2 {
+				return askHistoryTokens
+			}
+			historyLimitTokens = historyLimit(registry.ContextLength(ctx, modelName))
+		}
+		return historyLimitTokens
+	}
 
 	// The person's turn, kept before anything is asked.
 	var history []llm.ChatMessage
@@ -895,7 +913,7 @@ func (self *AskRun) turn() error {
 		historyTokens := llm.EstimateTokens(renderHistory(history))
 		if settings.ReadThenAnswer && historyTokens > askReadThenAnswerTokens {
 			answerNow = true
-		} else if historyTokens > askHistoryTokens {
+		} else if historyTokens > historyLimitFor(historyTokens) {
 			if settings.ReadThenAnswer {
 				answerNow = true
 			} else if !compactFailed {
@@ -908,7 +926,8 @@ func (self *AskRun) turn() error {
 				}
 			}
 		}
-		compact := settings.Short || llm.EstimateTokens(renderHistory(history)) > askHistoryTokens/2
+		compactedTokens := llm.EstimateTokens(renderHistory(history))
+		compact := settings.Short || compactedTokens > historyLimitFor(compactedTokens)/2
 		sent, deferred := Split(self.offered, self.loaded, compact)
 		system, err := self.systemPrompt(ctx, configuration, sent, deferred, compact)
 		if err != nil {
@@ -1088,6 +1107,15 @@ func (self *AskRun) turn() error {
 // chooseModel is the provider and model for this turn: the one for its
 // kind of work when the turn is a job's, else the person's own choice
 // when the operator offers choices, else the one for ask work.
+// historyLimit is the most history a round carries before the older turns
+// are compacted, for a model whose window is contextLength tokens, or zero
+// when it is not known. Never below askHistoryTokens: a small window is
+// what that was chosen for, and a request that still overflows is
+// compacted when the provider refuses it.
+func historyLimit(contextLength int) int {
+	return max(askHistoryTokens, contextLength/askHistoryWindowShare)
+}
+
 func (self *AskRun) chooseModel(configuration *config.Configuration, registry *llm.Registry) (llm.Provider, string, error) {
 	if self.settings.Work != "" {
 		return registry.ForWork(self.settings.Work)

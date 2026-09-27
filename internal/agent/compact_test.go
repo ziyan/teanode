@@ -22,15 +22,25 @@ import (
 )
 
 // compactingModel answers a compaction turn with the note and any other
-// round with the answer, and keeps what it was sent.
+// round with the answer, and keeps what it was sent. Its model list gives
+// the window as contextLength, or leaves it out when that is zero.
 //
 // Writing the note is a turn of the loop in its own right now, so which
 // call this is cannot be told from how many came before it: the older
 // conversation is read in as many parts as it takes.
-func compactingModel(note, answer string) (*httptest.Server, *[]map[string]any) {
+func compactingModel(note, answer string, contextLength int) (*httptest.Server, *[]map[string]any) {
 	var requests []map[string]any
 	var mutex sync.Mutex
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/models") {
+			writer.Header().Set("Content-Type", "application/json")
+			if contextLength > 0 {
+				_, _ = fmt.Fprintf(writer, `{"data":[{"id":"thinker","context_length":%d}]}`, contextLength)
+			} else {
+				_, _ = fmt.Fprint(writer, `{"data":[{"id":"thinker"}]}`)
+			}
+			return
+		}
 		var body map[string]any
 		_ = json.NewDecoder(request.Body).Decode(&body)
 		mutex.Lock()
@@ -74,13 +84,104 @@ func lastThingAsked(body map[string]any) string {
 // A long conversation is compacted before the round: the model gets a
 // note and the recent turns verbatim. The next turn gets the same note
 // and the same tail, not the note alone, and does not compact again.
+// longConversation is an agent whose main conversation holds thirty long
+// exchanges, well past what a round carries on a small window, talking to
+// a model whose window is contextLength.
+func longConversation(t *testing.T, note, answer string, contextLength int) (ask func(string), requests *[]map[string]any, notes func() int) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	t.Cleanup(closeDatabase)
+
+	model, requests := compactingModel(note, answer, contextLength)
+	t.Cleanup(model.Close)
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	// The night is not what this is about, and whether one is due depends
+	// on the wall clock: the tick queued a dream in CI at one in the morning
+	// and the test saw two jobs where it expected one.
+	configuration.Agent.Features.Dreaming = new(bool)
+	configuration.Agent.Providers = []config.AgentProvider{{Name: "fake", Kind: "openai", BaseURL: model.URL, APIKey: "k"}}
+	configuration.Agent.Models.Default = "fake:thinker"
+	registry, err := llm.Open(&configuration.Agent)
+	if err != nil {
+		t.Fatalf("llm.Open: %s", err)
+	}
+	store, err := storage.Open(&storage.Settings{Directory: t.TempDir()})
+	if err != nil {
+		t.Fatalf("storage.Open: %s", err)
+	}
+	worker := agent.New(&agent.Settings{Database: database, Storage: store, Registry: registry, Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour})
+	// Writing the note is a turn of its own, and a turn acts as the person.
+	worker.SetOperationsFactory(func(context.Context, *models.User) (agent.Operations, error) {
+		return &fakeOperations{permissions: models.NewEffectivePermissions(nil)}, nil
+	})
+
+	var owner *models.User
+	var found *models.Agent
+	var conversation *models.AgentConversation
+	filler := strings.Repeat("The plumber's invoice, the mooring fee, the regatta on the 21st. ", 60)
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if owner, err = tx.CreateUser(&models.User{Username: "alice", Name: "Alice Example"}); err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if found, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: found.ID, Kind: models.AgentConversationMain, LastAt: time.Now()}); err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		// Thirty exchanges of a few thousand characters each.
+		for turn := 1; turn <= 30; turn++ {
+			for _, message := range []*models.AgentMessage{
+				{ConversationID: conversation.ID, Role: "user", Content: "turn " + strconv.Itoa(turn) + ": " + filler},
+				{ConversationID: conversation.ID, Role: "assistant", Content: "reply " + strconv.Itoa(turn) + ": " + filler},
+			} {
+				if _, err := tx.AppendAgentMessage(message); err != nil {
+					t.Fatalf("AppendAgentMessage: %s", err)
+				}
+			}
+		}
+	})
+	operations := &fakeOperations{permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailRead}})}
+
+	ask = func(message string) {
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			if conversation, err = tx.GetAgentConversation(conversation.ID); err != nil {
+				t.Fatalf("GetAgentConversation: %s", err)
+			}
+		})
+		run, err := worker.Ask(&agent.AskSettings{Agent: found, Owner: owner, Operations: operations, Conversation: conversation, Message: message, Surface: "cli"})
+		if err != nil {
+			t.Fatalf("Ask: %s", err)
+		}
+		for _, event := range collect(run) {
+			if event.Kind == agent.EventError {
+				t.Fatalf("the turn failed: %s", event.Error)
+			}
+		}
+	}
+	notes = func() int {
+		count := 0
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			stored, _ := tx.ListAgentMessages(conversation.ID, nil)
+			for _, message := range stored {
+				if message.Role == "compaction" {
+					count++
+				}
+			}
+		})
+		return count
+	}
+	return ask, requests, notes
+}
+
 func TestCompactionKeepsTheRecentTurns(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
 	const note = "Decided: the regatta is on the 21st. Open: what the mooring costs."
 	const answered = "The invoice is [Invoice 42](mail:item1)."
-	model, requests := compactingModel(note, answered)
+	model, requests := compactingModel(note, answered, 0)
 	defer model.Close()
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
@@ -233,6 +334,30 @@ func TestCompactionKeepsTheRecentTurns(t *testing.T) {
 			t.Fatalf("a conversation that fits is not compacted again, got %d notes", notes)
 		}
 	})
+}
+
+// A model that says its window is large carries the same conversation
+// whole: the history is measured against the window, not a line drawn for
+// a small model.
+func TestLargeWindowIsNotCompactedEarly(t *testing.T) {
+	const answered = "The regatta is on the 21st."
+	ask, requests, notes := longConversation(t, "a note that should not be written", answered, 400000)
+
+	ask("and the regatta?")
+	if count := notes(); count != 0 {
+		t.Fatalf("a conversation that fits the window is not compacted, got %d notes", count)
+	}
+	carried := false
+	for _, request := range *requests {
+		for _, message := range request["messages"].([]any) {
+			if strings.Contains(toString(message.(map[string]any)["content"]), "turn 1: ") {
+				carried = true
+			}
+		}
+	}
+	if !carried {
+		t.Fatal("the oldest turn should reach the model verbatim")
+	}
 }
 
 func toString(value any) string {
