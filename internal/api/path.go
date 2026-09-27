@@ -36,6 +36,11 @@ const (
 	// citing a screenshot can show the screenshot.
 	PathAgentDocumentFile = Prefix + "/agent/documents/{documentId}/file"
 
+	// PathAgentPicture fetches, for the person reading a conversation, an
+	// image the agent put in an answer: one whose address a tool showed
+	// the agent in that conversation, and no other.
+	PathAgentPicture = Prefix + "/agent/conversations/{conversationId}/picture"
+
 	// PathAgentMCP answers the Model Context Protocol, so that a harness
 	// somebody codes in -- or any other program that speaks it -- can use
 	// the person's own agent tools. One POST is one JSON-RPC message.
