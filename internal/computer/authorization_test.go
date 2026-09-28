@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAuthorizationForwardSendsTheBrowserOn(t *testing.T) {
@@ -54,5 +55,50 @@ func TestAuthorizationForwardRefusesAnAddressThatIsNotOne(t *testing.T) {
 		if _, err := RunAuthorizationForward(&AuthorizationForwardArguments{ForwardURL: forward}); err == nil || !strings.Contains(err.Error(), "not an http or https address") {
 			t.Fatalf("forward to %q: %v", forward, err)
 		}
+	}
+}
+
+// Pressing Authorize again replaces the listener for that server rather than
+// adding to a pile that ends in a refusal, and past the most the oldest one
+// makes room: nothing asked for is ever refused for the ones left waiting.
+func TestAuthorizationForwardReplacesWhatWasLeftWaiting(t *testing.T) {
+	open := func(server string) string {
+		t.Helper()
+		result, err := RunAuthorizationForward(&AuthorizationForwardArguments{ForwardURL: "https://mail.example.com/agent?connect=" + server, LifetimeSeconds: 60})
+		if err != nil {
+			t.Fatalf("%s: %s", server, err)
+		}
+		return result.RedirectURL
+	}
+	waitingCount := func() int {
+		authorizationListenersMutex.Lock()
+		defer authorizationListenersMutex.Unlock()
+		return len(authorizationListeners)
+	}
+	first := open("tracker")
+	for attempt := 0; attempt < authorizationListenersAtMost+2; attempt++ {
+		open("tracker")
+	}
+	if count := waitingCount(); count != 1 {
+		t.Fatalf("the same server asked again should leave one listener, not %d", count)
+	}
+	// The one given up on stops answering.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		response, err := http.Get(first + "?code=late&state=late")
+		if err != nil {
+			break
+		}
+		_ = response.Body.Close()
+		if time.Now().After(deadline) {
+			t.Fatal("a replaced listener should close")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	for index := 0; index < authorizationListenersAtMost+2; index++ {
+		open("server-" + strings.Repeat("x", index+1))
+	}
+	if count := waitingCount(); count != authorizationListenersAtMost {
+		t.Fatalf("past the most, the oldest should make room: %d waiting", count)
 	}
 }

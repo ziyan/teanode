@@ -14,9 +14,11 @@
     const chosen = root.getAttribute('data-theme')
     return chosen ? chosen === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
   }
-  // The series colours, in order: readable on white, and lifted on dark.
-  const light = ['#2f6db5', '#d97706', '#16a34a', '#dc2626', '#7c3aed', '#0891b2', '#be185d', '#4d7c0f']
-  const lifted = ['#6ea8e8', '#fbbf24', '#4ade80', '#f87171', '#a78bfa', '#22d3ee', '#f472b6', '#a3e635']
+  // The series colours, in order, after the dashboard's own chart of usage:
+  // the leaf from the mark first, then quieter colours that sit beside it
+  // rather than shout over it. Readable on white, and lifted on dark.
+  const light = ['#729d39', '#6f7f96', '#d97706', '#3f8f8a', '#b4533c', '#8a6fb0', '#a9c47f', '#9a9aa0']
+  const lifted = ['#9fca63', '#9aa8bd', '#fbbf24', '#6cc4bd', '#e08a72', '#b39ddb', '#c6dd9f', '#7c7c84']
   const fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
 
   const theme = () => {
@@ -24,38 +26,92 @@
     const muted = token('--muted') || (dark() ? '#a0a0a8' : '#6f6f76')
     const border = token('--border') || (dark() ? '#2a2a2e' : '#e7e7e4')
     const surface = token('--surface') || (dark() ? '#1a1a1d' : '#ffffff')
+    const leaf = token('--leaf') || (dark() ? lifted[0] : light[0])
+    const palette = [leaf].concat((dark() ? lifted : light).slice(1))
+    // Labels at the dashboard's axis size, in its muted colour. ECharts
+    // outlines a label by default, which on a dark page smears every digit
+    // into the next.
+    const small = { color: muted, fontFamily, fontSize: 11, textBorderWidth: 0 }
+    // Gridlines, and nothing else drawn for an axis: no ticks, and no line
+    // down the side of the values, as in the dashboard's usage chart.
     const axis = {
-      axisLine: { lineStyle: { color: border } },
-      axisTick: { lineStyle: { color: border } },
-      axisLabel: { color: muted, fontFamily },
-      nameTextStyle: { color: muted, fontFamily },
-      splitLine: { lineStyle: { color: border } },
-      splitArea: { areaStyle: { color: ['transparent', 'transparent'] } },
+      axisLine: { show: false, lineStyle: { color: border } },
+      axisTick: { show: false },
+      axisLabel: Object.assign({ margin: 10 }, small),
+      nameTextStyle: Object.assign({ align: 'left' }, small),
+      splitLine: { lineStyle: { color: border, width: 1 } },
+      splitArea: { show: false },
     }
+    const categoryAxis = Object.assign({}, axis, {
+      axisLine: { show: true, lineStyle: { color: border } },
+      splitLine: { show: false },
+    })
+    // A value over a bar or a point says what the gridlines only suggest,
+    // and where two would overlap, as they do in a narrow drawer, one of
+    // them is dropped rather than written through the other.
+    const valueLabel = Object.assign({ fontWeight: 500 }, small, { color: text })
     return {
-      color: dark() ? lifted : light,
+      color: palette,
       backgroundColor: 'transparent',
       textStyle: { color: text, fontFamily },
       // The title at the left and the legend at the right, so the two
       // never sit on each other; the plot below both, with room for its
       // labels.
-      title: { left: 0, textStyle: { color: text, fontFamily, fontWeight: 600, fontSize: 14 }, subtextStyle: { color: muted, fontFamily } },
-      legend: { right: 0, top: 2, textStyle: { color: muted, fontFamily }, pageTextStyle: { color: muted } },
-      grid: { left: 8, right: 8, top: 48, bottom: 8, containLabel: true },
+      title: {
+        left: 0,
+        textStyle: { color: text, fontFamily, fontWeight: 600, fontSize: 14 },
+        subtextStyle: { color: muted, fontFamily, fontSize: 12 },
+      },
+      legend: {
+        right: 0,
+        top: 2,
+        icon: 'roundRect',
+        itemWidth: 10,
+        itemHeight: 10,
+        itemGap: 16,
+        textStyle: { color: muted, fontFamily, fontSize: 12 },
+        pageTextStyle: { color: muted },
+      },
+      grid: { left: 4, right: 4, top: 48, bottom: 4, containLabel: true },
       tooltip: {
         backgroundColor: surface,
         borderColor: border,
         borderWidth: 1,
-        textStyle: { color: text, fontFamily },
-        extraCssText: 'box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); border-radius: 8px;',
+        padding: [8, 12],
+        textStyle: { color: text, fontFamily, fontSize: 12 },
+        extraCssText: 'box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22); border-radius: 6px;',
+        axisPointer: {
+          lineStyle: { color: border },
+          crossStyle: { color: border },
+          shadowStyle: { color: dark() ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)' },
+        },
       },
-      categoryAxis: axis,
+      categoryAxis,
       valueAxis: axis,
-      timeAxis: axis,
+      timeAxis: categoryAxis,
       logAxis: axis,
-      line: { smooth: false, symbolSize: 6, lineStyle: { width: 2 } },
-      bar: { itemStyle: { borderRadius: [3, 3, 0, 0] }, barMaxWidth: 48 },
-      pie: { itemStyle: { borderColor: surface, borderWidth: 2 }, label: { color: text, fontFamily } },
+      line: {
+        smooth: false,
+        symbol: 'circle',
+        symbolSize: 5,
+        showSymbol: false,
+        lineStyle: { width: 2 },
+        label: valueLabel,
+        labelLayout: { hideOverlap: true },
+      },
+      bar: {
+        itemStyle: { borderRadius: [3, 3, 0, 0] },
+        barMaxWidth: 32,
+        barCategoryGap: '40%',
+        label: valueLabel,
+        labelLayout: { hideOverlap: true },
+      },
+      scatter: { symbolSize: 8, label: valueLabel, labelLayout: { hideOverlap: true } },
+      pie: {
+        itemStyle: { borderColor: surface, borderWidth: 2, borderRadius: 3 },
+        label: { color: text, fontFamily, fontSize: 12 },
+        labelLine: { lineStyle: { color: border } },
+      },
       dataZoom: { textStyle: { color: muted } },
       visualMap: { textStyle: { color: muted } },
     }
