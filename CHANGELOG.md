@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.74.3] - 2026-09-28
+
+### Changed
+
+- Showing tool calls and usage in the agent chat is switched from the usage dropdown in the chat's header rather than Preferences. (#206)
+
+### Fixed
+
+- An approval given after the agent's turn ended is shown once. (#206)
+- The "Looking into this carefully" note is written in your language. (#206)
+- A goal that is already met when you set it is marked met instead of being checked on each evening. (#206)
+
 ## [0.74.2] - 2026-09-28
 
 ### Fixed
