@@ -39,9 +39,9 @@
 - ideaKey: unsubscribe
   ideaCategory: mail
   emoji: "🧹"
-  headline: I'll unsubscribe you from the mail you delete without reading.
-  body: I find the senders you delete unread, show you the list, and use each one's unsubscribe link for the ones you pick. Nothing changes until you say so.
-  openingRequest: Which newsletters do I delete without reading? Help me unsubscribe.
+  headline: I'll unsubscribe you from the mail you put away without reading.
+  body: I find the senders whose mail you archive or delete unread, show you the list, and use each one's unsubscribe link for the ones you pick. Nothing changes until you say so.
+  openingRequest: Which newsletters do I archive or delete without reading? Help me unsubscribe.
   neededToolNames: [mail_search, subscription]
 
 - ideaKey: alert_rule
