@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.74.1] - 2026-09-28
+
+### Fixed
+
+- Retrying an authorization that comes back to your computer no longer fails with "authorizations are already waiting". (#207)
+
 ## [0.74.0] - 2026-09-28
 
 ### Added
