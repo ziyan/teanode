@@ -11168,27 +11168,66 @@ button.idea-history-title {
   justify-content: flex-start;
 }
 
-/* The reminders list beside the calendar: a field to add one, then each a
-   row with the box that ticks it off. */
+/* The reminders list beside the calendar: which list, then the list, whose
+   first line is where a new one is written and each line after it a
+   reminder with the box that ticks it off. */
 .reminders {
   display: grid;
   gap: var(--space-4);
   max-width: 720px;
 }
 
-.reminders-add {
+/* The line that adds one looks like the lines it adds: a mark where the box
+   would be, and the words where the title would be, in a field with no box
+   of its own, so it reads as the next reminder waiting to be written. */
+.reminder-add {
+  align-items: flex-start;
+}
+
+/* The mark takes the room the tick box takes, margins and all, so what is
+   typed starts where the titles under it start. */
+.reminder-add-mark {
+  flex: none;
+  box-sizing: content-box;
+  width: 13px;
+  height: 13px;
+  margin: 5px 6px 0 4px;
+  color: var(--muted);
+}
+
+.reminder-add form {
+  display: grid;
+  flex: 1;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+}
+
+/* One line tall, as a title is, rather than a field's height; the text stays
+   at 16px, below which a phone zooms the page in on focus. */
+.reminder-add input[type='text'],
+.reminder-add input[type='text']:hover,
+.reminder-add input[type='text']:focus-visible {
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  line-height: 22px;
+}
+
+.reminder-add-details {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
 }
 
-.reminders-add input[type='text'] {
-  flex: 1;
-  min-width: 0;
+.reminders-none {
+  margin: 0;
 }
 
 /* The due day, as one field with its name inside it: an empty date field is
-   a blank box on a phone, and a blank box beside "Add" says nothing. Beside
-   the title it takes what a date needs, and the title the rest. */
+   a blank box on a phone, and a blank box beside "Add" says nothing. */
 .reminders-due {
   display: flex;
   align-items: center;
@@ -11303,14 +11342,6 @@ button.idea-history-title {
 }
 
 @media (max-width: 600px) {
-  .reminders-add {
-    flex-wrap: wrap;
-  }
-
-  .reminders-add input[type='text'] {
-    flex-basis: 100%;
-  }
-
   .reminders-due {
     flex: 1;
     width: auto;

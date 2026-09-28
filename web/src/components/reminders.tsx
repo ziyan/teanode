@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { graphql } from '../api'
 import { useTranslation } from '../i18n/i18n'
 import { ConfirmDialog, FormDialog } from './dialog'
+import { PlusIcon } from './icons'
 import { SettingsEmpty } from './settingsList'
 import { useToast } from './toast'
 import { useQuery } from './useQuery'
@@ -140,31 +141,6 @@ export function RemindersView() {
 
   return (
     <div className="reminders">
-      <form
-        className="reminders-add"
-        onSubmit={(event) => {
-          event.preventDefault()
-          add()
-        }}
-      >
-        <input
-          type="text"
-          value={title}
-          placeholder={t('reminders.addPlaceholder')}
-          aria-label={t('reminders.addPlaceholder')}
-          onChange={(event) => setTitle(event.target.value)}
-        />
-        {/* A date field with nothing in it is a blank box on a phone, so it
-            says what it is for. */}
-        <label className="reminders-due">
-          <span>{t('reminders.dueDay')}</span>
-          <input type="date" value={day} onChange={(event) => setDay(event.target.value)} />
-        </label>
-        <button type="submit" className="primary" disabled={busy || !title.trim()}>
-          {t('reminders.add')}
-        </button>
-      </form>
-
       <div className="segmented reminders-lists" role="group" aria-label={t('reminders.lists')}>
         <button
           type="button"
@@ -206,21 +182,55 @@ export function RemindersView() {
         )
       ) : open.loading && !open.data ? (
         <p className="muted">{t('common.loading')}</p>
-      ) : openReminders.length === 0 ? (
-        <SettingsEmpty>{t('reminders.none')}</SettingsEmpty>
       ) : (
-        <ul className="reminder-list">
-          {openReminders.map((reminder) => (
-            <ReminderRow
-              key={reminder.id}
-              reminder={reminder}
-              language={language}
-              busy={busy}
-              onDone={setDone}
-              onOpen={setEditing}
-            />
-          ))}
-        </ul>
+        <>
+          <ul className="reminder-list">
+            {/* Adding is the list's first line, as on a phone: type, and
+                the day and the button come once there is something to add. */}
+            <li className="reminder-row reminder-add">
+              <PlusIcon className="reminder-add-mark" aria-hidden="true" />
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  add()
+                }}
+              >
+                <input
+                  type="text"
+                  value={title}
+                  placeholder={t('reminders.addPlaceholder')}
+                  aria-label={t('reminders.addPlaceholder')}
+                  enterKeyHint="done"
+                  onChange={(event) => setTitle(event.target.value)}
+                />
+                {title.trim() ? (
+                  <div className="reminder-add-details">
+                    {/* A date field with nothing in it is a blank box on a
+                        phone, so it says what it is for. */}
+                    <label className="reminders-due">
+                      <span>{t('reminders.dueDay')}</span>
+                      <input type="date" value={day} onChange={(event) => setDay(event.target.value)} />
+                    </label>
+                    <button type="submit" className="primary" disabled={busy}>
+                      {t('reminders.add')}
+                    </button>
+                  </div>
+                ) : null}
+              </form>
+            </li>
+            {openReminders.map((reminder) => (
+              <ReminderRow
+                key={reminder.id}
+                reminder={reminder}
+                language={language}
+                busy={busy}
+                onDone={setDone}
+                onOpen={setEditing}
+              />
+            ))}
+          </ul>
+          {openReminders.length === 0 ? <p className="muted reminders-none">{t('reminders.none')}</p> : null}
+        </>
       )}
 
       {editing ? (
