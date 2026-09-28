@@ -110,6 +110,10 @@ type ListAgentConversationsArguments struct {
 	// Query finds conversations by words in the title or in what was said;
 	// with it, Archived is ignored and every match is listed.
 	Query string `json:"query" graphapi:"nullable"`
+
+	// HasGoal lists only the conversations whose goal is still in
+	// progress, working or waiting: what the agent is keeping track of.
+	HasGoal bool `json:"hasGoal" graphapi:"nullable"`
 }
 
 // SetAgentMainConversationArguments name the conversation to make the
@@ -233,6 +237,10 @@ type UpdateAgentConversationArguments struct {
 	// no goal any more" are different answers and a plain string cannot
 	// tell them apart.
 	Goal *string `json:"goal" graphapi:"nullable"`
+
+	// GoalState is met, when the person says the goal is done. The agent
+	// says where a goal stands itself; a person has only this to say.
+	GoalState *string `json:"goalState" graphapi:"nullable"`
 }
 
 // asJSONValues is what a map of variables looks like once it has been through
@@ -493,7 +501,11 @@ func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAge
 	}
 	tx := self.transaction(ctx)
 	if query := strings.TrimSpace(arguments.Query); query != "" {
-		return tx.SearchAgentConversations(found.ID, query, 50)
+		found, err := tx.SearchAgentConversations(found.ID, query, 50)
+		if err != nil || !arguments.HasGoal {
+			return found, err
+		}
+		return withGoalInProgress(found), nil
 	}
 	main, err := self.mainConversation(tx, found)
 	if err != nil {
@@ -508,6 +520,9 @@ func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAge
 		if (conversation.ArchivedAt != nil) == arguments.Archived {
 			conversations = append(conversations, conversation)
 		}
+	}
+	if arguments.HasGoal {
+		return withGoalInProgress(conversations), nil
 	}
 	return conversations, nil
 }
@@ -958,7 +973,7 @@ func (self *graph) UpdateAgentConversation(ctx context.Context, arguments Update
 	if err != nil {
 		return nil, err
 	}
-	cleared := false
+	isStopping := false
 	updated, err := tx.UpdateAgentConversation(conversation.ID, func(conversation *models.AgentConversation) error {
 		if title := strings.TrimSpace(arguments.Title); title != "" {
 			// Named by the person: the model stops renaming it.
@@ -976,10 +991,23 @@ func (self *graph) UpdateAgentConversation(ctx context.Context, arguments Update
 				conversation.ArchivedAt = nil
 			}
 		}
+		if arguments.GoalState != nil {
+			if state := models.AgentGoalState(strings.TrimSpace(*arguments.GoalState)); state != models.GoalMet {
+				return fmt.Errorf("%w: a person marks a goal met, not %q; clearing it is goal set to nothing", api.ErrInvalidArguments, state)
+			}
+			if conversation.Goal == "" {
+				return fmt.Errorf("%w: this conversation has no goal", api.ErrInvalidArguments)
+			}
+			// Met as the agent would mark it: nothing is scheduled, and
+			// the note says who decided, so the next turn does not reopen
+			// what the person closed.
+			conversation.GoalState, conversation.GoalNextAt, conversation.GoalNote = models.GoalMet, nil, "Marked met by the person."
+			isStopping = true
+		}
 		if arguments.Goal != nil {
 			goal := strings.TrimSpace(*arguments.Goal)
-			cleared = goal == ""
-			if cleared {
+			isStopping = goal == ""
+			if isStopping {
 				conversation.Goal, conversation.GoalState, conversation.GoalNote, conversation.GoalNextAt, conversation.GoalSetAt = "", "", "", nil, nil
 			} else {
 				// A goal set again -- changed, or set on a conversation
@@ -1001,10 +1029,11 @@ func (self *graph) UpdateAgentConversation(ctx context.Context, arguments Update
 			return nil, translateError(err)
 		}
 	}
-	// Clearing the goal stops the turn it was taking. Left running, the
-	// agent would go on working toward something the person has just said
-	// they no longer want, and say so in their conversation.
-	if cleared {
+	// Clearing the goal, or saying it is met, stops the turn it was taking.
+	// Left running, the agent would go on working toward something the
+	// person has just said they no longer want, and say so in their
+	// conversation.
+	if isStopping {
 		if worker := self.agentWorker(); worker != nil {
 			worker.StopConversation(conversation.ID)
 		}
@@ -1127,4 +1156,16 @@ func (self *graph) agentWorker() *agent.Agent {
 		return nil
 	}
 	return worker
+}
+
+// withGoalInProgress is the conversations whose goal is still being worked
+// toward or waits on the person.
+func withGoalInProgress(conversations []*models.AgentConversation) []*models.AgentConversation {
+	kept := []*models.AgentConversation{}
+	for _, conversation := range conversations {
+		if conversation != nil && conversation.Goal != "" && conversation.GoalState != models.GoalMet {
+			kept = append(kept, conversation)
+		}
+	}
+	return kept
 }

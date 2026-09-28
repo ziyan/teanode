@@ -55,6 +55,8 @@ type InsightOperation interface {
 	// FindAgentConversationBySubject is the newest conversation of a kind
 	// whose subject is the one given, not archived, or nil.
 	FindAgentConversationBySubject(agentId string, kind models.AgentConversationKind, subjectId string) (*models.AgentConversation, error)
+	// UpdateAgentConversation changes a conversation. When its goal becomes
+	// met, the ideas it was carrying out are done.
 	UpdateAgentConversation(conversationId string, modify func(*models.AgentConversation) error) (*models.AgentConversation, error)
 	ListAgentConversations(agentId string, kinds []models.AgentConversationKind, options *Options) ([]*models.AgentConversation, error)
 
@@ -501,6 +503,17 @@ func (self *transaction) UpdateAgentConversation(conversationId string, modify f
 		"goal": after.Goal, "goal_state": string(after.GoalState), "goal_note": truncateRunes(after.GoalNote, 1000), "goal_next_at": after.GoalNextAt, "goal_set_at": after.GoalSetAt,
 	}).Error; err != nil {
 		return nil, err
+	}
+	// An idea carried out in a conversation is done when the conversation's
+	// goal is met, whoever said so: the agent's goal tool or the person.
+	// Here rather than at each of them, so that neither can forget.
+	if after.GoalState == models.GoalMet && before.GoalState != models.GoalMet {
+		now := time.Now()
+		if err := self.tx.Model(&agentIdeaModel{}).
+			Where(`"started_conversation_id" = ? AND "idea_status" = ?`, conversationId, string(models.IdeaStarted)).
+			Updates(map[string]any{"idea_status": string(models.IdeaDone), "closed_at": now, "modified_at": now}).Error; err != nil {
+			return nil, err
+		}
 	}
 	return self.GetAgentConversation(conversationId)
 }

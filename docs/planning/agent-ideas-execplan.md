@@ -22,7 +22,7 @@ To see it working: on a development server whose person has a mailbox granted to
 - [x] (2026-09-28) Milestone 2: the Ideas tab, checked in light and dark at 390 and 1400 pixels on the server with headless Chrome; ideas sit two to a row from 900 pixels, and the mark that dismisses one is in its corner rather than a line of its own.
 - [x] (2026-09-28) Milestone 3: the full catalog, thirty-three ideas beside the eight features, checked against the registered tools' own risks.
 - [x] (2026-09-28) Milestone 4: personal ideas from the dream and from conversation, through one check, and ranking from what the person did with each category.
-- [ ] Milestone 5: goals listed and marked met from the Goals tab, the command line and the `goal` tool, with ideas following their goals.
+- [x] (2026-09-28) Milestone 5: goals listed and marked met from the Goals tab, the command line and the `goal` tool, with ideas following their goals. The idea following its goal is kept in `UpdateAgentConversation` in the database layer, the one place every goal is written, rather than in each caller.
 
 ## Surprises & Discoveries
 

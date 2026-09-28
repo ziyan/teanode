@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/agent/tools/operator"
+	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -43,9 +45,10 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "goal", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "The goal on this conversation: the one thing you keep working toward across turns of your own until it is met or the person clears it. `set` puts a goal on the conversation, or clears it with empty text, and is only for when the person asks you to keep at something. `note` says where you are and how many minutes until you look again. `wait` says you need them, and stops your own turns until they write. `met` says it is done.",
+				Description: "The goal on this conversation: the one thing you keep working toward across turns of your own until it is met or the person clears it. `set` puts a goal on the conversation, or clears it with empty text, and is only for when the person asks you to keep at something. `note` says where you are and how many minutes until you look again. `wait` says you need them, and stops your own turns until they write. `met` says it is done; with conversation_id, that another conversation's goal is, when the person tells you so here. `list` is every goal still in progress, in any conversation: what you are keeping track of for them.",
 				Parameters: tools.Object(map[string]any{
-					"action":  tools.EnumProperty("what to say about the goal", "set", "note", "wait", "met"),
+					"action":          tools.EnumProperty("what to say about the goal", "set", "note", "wait", "met", "list"),
+					"conversation_id": tools.StringProperty("for met: another conversation whose goal the person says is done, by the id list gives; this conversation when left out"),
 					"text":    tools.StringProperty("for set: the goal, in the person's words, or empty to clear it. For note, wait and met: a sentence or two on where you are, what you need, or how it ended"),
 					"minutes": tools.IntegerProperty("for note: how long until your next turn on this, from 5 to 1440; 30 by default"),
 				}, "action"),
@@ -57,9 +60,10 @@ func init() {
 }
 
 type arguments struct {
-	Action  string `json:"action"`
-	Text    string `json:"text"`
-	Minutes int    `json:"minutes"`
+	Action         string `json:"action"`
+	Text           string `json:"text"`
+	Minutes        int    `json:"minutes"`
+	ConversationID string `json:"conversation_id"`
 }
 
 func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -77,6 +81,27 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		text = string(runes[:NoteCharacters])
 	}
 	here := current.Conversation()
+	// Across conversations, through the operations the dashboard's Goals
+	// tab and the command line call, so the three list and close the same.
+	if action == "list" {
+		result, err := operator.Execute(ctx, client.DocumentListAgentConversations, map[string]any{"hasGoal": true})
+		if err != nil {
+			return nil, err
+		}
+		return tools.JSONResult(map[string]any{"goals": result["ListAgentConversations"]})
+	}
+	if other := strings.TrimSpace(asked.ConversationID); action == "met" && other != "" && (here == nil || other != here.ID) {
+		result, err := operator.Execute(ctx, client.DocumentUpdateAgentConversation, map[string]any{"conversationId": other, "goalState": "met"})
+		if err != nil {
+			return nil, err
+		}
+		answer, err := tools.JSONResult(result["UpdateAgentConversation"])
+		if err != nil {
+			return nil, err
+		}
+		answer.Note = "that conversation's goal is met"
+		return answer, nil
+	}
 	if here == nil {
 		return nil, fmt.Errorf("there is no conversation to put a goal on")
 	}
@@ -125,7 +150,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 				}
 				return nil
 			}
-			return fmt.Errorf("%q is not set, note, wait or met", action)
+			return fmt.Errorf("%q is not set, note, wait, met or list", action)
 		})
 		if err != nil {
 			return err

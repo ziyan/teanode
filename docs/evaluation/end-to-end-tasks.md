@@ -505,8 +505,8 @@ Surface: drawer. Covers compaction and its note.
 
 ### ideas-01: the agent offers ideas, and the person manages them anywhere
 
-Surface: drawer, the Ideas tab, the command line. Covers `idea`,
-`agent_profile`, speaking first, suggested replies.
+Surface: drawer, the Ideas and Goals tabs, the command line. Covers `idea`,
+`goal`, `agent_profile`, speaking first, suggested replies.
 
 1. Open the drawer on a quiet day, as a fresh person.
 2. Ask the agent "what could you do for me?", then dismiss one of the ideas it
@@ -521,6 +521,9 @@ Surface: drawer, the Ideas tab, the command line. Covers `idea`,
       named after it, in which nothing has been said.
 - [ ] "No more ideas" stops it offering them for good, and the switch on the
       agent's settings page shows it off.
+- [ ] Asked "what are you keeping track of for me?", it lists the goals in
+      progress with the `goal` tool, the same ones the Goals tab shows, and
+      a goal ticked on the tab reads as met in its conversation.
 
 ## Which tool each task reaches
 

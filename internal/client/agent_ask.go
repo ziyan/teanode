@@ -185,7 +185,7 @@ const (
 		ResolveAgentConfirmation(runId: $runId, callId: $callId, approve: $approve)
 	}`
 	DocumentStopAgentRun            = `mutation ($runId: String!) { StopAgentRun(runId: $runId) }`
-	DocumentListAgentConversations  = `query ($archived: Boolean, $query: String) { ListAgentConversations(archived: $archived, query: $query) ` + conversationFields + ` }`
+	DocumentListAgentConversations  = `query ($archived: Boolean, $query: String, $hasGoal: Boolean) { ListAgentConversations(archived: $archived, query: $query, hasGoal: $hasGoal) ` + conversationFields + ` }`
 	DocumentDeleteAgentConversation = `mutation ($conversationId: String!) { DeleteAgentConversation(conversationId: $conversationId) }`
 	DocumentListAgentRuns           = `query ($first: Int, $offset: Int, $jobId: String, $kinds: [String!], $query: String) { ListAgentRuns(first: $first, offset: $offset, jobId: $jobId, kinds: $kinds, query: $query) { total runs ` + runFields + ` } }`
 	DocumentListAllAgentRuns        = `query ($first: Int, $offset: Int, $agentId: String, $kinds: [String!], $query: String) { ListAllAgentRuns(first: $first, offset: $offset, agentId: $agentId, kinds: $kinds, query: $query) { total runs ` + runFields + ` } }`
@@ -198,8 +198,8 @@ const (
 		}
 	}`
 	DocumentStartAgentConversation  = `mutation ($title: String, $goal: String) { StartAgentConversation(title: $title, goal: $goal) ` + conversationFields + ` }`
-	DocumentUpdateAgentConversation = `mutation ($conversationId: String!, $title: String, $archived: Boolean, $goal: String) {
-		UpdateAgentConversation(conversationId: $conversationId, title: $title, archived: $archived, goal: $goal) ` + conversationFields + `
+	DocumentUpdateAgentConversation = `mutation ($conversationId: String!, $title: String, $archived: Boolean, $goal: String, $goalState: String) {
+		UpdateAgentConversation(conversationId: $conversationId, title: $title, archived: $archived, goal: $goal, goalState: $goalState) ` + conversationFields + `
 	}`
 	DocumentSetAgentMainConversation = `mutation ($conversationId: String) {
 		SetAgentMainConversation(conversationId: $conversationId) ` + conversationFields + `
@@ -466,6 +466,29 @@ func UpdateAgentConversation(ctx context.Context, connection *Client, conversati
 		variables["goal"] = *goal
 	}
 	if err := connection.Execute(ctx, DocumentUpdateAgentConversation, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.UpdateAgentConversation, nil
+}
+
+// ListAgentGoals is the conversations whose goal is still in progress:
+// what the agent is keeping track of.
+func ListAgentGoals(ctx context.Context, connection *Client) ([]*AgentConversation, error) {
+	var result struct {
+		ListAgentConversations []*AgentConversation `json:"ListAgentConversations"`
+	}
+	if err := connection.Execute(ctx, DocumentListAgentConversations, map[string]any{"hasGoal": true}, &result); err != nil {
+		return nil, err
+	}
+	return result.ListAgentConversations, nil
+}
+
+// MarkAgentGoalMet says a conversation's goal is done.
+func MarkAgentGoalMet(ctx context.Context, connection *Client, conversationId string) (*AgentConversation, error) {
+	var result struct {
+		UpdateAgentConversation *AgentConversation `json:"UpdateAgentConversation"`
+	}
+	if err := connection.Execute(ctx, DocumentUpdateAgentConversation, map[string]any{"conversationId": conversationId, "goalState": "met"}, &result); err != nil {
 		return nil, err
 	}
 	return result.UpdateAgentConversation, nil
