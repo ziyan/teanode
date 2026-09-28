@@ -32,6 +32,7 @@
       splitLine: { lineStyle: { color: border } },
       splitArea: { areaStyle: { color: ['transparent', 'transparent'] } },
     }
+    const valueLabel = { color: text, fontFamily, textBorderWidth: 0 }
     return {
       color: dark() ? lifted : light,
       backgroundColor: 'transparent',
@@ -53,8 +54,12 @@
       valueAxis: axis,
       timeAxis: axis,
       logAxis: axis,
-      line: { smooth: false, symbolSize: 6, lineStyle: { width: 2 } },
-      bar: { itemStyle: { borderRadius: [3, 3, 0, 0] }, barMaxWidth: 48 },
+      // A value written beside a bar or a point is in the page's text
+      // colour. ECharts outlines it by default, which on a dark page smears
+      // every digit into the next.
+      line: { smooth: false, symbolSize: 6, lineStyle: { width: 2 }, label: valueLabel },
+      bar: { itemStyle: { borderRadius: [3, 3, 0, 0] }, barMaxWidth: 48, label: valueLabel },
+      scatter: { label: valueLabel },
       pie: { itemStyle: { borderColor: surface, borderWidth: 2 }, label: { color: text, fontFamily } },
       dataZoom: { textStyle: { color: muted } },
       visualMap: { textStyle: { color: muted } },
