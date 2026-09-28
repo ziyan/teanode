@@ -188,7 +188,8 @@ func isRemovedFromEditor(element atom.Atom, name string) bool {
 }
 
 // isScriptUrl says whether a link would run something rather than go
-// somewhere.
+// somewhere. A data URL counts: it can carry a page of its own, script and
+// all, and no note needs one in a link.
 func isScriptUrl(value string) bool {
 	trimmed := strings.Map(func(character rune) rune {
 		if character <= 0x20 || character == 0x7f {
@@ -196,5 +197,5 @@ func isScriptUrl(value string) bool {
 		}
 		return character
 	}, strings.ToLower(value))
-	return strings.HasPrefix(trimmed, "javascript:") || strings.HasPrefix(trimmed, "vbscript:")
+	return strings.HasPrefix(trimmed, "javascript:") || strings.HasPrefix(trimmed, "vbscript:") || strings.HasPrefix(trimmed, "data:")
 }

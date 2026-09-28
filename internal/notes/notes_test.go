@@ -81,10 +81,11 @@ func TestEditorHTMLKeepsTheTextAndDropsWhatReachesOut(test *testing.T) {
 	input := `<style>body { display: none }</style>` +
 		`<div class="compose" id="sign-in" onclick="steal()" style="color: red">Groceries</div>` +
 		`<script>steal()</script><!-- <img src=x onerror=steal()> -->` +
-		`<ul><li><a href="javascript:steal()" onmouseover="steal()">milk</a></li><li><a href="https://example.com/">bread</a></li></ul>` +
+		`<ul><li><a href="javascript:steal()" onmouseover="steal()">milk</a></li><li><a href="https://example.com/">bread</a></li>` +
+		`<li><a href=" DATA:text/html,&lt;script&gt;steal()&lt;/script&gt;">eggs</a></li></ul>` +
 		`<svg><script>steal()</script></svg>`
 	cleaned := notes.EditorHTML(input)
-	for _, unwanted := range []string{"<style", "class=", "id=", "onclick", "onmouseover", "onerror", "<script", "javascript:", "<svg", "steal", "<!--"} {
+	for _, unwanted := range []string{"<style", "class=", "id=", "onclick", "onmouseover", "onerror", "<script", "javascript:", "data:", "DATA:", "<svg", "steal", "<!--"} {
 		if strings.Contains(cleaned, unwanted) {
 			test.Errorf("%q survived: %s", unwanted, cleaned)
 		}
