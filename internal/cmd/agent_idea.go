@@ -36,7 +36,7 @@ func newAgentIdeaCommand() *cli.Command {
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "category", Usage: "money, paperwork, mail, home, family, travel, shopping, health, work, fun or assistant", Required: true},
-					&cli.StringFlag{Name: "emoji", Usage: "one of the category's emoji", Required: true},
+					&cli.StringFlag{Name: "emoji", Usage: "one of the category's emoji; the category's own when left out"},
 					&cli.StringFlag{Name: "headline", Usage: "the offer in a line", Required: true},
 					&cli.StringFlag{Name: "body", Usage: "what happens, and where the agent asks first", Required: true},
 					&cli.StringFlag{Name: "request", Usage: "what you would say to start it", Required: true},

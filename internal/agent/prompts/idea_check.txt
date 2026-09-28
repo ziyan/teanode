@@ -12,7 +12,12 @@ The tools it says the idea needs, with what each can do (read: only looks; write
 {{else}}- none
 {{end}}</tools>
 
-Say whether the idea is honest: whether an assistant with exactly these tools could do what the idea says, and whether, when a tool acts toward somebody else or cannot be undone, the idea says the assistant asks the person first. An idea that says it will negotiate, pay, book, file a claim, call somebody or watch something continuously, with no tool that does that, is not honest. An idea that only reads, drafts, lists, reminds or puts things on the calendar with the tools for those is honest.
+Say whether the idea is honest. Exactly two things make it dishonest:
+
+1. It promises something none of these tools can do: negotiating, paying, booking, filing a claim, calling somebody or watching a site continuously, with no tool that does that.
+2. It uses a tool marked outward or destructive for that kind of act, and does not say it asks the person first.
+
+Nothing else. A tool marked write that the idea only reads with is fine, and so is a tool with more power than the idea needs; the assistant uses what it needs of it. When in doubt, it is honest.
 
 Answer with one JSON object and nothing else:
 

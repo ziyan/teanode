@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -391,6 +392,11 @@ func (self *Agent) ProposeIdea(ctx context.Context, tx db.Transaction, agent *mo
 	}
 	if idea.RankScore == 0 {
 		idea.RankScore = personalIdeaRank
+	}
+	// An emoji is a picture, not a claim: one outside its category's list
+	// is replaced with the category's own rather than the idea refused.
+	if category, ok := models.IdeaCategoryOf(idea.IdeaCategory); ok && !slices.Contains(category.Emojis, idea.Emoji) {
+		idea.Emoji = category.Emojis[0]
 	}
 	problem := checkIdea(idea, toolRisks)
 	if problem == "" {

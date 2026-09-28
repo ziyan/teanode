@@ -30,7 +30,7 @@ func init() {
 					"idea_id":           tools.StringProperty("for start, done, dismiss and reopen: which idea, by the id list gives"),
 					"statuses":          tools.ArrayProperty("for list: open, started, done, dismissed, expired; open when left out", tools.StringProperty("a status")),
 					"idea_category":     tools.EnumProperty("for propose: the area it is about", "money", "paperwork", "mail", "home", "family", "travel", "shopping", "health", "work", "fun", "assistant"),
-					"emoji":             tools.StringProperty("for propose: one of the area's emoji, which list gives with the areas"),
+					"emoji":             tools.StringProperty("for propose: one of the area's emoji, which list gives with the areas; the area's own when left out"),
 					"headline":          tools.StringProperty("for propose: the offer in the first person, at most 80 characters: \"I can compare this month's charges with the last three.\""),
 					"body":              tools.StringProperty("for propose: at most 300 characters: what they give, what you do, and where you stop to ask"),
 					"opening_request":   tools.StringProperty("for propose: what they would say to start it, in their voice"),

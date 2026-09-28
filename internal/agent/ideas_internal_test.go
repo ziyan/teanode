@@ -261,9 +261,14 @@ func TestAProposedIdeaIsKeptOnlyWithEvidenceAndAnHonestVerdict(t *testing.T) {
 			}
 		}
 
-		kept, err := worker.ProposeIdea(t.Context(), tx, run.Agent, run.Owner, proposal("I'll remind you before the boiler service is due.", boiler))
+		withAnyEmoji := proposal("I'll remind you before the boiler service is due.", boiler)
+		withAnyEmoji.Emoji = "🛠️"
+		kept, err := worker.ProposeIdea(t.Context(), tx, run.Agent, run.Owner, withAnyEmoji)
 		if err != nil || kept.IdeaKind != models.IdeaPersonal || kept.IdeaStatus != models.IdeaOpen || !strings.HasPrefix(kept.IdeaKey, "personal_") {
 			t.Fatalf("kept as a personal idea: %+v %v", kept, err)
+		}
+		if kept.Emoji != "🏠" {
+			t.Fatalf("an emoji outside the category's is the category's own: %q", kept.Emoji)
 		}
 		if _, err := worker.ProposeIdea(t.Context(), tx, run.Agent, run.Owner, proposal("I'll remind you before the boiler service is due again.", boiler)); err == nil || !strings.Contains(err.Error(), "repeats") {
 			t.Fatalf("the same idea twice: %v", err)
