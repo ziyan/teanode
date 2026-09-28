@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.73.2] - 2026-09-28
+
+### Changed
+
+- The agent takes "August" or "Saturday" as the nearest one instead of asking which. (#203)
+
+### Fixed
+
+- Searching mail by date or sender through the agent no longer comes back empty because of filters nobody asked for, and matches by meaning stay within the dates asked for. (#203)
+
 ## [0.73.1] - 2026-09-28
 
 ### Fixed
