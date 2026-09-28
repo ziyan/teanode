@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.78.1] - 2026-09-28
+
+### Changed
+
+- A reminder is added on the first line of the list, and the day and the Add button appear once something is typed. (#222)
+
 ## [0.78.0] - 2026-09-28
 
 ### Added
