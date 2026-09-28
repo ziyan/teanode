@@ -85,6 +85,10 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		// same things the drawer and the dashboard do.
 		"ListAgentConversations":  client.DocumentListAgentConversations,
 		"UpdateAgentConversation": client.DocumentUpdateAgentConversation,
+		"ListAgentIdeas":          client.DocumentListAgentIdeas,
+		"ProposeAgentIdea":        client.DocumentProposeAgentIdea,
+		"StartAgentIdea":          client.DocumentStartAgentIdea,
+		"SetAgentIdeaStatus":      client.DocumentSetAgentIdeaStatus,
 		"ListAgentRuns":           client.DocumentListAgentRuns,
 		"ListAllAgentRuns":        client.DocumentListAllAgentRuns,
 		"StopAgentRun":            client.DocumentStopAgentRun,

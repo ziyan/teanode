@@ -503,15 +503,27 @@ Surface: drawer. Covers compaction and its note.
 - [ ] The note shows while it is written and opens to what it says.
 - [ ] Asked about something from the start, it still answers correctly.
 
-### tips-01: the agent speaks first
+### ideas-01: the agent offers ideas, and the person manages them anywhere
 
-Surface: drawer, a fresh person or `agent_profile tips_on`. Covers
-`agent_profile`, speaking first, suggested replies.
+Surface: drawer, the Ideas and Goals tabs, the command line. Covers `idea`,
+`goal`, `agent_profile`, speaking first, suggested replies.
 
-1. Open the drawer on a quiet day.
+1. Open the drawer on a quiet day, as a fresh person.
+2. Ask the agent "what could you do for me?", then dismiss one of the ideas it
+   lists by saying so.
+3. Run `teanode agent idea list --all`, and start another with
+   `teanode agent idea start <id>`.
 
-- [ ] It introduces itself once, with suggested replies, and "no more tips"
-      stops it for good.
+- [ ] It introduces itself once, with suggested replies.
+- [ ] It lists ideas with the `idea` tool rather than inventing them, and the
+      one dismissed in the drawer shows as dismissed on the command line.
+- [ ] The idea started from the command line has a conversation of its own,
+      named after it, in which nothing has been said.
+- [ ] "No more ideas" stops it offering them for good, and the switch on the
+      agent's settings page shows it off.
+- [ ] Asked "what are you keeping track of for me?", it lists the goals in
+      progress with the `goal` tool, the same ones the Goals tab shows, and
+      a goal ticked on the tab reads as met in its conversation.
 
 ## Which tool each task reaches
 
@@ -536,7 +548,8 @@ Surface: drawer, a fresh person or `agent_profile tips_on`. Covers
 | goal | goal-01 |
 | todo | shopping-01, travel-01 |
 | ask_user | computer-01 |
-| agent_profile | tips-01 |
+| agent_profile | ideas-01 |
+| idea | ideas-01 |
 | skills, connected_server | home-01, admin-01 |
 | account, app_password_manage, token_manage, session_revoke, access_explain | account-01 |
 | server_status, server_upgrade, settings, queue, domain, alias, credential, user, group_manage, group_list, role_list, role_manage, audit_log, mail_audit, report_list, agent_usage | admin-01 |

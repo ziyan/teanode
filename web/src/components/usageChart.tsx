@@ -206,7 +206,7 @@ export function UsageChart({
             <RankedBars items={items} metric={metric} ceiling={ceiling} format={format} label={label} />
           ))}
         {isDaily && hovered !== null && items[hovered] && width > 0 && (
-          <DayTip
+          <DayTooltip
             item={items[hovered]}
             index={hovered}
             count={items.length}
@@ -388,7 +388,7 @@ function RankedBars({
   )
 }
 
-function DayTip({
+function DayTooltip({
   item,
   index,
   count,
@@ -412,23 +412,23 @@ function DayTip({
   const parts = partsOf(item.row)
   return (
     <div
-      className={`usage-chart-tip ${isLeft ? 'left' : 'right'}`}
+      className={`usage-chart-tooltip ${isLeft ? 'left' : 'right'}`}
       style={isLeft ? { right: `${((width - center) / width) * 100}%` } : { left: `${(center / width) * 100}%` }}
       role="status"
     >
-      <div className="usage-chart-tip-day">{dayLabel(item.key)}</div>
+      <div className="usage-chart-tooltip-day">{dayLabel(item.key)}</div>
       {PARTS.map((part) => (
-        <div key={part} className="usage-chart-tip-line">
+        <div key={part} className="usage-chart-tooltip-line">
           <i className={`usage-chart-swatch ${part}`} />
           <span>{partLabel[part]}</span>
           <strong>{compact(parts[part])}</strong>
         </div>
       ))}
-      <div className="usage-chart-tip-line">
+      <div className="usage-chart-tooltip-line">
         <span>{t('usageChart.cost')}</span>
         <strong>{formatMoney(item.row?.cost ?? 0, currency)}</strong>
       </div>
-      <div className="usage-chart-tip-line">
+      <div className="usage-chart-tooltip-line">
         <span>{t('usageChart.calls')}</span>
         <strong>{item.row?.totals.calls ?? 0}</strong>
       </div>

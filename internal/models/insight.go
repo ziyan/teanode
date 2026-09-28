@@ -230,7 +230,7 @@ const ScheduleMarker = "[schedule]"
 var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, ScheduleMarker, SpeakFirstMarker}
 
 // SpeakFirstMarker begins the message a turn the agent starts on its own
-// is given: an introduction, a memory check, a tip. Nobody wrote it; the
+// is given: an introduction, a memory check, an idea. Nobody wrote it; the
 // agent is about to speak first.
 const SpeakFirstMarker = "[speaking first]"
 

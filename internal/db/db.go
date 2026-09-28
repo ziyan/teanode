@@ -173,6 +173,7 @@ type Transaction interface {
 	ChannelOperation
 	EvaluationOperation
 	InteractionOperation
+	IdeaOperation
 
 	DomainUsageOperation
 	AliasUsageOperation
