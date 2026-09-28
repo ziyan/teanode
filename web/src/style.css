@@ -1219,6 +1219,12 @@ th {
   font-size: 13px;
   letter-spacing: 0;
 }
+/* A head's words in the middle of the head, not at its top: a sortable
+   head is a button, forty pixels tall on a phone to be hit with a thumb,
+   and its word sat half a line below the plain heads beside it. */
+thead th {
+  vertical-align: middle;
+}
 tbody tr:hover {
   background: var(--sidebar-hover);
 }
