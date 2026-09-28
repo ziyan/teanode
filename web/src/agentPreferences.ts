@@ -1,18 +1,23 @@
 import { useEffect, useState } from 'react'
 
 // What a person chose about how their agent's work is shown: whether the
-// tool calls are drawn, and whether each turn says what it cost. Set once
-// in the account menu, kept in the browser, read by the drawer. A change
-// is announced on the window so that the drawer, which is a different
-// component, follows it at once.
+// tool calls are drawn, and whether each turn says what it cost. Switched
+// in the drawer's usage dropdown, kept in the browser, read by the drawer.
+// A change is announced on the window so that every drawer open, framed or
+// not, follows it at once.
 
 export interface AgentPreferences {
   showTools: boolean
   showUsage: boolean
+  // The agent's working notes: why it looked harder, an approval given
+  // after its turn, the turns it started on its own. Useful for seeing
+  // what it did; off unless asked for.
+  showWorkingNotes: boolean
 }
 
 const TOOLS_KEY = 'teanode.agent.showTools'
 const USAGE_KEY = 'teanode.agent.showUsage'
+const NOTES_KEY = 'teanode.agent.showWorkingNotes'
 const CHANGED = 'teanode:agent-preferences'
 
 function remembered(key: string): string {
@@ -32,12 +37,17 @@ function remember(key: string, value: string) {
 }
 
 export function readAgentPreferences(): AgentPreferences {
-  return { showTools: remembered(TOOLS_KEY) !== '0', showUsage: remembered(USAGE_KEY) === '1' }
+  return {
+    showTools: remembered(TOOLS_KEY) !== '0',
+    showUsage: remembered(USAGE_KEY) === '1',
+    showWorkingNotes: remembered(NOTES_KEY) === '1',
+  }
 }
 
 export function writeAgentPreferences(next: Partial<AgentPreferences>) {
   if (next.showTools !== undefined) remember(TOOLS_KEY, next.showTools ? '1' : '0')
   if (next.showUsage !== undefined) remember(USAGE_KEY, next.showUsage ? '1' : '0')
+  if (next.showWorkingNotes !== undefined) remember(NOTES_KEY, next.showWorkingNotes ? '1' : '0')
   window.dispatchEvent(new Event(CHANGED))
 }
 
