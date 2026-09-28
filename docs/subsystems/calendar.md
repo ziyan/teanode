@@ -406,6 +406,46 @@ Free-busy is one piece of code for all three (`calendar.FreeBusy` and
 "when could they meet" are one question from two ends, and the terminal, the
 agent and a colleague's phone must not be able to disagree about the answer.
 
+## The reminders list beside it
+
+Every person has one reminders list as well as one calendar. It is a
+`calendar` row whose `calendar_kind` is `reminders` (the calendar's is
+`events`), and each reminder is a `calendar_object` holding a `VTODO`. Storage
+already had everything a reminder needs: the file kept as sent, its ETag, the
+conditional writes, the limits and the agent's grant switch. A unique index
+allows one list of each kind per person, and `EnsureCalendar` makes one the
+first time any door asks for it, holding the person's row while it looks so
+two first requests cannot make two.
+
+The word is reminder everywhere this program chooses a name. `VTODO`, `DUE`
+and `COMPLETED` are the standard's and stay as written; the agent's `todo`
+tool is a conversation's own task list and nothing to do with this.
+
+**Each collection holds one kind of thing.** A phone learns what a collection
+takes from its supported component set, which is `VEVENT` for the calendar and
+`VTODO` for the list, and it is how the Reminders app on a phone finds
+somewhere to put a reminder at all. A put of the wrong kind is refused with
+403, so an event can never sit unseen in the list or a reminder in the
+calendar. Reports filter on the kind the collection holds, and a time range
+matches a reminder by when it is due; one with no due date matches every
+range, as the standard asks.
+
+**Due on a day is not due at midnight.** A reminder due on a day is read at
+midnight UTC of that day and shown as that day wherever the reader is; only a
+reminder due at a time moves with the zone.
+
+**Places that meant the events calendar ask for it by kind.** The command
+line, the dashboard, the agent's calendar tool and invitations arriving by mail
+used to take the first calendar listed, which was the events calendar only
+because it was the older one.
+
+The same three doors reach it: `teanode reminder list|add|edit|done|reopen|remove`,
+the Reminders tab on the calendar page, and the agent's `reminder` tool, which
+refuses unless the person has granted the list to their agent. All three call
+`ListReminders`, `SaveReminder`, `SetReminderDone` and `DeleteReminder`, and
+all of them write through `calendar.BuildReminder`, which edits the file that
+is already there so an alarm or a list colour a phone put on it survives.
+
 ## Things that will catch you
 
 **The trailing slash.** The router uses `StrictSlash(true)`, which answers a

@@ -10877,6 +10877,13 @@ main.content:has(> .knowledge-frame) {
   min-width: 0;
 }
 
+/* Every field is as wide as its row; beside the title the day takes only
+   what a date needs, and the title the rest. */
+.reminders-add input[type='date'] {
+  flex: none;
+  width: 11rem;
+}
+
 .reminder-list {
   display: grid;
   margin: 0;
@@ -10946,5 +10953,10 @@ main.content:has(> .knowledge-frame) {
 
   .reminders-add input[type='text'] {
     flex-basis: 100%;
+  }
+
+  .reminders-add input[type='date'] {
+    flex: 1;
+    width: auto;
   }
 }
