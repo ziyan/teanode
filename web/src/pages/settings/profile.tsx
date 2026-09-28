@@ -6,7 +6,6 @@ import { useQuery } from '../../components/useQuery'
 import { useToast } from '../../components/toast'
 import { ConfirmDialog } from '../../components/dialog'
 import { useTranslation } from '../../i18n/i18n'
-import { useAgentPreferences } from '../../agentPreferences'
 import { Select } from '../../components/select'
 
 const CURRENT_USER = `{ GetCurrentUser { id username name email timezone timezoneMode } }`
@@ -212,7 +211,6 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
           {t('common.save')}
         </button>
       </form>
-      <AgentShownCard />
 
       {confirmingRename && (
         <ConfirmDialog
@@ -229,35 +227,5 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
         />
       )}
     </>
-  )
-}
-
-// AgentShownCard is how the agent's work is drawn in the drawer: whether
-// each tool it used is shown, and what each turn cost. Kept in the browser,
-// since it is about this screen rather than the account.
-function AgentShownCard() {
-  const { t } = useTranslation()
-  const [preferences, setPreferences] = useAgentPreferences()
-  return (
-    <div className="card">
-      <h3>{t('preferences.agentShown')}</h3>
-      <p className="muted">{t('preferences.agentShownHint')}</p>
-      <label className="checkbox">
-        <input
-          type="checkbox"
-          checked={preferences.showTools}
-          onChange={(event) => setPreferences({ showTools: event.target.checked })}
-        />
-        {t('agentDrawer.showTools')}
-      </label>
-      <label className="checkbox">
-        <input
-          type="checkbox"
-          checked={preferences.showUsage}
-          onChange={(event) => setPreferences({ showUsage: event.target.checked })}
-        />
-        {t('agentDrawer.showUsage')}
-      </label>
-    </div>
   )
 }

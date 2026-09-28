@@ -6782,6 +6782,15 @@ main.content:has(> .mailbox-frame) {
   color: var(--text);
 }
 
+/* The switches for what the conversation shows, under the day's usage in
+   its dropdown. */
+.head-menu-switches {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 10px;
+}
+
 /* A tool line opens to what was asked and what came back. */
 .agent-tool-toggle {
   padding: 0;

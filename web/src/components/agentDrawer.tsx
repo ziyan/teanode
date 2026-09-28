@@ -1515,22 +1515,31 @@ function CitedPicture({ file }: { file: CitedFile }) {
 // BudgetRing is the day's tokens as a ring in the drawer's head: how much
 // of the budget has gone, coloured by how near the end of it the day is,
 // with the numbers and the hour it resets on hover, and the usage dropped
-// down under the head on a press. Nothing is drawn where there is no limit
-// to be near.
+// down under the head on a press. With no limit to be near it is the
+// ring's empty track: the dropdown is still where the person chooses what
+// the conversation shows of the agent's work.
 function BudgetRing({
   budget,
   zone,
   isOpen,
   onToggle,
 }: {
-  budget: Budget
+  budget: Budget | null
   zone: string
   isOpen: boolean
   onToggle: () => void
 }) {
   const { t } = useTranslation()
-  const shown = budgetShown(budget)
-  if (!shown) return null
+  const shown = budget ? budgetShown(budget) : null
+  if (!budget || !shown) {
+    return (
+      <HeadMark label={t('agentDrawer.usageTitle')} className="agent-drawer-budget" isOpen={isOpen} onToggle={onToggle}>
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <circle className="agent-budget-track" cx="8" cy="8" r={6} />
+        </svg>
+      </HeadMark>
+    )
+  }
   const fraction = Math.max(0, Math.min(1, shown.fraction))
   const percent = Math.round(fraction * 100)
   const nearness = budgetNearness(fraction, 1)
@@ -1694,12 +1703,36 @@ function siteOf(url: string | undefined): string {
 // UsageMenu is the day's budget, drawn as the agent's page draws it: how
 // much has gone, as words and as a bar coloured by how near the end it
 // is, what it came to, and when it starts again.
-function UsageMenu({ budget, zone, onClose }: { budget: Budget; zone: string; onClose: () => void }) {
+// And what the conversation shows of the agent's work -- the tool calls,
+// and what each answer used -- switched where the usage is, rather than in
+// the settings, far from the conversation they change.
+function UsageMenu({ budget, zone, onClose }: { budget: Budget | null; zone: string; onClose: () => void }) {
   const { t } = useTranslation()
+  const [preferences, setPreferences] = useAgentPreferences()
   return (
     <HeadMenu title={t('agentDrawer.usageTitle')} onClose={onClose}>
-      <div className="head-menu-usage">
-        <BudgetBar budget={budget} zone={zone} />
+      {budget && budgetShown(budget) ? (
+        <div className="head-menu-usage">
+          <BudgetBar budget={budget} zone={zone} />
+        </div>
+      ) : null}
+      <div className="head-menu-switches">
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={preferences.showTools}
+            onChange={(event) => setPreferences({ showTools: event.target.checked })}
+          />
+          {t('agentDrawer.showTools')}
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={preferences.showUsage}
+            onChange={(event) => setPreferences({ showUsage: event.target.checked })}
+          />
+          {t('agentDrawer.showUsage')}
+        </label>
       </div>
     </HeadMenu>
   )
@@ -2838,10 +2871,20 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // and nothing here to have said it twice.
     const origin = checkInOriginOf(event.text ?? '')
     if (origin) {
-      setLines((previous) => [
-        ...previous,
-        { kind: 'checkin', key: `${event.runId}-asked`, at: event.at, text: event.text ?? '', origin },
-      ])
+      // Read already with the transcript -- an approval given after a turn
+      // ended reads the conversation again as the new turn starts -- it is
+      // the same line, and is drawn once, as a person's words are below.
+      // Only near the end: a weekly schedule says the same words every week,
+      // and last week's line is not this one.
+      setLines((previous) => {
+        const tail = Math.max(0, previous.length - 8)
+        const kept = previous.filter(
+          (line, index) =>
+            line.key !== `${event.runId}-asked` &&
+            !(index >= tail && line.kind === 'checkin' && line.text === (event.text ?? '')),
+        )
+        return [...kept, { kind: 'checkin', key: `${event.runId}-asked`, at: event.at, text: event.text ?? '', origin }]
+      })
       // A background command has just ended: its row says so now rather
       // than at the next poll.
       if (origin === 'background') void reloadBackground(true)
@@ -3673,14 +3716,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 onToggle={() => toggleHeadMenu('background')}
               />
             )}
-            {budget && (
-              <BudgetRing
-                budget={budget}
-                zone={agentZone}
-                isOpen={headMenu === 'usage'}
-                onToggle={() => toggleHeadMenu('usage')}
-              />
-            )}
+            <BudgetRing
+              budget={budget}
+              zone={agentZone}
+              isOpen={headMenu === 'usage'}
+              onToggle={() => toggleHeadMenu('usage')}
+            />
             {/* Framed by the extension, the panel around this has a bar
                 of its own with the close on it; two of them, one under
                 the other, is one too many. */}
@@ -3705,9 +3746,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           )}
           {headMenu === 'computers' && <ComputersMenu computers={computers} onClose={() => setHeadMenu(null)} />}
           {headMenu === 'tab' && tab?.attached && <TabMenu tab={tab} onClose={() => setHeadMenu(null)} />}
-          {headMenu === 'usage' && budget && (
-            <UsageMenu budget={budget} zone={agentZone} onClose={() => setHeadMenu(null)} />
-          )}
+          {headMenu === 'usage' && <UsageMenu budget={budget} zone={agentZone} onClose={() => setHeadMenu(null)} />}
           {headMenu === 'goal' && current && (
             <GoalMenu
               key={current.id}

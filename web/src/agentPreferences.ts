@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 
 // What a person chose about how their agent's work is shown: whether the
-// tool calls are drawn, and whether each turn says what it cost. Set once
-// in the account menu, kept in the browser, read by the drawer. A change
-// is announced on the window so that the drawer, which is a different
-// component, follows it at once.
+// tool calls are drawn, and whether each turn says what it cost. Switched
+// in the drawer's usage dropdown, kept in the browser, read by the drawer.
+// A change is announced on the window so that every drawer open, framed or
+// not, follows it at once.
 
 export interface AgentPreferences {
   showTools: boolean
