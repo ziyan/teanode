@@ -10354,6 +10354,15 @@ main.content:has(> .knowledge-frame) {
   display: block;
 }
 
+/* A name that would sit on one already shown, until its page is hovered. */
+.graph-explore-name.crowded {
+  visibility: hidden;
+}
+
+.graph-explore-node:hover .graph-explore-name.crowded {
+  visibility: visible;
+}
+
 .graph-explore-edge line {
   fill: none;
   stroke: var(--border-strong);

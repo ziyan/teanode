@@ -348,6 +348,9 @@ export function KnowledgeGraph({
 
   // --- the view ----------------------------------------------------------
 
+  const declutterLater = useRef(0)
+  const declutterNow = useRef<() => void>(() => {})
+
   const applyView = useCallback(() => {
     const { x, y, k } = view.current
     zoomLayer.current?.setAttribute('transform', `translate(${x.toFixed(2)},${y.toFixed(2)}) scale(${k.toFixed(4)})`)
@@ -361,7 +364,39 @@ export function KnowledgeGraph({
     canvas.style.setProperty('--graph-explore-label', `${(LABEL_SIZE / k).toFixed(2)}px`)
     canvas.classList.toggle('names', k >= NAME_ZOOM)
     canvas.classList.toggle('relations', k >= RELATION_ZOOM)
+    // Which names crowd depends on the zoom: looked at again once the
+    // zooming stops.
+    window.clearTimeout(declutterLater.current)
+    declutterLater.current = window.setTimeout(() => declutterNow.current(), 150)
   }, [])
+
+  // declutter hides a name that would sit on another already shown, once the
+  // drawing has settled and after a zoom: the page the drawing is about
+  // first, then the better linked. Hovering a page shows its name. The
+  // simulation keeps circles apart, not the names under them, and the names
+  // are sized by the zoom, so this is done on what is on the screen.
+  const declutter = useCallback(() => {
+    const shown: DOMRect[] = []
+    const ranked = [...nodes.current].sort(
+      (left, right) => Number(right.path === from) - Number(left.path === from) || right.degree - left.degree,
+    )
+    for (const node of ranked) {
+      const label = nodeElements.current.get(node.path)?.querySelector('.graph-explore-name')
+      if (!label) continue
+      label.classList.remove('crowded')
+      const box = label.getBoundingClientRect()
+      if (box.width === 0) continue
+      const isCrowded = shown.some(
+        (other) => box.left < other.right && other.left < box.right && box.top < other.bottom && other.top < box.bottom,
+      )
+      if (isCrowded) {
+        label.classList.add('crowded')
+      } else {
+        shown.push(box)
+      }
+    }
+  }, [from])
+  declutterNow.current = declutter
 
   const paint = useCallback(() => {
     for (const node of nodes.current) {
@@ -471,7 +506,8 @@ export function KnowledgeGraph({
       fitWhenSettled.current = false
       fit()
     }
-  }, [fit, paint])
+    declutter()
+  }, [declutter, fit, paint])
 
   // kick starts the simulation again, or keeps it going. Never past what is
   // already in flight: a drag arriving every frame must not restart the
