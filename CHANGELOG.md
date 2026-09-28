@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.74.2] - 2026-09-28
+
+### Fixed
+
+- Charts in pages the agent makes draw again, in the dashboard's colours and type. (#210)
+
 ## [0.74.1] - 2026-09-28
 
 ### Fixed
