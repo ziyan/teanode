@@ -8632,7 +8632,7 @@ button.with-icon {
 }
 
 .usage-chart-legend span,
-.usage-chart-tip-line {
+.usage-chart-tooltip-line {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -8645,7 +8645,7 @@ button.with-icon {
   border-radius: 3px;
 }
 
-.usage-chart-tip {
+.usage-chart-tooltip {
   position: absolute;
   top: 0;
   z-index: 2;
@@ -8659,29 +8659,29 @@ button.with-icon {
   pointer-events: none;
 }
 
-.usage-chart-tip.right {
+.usage-chart-tooltip.right {
   margin-left: 10px;
 }
 
-.usage-chart-tip.left {
+.usage-chart-tooltip.left {
   margin-right: 10px;
 }
 
-.usage-chart-tip-day {
+.usage-chart-tooltip-day {
   font-weight: 650;
   margin-bottom: 4px;
 }
 
-.usage-chart-tip-line {
+.usage-chart-tooltip-line {
   display: flex;
   width: 100%;
 }
 
-.usage-chart-tip-line span {
+.usage-chart-tooltip-line span {
   color: var(--muted);
 }
 
-.usage-chart-tip-line strong {
+.usage-chart-tooltip-line strong {
   margin-left: auto;
   font-weight: 600;
   font-variant-numeric: tabular-nums;

@@ -154,7 +154,7 @@ type agentModel struct {
 	SpokeFirstAt           *time.Time `gorm:"column:spoke_first_at"`
 	OnboardedAt            *time.Time `gorm:"column:onboarded_at"`
 	IsMemoryCheckEnabled   bool       `gorm:"column:is_memory_check_enabled"`
-	IsTipsEnabled          bool       `gorm:"column:is_tips_enabled"`
+	IsIdeasEnabled         bool       `gorm:"column:is_ideas_enabled"`
 	SpeakFirstSnoozedUntil *time.Time `gorm:"column:speak_first_snoozed_until"`
 
 	// When the links were last faded. See migration 0084.
@@ -227,7 +227,7 @@ func agentFromModel(model *agentModel) (*models.Agent, error) {
 		SpokeFirstAt:           localTime(model.SpokeFirstAt),
 		OnboardedAt:            localTime(model.OnboardedAt),
 		IsMemoryCheckEnabled:   model.IsMemoryCheckEnabled,
-		IsTipsEnabled:          model.IsTipsEnabled,
+		IsIdeasEnabled:         model.IsIdeasEnabled,
 		SpeakFirstSnoozedUntil: localTime(model.SpeakFirstSnoozedUntil),
 	}
 	if model.DreamedAt != nil {
@@ -285,7 +285,7 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		SpokeFirstAt:           agent.SpokeFirstAt,
 		OnboardedAt:            agent.OnboardedAt,
 		IsMemoryCheckEnabled:   agent.IsMemoryCheckEnabled,
-		IsTipsEnabled:          agent.IsTipsEnabled,
+		IsIdeasEnabled:         agent.IsIdeasEnabled,
 		SpeakFirstSnoozedUntil: agent.SpeakFirstSnoozedUntil,
 		DecayedAt:              agent.DecayedAt,
 	}
@@ -401,9 +401,9 @@ func (self *transaction) CreateAgent(agent *models.Agent) (*models.Agent, error)
 	created.CreatedAt = time.Now()
 	created.ModifiedAt = created.CreatedAt
 	// On, as the columns default: a new agent introduces itself, checks
-	// what it remembers and gives tips until the person says otherwise. A
+	// what it remembers and offers ideas until the person says otherwise. A
 	// Go false here is the zero value nobody chose, not a choice.
-	created.IsMemoryCheckEnabled, created.IsTipsEnabled = true, true
+	created.IsMemoryCheckEnabled, created.IsIdeasEnabled = true, true
 	model, err := agentToModel(&created)
 	if err != nil {
 		return nil, err
@@ -461,7 +461,7 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 			"dreamed_at":              model.DreamedAt,
 			"dream_bootstrap":         model.DreamBootstrap,
 			"is_memory_check_enabled": model.IsMemoryCheckEnabled,
-			"is_tips_enabled":         model.IsTipsEnabled,
+			"is_ideas_enabled":        model.IsIdeasEnabled,
 			"decayed_at":              model.DecayedAt,
 		}).Error
 	}); err != nil {

@@ -19,7 +19,7 @@ type presenceReport struct {
 // presence is who has a dashboard open, kept in memory and nowhere else:
 // a restart forgets it until each open tab reports again, within a
 // minute. The agent speaks first only to somebody who is there to read
-// it, and gives a tip only to somebody who has gone quiet.
+// it, and offers an idea only to somebody who has gone quiet.
 type presence struct {
 	mutex   sync.Mutex
 	reports map[string]presenceReport

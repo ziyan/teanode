@@ -18,7 +18,7 @@ To see it working: on a development server whose person has a mailbox granted to
 
 - [x] (2026-09-28) Mapped the tip code as it is and wrote the first version of this plan.
 - [x] (2026-09-28) Revised the plan: one name (idea) everywhere, the same operations from the dashboard, the command line and the agent's tools, and fewer concepts (see Decision Log).
-- [ ] Milestone 1: rename tips to ideas end to end, with the idea stored as a row, the catalog as a file, and the four operations reachable from GraphQL, the `idea` tool and the command line.
+- [x] (2026-09-28) Milestone 1: rename tips to ideas end to end, with the idea stored as a row, the catalog as a file, and the four operations reachable from GraphQL, the `idea` tool and the command line. The tool sends the command line's own GraphQL documents (`internal/client/agent_idea.go`), which a test validates against the schema, so the two cannot differ even in wording.
 - [ ] Milestone 2: the Ideas tab.
 - [ ] Milestone 3: the full catalog, about thirty entries.
 - [ ] Milestone 4: personal ideas from the dream and from conversation, through one check.
@@ -36,6 +36,10 @@ To see it working: on a development server whose person has a mailbox granted to
   Evidence: `draftKey` in `web/src/components/agentDrawer.tsx` (`teanode.agent.draft.<conversation id>`), and `openAgentConversation` in `web/src/api.ts`.
 
 ## Decision Log
+
+- Decision: the agent's `idea` tool sends the documents the command line's client defines, rather than its own.
+  Rationale: found while building Milestone 1. `TestClientDocumentsMatchTheSchema` validates the client's documents against the schema; a tool's own documents are checked by nothing, and were a second copy of the same four operations.
+  Date/Author: 2026-09-28, while implementing.
 
 - Decision: one name. What is called a tip today is an idea from this plan on, in the code, the database, the GraphQL schema, the agent's tools, the command line, the dashboard, its three languages and the docs. Nothing new is called a tip, and no alias is kept.
   Rationale: the person asked for the same thing to have one name. Keeping `tips` as the switch and `ideas` as the list would leave two words for one thing, and every reader would wonder whether they differ. The one exception is history: migrations 0109 and 0112 and the speak-first plan are left as they were written, because a migration must never change after it has run and a plan records what was decided then.

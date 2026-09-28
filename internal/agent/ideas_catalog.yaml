@@ -1,0 +1,80 @@
+# The catalog of ideas: offers of work the agent can do, shown to a person
+# while their agent has every tool an entry needs, and, for an entry with a
+# usedCheck, until they use the feature it is about. Every entry is written
+# for anybody: no names, places or companies from anyone's data.
+#
+# The rules, which internal/agent/ideas_check.go enforces:
+#   headline         a first-person offer, or a situation and then one; at most 80 characters
+#   body             what the person gives, what the agent does, where it stops to ask; at most 300
+#   openingRequest   what the person would type to start it, in their own voice
+#   neededToolNames  the tools it needs; a trailing * is any tool whose name begins so
+#   emoji            one of its area's, from internal/models/idea.go
+# An entry needing a tool that acts toward somebody else, or cannot be undone,
+# says that the agent asks first.
+
+- ideaKey: mailbox_source
+  ideaCategory: mail
+  emoji: "📬"
+  headline: Let me read a mailbox. I'll sort it and draft replies for you.
+  body: Grant me a mailbox under Mail in your agent's settings and I sort what arrives, sum up the long threads and draft replies. Nothing is sent until you approve it.
+  openingRequest: How do I let you read my mailbox?
+  usedCheck: mailbox_source
+
+- ideaKey: schedule
+  ideaCategory: work
+  emoji: "🗓️"
+  headline: Name a time. I'll do a task then, every day if you like.
+  body: Tell me what and when, such as a summary of what needs you every weekday at eight, and I do it at that time and answer here or by mail.
+  openingRequest: Every weekday at 8, tell me what needs me today.
+  neededToolNames: [schedule]
+  usedCheck: schedule
+
+- ideaKey: knowledge_source
+  ideaCategory: assistant
+  emoji: "🧠"
+  headline: Point me at your notes or code. I'll read them at night and remember.
+  body: Add a folder on your computer, a code repository, a chat archive or a wiki under Sources in your agent's settings, and I read it overnight and answer questions from it.
+  openingRequest: How do I let you read my notes?
+  usedCheck: knowledge_source
+
+- ideaKey: goal
+  ideaCategory: assistant
+  emoji: "🧭"
+  headline: Give me something to keep at. I'll work on it until it's done.
+  body: Tell me what to keep working toward, such as following up until an answer arrives, and I check on it on my own, say where it stands, and ask you when I need you.
+  openingRequest: I have something I'd like you to keep at until it's done.
+  neededToolNames: [goal]
+  usedCheck: goal
+
+- ideaKey: named_conversation
+  ideaCategory: assistant
+  emoji: "✨"
+  headline: One conversation per topic keeps a long piece of work in one place.
+  body: Start a separate conversation with the plus at the top of the chat, and each keeps its own history, so a long job does not crowd out everything else.
+  openingRequest: How do I keep a separate conversation for one topic?
+  usedCheck: named_conversation
+
+- ideaKey: memory_edit
+  ideaCategory: assistant
+  emoji: "💡"
+  headline: See what I remember about you, and correct what I got wrong.
+  body: Everything I remember is on pages under Memory in your agent's settings. Read them, fix a fact or remove one, and I stop repeating the mistake.
+  openingRequest: What do you remember about me?
+  neededToolNames: [memory]
+  usedCheck: memory_edit
+
+- ideaKey: chat_channel
+  ideaCategory: assistant
+  emoji: "🔗"
+  headline: Talk to me from a chat app on your phone.
+  body: Link a chat app under Connections in your agent's settings and talk to me from it, with the same memory and tools as here.
+  openingRequest: How do I talk to you from a chat app?
+  usedCheck: chat_channel
+
+- ideaKey: command_line
+  ideaCategory: work
+  emoji: "🧑‍💻"
+  headline: Use me from a terminal, with the same memory and tools.
+  body: Install the teanode program and sign in with teanode auth login, and everything the dashboard does works from a terminal, including talking to me with teanode agent ask.
+  openingRequest: How do I use you from the command line?
+  usedCheck: command_line

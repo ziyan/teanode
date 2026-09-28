@@ -120,11 +120,11 @@ const BACKGROUND_COMMAND_MARKER = '[background command]'
 const SCHEDULE_MARKER = '[schedule]'
 
 // The marker a turn begins with when the agent starts a conversation on
-// its own, to introduce itself, check what it remembers or give a tip,
+// its own, to introduce itself, check what it remembers or offer an idea,
 // which is models.SpeakFirstMarker on the server.
 const SPEAK_FIRST_MARKER = '[speaking first]'
 
-// The surface such a turn is taken on, "speak_first:tip" and the like. A
+// The surface such a turn is taken on, "speak_first:idea" and the like. A
 // turn that begins with it in the main conversation opens the drawer.
 const SPEAK_FIRST_SURFACE = 'speak_first:'
 
@@ -2480,7 +2480,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   useAgentPresence(available && !standalone)
 
   // A turn the agent starts on its own in the main conversation -- its
-  // introduction, a memory check, a tip -- opens the drawer on it: a
+  // introduction, a memory check, an idea -- opens the drawer on it: a
   // message nobody sees might as well not have been written. Followed
   // whenever the drawer is not already showing the main conversation,
   // which is when the drawer's own subscription would not hear it.

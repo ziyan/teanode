@@ -11,8 +11,8 @@ import (
 )
 
 // The agent speaks first: a turn in the main conversation that nobody
-// asked for, to introduce itself, to check what it remembers, or to give
-// a tip. One mechanism for the three, so that they agree on when speaking
+// asked for, to introduce itself, to check what it remembers, or to offer
+// an idea. One mechanism for the three, so that they agree on when speaking
 // is welcome and the person is not interrupted three times as often.
 // docs/planning/agent-speaks-first-execplan.md is the design.
 
@@ -29,7 +29,7 @@ const (
 	speakFirstApart = 24 * time.Hour
 
 	// speakFirstSurfacePrefix begins the surface of a spoken-first turn:
-	// "speak_first:tip". The dashboard opens the chat drawer on a turn
+	// "speak_first:idea". The dashboard opens the chat drawer on a turn
 	// whose surface begins so.
 	speakFirstSurfacePrefix = "speak_first:"
 
@@ -53,7 +53,7 @@ const (
 const (
 	SpeakFirstOnboarding  = "onboarding"
 	SpeakFirstMemoryCheck = "memory_check"
-	SpeakFirstTip         = "tip"
+	SpeakFirstIdea        = "idea"
 )
 
 // speakFirstReason is one reason to speak first: when it is due, and what
@@ -89,9 +89,9 @@ type speakFirstReason struct {
 }
 
 // speakFirstReasons is every reason, in the order they are asked: an
-// introduction before anything else, then a memory check, then a tip.
+// introduction before anything else, then a memory check, then an idea.
 func (self *Agent) speakFirstReasons() []speakFirstReason {
-	return []speakFirstReason{self.onboardingReason(), self.memoryCheckReason(), self.tipReason()}
+	return []speakFirstReason{self.onboardingReason(), self.memoryCheckReason(), self.ideaReason()}
 }
 
 func (self *Agent) speakFirstReasonNamed(name string) (speakFirstReason, bool) {
@@ -204,7 +204,7 @@ func (self *Agent) isTurnRunning(conversationId string) bool {
 // line. One already queued or running is left to run.
 func (self *Agent) SpeakFirstNow(tx db.Transaction, agent *models.Agent, reason string) error {
 	if _, ok := self.speakFirstReasonNamed(reason); !ok {
-		return fmt.Errorf("the agent speaks first for %s, %s or %s, not %q", SpeakFirstOnboarding, SpeakFirstMemoryCheck, SpeakFirstTip, reason)
+		return fmt.Errorf("the agent speaks first for %s, %s or %s, not %q", SpeakFirstOnboarding, SpeakFirstMemoryCheck, SpeakFirstIdea, reason)
 	}
 	open, err := tx.CountAgentJobs(&db.AgentJobFilter{
 		AgentID:  agent.ID,
