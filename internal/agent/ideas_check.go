@@ -28,6 +28,7 @@ var ideaAsksFirst = []string{
 	"until you say", "until you approve", "you approve", "asks you first", "ask you first",
 	"check with you", "clear with you", "with your go-ahead", "for your approval", "your approval",
 	"nothing is sent", "nothing is ordered", "nothing is deleted", "nothing changes",
+	"stays with you", "stay with you",
 }
 
 // ideaOverpromises are words no idea may use: the agent does not know it

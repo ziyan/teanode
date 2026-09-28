@@ -12,6 +12,262 @@
 # An entry needing a tool that acts toward somebody else, or cannot be undone,
 # says that the agent asks first.
 
+- ideaKey: mail_needs_you
+  ideaCategory: mail
+  emoji: "📥"
+  headline: Every morning, I'll tell you which mail actually needs you.
+  body: I read your new mail each morning and send you a short list of what needs an answer, what has a deadline, and what can wait.
+  openingRequest: Every morning at 8, tell me which mail needs me today.
+  neededToolNames: [schedule, mail_search]
+
+- ideaKey: reply_drafts
+  ideaCategory: mail
+  emoji: "✉️"
+  headline: I'll draft replies to the mail waiting on you.
+  body: I find the messages you have not answered, draft a reply to each in your voice, and leave them in your drafts. Nothing is sent until you approve it.
+  openingRequest: Draft replies to the mail I haven't answered this week.
+  neededToolNames: [mail_search, mail_draft]
+
+- ideaKey: follow_up
+  ideaCategory: mail
+  emoji: "📨"
+  headline: Waiting on a reply? I'll chase it if none comes.
+  body: Tell me what you are waiting for and by when. I check each day, and if nothing arrives in time I draft the follow-up for you to send.
+  openingRequest: I'm waiting on a reply about something. If nothing comes by Friday, draft a follow-up.
+  neededToolNames: [goal, mail_search, mail_draft]
+
+- ideaKey: unsubscribe
+  ideaCategory: mail
+  emoji: "🧹"
+  headline: I'll unsubscribe you from the mail you delete without reading.
+  body: I find the senders you delete unread, show you the list, and use each one's unsubscribe link for the ones you pick. Nothing changes until you say so.
+  openingRequest: Which newsletters do I delete without reading? Help me unsubscribe.
+  neededToolNames: [mail_search, subscription]
+
+- ideaKey: alert_rule
+  ideaCategory: mail
+  emoji: "🔕"
+  headline: I'll file the routine alerts out of your inbox with a rule.
+  body: Tell me which notifications you only glance at and I write a mail rule that files them in a folder of their own, show you what it catches, and change it if it catches the wrong thing.
+  openingRequest: File the shipping and login alerts out of my inbox.
+  neededToolNames: [rule]
+
+- ideaKey: bills_due
+  ideaCategory: money
+  emoji: "🧾"
+  headline: I'll find the bills in your mail and list what's due and when.
+  body: I search your mail for bills and statements, pull out each amount and due date, and put the due dates on your calendar. Paying stays with you.
+  openingRequest: Find my bills from the last month and tell me what's due and when.
+  neededToolNames: [mail_search, mail_read, calendar]
+
+- ideaKey: spending_chart
+  ideaCategory: money
+  emoji: "📈"
+  headline: I can chart this month's spending against last month's.
+  body: I read the purchase alerts and receipts in your mail, total them by week and by kind, and draw the chart on a page you can keep.
+  openingRequest: Chart my spending this month from the alerts and receipts in my mail.
+  neededToolNames: [mail_search, mail_read, artifact]
+
+- ideaKey: subscriptions
+  ideaCategory: money
+  emoji: "💳"
+  headline: I'll list the subscriptions billing you, from the receipts in your mail.
+  body: I go through your receipts and renewal notices and list each subscription with its price and next renewal, marking the ones you seem not to use. Cancelling stays with you.
+  openingRequest: List every subscription I'm paying for, from my mail.
+  neededToolNames: [mail_search, mail_read]
+
+- ideaKey: letter_to_deadline
+  ideaCategory: paperwork
+  emoji: "📄"
+  headline: Photograph a letter. I'll pull out what it asks and by when.
+  body: Send a photo of a letter or a form and I read what it asks for, put the deadline on your calendar and draft the reply. Nothing is sent until you say so.
+  openingRequest: Here is a letter I got. What does it ask me to do, and by when?
+  neededToolNames: [calendar, mail_draft]
+
+- ideaKey: find_document
+  ideaCategory: paperwork
+  emoji: "🗂️"
+  headline: Lost a confirmation or a receipt? I'll dig it out of your mail.
+  body: Describe it, even roughly, and I search your mail by meaning as well as by words, then show you the message and its attachment.
+  openingRequest: Find the receipt for something I bought last spring.
+  neededToolNames: [mail_search, mail_read]
+
+- ideaKey: renewals
+  ideaCategory: paperwork
+  emoji: "🪪"
+  headline: Tell me when your documents expire. I'll remind you well ahead.
+  body: Give me the expiry dates of a passport, a license or an insurance policy and I remind you months ahead, with what the renewal needs, so nothing lapses by surprise.
+  openingRequest: My passport expires next June. Remind me in time to renew it.
+  neededToolNames: [schedule]
+
+- ideaKey: trip_page
+  ideaCategory: travel
+  emoji: "🗺️"
+  headline: Tell me where and when. I'll put the options for the trip on one page.
+  body: I research flights, places to stay and things to do, and lay the options side by side on a page with prices and links. Booking stays with you.
+  openingRequest: Plan a long weekend away next month. Put the options on one page.
+  neededToolNames: [web_search, web_fetch, artifact]
+
+- ideaKey: itinerary
+  ideaCategory: travel
+  emoji: "✈️"
+  headline: I'll gather your bookings from your mail into one itinerary.
+  body: I find the flight, hotel and car confirmations in your mail and put them on your calendar in order, with the confirmation numbers where you will look for them.
+  openingRequest: Put my upcoming trip's bookings on my calendar.
+  neededToolNames: [mail_search, mail_read, calendar]
+
+- ideaKey: packing
+  ideaCategory: travel
+  emoji: "🧳"
+  headline: I'll write a packing list for your next trip.
+  body: I look at the dates and where you are going, check the weather there, and write a list that fits the length of the trip and what you will be doing.
+  openingRequest: Make me a packing list for my next trip.
+  neededToolNames: [calendar, web_search]
+
+- ideaKey: compare
+  ideaCategory: shopping
+  emoji: "🛒"
+  headline: Tell me what you're buying. I'll compare the options side by side.
+  body: Say what matters to you and I research the models, read the reviews, and put specs and prices side by side on a page, with my pick and why.
+  openingRequest: I need a new vacuum. Compare the good options for me.
+  neededToolNames: [web_search, web_fetch, artifact]
+
+- ideaKey: cart
+  ideaCategory: shopping
+  emoji: "🛍️"
+  headline: I can fill your cart in your own browser, and stop before paying.
+  body: Tell me what you need and I add it to the cart in your browser, in a tab you can watch. Nothing is ordered until you check out yourself.
+  openingRequest: Add the groceries on my list to my cart.
+  neededToolNames: [browser]
+
+- ideaKey: returns
+  ideaCategory: shopping
+  emoji: "🔁"
+  headline: Returning something? I'll find the order and the last day to send it.
+  body: I find the order in your mail, work out the last day to return it, and put that on your calendar with the return steps. Sending it back stays with you.
+  openingRequest: I want to return something I ordered. When is the deadline?
+  neededToolNames: [mail_search, mail_read, calendar]
+
+- ideaKey: price_watch
+  ideaCategory: shopping
+  emoji: "🏷️"
+  headline: I'll check the price of what you're waiting to buy, each week.
+  body: Give me the product page and the price you would pay, and I look each week and tell you when it drops to it. Buying stays with you.
+  openingRequest: Watch this product and tell me when it drops under the price I'd pay.
+  neededToolNames: [schedule, web_fetch]
+
+- ideaKey: manual
+  ideaCategory: home
+  emoji: "🔧"
+  headline: Photograph a broken thing's label. I'll find the manual and the fix.
+  body: Send a photo of the model plate and say what is wrong, and I find the manual, the usual fixes and the part number if a part is needed.
+  openingRequest: Here's the label of my dishwasher. It won't drain.
+  neededToolNames: [web_search, web_fetch]
+
+- ideaKey: move
+  ideaCategory: home
+  emoji: "📦"
+  headline: Moving? I'll keep the whole move on one dated list.
+  body: Tell me the date and I build the checklist backward from it, from notices to give to services to switch, and put each deadline on your calendar.
+  openingRequest: I'm moving at the end of the month. Make me a checklist with dates.
+  neededToolNames: [todo, calendar]
+
+- ideaKey: chores
+  ideaCategory: home
+  emoji: "🪴"
+  headline: I'll remind you of the chores that come round every few months.
+  body: Tell me the filters, the gutters or the smoke alarm batteries and how often each is due, and I remind you when it comes round.
+  openingRequest: Remind me to change the air filters every three months.
+  neededToolNames: [schedule]
+
+- ideaKey: birthdays
+  ideaCategory: family
+  emoji: "🎂"
+  headline: I'll remind you of birthdays a week ahead, with an idea for each.
+  body: Tell me whose birthdays matter and I remind you a week before each one, with a gift idea from what I know about them.
+  openingRequest: Remind me of my family's birthdays a week ahead.
+  neededToolNames: [schedule, memory]
+
+- ideaKey: school_dates
+  ideaCategory: family
+  emoji: "🧸"
+  headline: I'll pull the dates out of school and club newsletters.
+  body: I read the newsletters as they arrive, pull out the events, forms and deadlines, and put them on your calendar, so nothing hides in the fourth paragraph.
+  openingRequest: Put the dates from the school newsletters on my calendar.
+  neededToolNames: [mail_search, mail_read, calendar]
+
+- ideaKey: appointments
+  ideaCategory: health
+  emoji: "🩺"
+  headline: I'll pull your appointments out of your mail and onto your calendar.
+  body: I find the appointment confirmations and reminders in your mail, put each on your calendar with the address, and tell you when one clashes with something.
+  openingRequest: Put my upcoming appointments from my mail on my calendar.
+  neededToolNames: [mail_search, calendar]
+
+- ideaKey: medication
+  ideaCategory: health
+  emoji: "💊"
+  headline: I'll remind you to take a medication, and to refill it in time.
+  body: Tell me when you take it and how long a refill lasts, and I remind you each time and again a few days before you run out.
+  openingRequest: Remind me to take my medication at 9 each evening and to refill it every 30 days.
+  neededToolNames: [schedule]
+
+- ideaKey: workouts
+  ideaCategory: health
+  emoji: "🏃"
+  headline: Tell me your goal and your week. I'll fit the workouts around it.
+  body: I look at your calendar, find the gaps, and suggest sessions that fit your goal and the time you have, for you to put on your calendar.
+  openingRequest: Find three times this week I could run for half an hour.
+  neededToolNames: [calendar]
+
+- ideaKey: meeting_brief
+  ideaCategory: work
+  emoji: "📝"
+  headline: Before each day's meetings, I'll gather what you'll need.
+  body: I look at the next day's meetings, find the recent mail with the people in them, and give you a short brief for each.
+  openingRequest: Every evening, brief me on tomorrow's meetings.
+  neededToolNames: [schedule, calendar, mail_search]
+
+- ideaKey: weekly_review
+  ideaCategory: work
+  emoji: "📊"
+  headline: Every Friday, I'll sum up your week from your mail and calendar.
+  body: I read the week's meetings and mail and write a short summary of what happened, what was decided, and what is still open for next week.
+  openingRequest: Every Friday at 4, sum up my week.
+  neededToolNames: [schedule, calendar, mail_search]
+
+- ideaKey: pull_requests
+  ideaCategory: work
+  emoji: "✅"
+  headline: I'll sum up the pull requests waiting on your review.
+  body: I list the pull requests that ask for your review, say what each one changes, and which look small. Commenting and approving stay with you.
+  openingRequest: Which pull requests are waiting on my review?
+  neededToolNames: ["skill__github__*"]
+
+- ideaKey: shows_near_you
+  ideaCategory: fun
+  emoji: "🎟️"
+  headline: Give me the artists you like. I'll look for shows near you.
+  body: I search each week for new dates near you and tell you when one appears, with where to buy tickets. Buying stays with you.
+  openingRequest: Look each week for shows near me by the bands I like.
+  neededToolNames: [schedule, web_search]
+
+- ideaKey: next_to_read
+  ideaCategory: fun
+  emoji: "📚"
+  headline: Tell me what you liked. I'll suggest what to read or watch next.
+  body: I remember what you enjoyed and why, and suggest a few next picks with a line on each, getting closer as you tell me what landed.
+  openingRequest: I loved the last book I read. What should I read next?
+  neededToolNames: [web_search, memory]
+
+- ideaKey: weekend
+  ideaCategory: fun
+  emoji: "🏞️"
+  headline: Free this weekend? I'll find things to do nearby.
+  body: Tell me who is coming and what they like, and I check your calendar and the forecast, then find a few options with times, prices and how far each is.
+  openingRequest: We're free on Saturday. What could we do nearby?
+  neededToolNames: [calendar, web_search]
+
 - ideaKey: mailbox_source
   ideaCategory: mail
   emoji: "📬"

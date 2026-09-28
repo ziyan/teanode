@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -37,8 +38,15 @@ func ideaCatalogForTest(t *testing.T) {
 }
 
 // The catalog in the repository is written to the rules every idea is
-// held to, and names only checks that exist.
+// held to, against the tools as they really are: each named tool exists,
+// and one that acts toward somebody else or cannot be undone makes the
+// entry say where it stops. A skill, named by a prefix, may be anything
+// the skill says, so it is taken to act.
 func TestTheCatalogIsWrittenToTheRules(t *testing.T) {
+	toolRisks := map[string]tools.Risk{}
+	for _, tool := range tools.Build().All() {
+		toolRisks[tool.Name] = tool.Risk
+	}
 	isKey := map[string]bool{}
 	for _, entry := range ideaCatalog {
 		if isKey[entry.IdeaKey] {
@@ -48,14 +56,18 @@ func TestTheCatalogIsWrittenToTheRules(t *testing.T) {
 		if entry.UsedCheck != "" && ideaUsedChecks[entry.UsedCheck] == nil {
 			t.Errorf("%s names the check %q, which there is not", entry.IdeaKey, entry.UsedCheck)
 		}
-		toolRisks := map[string]tools.Risk{}
+		entryRisks := maps.Clone(toolRisks)
 		for _, name := range entry.NeededToolNames {
-			toolRisks[strings.TrimSuffix(name, "*")+"x"] = tools.RiskRead
-			toolRisks[name] = tools.RiskRead
+			if prefix, isPrefix := strings.CutSuffix(name, "*"); isPrefix {
+				entryRisks[prefix+"any"] = tools.RiskOutward
+			}
 		}
-		if problem := checkIdea(entry.idea("agent", 1), toolRisks); problem != "" {
+		if problem := checkIdea(entry.idea("agent", 1), entryRisks); problem != "" {
 			t.Errorf("%s: %s", entry.IdeaKey, problem)
 		}
+	}
+	if len(ideaCatalog) < 30 {
+		t.Errorf("the catalog has %d ideas; a person should find something in it", len(ideaCatalog))
 	}
 }
 
