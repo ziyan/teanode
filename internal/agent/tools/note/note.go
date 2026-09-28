@@ -9,13 +9,16 @@ package note
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/mailbox"
 	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/notes"
 )
 
 func init() {
@@ -23,6 +26,9 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "note", Family: tools.FamilyMailbox, Risk: tools.RiskWrite,
+				// Offered to a person holding either; list and read need
+				// only mail:read, and run checks mail:write for the rest,
+				// as a merged tool checks each action's own.
 				Permissions: []models.Permission{models.PermissionMailRead, models.PermissionMailWrite},
 				Description: "The person's notes: the ones their phone's Notes app keeps in their mailbox, which it shows at its next sync. " +
 					"`list` shows each note's id, title and first words, the most recently changed first; `read` gives one note's text. " +
@@ -99,6 +105,11 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if noteId == "" && (action == "read" || action == "edit" || action == "append" || action == "remove") {
 		return nil, fmt.Errorf("%s needs note_id; list gives them", action)
 	}
+	if action == "write" || action == "edit" || action == "append" || action == "remove" {
+		if permissions := operations.Permissions(); permissions == nil || !permissions.Has(models.PermissionMailWrite) {
+			return nil, fmt.Errorf("note %s is not something they may do", action)
+		}
+	}
 	switch action {
 	case "", "list":
 		var result struct {
@@ -108,15 +119,15 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			return nil, err
 		}
 		type listed struct {
-			NoteID   string `json:"note_id"`
-			Title    string `json:"title"`
-			Preview  string `json:"preview,omitempty"`
-			Modified string `json:"modified"`
+			NoteID     string `json:"note_id"`
+			Title      string `json:"title"`
+			Preview    string `json:"preview,omitempty"`
+			ModifiedAt string `json:"modifiedAt"`
 		}
 		location := tools.Location(current.Owner())
 		rows := make([]listed, 0, len(result.ListNotes))
 		for _, note := range result.ListNotes {
-			rows = append(rows, listed{NoteID: note.ID, Title: note.Title, Preview: note.Preview, Modified: note.ModifiedAt.In(location).Format("2006-01-02 15:04")})
+			rows = append(rows, listed{NoteID: note.ID, Title: note.Title, Preview: note.Preview, ModifiedAt: note.ModifiedAt.In(location).Format("2006-01-02 15:04")})
 		}
 		answer, err := tools.JSONResult(map[string]any{"notes": rows})
 		if err != nil {
@@ -129,7 +140,12 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if err != nil {
 			return nil, err
 		}
-		answer, err := tools.JSONResult(map[string]any{"note_id": note.ID, "title": note.Title, "text": note.Text})
+		read := map[string]any{"note_id": note.ID, "title": note.Title, "text": note.Text}
+		if !note.IsEditable {
+			read["isEditable"] = false
+			read["uneditableReason"] = notes.UneditableReason
+		}
+		answer, err := tools.JSONResult(read)
 		if err != nil {
 			return nil, err
 		}
@@ -140,19 +156,24 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if text == "" {
 			return nil, fmt.Errorf("%s needs text", action)
 		}
-		if action == "write" {
-			noteId = ""
-		}
-		if action == "append" {
+		variables := map[string]any{"mailboxId": mailboxId, "text": text}
+		if action != "write" {
+			// Read first, so a note with pictures is refused in words the
+			// person can act on, and so a change made on the phone since is
+			// not written over: the save names the version it replaces.
 			note, err := getNote(ctx, operations, mailboxId, noteId)
 			if err != nil {
 				return nil, err
 			}
-			text = strings.TrimRight(note.Text, "\n") + "\n" + text
-		}
-		variables := map[string]any{"mailboxId": mailboxId, "text": text}
-		if noteId != "" {
+			if !note.IsEditable {
+				return nil, errors.New(notes.UneditableReason)
+			}
+			if action == "append" {
+				text = strings.TrimRight(note.Text, "\n") + "\n" + text
+				variables["text"] = text
+			}
 			variables["noteId"] = noteId
+			variables["expectedModifiedAt"] = note.ModifiedAt.Format(time.RFC3339Nano)
 		}
 		var result struct {
 			SaveNote *client.Note `json:"SaveNote"`

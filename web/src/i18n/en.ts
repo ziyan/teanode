@@ -3110,6 +3110,8 @@ export const en = {
   'notes.saved': 'Note saved.',
   'notes.deleted': 'Note deleted.',
   'notes.failed': 'That did not work.',
+  'notes.changedElsewhere': 'This note changed elsewhere, so it was not saved. It now shows the other change; make yours again.',
+  'notes.notEditable': 'This note has pictures or attachments. Change it on your phone.',
   'notes.deleteTitle': 'Delete this note?',
   'notes.deleteBody': '"{title}" is deleted here and from your phone at its next sync.',
 }

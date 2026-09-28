@@ -99,3 +99,102 @@ func isBlockElement(element atom.Atom) bool {
 	}
 	return false
 }
+
+// hasPicture says whether HTML shows an image.
+func hasPicture(input string) bool {
+	if !strings.Contains(strings.ToLower(input), "<img") {
+		return false
+	}
+	root, err := html.Parse(strings.NewReader(input))
+	if err != nil {
+		return true
+	}
+	var isFound func(*html.Node) bool
+	isFound = func(node *html.Node) bool {
+		if node.Type == html.ElementNode && node.DataAtom == atom.Img {
+			return true
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			if isFound(child) {
+				return true
+			}
+		}
+		return false
+	}
+	return isFound(root)
+}
+
+// EditorHTML is a note's HTML made fit to put into the dashboard's own page,
+// which is where its editor is. A message is shown in a frame of its own,
+// and what is safe there is not safe here: a style block restyles the whole
+// dashboard, and a class or an id borrows its rules. So the note keeps its
+// text and its structure, and loses its style blocks, its classes and ids,
+// and anything that could run: scripts and event handlers, which the input
+// should not have left, are dropped here again rather than trusted.
+func EditorHTML(input string) string {
+	body := &html.Node{Type: html.ElementNode, Data: "body", DataAtom: atom.Body}
+	nodes, err := html.ParseFragment(strings.NewReader(input), body)
+	if err != nil {
+		return ""
+	}
+	for _, node := range nodes {
+		body.AppendChild(node)
+	}
+	cleanForEditor(body)
+	var builder strings.Builder
+	for child := body.FirstChild; child != nil; child = child.NextSibling {
+		if err := html.Render(&builder, child); err != nil {
+			return ""
+		}
+	}
+	return builder.String()
+}
+
+// cleanForEditor removes from a tree what EditorHTML does not keep.
+func cleanForEditor(node *html.Node) {
+	for child := node.FirstChild; child != nil; {
+		next := child.NextSibling
+		if child.Type == html.CommentNode || (child.Type == html.ElementNode && isRemovedFromEditor(child.DataAtom, child.Data)) {
+			node.RemoveChild(child)
+		} else {
+			cleanForEditor(child)
+		}
+		child = next
+	}
+	if node.Type != html.ElementNode {
+		return
+	}
+	kept := node.Attr[:0]
+	for _, attribute := range node.Attr {
+		key := strings.ToLower(attribute.Key)
+		if key == "class" || key == "id" || strings.HasPrefix(key, "on") {
+			continue
+		}
+		if (key == "href" || key == "src") && isScriptUrl(attribute.Val) {
+			continue
+		}
+		kept = append(kept, attribute)
+	}
+	node.Attr = kept
+}
+
+func isRemovedFromEditor(element atom.Atom, name string) bool {
+	switch element {
+	case atom.Style, atom.Script, atom.Link, atom.Meta, atom.Title, atom.Base, atom.Noscript, atom.Template,
+		atom.Iframe, atom.Object, atom.Embed, atom.Form:
+		return true
+	}
+	return strings.EqualFold(name, "svg") || strings.EqualFold(name, "math")
+}
+
+// isScriptUrl says whether a link would run something rather than go
+// somewhere.
+func isScriptUrl(value string) bool {
+	trimmed := strings.Map(func(character rune) rune {
+		if character <= 0x20 || character == 0x7f {
+			return -1
+		}
+		return character
+	}, strings.ToLower(value))
+	return strings.HasPrefix(trimmed, "javascript:") || strings.HasPrefix(trimmed, "vbscript:")
+}

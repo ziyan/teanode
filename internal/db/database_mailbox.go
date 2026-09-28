@@ -89,7 +89,8 @@ type MailboxOperation interface {
 
 	// ListNoteItems is every item of a mailbox holding a note, or holding
 	// the note with this identifier when one is given, flagged deleted or
-	// not, newest message first, each with its message.
+	// not, newest item first, each with its message. Items in the trash
+	// and junk are left out.
 	ListNoteItems(mailboxId, noteIdentifier string) ([]*models.MailboxItem, error)
 
 	// ListExpunged is what vanished from a folder since a modseq.
@@ -132,6 +133,12 @@ type FolderOptions struct {
 	// out; IMAP has to count them, because a client that flagged one still
 	// sees it until it expunges.
 	ShouldExcludeDeleted bool
+
+	// ShouldCountNotes counts the items of each folder that hold a phone's
+	// note, so the dashboard can show a folder of notes as notes. Only the
+	// dashboard asks: it costs a join with every message, and IMAP has no
+	// use for the answer.
+	ShouldCountNotes bool
 }
 
 // ItemOptions narrows a listing of items.
@@ -646,15 +653,21 @@ func (self *transaction) ListFolders(mailboxId string, options *FolderOptions) (
 		return nil, err
 	}
 	type count struct {
-		FolderID string
-		Unread   int64
-		Total    int64
+		FolderID  string
+		Unread    int64
+		Total     int64
+		NoteCount int64
 	}
 	var counts []count
+	selected := "i.\"folder_id\" AS folder_id, COUNT(*) FILTER (WHERE NOT i.\"seen\") AS unread, COUNT(*) AS total"
 	query := self.tx.Table("\"mailbox_item\" AS i").
-		Select("i.\"folder_id\" AS folder_id, COUNT(*) FILTER (WHERE NOT i.\"seen\") AS unread, COUNT(*) AS total").
 		Joins("INNER JOIN \"mailbox_folder\" AS f ON f.\"id\" = i.\"folder_id\"").
 		Where("f.\"mailbox_id\" = ?", mailboxId)
+	if options != nil && options.ShouldCountNotes {
+		selected += ", COUNT(*) FILTER (WHERE m.\"kind\" = 'note') AS note_count"
+		query = query.Joins("INNER JOIN \"mail\" AS m ON m.\"id\" = i.\"mail_id\"")
+	}
+	query = query.Select(selected)
 	if options != nil && options.ShouldExcludeDeleted {
 		query = query.Where("NOT i.\"deleted\"")
 	}
@@ -670,6 +683,7 @@ func (self *transaction) ListFolders(mailboxId string, options *FolderOptions) (
 		folder := folderFromModel(&rows[index])
 		folder.Unread = byFolder[folder.ID].Unread
 		folder.Total = byFolder[folder.ID].Total
+		folder.NoteCount = byFolder[folder.ID].NoteCount
 		folders = append(folders, folder)
 	}
 	return folders, nil
@@ -1788,6 +1802,11 @@ func (self *transaction) FindItemByMessageID(folderId, messageId string) (*model
 // ListNoteItems reads every version of the notes at once, the old ones a
 // phone flagged deleted too, because which version is the note is the
 // caller's question: the newest not flagged.
+//
+// Newest by when the item was filed here, not by the message's own date: a
+// client appending a note says what that date is, and a phone whose clock is
+// behind would otherwise write a version that is never the note. A copy in
+// the trash or junk is not a note of the person's any more, and is left out.
 func (self *transaction) ListNoteItems(mailboxId, noteIdentifier string) ([]*models.MailboxItem, error) {
 	if mailboxId == "" {
 		return nil, nil
@@ -1795,13 +1814,14 @@ func (self *transaction) ListNoteItems(mailboxId, noteIdentifier string) ([]*mod
 	query := self.tx.Model(&mailboxItemModel{}).
 		Joins("INNER JOIN \"mailbox_folder\" ON \"mailbox_folder\".\"id\" = \"mailbox_item\".\"folder_id\"").
 		Joins("INNER JOIN \"mail\" ON \"mail\".\"id\" = \"mailbox_item\".\"mail_id\"").
-		Where("\"mailbox_folder\".\"mailbox_id\" = ? AND \"mail\".\"kind\" = ?", mailboxId, models.MailKindNote.String())
+		Where("\"mailbox_folder\".\"mailbox_id\" = ? AND \"mail\".\"kind\" = ?", mailboxId, models.MailKindNote.String()).
+		Where("\"mailbox_folder\".\"kind\" NOT IN ?", []string{string(models.MailboxFolderKindTrash), string(models.MailboxFolderKindJunk)})
 	if noteIdentifier != "" {
 		query = query.Where("\"mail\".\"note_identifier\" = ?", noteIdentifier)
 	}
 	var rows []mailboxItemModel
 	if err := query.Select("\"mailbox_item\".*").
-		Order("\"mail\".\"received_at\" DESC, \"mailbox_item\".\"id\" DESC").
+		Order("\"mailbox_item\".\"added_at\" DESC, \"mailbox_item\".\"id\" DESC").
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}

@@ -58,9 +58,9 @@ func TestBackfillNotesMarksANoteStoredBefore(test *testing.T) {
 	// As they were before the column existed.
 	dbtest.Exec(test, database, `UPDATE mail SET note_identifier = NULL`)
 
-	examined, err := backfillNotes(context.Background(), database, spool)
-	if err != nil || examined != 2 {
-		test.Fatalf("examined=%d, %v", examined, err)
+	examined, lastMailId, err := backfillNotes(context.Background(), database, spool, "")
+	if err != nil || examined != 2 || lastMailId != max(noteMailId, otherMailId) {
+		test.Fatalf("examined=%d through %q, %v", examined, lastMailId, err)
 	}
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 		stored, err := transaction.GetMails([]string{noteMailId, otherMailId}, nil)
@@ -74,7 +74,7 @@ func TestBackfillNotesMarksANoteStoredBefore(test *testing.T) {
 			test.Fatalf("the other=%+v", stored[1])
 		}
 	})
-	if examined, err := backfillNotes(context.Background(), database, spool); err != nil || examined != 0 {
+	if examined, _, err := backfillNotes(context.Background(), database, spool, ""); err != nil || examined != 0 {
 		test.Fatalf("a second pass examined %d, %v", examined, err)
 	}
 }

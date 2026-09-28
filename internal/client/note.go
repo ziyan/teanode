@@ -17,21 +17,22 @@ type Note struct {
 	Preview    string    `json:"preview"`
 	HTML       string    `json:"html"`
 	Text       string    `json:"text"`
+	IsEditable bool      `json:"isEditable"`
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
 }
 
 const (
 	DocumentListNotes = `query ($mailboxId: String!) {
-  ListNotes(mailboxId: $mailboxId) { id mailboxId folderId title preview createdAt modifiedAt }
+  ListNotes(mailboxId: $mailboxId) { id mailboxId folderId title preview isEditable createdAt modifiedAt }
 }`
 
 	DocumentGetNote = `query ($mailboxId: String!, $noteId: String!) {
-  GetNote(mailboxId: $mailboxId, noteId: $noteId) { id mailboxId folderId title preview html text createdAt modifiedAt }
+  GetNote(mailboxId: $mailboxId, noteId: $noteId) { id mailboxId folderId title preview html text isEditable createdAt modifiedAt }
 }`
 
-	DocumentSaveNote = `mutation ($mailboxId: String!, $noteId: String, $html: String, $text: String) {
-  SaveNote(mailboxId: $mailboxId, noteId: $noteId, html: $html, text: $text) { id mailboxId folderId title preview html text createdAt modifiedAt }
+	DocumentSaveNote = `mutation ($mailboxId: String!, $noteId: String, $html: String, $text: String, $expectedModifiedAt: String) {
+  SaveNote(mailboxId: $mailboxId, noteId: $noteId, html: $html, text: $text, expectedModifiedAt: $expectedModifiedAt) { id mailboxId folderId title preview html text isEditable createdAt modifiedAt }
 }`
 
 	DocumentDeleteNote = `mutation ($mailboxId: String!, $noteId: String!) { DeleteNote(mailboxId: $mailboxId, noteId: $noteId) }`
@@ -60,7 +61,7 @@ func GetNote(ctx context.Context, connection *Client, mailboxId, noteId string) 
 }
 
 // SaveNote writes text as a note: a new one when noteId is empty, or a new
-// version of that one.
+// version of that one, whatever version it is at: the last writer wins.
 func SaveNote(ctx context.Context, connection *Client, mailboxId, noteId, text string) (*Note, error) {
 	var result struct {
 		SaveNote *Note `json:"SaveNote"`

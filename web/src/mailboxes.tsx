@@ -23,7 +23,7 @@ const MAILBOXES = `{
       autoReply { enabled from until subject text html }
       agent { granted draftReplies triage { enabled } }
     }
-    folders { id mailboxId parentId name kind pinnedAt unread total }
+    folders { id mailboxId parentId name kind pinnedAt unread total noteCount }
     unread
     starredUnread
     priorityUnread

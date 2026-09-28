@@ -25,6 +25,18 @@ import (
 // one, which is what a phone calls it.
 const NotesFolderName = "Notes"
 
+var (
+	// ErrNoteChanged is a save refused because the note is not at the
+	// version its writer read: it changed elsewhere since, and writing over
+	// it would lose that change.
+	ErrNoteChanged = errors.New("mailbox: the note changed since it was read")
+
+	// ErrNoteNotEditable is a save refused because the note holds what a
+	// new version written from text or HTML would lose: pictures,
+	// attachments.
+	ErrNoteNotEditable = errors.New("mailbox: the note cannot be changed here without losing part of it")
+)
+
 // NoteStorage reads the version being replaced and stores the new one.
 type NoteStorage interface {
 	Get(context.Context, string) ([]string, []byte, error)
@@ -41,6 +53,21 @@ type SaveNoteRequest struct {
 	// Text is the note as plain text, for the search index: the message
 	// holds HTML alone, which the index does not read.
 	Text string
+
+	// FolderID is where a new note goes, when it is a folder of the mailbox
+	// that is not the trash or junk; otherwise NotesFolder decides. Unused
+	// for a new version, which stays where the note is.
+	FolderID string
+
+	// ExpectedModifiedAt, when set, is when the version the writer read was
+	// stored. A save over any other version is refused with ErrNoteChanged.
+	// Compared to the second, which is as much as every caller keeps.
+	ExpectedModifiedAt time.Time
+
+	// IsEditable says whether the current version can be replaced by what is
+	// being written without losing anything; when it says not, the save is
+	// refused with ErrNoteNotEditable. Nil asks nothing.
+	IsEditable func(context.Context, *models.MailboxItem) (bool, error)
 }
 
 // NoteVersion is what a new version of a note carries over from the one it
@@ -84,6 +111,18 @@ func (self *Commands) SaveNote(ctx context.Context, principal *access.Principal,
 			if current == nil {
 				return db.ErrNotFound
 			}
+			if !request.ExpectedModifiedAt.IsZero() && !current.AddedAt.Truncate(time.Second).Equal(request.ExpectedModifiedAt.Truncate(time.Second)) {
+				return ErrNoteChanged
+			}
+			if request.IsEditable != nil {
+				isEditable, err := request.IsEditable(ctx, current)
+				if err != nil {
+					return err
+				}
+				if !isEditable {
+					return ErrNoteNotEditable
+				}
+			}
 			folderId = current.FolderID
 			version.From = current.Mail.From
 			if version.CreatedAt, err = noteCreatedAt(ctx, spool, current); err != nil {
@@ -92,9 +131,14 @@ func (self *Commands) SaveNote(ctx context.Context, principal *access.Principal,
 		} else {
 			version.Identifier = notes.NewIdentifier()
 			version.CreatedAt = time.Now()
-			folder, err := NotesFolder(transaction, mailbox.ID)
+			folder, err := requestedNotesFolder(transaction, mailbox.ID, request.FolderID)
 			if err != nil {
 				return err
+			}
+			if folder == nil {
+				if folder, err = NotesFolder(transaction, mailbox.ID); err != nil {
+					return err
+				}
 			}
 			folderId = folder.ID
 			// Written from the address the notes already there were, which
@@ -131,10 +175,13 @@ func (self *Commands) SaveNote(ctx context.Context, principal *access.Principal,
 		}
 		// Expunged rather than flagged, the way EXPUNGE removes them, so the
 		// phone's next sync finds one message for the note rather than two
-		// and a flag it has to act on.
+		// and a flag it has to act on. Only the versions in the folder the
+		// note is in: a copy somebody put in another folder is theirs.
 		previousIds := make([]string, 0, len(previous))
 		for _, old := range previous {
-			previousIds = append(previousIds, old.ID)
+			if old.FolderID == folderId {
+				previousIds = append(previousIds, old.ID)
+			}
 		}
 		if _, err := transaction.DeleteItems(previousIds); err != nil {
 			return err
@@ -189,6 +236,23 @@ func lockNote(transaction db.Transaction, mailboxId, noteIdentifier string) ([]*
 	return transaction.ListNoteItems(mailboxId, noteIdentifier)
 }
 
+// requestedNotesFolder is the folder a writer asked a new note to go in,
+// when it may hold one: a folder of this mailbox, and not the trash or junk,
+// where a note would not be a note. Nil otherwise.
+func requestedNotesFolder(transaction db.Transaction, mailboxId, folderId string) (*models.MailboxFolder, error) {
+	if strings.TrimSpace(folderId) == "" {
+		return nil, nil
+	}
+	folder, err := transaction.GetFolder(strings.TrimSpace(folderId))
+	if err != nil || folder == nil {
+		return nil, err
+	}
+	if folder.MailboxID != mailboxId || folder.Kind == models.MailboxFolderKindTrash || folder.Kind == models.MailboxFolderKindJunk {
+		return nil, nil
+	}
+	return folder, nil
+}
+
 // CurrentNote is the version of a note that is the note: the newest not
 // flagged deleted. Nil when every version is, which is a note the phone
 // deleted and has not expunged yet. The items are newest first, as
@@ -220,6 +284,7 @@ func CurrentNotes(items []*models.MailboxItem) []*models.MailboxItem {
 // NotesFolder is where a new note goes: the folder holding the most notes,
 // else a folder named Notes, else one made with that name. Found by what it
 // holds first, because the name a phone gives it depends on its language.
+// Never the trash or junk: ListNoteItems leaves out what is in them.
 func NotesFolder(transaction db.Transaction, mailboxId string) (*models.MailboxFolder, error) {
 	items, err := transaction.ListNoteItems(mailboxId, "")
 	if err != nil {

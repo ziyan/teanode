@@ -38,6 +38,10 @@ var (
 	ErrInvalidCredential = errors.New("api: invalid credential")
 	ErrNotRetryable      = errors.New("api: not retryable")
 	ErrTooManyRequests   = errors.New("api: too many attempts, try again later")
+
+	// ErrConflict is a change refused because what it would change has
+	// changed since the caller read it.
+	ErrConflict = errors.New("api: conflict")
 )
 
 // Settings are the server-wide values the API needs.

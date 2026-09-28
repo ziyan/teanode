@@ -3072,6 +3072,8 @@ export const ja: Catalog = {
   'notes.saved': 'メモを保存しました。',
   'notes.deleted': 'メモを削除しました。',
   'notes.failed': 'うまくいきませんでした。',
+  'notes.changedElsewhere': 'このメモは別の場所で変更されたため、保存されませんでした。その変更を表示しています。もう一度変更してください。',
+  'notes.notEditable': 'このメモには画像または添付ファイルがあります。スマートフォンで変更してください。',
   'notes.deleteTitle': 'このメモを削除しますか？',
   'notes.deleteBody': '「{title}」はここから削除され、次の同期でスマートフォンからも削除されます。',
 }

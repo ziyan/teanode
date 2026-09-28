@@ -205,8 +205,9 @@ func (self *graph) requireItems(ctx context.Context, permission models.Permissio
 func (self *graph) describeMailbox(ctx context.Context, mailbox *models.Mailbox) (*MailboxView, error) {
 	// Counted without what is flagged deleted: a phone that edits a note
 	// flags the old version and leaves it for later, and the dashboard shows
-	// neither it nor a count that includes it.
-	folders, err := self.transaction(ctx).ListFolders(mailbox.ID, &db.FolderOptions{ShouldExcludeDeleted: true})
+	// neither it nor a count that includes it. The notes are counted too, so
+	// a folder holding nothing else is shown as notes.
+	folders, err := self.transaction(ctx).ListFolders(mailbox.ID, &db.FolderOptions{ShouldExcludeDeleted: true, ShouldCountNotes: true})
 	if err != nil {
 		return nil, err
 	}
@@ -719,11 +720,14 @@ func (self *graph) GetMailboxThread(ctx context.Context, arguments GetMailboxThr
 	// moving a message to another folder makes a new item with a new
 	// added_at, and a conversation ordered that way puts whatever was last
 	// archived at the top of it.
+	// Without what is flagged deleted, as every list the dashboard shows is.
+	isDeleted := false
 	found, err := tx.ListItems("", &db.ItemOptions{
 		MailboxID:  mailbox.ID,
 		ThreadID:   threadId,
 		ByReceived: true,
 		Limit:      threadLimit,
+		Deleted:    &isDeleted,
 	})
 	if err != nil {
 		return nil, err

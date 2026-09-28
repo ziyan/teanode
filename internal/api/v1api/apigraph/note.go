@@ -57,10 +57,21 @@ type NoteView struct {
 	Preview   string `json:"preview"`
 
 	// HTML and Text are the note itself, filled in when one note is read.
+	// The HTML is fit to put into the dashboard's own page, where its editor
+	// is: no style blocks, classes, ids or anything that runs.
 	HTML string `json:"html"`
 	Text string `json:"text"`
 
-	CreatedAt  time.Time `json:"createdAt"`
+	// IsEditable says whether the note can be changed here. A note holding
+	// pictures or attachments cannot: a new version is written from its
+	// text or HTML alone, and would lose them.
+	IsEditable bool `json:"isEditable"`
+
+	CreatedAt time.Time `json:"createdAt"`
+
+	// ModifiedAt is when this version arrived here, not the date the
+	// writing client put on it, which a phone with a wrong clock gets wrong.
+	// A save passes it back as expectedModifiedAt.
 	ModifiedAt time.Time `json:"modifiedAt"`
 }
 
@@ -84,6 +95,17 @@ type SaveNoteArguments struct {
 
 	HTML *string `json:"html" graphapi:"nullable"`
 	Text *string `json:"text" graphapi:"nullable"`
+
+	// FolderID is where a new note goes, when it is a folder of the
+	// mailbox other than the trash or junk; left out, or any other folder,
+	// the folder holding the notes. Unused when changing a note.
+	FolderID string `json:"folderId" graphapi:"nullable"`
+
+	// ExpectedModifiedAt is the modifiedAt of the version the writer read,
+	// in RFC 3339. When given and the note has changed since, the save is
+	// refused rather than written over the change; left out, the last
+	// writer wins.
+	ExpectedModifiedAt string `json:"expectedModifiedAt" graphapi:"nullable"`
 }
 
 // DeleteNoteArguments name the note.
@@ -157,12 +179,31 @@ func (self *graph) SaveNote(ctx context.Context, arguments SaveNoteArguments) (*
 	if title == "" {
 		return nil, fmt.Errorf("%w: a note needs something in it", api.ErrInvalidArguments)
 	}
-	request := mailboxcommands.SaveNoteRequest{MailboxID: mailbox.ID, NoteIdentifier: arguments.NoteID, Text: text}
+	request := mailboxcommands.SaveNoteRequest{
+		MailboxID: mailbox.ID, NoteIdentifier: arguments.NoteID, Text: text, FolderID: arguments.FolderID,
+		IsEditable: func(ctx context.Context, current *models.MailboxItem) (bool, error) {
+			view, err := self.noteView(ctx, mailbox, current, false)
+			if err != nil {
+				return false, err
+			}
+			return view.IsEditable, nil
+		},
+	}
+	if expected := strings.TrimSpace(arguments.ExpectedModifiedAt); expected != "" {
+		if request.ExpectedModifiedAt, err = time.Parse(time.RFC3339Nano, expected); err != nil {
+			return nil, fmt.Errorf("%w: expectedModifiedAt is not an RFC 3339 time", api.ErrInvalidArguments)
+		}
+	}
 	saved, err := mailboxcommands.New(self.transaction(ctx)).SaveNote(ctx, api.ContextPrincipal(ctx), request, self.storage,
 		func(ctx context.Context, transaction db.Transaction, owned *models.Mailbox, version mailboxcommands.NoteVersion) (*models.Mail, error) {
 			return self.prepareNote(ctx, transaction, owned, version, title, html)
 		})
-	if err != nil {
+	switch {
+	case errors.Is(err, mailboxcommands.ErrNoteChanged):
+		return nil, fmt.Errorf("%w: this note changed elsewhere since it was read; reload it and make the change again", api.ErrConflict)
+	case errors.Is(err, mailboxcommands.ErrNoteNotEditable):
+		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, notes.UneditableReason)
+	case err != nil:
 		return nil, translateError(err)
 	}
 	return self.noteView(ctx, mailbox, saved, true)
@@ -251,7 +292,9 @@ func (self *graph) noteView(ctx context.Context, mailbox *models.Mailbox, item *
 	stored := item.Mail
 	view := &NoteView{
 		ID: stored.NoteIdentifier, MailboxID: mailbox.ID, FolderID: item.FolderID,
-		Title: stored.Subject, CreatedAt: stored.ReceivedAt, ModifiedAt: stored.ReceivedAt,
+		Title: stored.Subject, CreatedAt: stored.ReceivedAt, ModifiedAt: item.AddedAt,
+		// A version whose message is gone has nothing a new one could lose.
+		IsEditable: true,
 	}
 	headers, body, err := self.storage.Get(ctx, stored.ID)
 	if err != nil {
@@ -269,6 +312,7 @@ func (self *graph) noteView(ctx context.Context, mailbox *models.Mailbox, item *
 	if err != nil {
 		return nil, err
 	}
+	view.IsEditable = notes.IsEditable(headers, content.HTML)
 	html, text := content.HTML, ""
 	if strings.TrimSpace(html) != "" {
 		text = notes.HTMLToText(html)
@@ -281,7 +325,7 @@ func (self *graph) noteView(ctx context.Context, mailbox *models.Mailbox, item *
 	}
 	view.Preview = notes.Preview(text, notePreviewLimit)
 	if isContentIncluded {
-		view.HTML, view.Text = html, text
+		view.HTML, view.Text = notes.EditorHTML(html), text
 	}
 	return view, nil
 }

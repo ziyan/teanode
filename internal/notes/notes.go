@@ -37,6 +37,11 @@ const (
 	TypeNote = "com.apple.mail-note"
 )
 
+// UneditableReason is what a person is told when a note cannot be changed
+// here: a new version is written from text or HTML alone, which would drop
+// the pictures and attachments the phone keeps in the message.
+const UneditableReason = "this note has pictures or attachments; change it on the phone"
+
 // titleLimit bounds the title, which is the Subject of the message: a note
 // whose first line is a paragraph is still named by a line.
 const titleLimit = 200
@@ -170,4 +175,16 @@ func Document(body string) string {
 		return body
 	}
 	return "<html><head></head><body>" + body + "</body></html>"
+}
+
+// IsEditable says whether a version of a note can be replaced by one written
+// from its text or HTML without losing anything: not when the message has
+// more than one part, which is how the phone keeps a picture or a file in a
+// note, and not when the HTML shows a picture.
+func IsEditable(headers []string, html string) bool {
+	contentType := strings.ToLower(strings.TrimSpace(mailparse.FindHeaderValue(headers, "Content-Type")))
+	if strings.HasPrefix(contentType, "multipart/") {
+		return false
+	}
+	return !hasPicture(html)
 }

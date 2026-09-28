@@ -164,6 +164,10 @@ type MailboxFolder struct {
 	// Counted when the tree is listed, never stored.
 	Unread int64 `json:"unread"`
 	Total  int64 `json:"total"`
+
+	// NoteCount is how many of the items are a phone's notes, counted only
+	// for the dashboard, which shows a folder holding nothing else as notes.
+	NoteCount int64 `json:"noteCount"`
 }
 
 // Validate reports everything wrong with the folder.

@@ -52,7 +52,7 @@ import { Key, useTranslation } from '../i18n/i18n'
 import { folderLabel, folderOfKind, folderRows, useMailboxes } from '../mailboxes'
 import { hasAnywhere, useSession } from '../session'
 import { InvitationCard } from '../components/invitationCard'
-import { LIST_NOTES, Note, NotesView, isNotesFolder } from '../components/notes'
+import { NotesView, isNotesFolder } from '../components/notes'
 import { ProposalCards } from '../components/proposalCard'
 import { MessageContent } from './mailDetail'
 import { MailboxComposer } from './mailboxCompose'
@@ -399,22 +399,7 @@ function FollowRail({ view, folder, itemId }: { view: MailboxView; folder: Mailb
       mailboxes.setCurrentId(mailboxId)
     }
   }, [mailboxes, mailboxId])
-  // Only the owner's own folders can be where the phone keeps notes, so only
-  // opening one of those asks which it is.
-  const isCustom = !folder.kind
-  const notes = useQuery(
-    () =>
-      isCustom
-        ? graphql<{ ListNotes: Note[] }>(LIST_NOTES, { mailboxId })
-        : Promise.resolve({ ListNotes: [] as Note[] }),
-    [mailboxId, isCustom],
-    { refresh: false },
-  )
-  // A failure to list notes shows the folder as mail, which it also is.
-  if (isCustom && notes.loading && !notes.data && !notes.error) {
-    return <Loading />
-  }
-  if (isNotesFolder(folder, notes.data?.ListNotes ?? [])) {
+  if (isNotesFolder(folder)) {
     return <NotesView key={folder.id} folder={folder} noteId={itemId} />
   }
   return <Folder key={folder.id} folder={folder} folders={view.folders} itemId={itemId} />

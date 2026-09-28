@@ -74,3 +74,44 @@ func TestTitleAndPreview(test *testing.T) {
 		test.Fatalf("title length=%d", len(title))
 	}
 }
+
+// A note is shown in the dashboard's own page, so nothing in it may reach
+// outside its box or run.
+func TestEditorHTMLKeepsTheTextAndDropsWhatReachesOut(test *testing.T) {
+	input := `<style>body { display: none }</style>` +
+		`<div class="compose" id="sign-in" onclick="steal()" style="color: red">Groceries</div>` +
+		`<script>steal()</script><!-- <img src=x onerror=steal()> -->` +
+		`<ul><li><a href="javascript:steal()" onmouseover="steal()">milk</a></li><li><a href="https://example.com/">bread</a></li></ul>` +
+		`<svg><script>steal()</script></svg>`
+	cleaned := notes.EditorHTML(input)
+	for _, unwanted := range []string{"<style", "class=", "id=", "onclick", "onmouseover", "onerror", "<script", "javascript:", "<svg", "steal", "<!--"} {
+		if strings.Contains(cleaned, unwanted) {
+			test.Errorf("%q survived: %s", unwanted, cleaned)
+		}
+	}
+	for _, wanted := range []string{"Groceries", `style="color: red"`, "<li>", "milk", `href="https://example.com/"`} {
+		if !strings.Contains(cleaned, wanted) {
+			test.Errorf("%q was lost: %s", wanted, cleaned)
+		}
+	}
+}
+
+func TestIsEditableRefusesPicturesAndAttachments(test *testing.T) {
+	single := []string{"Content-Type: text/html; charset=utf-8\r\n"}
+	multipart := []string{"Content-Type: multipart/mixed; boundary=\"example\"\r\n"}
+	for _, check := range []struct {
+		name       string
+		headers    []string
+		html       string
+		isEditable bool
+	}{
+		{"text", single, "<div>Plain words</div>", true},
+		{"a word that looks like a tag", single, "<div>&lt;img&gt; is a tag</div>", true},
+		{"a picture", single, `<div>Look</div><div><img src="cid:example"></div>`, false},
+		{"more than one part", multipart, "<div>With a file</div>", false},
+	} {
+		if isEditable := notes.IsEditable(check.headers, check.html); isEditable != check.isEditable {
+			test.Errorf("%s: isEditable=%v", check.name, isEditable)
+		}
+	}
+}

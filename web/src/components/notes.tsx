@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { MailboxFolder, graphql } from '../api'
@@ -9,7 +9,7 @@ import { ErrorMessage, Loading } from './common'
 import { ConfirmDialog } from './dialog'
 import { ArrowLeftIcon, TrashIcon } from './icons'
 import { RelativeTime } from './relativeTime'
-import { RichTextEditor } from './richText'
+import { RichTextEditor, quotableHtml } from './richText'
 import { SettingsEmpty } from './settingsList'
 import { useToast } from './toast'
 import { useQuery } from './useQuery'
@@ -26,6 +26,9 @@ export interface Note {
   preview: string
   createdAt: string
   modifiedAt: string
+  // Whether it can be changed here: a note with pictures or attachments
+  // cannot, since a new version is written from its HTML alone.
+  isEditable: boolean
   html?: string
   text?: string
 }
@@ -34,25 +37,40 @@ export interface Note {
 // identifier is a UUID, so it cannot be this word.
 export const NEW_NOTE = 'new'
 
-const FIELDS = `id mailboxId folderId title preview createdAt modifiedAt`
+const FIELDS = `id mailboxId folderId title preview isEditable createdAt modifiedAt`
 
 export const LIST_NOTES = `query ($mailboxId: String!) { ListNotes(mailboxId: $mailboxId) { ${FIELDS} } }`
 
 const GET = `query ($mailboxId: String!, $noteId: String!) { GetNote(mailboxId: $mailboxId, noteId: $noteId) { ${FIELDS} html text } }`
 
 const SAVE = `
-  mutation ($mailboxId: String!, $noteId: String, $html: String) {
-    SaveNote(mailboxId: $mailboxId, noteId: $noteId, html: $html) { ${FIELDS} html }
+  mutation ($mailboxId: String!, $noteId: String, $html: String, $folderId: String, $expectedModifiedAt: String) {
+    SaveNote(
+      mailboxId: $mailboxId
+      noteId: $noteId
+      html: $html
+      folderId: $folderId
+      expectedModifiedAt: $expectedModifiedAt
+    ) { ${FIELDS} html }
   }`
 
 const DELETE = `mutation ($mailboxId: String!, $noteId: String!) { DeleteNote(mailboxId: $mailboxId, noteId: $noteId) }`
 
-// isNotesFolder says whether a folder is where the phone keeps notes: it
-// holds one, or it is the owner's own folder called Notes, which is what the
-// phone makes and so what an empty one is called.
-export function isNotesFolder(folder: MailboxFolder, notes: Note[]): boolean {
-  if (notes.some((note) => note.folderId === folder.id)) return true
-  return !folder.kind && folder.name.trim().toLowerCase() === 'notes'
+// isNotesFolder says whether a folder is shown as notes: one of the owner's
+// own folders holding notes and nothing else, or an empty one called Notes,
+// which is what the phone makes. A folder where somebody filed notes among
+// mail stays mail, so none of the mail is hidden behind the notes view.
+export function isNotesFolder(folder: MailboxFolder): boolean {
+  if (folder.kind) return false
+  const noteCount = folder.noteCount ?? 0
+  if (noteCount > 0) return noteCount === folder.total
+  return folder.total === 0 && folder.name.trim().toLowerCase() === 'notes'
+}
+
+// isConflict says whether a save was refused because the note changed
+// elsewhere after it was loaded.
+function isConflict(caught: unknown): boolean {
+  return caught instanceof Error && caught.message.includes('api: conflict')
 }
 
 function newestFirst(notes: Note[]): Note[] {
@@ -116,6 +134,7 @@ export function NotesView({ folder, noteId }: { folder: MailboxFolder; noteId?: 
             <NoteEditor
               key={noteId}
               mailboxId={mailboxId}
+              folderId={folder.id}
               noteId={noteId}
               onBack={() => navigate(folderPath)}
               onSaved={(saved) => {
@@ -140,12 +159,14 @@ export function NotesView({ folder, noteId }: { folder: MailboxFolder; noteId?: 
 
 function NoteEditor({
   mailboxId,
+  folderId,
   noteId,
   onBack,
   onSaved,
   onDeleted,
 }: {
   mailboxId: string
+  folderId: string
   noteId: string
   onBack: () => void
   onSaved: (saved: Note) => void
@@ -167,8 +188,8 @@ function NoteEditor({
   const [html, setHtml] = useState('')
   const [savedHtml, setSavedHtml] = useState('')
   const [modifiedAt, setModifiedAt] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [isDeleting, setDeleting] = useState(false)
+  const [isBusy, setIsBusy] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const isDirty = html !== savedHtml
 
   // The newest version the editor has taken in. A refresh brings an edit made
@@ -177,22 +198,44 @@ function NoteEditor({
   // refresh that left before a save must not put the older text back.
   const shownModifiedAt = useRef(0)
   const loaded = note.data?.GetNote
+  const isEditable = isNew || (loaded?.isEditable ?? true)
+
+  // show puts a version of the note into the editor. The server has already
+  // made its HTML safe for this page; quotableHtml is the same rule the
+  // compose page applies to a quoted message, kept here too so the editor
+  // never takes in a style block or an id whatever the server sent.
+  const show = useCallback((version: Note) => {
+    const shownHtml = quotableHtml(version.html ?? '')
+    shownModifiedAt.current = Date.parse(version.modifiedAt)
+    setHtml(shownHtml)
+    setSavedHtml(shownHtml)
+    setModifiedAt(version.modifiedAt)
+  }, [])
+
   useEffect(() => {
     if (!loaded || isDirty) return
-    const loadedAt = Date.parse(loaded.modifiedAt)
-    if (loadedAt <= shownModifiedAt.current) return
-    shownModifiedAt.current = loadedAt
-    setHtml(loaded.html ?? '')
-    setSavedHtml(loaded.html ?? '')
-    setModifiedAt(loaded.modifiedAt)
-  }, [loaded, isDirty])
+    if (Date.parse(loaded.modifiedAt) <= shownModifiedAt.current) return
+    show(loaded)
+  }, [loaded, isDirty, show])
+
+  // After a save was refused because the note changed elsewhere, the editor
+  // shows that change, and the toast says why what was typed is gone rather
+  // than leaving it to be saved over the other change.
+  async function showChangedElsewhere() {
+    try {
+      const response = await graphql<{ GetNote: Note | null }>(GET, { mailboxId, noteId })
+      if (response.GetNote) show(response.GetNote)
+    } catch (caught) {
+      toast.failure(caught, t('notes.failed'))
+    }
+  }
 
   async function save() {
-    setBusy(true)
+    setIsBusy(true)
     try {
       const response = await graphql<{ SaveNote: Note }>(SAVE, {
         mailboxId,
-        ...(isNew ? {} : { noteId }),
+        ...(isNew ? { folderId } : { noteId, ...(modifiedAt ? { expectedModifiedAt: modifiedAt } : {}) }),
         html,
       })
       const saved = response.SaveNote
@@ -204,23 +247,28 @@ function NoteEditor({
       toast.done(t('notes.saved'))
       onSaved(saved)
     } catch (caught) {
-      toast.failure(caught, t('notes.failed'))
+      if (isConflict(caught)) {
+        toast.failed(t('notes.changedElsewhere'))
+        await showChangedElsewhere()
+      } else {
+        toast.failure(caught, t('notes.failed'))
+      }
     } finally {
-      setBusy(false)
+      setIsBusy(false)
     }
   }
 
   async function remove() {
-    setBusy(true)
+    setIsBusy(true)
     try {
       await graphql(DELETE, { mailboxId, noteId })
       toast.done(t('notes.deleted'))
-      setDeleting(false)
+      setIsDeleting(false)
       onDeleted()
     } catch (caught) {
       toast.failure(caught, t('notes.failed'))
     } finally {
-      setBusy(false)
+      setIsBusy(false)
     }
   }
 
@@ -260,25 +308,33 @@ function NoteEditor({
             className="icon-action danger"
             title={t('common.delete')}
             aria-label={`${title}: ${t('common.delete')}`}
-            disabled={busy}
-            onClick={() => setDeleting(true)}
+            disabled={isBusy}
+            onClick={() => setIsDeleting(true)}
           >
             <TrashIcon size={16} />
           </button>
         )}
-        <button type="button" className="primary" disabled={busy || !isDirty} onClick={() => void save()}>
-          {t('common.save')}
-        </button>
+        {isEditable && (
+          <button type="button" className="primary" disabled={isBusy || !isDirty} onClick={() => void save()}>
+            {t('common.save')}
+          </button>
+        )}
       </div>
-      <RichTextEditor value={html} readOnly={busy} placeholder={t('notes.placeholder')} onChange={setHtml} />
+      {!isEditable && <p className="notes-editor-uneditable muted">{t('notes.notEditable')}</p>}
+      <RichTextEditor
+        value={html}
+        readOnly={isBusy || !isEditable}
+        placeholder={t('notes.placeholder')}
+        onChange={setHtml}
+      />
       {isDeleting && (
         <ConfirmDialog
           title={t('notes.deleteTitle')}
           body={t('notes.deleteBody', { title })}
           confirmLabel={t('common.delete')}
-          busy={busy}
+          busy={isBusy}
           onConfirm={() => void remove()}
-          onClose={() => setDeleting(false)}
+          onClose={() => setIsDeleting(false)}
         />
       )}
     </div>

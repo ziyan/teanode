@@ -27,19 +27,21 @@ const (
 	noteBackfillBatch = 200
 )
 
-// backfillNotes reads one batch. It returns the number of messages examined,
-// so the caller can tell "there was work" from "there was none".
-func backfillNotes(ctx context.Context, database db.Database, store storage.Storage) (int, error) {
+// backfillNotes reads one batch, of the messages after afterMailId. It
+// returns the number of messages examined, so the caller can tell "there was
+// work" from "there was none", and the last id it examined, where the next
+// batch starts.
+func backfillNotes(ctx context.Context, database db.Database, store storage.Storage, afterMailId string) (int, string, error) {
 	var ids []string
 	if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
-		found, err := tx.ListMailNeedingNote(noteBackfillBatch)
+		found, err := tx.ListMailNeedingNote(afterMailId, noteBackfillBatch)
 		ids = found
 		return err
 	}); err != nil {
-		return 0, err
+		return 0, afterMailId, err
 	}
 	if len(ids) == 0 {
-		return 0, nil
+		return 0, afterMailId, nil
 	}
 
 	// Read outside a transaction, as the list headers are: these are network
@@ -51,7 +53,7 @@ func backfillNotes(ctx context.Context, database db.Database, store storage.Stor
 	results := make([]examined, 0, len(ids))
 	for _, id := range ids {
 		if ctx.Err() != nil {
-			return len(results), ctx.Err()
+			return 0, afterMailId, ctx.Err()
 		}
 		headers, _, err := store.Get(ctx, id)
 		if err != nil {
@@ -61,7 +63,7 @@ func backfillNotes(ctx context.Context, database db.Database, store storage.Stor
 				results = append(results, examined{id: id})
 				continue
 			}
-			return len(results), err
+			return 0, afterMailId, err
 		}
 		results = append(results, examined{id: id, noteIdentifier: notes.Identifier(headers)})
 	}
@@ -79,20 +81,21 @@ func backfillNotes(ctx context.Context, database db.Database, store storage.Stor
 		}
 		return nil
 	}); err != nil {
-		return 0, err
+		return 0, afterMailId, err
 	}
 	if found > 0 {
 		log.Noticef("read the headers of %d stored messages; %d are notes", len(results), found)
 	}
-	return len(results), nil
+	return len(results), ids[len(ids)-1], nil
 }
 
 // backfillAllNotes runs batches until one finds nothing, or the server
 // stops. A batch that fails is tried again a minute later rather than given
 // up on until the next start.
 func backfillAllNotes(ctx context.Context, database db.Database, store storage.Storage) {
+	lastMailId := ""
 	for ctx.Err() == nil {
-		examined, err := backfillNotes(ctx, database, store)
+		examined, examinedThrough, err := backfillNotes(ctx, database, store, lastMailId)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -108,5 +111,6 @@ func backfillAllNotes(ctx context.Context, database db.Database, store storage.S
 		if examined == 0 {
 			return
 		}
+		lastMailId = examinedThrough
 	}
 }

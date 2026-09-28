@@ -77,8 +77,9 @@ type MailOperation interface {
 	// ListMailNeedingNote is mail stored before this server looked for notes
 	// that could be one: a copy of something written by the account's owner,
 	// in a folder the owner made. The caller reads its headers and hands back
-	// what they said.
-	ListMailNeedingNote(limit int) ([]string, error)
+	// what they said. In order of id, after afterMailId, so a caller walking
+	// through them passes the last id of one page to get the next.
+	ListMailNeedingNote(afterMailId string, limit int) ([]string, error)
 
 	// SetMailNote records a message's note identifier, and that it was
 	// looked for. A non-empty identifier makes the message a note; an empty
@@ -667,16 +668,20 @@ func (self *transaction) SetMailList(mailId string, info mailparse.ListInfo) err
 // note, which is the only mail worth reading back out of storage: kept as
 // outgoing when it was appended, and in a folder of the custom kind, since a
 // phone puts its notes in a folder of their own.
-func (self *transaction) ListMailNeedingNote(limit int) ([]string, error) {
+//
+// Paged by id rather than read from the start each time: the messages that
+// are not candidates stay null, and a page that began at the start again
+// would step over every one of them on every page.
+func (self *transaction) ListMailNeedingNote(afterMailId string, limit int) ([]string, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 	var ids []string
 	err := self.tx.Model(&mailModel{}).
-		Where("\"note_identifier\" IS NULL AND \"kind\" = ?", models.MailKindOutgoing.String()).
+		Where("\"note_identifier\" IS NULL AND \"id\" > ? AND \"kind\" = ?", afterMailId, models.MailKindOutgoing.String()).
 		Where("EXISTS (SELECT 1 FROM \"mailbox_item\" INNER JOIN \"mailbox_folder\" ON \"mailbox_folder\".\"id\" = \"mailbox_item\".\"folder_id\" "+
 			"WHERE \"mailbox_item\".\"mail_id\" = \"mail\".\"id\" AND \"mailbox_folder\".\"kind\" = ?)", string(models.MailboxFolderKindCustom)).
-		Order("\"received_at\" DESC").
+		Order("\"id\" ASC").
 		Limit(limit).
 		Pluck("\"id\"", &ids).Error
 	return ids, err

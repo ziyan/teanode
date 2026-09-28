@@ -2981,6 +2981,8 @@ export const zh: Catalog = {
   'notes.saved': '备忘录已保存。',
   'notes.deleted': '备忘录已删除。',
   'notes.failed': '操作失败。',
+  'notes.changedElsewhere': '这条备忘录已在别处更改，因此未保存。现在显示的是那次更改，请重新修改。',
+  'notes.notEditable': '这条备忘录包含图片或附件。请在手机上修改。',
   'notes.deleteTitle': '删除这条备忘录？',
   'notes.deleteBody': '“{title}”将从这里删除，并在下次同步时从手机上删除。',
 }
