@@ -10937,6 +10937,14 @@ main.content:has(> .knowledge-frame) {
   }
 }
 
+/* An idea of their own carries its reason and what prompted it under it, so
+   it is read rather than scanned: one column, at a line length that reads,
+   rather than half the card beside an empty half. */
+.idea-list.idea-list-personal {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 720px;
+}
+
 .idea-row {
   position: relative;
   padding-right: 28px;

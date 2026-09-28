@@ -80,6 +80,20 @@ func (self *Agent) dreamThought(ctx context.Context, run *Run, budget *dreamBudg
 // settled here exactly as it is for a call in words, which is what makes
 // a night that has spent its share stop looking at pictures too.
 func (self *Agent) dreamThoughtAbout(ctx context.Context, run *Run, budget *dreamBudget, title, prompt string, pictures []llm.ContentPart, lookups bool) (*thought, error) {
+	return self.dreamCall(ctx, run, budget, title, prompt, pictures, lookups, budget.reserve)
+}
+
+// dreamThoughtBeyondShare is dreamThought for the one call a night makes
+// even when its share is spent: the look for ideas, which runs at most
+// once a day (see dreamIdeas). Every other call goes through
+// dreamThoughtAbout and stops when the share does.
+func (self *Agent) dreamThoughtBeyondShare(ctx context.Context, run *Run, budget *dreamBudget, title, prompt string, lookups bool) (*thought, error) {
+	return self.dreamCall(ctx, run, budget, title, prompt, nil, lookups, budget.reserveBeyondShare)
+}
+
+// dreamCall is the body of both, with reserve saying whether the call
+// may be made and claiming its estimate when it may.
+func (self *Agent) dreamCall(ctx context.Context, run *Run, budget *dreamBudget, title, prompt string, pictures []llm.ContentPart, lookups bool, reserve func() bool) (*thought, error) {
 	// A call with nothing to look up answers from its prompt, so it keeps
 	// the read-only turn it always had; there is nothing for a tool to do
 	// in it and no reason to offer one.
@@ -96,7 +110,7 @@ func (self *Agent) dreamThoughtAbout(ctx context.Context, run *Run, budget *drea
 	// its own is a promise made to every batch in flight at once: three
 	// of them asked whether there was room before any had spent
 	// anything, and all three were told yes.
-	if !budget.reserve() {
+	if !reserve() {
 		return nil, errNothingLeftToSpend
 	}
 	thinking, err := think(ctx, run, title, prompt, pictures, tools, rounds, models.AgentJobDream, config.AgentWorkScan)

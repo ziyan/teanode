@@ -200,6 +200,22 @@ func (self *dreamBudget) reserve() bool {
 	return true
 }
 
+// reserveBeyondShare is reserve for the one call that must run whatever
+// the night has spent: the look for ideas, at most once a day (see
+// dreamIdeas). Only a provider that will not bill the account stops it,
+// because nothing the night does changes that. The estimate is still
+// claimed and the cost still booked, so the calls after it see what it
+// spent.
+func (self *dreamBudget) reserveBeyondShare() bool {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if self.refused {
+		return false
+	}
+	self.reserved += dreamCallEstimate
+	return true
+}
+
 // settle gives back the estimate and books what the call really cost.
 func (self *dreamBudget) settle(usage llm.Usage) {
 	self.mutex.Lock()

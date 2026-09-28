@@ -102,14 +102,6 @@ type MarkAgentIdeasShownArguments struct {
 	IdeaIDs []string `json:"ideaIds"`
 }
 
-// personalIdeaLasts is how long a personal idea stays on offer when nobody
-// said when it stops mattering.
-const personalIdeaLasts = 14 * 24 * time.Hour
-
-// personalIdeaLastsMost is how far ahead a personal idea may say it stops
-// mattering.
-const personalIdeaLastsMost = 366 * 24 * time.Hour
-
 // ideaWorker is the worker that keeps ideas.
 func (self *graph) ideaWorker() (*agent.Agent, error) {
 	worker := self.agentWorker()
@@ -161,24 +153,18 @@ func (self *graph) ProposeAgentIdea(ctx context.Context, arguments ProposeAgentI
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
-	expires := now.Add(personalIdeaLasts)
-	if on := strings.TrimSpace(arguments.ExpiresOn); on != "" {
-		day, err := time.ParseInLocation("2006-01-02", on, time.Local)
-		if err != nil {
-			return nil, fmt.Errorf("%w: expiresOn is a day, as 2006-01-02: %s", api.ErrInvalidArguments, err)
-		}
-		expires = day.Add(24 * time.Hour)
-		if expires.Before(now) || expires.After(now.Add(personalIdeaLastsMost)) {
-			return nil, fmt.Errorf("%w: expiresOn is a day between today and a year from now", api.ErrInvalidArguments)
-		}
+	// The proposal is read into an idea the way the dream reads its own,
+	// so the day it stops mattering follows one rule whoever proposed it.
+	proposal := &agent.IdeaProposal{
+		IdeaCategory: arguments.IdeaCategory, Emoji: arguments.Emoji, Headline: arguments.Headline, Body: arguments.Body,
+		OpeningRequest: arguments.OpeningRequest, NeededToolNames: arguments.NeededToolNames, Evidence: arguments.Evidence,
+		SuggestionReason: arguments.SuggestionReason, ExpiresOn: arguments.ExpiresOn,
 	}
-	return worker.ProposeIdea(ctx, self.writing(ctx), found, principal.User, &models.AgentIdea{
-		IdeaCategory: models.AgentIdeaCategory(strings.TrimSpace(arguments.IdeaCategory)), Emoji: strings.TrimSpace(arguments.Emoji),
-		Headline: strings.TrimSpace(arguments.Headline), Body: strings.TrimSpace(arguments.Body),
-		OpeningRequest: strings.TrimSpace(arguments.OpeningRequest), NeededToolNames: arguments.NeededToolNames,
-		Evidence: arguments.Evidence, SuggestionReason: strings.TrimSpace(arguments.SuggestionReason), ExpiresAt: &expires,
-	})
+	idea, err := proposal.Idea(time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("%w: expiresOn: %s", api.ErrInvalidArguments, err)
+	}
+	return worker.ProposeIdea(ctx, self.writing(ctx), found, principal.User, idea)
 }
 
 func (self *graph) StartAgentIdea(ctx context.Context, arguments StartAgentIdeaArguments) (*StartedAgentIdea, error) {
