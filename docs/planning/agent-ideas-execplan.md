@@ -1,69 +1,85 @@
 # Ideas and goals: what the agent offers to do, and what it is keeping track of
 
-This ExecPlan is a living document. The sections Progress, Surprises & Discoveries, Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds. It follows the rules in `~/.claude/PLAN.md` as copied into the header of every plan under `docs/planning/`, and it builds on `docs/planning/agent-speaks-first-execplan.md`, whose seventh milestone added the tips this plan replaces.
+This ExecPlan is a living document. The sections Progress, Surprises & Discoveries, Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds. It builds on `docs/planning/agent-speaks-first-execplan.md`, whose seventh milestone added the "tips" that this plan turns into ideas; that plan stays as it was written, as history.
 
 ## Purpose / Big Picture
 
-A person uses a small part of what their agent can do, and mostly does not know what else it could do for them. Today the agent tells them one thing at a time, at most once a day, as a chat message it starts on its own: a "tip". Tips come from a fixed list of eight dashboard features (connect a mailbox, make a schedule, set a goal and so on), are never grounded in anything the person's own mail or memory says, are never shown again once said, and leave no record of whether they helped.
+A person uses a small part of what their agent can do, and mostly does not know what else it could do for them. Today the agent tells them one thing at a time, at most once a day, as a chat message it starts on its own. These messages are called tips in the code today. They come from a fixed list of eight dashboard features (connect a mailbox, make a schedule, set a goal and so on), are never grounded in the person's own mail or memory, are spent the moment they are said, and leave no record of whether they helped.
 
-After this plan, the agent keeps a list of ideas: concrete offers of work it can do, written as an offer ("I can compare this month's card charges against the last three and tell you what moved") with two or three lines on exactly what happens and where it stops to ask. The list has three kinds of idea. Personal ideas are found in the person's own mail, memory and activity during the nightly dream ("a subscription you keep marking as spam is still billing you; I can find the unsubscribe link and stop the mail"), and each one carries the evidence that prompted it. Offers are general ideas from a catalog in this repository, shown only when the person's agent has every tool the offer needs ("Photograph a letter and I read what it asks for, add the deadline to your calendar and draft the reply"). Setup ideas are the eight existing tips, shown until the person uses the feature.
+After this plan there is one thing, an idea, and the word tip is gone from the product. An idea is a concrete offer of work the agent can do, written as an offer ("I can compare this month's card charges against the last three and tell you what moved") with two or three lines on exactly what happens and where it stops to ask. An idea comes from one of two places. A catalog idea is written in this repository and is offered only when the person's agent has every tool it needs; the eight features of today are catalog ideas too, offered until the person uses the feature. A personal idea is found in the person's own mail, memory and calendar during the nightly dream, or proposed by the agent in conversation, and carries the evidence that prompted it ("a subscription you keep marking as spam is still billing you").
 
-The person sees the list on a new Ideas tab of their agent's page: personal ideas first, then offers grouped by area of life (money, mail and paperwork, home, family, travel, shopping, health, work, fun), each with an emoji and a one-line headline. Tapping an idea opens the chat drawer in a new conversation with the idea's opening request filled in, for the person to send or edit; nothing happens until they send it. Each idea can be dismissed. The same tab tracks what became of every idea: shown, started (with a link to the conversation it started), done, dismissed or expired, and why the agent suggested it. The occasional message the agent starts on its own ("speak first") keeps its one-a-day limit, but now draws on the top personal idea rather than the fixed list.
+The person manages ideas in three places that do the same things with the same words: the Ideas tab of their agent's page, the command line (`teanode agent idea list|propose|start|done|dismiss|reopen`), and the agent itself through its `idea` tool ("what ideas do you have for me?", "that one's done", "stop suggesting that"). Starting an idea opens a new conversation with the idea's opening request typed in the reply box; nothing happens until the person sends it. The Ideas tab also keeps a history of every idea: when it was started and in which conversation, done, dismissed or expired.
 
-Ideas lead to goals. A goal already exists in teanode: a conversation can carry a standing instruction the agent keeps working toward across turns of its own, with a state (`working`, `waiting`, `met`), a one-line note on where it stands and when it looks again. Today a goal is visible only inside its own conversation in the chat drawer, so a person with five goals has no single place that says what the agent is keeping track of for them. After this plan, a Goals tab lists every goal in progress as a row with a checkbox, the goal in a few words and the agent's latest note under it ("Waiting for the seller to confirm the size; I check again tomorrow at 9"), together with the schedules and mail rules that run on their own, since those are also things the agent keeps doing. Ticking a goal marks it met. Below the list, "Set a goal" offers one row per category; choosing one opens a conversation where the agent asks what the person is after and proposes a goal and a plan for it, which the person confirms before it is set. When an idea is started and its conversation ends up with a goal, the idea's status follows the goal: started while the goal is in progress, done when it is met.
+Ideas lead to goals. A goal already exists: a conversation can carry a standing instruction the agent keeps working toward across turns of its own, with a state (`working`, `waiting`, `met`), a one-line note on where it stands, and when it looks again. Today a goal is visible only inside its own conversation in the chat drawer. After this plan a Goals tab lists every goal in progress with its note, beside the schedules and mail rules that run on their own; ticking a goal marks it met; "Set a goal" by area opens a conversation for the agent to propose one. The command line and the agent's `goal` tool gain the same listing and the same "met". An idea started in a conversation that then gets a goal is done when that goal is met.
 
-To see it working: on a development server with a person whose agent has a mailbox and some memory, run `teanode agent dream` (or wait for the night), open Settings, Your agent, Ideas, and see a "For you" section with ideas that each name what they were drawn from, followed by grouped offers. Tap one; the drawer opens with the request ready to send. Send it, and the idea moves to "Started" with a link to that conversation. Dismiss another, and it moves to "Dismissed" and is not suggested again.
+To see it working: on a development server whose person has a mailbox granted to their agent, run `teanode agent dream now`, wait for it to finish, and open Settings, Your agent, Ideas. A "For you" section lists personal ideas, each saying what it was drawn from; below it, catalog ideas grouped by area. Tap one: the chat drawer opens on a new conversation with the request in the reply box. Send it; the idea shows as started in History with a link to the conversation. Run `teanode agent idea list` and see the same ideas and statuses. Ask the agent in the drawer to dismiss one of the ideas and see it move to dismissed on the tab.
 
 ## Progress
 
-- [x] (2026-09-28) Mapped the tip system as it is (see Context and Orientation) and wrote this plan.
-- [ ] Milestone 1: the idea as a stored record, the catalog file, the availability check, and the GraphQL operations; the existing tips become setup ideas.
-- [ ] Milestone 2: the Ideas tab, with starting, dismissing and tracking.
-- [ ] Milestone 3: the offer catalog, about thirty entries, each checked against the tools it needs.
-- [ ] Milestone 4: personal ideas from the dream, with evidence and an honesty check.
-- [ ] Milestone 5: ranking from what the person took up and dismissed, speak-first drawing on the list, and the end-to-end task.
-- [ ] Milestone 6: the Goals tab: every goal in progress with its latest note, the schedules and mail rules beside them, ticking a goal met, setting a goal by category, and an idea's status following the goal it led to.
+- [x] (2026-09-28) Mapped the tip code as it is and wrote the first version of this plan.
+- [x] (2026-09-28) Revised the plan: one name (idea) everywhere, the same operations from the dashboard, the command line and the agent's tools, and fewer concepts (see Decision Log).
+- [ ] Milestone 1: rename tips to ideas end to end, with the idea stored as a row, the catalog as a file, and the four operations reachable from GraphQL, the `idea` tool and the command line.
+- [ ] Milestone 2: the Ideas tab.
+- [ ] Milestone 3: the full catalog, about thirty entries.
+- [ ] Milestone 4: personal ideas from the dream and from conversation, through one check.
+- [ ] Milestone 5: goals listed and marked met from the Goals tab, the command line and the `goal` tool, with ideas following their goals.
 
 ## Surprises & Discoveries
 
-- Observation: the plan for tips said the agent would favor tips about "tools they used" and "a skill that is installed", but the code never read either; the choice is one model call shown the person's last ten conversation titles and nothing else.
+- Observation: the speak-first plan said tips would favor "tools they used" and "a skill that is installed", but the code never reads either; the choice is one model call shown the person's last ten conversation titles.
   Evidence: `chooseTip` in `internal/agent/tips.go` renders `tip_choose.txt` with `Candidates`, `Lately` and `Given` only.
-- Observation: a tip is recorded as given when the turn that says it starts, whatever the person does with it, so a tip ignored in a drawer nobody read is spent forever.
-  Evidence: `checkIn` in `internal/agent/tips.go` calls `tx.AddAgentTip` before the turn runs.
+- Observation: a tip is recorded as given before the turn that says it runs, so a tip nobody read is spent forever.
+  Evidence: `checkIn` in `internal/agent/tips.go` calls `tx.AddAgentTip` before returning the turn's instructions.
+- Observation: goals can already be listed from the command line, by fetching every conversation and keeping the ones with a goal in the client.
+  Evidence: `runAgentConversationGoal` in `internal/cmd/agent_chat.go` calls `client.SearchAgentConversations` (the `ListAgentConversations` operation) and filters on `Goal != ""` itself.
+- Observation: the chat drawer already keeps an unsent draft per conversation in the browser, and any page can open the drawer on a conversation.
+  Evidence: `draftKey` in `web/src/components/agentDrawer.tsx` (`teanode.agent.draft.<conversation id>`), and `openAgentConversation` in `web/src/api.ts`.
 
 ## Decision Log
 
-- Decision: one record for all three kinds of idea (setup, offer, personal), rather than keeping tips and adding ideas beside them.
-  Rationale: the person sees one list and one tracking view, and speak-first draws on one ranking. The difference between the kinds is where an idea comes from and how its availability is checked, which is a column, not a table.
-  Date/Author: 2026-09-28, plan author.
+- Decision: one name. What is called a tip today is an idea from this plan on, in the code, the database, the GraphQL schema, the agent's tools, the command line, the dashboard, its three languages and the docs. Nothing new is called a tip, and no alias is kept.
+  Rationale: the person asked for the same thing to have one name. Keeping `tips` as the switch and `ideas` as the list would leave two words for one thing, and every reader would wonder whether they differ. The one exception is history: migrations 0109 and 0112 and the speak-first plan are left as they were written, because a migration must never change after it has run and a plan records what was decided then.
+  Date/Author: 2026-09-28, at the person's request.
 
-- Decision: an idea never acts. Starting one puts its opening request into a new conversation for the person to send.
-  Rationale: an idea is written by a model from mail and memory the person has not read today, and some offers end in something outward (a message sent, an order placed). Making the person send the first message keeps every idea inside the approval rules that already govern the conversation, and it lets them correct a wrong premise before any work is done.
-  Date/Author: 2026-09-28, plan author.
+- Decision: every operation on ideas and goals exists once, as a GraphQL operation, and the three ways in are thin: the dashboard calls it, the command line calls it through the client, and the agent's tool calls it through `operator.Execute`, the way `internal/agent/tools/agentprofile/agentprofile.go` already calls `UpdateAgent`. The verbs are the same in all three: list, propose, start, done, dismiss, reopen for ideas; list and met for goals.
+  Rationale: the person asked for parity between the agent's tools, the web and the command line. Parity kept by hand drifts; parity by construction does not. Routing the tool through GraphQL also gives it the same permission checks and validation as the dashboard.
+  Date/Author: 2026-09-28, at the person's request.
 
-- Decision: an idea may only promise what the person's agent can do with the tools it has now, and says where it will stop to ask. This is enforced twice: a deterministic check that every tool the idea names exists in the person's tool list, and a model check that the text claims nothing beyond those tools.
-  Rationale: the ideas that read best in comparable products are often ones the agent could not carry out ("I'll haggle with the seller and arrange the pickup", "I'll file the claims end to end"). An offer the agent then fails at teaches the person that ideas are advertising. The tools already carry their risk (read, write, destructive, outward, see `internal/agent/tools/tool.go`), so "where it stops to ask" can be derived rather than trusted.
-  Date/Author: 2026-09-28, plan author.
+- Decision: two kinds of idea, `catalog` and `personal`, not three. The eight features of today are catalog entries that carry a `usedCheck`.
+  Rationale: a setup idea differs from any other catalog idea only in when it stops being offered, which is one optional field, not a kind.
+  Date/Author: 2026-09-28, simplifying the first version.
 
-- Decision: personal ideas are generated in the nightly dream, not during the day.
-  Rationale: the dream already reads the day's mail digest, the timeline and memory with a budget and a cheap model (see `internal/agent/dream.go`), and it runs while nobody waits. Finding patterns ("the same kind of alert every morning", "a document with a deadline next month") needs exactly that reading.
-  Date/Author: 2026-09-28, plan author.
+- Decision: five statuses, `open`, `started`, `done`, `dismissed`, `expired`. Being shown is a timestamp, `shown_at`, not a status.
+  Rationale: an idea that was shown is still open; a status for it would make every query ask for two statuses to mean one thing.
+  Date/Author: 2026-09-28, simplifying the first version.
 
-- Decision: emoji, from a fixed list per category, rather than generated pictures or the dashboard's line icons.
-  Rationale: an emoji renders in the dashboard, in Telegram and in mail with no asset pipeline, and a fixed list stops a model from choosing one that reads as a joke next to a serious idea (an immigration letter, a medical bill). The dashboard's line icons cannot tell thirty offers apart.
-  Date/Author: 2026-09-28, plan author.
+- Decision: the model call that picked a tip goes away. The agent's unprompted message names the highest ranked open idea not yet shown.
+  Rationale: the call existed to choose among eight generic features using conversation titles. Personal ideas are already judged relevant when the dream makes them, and ranking already orders them, so a second judgment adds a prompt and a failure mode and decides nothing new. The daily limit and the idle rule stay.
+  Date/Author: 2026-09-28, simplifying the first version.
 
-- Decision: the tracking view is part of the Ideas tab, not a separate page.
-  Rationale: the person asked for a UI that tracks the tips. What they want to see is what became of each idea next to the ideas still open: which they started, where that conversation is, which they dismissed and why each was suggested. Two pages would split one list by status.
-  Date/Author: 2026-09-28, plan author, at the person's request.
+- Decision: no new operations for goals and no draft stored on the server. Listing goals is a `hasGoal` argument on the existing `ListAgentConversations`; marking one met is a `goalState` argument on the existing `UpdateAgentConversation`; "Set a goal" is the existing `StartAgentConversation` followed by opening the drawer with a draft; starting an idea is `StartAgentIdea`, which returns the conversation and the opening request, and the dashboard puts the request in the reply box through `openAgentConversation(conversationId, draft)`.
+  Rationale: each of these already exists, or is one argument away. A separate tracking operation, a goal record or a server-side draft would each be a second copy of something the code has.
+  Date/Author: 2026-09-28, simplifying the first version.
 
-- Decision: a Goals tab listing every conversation goal in progress, with schedules and mail rules beside them, rather than a new kind of goal record.
-  Rationale: the person asked for goal tracking alongside ideas, after a comparable product that lists everything its assistant is tracking with a one-line status. Everything needed already exists: a goal is stored on its conversation with its state and the agent's latest note, a schedule and a mail rule each have their own table. What is missing is one place that lists them. A new record would duplicate the goal and drift from it.
-  Date/Author: 2026-09-28, plan author, at the person's request.
+- Decision: one check for every idea, whoever made it: the catalog test, the dream, the `idea` tool and `ProposeAgentIdea` all call `checkIdea`. It rejects an idea that needs a tool the person does not have, cites evidence that does not resolve, breaks the length and vocabulary rules, repeats an open or dismissed idea, or (for personal ideas, by one model call) promises more than its tools can do or leaves out where it asks first.
+  Rationale: the ideas that read best in comparable products are often ones the agent could not carry out ("I'll haggle with the seller and arrange the pickup"). An offer the agent then fails at teaches the person that ideas are advertising. One check means the catalog, the dream and the agent cannot drift apart on what an honest idea is.
+  Date/Author: 2026-09-28.
 
-- Decision: "Set a goal" opens a conversation that proposes a goal for the person to confirm, rather than a form.
-  Rationale: a goal is useful when it is specific and checkable ("save 300 a month toward the trip until March"), and people rarely write it that way first. The goal tool (`internal/agent/tools/goal/goal.go`) is told to `set` a goal only when the person asks for one, so the conversation proposes a goal in words, and the person saying yes is the asking; a category only frames the first question.
-  Date/Author: 2026-09-28, plan author.
+- Decision: starting an idea never acts. It opens a conversation with the request drafted for the person to send.
+  Rationale: a personal idea is written by a model from mail the person may not have read, and some offers end in something outward. The person sending the first message keeps every idea inside the approval rules the conversation already has, and lets them correct a wrong premise first.
+  Date/Author: 2026-09-28.
+
+- Decision: the areas (categories) and their emoji are one list in Go, served with the ideas, used by both tabs. The dashboard keeps only their translated labels.
+  Rationale: a second copy in TypeScript would drift. Emoji rather than pictures or the dashboard's line icons, because an emoji renders in the dashboard, in chat apps and in mail with no assets, and a fixed list keeps a model from choosing one that reads as a joke beside a serious idea.
+  Date/Author: 2026-09-28.
+
+- Decision: personal ideas are made in the nightly dream, and the agent may also propose one during a conversation.
+  Rationale: the dream already reads the day's mail, the timeline and memory within a budget while nobody waits. A conversation sometimes turns up an idea too ("you do this every Monday; want me to take it over?"), and the tool lets the agent keep it rather than lose it when the conversation ends.
+  Date/Author: 2026-09-28.
+
+- Decision: the history of ideas is a section of the Ideas tab, called History; the goals list is the Goals tab. Neither is called tracking.
+  Rationale: the person asked for a UI that tracks the ideas and pointed at a goals list. Using "tracking" for both would give two things one name, the mirror of the rule above.
+  Date/Author: 2026-09-28.
 
 ## Outcomes & Retrospective
 
@@ -71,87 +87,97 @@ Nothing yet.
 
 ## Context and Orientation
 
-The server is Go under `internal/`, the dashboard is React under `web/src/`. The "agent" is the person's assistant: `internal/agent/` holds its loop, its tools and its background work, and `models.Agent` (in `internal/models/agent.go`) is its row in the `agent` table, one per person.
+The server is Go under `internal/`, the dashboard is React under `web/src/`, the command line is `teanode`, built from `internal/cmd/`, which talks to the server only through its GraphQL API (`internal/client/`). The "agent" is a person's assistant; `internal/agent/` holds its loop, tools and background work, and `models.Agent` in `internal/models/agent.go` is its row in the `agent` table.
 
-Tips today. `internal/agent/tips.go` holds `tipCatalog`, eight `Tip` values, each with a `TipKey` (for example `schedule`), a `Feature` sentence, a `Where` (a dashboard link or what to say) and an `IsUsed` function that answers whether the person already uses the feature. `tipsToGive` filters the catalog to tips not used and not yet given. Tips are one of three "speak first" reasons in `internal/agent/speak_first.go`: a sweep every minute looks at agents whose person has the dashboard open, and if the person has been quiet for five minutes, has not been spoken to unprompted in a day, and no tip decision was made in a day, `chooseTip` asks a model (prompt `internal/agent/prompts/tip_choose.txt`) whether to give a tip and which. If it says yes, `checkIn` records the tip in the `agent_tip` table (migration `internal/db/migrations/0112_agent_tip.sql`: `agent_id`, `tip_key`, `given_at`, `conversation_id`, unique on agent and key) and starts a turn in the main conversation telling the agent to say it in two sentences. The person can reply "no more tips" or "not now", which the `agent_profile` tool (`internal/agent/tools/agentprofile/agentprofile.go`) turns into `is_tips_enabled = false` or a day's snooze. There is no card, no list and no tracking in the dashboard: a tip is an ordinary chat message labeled "Started by the agent" in `web/src/components/agentDrawer.tsx`. The switch for tips is on the agent's settings page, `web/src/pages/agent.tsx`, under the keys `agent.tips*` in `web/src/i18n/en.ts`, `ja.ts` and `zh.ts`.
+What exists today under the name tip. `internal/agent/tips.go` holds `tipCatalog`, eight `Tip` values (`TipKey`, `Feature`, `Where`, `IsUsed`), `tipsToGive`, `chooseTip` and `tipReason`; the prompt is `internal/agent/prompts/tip_choose.txt`; the tests are `internal/agent/tips_internal_test.go`. A tip is one of three reasons the agent starts a conversation on its own ("speak first", `internal/agent/speak_first.go`, constant `SpeakFirstTip = "tip"`, turn surface `speak_first:tip`): with the dashboard open and the person quiet for five minutes, at most once a day. Given tips are rows of `agent_tip` (migration `internal/db/migrations/0112_agent_tip.sql`; `models.AgentTip` in `internal/models/evaluation.go`; `AddAgentTip` and `ListAgentTips` in `internal/db/database_evaluation.go`). The switch is `agent.is_tips_enabled` (migration 0109; `IsTipsEnabled` in `internal/models/agent.go` and `internal/db/database_agent.go`; the GraphQL argument `isTipsEnabled` in `internal/api/v1api/apigraph/agent.go`; the checkbox in `web/src/pages/agent.tsx` with the strings `agent.tips`, `agent.tipsHint`, `agent.tipsOn`, `agent.tipsOff` in `web/src/i18n/en.ts`, `ja.ts`, `zh.ts`). The person turns them off by telling the agent, whose `agent_profile` tool (`internal/agent/tools/agentprofile/agentprofile.go`) has the actions `no_more_tips` and `tips_on`. The command `teanode agent speak-first --reason tip` (`internal/cmd/agent.go`, `internal/client/agent_graph.go`, `internal/api/v1api/apigraph/agent_speak_first.go`) forces one. Comments naming tips are in `internal/agent/presence.go`, `web/src/hooks/useAgentPresence.ts`, `web/src/components/agentDrawer.tsx`, `internal/models/insight.go`, `internal/models/agent.go` and `internal/db/database_agent.go`, and the end-to-end task `tips-01` is in `docs/evaluation/end-to-end-tasks.md`. Three other uses of the word are not this feature: the usage chart's hover box (`DayTip` and the `usage-chart-tip*` classes in `web/src/components/usageChart.tsx` and `web/src/style.css`), a comment about a git branch tip in `.github/workflows/secrets.yml`, and words in mail parsing code. The hover box is renamed to tooltip as well, so the word tip means nothing in the dashboard; the other two are left.
 
-Tools. The tools a person's agent can use are listed by `DirectTools` in `internal/agent/direct.go`; each is a `tools.Tool` (in `internal/agent/tools/tool.go`) with a `Name`, a `Description`, parameters, and a `Risk`: `read`, `write`, `destructive`, `outward` (reaches another person or service on their behalf) or `granting`. Skills installed from the registry add tools named `skill__<skill>__<tool>`, and connected MCP servers add their own. Which tools exist therefore differs per person and changes when they install or remove something.
+Tools. `DirectTools` in `internal/agent/direct.go` lists a person's tools; each `tools.Tool` (in `internal/agent/tools/tool.go`) has a `Name`, a `Description`, parameters and a `Risk`: `read`, `write`, `destructive`, `outward` (acts toward another person or service for them) or `granting`. Skills add tools named `skill__<skill>__<tool>`, connected servers add their own, so the list differs per person. A tool that mirrors a dashboard operation calls it with `operator.Execute(ctx, <graphql document>, variables)`, as `agentprofile.go` does.
 
-The dream. `internal/agent/dream.go` runs once a night per agent, as a job of kind `dream`, and calls passes in order (`dreamDigest`, `dreamAttachments`, `dreamTimeline`, `dreamConsolidate`, `dreamOrganize`, `dreamSplit`, `dreamAssociate`, `dreamRehearse` and others). Each pass draws on a shared `dreamBudget` and asks the model through `dreamThink` or `dreamThought` in `internal/agent/dream_request.go`, which can let the model look things up in memory and mail (`lookups`).
+Goals. A conversation row carries `goal`, `goal_state` (`working`, `waiting`, `met`, in `models.AgentGoalState`, `internal/models/insight.go`), `goal_note`, `goal_next_at` and `goal_set_at`. The `goal` tool (`internal/agent/tools/goal/goal.go`) acts on the conversation it runs in: `set` (only when the person asks), `note`, `wait`, `met`. GraphQL lists conversations with `ListAgentConversations(archived, query)` and changes one with `UpdateAgentConversation(conversationId, title, archived, goal)`; `StartAgentConversation(title, goal)` makes a named one. The command line has `teanode agent conversation goal`, which lists or sets.
 
-GraphQL. The dashboard talks to the server through operations defined as Go methods in `internal/api/v1api/apigraph/`, one file per area (for example `agent_speak_first.go`). Migrations are numbered SQL files in `internal/db/migrations/`; the newest is `0114_agent_interaction_run_call.sql`, so this plan adds `0115`. `docs/coding/database-migrations.md` says how to add one safely.
+The dream. `internal/agent/dream.go` runs once a night per agent and calls passes in order (`dreamDigest`, `dreamAttachments`, `dreamTimeline`, `dreamConsolidate` and more), each drawing on a shared `dreamBudget` and asking the model through `dreamThought` in `internal/agent/dream_request.go`, which can let it look things up. `teanode agent dream now` starts one.
 
-Terms used below. An "idea" is one offer of work, stored as a row. Its "kind" is `setup`, `offer` or `personal`. Its "needs" are the tool names it requires. Its "evidence" is the list of things in the person's data that prompted a personal idea, each a reference the dashboard can link to (a message, a memory page, a conversation). Its "status" is one of `open`, `shown`, `started`, `done`, `dismissed`, `expired`. Its "opening request" is the first message a started idea puts in the new conversation.
+The dashboard. `web/src/pages/agent.tsx` is the agent's page with its tabs; `openAgentConversation(conversationId)` in `web/src/api.ts` opens the chat drawer on a conversation; the drawer keeps a draft per conversation under the browser storage key `teanode.agent.draft.<id>`. Layout rules are in `docs/coding/frontend-design.md`; data tables stay tables on a phone, with sideways scroll.
+
+Migrations are numbered SQL files in `internal/db/migrations/`, each with a `.reverse.sql`; the newest is `0114`, so this plan adds `0115`. `docs/coding/database-migrations.md` says how.
 
 ## Plan of Work
 
-Milestone 1 makes the idea a stored record and moves the eight tips onto it, with no visible change yet except through the command line. Add migration `0115_agent_idea.sql` creating `agent_idea` with `id`, `agent_id` (foreign key to `agent`, cascade), `idea_key` (stable per agent: the catalog key for setup and offer ideas, a generated one for personal ideas), `idea_kind`, `idea_category`, `emoji`, `headline`, `body`, `opening_request`, `needed_tool_names` (text array), `evidence` (jsonb list of `{evidenceKind, evidenceId, evidenceSummary}`), `suggestion_reason` (one line, why this person), `idea_status`, `rank_score` (real), `created_at`, `shown_at`, `started_at`, `started_conversation_id`, `closed_at`, `expires_at`, and a unique index on `(agent_id, idea_key)`. Copy every `agent_tip` row into it as a setup idea with status `shown` and `shown_at = given_at`, so nothing the person was told comes back; keep `agent_tip` until Milestone 5 removes it. Add `models.AgentIdea` and the vocabularies `models.AgentIdeaKind`, `models.AgentIdeaCategory`, `models.AgentIdeaStatus` in a new `internal/models/idea.go`, and database methods in a new `internal/db/database_idea.go`: `UpsertAgentIdea` (insert, or on conflict refresh text and rank but never status), `ListAgentIdeas(agentId, statuses)`, `SetAgentIdeaStatus`, and `ExpireAgentIdeas(now)`.
+Milestone 1 renames and restructures in one pass, so that at its end there is no tip left and ideas can be listed, started and closed from all three places, with the eight features as the only catalog.
 
-The catalog moves out of Go into `internal/agent/ideas/catalog.yaml`, embedded with `go:embed`, read by a new package `internal/agent/ideas`. Each entry has `ideaKey`, `ideaKind` (`setup` or `offer`), `ideaCategory`, `emoji`, `headline`, `body`, `openingRequest`, `neededToolNames`, and for setup ideas `usedCheck`, naming one of the eight existing `IsUsed` functions, which move to `internal/agent/ideas/used.go` unchanged. The package exposes `Catalog() []*Entry`, and `Available(entry, toolNames) bool`, which is true when every needed name is among the person's tools (a trailing `*` matches a prefix, so `skill__gmail__*` means any tool of the gmail skill). A test reads the catalog and fails when a category or emoji is outside its vocabulary, a headline is over 80 characters, a body over 300, or an entry with an outward or destructive tool in `neededToolNames` has a body that does not say it asks first (it must contain one of the phrases listed in the package, such as "asks you first" or "until you say so").
+The database. Migration `0115_agent_idea.sql` creates `agent_idea` with `id`, `agent_id` (foreign key, cascade), `idea_key`, `idea_kind` (`catalog` or `personal`), `idea_category`, `emoji`, `headline`, `body`, `opening_request`, `needed_tool_names` (text array), `evidence` (jsonb list of `{evidenceKind, evidenceId, evidenceSummary}`), `suggestion_reason`, `idea_status`, `rank_score`, `created_at`, `shown_at`, `started_at`, `started_conversation_id`, `closed_at`, `expires_at`, unique on `(agent_id, idea_key)`. It copies each `agent_tip` row in as a catalog idea with status `open` and `shown_at` set to `given_at`, so nothing already said comes back unprompted; renames `agent.is_tips_enabled` to `is_ideas_enabled`; changes the subject of `speak_first` job rows from `tip` to `idea`, so the once-a-day count carries across the upgrade; and drops `agent_tip`. The reverse file does the opposite, recreating `agent_tip` from the catalog ideas that have a `shown_at`.
 
-A function `refreshCatalogIdeas(tx, agent, owner, toolNames)` in `internal/agent/ideas_refresh.go` upserts every available catalog entry for the agent as an `open` idea, and marks `expired` an open catalog idea whose tools are gone or, for setup ideas, whose feature the person now uses. It runs at the start of each dream and when the Ideas tab is opened, at most once an hour.
+The model and database layer. `internal/models/idea.go` holds `AgentIdea`, `AgentIdeaEvidence` and the vocabularies `AgentIdeaKind`, `AgentIdeaStatus` and `AgentIdeaCategory`, where each area also has its emoji list (`IdeaCategories()` returns them in display order). `models.AgentTip` goes. `internal/db/database_idea.go` holds `UpsertAgentIdea` (insert, or refresh text and rank without touching the status), `ListAgentIdeas(agentId, statuses, kinds)`, `GetAgentIdea`, `SetAgentIdeaStatus` and `MarkAgentIdeasShown`; `AddAgentTip` and `ListAgentTips` go. `IsTipsEnabled` becomes `IsIdeasEnabled` in the model, the database layer and GraphQL.
 
-GraphQL gains, in a new `internal/api/v1api/apigraph/agent_idea.go`: `ReadAgentIdeas(statuses)` returning the person's ideas with their evidence; `StartAgentIdea(ideaId)`, which creates a named conversation titled with the headline, puts the opening request in it as an unsent draft, sets the status to `started` with the conversation id, and returns the conversation; `DismissAgentIdea(ideaId)` and `ReopenAgentIdea(ideaId)`; `MarkAgentIdeasShown(ideaIds)`. The command line gains `teanode agent ideas list` and `teanode agent ideas refresh` through the generic operation reach described in `docs/reference/command-line.md`.
+The catalog. `internal/agent/tips.go` becomes `internal/agent/ideas.go`. The eight entries move to `internal/agent/ideas_catalog.yaml`, embedded with `go:embed`, each with `ideaKey`, `ideaCategory`, `emoji`, `headline`, `body`, `openingRequest`, `neededToolNames` and, for the eight, `usedCheck` naming one of the existing `IsUsed` functions (kept in Go, in a map by name). Their text is rewritten as offers under the rules in Milestone 3. `refreshCatalogIdeas` upserts every catalog entry whose tools the person has and whose feature they do not use, and expires open catalog ideas that no longer qualify. It runs at the start of each dream and when ideas are listed, at most once an hour per agent.
 
-Milestone 2 is the Ideas tab. Add a tab `ideas` to the tabs in `web/src/pages/agent.tsx`, rendering a new `web/src/pages/agentIdeas.tsx`. The top section, "For you", lists open personal ideas; then one section per category of open offers and setup ideas, in a fixed category order, each as a row with the emoji, the headline in the title weight, and the body clamped to three lines. A personal idea shows its suggestion reason under the body in the muted color, and its evidence as small links (a message opens the mail detail page, a memory page opens the knowledge explorer). Tapping a row calls `StartAgentIdea` and opens the chat drawer on the returned conversation with the draft in the reply box. A menu on each row has "Not interested", which dismisses it. Below the open ideas, a "Tracking" section with a status filter (Started, Done, Dismissed, Expired) lists closed and started ideas in a table (tables stay tables on a phone, with sideways scroll): the headline, the kind, the status, when, and for started ones a link to the conversation. A started idea's row offers "Mark done" and a dismissed one "Bring back". When the tab is first drawn, the rows on screen are reported through `MarkAgentIdeasShown`. The empty chat drawer (a new conversation with nothing in it) shows the top three open ideas as the same rows. Every string goes through the i18n files in English, Japanese and Chinese. The layout follows `docs/coding/frontend-design.md` and is checked at phone, tablet and desktop widths, light and dark.
+The operations, in `internal/api/v1api/apigraph/agent_idea.go`, each a thin resolver over functions on `*agent.Agent` in `internal/agent/ideas.go`:
 
-Milestone 3 writes the offer catalog: about thirty entries across the categories, every one invented and general (no names, no places, no companies from anyone's data), each written to the rules below and each naming its tools. The rules for the text, which the dream's prompt in Milestone 4 repeats: the headline is an offer in the first person or a situation followed by one ("Moving? I'll keep the whole move on one dated list."); the body says what the person gives, what the agent does step by step, and where it stops to ask; nothing is promised that a listed tool cannot do; nothing says "always", "every" or "guaranteed"; the opening request is what the person would type to start it, in their voice. Where a good idea needs a tool that exists only as a skill, the entry names the skill's tools with a prefix, so it appears only for people who installed it.
+    ListAgentIdeas(ideaStatuses: [String], ideaKinds: [String]) -> { ideas, ideaCategories }
+    ProposeAgentIdea(idea: AgentIdeaInput) -> AgentIdea                    checked by checkIdea; kind personal
+    StartAgentIdea(ideaId: String, conversationId: String) -> { idea, conversation, openingRequest }
+    SetAgentIdeaStatus(ideaId: String, ideaStatus: String) -> AgentIdea    done, dismissed, or open to reopen
 
-Milestone 4 adds personal ideas. A new dream pass `dreamIdeas` in `internal/agent/dream_ideas.go` runs after `dreamTimeline` and before `dreamConsolidate`, within the dream budget. It gives the model, through `dreamThought` with lookups on, the day's digest, the next thirty days of the timeline, the person's tool list with each tool's risk, the categories and emoji, the open ideas and the ones dismissed in the last ninety days, and the text rules, and asks for at most six candidate ideas as JSON, each with evidence references it looked up. Every candidate then goes through `checkIdea`, in `internal/agent/ideas_check.go`, which rejects it when a needed tool is not in the person's list, when an evidence reference does not resolve to a message, page or conversation of this person, when the text breaks the length or vocabulary rules, when the text is too close to an open or dismissed idea (by embedding similarity over 0.9, using the embedder the dream already uses), or when a second model call, prompt `internal/agent/prompts/idea_check.txt`, shown only the idea and the tool list with risks, answers that it promises something those tools cannot do or omits where it asks first. Accepted ideas are upserted as `personal` with an expiry of fourteen days unless the model gave an earlier date the idea stops mattering (a deadline). The pass logs each rejection with its reason at debug level and counts them on the dream record, so a prompt that produces mostly rejects shows up in the dream's summary.
+`StartAgentIdea` with no conversation makes a named conversation titled with the headline; with one (the agent's tool passes the conversation it is in), it records that one. Either way the status becomes `started`. The speak-first reason becomes `SpeakFirstIdea = "idea"`, the surface `speak_first:idea`; its check-in takes the highest ranked open idea with no `shown_at`, marks it shown, and tells the agent to offer it in two sentences with the opening request as a suggested reply. `chooseTip` and `tip_choose.txt` are deleted, for the reason in the Decision Log.
 
-Milestone 5 ranks and closes the loop. `rank_score` for an open idea is computed in `internal/agent/ideas_rank.go` from its kind (personal above offer above setup), its age, how many of the person's recent conversations touch its category, and the person's history: each dismissed idea in a category lowers that category, each started one raises it. The Ideas tab sorts by it within each section. The tip speak-first reason in `internal/agent/tips.go` changes to take the highest ranked open personal or setup idea not yet shown, pass it to the model with the same "is this a good moment" question, and tell it in the chat as today with the headline and the opening request as suggested replies; the idea is marked `shown`, not given, so it stays on the Ideas tab. `agent_tip` is then dropped by migration `0116`. `docs/evaluation/end-to-end-tasks.md` gets a task `ideas-01` (open the Ideas tab, start a personal idea, check that the draft is there and nothing ran; dismiss one; check the tracking list) replacing the tip half of `tips-01`, and `docs/subsystems/` gets a page `ideas.md` describing the whole of it.
+The agent's tool. A new `internal/agent/tools/idea/idea.go` registers `idea` (risk `write`), with actions `list`, `propose`, `start`, `done`, `dismiss`, `reopen`, each calling the operation above through `operator.Execute`. Its guidance says: list when the person asks what you could do for them; propose only with evidence you looked up, and never an idea that needs a tool you lack; start when the person takes one up in this conversation; done, dismiss or reopen when they say so. `agent_profile`'s `no_more_tips` and `tips_on` become `no_more_ideas` and `ideas_on`, setting `isIdeasEnabled`.
 
-Milestone 6 is the Goals tab. Add a GraphQL operation `ReadAgentTracking` in a new `internal/api/v1api/apigraph/agent_tracking.go` returning three lists: conversations of the person's agent with a goal whose state is `working` or `waiting` (id, title, goal text, `goalState`, `goalNote`, `goalNextAt`, `goalSetAt`), the agent's schedules as `ListAgentSchedules` returns them, and the rules of the mailboxes the agent may read (a rule belongs to a mailbox and is edited on the Rules tab of that mailbox's settings page, `web/src/pages/mailboxSettings.tsx`; nothing records whether the person or the agent wrote it, so all of them are listed). Add `SetAgentGoalMet(conversationId)`, which does what the goal tool does when the agent decides a goal is met: sets the state to `met` with a note that the person marked it, so the next turn does not reopen it. Add a tab `goals` to `web/src/pages/agent.tsx`, rendering `web/src/pages/agentGoals.tsx`: a "Tracking" list with, for each goal, a checkbox (ticking calls `SetAgentGoalMet` after a toast that can undo it for five seconds), the goal's title, the note in the muted color and a relative time for the next check, and a row menu with "Open conversation"; then "Runs on its own" with the schedules and rules, each linking to where it is edited today; then "Set a goal", one row per idea category with its emoji and a plus. Choosing a category calls a new `StartAgentGoal(ideaCategory)`, which creates a named conversation with an unsent draft ("I'd like to set a goal about my health.", in the person's language) and returns it, and the drawer opens on it; the agent then asks what they are after and proposes a goal in words, and sets it with the goal tool once they agree. Finally, the idea status follows the goal: when a goal is set or met on a conversation that is some idea's `started_conversation_id`, the goal tool's handler updates that idea to `started` or `done`. The acceptance: with two conversations carrying goals, one waiting and one working, and one schedule, the Goals tab shows both goals with their notes and the schedule; ticking one moves it out of the list and its conversation shows the goal as met; choosing "Money" under "Set a goal" opens the drawer on a new conversation with the draft in the box; starting an idea, letting the agent set a goal in that conversation and then ticking it on the Goals tab shows the idea as done on the Ideas tab.
+The command line. `internal/cmd/agent_idea.go` adds `teanode agent idea list [--status] [--kind] [--json]`, `propose` (fields as flags, for scripts), `start <idea-id> [--send]` (prints the conversation id and the opening request; `--send` sends it as `teanode agent ask --conversation` would), `done <idea-id>`, `dismiss <idea-id>` and `reopen <idea-id>`, each calling the client function for its operation. `speak-first --reason` takes `idea`. `docs/reference/command-line.md` gets the row.
+
+The dashboard, in this milestone only the rename: the checkbox reads "Ideas" with the strings `agent.ideas`, `agent.ideasHint`, `agent.ideasOn` and `agent.ideasOff` in all three languages, the GraphQL documents say `isIdeasEnabled`, the comments in `agentDrawer.tsx` and `useAgentPresence.ts` say idea, and the usage chart's `DayTip` and `usage-chart-tip*` become `DayTooltip` and `usage-chart-tooltip*`.
+
+Milestone 2 is the Ideas tab: a tab `ideas` in `web/src/pages/agent.tsx`, rendering `web/src/pages/agentIdeas.tsx`, reading `ListAgentIdeas`. "For you" lists open personal ideas; then one section per area in the order the server gives, each idea a row with its emoji, headline and body clamped to three lines, a personal idea also showing its suggestion reason in the muted color and its evidence as links (a message to the mail detail page, a memory page to the knowledge explorer, a conversation to the drawer). Tapping a row calls `StartAgentIdea` and then `openAgentConversation(conversation.id, openingRequest)`; `openAgentConversation` gains the optional `draft`, which the drawer writes to the conversation's draft key before it shows it. A row menu offers "Not interested" (dismiss). History, below, is a table with a status filter (started, done, dismissed, expired): headline, status, when, and the conversation link for started ones, with "Mark done" on started rows and "Bring back" on dismissed and expired ones. Rows drawn on screen are reported shown. An empty conversation in the drawer shows the top three open ideas as the same rows, from one shared component. All strings in three languages; checked at phone, tablet and desktop widths, light and dark.
+
+Milestone 3 fills the catalog to about thirty entries across the areas, invented and general (no names, places or companies from anyone's data). The text rules, which `checkIdea` enforces and the dream's prompt repeats: the headline is a first-person offer, or a situation followed by one, at most 80 characters; the body, at most 300, says what the person gives, what the agent does and where it stops to ask; an idea needing a tool of risk `outward` or `destructive` says it asks first; no "always", "every time" or "guaranteed"; the opening request is what the person would type, in their voice. An entry that needs a skill names the skill's tools with a trailing `*` (`skill__gmail__*`), which `checkIdea` and `refreshCatalogIdeas` read as any tool with that prefix.
+
+Milestone 4 adds personal ideas. `checkIdea(ctx, run, idea, toolRisks)` in `internal/agent/ideas_check.go` runs the deterministic rules, then for personal ideas resolves each evidence reference against the person's messages, memory pages and conversations, compares the text by embedding with open and dismissed ideas (too close above 0.9, using the dream's embedder), and asks one model call, `internal/agent/prompts/idea_check.txt`, shown only the idea and the tool list with risks, whether it promises more than those tools do or leaves out where it asks first. A pass `dreamIdeas` in `internal/agent/dream_ideas.go`, after `dreamTimeline`, gives the model the day's digest, the next thirty days of the timeline, the tool list with risks, the areas and emoji, the open and recently dismissed ideas and the text rules, asks for at most six ideas with evidence it looked up, sends each through the function behind `ProposeAgentIdea`, and counts the rejections with their reasons on the dream record. A personal idea expires after fourteen days, or earlier when the model gives the date it stops mattering. Ranking (`internal/agent/ideas_rank.go`) orders open ideas by kind (personal first), age, and the person's history per area: dismissals lower an area, starts raise it.
+
+Milestone 5 is goals. `ListAgentConversations` gains `hasGoal: Boolean`, returning only conversations with a goal not met; `UpdateAgentConversation` gains `goalState`, accepting only `met` from a person and writing the note "Marked met by the person" so the next turn does not reopen it. The command line's `conversation goal` list passes `hasGoal` and drops its own filter, and `conversation goal <id> --met` marks one met. The `goal` tool gains `list` (every goal in progress, through `ListAgentConversations(hasGoal: true)`) and lets `met` name another conversation with `conversation_id`, so the person can say in the main chat that something is done. The Goals tab, `web/src/pages/agentGoals.tsx`: "In progress" lists goals with a checkbox (ticking marks met, with an undo toast for five seconds), the title, the note in the muted color and when it looks again, and a link to the conversation; "Runs on its own" lists the schedules and the rules of the mailboxes the agent may read, from the operations their own pages already use, each linking there; "Set a goal" lists the areas from `ListAgentIdeas`' `ideaCategories`, and choosing one calls `StartAgentConversation` and `openAgentConversation` with a drafted first line in the person's language. When the goal tool sets or meets a goal on a conversation that is an idea's `started_conversation_id`, the idea becomes `started` or `done`.
 
 ## Concrete Steps
 
-All commands run from the repository root. Tests that touch the database need Docker, as `make test` starts PostgreSQL in a container; a single package can be tested against it the same way.
+From the repository root. Database tests need Docker (`make test` starts PostgreSQL).
 
-After Milestone 1:
+    go test -mod=vendor ./internal/agent/ ./internal/agent/tools/idea/ ./internal/db/ -run 'Idea|SpeakFirst'
+    go test -mod=vendor ./internal/cmd/ -run Idea
+    cd web && npx tsc --noEmit -p . && npx vitest run
+    make build
+    TEANODE_PROFILE=local ./build/teanode agent idea list
+    TEANODE_PROFILE=local ./build/teanode agent idea start <idea-id>
 
-    go test -mod=vendor ./internal/agent/ideas/ ./internal/db/ -run 'Idea|Catalog'
-    go test -mod=vendor ./internal/agent/ -run 'Tip|Idea'
-    make build && TEANODE_PROFILE=local ./build/teanode agent ideas refresh && TEANODE_PROFILE=local ./build/teanode agent ideas list
+The last command prints the new conversation's id and the opening request; `agent idea list` then shows the idea as started.
 
-The last command prints the available setup and offer ideas for the development account, one per line with key, kind, category and status.
+After the rename, this must print nothing but the unrelated uses named in Context and Orientation and the two historical migrations and plan:
 
-After Milestone 2, `make dev` and open http://127.0.0.1:10000/settings/agent/ideas.
-
-After Milestone 4, on the development server with a mailbox granted to the agent:
-
-    TEANODE_PROFILE=local ./build/teanode agent dream
-    TEANODE_PROFILE=local ./build/teanode agent ideas list --status open
-
-and expect personal ideas, each with at least one evidence reference.
+    git grep -n -iE '\btips?\b|tips?[A-Z_]|_tips?\b|Tips?Enabled|tip_choose|agent_tip' -- internal web/src docs
 
 ## Validation and Acceptance
 
-Milestone 1 is accepted when the catalog test fails on a catalog entry with an outward tool and no "asks first" wording and passes on the shipped catalog; when a person whose agent lacks a tool an offer needs does not get that offer, and gets it after the tool appears; when the eight former tips appear as setup ideas with their given ones already `shown`; and when `StartAgentIdea` returns a conversation whose draft is the opening request and no turn has run in it.
+Milestone 1: the grep above is clean; the migration applied to a copy of a database with given tips leaves those ideas with `shown_at` set, the switch as it was, and today's speak-first count unchanged; the same idea is listed identically by `teanode agent idea list --json`, by GraphQL `ListAgentIdeas`, and by the agent when asked what ideas it has; dismissing it from any one of the three shows it dismissed in the other two; `StartAgentIdea` returns a conversation in which no turn has run; `agent_profile` with `no_more_ideas` turns the switch off and the Ideas checkbox shows it off.
 
-Milestone 2 is accepted by hand in Chrome at 390, 820 and 1400 pixels wide, in light and dark: sections and rows as described, starting an idea opens the drawer on the new conversation with the draft in the box, dismissing moves the row to Tracking under Dismissed, "Bring back" returns it, and a started idea links to its conversation.
+Milestone 2: in Chrome at 390, 820 and 1400 pixels, light and dark, the sections and rows read as described; tapping an idea opens the drawer on a new conversation with the request in the reply box and nothing sent; "Not interested" moves the idea to History as dismissed, and "Bring back" returns it.
 
-Milestone 3 is accepted when the catalog test passes with the full catalog and a person with the default tools sees at least fifteen offers across at least six categories.
+Milestone 3: `go test ./internal/agent/ -run Catalog` passes on the full catalog and fails on an entry with an outward tool and no "asks first" wording, and a person with the default tools gets at least fifteen catalog ideas across at least six areas.
 
-Milestone 4 is accepted when a dream on a development account with a week of seeded mail produces personal ideas whose evidence links open the right messages; when a seeded idea that names a tool the person lacks, or cites a message that does not exist, is rejected with that reason; and when an idea close to a dismissed one is not suggested again.
+Milestone 4: a dream on a development account with a week of seeded mail yields personal ideas whose evidence links open the right messages; a proposed idea naming a tool the person lacks, citing a message that does not exist, or repeating a dismissed idea is refused with that reason, through the tool and through the command line alike.
 
-Milestone 6 is accepted as described at the end of its paragraph in Plan of Work, checked in Chrome at the same three widths.
+Milestone 5: with two conversations carrying goals and one schedule, the Goals tab, `teanode agent conversation goal` and the agent asked what it is working on list the same two goals; ticking one on the tab marks it met everywhere; an idea started, given a goal in its conversation and marked met shows as done on the Ideas tab.
 
-Milestone 5 is accepted when dismissing three ideas of one category moves that category's remaining ideas below others on the tab; when the agent's unprompted tip names an idea from the list and the idea then shows as shown, not gone; and when the end-to-end task `ideas-01` passes on the development server.
+A task `ideas-01` in `docs/evaluation/end-to-end-tasks.md` replaces `tips-01` and covers the switch, starting an idea from the tab, managing one by talking to the agent, and a goal marked met.
 
 ## Idempotence and Recovery
 
-The migration only adds a table and copies rows; its down file drops the table, and `agent_tip` is untouched until Milestone 5. Refreshing catalog ideas is an upsert that never changes a status, so it can run any number of times. The dream pass only adds or updates rows with kind `personal`; deleting every such row (`delete from agent_idea where idea_kind = 'personal'`) returns an agent to catalog ideas only, and the next dream finds new ones.
+Refreshing catalog ideas is an upsert that never changes a status, so it can run any number of times. The migration is reversible by its reverse file; take a database backup before applying it to a server with data, as `docs/reference/deployment.md` describes. Deleting every personal idea (`delete from agent_idea where idea_kind = 'personal'`) returns an agent to catalog ideas, and the next dream finds new ones.
 
 ## Artifacts and Notes
 
 An invented catalog entry, to show the shape:
 
     ideaKey: letter_to_deadline
-    ideaKind: offer
     ideaCategory: paperwork
     emoji: "📄"
     headline: Photograph a letter. I'll pull out what it asks and by when.
-    body: Send a photo of any letter or form and I read what it asks for, put the deadline on your calendar and draft the reply. Nothing is sent until you say so.
+    body: Send a photo of a letter or form and I read what it asks for, put the deadline on your calendar and draft the reply. Nothing is sent until you say so.
     openingRequest: Here is a letter I got. What does it ask me to do, and by when?
     neededToolNames: [calendar, mail_draft]
 
@@ -159,9 +185,9 @@ An invented catalog entry, to show the shape:
 
 In `internal/models/idea.go`:
 
-    type AgentIdeaKind string      // "setup", "offer", "personal"
-    type AgentIdeaCategory string  // "money", "paperwork", "mail", "home", "family", "travel", "shopping", "health", "work", "fun", "setup"
-    type AgentIdeaStatus string    // "open", "shown", "started", "done", "dismissed", "expired"
+    type AgentIdeaKind string      // "catalog", "personal"
+    type AgentIdeaStatus string    // "open", "started", "done", "dismissed", "expired"
+    type AgentIdeaCategory string  // "money", "paperwork", "mail", "home", "family", "travel", "shopping", "health", "work", "fun", "assistant"
 
     type AgentIdeaEvidence struct {
         EvidenceKind    string `json:"evidenceKind"`    // "message", "page", "conversation"
@@ -170,28 +196,29 @@ In `internal/models/idea.go`:
     }
 
     type AgentIdea struct {
-        ID, AgentID, IdeaKey string
-        IdeaKind AgentIdeaKind
-        IdeaCategory AgentIdeaCategory
-        Emoji, Headline, Body, OpeningRequest, SuggestionReason string
-        NeededToolNames []string
-        Evidence []AgentIdeaEvidence
-        IdeaStatus AgentIdeaStatus
-        RankScore float64
-        CreatedAt time.Time
-        ShownAt, StartedAt, ClosedAt, ExpiresAt *time.Time
-        StartedConversationID string
+        ID, AgentID, IdeaKey          string
+        IdeaKind                      AgentIdeaKind
+        IdeaCategory                  AgentIdeaCategory
+        Emoji, Headline, Body         string
+        OpeningRequest                string
+        SuggestionReason              string
+        NeededToolNames               []string
+        Evidence                      []AgentIdeaEvidence
+        IdeaStatus                    AgentIdeaStatus
+        RankScore                     float64
+        StartedConversationID         string
+        CreatedAt                     time.Time
+        ShownAt, StartedAt, ClosedAt  *time.Time
+        ExpiresAt                     *time.Time
     }
 
-In `internal/agent/ideas`:
+In `internal/agent/ideas.go`, used by the GraphQL resolvers and the dream, and by nothing else:
 
-    func Catalog() []*Entry
-    func Available(entry *Entry, toolNames []string) bool
+    func (self *Agent) ListIdeas(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, statuses []models.AgentIdeaStatus, kinds []models.AgentIdeaKind) ([]*models.AgentIdea, error)
+    func (self *Agent) ProposeIdea(ctx context.Context, run *Run, idea *models.AgentIdea) (*models.AgentIdea, error)
+    func (self *Agent) StartIdea(ctx context.Context, tx db.Transaction, agent *models.Agent, ideaId, conversationId string) (*models.AgentIdea, *models.AgentConversation, error)
+    func (self *Agent) SetIdeaStatus(ctx context.Context, tx db.Transaction, agent *models.Agent, ideaId string, status models.AgentIdeaStatus) (*models.AgentIdea, error)
 
-In `internal/agent`:
+No new libraries: YAML is already vendored for skills, and the embedder and model calls are the dream's own.
 
-    func (self *Agent) refreshCatalogIdeas(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User) error
-    func (self *Agent) dreamIdeas(ctx context.Context, run *Run, record *models.AgentDream, budget *dreamBudget)
-    func (self *Agent) checkIdea(ctx context.Context, run *Run, candidate *models.AgentIdea, toolRisks map[string]tools.Risk) (bool, string)
-
-No new libraries: YAML is already vendored for skills, and the embedder and the model calls are the dream's own.
+Revision 2026-09-28: renamed tips to ideas throughout at the person's request; made every operation one GraphQL operation reached the same way from the dashboard, the command line and the agent's tools; cut what the first version had twice (three kinds to two, a shown status to a timestamp, a tracking operation, a goal-start operation and a server-side draft to existing operations, the tip-choosing model call to ranking); named the two views History and Goals so that no word means two things.
