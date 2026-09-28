@@ -6,6 +6,20 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.78.0] - 2026-09-28
+
+### Added
+
+- Notes from a phone's Notes app, readable and writable in the dashboard's notes folder, as `teanode note`, and by the agent. (#221)
+
+### Changed
+
+- The dashboard no longer lists or counts messages flagged deleted but not yet expunged. (#221)
+
+### Fixed
+
+- Downloading a message a mail program appended over IMAP gave a file with a blank line after every header. (#221)
+
 ## [0.77.1] - 2026-09-28
 
 ### Changed
