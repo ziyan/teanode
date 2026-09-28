@@ -63,6 +63,7 @@ export type AgentMCPServer = {
   oauthScopes: string[]
   oauthAuthorizationUrl: string
   oauthTokenUrl: string
+  oauthRedirect: string
   headless: boolean
   location: string
   readOnly: string[]
@@ -150,7 +151,7 @@ export const AGENT_SELECTION = `agent {
   search { kind hasApiKey }
   tools { disabled confirm catalog { name family risk description confirms core actions } }
   browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
-  mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl headless location readOnly disabled timeout enabled }
+  mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl oauthRedirect headless location readOnly disabled timeout enabled }
   works families kinds
 }`
 
@@ -1373,6 +1374,7 @@ type ServerDraft = {
   oauthScopes: string
   oauthAuthorizationUrl: string
   oauthTokenUrl: string
+  oauthRedirect: string
   headless: boolean
   location: string
   readOnly: string
@@ -1400,6 +1402,7 @@ function serverDraft(server?: AgentMCPServer): ServerDraft {
         oauthScopes: list(server.oauthScopes),
         oauthAuthorizationUrl: server.oauthAuthorizationUrl,
         oauthTokenUrl: server.oauthTokenUrl,
+        oauthRedirect: server.oauthRedirect === 'computer' ? 'computer' : '',
         headless: server.headless,
         location: server.location,
         readOnly: list(server.readOnly),
@@ -1424,6 +1427,7 @@ function serverDraft(server?: AgentMCPServer): ServerDraft {
         oauthScopes: '',
         oauthAuthorizationUrl: '',
         oauthTokenUrl: '',
+        oauthRedirect: '',
         headless: false,
         location: '',
         readOnly: '',
@@ -1452,7 +1456,9 @@ function serverValues(server: AgentMCPServer) {
     oauthScopes: server.oauthScopes,
     oauthAuthorizationUrl: server.oauthAuthorizationUrl,
     oauthTokenUrl: server.oauthTokenUrl,
+    oauthRedirect: server.oauthRedirect === 'computer' ? 'computer' : '',
     headless: server.headless,
+    location: server.location === 'computer' ? 'computer' : '',
     readOnly: server.readOnly,
     disabled: server.disabled,
     timeout: server.timeout,
@@ -1476,6 +1482,7 @@ function serverDraftValues(draft: ServerDraft) {
     oauthScopes: split(draft.oauthScopes),
     oauthAuthorizationUrl: draft.oauthAuthorizationUrl.trim(),
     oauthTokenUrl: draft.oauthTokenUrl.trim(),
+    oauthRedirect: draft.oauthRedirect,
     headless: draft.headless,
     location: draft.location,
     readOnly: split(draft.readOnly),
@@ -1659,7 +1666,9 @@ function ServerDialog({
                 { value: '', label: t('agentSettings.serverLocationServer') },
                 { value: 'computer', label: t('agentSettings.serverLocationComputer') },
               ]}
-              onChange={(location) => set({ location })}
+              // A server on the person's computer is there only while they
+              // are, so a run with nobody present cannot use it.
+              onChange={(location) => set(location === 'computer' ? { location, headless: false } : { location })}
             />
           </label>
         )}
@@ -1776,6 +1785,19 @@ function ServerDialog({
               />
             </label>
           </div>
+          <label>
+            <span>{t('agentSettings.serverOauthRedirect')}</span>
+            <Select
+              block
+              value={draft.oauthRedirect}
+              label={t('agentSettings.serverOauthRedirect')}
+              options={[
+                { value: '', label: t('agentSettings.serverOauthRedirectServer') },
+                { value: 'computer', label: t('agentSettings.serverOauthRedirectComputer') },
+              ]}
+              onChange={(oauthRedirect) => set({ oauthRedirect })}
+            />
+          </label>
         </>
       ) : null}
       <div className="row">
@@ -1788,10 +1810,16 @@ function ServerDialog({
           <input value={draft.disabled} onChange={(event) => set({ disabled: event.target.value })} />
         </label>
       </div>
-      <label className="checkbox">
-        <input type="checkbox" checked={draft.headless} onChange={(event) => set({ headless: event.target.checked })} />
-        {t('agentSettings.serverHeadless')}
-      </label>
+      {draft.location === 'computer' ? null : (
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={draft.headless}
+            onChange={(event) => set({ headless: event.target.checked })}
+          />
+          {t('agentSettings.serverHeadless')}
+        </label>
+      )}
       <label className="checkbox">
         <input type="checkbox" checked={draft.enabled} onChange={(event) => set({ enabled: event.target.checked })} />
         {t('integrations.enabled')}
