@@ -10865,6 +10865,7 @@ main.content:has(> .knowledge-frame) {
    there is room, so thirty ideas are not one long scroll. */
 .idea-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4) var(--space-6);
 }
 
@@ -10949,6 +10950,7 @@ main.content:has(> .knowledge-frame) {
    with the mark of what it is. */
 .idea-sources {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   margin: 0;
   padding: 0;
@@ -10959,6 +10961,7 @@ main.content:has(> .knowledge-frame) {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+  min-width: 0;
   max-width: 100%;
   padding: 0;
   border: 0;
