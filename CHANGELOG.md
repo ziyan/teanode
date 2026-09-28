@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.74.7] - 2026-09-28
+
+### Changed
+
+- On a phone, messages such as "Dismissed" or "Archived" appear at the bottom of the screen. (#218)
+
 ## [0.74.6] - 2026-09-28
 
 ### Fixed
