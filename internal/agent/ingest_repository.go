@@ -175,6 +175,11 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 				facts = append(facts, line{"dependencies-elsewhere", elsewhere})
 			}
 		}
+		if activity, err := checkoutActivity(tx, source.AgentID, profile, time.Now()); err != nil {
+			return err
+		} else if activity != "" {
+			facts = append(facts, line{"activity", activity})
+		}
 		// A profile is recomputed every pass. What it says lands on the
 		// same numbered facts it said it on last time -- changed where the
 		// words changed, left alone where they did not -- and only a line

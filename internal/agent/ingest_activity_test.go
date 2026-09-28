@@ -1,0 +1,61 @@
+package agent
+
+import (
+	"testing"
+	"time"
+
+	"github.com/ziyan/teanode/internal/computer"
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/models"
+)
+
+// How busy a checkout is: its commits as the device counted them, and its
+// project's issues and merge requests as a code-host source filed them,
+// whether the source said what each is in its metadata or only in its
+// identifier.
+func TestCheckoutActivityCountsCommitsIssuesAndMergeRequests(test *testing.T) {
+	database, _, _, source := ingestionPageFixture(test)
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	daysAgo := func(days int) *time.Time {
+		when := now.AddDate(0, 0, -days)
+		return &when
+	}
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		for _, post := range []*models.AgentDocument{
+			// Named only by their identifiers, the way a GitLab source
+			// that carries no metadata about them files them.
+			{ExternalID: "core/example-lib.jsonl#core/example-lib#1", HappenedAt: daysAgo(10), Metadata: map[string]any{"state": "opened"}},
+			{ExternalID: "core/example-lib.jsonl#core/example-lib#2", HappenedAt: daysAgo(200), Metadata: map[string]any{"state": "closed"}},
+			{ExternalID: "core/example-lib.jsonl#core/example-lib!3", HappenedAt: daysAgo(30), ModifiedAt: daysAgo(5), Metadata: map[string]any{"state": "merged"}},
+			{ExternalID: "core/example-lib.jsonl#core/example-lib!4", HappenedAt: daysAgo(150), ModifiedAt: daysAgo(120), Metadata: map[string]any{"state": "merged"}},
+			// Said in its metadata.
+			{ExternalID: "issue-5", HappenedAt: daysAgo(400), Metadata: map[string]any{"project": "core/example-lib", "kind": "issue", "state": "opened"}},
+			// Another project whose path begins with this one's.
+			{ExternalID: "core/example-libextra.jsonl#core/example-libextra#6", HappenedAt: daysAgo(3), Metadata: map[string]any{"state": "opened"}},
+		} {
+			post.AgentID, post.SourceID, post.Kind = source.AgentID, source.ID, models.DocumentPost
+			if _, err := tx.PutAgentDocument(post); err != nil {
+				test.Fatal(err)
+			}
+		}
+		profile := &computer.RepositoryProfile{
+			Remotes:  []string{"git@git.example.com:core/example-lib.git"},
+			Activity: &computer.RepositoryActivity{CommitCountLast90Days: 3, CommitCountLast365Days: 10, AuthorCountLast365Days: 2},
+		}
+		activity, err := checkoutActivity(tx, source.AgentID, profile, now)
+		if err != nil {
+			test.Fatal(err)
+		}
+		want := "Activity: 3 commits in the last 90 days and 10 in the last year, by 2 people; " +
+			"2 open issues, 1 opened in the last 90 days; 1 merge request merged in the last 90 days."
+		if activity != want {
+			test.Fatalf("activity:\n got %q\nwant %q", activity, want)
+		}
+		// Nothing known, nothing said: a profile from a device that
+		// predates the counts, of a checkout no source reads issues for.
+		if activity, err := checkoutActivity(tx, source.AgentID, &computer.RepositoryProfile{}, now); err != nil || activity != "" {
+			test.Fatalf("nothing known is nothing said, not %q (%v)", activity, err)
+		}
+	})
+}

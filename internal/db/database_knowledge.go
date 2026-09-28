@@ -53,6 +53,17 @@ type KnowledgeOperation interface {
 	GetAgentDocumentByExternal(sourceId, externalId string) (*models.AgentDocument, error)
 	DeleteAgentDocument(agentId, documentId string) error
 
+	// ListAgentProjectPosts is the issues and merge requests an agent's
+	// sources read about one project on a code host, named by its path
+	// there ("core/example-lib"), newest first and at most limit of them.
+	// A post is the project's when its metadata says so, or when its
+	// identifier names the project, which is how a source type that
+	// carries no metadata about it names a post: "core/example-lib#12"
+	// for an issue and "core/example-lib!7" for a merge request. A path
+	// matches a project of that path under any group, as a mirror would
+	// hold it.
+	ListAgentProjectPosts(agentId, projectPath string, limit int) ([]*models.AgentDocument, error)
+
 	// ListAgentDocumentHashes is what a source already holds, so a pass
 	// can tell an unchanged file from one to read again without reading
 	// either.
@@ -550,6 +561,26 @@ func (self *transaction) GetAgentDocumentByExternal(sourceId, externalId string)
 		return nil, err
 	}
 	return documents[0], nil
+}
+
+func (self *transaction) ListAgentProjectPosts(agentId, projectPath string, limit int) ([]*models.AgentDocument, error) {
+	projectPath = strings.ToLower(strings.Trim(strings.TrimSpace(projectPath), "/"))
+	if agentId == "" || projectPath == "" {
+		return nil, nil
+	}
+	// position() rather than LIKE, so a path holding an underscore is
+	// the path and not a pattern. The identifier is read with a mark in
+	// front, since a post filed from a file of records carries the file's
+	// name before its own: "core/example-lib.jsonl#core/example-lib#12".
+	underGroup := "/" + projectPath
+	return self.documentsFrom(self.tx.Where(`"agent_id" = ? AND "kind" = ? AND (
+			lower(coalesce("metadata"->>'project', '')) = ?
+			OR right(lower(coalesce("metadata"->>'project', '')), ?) = ?
+			OR position(? in '#' || lower("external_id")) > 0 OR position(? in '#' || lower("external_id")) > 0
+			OR position(? in lower("external_id")) > 0 OR position(? in lower("external_id")) > 0)`,
+		agentId, string(models.DocumentPost), projectPath, len(underGroup), underGroup,
+		"#"+projectPath+"#", "#"+projectPath+"!", underGroup+"#", underGroup+"!").
+		Order(`"happened_at" DESC NULLS LAST`).Limit(limit))
 }
 
 func (self *transaction) DeleteAgentDocument(agentId, documentId string) error {
