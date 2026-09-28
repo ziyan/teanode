@@ -545,14 +545,7 @@ func domainOf(address string) string {
 // calendarFor is the calendar an invitation goes into: the person's own,
 // made if they have never had one.
 func (self *Scheduler) calendarFor(tx db.Transaction, userId string) (*models.Calendar, error) {
-	found, err := tx.ListCalendars(userId)
-	if err != nil {
-		return nil, err
-	}
-	if len(found) > 0 {
-		return found[0], nil
-	}
-	return tx.CreateCalendar(&models.Calendar{UserID: userId, Name: "Calendar"})
+	return tx.EnsureCalendar(userId, models.CalendarEvents, nil)
 }
 
 // request is somebody asking this person to a meeting.

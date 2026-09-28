@@ -1665,6 +1665,7 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 	var answer struct {
 		ListCalendars []struct {
 			Name         string `json:"name"`
+			CalendarKind string `json:"calendarKind"`
 			Events       int    `json:"events"`
 			AgentGranted bool   `json:"agentGranted"`
 		} `json:"ListCalendars"`
@@ -1675,7 +1676,7 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 		} `json:"ListAddressBooks"`
 	}
 	if err := self.settings.Operations.Execute(ctx,
-		`query { ListCalendars { name events agentGranted } ListAddressBooks { name contacts agentGranted } }`,
+		`query { ListCalendars { name calendarKind events agentGranted } ListAddressBooks { name contacts agentGranted } }`,
 		nil, &answer); err != nil {
 		// Not an error worth failing a turn over: a person without the
 		// permission for either has neither, and the prompt says nothing
@@ -1683,13 +1684,19 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 		log.Debugf("cannot list the collections of %q for the prompt: %s", self.settings.Owner.Username, err)
 		return nil, nil
 	}
-	calendars, books := 0, 0
+	calendars, reminderLists, books := 0, 0, 0
 	for _, calendar := range answer.ListCalendars {
-		if !calendar.AgentGranted {
+		isReminders := calendar.CalendarKind == string(models.CalendarReminders)
+		switch {
+		case !calendar.AgentGranted && isReminders:
+			reminderLists++
+		case !calendar.AgentGranted:
 			calendars++
-			continue
+		case isReminders:
+			granted = append(granted, fmt.Sprintf("- their reminders list %q, through the reminder tool", calendar.Name))
+		default:
+			granted = append(granted, fmt.Sprintf("- the calendar %q, with %d events in it", calendar.Name, calendar.Events))
 		}
-		granted = append(granted, fmt.Sprintf("- the calendar %q, with %d events in it", calendar.Name, calendar.Events))
 	}
 	for _, book := range answer.ListAddressBooks {
 		if !book.AgentGranted {
@@ -1700,6 +1707,9 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 	}
 	if calendars > 0 {
 		withheld = append(withheld, "their calendar")
+	}
+	if reminderLists > 0 {
+		withheld = append(withheld, "their reminders list")
 	}
 	if books > 0 {
 		withheld = append(withheld, "their address book")

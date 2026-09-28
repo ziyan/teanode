@@ -11,6 +11,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/calendar"
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/security"
 )
 
@@ -127,16 +128,19 @@ func eventFlags() []cli.Flag {
 }
 
 // theCalendar is the caller's, made by the server if they have never had one.
-// Everything here works on one calendar, because a person has one.
+// Everything here works on one calendar, because a person has one; their
+// reminders list beside it is teanode reminder's.
 func theCalendar(ctx context.Context, connection *client.Client) (*client.Calendar, error) {
 	calendars, err := client.ListCalendars(ctx, connection)
 	if err != nil {
 		return nil, err
 	}
-	if len(calendars) == 0 {
-		return nil, fmt.Errorf("this account has no calendar")
+	for _, found := range calendars {
+		if found.CalendarKind != string(models.CalendarReminders) {
+			return found, nil
+		}
 	}
-	return calendars[0], nil
+	return nil, fmt.Errorf("this account has no calendar")
 }
 
 // zoneOf is the zone to read a written time in: the calendar's own, and
@@ -587,12 +591,17 @@ func runCalendarCalendars(ctx context.Context, command *cli.Command) error {
 	}
 	rows := make([][]string, 0, len(calendars))
 	for _, found := range calendars {
+		// The count is of what the calendar keeps, which in the reminders
+		// list is reminders.
+		held := plural(found.Events, "event", "events")
+		if found.CalendarKind == string(models.CalendarReminders) {
+			held = plural(found.Events, "reminder", "reminders")
+		}
 		rows = append(rows, []string{
-			found.Name, found.Timezone, found.WeekStart, found.Colour,
-			fmt.Sprintf("%d", found.Events), found.ID,
+			found.Name, found.Timezone, found.WeekStart, found.Colour, held, found.ID,
 		})
 	}
-	return printTable([]string{"name", "timezone", "week starts", "colour", "events", "id"}, rows)
+	return printTable([]string{"name", "timezone", "week starts", "colour", "holds", "id"}, rows)
 }
 
 func runCalendarSet(ctx context.Context, command *cli.Command) error {

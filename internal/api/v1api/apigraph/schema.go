@@ -25,6 +25,7 @@ type Query interface {
 	MailboxDirectoryQuery
 	AddressBookQuery
 	CalendarQuery
+	ReminderQuery
 	CalendarInvitationQuery
 	TokenQuery
 	AppQuery
@@ -76,6 +77,7 @@ type Mutation interface {
 	MailboxAppPasswordMutation
 	AddressBookMutation
 	CalendarMutation
+	ReminderMutation
 	CalendarInvitationMutation
 	TokenMutation
 	AppMutation

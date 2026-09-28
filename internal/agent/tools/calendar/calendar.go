@@ -187,17 +187,19 @@ func theCalendar(ctx context.Context, operations tools.Operations) (string, stri
 			Name         string `json:"name"`
 			Timezone     string `json:"timezone"`
 			AgentGranted bool   `json:"agentGranted"`
+			CalendarKind string `json:"calendarKind"`
 		} `json:"ListCalendars"`
 	}
 	if err := operations.Execute(ctx,
-		`query { ListCalendars { id name timezone agentGranted } }`, nil, &result); err != nil {
+		`query { ListCalendars { id name timezone agentGranted calendarKind } }`, nil, &result); err != nil {
 		return "", "", err
 	}
 	if len(result.ListCalendars) == 0 {
 		return "", "", fmt.Errorf("there is no calendar")
 	}
 	for _, calendar := range result.ListCalendars {
-		if calendar.AgentGranted {
+		// The events calendar: the reminders list is the reminder tool's.
+		if calendar.AgentGranted && calendar.CalendarKind != string(models.CalendarReminders) {
 			return calendar.ID, calendar.Timezone, nil
 		}
 	}

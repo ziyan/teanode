@@ -264,6 +264,18 @@ proposals, `calendar`, `contact_book`.
       zone.
 - [ ] The contact is saved or updated, not duplicated.
 
+### reminder-01: something to remember on a day
+
+Surface: drawer, with the reminders list granted. Covers `reminder`
+(add, list, done).
+
+1. "Remind me to renew the library card on Friday."
+2. "What is on my reminders?" and then "I did the library card."
+
+- [ ] It lands on the reminders list due that Friday, not in the calendar
+      and not as a schedule.
+- [ ] Ticked off, it shows done on the calendar page's Reminders tab.
+
 ### money-01: what did I spend
 
 Surface: drawer. Covers `mail_search` over receipts, `artifact`.
@@ -546,6 +558,7 @@ Surface: drawer, the Ideas and Goals tabs, the command line. Covers `idea`,
 | conversation | inbox-01, surfaces-01 |
 | schedule | remind-01, schedule-02, files-01 |
 | goal | goal-01 |
+| reminder | reminder-01 |
 | todo | shopping-01, travel-01 |
 | ask_user | computer-01 |
 | agent_profile | ideas-01 |

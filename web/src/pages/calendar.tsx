@@ -8,6 +8,7 @@ import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { ChevronLeftIcon, ChevronRightIcon, PencilIcon, TrashIcon } from '../components/icons'
 import { Tooltip } from '../components/tooltip'
 import { TabItem, Tabs } from '../components/tabs'
+import { RemindersView } from '../components/reminders'
 import { useQuery } from '../components/useQuery'
 import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
@@ -23,7 +24,7 @@ import { useTranslation } from '../i18n/i18n'
 // per time something happens, so a weekly meeting arrives once for each week
 // in view and this page never has to know what a repeat rule means.
 
-const CALENDARS = `query { ListCalendars { id name description colour timezone weekStart events } }`
+const CALENDARS = `query { ListCalendars { id name description colour timezone weekStart events calendarKind } }`
 
 const EVENTS = `
   query ($calendarId: String!, $from: String!, $until: String!) {
@@ -48,6 +49,7 @@ type Calendar = {
   timezone?: string
   weekStart?: string
   events: number
+  calendarKind: 'events' | 'reminders'
 }
 
 type Attendee = { address: string; name?: string; participation?: string; role?: string }
@@ -72,7 +74,7 @@ type CalendarEvent = {
   attendees?: Attendee[]
 }
 
-type View = 'month' | 'week' | 'workweek' | 'day' | 'agenda'
+type View = 'month' | 'week' | 'workweek' | 'day' | 'agenda' | 'reminders'
 
 // The two conventions worth keeping. The server holds this per calendar and
 // answers with one of these, so the page never has to guess.
@@ -119,8 +121,10 @@ function namedRepeat(rule: string): boolean {
 // many days it starts from and how many it shows.
 const COLUMNS: Partial<Record<View, number>> = { day: 1, workweek: 5, week: 7 }
 
-// The order the views are offered in: widest span to narrowest, then the list.
-const VIEWS: View[] = ['month', 'week', 'workweek', 'day', 'agenda']
+// The order the views are offered in: widest span to narrowest, then the list,
+// then the reminders list beside the calendar, which a phone keeps in its
+// Reminders app and which is kept here too.
+const VIEWS: View[] = ['month', 'week', 'workweek', 'day', 'agenda', 'reminders']
 
 // How tall an hour is drawn, in pixels, and where the grid opens.
 //
@@ -336,7 +340,8 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   }
 
   const calendars = useQuery(() => graphql<{ ListCalendars: Calendar[] }>(CALENDARS), [], { refresh: false })
-  const calendar = calendars.data?.ListCalendars?.[0] ?? null
+  // The events calendar; the reminders list beside it is drawn on its own.
+  const calendar = calendars.data?.ListCalendars?.find((found) => found.calendarKind !== 'reminders') ?? null
   const calendarId = calendar?.id ?? ''
   // Sunday unless this calendar says Monday. The server answers with one of
   // the two, so this only has to cope with an answer that has not arrived.
@@ -660,37 +665,46 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
         onSelect={(id) => move({ view: id as View })}
       />
 
-      <div className="calendar-bar">
-        <div className="calendar-move">
-          <Tooltip label={t('calendar.previous')}>
-            <button type="button" className="icon-button" onClick={() => step(-1)} aria-label={t('calendar.previous')}>
-              <ChevronLeftIcon />
-            </button>
-          </Tooltip>
-          <button type="button" onClick={() => move({ on: new Date() })}>
-            {t('calendar.today')}
-          </button>
-          <Tooltip label={t('calendar.next')}>
-            <button type="button" className="icon-button" onClick={() => step(1)} aria-label={t('calendar.next')}>
-              <ChevronRightIcon />
-            </button>
-          </Tooltip>
-          <span className="calendar-heading">{heading}</span>
-        </div>
-        <button
-          className="primary"
-          type="button"
-          disabled={!calendarId || !!submission.pending || submission.isWorking || busy}
-          onClick={() => {
-            setProblem(null)
-            setDraft(blank(on))
-          }}
-        >
-          {t('calendar.new')}
-        </button>
-      </div>
+      {view === 'reminders' && <RemindersView />}
 
-      {loading && <p className="calendar-notice muted">{t('common.loading')}</p>}
+      {view !== 'reminders' && (
+        <div className="calendar-bar">
+          <div className="calendar-move">
+            <Tooltip label={t('calendar.previous')}>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => step(-1)}
+                aria-label={t('calendar.previous')}
+              >
+                <ChevronLeftIcon />
+              </button>
+            </Tooltip>
+            <button type="button" onClick={() => move({ on: new Date() })}>
+              {t('calendar.today')}
+            </button>
+            <Tooltip label={t('calendar.next')}>
+              <button type="button" className="icon-button" onClick={() => step(1)} aria-label={t('calendar.next')}>
+                <ChevronRightIcon />
+              </button>
+            </Tooltip>
+            <span className="calendar-heading">{heading}</span>
+          </div>
+          <button
+            className="primary"
+            type="button"
+            disabled={!calendarId || !!submission.pending || submission.isWorking || busy}
+            onClick={() => {
+              setProblem(null)
+              setDraft(blank(on))
+            }}
+          >
+            {t('calendar.new')}
+          </button>
+        </div>
+      )}
+
+      {loading && view !== 'reminders' && <p className="calendar-notice muted">{t('common.loading')}</p>}
 
       {!loading && view === 'month' && (
         <div className="calendar-month-scroll">

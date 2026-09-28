@@ -39,6 +39,9 @@ func (self *Commands) SaveEvent(ctx context.Context, principal *access.Principal
 		if owned == nil || owned.UserID != principal.User.ID {
 			return db.ErrNotFound
 		}
+		if owned.CalendarKind == models.CalendarReminders {
+			return fmt.Errorf("%w: that is the reminders list, which keeps reminders, not events", db.ErrInvalidArguments)
+		}
 		var existing *models.CalendarObject
 		if id := strings.TrimSpace(request.ID); id != "" {
 			existing, err = transaction.LockCalendarObject(owned.ID, id)
@@ -126,6 +129,9 @@ func (self *Commands) DeleteEvent(ctx context.Context, principal *access.Princip
 		}
 		if owned == nil || owned.UserID != principal.User.ID {
 			return db.ErrNotFound
+		}
+		if owned.CalendarKind == models.CalendarReminders {
+			return fmt.Errorf("%w: that is the reminders list, which keeps reminders, not events", db.ErrInvalidArguments)
 		}
 		object, err := transaction.LockCalendarObject(owned.ID, strings.TrimSpace(request.ID))
 		if err != nil {

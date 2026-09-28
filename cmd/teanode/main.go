@@ -85,6 +85,7 @@ func main() {
 			cmd.NewMailboxCommand(),
 			cmd.NewContactCommand(),
 			cmd.NewCalendarCommand(),
+			cmd.NewReminderCommand(),
 			cmd.NewAgentCommand(),
 			cmd.NewComputerCommand(),
 			cmd.NewTerminalCommand(),
