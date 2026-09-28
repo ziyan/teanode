@@ -19,9 +19,9 @@ To see it working: on a development server whose person has a mailbox granted to
 - [x] (2026-09-28) Mapped the tip code as it is and wrote the first version of this plan.
 - [x] (2026-09-28) Revised the plan: one name (idea) everywhere, the same operations from the dashboard, the command line and the agent's tools, and fewer concepts (see Decision Log).
 - [x] (2026-09-28) Milestone 1: rename tips to ideas end to end, with the idea stored as a row, the catalog as a file, and the four operations reachable from GraphQL, the `idea` tool and the command line. The tool sends the command line's own GraphQL documents (`internal/client/agent_idea.go`), which a test validates against the schema, so the two cannot differ even in wording.
-- [ ] Milestone 2: the Ideas tab.
-- [ ] Milestone 3: the full catalog, about thirty entries.
-- [ ] Milestone 4: personal ideas from the dream and from conversation, through one check.
+- [x] (2026-09-28) Milestone 2: the Ideas tab, checked in light and dark at 390 and 1400 pixels on the server with headless Chrome; ideas sit two to a row from 900 pixels, and the mark that dismisses one is in its corner rather than a line of its own.
+- [x] (2026-09-28) Milestone 3: the full catalog, thirty-three ideas beside the eight features, checked against the registered tools' own risks.
+- [x] (2026-09-28) Milestone 4: personal ideas from the dream and from conversation, through one check, and ranking from what the person did with each category.
 - [ ] Milestone 5: goals listed and marked met from the Goals tab, the command line and the `goal` tool, with ideas following their goals.
 
 ## Surprises & Discoveries
@@ -36,6 +36,14 @@ To see it working: on a development server whose person has a mailbox granted to
   Evidence: `draftKey` in `web/src/components/agentDrawer.tsx` (`teanode.agent.draft.<conversation id>`), and `openAgentConversation` in `web/src/api.ts`.
 
 ## Decision Log
+
+- Decision: the dream proposes ideas by calling the idea tool itself, rather than returning JSON for the pass to check and keep.
+  Rationale: a call of the night already has the person's tools, and one that needs no approval runs unattended. Going through the tool means a dream's idea takes the same path as the agent's in a conversation and the person's on the command line, and the model sees a refusal's reason and can correct the one thing wrong.
+  Date/Author: 2026-09-28, while implementing.
+
+- Decision: a repeat is found by the share of words two headlines have in common (over 0.6 of the words of four letters or more), not by embeddings.
+  Rationale: the check runs inside a request and for a handful of ideas; embedding each headline needs the embedding service up and adds a call for what word overlap already catches between two offers of one thing. The model's judgment is the check that needs a model.
+  Date/Author: 2026-09-28, while implementing.
 
 - Decision: the agent's `idea` tool sends the documents the command line's client defines, rather than its own.
   Rationale: found while building Milestone 1. `TestClientDocumentsMatchTheSchema` validates the client's documents against the schema; a tool's own documents are checked by nothing, and were a second copy of the same four operations.

@@ -220,3 +220,78 @@ func TestTheAgentOffersTheBestUnseenIdeaAtMostDaily(t *testing.T) {
 		}
 	})
 }
+
+// An idea found for the person is kept only when what prompted it is
+// there, it is not one already kept, and a model finds it promises
+// nothing its tools cannot do.
+func TestAProposedIdeaIsKeptOnlyWithEvidenceAndAnHonestVerdict(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	provider := scriptedProvider([]string{
+		saidByModel(`{"isHonest": true, "problem": ""}`),
+		saidByModel(`{"isHonest": false, "problem": "nothing it has can call the plumber"}`),
+	})
+	defer provider.Close()
+	worker, run := digestSplitWorld(t, database, provider.URL)
+	ideaCatalogForTest(t)
+
+	proposal := func(headline string, evidence ...models.AgentIdeaEvidence) *models.AgentIdea {
+		return &models.AgentIdea{
+			IdeaCategory: "home", Emoji: "🔧", Headline: headline,
+			Body: "I list what the service needs and when, and remind you a week ahead.", OpeningRequest: "Remind me before the boiler service.",
+			Evidence: evidence,
+		}
+	}
+	boiler := models.AgentIdeaEvidence{EvidenceKind: "page", EvidenceID: "things/boiler", EvidenceSummary: "the boiler"}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.PutAgentNode(&models.AgentNode{AgentID: run.Agent.ID, Path: "things/boiler", Kind: models.NodeThing, Name: "Boiler"}); err != nil {
+			t.Fatal(err)
+		}
+		for _, each := range []struct {
+			idea *models.AgentIdea
+			want string
+		}{
+			{proposal("I'll remind you before the boiler service is due."), "needs the evidence"},
+			{proposal("I'll remind you before the boiler service is due.", models.AgentIdeaEvidence{EvidenceKind: "page", EvidenceID: "things/kettle", EvidenceSummary: "a kettle"}), "no memory page"},
+			{proposal("I'll remind you before the boiler service is due.", models.AgentIdeaEvidence{EvidenceKind: "message", EvidenceID: "01nothing", EvidenceSummary: "a letter"}), "no message"},
+			{proposal("I'll remind you before the boiler service is due.", models.AgentIdeaEvidence{EvidenceKind: "conversation", EvidenceID: "01nobody", EvidenceSummary: "a chat"}), "no conversation"},
+		} {
+			if _, err := worker.ProposeIdea(t.Context(), tx, run.Agent, run.Owner, each.idea); err == nil || !strings.Contains(err.Error(), each.want) {
+				t.Errorf("%q: %v", each.want, err)
+			}
+		}
+
+		kept, err := worker.ProposeIdea(t.Context(), tx, run.Agent, run.Owner, proposal("I'll remind you before the boiler service is due.", boiler))
+		if err != nil || kept.IdeaKind != models.IdeaPersonal || kept.IdeaStatus != models.IdeaOpen || !strings.HasPrefix(kept.IdeaKey, "personal_") {
+			t.Fatalf("kept as a personal idea: %+v %v", kept, err)
+		}
+		if _, err := worker.ProposeIdea(t.Context(), tx, run.Agent, run.Owner, proposal("I'll remind you before the boiler service is due again.", boiler)); err == nil || !strings.Contains(err.Error(), "repeats") {
+			t.Fatalf("the same idea twice: %v", err)
+		}
+		if _, err := worker.ProposeIdea(t.Context(), tx, run.Agent, run.Owner, proposal("I'll call the plumber when the boiler breaks.", boiler)); err == nil || !strings.Contains(err.Error(), "call the plumber") {
+			t.Fatalf("the model's no, with its reason: %v", err)
+		}
+	})
+}
+
+// What the person did with a category's ideas moves the rest of it: the
+// ones they dismiss sink, the ones they take up rise, and never past a
+// kind.
+func TestWhatThePersonDidMovesACategory(t *testing.T) {
+	ideas := []*models.AgentIdea{
+		{IdeaCategory: "home", IdeaStatus: models.IdeaDismissed},
+		{IdeaCategory: "home", IdeaStatus: models.IdeaDismissed},
+		{IdeaCategory: "travel", IdeaStatus: models.IdeaStarted},
+		{IdeaCategory: "travel", IdeaStatus: models.IdeaOpen},
+	}
+	for index := 0; index < 20; index++ {
+		ideas = append(ideas, &models.AgentIdea{IdeaCategory: "money", IdeaStatus: models.IdeaDismissed})
+	}
+	weights := categoryWeights(ideas)
+	if weights["home"] >= 0 || weights["travel"] <= 0 || weights["work"] != 0 {
+		t.Fatalf("home sinks, travel rises, work stays: %v", weights)
+	}
+	if personalIdeaRank+weights["money"] <= catalogIdeaRank+ideaCategoryMost {
+		t.Fatalf("a personal idea stays above every catalog idea: %v", weights)
+	}
+}

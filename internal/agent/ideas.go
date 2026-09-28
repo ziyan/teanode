@@ -203,6 +203,32 @@ const (
 	catalogOrderStep = 0.001
 )
 
+// ideaCategoryStep is how far one idea the person dismissed moves the rest
+// of its category down, and one they took up moves it up. Never across
+// kinds: ideaCategoryMost keeps a personal idea above every catalog one.
+const (
+	ideaCategoryStep = 0.1
+	ideaCategoryMost = 0.4
+)
+
+// categoryWeights is what the person has done with each category's ideas:
+// taken up, it counts for the rest of the category; dismissed, against.
+func categoryWeights(ideas []*models.AgentIdea) map[models.AgentIdeaCategory]float64 {
+	weights := map[models.AgentIdeaCategory]float64{}
+	for _, idea := range ideas {
+		switch idea.IdeaStatus {
+		case models.IdeaStarted, models.IdeaDone:
+			weights[idea.IdeaCategory] += ideaCategoryStep
+		case models.IdeaDismissed:
+			weights[idea.IdeaCategory] -= ideaCategoryStep
+		}
+	}
+	for category, weight := range weights {
+		weights[category] = max(-ideaCategoryMost, min(ideaCategoryMost, weight))
+	}
+	return weights
+}
+
 // ideasRefreshed is when each agent's catalog ideas were last refreshed.
 var ideasRefreshed sync.Map
 
@@ -220,10 +246,11 @@ func (self *Agent) refreshIdeas(ctx context.Context, tx db.Transaction, agent *m
 	if err != nil {
 		return err
 	}
-	open, err := tx.ListAgentIdeas(agent.ID, []models.AgentIdeaStatus{models.IdeaOpen}, nil)
+	every, err := tx.ListAgentIdeas(agent.ID, nil, nil)
 	if err != nil {
 		return err
 	}
+	weights := categoryWeights(every)
 	isOffered := map[string]bool{}
 	for index, entry := range ideaCatalog {
 		isUsed := false
@@ -236,7 +263,8 @@ func (self *Agent) refreshIdeas(ctx context.Context, tx db.Transaction, agent *m
 			continue
 		}
 		isOffered[entry.IdeaKey] = true
-		kept, err := tx.UpsertAgentIdea(entry.idea(agent.ID, catalogIdeaRank-float64(index)*catalogOrderStep))
+		rankScore := catalogIdeaRank - float64(index)*catalogOrderStep + weights[models.AgentIdeaCategory(entry.IdeaCategory)]
+		kept, err := tx.UpsertAgentIdea(entry.idea(agent.ID, rankScore))
 		if err != nil {
 			return err
 		}
@@ -251,10 +279,21 @@ func (self *Agent) refreshIdeas(ctx context.Context, tx db.Transaction, agent *m
 			}
 		}
 	}
-	for _, idea := range open {
+	for _, idea := range every {
+		if idea.IdeaStatus != models.IdeaOpen {
+			continue
+		}
 		isStale := idea.IdeaKind == models.IdeaCatalog && !isOffered[idea.IdeaKey]
 		isPast := idea.ExpiresAt != nil && idea.ExpiresAt.Before(now)
 		if !isStale && !isPast {
+			if rankScore := personalIdeaRank + weights[idea.IdeaCategory]; idea.IdeaKind == models.IdeaPersonal && idea.RankScore != rankScore {
+				if _, err := tx.UpdateAgentIdea(agent.ID, idea.ID, func(changing *models.AgentIdea) error {
+					changing.RankScore = rankScore
+					return nil
+				}); err != nil {
+					return err
+				}
+			}
 			continue
 		}
 		if _, err := tx.UpdateAgentIdea(agent.ID, idea.ID, func(changing *models.AgentIdea) error {
@@ -336,8 +375,11 @@ func (self *Agent) SetIdeaStatus(tx db.Transaction, agent *models.Agent, ideaId 
 	})
 }
 
-// ProposeIdea keeps an idea the agent found for the person, once it passes
-// the check every idea passes.
+// ProposeIdea keeps an idea found for the person, once it passes the check
+// every idea passes, whoever proposed it: the words and the tools
+// (checkIdea), what prompted it (checkEvidence), that it is not one already
+// kept (repeatedIdea), and a model's judgment that it promises nothing its
+// tools cannot do (judgeIdea).
 func (self *Agent) ProposeIdea(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, idea *models.AgentIdea) (*models.AgentIdea, error) {
 	toolRisks, err := self.ToolRisks(ctx, agent, owner)
 	if err != nil {
@@ -350,7 +392,22 @@ func (self *Agent) ProposeIdea(ctx context.Context, tx db.Transaction, agent *mo
 	if idea.RankScore == 0 {
 		idea.RankScore = personalIdeaRank
 	}
-	if problem := checkIdea(idea, toolRisks); problem != "" {
+	problem := checkIdea(idea, toolRisks)
+	if problem == "" {
+		problem, err = checkEvidence(tx, agent, owner, idea.Evidence)
+	}
+	if problem == "" && err == nil {
+		problem, err = repeatedIdea(tx, agent, idea)
+	}
+	// The model last, and only when every rule that costs nothing held.
+	if problem == "" && err == nil {
+		problem, err = self.judgeIdea(ctx, agent, owner, idea, toolRisks)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if problem != "" {
+		log.Debugf("an idea for agent %q was refused: %s", agent.ID, problem)
 		return nil, fmt.Errorf("%w: %s", db.ErrInvalidArguments, problem)
 	}
 	return tx.UpsertAgentIdea(idea)

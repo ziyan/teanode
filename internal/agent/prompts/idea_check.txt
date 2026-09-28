@@ -1,0 +1,19 @@
+An assistant wants to offer the person it works for this idea of something it could do for them:
+
+<idea>
+Headline: {{.Headline}}
+What happens: {{.Body}}
+They would start it by saying: {{.OpeningRequest}}
+</idea>
+
+<tools>
+The tools it says the idea needs, with what each can do (read: only looks; write: changes something of the person's; outward: acts toward another person or service for them; destructive: cannot be undone):
+{{range .Tools}}{{.}}
+{{else}}- none
+{{end}}</tools>
+
+Say whether the idea is honest: whether an assistant with exactly these tools could do what the idea says, and whether, when a tool acts toward somebody else or cannot be undone, the idea says the assistant asks the person first. An idea that says it will negotiate, pay, book, file a claim, call somebody or watch something continuously, with no tool that does that, is not honest. An idea that only reads, drafts, lists, reminds or puts things on the calendar with the tools for those is honest.
+
+Answer with one JSON object and nothing else:
+
+{"isHonest": true, "problem": "one short line saying what it promises that the tools cannot do, or empty"}
