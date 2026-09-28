@@ -47,6 +47,9 @@ type AuthorizationForwardResult struct {
 // Bounds on the listeners: a person signing in and proving who they are can
 // take a while, and a listener nobody came back to costs a port and nothing
 // else, but a program that is asked again and again should not collect them.
+// A new one for the same address replaces the one waiting, and past the most
+// the oldest goes: a person who pressed Authorize again after giving up on a
+// sign-in was refused until the ones they left behind ran out.
 const (
 	authorizationLifetimeDefault = 15 * time.Minute
 	authorizationLifetimeLongest = time.Hour
@@ -57,9 +60,17 @@ const (
 // issuer identification it added later. Nothing else is carried on.
 var authorizationParameters = []string{"code", "state", "error", "error_description", "error_uri", "iss"}
 
+// waitingAuthorization is one listener that has not been answered yet.
+type waitingAuthorization struct {
+	cancel   context.CancelFunc
+	openedAt time.Time
+}
+
 var (
 	authorizationListenersMutex sync.Mutex
-	authorizationListenerCount  int
+	// authorizationListeners are the listeners waiting, by the address
+	// each sends the browser on to.
+	authorizationListeners = map[string]*waitingAuthorization{}
 )
 
 // RunAuthorizationForward opens one listener and answers with its address.
@@ -75,16 +86,32 @@ func RunAuthorizationForward(arguments *AuthorizationForwardArguments) (*Authori
 		lifetime = min(time.Duration(arguments.LifetimeSeconds)*time.Second, authorizationLifetimeLongest)
 	}
 
+	key := forward.String()
+	ctx, cancel := context.WithTimeout(context.Background(), lifetime)
+	waiting := &waitingAuthorization{cancel: cancel, openedAt: time.Now()}
 	authorizationListenersMutex.Lock()
-	if authorizationListenerCount >= authorizationListenersAtMost {
-		authorizationListenersMutex.Unlock()
-		return nil, fmt.Errorf("%d authorizations are already waiting on this computer; finish one or wait for it to expire", authorizationListenersAtMost)
+	if earlier := authorizationListeners[key]; earlier != nil {
+		earlier.cancel()
+		delete(authorizationListeners, key)
 	}
-	authorizationListenerCount++
+	for len(authorizationListeners) >= authorizationListenersAtMost {
+		oldestKey := ""
+		for candidate, each := range authorizationListeners {
+			if oldestKey == "" || each.openedAt.Before(authorizationListeners[oldestKey].openedAt) {
+				oldestKey = candidate
+			}
+		}
+		authorizationListeners[oldestKey].cancel()
+		delete(authorizationListeners, oldestKey)
+	}
+	authorizationListeners[key] = waiting
 	authorizationListenersMutex.Unlock()
 	release := func() {
+		cancel()
 		authorizationListenersMutex.Lock()
-		authorizationListenerCount--
+		if authorizationListeners[key] == waiting {
+			delete(authorizationListeners, key)
+		}
 		authorizationListenersMutex.Unlock()
 	}
 
@@ -103,7 +130,6 @@ func RunAuthorizationForward(arguments *AuthorizationForwardArguments) (*Authori
 	if sixth, err := net.Listen("tcp", fmt.Sprintf("[::1]:%d", port)); err == nil {
 		listeners = append(listeners, sixth)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), lifetime)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", func(response http.ResponseWriter, request *http.Request) {
 		query := request.URL.Query()
