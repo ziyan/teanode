@@ -280,10 +280,15 @@ func (self *mcpCatalog) List(ctx context.Context) ([]mcp.Tool, error) {
 		if schema == nil {
 			schema = map[string]any{"type": "object", "properties": map[string]any{}}
 		}
+		// What the tool does, in the protocol's hints, so a program using
+		// these tools can tell a look from a change the way the agent does:
+		// a connected server's as it gave them, the agent's own read off
+		// their risk.
 		listed = append(listed, mcp.Tool{
 			Name:        tool.Name,
 			Description: tool.Description,
 			InputSchema: schema,
+			Annotations: tool.Hints(),
 		})
 	}
 	return listed, nil

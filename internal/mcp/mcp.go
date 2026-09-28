@@ -66,9 +66,46 @@ var ErrUnauthorized = errors.New("mcp: unauthorized")
 
 // Tool is one tool a server offers.
 type Tool struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	InputSchema map[string]any `json:"inputSchema"`
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	InputSchema map[string]any   `json:"inputSchema"`
+	Annotations *ToolAnnotations `json:"annotations,omitempty"`
+}
+
+// ToolAnnotations are what a tool says about its effects, in the protocol's
+// terms: hints, in its word, which a client weighs by how far it trusts the
+// server. Every tool here carries them -- the agent's own, and those of a
+// connected server as that server gave them -- and they are what this
+// server lists when it answers the protocol itself.
+type ToolAnnotations struct {
+	// Title is a name for a person to read.
+	Title string `json:"title,omitempty"`
+	// ReadOnlyHint says the tool changes nothing where it acts.
+	ReadOnlyHint bool `json:"readOnlyHint,omitempty"`
+	// DestructiveHint says a change it makes may not be undone; left out,
+	// the protocol takes it to be true of a tool that is not read-only.
+	DestructiveHint *bool `json:"destructiveHint,omitempty"`
+	// IdempotentHint says calling it again with the same arguments does
+	// nothing more.
+	IdempotentHint bool `json:"idempotentHint,omitempty"`
+	// OpenWorldHint says it reaches beyond what it was given -- the web,
+	// another service; left out, the protocol takes it to be true.
+	OpenWorldHint *bool `json:"openWorldHint,omitempty"`
+}
+
+// IsReadOnly says the tool is marked as changing nothing.
+func (self *Tool) IsReadOnly() bool {
+	return self.Annotations != nil && self.Annotations.ReadOnlyHint
+}
+
+// IsDestructive says the tool is marked as making changes that may not be
+// undone: said so outright, or left unsaid on a tool that is not read-only,
+// which is how the protocol reads it.
+func (self *Tool) IsDestructive() bool {
+	if self.IsReadOnly() {
+		return false
+	}
+	return self.Annotations == nil || self.Annotations.DestructiveHint == nil || *self.Annotations.DestructiveHint
 }
 
 // Content is one part of a tool's answer.

@@ -312,3 +312,29 @@ func TestThePipedTransportSpeaksOverAnyPipes(t *testing.T) {
 		t.Fatalf("the closer was not called")
 	}
 }
+
+// A tool read-only by its annotations is neither a change nor destructive;
+// one that says nothing is taken the protocol's way, as possibly
+// destructive; one that says it is not destructive is not.
+func TestToolAnnotationsAreReadTheProtocolsWay(t *testing.T) {
+	var listed struct {
+		Tools []Tool `json:"tools"`
+	}
+	if err := json.Unmarshal([]byte(`{"tools":[
+		{"name":"look","annotations":{"readOnlyHint":true}},
+		{"name":"unsaid"},
+		{"name":"undoable","annotations":{"destructiveHint":false,"idempotentHint":true,"title":"Undoable"}}
+	]}`), &listed); err != nil {
+		t.Fatal(err)
+	}
+	look, unsaid, undoable := listed.Tools[0], listed.Tools[1], listed.Tools[2]
+	if !look.IsReadOnly() || look.IsDestructive() {
+		t.Error("a read-only tool changes nothing")
+	}
+	if unsaid.IsReadOnly() || !unsaid.IsDestructive() {
+		t.Error("a tool that says nothing may change and destroy")
+	}
+	if undoable.IsDestructive() || !undoable.Annotations.IdempotentHint || undoable.Annotations.Title != "Undoable" {
+		t.Errorf("what a tool says is kept: %+v", undoable.Annotations)
+	}
+}
