@@ -23,6 +23,8 @@ const (
 	ideaHeadlineMostRuneCount = 80
 	ideaBodyMostRuneCount     = 300
 	ideaRequestMostRuneCount  = 300
+	ideaReasonMostRuneCount   = 200
+	ideaEvidenceMostRuneCount = 120
 )
 
 // ideaAsksFirst are the words that say the agent asks before it acts: one
@@ -56,6 +58,8 @@ func checkIdea(idea *models.AgentIdea, toolRisks map[string]tools.Risk) string {
 		return "an idea needs the request that starts it"
 	case utf8.RuneCountInString(idea.OpeningRequest) > ideaRequestMostRuneCount:
 		return fmt.Sprintf("the opening request is longer than %d characters", ideaRequestMostRuneCount)
+	case utf8.RuneCountInString(idea.SuggestionReason) > ideaReasonMostRuneCount:
+		return fmt.Sprintf("the reason is longer than %d characters", ideaReasonMostRuneCount)
 	}
 	category, ok := models.IdeaCategoryOf(idea.IdeaCategory)
 	if !ok {
@@ -94,6 +98,9 @@ func checkIdea(idea *models.AgentIdea, toolRisks map[string]tools.Risk) string {
 		}
 		if strings.TrimSpace(evidence.EvidenceID) == "" {
 			return "a piece of evidence names nothing"
+		}
+		if utf8.RuneCountInString(evidence.EvidenceSummary) > ideaEvidenceMostRuneCount {
+			return fmt.Sprintf("a piece of evidence is described in more than %d characters", ideaEvidenceMostRuneCount)
 		}
 	}
 	if idea.IdeaKind == models.IdeaPersonal && len(idea.Evidence) == 0 {
@@ -231,8 +238,13 @@ func (self *Agent) judgeIdea(ctx context.Context, agent *models.Agent, owner *mo
 			needed = append(needed, fmt.Sprintf("- %s (%s)", tool, toolRisks[tool]))
 		}
 	}
+	evidence := []string{}
+	for _, each := range idea.Evidence {
+		evidence = append(evidence, "- "+each.EvidenceSummary)
+	}
 	prompt, err := render("idea_check.txt", map[string]any{
-		"Headline": idea.Headline, "Body": idea.Body, "OpeningRequest": idea.OpeningRequest, "Tools": needed,
+		"Headline": idea.Headline, "Body": idea.Body, "OpeningRequest": idea.OpeningRequest,
+		"SuggestionReason": idea.SuggestionReason, "Evidence": evidence, "Tools": needed,
 	})
 	if err != nil {
 		return "", err

@@ -101,6 +101,8 @@ func TestAnIdeaPromisesOnlyWhatItsToolsDo(t *testing.T) {
 		{"evidence of no kind", func(idea *models.AgentIdea) { idea.Evidence[0].EvidenceKind = "rumor" }, "not a kind of evidence"},
 		{"a headline too long", func(idea *models.AgentIdea) { idea.Headline = strings.Repeat("a", 81) }, "longer than 80"},
 		{"no request to start it", func(idea *models.AgentIdea) { idea.OpeningRequest = " " }, "request that starts it"},
+		{"a reason that is a letter", func(idea *models.AgentIdea) { idea.SuggestionReason = strings.Repeat("do this ", 30) }, "reason is longer"},
+		{"evidence that is a letter", func(idea *models.AgentIdea) { idea.Evidence[0].EvidenceSummary = strings.Repeat("and this ", 20) }, "more than 120"},
 	} {
 		idea := good()
 		each.change(idea)
@@ -140,6 +142,10 @@ func TestAnIdeaIsOfferedWhileItFitsAndKeepsWhatBecameOfIt(t *testing.T) {
 		if len(messages) != 0 {
 			t.Fatalf("starting an idea says nothing: %+v", messages)
 		}
+		_, secondTap, err := worker.StartIdea(t.Context(), tx, run.Agent, bread.ID, "")
+		if err != nil || secondTap.ID != conversation.ID {
+			t.Fatalf("a second tap opens the same conversation, not another: %+v %v", secondTap, err)
+		}
 
 		if _, err := worker.SetIdeaStatus(tx, run.Agent, bread.ID, models.IdeaStarted); err == nil {
 			t.Fatal("started is starting's, not a status to set")
@@ -147,6 +153,9 @@ func TestAnIdeaIsOfferedWhileItFitsAndKeepsWhatBecameOfIt(t *testing.T) {
 		dismissed, err := worker.SetIdeaStatus(tx, run.Agent, bread.ID, models.IdeaDismissed)
 		if err != nil || dismissed.IdeaStatus != models.IdeaDismissed || dismissed.ClosedAt == nil {
 			t.Fatalf("dismissed: %+v %v", dismissed, err)
+		}
+		if _, _, err := worker.StartIdea(t.Context(), tx, run.Agent, bread.ID, ""); err == nil || !strings.Contains(err.Error(), "open it again first") {
+			t.Fatalf("a dismissed idea is opened again before it is started: %v", err)
 		}
 		if err := worker.refreshIdeas(t.Context(), tx, run.Agent, run.Owner, true); err != nil {
 			t.Fatal(err)

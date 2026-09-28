@@ -101,6 +101,10 @@ type MarkAgentIdeasShownArguments struct {
 // said when it stops mattering.
 const personalIdeaLasts = 14 * 24 * time.Hour
 
+// personalIdeaLastsMost is how far ahead a personal idea may say it stops
+// mattering.
+const personalIdeaLastsMost = 366 * 24 * time.Hour
+
 // ideaWorker is the worker that keeps ideas.
 func (self *graph) ideaWorker() (*agent.Agent, error) {
 	worker := self.agentWorker()
@@ -152,13 +156,17 @@ func (self *graph) ProposeAgentIdea(ctx context.Context, arguments ProposeAgentI
 	if err != nil {
 		return nil, err
 	}
-	expires := time.Now().Add(personalIdeaLasts)
+	now := time.Now()
+	expires := now.Add(personalIdeaLasts)
 	if on := strings.TrimSpace(arguments.ExpiresOn); on != "" {
 		day, err := time.ParseInLocation("2006-01-02", on, time.Local)
 		if err != nil {
 			return nil, fmt.Errorf("%w: expiresOn is a day, as 2006-01-02: %s", api.ErrInvalidArguments, err)
 		}
 		expires = day.Add(24 * time.Hour)
+		if expires.Before(now) || expires.After(now.Add(personalIdeaLastsMost)) {
+			return nil, fmt.Errorf("%w: expiresOn is a day between today and a year from now", api.ErrInvalidArguments)
+		}
 	}
 	return worker.ProposeIdea(ctx, self.writing(ctx), found, principal.User, &models.AgentIdea{
 		IdeaCategory: models.AgentIdeaCategory(strings.TrimSpace(arguments.IdeaCategory)), Emoji: strings.TrimSpace(arguments.Emoji),

@@ -74,6 +74,37 @@ func TestAnIdeaKeepsItsStatusAndFinishesWithItsGoal(t *testing.T) {
 			t.Fatalf("done with its goal: %+v", done)
 		}
 
+		// "Met" taken back: the goal set again, and the idea is started again.
+		if _, err := tx.UpdateAgentConversation(conversation.ID, func(changing *models.AgentConversation) error {
+			changing.GoalState = models.GoalWorking
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if reopened, _ := tx.GetAgentIdea(agent.ID, kept.ID); reopened.IdeaStatus != models.IdeaStarted || reopened.ClosedAt != nil {
+			t.Fatalf("started again with its goal: %+v", reopened)
+		}
+		inProgress, err := tx.ListAgentGoalsInProgress(agent.ID)
+		if err != nil || len(inProgress) != 1 || inProgress[0].ID != conversation.ID {
+			t.Fatalf("the goal is in progress again: %+v %v", inProgress, err)
+		}
+		archived := time.Now()
+		if _, err := tx.UpdateAgentConversation(conversation.ID, func(changing *models.AgentConversation) error {
+			changing.ArchivedAt = &archived
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if inProgress, _ := tx.ListAgentGoalsInProgress(agent.ID); len(inProgress) != 1 {
+			t.Fatalf("a goal in an archived conversation still runs, so it is still listed: %+v", inProgress)
+		}
+		if _, err := tx.UpdateAgentConversation(conversation.ID, func(changing *models.AgentConversation) error {
+			changing.GoalState = models.GoalMet
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+
 		if err := tx.MarkAgentIdeasShown(agent.ID, []string{kept.ID}, now); err != nil {
 			t.Fatal(err)
 		}

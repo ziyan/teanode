@@ -49,8 +49,8 @@ func init() {
 				Parameters: tools.Object(map[string]any{
 					"action":          tools.EnumProperty("what to say about the goal", "set", "note", "wait", "met", "list"),
 					"conversation_id": tools.StringProperty("for met: another conversation whose goal the person says is done, by the id list gives; this conversation when left out"),
-					"text":    tools.StringProperty("for set: the goal, in the person's words, or empty to clear it. For note, wait and met: a sentence or two on where you are, what you need, or how it ended"),
-					"minutes": tools.IntegerProperty("for note: how long until your next turn on this, from 5 to 1440; 30 by default"),
+					"text":            tools.StringProperty("for set: the goal, in the person's words, or empty to clear it. For note, wait and met: a sentence or two on where you are, what you need, or how it ended"),
+					"minutes":         tools.IntegerProperty("for note: how long until your next turn on this, from 5 to 1440; 30 by default"),
 				}, "action"),
 				Guidance: "goal: while a goal is set you take turns here on your own, and each ends with exactly one call to this tool: `note` where you are and the minutes until it is worth looking again; `wait` with one line saying what you need from the person, which is shown above the box they type in; `met` when it is done. A sentence or two each. `set` a goal only when the person asks you to keep working at something, never in a check-in of your own. Look first whether it already holds; a goal that is met when it is set is `met` at once, said so, rather than checked on every evening.",
 				Run:      run,
@@ -84,7 +84,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	// Across conversations, through the operations the dashboard's Goals
 	// tab and the command line call, so the three list and close the same.
 	if action == "list" {
-		result, err := operator.Execute(ctx, client.DocumentListAgentConversations, map[string]any{"hasGoal": true})
+		result, err := operator.Execute(ctx, client.DocumentListAgentConversations, map[string]any{"isGoalInProgress": true})
 		if err != nil {
 			return nil, err
 		}

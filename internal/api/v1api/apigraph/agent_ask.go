@@ -111,9 +111,10 @@ type ListAgentConversationsArguments struct {
 	// with it, Archived is ignored and every match is listed.
 	Query string `json:"query" graphapi:"nullable"`
 
-	// HasGoal lists only the conversations whose goal is still in
-	// progress, working or waiting: what the agent is keeping track of.
-	HasGoal bool `json:"hasGoal" graphapi:"nullable"`
+	// IsGoalInProgress lists only the conversations whose goal is still
+	// worked toward or waits on the person, archived or not: what the
+	// agent is keeping track of. Archived and Query are ignored with it.
+	IsGoalInProgress bool `json:"isGoalInProgress" graphapi:"nullable"`
 }
 
 // SetAgentMainConversationArguments name the conversation to make the
@@ -500,12 +501,11 @@ func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAge
 		return nil, err
 	}
 	tx := self.transaction(ctx)
+	if arguments.IsGoalInProgress {
+		return tx.ListAgentGoalsInProgress(found.ID)
+	}
 	if query := strings.TrimSpace(arguments.Query); query != "" {
-		found, err := tx.SearchAgentConversations(found.ID, query, 50)
-		if err != nil || !arguments.HasGoal {
-			return found, err
-		}
-		return withGoalInProgress(found), nil
+		return tx.SearchAgentConversations(found.ID, query, 50)
 	}
 	main, err := self.mainConversation(tx, found)
 	if err != nil {
@@ -520,9 +520,6 @@ func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAge
 		if (conversation.ArchivedAt != nil) == arguments.Archived {
 			conversations = append(conversations, conversation)
 		}
-	}
-	if arguments.HasGoal {
-		return withGoalInProgress(conversations), nil
 	}
 	return conversations, nil
 }
@@ -991,6 +988,9 @@ func (self *graph) UpdateAgentConversation(ctx context.Context, arguments Update
 				conversation.ArchivedAt = nil
 			}
 		}
+		if arguments.GoalState != nil && arguments.Goal != nil {
+			return fmt.Errorf("%w: say the goal is met, or set a goal, not both at once", api.ErrInvalidArguments)
+		}
 		if arguments.GoalState != nil {
 			if state := models.AgentGoalState(strings.TrimSpace(*arguments.GoalState)); state != models.GoalMet {
 				return fmt.Errorf("%w: a person marks a goal met, not %q; clearing it is goal set to nothing", api.ErrInvalidArguments, state)
@@ -1156,16 +1156,4 @@ func (self *graph) agentWorker() *agent.Agent {
 		return nil
 	}
 	return worker
-}
-
-// withGoalInProgress is the conversations whose goal is still being worked
-// toward or waits on the person.
-func withGoalInProgress(conversations []*models.AgentConversation) []*models.AgentConversation {
-	kept := []*models.AgentConversation{}
-	for _, conversation := range conversations {
-		if conversation != nil && conversation.Goal != "" && conversation.GoalState != models.GoalMet {
-			kept = append(kept, conversation)
-		}
-	}
-	return kept
 }

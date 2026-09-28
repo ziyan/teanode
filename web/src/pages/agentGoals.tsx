@@ -35,7 +35,7 @@ interface Schedule {
 
 const GOALS = `
   query {
-    ListAgentConversations(hasGoal: true) { id title goal goalState goalNote goalNextAt }
+    ListAgentConversations(isGoalInProgress: true) { id title goal goalState goalNote goalNextAt }
   }`
 
 const SCHEDULES = `query { ListAgentSchedules { id name cron enabled nextRunAt } }`

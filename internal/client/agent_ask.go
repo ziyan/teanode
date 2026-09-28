@@ -185,7 +185,7 @@ const (
 		ResolveAgentConfirmation(runId: $runId, callId: $callId, approve: $approve)
 	}`
 	DocumentStopAgentRun            = `mutation ($runId: String!) { StopAgentRun(runId: $runId) }`
-	DocumentListAgentConversations  = `query ($archived: Boolean, $query: String, $hasGoal: Boolean) { ListAgentConversations(archived: $archived, query: $query, hasGoal: $hasGoal) ` + conversationFields + ` }`
+	DocumentListAgentConversations  = `query ($archived: Boolean, $query: String, $isGoalInProgress: Boolean) { ListAgentConversations(archived: $archived, query: $query, isGoalInProgress: $isGoalInProgress) ` + conversationFields + ` }`
 	DocumentDeleteAgentConversation = `mutation ($conversationId: String!) { DeleteAgentConversation(conversationId: $conversationId) }`
 	DocumentListAgentRuns           = `query ($first: Int, $offset: Int, $jobId: String, $kinds: [String!], $query: String) { ListAgentRuns(first: $first, offset: $offset, jobId: $jobId, kinds: $kinds, query: $query) { total runs ` + runFields + ` } }`
 	DocumentListAllAgentRuns        = `query ($first: Int, $offset: Int, $agentId: String, $kinds: [String!], $query: String) { ListAllAgentRuns(first: $first, offset: $offset, agentId: $agentId, kinds: $kinds, query: $query) { total runs ` + runFields + ` } }`
@@ -477,7 +477,7 @@ func ListAgentGoals(ctx context.Context, connection *Client) ([]*AgentConversati
 	var result struct {
 		ListAgentConversations []*AgentConversation `json:"ListAgentConversations"`
 	}
-	if err := connection.Execute(ctx, DocumentListAgentConversations, map[string]any{"hasGoal": true}, &result); err != nil {
+	if err := connection.Execute(ctx, DocumentListAgentConversations, map[string]any{"isGoalInProgress": true}, &result); err != nil {
 		return nil, err
 	}
 	return result.ListAgentConversations, nil

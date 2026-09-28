@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 import { graphql, openAgentConversation } from '../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../components/common'
 import { Column, DataTable } from '../components/dataTable'
-import { Idea, IdeaList, IdeaRow, LIST_IDEAS, markIdeasShown, setIdeaStatus, startIdea } from '../components/ideaRow'
+import { Idea, IdeaList, IdeaRow, LIST_IDEAS, setIdeaStatus, startIdea } from '../components/ideaRow'
 import { SettingsEmpty, SettingsSection } from '../components/settingsList'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
@@ -28,11 +28,6 @@ export function IdeasTab() {
   const categories = data?.ListAgentIdeas.ideaCategories ?? []
   const open = ideas.filter((idea) => idea.ideaStatus === 'open')
   const history = ideas.filter((idea) => idea.ideaStatus !== 'open')
-
-  useEffect(() => {
-    markIdeasShown(open)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data])
 
   if (loading && !data) return <Loading />
   if (error) return <ErrorMessage error={error} />

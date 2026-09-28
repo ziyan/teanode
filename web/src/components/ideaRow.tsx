@@ -1,9 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { graphql, openAgentConversation } from '../api'
 import { useTranslation } from '../i18n/i18n'
 import { CloseIcon } from './icons'
+import { useToast } from './toast'
 import { useQuery } from './useQuery'
 
 // An idea is an offer of work the agent can do for the person, with what
@@ -92,16 +93,46 @@ export async function setIdeaStatus(idea: Idea, ideaStatus: 'done' | 'dismissed'
   await graphql(SET_IDEA_STATUS, { ideaId: idea.id, ideaStatus })
 }
 
-// The ideas already reported shown in this tab, so that drawing a list
-// again does not report them again.
+// Being shown is reported for an idea when most of its row has been on the
+// screen, not when it was drawn: a tab of thirty ideas is not thirty seen,
+// and the agent offers on its own only the ones nobody has seen. The ids
+// are gathered for a moment and reported together.
 const reportedShown = new Set<string>()
+const waitingToReport = new Set<string>()
+let reportTimer: ReturnType<typeof setTimeout> | undefined
 
-// markIdeasShown reports the ideas the person has in front of them.
-export function markIdeasShown(ideas: Idea[]): void {
-  const fresh = ideas.filter((idea) => !idea.shownAt && !reportedShown.has(idea.id)).map((idea) => idea.id)
-  if (fresh.length === 0) return
-  fresh.forEach((id) => reportedShown.add(id))
-  void graphql(MARK_IDEAS_SHOWN, { ideaIds: fresh }).catch(() => fresh.forEach((id) => reportedShown.delete(id)))
+function reportShown(id: string) {
+  if (reportedShown.has(id)) return
+  reportedShown.add(id)
+  waitingToReport.add(id)
+  if (reportTimer) return
+  reportTimer = setTimeout(() => {
+    reportTimer = undefined
+    const ideaIds = [...waitingToReport]
+    waitingToReport.clear()
+    void graphql(MARK_IDEAS_SHOWN, { ideaIds }).catch(() => ideaIds.forEach((id) => reportedShown.delete(id)))
+  }, 1000)
+}
+
+let seenObserver: IntersectionObserver | undefined
+
+function observeSeen(element: Element, id: string): () => void {
+  if (typeof IntersectionObserver === 'undefined') return () => {}
+  seenObserver ??= new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        const seen = (entry.target as HTMLElement).dataset.ideaId
+        if (entry.isIntersecting && seen) {
+          reportShown(seen)
+          seenObserver?.unobserve(entry.target)
+        }
+      }
+    },
+    { threshold: 0.6 },
+  )
+  ;(element as HTMLElement).dataset.ideaId = id
+  seenObserver.observe(element)
+  return () => seenObserver?.unobserve(element)
 }
 
 // evidenceLink is where a piece of evidence opens: a message where it is,
@@ -132,8 +163,13 @@ export function IdeaRow({
   onDismiss?: (idea: Idea) => void
 }) {
   const { t } = useTranslation()
+  const row = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (idea.shownAt || !row.current) return
+    return observeSeen(row.current, idea.id)
+  }, [idea.id, idea.shownAt])
   return (
-    <div className="idea-row">
+    <div className="idea-row" ref={row}>
       <button type="button" className="idea-start" disabled={busy} onClick={() => onStart(idea)}>
         <span className="idea-emoji" aria-hidden="true">
           {idea.emoji}
@@ -196,27 +232,28 @@ export function IdeaSuggestions({
   onDraft: (conversationId: string, openingRequest: string) => void
 }) {
   const { t } = useTranslation()
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
   const { data } = useQuery(() => graphql<IdeaList>(LIST_IDEAS, { ideaStatuses: ['open'] }), [])
   const ideas = (data?.ListAgentIdeas.ideas ?? []).slice(0, ideaSuggestionCount)
-  useEffect(() => {
-    markIdeasShown(ideas)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data])
   if (ideas.length === 0) return null
+  const onStart = async (chosen: Idea) => {
+    setBusy(true)
+    try {
+      const started = await startIdea(chosen, conversationId)
+      onDraft(started.conversationId, started.openingRequest)
+    } catch (caught) {
+      toast.failure(caught, t('ideas.failed'))
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
     <div className="idea-suggestions">
       <p className="muted idea-suggestions-title">{t('ideas.suggestions')}</p>
       <div className="idea-list">
         {ideas.map((idea) => (
-          <IdeaRow
-            key={idea.id}
-            idea={idea}
-            onStart={(chosen) =>
-              void startIdea(chosen, conversationId).then((started) =>
-                onDraft(started.conversationId, started.openingRequest),
-              )
-            }
-          />
+          <IdeaRow key={idea.id} idea={idea} busy={busy} onStart={(chosen) => void onStart(chosen)} />
         ))}
       </div>
     </div>

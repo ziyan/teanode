@@ -225,7 +225,10 @@ func (self *transaction) MarkAgentIdeasShown(agentId string, ideaIds []string, a
 	if len(ideaIds) == 0 {
 		return nil
 	}
-	return self.tx.Model(&agentIdeaModel{}).
-		Where(`"agent_id" = ? AND "id" IN ? AND "shown_at" IS NULL`, agentId, ideaIds).
-		Update("shown_at", at).Error
+	// Rows another request holds are skipped rather than waited for: being
+	// shown is noted again the next time, and a refresh locking the same
+	// rows in another order would otherwise deadlock with this.
+	return self.tx.Exec(`UPDATE "agent_idea" SET "shown_at" = ? WHERE "id" IN (
+		SELECT "id" FROM "agent_idea" WHERE "agent_id" = ? AND "id" IN ? AND "shown_at" IS NULL ORDER BY "id" FOR UPDATE SKIP LOCKED)`,
+		at, agentId, ideaIds).Error
 }
