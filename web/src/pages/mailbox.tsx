@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import {
@@ -1191,6 +1191,14 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
                 href={within(`/mailbox/${folder.id}/${thread.item.id}`)}
                 onOpen={() => navigate(within(`/mailbox/${folder.id}/${thread.item.id}`))}
                 onFlag={(on) => setFlags(everywhere ? [thread.item.id] : thread.itemIds, { flagged: on })}
+                onToggleSeen={() =>
+                  setFlags(everywhere ? [thread.item.id] : thread.itemIds, { seen: thread.unread > 0 })
+                }
+                onArchive={
+                  archive && thread.item.folderId !== archive.id
+                    ? () => moveTo(everywhere ? [thread.item.id] : thread.itemIds, archive.id)
+                    : undefined
+                }
               />
             ))}
             {!loading && threads.length === 0 && (
@@ -1293,6 +1301,91 @@ function folderLabelOf(folders: MailboxFolder[], folderId: string, t: (key: Key)
   return found ? folderLabel(t, found) : ''
 }
 
+// How far a finger carries a row, as a share of its width, before letting
+// go does what the swipe says; how far it has to move sideways before it is
+// a swipe rather than a tap or the start of a scroll; and how long a row
+// swept away waits for the list to take it before it comes back, which it
+// does only when archiving failed.
+const SWIPE_ACTS = 0.35
+const SWIPE_STARTS = 12
+const SWIPE_AWAY_MS = 180
+const SWIPE_RETURNS_MS = 1500
+
+// useRowSwipe is a row that follows a finger sideways: to the left for
+// onLeft, to the right for onRight. A finger only: a mouse or a pen drags
+// to select text, as it always has. The browser keeps the vertical scroll
+// (touch-action: pan-y on the row), and a movement that is more down than
+// across is left to it.
+function useRowSwipe(onLeft?: () => void, onRight?: () => void) {
+  const [offset, setOffset] = useState(0)
+  const [isSettling, setSettling] = useState(false)
+  const began = useRef<{ x: number; y: number; pointerId: number; width: number; isSwiping: boolean } | null>(null)
+  const hasSwiped = useRef(false)
+  const onPointerDown = (event: React.PointerEvent<HTMLElement>) => {
+    if (event.pointerType !== 'touch') return
+    began.current = {
+      x: event.clientX,
+      y: event.clientY,
+      pointerId: event.pointerId,
+      width: event.currentTarget.getBoundingClientRect().width,
+      isSwiping: false,
+    }
+    hasSwiped.current = false
+    setSettling(false)
+  }
+  const onPointerMove = (event: React.PointerEvent<HTMLElement>) => {
+    const start = began.current
+    if (!start || start.pointerId !== event.pointerId) return
+    const across = event.clientX - start.x
+    const down = event.clientY - start.y
+    if (!start.isSwiping) {
+      if (Math.abs(down) > SWIPE_STARTS && Math.abs(down) > Math.abs(across)) {
+        began.current = null
+        return
+      }
+      if (Math.abs(across) < SWIPE_STARTS) return
+      start.isSwiping = true
+      event.currentTarget.setPointerCapture(event.pointerId)
+    }
+    setOffset((across < 0 && onLeft) || (across > 0 && onRight) ? across : 0)
+  }
+  const onPointerUp = () => {
+    const start = began.current
+    began.current = null
+    if (!start?.isSwiping) return
+    hasSwiped.current = true
+    setSettling(true)
+    if (Math.abs(offset) < start.width * SWIPE_ACTS) {
+      setOffset(0)
+    } else if (offset < 0 && onLeft) {
+      setOffset(-start.width)
+      setTimeout(onLeft, SWIPE_AWAY_MS)
+      setTimeout(() => setOffset(0), SWIPE_RETURNS_MS)
+    } else if (offset > 0 && onRight) {
+      setOffset(0)
+      onRight()
+    }
+  }
+  const onPointerCancel = () => {
+    began.current = null
+    setSettling(true)
+    setOffset(0)
+  }
+  // The tap that ends a swipe is not a tap on the row.
+  const onClickCapture = (event: React.MouseEvent) => {
+    if (!hasSwiped.current) return
+    hasSwiped.current = false
+    event.preventDefault()
+    event.stopPropagation()
+  }
+  return {
+    offset,
+    isReady: began.current ? Math.abs(offset) >= began.current.width * SWIPE_ACTS : Math.abs(offset) > 0,
+    isSettling,
+    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onClickCapture },
+  }
+}
+
 function Row({
   thread,
   folderName,
@@ -1302,6 +1395,8 @@ function Row({
   onSelect,
   onOpen,
   onFlag,
+  onToggleSeen,
+  onArchive,
 }: {
   thread: MailboxThread
   folderName?: string
@@ -1311,8 +1406,13 @@ function Row({
   onSelect: (on: boolean) => void
   onOpen: () => void
   onFlag: (on: boolean) => void
+  // A swipe to the right, which marks it read or unread; one to the left,
+  // which archives it, where there is an archive to move it to.
+  onToggleSeen: () => void
+  onArchive?: () => void
 }) {
   const { t } = useTranslation()
+  const swipe = useRowSwipe(onArchive, onToggleSeen)
   const item = thread.item
   const mail = item.mail
   // Who the row is about: everybody who has written, when more than one has.
@@ -1322,66 +1422,98 @@ function Row({
       ? thread.participants.join(', ')
       : thread.participants[0] || mail?.fromName || mail?.from || mail?.sender || t('mailbox.unknownSender')
   return (
-    <li
-      className={['mailbox-row', thread.unread > 0 ? 'unread' : '', active ? 'active' : ''].filter(Boolean).join(' ')}
-      onClick={onOpen}
-    >
-      <input
-        type="checkbox"
-        aria-label={t('mailbox.select')}
-        checked={selected}
-        onClick={(event) => event.stopPropagation()}
-        onChange={(event) => onSelect(event.target.checked)}
-      />
-      <button
-        type="button"
-        className={['mailbox-star', thread.flagged ? 'on' : ''].filter(Boolean).join(' ')}
-        aria-label={thread.flagged ? t('mailbox.unflag') : t('mailbox.flag')}
-        aria-pressed={thread.flagged}
-        onClick={(event) => {
-          event.stopPropagation()
-          onFlag(!thread.flagged)
-        }}
+    <li className="mailbox-row-slot">
+      {/* What letting go will do, uncovered as the row slides off it. */}
+      {swipe.offset !== 0 && (
+        <div
+          className={['mailbox-row-reveal', swipe.offset < 0 ? 'archive' : 'seen', swipe.isReady ? 'ready' : '']
+            .filter(Boolean)
+            .join(' ')}
+          aria-hidden="true"
+        >
+          {swipe.offset < 0 ? (
+            <>
+              <ArchiveIcon size={18} />
+              <span>{t('mailbox.archive')}</span>
+            </>
+          ) : (
+            <>
+              {thread.unread > 0 ? <MailOpenIcon size={18} /> : <MailIcon size={18} />}
+              <span>{thread.unread > 0 ? t('mailbox.markRead') : t('mailbox.markUnread')}</span>
+            </>
+          )}
+        </div>
+      )}
+      <div
+        className={[
+          'mailbox-row',
+          thread.unread > 0 ? 'unread' : '',
+          active ? 'active' : '',
+          swipe.isSettling ? 'settling' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        style={swipe.offset !== 0 ? { transform: `translateX(${swipe.offset}px)` } : undefined}
+        onClick={onOpen}
+        {...swipe.handlers}
       >
-        {thread.flagged ? '★' : '☆'}
-      </button>
-      {/* A real link, so the keyboard reaches it and a middle click opens
+        <input
+          type="checkbox"
+          aria-label={t('mailbox.select')}
+          checked={selected}
+          onClick={(event) => event.stopPropagation()}
+          onChange={(event) => onSelect(event.target.checked)}
+        />
+        <button
+          type="button"
+          className={['mailbox-star', thread.flagged ? 'on' : ''].filter(Boolean).join(' ')}
+          aria-label={thread.flagged ? t('mailbox.unflag') : t('mailbox.flag')}
+          aria-pressed={thread.flagged}
+          onClick={(event) => {
+            event.stopPropagation()
+            onFlag(!thread.flagged)
+          }}
+        >
+          {thread.flagged ? '★' : '☆'}
+        </button>
+        {/* A real link, so the keyboard reaches it and a middle click opens
           it in a tab; the row's own click is for the mouse. */}
-      <Link
-        className="mailbox-row-link"
-        to={href}
-        onClick={(event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          onOpen()
-        }}
-      >
-        <div className="mailbox-row-from">
-          {/* The sender's own mark where they publish one and the message
+        <Link
+          className="mailbox-row-link"
+          to={href}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onOpen()
+          }}
+        >
+          <div className="mailbox-row-from">
+            {/* The sender's own mark where they publish one and the message
               proved it came from them, and their initial otherwise. Who wrote
               is what the eye looks for first in a list. */}
-          <SenderLogo name={who} logoDomain={mail?.logoDomain} size={18} />
-          {/* The name has its own box so that it, and not the marks beside
+            <SenderLogo name={who} logoDomain={mail?.logoDomain} size={18} />
+            {/* The name has its own box so that it, and not the marks beside
               it, is what gives way when the row is narrow. */}
-          <span className="mailbox-row-who">{who}</span>
-          {thread.count > 1 && <span className="mailbox-row-count">{thread.count}</span>}
-          {/* An answer begun and left. Worth saying in the list, because the
+            <span className="mailbox-row-who">{who}</span>
+            {thread.count > 1 && <span className="mailbox-row-count">{thread.count}</span>}
+            {/* An answer begun and left. Worth saying in the list, because the
               conversation looks finished otherwise and the half-written reply
               is two folders away. */}
-          {thread.hasDraft && <span className="mailbox-row-draft">{t('mailbox.draft')}</span>}
-          {item.insight && <InsightChips insight={item.insight} />}
-        </div>
-        <div className="mailbox-row-subject">
-          {folderName && <span className="mailbox-row-folder">{folderName}</span>}
-          {mail?.subject || t('mailbox.noSubject')}
-        </div>
-      </Link>
-      <div className="mailbox-row-when">
-        {/* What the checks said, in the width of a character: the answer to
+            {thread.hasDraft && <span className="mailbox-row-draft">{t('mailbox.draft')}</span>}
+            {item.insight && <InsightChips insight={item.insight} />}
+          </div>
+          <div className="mailbox-row-subject">
+            {folderName && <span className="mailbox-row-folder">{folderName}</span>}
+            {mail?.subject || t('mailbox.noSubject')}
+          </div>
+        </Link>
+        <div className="mailbox-row-when">
+          {/* What the checks said, in the width of a character: the answer to
             "is this really from who it says" belongs where the message is
             listed, not only on the audit page. */}
-        <VerdictMark mail={mail} />
-        <RelativeTime value={mail?.receivedAt ?? item.addedAt} />
+          <VerdictMark mail={mail} />
+          <RelativeTime value={mail?.receivedAt ?? item.addedAt} />
+        </div>
       </div>
     </li>
   )

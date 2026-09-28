@@ -4314,7 +4314,41 @@ main.content:has(> .mailbox-frame) {
   overflow-y: auto;
   flex: 1 1 auto;
 }
+/* A row that can be swiped: the slot holds still and clips, the row slides
+   over what letting go will do. */
+.mailbox-row-slot {
+  position: relative;
+  overflow: hidden;
+}
+.mailbox-row-reveal {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  color: var(--accent-text);
+  background: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 120ms ease;
+}
+.mailbox-row-reveal.seen {
+  justify-content: flex-start;
+}
+.mailbox-row-reveal.archive {
+  justify-content: flex-end;
+}
+.mailbox-row-reveal.ready.seen {
+  background: var(--accent);
+}
+.mailbox-row-reveal.ready.archive {
+  background: var(--good);
+}
 .mailbox-row {
+  position: relative;
+  background: var(--background);
+  touch-action: pan-y;
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr) auto;
   gap: 8px;
@@ -4329,6 +4363,9 @@ main.content:has(> .mailbox-frame) {
 }
 .mailbox-row.active {
   background: var(--sidebar-hover);
+}
+.mailbox-row.settling {
+  transition: transform 180ms ease;
 }
 .mailbox-row.unread .mailbox-row-from,
 .mailbox-row.unread .mailbox-row-subject {
