@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -194,7 +195,7 @@ func (self *Skill) Run(ctx context.Context, toolName string, arguments map[strin
 		chosen, _ := values[tool.ActionField].(string)
 		found, ok := tool.Actions[chosen]
 		if !ok {
-			return nil, fmt.Errorf("skills: %s does not do %q", tool.Name, chosen)
+			return nil, fmt.Errorf("skills: %s does not do %q; its %s is one of %s", tool.Name, chosen, tool.ActionField, strings.Join(actionsOf(tool), ", "))
 		}
 		steps = found
 	}
@@ -652,7 +653,7 @@ func (self *run) fill(text string) (string, error) {
 		name, filter := SplitReference(strings.Trim(whole, "{}"))
 		value, ok := self.lookup(name)
 		if !ok {
-			failure = fmt.Errorf("%s has no value", name)
+			failure = self.missing(name)
 			return ""
 		}
 		if filter == FilterJSON {
@@ -701,7 +702,7 @@ func (self *run) fillURL(text string) (string, error) {
 		name, filter := SplitReference(strings.Trim(match, "{}"))
 		value, ok := self.lookup(name)
 		if !ok {
-			failure = fmt.Errorf("%s has no value", name)
+			failure = self.missing(name)
 			return ""
 		}
 		if filter == FilterJSON {
@@ -797,6 +798,70 @@ func (self *run) lookup(name string) (any, bool) {
 	return value, ok
 }
 
+// missing is the failure for a value a step needs and does not have.
+//
+// A parameter the schema leaves optional can still be one an action cannot
+// do without: reading a channel's messages needs the channel. Said as "has
+// no value", a caller could not tell whether it had passed the wrong thing
+// or nothing at all; this says it was not given, and names any argument
+// the call carried that is not a parameter at all, which is usually the
+// same value under a name the caller guessed.
+func (self *run) missing(name string) error {
+	properties, _ := self.tool.Parameters["properties"].(map[string]any)
+	if _, isParameter := properties[name]; !isParameter {
+		return fmt.Errorf("%s has no value", name)
+	}
+	var unknown []string
+	for given := range self.values {
+		if _, known := properties[given]; !known {
+			unknown = append(unknown, given)
+		}
+	}
+	if len(unknown) == 0 {
+		return fmt.Errorf("this needs %s, which was not given", name)
+	}
+	sort.Strings(unknown)
+	return fmt.Errorf("this needs %s, which was not given; %s is not a parameter of %s", name, strings.Join(unknown, ", "), self.tool.Name)
+}
+
+// actionsOf is what a tool's action field may say, in the order its schema
+// lists them, so the refusal of a guess reads the way the schema does.
+func actionsOf(tool *Tool) []string {
+	names := choicesOf(tool, tool.ActionField)
+	seen := make(map[string]bool, len(names))
+	for _, name := range names {
+		seen[name] = true
+	}
+	var rest []string
+	for name := range tool.Actions {
+		if !seen[name] {
+			rest = append(rest, name)
+		}
+	}
+	sort.Strings(rest)
+	listed := make([]string, 0, len(names)+len(rest))
+	for _, name := range names {
+		if _, ok := tool.Actions[name]; ok {
+			listed = append(listed, name)
+		}
+	}
+	return append(listed, rest...)
+}
+
+// choicesOf is the enum a parameter's schema gives it, if any.
+func choicesOf(tool *Tool, name string) []string {
+	properties, _ := tool.Parameters["properties"].(map[string]any)
+	property, _ := properties[name].(map[string]any)
+	listed, _ := property["enum"].([]any)
+	choices := make([]string, 0, len(listed))
+	for _, entry := range listed {
+		if choice, ok := entry.(string); ok {
+			choices = append(choices, choice)
+		}
+	}
+	return choices
+}
+
 // required refuses a call that left out something the schema asks for,
 // before a request is made with a hole in it.
 func (self *Skill) required(tool *Tool, values map[string]any) error {
@@ -807,6 +872,9 @@ func (self *Skill) required(tool *Tool, values map[string]any) error {
 			continue
 		}
 		if value, ok := values[name]; !ok || asText(value) == "" {
+			if choices := choicesOf(tool, name); len(choices) > 0 {
+				return fmt.Errorf("%s needs %s, one of %s", tool.Name, name, strings.Join(choices, ", "))
+			}
 			return fmt.Errorf("%s needs %s", tool.Name, name)
 		}
 	}
