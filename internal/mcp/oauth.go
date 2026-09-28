@@ -31,6 +31,13 @@ type Metadata struct {
 	TokenEndpoint         string   `json:"token_endpoint"`
 	RegistrationEndpoint  string   `json:"registration_endpoint"`
 	ScopesSupported       []string `json:"scopes_supported"`
+
+	// ResourceScopes are the scopes the protected resource itself says it
+	// takes, from its own metadata rather than the authorization server's.
+	// Asked for when the operator configured none, which is what the Model
+	// Context Protocol tells a client to do when the server's challenge names
+	// no scope.
+	ResourceScopes []string `json:"-"`
 }
 
 // Tokens are what an authorization gave. ClientID is kept beside them
@@ -176,9 +183,12 @@ func Discover(ctx context.Context, settings *OAuthSettings) (*Metadata, error) {
 	candidates := []string{}
 	// The protected resource may name its authorization server.
 	named := map[string]bool{}
+	var resourceScopes []string
 	if resource, err := fetchJSON[struct {
 		AuthorizationServers []string `json:"authorization_servers"`
+		ScopesSupported      []string `json:"scopes_supported"`
 	}](ctx, settings.client(), origin+"/.well-known/oauth-protected-resource"); err == nil {
+		resourceScopes = resource.ScopesSupported
 		for _, authorizationServer := range resource.AuthorizationServers {
 			for _, candidate := range wellKnown(authorizationServer, "oauth-authorization-server") {
 				// The server named this one, so it is followed with the
@@ -219,6 +229,7 @@ func Discover(ctx context.Context, settings *OAuthSettings) (*Metadata, error) {
 			lastErr = fmt.Errorf("mcp: the metadata at %s says it belongs to %s", candidate, metadata.Issuer)
 			continue
 		}
+		metadata.ResourceScopes = resourceScopes
 		return &metadata, nil
 	}
 	if lastErr == nil {
@@ -364,6 +375,9 @@ func Begin(ctx context.Context, settings *OAuthSettings) (*Authorization, error)
 	metadata, err := Discover(ctx, settings)
 	if err != nil {
 		return nil, err
+	}
+	if len(settings.Scopes) == 0 {
+		settings.Scopes = metadata.ResourceScopes
 	}
 	clientId := settings.ClientID
 	if clientId == "" {
