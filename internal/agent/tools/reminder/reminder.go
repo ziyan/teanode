@@ -26,7 +26,7 @@ func init() {
 				Description: "The person's reminders: the list beside their calendar that their phone's Reminders app syncs. " +
 					"`list` shows the ones not done, by when they are due (done: true for the done ones). " +
 					"`add` makes one: a title, and when it is due if they said. " +
-					"`edit` changes one; `done` ticks one off and `reopen` puts it back; `remove` takes it away. " +
+					"`edit` changes one; `done` ticks one off (one that repeats moves on to its next day instead) and `reopen` puts it back; `remove` takes it away. " +
 					"Not for your own steps in this conversation, which are the todo tool's.",
 				Parameters: tools.Object(map[string]any{
 					"action":      tools.EnumProperty("what to do", "list", "add", "edit", "done", "reopen", "remove"),
@@ -61,14 +61,14 @@ func init() {
 }
 
 type arguments struct {
-	Action     string `json:"action"`
-	ReminderID string `json:"reminder_id"`
-	Title      string `json:"title"`
-	Notes      string `json:"notes"`
-	Due        string `json:"due"`
-	NoDue      bool   `json:"no_due"`
-	Priority   *int   `json:"priority"`
-	Done       bool   `json:"done"`
+	Action       string `json:"action"`
+	ReminderID   string `json:"reminder_id"`
+	Title        string `json:"title"`
+	Notes        string `json:"notes"`
+	Due          string `json:"due"`
+	IsDueCleared bool   `json:"no_due"`
+	Priority     *int   `json:"priority"`
+	IsDone       bool   `json:"done"`
 }
 
 func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -80,13 +80,13 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := isGranted(ctx); err != nil {
+	if err := requireGranted(ctx); err != nil {
 		return nil, err
 	}
 	reminderId := strings.TrimSpace(asked.ReminderID)
 	switch action := strings.ToLower(strings.TrimSpace(asked.Action)); action {
 	case "", "list":
-		result, err := operator.Execute(ctx, client.DocumentListReminders, map[string]any{"isDone": asked.Done})
+		result, err := operator.Execute(ctx, client.DocumentListReminders, map[string]any{"isDone": asked.IsDone})
 		if err != nil {
 			return nil, err
 		}
@@ -98,7 +98,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if action == "edit" && reminderId == "" {
 			return nil, fmt.Errorf("edit needs reminder_id")
 		}
-		variables := map[string]any{"isDueCleared": asked.NoDue}
+		variables := map[string]any{"isDueCleared": asked.IsDueCleared}
 		if reminderId != "" {
 			variables["reminderId"] = reminderId
 		}
@@ -154,10 +154,10 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	}
 }
 
-// isGranted refuses when the person has not given their agent the reminders
+// requireGranted refuses when the person has not given their agent the reminders
 // list, as the calendar tool refuses without the calendar: nothing from a
 // source the person has not granted is the agent's to read or change.
-func isGranted(ctx context.Context) error {
+func requireGranted(ctx context.Context) error {
 	result, err := operator.Execute(ctx, client.DocumentListCalendars, nil)
 	if err != nil {
 		return err

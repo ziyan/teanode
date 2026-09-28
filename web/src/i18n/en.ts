@@ -3034,6 +3034,8 @@ export const en = {
   'reminders.markDone': 'Mark done',
   'reminders.reopen': 'Mark not done',
   'reminders.markedDone': 'Done.',
+  'reminders.repeats': 'Repeats',
+  'reminders.movedOn': 'Done; it comes back on its next day.',
   'reminders.saved': 'Saved.',
   'reminders.removed': 'Removed.',
   'reminders.failed': 'That did not work.',

@@ -20,9 +20,10 @@ export interface Reminder {
   isDone: boolean
   doneAt: string | null
   priority: number
+  isRepeating: boolean
 }
 
-const FIELDS = `{ id title notes dueAt isDueDate isDone doneAt priority }`
+const FIELDS = `{ id title notes dueAt isDueDate isDone doneAt priority isRepeating }`
 
 const LIST = `query ($isDone: Boolean) { ListReminders(isDone: $isDone) ${FIELDS} }`
 
@@ -94,9 +95,14 @@ export function RemindersView() {
   const [isShowingDone, setShowingDone] = useState(false)
   const [editing, setEditing] = useState<Reminder | null>(null)
   const open = useQuery(() => graphql<{ ListReminders: Reminder[] }>(LIST, { isDone: false }), [], { refresh: true })
-  const done = useQuery(() => graphql<{ ListReminders: Reminder[] }>(LIST, { isDone: true }), [isShowingDone], {
-    refresh: true,
-  })
+  const done = useQuery(
+    () =>
+      isShowingDone
+        ? graphql<{ ListReminders: Reminder[] }>(LIST, { isDone: true })
+        : Promise.resolve({ ListReminders: [] as Reminder[] }),
+    [isShowingDone],
+    { refresh: true },
+  )
 
   async function act(work: () => Promise<unknown>, said?: string) {
     setBusy(true)
@@ -126,7 +132,7 @@ export function RemindersView() {
   const setDone = (reminder: Reminder, isDone: boolean) =>
     void act(
       () => graphql(SET_DONE, { reminderId: reminder.id, isDone }),
-      isDone ? t('reminders.markedDone') : undefined,
+      isDone ? t(reminder.isRepeating ? 'reminders.movedOn' : 'reminders.markedDone') : undefined,
     )
 
   const openReminders = open.data?.ListReminders ?? []
@@ -248,7 +254,9 @@ function ReminderRow({
       <button type="button" className="reminder-text" onClick={() => onOpen(reminder)}>
         <span className="reminder-title">{reminder.title}</span>
         {due ? (
-          <span className={['reminder-due', due.isOverdue ? 'overdue' : ''].filter(Boolean).join(' ')}>{due.text}</span>
+          <span className={['reminder-due', due.isOverdue ? 'overdue' : ''].filter(Boolean).join(' ')}>
+            {reminder.isRepeating ? `${due.text} · ${t('reminders.repeats')}` : due.text}
+          </span>
         ) : null}
         {reminder.notes ? <span className="reminder-notes muted">{reminder.notes}</span> : null}
       </button>
@@ -299,7 +307,16 @@ function ReminderDialog({
         </button>
       }
       onClose={onClose}
-      onSubmit={() => onSave({ title: title.trim(), notes, ...dueVariables(day, day ? time : '') })}
+      onSubmit={() => {
+        // Only what changed here: a phone may have changed the rest while the
+        // dialog was open, and sending it back would undo that.
+        const variables: Record<string, unknown> = {}
+        if (title.trim() !== reminder.title) variables.title = title.trim()
+        if (notes !== reminder.notes) variables.notes = notes
+        if (day !== dayOf(reminder) || time !== timeOf(reminder))
+          Object.assign(variables, dueVariables(day, day ? time : ''))
+        onSave(variables)
+      }}
     >
       <label>
         {t('reminders.title')}

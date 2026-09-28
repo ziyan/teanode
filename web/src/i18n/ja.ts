@@ -2996,6 +2996,8 @@ export const ja: Catalog = {
   'reminders.markDone': '完了にする',
   'reminders.reopen': '未完了に戻す',
   'reminders.markedDone': '完了しました。',
+  'reminders.repeats': '繰り返し',
+  'reminders.movedOn': '完了しました。次の日にまた表示されます。',
   'reminders.saved': '保存しました。',
   'reminders.removed': '削除しました。',
   'reminders.failed': 'うまくいきませんでした。',

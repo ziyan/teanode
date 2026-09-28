@@ -2905,6 +2905,8 @@ export const zh: Catalog = {
   'reminders.markDone': '标记完成',
   'reminders.reopen': '标记为未完成',
   'reminders.markedDone': '已完成。',
+  'reminders.repeats': '重复',
+  'reminders.movedOn': '已完成，下次到期时会再出现。',
   'reminders.saved': '已保存。',
   'reminders.removed': '已删除。',
   'reminders.failed': '操作失败。',
