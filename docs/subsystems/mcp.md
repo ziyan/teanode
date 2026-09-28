@@ -44,12 +44,34 @@ connects their own credential, or authorizes in a browser for a server using
 OAuth 2.1 with PKCE. Their credentials are sealed with the server secret
 before they are stored.
 
+Some services send an authorization only to a loopback address, the flow
+meant for a program on somebody's own machine. A server declared with
+`oauth.redirect: computer` is authorized through the person's attached
+computer instead: the computer listens on its loopback interface, the service
+is given that address, and the computer sends the browser on to the dashboard,
+which finishes the connection. The person has to finish it in a browser on
+that computer. With several attached, the dashboard asks which one they are
+signing in on and passes it as `computer`; left out, the server's reach
+decides, or the only computer attached. Why:
+`docs/decisions/20260927-an-authorization-can-come-back-to-the-persons-computer.md`.
+
 `internal/agent/tools_mcp.go` discovers each connected server's tools and
 holds the list for five minutes; three failures in a row withdraw a server's
 tools until the next interval, so one service being down does not take the
 agent's whole kit with it. What comes back is namespaced by server name and
-joined into the person's catalog, and is **outward** risk — needing the
-person's word — unless the operator listed a tool as read-only.
+joined into the person's catalog with the annotations the server gave it
+(`readOnlyHint`, `destructiveHint` and the rest). A tool marked read-only, by
+the server or on the operator's list, runs without asking; one marked
+destructive asks. Every other call is judged by the fast model, as a skill's
+command is (`command_judge.go`), and asks only where it acts for the person
+toward others, moves money, places or cancels an order, or destroys; a
+judgement that fails asks. A card for every look at an account taught people
+to approve without reading, which is worse than no card.
+
+Every tool carries the protocol's annotations (`tools.Tool.Hints`): a connected
+server's as it gave them, the agent's own read off their risk. The inward
+server below lists them, so a program using the person's tools can tell a
+look from a change the way the agent does.
 
 Everything a connected server returns is data. It never instructs.
 

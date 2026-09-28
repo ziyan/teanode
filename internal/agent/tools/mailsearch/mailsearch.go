@@ -34,12 +34,12 @@ func init() {
 					"subject":        tools.StringProperty("part of the subject"),
 					"since":          tools.StringProperty("an ISO date: on or after"),
 					"before":         tools.StringProperty("an ISO date: before"),
-					"unread":         tools.BooleanProperty("only unread"),
-					"flagged":        tools.BooleanProperty("only starred"),
-					"has_attachment": tools.BooleanProperty("only with an attachment"),
+					"unread":         tools.BooleanProperty("true: only unread; false or left out: read or not"),
+					"flagged":        tools.BooleanProperty("true: only starred; false or left out: starred or not"),
+					"has_attachment": tools.BooleanProperty("true: only with an attachment; false or left out: either"),
 					"category":       tools.StringProperty("what the agent sorted it as: personal, work, newsletter, notification, receipt, promotion, social, invitation, other, or one of the person's own"),
-					"priority":       tools.EnumProperty("what the agent said", "high", "normal", "low"),
-					"needs_reply":    tools.BooleanProperty("only what the agent said needs an answer"),
+					"priority":       tools.EnumProperty("only what the agent rated so; any, or left out, for every priority", "any", "high", "normal", "low"),
+					"needs_reply":    tools.BooleanProperty("true: only what the agent said needs an answer; false or left out: either"),
 					"limit":          tools.IntegerProperty("how many rows, 20 by default, 100 at most"),
 					"offset":         tools.IntegerProperty("skip this many rows, for the next page"),
 				}),
@@ -144,14 +144,20 @@ func runMailSearch(ctx context.Context, call *tools.Call) (*tools.Result, error)
 	if query := strings.TrimSpace(arguments.Query); query != "" {
 		variables["search"] = query
 	}
+	// A filter is what narrows the search. A model hands every field it is
+	// shown, with false and a middling priority for the ones it has no view
+	// on, and read as filters those left a search for August's receipts
+	// with read, unstarred, normal-priority messages that had no
+	// attachment and needed no answer -- which was nothing. So a flag
+	// narrows only when it is true, and a priority only when it names one.
 	for key, value := range map[string]string{"from": arguments.From, "to": arguments.To, "subject": arguments.Subject, "category": arguments.Category, "priority": arguments.Priority} {
-		if strings.TrimSpace(value) != "" {
-			variables[key] = strings.TrimSpace(value)
+		if value = strings.TrimSpace(value); value != "" && !strings.EqualFold(value, "any") {
+			variables[key] = value
 		}
 	}
 	for key, value := range map[string]*bool{"unread": arguments.Unread, "flagged": arguments.Flagged, "hasAttachment": arguments.HasAttachment, "needsReply": arguments.NeedsReply} {
-		if value != nil {
-			variables[key] = *value
+		if value != nil && *value {
+			variables[key] = true
 		}
 	}
 	location := tools.Location(run.Owner())
@@ -229,7 +235,18 @@ func runMailSearch(ctx context.Context, call *tools.Call) (*tools.Result, error)
 				for _, thread := range threads {
 					seen[thread.Item.MailID] = true
 				}
-				byMeaning := map[string]any{"mailboxId": view.Mailbox.ID, "mailIds": ids, "first": limit}
+				// The same filters as the words had, the messages found by
+				// meaning in place of the words: without them a search for
+				// one month's receipts came back with a delivery from the
+				// month after.
+				byMeaning := map[string]any{}
+				for key, value := range perMailbox {
+					if key != "search" && key != "offset" {
+						byMeaning[key] = value
+					}
+				}
+				byMeaning["mailIds"] = ids
+				byMeaning["first"] = limit
 				var more struct {
 					ListMailboxThreads struct {
 						Threads []threadRow `json:"threads"`

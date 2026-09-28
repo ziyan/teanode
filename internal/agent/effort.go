@@ -124,6 +124,7 @@ func (self *AskRun) judgeDepth() (string, string) {
 		"PersonName": personName(settings.Owner),
 		"Recent":     recent,
 		"Message":    cutRunes(settings.Message, 4000),
+		"Language":   languageName(Language(settings.Agent, settings.Owner)),
 	})
 	if err != nil {
 		return depthAnswer, ""

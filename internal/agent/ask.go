@@ -61,6 +61,11 @@ type AskSettings struct {
 	// Surface is where the answer goes: drawer, phone, cli, api or mail.
 	Surface string
 
+	// Origin is the address the dashboard was reached at, scheme and host,
+	// for a link to a file that has to open somewhere else; empty where the
+	// turn did not come through it.
+	Origin string
+
 	// ReadOnly leaves out every tool that changes anything, for a
 	// read-only credential.
 	ReadOnly bool

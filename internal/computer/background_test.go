@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +25,7 @@ func serveForTest(t *testing.T, ctx context.Context, background *BackgroundComma
 		_ = Serve(ctx, connection, &Options{Token: "t", Name: "laptop", Home: t.TempDir(), Background: background})
 	}()
 	hello := connection.next(t, "hello")
-	if len(hello.Features) != 1 || hello.Features[0] != FeatureBackground {
+	if !slices.Contains(hello.Features, FeatureBackground) {
 		t.Fatalf("the hello names background commands: %+v", hello)
 	}
 	connection.incoming <- message{Type: "welcome", Protocol: Protocol}

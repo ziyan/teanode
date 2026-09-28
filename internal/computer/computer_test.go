@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -71,7 +72,7 @@ func TestServeAnswersTheAgentInsideWhatWasAllowed(t *testing.T) {
 	}
 	// Without background commands of its own that outlive the
 	// connection, the program does not offer them.
-	if len(hello.Features) != 0 {
+	if slices.Contains(hello.Features, FeatureBackground) {
 		t.Fatalf("background commands offered by a program that would kill them with the connection: %+v", hello.Features)
 	}
 	connection.incoming <- message{Type: "welcome", Protocol: Protocol}

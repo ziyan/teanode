@@ -20,7 +20,7 @@ Before {{.AgentName}} answers {{.PersonName}}, decide how much looking into thei
 
 When you are unsure between two, choose the deeper one: a careful answer to a quick question costs a little time, and a quick answer to a question that needed care costs their trust.
 
-The reason is shown to {{.PersonName}} under their message, after "Looking into this carefully:". Write it as a few words about what will be looked into, in the language their message is written in, without naming or describing them: "why the nightly backup stopped finishing", not "They want to know why their backup stopped".
+The reason is shown to {{.PersonName}} under their message, after "Looking into this carefully:". Write it as a few words about what will be looked into, in {{.Language}} unless their message is plainly written in another language, without naming or describing them: "why the nightly backup stopped finishing", not "They want to know why their backup stopped".
 
 Answer with this JSON object and nothing else:
 

@@ -634,6 +634,12 @@ const (
 	AgentMCPLocationComputer = "computer"
 )
 
+// Where an OAuth authorization comes back to.
+const (
+	AgentMCPOAuthRedirectServer   = "server"
+	AgentMCPOAuthRedirectComputer = "computer"
+)
+
 // AgentMCPAuthNone and the others are the auth modes.
 const (
 	AgentMCPAuthNone   = "none"
@@ -755,6 +761,22 @@ type AgentMCPOAuth struct {
 	Scopes           []string `yaml:"scopes,omitempty"`
 	AuthorizationURL string   `yaml:"authorizationUrl,omitempty"`
 	TokenURL         string   `yaml:"tokenUrl,omitempty"`
+
+	// Redirect is where the authorization comes back to: "server", the
+	// default, is the dashboard; "computer" is a loopback address on the
+	// person's attached computer, which sends the browser on to the
+	// dashboard. For a service that sends an authorization only to a
+	// loopback address, the flow meant for a program on somebody's own
+	// machine.
+	Redirect string `yaml:"redirect,omitempty"`
+}
+
+// ResolvedRedirect is where the authorization comes back to.
+func (self *AgentMCPOAuth) ResolvedRedirect() string {
+	if self.Redirect == AgentMCPOAuthRedirectComputer {
+		return AgentMCPOAuthRedirectComputer
+	}
+	return AgentMCPOAuthRedirectServer
 }
 
 // defaultAgent is what a new server starts with: off, and every limit at a
@@ -1114,6 +1136,14 @@ func (self *Configuration) validateAgent(validator *validator) {
 		case "", AgentMCPAuthNone, AgentMCPAuthStatic, AgentMCPAuthUser, AgentMCPAuthOAuth:
 		default:
 			validator.add(prefix+".auth", `must be "none", "static", "user" or "oauth"`)
+		}
+		switch server.OAuth.Redirect {
+		case "", AgentMCPOAuthRedirectServer, AgentMCPOAuthRedirectComputer:
+		default:
+			validator.add(prefix+".oauth.redirect", `must be "server" or "computer"`)
+		}
+		if server.OAuth.Redirect == AgentMCPOAuthRedirectComputer && server.ResolvedAuth() != AgentMCPAuthOAuth {
+			validator.add(prefix+".oauth.redirect", "only a server connected by OAuth has an authorization to bring back")
 		}
 		if server.ResolvedAuth() == AgentMCPAuthOAuth && server.OAuth.ClientID == "" && server.OAuth.AuthorizationURL != "" && server.OAuth.TokenURL != "" {
 			// Left empty, a client is registered with the server on the

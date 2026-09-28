@@ -6,6 +6,64 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.74.3] - 2026-09-28
+
+### Changed
+
+- Showing tool calls and usage in the agent chat is switched from the usage dropdown in the chat's header rather than Preferences. (#206)
+
+### Fixed
+
+- An approval given after the agent's turn ended is shown once. (#206)
+- The "Looking into this carefully" note is written in your language. (#206)
+- A goal that is already met when you set it is marked met instead of being checked on each evening. (#206)
+
+## [0.74.2] - 2026-09-28
+
+### Fixed
+
+- Charts in pages the agent makes draw again, in the dashboard's colours and type. (#210)
+
+## [0.74.1] - 2026-09-28
+
+### Fixed
+
+- Retrying an authorization that comes back to your computer no longer fails with "authorizations are already waiting". (#207)
+
+## [0.74.0] - 2026-09-28
+
+### Added
+
+- Ask the agent for a link to a page or file it made, and it gives one that opens on another device without signing in, for six hours. (#204)
+
+## [0.73.2] - 2026-09-28
+
+### Changed
+
+- The agent takes "August" or "Saturday" as the nearest one instead of asking which. (#203)
+
+### Fixed
+
+- Searching mail by date or sender through the agent no longer comes back empty because of filters nobody asked for, and matches by meaning stay within the dates asked for. (#203)
+
+## [0.73.1] - 2026-09-28
+
+### Fixed
+
+- A question you answered in the agent chat no longer comes back open after reloading. (#202)
+- Links written in bold in the agent's answers are shown as links. (#202)
+- A named conversation keeps its name when one message strays from its subject. (#202)
+
+## [0.73.0] - 2026-09-28
+
+### Added
+
+- A connected server whose service only sends an authorization to a loopback address can now be connected from the dashboard: set its authorization to come back to the attached computer, and finish it in a browser on that computer. (#205)
+
+### Fixed
+
+- Saving connected servers no longer resets another server that runs on the person's computer back to running on the server. (#205)
+
 ## [0.72.2] - 2026-09-27
 
 ### Changed

@@ -388,7 +388,9 @@ type Line =
     }
   // detail is what a compaction's line opens to: the note itself.
   // isPending marks the line of a compaction still being written.
-  | { kind: 'note'; key: string; text: string; at?: string; detail?: string; isPending?: boolean }
+  // noteKind is the note's kind where it has one, which decides whether it
+  // is a working note shown only on request.
+  | { kind: 'note'; key: string; text: string; at?: string; detail?: string; isPending?: boolean; noteKind?: string }
   | { kind: 'error'; key: string; text: string }
   // A turn the agent started on its own: against the goal, or because a
   // background command ended. Its words are framing for the model and were
@@ -1037,6 +1039,19 @@ const LEGACY_NOTES: [string, string][] = [
   ['Goal met', 'goal_met'],
 ]
 
+// resolvedNoteKind is a note's kind, read back from its English words for
+// one written before notes had kinds.
+function resolvedNoteKind(noteKind: string, prose: string): string {
+  if (NOTE_WORDS[noteKind]) return noteKind
+  const legacy = LEGACY_NOTES.find(([english]) => prose === english || prose.startsWith(english + ': '))
+  return legacy ? legacy[1] : ''
+}
+
+// WORKING_NOTES are the notes about how the agent went about a turn rather
+// than what happened in the conversation: shown with the working notes
+// switch, for somebody looking at what it did.
+const WORKING_NOTES = new Set(['depth', 'call_unreadable'])
+
 // noteWords is a note as the drawer shows it. A compaction's detail is the
 // note it wrote, which its line opens to rather than repeats.
 function noteWords(
@@ -1058,6 +1073,27 @@ function noteWords(
     return t(words.withDetail, { detail: noteDetail })
   }
   return t(words.plain, { detail: noteDetail })
+}
+
+// answerOf is what a question card was answered with, read from the
+// ask_user call's result; the result itself when it is not that shape.
+function answerOf(result: string | undefined): string {
+  try {
+    const parsed = JSON.parse(result ?? '') as { answer?: unknown }
+    if (typeof parsed.answer === 'string' && parsed.answer) return parsed.answer
+  } catch {
+    // Not JSON: the words are the answer.
+  }
+  return result || '…'
+}
+
+// isDeclined says whether a confirmation's call came back declined.
+function isDeclined(result: string | undefined): boolean {
+  try {
+    return (JSON.parse(result ?? '') as { declined?: unknown }).declined === true
+  } catch {
+    return false
+  }
 }
 
 function linesOf(messages: StoredMessage[], t: (key: Key, values?: Values) => string): Line[] {
@@ -1159,6 +1195,7 @@ function linesOf(messages: StoredMessage[], t: (key: Key, values?: Values) => st
           kind: 'note',
           key: message.id,
           text: noteWords(t, message.name ?? '', message.content, message.content),
+          noteKind: resolvedNoteKind(message.name ?? '', message.content),
           at: message.createdAt,
         })
         break
@@ -1515,22 +1552,31 @@ function CitedPicture({ file }: { file: CitedFile }) {
 // BudgetRing is the day's tokens as a ring in the drawer's head: how much
 // of the budget has gone, coloured by how near the end of it the day is,
 // with the numbers and the hour it resets on hover, and the usage dropped
-// down under the head on a press. Nothing is drawn where there is no limit
-// to be near.
+// down under the head on a press. With no limit to be near it is the
+// ring's empty track: the dropdown is still where the person chooses what
+// the conversation shows of the agent's work.
 function BudgetRing({
   budget,
   zone,
   isOpen,
   onToggle,
 }: {
-  budget: Budget
+  budget: Budget | null
   zone: string
   isOpen: boolean
   onToggle: () => void
 }) {
   const { t } = useTranslation()
-  const shown = budgetShown(budget)
-  if (!shown) return null
+  const shown = budget ? budgetShown(budget) : null
+  if (!budget || !shown) {
+    return (
+      <HeadMark label={t('agentDrawer.usageTitle')} className="agent-drawer-budget" isOpen={isOpen} onToggle={onToggle}>
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <circle className="agent-budget-track" cx="8" cy="8" r={6} />
+        </svg>
+      </HeadMark>
+    )
+  }
   const fraction = Math.max(0, Math.min(1, shown.fraction))
   const percent = Math.round(fraction * 100)
   const nearness = budgetNearness(fraction, 1)
@@ -1694,12 +1740,44 @@ function siteOf(url: string | undefined): string {
 // UsageMenu is the day's budget, drawn as the agent's page draws it: how
 // much has gone, as words and as a bar coloured by how near the end it
 // is, what it came to, and when it starts again.
-function UsageMenu({ budget, zone, onClose }: { budget: Budget; zone: string; onClose: () => void }) {
+// And what the conversation shows of the agent's work -- the tool calls,
+// and what each answer used -- switched where the usage is, rather than in
+// the settings, far from the conversation they change.
+function UsageMenu({ budget, zone, onClose }: { budget: Budget | null; zone: string; onClose: () => void }) {
   const { t } = useTranslation()
+  const [preferences, setPreferences] = useAgentPreferences()
   return (
     <HeadMenu title={t('agentDrawer.usageTitle')} onClose={onClose}>
-      <div className="head-menu-usage">
-        <BudgetBar budget={budget} zone={zone} />
+      {budget && budgetShown(budget) ? (
+        <div className="head-menu-usage">
+          <BudgetBar budget={budget} zone={zone} />
+        </div>
+      ) : null}
+      <div className="head-menu-switches">
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={preferences.showTools}
+            onChange={(event) => setPreferences({ showTools: event.target.checked })}
+          />
+          {t('agentDrawer.showTools')}
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={preferences.showUsage}
+            onChange={(event) => setPreferences({ showUsage: event.target.checked })}
+          />
+          {t('agentDrawer.showUsage')}
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={preferences.showWorkingNotes}
+            onChange={(event) => setPreferences({ showWorkingNotes: event.target.checked })}
+          />
+          {t('agentDrawer.showWorkingNotes')}
+        </label>
       </div>
     </HeadMenu>
   )
@@ -2048,7 +2126,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // comes down when the person sends, because the answer is on its way,
   // and the next read puts it back if the agent is still waiting.
   const [showingGoalNote, setShowingGoalNote] = useState(true)
-  const [{ showTools, showUsage }] = useAgentPreferences()
+  const [{ showTools, showUsage, showWorkingNotes }] = useAgentPreferences()
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   // The bubbles whose time is shown: a tap on a phone, where there is no
   // pointer to hover with.
@@ -2763,6 +2841,19 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             const line = next[index]
             if (line.kind === 'tool') next[index] = { ...line, done: true, note: event.note ?? '', result: event.text }
           }
+          // A card's call has an answer: the card is settled, whoever
+          // settled it. The events of a recent run are replayed when the
+          // drawer loads, and the card they raise would otherwise come back
+          // open after it was answered, here or on another device.
+          const cardIndex = next.findIndex((line) => line.key === `${event.runId}-${event.callId}-card`)
+          if (cardIndex >= 0) {
+            const card = next[cardIndex]
+            if (card.kind === 'question' && !card.answered) {
+              next[cardIndex] = { ...card, answered: answerOf(event.text) }
+            } else if (card.kind === 'confirmation' && !card.resolved) {
+              next[cardIndex] = { ...card, resolved: isDeclined(event.text) ? 'declined' : 'approved' }
+            }
+          }
           return next
         }
         case 'confirmation':
@@ -2814,6 +2905,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             kind: 'note',
             key: `${event.runId}-${event.sequence}`,
             text: noteWords(t, event.noteKind ?? '', event.noteDetail ?? '', event.note ?? ''),
+            noteKind: resolvedNoteKind(event.noteKind ?? '', event.note ?? ''),
             detail: event.noteKind === 'compacted' ? event.noteDetail : undefined,
           })
           return withoutQueued
@@ -2838,10 +2930,20 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // and nothing here to have said it twice.
     const origin = checkInOriginOf(event.text ?? '')
     if (origin) {
-      setLines((previous) => [
-        ...previous,
-        { kind: 'checkin', key: `${event.runId}-asked`, at: event.at, text: event.text ?? '', origin },
-      ])
+      // Read already with the transcript -- an approval given after a turn
+      // ended reads the conversation again as the new turn starts -- it is
+      // the same line, and is drawn once, as a person's words are below.
+      // Only near the end: a weekly schedule says the same words every week,
+      // and last week's line is not this one.
+      setLines((previous) => {
+        const tail = Math.max(0, previous.length - 8)
+        const kept = previous.filter(
+          (line, index) =>
+            line.key !== `${event.runId}-asked` &&
+            !(index >= tail && line.kind === 'checkin' && line.text === (event.text ?? '')),
+        )
+        return [...kept, { kind: 'checkin', key: `${event.runId}-asked`, at: event.at, text: event.text ?? '', origin }]
+      })
       // A background command has just ended: its row says so now rather
       // than at the next poll.
       if (origin === 'background') void reloadBackground(true)
@@ -3474,8 +3576,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           />
         )
       case 'checkin':
+        // A turn nobody typed, and an approval given after a turn ended:
+        // how the agent came to speak, which its answer shows anyway.
+        if (!showWorkingNotes) return null
         return <CheckInLine key={line.key} at={line.at} text={line.text} origin={line.origin} />
       case 'note':
+        if (!showWorkingNotes && line.noteKind && WORKING_NOTES.has(line.noteKind)) return null
         if (line.detail) {
           return (
             <div
@@ -3673,14 +3779,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 onToggle={() => toggleHeadMenu('background')}
               />
             )}
-            {budget && (
-              <BudgetRing
-                budget={budget}
-                zone={agentZone}
-                isOpen={headMenu === 'usage'}
-                onToggle={() => toggleHeadMenu('usage')}
-              />
-            )}
+            <BudgetRing
+              budget={budget}
+              zone={agentZone}
+              isOpen={headMenu === 'usage'}
+              onToggle={() => toggleHeadMenu('usage')}
+            />
             {/* Framed by the extension, the panel around this has a bar
                 of its own with the close on it; two of them, one under
                 the other, is one too many. */}
@@ -3705,9 +3809,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           )}
           {headMenu === 'computers' && <ComputersMenu computers={computers} onClose={() => setHeadMenu(null)} />}
           {headMenu === 'tab' && tab?.attached && <TabMenu tab={tab} onClose={() => setHeadMenu(null)} />}
-          {headMenu === 'usage' && budget && (
-            <UsageMenu budget={budget} zone={agentZone} onClose={() => setHeadMenu(null)} />
-          )}
+          {headMenu === 'usage' && <UsageMenu budget={budget} zone={agentZone} onClose={() => setHeadMenu(null)} />}
           {headMenu === 'goal' && current && (
             <GoalMenu
               key={current.id}
