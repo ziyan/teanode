@@ -154,19 +154,57 @@ export function RemindersView() {
           aria-label={t('reminders.addPlaceholder')}
           onChange={(event) => setTitle(event.target.value)}
         />
-        <input
-          type="date"
-          value={day}
-          aria-label={t('reminders.dueDay')}
-          title={t('reminders.dueDay')}
-          onChange={(event) => setDay(event.target.value)}
-        />
+        {/* A date field with nothing in it is a blank box on a phone, so it
+            says what it is for. */}
+        <label className="reminders-due">
+          <span>{t('reminders.dueDay')}</span>
+          <input type="date" value={day} onChange={(event) => setDay(event.target.value)} />
+        </label>
         <button type="submit" className="primary" disabled={busy || !title.trim()}>
           {t('reminders.add')}
         </button>
       </form>
 
-      {open.loading && !open.data ? (
+      <div className="segmented reminders-lists" role="group" aria-label={t('reminders.lists')}>
+        <button
+          type="button"
+          className={isShowingDone ? '' : 'active'}
+          aria-pressed={!isShowingDone}
+          onClick={() => setShowingDone(false)}
+        >
+          {t('reminders.toDo')}
+          {openReminders.length > 0 ? <span className="count">{openReminders.length}</span> : null}
+        </button>
+        <button
+          type="button"
+          className={isShowingDone ? 'active' : ''}
+          aria-pressed={isShowingDone}
+          onClick={() => setShowingDone(true)}
+        >
+          {t('reminders.doneList')}
+        </button>
+      </div>
+
+      {isShowingDone ? (
+        done.loading && !done.data ? (
+          <p className="muted">{t('common.loading')}</p>
+        ) : doneReminders.length === 0 ? (
+          <SettingsEmpty>{t('reminders.noneDone')}</SettingsEmpty>
+        ) : (
+          <ul className="reminder-list done">
+            {doneReminders.map((reminder) => (
+              <ReminderRow
+                key={reminder.id}
+                reminder={reminder}
+                language={language}
+                busy={busy}
+                onDone={setDone}
+                onOpen={setEditing}
+              />
+            ))}
+          </ul>
+        )
+      ) : open.loading && !open.data ? (
         <p className="muted">{t('common.loading')}</p>
       ) : openReminders.length === 0 ? (
         <SettingsEmpty>{t('reminders.none')}</SettingsEmpty>
@@ -184,27 +222,6 @@ export function RemindersView() {
           ))}
         </ul>
       )}
-
-      <button type="button" className="link reminders-done-toggle" onClick={() => setShowingDone(!isShowingDone)}>
-        {isShowingDone ? t('reminders.hideDone') : t('reminders.showDone')}
-      </button>
-      {isShowingDone &&
-        (doneReminders.length === 0 ? (
-          <SettingsEmpty>{t('reminders.noneDone')}</SettingsEmpty>
-        ) : (
-          <ul className="reminder-list done">
-            {doneReminders.map((reminder) => (
-              <ReminderRow
-                key={reminder.id}
-                reminder={reminder}
-                language={language}
-                busy={busy}
-                onDone={setDone}
-                onOpen={setEditing}
-              />
-            ))}
-          </ul>
-        ))}
 
       {editing ? (
         <ReminderDialog
