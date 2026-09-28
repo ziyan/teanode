@@ -40,7 +40,10 @@ type AgentConnectionMutation interface {
 
 	// Begin an authorization: the address to send the person to. The
 	// redirect is where the code comes back, which must be a page of this
-	// server. Needs agent:use.
+	// server. For a server whose authorization comes back to the person's
+	// computer, the computer listens on a loopback address, the service is
+	// given that address, and the computer sends the browser on to the
+	// redirect. Needs agent:use.
 	BeginAgentServerOAuth(ctx context.Context, arguments BeginAgentServerOAuthArguments) (string, error)
 
 	// Finish an authorization with the code and state the person came
@@ -57,7 +60,11 @@ type AgentServerView struct {
 	// Location is where a command-spoken server runs: this server, or the
 	// person's own attached computer.
 	Location string `json:"location"`
-	Enabled  bool   `json:"enabled"`
+	// OAuthRedirect is where an authorization comes back to: server, the
+	// dashboard, or computer, the person's attached computer, which is
+	// where they have to finish it.
+	OAuthRedirect string `json:"oauthRedirect"`
+	Enabled       bool   `json:"enabled"`
 
 	// Status is the person's connection: connected, pending, error,
 	// disconnected, or empty when the server needs no connection.
@@ -107,7 +114,7 @@ type pendingAuthorization struct {
 }
 
 func (self *graph) serverView(server *config.AgentMCPServer, connection *models.AgentConnection) *AgentServerView {
-	view := &AgentServerView{Name: server.Name, Transport: server.ResolvedTransport(), Auth: server.ResolvedAuth(), Headless: server.Headless, Location: server.ResolvedLocation(), Enabled: server.IsEnabled()}
+	view := &AgentServerView{Name: server.Name, Transport: server.ResolvedTransport(), Auth: server.ResolvedAuth(), Headless: server.Headless, Location: server.ResolvedLocation(), OAuthRedirect: server.OAuth.ResolvedRedirect(), Enabled: server.IsEnabled()}
 	if connection != nil {
 		view.Status = string(connection.Status)
 		view.LastError = connection.LastError
@@ -245,6 +252,16 @@ func (self *graph) BeginAgentServerOAuth(ctx context.Context, arguments BeginAge
 	redirect := strings.TrimSpace(arguments.RedirectURL)
 	if redirect == "" {
 		return "", fmt.Errorf("%w: a redirect address is needed", api.ErrInvalidArguments)
+	}
+	if server.OAuth.ResolvedRedirect() == config.AgentMCPOAuthRedirectComputer {
+		// The service is given the computer's loopback address, and the
+		// flow is finished against that address, which the pending state
+		// keeps. The dashboard still finishes it: the computer sends the
+		// browser on to the redirect asked for.
+		redirect, err = worker.ForwardAuthorization(ctx, found.ID, server, redirect)
+		if err != nil {
+			return "", err
+		}
 	}
 	authorization, err := mcp.Begin(ctx, worker.OAuthSettings(server, redirect))
 	if err != nil {

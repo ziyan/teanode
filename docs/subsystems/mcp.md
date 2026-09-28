@@ -44,6 +44,15 @@ connects their own credential, or authorizes in a browser for a server using
 OAuth 2.1 with PKCE. Their credentials are sealed with the server secret
 before they are stored.
 
+Some services send an authorization only to a loopback address, the flow
+meant for a program on somebody's own machine. A server declared with
+`oauth.redirect: computer` is authorized through the person's attached
+computer instead: the computer listens on its loopback interface, the service
+is given that address, and the computer sends the browser on to the dashboard,
+which finishes the connection. The person has to finish it in a browser on
+that computer. Why:
+`docs/decisions/20260927-an-authorization-can-come-back-to-the-persons-computer.md`.
+
 `internal/agent/tools_mcp.go` discovers each connected server's tools and
 holds the list for five minutes; three failures in a row withdraw a server's
 tools until the next interval, so one service being down does not take the

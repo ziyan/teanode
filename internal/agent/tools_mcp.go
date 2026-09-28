@@ -5,13 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	computertools "github.com/ziyan/teanode/internal/agent/tools/computer"
+	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/mcp"
@@ -205,6 +209,50 @@ func (self *Agent) computerForServer(agentId, serverName, computerName string) (
 		return computers[0], nil
 	}
 	return nil, fmt.Errorf("the server %q runs on the person's computer, and several are attached; set its reach on the Connections tab", serverName)
+}
+
+// ForwardAuthorization asks the person's attached computer to listen on its
+// loopback interface for a server's authorization and send the browser that
+// brings it on to forwardURL. The answer is the loopback address to give the
+// service, which only a browser on that computer can reach.
+func (self *Agent) ForwardAuthorization(ctx context.Context, agentId string, server *config.AgentMCPServer, forwardURL string) (string, error) {
+	computers := self.computersFor(agentId)
+	var on *attachedComputer
+	if named := self.reachOf(ctx, agentId, models.AgentReachServer, server.Name); named != "" {
+		found, err := self.attachedNamed(agentId, named)
+		if err != nil {
+			return "", fmt.Errorf("%s is authorized on your computer %s, which is not attached; start teanode computer there", server.Name, named)
+		}
+		on = found
+	} else {
+		switch len(computers) {
+		case 0:
+			return "", fmt.Errorf("%s is authorized on your own computer, and none is attached; start teanode computer on the one with your browser", server.Name)
+		case 1:
+			on = computers[0]
+		default:
+			return "", fmt.Errorf("%s is authorized on your own computer, and several are attached; set its reach on the Connections tab to the one with your browser", server.Name)
+		}
+	}
+	if !slices.Contains(on.features, computer.FeatureAuthorizationForward) {
+		return "", fmt.Errorf("teanode computer on %s is too old to bring an authorization back; update it and start it again", on.name)
+	}
+	answer, err := on.Ask(ctx, "authorization_forward", computer.AuthorizationForwardArguments{ForwardURL: forwardURL}, 30*time.Second)
+	if err != nil {
+		return "", err
+	}
+	var result computer.AuthorizationForwardResult
+	if err := json.Unmarshal(answer, &result); err != nil {
+		return "", fmt.Errorf("the computer %s answered with something that is not an address: %w", on.name, err)
+	}
+	// The address goes to the service as the place to send a person's
+	// authorization, so it has to be the loopback address this was for and
+	// nothing else the computer might have said.
+	parsed, err := url.Parse(result.RedirectURL)
+	if err != nil || parsed.Scheme != "http" || !api.IsLoopbackHost(parsed.Hostname()) {
+		return "", fmt.Errorf("the computer %s answered with %q, which is not a loopback address", on.name, result.RedirectURL)
+	}
+	return result.RedirectURL, nil
 }
 
 // attachedNamed is one of the person's attached computers by name.

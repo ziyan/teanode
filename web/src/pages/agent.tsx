@@ -982,7 +982,7 @@ const RUN_SCHEDULE = `
 
 const SERVERS = `
   query {
-    ListAgentServers { name transport auth headless enabled status lastError lastConnectedAt tools }
+    ListAgentServers { name transport auth oauthRedirect headless enabled status lastError lastConnectedAt tools }
   }`
 
 const CONNECT_SERVER = `
@@ -1009,6 +1009,7 @@ interface AgentServer {
   name: string
   transport: string
   auth: string
+  oauthRedirect: string
   headless: boolean
   enabled: boolean
   status: string
@@ -1234,6 +1235,13 @@ function ServersCard() {
     const server = parameters.get('connect')
     const code = parameters.get('code')
     const state = parameters.get('state')
+    const refusal = parameters.get('error')
+    if (server && refusal) {
+      window.history.replaceState(null, '', window.location.pathname)
+      toast.failed(t('agent.serverRefused', { name: server, error: parameters.get('error_description') || refusal }))
+      void reload()
+      return
+    }
     if (!server || !code || !state) return
     window.history.replaceState(null, '', window.location.pathname)
     graphql<{ FinishAgentServerOAuth: AgentServer }>(FINISH_OAUTH, { server, code, state })
@@ -1326,6 +1334,8 @@ function ServersCard() {
           // column.
           if (!needsPerson) detail.push(t('agent.serverSharedHint'))
           if (server.headless) detail.push(t('agent.serverHeadless'))
+          if (server.auth === 'oauth' && server.oauthRedirect === 'computer' && !connected)
+            detail.push(t('agent.serverOnComputer'))
           if (server.status === 'error' && server.lastError) detail.push(server.lastError)
           return (
             <SettingsRow
