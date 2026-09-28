@@ -10995,6 +10995,33 @@ main.content:has(> .knowledge-frame) {
   margin-top: var(--space-4);
 }
 
+/* An idea in the history table: its words on one line, opening the
+   conversation that carried it out. */
+.idea-history-title {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.idea-history-title {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  button.idea-history-title:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
 /* One column in the drawer, however wide the window: the two-column rule
    answers to the window, and the drawer is narrow in any of them. */
 .idea-suggestions .idea-list {

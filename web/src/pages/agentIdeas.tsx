@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { graphql, openAgentConversation } from '../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../components/common'
 import { Column, DataTable } from '../components/dataTable'
+import { CheckIcon, RestartIcon } from '../components/icons'
 import { Idea, IdeaList, IdeaRow, LIST_IDEAS, setIdeaStatus, startIdea } from '../components/ideaRow'
 import { SettingsEmpty, SettingsSection } from '../components/settingsList'
 import { useToast } from '../components/toast'
@@ -117,11 +118,16 @@ function IdeaHistory({
       value: (idea) => idea.headline,
       render: (idea) =>
         idea.startedConversationId ? (
-          <button type="button" className="link" onClick={() => openAgentConversation(idea.startedConversationId)}>
+          <button
+            type="button"
+            className="idea-history-title"
+            title={idea.headline}
+            onClick={() => openAgentConversation(idea.startedConversationId)}
+          >
             {idea.emoji} {idea.headline}
           </button>
         ) : (
-          <span>
+          <span className="idea-history-title" title={idea.headline}>
             {idea.emoji} {idea.headline}
           </span>
         ),
@@ -145,15 +151,29 @@ function IdeaHistory({
     {
       key: 'actions',
       header: '',
-      width: '8rem',
+      width: '3rem',
       render: (idea) =>
         idea.ideaStatus === 'started' ? (
-          <button type="button" className="link" disabled={busy} onClick={() => onMarkDone(idea)}>
-            {t('ideas.markDone')}
+          <button
+            type="button"
+            className="icon-action"
+            disabled={busy}
+            title={t('ideas.markDone')}
+            aria-label={`${idea.headline}: ${t('ideas.markDone')}`}
+            onClick={() => onMarkDone(idea)}
+          >
+            <CheckIcon size={16} />
           </button>
         ) : idea.ideaStatus === 'dismissed' || idea.ideaStatus === 'expired' ? (
-          <button type="button" className="link" disabled={busy} onClick={() => onBringBack(idea)}>
-            {t('ideas.bringBack')}
+          <button
+            type="button"
+            className="icon-action"
+            disabled={busy}
+            title={t('ideas.bringBack')}
+            aria-label={`${idea.headline}: ${t('ideas.bringBack')}`}
+            onClick={() => onBringBack(idea)}
+          >
+            <RestartIcon size={16} />
           </button>
         ) : null,
     },
