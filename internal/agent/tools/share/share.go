@@ -39,9 +39,10 @@ func init() {
 					"path":          tools.StringProperty("computer: the file's path; ~ is the person's home"),
 					"attachment_id": tools.StringProperty("conversation: the attachment's id"),
 					"look":          tools.BooleanProperty("also show the picture to you, for a picture"),
+					"link":          tools.BooleanProperty("true: also make an address that opens the file on another device with no sign-in, for six hours, for a person who asks for a link"),
 					"caption":       tools.StringProperty("a line to send with it, optional"),
 				}, "source"),
-				Guidance: "share_file: hands the person the file itself; use it when they ask to see or have something, and with look when you need to see a picture to answer.",
+				Guidance: "share_file: hands the person the file itself; use it when they ask to see or have something, with look when you need to see a picture to answer, and with link when they want to open it on another device: give them the share_link it answers, never an address of your own making.",
 				Run:      runShare,
 			},
 		}
@@ -56,6 +57,7 @@ type shareArguments struct {
 	Path         string `json:"path"`
 	AttachmentID string `json:"attachment_id"`
 	Look         bool   `json:"look"`
+	Link         bool   `json:"link"`
 	Caption      string `json:"caption"`
 }
 
@@ -136,12 +138,22 @@ func runShare(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if strings.TrimSpace(arguments.Caption) != "" {
 		answer["caption"] = strings.TrimSpace(arguments.Caption)
 	}
-	// A run that can sign an address hands that out instead: one that opens
-	// the file with no sign-in, for a caller who has none here.
-	if linking, ok := run.(tools.Linking); ok {
+	// A run that can sign an address hands one out: in place of the path
+	// for a program over MCP, which has no session here, and beside it for
+	// a person who asked for a link to open somewhere else. Without one the
+	// agent made up an address that needed a sign-in and named the wrong
+	// host.
+	if linking, ok := run.(tools.Linking); ok && (arguments.Link || linking.IsLinkInPlaceOfPath()) {
 		if link := linking.SharedLink(attachment.ID); link != "" {
-			answer["url"] = link
-			answer["url_note"] = "opens as it is, with no sign-in, for six hours; fetch it directly"
+			if linking.IsLinkInPlaceOfPath() {
+				answer["url"] = link
+				answer["url_note"] = "opens as it is, with no sign-in, for six hours; fetch it directly"
+			} else {
+				answer["share_link"] = link
+				answer["share_link_note"] = "opens with no sign-in for six hours; give it to the person as it is"
+			}
+		} else if arguments.Link {
+			answer["share_link_note"] = "no link can be made from here; the file is in the conversation"
 		}
 	}
 	var images []llm.ContentPart
