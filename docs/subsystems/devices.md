@@ -46,9 +46,9 @@ reads it, and `share_file` brings the answer back.
 
 It can also be where an OAuth authorization comes back to, for a connected
 server whose service sends one only to a loopback address. Asked with
-`authorization_forward`, it listens on `127.0.0.1` for one redirect and sends
-the browser on to the dashboard address the server named, carrying only the
-authorization's own parameters. The listener outlives the request and the
+`authorization_forward`, it listens on the loopback interface, gives out a
+`localhost` address, and sends the browser that comes back on to the dashboard
+address the server named, carrying only the authorization's own parameters. The listener outlives the request and the
 connection, so a network that drops while the person signs in loses nothing,
 and closes after the redirect or fifteen minutes; four wait at most.
 

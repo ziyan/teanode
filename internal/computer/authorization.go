@@ -93,6 +93,16 @@ func RunAuthorizationForward(arguments *AuthorizationForwardArguments) (*Authori
 		release()
 		return nil, fmt.Errorf("cannot listen on the loopback interface: %w", err)
 	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	// The address given out names localhost, which is what the services
+	// that take only a loopback address expect, and a browser may take
+	// localhost to mean the IPv6 loopback first. The same port there too,
+	// when this computer has one; without it the browser falls back to the
+	// IPv4 one.
+	listeners := []net.Listener{listener}
+	if sixth, err := net.Listen("tcp", fmt.Sprintf("[::1]:%d", port)); err == nil {
+		listeners = append(listeners, sixth)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), lifetime)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", func(response http.ResponseWriter, request *http.Request) {
@@ -108,10 +118,12 @@ func RunAuthorizationForward(arguments *AuthorizationForwardArguments) (*Authori
 		cancel()
 	})
 	server := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	go func() {
-		defer deferutil.Recover()
-		_ = server.Serve(listener)
-	}()
+	for _, each := range listeners {
+		go func() {
+			defer deferutil.Recover()
+			_ = server.Serve(each)
+		}()
+	}
 	go func() {
 		defer deferutil.Recover()
 		defer release()
@@ -121,7 +133,7 @@ func RunAuthorizationForward(arguments *AuthorizationForwardArguments) (*Authori
 		defer cancelShutdown()
 		_ = server.Shutdown(shutdown)
 	}()
-	return &AuthorizationForwardResult{RedirectURL: fmt.Sprintf("http://127.0.0.1:%d/callback", listener.Addr().(*net.TCPAddr).Port)}, nil
+	return &AuthorizationForwardResult{RedirectURL: fmt.Sprintf("http://localhost:%d/callback", port)}, nil
 }
 
 // forwardedURL is the forward address with the authorization's parameters

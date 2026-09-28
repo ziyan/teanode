@@ -13,7 +13,7 @@ func TestAuthorizationForwardSendsTheBrowserOn(t *testing.T) {
 		t.Fatal(err)
 	}
 	redirect, err := url.Parse(result.RedirectURL)
-	if err != nil || redirect.Scheme != "http" || redirect.Hostname() != "127.0.0.1" || redirect.Path != "/callback" {
+	if err != nil || redirect.Scheme != "http" || redirect.Hostname() != "localhost" || redirect.Path != "/callback" {
 		t.Fatalf("redirect address %q", result.RedirectURL)
 	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
