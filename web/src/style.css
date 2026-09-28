@@ -11186,11 +11186,62 @@ button.idea-history-title {
   min-width: 0;
 }
 
-/* Every field is as wide as its row; beside the title the day takes only
-   what a date needs, and the title the rest. */
-.reminders-add input[type='date'] {
+/* The due day, as one field with its name inside it: an empty date field is
+   a blank box on a phone, and a blank box beside "Add" says nothing. Beside
+   the title it takes what a date needs, and the title the rest. */
+.reminders-due {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   flex: none;
-  width: 11rem;
+  width: 13rem;
+  margin: 0;
+  padding-left: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+}
+
+.reminders-due:hover {
+  border-color: var(--border-strong);
+}
+
+.reminders-due:focus-within {
+  border-color: var(--text);
+}
+
+.reminders-due > span {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-label);
+  white-space: nowrap;
+}
+
+.reminders-due > input[type='date'],
+.reminders-due > input[type='date']:hover,
+.reminders-due > input[type='date']:focus-visible {
+  flex: 1;
+  min-width: 0;
+  padding-left: 0;
+  border: none;
+  background: transparent;
+}
+
+/* To do and Done: the one choice of which list is shown, a little larger than
+   a toolbar's segments since it is what the page is about. */
+.reminders-lists {
+  justify-self: start;
+}
+
+.reminders-lists button {
+  padding: 5px 14px;
+  font-size: 13px;
+}
+
+.reminders-lists .count {
+  margin-left: var(--space-1);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .reminder-list {
@@ -11251,10 +11302,6 @@ button.idea-history-title {
   overflow-wrap: anywhere;
 }
 
-.reminders-done-toggle {
-  justify-self: start;
-}
-
 @media (max-width: 600px) {
   .reminders-add {
     flex-wrap: wrap;
@@ -11264,7 +11311,7 @@ button.idea-history-title {
     flex-basis: 100%;
   }
 
-  .reminders-add input[type='date'] {
+  .reminders-due {
     flex: 1;
     width: auto;
   }
