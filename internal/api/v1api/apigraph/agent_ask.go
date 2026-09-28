@@ -756,6 +756,12 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 			return nil, api.ErrNotFound
 		}
 	}
+	// Where the dashboard was reached, for a link to a file the person asks
+	// to open on another device.
+	origin := ""
+	if request := api.ContextRequest(ctx); request != nil {
+		origin = self.originOf(request)
+	}
 	run, err := worker.Ask(&agent.AskSettings{
 		Agent:        asking,
 		Owner:        person,
@@ -768,6 +774,7 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 		Attachments:  attachments,
 		References:   arguments.References,
 		Effort:       arguments.Effort,
+		Origin:       origin,
 	})
 	if err != nil {
 		return nil, translateError(err)
