@@ -29,7 +29,7 @@ import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { MenuButton } from '../components/menuButton'
 import { Markdown } from '../components/markdown'
 import { Tooltip } from '../components/tooltip'
-import { GraphExplorer } from '../components/graphExplorer'
+import { KnowledgeGraph } from './knowledgeExplore'
 // The set of things to tick, the one the access pages tick roles and
 // permissions with. Four audiences is the short end of what it is for,
 // and it is the only control here that is a list of ticks.
@@ -724,9 +724,7 @@ export function KnowledgePage() {
   const column = (
     <div className="knowledge-list">
       {trail ?? lookup}
-      <div className="knowledge-list-rows">
-        {list}
-      </div>
+      <div className="knowledge-list-rows">{list}</div>
       {/* Under the rows rather than among them, which is where the mailbox
           puts the same strip and what keeps it in view while the folder is
           walked down. It cannot be drawn where it is counted: the panels
@@ -1750,9 +1748,7 @@ function PageView({
           </div>
         </div>
       </header>
-      <SettingsSection
-        card
-      >
+      <SettingsSection card>
         {/* The other names the page answers to, said the way the command
             line says them, because a page found under a name that is not
             its heading is otherwise a mystery. */}
@@ -1885,7 +1881,7 @@ function PageView({
           </>
         }
       >
-        <GraphExplorer path={node.path} onOpen={onSelect} version={linked} />
+        <KnowledgeGraph from={node.path} isEmbedded version={linked} />
       </SettingsSection>
       {linking ? (
         <LinkDialog

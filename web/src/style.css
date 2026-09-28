@@ -10065,134 +10065,6 @@ main.content:has(> .knowledge-frame) {
   background: var(--field);
 }
 
-/* The pages around one page, drawn.
-
-   The box is laid out in the pixels it is drawn in -- the viewBox is the
-   element's own width and height, measured -- so a label is twelve real
-   pixels wide on a phone and on a laptop. A fixed viewBox scaled to fit
-   made the names on a narrow column too small to read, which is the one
-   thing this panel exists to show. */
-.graph-explorer-canvas {
-  display: block;
-  width: 100%;
-  height: 360px;
-  /* A node is tapped, and a double tap on it opens the page. Without this
-     the browser spends its own 300ms deciding whether the first tap was a
-     zoom. */
-  touch-action: manipulation;
-}
-
-.graph-explorer-edge {
-  stroke: var(--border-strong);
-  fill: none;
-}
-
-/* A link the nightly walk guessed rather than one somebody stated.
-   Dashed, so a guess is not drawn as a fact; the word "proposed" sits
-   beside the relation for anybody who does not read the dashes. */
-.graph-explorer-edge.proposed {
-  stroke-dasharray: 7 4;
-}
-
-.graph-explorer-arrow {
-  fill: var(--border-strong);
-  stroke: none;
-}
-
-/* The relation, on the line it belongs to. The line runs under the word,
-   so the word is drawn with the panel's own colour around it rather than
-   on top of the stroke. */
-.graph-explorer-relation {
-  fill: var(--muted);
-  font-size: 11px;
-  paint-order: stroke;
-  stroke: var(--surface);
-  stroke-width: 4px;
-  stroke-linejoin: round;
-}
-
-.graph-explorer-node circle {
-  fill: var(--field);
-  stroke: var(--border-strong);
-}
-
-.graph-explorer-node text {
-  fill: var(--text);
-  font-size: 12px;
-}
-
-.graph-explorer-node.centre circle {
-  fill: var(--surface);
-  stroke: var(--accent);
-  stroke-width: 2px;
-}
-
-/* Filed under it, as a count rather than as pages: dashed, because it is
-   not one page and cannot be walked onto. */
-.graph-explorer-node.children circle {
-  fill: none;
-  stroke-dasharray: 3 3;
-}
-
-/* A page walked through earlier. Quiet: it is where you have been, not
-   what the page in the middle says. */
-.graph-explorer-node.seen circle {
-  fill: none;
-  stroke: var(--border);
-}
-
-.graph-explorer-node.seen text {
-  fill: var(--muted);
-}
-
-.graph-explorer-node[role='button'] {
-  cursor: pointer;
-}
-
-.graph-explorer-node[role='button']:hover circle,
-.graph-explorer-node[role='button']:focus-visible circle {
-  stroke: var(--accent);
-}
-
-.graph-explorer-node:focus {
-  outline: none;
-}
-
-.graph-explorer-node:focus-visible circle {
-  stroke: var(--accent);
-  stroke-width: 2px;
-}
-
-/* The way back, and the way in: which page the drawing is showing now,
-   and the one action that leaves the page being read. */
-.graph-explorer-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-.graph-explorer-here {
-  font-size: var(--text-label);
-  overflow-wrap: anywhere;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* The fields that make a link, under the drawing they change. Flush
-   against it they read as part of the picture rather than as the way to
-   add to it. */
-.graph-explorer + .row {
-  margin-top: var(--space-4);
-}
-
-@media (max-width: 600px) {
-  .graph-explorer-canvas {
-    height: 300px;
-  }
-}
-
 /* What a question would carry, inside the dialog that asks it: a page, and
    under it the facts recall would have put in front of the model. The facts
    are read rather than aimed at -- they are the answer, not a way anywhere --
@@ -10320,6 +10192,11 @@ main.content:has(> .knowledge-frame) {
   /* Nothing here is text to select, and a drag that starts on a name should
      move the drawing rather than highlight the name. */
   user-select: none;
+}
+
+/* In a page's Connections card: the height of a card, the same drawing. */
+.graph-explore.embedded {
+  height: 420px;
 }
 
 /* The browser's fullscreen: the frame is the screen, whatever height the

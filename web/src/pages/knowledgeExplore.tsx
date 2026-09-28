@@ -292,13 +292,29 @@ function settle(nodes: Drawn[], edges: Joined[], byPath: Map<string, Drawn>, alp
 
 export function KnowledgeExplorePage() {
   const { t } = useTranslation()
+  const [parameters] = useSearchParams()
+  useBreadcrumbDetail(t('knowledge.explore.title'))
+  return <KnowledgeGraph from={parameters.get('from') ?? ''} />
+}
+
+// KnowledgeGraph is the drawing: the whole graph walked from the roots, or
+// from one page. The explore page is it and nothing else; a page's
+// Connections card is it at the height of a card, opened on that page,
+// without the search and the legend a whole page has room for. version
+// reloads it after a link was made from the card.
+export function KnowledgeGraph({
+  from,
+  isEmbedded = false,
+  version = 0,
+}: {
+  from: string
+  isEmbedded?: boolean
+  version?: number
+}) {
+  const { t } = useTranslation()
   const toast = useToast()
   const navigate = useNavigate()
   const me = useSession().name || ''
-  const [parameters] = useSearchParams()
-  const from = parameters.get('from') ?? ''
-
-  useBreadcrumbDetail(t('knowledge.explore.title'))
 
   // The drawing itself. Held in refs and redrawn by hand, for the reason at
   // the top of the file; `redraw` is what tells React the set of pages has
@@ -529,6 +545,11 @@ export function KnowledgeExplorePage() {
       return
     }
     const measure = () => {
+      // In a card it is the card's size, set by the stylesheet.
+      if (isEmbedded) {
+        size.current = { width: box.clientWidth, height: box.clientHeight }
+        return
+      }
       const content = box.closest('.content')
       let bottom = window.innerHeight
       if (content instanceof HTMLElement) {
@@ -551,7 +572,7 @@ export function KnowledgeExplorePage() {
       observer.disconnect()
       window.removeEventListener('resize', measure)
     }
-  }, [applyView])
+  }, [applyView, isEmbedded])
 
   // --- what is on the drawing --------------------------------------------
 
@@ -804,9 +825,10 @@ export function KnowledgeExplorePage() {
       alive = false
     }
     // Once per page opened from, and never again: everything after the first
-    // answer is somebody expanding something.
+    // answer is somebody expanding something. A card's graph also reads its
+    // page again after a link was made from the card.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from])
+  }, [from, version])
 
   // --- the pointer -------------------------------------------------------
 
@@ -1078,7 +1100,7 @@ export function KnowledgeExplorePage() {
   const empty = !loading && nodes.current.length === 0
 
   return (
-    <div className="graph-explore" ref={frame}>
+    <div className={['graph-explore', isEmbedded ? 'embedded' : ''].filter(Boolean).join(' ')} ref={frame}>
       {/* One picture to a reader who cannot see it, rather than three hundred
           circles none of which can be reached from a keyboard. The same graph
           in words is the Knowledge page, which is the way through it for a
@@ -1199,28 +1221,32 @@ export function KnowledgeExplorePage() {
         </g>
       </svg>
 
-      <div className="graph-explore-lookup">
-        <input
-          type="search"
-          value={query}
-          placeholder={t('knowledge.explore.find')}
-          aria-label={t('knowledge.explore.find')}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        {found ? (
-          <ul className="graph-explore-found">
-            {found.length === 0 ? <li className="muted">{t('knowledge.nothingFound')}</li> : null}
-            {found.map((node) => (
-              <li key={node.id}>
-                <button type="button" onClick={() => bringIn(node)}>
-                  <span>{nameOf(node, me)}</span>
-                  <span className="muted">{node.path}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
+      {isEmbedded ? null : (
+        <>
+          <div className="graph-explore-lookup">
+            <input
+              type="search"
+              value={query}
+              placeholder={t('knowledge.explore.find')}
+              aria-label={t('knowledge.explore.find')}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            {found ? (
+              <ul className="graph-explore-found">
+                {found.length === 0 ? <li className="muted">{t('knowledge.nothingFound')}</li> : null}
+                {found.map((node) => (
+                  <li key={node.id}>
+                    <button type="button" onClick={() => bringIn(node)}>
+                      <span>{nameOf(node, me)}</span>
+                      <span className="muted">{node.path}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </>
+      )}
 
       <div className="graph-explore-zoom">
         <Tooltip label={t('knowledge.explore.zoomIn')}>
@@ -1258,15 +1284,19 @@ export function KnowledgeExplorePage() {
         </div>
       </div>
 
-      <div className="graph-explore-legend">
-        {legend.map((entry) => (
-          <span key={entry.kind} className={`graph-explore-swatch graph-explore-kind-${entry.kind}`}>
-            <i />
-            {entry.label}
-          </span>
-        ))}
-        <span className="graph-explore-hint muted">{t('knowledge.explore.hint')}</span>
-      </div>
+      {isEmbedded ? null : (
+        <>
+          <div className="graph-explore-legend">
+            {legend.map((entry) => (
+              <span key={entry.kind} className={`graph-explore-swatch graph-explore-kind-${entry.kind}`}>
+                <i />
+                {entry.label}
+              </span>
+            ))}
+            <span className="graph-explore-hint muted">{t('knowledge.explore.hint')}</span>
+          </div>
+        </>
+      )}
 
       {empty ? (
         <div className="graph-explore-nothing">
