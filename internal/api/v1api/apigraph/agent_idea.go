@@ -48,6 +48,8 @@ type AgentIdeaMutation interface {
 type ListAgentIdeasArguments struct {
 	IdeaStatuses []string `json:"ideaStatuses" graphapi:"nullable"`
 	IdeaKinds    []string `json:"ideaKinds" graphapi:"nullable"`
+	// Language is the reader's, for the catalog's ideas: ja, zh or en.
+	Language string `json:"language" graphapi:"nullable"`
 }
 
 // AgentIdeaList is the ideas, and the areas they can be in.
@@ -76,6 +78,9 @@ type ProposeAgentIdeaArguments struct {
 type StartAgentIdeaArguments struct {
 	IdeaID         string `json:"ideaId"`
 	ConversationID string `json:"conversationId" graphapi:"nullable"`
+	// Language is the reader's, for the conversation's name and the
+	// request drafted in it.
+	Language string `json:"language" graphapi:"nullable"`
 }
 
 // StartedAgentIdea is the idea started, the conversation carrying it out,
@@ -140,7 +145,7 @@ func (self *graph) ListAgentIdeas(ctx context.Context, arguments ListAgentIdeasA
 			return nil, fmt.Errorf("%w: %q is not catalog or personal", api.ErrInvalidArguments, kind)
 		}
 	}
-	ideas, err := worker.ListIdeas(ctx, self.writing(ctx), found, principal.User, statuses, kinds)
+	ideas, err := worker.ListIdeas(ctx, self.writing(ctx), found, principal.User, statuses, kinds, arguments.Language)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +190,7 @@ func (self *graph) StartAgentIdea(ctx context.Context, arguments StartAgentIdeaA
 	if err != nil {
 		return nil, err
 	}
-	idea, conversation, err := worker.StartIdea(ctx, self.writing(ctx), found, strings.TrimSpace(arguments.IdeaID), arguments.ConversationID)
+	idea, conversation, err := worker.StartIdea(ctx, self.writing(ctx), found, strings.TrimSpace(arguments.IdeaID), arguments.ConversationID, arguments.Language)
 	if err != nil {
 		return nil, err
 	}

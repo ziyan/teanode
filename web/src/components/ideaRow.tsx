@@ -45,8 +45,8 @@ export interface IdeaCategory {
 }
 
 export const LIST_IDEAS = `
-  query ($ideaStatuses: [String!]) {
-    ListAgentIdeas(ideaStatuses: $ideaStatuses) {
+  query ($ideaStatuses: [String!], $language: String) {
+    ListAgentIdeas(ideaStatuses: $ideaStatuses, language: $language) {
       ideas {
         id ideaKind ideaCategory emoji headline body openingRequest suggestionReason
         evidence { evidenceKind evidenceId evidenceSummary }
@@ -59,8 +59,11 @@ export const LIST_IDEAS = `
 export type IdeaList = { ListAgentIdeas: { ideas: Idea[]; ideaCategories: IdeaCategory[] } }
 
 const START_IDEA = `
-  mutation ($ideaId: String!, $conversationId: String) {
-    StartAgentIdea(ideaId: $ideaId, conversationId: $conversationId) { conversation { id } openingRequest }
+  mutation ($ideaId: String!, $conversationId: String, $language: String) {
+    StartAgentIdea(ideaId: $ideaId, conversationId: $conversationId, language: $language) {
+      conversation { id }
+      openingRequest
+    }
   }`
 
 const SET_IDEA_STATUS = `
@@ -76,11 +79,12 @@ const MARK_IDEAS_SHOWN = `mutation ($ideaIds: [String!]!) { MarkAgentIdeasShown(
 // to send or change first.
 export async function startIdea(
   idea: Idea,
+  language: string,
   conversationId?: string,
 ): Promise<{ conversationId: string; openingRequest: string }> {
   const started = await graphql<{ StartAgentIdea: { conversation: { id: string }; openingRequest: string } }>(
     START_IDEA,
-    { ideaId: idea.id, conversationId: conversationId || null },
+    { ideaId: idea.id, conversationId: conversationId || null, language },
   )
   return {
     conversationId: started.StartAgentIdea.conversation.id,
@@ -251,16 +255,16 @@ export function IdeaSuggestions({
   conversationId: string
   onDraft: (conversationId: string, openingRequest: string) => void
 }) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const toast = useToast()
   const [busy, setBusy] = useState(false)
-  const { data } = useQuery(() => graphql<IdeaList>(LIST_IDEAS, { ideaStatuses: ['open'] }), [])
+  const { data } = useQuery(() => graphql<IdeaList>(LIST_IDEAS, { ideaStatuses: ['open'], language }), [language])
   const ideas = (data?.ListAgentIdeas.ideas ?? []).slice(0, ideaSuggestionCount)
   if (ideas.length === 0) return null
   const onStart = async (chosen: Idea) => {
     setBusy(true)
     try {
-      const started = await startIdea(chosen, conversationId)
+      const started = await startIdea(chosen, language, conversationId)
       onDraft(started.conversationId, started.openingRequest)
     } catch (caught) {
       toast.failure(caught, t('ideas.failed'))

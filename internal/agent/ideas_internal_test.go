@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
@@ -66,6 +67,17 @@ func TestTheCatalogIsWrittenToTheRules(t *testing.T) {
 			t.Errorf("%s: %s", entry.IdeaKey, problem)
 		}
 	}
+	for _, entry := range ideaCatalog {
+		for _, language := range []string{"ja", "zh"} {
+			words, ok := entry.Translations[language]
+			switch {
+			case !ok || words.Headline == "" || words.Body == "" || words.OpeningRequest == "":
+				t.Errorf("%s has no %s words", entry.IdeaKey, language)
+			case utf8.RuneCountInString(words.Headline) > ideaHeadlineMostRuneCount || utf8.RuneCountInString(words.Body) > ideaBodyMostRuneCount:
+				t.Errorf("%s is too long in %s", entry.IdeaKey, language)
+			}
+		}
+	}
 	if len(ideaCatalog) < 30 {
 		t.Errorf("the catalog has %d ideas; a person should find something in it", len(ideaCatalog))
 	}
@@ -94,8 +106,13 @@ func TestAnIdeaPromisesOnlyWhatItsToolsDo(t *testing.T) {
 		{"a tool it lacks", func(idea *models.AgentIdea) { idea.NeededToolNames = []string{"haggle"} }, "does not have"},
 		{"a skill it has, by prefix", func(idea *models.AgentIdea) { idea.NeededToolNames = []string{"skill__garden__*"} }, ""},
 		{"a skill it lacks, by prefix", func(idea *models.AgentIdea) { idea.NeededToolNames = []string{"skill__pool__*"} }, "does not have"},
-		{"acting without asking", func(idea *models.AgentIdea) { idea.Body = "I send each reply for you." }, "asks first"},
-		{"promising too much", func(idea *models.AgentIdea) { idea.Headline = "I'll always answer the club." }, "promises too much"},
+		{"a catalog idea acting without asking", func(idea *models.AgentIdea) {
+			idea.IdeaKind, idea.Body = models.IdeaCatalog, "I send each reply for you."
+		}, "asks first"},
+		{"a catalog idea promising too much", func(idea *models.AgentIdea) {
+			idea.IdeaKind, idea.Headline = models.IdeaCatalog, "I'll always answer the club."
+		}, "promises too much"},
+		{"a personal idea in another language, left to the model", func(idea *models.AgentIdea) { idea.Body = "返信を送ります。" }, ""},
 		{"an emoji of another area", func(idea *models.AgentIdea) { idea.Emoji = "🎲" }, "not one of the emoji"},
 		{"no evidence", func(idea *models.AgentIdea) { idea.Evidence = nil }, "needs the evidence"},
 		{"evidence of no kind", func(idea *models.AgentIdea) { idea.Evidence[0].EvidenceKind = "rumor" }, "not a kind of evidence"},
@@ -125,13 +142,21 @@ func TestAnIdeaIsOfferedWhileItFitsAndKeepsWhatBecameOfIt(t *testing.T) {
 	ideaCatalogForTest(t)
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		ideas, err := worker.ListIdeas(t.Context(), tx, run.Agent, run.Owner, []models.AgentIdeaStatus{models.IdeaOpen}, nil)
+		ideas, err := worker.ListIdeas(t.Context(), tx, run.Agent, run.Owner, []models.AgentIdeaStatus{models.IdeaOpen}, nil, "")
 		if err != nil || len(ideas) != 1 || ideas[0].IdeaKey != "bread" || ideas[0].Headline != "Tell me the flour. I'll plan the bake." {
 			t.Fatalf("only bread is on offer: %+v %v", ideas, err)
 		}
 		bread := ideas[0]
+		ideaCatalog[0].Translations = map[string]ideaWords{"ja": {Headline: "粉を教えてください。", Body: "時間を計算します。", OpeningRequest: "土曜にパンを焼きたい。"}}
+		inJapanese, err := worker.ListIdeas(t.Context(), tx, run.Agent, run.Owner, []models.AgentIdeaStatus{models.IdeaOpen}, nil, "ja-JP")
+		if err != nil || len(inJapanese) != 1 || inJapanese[0].Headline != "粉を教えてください。" || inJapanese[0].OpeningRequest != "土曜にパンを焼きたい。" {
+			t.Fatalf("read in Japanese: %+v %v", inJapanese, err)
+		}
+		if kept, _ := tx.GetAgentIdea(run.Agent.ID, bread.ID); kept.Headline != bread.Headline {
+			t.Fatalf("the row keeps the catalog's own words: %q", kept.Headline)
+		}
 
-		started, conversation, err := worker.StartIdea(t.Context(), tx, run.Agent, bread.ID, "")
+		started, conversation, err := worker.StartIdea(t.Context(), tx, run.Agent, bread.ID, "", "")
 		if err != nil || started.IdeaStatus != models.IdeaStarted || conversation == nil || started.StartedConversationID != conversation.ID {
 			t.Fatalf("started in a conversation of its own: %+v %+v %v", started, conversation, err)
 		}
@@ -142,7 +167,7 @@ func TestAnIdeaIsOfferedWhileItFitsAndKeepsWhatBecameOfIt(t *testing.T) {
 		if len(messages) != 0 {
 			t.Fatalf("starting an idea says nothing: %+v", messages)
 		}
-		_, secondTap, err := worker.StartIdea(t.Context(), tx, run.Agent, bread.ID, "")
+		_, secondTap, err := worker.StartIdea(t.Context(), tx, run.Agent, bread.ID, "", "")
 		if err != nil || secondTap.ID != conversation.ID {
 			t.Fatalf("a second tap opens the same conversation, not another: %+v %v", secondTap, err)
 		}
@@ -154,7 +179,7 @@ func TestAnIdeaIsOfferedWhileItFitsAndKeepsWhatBecameOfIt(t *testing.T) {
 		if err != nil || dismissed.IdeaStatus != models.IdeaDismissed || dismissed.ClosedAt == nil {
 			t.Fatalf("dismissed: %+v %v", dismissed, err)
 		}
-		if _, _, err := worker.StartIdea(t.Context(), tx, run.Agent, bread.ID, ""); err == nil || !strings.Contains(err.Error(), "open it again first") {
+		if _, _, err := worker.StartIdea(t.Context(), tx, run.Agent, bread.ID, "", ""); err == nil || !strings.Contains(err.Error(), "open it again first") {
 			t.Fatalf("a dismissed idea is opened again before it is started: %v", err)
 		}
 		if err := worker.refreshIdeas(t.Context(), tx, run.Agent, run.Owner, true); err != nil {

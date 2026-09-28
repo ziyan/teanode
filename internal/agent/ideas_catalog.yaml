@@ -9,6 +9,9 @@
 #   openingRequest   what the person would type to start it, in their own voice
 #   neededToolNames  the tools it needs; a trailing * is any tool whose name begins so
 #   emoji            one of its area's, from internal/models/idea.go
+#   translations     the headline, body and opening request in each other
+#                    language the dashboard speaks (ja, zh), held to the same
+#                    lengths
 # An entry needing a tool that acts toward somebody else, or cannot be undone,
 # says that the agent asks first.
 
@@ -19,6 +22,15 @@
   body: I read your new mail each morning and send you a short list of what needs an answer, what has a deadline, and what can wait.
   openingRequest: Every morning at 8, tell me which mail needs me today.
   neededToolNames: [schedule, mail_search]
+  translations:
+    ja:
+      headline: "毎朝、本当に対応が必要なメールをお知らせします。"
+      body: "毎朝新着メールを読み、返信が必要なもの、期限があるもの、後回しでよいものを短い一覧にしてお送りします。"
+      openingRequest: "平日の朝8時に、今日対応が必要なメールを教えて。"
+    zh:
+      headline: "每天早上，我告诉你哪些邮件真正需要你处理。"
+      body: "我每天早上阅读新邮件，给你一份简短清单：哪些要回复，哪些有截止日期，哪些可以等。"
+      openingRequest: "每个工作日早上8点，告诉我今天哪些邮件需要我处理。"
 
 - ideaKey: reply_drafts
   ideaCategory: mail
@@ -27,6 +39,15 @@
   body: I find the messages you have not answered, draft a reply to each in your voice, and leave them in your drafts. Nothing is sent until you approve it.
   openingRequest: Draft replies to the mail I haven't answered this week.
   neededToolNames: [mail_search, mail_draft]
+  translations:
+    ja:
+      headline: "返信待ちのメールに下書きを用意します。"
+      body: "まだ返信していないメッセージを見つけ、あなたの口調で返信を下書きして下書きフォルダに残します。承認するまで何も送信しません。"
+      openingRequest: "今週まだ返信していないメールの返信を下書きして。"
+    zh:
+      headline: "我为等你回复的邮件起草回复。"
+      body: "我找出你还没回复的邮件，用你的语气为每封起草回复，放在草稿箱里。你批准之前什么都不会发出。"
+      openingRequest: "帮我起草这周还没回复的邮件的回复。"
 
 - ideaKey: follow_up
   ideaCategory: mail
@@ -35,6 +56,15 @@
   body: Tell me what you are waiting for and by when. I check each day, and if nothing arrives in time I draft the follow-up for you to send.
   openingRequest: I'm waiting on a reply about something. If nothing comes by Friday, draft a follow-up.
   neededToolNames: [goal, mail_search, mail_draft]
+  translations:
+    ja:
+      headline: "返事待ちですか？来なければ催促します。"
+      body: "何を、いつまでに待っているか教えてください。毎日確認し、期限までに届かなければ、あなたが送る催促メールを下書きします。"
+      openingRequest: "返事を待っている件があります。金曜までに来なければ催促メールを下書きして。"
+    zh:
+      headline: "在等回复？如果没来，我去跟进。"
+      body: "告诉我你在等什么、等到什么时候。我每天查看，如果到时还没回音，就起草一封跟进邮件供你发送。"
+      openingRequest: "我在等一个回复。如果周五前还没来，帮我起草一封跟进邮件。"
 
 - ideaKey: unsubscribe
   ideaCategory: mail
@@ -43,6 +73,15 @@
   body: I find the senders whose mail you archive or delete unread, show you the list, and use each one's unsubscribe link for the ones you pick. Nothing changes until you say so.
   openingRequest: Which newsletters do I archive or delete without reading? Help me unsubscribe.
   neededToolNames: [mail_search, subscription]
+  translations:
+    ja:
+      headline: "読まずに片付けているメールの配信を停止します。"
+      body: "読まずにアーカイブや削除をしている送信元を見つけて一覧にし、選んだものだけ配信停止リンクを使います。あなたが決めるまで何も変えません。"
+      openingRequest: "読まずにアーカイブや削除しているニュースレターはどれ？配信停止を手伝って。"
+    zh:
+      headline: "我帮你退订那些你没读就收起来的邮件。"
+      body: "我找出你没读就归档或删除的发件人，列给你看，并只对你选中的使用退订链接。你决定之前什么都不会改变。"
+      openingRequest: "哪些新闻邮件我没读就归档或删除了？帮我退订。"
 
 - ideaKey: alert_rule
   ideaCategory: mail
@@ -51,6 +90,15 @@
   body: Tell me which notifications you only glance at and I write a mail rule that files them in a folder of their own, show you what it catches, and change it if it catches the wrong thing.
   openingRequest: File the shipping and login alerts out of my inbox.
   neededToolNames: [rule]
+  translations:
+    ja:
+      headline: "定型の通知をルールで受信トレイから整理します。"
+      body: "ざっと見るだけの通知を教えてください。専用フォルダに振り分けるメールルールを作り、何が該当するか見せて、違うものを拾ったら直します。"
+      openingRequest: "配送やログインの通知を受信トレイから振り分けて。"
+    zh:
+      headline: "我用规则把例行通知移出收件箱。"
+      body: "告诉我哪些通知你只是扫一眼，我写一条邮件规则把它们归到专门的文件夹，给你看它会匹配什么，匹配错了就改。"
+      openingRequest: "把快递和登录通知从收件箱里分出去。"
 
 - ideaKey: bills_due
   ideaCategory: money
@@ -59,6 +107,15 @@
   body: I search your mail for bills and statements, pull out each amount and due date, and put the due dates on your calendar. Paying stays with you.
   openingRequest: Find my bills from the last month and tell me what's due and when.
   neededToolNames: [mail_search, mail_read, calendar]
+  translations:
+    ja:
+      headline: "メールから請求書を探し、支払期限を一覧にします。"
+      body: "メールの請求書や明細を探し、金額と期限を抜き出して、期限をカレンダーに入れます。支払いはあなたが行います。"
+      openingRequest: "先月分の請求書を探して、何がいつ期限か教えて。"
+    zh:
+      headline: "我从邮件里找出账单，列出应付金额和到期日。"
+      body: "我在邮件中查找账单和对账单，提取每笔金额和到期日，并把到期日放进你的日历。付款仍由你来做。"
+      openingRequest: "找出我上个月的账单，告诉我哪些什么时候到期。"
 
 - ideaKey: spending_chart
   ideaCategory: money
@@ -67,6 +124,15 @@
   body: I read the purchase alerts and receipts in your mail, total them by week and by kind, and draw the chart on a page you can keep.
   openingRequest: Chart my spending this month from the alerts and receipts in my mail.
   neededToolNames: [mail_search, mail_read, artifact]
+  translations:
+    ja:
+      headline: "今月の支出を先月と比べてグラフにできます。"
+      body: "メールの利用通知や領収書を読み、週ごと・種類ごとに集計して、保存できるページにグラフを描きます。"
+      openingRequest: "メールの利用通知と領収書から、今月の支出をグラフにして。"
+    zh:
+      headline: "我可以把本月支出和上月做成对比图。"
+      body: "我读取邮件里的消费提醒和收据，按周、按类别汇总，并在一个可保存的页面上画出图表。"
+      openingRequest: "根据邮件里的消费提醒和收据，把我这个月的支出做成图表。"
 
 - ideaKey: subscriptions
   ideaCategory: money
@@ -75,6 +141,15 @@
   body: I go through your receipts and renewal notices and list each subscription with its price and next renewal, marking the ones you seem not to use. Canceling stays with you.
   openingRequest: List every subscription I'm paying for, from my mail.
   neededToolNames: [mail_search, mail_read]
+  translations:
+    ja:
+      headline: "メールの領収書から、課金中のサブスクリプションを一覧にします。"
+      body: "領収書や更新のお知らせを確認し、各サブスクリプションの料金と次回更新日を一覧にして、使っていなさそうなものに印を付けます。解約はあなたが行います。"
+      openingRequest: "メールから、支払っているサブスクリプションを全部一覧にして。"
+    zh:
+      headline: "我根据邮件里的收据，列出正在向你收费的订阅。"
+      body: "我查看你的收据和续费通知，列出每个订阅的价格和下次续费日期，并标出你似乎不用的。取消仍由你来做。"
+      openingRequest: "根据我的邮件，列出我正在付费的所有订阅。"
 
 - ideaKey: letter_to_deadline
   ideaCategory: paperwork
@@ -83,6 +158,15 @@
   body: Send a photo of a letter or a form and I read what it asks for, put the deadline on your calendar and draft the reply. Nothing is sent until you say so.
   openingRequest: Here is a letter I got. What does it ask me to do, and by when?
   neededToolNames: [calendar, mail_draft]
+  translations:
+    ja:
+      headline: "書類を撮影してください。何をいつまでにすべきか読み取ります。"
+      body: "手紙や書類の写真を送ってください。何を求めているかを読み、期限をカレンダーに入れて返信を下書きします。あなたが言うまで何も送りません。"
+      openingRequest: "この手紙が届きました。何をいつまでにすればいい？"
+    zh:
+      headline: "拍下一封信，我帮你找出它要求什么、截止何时。"
+      body: "发来信件或表格的照片，我读出它要求什么，把截止日期放进日历并起草回复。你说可以之前什么都不会发出。"
+      openingRequest: "我收到了这封信。它要我做什么，截止到什么时候？"
 
 - ideaKey: find_document
   ideaCategory: paperwork
@@ -91,6 +175,15 @@
   body: Describe it, even roughly, and I search your mail by meaning as well as by words, then show you the message and its attachment.
   openingRequest: Find the receipt for something I bought last spring.
   neededToolNames: [mail_search, mail_read]
+  translations:
+    ja:
+      headline: "確認メールや領収書が見つからない？メールから探し出します。"
+      body: "おおまかな説明で構いません。言葉だけでなく意味でもメールを検索し、そのメッセージと添付ファイルをお見せします。"
+      openingRequest: "去年の春に買ったものの領収書を探して。"
+    zh:
+      headline: "找不到确认邮件或收据？我从邮件里帮你挖出来。"
+      body: "大概描述一下就行，我按意思和关键词搜索你的邮件，然后给你看那封邮件和附件。"
+      openingRequest: "找一下我去年春天买的东西的收据。"
 
 - ideaKey: renewals
   ideaCategory: paperwork
@@ -99,6 +192,15 @@
   body: Give me the expiry dates of a passport, a license or an insurance policy and I remind you months ahead, with what the renewal needs, so nothing lapses by surprise.
   openingRequest: My passport expires next June. Remind me in time to renew it.
   neededToolNames: [schedule]
+  translations:
+    ja:
+      headline: "書類の有効期限を教えてください。早めにお知らせします。"
+      body: "パスポートや免許証、保険の有効期限を教えてください。更新に必要なものと合わせて数か月前にお知らせし、うっかり失効を防ぎます。"
+      openingRequest: "パスポートの期限が来年6月です。更新が間に合うように知らせて。"
+    zh:
+      headline: "告诉我证件何时到期，我会提前提醒你。"
+      body: "告诉我护照、驾照或保险的到期日，我会提前几个月提醒你，并说明续办需要什么，避免意外过期。"
+      openingRequest: "我的护照明年六月到期。提前提醒我去续办。"
 
 - ideaKey: trip_page
   ideaCategory: travel
@@ -107,6 +209,15 @@
   body: I research flights, places to stay and things to do, and lay the options side by side on a page with prices and links. Booking stays with you.
   openingRequest: Plan a long weekend away next month. Put the options on one page.
   neededToolNames: [web_search, web_fetch, artifact]
+  translations:
+    ja:
+      headline: "行き先と日程を教えてください。旅行の選択肢を1ページにまとめます。"
+      body: "フライト、宿泊先、アクティビティを調べ、料金とリンク付きで比較できるページにまとめます。予約はあなたが行います。"
+      openingRequest: "来月の3連休の旅行を計画して。選択肢を1ページにまとめて。"
+    zh:
+      headline: "告诉我去哪儿、什么时候，我把出行方案放在一页上。"
+      body: "我查找航班、住宿和活动，把各个方案连同价格和链接并排放在一个页面上。预订仍由你来做。"
+      openingRequest: "帮我规划下个月的一个长周末出行，把方案放在一页上。"
 
 - ideaKey: itinerary
   ideaCategory: travel
@@ -115,6 +226,15 @@
   body: I find the flight, hotel and car confirmations in your mail and put them on your calendar in order, with the confirmation numbers where you will look for them.
   openingRequest: Put my upcoming trip's bookings on my calendar.
   neededToolNames: [mail_search, mail_read, calendar]
+  translations:
+    ja:
+      headline: "メールの予約をまとめて旅程にします。"
+      body: "メールからフライト、ホテル、レンタカーの確認メールを探し、確認番号付きで順番にカレンダーに入れます。"
+      openingRequest: "次の旅行の予約をカレンダーに入れて。"
+    zh:
+      headline: "我把邮件里的预订汇总成一份行程。"
+      body: "我从邮件中找出航班、酒店和租车的确认信息，按顺序放进日历，并附上确认号。"
+      openingRequest: "把我下次旅行的预订放进日历。"
 
 - ideaKey: packing
   ideaCategory: travel
@@ -123,6 +243,15 @@
   body: I look at the dates and where you are going, check the weather there, and write a list that fits the length of the trip and what you will be doing.
   openingRequest: Make me a packing list for my next trip.
   neededToolNames: [calendar, web_search]
+  translations:
+    ja:
+      headline: "次の旅行の持ち物リストを作ります。"
+      body: "日程と行き先を見て現地の天気を確認し、旅の長さとやることに合わせたリストを作ります。"
+      openingRequest: "次の旅行の持ち物リストを作って。"
+    zh:
+      headline: "我为你下一次旅行写一份行李清单。"
+      body: "我看日期和目的地，查一下当地天气，按行程长短和活动写一份清单。"
+      openingRequest: "帮我列一份下次旅行的行李清单。"
 
 - ideaKey: compare
   ideaCategory: shopping
@@ -131,6 +260,15 @@
   body: Say what matters to you and I research the models, read the reviews, and put specs and prices side by side on a page, with my pick and why.
   openingRequest: I need a new vacuum. Compare the good options for me.
   neededToolNames: [web_search, web_fetch, artifact]
+  translations:
+    ja:
+      headline: "何を買うか教えてください。選択肢を並べて比較します。"
+      body: "重視する点を教えてください。モデルを調べ、レビューを読み、仕様と価格を1ページに並べ、おすすめとその理由を添えます。"
+      openingRequest: "掃除機を買い替えたい。良い候補を比較して。"
+    zh:
+      headline: "告诉我你要买什么，我把选项并排比较。"
+      body: "说说你看重什么，我调研各款型号、读评测，把规格和价格并排放在一个页面上，并给出推荐和理由。"
+      openingRequest: "我需要一台新吸尘器。帮我比较一下好的选择。"
 
 - ideaKey: cart
   ideaCategory: shopping
@@ -139,6 +277,15 @@
   body: Tell me what you need and I add it to the cart in your browser, in a tab you can watch. Nothing is ordered until you check out yourself.
   openingRequest: Add the groceries on my list to my cart.
   neededToolNames: [browser]
+  translations:
+    ja:
+      headline: "あなたのブラウザでカートに入れ、支払いの前で止めます。"
+      body: "必要なものを教えてください。あなたが見られるタブでカートに追加します。購入手続きはあなたが行うまで何も注文しません。"
+      openingRequest: "買い物リストの食料品をカートに入れて。"
+    zh:
+      headline: "我可以在你自己的浏览器里把商品加入购物车，付款前停下。"
+      body: "告诉我你需要什么，我在一个你能看到的标签页里把它们加入购物车。你自己结账之前不会下单。"
+      openingRequest: "把我清单上的食品加入购物车。"
 
 - ideaKey: returns
   ideaCategory: shopping
@@ -147,6 +294,15 @@
   body: I find the order in your mail, work out the last day to return it, and put that on your calendar with the return steps. Sending it back stays with you.
   openingRequest: I want to return something I ordered. When is the deadline?
   neededToolNames: [mail_search, mail_read, calendar]
+  translations:
+    ja:
+      headline: "返品ですか？注文と返品期限を探します。"
+      body: "メールから注文を探し、返品できる最終日を割り出して、返品手順と一緒にカレンダーに入れます。返送はあなたが行います。"
+      openingRequest: "注文したものを返品したい。期限はいつ？"
+    zh:
+      headline: "要退货？我帮你找到订单和最后退货日期。"
+      body: "我从邮件中找到订单，算出最后退货日期，并连同退货步骤放进日历。寄回仍由你来做。"
+      openingRequest: "我想退一件买的东西。截止日期是什么时候？"
 
 - ideaKey: price_watch
   ideaCategory: shopping
@@ -155,6 +311,15 @@
   body: Give me the product page and the price you would pay, and I look each week and tell you when it drops to it. Buying stays with you.
   openingRequest: Watch this product and tell me when it drops under the price I'd pay.
   neededToolNames: [schedule, web_fetch]
+  translations:
+    ja:
+      headline: "買おうか迷っている商品の価格を毎週チェックします。"
+      body: "商品ページと払ってもよい価格を教えてください。毎週確認し、その価格まで下がったらお知らせします。購入はあなたが行います。"
+      openingRequest: "この商品を見張って、希望価格より下がったら教えて。"
+    zh:
+      headline: "我每周帮你查看想买的东西的价格。"
+      body: "给我商品页面和你愿意付的价格，我每周查看，降到这个价格时告诉你。购买仍由你来做。"
+      openingRequest: "盯着这个商品，价格低于我能接受的价格时告诉我。"
 
 - ideaKey: manual
   ideaCategory: home
@@ -163,6 +328,15 @@
   body: Send a photo of the model plate and say what is wrong, and I find the manual, the usual fixes and the part number if a part is needed.
   openingRequest: Here's the label of my dishwasher. It won't drain.
   neededToolNames: [web_search, web_fetch]
+  translations:
+    ja:
+      headline: "壊れたものの型番ラベルを撮影してください。説明書と直し方を探します。"
+      body: "型番プレートの写真と不具合を教えてください。説明書やよくある直し方、部品が必要ならその品番を探します。"
+      openingRequest: "食洗機のラベルです。水が流れなくなりました。"
+    zh:
+      headline: "拍下坏掉东西的铭牌，我帮你找说明书和修法。"
+      body: "发来型号铭牌的照片并说明哪里坏了，我帮你找说明书、常见修法，需要零件的话还有零件号。"
+      openingRequest: "这是我洗碗机的铭牌。它不排水了。"
 
 - ideaKey: move
   ideaCategory: home
@@ -171,6 +345,15 @@
   body: Tell me the date and I build the checklist backward from it, from notices to give to services to switch, and put each deadline on your calendar.
   openingRequest: I'm moving at the end of the month. Make me a checklist with dates.
   neededToolNames: [todo, calendar]
+  translations:
+    ja:
+      headline: "引っ越しですか？全体を日付付きの一覧で管理します。"
+      body: "引っ越し日を教えてください。そこから逆算して、届け出からサービスの切り替えまでのチェックリストを作り、各期限をカレンダーに入れます。"
+      openingRequest: "月末に引っ越します。日付付きのチェックリストを作って。"
+    zh:
+      headline: "要搬家？我把整个搬家安排在一份带日期的清单上。"
+      body: "告诉我搬家日期，我倒推出一份清单，从需要发出的通知到需要切换的服务，并把每个截止日放进日历。"
+      openingRequest: "我月底搬家。帮我做一份带日期的清单。"
 
 - ideaKey: chores
   ideaCategory: home
@@ -179,6 +362,15 @@
   body: Tell me the filters, the gutters or the smoke alarm batteries and how often each is due, and I remind you when it comes round.
   openingRequest: Remind me to change the air filters every three months.
   neededToolNames: [schedule]
+  translations:
+    ja:
+      headline: "数か月ごとの家事を忘れないようにお知らせします。"
+      body: "フィルター交換や雨どい掃除、煙感知器の電池など、それぞれの間隔を教えてください。時期が来たらお知らせします。"
+      openingRequest: "3か月ごとにエアコンのフィルター交換を知らせて。"
+    zh:
+      headline: "我提醒你那些每隔几个月要做的家务。"
+      body: "告诉我滤网、排水槽或烟雾报警器电池等事项以及各自的周期，到时间我就提醒你。"
+      openingRequest: "每三个月提醒我换一次空气滤网。"
 
 - ideaKey: birthdays
   ideaCategory: family
@@ -187,6 +379,15 @@
   body: Tell me whose birthdays matter and I remind you a week before each one, with a gift idea from what I know about them.
   openingRequest: Remind me of my family's birthdays a week ahead.
   neededToolNames: [schedule, memory]
+  translations:
+    ja:
+      headline: "誕生日を1週間前に、贈り物のアイデアと一緒にお知らせします。"
+      body: "大切な人の誕生日を教えてください。それぞれ1週間前に、その人について知っていることからの贈り物のアイデアを添えてお知らせします。"
+      openingRequest: "家族の誕生日を1週間前に知らせて。"
+    zh:
+      headline: "我提前一周提醒你生日，并给每人一个礼物点子。"
+      body: "告诉我哪些人的生日重要，我会在每个生日前一周提醒你，并根据我对他们的了解给出礼物建议。"
+      openingRequest: "提前一周提醒我家人的生日。"
 
 - ideaKey: school_dates
   ideaCategory: family
@@ -195,6 +396,15 @@
   body: I read the newsletters as they arrive, pull out the events, forms and deadlines, and put them on your calendar, so nothing hides in the fourth paragraph.
   openingRequest: Put the dates from the school newsletters on my calendar.
   neededToolNames: [mail_search, mail_read, calendar]
+  translations:
+    ja:
+      headline: "学校や習い事のお便りから日付を拾い出します。"
+      body: "お便りが届くたびに読み、行事や提出物、締め切りを抜き出してカレンダーに入れます。4段落目に埋もれた予定も見逃しません。"
+      openingRequest: "学校のお便りの日付をカレンダーに入れて。"
+    zh:
+      headline: "我从学校和兴趣班的通讯里摘出日期。"
+      body: "通讯一到我就读，把活动、表格和截止日期摘出来放进你的日历，不让重要信息藏在第四段里。"
+      openingRequest: "把学校通讯里的日期放进我的日历。"
 
 - ideaKey: appointments
   ideaCategory: health
@@ -203,6 +413,15 @@
   body: I find the appointment confirmations and reminders in your mail, put each on your calendar with the address, and tell you when one clashes with something.
   openingRequest: Put my upcoming appointments from my mail on my calendar.
   neededToolNames: [mail_search, calendar]
+  translations:
+    ja:
+      headline: "メールの予約をカレンダーに入れます。"
+      body: "メールから予約の確認やリマインダーを探し、住所付きでカレンダーに入れ、ほかの予定と重なっていればお知らせします。"
+      openingRequest: "メールにある今後の予約をカレンダーに入れて。"
+    zh:
+      headline: "我把邮件里的预约放进你的日历。"
+      body: "我在邮件中找到预约确认和提醒，连同地址放进你的日历，和其他安排冲突时告诉你。"
+      openingRequest: "把邮件里即将到来的预约放进我的日历。"
 
 - ideaKey: medication
   ideaCategory: health
@@ -211,6 +430,15 @@
   body: Tell me when you take it and how long a refill lasts, and I remind you each time and again a few days before you run out.
   openingRequest: Remind me to take my medication at 9 each evening and to refill it every 30 days.
   neededToolNames: [schedule]
+  translations:
+    ja:
+      headline: "薬の服用と、切れる前の補充をお知らせします。"
+      body: "飲む時間と1回の処方で何日分あるかを教えてください。毎回お知らせし、なくなる数日前にも補充をお知らせします。"
+      openingRequest: "毎晩9時に薬を飲むこと、30日ごとに補充することを知らせて。"
+    zh:
+      headline: "我提醒你按时吃药，并及时续药。"
+      body: "告诉我服药时间和一次处方能用几天，我每次提醒你，并在快用完的几天前提醒你续药。"
+      openingRequest: "每天晚上9点提醒我吃药，每30天提醒我续药。"
 
 - ideaKey: workouts
   ideaCategory: health
@@ -219,6 +447,15 @@
   body: I look at your calendar, find the gaps, and suggest sessions that fit your goal and the time you have, for you to put on your calendar.
   openingRequest: Find three times this week I could run for half an hour.
   neededToolNames: [calendar]
+  translations:
+    ja:
+      headline: "目標と一週間の予定を教えてください。運動の時間を組み込みます。"
+      body: "カレンダーの空き時間を見つけ、目標と使える時間に合ったトレーニングを提案します。カレンダーに入れるかはあなたが決めます。"
+      openingRequest: "今週、30分走れる時間を3つ見つけて。"
+    zh:
+      headline: "告诉我你的目标和这周安排，我把锻炼插进去。"
+      body: "我查看你的日历、找出空档，根据你的目标和可用时间建议训练安排，由你放进日历。"
+      openingRequest: "帮我找出这周能跑步半小时的三个时间。"
 
 - ideaKey: meeting_brief
   ideaCategory: work
@@ -227,6 +464,15 @@
   body: I look at the next day's meetings, find the recent mail with the people in them, and give you a short brief for each.
   openingRequest: Every evening, brief me on tomorrow's meetings.
   neededToolNames: [schedule, calendar, mail_search]
+  translations:
+    ja:
+      headline: "毎日、翌日の会議に必要な情報をまとめます。"
+      body: "翌日の会議を確認し、参加者との最近のメールを探して、会議ごとに短い要点をお渡しします。"
+      openingRequest: "毎晩、明日の会議について要点をまとめて。"
+    zh:
+      headline: "每天我为你准备第二天会议需要的材料。"
+      body: "我查看第二天的会议，找到与参会者最近的邮件，为每场会议给你一份简短要点。"
+      openingRequest: "每天晚上帮我准备明天会议的简报。"
 
 - ideaKey: weekly_review
   ideaCategory: work
@@ -235,6 +481,15 @@
   body: I read the week's meetings and mail and write a short summary of what happened, what was decided, and what is still open for next week.
   openingRequest: Every Friday at 4, sum up my week.
   neededToolNames: [schedule, calendar, mail_search]
+  translations:
+    ja:
+      headline: "毎週金曜、メールとカレンダーから一週間をまとめます。"
+      body: "一週間の会議とメールを読み、何があったか、何が決まったか、来週に残っていることを短くまとめます。"
+      openingRequest: "毎週金曜の16時に、今週をまとめて。"
+    zh:
+      headline: "每周五，我根据邮件和日历总结你的一周。"
+      body: "我阅读本周的会议和邮件，简要总结发生了什么、做了哪些决定、哪些事留到下周。"
+      openingRequest: "每周五下午4点，总结我这一周。"
 
 - ideaKey: pull_requests
   ideaCategory: work
@@ -243,6 +498,15 @@
   body: I list the pull requests that ask for your review, say what each one changes, and which look small. Commenting and approving stay with you.
   openingRequest: Which pull requests are waiting on my review?
   neededToolNames: ["skill__github__*"]
+  translations:
+    ja:
+      headline: "レビュー待ちのプルリクエストを要約します。"
+      body: "あなたのレビューを求めているプルリクエストを一覧にし、それぞれの変更内容と小さそうなものを伝えます。コメントや承認はあなたが行います。"
+      openingRequest: "レビュー待ちのプルリクエストはどれ？"
+    zh:
+      headline: "我总结等你审阅的拉取请求。"
+      body: "我列出请求你审阅的拉取请求，说明每个改了什么、哪些看起来较小。评论和批准仍由你来做。"
+      openingRequest: "哪些拉取请求在等我审阅？"
 
 - ideaKey: shows_near_you
   ideaCategory: fun
@@ -251,6 +515,15 @@
   body: I search each week for new dates near you and tell you when one appears, with where to buy tickets. Buying stays with you.
   openingRequest: Look each week for shows near me by the bands I like.
   neededToolNames: [schedule, web_search]
+  translations:
+    ja:
+      headline: "好きなアーティストを教えてください。近くの公演を探します。"
+      body: "毎週、近くでの新しい公演日程を探し、見つかったらチケットの購入先と一緒にお知らせします。購入はあなたが行います。"
+      openingRequest: "好きなバンドの近くの公演を毎週探して。"
+    zh:
+      headline: "告诉我你喜欢的艺人，我帮你找附近的演出。"
+      body: "我每周搜索你附近的新演出日期，一有消息就告诉你，并附上购票渠道。购票仍由你来做。"
+      openingRequest: "每周帮我找我喜欢的乐队在附近的演出。"
 
 - ideaKey: next_to_read
   ideaCategory: fun
@@ -259,6 +532,15 @@
   body: I remember what you enjoyed and why, and suggest a few next picks with a line on each, getting closer as you tell me what landed.
   openingRequest: I loved the last book I read. What should I read next?
   neededToolNames: [web_search, memory]
+  translations:
+    ja:
+      headline: "気に入ったものを教えてください。次に読むもの・観るものを提案します。"
+      body: "何をなぜ楽しんだかを覚えておき、一言ずつ添えていくつか次の候補を提案します。感想を教えてもらうほど的確になります。"
+      openingRequest: "最近読んだ本がとても良かった。次は何を読めばいい？"
+    zh:
+      headline: "告诉我你喜欢什么，我推荐接下来读什么、看什么。"
+      body: "我记住你喜欢什么以及原因，推荐几个下一步的选择并各附一句说明，你反馈越多越准。"
+      openingRequest: "我很喜欢最近读的那本书。接下来该读什么？"
 
 - ideaKey: weekend
   ideaCategory: fun
@@ -267,6 +549,15 @@
   body: Tell me who is coming and what they like, and I check your calendar and the forecast, then find a few options with times, prices and how far each is.
   openingRequest: We're free on Saturday. What could we do nearby?
   neededToolNames: [calendar, web_search]
+  translations:
+    ja:
+      headline: "今週末は空いていますか？近くで楽しめることを探します。"
+      body: "誰と行くか、何が好きかを教えてください。カレンダーと天気予報を確認し、時間・料金・距離付きでいくつか候補を探します。"
+      openingRequest: "土曜日が空いています。近くで何ができる？"
+    zh:
+      headline: "这个周末有空？我帮你找附近能做的事。"
+      body: "告诉我谁一起去、喜欢什么，我查看你的日历和天气预报，找出几个选择，附上时间、价格和距离。"
+      openingRequest: "我们周六有空。附近可以做些什么？"
 
 - ideaKey: mailbox_source
   ideaCategory: mail
@@ -275,6 +566,15 @@
   body: Grant me a mailbox under Mail in your agent's settings and I sort what arrives, sum up the long threads and draft replies. Nothing is sent until you approve it.
   openingRequest: How do I let you read my mailbox?
   usedCheck: mailbox_source
+  translations:
+    ja:
+      headline: "メールボックスを読ませてください。整理して返信を下書きします。"
+      body: "エージェント設定の「メール」でメールボックスを許可すると、届いたメールを整理し、長いスレッドを要約し、返信を下書きします。承認するまで何も送りません。"
+      openingRequest: "メールボックスを読んでもらうにはどうすればいい？"
+    zh:
+      headline: "让我读取一个邮箱，我来整理并起草回复。"
+      body: "在助手设置的“邮件”中授权一个邮箱，我会整理到来的邮件、总结长线程并起草回复。你批准之前什么都不会发出。"
+      openingRequest: "怎样让你读取我的邮箱？"
 
 - ideaKey: schedule
   ideaCategory: work
@@ -284,6 +584,15 @@
   openingRequest: Every weekday at 8, tell me what needs me today.
   neededToolNames: [schedule]
   usedCheck: schedule
+  translations:
+    ja:
+      headline: "時間を決めてください。その時間に、毎日でも作業します。"
+      body: "平日8時に対応が必要なことをまとめる、など何をいつするか教えてください。その時間に実行し、ここかメールでお答えします。"
+      openingRequest: "平日の朝8時に、今日対応が必要なことを教えて。"
+    zh:
+      headline: "说个时间，我到时帮你做一件事，愿意的话每天都做。"
+      body: "告诉我做什么、什么时候做，比如每个工作日8点总结需要你处理的事，我会按时执行，并在这里或通过邮件回复你。"
+      openingRequest: "每个工作日早上8点，告诉我今天需要处理什么。"
 
 - ideaKey: knowledge_source
   ideaCategory: assistant
@@ -292,6 +601,15 @@
   body: Add a folder on your computer, a code repository, a chat archive or a wiki under Sources in your agent's settings, and I read it overnight and answer questions from it.
   openingRequest: How do I let you read my notes?
   usedCheck: knowledge_source
+  translations:
+    ja:
+      headline: "メモやコードの場所を教えてください。夜に読んで覚えておきます。"
+      body: "エージェント設定の「ソース」で、パソコンのフォルダ、コードリポジトリ、チャットの記録、Wikiを追加すると、夜のうちに読んで質問に答えられるようにします。"
+      openingRequest: "メモを読んでもらうにはどうすればいい？"
+    zh:
+      headline: "告诉我你的笔记或代码在哪儿，我在夜里读完并记住。"
+      body: "在助手设置的“来源”中添加电脑上的文件夹、代码仓库、聊天记录或维基，我会在夜里读完并据此回答问题。"
+      openingRequest: "怎样让你读取我的笔记？"
 
 - ideaKey: goal
   ideaCategory: assistant
@@ -301,6 +619,15 @@
   openingRequest: I have something I'd like you to keep at until it's done.
   neededToolNames: [goal]
   usedCheck: goal
+  translations:
+    ja:
+      headline: "続けてほしいことを任せてください。終わるまで取り組みます。"
+      body: "返事が来るまで追いかける、など目指すことを教えてください。自分で確認を続け、状況を伝え、あなたが必要なときは声をかけます。"
+      openingRequest: "終わるまで続けてほしいことがあります。"
+    zh:
+      headline: "交给我一件要坚持做的事，我会一直做到完成。"
+      body: "告诉我要朝什么目标努力，比如一直跟进直到收到回复。我会自行检查、告诉你进展，需要你时再找你。"
+      openingRequest: "我有件事希望你一直跟进直到完成。"
 
 - ideaKey: named_conversation
   ideaCategory: assistant
@@ -309,6 +636,15 @@
   body: Start a separate conversation with the plus at the top of the chat, and each keeps its own history, so a long job does not crowd out everything else.
   openingRequest: How do I keep a separate conversation for one topic?
   usedCheck: named_conversation
+  translations:
+    ja:
+      headline: "話題ごとに会話を分けると、長い作業が一か所にまとまります。"
+      body: "チャット上部の「＋」で別の会話を始めると、それぞれに履歴が残り、長い作業がほかの話題に埋もれません。"
+      openingRequest: "ひとつの話題だけの会話を分けるにはどうすればいい？"
+    zh:
+      headline: "一个话题一段对话，长期的工作就集中在一处。"
+      body: "用聊天顶部的加号开始一段单独的对话，每段都有自己的历史，长期工作不会淹没其他事情。"
+      openingRequest: "怎样为一个话题单独开一段对话？"
 
 - ideaKey: memory_edit
   ideaCategory: assistant
@@ -318,6 +654,15 @@
   openingRequest: What do you remember about me?
   neededToolNames: [memory]
   usedCheck: memory_edit
+  translations:
+    ja:
+      headline: "あなたについて覚えていることを確認し、間違いを直してください。"
+      body: "覚えていることはすべて、エージェント設定の「記憶」にページとしてあります。読んで、事実を直したり消したりすれば、同じ間違いを繰り返さなくなります。"
+      openingRequest: "私について何を覚えている？"
+    zh:
+      headline: "看看我记得关于你的哪些事，并改正我弄错的地方。"
+      body: "我记住的一切都在助手设置的“记忆”页面里。读一读，改正或删除某条事实，我就不会再重复这个错误。"
+      openingRequest: "你记得关于我的哪些事？"
 
 - ideaKey: chat_channel
   ideaCategory: assistant
@@ -326,6 +671,15 @@
   body: Link a chat app under Connections in your agent's settings and talk to me from it, with the same memory and tools as here.
   openingRequest: How do I talk to you from a chat app?
   usedCheck: chat_channel
+  translations:
+    ja:
+      headline: "スマホのチャットアプリから話しかけてください。"
+      body: "エージェント設定の「接続」でチャットアプリを連携すると、ここと同じ記憶とツールでそこから話せます。"
+      openingRequest: "チャットアプリから話しかけるにはどうすればいい？"
+    zh:
+      headline: "在手机的聊天应用里和我对话。"
+      body: "在助手设置的“连接”中关联一个聊天应用，就能在那里和我对话，记忆和工具与这里相同。"
+      openingRequest: "怎样在聊天应用里和你对话？"
 
 - ideaKey: command_line
   ideaCategory: work
@@ -334,3 +688,12 @@
   body: Install the teanode program and sign in with teanode auth login, and everything the dashboard does works from a terminal, including talking to me with teanode agent ask.
   openingRequest: How do I use you from the command line?
   usedCheck: command_line
+  translations:
+    ja:
+      headline: "ターミナルからも、同じ記憶とツールで使えます。"
+      body: "teanode プログラムをインストールして teanode auth login でサインインすると、ダッシュボードでできることがすべてターミナルから使え、teanode agent ask で話しかけることもできます。"
+      openingRequest: "コマンドラインから使うにはどうすればいい？"
+    zh:
+      headline: "在终端里用我，记忆和工具都一样。"
+      body: "安装 teanode 程序并用 teanode auth login 登录，仪表板能做的事都可以在终端完成，也可以用 teanode agent ask 和我对话。"
+      openingRequest: "怎样在命令行里使用你？"

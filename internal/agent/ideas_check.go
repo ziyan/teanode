@@ -68,9 +68,14 @@ func checkIdea(idea *models.AgentIdea, toolRisks map[string]tools.Risk) string {
 	if !slices.Contains(category.Emojis, idea.Emoji) {
 		return fmt.Sprintf("%q is not one of the emoji of %s: %s", idea.Emoji, category.IdeaCategory, strings.Join(category.Emojis, " "))
 	}
+	// The words that promise too much, and those that say where the agent
+	// asks first, are English: they hold the catalog, which is written in
+	// English first. A personal idea may be in any language, and the
+	// model's judgment (judgeIdea) holds it to the same two things.
+	isCatalog := idea.IdeaKind == models.IdeaCatalog
 	lowered := strings.ToLower(headline + " " + body)
 	for _, word := range ideaOverpromises {
-		if strings.Contains(lowered, word) {
+		if isCatalog && strings.Contains(lowered, word) {
 			return fmt.Sprintf("it promises too much: %q", word)
 		}
 	}
@@ -87,7 +92,7 @@ func checkIdea(idea *models.AgentIdea, toolRisks map[string]tools.Risk) string {
 			}
 		}
 	}
-	if isActing && !containsAny(lowered, ideaAsksFirst) {
+	if isCatalog && isActing && !containsAny(lowered, ideaAsksFirst) {
 		return "it needs a tool that acts toward somebody else or cannot be undone, and does not say it asks first"
 	}
 	for _, evidence := range idea.Evidence {

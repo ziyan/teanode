@@ -54,6 +54,47 @@ type ideaEntry struct {
 	// UsedCheck names the check, in ideaUsedChecks, that says the person
 	// already uses what the idea is about; it is no longer offered then.
 	UsedCheck string `yaml:"usedCheck"`
+
+	// Translations are the idea's words in the other languages the
+	// dashboard speaks, by language tag.
+	Translations map[string]ideaWords `yaml:"translations"`
+}
+
+// ideaWords is what of an idea is read: its headline, what happens, and the
+// request that starts it.
+type ideaWords struct {
+	Headline       string `yaml:"headline"`
+	Body           string `yaml:"body"`
+	OpeningRequest string `yaml:"openingRequest"`
+}
+
+// localizeIdeas puts a catalog idea's words in the language asked for, where
+// the catalog has them: "ja", "zh", or a tag that begins so. The row keeps
+// the catalog's own words; the language is the reader's, chosen when the
+// idea is read, so one reading the dashboard in Japanese and the agent
+// talking in English see the same idea each in their own. A personal idea
+// was written in the agent's language, and is left as it is.
+func localizeIdeas(ideas []*models.AgentIdea, language string) {
+	language, _, _ = strings.Cut(strings.ToLower(strings.TrimSpace(language)), "-")
+	if language == "" {
+		return
+	}
+	byKey := map[string]*ideaEntry{}
+	for _, entry := range ideaCatalog {
+		byKey[entry.IdeaKey] = entry
+	}
+	for _, idea := range ideas {
+		if idea == nil || idea.IdeaKind != models.IdeaCatalog {
+			continue
+		}
+		entry := byKey[idea.IdeaKey]
+		if entry == nil {
+			continue
+		}
+		if words, ok := entry.Translations[language]; ok {
+			idea.Headline, idea.Body, idea.OpeningRequest = words.Headline, words.Body, words.OpeningRequest
+		}
+	}
 }
 
 // ideaCatalog is every entry, in the order the file gives them, which is
@@ -326,19 +367,22 @@ func (self *Agent) refreshIdeas(ctx context.Context, tx db.Transaction, agent *m
 }
 
 // ListIdeas is the agent's ideas in the statuses and kinds asked for, or in
-// all, brought up to date first.
-func (self *Agent) ListIdeas(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, statuses []models.AgentIdeaStatus, kinds []models.AgentIdeaKind) ([]*models.AgentIdea, error) {
+// all, brought up to date first, in the language asked for where the
+// catalog has it.
+func (self *Agent) ListIdeas(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, statuses []models.AgentIdeaStatus, kinds []models.AgentIdeaKind, language string) ([]*models.AgentIdea, error) {
 	if err := self.refreshIdeas(ctx, tx, agent, owner, false); err != nil {
 		return nil, err
 	}
-	return tx.ListAgentIdeas(agent.ID, statuses, kinds)
+	ideas, err := tx.ListAgentIdeas(agent.ID, statuses, kinds)
+	localizeIdeas(ideas, language)
+	return ideas, err
 }
 
 // StartIdea records that a conversation carries an idea out: the one given,
 // when the agent took it up where it was talking, or a new one named after
 // the idea, whose first message the person then sends. Nothing is said in
 // it here: starting an idea never acts.
-func (self *Agent) StartIdea(ctx context.Context, tx db.Transaction, agent *models.Agent, ideaId, conversationId string) (*models.AgentIdea, *models.AgentConversation, error) {
+func (self *Agent) StartIdea(ctx context.Context, tx db.Transaction, agent *models.Agent, ideaId, conversationId, language string) (*models.AgentIdea, *models.AgentConversation, error) {
 	idea, err := tx.GetAgentIdea(agent.ID, ideaId)
 	if err != nil {
 		return nil, nil, err
@@ -346,6 +390,10 @@ func (self *Agent) StartIdea(ctx context.Context, tx db.Transaction, agent *mode
 	if idea == nil {
 		return nil, nil, fmt.Errorf("%w: there is no idea %q", db.ErrNotFound, ideaId)
 	}
+	// The conversation is named, and the request drafted, in the reader's
+	// language.
+	localizeIdeas([]*models.AgentIdea{idea}, language)
+	localized := *idea
 	switch idea.IdeaStatus {
 	case models.IdeaOpen:
 	case models.IdeaStarted:
@@ -358,7 +406,7 @@ func (self *Agent) StartIdea(ctx context.Context, tx db.Transaction, agent *mode
 				return nil, nil, err
 			}
 			if existing != nil {
-				return idea, existing, nil
+				return &localized, existing, nil
 			}
 		}
 	default:
@@ -386,6 +434,7 @@ func (self *Agent) StartIdea(ctx context.Context, tx db.Transaction, agent *mode
 		}
 		return nil
 	})
+	localizeIdeas([]*models.AgentIdea{started}, language)
 	return started, conversation, err
 }
 
@@ -508,6 +557,7 @@ func (self *Agent) ideaReason() speakFirstReason {
 			if err != nil || idea == nil {
 				return "", err
 			}
+			localizeIdeas([]*models.AgentIdea{idea}, Language(agent, owner))
 			if err := tx.MarkAgentIdeasShown(agent.ID, []string{idea.ID}, now); err != nil {
 				return "", err
 			}

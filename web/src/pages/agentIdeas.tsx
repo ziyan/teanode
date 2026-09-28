@@ -21,10 +21,10 @@ type ClosedStatus = 'started' | 'done' | 'dismissed' | 'expired'
 const HISTORY_STATUSES: ClosedStatus[] = ['started', 'done', 'dismissed', 'expired']
 
 export function IdeasTab() {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const toast = useToast()
   const [busy, setBusy] = useState(false)
-  const { data, error, loading, reload } = useQuery(() => graphql<IdeaList>(LIST_IDEAS, {}), [])
+  const { data, error, loading, reload } = useQuery(() => graphql<IdeaList>(LIST_IDEAS, { language }), [language])
   const ideas = data?.ListAgentIdeas.ideas ?? []
   const categories = data?.ListAgentIdeas.ideaCategories ?? []
   const open = ideas.filter((idea) => idea.ideaStatus === 'open')
@@ -47,7 +47,7 @@ export function IdeasTab() {
   }
   const onStart = (idea: Idea) =>
     void act(async () => {
-      const started = await startIdea(idea)
+      const started = await startIdea(idea, language)
       openAgentConversation(started.conversationId, started.openingRequest)
     })
   const onDismiss = (idea: Idea) => void act(() => setIdeaStatus(idea, 'dismissed'), t('ideas.dismissed'))
