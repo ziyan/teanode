@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.74.0] - 2026-09-28
+
+### Added
+
+- Ask the agent for a link to a page or file it made, and it gives one that opens on another device without signing in, for six hours. (#204)
+
 ## [0.73.2] - 2026-09-28
 
 ### Changed
