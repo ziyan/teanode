@@ -160,7 +160,14 @@ func (self *Agent) describeConversation(ctx context.Context, conversation *model
 	if agent == nil || owner == nil {
 		return mark("", "")
 	}
-	prompt := "This is the recent part of a conversation between a person and their assistant. Answer with JSON only: {\"title\": a name for the conversation of at most five words, no quotes and no full stop; \"summary\": one sentence on what it is about now}. Write both in the language the person writes in — English when they write English.\n\n" + transcript
+	// A conversation that has a name keeps it unless what it is about has
+	// changed: a named conversation of weeks was renamed after one message
+	// on something else, because only its latest part is read here.
+	keeping := ""
+	if title := strings.TrimSpace(conversation.Title); title != "" {
+		keeping = " It is called \"" + title + "\" now: keep that title unless the conversation as a whole has moved to something else, not because its latest message is about something else; answer the same title to keep it."
+	}
+	prompt := "This is the recent part of a conversation between a person and their assistant." + keeping + " Answer with JSON only: {\"title\": a name for the conversation of at most five words, no quotes and no full stop; \"summary\": one sentence on what it is about now}. Write both in the language the person writes in — English when they write English.\n\n" + transcript
 	// Titled by the compact model when one is set, else by the model the
 	// conversation itself is held with.
 	thinking, err := self.oneShot(ctx, self.runFor(agent, owner, nil, conversation.ID), "Named a conversation", prompt, models.AgentJobDescribe, compactWork(self.settings.Configuration(), config.AgentWorkAsk))

@@ -51,3 +51,15 @@ it('draws a picture whose address is not http as its words', () => {
   expect(container.querySelector('a')).toBeNull()
   expect(container.textContent).toContain('a note')
 })
+
+it('reads a link inside bold as a link', () => {
+  const { container } = render(
+    <MemoryRouter>
+      <Markdown text={'- **[A Thai kitchen](https://kitchen.example.org/)** is open until ten.'} />
+    </MemoryRouter>,
+  )
+  const link = container.querySelector('strong a')
+  expect(link?.getAttribute('href')).toBe('https://kitchen.example.org/')
+  expect(link?.textContent).toBe('A Thai kitchen')
+  expect(container.textContent).not.toContain('](')
+})

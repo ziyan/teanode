@@ -27,7 +27,7 @@ func init() {
 					"matching": tools.StringProperty("for list: words in the list's name, address or key"),
 					"limit":    tools.IntegerProperty("for list: how many rows, 30 by default"),
 				}, "action"),
-				Guidance: "subscription: to stop a newsletter, leave it with the subscription tool; never draft an unsubscribe mail by hand.",
+				Guidance: "subscription: to stop a newsletter, leave it with the subscription tool; never draft an unsubscribe mail by hand. A sender that puts no list header on its mail is not in the list: its unsubscribe link is at the foot of the message, so read the message and open that link in the person's browser, saying so first, rather than make a rule that deletes their mail.",
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
 					var call subscriptionArguments
 					_ = json.Unmarshal(arguments, &call)
