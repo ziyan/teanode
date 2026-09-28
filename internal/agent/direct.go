@@ -249,6 +249,10 @@ var (
 // (tools.Linking). A caller over MCP has no session here, and its token, when
 // a program was given it by approval, works only at the tools endpoint, so a
 // plain path to the file was one it could not fetch.
+// IsLinkInPlaceOfPath is true: a caller over MCP has no session to fetch a
+// path with.
+func (self *directRun) IsLinkInPlaceOfPath() bool { return true }
+
 func (self *directRun) SharedLink(attachmentId string) string {
 	if self.origin == "" {
 		return ""

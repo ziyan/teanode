@@ -1075,6 +1075,27 @@ function noteWords(
   return t(words.plain, { detail: noteDetail })
 }
 
+// answerOf is what a question card was answered with, read from the
+// ask_user call's result; the result itself when it is not that shape.
+function answerOf(result: string | undefined): string {
+  try {
+    const parsed = JSON.parse(result ?? '') as { answer?: unknown }
+    if (typeof parsed.answer === 'string' && parsed.answer) return parsed.answer
+  } catch {
+    // Not JSON: the words are the answer.
+  }
+  return result || '…'
+}
+
+// isDeclined says whether a confirmation's call came back declined.
+function isDeclined(result: string | undefined): boolean {
+  try {
+    return (JSON.parse(result ?? '') as { declined?: unknown }).declined === true
+  } catch {
+    return false
+  }
+}
+
 function linesOf(messages: StoredMessage[], t: (key: Key, values?: Values) => string): Line[] {
   const lines: Line[] = []
   const results = new Map<string, string>()
@@ -2819,6 +2840,19 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           if (index >= 0) {
             const line = next[index]
             if (line.kind === 'tool') next[index] = { ...line, done: true, note: event.note ?? '', result: event.text }
+          }
+          // A card's call has an answer: the card is settled, whoever
+          // settled it. The events of a recent run are replayed when the
+          // drawer loads, and the card they raise would otherwise come back
+          // open after it was answered, here or on another device.
+          const cardIndex = next.findIndex((line) => line.key === `${event.runId}-${event.callId}-card`)
+          if (cardIndex >= 0) {
+            const card = next[cardIndex]
+            if (card.kind === 'question' && !card.answered) {
+              next[cardIndex] = { ...card, answered: answerOf(event.text) }
+            } else if (card.kind === 'confirmation' && !card.resolved) {
+              next[cardIndex] = { ...card, resolved: isDeclined(event.text) ? 'declined' : 'approved' }
+            }
           }
           return next
         }

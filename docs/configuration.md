@@ -1569,6 +1569,13 @@ two endpoints by hand skips discovery, and then a `clientId` is needed.
 **`clientId`**, **`clientSecret`**, **`scopes`**, **`authorizationUrl`**,
 **`tokenUrl`** — The OAuth client's fields.
 
+**`redirect`** — Where the authorization comes back to. `server`, the
+default, is the dashboard. `computer` is a loopback address on the person's
+attached computer, which sends the browser on to the dashboard to finish.
+For a service that sends an authorization only to a loopback address, the
+flow meant for a program on somebody's own machine. The person has to finish
+it in a browser on that computer. Only for `auth: oauth`.
+
 **`headless`** — Whether processing runs with nobody present may use the
 server's read-only tools.
 
