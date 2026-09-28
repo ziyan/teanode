@@ -3932,19 +3932,21 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             {lines.length === 0 && (
               <>
                 <p className="muted agent-drawer-empty">{t('agentDrawer.empty')}</p>
-                <IdeaSuggestions
-                  key={conversationId}
-                  conversationId={conversationId}
-                  onDraft={(startedIn, openingRequest) => {
-                    if (startedIn !== conversationId) {
-                      openAgentConversation(startedIn, openingRequest)
-                      return
-                    }
-                    setDraft(openingRequest)
-                    remember(draftKey(startedIn), openingRequest)
-                    input.current?.focus()
-                  }}
-                />
+                {draft.trim() === '' ? (
+                  <IdeaSuggestions
+                    key={conversationId}
+                    conversationId={conversationId}
+                    onDraft={(startedIn, openingRequest) => {
+                      if (startedIn !== conversationId) {
+                        openAgentConversation(startedIn, openingRequest)
+                        return
+                      }
+                      setDraft(openingRequest)
+                      remember(draftKey(startedIn), openingRequest)
+                      input.current?.focus()
+                    }}
+                  />
+                ) : null}
               </>
             )}
             {total > messages.current.length && (

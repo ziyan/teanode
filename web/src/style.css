@@ -10957,6 +10957,12 @@ main.content:has(> .knowledge-frame) {
   margin-top: var(--space-4);
 }
 
+/* One column in the drawer, however wide the window: the two-column rule
+   answers to the window, and the drawer is narrow in any of them. */
+.idea-suggestions .idea-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .idea-suggestions-title {
   margin-bottom: var(--space-3);
 }

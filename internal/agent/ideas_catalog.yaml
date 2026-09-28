@@ -72,7 +72,7 @@
   ideaCategory: money
   emoji: "💳"
   headline: I'll list the subscriptions billing you, from the receipts in your mail.
-  body: I go through your receipts and renewal notices and list each subscription with its price and next renewal, marking the ones you seem not to use. Cancelling stays with you.
+  body: I go through your receipts and renewal notices and list each subscription with its price and next renewal, marking the ones you seem not to use. Canceling stays with you.
   openingRequest: List every subscription I'm paying for, from my mail.
   neededToolNames: [mail_search, mail_read]
 
