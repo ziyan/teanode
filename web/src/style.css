@@ -7717,11 +7717,30 @@ p.notice.domain-logo-note {
 }
 
 /* On a phone the strip is the width of the screen, because 420px of message
-   beside 30px of margin is neither. */
+   beside 30px of margin is neither, and at the bottom, where the thumb is
+   and the eye goes after acting: at the top it covered the page's title.
+   It stands clear of the agent's button, which keeps the same 84 pixels
+   free, and the newest is the lowest, rising into place. */
 @media (max-width: 600px) {
   .toasts {
+    top: auto;
+    bottom: calc(84px + env(safe-area-inset-bottom));
     left: var(--space-2);
     right: var(--space-2);
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 600px) and (prefers-reduced-motion: no-preference) {
+  .toast {
+    animation-name: toast-up;
+  }
+}
+
+@keyframes toast-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
   }
 }
 
