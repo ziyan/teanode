@@ -22,7 +22,10 @@ import (
 // No model runs here. A repository's profile is arithmetic: who committed,
 // how much, and between which dates. Handing that to a model to be
 // rephrased would cost money and lose precision.
-func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, entry computer.ScanEntry) {
+//
+// checkouts is every checkout the same pass profiled, which is what a
+// build file's dependencies are resolved against.
+func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, entry computer.ScanEntry, checkouts *checkoutIndex) {
 	if err := self.checkSourceRead(ctx, source); err != nil {
 		return
 	}
@@ -30,14 +33,7 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 	if profile == nil {
 		return
 	}
-	name := entry.Title
-	if name == "" {
-		name = models.LastSegment(entry.ExternalID)
-	}
-	path := models.JoinPath(source.RootPath, name)
-	if source.RootPath == "" {
-		path = models.JoinPath(models.PathProjects, name)
-	}
+	name, path := repositoryPage(source, entry)
 
 	// Which of the authors are people this person actually worked with.
 	// Everyone who has ever committed to a mirrored upstream is not:
@@ -170,6 +166,15 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 			facts = append(facts, line{"own", fmt.Sprintf("%s wrote %d of the commits, %s.",
 				personName(run.Owner), own.Commits, monthSpan(own.First, own.Last))})
 		}
+		// What it needs that is a checkout here is a link, written once
+		// every checkout of the pass has its page; what it needs that is
+		// not is this one line, or a page would carry a link to nowhere
+		// for every library in the world it imports.
+		if checkouts != nil {
+			if elsewhere := checkouts.dependenciesElsewhere(tx, profile); elsewhere != "" {
+				facts = append(facts, line{"dependencies-elsewhere", elsewhere})
+			}
+		}
 		// A profile is recomputed every pass. What it says lands on the
 		// same numbered facts it said it on last time -- changed where the
 		// words changed, left alone where they did not -- and only a line
@@ -243,6 +248,11 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 					return err
 				}
 			}
+		}
+		// Its parts, each a page under this one, so a checkout of forty
+		// libraries is forty things that can each be linked to.
+		if err := fileCheckoutComponents(tx, source.AgentID, name, node, profile); err != nil {
+			return err
 		}
 		for _, link := range links {
 			target, err := tx.GetAgentNode(source.AgentID, link.To)

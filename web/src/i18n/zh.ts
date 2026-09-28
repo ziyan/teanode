@@ -2638,6 +2638,7 @@ export const zh: Catalog = {
   'knowledge.relation.related_to': '相关于',
   'knowledge.relation.decided_in': '决定于',
   'knowledge.relation.about': '关于',
+  'knowledge.relation.depends_on': '依赖',
   'knowledge.recall.title': '它会想起什么？',
   'knowledge.recall.button': '想起',
   'knowledge.recall.hint':

@@ -167,6 +167,11 @@ type GraphOperation interface {
 	// with the other end's path filled in.
 	ListAgentEdges(agentId, nodeId string) ([]*models.AgentEdge, error)
 
+	// ListAgentEdgesByRelation is every link of one relation an agent's
+	// graph holds, with both ends' paths filled in: what a writer that
+	// owns a relation's links reads before replacing its own.
+	ListAgentEdgesByRelation(agentId string, relation models.AgentEdgeRelation) ([]*models.AgentEdge, error)
+
 	// TouchAgentNodes and TouchAgentFacts mark what a prompt carried or a
 	// search found as used. Used time feeds the nightly importance; it
 	// does not order the index, because a prompt whose order moves every
@@ -1435,6 +1440,20 @@ func (self *transaction) ListAgentEdges(agentId, nodeId string) ([]*models.Agent
 		Order(`"relation" ASC`).Find(&rows).Error; err != nil {
 		return nil, err
 	}
+	return self.edgesOf(agentId, rows)
+}
+
+func (self *transaction) ListAgentEdgesByRelation(agentId string, relation models.AgentEdgeRelation) ([]*models.AgentEdge, error) {
+	var rows []agentEdgeModel
+	if err := self.tx.Where(`"agent_id" = ? AND "relation" = ?`, agentId, string(relation)).
+		Order(`"from_id" ASC, "to_id" ASC`).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return self.edgesOf(agentId, rows)
+}
+
+// edgesOf is stored links as the model has them, with both ends named.
+func (self *transaction) edgesOf(agentId string, rows []agentEdgeModel) ([]*models.AgentEdge, error) {
 	if len(rows) == 0 {
 		return nil, nil
 	}

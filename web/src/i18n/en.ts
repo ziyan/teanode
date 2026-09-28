@@ -2740,6 +2740,7 @@ export const en = {
   'knowledge.relation.related_to': 'related to',
   'knowledge.relation.decided_in': 'decided in',
   'knowledge.relation.about': 'about',
+  'knowledge.relation.depends_on': 'depends on',
   // The lookup answers "is this written down"; recall answers "will it be
   // read", which is a different question and the one behind most of "why
   // did it not know that".

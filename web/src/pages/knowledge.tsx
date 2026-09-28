@@ -153,6 +153,7 @@ const RELATIONS = [
   'related_to',
   'decided_in',
   'about',
+  'depends_on',
 ]
 
 // The unattended runs a fact can be addressed to, in the order the

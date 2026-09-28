@@ -2722,6 +2722,7 @@ export const ja: Catalog = {
   'knowledge.relation.related_to': 'に関係する',
   'knowledge.relation.decided_in': 'で決まった',
   'knowledge.relation.about': 'について',
+  'knowledge.relation.depends_on': 'に依存する',
   'knowledge.recall.title': '何を思い出しますか？',
   'knowledge.recall.button': '想起',
   'knowledge.recall.hint':

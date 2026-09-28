@@ -106,7 +106,7 @@ func newAgentGraphCommands() []*cli.Command {
 			Usage:     "join two pages: what the first is to the second",
 			ArgsUsage: "<path> <to>",
 			Flags: []cli.Flag{
-				&cli.StringFlag{Name: "relation", Usage: "part_of, works_on, member_of, knows, owns, uses, located_in, related_to, decided_in or about", Value: "related_to"},
+				&cli.StringFlag{Name: "relation", Usage: "part_of, works_on, member_of, knows, owns, uses, located_in, related_to, decided_in, about or depends_on", Value: "related_to"},
 				&cli.StringFlag{Name: "note", Usage: "a few words on the link, such as 'led the controls work on it in 2024'"},
 			},
 			Action: runAgentGraphLink,

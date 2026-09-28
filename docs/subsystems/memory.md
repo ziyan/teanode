@@ -60,7 +60,9 @@ visible as a number rather than as a graph full of confident fiction.
 
 **An edge** joins two pages and says how. Not "related": `works_on`,
 `member_of`, `knows`, `owns`, `uses`, `located_in`, `decided_in`,
-`about`, `part_of`. Each relation knows how to say itself in both
+`about`, `part_of`, and `depends_on`, which is read from a checkout's
+build files when its profile is filed and which the nightly walk never
+guesses. Each relation knows how to say itself in both
 directions — the edge from Alice to Portal reads "works on" from her page
 and "is worked on by" from the project's — and an edge may carry a
 sentence of its own ("led the controls work until 2025"). An edge nothing

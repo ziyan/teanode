@@ -295,12 +295,19 @@ const (
 	EdgeRelatedTo  AgentEdgeRelation = "related_to"
 	EdgeDecidedIn  AgentEdgeRelation = "decided_in"
 	EdgeAboutPlace AgentEdgeRelation = "about"
+
+	// EdgeDependsOn is a build-time dependency of one checkout on another,
+	// read from its build files by a program. Not uses: that one is the
+	// model's word for people and their tools, and a map of what builds on
+	// what has to be told apart from it.
+	EdgeDependsOn AgentEdgeRelation = "depends_on"
 )
 
 // AgentEdgeRelations is every relation.
 var AgentEdgeRelations = []AgentEdgeRelation{
 	EdgePartOf, EdgeWorksOn, EdgeMemberOf, EdgeKnows, EdgeOwns,
 	EdgeUses, EdgeLocatedIn, EdgeRelatedTo, EdgeDecidedIn, EdgeAboutPlace,
+	EdgeDependsOn,
 }
 
 // IsAgentEdgeRelation says whether a word names a relation.
@@ -391,6 +398,7 @@ var relationPhrases = map[AgentEdgeRelation][2]string{
 	EdgeRelatedTo:  {"is related to", "is related to"},
 	EdgeDecidedIn:  {"was decided in", "is where the decision was made about"},
 	EdgeAboutPlace: {"is about", "is the subject of"},
+	EdgeDependsOn:  {"depends on", "is depended on by"},
 }
 
 // pastPhrases are how a relation reads once it has stopped being true.
@@ -403,6 +411,7 @@ var pastPhrases = map[AgentEdgeRelation][2]string{
 	EdgeOwns:      {"owned", "belonged to"},
 	EdgeUses:      {"used", "was used by"},
 	EdgeLocatedIn: {"was in", "was where"},
+	EdgeDependsOn: {"depended on", "was depended on by"},
 }
 
 // Phrase is how this relation reads from one end, in the tense the link
