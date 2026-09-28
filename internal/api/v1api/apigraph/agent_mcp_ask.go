@@ -45,6 +45,9 @@ var mcpAskWait = 55 * time.Second
 func mcpAskTool() mcp.Tool {
 	return mcp.Tool{
 		Name: mcpAskName,
+		// A turn of the agent's may do anything its tools do, each asking
+		// where it would: the protocol's unsaid hints are the honest ones.
+		Annotations: &mcp.ToolAnnotations{Title: "Ask the agent"},
 		Description: "Put a question to this person's own agent, in words, and get its answer. " +
 			"It can search their mail, their calendar, their contacts and everything its nightly " +
 			"reading has learned about their work and the people in it, and it can use every tool " +

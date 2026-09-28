@@ -16,6 +16,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/llm"
+	"github.com/ziyan/teanode/internal/mcp"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -74,6 +75,12 @@ type Tool struct {
 	Family      Family
 	Description string
 	Risk        Risk
+
+	// Annotations are what the tool says about its effects in the Model
+	// Context Protocol's terms, where they are given rather than read off
+	// the risk: a connected server's, carried through as the server gave
+	// them, and a tool that reads the open web. Nil derives them; see Hints.
+	Annotations *mcp.ToolAnnotations
 
 	// Parameters is the JSON schema of the arguments.
 	Parameters map[string]any
@@ -623,4 +630,52 @@ func Some(values []string, limit int) string {
 		return strings.Join(kept, ", ")
 	}
 	return fmt.Sprintf("%s and %d more", strings.Join(kept[:limit], ", "), len(kept)-limit)
+}
+
+// Hints are the tool's annotations: its own where it has them, else read
+// off its risk, which stays the one place a built-in tool says what it does.
+//
+// A read changes nothing and reaches nothing beyond what the person may see
+// here; a write changes something here and can be undone; a destructive one
+// cannot; an outward one speaks to the world as the person. A tool whose
+// risk depends on the call (RiskOf) is only read-only when every call is,
+// so it keeps the protocol's cautious defaults for whatever it may raise to.
+func (self *Tool) Hints() *mcp.ToolAnnotations {
+	if self.Annotations != nil {
+		return self.Annotations
+	}
+	isTrue, isFalse := true, false
+	hints := &mcp.ToolAnnotations{}
+	switch {
+	case self.RiskOf != nil || self.JudgedCall != nil:
+		// A tool whose calls differ -- by action, or by what a command
+		// line says -- is left as the protocol reads unsaid hints: may
+		// change, may destroy, may reach out.
+	case self.Risk == RiskRead:
+		hints.ReadOnlyHint = true
+		hints.OpenWorldHint = &isFalse
+	case self.Risk == RiskWrite:
+		hints.DestructiveHint = &isFalse
+		hints.OpenWorldHint = &isFalse
+	case self.Risk == RiskDestructive:
+		hints.DestructiveHint = &isTrue
+		hints.OpenWorldHint = &isFalse
+	case self.Risk == RiskOutward:
+		hints.DestructiveHint = &isFalse
+		hints.OpenWorldHint = &isTrue
+	}
+	// What reaches another service is open-world whatever its risk: the
+	// browser, a skill, a connected server.
+	switch self.Family {
+	case FamilyBrowser, FamilySkills, FamilyServers:
+		hints.OpenWorldHint = &isTrue
+	}
+	return hints
+}
+
+// OpenWorldRead are the annotations of a tool that changes nothing and
+// reaches beyond this server to read: the web, a search service.
+func OpenWorldRead() *mcp.ToolAnnotations {
+	isTrue := true
+	return &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &isTrue}
 }

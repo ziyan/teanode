@@ -24,6 +24,8 @@ func init() {
 				Core:        true,
 				Risk:        tools.RiskRead,
 				Description: "Search the web. Returns titles, addresses and a line each. Only offered when the operator configured a search service.",
+				// A read that goes out to the web.
+				Annotations: tools.OpenWorldRead(),
 				Guidance:    "web_search and web_fetch look things up in the world; mail_search searches only the person's mail. A search finds pages; a price, an opening hour or a detail is on the page, so read the page rather than searching again for the detail in the snippets. Set freshness only when the question is about recent news: most pages worth reading have not changed this month.",
 				Parameters: tools.Object(map[string]any{
 					"query":     tools.StringProperty("the search"),

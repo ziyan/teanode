@@ -40,8 +40,9 @@ func fakeMCP(t *testing.T) (*httptest.Server, *[]string) {
 			result = map[string]any{"protocolVersion": "2025-03-26", "serverInfo": map[string]any{"name": "tracker", "version": "1"}}
 		case "tools/list":
 			result = map[string]any{"tools": []map[string]any{
-				{"name": "track", "description": "Where a parcel is.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"number": map[string]any{"type": "string"}}}},
-				{"name": "cancel", "description": "Cancel a shipment.", "inputSchema": map[string]any{"type": "object"}},
+				{"name": "track", "description": "Where a parcel is.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"number": map[string]any{"type": "string"}}}, "annotations": map[string]any{"readOnlyHint": true}},
+				{"name": "cancel", "description": "Cancel a shipment.", "inputSchema": map[string]any{"type": "object"}, "annotations": map[string]any{"destructiveHint": true}},
+				{"name": "note", "description": "Keep a note on a parcel.", "inputSchema": map[string]any{"type": "object"}},
 			}}
 		case "tools/call":
 			calls = append(calls, string(message.Params))
@@ -126,8 +127,8 @@ func TestConnectedServerToolsAreOfferedWithTheirRisk(t *testing.T) {
 	if !strings.Contains(joined, "tool_call:mcp__tracker__track tool_result:mcp__tracker__track") {
 		t.Fatalf("the read-only tool should run without a card: %v", kinds)
 	}
-	if confirmed == nil || confirmed.Tool != "mcp__tracker__cancel" || confirmed.Risk != "outward" {
-		t.Fatalf("the other tool should ask first as outward: %+v", confirmed)
+	if confirmed == nil || confirmed.Tool != "mcp__tracker__cancel" || confirmed.Risk != "destructive" {
+		t.Fatalf("a tool the server marks destructive should ask first as destructive: %+v", confirmed)
 	}
 	if len(*calls) != 2 || !strings.Contains((*calls)[0], `"number":"42"`) {
 		t.Fatalf("the server should have been called twice: %v", *calls)
@@ -247,5 +248,54 @@ func TestResearchWritesNotesOnTheInsight(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "Track parcel 42") {
 		t.Fatalf("the research prompt lacks the action items: %s", prompt)
+	}
+}
+
+// A connected server's own annotations decide what asks: a tool it marks
+// read-only runs without a card, with no list of the operator's needed, one
+// it marks destructive asks, and what it said is carried through to whoever
+// reaches the tool through the agent. A tool it says nothing about is
+// judged call by call.
+func TestAConnectedServersAnnotationsAreCarriedThrough(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	remote, _ := fakeMCP(t)
+	defer remote.Close()
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	dreamingOff := false
+	configuration.Agent.Features.Dreaming = &dreamingOff
+	configuration.Agent.MCP.Servers = []config.AgentMCPServer{{Name: "tracker", URL: remote.URL}}
+	store, _ := storage.Open(&storage.Settings{Directory: t.TempDir()})
+	worker := agent.New(&agent.Settings{Database: database, Storage: store, Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour})
+	var found *models.Agent
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, _ := tx.CreateUser(&models.User{Username: "alice"})
+		found, _ = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true})
+	})
+	operations := &fakeOperations{permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailRead}})}
+	byName := map[string]*agent.Tool{}
+	for _, tool := range worker.DirectTools(context.Background(), found, operations) {
+		byName[tool.Name] = tool
+	}
+	track, cancel, note := byName["mcp__tracker__track"], byName["mcp__tracker__cancel"], byName["mcp__tracker__note"]
+	if track == nil || cancel == nil || note == nil {
+		t.Fatalf("the server's tools should be offered: %v", len(byName))
+	}
+	if track.Risk != agent.RiskRead || !track.Hints().ReadOnlyHint {
+		t.Errorf("a tool the server marks read-only is a read: %s %+v", track.Risk, track.Hints())
+	}
+	if track.Hints().OpenWorldHint == nil || !*track.Hints().OpenWorldHint {
+		t.Error("another service is open-world")
+	}
+	if cancel.Risk != agent.RiskDestructive {
+		t.Errorf("a tool the server marks destructive asks as one: %s", cancel.Risk)
+	}
+	// Anything else is judged call by call rather than asked every time.
+	if note.Risk != agent.RiskWrite || note.JudgedCall == nil || note.Hints().ReadOnlyHint {
+		t.Errorf("a tool the server says nothing about is judged: %s", note.Risk)
+	}
+	if call := note.JudgedCall([]byte(`{"parcel":"42"}`)); !strings.Contains(call, "note") || !strings.Contains(call, "tracker") || !strings.Contains(call, `"parcel":"42"`) {
+		t.Errorf("the judged call names the tool, the service and the arguments: %q", call)
 	}
 }
