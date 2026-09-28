@@ -98,13 +98,13 @@ type Agent struct {
 
 	// SpokeFirstAt is when the agent last started a conversation on its
 	// own, and OnboardedAt when its introduction ended, answered or not.
-	// IsMemoryCheckEnabled and IsTipsEnabled are the person's switches for
+	// IsMemoryCheckEnabled and IsIdeasEnabled are the person's switches for
 	// two of the reasons it may, and SpeakFirstSnoozedUntil is how long
 	// they asked it to keep quiet. See internal/agent/speak_first.go.
 	SpokeFirstAt           *time.Time `json:"spokeFirstAt,omitempty" graphapi:"nullable"`
 	OnboardedAt            *time.Time `json:"onboardedAt,omitempty" graphapi:"nullable"`
 	IsMemoryCheckEnabled   bool       `json:"isMemoryCheckEnabled"`
-	IsTipsEnabled          bool       `json:"isTipsEnabled"`
+	IsIdeasEnabled         bool       `json:"isIdeasEnabled"`
 	SpeakFirstSnoozedUntil *time.Time `json:"speakFirstSnoozedUntil,omitempty" graphapi:"nullable"`
 }
 
@@ -481,7 +481,7 @@ const (
 
 	// AgentJobSpeakFirst is a turn the agent takes in the main conversation
 	// with nobody having asked: to introduce itself, to check what it
-	// remembers, or to give a tip. Its subject is the reason.
+	// remembers, or to offer an idea. Its subject is the reason.
 	AgentJobSpeakFirst AgentJobKind = "speak_first"
 )
 

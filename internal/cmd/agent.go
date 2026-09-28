@@ -34,6 +34,7 @@ func NewAgentCommand() *cli.Command {
 			newAgentToolsCommand(),
 			newAgentMemoryCommand(),
 			newAgentSkillCommand(),
+			newAgentIdeaCommand(),
 			newAgentSourceTypeCommand(),
 			newAgentScheduleCommand(),
 			newAgentKnowledgeCommand(),
@@ -47,9 +48,9 @@ func NewAgentCommand() *cli.Command {
 			newAgentBriefCommand(),
 			{
 				Name:  "speak-first",
-				Usage: "have your agent start a conversation now, as it would on its own: onboarding, memory_check or tip",
+				Usage: "have your agent start a conversation now, as it would on its own: onboarding, memory_check or idea",
 				Flags: []cli.Flag{
-					&cli.StringFlag{Name: "reason", Usage: "onboarding, memory_check or tip", Required: true},
+					&cli.StringFlag{Name: "reason", Usage: "onboarding, memory_check or idea", Required: true},
 				},
 				Action: runAgentSpeakFirst,
 			},

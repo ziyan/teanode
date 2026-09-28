@@ -40,6 +40,7 @@ type Query interface {
 	AgentMemoryQuery
 	AgentGraphQuery
 	AgentEvaluationQuery
+	AgentIdeaQuery
 	AgentInteractionQuery
 	AgentConnectionQuery
 	AgentReachQuery
@@ -91,6 +92,7 @@ type Mutation interface {
 	AgentGraphMutation
 	AgentSpeakFirstMutation
 	AgentEvaluationMutation
+	AgentIdeaMutation
 	AgentConnectionMutation
 	AgentReachMutation
 	AgentSkillMutation

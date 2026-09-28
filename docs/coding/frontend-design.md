@@ -69,6 +69,10 @@ One action on a row is a text button: `className="link"`, or `link danger`
 when it destroys something. The word is clearer than any icon, and there is
 room for it.
 
+The exception is a row that is itself a button, such as an idea on the
+agent's Ideas tab: its one other action is an icon in the row's corner, since
+a word there would take a line of its own under every row.
+
 Two or more actions are icon buttons — `className="icon-action"` inside a
 `<div className="row-actions">`, `icon-action danger` for the destructive one.
 Three words in a row crowd out what the row is about. `icon-button` is the

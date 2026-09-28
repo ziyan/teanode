@@ -18,7 +18,7 @@ const INPUT_EVENTS = ['keydown', 'pointerdown', 'wheel', 'scroll', 'touchstart']
 // of them, and how long since they last typed, clicked or scrolled in it:
 // every minute, and at once when the tab is shown or hidden. The agent
 // starts a conversation on its own only with somebody who is there to read
-// it, and gives a tip only to somebody who has gone quiet. Nothing is sent
+// it, and offers an idea only to somebody who has gone quiet. Nothing is sent
 // while there is no agent to tell.
 export function useAgentPresence(isAvailable: boolean) {
   useEffect(() => {

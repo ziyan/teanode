@@ -55,6 +55,14 @@ type InsightOperation interface {
 	// FindAgentConversationBySubject is the newest conversation of a kind
 	// whose subject is the one given, not archived, or nil.
 	FindAgentConversationBySubject(agentId string, kind models.AgentConversationKind, subjectId string) (*models.AgentConversation, error)
+	// ListAgentGoalsInProgress is the agent's conversations whose goal is
+	// still worked toward or waits on the person, archived or not, the
+	// latest first.
+	ListAgentGoalsInProgress(agentId string) ([]*models.AgentConversation, error)
+
+	// UpdateAgentConversation changes a conversation. When its goal becomes
+	// met, the ideas it was carrying out are done, and started again when
+	// it is taken back up.
 	UpdateAgentConversation(conversationId string, modify func(*models.AgentConversation) error) (*models.AgentConversation, error)
 	ListAgentConversations(agentId string, kinds []models.AgentConversationKind, options *Options) ([]*models.AgentConversation, error)
 
@@ -480,6 +488,27 @@ func (self *transaction) GetAgentConversation(conversationId string) (*models.Ag
 	return conversationFromModel(&model), nil
 }
 
+// ListAgentGoalsInProgress: see the interface.
+func (self *transaction) ListAgentGoalsInProgress(agentId string) ([]*models.AgentConversation, error) {
+	var ids []string
+	if err := self.tx.Model(&agentConversationModel{}).
+		Where(`"agent_id" = ? AND "goal" <> '' AND "goal_state" <> ?`, agentId, string(models.GoalMet)).
+		Order(`"last_at" DESC`).Pluck("id", &ids).Error; err != nil {
+		return nil, err
+	}
+	conversations := make([]*models.AgentConversation, 0, len(ids))
+	for _, id := range ids {
+		conversation, err := self.GetAgentConversation(id)
+		if err != nil {
+			return nil, err
+		}
+		if conversation != nil {
+			conversations = append(conversations, conversation)
+		}
+	}
+	return conversations, nil
+}
+
 func (self *transaction) UpdateAgentConversation(conversationId string, modify func(*models.AgentConversation) error) (*models.AgentConversation, error) {
 	if err := lockRow(self.tx, &agentConversationModel{}, conversationId); err != nil {
 		return nil, err
@@ -501,6 +530,26 @@ func (self *transaction) UpdateAgentConversation(conversationId string, modify f
 		"goal": after.Goal, "goal_state": string(after.GoalState), "goal_note": truncateRunes(after.GoalNote, 1000), "goal_next_at": after.GoalNextAt, "goal_set_at": after.GoalSetAt,
 	}).Error; err != nil {
 		return nil, err
+	}
+	// An idea carried out in a conversation is done when the conversation's
+	// goal is met, whoever said so: the agent's goal tool or the person.
+	// And started again when the goal is taken back up, which is what an
+	// undo of "met" is. Here rather than at each of them, so that none can
+	// forget.
+	now := time.Now()
+	switch isMet, wasMet := after.GoalState == models.GoalMet, before.GoalState == models.GoalMet; {
+	case isMet && !wasMet:
+		if err := self.tx.Model(&agentIdeaModel{}).
+			Where(`"started_conversation_id" = ? AND "idea_status" = ?`, conversationId, string(models.IdeaStarted)).
+			Updates(map[string]any{"idea_status": string(models.IdeaDone), "closed_at": now, "modified_at": now}).Error; err != nil {
+			return nil, err
+		}
+	case wasMet && !isMet && after.Goal != "":
+		if err := self.tx.Model(&agentIdeaModel{}).
+			Where(`"started_conversation_id" = ? AND "idea_status" = ?`, conversationId, string(models.IdeaDone)).
+			Updates(map[string]any{"idea_status": string(models.IdeaStarted), "closed_at": nil, "modified_at": now}).Error; err != nil {
+			return nil, err
+		}
 	}
 	return self.GetAgentConversation(conversationId)
 }

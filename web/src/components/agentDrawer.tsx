@@ -11,6 +11,7 @@ import {
   agentViewing,
   announceMailChanged,
   graphql,
+  openAgentConversation,
   subscribe,
   authorization,
   framedDrawer,
@@ -24,6 +25,7 @@ import { budgetNearness, formatClock, formatCount, formatMoney, formatTime } fro
 import { useResolvedTheme } from './theme'
 import { Tooltip } from './tooltip'
 import { Markdown } from './markdown'
+import { IdeaSuggestions } from './ideaRow'
 import { RelativeTime } from './relativeTime'
 import {
   ArchiveIcon,
@@ -79,6 +81,8 @@ type GoalState = 'working' | 'waiting' | 'met'
 interface Conversation {
   id: string
   kind: 'main' | 'named' | 'run'
+  // For a run, what made it: a dream, a triage, a call over MCP.
+  jobKind?: string
   title: string
   summary?: string
   lastAt: string
@@ -120,11 +124,11 @@ const BACKGROUND_COMMAND_MARKER = '[background command]'
 const SCHEDULE_MARKER = '[schedule]'
 
 // The marker a turn begins with when the agent starts a conversation on
-// its own, to introduce itself, check what it remembers or give a tip,
+// its own, to introduce itself, check what it remembers or offer an idea,
 // which is models.SpeakFirstMarker on the server.
 const SPEAK_FIRST_MARKER = '[speaking first]'
 
-// The surface such a turn is taken on, "speak_first:tip" and the like. A
+// The surface such a turn is taken on, "speak_first:idea" and the like. A
 // turn that begins with it in the main conversation opens the drawer.
 const SPEAK_FIRST_SURFACE = 'speak_first:'
 
@@ -426,7 +430,7 @@ const CONVERSATION_TODOS = `
 const CONVERSATION = `
   query ($conversationId: String, $first: Int, $offset: Int) {
     ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
-      conversation { id kind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt }
+      conversation { id kind jobKind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt }
       actingAs
       goalTurnsToday
       messages {
@@ -2459,15 +2463,23 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   }, [available, open])
 
   // Another page asking for a conversation to be opened here: a run's
-  // transcript from the agent page.
+  // transcript from the agent page, or an idea started, whose request is
+  // written in as the conversation's draft so that it is in the box when
+  // the conversation is drawn, and nothing is sent until the person sends
+  // it.
   useEffect(() => {
     const listener = (event: Event) => {
       const detail = (event as CustomEvent<AgentOpenDetail>).detail
       if (!available || !detail?.conversationId) return
       detail.handled = true
+      if (detail.draft) {
+        remember(draftKey(detail.conversationId), detail.draft)
+        draftLoadedFor.current = ''
+      }
       setOpen(true)
       remember(OPEN_KEY, '1')
       void switchTo(detail.conversationId)
+      if (detail.draft) setTimeout(() => input.current?.focus(), 50)
     }
     window.addEventListener(AGENT_OPEN_EVENT, listener)
     return () => window.removeEventListener(AGENT_OPEN_EVENT, listener)
@@ -2480,7 +2492,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   useAgentPresence(available && !standalone)
 
   // A turn the agent starts on its own in the main conversation -- its
-  // introduction, a memory check, a tip -- opens the drawer on it: a
+  // introduction, a memory check, an idea -- opens the drawer on it: a
   // message nobody sees might as well not have been written. Followed
   // whenever the drawer is not already showing the main conversation,
   // which is when the drawer's own subscription would not hear it.
@@ -3462,6 +3474,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     })
   }
 
+  // A call a program made over MCP is filed as a run of one tool call, and
+  // that call is all there is to read: what it was asked and what came
+  // back, or why it failed. Hidden with the other tool calls, the run said
+  // only that the call was made, so here it is always shown, and open.
+  const isCallRecord = loaded?.id === conversationId && loaded?.jobKind === 'mcp'
+  const isToolOpen = (key: string) => expanded.has(key) !== isCallRecord
+
   // drawLine is one line of the transcript as the drawer draws it.
   const drawLine = (line: Line) => {
     switch (line.kind) {
@@ -3505,7 +3524,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       case 'tool': {
         const artifact = artifactOf(line)
         const shared = sharedFilesOf(line)
-        if (!showTools) {
+        if (!showTools && !isCallRecord) {
           if (artifact) return <ArtifactCard key={line.key} artifact={artifact} />
           return shared.length > 0 ? (
             <Fragment key={line.key}>
@@ -3518,7 +3537,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         return (
           <div
             key={line.key}
-            className={['agent-line tool', line.done ? 'done' : '', expanded.has(line.key) ? 'open' : '']
+            className={['agent-line tool', line.done ? 'done' : '', isToolOpen(line.key) ? 'open' : '']
               .filter(Boolean)
               .join(' ')}
           >
@@ -3526,7 +3545,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               {line.done ? '✓' : '…'} {line.tool}
               {line.note ? <span className="muted"> · {line.note}</span> : null}
             </button>
-            {expanded.has(line.key) && (
+            {isToolOpen(line.key) && (
               <div className="agent-tool-detail">
                 {line.arguments && <CodeBlock text={line.arguments} tidy />}
                 {line.result && <CodeBlock text={line.result} tidy />}
@@ -3919,7 +3938,26 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               }
             }}
           >
-            {lines.length === 0 && <p className="muted agent-drawer-empty">{t('agentDrawer.empty')}</p>}
+            {lines.length === 0 && (
+              <>
+                <p className="muted agent-drawer-empty">{t('agentDrawer.empty')}</p>
+                {draft.trim() === '' ? (
+                  <IdeaSuggestions
+                    key={conversationId}
+                    conversationId={conversationId}
+                    onDraft={(startedIn, openingRequest) => {
+                      if (startedIn !== conversationId) {
+                        openAgentConversation(startedIn, openingRequest)
+                        return
+                      }
+                      setDraft(openingRequest)
+                      remember(draftKey(startedIn), openingRequest)
+                      input.current?.focus()
+                    }}
+                  />
+                ) : null}
+              </>
+            )}
             {total > messages.current.length && (
               <button
                 type="button"

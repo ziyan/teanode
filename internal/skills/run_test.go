@@ -169,6 +169,37 @@ func TestARoutedToolPicksItsSteps(t *testing.T) {
 	}
 }
 
+// A caller that guesses is told enough in the refusal to get it right the
+// next time: which actions there are, which values a required parameter
+// takes, and that a value an action needs was not given, under the name it
+// was given by if it came under another.
+func TestARefusalSaysWhatWouldHaveWorked(t *testing.T) {
+	body := "---\nname: box\ndescription: box\ntools:\n" +
+		"  - name: box_ops\n    description: ops\n    type: workflow\n    actionField: action\n" +
+		"    parameters: {type: object, properties: {action: {type: string, enum: [open, read]}, shelf: {type: string}}, required: [action]}\n" +
+		"    actions:\n" +
+		"      open: [{name: open, type: http, url: \"https://box.example/open\", result: json}]\n" +
+		"      read: [{name: read, type: http, url: \"https://box.example/{{shelf}}\", result: json}]\n---\n"
+	skill, err := Parse([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	for _, check := range []struct {
+		arguments map[string]any
+		want      string
+	}{
+		{map[string]any{"action": "list"}, `does not do "list"; its action is one of open, read`},
+		{map[string]any{}, "box_ops needs action, one of open, read"},
+		{map[string]any{"action": "read"}, "read: this needs shelf, which was not given"},
+		{map[string]any{"action": "read", "shelf_id": "a"}, "shelf_id is not a parameter of box_ops"},
+	} {
+		_, err := skill.Run(context.Background(), "box_ops", check.arguments, &Running{})
+		if err == nil || !strings.Contains(err.Error(), check.want) {
+			t.Errorf("%v: want %q, got %v", check.arguments, check.want, err)
+		}
+	}
+}
+
 // A service that answers badly is reported with what it said, and one
 // that answers something huge is cut.
 func TestWhatAServiceAnswersIsBoundedAndReported(t *testing.T) {

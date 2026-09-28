@@ -1219,6 +1219,12 @@ th {
   font-size: 13px;
   letter-spacing: 0;
 }
+/* A head's words in the middle of the head, not at its top: a sortable
+   head is a button, forty pixels tall on a phone to be hit with a thumb,
+   and its word sat half a line below the plain heads beside it. */
+thead th {
+  vertical-align: middle;
+}
 tbody tr:hover {
   background: var(--sidebar-hover);
 }
@@ -4314,7 +4320,41 @@ main.content:has(> .mailbox-frame) {
   overflow-y: auto;
   flex: 1 1 auto;
 }
+/* A row that can be swiped: the slot holds still and clips, the row slides
+   over what letting go will do. */
+.mailbox-row-slot {
+  position: relative;
+  overflow: hidden;
+}
+.mailbox-row-reveal {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  color: var(--accent-text);
+  background: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 120ms ease;
+}
+.mailbox-row-reveal.seen {
+  justify-content: flex-start;
+}
+.mailbox-row-reveal.archive {
+  justify-content: flex-end;
+}
+.mailbox-row-reveal.ready.seen {
+  background: var(--accent);
+}
+.mailbox-row-reveal.ready.archive {
+  background: var(--good);
+}
 .mailbox-row {
+  position: relative;
+  background: var(--background);
+  touch-action: pan-y;
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr) auto;
   gap: 8px;
@@ -4329,6 +4369,9 @@ main.content:has(> .mailbox-frame) {
 }
 .mailbox-row.active {
   background: var(--sidebar-hover);
+}
+.mailbox-row.settling {
+  transition: transform 180ms ease;
 }
 .mailbox-row.unread .mailbox-row-from,
 .mailbox-row.unread .mailbox-row-subject {
@@ -7717,11 +7760,30 @@ p.notice.domain-logo-note {
 }
 
 /* On a phone the strip is the width of the screen, because 420px of message
-   beside 30px of margin is neither. */
+   beside 30px of margin is neither, and at the bottom, where the thumb is
+   and the eye goes after acting: at the top it covered the page's title.
+   It stands clear of the agent's button, which keeps the same 84 pixels
+   free, and the newest is the lowest, rising into place. */
 @media (max-width: 600px) {
   .toasts {
+    top: auto;
+    bottom: calc(84px + env(safe-area-inset-bottom));
     left: var(--space-2);
     right: var(--space-2);
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 600px) and (prefers-reduced-motion: no-preference) {
+  .toast {
+    animation-name: toast-up;
+  }
+}
+
+@keyframes toast-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
   }
 }
 
@@ -8632,7 +8694,7 @@ button.with-icon {
 }
 
 .usage-chart-legend span,
-.usage-chart-tip-line {
+.usage-chart-tooltip-line {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -8645,7 +8707,7 @@ button.with-icon {
   border-radius: 3px;
 }
 
-.usage-chart-tip {
+.usage-chart-tooltip {
   position: absolute;
   top: 0;
   z-index: 2;
@@ -8659,29 +8721,29 @@ button.with-icon {
   pointer-events: none;
 }
 
-.usage-chart-tip.right {
+.usage-chart-tooltip.right {
   margin-left: 10px;
 }
 
-.usage-chart-tip.left {
+.usage-chart-tooltip.left {
   margin-right: 10px;
 }
 
-.usage-chart-tip-day {
+.usage-chart-tooltip-day {
   font-weight: 650;
   margin-bottom: 4px;
 }
 
-.usage-chart-tip-line {
+.usage-chart-tooltip-line {
   display: flex;
   width: 100%;
 }
 
-.usage-chart-tip-line span {
+.usage-chart-tooltip-line span {
   color: var(--muted);
 }
 
-.usage-chart-tip-line strong {
+.usage-chart-tooltip-line strong {
   margin-left: auto;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -10857,6 +10919,253 @@ main.content:has(> .knowledge-frame) {
   margin: var(--space-3) 0 0;
   font-size: var(--text-label);
   overflow-wrap: anywhere;
+}
+
+/* Ideas: offers of work the agent can do. A row is the button that starts
+   the idea, with the mark that dismisses it in its corner; under it, for one
+   found in the person's own data, why and from what. Two columns where
+   there is room, so thirty ideas are not one long scroll. */
+.idea-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4) var(--space-6);
+}
+
+@media (min-width: 900px) {
+  .idea-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.idea-row {
+  position: relative;
+  padding-right: 28px;
+}
+
+.idea-start {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.idea-start:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: var(--radius-1);
+}
+
+@media (hover: hover) {
+  .idea-start:hover .idea-headline {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+.idea-emoji {
+  flex: none;
+  width: 28px;
+  font-size: 22px;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.idea-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.idea-headline {
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.idea-body {
+  line-height: 1.45;
+}
+
+.idea-row .idea-dismiss {
+  position: absolute;
+  top: -2px;
+  right: 0;
+}
+
+.idea-foot {
+  margin: var(--space-2) 0 0 calc(28px + var(--space-3));
+  font-size: var(--text-label);
+}
+
+.idea-reason {
+  margin: 0 0 var(--space-1);
+}
+
+/* What prompted an idea: plain links, one to a line and cut to it, each
+   with the mark of what it is. */
+.idea-sources {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.idea-source {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.idea-source svg {
+  flex: none;
+}
+
+.idea-source span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .idea-source:hover {
+    color: var(--text);
+  }
+
+  .idea-source:hover span {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+}
+
+.idea-suggestions {
+  margin-top: var(--space-4);
+}
+
+/* An idea in the history table: its words on one line, opening the
+   conversation that carried it out. */
+.idea-history-title {
+  display: block;
+  max-width: min(50vw, 36rem);
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.idea-history-title {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  button.idea-history-title:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+/* One column in the drawer, however wide the window: the two-column rule
+   answers to the window, and the drawer is narrow in any of them. */
+.idea-suggestions .idea-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.idea-suggestions-title {
+  margin-bottom: var(--space-3);
+}
+
+/* Goals: what the agent keeps working on, each a row the person ticks when
+   it is done, and the areas a new one can be about. */
+.goal-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.goal-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.goal-check {
+  flex: none;
+  margin-top: 3px;
+}
+
+.goal-mark {
+  flex: none;
+  width: 18px;
+  text-align: center;
+}
+
+.goal-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.goal-title {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .goal-title:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+.goal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  font-size: var(--text-label);
+}
+
+.goal-areas {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+.goal-area {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: flex-start;
 }
 
 /* The reminders list beside the calendar: a field to add one, then each a

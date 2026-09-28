@@ -178,6 +178,8 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 	// passages tonight and is read like anything else tomorrow.
 	self.dreamAttachments(ctx, run, budget)
 	self.dreamTimeline(ctx, run, record, budget)
+	// Ideas after the month is written, from the same reading.
+	self.dreamIdeas(ctx, run, budget)
 	// Half of what is left, so the phases after it still run.
 	budget.consolidateUntil = halfway(ctx, time.Now())
 	self.dreamConsolidate(ctx, run, record, budget)

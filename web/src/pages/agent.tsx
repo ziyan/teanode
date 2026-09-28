@@ -24,6 +24,8 @@ import {
 import { PencilIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tabs, TabItem } from '../components/tabs'
+import { GoalsTab } from './agentGoals'
+import { IdeasTab } from './agentIdeas'
 import { MemoryCheckSection } from '../components/memoryCheck'
 import { Tooltip } from '../components/tooltip'
 import { useToast } from '../components/toast'
@@ -100,7 +102,7 @@ export type Agent = {
   dailyTokens: number
   operatorDisabledAt?: string | null
   isMemoryCheckEnabled: boolean
-  isTipsEnabled: boolean
+  isIdeasEnabled: boolean
 }
 export type AgentSource = { mailboxId: string; name: string; addresses: string[]; policy?: AgentMailboxPolicy | null }
 // A calendar or an address book as a source: a switch, and how much is in it.
@@ -126,7 +128,7 @@ export type AgentView = {
 
 const VIEW = `{
   agent { id name enabled instructions language knowledgeLanguage askModel dreamFrom dreamUntil dailyTokens operatorDisabledAt confirm
-    isMemoryCheckEnabled isTipsEnabled
+    isMemoryCheckEnabled isIdeasEnabled
     voice { tone length greeting signoff }
     categories { name description }
     notifications { heldReply highPriority runFailed } }
@@ -145,12 +147,12 @@ const UPDATE_AGENT = `
   mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String, $knowledgeLanguage: String,
     $voice: AgentVoiceInput,
     $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput, $confirm: [String!], $askModel: String,
-    $dreamFrom: String, $dreamUntil: String, $isMemoryCheckEnabled: Boolean, $isTipsEnabled: Boolean, $forget: Boolean) {
+    $dreamFrom: String, $dreamUntil: String, $isMemoryCheckEnabled: Boolean, $isIdeasEnabled: Boolean, $forget: Boolean) {
     UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, knowledgeLanguage: $knowledgeLanguage,
       voice: $voice,
       categories: $categories, notifications: $notifications, confirm: $confirm, askModel: $askModel,
       dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, isMemoryCheckEnabled: $isMemoryCheckEnabled,
-      isTipsEnabled: $isTipsEnabled, forget: $forget) ${VIEW}
+      isIdeasEnabled: $isIdeasEnabled, forget: $forget) ${VIEW}
   }`
 const GRANT = `mutation ($mailboxId: String!, $policy: AgentMailboxInput) { GrantAgentMailbox(mailboxId: $mailboxId, policy: $policy) ${VIEW} }`
 const REVOKE = `mutation ($mailboxId: String!) { RevokeAgentMailbox(mailboxId: $mailboxId) ${VIEW} }`
@@ -180,11 +182,13 @@ function messageOf(caught: unknown): string {
 
 // The tabs of /settings/agent, and the path a person can be sent to. One
 // scroll of fourteen cards meant scrolling past a mailbox's policies to
-// reach what the agent remembered; the six subjects here are the six
+// reach what the agent remembered; the subjects here are the
 // questions somebody opens this page with. Mail is what it may reach in
 // the person's mailboxes; Sources is everywhere else it reads.
 const AGENT_TABS: TabItem[] = [
   { id: 'overview', label: 'agent.tabOverview' },
+  { id: 'ideas', label: 'agent.tabIdeas' },
+  { id: 'goals', label: 'agent.tabGoals' },
   { id: 'mail', label: 'agent.tabMail' },
   { id: 'sources', label: 'agent.tabSources' },
   { id: 'memory', label: 'agent.tabMemory' },
@@ -354,18 +358,18 @@ export function AgentPage() {
               <label className="checkbox">
                 <input
                   type="checkbox"
-                  checked={agent.isTipsEnabled}
+                  checked={agent.isIdeasEnabled}
                   disabled={busy}
                   onChange={(event) =>
                     void update(
-                      { isTipsEnabled: event.target.checked },
-                      event.target.checked ? t('agent.tipsOn') : t('agent.tipsOff'),
+                      { isIdeasEnabled: event.target.checked },
+                      event.target.checked ? t('agent.ideasOn') : t('agent.ideasOff'),
                     )
                   }
                 />
-                {t('agent.tips')}
+                {t('agent.ideas')}
               </label>
-              <p className="muted field-hint">{t('agent.tipsHint')}</p>
+              <p className="muted field-hint">{t('agent.ideasHint')}</p>
             </div>
             <ConfirmForm agent={agent} busy={busy} onSave={update} />
             <div className="settings-subform">
@@ -418,6 +422,8 @@ export function AgentPage() {
           <BriefCard />
         </>
       ) : null}
+      {tab === 'ideas' ? <IdeasTab /> : null}
+      {tab === 'goals' ? <GoalsTab /> : null}
       {tab === 'connections' ? (
         <>
           <ServersCard />
