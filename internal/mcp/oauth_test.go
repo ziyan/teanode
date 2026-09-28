@@ -145,3 +145,36 @@ func TestWhereCredentialsMayBeSent(t *testing.T) {
 		t.Fatal("a server out on the internet is not a private deployment")
 	}
 }
+
+// With no scopes configured, the flow asks for the ones the protected
+// resource publishes, as the Model Context Protocol tells a client to when the
+// server's challenge names none. Configured scopes win.
+func TestBeginAsksForTheResourcesScopesWhenNoneAreConfigured(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/.well-known/oauth-protected-resource":
+			_, _ = writer.Write([]byte(`{"authorization_servers":["` + baseOf(request) + `/mcp"],"scopes_supported":["tools.read"]}`))
+		case "/.well-known/oauth-authorization-server/mcp":
+			_, _ = writer.Write([]byte(`{"issuer":"` + baseOf(request) + `/mcp","authorization_endpoint":"` + baseOf(request) + `/authorize","token_endpoint":"` + baseOf(request) + `/token"}`))
+		default:
+			writer.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	authorization, err := Begin(context.Background(), &OAuthSettings{Client: server.Client(), ServerURL: server.URL + "/mcp", RedirectURL: "http://localhost:1/callback", ClientID: "by-hand"})
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	if !strings.Contains(authorization.URL, "scope=tools.read") {
+		t.Fatalf("the resource's scope is asked for: %s", authorization.URL)
+	}
+	authorization, err = Begin(context.Background(), &OAuthSettings{Client: server.Client(), ServerURL: server.URL + "/mcp", RedirectURL: "http://localhost:1/callback", ClientID: "by-hand", Scopes: []string{"tools.write"}})
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	if !strings.Contains(authorization.URL, "scope=tools.write") || strings.Contains(authorization.URL, "tools.read") {
+		t.Fatalf("the configured scope wins: %s", authorization.URL)
+	}
+}
