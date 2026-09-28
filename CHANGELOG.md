@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.77.0] - 2026-09-28
+
+### Added
+
+- A reminders list beside the calendar, which the Reminders app on a phone syncs, on the calendar page, as `teanode reminder` and as the agent's `reminder` tool. (#219)
+
 ## [0.76.0] - 2026-09-28
 
 ### Added
