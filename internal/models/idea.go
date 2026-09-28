@@ -59,9 +59,9 @@ type IdeaCategory struct {
 
 // ideaCategories is every area, in the order they are shown.
 var ideaCategories = []IdeaCategory{
+	{"mail", []string{"📬", "📥", "✉️", "🧹", "🔕", "📨"}},
 	{"money", []string{"💰", "💳", "🧾", "📈", "🏦", "💵"}},
 	{"paperwork", []string{"📄", "🗂️", "📋", "✍️", "🪪", "📑"}},
-	{"mail", []string{"📬", "📥", "✉️", "🧹", "🔕", "📨"}},
 	{"home", []string{"🏠", "🔧", "🧰", "📦", "🔌", "🪴"}},
 	{"family", []string{"👪", "🎂", "🧸", "🎁", "💬", "🐾"}},
 	{"travel", []string{"✈️", "🧳", "🗺️", "🏨", "🚆", "🚗"}},

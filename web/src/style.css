@@ -10858,3 +10858,105 @@ main.content:has(> .knowledge-frame) {
   font-size: var(--text-label);
   overflow-wrap: anywhere;
 }
+
+/* Ideas: offers of work the agent can do. A row is the button that starts
+   the idea, with the mark that dismisses it in its corner; under it, for one
+   found in the person's own data, why and from what. Two columns where
+   there is room, so thirty ideas are not one long scroll. */
+.idea-list {
+  display: grid;
+  gap: var(--space-4) var(--space-6);
+}
+
+@media (min-width: 900px) {
+  .idea-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.idea-row {
+  position: relative;
+  padding-right: 28px;
+}
+
+.idea-start {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.idea-start:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: var(--radius-1);
+}
+
+@media (hover: hover) {
+  .idea-start:hover .idea-headline {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+.idea-emoji {
+  flex: none;
+  width: 28px;
+  font-size: 22px;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.idea-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.idea-headline {
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.idea-body {
+  line-height: 1.45;
+}
+
+.idea-row .idea-dismiss {
+  position: absolute;
+  top: -2px;
+  right: 0;
+}
+
+.idea-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: var(--space-2) 0 0 calc(28px + var(--space-3));
+  font-size: var(--text-label);
+}
+
+.idea-evidence {
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-round);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.idea-suggestions {
+  margin-top: var(--space-4);
+}
+
+.idea-suggestions-title {
+  margin-bottom: var(--space-3);
+}

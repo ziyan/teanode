@@ -24,6 +24,7 @@ import {
 import { PencilIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tabs, TabItem } from '../components/tabs'
+import { IdeasTab } from './agentIdeas'
 import { MemoryCheckSection } from '../components/memoryCheck'
 import { Tooltip } from '../components/tooltip'
 import { useToast } from '../components/toast'
@@ -180,11 +181,12 @@ function messageOf(caught: unknown): string {
 
 // The tabs of /settings/agent, and the path a person can be sent to. One
 // scroll of fourteen cards meant scrolling past a mailbox's policies to
-// reach what the agent remembered; the six subjects here are the six
+// reach what the agent remembered; the subjects here are the
 // questions somebody opens this page with. Mail is what it may reach in
 // the person's mailboxes; Sources is everywhere else it reads.
 const AGENT_TABS: TabItem[] = [
   { id: 'overview', label: 'agent.tabOverview' },
+  { id: 'ideas', label: 'agent.tabIdeas' },
   { id: 'mail', label: 'agent.tabMail' },
   { id: 'sources', label: 'agent.tabSources' },
   { id: 'memory', label: 'agent.tabMemory' },
@@ -418,6 +420,7 @@ export function AgentPage() {
           <BriefCard />
         </>
       ) : null}
+      {tab === 'ideas' ? <IdeasTab /> : null}
       {tab === 'connections' ? (
         <>
           <ServersCard />
