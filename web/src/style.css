@@ -10999,7 +10999,7 @@ main.content:has(> .knowledge-frame) {
    conversation that carried it out. */
 .idea-history-title {
   display: block;
-  max-width: 100%;
+  max-width: min(50vw, 36rem);
   overflow: hidden;
   padding: 0;
   border: 0;
