@@ -199,7 +199,7 @@ func theCalendar(ctx context.Context, operations tools.Operations) (string, stri
 	}
 	for _, calendar := range result.ListCalendars {
 		// The events calendar: the reminders list is the reminder tool's.
-		if calendar.AgentGranted && calendar.CalendarKind != "reminders" {
+		if calendar.AgentGranted && calendar.CalendarKind != string(models.CalendarReminders) {
 			return calendar.ID, calendar.Timezone, nil
 		}
 	}

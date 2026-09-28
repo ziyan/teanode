@@ -180,14 +180,36 @@ func (self *transaction) CreateCalendar(calendar *models.Calendar) (*models.Cale
 
 // EnsureCalendar is the person's calendar of a kind, made from the template
 // when they have none. Every door asks through this, so that a person has
-// one calendar and one reminders list however many devices ask at once:
-// the person's own row is held while the question is answered, so a second
-// request waits for the first one's answer rather than making a second
-// list.
+// one calendar and one reminders list however many devices ask at once.
+//
+// Almost always the calendar is there, and it is read without holding
+// anything. Only when it is not is the person's own row held, and the
+// question asked again under it, so a second request that got this far
+// waits for the first one's answer rather than making a second list. FOR NO
+// KEY UPDATE is enough for that, and does not stop rows that refer to the
+// person from being written meanwhile.
 func (self *transaction) EnsureCalendar(userId string, kind models.CalendarKind, template *models.Calendar) (*models.Calendar, error) {
-	if err := self.tx.Exec(`SELECT 1 FROM "user" WHERE "id" = ? FOR UPDATE`, userId).Error; err != nil {
+	found, err := self.calendarOfKind(userId, kind)
+	if err != nil || found != nil {
+		return found, err
+	}
+	if err := self.tx.Exec(`SELECT 1 FROM "user" WHERE "id" = ? FOR NO KEY UPDATE`, userId).Error; err != nil {
 		return nil, err
 	}
+	if found, err = self.calendarOfKind(userId, kind); err != nil || found != nil {
+		return found, err
+	}
+	made := models.Calendar{}
+	if template != nil {
+		made = *template
+	}
+	made.UserID, made.CalendarKind = userId, kind
+	return self.CreateCalendar(&made)
+}
+
+// calendarOfKind is the person's calendar of a kind, or nil when they have
+// none.
+func (self *transaction) calendarOfKind(userId string, kind models.CalendarKind) (*models.Calendar, error) {
 	calendars, err := self.ListCalendars(userId)
 	if err != nil {
 		return nil, err
@@ -197,12 +219,7 @@ func (self *transaction) EnsureCalendar(userId string, kind models.CalendarKind,
 			return found, nil
 		}
 	}
-	made := models.Calendar{}
-	if template != nil {
-		made = *template
-	}
-	made.UserID, made.CalendarKind = userId, kind
-	return self.CreateCalendar(&made)
+	return nil, nil
 }
 
 // UpdateCalendar renames one, or changes how it is shown.

@@ -11,6 +11,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/calendar"
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/security"
 )
 
@@ -135,7 +136,7 @@ func theCalendar(ctx context.Context, connection *client.Client) (*client.Calend
 		return nil, err
 	}
 	for _, found := range calendars {
-		if found.CalendarKind != "reminders" {
+		if found.CalendarKind != string(models.CalendarReminders) {
 			return found, nil
 		}
 	}
@@ -590,12 +591,17 @@ func runCalendarCalendars(ctx context.Context, command *cli.Command) error {
 	}
 	rows := make([][]string, 0, len(calendars))
 	for _, found := range calendars {
+		// The count is of what the calendar keeps, which in the reminders
+		// list is reminders.
+		held := fmt.Sprintf("%d events", found.Events)
+		if found.CalendarKind == string(models.CalendarReminders) {
+			held = fmt.Sprintf("%d reminders", found.Events)
+		}
 		rows = append(rows, []string{
-			found.Name, found.Timezone, found.WeekStart, found.Colour,
-			fmt.Sprintf("%d", found.Events), found.ID,
+			found.Name, found.Timezone, found.WeekStart, found.Colour, held, found.ID,
 		})
 	}
-	return printTable([]string{"name", "timezone", "week starts", "colour", "events", "id"}, rows)
+	return printTable([]string{"name", "timezone", "week starts", "colour", "holds", "id"}, rows)
 }
 
 func runCalendarSet(ctx context.Context, command *cli.Command) error {

@@ -10,16 +10,17 @@ import (
 
 // Reminder is one reminder.
 type Reminder struct {
-	ID         string     `json:"id"`
-	Title      string     `json:"title"`
-	Notes      string     `json:"notes"`
-	DueAt      *time.Time `json:"dueAt"`
-	IsDueDate  bool       `json:"isDueDate"`
-	IsDone     bool       `json:"isDone"`
-	DoneAt     *time.Time `json:"doneAt"`
-	Priority   int        `json:"priority"`
-	CreatedAt  time.Time  `json:"createdAt"`
-	ModifiedAt time.Time  `json:"modifiedAt"`
+	ID          string     `json:"id"`
+	Title       string     `json:"title"`
+	Notes       string     `json:"notes"`
+	DueAt       *time.Time `json:"dueAt"`
+	IsDueDate   bool       `json:"isDueDate"`
+	IsDone      bool       `json:"isDone"`
+	DoneAt      *time.Time `json:"doneAt"`
+	Priority    int        `json:"priority"`
+	IsRepeating bool       `json:"isRepeating"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	ModifiedAt  time.Time  `json:"modifiedAt"`
 }
 
 // ReminderChange is what to write into a reminder; what is nil is kept.
@@ -32,7 +33,7 @@ type ReminderChange struct {
 	Priority     *int    `json:"priority,omitempty"`
 }
 
-const reminderFields = `{ id title notes dueAt isDueDate isDone doneAt priority createdAt modifiedAt }`
+const reminderFields = `{ id title notes dueAt isDueDate isDone doneAt priority isRepeating createdAt modifiedAt }`
 
 const (
 	DocumentListReminders = `query ($isDone: Boolean) { ListReminders(isDone: $isDone) ` + reminderFields + ` }`

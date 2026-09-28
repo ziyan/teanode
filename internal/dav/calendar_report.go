@@ -590,16 +590,22 @@ func (self *component) eventsMatching(ctx context.Context, backing *calendarBack
 		return nil, refuse(http.StatusBadRequest, "that time range is not one this server can read")
 	}
 	if found.CalendarKind == models.CalendarReminders {
-		// A reminder happens once, when it is due, so the range is read
-		// against that; one due at no time matches any range, as the
-		// format says a to-do with no dates does.
 		stored, err := backing.storedEvents(ctx, address)
 		if err != nil {
 			return nil, err
 		}
+		location := time.UTC
+		if name := strings.TrimSpace(found.Timezone); name != "" {
+			if loaded, err := time.LoadLocation(name); err == nil {
+				location = loaded
+			}
+		}
 		inRange := make([]*models.CalendarObject, 0, len(stored))
 		for _, object := range stored {
-			if object.StartsAt.IsZero() || (!object.StartsAt.Before(from) && object.StartsAt.Before(until)) {
+			reminder, err := calendar.ParseReminder([]byte(object.Data))
+			if err != nil || reminderInRange(reminder, from, until, location) {
+				// One that cannot be read is sent rather than hidden:
+				// a phone that never hears of it cannot show it at all.
 				inRange = append(inRange, object)
 			}
 		}
@@ -637,6 +643,44 @@ func (self *component) eventsMatching(ctx context.Context, backing *calendarBack
 		return nil, err
 	}
 	return objects, nil
+}
+
+// reminderInRange is whether a reminder falls in a time range, as RFC 4791
+// section 9.9 has it for a to-do: with a start and a due date, the stretch
+// between them meets the range; with a due date alone, the range holds it;
+// with a start alone, it starts before the range ends; with neither, it is
+// in every range. What it says about COMPLETED and CREATED is left out.
+//
+// A value written as a day is that whole day where the calendar is kept,
+// not midnight UTC: one due tomorrow is due all of tomorrow for the person
+// whose list it is.
+func reminderInRange(reminder *calendar.Reminder, from, until time.Time, location *time.Location) bool {
+	hasStart, hasDue := !reminder.StartsAt.IsZero(), !reminder.DueAt.IsZero()
+	startBegins, _ := reminderSpan(reminder.StartsAt, reminder.IsStartDate, location)
+	dueBegins, dueEnds := reminderSpan(reminder.DueAt, reminder.IsDueDate, location)
+	switch {
+	case hasStart && hasDue:
+		return (from.Before(dueEnds) || !startBegins.Before(from)) &&
+			(until.After(startBegins) || !until.Before(dueEnds))
+	case hasDue && reminder.IsDueDate:
+		return from.Before(dueEnds) && until.After(dueBegins)
+	case hasDue:
+		return from.Before(reminder.DueAt) && !until.Before(reminder.DueAt)
+	case hasStart:
+		return startBegins.Before(until)
+	}
+	return true
+}
+
+// reminderSpan is the stretch of time one of a reminder's dates covers: a
+// moment, or for a day the whole of that day in the calendar's zone. The
+// day is the one written in the file, which is read at midnight UTC.
+func reminderSpan(at time.Time, isDate bool, location *time.Location) (time.Time, time.Time) {
+	if !isDate {
+		return at, at
+	}
+	day := time.Date(at.Year(), at.Month(), at.Day(), 0, 0, 0, 0, location)
+	return day.UTC(), day.AddDate(0, 0, 1).UTC()
 }
 
 // foundEvent is one event in an answer, with the bytes exactly as stored.

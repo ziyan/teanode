@@ -55,6 +55,10 @@ type ReminderView struct {
 	// Priority is 0 for none, or 1 the highest to 9 the lowest.
 	Priority int `json:"priority"`
 
+	// IsRepeating says it has a repeat rule: marking it done moves it on to
+	// its next time instead of finishing it.
+	IsRepeating bool `json:"isRepeating"`
+
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
 }
@@ -97,7 +101,7 @@ func reminderView(object *models.CalendarObject) (*ReminderView, error) {
 	}
 	view := &ReminderView{
 		ID: object.ID, Title: reminder.Title, Notes: reminder.Notes, IsDueDate: reminder.IsDueDate,
-		IsDone: reminder.IsDone, Priority: reminder.Priority,
+		IsDone: reminder.IsDone, Priority: reminder.Priority, IsRepeating: reminder.IsRepeating,
 		CreatedAt: object.CreatedAt, ModifiedAt: object.ModifiedAt,
 	}
 	if !reminder.DueAt.IsZero() {
@@ -176,7 +180,7 @@ func (self *graph) SaveReminder(ctx context.Context, arguments SaveReminderArgum
 	}
 	fields := &calendar.ReminderFields{
 		Title: arguments.Title, Notes: arguments.Notes, DueOn: arguments.DueOn,
-		ClearDue: arguments.IsDueCleared, Priority: arguments.Priority,
+		IsDueCleared: arguments.IsDueCleared, Priority: arguments.Priority,
 	}
 	if arguments.DueAt != nil && strings.TrimSpace(*arguments.DueAt) != "" {
 		at, err := time.Parse(time.RFC3339, strings.TrimSpace(*arguments.DueAt))

@@ -30,6 +30,11 @@ type Reminder struct {
 	DueAt     time.Time
 	IsDueDate bool
 
+	// StartsAt is its DTSTART, read as DueAt is, and zero when it has none;
+	// IsStartDate marks one written as a day.
+	StartsAt    time.Time
+	IsStartDate bool
+
 	// IsDone is its STATUS being COMPLETED, and DoneAt its COMPLETED time
 	// where the file gives one.
 	IsDone bool
@@ -37,6 +42,10 @@ type Reminder struct {
 
 	// Priority is the file's own: 0 for none, 1 the highest to 9 the lowest.
 	Priority int
+
+	// IsRepeating is the reminder having a repeat rule. Ticking one off
+	// moves it on to its next time rather than finishing it.
+	IsRepeating bool
 
 	Data []byte
 }
@@ -48,10 +57,10 @@ type ReminderFields struct {
 	Notes *string
 
 	// DueAt is a time it is due, and DueOn a day, as 2006-01-02. Setting
-	// either replaces the other; ClearDue takes the due date away.
-	DueAt    *time.Time
-	DueOn    *string
-	ClearDue bool
+	// either replaces the other; IsDueCleared takes the due date away.
+	DueAt        *time.Time
+	DueOn        *string
+	IsDueCleared bool
 
 	IsDone   *bool
 	Priority *int
@@ -94,6 +103,12 @@ func ParseReminder(data []byte) (*Reminder, error) {
 			reminder.DueAt = at.UTC()
 		}
 	}
+	if start := todo.Props.Get(ical.PropDateTimeStart); start != nil {
+		reminder.IsStartDate = isDateValue(start)
+		if at, err := start.DateTime(time.UTC); err == nil {
+			reminder.StartsAt = at.UTC()
+		}
+	}
 	if status, err := todo.Props.Text(ical.PropStatus); err == nil {
 		reminder.IsDone = strings.EqualFold(strings.TrimSpace(status), "COMPLETED")
 	}
@@ -109,6 +124,7 @@ func ParseReminder(data []byte) (*Reminder, error) {
 			reminder.Priority = value
 		}
 	}
+	reminder.IsRepeating = todo.Props.Get(ical.PropRecurrenceRule) != nil
 	return reminder, nil
 }
 
@@ -148,7 +164,8 @@ func BuildReminder(previous []byte, fields *ReminderFields) (*Reminder, error) {
 	setComponentText(todo, ical.PropSummary, fields.Title)
 	setComponentText(todo, ical.PropDescription, fields.Notes)
 	switch {
-	case fields.ClearDue:
+	case fields.IsDueCleared:
+		// A start with no due date is a reminder on its own, so it stays.
 		todo.Props.Del(ical.PropDue)
 	case fields.DueOn != nil && strings.TrimSpace(*fields.DueOn) != "":
 		day, err := time.Parse("2006-01-02", strings.TrimSpace(*fields.DueOn))
@@ -157,9 +174,11 @@ func BuildReminder(previous []byte, fields *ReminderFields) (*Reminder, error) {
 		}
 		todo.Props.Del(ical.PropDue)
 		todo.Props.SetDate(ical.PropDue, day)
+		keepStartBeforeDue(todo)
 	case fields.DueAt != nil && !fields.DueAt.IsZero():
 		todo.Props.Del(ical.PropDue)
 		todo.Props.SetDateTime(ical.PropDue, fields.DueAt.UTC())
+		keepStartBeforeDue(todo)
 	}
 	if fields.Priority != nil {
 		if *fields.Priority < 0 || *fields.Priority > 9 {
@@ -172,8 +191,15 @@ func BuildReminder(previous []byte, fields *ReminderFields) (*Reminder, error) {
 			todo.Props.Set(property)
 		}
 	}
+	isDoneForGood := true
+	if fields.IsDone != nil && *fields.IsDone && todo.Props.Get(ical.PropRecurrenceRule) != nil {
+		// Ticking off a repeating reminder is doing this time of it, and
+		// the reminder moves on to the next. Only when there is no next
+		// time left is it done for good.
+		isDoneForGood = !advanceToNext(todo)
+	}
 	if fields.IsDone != nil {
-		if *fields.IsDone {
+		if *fields.IsDone && isDoneForGood {
 			todo.Props.SetText(ical.PropStatus, "COMPLETED")
 			if todo.Props.Get(ical.PropCompleted) == nil {
 				todo.Props.SetDateTime(ical.PropCompleted, now)
@@ -197,14 +223,178 @@ func BuildReminder(previous []byte, fields *ReminderFields) (*Reminder, error) {
 	return ParseReminder(written)
 }
 
-// firstToDo is the file's first to-do.
+// firstToDo is the to-do a file is about: the one without a RECURRENCE-ID,
+// as firstEvent is for an event, or the first when every one has one.
 func firstToDo(cal *ical.Calendar) *ical.Component {
+	var first *ical.Component
 	for _, child := range cal.Children {
-		if child != nil && child.Name == ical.CompToDo {
+		if child == nil || child.Name != ical.CompToDo {
+			continue
+		}
+		if child.Props.Get(ical.PropRecurrenceID) == nil {
 			return child
 		}
+		if first == nil {
+			first = child
+		}
 	}
-	return nil
+	return first
+}
+
+// keepStartBeforeDue takes DTSTART away when a new due date leaves it
+// wrong: written as a day where the due date is a time, or the other way
+// round, or after the due date. The format allows neither, and a reminder
+// may have no start at all.
+func keepStartBeforeDue(todo *ical.Component) {
+	due, start := todo.Props.Get(ical.PropDue), todo.Props.Get(ical.PropDateTimeStart)
+	if due == nil || start == nil {
+		return
+	}
+	if isDateValue(start) != isDateValue(due) {
+		todo.Props.Del(ical.PropDateTimeStart)
+		return
+	}
+	dueAt, dueErr := due.DateTime(time.UTC)
+	startAt, startErr := start.DateTime(time.UTC)
+	if dueErr != nil || startErr != nil || startAt.After(dueAt) {
+		todo.Props.Del(ical.PropDateTimeStart)
+	}
+}
+
+// isDateValue is a property holding a day rather than a time, whether or
+// not it says VALUE=DATE.
+func isDateValue(property *ical.Prop) bool {
+	switch property.ValueType() {
+	case ical.ValueDate:
+		return true
+	case ical.ValueDefault:
+		return len(strings.TrimSpace(property.Value)) == len("20060102")
+	}
+	return false
+}
+
+// advanceToNext moves a repeating reminder on to its next time after the
+// one it is at now: DUE, and DTSTART with it by the same amount, and it is
+// open again. It says false, and changes nothing, when the repeat has no
+// next time or cannot be read, and the reminder is then simply done.
+//
+// The repeat is counted from DTSTART, as the format has it, or from DUE for
+// a reminder with no start. Moving the start moves where the count begins,
+// so a COUNT is lowered by the times stepped past, or a reminder meant to
+// repeat three times would repeat for ever.
+func advanceToNext(todo *ical.Component) bool {
+	due, start := todo.Props.Get(ical.PropDue), todo.Props.Get(ical.PropDateTimeStart)
+	anchor := start
+	if anchor == nil {
+		anchor = due
+	}
+	if anchor == nil {
+		return false
+	}
+	current, err := anchor.DateTime(time.UTC)
+	if err != nil {
+		return false
+	}
+	// The repeat worked out as though the anchor were the start, with the
+	// dates the file adds and takes away, and again with the rule alone,
+	// which is what a COUNT counts.
+	withDates := &ical.Component{Name: ical.CompToDo, Props: ical.Props{}}
+	ruleAlone := &ical.Component{Name: ical.CompToDo, Props: ical.Props{}}
+	startProperty := *anchor
+	startProperty.Name = ical.PropDateTimeStart
+	for _, component := range []*ical.Component{withDates, ruleAlone} {
+		component.Props.Set(&startProperty)
+		component.Props.Set(todo.Props.Get(ical.PropRecurrenceRule))
+	}
+	withDates.Props[ical.PropExceptionDates] = todo.Props[ical.PropExceptionDates]
+	withDates.Props[ical.PropRecurrenceDates] = todo.Props[ical.PropRecurrenceDates]
+	set, err := withDates.RecurrenceSet(time.UTC)
+	if err != nil || set == nil {
+		return false
+	}
+	var next time.Time
+	iterator := set.Iterator()
+	for step := 0; step < maximumSteps; step++ {
+		when, ok := iterator()
+		if !ok {
+			return false
+		}
+		if when.After(current) {
+			next = when
+			break
+		}
+	}
+	if next.IsZero() {
+		return false
+	}
+	rule := todo.Props.Get(ical.PropRecurrenceRule)
+	if options, err := todo.Props.RecurrenceRule(); err == nil && options != nil && options.Count > 0 {
+		ruleSet, err := ruleAlone.RecurrenceSet(time.UTC)
+		if err != nil || ruleSet == nil {
+			return false
+		}
+		steppedPast := 0
+		ruleIterator := ruleSet.Iterator()
+		for step := 0; step < maximumSteps; step++ {
+			when, ok := ruleIterator()
+			if !ok || !when.Before(next) {
+				break
+			}
+			steppedPast++
+		}
+		remainingCount := options.Count - steppedPast
+		if remainingCount < 1 {
+			remainingCount = 1
+		}
+		rule.Value = replaceRulePart(rule.Value, "COUNT", fmt.Sprint(remainingCount))
+	}
+	offset := next.Sub(current)
+	if start != nil {
+		moveProperty(start, next)
+	}
+	if due != nil {
+		if start == nil {
+			moveProperty(due, next)
+		} else if dueAt, err := due.DateTime(time.UTC); err == nil {
+			moveProperty(due, dueAt.Add(offset))
+		}
+	}
+	todo.Props.SetText(ical.PropStatus, "NEEDS-ACTION")
+	todo.Props.Del(ical.PropCompleted)
+	todo.Props.Del(ical.PropPercentComplete)
+	return true
+}
+
+// moveProperty writes a new moment into a date or time property the way it
+// was already written: a day, a UTC time, a time in its TZID, or a floating
+// time.
+func moveProperty(property *ical.Prop, at time.Time) {
+	value := strings.TrimSpace(property.Value)
+	switch {
+	case isDateValue(property):
+		property.Value = at.Format("20060102")
+	case strings.HasSuffix(value, "Z"):
+		property.Value = at.UTC().Format("20060102T150405Z")
+	case property.Params.Get(ical.PropTimezoneID) != "":
+		if location, err := time.LoadLocation(property.Params.Get(ical.PropTimezoneID)); err == nil {
+			at = at.In(location)
+		}
+		property.Value = at.Format("20060102T150405")
+	default:
+		property.Value = at.Format("20060102T150405")
+	}
+}
+
+// replaceRulePart sets one NAME=value part of a repeat rule's text, leaving
+// the others as they were written.
+func replaceRulePart(rule, name, value string) string {
+	parts := strings.Split(rule, ";")
+	for index, part := range parts {
+		if key, _, found := strings.Cut(part, "="); found && strings.EqualFold(strings.TrimSpace(key), name) {
+			parts[index] = name + "=" + value
+		}
+	}
+	return strings.Join(parts, ";")
 }
 
 // setComponentText writes a property, or takes it away when the instruction

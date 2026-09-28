@@ -147,3 +147,79 @@ func TestAReminderIsKeptTickedOffAndRemoved(t *testing.T) {
 		t.Fatalf("removing it: %d", removed.StatusCode)
 	}
 }
+
+// A time range over the reminders list is read as the format has it for a
+// to-do: a reminder with a start and a due date is in any range that meets
+// the stretch between them, one with only a start is in any range ending
+// after it, one with neither is in every range, and one due on a day is due
+// the whole of that day where the list is kept.
+func TestARemindersTimeRangeFollowsTheFormat(t *testing.T) {
+	here, done := newWorld(t)
+	defer done()
+	list := here.remindersPath(t)
+	listId := strings.TrimSuffix(strings.TrimPrefix(list, dav.Prefix+"/"+here.userID+"/calendars/"), "/")
+	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
+		found, err := tx.GetCalendar(listId)
+		if err != nil || found == nil {
+			t.Fatalf("the list: %v", err)
+		}
+		// Thirteen hours ahead of UTC on these days.
+		found.Timezone = "Pacific/Auckland"
+		if _, err := tx.UpdateCalendar(found); err != nil {
+			t.Fatal(err)
+		}
+	})
+	put := func(name string, body string) {
+		t.Helper()
+		answer := here.ask(t, http.MethodPut, list+name, body, "Content-Type", "text/calendar; charset=utf-8")
+		_ = text(t, answer)
+		if answer.StatusCode != http.StatusCreated {
+			t.Fatalf("keeping %s: %d", name, answer.StatusCode)
+		}
+	}
+	put("on-a-day.ics", reminder("day@example.com", "Water the plants", "DUE;VALUE=DATE:20261001"))
+	put("start-and-due.ics", reminder("span@example.com", "Write the report", "DTSTART:20261005T090000Z", "DUE:20261006T090000Z"))
+	put("start-only.ics", reminder("start@example.com", "Plan the trip", "DTSTART:20261020T090000Z"))
+	put("no-dates.ics", reminder("none@example.com", "Read a book"))
+	put("due-only.ics", reminder("due@example.com", "Pay the bill", "DUE:20261010T090000Z"))
+
+	query := func(from, until string) string {
+		t.Helper()
+		answer := here.ask(t, "REPORT", list, `<?xml version="1.0"?>
+			<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+			  <d:prop><d:getetag/></d:prop>
+			  <c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VTODO">
+			    <c:time-range start="`+from+`" end="`+until+`"/>
+			  </c:comp-filter></c:comp-filter></c:filter>
+			</c:calendar-query>`, "Depth", "1")
+		body := text(t, answer)
+		if answer.StatusCode != http.StatusMultiStatus {
+			t.Fatalf("querying: %d %s", answer.StatusCode, body)
+		}
+		return body
+	}
+	for _, check := range []struct {
+		from, until string
+		wanted      []string
+	}{
+		// The first of October in the list's zone begins at 11:00 UTC on
+		// the day before; read at midnight UTC it would not be here.
+		{"20260930T120000Z", "20260930T180000Z", []string{"on-a-day.ics", "no-dates.ics"}},
+		// Between a reminder's start and its due date, though neither is
+		// in the range.
+		{"20261005T120000Z", "20261005T130000Z", []string{"start-and-due.ics", "no-dates.ics"}},
+		{"20261010T080000Z", "20261010T100000Z", []string{"due-only.ics", "no-dates.ics"}},
+		{"20261025T000000Z", "20261026T000000Z", []string{"start-only.ics", "no-dates.ics"}},
+	} {
+		body := query(check.from, check.until)
+		for _, name := range []string{"on-a-day.ics", "start-and-due.ics", "start-only.ics", "no-dates.ics", "due-only.ics"} {
+			isWanted := false
+			for _, wanted := range check.wanted {
+				isWanted = isWanted || wanted == name
+			}
+			if strings.Contains(body, name) != isWanted {
+				t.Fatalf("from %s until %s, %s found %v:\n%s", check.from, check.until, name, !isWanted, body)
+			}
+		}
+	}
+}
