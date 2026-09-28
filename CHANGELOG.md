@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.74.6] - 2026-09-28
+
+### Fixed
+
+- A call over MCP that failed shows why in the activity drawer, and skill refusals say what would have worked. (#215)
+
 ## [0.74.5] - 2026-09-28
 
 ### Changed
