@@ -1666,7 +1666,9 @@ function ServerDialog({
                 { value: '', label: t('agentSettings.serverLocationServer') },
                 { value: 'computer', label: t('agentSettings.serverLocationComputer') },
               ]}
-              onChange={(location) => set({ location })}
+              // A server on the person's computer is there only while they
+              // are, so a run with nobody present cannot use it.
+              onChange={(location) => set(location === 'computer' ? { location, headless: false } : { location })}
             />
           </label>
         )}
@@ -1808,10 +1810,16 @@ function ServerDialog({
           <input value={draft.disabled} onChange={(event) => set({ disabled: event.target.value })} />
         </label>
       </div>
-      <label className="checkbox">
-        <input type="checkbox" checked={draft.headless} onChange={(event) => set({ headless: event.target.checked })} />
-        {t('agentSettings.serverHeadless')}
-      </label>
+      {draft.location === 'computer' ? null : (
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={draft.headless}
+            onChange={(event) => set({ headless: event.target.checked })}
+          />
+          {t('agentSettings.serverHeadless')}
+        </label>
+      )}
       <label className="checkbox">
         <input type="checkbox" checked={draft.enabled} onChange={(event) => set({ enabled: event.target.checked })} />
         {t('integrations.enabled')}
