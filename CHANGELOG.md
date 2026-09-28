@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.73.1] - 2026-09-28
+
+### Fixed
+
+- A question you answered in the agent chat no longer comes back open after reloading. (#202)
+- Links written in bold in the agent's answers are shown as links. (#202)
+- A named conversation keeps its name when one message strays from its subject. (#202)
+
 ## [0.73.0] - 2026-09-28
 
 ### Added
