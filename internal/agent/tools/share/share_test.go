@@ -211,3 +211,67 @@ func TestShareFileHandsOverAndLooks(t *testing.T) {
 		t.Fatal("an unknown source is an error")
 	}
 }
+
+// linkingRun is a run that signs addresses: a conversation, which hands one
+// out beside the path when asked, or a program over MCP, whose every file
+// goes by its link.
+type linkingRun struct {
+	*fakeRun
+	isLinkInPlaceOfPath bool
+}
+
+func (self *linkingRun) SharedLink(attachmentId string) string {
+	return "https://mail.example.org/api/v1/agent/attachments/" + attachmentId + "?share=signed"
+}
+func (self *linkingRun) IsLinkInPlaceOfPath() bool { return self.isLinkInPlaceOfPath }
+func (self *linkingRun) Surface() string           { return "drawer" }
+
+// A person who asks for a link to open elsewhere gets a signed one beside
+// the path; a file handed over without asking keeps its path alone; and a
+// program over MCP gets the link in place of the path.
+func TestShareFileHandsOutALinkWhenAsked(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	store, err := storage.Open(&storage.Settings{Directory: t.TempDir()})
+	if err != nil {
+		t.Fatalf("storage.Open: %s", err)
+	}
+	base := &fakeRun{database: database, store: store, computer: &fakeComputer{}}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "alice", Name: "Alice Example"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if base.agent, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if base.conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: base.agent.ID, Kind: models.AgentConversationMain, LastAt: time.Now()}); err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+	})
+	tool := find(t, "share_file")
+	share := func(run tools.Run, arguments string) map[string]any {
+		t.Helper()
+		result, err := tool.Run(tools.WithRun(context.Background(), run), &tools.Call{ID: "c1", Arguments: json.RawMessage(arguments)})
+		if err != nil {
+			t.Fatalf("share_file: %s", err)
+		}
+		var answer map[string]any
+		_ = json.Unmarshal([]byte(result.Content), &answer)
+		return answer
+	}
+
+	conversation := &linkingRun{fakeRun: base}
+	asked := share(conversation, `{"source":"computer","path":"~/Pictures/cat.png","link":true}`)
+	id, _ := asked["attachment_id"].(string)
+	if asked["url"] != "/api/v1/agent/attachments/"+id || !strings.HasSuffix(asked["share_link"].(string), id+"?share=signed") {
+		t.Fatalf("asked for a link, the path stays and a signed link comes beside it: %v", asked)
+	}
+	if unasked := share(conversation, `{"source":"computer","path":"~/Pictures/cat.png"}`); unasked["share_link"] != nil {
+		t.Fatalf("not asked, no link: %v", unasked)
+	}
+	program := share(&linkingRun{fakeRun: base, isLinkInPlaceOfPath: true}, `{"source":"computer","path":"~/Pictures/cat.png"}`)
+	if !strings.HasSuffix(program["url"].(string), "?share=signed") || program["share_link"] != nil {
+		t.Fatalf("a program over MCP gets the link in place of the path: %v", program)
+	}
+}
