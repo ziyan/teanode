@@ -26,6 +26,7 @@ type Query interface {
 	AddressBookQuery
 	CalendarQuery
 	ReminderQuery
+	NoteQuery
 	CalendarInvitationQuery
 	TokenQuery
 	AppQuery
@@ -78,6 +79,7 @@ type Mutation interface {
 	AddressBookMutation
 	CalendarMutation
 	ReminderMutation
+	NoteMutation
 	CalendarInvitationMutation
 	TokenMutation
 	AppMutation

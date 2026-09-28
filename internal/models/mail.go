@@ -45,6 +45,11 @@ const (
 	MailKindRUA      MailKind = "rua"
 	MailKindRUF      MailKind = "ruf"
 	MailKindDraft    MailKind = "draft"
+
+	// MailKindNote is a note from a phone's Notes app, which keeps its notes
+	// as messages in a folder of the mail account. Not mail: nothing that
+	// sorts, summarizes or searches mail should treat it as such.
+	MailKindNote MailKind = "note"
 )
 
 func (self MailKind) String() string {
@@ -67,6 +72,8 @@ func GetMailKind(value string) MailKind {
 		return MailKindRUF
 	case "draft":
 		return MailKindDraft
+	case "note":
+		return MailKindNote
 	}
 	return MailKindUnknown
 }
@@ -179,6 +186,11 @@ type Mail struct {
 
 	// Kind gains draft for a message being written.
 
+	// NoteIdentifier is the X-Universally-Unique-Identifier of a note, which
+	// every version of the note carries: what says two messages are the same
+	// note written twice. Empty for anything that is not a note.
+	NoteIdentifier string `json:"noteIdentifier,omitempty"`
+
 	// Size of the received Mail
 	Size uint64 `json:"size,omitempty"`
 
@@ -191,7 +203,7 @@ type Mail struct {
 	// Timestamp when the Mail was received
 	ReceivedAt time.Time `json:"receivedAt,omitempty"`
 
-	// Kind of Mail, one of: incoming, outgoing, exchange, dsn, rua, ruf
+	// Kind of Mail, one of: incoming, outgoing, exchange, dsn, rua, ruf, draft, note
 	Kind MailKind `json:"kind,omitempty"`
 
 	// One or more Delivery created from this Mail

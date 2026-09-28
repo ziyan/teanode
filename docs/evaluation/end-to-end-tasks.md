@@ -276,6 +276,18 @@ Surface: drawer, with the reminders list granted. Covers `reminder`
       and not as a schedule.
 - [ ] Ticked off, it shows done on the calendar page's Reminders tab.
 
+### note-01: write it down
+
+Surface: drawer, with the mailbox granted. Covers `note` (write, read,
+edit).
+
+1. "Start a note with a packing list for a weekend away."
+2. "Add sunscreen to it."
+
+- [ ] One note, titled from its first line, in the notes folder and on the
+      phone after its next sync; not a draft and not a memory.
+- [ ] The second message changes that note rather than writing another.
+
 ### money-01: what did I spend
 
 Surface: drawer. Covers `mail_search` over receipts, `artifact`.
@@ -559,6 +571,7 @@ Surface: drawer, the Ideas and Goals tabs, the command line. Covers `idea`,
 | schedule | remind-01, schedule-02, files-01 |
 | goal | goal-01 |
 | reminder | reminder-01 |
+| note | note-01 |
 | todo | shopping-01, travel-01 |
 | ask_user | computer-01 |
 | agent_profile | ideas-01 |

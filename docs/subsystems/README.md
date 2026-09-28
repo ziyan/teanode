@@ -25,6 +25,7 @@ change with it.
 | `mcp.md` | The Model Context Protocol both ways: servers the agent connects to, and harnesses that use its tools |
 | `contacts.md` | The address book, CardDAV, and what a phone may do to a card |
 | `calendar.md` | The calendar, CalDAV, free-busy, and invitations by mail |
+| `notes.md` | Notes from a phone's Notes app, kept in the mailbox over IMAP |
 
 Two conventions hold throughout. *Rules* are the mailbox's rules and nothing
 else. The words for the agent's own text are fixed in `AGENTS.md`: the

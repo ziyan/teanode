@@ -824,6 +824,16 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 	listBackfill.Start()
 	self.onClose(listBackfill.Stop)
 
+	// The notes a phone kept here before this server read them as notes.
+	// Once, at start, rather than on a timer: everything stored from now on
+	// is recognized as it arrives, so after one pass there is nothing left.
+	scavengeGroup.Add(1)
+	go func() {
+		defer deferutil.Recover()
+		defer scavengeGroup.Done()
+		backfillAllNotes(scavengeContext, self.database, self.storage)
+	}()
+
 	// The logos sending domains publish for their mail. Fetched here, once
 	// per domain per day, so that showing one does not tell the sender which
 	// address opened which message at what moment.

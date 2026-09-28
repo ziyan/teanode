@@ -52,6 +52,7 @@ import { Key, useTranslation } from '../i18n/i18n'
 import { folderLabel, folderOfKind, folderRows, useMailboxes } from '../mailboxes'
 import { hasAnywhere, useSession } from '../session'
 import { InvitationCard } from '../components/invitationCard'
+import { NotesView, isNotesFolder } from '../components/notes'
 import { ProposalCards } from '../components/proposalCard'
 import { MessageContent } from './mailDetail'
 import { MailboxComposer } from './mailboxCompose'
@@ -398,6 +399,9 @@ function FollowRail({ view, folder, itemId }: { view: MailboxView; folder: Mailb
       mailboxes.setCurrentId(mailboxId)
     }
   }, [mailboxes, mailboxId])
+  if (isNotesFolder(folder)) {
+    return <NotesView key={folder.id} folder={folder} noteId={itemId} />
+  }
   return <Folder key={folder.id} folder={folder} folders={view.folders} itemId={itemId} />
 }
 

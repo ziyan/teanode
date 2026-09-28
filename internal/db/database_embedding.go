@@ -79,6 +79,8 @@ func (self *transaction) ListMailWithoutEmbedding(mailboxId, model string, limit
 	if limit <= 0 {
 		limit = 200
 	}
+	// A phone's notes are kept in the mailbox; they are not mail to be found
+	// by meaning among the rest of it.
 	var ids []string
 	err := self.tx.Raw(`SELECT DISTINCT ON ("mail"."received_at", "mail"."id") "mail"."id"
 		FROM "mailbox_item"
@@ -86,6 +88,7 @@ func (self *transaction) ListMailWithoutEmbedding(mailboxId, model string, limit
 		JOIN "mail" ON "mail"."id" = "mailbox_item"."mail_id"
 		LEFT JOIN "mail_embedding" ON "mail_embedding"."mail_id" = "mail"."id" AND "mail_embedding"."mailbox_id" = "mailbox_folder"."mailbox_id" AND "mail_embedding"."model" = ?
 		WHERE "mailbox_folder"."mailbox_id" = ? AND "mail_embedding"."mail_id" IS NULL AND "mailbox_folder"."kind" NOT IN ('trash', 'junk')
+		  AND "mail"."kind" <> 'note'
 		ORDER BY "mail"."received_at" DESC, "mail"."id" DESC
 		LIMIT ?`, model, mailboxId, limit).Scan(&ids).Error
 	return ids, err

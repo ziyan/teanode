@@ -27,8 +27,9 @@ type MailboxOperation interface {
 	UpdateMailbox(mailboxId string, modify func(*models.Mailbox) error) (*models.Mailbox, error)
 	DeleteMailbox(mailboxId string) error
 
-	// ListFolders is the folder tree of a mailbox, with its counts.
-	ListFolders(mailboxId string) ([]*models.MailboxFolder, error)
+	// ListFolders is the folder tree of a mailbox, with its counts. Options
+	// may be nil, which counts every item.
+	ListFolders(mailboxId string, options *FolderOptions) ([]*models.MailboxFolder, error)
 	GetFolder(folderId string) (*models.MailboxFolder, error)
 	GetFolderByKind(mailboxId string, kind models.MailboxFolderKind) (*models.MailboxFolder, error)
 	CreateFolder(folder *models.MailboxFolder) (*models.MailboxFolder, error)
@@ -86,6 +87,12 @@ type MailboxOperation interface {
 	// from the message itself.
 	FindItemByMessageID(folderId, messageId string) (*models.MailboxItem, error)
 
+	// ListNoteItems is every item of a mailbox holding a note, or holding
+	// the note with this identifier when one is given, flagged deleted or
+	// not, newest item first, each with its message. Items in the trash
+	// and junk are left out.
+	ListNoteItems(mailboxId, noteIdentifier string) ([]*models.MailboxItem, error)
+
 	// ListExpunged is what vanished from a folder since a modseq.
 	ListExpunged(folderId string, sinceModSeq uint64) ([]*models.MailboxFolderExpunge, error)
 
@@ -117,6 +124,21 @@ type MailboxOperation interface {
 	CreateAppPassword(appPassword *models.MailboxAppPassword) (*models.MailboxAppPassword, error)
 	TouchAppPassword(appPasswordId string, at time.Time) error
 	DeleteAppPassword(appPasswordId string) error
+}
+
+// FolderOptions says what a folder's counts count.
+type FolderOptions struct {
+	// ShouldExcludeDeleted leaves out items flagged with IMAP's \Deleted.
+	// The dashboard shows a folder without them, since they are on their way
+	// out; IMAP has to count them, because a client that flagged one still
+	// sees it until it expunges.
+	ShouldExcludeDeleted bool
+
+	// ShouldCountNotes counts the items of each folder that hold a phone's
+	// note, so the dashboard can show a folder of notes as notes. Only the
+	// dashboard asks: it costs a join with every message, and IMAP has no
+	// use for the answer.
+	ShouldCountNotes bool
 }
 
 // ItemOptions narrows a listing of items.
@@ -151,6 +173,11 @@ type ItemOptions struct {
 	// has to leave out the same mail or the two disagree about what a list
 	// has sent.
 	ExcludeKinds []models.MailboxFolderKind
+
+	// ExcludeMailKinds leaves out messages of these kinds: a search over a
+	// whole mailbox is a search of its mail, and a phone's notes are kept
+	// in the mailbox without being any.
+	ExcludeMailKinds []models.MailKind
 
 	// ListKey lists the mail of one mailing list, the way ThreadID lists the
 	// mail of one conversation.
@@ -620,23 +647,31 @@ func (self *transaction) DeleteMailbox(mailboxId string) error {
 
 // Folders.
 
-func (self *transaction) ListFolders(mailboxId string) ([]*models.MailboxFolder, error) {
+func (self *transaction) ListFolders(mailboxId string, options *FolderOptions) ([]*models.MailboxFolder, error) {
 	var rows []mailboxFolderModel
 	if err := self.tx.Where("\"mailbox_id\" = ?", mailboxId).Order("\"created_at\" ASC, \"id\" ASC").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	type count struct {
-		FolderID string
-		Unread   int64
-		Total    int64
+		FolderID  string
+		Unread    int64
+		Total     int64
+		NoteCount int64
 	}
 	var counts []count
-	if err := self.tx.Table("\"mailbox_item\" AS i").
-		Select("i.\"folder_id\" AS folder_id, COUNT(*) FILTER (WHERE NOT i.\"seen\") AS unread, COUNT(*) AS total").
+	selected := "i.\"folder_id\" AS folder_id, COUNT(*) FILTER (WHERE NOT i.\"seen\") AS unread, COUNT(*) AS total"
+	query := self.tx.Table("\"mailbox_item\" AS i").
 		Joins("INNER JOIN \"mailbox_folder\" AS f ON f.\"id\" = i.\"folder_id\"").
-		Where("f.\"mailbox_id\" = ?", mailboxId).
-		Group("i.\"folder_id\"").
-		Scan(&counts).Error; err != nil {
+		Where("f.\"mailbox_id\" = ?", mailboxId)
+	if options != nil && options.ShouldCountNotes {
+		selected += ", COUNT(*) FILTER (WHERE m.\"kind\" = 'note') AS note_count"
+		query = query.Joins("INNER JOIN \"mail\" AS m ON m.\"id\" = i.\"mail_id\"")
+	}
+	query = query.Select(selected)
+	if options != nil && options.ShouldExcludeDeleted {
+		query = query.Where("NOT i.\"deleted\"")
+	}
+	if err := query.Group("i.\"folder_id\"").Scan(&counts).Error; err != nil {
 		return nil, err
 	}
 	byFolder := map[string]count{}
@@ -648,6 +683,7 @@ func (self *transaction) ListFolders(mailboxId string) ([]*models.MailboxFolder,
 		folder := folderFromModel(&rows[index])
 		folder.Unread = byFolder[folder.ID].Unread
 		folder.Total = byFolder[folder.ID].Total
+		folder.NoteCount = byFolder[folder.ID].NoteCount
 		folders = append(folders, folder)
 	}
 	return folders, nil
@@ -1014,6 +1050,13 @@ func (self *transaction) itemQuery(folderId string, options *ItemOptions) *gorm.
 		if options.ListKey != "" {
 			query = query.Where("\"mail\".\"list_key\" = ?", options.ListKey)
 		}
+		if len(options.ExcludeMailKinds) > 0 {
+			kinds := make([]string, 0, len(options.ExcludeMailKinds))
+			for _, kind := range options.ExcludeMailKinds {
+				kinds = append(kinds, kind.String())
+			}
+			query = query.Where("\"mail\".\"kind\" NOT IN ?", kinds)
+		}
 		if options.From != "" {
 			query = query.Where("(\"mail\".\"from\" ILIKE ? OR \"mail\".\"sender\" ILIKE ?)", contains(options.From), contains(options.From))
 		}
@@ -1056,7 +1099,7 @@ func needsMailJoin(options *ItemOptions) bool {
 	}
 	return options.Search != "" || options.ThreadID != "" || options.ListKey != "" || options.From != "" ||
 		options.To != "" || options.Subject != "" || !options.Since.IsZero() || !options.Before.IsZero() ||
-		options.HasAttachment != nil
+		options.HasAttachment != nil || len(options.ExcludeMailKinds) > 0
 }
 
 // itemOrder is how a list of items is sorted: within a folder by UID, which is
@@ -1504,6 +1547,9 @@ func (self *transaction) threadCounts(folderId string, options *ItemOptions, thr
 	scope := &ItemOptions{}
 	if options != nil {
 		scope.MailboxID = options.MailboxID
+		// Not a filter but what the list shows at all: items on their way
+		// out are no part of the conversation for a reader who hides them.
+		scope.Deleted = options.Deleted
 	}
 	query := self.threadQuery(folderId, scope).
 		Where("\"mail\".\"thread_id\" IN ?", threadIds).
@@ -1751,6 +1797,48 @@ func (self *transaction) FindItemByMessageID(folderId, messageId string) (*model
 		return nil, nil
 	}
 	return itemFromModel(&rows[0]), nil
+}
+
+// ListNoteItems reads every version of the notes at once, the old ones a
+// phone flagged deleted too, because which version is the note is the
+// caller's question: the newest not flagged.
+//
+// Newest by when the item was filed here, not by the message's own date: a
+// client appending a note says what that date is, and a phone whose clock is
+// behind would otherwise write a version that is never the note. A copy in
+// the trash or junk is not a note of the person's any more, and is left out.
+func (self *transaction) ListNoteItems(mailboxId, noteIdentifier string) ([]*models.MailboxItem, error) {
+	if mailboxId == "" {
+		return nil, nil
+	}
+	query := self.tx.Model(&mailboxItemModel{}).
+		Joins("INNER JOIN \"mailbox_folder\" ON \"mailbox_folder\".\"id\" = \"mailbox_item\".\"folder_id\"").
+		Joins("INNER JOIN \"mail\" ON \"mail\".\"id\" = \"mailbox_item\".\"mail_id\"").
+		Where("\"mailbox_folder\".\"mailbox_id\" = ? AND \"mail\".\"kind\" = ?", mailboxId, models.MailKindNote.String()).
+		Where("\"mailbox_folder\".\"kind\" NOT IN ?", []string{string(models.MailboxFolderKindTrash), string(models.MailboxFolderKindJunk)})
+	if noteIdentifier != "" {
+		query = query.Where("\"mail\".\"note_identifier\" = ?", noteIdentifier)
+	}
+	var rows []mailboxItemModel
+	if err := query.Select("\"mailbox_item\".*").
+		Order("\"mailbox_item\".\"added_at\" DESC, \"mailbox_item\".\"id\" DESC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	items := make([]*models.MailboxItem, 0, len(rows))
+	mailIds := make([]string, 0, len(rows))
+	for index := range rows {
+		items = append(items, itemFromModel(&rows[index]))
+		mailIds = append(mailIds, rows[index].MailID)
+	}
+	mails, err := self.GetMails(mailIds, nil)
+	if err != nil {
+		return nil, err
+	}
+	for index, item := range items {
+		item.Mail = mails[index]
+	}
+	return items, nil
 }
 
 func (self *transaction) ListItemsByMail(mailId string) ([]*models.MailboxItem, error) {

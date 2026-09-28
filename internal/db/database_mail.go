@@ -73,6 +73,18 @@ type MailOperation interface {
 	// SetMailList records what a message said about its list, and that it was
 	// asked. An empty key is an answer: most mail belongs to no list.
 	SetMailList(mailId string, info mailparse.ListInfo) error
+
+	// ListMailNeedingNote is mail stored before this server looked for notes
+	// that could be one: a copy of something written by the account's owner,
+	// in a folder the owner made. The caller reads its headers and hands back
+	// what they said. In order of id, after afterMailId, so a caller walking
+	// through them passes the last id of one page to get the next.
+	ListMailNeedingNote(afterMailId string, limit int) ([]string, error)
+
+	// SetMailNote records a message's note identifier, and that it was
+	// looked for. A non-empty identifier makes the message a note; an empty
+	// one is an answer too, since most such messages are not notes.
+	SetMailNote(mailId, noteIdentifier string) error
 }
 
 type mailModel struct {
@@ -131,6 +143,10 @@ type mailModel struct {
 	ListOneClick    bool   `gorm:"column:list_one_click"`
 	ListStripped    bool   `gorm:"column:list_stripped"`
 	ListChecked     bool   `gorm:"column:list_checked"`
+
+	// NoteIdentifier is a note's identifier, empty for a message that is not
+	// a note, and null for one stored before this server looked for notes.
+	NoteIdentifier *string `gorm:"column:note_identifier;size:64"`
 }
 
 func (self *mailModel) TableName() string {
@@ -167,6 +183,9 @@ func getMailFromMailModel(model mailModel) *models.Mail {
 		ReceivedAt:      model.ReceivedAt,
 		Kind:            models.GetMailKind(model.Kind),
 		ThreadID:        model.ThreadID,
+	}
+	if model.NoteIdentifier != nil {
+		mail.NoteIdentifier = *model.NoteIdentifier
 	}
 	if model.DomainID != nil {
 		mail.DomainID = *model.DomainID
@@ -325,6 +344,14 @@ func updateMailModelFromMail(model *mailModel, mail *models.Mail) bool {
 		model.Kind = mail.Kind.String()
 		dirty = true
 	}
+	// Only ever set, never cleared by a modification: an old row's null means
+	// nobody has looked yet, and a change to something else about the
+	// message is not a look.
+	if mail.NoteIdentifier != "" && (model.NoteIdentifier == nil || *model.NoteIdentifier != mail.NoteIdentifier) {
+		noteIdentifier := mail.NoteIdentifier
+		model.NoteIdentifier = &noteIdentifier
+		dirty = true
+	}
 
 	// initialize
 	if model.Status == "" {
@@ -460,6 +487,11 @@ func (self *transaction) CreateMails(mails []*models.Mail, options *Options) ([]
 			ModifiedAt: now,
 		}
 		updateMailModelFromMail(&newModel, mail)
+		// A message stored now has been looked at, note or not: the pass
+		// over older ones reads only those that are null.
+		if newModel.NoteIdentifier == nil {
+			newModel.NoteIdentifier = new("")
+		}
 		if err := self.tx.Create(&newModel).Error; err != nil {
 			return nil, err
 		}
@@ -630,6 +662,37 @@ func (self *transaction) SetMailList(mailId string, info mailparse.ListInfo) err
 		"list_stripped":    info.Stripped,
 		"list_checked":     true,
 	}).Error
+}
+
+// ListMailNeedingNote is restricted to what a phone could have written as a
+// note, which is the only mail worth reading back out of storage: kept as
+// outgoing when it was appended, and in a folder of the custom kind, since a
+// phone puts its notes in a folder of their own.
+//
+// Paged by id rather than read from the start each time: the messages that
+// are not candidates stay null, and a page that began at the start again
+// would step over every one of them on every page.
+func (self *transaction) ListMailNeedingNote(afterMailId string, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var ids []string
+	err := self.tx.Model(&mailModel{}).
+		Where("\"note_identifier\" IS NULL AND \"id\" > ? AND \"kind\" = ?", afterMailId, models.MailKindOutgoing.String()).
+		Where("EXISTS (SELECT 1 FROM \"mailbox_item\" INNER JOIN \"mailbox_folder\" ON \"mailbox_folder\".\"id\" = \"mailbox_item\".\"folder_id\" "+
+			"WHERE \"mailbox_item\".\"mail_id\" = \"mail\".\"id\" AND \"mailbox_folder\".\"kind\" = ?)", string(models.MailboxFolderKindCustom)).
+		Order("\"id\" ASC").
+		Limit(limit).
+		Pluck("\"id\"", &ids).Error
+	return ids, err
+}
+
+func (self *transaction) SetMailNote(mailId, noteIdentifier string) error {
+	updates := map[string]any{"note_identifier": noteIdentifier}
+	if noteIdentifier != "" {
+		updates["kind"] = models.MailKindNote.String()
+	}
+	return self.tx.Model(&mailModel{}).Where("\"id\" = ?", mailId).Updates(updates).Error
 }
 
 func (self *database) MailExists(mailId string) (bool, error) {

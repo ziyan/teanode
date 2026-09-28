@@ -718,6 +718,9 @@ export interface MailboxFolder {
   pinnedAt?: string
   unread: number
   total: number
+  // How many of the items are a phone's notes: a folder holding nothing
+  // else is shown as notes.
+  noteCount?: number
 }
 
 // MailboxView is a mailbox with its folder tree, as ListMailboxes returns it.

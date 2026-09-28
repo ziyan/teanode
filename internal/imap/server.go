@@ -390,7 +390,7 @@ type named struct {
 
 // folders is the tree as names, from the database.
 func (self *session) folders(tx db.Transaction) ([]*named, error) {
-	folders, err := tx.ListFolders(self.mailbox.ID)
+	folders, err := tx.ListFolders(self.mailbox.ID, nil)
 	if err != nil {
 		return nil, err
 	}

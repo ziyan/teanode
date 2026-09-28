@@ -372,9 +372,12 @@ func (self *transaction) ListMailWithoutInsight(mailboxId string, limit int) ([]
 		limit = 200
 	}
 	var ids []string
+	// A phone's notes are kept in the mailbox and are not mail to be sorted.
 	err := self.tx.Raw(`SELECT "mailbox_item"."mail_id" FROM "mailbox_item"
 		JOIN "mailbox_folder" ON "mailbox_folder"."id" = "mailbox_item"."folder_id"
+		JOIN "mail" ON "mail"."id" = "mailbox_item"."mail_id"
 		WHERE "mailbox_folder"."mailbox_id" = ? AND "mailbox_folder"."kind" NOT IN ('junk', 'trash', 'drafts', 'sent') AND "mailbox_item"."deleted" = false
+		  AND "mail"."kind" <> 'note'
 		  AND NOT EXISTS (SELECT 1 FROM "mail_insight" WHERE "mail_insight"."mail_id" = "mailbox_item"."mail_id" AND "mail_insight"."mailbox_id" = ?)
 		ORDER BY "mailbox_item"."added_at" DESC LIMIT ?`, mailboxId, mailboxId, limit).Scan(&ids).Error
 	if ids == nil {

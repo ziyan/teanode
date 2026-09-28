@@ -11316,3 +11316,169 @@ button.idea-history-title {
     width: auto;
   }
 }
+
+/* The notes folder: the list of notes beside the one being edited, drawn in
+   the mailbox's frame so the page keeps its height and its container. */
+.notes {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.notes-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+
+.notes-list-head {
+  display: flex;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.notes-list .settings-empty {
+  margin: var(--space-3);
+}
+
+.notes-rows {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.notes-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  color: inherit;
+  text-decoration: none;
+}
+
+.notes-row:hover {
+  background: var(--field);
+}
+
+.notes-row.active {
+  background: var(--sidebar-hover);
+}
+
+.notes-row-title,
+.notes-row-preview {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.notes-row-title {
+  font-weight: 600;
+}
+
+.notes-row-when {
+  color: var(--muted);
+  font-size: var(--text-label);
+  white-space: nowrap;
+}
+
+.notes-row-preview {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.notes-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-3) var(--space-4);
+  overflow-y: auto;
+}
+
+.notes-pane-placeholder {
+  margin: auto;
+}
+
+.notes-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+}
+
+.notes-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.notes-editor-when {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--text-label);
+}
+
+.notes-editor-uneditable {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-label);
+}
+
+.notes-editor .richtext {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+}
+
+.notes-editor .richtext-editor {
+  flex: 1 1 auto;
+}
+
+/* The back button is a step only when the note has taken the list's place. */
+.notes-back {
+  display: none;
+}
+
+/* One pane at a time on a phone: the list, or the note with a way back. */
+@container mailbox (max-width: 600px) {
+  .notes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .notes-list {
+    border-right: 0;
+  }
+
+  .notes.reading .notes-list,
+  .notes:not(.reading) .notes-pane {
+    display: none;
+  }
+
+  .notes-back {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 600px) {
+  .notes {
+    margin-left: calc(var(--space-3) * -1);
+    margin-right: calc(var(--space-3) * -1);
+    border: none;
+    border-radius: 0;
+  }
+
+  .notes-pane {
+    padding: var(--space-3) var(--space-2);
+  }
+}

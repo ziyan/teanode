@@ -32,6 +32,7 @@ import (
 	_ "github.com/ziyan/teanode/internal/agent/tools/mailsend"
 	_ "github.com/ziyan/teanode/internal/agent/tools/memory"
 	_ "github.com/ziyan/teanode/internal/agent/tools/memorycheck"
+	_ "github.com/ziyan/teanode/internal/agent/tools/note"
 	_ "github.com/ziyan/teanode/internal/agent/tools/people"
 	_ "github.com/ziyan/teanode/internal/agent/tools/reminder"
 	_ "github.com/ziyan/teanode/internal/agent/tools/replyqueue"
