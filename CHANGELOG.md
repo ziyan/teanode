@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.74.4] - 2026-09-28
+
+### Changed
+
+- The agent no longer asks before reading from a connected service: calls are asked about only when they act for you, move money, place or cancel an order, or delete something. (#208)
+- Programs using your agent's tools over MCP now see each tool's read-only and destructive annotations. (#208)
+
 ## [0.74.3] - 2026-09-28
 
 ### Changed
