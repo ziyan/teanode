@@ -265,6 +265,11 @@ func (self *graph) ListCalendars(ctx context.Context) ([]*CalendarView, error) {
 		if _, err := tx.EnsureCalendar(principal.User.ID, models.CalendarEvents, &models.Calendar{Timezone: self.zoneFor(principal)}); err != nil {
 			return err
 		}
+		// And the reminders list beside it, so that the switch that gives
+		// it to the agent is there before anything has been put in it.
+		if _, err := tx.EnsureCalendar(principal.User.ID, models.CalendarReminders, &models.Calendar{Timezone: self.zoneFor(principal)}); err != nil {
+			return err
+		}
 		found, err := tx.ListCalendars(principal.User.ID)
 		calendars = found
 		return err

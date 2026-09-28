@@ -32,6 +32,7 @@ import (
 	_ "github.com/ziyan/teanode/internal/agent/tools/memory"
 	_ "github.com/ziyan/teanode/internal/agent/tools/memorycheck"
 	_ "github.com/ziyan/teanode/internal/agent/tools/people"
+	_ "github.com/ziyan/teanode/internal/agent/tools/reminder"
 	_ "github.com/ziyan/teanode/internal/agent/tools/replyqueue"
 	_ "github.com/ziyan/teanode/internal/agent/tools/rule"
 	_ "github.com/ziyan/teanode/internal/agent/tools/schedule"

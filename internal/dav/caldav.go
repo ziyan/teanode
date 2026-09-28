@@ -13,6 +13,7 @@ import (
 	"github.com/emersion/go-webdav/caldav"
 
 	"github.com/ziyan/teanode/internal/calendar"
+	"github.com/ziyan/teanode/internal/calendar/commands"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -128,16 +129,7 @@ func storedAs(found *models.Calendar, objectId string, written []byte) (*models.
 			}
 			return nil, nil, refused(err)
 		}
-		status := "NEEDS-ACTION"
-		if reminder.IsDone {
-			status = "COMPLETED"
-		}
-		return &models.CalendarObject{
-			ID: objectId, CalendarID: found.ID, UID: reminder.UID,
-			ETag: calendar.ETag(reminder.Data), Data: string(reminder.Data),
-			Summary: reminder.Title, StartsAt: reminder.DueAt, EndsAt: reminder.DueAt,
-			AllDay: reminder.IsDueDate, Status: status,
-		}, nil, nil
+		return commands.ReminderObject(found.ID, objectId, reminder), nil, nil
 	}
 	parsed, err := calendar.Parse(written)
 	if err != nil {

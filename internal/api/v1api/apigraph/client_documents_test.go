@@ -84,6 +84,10 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		// The agent's own documents, which the command line sends for the
 		// same things the drawer and the dashboard do.
 		"ListAgentConversations":  client.DocumentListAgentConversations,
+		"ListReminders":           client.DocumentListReminders,
+		"SaveReminder":            client.DocumentSaveReminder,
+		"SetReminderDone":         client.DocumentSetReminderDone,
+		"DeleteReminder":          client.DocumentDeleteReminder,
 		"UpdateAgentConversation": client.DocumentUpdateAgentConversation,
 		"ListAgentRuns":           client.DocumentListAgentRuns,
 		"ListAllAgentRuns":        client.DocumentListAllAgentRuns,
