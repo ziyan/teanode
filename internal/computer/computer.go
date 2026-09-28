@@ -211,8 +211,9 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 	// it ends, before their endings could be told, and the agent, told it
 	// would be woken, would never hear.
 	if options.Background != nil {
-		hello.Features = []string{FeatureBackground}
+		hello.Features = append(hello.Features, FeatureBackground)
 	}
+	hello.Features = append(hello.Features, FeatureAuthorizationForward)
 	// Closed when the shell the person attached ends. Leaving the shell is
 	// how they detach, so this program ends with it rather than sitting on
 	// a dead pty until they find the key that kills it.
@@ -449,6 +450,12 @@ func handle(ctx context.Context, options *Options, action string, args json.RawM
 			return nil, fmt.Errorf("the request is not readable: %w", err)
 		}
 		result, err = RunHTTP(ctx, &arguments)
+	case "authorization_forward":
+		var arguments AuthorizationForwardArguments
+		if err := json.Unmarshal(args, &arguments); err != nil {
+			return nil, fmt.Errorf("the request is not readable: %w", err)
+		}
+		result, err = RunAuthorizationForward(&arguments)
 	case "filesystem":
 		var arguments FilesystemArguments
 		if err := json.Unmarshal(args, &arguments); err != nil {

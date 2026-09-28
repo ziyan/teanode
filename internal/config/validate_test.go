@@ -89,3 +89,33 @@ tls:
   acme:
     enabled: false
 `
+
+// An authorization may come back to the person's computer only for a server
+// connected by OAuth, and only as one of the two places there are.
+func TestAnOAuthRedirectIsTheServerOrTheComputer(t *testing.T) {
+	t.Parallel()
+
+	withServer := func(server AgentMCPServer) *Configuration {
+		configuration := validConfiguration()
+		configuration.Agent.MCP.Servers = []AgentMCPServer{server}
+		return configuration
+	}
+	for _, redirect := range []string{"", AgentMCPOAuthRedirectServer, AgentMCPOAuthRedirectComputer} {
+		server := AgentMCPServer{Name: "tracker", URL: "https://mcp.example.com/tracker", Auth: AgentMCPAuthOAuth, OAuth: AgentMCPOAuth{Redirect: redirect}}
+		if err := withServer(server).Validate(); err != nil {
+			t.Errorf("redirect %q should be valid, got: %s", redirect, err)
+		}
+	}
+	refused := []AgentMCPServer{
+		{Name: "tracker", URL: "https://mcp.example.com/tracker", Auth: AgentMCPAuthOAuth, OAuth: AgentMCPOAuth{Redirect: "browser"}},
+		{Name: "tracker", URL: "https://mcp.example.com/tracker", Auth: AgentMCPAuthUser, OAuth: AgentMCPOAuth{Redirect: AgentMCPOAuthRedirectComputer}},
+	}
+	for _, server := range refused {
+		if err := withServer(server).Validate(); err == nil {
+			t.Errorf("auth %q with redirect %q should be refused", server.Auth, server.OAuth.Redirect)
+		}
+	}
+	if (&AgentMCPOAuth{}).ResolvedRedirect() != AgentMCPOAuthRedirectServer {
+		t.Error("an unset redirect should come back to the server")
+	}
+}

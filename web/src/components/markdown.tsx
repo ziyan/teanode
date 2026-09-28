@@ -125,10 +125,12 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
     } else if (codeSpan !== undefined) {
       nodes.push(<code key={key}>{codeSpan}</code>)
     } else if (bold !== undefined) {
-      nodes.push(<strong key={key}>{bold}</strong>)
+      // What is inside is read the same way: a link or code in bold is a
+      // link or code, not its brackets.
+      nodes.push(<strong key={key}>{inline(bold, key)}</strong>)
     } else if (italic !== undefined) {
       if (beforeItalic) nodes.push(beforeItalic)
-      nodes.push(<em key={key}>{italic}</em>)
+      nodes.push(<em key={key}>{inline(italic, key)}</em>)
     } else {
       // Only http and https. A link in a release note is a link somebody
       // else wrote, and javascript: is a scheme nothing here should follow.

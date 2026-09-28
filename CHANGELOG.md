@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.73.0] - 2026-09-28
+
+### Added
+
+- A connected server whose service only sends an authorization to a loopback address can now be connected from the dashboard: set its authorization to come back to the attached computer, and finish it in a browser on that computer. (#205)
+
+### Fixed
+
+- Saving connected servers no longer resets another server that runs on the person's computer back to running on the server. (#205)
+
 ## [0.72.2] - 2026-09-27
 
 ### Changed

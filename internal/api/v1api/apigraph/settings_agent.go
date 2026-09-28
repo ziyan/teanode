@@ -251,6 +251,7 @@ type AgentMCPServerSettings struct {
 	OAuthScopes           []string `json:"oauthScopes"`
 	OAuthAuthorizationURL string   `json:"oauthAuthorizationUrl"`
 	OAuthTokenURL         string   `json:"oauthTokenUrl"`
+	OAuthRedirect         string   `json:"oauthRedirect"`
 	Headless              bool     `json:"headless"`
 	Location              string   `json:"location"`
 	ReadOnly              []string `json:"readOnly"`
@@ -397,6 +398,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			OAuthScopes:           nonNil(server.OAuth.Scopes),
 			OAuthAuthorizationURL: server.OAuth.AuthorizationURL,
 			OAuthTokenURL:         server.OAuth.TokenURL,
+			OAuthRedirect:         server.OAuth.ResolvedRedirect(),
 			Headless:              server.Headless,
 			Location:              server.ResolvedLocation(),
 			ReadOnly:              nonNil(server.ReadOnly),
@@ -589,6 +591,9 @@ type AgentMCPServerParameters struct {
 	OAuthScopes           []string `json:"oauthScopes" graphapi:"nullable"`
 	OAuthAuthorizationURL string   `json:"oauthAuthorizationUrl" graphapi:"nullable"`
 	OAuthTokenURL         string   `json:"oauthTokenUrl" graphapi:"nullable"`
+	// OAuthRedirect is where the authorization comes back to: server or
+	// computer.
+	OAuthRedirect string `json:"oauthRedirect" graphapi:"nullable"`
 
 	Headless bool     `json:"headless"`
 	Location string   `json:"location"`
@@ -838,6 +843,7 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 					Scopes:           trimmed(given.OAuthScopes),
 					AuthorizationURL: strings.TrimSpace(given.OAuthAuthorizationURL),
 					TokenURL:         strings.TrimSpace(given.OAuthTokenURL),
+					Redirect:         strings.TrimSpace(given.OAuthRedirect),
 				},
 				Headless: given.Headless,
 				Location: given.Location,

@@ -92,3 +92,9 @@ background on the person's computer rather than being killed, the program
 there holds it and is the only record of it, and when it ends the
 conversation that started it takes a turn to hear how. It also says why that
 turn is the person's rather than one with nobody present, and what bounds it.
+
+`20260927-an-authorization-can-come-back-to-the-persons-computer.md` says
+how a connected server whose authorization is sent only to a loopback address
+is connected from the dashboard: the person's attached computer listens there
+and sends the browser on to the dashboard, which finishes it. It also says why
+the person then has to finish it on that computer.
