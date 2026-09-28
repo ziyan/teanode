@@ -17,7 +17,7 @@ To see it working: on a phone, add the server as a CalDAV account (Settings, Cal
 - [x] (2026-09-28) Mapped calendars, CalDAV, the calendar tool, the CLI and the dashboard; wrote this plan.
 - [x] (2026-09-28) Milestone 1: a reminders list per person, stored as a calendar of kind `reminders`, served over CalDAV as a collection of to-dos, with iOS-shaped requests tested.
 - [x] (2026-09-28) Milestone 2: GraphQL operations, the `reminder` tool and `teanode reminder`, one set of documents shared by the CLI and the tool.
-- [ ] Milestone 3: reminders on the dashboard's calendar page.
+- [x] (2026-09-28) Milestone 3: reminders on the dashboard's calendar page.
 - [ ] Milestone 4: docs, the end-to-end task, deploy, and a check with a phone.
 
 ## Surprises & Discoveries

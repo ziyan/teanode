@@ -10858,3 +10858,93 @@ main.content:has(> .knowledge-frame) {
   font-size: var(--text-label);
   overflow-wrap: anywhere;
 }
+
+/* The reminders list beside the calendar: a field to add one, then each a
+   row with the box that ticks it off. */
+.reminders {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 720px;
+}
+
+.reminders-add {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.reminders-add input[type='text'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.reminder-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.reminder-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.reminder-row input[type='checkbox'] {
+  flex: none;
+  margin-top: 2px;
+}
+
+.reminder-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.reminder-title {
+  overflow-wrap: anywhere;
+}
+
+.reminder-row.done .reminder-title {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.reminder-due {
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.reminder-due.overdue {
+  color: var(--bad);
+}
+
+.reminder-notes {
+  font-size: var(--text-label);
+  overflow-wrap: anywhere;
+}
+
+.reminders-done-toggle {
+  justify-self: start;
+}
+
+@media (max-width: 600px) {
+  .reminders-add {
+    flex-wrap: wrap;
+  }
+
+  .reminders-add input[type='text'] {
+    flex-basis: 100%;
+  }
+}
