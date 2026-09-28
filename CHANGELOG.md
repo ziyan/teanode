@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.78.2] - 2026-09-28
+
+### Fixed
+
+- A reminder's tick box lines up with its title. (#223)
+
 ## [0.78.1] - 2026-09-28
 
 ### Changed
