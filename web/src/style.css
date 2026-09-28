@@ -10966,3 +10966,74 @@ main.content:has(> .knowledge-frame) {
 .idea-suggestions-title {
   margin-bottom: var(--space-3);
 }
+
+/* Goals: what the agent keeps working on, each a row the person ticks when
+   it is done, and the areas a new one can be about. */
+.goal-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.goal-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.goal-check {
+  flex: none;
+  margin-top: 3px;
+}
+
+.goal-mark {
+  flex: none;
+  width: 18px;
+  text-align: center;
+}
+
+.goal-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.goal-title {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .goal-title:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+.goal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  font-size: var(--text-label);
+}
+
+.goal-areas {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+.goal-area {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: flex-start;
+}

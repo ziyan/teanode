@@ -24,6 +24,7 @@ import {
 import { PencilIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tabs, TabItem } from '../components/tabs'
+import { GoalsTab } from './agentGoals'
 import { IdeasTab } from './agentIdeas'
 import { MemoryCheckSection } from '../components/memoryCheck'
 import { Tooltip } from '../components/tooltip'
@@ -187,6 +188,7 @@ function messageOf(caught: unknown): string {
 const AGENT_TABS: TabItem[] = [
   { id: 'overview', label: 'agent.tabOverview' },
   { id: 'ideas', label: 'agent.tabIdeas' },
+  { id: 'goals', label: 'agent.tabGoals' },
   { id: 'mail', label: 'agent.tabMail' },
   { id: 'sources', label: 'agent.tabSources' },
   { id: 'memory', label: 'agent.tabMemory' },
@@ -421,6 +423,7 @@ export function AgentPage() {
         </>
       ) : null}
       {tab === 'ideas' ? <IdeasTab /> : null}
+      {tab === 'goals' ? <GoalsTab /> : null}
       {tab === 'connections' ? (
         <>
           <ServersCard />
