@@ -593,9 +593,9 @@ func runCalendarCalendars(ctx context.Context, command *cli.Command) error {
 	for _, found := range calendars {
 		// The count is of what the calendar keeps, which in the reminders
 		// list is reminders.
-		held := fmt.Sprintf("%d events", found.Events)
+		held := plural(found.Events, "event", "events")
 		if found.CalendarKind == string(models.CalendarReminders) {
-			held = fmt.Sprintf("%d reminders", found.Events)
+			held = plural(found.Events, "reminder", "reminders")
 		}
 		rows = append(rows, []string{
 			found.Name, found.Timezone, found.WeekStart, found.Colour, held, found.ID,
