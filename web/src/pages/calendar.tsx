@@ -23,7 +23,7 @@ import { useTranslation } from '../i18n/i18n'
 // per time something happens, so a weekly meeting arrives once for each week
 // in view and this page never has to know what a repeat rule means.
 
-const CALENDARS = `query { ListCalendars { id name description colour timezone weekStart events } }`
+const CALENDARS = `query { ListCalendars { id name description colour timezone weekStart events calendarKind } }`
 
 const EVENTS = `
   query ($calendarId: String!, $from: String!, $until: String!) {
@@ -48,6 +48,7 @@ type Calendar = {
   timezone?: string
   weekStart?: string
   events: number
+  calendarKind: 'events' | 'reminders'
 }
 
 type Attendee = { address: string; name?: string; participation?: string; role?: string }
@@ -336,7 +337,8 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   }
 
   const calendars = useQuery(() => graphql<{ ListCalendars: Calendar[] }>(CALENDARS), [], { refresh: false })
-  const calendar = calendars.data?.ListCalendars?.[0] ?? null
+  // The events calendar; the reminders list beside it is drawn on its own.
+  const calendar = calendars.data?.ListCalendars?.find((found) => found.calendarKind !== 'reminders') ?? null
   const calendarId = calendar?.id ?? ''
   // Sunday unless this calendar says Monday. The server answers with one of
   // the two, so this only has to cope with an answer that has not arrived.

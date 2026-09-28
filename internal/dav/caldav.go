@@ -51,26 +51,23 @@ func (self *calendarBackend) CalendarHomeSetPath(ctx context.Context) (string, e
 	return calendarHomeSetPath(self.who(ctx).userID), nil
 }
 
-// ListCalendars is every calendar this person keeps. An account that has
-// never had one is given one here, because a phone asked to synchronize an
-// empty home set has nothing to point at and some clients then stop asking.
+// ListCalendars is every calendar this person keeps: their calendar and
+// their reminders list, each made here the first time it is asked for,
+// because a phone asked to synchronize an empty home set has nothing to point
+// at and some clients then stop asking, and a Reminders app shown no list
+// that takes reminders has nowhere to put one.
 func (self *calendarBackend) ListCalendars(ctx context.Context) ([]caldav.Calendar, error) {
 	signedIn := self.who(ctx)
 	var calendars []*models.Calendar
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		found, err := tx.ListCalendars(signedIn.userID)
-		if err != nil {
-			return unexpectedCalendar(err)
-		}
-		if len(found) == 0 {
-			made, err := tx.CreateCalendar(&models.Calendar{UserID: signedIn.userID, Name: "Calendar"})
-			if err != nil {
+		for _, kind := range []models.CalendarKind{models.CalendarEvents, models.CalendarReminders} {
+			if _, err := tx.EnsureCalendar(signedIn.userID, kind, nil); err != nil {
 				return unexpectedCalendar(err)
 			}
-			found = []*models.Calendar{made}
 		}
+		found, err := tx.ListCalendars(signedIn.userID)
 		calendars = found
-		return nil
+		return unexpectedCalendar(err)
 	}); err != nil {
 		return nil, err
 	}
@@ -89,11 +86,88 @@ func (self *calendarBackend) describe(signedIn *session, found *models.Calendar)
 		// So that a client knows not to try to send something enormous,
 		// rather than finding out when it is refused.
 		MaxResourceSize: calendar.MaximumObject,
-		// Events only. A client told this server also keeps to-dos would
-		// put one here and find it did not come back, which is worse than
-		// being told at the start.
-		SupportedComponentSet: []string{ical.CompEvent},
+		// One kind each: events in the calendar, reminders in the
+		// reminders list. A client told a collection also keeps the other
+		// kind would put one there and find it did not come back, which is
+		// worse than being told at the start.
+		SupportedComponentSet: []string{componentOf(found)},
 	}
+}
+
+// componentOf is the iCalendar component a calendar holds: VTODO, which is
+// what the format calls a reminder, for a reminders list, and VEVENT for the
+// calendar.
+func componentOf(found *models.Calendar) string {
+	if found.CalendarKind == models.CalendarReminders {
+		return ical.CompToDo
+	}
+	return ical.CompEvent
+}
+
+// storedAs is what a file sent to a calendar is stored as: an event with the
+// times it happens, or a reminder with its due time as its start and no
+// occurrences, read by the parser for the kind the calendar holds. A file of
+// the other kind is refused with 403, which is what the protocol says for a
+// component the collection does not support.
+func storedAs(found *models.Calendar, objectId string, written []byte) (*models.CalendarObject, []models.Occurrence, error) {
+	refused := func(err error) error {
+		// Something larger than this server keeps is the one case worth
+		// its own status: 507 tells a client the request was understood
+		// and there is no room, which is what makes it stop resending.
+		if errors.Is(err, calendar.ErrTooLarge) {
+			return webdav.NewHTTPError(http.StatusInsufficientStorage, err)
+		}
+		return webdav.NewHTTPError(http.StatusBadRequest, err)
+	}
+	if found.CalendarKind == models.CalendarReminders {
+		reminder, err := calendar.ParseReminder(written)
+		if err != nil {
+			if _, isEvent := calendar.Parse(written); isEvent == nil {
+				return nil, nil, webdav.NewHTTPError(http.StatusForbidden,
+					fmt.Errorf("this is the reminders list, which keeps reminders, not events"))
+			}
+			return nil, nil, refused(err)
+		}
+		status := "NEEDS-ACTION"
+		if reminder.IsDone {
+			status = "COMPLETED"
+		}
+		return &models.CalendarObject{
+			ID: objectId, CalendarID: found.ID, UID: reminder.UID,
+			ETag: calendar.ETag(reminder.Data), Data: string(reminder.Data),
+			Summary: reminder.Title, StartsAt: reminder.DueAt, EndsAt: reminder.DueAt,
+			AllDay: reminder.IsDueDate, Status: status,
+		}, nil, nil
+	}
+	parsed, err := calendar.Parse(written)
+	if err != nil {
+		if _, isReminder := calendar.ParseReminder(written); isReminder == nil {
+			return nil, nil, webdav.NewHTTPError(http.StatusForbidden,
+				fmt.Errorf("this is the calendar, which keeps events; reminders go in the reminders list"))
+		}
+		return nil, nil, refused(err)
+	}
+	// Indexed over the same stretch the dashboard indexes, because the
+	// horizon is a property of the calendar rather than of the door.
+	expanded, indexedUntil, err := calendar.Indexed(parsed)
+	if err != nil {
+		return nil, nil, webdav.NewHTTPError(http.StatusBadRequest, err)
+	}
+	indexedAt := time.Now().UTC()
+	occurrences := make([]models.Occurrence, 0, len(expanded))
+	for _, occurrence := range expanded {
+		occurrences = append(occurrences, models.Occurrence{
+			StartsAt: occurrence.StartsAt, EndsAt: occurrence.EndsAt, AllDay: occurrence.AllDay,
+		})
+	}
+	return &models.CalendarObject{
+		ID: objectId, CalendarID: found.ID, UID: parsed.UID,
+		ETag: calendar.ETag(parsed.Data), Data: string(parsed.Data),
+		Summary: parsed.Summary, Location: parsed.Location,
+		StartsAt: parsed.StartsAt, EndsAt: parsed.EndsAt,
+		AllDay: parsed.AllDay, Recurring: parsed.Recurring, Status: parsed.Status,
+		IndexedUntil: &indexedUntil, IndexedAt: &indexedAt,
+	}, occurrences, nil
 }
 
 func (self *calendarBackend) GetCalendar(ctx context.Context, address string) (*caldav.Calendar, error) {
@@ -187,41 +261,13 @@ func (self *calendarBackend) PutCalendarObject(ctx context.Context, address stri
 	if err != nil {
 		return nil, webdav.NewHTTPError(http.StatusBadRequest, err)
 	}
-	parsed, err := calendar.Parse(written)
+	kept, occurrences, err := storedAs(found, objectId, written)
 	if err != nil {
-		// Something larger than this server keeps is the one case worth
-		// its own status: 507 tells a client the request was understood
-		// and there is no room, which is what makes it stop resending.
-		if errors.Is(err, calendar.ErrTooLarge) {
-			return nil, webdav.NewHTTPError(http.StatusInsufficientStorage, err)
-		}
-		return nil, webdav.NewHTTPError(http.StatusBadRequest, err)
+		return nil, err
 	}
-	if len(parsed.UID) > maximumEventName {
+	if len(kept.UID) > maximumEventName {
 		return nil, davError(refuse(http.StatusBadRequest,
-			"that event's identifier is longer than the %d characters this server keeps", maximumEventName))
-	}
-
-	// Indexed over the same stretch the dashboard indexes, because the
-	// horizon is a property of the calendar rather than of the door.
-	expanded, indexedUntil, err := calendar.Indexed(parsed)
-	if err != nil {
-		return nil, webdav.NewHTTPError(http.StatusBadRequest, err)
-	}
-	indexedAt := time.Now().UTC()
-	occurrences := make([]models.Occurrence, 0, len(expanded))
-	for _, occurrence := range expanded {
-		occurrences = append(occurrences, models.Occurrence{
-			StartsAt: occurrence.StartsAt, EndsAt: occurrence.EndsAt, AllDay: occurrence.AllDay,
-		})
-	}
-	kept := &models.CalendarObject{
-		ID: objectId, CalendarID: found.ID, UID: parsed.UID,
-		ETag: calendar.ETag(parsed.Data), Data: string(parsed.Data),
-		Summary: parsed.Summary, Location: parsed.Location,
-		StartsAt: parsed.StartsAt, EndsAt: parsed.EndsAt,
-		AllDay: parsed.AllDay, Recurring: parsed.Recurring, Status: parsed.Status,
-		IndexedUntil: &indexedUntil, IndexedAt: &indexedAt,
+			"that identifier is longer than the %d characters this server keeps", maximumEventName))
 	}
 	var stored *models.CalendarObject
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) error {

@@ -17,6 +17,9 @@ type Calendar struct {
 	Timezone    string `json:"timezone,omitempty"`
 	WeekStart   string `json:"weekStart,omitempty"`
 	Events      int    `json:"events"`
+
+	// CalendarKind is what it holds: events, or reminders.
+	CalendarKind string `json:"calendarKind"`
 }
 
 // CalendarEvent is one entry. In a listing it is one time something happens,
@@ -59,7 +62,7 @@ type CalendarAttendee struct {
 }
 
 const (
-	DocumentListCalendars = `query { ListCalendars { id name description colour timezone weekStart events } }`
+	DocumentListCalendars = `query { ListCalendars { id name description colour timezone weekStart events calendarKind } }`
 
 	DocumentListCalendarEvents = `query ($calendarId: String!, $from: String!, $until: String!) {
   ListCalendarEvents(calendarId: $calendarId, from: $from, until: $until) {

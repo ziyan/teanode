@@ -29,7 +29,8 @@ type calendarModel struct {
 	Timezone    string    `gorm:"column:time_zone"`
 	WeekStart   string    `gorm:"column:week_start"`
 	// AgentGranted is the person's switch for this calendar as a source.
-	AgentGranted bool `gorm:"column:agent_granted"`
+	AgentGranted bool   `gorm:"column:agent_granted"`
+	CalendarKind string `gorm:"column:calendar_kind"`
 }
 
 func (calendarModel) TableName() string { return "calendar" }
@@ -39,7 +40,7 @@ func (self *calendarModel) toModel() *models.Calendar {
 		ID: self.ID, UserID: self.UserID, CreatedAt: self.CreatedAt,
 		ModifiedAt: self.ModifiedAt, Name: self.Name, Description: self.Description,
 		Colour: self.Colour, Timezone: self.Timezone, WeekStart: self.WeekStart,
-		AgentGranted: self.AgentGranted,
+		AgentGranted: self.AgentGranted, CalendarKind: models.CalendarKind(self.CalendarKind),
 	}
 }
 
@@ -156,10 +157,14 @@ func (self *transaction) CreateCalendar(calendar *models.Calendar) (*models.Cale
 		Timezone: truncateRunes(strings.TrimSpace(calendar.Timezone), 64),
 		// Sunday unless this person says otherwise, and never a word this
 		// server does not know: the dashboard draws its columns from this.
-		WeekStart: models.KnownWeekStart(calendar.WeekStart),
+		WeekStart:    models.KnownWeekStart(calendar.WeekStart),
+		CalendarKind: string(calendar.CalendarKind),
+	}
+	if row.CalendarKind == "" {
+		row.CalendarKind = string(models.CalendarEvents)
 	}
 	if row.Name == "" {
-		row.Name = "Calendar"
+		row.Name = models.CalendarNamed[models.CalendarKind(row.CalendarKind)]
 	}
 	if row.WeekStart == "" {
 		row.WeekStart = models.WeekStartsSunday
@@ -171,6 +176,33 @@ func (self *transaction) CreateCalendar(calendar *models.Calendar) (*models.Cale
 		return nil, err
 	}
 	return row.toModel(), nil
+}
+
+// EnsureCalendar is the person's calendar of a kind, made from the template
+// when they have none. Every door asks through this, so that a person has
+// one calendar and one reminders list however many devices ask at once:
+// the person's own row is held while the question is answered, so a second
+// request waits for the first one's answer rather than making a second
+// list.
+func (self *transaction) EnsureCalendar(userId string, kind models.CalendarKind, template *models.Calendar) (*models.Calendar, error) {
+	if err := self.tx.Exec(`SELECT 1 FROM "user" WHERE "id" = ? FOR UPDATE`, userId).Error; err != nil {
+		return nil, err
+	}
+	calendars, err := self.ListCalendars(userId)
+	if err != nil {
+		return nil, err
+	}
+	for _, found := range calendars {
+		if found.CalendarKind == kind {
+			return found, nil
+		}
+	}
+	made := models.Calendar{}
+	if template != nil {
+		made = *template
+	}
+	made.UserID, made.CalendarKind = userId, kind
+	return self.CreateCalendar(&made)
 }
 
 // UpdateCalendar renames one, or changes how it is shown.

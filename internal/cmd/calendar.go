@@ -127,16 +127,19 @@ func eventFlags() []cli.Flag {
 }
 
 // theCalendar is the caller's, made by the server if they have never had one.
-// Everything here works on one calendar, because a person has one.
+// Everything here works on one calendar, because a person has one; their
+// reminders list beside it is teanode reminder's.
 func theCalendar(ctx context.Context, connection *client.Client) (*client.Calendar, error) {
 	calendars, err := client.ListCalendars(ctx, connection)
 	if err != nil {
 		return nil, err
 	}
-	if len(calendars) == 0 {
-		return nil, fmt.Errorf("this account has no calendar")
+	for _, found := range calendars {
+		if found.CalendarKind != "reminders" {
+			return found, nil
+		}
 	}
-	return calendars[0], nil
+	return nil, fmt.Errorf("this account has no calendar")
 }
 
 // zoneOf is the zone to read a written time in: the calendar's own, and

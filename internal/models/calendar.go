@@ -36,6 +36,28 @@ type Calendar struct {
 	// there was a switch: nothing from a source the person has not granted
 	// is ever sent to a model.
 	AgentGranted bool `json:"agentGranted"`
+
+	// CalendarKind is what it holds: events, or reminders. A person has one
+	// of each.
+	CalendarKind CalendarKind `json:"calendarKind"`
+}
+
+// CalendarKind is what a calendar holds.
+type CalendarKind string
+
+const (
+	// CalendarEvents holds events: the calendar.
+	CalendarEvents CalendarKind = "events"
+	// CalendarReminders holds reminders, which iCalendar calls to-dos: the
+	// list a phone's Reminders app syncs.
+	CalendarReminders CalendarKind = "reminders"
+)
+
+// CalendarNamed is the name a calendar of each kind is given when it is
+// made for somebody.
+var CalendarNamed = map[CalendarKind]string{
+	CalendarEvents:    "Calendar",
+	CalendarReminders: "Reminders",
 }
 
 // Week starts, which are the two conventions worth keeping: much of the world

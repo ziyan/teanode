@@ -76,6 +76,10 @@ type CalendarView struct {
 	// AgentGranted says the person has given their agent this calendar. The
 	// agent's own tools read it: what is not granted is not theirs to see.
 	AgentGranted bool `json:"agentGranted"`
+
+	// CalendarKind is what it holds: events, or reminders. A person has one
+	// of each, and whatever works on "the calendar" means the events one.
+	CalendarKind string `json:"calendarKind"`
 }
 
 // CalendarEventView is one event, and when it happens.
@@ -255,24 +259,15 @@ func (self *graph) ListCalendars(ctx context.Context) ([]*CalendarView, error) {
 	}
 	var calendars []*models.Calendar
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		found, err := tx.ListCalendars(principal.User.ID)
-		if err != nil {
-			return err
-		}
 		// Nobody should have to make a calendar before they can put
 		// something in it, and the CalDAV layout needs one to exist
 		// before a phone can be pointed at it.
-		if len(found) == 0 {
-			made, err := tx.CreateCalendar(&models.Calendar{
-				UserID: principal.User.ID, Name: "Calendar", Timezone: self.zoneFor(principal),
-			})
-			if err != nil {
-				return err
-			}
-			found = []*models.Calendar{made}
+		if _, err := tx.EnsureCalendar(principal.User.ID, models.CalendarEvents, &models.Calendar{Timezone: self.zoneFor(principal)}); err != nil {
+			return err
 		}
+		found, err := tx.ListCalendars(principal.User.ID)
 		calendars = found
-		return nil
+		return err
 	}); err != nil {
 		return nil, err
 	}
@@ -286,7 +281,7 @@ func (self *graph) ListCalendars(ctx context.Context) ([]*CalendarView, error) {
 			ID: found.ID, Name: found.Name, Description: found.Description,
 			Colour: found.Colour, Timezone: found.Timezone,
 			WeekStart: weekStartOf(found), Events: int(count),
-			AgentGranted: found.AgentGranted,
+			AgentGranted: found.AgentGranted, CalendarKind: string(found.CalendarKind),
 		})
 	}
 	return views, nil

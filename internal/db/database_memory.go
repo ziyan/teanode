@@ -110,6 +110,10 @@ type MemoryOperation interface {
 	GetCalendar(calendarId string) (*models.Calendar, error)
 	LockCalendar(calendarId string) (*models.Calendar, error)
 	CreateCalendar(calendar *models.Calendar) (*models.Calendar, error)
+
+	// EnsureCalendar is the person's calendar of a kind, made from the
+	// template when they have none: one calendar and one reminders list each.
+	EnsureCalendar(userId string, kind models.CalendarKind, template *models.Calendar) (*models.Calendar, error)
 	UpdateCalendar(calendar *models.Calendar) (*models.Calendar, error)
 	DeleteCalendar(userId, calendarId string) error
 	ListCalendarObjects(calendarId string) ([]*models.CalendarObject, error)

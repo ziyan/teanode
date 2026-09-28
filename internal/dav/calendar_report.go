@@ -139,9 +139,10 @@ func readMoment(value string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// eventFilter is the VEVENT filter inside a query: the filter itself, whether
-// the query asks for something this calendar can never hold, and whether it is
-// a query this server can carry out at all.
+// componentFilter is the filter inside a query for the component the
+// collection holds -- VEVENT in the calendar, VTODO in the reminders list --
+// the filter itself, whether the query asks for something this collection can
+// never hold, and whether it is a query this server can carry out at all.
 //
 // A filter this server cannot carry out is refused rather than answered
 // emptily. Skipping every event would tell a client whose query was slightly
@@ -153,7 +154,7 @@ func readMoment(value string) (time.Time, bool) {
 // second way: a query for the to-dos this server does not keep came back
 // carrying every event in the calendar, and a client that asked for to-dos
 // and events together had its time range thrown away with the to-do filter.
-func (self *calendarQuery) eventFilter() (filter *compFilter, nothing bool, usable bool) {
+func (self *calendarQuery) componentFilter(held string) (filter *compFilter, nothing bool, usable bool) {
 	outer := self.Filter.CompFilter
 	if outer.Name != "" && !strings.EqualFold(outer.Name, "VCALENDAR") {
 		return nil, false, false
@@ -162,21 +163,20 @@ func (self *calendarQuery) eventFilter() (filter *compFilter, nothing bool, usab
 	for index := range outer.Children {
 		child := &outer.Children[index]
 		switch {
-		case strings.EqualFold(child.Name, "VEVENT"):
-			// The events are what this server keeps, so this is the part
-			// of the question it can answer, whatever else was asked
-			// beside it.
+		case strings.EqualFold(child.Name, held):
+			// What this collection keeps, so this is the part of the
+			// question it can answer, whatever else was asked beside it.
 			return child, false, true
 		case child.Name == "":
 			continue
 		default:
-			// A to-do, a journal or a free-busy component.
+			// The other kind, a journal or a free-busy component.
 			other = true
 		}
 	}
 	if other {
-		// Asked only for kinds of thing this server does not keep, which
-		// matches nothing -- the truth rather than a refusal.
+		// Asked only for kinds of thing this collection does not keep,
+		// which matches nothing -- the truth rather than a refusal.
 		return nil, true, true
 	}
 	// No inner filter: every event in the calendar.
@@ -193,7 +193,7 @@ func (self *calendarQuery) eventFilter() (filter *compFilter, nothing bool, usab
 //
 // An event whose file cannot be read matches, on the principle that something
 // nobody can read is better shown than silently withheld.
-func (self *compFilter) matches(data string) bool {
+func (self *compFilter) matches(data string, held string) bool {
 	if self == nil || len(self.PropFilters) == 0 {
 		return true
 	}
@@ -208,7 +208,7 @@ func (self *compFilter) matches(data string) bool {
 	matched := false
 	empty := true
 	for _, child := range decoded.Children {
-		if child == nil || child.Name != ical.CompEvent {
+		if child == nil || child.Name != held {
 			continue
 		}
 		empty = false
@@ -402,7 +402,14 @@ func (self *component) serveCalendarReport(writer http.ResponseWriter, request *
 			http.Error(writer, "that filter could not be read", http.StatusBadRequest)
 			return true
 		}
-		filter, nothing, usable := query.eventFilter()
+		found, err := backing.calendarAt(ctx, signedIn, request.URL.Path)
+		if err != nil {
+			status, message := statusOf(err)
+			http.Error(writer, message, status)
+			return true
+		}
+		held := componentOf(found)
+		filter, nothing, usable := query.componentFilter(held)
 		if !usable {
 			http.Error(writer, "this server does not answer that filter", http.StatusBadRequest)
 			return true
@@ -415,14 +422,14 @@ func (self *component) serveCalendarReport(writer http.ResponseWriter, request *
 			return true
 		}
 		if !nothing {
-			objects, err := self.eventsMatching(ctx, backing, request.URL.Path, filter)
+			objects, err := self.eventsMatching(ctx, backing, found, filter)
 			if err != nil {
 				status, message := statusOf(err)
 				http.Error(writer, message, status)
 				return true
 			}
 			for _, object := range objects {
-				if !filter.matches(object.Data) {
+				if !filter.matches(object.Data, held) {
 					continue
 				}
 				answers = append(answers, foundEvent(signedIn, object, wantsETag, wantsLength, wantsData))
@@ -565,7 +572,8 @@ func (self *component) serveFreeBusy(writer http.ResponseWriter, request *http.R
 // proportional to the window rather than to the calendar; without one, the
 // whole calendar, which is what a client enumerating asks for.
 func (self *component) eventsMatching(ctx context.Context, backing *calendarBackend,
-	address string, filter *compFilter) ([]*models.CalendarObject, error) {
+	found *models.Calendar, filter *compFilter) ([]*models.CalendarObject, error) {
+	address := calendarPath(backing.who(ctx).userID, found.ID)
 	if filter == nil {
 		return backing.storedEvents(ctx, address)
 	}
@@ -581,10 +589,21 @@ func (self *component) eventsMatching(ctx context.Context, backing *calendarBack
 	if !ok {
 		return nil, refuse(http.StatusBadRequest, "that time range is not one this server can read")
 	}
-	signedIn := backing.who(ctx)
-	found, err := backing.calendarAt(ctx, signedIn, address)
-	if err != nil {
-		return nil, err
+	if found.CalendarKind == models.CalendarReminders {
+		// A reminder happens once, when it is due, so the range is read
+		// against that; one due at no time matches any range, as the
+		// format says a to-do with no dates does.
+		stored, err := backing.storedEvents(ctx, address)
+		if err != nil {
+			return nil, err
+		}
+		inRange := make([]*models.CalendarObject, 0, len(stored))
+		for _, object := range stored {
+			if object.StartsAt.IsZero() || (!object.StartsAt.Before(from) && object.StartsAt.Before(until)) {
+				inRange = append(inRange, object)
+			}
+		}
+		return inRange, nil
 	}
 	var objects []*models.CalendarObject
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
