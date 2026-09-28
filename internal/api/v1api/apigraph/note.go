@@ -1,9 +1,11 @@
 package apigraph
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"mime/quotedprintable"
 	"strings"
 	"time"
 
@@ -201,10 +203,27 @@ func (self *graph) prepareNote(ctx context.Context, transaction db.Transaction, 
 		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
 	// A note is addressed to nobody, and the phone writes no To at all.
+	//
+	// The body is the HTML as quoted-printable text rather than the base64
+	// the composer writes for mail: a phone reads its notes the way it
+	// writes them, as text, and a note should not depend on it decoding
+	// more than that.
+	var body bytes.Buffer
+	encoder := quotedprintable.NewWriter(&body)
+	if _, err := encoder.Write([]byte(html)); err != nil {
+		return nil, err
+	}
+	if err := encoder.Close(); err != nil {
+		return nil, err
+	}
 	headers := make([]string, 0, len(composed.Headers))
 	for _, header := range composed.Headers {
-		if name, value := mailparse.SplitHeader(header); strings.EqualFold(name, "To") && strings.TrimSpace(value) == "" {
+		name, value := mailparse.SplitHeader(header)
+		if strings.EqualFold(name, "To") && strings.TrimSpace(value) == "" {
 			continue
+		}
+		if strings.EqualFold(name, "Content-Transfer-Encoding") {
+			header = "Content-Transfer-Encoding: quoted-printable\r\n"
 		}
 		headers = append(headers, header)
 	}
@@ -216,8 +235,8 @@ func (self *graph) prepareNote(ctx context.Context, transaction db.Transaction, 
 		From:           address.Address,
 		Subject:        title,
 		Headers:        headers,
-		Body:           composed.Body,
-		Size:           uint64(len(composed.Body)),
+		Body:           body.Bytes(),
+		Size:           uint64(body.Len()),
 		Status:         models.MailStatusAccepted,
 		ReceivedAt:     time.Now(),
 		Kind:           models.MailKindNote,

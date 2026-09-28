@@ -49,8 +49,9 @@ type NoteVersion struct {
 	Identifier string
 	CreatedAt  time.Time
 
-	// From is the address the version being replaced was written from;
-	// empty for a new note.
+	// From is the address the version being replaced was written from, or
+	// for a new note the one the other notes in its folder were; empty when
+	// there are none.
 	From string
 }
 
@@ -96,6 +97,16 @@ func (self *Commands) SaveNote(ctx context.Context, principal *access.Principal,
 				return err
 			}
 			folderId = folder.ID
+			// Written from the address the notes already there were, which
+			// is the one the phone's account signs its notes with.
+			if others, err := transaction.ListNoteItems(mailbox.ID, ""); err == nil {
+				for _, other := range CurrentNotes(others) {
+					if other.FolderID == folderId && other.Mail.From != "" {
+						version.From = other.Mail.From
+						break
+					}
+				}
+			}
 		}
 		prepared, err := prepare(ctx, transaction, mailbox, version)
 		if err != nil {
