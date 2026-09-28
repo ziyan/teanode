@@ -242,7 +242,13 @@ func renderContent(mailId string, headers []string, body []byte) (*MailContent, 
 	}
 
 	content.Headers = describeHeaders(headers)
-	content.RawHeaders = strings.Join(headers, "\r\n")
+	// Trimmed first: a message appended over IMAP keeps a line ending on
+	// every stored header, and joined as they are they read double spaced.
+	rawHeaders := make([]string, 0, len(headers))
+	for _, header := range headers {
+		rawHeaders = append(rawHeaders, strings.TrimRight(header, "\r\n"))
+	}
+	content.RawHeaders = strings.Join(rawHeaders, "\r\n")
 
 	partIndex := 0
 	inlineParts := map[string]int{}

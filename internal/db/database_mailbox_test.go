@@ -55,7 +55,7 @@ func TestMailboxItemsReferenceOneMessage(t *testing.T) {
 		if err != nil || mail == nil || mail.UnreferencedAt != nil {
 			t.Errorf("a held message has a retention clock running: %+v, %v", mail, err)
 		}
-		folders, err := tx.ListFolders(mailboxes[0].ID)
+		folders, err := tx.ListFolders(mailboxes[0].ID, nil)
 		if err != nil {
 			t.Fatalf("ListFolders: %s", err)
 		}
@@ -220,7 +220,7 @@ func TestFolderPinsKeepTheirOrder(test *testing.T) {
 		pin(folders[0], later)
 		pin(folders[1], earlier)
 
-		listed, err := tx.ListFolders(mailbox.ID)
+		listed, err := tx.ListFolders(mailbox.ID, nil)
 		if err != nil {
 			test.Fatalf("ListFolders: %s", err)
 		}

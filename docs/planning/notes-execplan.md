@@ -13,9 +13,9 @@ To see it working: on a phone with the mail account's Notes switched on, write a
 ## Progress
 
 - [x] (2026-09-28) Looked at a real note on the server and surveyed every path that reads mailbox items (see Surprises).
-- [ ] Milestone 1: storage. A note is recognized when it is appended, older notes are recognized once, and the dashboard stops listing and counting messages flagged deleted.
-- [ ] Milestone 2: one set of operations: GraphQL, `teanode note`, and the agent's `note` tool; notes left out of the mail pipelines.
-- [ ] Milestone 3: the dashboard's notes view.
+- [x] (2026-09-28) Milestone 1: storage. Migration 0117, `MailKindNote` and `Mail.NoteIdentifier`, APPEND recognizes a note (`internal/notes`), a pass at start marks the notes stored before (`internal/cmd/server/notebackfill.go`), `rawView` trims headers, and the dashboard's folder counts, item lists and thread lists leave out items flagged deleted (`db.FolderOptions`, `ItemOptions.Deleted`); IMAP still counts them.
+- [x] (2026-09-28) Milestone 2: `ListNotes`, `GetNote`, `SaveNote`, `DeleteNote` (`apigraph/note.go`, commands in `internal/mailbox/notes.go`), `internal/client/note.go`, `teanode note list|show|add|edit|remove`, and the agent's `note` tool. Notes are left out of `ListMailWithoutInsight`, `ListMailWithoutEmbedding`, and mailbox-wide item and thread lists (`ItemOptions.ExcludeMailKinds`). The `note` tool is the 61st in the catalog; the limit in `TestTheCatalogStaysShort` went from 60 to 61, since it is a new thing rather than a new verb.
+- [x] (2026-09-28) Milestone 3: the dashboard's notes view (`web/src/components/notes.tsx`), shown for a custom folder that holds notes or is named "Notes".
 - [ ] Milestone 4: docs, deploy, a check with a phone.
 
 ## Surprises & Discoveries
@@ -27,6 +27,10 @@ To see it working: on a phone with the mail account's Notes switched on, write a
 - Observation: a message appended over IMAP keeps a CRLF at the end of each stored header line, while mail received over SMTP does not. `rawView` in `internal/api/v1api/apimail/apimail.go` joins headers with CRLF, so an appended message downloads with a blank line after every header and does not parse. IMAP itself is unaffected: `joinMessage` trims first.
 - Observation: nothing filters by folder kind "custom", so a note is sorted by the agent's triage backfill (`ListMailWithoutInsight`), embedded, found by `mail_search` across the mailbox, and counted, like any message.
 - Observation: the IMAP LIST reply uses the same `ListFolders` counts as the dashboard, so hiding `\Deleted` items has to be the dashboard's choice, not the database's.
+- Observation: marking a note needs a record of which old messages were already looked at, so the pass does not read them again at every start. `mail.note_identifier` is null for a message stored before the migration and never looked at, empty for one looked at that is not a note, and the identifier for a note. `CreateMails` writes empty, so the pass reads only old rows, and only once. The index is therefore `WHERE note_identifier <> ''` rather than `IS NOT NULL`.
+- Observation: the search index (`mx.SearchDocument`) reads only `text/plain` parts, and a note is HTML alone. `SaveNote` adds the note's text to the search document itself. A note appended by the phone is indexed by its subject only.
+- Observation: `ListNotes` reads each note from storage to build its preview and read its creation date. That is one read per note, which is fine for a few hundred notes on the filesystem and slower on S3.
+- Observation: the agent's tool catalog has a fuse at 60 tools (`TestTheCatalogStaysShort`), and `note` is the 61st. The fuse is now 61: it is there to stop new verbs for an existing thing, and a note is a new thing.
 
 ## Decision Log
 

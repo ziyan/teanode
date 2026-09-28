@@ -6,6 +6,7 @@
 package apimail
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net/http"
@@ -168,15 +169,28 @@ func (self *mail) rawView(response http.ResponseWriter, request *http.Request) {
 		fmt.Sprintf("attachment; filename=%q", sanitizeFilename(mailId)+".eml"))
 	response.WriteHeader(http.StatusOK)
 
-	// The blank line between the headers and the body is what makes this a
-	// message rather than two pieces of one.
-	if _, err := response.Write([]byte(strings.Join(headers, "\r\n") + "\r\n\r\n")); err != nil {
-		log.Debugf("failed to write the headers of %q: %s", mailId, err)
-		return
+	if _, err := response.Write(rawMessage(headers, body)); err != nil {
+		log.Debugf("failed to write %q: %s", mailId, err)
 	}
-	if _, err := response.Write(body); err != nil {
-		log.Debugf("failed to write the body of %q: %s", mailId, err)
+}
+
+// rawMessage is the stored headers and body as one message. The blank line
+// between the headers and the body is what makes this a message rather than
+// two pieces of one.
+//
+// Each header is trimmed of its line ending before the lines are joined: a
+// message appended over IMAP is stored with the CRLF still on every header,
+// and joining those with another made a blank line after the first header,
+// which ended the headers there and made the rest of them body.
+func rawMessage(headers []string, body []byte) []byte {
+	var buffer bytes.Buffer
+	for _, header := range headers {
+		buffer.WriteString(strings.TrimRight(header, "\r\n"))
+		buffer.WriteString("\r\n")
 	}
+	buffer.WriteString("\r\n")
+	buffer.Write(body)
+	return buffer.Bytes()
 }
 
 // requireOperator refuses a caller who is not one. The middleware has already

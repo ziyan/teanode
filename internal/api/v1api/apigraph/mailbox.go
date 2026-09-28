@@ -203,7 +203,10 @@ func (self *graph) requireItems(ctx context.Context, permission models.Permissio
 }
 
 func (self *graph) describeMailbox(ctx context.Context, mailbox *models.Mailbox) (*MailboxView, error) {
-	folders, err := self.transaction(ctx).ListFolders(mailbox.ID)
+	// Counted without what is flagged deleted: a phone that edits a note
+	// flags the old version and leaves it for later, and the dashboard shows
+	// neither it nor a count that includes it.
+	folders, err := self.transaction(ctx).ListFolders(mailbox.ID, &db.FolderOptions{ShouldExcludeDeleted: true})
 	if err != nil {
 		return nil, err
 	}
@@ -213,14 +216,14 @@ func (self *graph) describeMailbox(ctx context.Context, mailbox *models.Mailbox)
 			view.Unread = folder.Unread
 		}
 	}
-	unseen, flagged := true, true
+	unseen, flagged, isDeleted := true, true, false
 	tx := self.transaction(ctx)
 	aside := []models.MailboxFolderKind{models.MailboxFolderKindJunk, models.MailboxFolderKindTrash}
-	if view.StarredUnread, err = tx.CountItems("", &db.ItemOptions{MailboxID: mailbox.ID, Unseen: &unseen, Flagged: &flagged, ExcludeKinds: aside}); err != nil {
+	if view.StarredUnread, err = tx.CountItems("", &db.ItemOptions{MailboxID: mailbox.ID, Unseen: &unseen, Flagged: &flagged, ExcludeKinds: aside, Deleted: &isDeleted}); err != nil {
 		return nil, err
 	}
 	if mailbox.Agent != nil && mailbox.Agent.Granted && mailbox.Agent.Triage != nil && mailbox.Agent.Triage.Enabled {
-		if view.PriorityUnread, err = tx.CountItems("", &db.ItemOptions{MailboxID: mailbox.ID, Unseen: &unseen, Priority: "high", ExcludeKinds: aside}); err != nil {
+		if view.PriorityUnread, err = tx.CountItems("", &db.ItemOptions{MailboxID: mailbox.ID, Unseen: &unseen, Priority: "high", ExcludeKinds: aside, Deleted: &isDeleted}); err != nil {
 			return nil, err
 		}
 	}
@@ -305,7 +308,10 @@ type MailboxItemPage struct {
 }
 
 func (self *graph) ListMailboxItems(ctx context.Context, arguments ListMailboxItemsArguments) (*MailboxItemPage, error) {
-	options := &db.ItemOptions{Limit: 50, Flagged: arguments.Flagged, HasAttachment: arguments.HasAttachment}
+	// What is flagged deleted is on its way out and is not listed here;
+	// IMAP lists it until a client expunges it.
+	isDeleted := false
+	options := &db.ItemOptions{Limit: 50, Flagged: arguments.Flagged, HasAttachment: arguments.HasAttachment, Deleted: &isDeleted}
 	folderId := arguments.FolderID
 	if folderId != "" {
 		_, folder, err := self.requireFolder(ctx, models.PermissionMailRead, folderId)
@@ -356,6 +362,11 @@ func (self *graph) ListMailboxItems(ctx context.Context, arguments ListMailboxIt
 	// was thrown away or junked; those are reached in their own folders.
 	if folderId == "" && (options.Flagged != nil || options.Priority != "") {
 		options.ExcludeKinds = []models.MailboxFolderKind{models.MailboxFolderKindJunk, models.MailboxFolderKindTrash}
+	}
+	// A search of the whole mailbox is a search of its mail, and a phone's
+	// notes are not mail; they are found in the folder that holds them.
+	if folderId == "" {
+		options.ExcludeMailKinds = []models.MailKind{models.MailKindNote}
 	}
 	if arguments.NeedsReply != nil {
 		options.NeedsReply = arguments.NeedsReply
@@ -521,7 +532,8 @@ type MailboxThreadPage struct {
 // ListMailboxThreads is a folder read as conversations rather than messages:
 // one row for each, carrying the newest of its messages in that folder.
 func (self *graph) ListMailboxThreads(ctx context.Context, arguments ListMailboxThreadsArguments) (*MailboxThreadPage, error) {
-	options := &db.ItemOptions{Limit: 50, Flagged: arguments.Flagged, HasAttachment: arguments.HasAttachment}
+	isDeleted := false
+	options := &db.ItemOptions{Limit: 50, Flagged: arguments.Flagged, HasAttachment: arguments.HasAttachment, Deleted: &isDeleted}
 	folderId := arguments.FolderID
 	if folderId != "" {
 		_, folder, err := self.requireFolder(ctx, models.PermissionMailRead, folderId)
@@ -569,6 +581,11 @@ func (self *graph) ListMailboxThreads(ctx context.Context, arguments ListMailbox
 	// was thrown away or junked; those are reached in their own folders.
 	if folderId == "" && (options.Flagged != nil || options.Priority != "") {
 		options.ExcludeKinds = []models.MailboxFolderKind{models.MailboxFolderKindJunk, models.MailboxFolderKindTrash}
+	}
+	// A search of the whole mailbox is a search of its mail, and a phone's
+	// notes are not mail; they are found in the folder that holds them.
+	if folderId == "" {
+		options.ExcludeMailKinds = []models.MailKind{models.MailKindNote}
 	}
 	if arguments.NeedsReply != nil {
 		options.NeedsReply = arguments.NeedsReply
@@ -829,7 +846,7 @@ func (self *graph) threadSummary(ctx context.Context, mailbox *models.Mailbox, t
 // and differ only in what gathers the messages.
 func (self *graph) threadViewOf(ctx context.Context, mailbox *models.Mailbox,
 	items []*models.MailboxItem, preferred string) (*MailboxThreadView, error) {
-	folders, err := self.transaction(ctx).ListFolders(mailbox.ID)
+	folders, err := self.transaction(ctx).ListFolders(mailbox.ID, &db.FolderOptions{ShouldExcludeDeleted: true})
 	if err != nil {
 		return nil, err
 	}

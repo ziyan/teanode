@@ -17,6 +17,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/notes"
 	"github.com/ziyan/teanode/internal/util/mailparse"
 )
 
@@ -253,6 +254,13 @@ func mailFromMessage(mailbox *models.Mailbox, headers []string, body []byte, fla
 	if flags.Draft != nil && *flags.Draft {
 		kind = models.MailKindDraft
 	}
+	// A phone's Notes app keeps each note as a message it appends, and says
+	// so in the headers. Recognized here, as it arrives, so that nothing that
+	// reads mail takes it for some.
+	noteIdentifier := notes.Identifier(headers)
+	if noteIdentifier != "" {
+		kind = models.MailKindNote
+	}
 	var recipients []string
 	for _, name := range []string{"To", "Cc"} {
 		if list, err := mail.ParseAddressList(mailparse.DecodeHeaderValue(mailparse.FindHeaderValue(headers, name))); err == nil {
@@ -273,6 +281,8 @@ func mailFromMessage(mailbox *models.Mailbox, headers []string, body []byte, fla
 		Status:     models.MailStatusAccepted,
 		ReceivedAt: at,
 		Kind:       kind,
+
+		NoteIdentifier: noteIdentifier,
 	}
 	if len(mailbox.Addresses) > 0 {
 		stored.DomainID = mailbox.Addresses[0].DomainID
