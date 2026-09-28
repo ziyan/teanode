@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.76.0] - 2026-09-28
+
+### Added
+
+- Ideas: offers of work the agent can do for you, on the new Ideas tab, from `teanode agent idea`, or by asking the agent; found in your own mail each night, each saying why. (#216)
+- A Goals tab listing what the agent is keeping track of, with a way to mark a goal done or set a new one. (#216)
+
+### Changed
+
+- Tips are now ideas: the setting, the agent's replies and `teanode agent speak-first --reason idea` use the new name. (#216)
+
 ## [0.75.0] - 2026-09-28
 
 ### Added
