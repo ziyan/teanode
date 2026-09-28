@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.75.0] - 2026-09-28
+
+### Added
+
+- On a phone, swipe a message left to archive it and right to mark it read or unread. (#217)
+
 ## [0.74.7] - 2026-09-28
 
 ### Changed
