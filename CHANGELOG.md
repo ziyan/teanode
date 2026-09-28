@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.77.1] - 2026-09-28
+
+### Changed
+
+- The Reminders tab switches between the reminders to do and those done, and its date field is labeled. (#220)
+
 ## [0.77.0] - 2026-09-28
 
 ### Added
