@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { graphql, openAgentConversation } from '../api'
 import { useTranslation } from '../i18n/i18n'
-import { CloseIcon } from './icons'
+import { CloseIcon, GraphIcon, MailIcon, SparkIcon } from './icons'
 import { useToast } from './toast'
 import { useQuery } from './useQuery'
 
@@ -193,24 +193,44 @@ export function IdeaRow({
       ) : null}
       {idea.suggestionReason || idea.evidence.length > 0 ? (
         <div className="idea-foot">
-          {idea.suggestionReason ? <span className="idea-reason muted">{idea.suggestionReason}</span> : null}
-          {idea.evidence.map((evidence) => {
-            const link = evidenceLink(evidence)
-            return link ? (
-              <Link key={evidence.evidenceKind + evidence.evidenceId} className="idea-evidence" to={link}>
-                {evidence.evidenceSummary}
-              </Link>
-            ) : (
-              <button
-                key={evidence.evidenceKind + evidence.evidenceId}
-                type="button"
-                className="link idea-evidence"
-                onClick={() => openAgentConversation(evidence.evidenceId)}
-              >
-                {evidence.evidenceSummary}
-              </button>
-            )
-          })}
+          {idea.suggestionReason ? <p className="idea-reason muted">{idea.suggestionReason}</p> : null}
+          {idea.evidence.length > 0 ? (
+            <ul className="idea-sources">
+              {idea.evidence.map((evidence) => {
+                const link = evidenceLink(evidence)
+                const Icon =
+                  evidence.evidenceKind === 'message'
+                    ? MailIcon
+                    : evidence.evidenceKind === 'page'
+                      ? GraphIcon
+                      : SparkIcon
+                const label = (
+                  <>
+                    <Icon size={13} />
+                    <span>{evidence.evidenceSummary}</span>
+                  </>
+                )
+                return (
+                  <li key={evidence.evidenceKind + evidence.evidenceId}>
+                    {link ? (
+                      <Link className="idea-source" to={link} title={evidence.evidenceSummary}>
+                        {label}
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        className="idea-source"
+                        title={evidence.evidenceSummary}
+                        onClick={() => openAgentConversation(evidence.evidenceId)}
+                      >
+                        {label}
+                      </button>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          ) : null}
         </div>
       ) : null}
     </div>

@@ -10937,20 +10937,58 @@ main.content:has(> .knowledge-frame) {
 }
 
 .idea-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-2);
   margin: var(--space-2) 0 0 calc(28px + var(--space-3));
   font-size: var(--text-label);
 }
 
-.idea-evidence {
-  padding: 1px var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-round);
-  color: var(--text);
+.idea-reason {
+  margin: 0 0 var(--space-1);
+}
+
+/* What prompted an idea: plain links, one to a line and cut to it, each
+   with the mark of what it is. */
+.idea-sources {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.idea-source {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
   text-decoration: none;
+  cursor: pointer;
+}
+
+.idea-source svg {
+  flex: none;
+}
+
+.idea-source span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .idea-source:hover {
+    color: var(--text);
+  }
+
+  .idea-source:hover span {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
 }
 
 .idea-suggestions {
