@@ -95,6 +95,27 @@ func TestTheBuiltDashboardIsServed(t *testing.T) {
 	}
 }
 
+// The artifact helper is linked alone from a page the model wrote, with no
+// dashboard around it. Built as a chunk that waits for the dashboard's
+// runtime, it loads without an error and never runs, and every chart the
+// model draws with teanode.chart is an empty box.
+func TestTheArtifactHelperRunsOnItsOwn(t *testing.T) {
+	assets, err := fs.Sub(content, "static")
+	if err != nil {
+		t.Fatalf("the embedded dashboard: %s", err)
+	}
+	helper, err := fs.ReadFile(assets, "assets/artifact.js")
+	if err != nil {
+		t.Skip("the dashboard has not been built into this binary")
+	}
+	if strings.Contains(string(helper), "webpackChunk") {
+		t.Fatal("assets/artifact.js is a chunk waiting for the dashboard's runtime, which an artifact page never loads")
+	}
+	if !strings.Contains(string(helper), "window.teanode") {
+		t.Fatal("assets/artifact.js does not define window.teanode")
+	}
+}
+
 // An unclaimed well-known address is a 404, not the dashboard.
 //
 // Programs probe several of these in turn: a client looking for an

@@ -84,7 +84,10 @@ module.exports = {
     //
     // The artifact helper stays whole: it is one small file linked by name
     // from a page this server did not write, and it cannot ask for a second.
-    runtimeChunk: production ? 'single' : false,
+    // That includes the runtime: an entry given no runtime chunk carries it
+    // inside, while one sharing the dashboard's is only a chunk that waits
+    // for a runtime the page never loads, and never runs.
+    runtimeChunk: production ? { name: (entrypoint) => (entrypoint.name === 'artifact' ? undefined : 'runtime') } : false,
     splitChunks: {
       chunks: (chunk) => chunk.name !== 'artifact',
       cacheGroups: {
