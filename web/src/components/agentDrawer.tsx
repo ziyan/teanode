@@ -81,6 +81,8 @@ type GoalState = 'working' | 'waiting' | 'met'
 interface Conversation {
   id: string
   kind: 'main' | 'named' | 'run'
+  // For a run, what made it: a dream, a triage, a call over MCP.
+  jobKind?: string
   title: string
   summary?: string
   lastAt: string
@@ -428,7 +430,7 @@ const CONVERSATION_TODOS = `
 const CONVERSATION = `
   query ($conversationId: String, $first: Int, $offset: Int) {
     ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
-      conversation { id kind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt }
+      conversation { id kind jobKind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt }
       actingAs
       goalTurnsToday
       messages {
@@ -3472,6 +3474,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     })
   }
 
+  // A call a program made over MCP is filed as a run of one tool call, and
+  // that call is all there is to read: what it was asked and what came
+  // back, or why it failed. Hidden with the other tool calls, the run said
+  // only that the call was made, so here it is always shown, and open.
+  const isCallRecord = loaded?.id === conversationId && loaded?.jobKind === 'mcp'
+  const isToolOpen = (key: string) => expanded.has(key) !== isCallRecord
+
   // drawLine is one line of the transcript as the drawer draws it.
   const drawLine = (line: Line) => {
     switch (line.kind) {
@@ -3515,7 +3524,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       case 'tool': {
         const artifact = artifactOf(line)
         const shared = sharedFilesOf(line)
-        if (!showTools) {
+        if (!showTools && !isCallRecord) {
           if (artifact) return <ArtifactCard key={line.key} artifact={artifact} />
           return shared.length > 0 ? (
             <Fragment key={line.key}>
@@ -3528,7 +3537,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         return (
           <div
             key={line.key}
-            className={['agent-line tool', line.done ? 'done' : '', expanded.has(line.key) ? 'open' : '']
+            className={['agent-line tool', line.done ? 'done' : '', isToolOpen(line.key) ? 'open' : '']
               .filter(Boolean)
               .join(' ')}
           >
@@ -3536,7 +3545,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               {line.done ? '✓' : '…'} {line.tool}
               {line.note ? <span className="muted"> · {line.note}</span> : null}
             </button>
-            {expanded.has(line.key) && (
+            {isToolOpen(line.key) && (
               <div className="agent-tool-detail">
                 {line.arguments && <CodeBlock text={line.arguments} tidy />}
                 {line.result && <CodeBlock text={line.result} tidy />}
