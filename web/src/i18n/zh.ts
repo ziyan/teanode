@@ -1128,6 +1128,7 @@ export const zh: Catalog = {
   'agentDrawer.remove': '移除',
   'agentDrawer.showTools': '显示工具调用',
   'agentDrawer.showUsage': '显示用量',
+  'agentDrawer.showWorkingNotes': '显示助手的工作笔记',
   'agentDrawer.rename': '重命名',
   'agentDrawer.tokens': '输入 {in}，输出 {out}',
   'agentDrawer.arguments': '参数',

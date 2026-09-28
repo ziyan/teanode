@@ -6787,8 +6787,23 @@ main.content:has(> .mailbox-frame) {
 .head-menu-switches {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 12px 10px;
+  gap: 2px;
+  padding: 6px 12px 8px;
+}
+
+/* Under the day's usage, a rule between them; alone, none. */
+.head-menu-usage + .head-menu-switches {
+  border-top: 1px solid var(--border);
+}
+
+/* A row each, the size of the menu's own text, and none of the margin a
+   checkbox on a settings page has. */
+.head-menu-switches label.checkbox {
+  margin-top: 0;
+  padding: 6px 0;
+  color: var(--text);
+  font-size: 13.5px;
+  cursor: pointer;
 }
 
 /* A tool line opens to what was asked and what came back. */

@@ -1171,6 +1171,7 @@ export const en = {
   'agentDrawer.remove': 'Remove',
   'agentDrawer.showTools': 'Show tool calls',
   'agentDrawer.showUsage': 'Show usage',
+  'agentDrawer.showWorkingNotes': 'Show the agent\'s working notes',
   'agentDrawer.rename': 'Rename',
   'agentDrawer.tokens': '{in} in, {out} out',
   'agentDrawer.arguments': 'Arguments',

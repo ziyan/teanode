@@ -1165,6 +1165,7 @@ export const ja: Catalog = {
   'agentDrawer.remove': '削除',
   'agentDrawer.showTools': 'ツール呼び出しを表示',
   'agentDrawer.showUsage': '使用量を表示',
+  'agentDrawer.showWorkingNotes': 'エージェントの作業メモを表示',
   'agentDrawer.rename': '名前を変更',
   'agentDrawer.tokens': '入力 {in}、出力 {out}',
   'agentDrawer.arguments': '引数',
