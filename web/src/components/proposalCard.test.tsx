@@ -26,7 +26,12 @@ afterEach(cleanup)
 it('recovers an accepted proposal after reload without another event or separate status write', async () => {
   const changed = vi.fn()
   execute
-    .mockResolvedValueOnce({ ListCalendars: [{ id: 'calendar', name: 'Calendar' }] })
+    .mockResolvedValueOnce({
+      ListCalendars: [
+        { id: 'reminders', name: 'Reminders', calendarKind: 'reminders' },
+        { id: 'calendar', name: 'Calendar', calendarKind: 'events' },
+      ],
+    })
     .mockRejectedValueOnce(new Error('lost response'))
   const first = render(<ProposalCards itemId="item" proposals={[proposal]} onChanged={changed} />)
   fireEvent.change(screen.getByLabelText('proposal.what'), { target: { value: 'Corrected meeting' } })
@@ -39,6 +44,7 @@ it('recovers an accepted proposal after reload without another event or separate
     expectedProposal: JSON.stringify(proposal),
     summary: 'Corrected meeting',
     requestId: expect.any(String),
+    calendarId: 'calendar',
   })
   expect((screen.getByLabelText('proposal.what') as HTMLInputElement).disabled).toBe(true)
   first.unmount()
@@ -53,7 +59,7 @@ it('recovers an accepted proposal after reload without another event or separate
 
 it('does not adopt a different pending event and lets its own failed request be stopped', async () => {
   execute
-    .mockResolvedValueOnce({ ListCalendars: [{ id: 'calendar' }] })
+    .mockResolvedValueOnce({ ListCalendars: [{ id: 'calendar', calendarKind: 'events' }] })
     .mockRejectedValueOnce(new Error('lost response'))
   render(
     <ProposalCards
