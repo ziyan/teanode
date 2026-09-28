@@ -238,8 +238,13 @@ func TestATokenTheServiceRefusesIsFetchedAgainOnce(test *testing.T) {
 	}))
 	defer server.Close()
 
-	made, _ := newCodex(server.URL, "a-refresh-token-for-"+test.Name(), "an-account", server.Client())
-	made.signIn.tokenUrl = server.URL + "/token"
+	// A sign-in of its own, as signedIn makes: pointing a shared one at this
+	// server wrote to it while the tests running beside this one read it.
+	signer, err := newSignIn(server.URL+"/token", codexClientId, "a-refresh-token", server.Client())
+	if err != nil {
+		test.Fatalf("newSignIn: %s", err)
+	}
+	made := &codex{baseUrl: server.URL, account: "an-account", signIn: signer, http: server.Client()}
 
 	if _, err := made.Chat(context.Background(), &ChatRequest{
 		Model: "gpt-5.5", Messages: []ChatMessage{{Role: RoleUser, Content: "well?"}},
