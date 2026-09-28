@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.74.5] - 2026-09-28
+
+### Changed
+
+- A page's connections are drawn with the same graph as the explore page, so page names no longer run over each other. (#209)
+
 ## [0.74.4] - 2026-09-28
 
 ### Changed
