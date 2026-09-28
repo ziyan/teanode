@@ -92,6 +92,10 @@ type DisconnectAgentServerArguments struct {
 type BeginAgentServerOAuthArguments struct {
 	Server      string `json:"server"`
 	RedirectURL string `json:"redirectUrl"`
+	// Computer is the attached computer the person is signing in on, for a
+	// server whose authorization comes back to their computer; empty takes
+	// its reach, or the only one attached.
+	Computer string `json:"computer" graphapi:"nullable"`
 }
 
 // FinishAgentServerOAuthArguments carry what the person came back with.
@@ -258,7 +262,7 @@ func (self *graph) BeginAgentServerOAuth(ctx context.Context, arguments BeginAge
 		// flow is finished against that address, which the pending state
 		// keeps. The dashboard still finishes it: the computer sends the
 		// browser on to the redirect asked for.
-		redirect, err = worker.ForwardAuthorization(ctx, found.ID, server, redirect)
+		redirect, err = worker.ForwardAuthorization(ctx, found.ID, server, redirect, strings.TrimSpace(arguments.Computer))
 		if err != nil {
 			return "", err
 		}

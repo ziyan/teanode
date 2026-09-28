@@ -1034,6 +1034,8 @@ export const en = {
   'agent.serverCredential': 'Your credential for this server',
   'agent.serverConnect': 'Connect',
   'agent.serverAuthorize': 'Authorize',
+  'agent.serverAuthorizeOnWhich': 'Which computer are you signing in on? The service sends you back to it, so finish the sign-in in a browser there.',
+  'agent.serverAuthorizeComputer': 'Computer',
   'agent.serverDisconnect': 'Disconnect',
   'agent.serverConnected': 'Connected {name}.',
   'agent.serverFailed': 'The server did not accept the connection.',

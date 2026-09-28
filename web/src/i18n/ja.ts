@@ -1028,6 +1028,8 @@ export const ja: Catalog = {
   'agent.serverCredential': 'このサーバーへのあなたの資格情報',
   'agent.serverConnect': '接続',
   'agent.serverAuthorize': '認可する',
+  'agent.serverAuthorizeOnWhich': 'どのコンピューターでサインインしますか？サービスはそのコンピューターに戻るので、そこのブラウザーでサインインを完了してください。',
+  'agent.serverAuthorizeComputer': 'コンピューター',
   'agent.serverDisconnect': '切断',
   'agent.serverConnected': '{name} に接続しました。',
   'agent.serverFailed': 'サーバーが接続を受け付けませんでした。',

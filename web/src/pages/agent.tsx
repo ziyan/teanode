@@ -996,9 +996,11 @@ const DISCONNECT_SERVER = `
   }`
 
 const BEGIN_OAUTH = `
-  mutation ($server: String!, $redirectUrl: String!) {
-    BeginAgentServerOAuth(server: $server, redirectUrl: $redirectUrl)
+  mutation ($server: String!, $redirectUrl: String!, $computer: String) {
+    BeginAgentServerOAuth(server: $server, redirectUrl: $redirectUrl, computer: $computer)
   }`
+
+const ATTACHED_COMPUTERS = `query { ReadAgentComputers { computers { name } } }`
 
 const FINISH_OAUTH = `
   mutation ($server: String!, $code: String!, $state: String!) {
@@ -1225,6 +1227,9 @@ function ServersCard() {
     refresh: false,
   })
   const [connecting, setConnecting] = useState<AgentServer | null>(null)
+  // A server whose authorization comes back to the person's computer, with
+  // several attached: which one they are signing in on.
+  const [choosing, setChoosing] = useState<{ server: AgentServer; computers: string[]; chosen: string } | null>(null)
   const [credential, setCredential] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -1257,13 +1262,28 @@ function ServersCard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const authorize = async (server: AgentServer) => {
+  const authorize = async (server: AgentServer, computer?: string) => {
     setBusy(server.name)
     try {
+      // Coming back to the person's computer, the sign-in has to happen in
+      // a browser on it: with several attached, they say which.
+      if (server.oauthRedirect === 'computer' && computer === undefined) {
+        const attached = await graphql<{ ReadAgentComputers: { computers: { name: string }[] } }>(
+          ATTACHED_COMPUTERS,
+          {},
+        )
+        const names = attached.ReadAgentComputers.computers.map((entry) => entry.name)
+        if (names.length > 1) {
+          setChoosing({ server, computers: names, chosen: names[0] })
+          setBusy(null)
+          return
+        }
+      }
       const redirect = `${window.location.origin}/settings/agent?connect=${encodeURIComponent(server.name)}`
       const response = await graphql<{ BeginAgentServerOAuth: string }>(BEGIN_OAUTH, {
         server: server.name,
         redirectUrl: redirect,
+        computer: computer || undefined,
       })
       window.location.assign(response.BeginAgentServerOAuth)
     } catch (caught) {
@@ -1394,6 +1414,31 @@ function ServersCard() {
               type="password"
               value={credential}
               onChange={(event) => setCredential(event.target.value)}
+            />
+          </label>
+        </FormDialog>
+      ) : null}
+      {choosing ? (
+        <FormDialog
+          title={`${t('agent.serverAuthorize')} · ${choosing.server.name}`}
+          submitLabel={t('agent.serverAuthorize')}
+          busy={busy === choosing.server.name}
+          onClose={() => setChoosing(null)}
+          onSubmit={() => {
+            const { server, chosen } = choosing
+            setChoosing(null)
+            void authorize(server, chosen)
+          }}
+        >
+          <p className="muted">{t('agent.serverAuthorizeOnWhich')}</p>
+          <label>
+            <span>{t('agent.serverAuthorizeComputer')}</span>
+            <Select
+              block
+              value={choosing.chosen}
+              label={t('agent.serverAuthorizeComputer')}
+              options={choosing.computers.map((name) => ({ value: name, label: name }))}
+              onChange={(chosen) => setChoosing({ ...choosing, chosen })}
             />
           </label>
         </FormDialog>

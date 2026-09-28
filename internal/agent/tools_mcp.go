@@ -215,10 +215,19 @@ func (self *Agent) computerForServer(agentId, serverName, computerName string) (
 // loopback interface for a server's authorization and send the browser that
 // brings it on to forwardURL. The answer is the loopback address to give the
 // service, which only a browser on that computer can reach.
-func (self *Agent) ForwardAuthorization(ctx context.Context, agentId string, server *config.AgentMCPServer, forwardURL string) (string, error) {
+//
+// The computer is the one the person named, since it is the one they are
+// signing in on; else the server's reach; else the only one attached.
+func (self *Agent) ForwardAuthorization(ctx context.Context, agentId string, server *config.AgentMCPServer, forwardURL, computerName string) (string, error) {
 	computers := self.computersFor(agentId)
 	var on *attachedComputer
-	if named := self.reachOf(ctx, agentId, models.AgentReachServer, server.Name); named != "" {
+	if computerName != "" {
+		found, err := self.attachedNamed(agentId, computerName)
+		if err != nil {
+			return "", fmt.Errorf("your computer %s is not attached; start teanode computer there", computerName)
+		}
+		on = found
+	} else if named := self.reachOf(ctx, agentId, models.AgentReachServer, server.Name); named != "" {
 		found, err := self.attachedNamed(agentId, named)
 		if err != nil {
 			return "", fmt.Errorf("%s is authorized on your computer %s, which is not attached; start teanode computer there", server.Name, named)
@@ -231,7 +240,7 @@ func (self *Agent) ForwardAuthorization(ctx context.Context, agentId string, ser
 		case 1:
 			on = computers[0]
 		default:
-			return "", fmt.Errorf("%s is authorized on your own computer, and several are attached; set its reach on the Connections tab to the one with your browser", server.Name)
+			return "", fmt.Errorf("%s is authorized on your own computer, and several are attached; choose the one you are signing in on", server.Name)
 		}
 	}
 	if !slices.Contains(on.features, computer.FeatureAuthorizationForward) {

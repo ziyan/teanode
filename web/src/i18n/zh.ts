@@ -995,6 +995,8 @@ export const zh: Catalog = {
   'agent.serverCredential': '你在这台服务器上的凭据',
   'agent.serverConnect': '连接',
   'agent.serverAuthorize': '授权',
+  'agent.serverAuthorizeOnWhich': '你在哪台电脑上登录？服务会把你送回那台电脑，请在那里的浏览器中完成登录。',
+  'agent.serverAuthorizeComputer': '电脑',
   'agent.serverDisconnect': '断开',
   'agent.serverConnected': '已连接 {name}。',
   'agent.serverFailed': '服务器没有接受这次连接。',

@@ -50,7 +50,9 @@ meant for a program on somebody's own machine. A server declared with
 computer instead: the computer listens on its loopback interface, the service
 is given that address, and the computer sends the browser on to the dashboard,
 which finishes the connection. The person has to finish it in a browser on
-that computer. Why:
+that computer. With several attached, the dashboard asks which one they are
+signing in on and passes it as `computer`; left out, the server's reach
+decides, or the only computer attached. Why:
 `docs/decisions/20260927-an-authorization-can-come-back-to-the-persons-computer.md`.
 
 `internal/agent/tools_mcp.go` discovers each connected server's tools and
