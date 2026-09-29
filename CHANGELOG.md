@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.82.0] - 2026-09-29
+
+### Added
+
+- Alerts: the agent tells you, unasked, when your mail shows something you should know now, in the conversation and your linked chat app, with quiet hours, a daily limit and mutes. (#233)
+
+### Fixed
+
+- Turns the agent took on its own (speaking first, schedules, goal check-ins) never reached a linked Telegram or Discord chat. (#233)
+
 ## [0.81.2] - 2026-09-29
 
 ### Fixed
