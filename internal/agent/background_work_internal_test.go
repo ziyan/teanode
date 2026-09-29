@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -585,5 +586,106 @@ func TestTheToolsStartReadAndStopBackgroundWork(t *testing.T) {
 	}
 	if _, err := tool.Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"action": "read", "id": "not-one"}`)}); err == nil {
 		t.Errorf("read what is not there")
+	}
+}
+
+// permissionedOperations are the API as a person who may do what
+// permissions says; the reading asks nothing of the server. narrowedTo is
+// the limit they were last narrowed to, and askedCount how often a turn
+// asked what they allow.
+type permissionedOperations struct {
+	mutex       sync.Mutex
+	permissions *models.EffectivePermissions
+	narrowedTo  *models.EffectivePermissions
+	narrowed    *permissionedOperations
+	askedCount  int
+}
+
+func (self *permissionedOperations) Permissions() *models.EffectivePermissions {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.askedCount++
+	return self.permissions
+}
+
+func (self *permissionedOperations) Execute(ctx context.Context, document string, variables map[string]any, result any) error {
+	if result == nil {
+		return nil
+	}
+	return json.Unmarshal([]byte(`{}`), result)
+}
+
+func (self *permissionedOperations) NarrowedTo(limit *models.EffectivePermissions) Operations {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.narrowedTo = limit
+	self.narrowed = &permissionedOperations{permissions: self.permissions.Within(limit)}
+	return self.narrowed
+}
+
+// A subagent started in the background is held to what the turn that
+// started it could do: the set is kept with the work, and when it runs
+// the operations made again for the person are narrowed to it, so that a
+// permission the person was given since does not reach it.
+func TestABackgroundSubagentRunsWithTheStartingTurnsPermissions(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	provider, callCount := answeringProvider(t, "Nothing to report.", nil, nil)
+	worker, run := digestSplitWorld(t, database, provider.URL)
+	conversation := backgroundConversation(t, database, run.Agent.ID)
+
+	startingTurn := models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionAgentUse}, {Permission: models.PermissionMailRead}})
+	turn := &AskRun{
+		agent: worker,
+		settings: &AskSettings{
+			Agent: run.Agent, Owner: run.Owner, Conversation: conversation,
+			Operations: &permissionedOperations{permissions: startingTurn},
+		},
+		offered:        []*Tool{{Name: "subagent"}, {Name: "memory"}},
+		promptMemories: map[string]bool{},
+	}
+	result, err := worker.subagentTool().Run(tools.WithRun(t.Context(), turn), &tools.Call{Arguments: json.RawMessage(`{"prompt": "Look through the folder.", "background": true}`)})
+	if err != nil {
+		t.Fatalf("started: %s", err)
+	}
+	var answered struct {
+		BackgroundWorkID string `json:"backgroundWorkId"`
+	}
+	if err := json.Unmarshal([]byte(result.Content), &answered); err != nil {
+		t.Fatal(err)
+	}
+	work := readWork(t, database, run.Agent.ID, answered.BackgroundWorkID)
+	if kept := work.WorkRequest.StartingTurnPermissions; kept == nil || !kept.Has(models.PermissionAgentUse) || !kept.Has(models.PermissionMailRead) || kept.Has(models.PermissionServerManage) {
+		t.Fatalf("the starting turn's permissions are kept with the work: %+v", work.WorkRequest)
+	}
+
+	// By the time it runs, the person may also manage the server.
+	now := &permissionedOperations{permissions: models.NewEffectivePermissions([]models.Grant{
+		{Permission: models.PermissionAgentUse}, {Permission: models.PermissionMailRead}, {Permission: models.PermissionServerManage},
+	})}
+	worker.SetOperationsFactory(func(context.Context, *models.User) (Operations, error) { return now, nil })
+	if err := worker.Tick(t.Context()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	worker.Wait()
+	if finished := readWork(t, database, run.Agent.ID, work.ID); finished.WorkStatus != models.BackgroundWorkDone || callCount() == 0 {
+		t.Fatalf("the subagent ran: %+v", finished)
+	}
+	now.mutex.Lock()
+	defer now.mutex.Unlock()
+	if now.narrowedTo == nil || now.narrowedTo.Has(models.PermissionServerManage) || now.narrowed == nil {
+		t.Fatalf("the operations were narrowed to the starting turn's: %+v", now.narrowedTo)
+	}
+	if now.narrowed.askedCount == 0 || now.narrowed.permissions.Has(models.PermissionServerManage) || !now.narrowed.permissions.Has(models.PermissionMailRead) {
+		t.Fatalf("the subagent's turn ran with the narrowed operations: %+v", now.narrowed.permissions)
+	}
+
+	// Operations that cannot narrow themselves say the narrower set.
+	plain := &digestSplitOperations{}
+	if said := narrowOperations(plain, startingTurn).Permissions(); len(said.Everywhere) != 0 {
+		t.Errorf("nothing held is nothing within: %+v", said)
+	}
+	if narrowOperations(plain, nil) != Operations(plain) {
+		t.Errorf("no limit, kept before there was one, leaves them as they are")
 	}
 }

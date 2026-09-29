@@ -23,6 +23,14 @@ type Operations interface {
 	Permissions() *models.EffectivePermissions
 }
 
+// NarrowableOperations is Operations that can be held to fewer permissions
+// than the person's: every call is refused what the limit does not allow,
+// and Permissions says the narrower set.
+type NarrowableOperations interface {
+	Operations
+	NarrowedTo(limit *models.EffectivePermissions) Operations
+}
+
 // Run is the turn a tool is called in, as a tool sees it: who it is for,
 // what it may reach, and what has been loaded so far. The loop puts its
 // run into the context with WithRun; a tool takes it out with RunFrom.

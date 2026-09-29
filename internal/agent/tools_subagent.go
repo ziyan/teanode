@@ -220,6 +220,14 @@ func followSubagent(ctx context.Context, turn *AskRun, conversationId string, wa
 // restart has the same.
 func (self *Agent) startBackgroundSubagent(ctx context.Context, parent *AskRun, prompt, title string) (*Result, error) {
 	request := models.AgentBackgroundWorkRequest{Prompt: prompt, IsReadOnly: parent.settings.ReadOnly, AllowedToolNames: []string{}}
+	// What this turn may do, which the subagent is held to when it runs:
+	// its operations are made again then, for the person as they are then.
+	if parent.settings.Operations != nil {
+		request.StartingTurnPermissions = parent.settings.Operations.Permissions()
+	}
+	if request.StartingTurnPermissions == nil {
+		request.StartingTurnPermissions = models.NewEffectivePermissions(nil)
+	}
 	for _, tool := range parent.offered {
 		switch tool.Name {
 		case "subagent", "survey", "background_work":

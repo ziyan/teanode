@@ -47,6 +47,11 @@ type AgentBackgroundWorkRequest struct {
 	AllowedToolNames  []string `json:"allowedToolNames,omitempty"`
 	ReadOnlyToolNames []string `json:"readOnlyToolNames,omitempty"`
 	IsReadOnly        bool     `json:"isReadOnly,omitempty"`
+
+	// StartingTurnPermissions is what the turn that started a subagent
+	// could do. It runs held to them, so that it never does more than
+	// that turn could, whatever the person may do by the time it runs.
+	StartingTurnPermissions *EffectivePermissions `json:"startingTurnPermissions,omitempty"`
 }
 
 // AgentBackgroundWork is one piece of background work.

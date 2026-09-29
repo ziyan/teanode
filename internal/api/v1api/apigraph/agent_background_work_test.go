@@ -12,6 +12,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/graphapi"
 )
 
 // A survey started through the API is queued and answered at once, wakes
@@ -118,4 +119,49 @@ func TestASurveyStartedThroughTheAPIIsQueuedReadAndStopped(t *testing.T) {
 			t.Fatalf("stopped: %+v %v", stopped, err)
 		}
 	})
+}
+
+// Operations narrowed to a limit say the narrower set and are refused
+// every call beyond it, whatever the person may do: what a subagent in
+// the background is held to, the permissions of the turn that started it.
+func TestNarrowedOperationsAreRefusedBeyondTheirLimit(t *testing.T) {
+	endpoint, _, reader := mcpEndpoint(t)
+	graphApi := graphapi.New()
+	var query Query = endpoint
+	var mutation Mutation = endpoint
+	if err := graphApi.Register(&query, &mutation, nil); err != nil {
+		t.Fatalf("cannot register the schema: %s", err)
+	}
+	schema, err := graphApi.Build()
+	if err != nil {
+		t.Fatalf("cannot build the schema: %s", err)
+	}
+	endpoint.schema = schema
+
+	var permissions *models.EffectivePermissions
+	dbtest.RunTransactionOn(t, endpoint.database, func(tx db.Transaction) {
+		if permissions, err = tx.EffectivePermissions(reader.ID); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if !permissions.Has(models.PermissionAgentUse) || !permissions.Has(models.PermissionMailRead) {
+		t.Fatalf("the reader may talk to their agent and read their mail: %+v", permissions)
+	}
+	operations := &agentOperations{graph: endpoint, user: reader, permissions: permissions}
+	const listing = `query { ListAgentBackgroundWork { id } }`
+	if err := operations.Execute(context.Background(), listing, nil, nil); err != nil {
+		t.Fatalf("the person's own operations list their work: %s", err)
+	}
+
+	readingOnly := models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailRead}})
+	narrowed := operations.NarrowedTo(readingOnly)
+	if narrowed.Permissions().Has(models.PermissionAgentUse) || !narrowed.Permissions().Has(models.PermissionMailRead) {
+		t.Fatalf("narrowed to reading mail: %+v", narrowed.Permissions())
+	}
+	if err := narrowed.Execute(context.Background(), listing, nil, nil); err == nil {
+		t.Fatalf("a call beyond the limit was made")
+	}
+	if !operations.Permissions().Has(models.PermissionAgentUse) || operations.permissionLimit != nil {
+		t.Fatalf("narrowing changed the operations it was made from")
+	}
 }

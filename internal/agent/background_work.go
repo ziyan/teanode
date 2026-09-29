@@ -291,12 +291,9 @@ func (self *Agent) carryOutBackgroundWork(ctx context.Context, run *Run, work *m
 // their word is refused, and it says what it would have done, for the turn
 // it wakes to take to them.
 func (self *Agent) backgroundSubagent(ctx context.Context, run *Run, work *models.AgentBackgroundWork) (string, []string, error) {
-	if self.operations == nil {
-		return "", nil, ErrUnavailable
-	}
-	operations, err := self.operations(ctx, run.Owner)
+	operations, err := self.backgroundSubagentOperations(ctx, run.Owner, &work.WorkRequest)
 	if err != nil {
-		return "", nil, fmt.Errorf("cannot act as %q: %w", run.Owner.Username, err)
+		return "", nil, err
 	}
 	request := work.WorkRequest
 	conversation, err := self.createSubagentRun(ctx, run.Agent.ID, work.Title)
@@ -335,6 +332,23 @@ func (self *Agent) backgroundSubagent(ctx context.Context, run *Run, work *model
 	}
 	answer, _, err := followSubagent(ctx, turn, conversation.ID, backgroundWorkLongest)
 	return answer, runIds, err
+}
+
+// backgroundSubagentOperations is the API as the person for a subagent in
+// the background, held to what the turn that started it could do. Made
+// afresh for the person, since a run after a restart has no turn to take
+// them from, and narrowed, so that neither a permission granted since nor
+// a turn of wider reach than the one that started it widens what it may
+// do. A permission taken away since is gone from both.
+func (self *Agent) backgroundSubagentOperations(ctx context.Context, owner *models.User, request *models.AgentBackgroundWorkRequest) (Operations, error) {
+	if self.operations == nil {
+		return nil, ErrUnavailable
+	}
+	operations, err := self.operations(ctx, owner)
+	if err != nil {
+		return nil, fmt.Errorf("cannot act as %q: %w", owner.Username, err)
+	}
+	return narrowOperations(operations, request.StartingTurnPermissions), nil
 }
 
 // sweepBackgroundWork fails work whose job was lost, and wakes the
