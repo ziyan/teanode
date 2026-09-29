@@ -22,6 +22,7 @@ import {
   useBackgroundCommands,
 } from '../components/backgroundCommands'
 import { BackgroundWorkCard } from '../components/backgroundWork'
+import { AlertsCard } from '../components/agentAlerts'
 import { PencilIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tabs, TabItem } from '../components/tabs'
@@ -85,6 +86,8 @@ export type AgentMailboxPolicy = {
   search: boolean
   research: boolean
   autoReply?: AgentAutoReply | null
+  // Absent means on: alerts follow the sorting unless switched off here.
+  alerts?: { enabled: boolean } | null
 }
 export type Agent = {
   id: string
@@ -104,6 +107,10 @@ export type Agent = {
   operatorDisabledAt?: string | null
   isMemoryCheckEnabled: boolean
   isIdeasEnabled: boolean
+  isAlertsEnabled: boolean
+  alertQuietStart?: string
+  alertQuietEnd?: string
+  alertDailyMost: number
 }
 export type AgentSource = { mailboxId: string; name: string; addresses: string[]; policy?: AgentMailboxPolicy | null }
 // A calendar or an address book as a source: a switch, and how much is in it.
@@ -129,14 +136,15 @@ export type AgentView = {
 
 const VIEW = `{
   agent { id name enabled instructions language knowledgeLanguage askModel dreamFrom dreamUntil dailyTokens operatorDisabledAt confirm
-    isMemoryCheckEnabled isIdeasEnabled
+    isMemoryCheckEnabled isIdeasEnabled isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost
     voice { tone length greeting signoff }
     categories { name description }
     notifications { heldReply highPriority runFailed } }
   sources { mailboxId name addresses policy { granted draftReplies search research
     triage { enabled backfill replyExpectation }
     summaries { enabled minimumMessages style }
-    autoReply { enabled guidance scope allow never categories when hours { from until days } holdMinutes dailyLimit } } }
+    autoReply { enabled guidance scope allow never categories when hours { from until days } holdMinutes dailyLimit }
+    alerts { enabled } } }
   collections { id name kind granted items }
   allowed { enabled triage summaries draftReplies search research autoReply ask schedules browser connectedServers }
   budget { used limit resetsAt cost costLimit currency }
@@ -148,12 +156,14 @@ const UPDATE_AGENT = `
   mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String, $knowledgeLanguage: String,
     $voice: AgentVoiceInput,
     $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput, $confirm: [String!], $askModel: String,
-    $dreamFrom: String, $dreamUntil: String, $isMemoryCheckEnabled: Boolean, $isIdeasEnabled: Boolean, $forget: Boolean) {
+    $dreamFrom: String, $dreamUntil: String, $isMemoryCheckEnabled: Boolean, $isIdeasEnabled: Boolean,
+    $isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int, $forget: Boolean) {
     UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, knowledgeLanguage: $knowledgeLanguage,
       voice: $voice,
       categories: $categories, notifications: $notifications, confirm: $confirm, askModel: $askModel,
       dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, isMemoryCheckEnabled: $isMemoryCheckEnabled,
-      isIdeasEnabled: $isIdeasEnabled, forget: $forget) ${VIEW}
+      isIdeasEnabled: $isIdeasEnabled, isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart,
+      alertQuietEnd: $alertQuietEnd, alertDailyMost: $alertDailyMost, forget: $forget) ${VIEW}
   }`
 const GRANT = `mutation ($mailboxId: String!, $policy: AgentMailboxInput) { GrantAgentMailbox(mailboxId: $mailboxId, policy: $policy) ${VIEW} }`
 const REVOKE = `mutation ($mailboxId: String!) { RevokeAgentMailbox(mailboxId: $mailboxId) ${VIEW} }`
@@ -315,6 +325,7 @@ export function AgentPage() {
             <AboutForm agent={agent} view={view} busy={busy} onSave={update} />
             <VoiceForm agent={agent} busy={busy} onSave={update} />
           </div>
+          {agent.enabled && !agent.operatorDisabledAt ? <AlertsCard /> : null}
           <div className="card">
             <h3>{t('agent.advanced')}</h3>
             <div className="form-narrow">
@@ -372,6 +383,7 @@ export function AgentPage() {
               </label>
               <p className="muted field-hint">{t('agent.ideasHint')}</p>
             </div>
+            <AlertSettings agent={agent} busy={busy} onSave={update} />
             <ConfirmForm agent={agent} busy={busy} onSave={update} />
             <div className="settings-subform">
               <h4>{t('agent.forget')}</h4>
@@ -469,6 +481,76 @@ type SaveProps = {
   agent: Agent
   busy: boolean
   onSave: (variables: Record<string, unknown>, done: string) => Promise<void>
+}
+
+// AlertSettings: whether the agent tells the person, unasked, what their
+// mail says they should know now; their night, when only what cannot wait
+// is said; and how many a day at most. What it told them, and what they
+// muted, is the Alerts card on this tab.
+function AlertSettings({ agent, busy, onSave }: SaveProps) {
+  const { t } = useTranslation()
+  const [dailyMost, setDailyMost] = useState(String(agent.alertDailyMost || 5))
+  useEffect(() => setDailyMost(String(agent.alertDailyMost || 5)), [agent.alertDailyMost])
+  const saveDailyMost = () => {
+    const most = Number.parseInt(dailyMost, 10)
+    if (!Number.isFinite(most) || most === (agent.alertDailyMost || 5)) return
+    void onSave({ alertDailyMost: most }, t('agent.saved'))
+  }
+  return (
+    <div className="settings-subform">
+      <h4>{t('agent.alerts')}</h4>
+      <p className="muted">{t('agent.alertsHint')}</p>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={agent.isAlertsEnabled}
+          disabled={busy}
+          onChange={(event) =>
+            void onSave(
+              { isAlertsEnabled: event.target.checked },
+              event.target.checked ? t('agent.alertsOn') : t('agent.alertsOff'),
+            )
+          }
+        />
+        {t('agent.alertsEnabled')}
+      </label>
+      <div className="form-narrow">
+        <div className="row alert-settings">
+          <label>
+            <span>{t('agent.alertQuietStart')}</span>
+            <input
+              type="time"
+              disabled={busy || !agent.isAlertsEnabled}
+              value={agent.alertQuietStart || '22:00'}
+              onChange={(event) => void onSave({ alertQuietStart: event.target.value }, t('agent.saved'))}
+            />
+          </label>
+          <label>
+            <span>{t('agent.alertQuietEnd')}</span>
+            <input
+              type="time"
+              disabled={busy || !agent.isAlertsEnabled}
+              value={agent.alertQuietEnd || '07:00'}
+              onChange={(event) => void onSave({ alertQuietEnd: event.target.value }, t('agent.saved'))}
+            />
+          </label>
+          <label className="shrink">
+            <span>{t('agent.alertDailyMost')}</span>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              disabled={busy || !agent.isAlertsEnabled}
+              value={dailyMost}
+              onChange={(event) => setDailyMost(event.target.value)}
+              onBlur={saveDailyMost}
+            />
+          </label>
+        </div>
+      </div>
+      <p className="muted field-hint">{t('agent.alertQuietHint')}</p>
+    </div>
+  )
 }
 
 // AboutForm: what the agent is called, what it writes in, and the standing
@@ -3875,17 +3957,20 @@ function SortingForm({ policy, allowed, busy, onSave }: PolicyProps) {
   const { t } = useTranslation()
   const stored = policy.triage ?? { enabled: false }
   const [triage, setTriage] = useState(stored)
+  // Alerts follow the sorting; a policy that never said is on.
+  const [isAlerting, setIsAlerting] = useState(policy.alerts?.enabled ?? true)
   useEffect(() => {
     setTriage(policy.triage ?? { enabled: false })
+    setIsAlerting(policy.alerts?.enabled ?? true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(policy.triage)])
+  }, [JSON.stringify(policy.triage), JSON.stringify(policy.alerts)])
 
   return (
     <form
       className="settings-subform"
       onSubmit={(event) => {
         event.preventDefault()
-        void onSave({ triage })
+        void onSave({ triage, alerts: { enabled: isAlerting } })
       }}
     >
       <h4>{t('agent.sorting')}</h4>
@@ -3894,6 +3979,12 @@ function SortingForm({ policy, allowed, busy, onSave }: PolicyProps) {
         disabled={!allowed.triage}
         label={t('agent.triage')}
         onChange={(enabled) => setTriage({ ...triage, enabled })}
+      />
+      <Check
+        checked={isAlerting && !!triage.enabled}
+        disabled={!allowed.triage || !triage.enabled}
+        label={t('agent.mailboxAlerts')}
+        onChange={setIsAlerting}
       />
       <div className="form-narrow">
         <div className="row">
