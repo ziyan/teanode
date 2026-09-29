@@ -176,6 +176,7 @@ type Transaction interface {
 	EvaluationOperation
 	InteractionOperation
 	IdeaOperation
+	BackgroundWorkOperation
 
 	DomainUsageOperation
 	AliasUsageOperation

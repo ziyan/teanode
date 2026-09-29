@@ -139,6 +139,13 @@ type AskSettings struct {
 	// conversation, not the run this is happening in.
 	confirmVia *AskRun
 
+	// isUnattended is a run nobody is at the other end of, though it is
+	// not headless: a subagent running in the background, after the turn
+	// that started it has ended. It keeps the tools that turn had, and
+	// puts no card to anybody -- a call that needs the person's word is
+	// refused, as in a headless run.
+	isUnattended bool
+
 	// subagentDepth is how deep in subagents this run is: zero for a turn
 	// somebody asked for, one inside a subagent. One is the limit, and it
 	// is what keeps the subagent tool out of its own catalog.
@@ -515,7 +522,9 @@ func (self *AskRun) Database() db.Database                { return self.agent.se
 func (self *AskRun) Configuration() *config.Configuration { return self.agent.settings.Configuration() }
 func (self *AskRun) Surface() string                      { return self.settings.Surface }
 func (self *AskRun) Headless() bool                       { return self.settings.Headless }
-func (self *AskRun) CanAsk() bool                         { return !self.settings.Headless || self.settings.CanAsk }
+func (self *AskRun) CanAsk() bool {
+	return (!self.settings.Headless || self.settings.CanAsk) && !self.settings.isUnattended
+}
 
 // resultCharacters is how much of a tool's answer the history keeps.
 func (self *AskRun) resultCharacters() int {

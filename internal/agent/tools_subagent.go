@@ -86,21 +86,8 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 		title = cut(prompt, 60)
 	}
 
-	// A conversation of its own, of the kind runs use, so the working is
-	// kept and readable afterwards without being in the middle of what the
-	// person is reading now.
-	var conversation *models.AgentConversation
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		conversation, err = tx.CreateAgentConversation(&models.AgentConversation{
-			AgentID: parent.settings.Agent.ID,
-			Kind:    models.AgentConversationRun,
-			Title:   "Subagent: " + title,
-			JobKind: string(models.AgentJobSubagent),
-			Surface: "subagent",
-			LastAt:  time.Now(),
-		})
-		return err
-	}); err != nil {
+	conversation, err := self.createSubagentRun(ctx, parent.settings.Agent.ID, title)
+	if err != nil {
 		return nil, err
 	}
 
@@ -136,10 +123,54 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 	if err != nil {
 		return nil, err
 	}
+	answer, calls, err := followSubagent(ctx, turn, conversation.ID, subagentWait)
+	if err != nil {
+		return nil, err
+	}
+	result, err := tools.JSONResult(map[string]any{
+		"answer": answer,
+		// Where the working is, so that a person who wants to see what it
+		// actually did can be pointed at it.
+		"run":        conversation.ID,
+		"tool_calls": calls,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result.Note = title
+	return result, nil
+}
+
+// createSubagentRun makes the conversation a subagent works in: one of
+// its own, of the kind runs use, so the working is kept and readable
+// afterwards without being in the middle of what the person is reading
+// now.
+func (self *Agent) createSubagentRun(ctx context.Context, agentId, title string) (*models.AgentConversation, error) {
+	var conversation *models.AgentConversation
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		conversation, err = tx.CreateAgentConversation(&models.AgentConversation{
+			AgentID: agentId,
+			Kind:    models.AgentConversationRun,
+			Title:   "Subagent: " + title,
+			JobKind: string(models.AgentJobSubagent),
+			Surface: "subagent",
+			LastAt:  time.Now(),
+		})
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return conversation, nil
+}
+
+// followSubagent waits for a subagent's turn to end, at most wait, and
+// says what it answered and how many tools it called. A turn still going
+// when the wait is up, or when ctx ends, is stopped.
+func followSubagent(ctx context.Context, turn *AskRun, conversationId string, wait time.Duration) (string, int, error) {
 	events, unsubscribe := turn.Subscribe()
 	defer unsubscribe()
 
-	timer := time.NewTimer(subagentWait)
+	timer := time.NewTimer(wait)
 	defer timer.Stop()
 	answer, failure, calls := "", "", 0
 	for waiting := true; waiting; {
@@ -159,30 +190,19 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 			}
 		case <-timer.C:
 			turn.Stop()
-			failure = fmt.Sprintf("it was still going after %s and was stopped", subagentWait)
+			failure = fmt.Sprintf("it was still going after %s and was stopped", wait)
 			waiting = false
 		case <-ctx.Done():
 			turn.Stop()
-			return nil, ctx.Err()
+			return "", calls, ctx.Err()
 		}
 	}
 	if failure != "" {
-		return nil, fmt.Errorf("the subagent did not finish: %s", failure)
+		return "", calls, fmt.Errorf("the subagent did not finish: %s", failure)
 	}
 	answer = strings.TrimSpace(answer)
 	if answer == "" {
-		return nil, fmt.Errorf("the subagent ended without answering; its working is in the run %s", conversation.ID)
+		return "", calls, fmt.Errorf("the subagent ended without answering; its working is in the run %s", conversationId)
 	}
-	result, err := tools.JSONResult(map[string]any{
-		"answer": answer,
-		// Where the working is, so that a person who wants to see what it
-		// actually did can be pointed at it.
-		"run":        conversation.ID,
-		"tool_calls": calls,
-	})
-	if err != nil {
-		return nil, err
-	}
-	result.Note = title
-	return result, nil
+	return answer, calls, nil
 }

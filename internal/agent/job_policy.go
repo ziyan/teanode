@@ -22,6 +22,11 @@ func jobTimeout(jobKind models.AgentJobKind) time.Duration {
 		return ingestLongest
 	case models.AgentJobEvaluate:
 		return evaluationLongest
+	case models.AgentJobBackground:
+		// A little past the work's own bound, so that work reaching
+		// that bound is recorded as failed rather than put back in the
+		// queue, as a job cut off by its deadline is.
+		return backgroundWorkLongest + 2*time.Minute
 	case models.AgentJobSpeakFirst:
 		// A memory check is a conversation held in one turn, a question
 		// card at a time, each waited on for as long as a confirmation.

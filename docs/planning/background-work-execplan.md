@@ -13,16 +13,28 @@ To see it working: in the drawer ask "survey my notes on the garden in the backg
 ## Progress
 
 - [x] (2026-09-29) Read how background shell commands wake a conversation (`internal/agent/background.go`) and how jobs run; wrote this plan.
-- [ ] Milestone 1: the record and the job: `agent_background_work`, a job kind that runs one, stopping, and the result kept.
+- [x] (2026-09-29) Milestone 1: the record and the job: `agent_background_work` (migration 0121), the job kind `background`, stopping (here through a cancel, elsewhere through the row), the result kept, and a sweep that fails work whose job was lost.
 - [ ] Milestone 2: waking the conversation when it finishes, sharing the bounds background commands have.
 - [ ] Milestone 3: the tools, the API and the command line: survey and subagent with `background`, list/read/stop everywhere, `teanode agent survey` by start and wait.
 - [ ] Milestone 4: the dashboard, docs, a decision record, deploy, and a check end to end.
 
 ## Surprises & Discoveries
 
-None yet.
+- The general stale-claim rule puts back any running job claimed more than fifteen minutes ago, except the night and the ingest. A survey may take a quarter of an hour, so background work would have been claimed a second time beside itself; it gets a bound of its own, released by kind the way the night and the ingest are.
+  Evidence: `ReleaseStaleAgentJobs` in `internal/db/database_agent.go`, and `jobTimeout` defaulting to ten minutes.
+- A job cut off by its own deadline goes back in the queue without a mark (`outcomeForJob`), which for background work would run it again forever. The work gets a bound (`backgroundWorkLongest`, twenty minutes) a little inside the job's, so reaching it is recorded as failed on the row and the job ends done.
 
 ## Decision Log
+
+- Decision: the row's columns are named for what they hold: `work_request` (typed, `models.AgentBackgroundWorkRequest`) rather than `request`, `result_text` rather than `result`, `error_message` rather than `error`.
+  Rationale: the project's naming rule for keys and fields; the same names run from the column to the GraphQL view.
+  Date/Author: 2026-09-29.
+- Decision: a stop is the row first. `StopBackgroundWork` marks it stopped in the caller's transaction and cancels the work after commit when it runs on this instance; running work also reads its row every five seconds and cancels itself when it says stopped, which is how a stop made on another instance reaches it. Finishing never overwrites a stop.
+  Rationale: the in-process registry cannot reach another instance, and a stop that only sometimes works is worse than one that takes five seconds.
+  Date/Author: 2026-09-29.
+- Decision: a subagent in the background is not headless but puts no card to anybody (`isUnattended` on its settings): a call that needs the person's word is refused and it says what it would have done. Its tools are fixed when it is started and kept in the row, so a run after a restart has the same ones.
+  Rationale: the card of a waiting subagent is shown in the parent turn, which has ended; a card raised in the subagent's own run would sit in a conversation nobody reads. The woken turn can raise the card instead.
+  Date/Author: 2026-09-29.
 
 - Decision: background work is a row in a new table, `agent_background_work`, run by a queued job whose subject is the row.
   Rationale: shell commands survive a server restart because the person's computer holds them. A survey or a subagent runs on the server, and a goroutine dies with a deploy; a queued job is claimed again after a restart (at least once, as the job queue already guarantees). Jobs carry only a subject id, so what was asked (the question and scope, or the prompt and title), where to wake, and the result need a row of their own. The row is also what the API and the command line read the result from.
