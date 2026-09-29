@@ -29,7 +29,7 @@ To see it working: on the development server, `teanode agent memory get projects
 - [x] (2026-09-28) Milestone 6: the survey (`internal/agent/survey.go`, `prompts/survey_part.txt`, `prompts/survey_report.txt`): the pages in scope resolved from the structure, one read-only run each with the memory and knowledge lookups, at most six at once and forty in all, then one run combining the parts into a report ending with what it covered and what failed; runs of kind `survey`. The agent's `survey` tool (`tools_survey.go`), the `SurveyAgentMemory` query, the client document and `teanode agent survey "<question>" [--scope <path>] [--json]`. Recall carries a page's first overview section and a theme's standing reflections, and the prompt's index opens with the themes directly under `themes`.
 - [x] (2026-09-28) Review fixes: overview fingerprint and order, activity ranges, older daemons, shared directory names, CMake variables, pass-wide post counts, the survey tool, dormant and divided themes, prompts; see the Decision Log entries marked review.
 - [x] (2026-09-28) A `synthesize` model slot for the overviews, reflections and a survey's page runs, falling back to research; see the Decision Log.
-- [ ] Milestone 7: docs, deploy, and the question this plan began with, asked on the development server.
+- [x] (2026-09-29) Milestone 7: docs, deploy, and the question this plan began with, asked on the development server; the dependency links wait for the first full scan pass with the new reader.
 
 ## Surprises & Discoveries
 
@@ -235,7 +235,11 @@ To see it working: on the development server, `teanode agent memory get projects
 
 ## Outcomes & Retrospective
 
-Nothing yet.
+On the development server, three dreams built 132 themes in up to three levels, about 150 overviews and the first reflections from a memory of tens of thousands of pages, and the structure depends on no question: nothing is written from a survey. A survey of one top-level theme asked seven parts and returned a report of strengths, weaknesses and a strategy, citing pages and fact numbers, in about two minutes. Asked the same question in a conversation, the agent chose the survey on its own and went on to read code and documents for the rest.
+
+What real data changed, each recorded above: themes were first a dozen of up to 1,400 pages, which led to dividing large themes; the first overviews went to deep pages of little weight, which led to ordering by importance with a floor and readiness by direct children; parts took their parent's name, which led to naming against the names taken; the survey's parts on the scan model read as summaries rather than answers, which led to the research model and then the synthesize slot; a survey scoped to a page missed the themes built under it; and CMake directories were named after a test or fuzz program rather than their library.
+
+What remains: the build-file reader was checked by hand over real checkouts, but its links reach the server only when a folder's scan pass ends, and the first full pass after the change was still running when this was written. The survey is a long query; a proxy with a short timeout in front of the server would cut it, and the fix then is a job. Themes of a person's life outside work fill in as the reading of those sources and the nightly overviews catch up.
 
 ## Context and Orientation
 
