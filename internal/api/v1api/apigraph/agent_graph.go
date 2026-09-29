@@ -53,6 +53,16 @@ type AgentGraphQuery interface {
 	// Needs agent:use.
 	RecallAgentMemory(ctx context.Context, arguments RecallAgentMemoryArguments) (*RecallAgentMemoryResult, error)
 
+	// Answer a broad question about a whole area of the graph -- a theme,
+	// a page and what is under it, or everything when scopePath is left
+	// out -- by asking each overview in it for its part of the answer and
+	// combining the parts into one report with citations. Minutes of
+	// model calls, about one a page and one more, priced as runs of kind
+	// survey; nothing in the graph changes. A query rather than a
+	// mutation so that no transaction is held open while it runs. Needs
+	// agent:use.
+	SurveyAgentMemory(ctx context.Context, arguments SurveyAgentMemoryArguments) (*AgentSurveyView, error)
+
 	// What has been filed lately: what the agent page shows under
 	// "Learned". Needs agent:use.
 	ListAgentLearned(ctx context.Context, arguments ListAgentLearnedArguments) ([]*AgentLearnedFact, error)
@@ -143,6 +153,11 @@ type AgentGraphMutation interface {
 	// Dream now, whatever the agent's hours, rather than waiting for its
 	// next turn. Needs agent:use.
 	DreamAgentNow(ctx context.Context, arguments DreamAgentNowArguments) (bool, error)
+
+	// Have the next night write a page's overview again, whether or not
+	// what it is written from has changed. The overview it has stays
+	// until then. Needs agent:use.
+	RewriteAgentOverview(ctx context.Context, arguments RewriteAgentOverviewArguments) (bool, error)
 
 	// Answer one question of a memory evaluation from memory, from the
 	// sources or from both, and grade the answer against the one the
@@ -250,6 +265,13 @@ type RecallAgentMemoryArguments struct {
 	Question string `json:"question"`
 }
 
+// SurveyAgentMemoryArguments are the question a survey answers and
+// where: a page's path, or nothing for everything.
+type SurveyAgentMemoryArguments struct {
+	Question  string `json:"question"`
+	ScopePath string `json:"scopePath" graphapi:"nullable"`
+}
+
 type ListAgentLearnedArguments struct {
 	// Days is how far back to look; zero is one day.
 	Days  int `json:"days" graphapi:"nullable"`
@@ -289,6 +311,10 @@ type MoveAgentNodeArguments struct {
 // tick with wider limits until nothing waits to be read.
 type DreamAgentNowArguments struct {
 	Bootstrap *bool `json:"bootstrap" graphapi:"nullable"`
+}
+
+type RewriteAgentOverviewArguments struct {
+	Path string `json:"path"`
 }
 
 type EvaluateAgentAnswerArguments struct {
@@ -505,6 +531,22 @@ type RecalledAgentPage struct {
 	// it carried none.
 	Summary string               `json:"summary" graphapi:"nullable"`
 	Facts   []*RecalledAgentFact `json:"facts"`
+}
+
+// AgentSurveyView is what a survey answered.
+type AgentSurveyView struct {
+	// Report is the combined answer in markdown, ending with the pages it
+	// covered and any it could not.
+	Report string `json:"report"`
+
+	// CoveredPaths is the pages whose run answered, and FailedPaths the
+	// ones whose run did not finish.
+	CoveredPaths []string `json:"coveredPaths"`
+	FailedPaths  []string `json:"failedPaths"`
+
+	// RunIDs is every run the survey made: one a page and the one that
+	// combined them, each a transcript the person can open.
+	RunIDs []string `json:"runIds"`
 }
 
 // RecalledAgentFact is a fact as the page cites it: its number and what
@@ -1054,6 +1096,46 @@ func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentM
 	return result, nil
 }
 
+// SurveyAgentMemory runs a survey, which is paid work: one model run per
+// page in scope and one more, minutes of them. It is a query all the same,
+// deliberately. A mutation runs inside one database transaction for the
+// whole request (graphView), which a quarter of an hour of model calls
+// must not hold open; a query is left out of the per-resolver transaction
+// (isModelBackedQuery) and reads in short phases around the work. What a
+// query usually promises, that asking twice costs nothing, it does not
+// keep: a client must not retry it, or run it to prefetch.
+func (self *graph) SurveyAgentMemory(ctx context.Context, arguments SurveyAgentMemoryArguments) (*AgentSurveyView, error) {
+	principal, found, err := self.requireRecallPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	question := strings.TrimSpace(arguments.Question)
+	if question == "" {
+		return nil, fmt.Errorf("ask a question to survey")
+	}
+	surveyed, err := worker.Survey(ctx, found, principal.User, question, arguments.ScopePath)
+	if err != nil {
+		return nil, err
+	}
+	// Asked again after the minutes the survey took, so a grant revoked
+	// while it ran does not release what it found.
+	_, current, err := self.requireRecallPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if current.ID != found.ID {
+		return nil, agent.ErrUnavailable
+	}
+	return &AgentSurveyView{
+		Report: surveyed.Report, CoveredPaths: nonNil(surveyed.CoveredPaths),
+		FailedPaths: nonNil(surveyed.FailedPaths), RunIDs: nonNil(surveyed.RunIDs),
+	}, nil
+}
+
 func (self *graph) ListAgentLearned(ctx context.Context, arguments ListAgentLearnedArguments) ([]*AgentLearnedFact, error) {
 	_, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
@@ -1530,6 +1612,26 @@ func (self *graph) SaveAgentNode(ctx context.Context, arguments SaveAgentNodeArg
 	return tx.PutAgentNode(node)
 }
 
+func (self *graph) RewriteAgentOverview(ctx context.Context, arguments RewriteAgentOverviewArguments) (bool, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	path := models.NormalizePath(arguments.Path)
+	tx := self.writing(ctx)
+	node, err := tx.GetAgentNode(found.ID, path)
+	if err != nil {
+		return false, err
+	}
+	if node == nil {
+		return false, fmt.Errorf("there is no page at %q", path)
+	}
+	if err := tx.ClearAgentNodeOverviewInputs(found.ID, node.ID); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (self *graph) MoveAgentNode(ctx context.Context, arguments MoveAgentNodeArguments) (*models.AgentNode, error) {
 	_, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
@@ -1585,6 +1687,12 @@ func (self *graph) SaveAgentFact(ctx context.Context, arguments SaveAgentFactArg
 	kind := models.AgentFactKind(strings.TrimSpace(arguments.Kind))
 	if !models.IsAgentFactKind(kind) {
 		kind = models.FactPlain
+	}
+	// A reflection is the night's reading of a theme, citing what it rests
+	// on, and superseded by the next one; written from here it would be a
+	// claim dressed as that reading, and the next night would fold it away.
+	if kind.FromTheNight() {
+		return nil, fmt.Errorf("%w: a %s is written by the night, not saved by hand; save it as a fact", api.ErrInvalidArguments, kind)
 	}
 	var happened *time.Time
 	if said := strings.TrimSpace(arguments.Happened); said != "" {

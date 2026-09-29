@@ -96,6 +96,9 @@ func repositoryProfile(ctx context.Context, directory string, tracked []string) 
 		}
 	}
 	profile.Module = manifestName(directory)
+	profile.Dependencies, profile.Modules = repositoryDependencies(directory, tracked)
+	profile.Components = repositoryComponents(directory, tracked, ownRepositoryNames(directory, profile.Remotes), profile.Modules)
+	profile.IsBuildRead = true
 	top := map[string]bool{}
 	for _, path := range tracked {
 		if extension := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), "."); extension != "" {
@@ -116,6 +119,13 @@ func repositoryProfile(ctx context.Context, directory string, tracked []string) 
 	// the evidence for it.
 	if log, err := git(ctx, directory, "log", "--no-merges", "--format=%aN%x09%aE%x09%ad", "--date=short"); err == nil {
 		byAddress := map[string]*ScanAuthor{}
+		// Lately, as well as ever: the same lines counted against two
+		// dates, so how busy a checkout is costs no second walk of its
+		// history.
+		now := time.Now()
+		ninetyDaysAgo, yearAgo := now.AddDate(0, 0, -90), now.AddDate(0, 0, -365)
+		activity := &RepositoryActivity{}
+		recentAddresses := map[string]bool{}
 		for _, line := range strings.Split(log, "\n") {
 			fields := strings.Split(line, "\t")
 			if len(fields) < 3 {
@@ -135,6 +145,13 @@ func repositoryProfile(ctx context.Context, directory string, tracked []string) 
 				profile.Last = &last
 			}
 			address := strings.ToLower(fields[1])
+			if !when.Before(yearAgo) {
+				activity.CommitCountLast365Days++
+				recentAddresses[address] = true
+				if !when.Before(ninetyDaysAgo) {
+					activity.CommitCountLast90Days++
+				}
+			}
 			author := byAddress[address]
 			if author == nil {
 				author = &ScanAuthor{Name: fields[0], Address: address}
@@ -151,6 +168,8 @@ func repositoryProfile(ctx context.Context, directory string, tracked []string) 
 			}
 		}
 		profile.Contributors = len(byAddress)
+		activity.AuthorCountLast365Days = len(recentAddresses)
+		profile.Activity = activity
 		for _, author := range byAddress {
 			profile.Authors = append(profile.Authors, *author)
 		}

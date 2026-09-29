@@ -30,8 +30,29 @@ func (self *Agent) graphIndex(ctx context.Context, agent *models.Agent, owner *m
 		if err != nil {
 			return err
 		}
-		spent := 0
+		// The top of the themes first: what the graph is about, a line
+		// each. They would not rank on their own, since a theme of
+		// themes has no links and at most a few reflections, and those
+		// are what importance is made of.
+		topThemes, err := tx.ListAgentTopThemes(agent.ID, indexThemes)
+		if err != nil {
+			return err
+		}
+		isTopTheme := make(map[string]bool, len(topThemes))
+		var ordered []*models.AgentNode
+		for _, theme := range topThemes {
+			if strings.TrimSpace(theme.Summary) != "" || strings.TrimSpace(theme.Overview) != "" {
+				isTopTheme[theme.ID] = true
+				ordered = append(ordered, theme)
+			}
+		}
 		for _, node := range nodes {
+			if !isTopTheme[node.ID] {
+				ordered = append(ordered, node)
+			}
+		}
+		spent := 0
+		for _, node := range ordered {
 			// The self page is not a line in the index; it is the block
 			// above it, written by selfLines.
 			if node.Path == models.PathSelf {

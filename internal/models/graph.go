@@ -65,7 +65,23 @@ const (
 	// own span on each checkout. A hundred checkouts are a hundred lines,
 	// which would bury the page that says who they are.
 	PathWork = "self/work"
+
+	// PathThemes is where the night keeps the themes it finds by
+	// clustering the links: groups of pages more linked to one another
+	// than to the rest. Not one of the roots every graph starts with; the
+	// night makes it the first time it has a theme to put there.
+	PathThemes = "themes"
+
+	// PathReflections is the person's own page of the night's
+	// observations across their themes, written about once a week.
+	PathReflections = "self/reflections"
 )
+
+// IsThemePath says whether a path is a theme's page: anything under
+// themes, not the folder itself.
+func IsThemePath(path string) bool {
+	return strings.HasPrefix(path, PathThemes+"/")
+}
 
 // IsThePerson says whether a path under people names the person whose
 // agent this is: by their username, by any word of their name, by their
@@ -165,6 +181,27 @@ type AgentNode struct {
 	Dormant bool `json:"dormant"`
 
 	UsedAt *time.Time `json:"usedAt,omitempty"`
+
+	// Overview is how the thing works, in several short markdown sections,
+	// written by the night from the page's facts, the overviews of the
+	// pages under it and the openings of the pages it is linked to. The
+	// opening says what a page is and every prompt's index carries it; the
+	// overview is longer and is read only when the page itself is.
+	//
+	// Written only by the night's overview phase, and never by writing the
+	// page, so a page saved from a copy read before an overview was written
+	// does not put the old one back.
+	Overview          string     `json:"overview,omitempty"`
+	OverviewWrittenAt *time.Time `json:"overviewWrittenAt,omitempty"`
+
+	// OverviewInputs is a hash of what the overview was written from. The
+	// night writes it again when the hash of the page's inputs as they are
+	// now is different; empty means it is due.
+	OverviewInputs string `json:"-"`
+
+	// OverviewEvidence is the pages (kind memory, the path as the quote)
+	// and the files (kind document) the overview cites.
+	OverviewEvidence []Evidence `json:"overviewEvidence,omitempty"`
 }
 
 // AgentFactKind is what sort of statement a fact is.
@@ -178,10 +215,20 @@ const (
 	FactDecision   AgentFactKind = "decision"
 	FactEvent      AgentFactKind = "event"
 	FactHowTo      AgentFactKind = "howto"
+
+	// FactReflection is an observation the night made over a theme --
+	// a pattern, a tension, a trend, a risk, a question -- citing the
+	// pages and facts it rests on. Nobody said it; the night worked it out
+	// from what the notes say, so only the night writes one.
+	FactReflection AgentFactKind = "reflection"
 )
 
 // AgentFactKinds is every kind.
-var AgentFactKinds = []AgentFactKind{FactPlain, FactPreference, FactDecision, FactEvent, FactHowTo}
+var AgentFactKinds = []AgentFactKind{FactPlain, FactPreference, FactDecision, FactEvent, FactHowTo, FactReflection}
+
+// AgentFactKindsFiled is the kinds a conversation, a tool or a person
+// files: every kind but a reflection.
+var AgentFactKindsFiled = []AgentFactKind{FactPlain, FactPreference, FactDecision, FactEvent, FactHowTo}
 
 // IsAgentFactKind says whether a word names a kind.
 func IsAgentFactKind(kind AgentFactKind) bool {
@@ -199,6 +246,13 @@ func IsAgentFactKind(kind AgentFactKind) bool {
 // agent following a stranger.
 func (self AgentFactKind) FromThePerson() bool {
 	return self == FactPreference || self == FactDecision
+}
+
+// FromTheNight says whether a kind is only ever written by the night's
+// own reasoning. A model filing a conversation that calls its sentence a
+// reflection is filing a fact, and it is filed as one.
+func (self AgentFactKind) FromTheNight() bool {
+	return self == FactReflection
 }
 
 // EvidenceKind is where a fact came from.
@@ -221,6 +275,11 @@ const (
 	// kind so that no reader mistakes the walk for a document.
 	EvidenceDream EvidenceKind = "dream"
 )
+
+// ReflectionEvidencePrefix begins the night's own line of evidence on a
+// reflection, which names what kind of observation it is: "reflection:
+// pattern", "reflection: risk".
+const ReflectionEvidencePrefix = "reflection: "
 
 // Evidence is one place a fact came from, with the words it was read in.
 type Evidence struct {
@@ -295,12 +354,19 @@ const (
 	EdgeRelatedTo  AgentEdgeRelation = "related_to"
 	EdgeDecidedIn  AgentEdgeRelation = "decided_in"
 	EdgeAboutPlace AgentEdgeRelation = "about"
+
+	// EdgeDependsOn is a build-time dependency of one checkout on another,
+	// read from its build files by a program. Not uses: that one is the
+	// model's word for people and their tools, and a map of what builds on
+	// what has to be told apart from it.
+	EdgeDependsOn AgentEdgeRelation = "depends_on"
 )
 
 // AgentEdgeRelations is every relation.
 var AgentEdgeRelations = []AgentEdgeRelation{
 	EdgePartOf, EdgeWorksOn, EdgeMemberOf, EdgeKnows, EdgeOwns,
 	EdgeUses, EdgeLocatedIn, EdgeRelatedTo, EdgeDecidedIn, EdgeAboutPlace,
+	EdgeDependsOn,
 }
 
 // IsAgentEdgeRelation says whether a word names a relation.
@@ -391,6 +457,7 @@ var relationPhrases = map[AgentEdgeRelation][2]string{
 	EdgeRelatedTo:  {"is related to", "is related to"},
 	EdgeDecidedIn:  {"was decided in", "is where the decision was made about"},
 	EdgeAboutPlace: {"is about", "is the subject of"},
+	EdgeDependsOn:  {"depends on", "is depended on by"},
 }
 
 // pastPhrases are how a relation reads once it has stopped being true.
@@ -403,6 +470,7 @@ var pastPhrases = map[AgentEdgeRelation][2]string{
 	EdgeOwns:      {"owned", "belonged to"},
 	EdgeUses:      {"used", "was used by"},
 	EdgeLocatedIn: {"was in", "was where"},
+	EdgeDependsOn: {"depended on", "was depended on by"},
 }
 
 // Phrase is how this relation reads from one end, in the tense the link
@@ -651,6 +719,33 @@ func (self *AgentFact) Addressed(audience AgentAudience) bool {
 		}
 	}
 	return false
+}
+
+// ReflectionKind is what kind of observation a reflection is -- a
+// pattern, a tension, a trend, a risk, a question -- from the night's own
+// line in its evidence; empty for any other fact.
+func (self *AgentFact) ReflectionKind() string {
+	if self.Kind != FactReflection {
+		return ""
+	}
+	for _, evidence := range self.Evidence {
+		if evidence.Kind == EvidenceDream && strings.HasPrefix(evidence.Quote, ReflectionEvidencePrefix) {
+			return strings.TrimPrefix(evidence.Quote, ReflectionEvidencePrefix)
+		}
+	}
+	return ""
+}
+
+// Citations is the pages and facts a reflection cites, as a reader names
+// them: "projects/example-app", "projects/example-lib#2".
+func (self *AgentFact) Citations() []string {
+	var citations []string
+	for _, evidence := range self.Evidence {
+		if evidence.Kind == EvidenceMemory && evidence.Quote != "" {
+			citations = append(citations, evidence.Quote)
+		}
+	}
+	return citations
 }
 
 // Live says whether a fact is one the page still states: not superseded,

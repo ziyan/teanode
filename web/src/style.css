@@ -11533,3 +11533,20 @@ button.idea-history-title {
     padding: var(--space-3) var(--space-2);
   }
 }
+
+/* A page's overview is several sections of prose the night wrote, read
+   like the opening above it, so its measure is capped the same way. */
+.knowledge-overview {
+  max-width: var(--measure);
+  overflow-wrap: break-word;
+}
+
+/* A reflection's citations: the pages and facts it rests on, each a link
+   to its page, wrapping onto as many lines as it needs. */
+.knowledge-citations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  align-items: baseline;
+  overflow-wrap: anywhere;
+}

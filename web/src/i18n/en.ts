@@ -2740,6 +2740,7 @@ export const en = {
   'knowledge.relation.related_to': 'related to',
   'knowledge.relation.decided_in': 'decided in',
   'knowledge.relation.about': 'about',
+  'knowledge.relation.depends_on': 'depends on',
   // The lookup answers "is this written down"; recall answers "will it be
   // read", which is a different question and the one behind most of "why
   // did it not know that".
@@ -3115,4 +3116,19 @@ export const en = {
   'notes.notEditable': 'This note has pictures or attachments. Change it on your phone.',
   'notes.deleteTitle': 'Delete this note?',
   'notes.deleteBody': '"{title}" is deleted here and from your phone at its next sync.',
+  'knowledge.overview': 'Overview',
+  'knowledge.overviewHint': 'How this works, as your agent last wrote it while dreaming, from this page and the pages under and beside it. Written {when}.',
+  'agent.dreamOverviewsWritten': '{count} overviews written',
+  'knowledge.reflections': 'Reflections',
+  'knowledge.reflectionsHint': 'What your agent noticed across the pages this one groups, while dreaming. Each cites the pages and facts it rests on; a later reflection replaces the last.',
+  'knowledge.citing': 'Citing',
+  'knowledge.factKind.reflection': 'Reflection',
+  'knowledge.reflectionKind.pattern': 'Pattern',
+  'knowledge.reflectionKind.tension': 'Tension',
+  'knowledge.reflectionKind.trend': 'Trend',
+  'knowledge.reflectionKind.risk': 'Risk',
+  'knowledge.reflectionKind.question': 'Question',
+  'agent.dreamThemesMade': '{count} themes made',
+  'agent.dreamThemesUpdated': '{count} themes updated',
+  'agent.dreamReflectionsWritten': '{count} reflections written',
 }

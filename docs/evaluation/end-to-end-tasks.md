@@ -288,6 +288,19 @@ edit).
       phone after its next sync; not a draft and not a memory.
 - [ ] The second message changes that note rather than writing another.
 
+### picture-01: the big picture
+
+Surface: drawer, with sources of code and documents read and a few dreams
+behind them. Covers `survey`, overviews, themes, reflections.
+
+1. "Looking at everything you know about my work, what are the strengths and
+   weaknesses of the product, and what would you improve first?"
+
+- [ ] It surveys rather than guessing from a few recalled facts: the answer
+      names parts of the product and cites pages, facts or files.
+- [ ] Weaknesses come with their evidence (activity, issues, reflections),
+      not general advice that fits any product.
+
 ### money-01: what did I spend
 
 Surface: drawer. Covers `mail_search` over receipts, `artifact`.
@@ -572,6 +585,7 @@ Surface: drawer, the Ideas and Goals tabs, the command line. Covers `idea`,
 | goal | goal-01 |
 | reminder | reminder-01 |
 | note | note-01 |
+| survey, overviews, themes, reflections | picture-01 |
 | todo | shopping-01, travel-01 |
 | ask_user | computer-01 |
 | agent_profile | ideas-01 |

@@ -39,6 +39,13 @@ func (self *Agent) fileComputerPage(ctx context.Context, run *Run, source *model
 	// filed has it written by the filing.
 	named := make([]string, 0, len(result.Entries))
 	var renamed []*models.AgentDocument
+	var checkouts *checkoutIndex
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		checkouts = newCheckoutIndex(tx, source, result.Entries)
+		return nil
+	}); err != nil {
+		return "", counts, err
+	}
 	for _, entry := range result.Entries {
 		if ctx.Err() != nil {
 			return "", counts, ctx.Err()
@@ -58,7 +65,7 @@ func (self *Agent) fileComputerPage(ctx context.Context, run *Run, source *model
 		// link to the person who works on it, which is why a graph of
 		// forty projects had no edges at all.
 		if entry.Repository != nil {
-			self.fileRepository(ctx, run, source, entry)
+			self.fileRepository(ctx, run, source, entry, checkouts)
 		}
 		// Before the unchanged check and before the empty-text one,
 		// both of which an attachment would fall through: it has no text
@@ -98,6 +105,7 @@ func (self *Agent) fileComputerPage(ctx context.Context, run *Run, source *model
 		counts.Documents++
 		counts.Chunks += chunks
 	}
+	self.linkCheckoutDependencies(ctx, source, checkouts)
 	// Before the page is called done, and its failure fails the pass: a
 	// pass that forgot a page of names and then reached the end of the
 	// tree would take that page's documents for gone.

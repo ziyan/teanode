@@ -167,6 +167,11 @@ type GraphOperation interface {
 	// with the other end's path filled in.
 	ListAgentEdges(agentId, nodeId string) ([]*models.AgentEdge, error)
 
+	// ListAgentEdgesByRelation is every link of one relation an agent's
+	// graph holds, with both ends' paths filled in: what a writer that
+	// owns a relation's links reads before replacing its own.
+	ListAgentEdgesByRelation(agentId string, relation models.AgentEdgeRelation) ([]*models.AgentEdge, error)
+
 	// TouchAgentNodes and TouchAgentFacts mark what a prompt carried or a
 	// search found as used. Used time feeds the nightly importance; it
 	// does not order the index, because a prompt whose order moves every
@@ -210,6 +215,17 @@ type agentNodeModel struct {
 	Version    string     `gorm:"column:version"`
 	CreatedAt  time.Time  `gorm:"column:created_at"`
 	ModifiedAt time.Time  `gorm:"column:modified_at"`
+
+	// The overview is read with the page and never written with it: "->"
+	// keeps these columns out of Save and Create. A page is saved whole
+	// from whatever copy the writer holds, and most writers build that
+	// copy from what a source says, with no overview in it; saved with
+	// the row, every pass over a checkout blanked what the night wrote.
+	// SetAgentNodeOverview is the one writer.
+	Overview          string     `gorm:"column:overview;->"`
+	OverviewWrittenAt *time.Time `gorm:"column:overview_written_at;->"`
+	OverviewInputs    string     `gorm:"column:overview_inputs;->"`
+	OverviewEvidence  []byte     `gorm:"column:overview_evidence;type:jsonb;->"`
 
 	// next_fact_number and next_revision are deliberately absent, the way
 	// next_revision always has been. They are counters this package moves
@@ -298,7 +314,13 @@ func (self *agentNodeModel) toModel() (*models.AgentNode, error) {
 		Name: self.Name, Summary: self.Summary, Pinned: self.Pinned, Importance: self.Importance,
 		Dormant: self.Dormant, UsedAt: self.UsedAt, Version: self.Version,
 		CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt,
-		Aliases: []string{},
+		Aliases:  []string{},
+		Overview: self.Overview, OverviewWrittenAt: self.OverviewWrittenAt, OverviewInputs: self.OverviewInputs,
+	}
+	if len(self.OverviewEvidence) > 0 {
+		if err := json.Unmarshal(self.OverviewEvidence, &node.OverviewEvidence); err != nil {
+			return nil, err
+		}
 	}
 	if self.ParentID != nil {
 		node.ParentID = *self.ParentID
@@ -1435,6 +1457,20 @@ func (self *transaction) ListAgentEdges(agentId, nodeId string) ([]*models.Agent
 		Order(`"relation" ASC`).Find(&rows).Error; err != nil {
 		return nil, err
 	}
+	return self.edgesOf(agentId, rows)
+}
+
+func (self *transaction) ListAgentEdgesByRelation(agentId string, relation models.AgentEdgeRelation) ([]*models.AgentEdge, error) {
+	var rows []agentEdgeModel
+	if err := self.tx.Where(`"agent_id" = ? AND "relation" = ?`, agentId, string(relation)).
+		Order(`"from_id" ASC, "to_id" ASC`).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return self.edgesOf(agentId, rows)
+}
+
+// edgesOf is stored links as the model has them, with both ends named.
+func (self *transaction) edgesOf(agentId string, rows []agentEdgeModel) ([]*models.AgentEdge, error) {
 	if len(rows) == 0 {
 		return nil, nil
 	}

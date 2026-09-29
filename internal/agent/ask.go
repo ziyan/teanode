@@ -254,6 +254,10 @@ type AskRun struct {
 	// answer carries yet; see countJudgement.
 	judgementUsage models.AgentUsageNote
 
+	// hasSurveyed says the turn has started its one survey; see
+	// runSurvey. Under mutex.
+	hasSurveyed bool
+
 	// questions are the ask_user cards waiting for an answer, by call id.
 	questions map[string]chan string
 
@@ -828,6 +832,19 @@ func (self *AskRun) turn() error {
 			self.offered = append(self.offered, subagent)
 			self.loaded[subagent.Name] = true
 		}
+	}
+	// A survey over the graph, built for the same reason: it starts runs.
+	// Behind the same switch and depth as the subagent, since it is runs
+	// handed work in the same way, many of them. In the round from the
+	// start, since its guidance is what tells the model to reach for it
+	// on a broad question instead of answering from the few facts recall
+	// carried. Not in a run with nobody present: the night is given every
+	// tool, and a survey is minutes of calls that nobody is there to have
+	// asked for.
+	if survey := self.agent.surveyTool(); !settings.Headless && settings.subagentDepth == 0 &&
+		FeatureAllowed(configuration, "subagents") && !listed(configuration.Agent.Tools.Disabled, survey) {
+		self.offered = append(self.offered, survey)
+		self.loaded[survey.Name] = true
 	}
 	// The browser tool goes when the operator switched the browser off,
 	// and when there is neither a headless browser nor the person's own

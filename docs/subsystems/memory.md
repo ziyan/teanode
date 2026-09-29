@@ -60,7 +60,9 @@ visible as a number rather than as a graph full of confident fiction.
 
 **An edge** joins two pages and says how. Not "related": `works_on`,
 `member_of`, `knows`, `owns`, `uses`, `located_in`, `decided_in`,
-`about`, `part_of`. Each relation knows how to say itself in both
+`about`, `part_of`, and `depends_on`, which is read from a checkout's
+build files when its profile is filed and which the nightly walk never
+guesses. Each relation knows how to say itself in both
 directions — the edge from Alice to Portal reads "works on" from her page
 and "is worked on by" from the project's — and an edge may carry a
 sentence of its own ("led the controls work until 2025"). An edge nothing
@@ -679,6 +681,65 @@ and the same gap found mid-conversation is the person watching their
 agent say it does not know. Gaps are written down, never filled: a run
 with nobody present inventing answers to its own questions is how a graph
 fills with fiction.
+
+## The big picture
+
+Facts answer questions a fact is close to. A question about a whole, "what
+are the strengths and weaknesses of the product these repositories make up",
+has no fact close to it, and recall used to answer it with a handful of
+scattered details. Four layers above the facts answer it, each written
+bottom-up from the one below.
+
+**Components and dependencies, read by a program.** For code the device reads
+the build files of every checkout (Go modules, npm, Python packaging, Cargo,
+CMake, and jhbuild module sets, which name other repositories) and sends each
+checkout's dependencies, components and activity with its profile. A
+component is a subdirectory with its own build file, or a module a build set
+builds from this checkout; it becomes a page under the checkout's page, so a
+repository holding forty libraries is forty pages. Dependencies become
+stated `depends_on` links between checkouts and components, with the build
+file as evidence, and a pass replaces only the links it wrote. How busy a
+checkout is (commits and authors over 90 and 365 days, issues and merge
+requests where a source has them) is one fact on its page, updated in place.
+
+**Overviews, for every kind of page.** An overview is several short
+sections on a page: what it is, its parts, how it relates to what it is
+linked to, what has been happening, what stands out. The dream writes them
+after the openings, deepest pages first so a parent reads its children's,
+and only for pages with something to say (three facts, or pages under
+them). A fingerprint over what an overview was written from, the opening,
+the facts, the children's overviews and the linked pages, decides when one
+is rewritten, so a page nothing touched costs nothing. A checkout's overview
+also reads its readme, its build file and two entry points from the indexed
+source. `teanode agent memory overview <path> --rewrite` asks for one again.
+
+**Themes, found by clustering.** The dream groups pages more linked to one
+another than to the rest (label propagation with a modularity penalty, then
+the groups merged again until nothing changes, deterministic by page id),
+over every stated link, build dependencies weighing double. Pages linked to
+nearly everything sit out and join a group afterwards, so one hub cannot
+merge the graph into one group. Groups become themes under `themes`, and
+the themes are grouped again into a second level. A theme keeps its path as
+its members change, is linked to them with `about`, gets its overview from
+theirs, and goes dormant rather than away when its group dissolves.
+
+**Reflections.** A few themes a night, those whose overview changed, are
+asked for higher-level observations: a pattern that repeats, a tension, a
+trend, a risk, a question nobody answered. Each must cite at least two pages
+or facts the model was shown, or it is dropped. They are facts of kind
+reflection on the theme's page, and a new round supersedes the old one
+rather than deleting it. Once a week the top-level themes are reflected on
+together, onto `self/reflections`.
+
+**The survey.** A broad question is answered by asking each overview in
+scope for its part of the answer, several at once, each run free to look up
+facts, documents and code but not to change anything, then combining the
+parts into one report whose sections follow the question and whose
+citations are kept. The scope is a theme, a page, or everything. The agent's
+`survey` tool (offered only when the person is there), `teanode agent survey`
+and the `SurveyAgentMemory` query run it; its runs are of kind survey.
+Recall carries the start of a chosen page's overview and a theme's
+reflections, and every prompt's index opens with the top-level themes.
 
 ## Facts that say nothing
 

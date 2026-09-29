@@ -541,6 +541,10 @@ func TestScanProfileListsTheTopLevelDirectories(t *testing.T) {
 	if got := strings.Join(profile.Directories, ","); got != "backend,docs,frontend" {
 		t.Fatalf("the top of the tree, without the dotfiles: %q", got)
 	}
+	// The one commit was made today, so it counts in every window.
+	if profile.Activity == nil || *profile.Activity != (RepositoryActivity{CommitCountLast90Days: 1, CommitCountLast365Days: 1, AuthorCountLast365Days: 1}) {
+		t.Fatalf("the commit made today is recent activity: %+v", profile.Activity)
+	}
 }
 
 // pem is a key-shaped file, assembled here so that no key-shaped string

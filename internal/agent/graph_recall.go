@@ -180,6 +180,10 @@ type recalledBlock struct {
 	// Summary is the page's opening as Text carries it, if it does.
 	Summary string
 
+	// Overview is the first section of the page's overview as Text
+	// carries it, if it does.
+	Overview string
+
 	// Facts are the facts the block carried, in the order it carried
 	// them.
 	Facts []*models.AgentFact
@@ -265,7 +269,17 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 		if err != nil {
 			return nil, err
 		}
+		// A theme's facts are the night's reflections on it, and what
+		// it carries is the ones that stand now rather than the one or
+		// two the words happened to hit: they are what the theme adds
+		// over its members, which are pages of their own.
+		isTheme := models.IsThemePath(node.Path) || node.Path == models.PathReflections
 		pageFactsFound := factsToShow(considered, hitOnPage[node.ID])
+		if isTheme {
+			if reflections := reflectionsToShow(considered, hitOnPage[node.ID]); len(reflections) > 0 {
+				pageFactsFound = reflections
+			}
+		}
 		text := node.Path
 		if node.Name != "" {
 			text += " — " + node.Name
@@ -281,10 +295,33 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 			summary = cutRunes(opening, 600)
 			text += "\n  " + summary
 		}
+		factLines := ""
 		for _, fact := range pageFactsFound {
-			text += "\n  #" + strconv.Itoa(fact.Number) + " " + fact.Line()
+			line := fact.Line()
+			if isTheme {
+				line = cutRunes(line, recallReflectionLength)
+			}
+			factLines += "\n  #" + strconv.Itoa(fact.Number) + " " + line
 		}
-		cost := llm.EstimateTokens(text)
+		// The overview's first section, which says what the thing is
+		// and how it works in a paragraph: what a broad question needs
+		// and no single fact says. Only where the page still fits with
+		// it; a page that does not is carried without it before it is
+		// passed over.
+		overview := firstOverviewSection(node.Overview, recallOverviewLength)
+		cost := 0
+		if overview != "" {
+			cost = llm.EstimateTokens(text + "\n  " + overview + factLines)
+			if spent+cost > pageTokens {
+				overview = ""
+			}
+		}
+		if overview != "" {
+			text += "\n  " + overview + factLines
+		} else {
+			text += factLines
+			cost = llm.EstimateTokens(text)
+		}
 		if spent+cost > pageTokens {
 			// A smaller page further down may still fit, so this one
 			// is passed over rather than ending the loop -- but once
@@ -296,7 +333,7 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 			continue
 		}
 		spent += cost
-		blocks = append(blocks, &recalledBlock{NodeID: node.ID, Path: node.Path, Text: text, Summary: summary, Facts: pageFactsFound})
+		blocks = append(blocks, &recalledBlock{NodeID: node.ID, Path: node.Path, Text: text, Summary: summary, Overview: overview, Facts: pageFactsFound})
 		for _, fact := range pageFactsFound {
 			shown[fact.ID] = true
 		}
@@ -396,6 +433,55 @@ func factsToShow(considered, hit []*models.AgentFact) []*models.AgentFact {
 	return chosen
 }
 
+// reflectionsToShow is the reflections a theme carries: the ones the
+// question hit first, then the rest, up to recallReflections, laid out
+// by number. Superseded ones were never read, so these are the ones
+// that stand.
+func reflectionsToShow(considered, hit []*models.AgentFact) []*models.AgentFact {
+	isReflection := map[string]bool{}
+	var reflections []*models.AgentFact
+	for _, fact := range considered {
+		if fact.Kind == models.FactReflection {
+			isReflection[fact.ID] = true
+			reflections = append(reflections, fact)
+		}
+	}
+	chosen := make([]*models.AgentFact, 0, recallReflections)
+	taken := map[string]bool{}
+	for _, group := range [][]*models.AgentFact{hit, reflections} {
+		for _, fact := range group {
+			if len(chosen) >= recallReflections {
+				break
+			}
+			if isReflection[fact.ID] && !taken[fact.ID] {
+				taken[fact.ID] = true
+				chosen = append(chosen, fact)
+			}
+		}
+	}
+	sort.SliceStable(chosen, func(first, second int) bool {
+		return chosen[first].Number < chosen[second].Number
+	})
+	return chosen
+}
+
+// firstOverviewSection is an overview's first section, its heading
+// included, cut to so many characters; empty for a page with none.
+func firstOverviewSection(overview string, characters int) string {
+	overview = strings.TrimSpace(overview)
+	if overview == "" {
+		return ""
+	}
+	if index := strings.Index(overview[1:], "\n## "); index >= 0 {
+		overview = overview[:index+1]
+	}
+	section := strings.TrimSpace(overview)
+	if cut := cutRunes(section, characters); cut != section {
+		section = strings.TrimSpace(cut) + "…"
+	}
+	return section
+}
+
 // writeRecalled expands what was found into the overlay the next round
 // sees, and marks what it carried as used.
 func (self *AskRun) writeRecalled(ctx context.Context, nodes []*models.AgentNode, facts []*models.AgentFact) {
@@ -432,6 +518,10 @@ type RecalledPage struct {
 	// Summary is the page's opening as the overlay carried it, or empty
 	// where it carried none: a page the prompt's index already names.
 	Summary string
+
+	// Overview is the first section of the page's overview as the
+	// overlay carried it, or empty where it carried none.
+	Overview string
 
 	Facts []*models.AgentFact
 }
@@ -506,6 +596,7 @@ func (self *Agent) RecallForQuestion(ctx context.Context, found *models.Agent, o
 		}
 		page := pageOf(block.Path)
 		page.Summary = block.Summary
+		page.Overview = block.Overview
 		page.Facts = append(page.Facts, block.Facts...)
 	}
 	return pages, nil

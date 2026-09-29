@@ -45,6 +45,16 @@ func newAgentGraphCommands() []*cli.Command {
 			Action:    runAgentGraphGet,
 		},
 		{
+			Name:      "overview",
+			Usage:     "how the thing a page is about works, as the night last wrote it from the page and the pages under and beside it",
+			ArgsUsage: "<path>",
+			Flags: []cli.Flag{
+				JSONFlag(),
+				&cli.BoolFlag{Name: "rewrite", Usage: "have the next dream write it again, whether or not what it is written from has changed"},
+			},
+			Action: runAgentGraphOverview,
+		},
+		{
 			Name:      "search",
 			Usage:     "find pages and facts by words",
 			ArgsUsage: "<words>",
@@ -106,7 +116,7 @@ func newAgentGraphCommands() []*cli.Command {
 			Usage:     "join two pages: what the first is to the second",
 			ArgsUsage: "<path> <to>",
 			Flags: []cli.Flag{
-				&cli.StringFlag{Name: "relation", Usage: "part_of, works_on, member_of, knows, owns, uses, located_in, related_to, decided_in or about", Value: "related_to"},
+				&cli.StringFlag{Name: "relation", Usage: "part_of, works_on, member_of, knows, owns, uses, located_in, related_to, decided_in, about or depends_on", Value: "related_to"},
 				&cli.StringFlag{Name: "note", Usage: "a few words on the link, such as 'led the controls work on it in 2024'"},
 			},
 			Action: runAgentGraphLink,
@@ -479,6 +489,83 @@ func runAgentGraphIndex(ctx context.Context, command *cli.Command) error {
 // graph is larger, which the line above tells the person to do.
 const indexPages = 1000
 
+// printOverview writes a page's overview under a heading that says when
+// it was written, and nothing for a page that has none.
+func printOverview(command *cli.Command, node *client.AgentNode) {
+	overview := strings.TrimSpace(node.Overview)
+	if overview == "" {
+		return
+	}
+	heading := "Overview"
+	if node.OverviewWrittenAt != nil {
+		heading += ", written " + node.OverviewWrittenAt.Local().Format("2 Jan 2006")
+	}
+	_, _ = fmt.Fprintf(command.Writer, "\n%s:\n\n%s\n", heading, overview)
+}
+
+// printReflections writes the night's observations on a page under their
+// own heading, apart from the facts, each with its kind and what it
+// cites, since an observation is only as good as what it rests on.
+func printReflections(command *cli.Command, reflections []*client.AgentFact) {
+	if len(reflections) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(command.Writer, "\nReflections:\n\n")
+	for _, fact := range reflections {
+		line := fmt.Sprintf("#%d %s", fact.Number, fact.Text)
+		var citations []string
+		for _, evidence := range fact.Evidence {
+			switch {
+			case evidence.Kind == string(models.EvidenceDream) && strings.HasPrefix(evidence.Quote, models.ReflectionEvidencePrefix):
+				line += "  (" + strings.TrimPrefix(evidence.Quote, models.ReflectionEvidencePrefix) + ")"
+			case evidence.Kind == string(models.EvidenceMemory) && evidence.Quote != "":
+				citations = append(citations, evidence.Quote)
+			}
+		}
+		_, _ = fmt.Fprintln(command.Writer, line)
+		if len(citations) > 0 {
+			_, _ = fmt.Fprintf(command.Writer, "   citing %s\n", strings.Join(citations, ", "))
+		}
+	}
+}
+
+func runAgentGraphOverview(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 1 {
+		return fmt.Errorf("which page? teanode agent memory overview projects/example-app")
+	}
+	path := command.Args().First()
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if command.Bool("rewrite") {
+		if err := client.RewriteAgentOverview(ctx, connection, path); err != nil {
+			return describeError(command, err)
+		}
+		if command.Bool("json") {
+			return PrintJSON(map[string]any{"path": path, "isRewriteAsked": true})
+		}
+		_, _ = fmt.Fprintf(command.Writer, "the next dream writes the overview of %s again; the one it has stays until then\n", path)
+		return nil
+	}
+	page, err := client.AgentGraphPageOf(ctx, connection, path)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if page == nil || page.Node == nil {
+		return fmt.Errorf("there is no page at %s", path)
+	}
+	if command.Bool("json") {
+		return PrintJSON(map[string]any{"path": page.Node.Path, "overview": page.Node.Overview, "overviewWrittenAt": page.Node.OverviewWrittenAt})
+	}
+	if strings.TrimSpace(page.Node.Overview) == "" {
+		_, _ = fmt.Fprintf(command.Writer, "%s has no overview yet: a dream writes one for a page with at least three facts or pages under it\n", page.Node.Path)
+		return nil
+	}
+	printOverview(command, page.Node)
+	return nil
+}
+
 func runAgentGraphGet(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() < 1 {
 		return fmt.Errorf("which page? teanode agent memory get people/alice-chen")
@@ -516,9 +603,20 @@ func runAgentGraphGet(ctx context.Context, command *cli.Command) error {
 	if summary := strings.TrimSpace(node.Summary); summary != "" {
 		_, _ = fmt.Fprintf(command.Writer, "\n%s\n", summary)
 	}
-	if len(page.Facts) > 0 {
+	printOverview(command, node)
+	var facts []*client.AgentFact
+	var reflections []*client.AgentFact
+	for _, fact := range page.Facts {
+		if fact.Kind == string(models.FactReflection) {
+			reflections = append(reflections, fact)
+		} else {
+			facts = append(facts, fact)
+		}
+	}
+	printReflections(command, reflections)
+	if len(facts) > 0 {
 		_, _ = fmt.Fprintln(command.Writer)
-		for _, fact := range page.Facts {
+		for _, fact := range facts {
 			line := fmt.Sprintf("#%d %s", fact.Number, fact.Text)
 			var notes []string
 			if fact.Kind != "fact" {
@@ -1385,6 +1483,9 @@ func runDreamLog(ctx context.Context, command *cli.Command) error {
 			// twelve questions memory answered.
 			{dream.Gaps, "it could not answer"}, {dream.Unknown, "it could not try"},
 			{dream.Revised, "lines an older version left"},
+			{dream.OverviewsWritten, "overviews written"},
+			{dream.ThemesMade, "themes made"}, {dream.ThemesUpdated, "themes updated"},
+			{dream.ReflectionsWritten, "reflections written"},
 			{dream.Merged, "said twice, merged"},
 		} {
 			if pair.count > 0 {
@@ -1673,6 +1774,52 @@ func knownQuestionKind(kind string) bool {
 // anything, and a page recall expands here is not marked as used, so the
 // same graph answers the same twice and asking does not itself change
 // what tomorrow's night reads.
+// surveyTimeout is how long the command waits for a survey: the
+// quarter of an hour the server gives one, and a minute more for the
+// answer to arrive.
+const surveyTimeout = 16 * time.Minute
+
+func newAgentSurveyCommand() *cli.Command {
+	return &cli.Command{
+		Name: "survey",
+		Usage: "answer a broad question about a whole area of what your agent knows -- a theme, a page and what is under it, or everything -- " +
+			"by asking each overview in it for its part and combining the parts into a report with citations; " +
+			"minutes, about one model call a page and one more, priced as runs of kind survey",
+		ArgsUsage: "<question>",
+		Flags: []cli.Flag{JSONFlag(),
+			&cli.StringFlag{Name: "scope", Usage: "the page to survey under, such as themes/<one> or projects/<one>; everything when left out"},
+		},
+		Action: runAgentSurvey,
+	}
+}
+
+func runAgentSurvey(ctx context.Context, command *cli.Command) error {
+	question := strings.TrimSpace(strings.Join(command.Args().Slice(), " "))
+	if question == "" {
+		return fmt.Errorf("ask something: teanode agent survey \"what are the strengths and weaknesses of these projects?\"")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	connection.SetTimeout(surveyTimeout)
+	surveyed, err := client.SurveyAgentMemory(ctx, connection, question, strings.TrimSpace(command.String("scope")))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if surveyed == nil {
+		surveyed = &client.AgentSurvey{}
+	}
+	if command.Bool("json") {
+		return PrintJSON(surveyed)
+	}
+	_, _ = fmt.Fprintln(command.Writer, strings.TrimSpace(surveyed.Report))
+	if len(surveyed.RunIDs) > 0 {
+		_, _ = fmt.Fprintf(command.Writer, "\nThe runs, each openable with 'teanode agent run show': %s\n", strings.Join(surveyed.RunIDs, ", "))
+	}
+	return nil
+}
+
 func runAgentGraphRecall(ctx context.Context, command *cli.Command) error {
 	question := strings.TrimSpace(strings.Join(command.Args().Slice(), " "))
 	if question == "" {

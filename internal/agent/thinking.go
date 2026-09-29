@@ -171,18 +171,28 @@ func (self *Agent) thinking(ctx context.Context, run *Run, title, prompt string,
 	events, unsubscribe := turn.Subscribe()
 	defer unsubscribe()
 	said, failure := "", ""
-	for event := range events {
-		// The job's own deadline, not the agent's: a turn past its time is
-		// stopped here, before another instance is handed the job.
-		if ctx.Err() != nil {
+	for waiting := true; waiting; {
+		select {
+		case event, isOpen := <-events:
+			if !isOpen {
+				waiting = false
+				break
+			}
+			switch event.Kind {
+			case EventMessage:
+				said = event.Text
+			case EventError:
+				failure = event.Error
+			}
+		case <-ctx.Done():
+			// The job's own deadline, not the agent's: a turn past its
+			// time is stopped here, before another instance is handed
+			// the job. Waited on beside the events rather than checked
+			// when one arrives, because a model that is slow to answer
+			// sends none, and a survey stopping its pages at their
+			// deadline would otherwise wait out the provider's timeout.
 			turn.Stop()
-			break
-		}
-		switch event.Kind {
-		case EventMessage:
-			said = event.Text
-		case EventError:
-			failure = event.Error
+			waiting = false
 		}
 	}
 	if failure != "" {

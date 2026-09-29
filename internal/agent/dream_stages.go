@@ -239,9 +239,13 @@ func (self *Agent) askAboutAWalk(ctx context.Context, run *Run, record *models.A
 		}
 		through = append(through, line)
 	}
+	// Not depends_on: that is read from build files by a program, exactly,
+	// and a walk's guess at one would be a wrong link among right ones.
 	relations := make([]string, 0, len(models.AgentEdgeRelations))
 	for _, relation := range models.AgentEdgeRelations {
-		relations = append(relations, string(relation))
+		if relation != models.EdgeDependsOn {
+			relations = append(relations, string(relation))
+		}
 	}
 	prompt, err := render("associate.txt", map[string]any{
 		"PersonName": personName(run.Owner),
@@ -270,7 +274,7 @@ func (self *Agent) askAboutAWalk(ctx context.Context, run *Run, record *models.A
 		return false
 	}
 	relation := models.AgentEdgeRelation(strings.ToLower(strings.TrimSpace(answer.Relation)))
-	if !models.IsAgentEdgeRelation(relation) || strings.TrimSpace(answer.Note) == "" {
+	if !models.IsAgentEdgeRelation(relation) || relation == models.EdgeDependsOn || strings.TrimSpace(answer.Note) == "" {
 		return false
 	}
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {

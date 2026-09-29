@@ -23,6 +23,11 @@ type AgentNode struct {
 	Dormant    bool       `json:"dormant"`
 	UsedAt     *time.Time `json:"usedAt"`
 	ModifiedAt time.Time  `json:"modifiedAt"`
+
+	// Overview is how the thing works, in markdown sections the night
+	// writes; asked for only when one page is read.
+	Overview          string     `json:"overview"`
+	OverviewWrittenAt *time.Time `json:"overviewWrittenAt"`
 }
 
 // AgentFact is one sentence on a page.
@@ -233,6 +238,11 @@ type AgentDream struct {
 	Gaps         int `json:"gaps"`
 	Unknown      int `json:"unknown"`
 
+	OverviewsWritten   int `json:"overviewsWritten"`
+	ThemesMade         int `json:"themesMade"`
+	ThemesUpdated      int `json:"themesUpdated"`
+	ReflectionsWritten int `json:"reflectionsWritten"`
+
 	Tokens    int64  `json:"tokens"`
 	LastError string `json:"lastError"`
 
@@ -248,12 +258,17 @@ type AgentDream struct {
 }
 
 const nodeFields = `{ id path kind name aliases summary contactId pinned importance dormant usedAt modifiedAt }`
+
+// pageNodeFields is nodeFields and the overview, for a page read on its
+// own: an index of four hundred pages has no use for four hundred
+// overviews.
+const pageNodeFields = `{ id path kind name aliases summary contactId pinned importance dormant usedAt modifiedAt overview overviewWrittenAt }`
 const factFields = `{ id number kind text happenedAt confidence inferred evidence { kind id quote } audiences dormant createdAt }`
 const sourceFields = `{ id kind name specification { type settings computer path format include exclude tool start depth mailboxId readEveryCheckout commitsPerPass ownCommitsAtLeast } rootPath enabled cron lastRunAt nextRunAt lastError documentCount chunkCount refusedCount more unknownAuthors checkoutsKeptToProfile filesKeptToProfile }`
 const revisionFields = `{ revision kind actor summary change before after path reason createdAt }`
 const passageFields = `{ documentId externalId title url kind author sourceId source happenedAt private number text score }`
 const extractFields = `{ documentId externalId title url kind author sourceId source happenedAt private from text total next }`
-const dreamFields = `{ id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse strengthened associated rehearsed gaps unknown revised tokens lastError cost currency proposals { kind path to reason } }`
+const dreamFields = `{ id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse strengthened associated rehearsed gaps unknown revised overviewsWritten themesMade themesUpdated reflectionsWritten tokens lastError cost currency proposals { kind path to reason } }`
 
 // The documents.
 const (
@@ -262,7 +277,7 @@ const (
 	}`
 	DocumentAgentGraphPage = `query ($path: String!) {
 		AgentGraphPage(path: $path) {
-			node ` + nodeFields + `
+			node ` + pageNodeFields + `
 			facts ` + factFields + `
 			edges { relation status fromPath toPath }
 			children ` + nodeFields + `
@@ -284,6 +299,9 @@ const (
 		RecallAgentMemory(question: $question) {
 			pages { path facts { number text } }
 		}
+	}`
+	DocumentSurveyAgentMemory = `query ($question: String!, $scopePath: String) {
+		SurveyAgentMemory(question: $question, scopePath: $scopePath) { report coveredPaths failedPaths runIds }
 	}`
 	DocumentListAgentLearned = `query ($days: Int, $first: Int) {
 		ListAgentLearned(days: $days, first: $first) { fact ` + factFields + ` path name }
@@ -322,6 +340,7 @@ const (
 	DocumentDeleteAgentKnowledgeSource = `mutation ($sourceId: String!) { DeleteAgentKnowledgeSource(sourceId: $sourceId) }`
 	DocumentSyncAgentKnowledgeSource   = `mutation ($sourceId: String!) { SyncAgentKnowledgeSource(sourceId: $sourceId) }`
 	DocumentDreamAgentNow              = `mutation ($bootstrap: Boolean) { DreamAgentNow(bootstrap: $bootstrap) }`
+	DocumentRewriteAgentOverview       = `mutation ($path: String!) { RewriteAgentOverview(path: $path) }`
 	DocumentRereadAgentDocuments       = `mutation ($minutes: Int!) { RereadAgentDocuments(minutes: $minutes) }`
 	DocumentLinkAgentNodes             = `mutation ($path: String!, $to: String!, $relation: String!, $note: String) { LinkAgentNodes(path: $path, to: $to, relation: $relation, note: $note) }`
 	DocumentUnlinkAgentNodes           = `mutation ($path: String!, $to: String!, $relation: String!) { UnlinkAgentNodes(path: $path, to: $to, relation: $relation) }`
@@ -377,6 +396,32 @@ func RecallAgentMemory(ctx context.Context, connection *Client, question string)
 		return nil, err
 	}
 	return result.RecallAgentMemory, nil
+}
+
+// AgentSurvey is what a survey answered: the report, the pages it
+// covered and could not, and the runs it made.
+type AgentSurvey struct {
+	Report       string   `json:"report"`
+	CoveredPaths []string `json:"coveredPaths"`
+	FailedPaths  []string `json:"failedPaths"`
+	RunIDs       []string `json:"runIds"`
+}
+
+// SurveyAgentMemory answers a broad question about a whole area of the
+// graph, a page's path or everything when scopePath is empty. It takes
+// minutes; the caller sets the connection's timeout to match.
+func SurveyAgentMemory(ctx context.Context, connection *Client, question, scopePath string) (*AgentSurvey, error) {
+	var result struct {
+		SurveyAgentMemory *AgentSurvey `json:"SurveyAgentMemory"`
+	}
+	variables := map[string]any{"question": question}
+	if scopePath != "" {
+		variables["scopePath"] = scopePath
+	}
+	if err := connection.Execute(ctx, DocumentSurveyAgentMemory, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.SurveyAgentMemory, nil
 }
 
 // AgentAnswerEvaluation is one question of a memory evaluation, answered
@@ -628,6 +673,15 @@ func DreamAgentNow(ctx context.Context, connection *Client, bootstrap *bool) err
 		variables["bootstrap"] = *bootstrap
 	}
 	return connection.Execute(ctx, DocumentDreamAgentNow, variables, &result)
+}
+
+// RewriteAgentOverview has the next night write a page's overview again,
+// whether or not what it is written from has changed.
+func RewriteAgentOverview(ctx context.Context, connection *Client, path string) error {
+	var result struct {
+		RewriteAgentOverview bool `json:"RewriteAgentOverview"`
+	}
+	return connection.Execute(ctx, DocumentRewriteAgentOverview, map[string]any{"path": path}, &result)
 }
 
 // LinkAgentNodes joins two pages.

@@ -375,6 +375,72 @@ type RepositoryProfile struct {
 	// Filtering this down to people the person actually worked with is
 	// the server's job; the whole list is the evidence for it.
 	Authors []ScanAuthor `json:"authors,omitempty"`
+
+	// Dependencies are what the checkout's build files say it needs, and
+	// Modules what a jhbuild moduleset in it says other repositories are
+	// and need. Read by a program, not guessed by a model, so that the
+	// links between checkouts are exact. Both are left out by a program
+	// that predates them, and a server reads their absence as nothing
+	// known.
+	Dependencies []RepositoryDependency `json:"dependencies,omitempty"`
+	Modules      []RepositoryModule     `json:"modules,omitempty"`
+
+	// Components are the parts of the checkout that build on their own,
+	// each with what it needs. Left out, like the two above, by a program
+	// that predates them.
+	Components []RepositoryComponent `json:"components,omitempty"`
+
+	// Activity is how busy the checkout has been lately, counted from the
+	// same history as Commits. Nil from a program that predates it.
+	Activity *RepositoryActivity `json:"activity,omitempty"`
+
+	// IsBuildRead says this program read the build files and the history
+	// for Dependencies, Modules, Components and Activity, so that their
+	// being empty means the checkout has none. A program that predates
+	// them sends none of the five, and the server then leaves what an
+	// earlier pass wrote from them alone rather than take it for "no
+	// dependencies, no components, no activity".
+	IsBuildRead bool `json:"isBuildRead,omitempty"`
+}
+
+// RepositoryDependency is one thing a build file says the checkout needs:
+// a Go module, an npm package, a Python or Rust package, a CMake package.
+type RepositoryDependency struct {
+	Name string `json:"name"`
+
+	// Ecosystem is which kind of build file named it: go, npm, python,
+	// cargo or cmake.
+	Ecosystem string `json:"ecosystem"`
+
+	// File is the build file it was read from, relative to the checkout.
+	File string `json:"file"`
+}
+
+// RepositoryModule is one module of a jhbuild moduleset: a name the
+// moduleset builds, the repository it builds it from, and the other
+// modules it needs first.
+type RepositoryModule struct {
+	Name string `json:"name"`
+
+	// Repository is the last segment of the module's repository path,
+	// without `.git`, which is what a checkout of it is usually called.
+	// The module's own name when the moduleset does not say.
+	Repository string `json:"repository,omitempty"`
+
+	Dependencies []string `json:"dependencies,omitempty"`
+	File         string   `json:"file"`
+
+	// isMetamodule marks a metamodule while the modulesets are read; see
+	// expandMetamodules, which takes them out before a profile is sent.
+	isMetamodule bool
+}
+
+// RepositoryActivity is how many commits a checkout had lately and by how
+// many people, by the author's date.
+type RepositoryActivity struct {
+	CommitCountLast90Days  int `json:"commitCountLast90Days"`
+	CommitCountLast365Days int `json:"commitCountLast365Days"`
+	AuthorCountLast365Days int `json:"authorCountLast365Days"`
 }
 
 // ScanAuthor is one person in a repository's history.

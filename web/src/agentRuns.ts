@@ -16,6 +16,8 @@ export const RUN_KINDS = [
   'compact',
   // A question from a memory evaluation, answered and graded.
   'evaluate',
+  // A survey: one run per page it asked, and one that combined them.
+  'survey',
   // A tool called, or a question asked, by a program over MCP.
   'mcp',
 ]
