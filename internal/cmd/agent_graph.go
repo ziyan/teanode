@@ -1774,6 +1774,52 @@ func knownQuestionKind(kind string) bool {
 // anything, and a page recall expands here is not marked as used, so the
 // same graph answers the same twice and asking does not itself change
 // what tomorrow's night reads.
+// surveyTimeout is how long the command waits for a survey: the
+// quarter of an hour the server gives one, and a minute more for the
+// answer to arrive.
+const surveyTimeout = 16 * time.Minute
+
+func newAgentSurveyCommand() *cli.Command {
+	return &cli.Command{
+		Name: "survey",
+		Usage: "answer a broad question about a whole area of what your agent knows -- a theme, a page and what is under it, or everything -- " +
+			"by asking each overview in it for its part and combining the parts into a report with citations; " +
+			"minutes, about one model call a page and one more, priced as runs of kind survey",
+		ArgsUsage: "<question>",
+		Flags: []cli.Flag{JSONFlag(),
+			&cli.StringFlag{Name: "scope", Usage: "the page to survey under, such as themes/<one> or projects/<one>; everything when left out"},
+		},
+		Action: runAgentSurvey,
+	}
+}
+
+func runAgentSurvey(ctx context.Context, command *cli.Command) error {
+	question := strings.TrimSpace(strings.Join(command.Args().Slice(), " "))
+	if question == "" {
+		return fmt.Errorf("ask something: teanode agent survey \"what are the strengths and weaknesses of these projects?\"")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	connection.SetTimeout(surveyTimeout)
+	surveyed, err := client.SurveyAgentMemory(ctx, connection, question, strings.TrimSpace(command.String("scope")))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if surveyed == nil {
+		surveyed = &client.AgentSurvey{}
+	}
+	if command.Bool("json") {
+		return PrintJSON(surveyed)
+	}
+	_, _ = fmt.Fprintln(command.Writer, strings.TrimSpace(surveyed.Report))
+	if len(surveyed.RunIDs) > 0 {
+		_, _ = fmt.Fprintf(command.Writer, "\nThe runs, each openable with 'teanode agent run show': %s\n", strings.Join(surveyed.RunIDs, ", "))
+	}
+	return nil
+}
+
 func runAgentGraphRecall(ctx context.Context, command *cli.Command) error {
 	question := strings.TrimSpace(strings.Join(command.Args().Slice(), " "))
 	if question == "" {
