@@ -11,7 +11,10 @@ import (
 
 // ChannelOperation is a person's chat-app bots.
 type ChannelOperation interface {
-	// PutAgentChannel writes or replaces the person's bot for an app.
+	// PutAgentChannel writes or replaces the person's bot for an app. A
+	// bot linked, linked again, given a new token or switched back on
+	// sends the agent's own turns from the main conversation's newest
+	// message on, never what was said while it was not listening.
 	PutAgentChannel(channel *models.AgentChannel) (*models.AgentChannel, error)
 	GetAgentChannel(agentId string, kind models.AgentChannelKind) (*models.AgentChannel, error)
 	ListAgentChannels(agentId string) ([]*models.AgentChannel, error)
@@ -90,7 +93,43 @@ func (self *transaction) PutAgentChannel(channel *models.AgentChannel) (*models.
 	}).Create(model).Error; err != nil {
 		return nil, err
 	}
+	stored.RelayedThrough = ""
+	if existing != nil {
+		stored.RelayedThrough = existing.RelayedThrough
+	}
+	isRelayRestarted := existing == nil || stored.LinkedID != existing.LinkedID || stored.LinkedSenderID != existing.LinkedSenderID ||
+		stored.Token != existing.Token || (stored.Enabled && !existing.Enabled)
+	if isRelayRestarted {
+		through, err := self.newestMainAgentMessageID(stored.AgentID)
+		if err != nil {
+			return nil, err
+		}
+		if through == "" {
+			through = newID()
+		}
+		if err := self.tx.Model(&agentChannelModel{}).Where("\"id\" = ?", stored.ID).Update("relayed_through", through).Error; err != nil {
+			return nil, err
+		}
+		stored.RelayedThrough = through
+	}
 	return &stored, nil
+}
+
+// newestMainAgentMessageID is the newest message of the agent's main
+// conversations, or empty. Message ids are ULIDs, so the greatest is the
+// newest.
+func (self *transaction) newestMainAgentMessageID(agentId string) (string, error) {
+	var ids []string
+	if err := self.tx.Raw(`SELECT "agent_message"."id" FROM "agent_message"
+		JOIN "agent_conversation" ON "agent_conversation"."id" = "agent_message"."conversation_id"
+		WHERE "agent_conversation"."agent_id" = ? AND "agent_conversation"."kind" = ?
+		ORDER BY "agent_message"."id" DESC LIMIT 1`, agentId, string(models.AgentConversationMain)).Scan(&ids).Error; err != nil {
+		return "", err
+	}
+	if len(ids) == 0 {
+		return "", nil
+	}
+	return ids[0], nil
 }
 
 func (self *transaction) GetAgentChannel(agentId string, kind models.AgentChannelKind) (*models.AgentChannel, error) {
