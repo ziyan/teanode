@@ -19,9 +19,10 @@ import (
 // the moduleset still builds the app after it.
 func exampleCheckouts(requiresLibrary, modulesetRequiresLibrary bool) ingestPage {
 	application := &computer.RepositoryProfile{
-		Head:    "1111111111111111111111111111111111111111",
-		Module:  "git.example.com/apps/example-app",
-		Remotes: []string{"git@git.example.com:apps/example-app.git"},
+		IsBuildRead: true,
+		Head:        "1111111111111111111111111111111111111111",
+		Module:      "git.example.com/apps/example-app",
+		Remotes:     []string{"git@git.example.com:apps/example-app.git"},
 		Dependencies: []computer.RepositoryDependency{
 			{Name: "example-widgets", Ecosystem: computer.EcosystemNpm, File: "package.json"},
 		},
@@ -31,15 +32,17 @@ func exampleCheckouts(requiresLibrary, modulesetRequiresLibrary bool) ingestPage
 			computer.RepositoryDependency{Name: "git.example.com/core/example-lib", Ecosystem: computer.EcosystemGo, File: "go.mod"})
 	}
 	library := &computer.RepositoryProfile{
-		Head:    "2222222222222222222222222222222222222222",
-		Remotes: []string{"https://git.example.com/core/example-lib.git"},
+		IsBuildRead: true,
+		Head:        "2222222222222222222222222222222222222222",
+		Remotes:     []string{"https://git.example.com/core/example-lib.git"},
 	}
 	applicationModule := computer.RepositoryModule{Name: "exampleappcpp", Repository: "example-app", File: "modulesets/example.modules"}
 	if modulesetRequiresLibrary {
 		applicationModule.Dependencies = []string{"examplelibcpp"}
 	}
 	build := &computer.RepositoryProfile{
-		Head: "3333333333333333333333333333333333333333",
+		IsBuildRead: true,
+		Head:        "3333333333333333333333333333333333333333",
 		Modules: []computer.RepositoryModule{
 			{Name: "examplelibcpp", Repository: "example-lib", File: "modulesets/example.modules"},
 			applicationModule,
@@ -203,10 +206,10 @@ func TestAMonoreposComponentsArePagesWithTheirOwnLinks(test *testing.T) {
 		}
 		return ingestPage{IsComplete: true, Entries: []computer.ScanEntry{
 			{ExternalID: "example-lib", Kind: "repository", Title: "example-lib", Repository: &computer.RepositoryProfile{
-				Head: "2222222222222222222222222222222222222222", Remotes: []string{"https://git.example.com/core/example-lib.git"},
+				IsBuildRead: true, Head: "2222222222222222222222222222222222222222", Remotes: []string{"https://git.example.com/core/example-lib.git"},
 			}},
 			{ExternalID: "example-mono", Kind: "repository", Title: "example-mono", Repository: &computer.RepositoryProfile{
-				Head: "4444444444444444444444444444444444444444", Components: components,
+				IsBuildRead: true, Head: "4444444444444444444444444444444444444444", Components: components,
 			}},
 		}}
 	}
@@ -258,4 +261,195 @@ func TestAMonoreposComponentsArePagesWithTheirOwnLinks(test *testing.T) {
 			test.Fatalf("the viewer's page is back: %+v %v", viewer, err)
 		}
 	})
+}
+
+// factTextsOf is the live facts of a page, as their words.
+func factTextsOf(test *testing.T, database db.Database, agentId, path string) []string {
+	var texts []string
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		page, err := tx.GetAgentNode(agentId, path)
+		if err != nil || page == nil {
+			test.Fatalf("the page %s: %v %v", path, page, err)
+		}
+		facts, err := tx.ListAgentFacts(agentId, page.ID, false, 100)
+		if err != nil {
+			test.Fatal(err)
+		}
+		for _, fact := range facts {
+			texts = append(texts, fact.Text)
+		}
+	})
+	sort.Strings(texts)
+	return texts
+}
+
+// A profile from a program that predates the build-file reader says
+// nothing about dependencies, components or activity, and the links, the
+// component pages and the lines an earlier pass wrote from them stay.
+func TestAProfileFromAnOlderProgramLeavesWhatTheBuildFilesSaidAlone(test *testing.T) {
+	database, worker, run, source := ingestionPageFixture(test)
+	page := exampleCheckouts(true, true)
+	application := page.Entries[0].Repository
+	application.Activity = &computer.RepositoryActivity{CommitCountLast90Days: 8, CommitCountLast365Days: 30, AuthorCountLast365Days: 3}
+	application.Components = []computer.RepositoryComponent{
+		{Path: "cmd/example", Name: "git.example.com/apps/example-app/cmd/example", Ecosystem: computer.EcosystemGo, File: "cmd/example/go.mod"},
+	}
+	if _, _, err := worker.fileComputerPage(test.Context(), run, source, page, nil); err != nil {
+		test.Fatalf("fileComputerPage: %s", err)
+	}
+	linksBefore := dependencyLinksOf(test, database, source.AgentID)
+	factsBefore := factTextsOf(test, database, source.AgentID, "projects/example-app")
+	if len(linksBefore) == 0 || !strings.Contains(strings.Join(factsBefore, "\n"), "Activity: ") {
+		test.Fatalf("the first pass wrote nothing to keep: %v %v", linksBefore, factsBefore)
+	}
+
+	older := exampleCheckouts(true, true)
+	for index := range older.Entries {
+		profile := *older.Entries[index].Repository
+		profile.IsBuildRead, profile.Dependencies, profile.Modules, profile.Components, profile.Activity = false, nil, nil, nil, nil
+		older.Entries[index].Repository = &profile
+	}
+	if _, _, err := worker.fileComputerPage(test.Context(), run, source, older, nil); err != nil {
+		test.Fatalf("fileComputerPage: %s", err)
+	}
+	if got := dependencyLinksOf(test, database, source.AgentID); !reflect.DeepEqual(got, linksBefore) {
+		test.Fatalf("links after an older program's pass:\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(linksBefore, "\n"))
+	}
+	if got := factTextsOf(test, database, source.AgentID, "projects/example-app"); !reflect.DeepEqual(got, factsBefore) {
+		test.Fatalf("facts after an older program's pass:\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(factsBefore, "\n"))
+	}
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		component, err := tx.GetAgentNode(source.AgentID, "projects/example-app/cmd-example")
+		if err != nil || component == nil || component.Dormant {
+			test.Fatalf("the component's page is not put away: %+v %v", component, err)
+		}
+	})
+}
+
+// Two checkouts in directories of one name are two pages; the one the
+// page already belongs to keeps it; and a name both answer to finds
+// neither.
+func TestCheckoutsSharingADirectoryNameKeepTheirOwnPages(test *testing.T) {
+	database, worker, run, source := ingestionPageFixture(test)
+	page := func() ingestPage {
+		return ingestPage{IsComplete: true, Entries: []computer.ScanEntry{
+			{ExternalID: "tools/example-lib", Kind: "repository", Title: "example-lib", Repository: &computer.RepositoryProfile{
+				IsBuildRead: true, Head: "5555555555555555555555555555555555555555",
+			}},
+			{ExternalID: "upstream/example-lib", Kind: "repository", Title: "example-lib", Repository: &computer.RepositoryProfile{
+				IsBuildRead: true, Head: "6666666666666666666666666666666666666666",
+			}},
+			{ExternalID: "example-app", Kind: "repository", Title: "example-app", Repository: &computer.RepositoryProfile{
+				IsBuildRead: true, Head: "7777777777777777777777777777777777777777",
+				Dependencies: []computer.RepositoryDependency{{Name: "example-lib", Ecosystem: computer.EcosystemNpm, File: "package.json"}},
+			}},
+		}}
+	}
+	// The page is already the second checkout's, from before the first
+	// was cloned.
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		existing, err := tx.PutAgentNode(&models.AgentNode{AgentID: source.AgentID, Path: "projects/example-lib", Kind: models.NodeProject, Name: "example-lib"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if err := putKeyedRepositoryFact(tx, source.AgentID, existing.ID, checkoutFactKey,
+			checkoutLine("/fixture/upstream/example-lib", "fixture-computer"), "6666666666666666666666666666666666666666"); err != nil {
+			test.Fatal(err)
+		}
+	})
+	for range 2 {
+		if _, _, err := worker.fileComputerPage(test.Context(), run, source, page(), nil); err != nil {
+			test.Fatalf("fileComputerPage: %s", err)
+		}
+	}
+	for path, where := range map[string]string{
+		"projects/example-lib":       "/fixture/upstream/example-lib",
+		"projects/example-lib-tools": "/fixture/tools/example-lib",
+	} {
+		if texts := factTextsOf(test, database, source.AgentID, path); !containsText(texts, checkoutLine(where, "fixture-computer")) {
+			test.Errorf("%s is not the checkout at %s: %v", path, where, texts)
+		}
+	}
+	if got := dependencyLinksOf(test, database, source.AgentID); len(got) != 0 {
+		test.Errorf("a name two checkouts answer to was linked: %v", got)
+	}
+	if texts := factTextsOf(test, database, source.AgentID, "projects/example-app"); !containsText(texts,
+		"Depends on 1 package that is not a checkout here, which is example-lib.") {
+		test.Errorf("the ambiguous name is not counted elsewhere: %v", texts)
+	}
+}
+
+// A Go module past its first major version, and a scoped npm package,
+// find the checkout by the word they end in.
+func TestVersionedAndScopedNamesFindTheirCheckouts(test *testing.T) {
+	database, worker, run, source := ingestionPageFixture(test)
+	page := ingestPage{IsComplete: true, Entries: []computer.ScanEntry{
+		{ExternalID: "example-lib", Kind: "repository", Title: "example-lib", Repository: &computer.RepositoryProfile{
+			IsBuildRead: true, Head: "8888888888888888888888888888888888888888",
+			Module: "git.example.com/core/example-lib", Remotes: []string{"git@git.example.com:core/example-lib.git"},
+		}},
+		{ExternalID: "example-widgets", Kind: "repository", Title: "example-widgets", Repository: &computer.RepositoryProfile{
+			IsBuildRead: true, Head: "9999999999999999999999999999999999999999",
+		}},
+		{ExternalID: "example-app", Kind: "repository", Title: "example-app", Repository: &computer.RepositoryProfile{
+			IsBuildRead: true, Head: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			Dependencies: []computer.RepositoryDependency{
+				{Name: "git.example.com/core/example-lib/v3", Ecosystem: computer.EcosystemGo, File: "go.mod"},
+				{Name: "@example/example-widgets", Ecosystem: computer.EcosystemNpm, File: "package.json"},
+			},
+		}},
+	}}
+	if _, _, err := worker.fileComputerPage(test.Context(), run, source, page, nil); err != nil {
+		test.Fatalf("fileComputerPage: %s", err)
+	}
+	want := []string{
+		"projects/example-app -> projects/example-lib: dependency:git.example.com/core/example-lib/v3",
+		"projects/example-app -> projects/example-widgets: dependency:@example/example-widgets",
+	}
+	if got := dependencyLinksOf(test, database, source.AgentID); !reflect.DeepEqual(got, want) {
+		test.Fatalf("links:\n%s", strings.Join(got, "\n"))
+	}
+}
+
+// A page the person filed where a component would go stays theirs: no
+// component line is written on it, and no link goes to or from it.
+func TestAComponentDoesNotTakeOverThePersonsPage(test *testing.T) {
+	database, worker, run, source := ingestionPageFixture(test)
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		if _, err := tx.PutAgentNode(&models.AgentNode{AgentID: source.AgentID, Path: "projects/example-mono", Kind: models.NodeProject, Name: "example-mono"}); err != nil {
+			test.Fatal(err)
+		}
+		notes, err := tx.PutAgentNode(&models.AgentNode{AgentID: source.AgentID, Path: "projects/example-mono/libs-core", Kind: models.NodeTopic, Name: "Notes on the core"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := tx.AddAgentFact(&models.AgentFact{AgentID: source.AgentID, NodeID: notes.ID, Kind: models.FactPlain, Text: "The core is due a rewrite."}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	page := ingestPage{IsComplete: true, Entries: []computer.ScanEntry{
+		{ExternalID: "example-mono", Kind: "repository", Title: "example-mono", Repository: &computer.RepositoryProfile{
+			IsBuildRead: true, Head: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			Components: []computer.RepositoryComponent{
+				{Path: "libs/core", Name: "examplecore", Ecosystem: computer.EcosystemCMake, File: "libs/core/CMakeLists.txt"},
+				{Path: "apps/viewer", Name: "exampleviewer", Ecosystem: computer.EcosystemCMake, File: "apps/viewer/CMakeLists.txt",
+					Dependencies: []string{"examplecore"}},
+			},
+		}},
+	}}
+	if _, _, err := worker.fileComputerPage(test.Context(), run, source, page, nil); err != nil {
+		test.Fatalf("fileComputerPage: %s", err)
+	}
+	if texts := factTextsOf(test, database, source.AgentID, "projects/example-mono/libs-core"); !reflect.DeepEqual(texts, []string{"The core is due a rewrite."}) {
+		test.Errorf("the person's page was written on: %v", texts)
+	}
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		notes, err := tx.GetAgentNode(source.AgentID, "projects/example-mono/libs-core")
+		if err != nil || notes == nil || notes.Kind != models.NodeTopic || notes.Name != "Notes on the core" {
+			test.Errorf("the person's page changed: %+v %v", notes, err)
+		}
+	})
+	if got := dependencyLinksOf(test, database, source.AgentID); len(got) != 0 {
+		test.Errorf("a link was written to the person's page: %v", got)
+	}
 }

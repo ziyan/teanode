@@ -53,16 +53,17 @@ type KnowledgeOperation interface {
 	GetAgentDocumentByExternal(sourceId, externalId string) (*models.AgentDocument, error)
 	DeleteAgentDocument(agentId, documentId string) error
 
-	// ListAgentProjectPosts is the issues and merge requests an agent's
-	// sources read about one project on a code host, named by its path
-	// there ("core/example-lib"), newest first and at most limit of them.
-	// A post is the project's when its metadata says so, or when its
-	// identifier names the project, which is how a source type that
-	// carries no metadata about it names a post: "core/example-lib#12"
-	// for an issue and "core/example-lib!7" for a merge request. A path
-	// matches a project of that path under any group, as a mirror would
-	// hold it.
-	ListAgentProjectPosts(agentId, projectPath string, limit int) ([]*models.AgentDocument, error)
+	// CountAgentProjectPosts is the issues and merge requests an agent's
+	// sources read about projects on code hosts, counted per project, in
+	// one statement over every post: a pass counts them once for all its
+	// checkouts, and reads no post's text to do it. A post's project is
+	// what its metadata says, or what its identifier names, which is how
+	// a source type that carries no metadata about it names a post:
+	// "core/example-lib#12" for an issue and "core/example-lib!7" for a
+	// merge request, after the name of the file of records it came in.
+	// What a post is comes from its metadata's kind, or else from that
+	// mark. since is where "lately" begins.
+	CountAgentProjectPosts(agentId string, since time.Time) ([]*AgentProjectPostCount, error)
 
 	// ListAgentDocumentHashes is what a source already holds, so a pass
 	// can tell an unchanged file from one to read again without reading
@@ -563,24 +564,71 @@ func (self *transaction) GetAgentDocumentByExternal(sourceId, externalId string)
 	return documents[0], nil
 }
 
-func (self *transaction) ListAgentProjectPosts(agentId, projectPath string, limit int) ([]*models.AgentDocument, error) {
-	projectPath = strings.ToLower(strings.Trim(strings.TrimSpace(projectPath), "/"))
-	if agentId == "" || projectPath == "" {
+// AgentProjectPostCount is the posts about one project on a code host,
+// counted: ProjectPath in lower case as the post named it
+// ("core/example-lib"), how many of its posts are issues or merge
+// requests, how many issues are open, how many were opened since the
+// time asked about, and how many merge requests were merged since then.
+type AgentProjectPostCount struct {
+	ProjectPath             string
+	PostCount               int
+	OpenIssueCount          int
+	OpenedIssueCount        int
+	MergedMergeRequestCount int
+}
+
+// projectPostKindExpression is what a post is, 'issue' or 'merge
+// request', from its metadata's kind or else the mark before the number
+// that ends its identifier; NULL for anything else. GitHub's pull request
+// is a merge request under another name.
+const projectPostKindExpression = `CASE
+		WHEN lower(trim(d."metadata"->>'kind')) = 'issue' THEN 'issue'
+		WHEN lower(trim(d."metadata"->>'kind')) IN ('merge request', 'merge_request', 'mergerequest', 'pull request', 'pull_request', 'pullrequest') THEN 'merge request'
+		WHEN d."external_id" ~ '![0-9]+$' THEN 'merge request'
+		WHEN d."external_id" ~ '#[0-9]+$' THEN 'issue'
+	END`
+
+// projectPostMergedExpression is when a merge request was merged: the
+// time its metadata says, where it is written as one, and otherwise when
+// it last changed, which for a merged request is the merge or a little
+// after it. Only a well-formed time is cast, so one post's odd metadata
+// cannot fail the count of all of them.
+const projectPostMergedExpression = `COALESCE(
+		CASE WHEN d."metadata"->>'mergedAt' ~ '^[0-9]{4}-[01][0-9]-[0-3][0-9]T[0-2][0-9]:[0-5][0-9]:[0-5][0-9](\.[0-9]+){0,1}(Z|[+-][0-9]{2}:[0-9]{2})$'
+			THEN (d."metadata"->>'mergedAt')::timestamptz END,
+		CASE WHEN d."metadata"->>'merged_at' ~ '^[0-9]{4}-[01][0-9]-[0-3][0-9]T[0-2][0-9]:[0-5][0-9]:[0-5][0-9](\.[0-9]+){0,1}(Z|[+-][0-9]{2}:[0-9]{2})$'
+			THEN (d."metadata"->>'merged_at')::timestamptz END,
+		d."modified_at", d."happened_at")`
+
+func (self *transaction) CountAgentProjectPosts(agentId string, since time.Time) ([]*AgentProjectPostCount, error) {
+	if agentId == "" {
 		return nil, nil
 	}
-	// position() rather than LIKE, so a path holding an underscore is
-	// the path and not a pattern. The identifier is read with a mark in
-	// front, since a post filed from a file of records carries the file's
-	// name before its own: "core/example-lib.jsonl#core/example-lib#12".
-	underGroup := "/" + projectPath
-	return self.documentsFrom(self.tx.Where(`"agent_id" = ? AND "kind" = ? AND (
-			lower(coalesce("metadata"->>'project', '')) = ?
-			OR right(lower(coalesce("metadata"->>'project', '')), ?) = ?
-			OR position(? in '#' || lower("external_id")) > 0 OR position(? in '#' || lower("external_id")) > 0
-			OR position(? in lower("external_id")) > 0 OR position(? in lower("external_id")) > 0)`,
-		agentId, string(models.DocumentPost), projectPath, len(underGroup), underGroup,
-		"#"+projectPath+"#", "#"+projectPath+"!", underGroup+"#", underGroup+"!").
-		Order(`"happened_at" DESC NULLS LAST`).Limit(limit))
+	var counts []*AgentProjectPostCount
+	// The project from an identifier is what comes between the last mark
+	// before it and the mark before the number: in
+	// "core/example-lib.jsonl#core/example-lib#12" that is
+	// core/example-lib, not the file's name.
+	err := self.tx.Raw(`SELECT posts."project_path" AS "project_path",
+			count(*) AS "post_count",
+			count(*) FILTER (WHERE posts."post_kind" = 'issue' AND posts."state" IN ('opened', 'open')) AS "open_issue_count",
+			count(*) FILTER (WHERE posts."post_kind" = 'issue' AND posts."happened_at" >= ?) AS "opened_issue_count",
+			count(*) FILTER (WHERE posts."post_kind" = 'merge request' AND posts."state" = 'merged' AND posts."merged_at" >= ?) AS "merged_merge_request_count"
+		FROM (
+			SELECT lower(trim(both '/' from COALESCE(NULLIF(trim(d."metadata"->>'project'), ''),
+					substring(d."external_id" from '([^#!]+)[#!][0-9]+$')))) AS "project_path",
+				`+projectPostKindExpression+` AS "post_kind",
+				lower(trim(COALESCE(d."metadata"->>'state', ''))) AS "state",
+				d."happened_at" AS "happened_at",
+				`+projectPostMergedExpression+` AS "merged_at"
+			FROM "agent_document" d
+			WHERE d."agent_id" = ? AND d."kind" = ?
+		) posts
+		WHERE posts."project_path" <> '' AND posts."post_kind" IS NOT NULL
+		GROUP BY posts."project_path"
+		ORDER BY posts."project_path"`,
+		since, since, agentId, string(models.DocumentPost)).Scan(&counts).Error
+	return counts, err
 }
 
 func (self *transaction) DeleteAgentDocument(agentId, documentId string) error {

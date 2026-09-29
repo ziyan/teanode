@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -34,6 +33,9 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 		return
 	}
 	name, path := repositoryPage(source, entry)
+	if checkouts != nil {
+		name, path = checkouts.pageOf(entry)
+	}
 
 	// Which of the authors are people this person actually worked with.
 	// Everyone who has ever committed to a mirrored upstream is not:
@@ -79,6 +81,10 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 	// What the checkout says it is, in the model's words, from its readme:
 	// asked once per head, outside the transaction below.
 	opening, about, links := self.describeCheckout(ctx, run, source, entry, path)
+	var projectPosts []*db.AgentProjectPostCount
+	if profile.IsBuildRead {
+		projectPosts = self.projectPostsOf(ctx, source.AgentID, checkouts)
+	}
 
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		if err := lockIngestSource(tx, source); err != nil {
@@ -125,10 +131,7 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 		for index, text := range about {
 			facts = append(facts, line{fmt.Sprintf("about-%d", index+1), text})
 		}
-		where := source.Specification.Path
-		if relative := strings.TrimSpace(entry.ExternalID); relative != "" && relative != "." {
-			where = filepath.ToSlash(filepath.Join(where, relative))
-		}
+		where := checkoutWhere(source, entry)
 		// The description is a fact as well as the opening. The night
 		// rewrites openings from the facts alone, and one written from a
 		// readme the facts did not mention was rewritten into "This is
@@ -170,15 +173,20 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 		// every checkout of the pass has its page; what it needs that is
 		// not is this one line, or a page would carry a link to nowhere
 		// for every library in the world it imports.
-		if checkouts != nil {
+		//
+		// Only from a program that read the build files. One that
+		// predates the reader sends no dependencies and no activity, which
+		// says nothing about the checkout, so the lines an earlier pass
+		// wrote from them are kept as they are (buildReadFactKeys).
+		if checkouts != nil && profile.IsBuildRead {
 			if elsewhere := checkouts.dependenciesElsewhere(tx, profile); elsewhere != "" {
-				facts = append(facts, line{"dependencies-elsewhere", elsewhere})
+				facts = append(facts, line{dependenciesElsewhereFactKey, elsewhere})
 			}
 		}
-		if activity, err := checkoutActivity(tx, source.AgentID, profile, time.Now()); err != nil {
-			return err
-		} else if activity != "" {
-			facts = append(facts, line{"activity", activity})
+		if profile.IsBuildRead {
+			if activity := checkoutActivity(profile, projectPosts); activity != "" {
+				facts = append(facts, line{activityFactKey, activity})
+			}
 		}
 		// A profile is recomputed every pass. What it says lands on the
 		// same numbered facts it said it on last time -- changed where the
@@ -200,6 +208,14 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 			}
 		}
 		kept := map[string]bool{}
+		if !profile.IsBuildRead {
+			for _, key := range []string{dependenciesElsewhereFactKey, activityFactKey} {
+				if before := previous[key]; before != nil {
+					delete(previous, key)
+					kept[before.ID] = true
+				}
+			}
+		}
 		for _, wanted := range facts {
 			evidence := []models.Evidence{{Kind: models.EvidenceRepository, ID: profile.Head, Quote: wanted.key}}
 			if before := previous[wanted.key]; before != nil {
@@ -255,9 +271,20 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 			}
 		}
 		// Its parts, each a page under this one, so a checkout of forty
-		// libraries is forty things that can each be linked to.
-		if err := fileCheckoutComponents(tx, source.AgentID, name, node, profile); err != nil {
-			return err
+		// libraries is forty things that can each be linked to. Not from a
+		// program that predates the reader: its profile has no components
+		// because it never looked, and taking that for none would put
+		// every component page to sleep.
+		if profile.IsBuildRead {
+			leftAlone, err := fileCheckoutComponents(tx, source.AgentID, name, node, profile)
+			if err != nil {
+				return err
+			}
+			if checkouts != nil {
+				for _, pagePath := range leftAlone {
+					checkouts.isNotComponentPage[pagePath] = true
+				}
+			}
 		}
 		for _, link := range links {
 			target, err := tx.GetAgentNode(source.AgentID, link.To)
@@ -628,6 +655,15 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 	}
 	return opening, about, links
 }
+
+// dependenciesElsewhereFactKey and activityFactKey are the keys of the
+// lines a checkout's page carries from what its build files and its
+// history say: what it needs that is not a checkout here, and how busy
+// it has been.
+const (
+	dependenciesElsewhereFactKey = "dependencies-elsewhere"
+	activityFactKey              = "activity"
+)
 
 // checkoutFactKey is the key of the line on a checkout's page that says
 // where it is. The overview of the page reads it back to find the

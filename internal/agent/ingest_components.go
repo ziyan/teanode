@@ -101,7 +101,8 @@ func componentLocationOf(text string) (string, string, bool) {
 
 // fileCheckoutComponents keeps a page for each component of a checkout,
 // under the checkout's page, and makes dormant the pages of components it
-// no longer has.
+// no longer has. It answers with the pages a component would be kept on
+// that were left alone, being somebody else's.
 //
 // A page already there is left as it is but for coming back from dormant:
 // its opening may be the night's, or the person's, and either is better
@@ -109,14 +110,31 @@ func componentLocationOf(text string) (string, string, bool) {
 // component goes, the way the night treats what it takes off the index:
 // the page may carry what somebody learned about it, and a component
 // moved back keeps that.
-func fileCheckoutComponents(tx db.Transaction, agentId, checkoutName string, checkout *models.AgentNode, profile *computer.RepositoryProfile) error {
+//
+// A page there that this code did not make -- one the person or the night
+// filed under the checkout, which carries no "component" line -- is not
+// taken over: its kind, its sleep and its facts are theirs. An empty
+// folder the tree made on the way to a deeper page is the one exception;
+// it holds nothing to take.
+func fileCheckoutComponents(tx db.Transaction, agentId, checkoutName string, checkout *models.AgentNode, profile *computer.RepositoryProfile) ([]string, error) {
 	wanted := componentPages(checkout.Path, profile)
 	isWanted := make(map[string]bool, len(wanted))
+	var leftAlone []string
 	for _, page := range wanted {
 		isWanted[page.pagePath] = true
 		node, err := tx.GetAgentNode(agentId, page.pagePath)
 		if err != nil {
-			return err
+			return nil, err
+		}
+		if node != nil {
+			isComponent, err := isComponentPage(tx, agentId, node)
+			if err != nil {
+				return nil, err
+			}
+			if !isComponent {
+				leftAlone = append(leftAlone, page.pagePath)
+				continue
+			}
 		}
 		switch {
 		case node == nil:
@@ -133,35 +151,64 @@ func fileCheckoutComponents(tx db.Transaction, agentId, checkoutName string, che
 			node, err = tx.PutAgentNode(&revived)
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err := putKeyedRepositoryFact(tx, agentId, node.ID, componentFactKey,
 			componentLine(checkoutName, page.component), profile.Head); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	children, err := tx.ListAgentNodeChildren(agentId, checkout.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, child := range children {
-		if isWanted[child.Path] {
+		if isWanted[child.Path] || child.Dormant {
 			continue
 		}
-		removed, err := deleteKeyedRepositoryFacts(tx, agentId, child.ID, componentFactKey)
+		// The line stays on the page put away: it is where the component
+		// was, and it is what marks the page as this code's when the
+		// component comes back.
+		hasLine, _, err := componentLineOn(tx, agentId, child)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if removed == 0 || child.Dormant {
-			continue // not a page this code made, or already put away
+		if !hasLine {
+			continue // not a page this code made
 		}
 		dormant := *child
 		dormant.Dormant = true
 		if _, err := tx.PutAgentNode(&dormant); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return leftAlone, nil
+}
+
+// isComponentPage says whether a page is one fileCheckoutComponents made:
+// it carries the keyed "component" line, dormant or not, or it is an
+// empty folder.
+func isComponentPage(tx db.Transaction, agentId string, node *models.AgentNode) (bool, error) {
+	hasLine, factCount, err := componentLineOn(tx, agentId, node)
+	if err != nil || hasLine {
+		return hasLine, err
+	}
+	return node.Kind == models.NodeFolder && factCount == 0 && strings.TrimSpace(node.Summary) == "", nil
+}
+
+// componentLineOn says whether a page carries the keyed "component" line,
+// and how many facts it has, dormant ones included.
+func componentLineOn(tx db.Transaction, agentId string, node *models.AgentNode) (bool, int, error) {
+	facts, err := tx.ListAgentFacts(agentId, node.ID, true, 100)
+	if err != nil {
+		return false, 0, err
+	}
+	for _, fact := range facts {
+		if key, isKeyed := repositoryKeyOf(fact); isKeyed && key == componentFactKey {
+			return true, len(facts), nil
+		}
+	}
+	return false, len(facts), nil
 }
 
 // repositoryKeyOf is the key a fact computed from a profile carries as the
@@ -213,23 +260,4 @@ func putKeyedRepositoryFact(tx db.Transaction, agentId, nodeId, key, text, head 
 		return nil
 	})
 	return err
-}
-
-// deleteKeyedRepositoryFacts takes the computed lines under one key off a
-// page, and says how many there were.
-func deleteKeyedRepositoryFacts(tx db.Transaction, agentId, nodeId, key string) (int, error) {
-	facts, err := tx.ListAgentFacts(agentId, nodeId, true, 100)
-	if err != nil {
-		return 0, err
-	}
-	removed := 0
-	for _, fact := range facts {
-		if factKey, found := repositoryKeyOf(fact); found && factKey == key {
-			if err := tx.DeleteAgentFact(agentId, fact.ID); err != nil {
-				return removed, err
-			}
-			removed++
-		}
-	}
-	return removed, nil
 }

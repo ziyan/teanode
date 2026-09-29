@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -42,13 +43,152 @@ func repositoryPage(source *models.AgentKnowledgeSource, entry computer.ScanEntr
 	return name, models.JoinPath(source.RootPath, name)
 }
 
+// checkoutWhere is where a checkout is on its computer: the source's
+// directory and the checkout's own under it, as the checkout's page says
+// in its keyed "checkout" line.
+func checkoutWhere(source *models.AgentKnowledgeSource, entry computer.ScanEntry) string {
+	where := source.Specification.Path
+	if relative := strings.TrimSpace(entry.ExternalID); relative != "" && relative != "." {
+		where = filepath.ToSlash(filepath.Join(where, relative))
+	}
+	return where
+}
+
+// checkoutPagePaths is the page of each checkout among a pass's entries,
+// by its identifier. A checkout's page is named after its directory
+// (repositoryPage), and two checkouts in directories of one name -- a
+// clone of the same project in two places, or two projects that happen
+// to share a name -- would be filed on one page, each pass overwriting
+// the other. So when a name is shared, the checkout the page already
+// belongs to (its "checkout" line says where it is) keeps it, or where
+// none does the first by where it is, and each of the others is named
+// after its directory and the one above it: projects/example-lib-vendor.
+func checkoutPagePaths(tx db.Transaction, source *models.AgentKnowledgeSource, entries []computer.ScanEntry) map[string]string {
+	entriesByPage := map[string][]computer.ScanEntry{}
+	var pagePaths []string
+	for _, entry := range entries {
+		if entry.Repository == nil || entry.Refused != "" {
+			continue
+		}
+		_, pagePath := repositoryPage(source, entry)
+		if entriesByPage[pagePath] == nil {
+			pagePaths = append(pagePaths, pagePath)
+		}
+		entriesByPage[pagePath] = append(entriesByPage[pagePath], entry)
+	}
+	pagePathByCheckout := map[string]string{}
+	isUsed := map[string]bool{}
+	for _, pagePath := range pagePaths {
+		isUsed[pagePath] = true
+	}
+	sort.Strings(pagePaths)
+	for _, pagePath := range pagePaths {
+		sharing := entriesByPage[pagePath]
+		sort.SliceStable(sharing, func(left, right int) bool { return sharing[left].ExternalID < sharing[right].ExternalID })
+		owner := 0
+		if len(sharing) > 1 {
+			if where, isKnown := checkoutOfPage(tx, source, pagePath); isKnown {
+				for index, entry := range sharing {
+					if checkoutWhere(source, entry) == where {
+						owner = index
+						break
+					}
+				}
+			}
+		}
+		for index, entry := range sharing {
+			if index == owner {
+				pagePathByCheckout[entry.ExternalID] = pagePath
+				continue
+			}
+			name, _ := repositoryPage(source, entry)
+			above := path.Base(path.Dir(filepath.ToSlash(strings.TrimSpace(entry.ExternalID))))
+			base := models.JoinPath(models.ParentPath(pagePath), name)
+			if above != "." && above != "/" && models.Slug(above) != "" {
+				base = models.JoinPath(models.ParentPath(pagePath), name+"-"+above)
+			}
+			candidate := base
+			for attempt := 2; isUsed[candidate]; attempt++ {
+				candidate = fmt.Sprintf("%s-%d", base, attempt)
+			}
+			isUsed[candidate] = true
+			pagePathByCheckout[entry.ExternalID] = candidate
+		}
+	}
+	return pagePathByCheckout
+}
+
+// checkoutOfPage is where the checkout a page was filed from is, from the
+// page's keyed "checkout" line, and false when there is no such page or
+// line, or it is on another computer.
+func checkoutOfPage(tx db.Transaction, source *models.AgentKnowledgeSource, pagePath string) (string, bool) {
+	if tx == nil {
+		return "", false
+	}
+	node, err := tx.GetAgentNode(source.AgentID, pagePath)
+	if err != nil || node == nil {
+		return "", false
+	}
+	facts, err := tx.ListAgentFacts(source.AgentID, node.ID, false, 100)
+	if err != nil {
+		return "", false
+	}
+	for _, fact := range facts {
+		if key, isKeyed := repositoryKeyOf(fact); !isKeyed || key != checkoutFactKey {
+			continue
+		}
+		if where, computerName, isCheckout := checkoutLocationOf(fact.Text); isCheckout && computerName == source.Specification.Computer {
+			return where, true
+		}
+	}
+	return "", false
+}
+
 // profiledCheckout is one checkout of a pass: its page, its profile, and
 // the pages of its components, which are also found by their names.
 type profiledCheckout struct {
 	pagePath            string
 	profile             *computer.RepositoryProfile
 	components          []componentPage
-	componentPageByName map[string]string
+	componentPageByName *pageNames
+}
+
+// pageNames is the pages a kind of name finds, each name in lower case. A
+// name two pages claim finds neither: two checkouts that both call
+// themselves "core" leave a dependency on "core" unresolved, which is
+// counted among what is not a checkout here, rather than linked to
+// whichever was filed first.
+type pageNames struct {
+	pageByName  map[string]string
+	isAmbiguous map[string]bool
+}
+
+func newPageNames() *pageNames {
+	return &pageNames{pageByName: map[string]string{}, isAmbiguous: map[string]bool{}}
+}
+
+// claim says a name finds a page.
+func (self *pageNames) claim(name, pagePath string) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" || pagePath == "" {
+		return
+	}
+	if claimed, isClaimed := self.pageByName[name]; isClaimed && claimed != pagePath {
+		self.isAmbiguous[name] = true
+		return
+	}
+	self.pageByName[name] = pagePath
+}
+
+// lookup is the page a name finds, and whether anything claims the name
+// at all: a name two pages claim is claimed, and finds nothing.
+func (self *pageNames) lookup(name string) (string, bool) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if self.isAmbiguous[name] {
+		return "", true
+	}
+	pagePath, isClaimed := self.pageByName[name]
+	return pagePath, isClaimed
 }
 
 // checkoutIndex is every checkout a pass profiled, by each name a build
@@ -60,83 +200,127 @@ type checkoutIndex struct {
 	source    *models.AgentKnowledgeSource
 	checkouts []profiledCheckout
 
-	// Each keyed in lower case, and each tried in this order.
-	pageByModule     map[string]string
-	pageByRemote     map[string]string
-	pageByComponent  map[string]string
-	pageByRemoteName map[string]string
-	pageByDirectory  map[string]string
+	// pagePathByCheckout is each checkout's page, by its identifier; see
+	// checkoutPagePaths.
+	pagePathByCheckout map[string]string
+
+	// Tried in the order resolve says.
+	pageByModule     *pageNames
+	pageByRemote     *pageNames
+	pageByComponent  *pageNames
+	pageByRemoteName *pageNames
+	pageByDirectory  *pageNames
 
 	// repositoryByJhbuildModule is what repository each module of every
 	// moduleset in the pass builds from, so a build file that names a
 	// module finds the checkout it is built from.
-	repositoryByJhbuildModule map[string]string
+	repositoryByJhbuildModule *pageNames
 
 	// componentPageByJhbuildModule is the page of each module that is a
 	// component of its checkout, which a moduleset's statement about it
 	// links rather than the checkout as a whole.
-	componentPageByJhbuildModule map[string]string
+	componentPageByJhbuildModule *pageNames
+
+	// isNotComponentPage is the pages a component would be kept on that
+	// somebody else made, which the component leaves alone; see
+	// fileCheckoutComponents. No link is written to or from one.
+	isNotComponentPage map[string]bool
 
 	// pageFiledElsewhere is what the graph said when a name was looked
 	// for among the pages other sources filed, empty for none: a
 	// checkout names hundreds of packages, most of them the world's, and
 	// each is looked for twice a pass.
 	pageFiledElsewhere map[string]string
+
+	// projectPosts is the issues and merge requests of every project,
+	// counted once for the pass when the first checkout asks; see
+	// projectPostsOf.
+	projectPosts          []*db.AgentProjectPostCount
+	isProjectPostsCounted bool
 }
 
-// newCheckoutIndex indexes the profiles among a page's entries. The first
-// checkout to claim a name keeps it; profiles arrive sorted by directory,
-// so which one that is does not change from pass to pass.
-func newCheckoutIndex(source *models.AgentKnowledgeSource, entries []computer.ScanEntry) *checkoutIndex {
+// newCheckoutIndex indexes the profiles among a page's entries. tx reads
+// which checkout a page already belongs to, where two share a directory
+// name; nil for none.
+func newCheckoutIndex(tx db.Transaction, source *models.AgentKnowledgeSource, entries []computer.ScanEntry) *checkoutIndex {
 	index := &checkoutIndex{
-		source:                    source,
-		pageByModule:              map[string]string{},
-		pageByRemote:              map[string]string{},
-		pageByComponent:           map[string]string{},
-		pageByRemoteName:          map[string]string{},
-		pageByDirectory:           map[string]string{},
-		repositoryByJhbuildModule: map[string]string{},
-		pageFiledElsewhere:        map[string]string{},
-
-		componentPageByJhbuildModule: map[string]string{},
-	}
-	claim := func(pages map[string]string, key, pagePath string) {
-		key = strings.ToLower(strings.TrimSpace(key))
-		if _, taken := pages[key]; key != "" && !taken {
-			pages[key] = pagePath
-		}
+		source:                       source,
+		pagePathByCheckout:           checkoutPagePaths(tx, source, entries),
+		pageByModule:                 newPageNames(),
+		pageByRemote:                 newPageNames(),
+		pageByComponent:              newPageNames(),
+		pageByRemoteName:             newPageNames(),
+		pageByDirectory:              newPageNames(),
+		repositoryByJhbuildModule:    newPageNames(),
+		componentPageByJhbuildModule: newPageNames(),
+		isNotComponentPage:           map[string]bool{},
+		pageFiledElsewhere:           map[string]string{},
 	}
 	for _, entry := range entries {
 		if entry.Repository == nil || entry.Refused != "" {
 			continue
 		}
-		name, pagePath := repositoryPage(source, entry)
+		name, pagePath := index.pageOf(entry)
 		profile := entry.Repository
 		checkout := profiledCheckout{
 			pagePath: pagePath, profile: profile,
-			components: componentPages(pagePath, profile), componentPageByName: map[string]string{},
+			components: componentPages(pagePath, profile), componentPageByName: newPageNames(),
 		}
 		for _, component := range checkout.components {
-			claim(checkout.componentPageByName, component.component.Name, component.pagePath)
-			claim(index.pageByComponent, component.component.Name, component.pagePath)
+			checkout.componentPageByName.claim(component.component.Name, component.pagePath)
+			index.pageByComponent.claim(component.component.Name, component.pagePath)
 			if component.component.Ecosystem == computer.EcosystemJhbuild {
-				claim(index.componentPageByJhbuildModule, component.component.Name, component.pagePath)
+				index.componentPageByJhbuildModule.claim(component.component.Name, component.pagePath)
 			}
 		}
 		index.checkouts = append(index.checkouts, checkout)
-		claim(index.pageByModule, profile.Module, pagePath)
+		index.pageByModule.claim(profile.Module, pagePath)
 		for _, remote := range profile.Remotes {
 			if host, projectPath := remoteLocation(remote); projectPath != "" {
-				claim(index.pageByRemote, host+"/"+projectPath, pagePath)
-				claim(index.pageByRemoteName, path.Base(projectPath), pagePath)
+				index.pageByRemote.claim(host+"/"+projectPath, pagePath)
+				index.pageByRemoteName.claim(path.Base(projectPath), pagePath)
 			}
 		}
-		claim(index.pageByDirectory, name, pagePath)
+		index.pageByDirectory.claim(name, pagePath)
 		for _, module := range profile.Modules {
-			claim(index.repositoryByJhbuildModule, module.Name, module.Repository)
+			index.repositoryByJhbuildModule.claim(module.Name, module.Repository)
 		}
 	}
 	return index
+}
+
+// pageOf is a checkout's name and the page it is filed on.
+func (self *checkoutIndex) pageOf(entry computer.ScanEntry) (string, string) {
+	name, pagePath := repositoryPage(self.source, entry)
+	if assigned := self.pagePathByCheckout[entry.ExternalID]; assigned != "" {
+		pagePath = assigned
+	}
+	return name, pagePath
+}
+
+// meaningfulName is the word a dependency named by a path is known by:
+// the last segment, without a Go module's major version
+// ("git.example.com/core/example-lib/v2" is example-lib) and without an
+// npm package's scope ("@example/ui" is ui).
+func meaningfulName(name string) string {
+	name = strings.TrimSuffix(withoutMajorVersion(strings.Trim(name, "/")), ".git")
+	if name == "" {
+		return ""
+	}
+	return path.Base(name)
+}
+
+// withoutMajorVersion is a Go module path without the /vN a major
+// version past the first adds to it.
+func withoutMajorVersion(name string) string {
+	at := strings.LastIndex(name, "/")
+	if at <= 0 {
+		return name
+	}
+	if last := name[at+1:]; len(last) > 1 && last[0] == 'v' && strings.Trim(last[1:], "0123456789") == "" {
+		return name[:at]
+	}
+	return name
 }
 
 // remoteLocation is a git remote as a host and a path on it, without the
@@ -172,37 +356,66 @@ func remoteLocation(remote string) (string, string) {
 }
 
 // resolve is the page of the checkout or the component a dependency
-// names, or empty when it names none here. A Go module is named by where
-// it lives, so it is matched against remotes whole; a package of another
-// ecosystem is named by a word, which is matched against what checkouts
-// and their components call themselves, their remotes' last names and
-// their directories.
+// names, or empty when it names none here, or more than one. Tried in
+// order, and the first kind of name that claims it decides:
+//
+//   - what a checkout calls itself (a Go module whole, with or without its
+//     major version);
+//   - a jhbuild module that is a component, then the repository a jhbuild
+//     module builds from;
+//   - a remote, whole, which is how a Go module is named;
+//   - a component by its whole name (a Go module or a scoped npm package);
+//   - by the dependency's last meaningful word (meaningfulName): the name
+//     a remote ends in, before a component's name, since a remote is the
+//     repository itself and a component's name is the build file's
+//     choice; then a component's name, a directory, and a project page
+//     another source filed.
 func (self *checkoutIndex) resolve(tx db.Transaction, dependencyName string) string {
 	key := strings.ToLower(strings.TrimSpace(dependencyName))
 	if key == "" {
 		return ""
 	}
-	if pagePath := self.pageByModule[key]; pagePath != "" {
+	keys := []string{key}
+	if unversioned := withoutMajorVersion(key); unversioned != key {
+		keys = append(keys, unversioned)
+	}
+	for _, candidate := range keys {
+		if pagePath, isClaimed := self.pageByModule.lookup(candidate); isClaimed {
+			return pagePath
+		}
+	}
+	if pagePath, isClaimed := self.componentPageByJhbuildModule.lookup(key); isClaimed {
 		return pagePath
 	}
-	if pagePath := self.componentPageByJhbuildModule[key]; pagePath != "" {
-		return pagePath
-	}
-	if repository := self.repositoryByJhbuildModule[key]; repository != "" {
+	if repository, isClaimed := self.repositoryByJhbuildModule.lookup(key); isClaimed {
+		if repository == "" {
+			return ""
+		}
 		if pagePath := self.resolveRepository(tx, repository); pagePath != "" {
 			return pagePath
 		}
 	}
-	if pagePath := self.pageByRemote[strings.TrimSuffix(key, ".git")]; pagePath != "" {
-		return pagePath
+	for _, candidate := range keys {
+		if pagePath, isClaimed := self.pageByRemote.lookup(strings.TrimSuffix(candidate, ".git")); isClaimed {
+			return pagePath
+		}
+		if strings.Contains(candidate, "/") {
+			if pagePath, isClaimed := self.pageByComponent.lookup(candidate); isClaimed {
+				return pagePath
+			}
+		}
 	}
-	if pagePath := self.pageByComponent[key]; pagePath != "" {
-		return pagePath
-	}
-	if strings.Contains(key, "/") {
+	name := meaningfulName(key)
+	if name == "" {
 		return ""
 	}
-	return self.resolveRepository(tx, key)
+	if pagePath, isClaimed := self.pageByRemoteName.lookup(name); isClaimed {
+		return pagePath
+	}
+	if pagePath, isClaimed := self.pageByComponent.lookup(name); isClaimed {
+		return pagePath
+	}
+	return self.resolveRepository(tx, name)
 }
 
 // resolveRepository is the page of the checkout of a repository, by the
@@ -214,13 +427,13 @@ func (self *checkoutIndex) resolveRepository(tx db.Transaction, repository strin
 	if key == "" {
 		return ""
 	}
-	if pagePath := self.pageByRemoteName[key]; pagePath != "" {
+	if pagePath, isClaimed := self.pageByRemoteName.lookup(key); isClaimed {
 		return pagePath
 	}
-	if pagePath := self.pageByDirectory[key]; pagePath != "" {
+	if pagePath, isClaimed := self.pageByDirectory.lookup(key); isClaimed {
 		return pagePath
 	}
-	if pagePath, asked := self.pageFiledElsewhere[key]; asked {
+	if pagePath, isAsked := self.pageFiledElsewhere[key]; isAsked {
 		return pagePath
 	}
 	_, pagePath := repositoryPage(self.source, computer.ScanEntry{Title: repository})
@@ -277,7 +490,8 @@ func (self *checkoutIndex) wantedDependencyLinks(tx db.Transaction) map[[2]strin
 		// already, and a root build file naming its own workspace's
 		// packages is how a monorepo is put together, not a dependency.
 		if fromPath == "" || toPath == "" || fromPath == toPath ||
-			strings.HasPrefix(toPath, fromPath+"/") || strings.HasPrefix(fromPath, toPath+"/") {
+			strings.HasPrefix(toPath, fromPath+"/") || strings.HasPrefix(fromPath, toPath+"/") ||
+			self.isNotComponentPage[fromPath] || self.isNotComponentPage[toPath] {
 			return
 		}
 		key := [2]string{fromPath, toPath}
@@ -295,6 +509,11 @@ func (self *checkoutIndex) wantedDependencyLinks(tx db.Transaction) map[[2]strin
 	}
 	for _, checkout := range self.checkouts {
 		profile := checkout.profile
+		// A program that predates the reader says nothing about what the
+		// checkout needs; see linkCheckoutDependencies.
+		if !profile.IsBuildRead {
+			continue
+		}
 		for _, dependency := range profile.Dependencies {
 			want(checkout.pagePath, self.resolve(tx, dependency.Name), profile.Head,
 				dependencyQuotePrefix+dependency.Name, dependency.File+" names "+dependency.Name)
@@ -304,8 +523,8 @@ func (self *checkoutIndex) wantedDependencyLinks(tx db.Transaction) map[[2]strin
 		// build file would use.
 		for _, component := range checkout.components {
 			for _, needed := range component.component.Dependencies {
-				toPath := checkout.componentPageByName[strings.ToLower(needed)]
-				if toPath == "" {
+				toPath, isClaimed := checkout.componentPageByName.lookup(needed)
+				if !isClaimed {
 					toPath = self.resolve(tx, needed)
 				}
 				want(component.pagePath, toPath, profile.Head,
@@ -317,12 +536,12 @@ func (self *checkoutIndex) wantedDependencyLinks(tx db.Transaction) map[[2]strin
 		// moduleset is for.
 		repositoryByModule := map[string]string{}
 		for _, module := range profile.Modules {
-			if _, taken := repositoryByModule[module.Name]; !taken {
+			if _, isTaken := repositoryByModule[module.Name]; !isTaken {
 				repositoryByModule[module.Name] = module.Repository
 			}
 		}
 		modulePage := func(moduleName, repository string) string {
-			if pagePath := self.componentPageByJhbuildModule[strings.ToLower(moduleName)]; pagePath != "" {
+			if pagePath, isClaimed := self.componentPageByJhbuildModule.lookup(moduleName); isClaimed {
 				return pagePath
 			}
 			return self.resolveRepository(tx, repository)
@@ -382,10 +601,15 @@ func (self *Agent) linkCheckoutDependencies(ctx context.Context, source *models.
 		return
 	}
 	// A page whose evidence is replaced is a checkout of this pass or a
-	// component under one, a component that has since gone included.
+	// component under one, a component that has since gone included. Not
+	// a checkout whose profile came from a program that predates the
+	// reader: it stated nothing this time, which is not the same as
+	// stating that it needs nothing, so what it stated before stays.
 	inPass := make(map[string]bool, len(index.checkouts))
 	for _, checkout := range index.checkouts {
-		inPass[checkout.pagePath] = true
+		if checkout.profile.IsBuildRead {
+			inPass[checkout.pagePath] = true
+		}
 	}
 	isInPass := func(owner string) bool {
 		return inPass[owner] || inPass[models.ParentPath(owner)]

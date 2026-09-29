@@ -39,23 +39,41 @@ func TestCheckoutActivityCountsCommitsIssuesAndMergeRequests(test *testing.T) {
 				test.Fatal(err)
 			}
 		}
+		projectPosts, err := tx.CountAgentProjectPosts(source.AgentID, now.AddDate(0, 0, -90))
+		if err != nil {
+			test.Fatal(err)
+		}
 		profile := &computer.RepositoryProfile{
 			Remotes:  []string{"git@git.example.com:core/example-lib.git"},
 			Activity: &computer.RepositoryActivity{CommitCountLast90Days: 3, CommitCountLast365Days: 10, AuthorCountLast365Days: 2},
 		}
-		activity, err := checkoutActivity(tx, source.AgentID, profile, now)
-		if err != nil {
-			test.Fatal(err)
-		}
-		want := "Activity: 3 commits in the last 90 days and 10 in the last year, by 2 people; " +
-			"2 open issues, 1 opened in the last 90 days; 1 merge request merged in the last 90 days."
-		if activity != want {
+		want := "Activity: 1-5 commits in the last 90 days and 6-20 commits in the last year, by 1-5 people; " +
+			"1-5 open issues; 1-5 issues opened and 1-5 merge requests merged in the last 90 days."
+		if activity := checkoutActivity(profile, projectPosts); activity != want {
 			test.Fatalf("activity:\n got %q\nwant %q", activity, want)
 		}
-		// Nothing known, nothing said: a profile from a device that
-		// predates the counts, of a checkout no source reads issues for.
-		if activity, err := checkoutActivity(tx, source.AgentID, &computer.RepositoryProfile{}, now); err != nil || activity != "" {
-			test.Fatalf("nothing known is nothing said, not %q (%v)", activity, err)
+		// Counts that move within their ranges say the same thing, so
+		// the fact, and the overview written from it, stay as they are.
+		profile.Activity = &computer.RepositoryActivity{CommitCountLast90Days: 5, CommitCountLast365Days: 19, AuthorCountLast365Days: 4}
+		if activity := checkoutActivity(profile, projectPosts); activity != want {
+			test.Fatalf("activity within the same ranges:\n got %q\nwant %q", activity, want)
+		}
+		// Nothing known, nothing said: a profile with no history, of a
+		// checkout no source reads issues for.
+		if activity := checkoutActivity(&computer.RepositoryProfile{}, projectPosts); activity != "" {
+			test.Fatalf("nothing known is nothing said, not %q", activity)
 		}
 	})
+}
+
+// A count is said as the range it falls in.
+func TestActivityRanges(test *testing.T) {
+	for count, want := range map[int]string{
+		0: "no commits", 1: "1-5 commits", 5: "1-5 commits", 6: "6-20 commits", 20: "6-20 commits",
+		21: "21-50 commits", 51: "51-100 commits", 100: "51-100 commits", 101: "more than 100 commits",
+	} {
+		if got := activityRange(count, "commits"); got != want {
+			test.Errorf("%d: got %q, want %q", count, got, want)
+		}
+	}
 }

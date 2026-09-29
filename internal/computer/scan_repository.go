@@ -98,6 +98,7 @@ func repositoryProfile(ctx context.Context, directory string, tracked []string) 
 	profile.Module = manifestName(directory)
 	profile.Dependencies, profile.Modules = repositoryDependencies(directory, tracked)
 	profile.Components = repositoryComponents(directory, tracked, ownRepositoryNames(directory, profile.Remotes), profile.Modules)
+	profile.IsBuildRead = true
 	top := map[string]bool{}
 	for _, path := range tracked {
 		if extension := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), "."); extension != "" {

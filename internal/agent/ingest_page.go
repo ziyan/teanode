@@ -39,7 +39,13 @@ func (self *Agent) fileComputerPage(ctx context.Context, run *Run, source *model
 	// filed has it written by the filing.
 	named := make([]string, 0, len(result.Entries))
 	var renamed []*models.AgentDocument
-	checkouts := newCheckoutIndex(source, result.Entries)
+	var checkouts *checkoutIndex
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		checkouts = newCheckoutIndex(tx, source, result.Entries)
+		return nil
+	}); err != nil {
+		return "", counts, err
+	}
 	for _, entry := range result.Entries {
 		if ctx.Err() != nil {
 			return "", counts, ctx.Err()

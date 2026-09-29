@@ -393,6 +393,14 @@ type RepositoryProfile struct {
 	// Activity is how busy the checkout has been lately, counted from the
 	// same history as Commits. Nil from a program that predates it.
 	Activity *RepositoryActivity `json:"activity,omitempty"`
+
+	// IsBuildRead says this program read the build files and the history
+	// for Dependencies, Modules, Components and Activity, so that their
+	// being empty means the checkout has none. A program that predates
+	// them sends none of the five, and the server then leaves what an
+	// earlier pass wrote from them alone rather than take it for "no
+	// dependencies, no components, no activity".
+	IsBuildRead bool `json:"isBuildRead,omitempty"`
 }
 
 // RepositoryDependency is one thing a build file says the checkout needs:
