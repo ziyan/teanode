@@ -6248,6 +6248,25 @@ main.content:has(> .mailbox-frame) {
   overflow-wrap: anywhere;
 }
 
+/* What a survey or a subagent came back with: text to read, drawn as
+   the transcript draws it, and scrolled within itself so a long report
+   leaves the runs and the close button in view. */
+.background-work-result {
+  max-height: min(56vh, 520px);
+  padding: var(--space-2) var(--space-3);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--field);
+  overflow-wrap: anywhere;
+}
+
+.background-work-runs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
 /* Where the goal stands, in the dialog: a term and its value a line. */
 .agent-drawer-goal-status {
   display: grid;
