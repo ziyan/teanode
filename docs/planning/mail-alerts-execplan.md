@@ -13,9 +13,9 @@ To see it working: send the account's own mailbox a message that reads like a sc
 ## Progress
 
 - [x] (2026-09-29) Surveyed triage, speaking first, schedules, the chat apps and the injection stance; wrote this plan.
-- [ ] Milestone 1: triage says whether a message is worth telling now, and a program notices a burst of similar messages.
-- [ ] Milestone 2: the alert job: gather candidates, decide with the person's memory, write one short message, bounded by quiet hours, a daily cap and a record of what was said.
-- [ ] Milestone 3: delivery: the main conversation and the linked chat app, which also starts receiving the agent's other unasked turns.
+- [x] (2026-09-29) Milestone 1: triage says whether a message is worth telling now (`alert_signal`, `alert_reason`), and a program notices a burst of similar messages (`alert_candidate.go`, migration 0123).
+- [x] (2026-09-29) Milestone 2: the alert job (`alert.go`, `prompts/alert.txt`, migration 0124): gathers candidates, decides with the person's triage memories and recalled pages, writes one short message, bounded in code by quiet hours, a daily cap of five and a week's subject keys; the drawer opens for it.
+- [x] (2026-09-29) Milestone 3: delivery: the main conversation and the linked chat app, which also receives the agent's other unasked turns (`internal/channel/relay.go`, migration 0125).
 - [ ] Milestone 4: control: a setting per mailbox and for the whole agent, quiet hours, the list of recent alerts, and "don't tell me about these" from any door.
 - [ ] Milestone 5: docs, deploy, and the two scenarios above on the development server.
 
@@ -24,6 +24,10 @@ To see it working: send the account's own mailbox a message that reads like a sc
 - Observation: nothing the agent starts on its own reaches a chat app today. `internal/channel/channel.go` follows only the turns a chat message started; speaking first, schedules and goal turns write into the main conversation and stop there. There is no web push either.
 - Observation: triage's prompt files a sign-in alert as a notification of low priority, which is right for one code and wrong for fourteen in a night. The signal is the pattern, which no single message's triage can see.
 - Observation: triage has no memory of people beyond memories addressed to its audience and the contact book, so it cannot know that a school is the person's child's.
+- Observation: an alert is not a turn, so nothing emitted the events the drawer listens for. The alert job publishes an `asked` (note `alert`), a `message` and a `done` on the main conversation's feed with the alert's id as the run id, which the drawer treats as any other turn and which the relay between instances carries.
+- Observation: the job queue's rule of one open job per agent, kind and subject counts a running job as open, so a candidate arriving while the alert job runs cannot queue another. The job looks again when it finishes and puts itself back two minutes out (a `Deferral`) when anything arrived meanwhile; the same `Deferral` is how a night's hold waits for 07:00.
+- Observation: a chat message steered into a turn of the agent's own that is already running is not followed by the chat, and that turn's answer is not relayed either, because its last opening message is the person's. It was so before this plan; left alone.
+- Observation: a question card raised by a turn of the agent's own (the memory check asks some) is not sent to the chat; only the turn's last word is.
 
 ## Decision Log
 
@@ -46,9 +50,24 @@ To see it working: send the account's own mailbox a message that reads like a sc
   Rationale: an alert is written from a stranger's text and read by the person as the agent's word.
   Date/Author: 2026-09-29.
 
+- Decision: the model is shown candidates by short labels (`c1`, `c2`) rather than their identifiers, and the code maps them back; a candidate the decision did not mention is dropped with that said. The model's JSON keys stay snake_case like triage's (`alert_signal`, `subject_key`), and the stored fields are camelCase like the rest of the insight.
+  Rationale: a model copies a two-character label reliably and a twenty-six-character one not always; the keys match the closest existing object.
+  Date/Author: 2026-09-29.
+- Decision: the daily cap drops what is over it rather than holding it for tomorrow; urgent alerts are placed first so the day's last places go to them. A held (night) alert keeps its candidates waiting and the morning's decision sees them again with whatever arrived overnight. A candidate that may not wait (triage said `now`, or a burst) brings a job held for the morning forward.
+  Rationale: yesterday's sixth alert is not news in the morning; re-deciding in the morning costs one call and lets a burst that grew overnight be one alert.
+  Date/Author: 2026-09-29.
+- Decision: web addresses are taken out of an alert's text in code, not only asked for in the prompt; a candidate from a mailing list, a reply or a message in Junk or Trash is never a burst, and one older than a day (a backfill) is not a candidate at all.
+  Rationale: an alert is read as the agent's word; a link in it from a phishing message is the phishing message delivered by the agent. A digest's volume and issue are the digits the pattern takes out, and a conversation going back and forth is not a burst.
+  Date/Author: 2026-09-29.
+- Decision: the chat app reads the agent's own turns back from the main conversation (`ListAgentOwnTurnAnswers`: assistant messages without tool calls whose latest opening user message carries an own-turn marker) past a cursor on the channel row, `relayed_through`, moved by compare-and-set before sending and only by the instance that holds the bot. It wakes early on the feed's `done` and otherwise every fifteen seconds, and only reads messages three seconds old, so one written in a transaction not yet committed is not skipped. A new link starts from the moment it is made.
+  Rationale: the feed drops what a listener misses; an alert must not be. Moving the cursor before sending makes a failed send lost from the chat (it is still in the drawer) rather than sent twice.
+  Date/Author: 2026-09-29.
+- Decision: `isAlertingAllowed` (on wherever the mailbox is triaged and the triage feature is allowed) is the one place the switches of Milestone 4 will be read.
+  Date/Author: 2026-09-29.
+
 ## Outcomes & Retrospective
 
-Nothing yet.
+Milestones 1 to 3 (2026-09-29): candidates from triage and from bursts, the alert job with its bounds, delivery to the main conversation, the drawer and the linked chat app, which now also carries speaking first, schedules, goal check-ins and background wakes. Tests cover triage's new fields, burst counting with invented messages, gathering into one job, the job with a stubbed model (one alert for a burst, a dropped newsletter, the night's hold and the urgent exception, the cap, no repeat), the fenced prompt, and the chat sending each own turn once across a restart. Milestones 4 and 5 remain: the switches and mute, docs and the scenarios on the development server.
 
 ## Context and Orientation
 
