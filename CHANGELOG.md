@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.81.1] - 2026-09-29
+
+### Changed
+
+- The agent runs the reads a model asks for in one round at the same time, so several searches or subagents take about as long as the slowest. (#231)
+
 ## [0.81.0] - 2026-09-29
 
 ### Added
