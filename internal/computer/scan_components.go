@@ -411,10 +411,10 @@ func cmakeTargetsOf(directory string, files []string) *cmakeTargets {
 				}
 				isImported, isAlias, aliased := false, false, ""
 				for index, word := range command[2:] {
-					switch {
-					case word == "IMPORTED":
+					switch word {
+					case "IMPORTED":
 						isImported = true
-					case word == "ALIAS":
+					case "ALIAS":
 						isAlias = true
 						if index+3 < len(command) {
 							aliased, _ = name(command[index+3])
