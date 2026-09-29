@@ -162,6 +162,10 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 	// ran -- a night has a deadline, four hundred chat days took all of
 	// it, and the twenty-eight empty pages stood for another day.
 	self.dreamRevise(ctx, run, record)
+	// Ideas before the reading, at most once a day, and past the night's
+	// share: after it, a night working through a backlog had spent
+	// everything on the reading and never looked (see dreamIdeas).
+	self.dreamIdeas(ctx, run, budget)
 	// The reading gets half of what is left of the night, never all of
 	// it: what comes after it is what makes the reading worth doing.
 	reading := 0.5
@@ -178,8 +182,6 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 	// passages tonight and is read like anything else tomorrow.
 	self.dreamAttachments(ctx, run, budget)
 	self.dreamTimeline(ctx, run, record, budget)
-	// Ideas after the month is written, from the same reading.
-	self.dreamIdeas(ctx, run, budget)
 	// Half of what is left, so the phases after it still run.
 	budget.consolidateUntil = halfway(ctx, time.Now())
 	self.dreamConsolidate(ctx, run, record, budget)

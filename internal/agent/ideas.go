@@ -465,6 +465,54 @@ func (self *Agent) SetIdeaStatus(tx db.Transaction, agent *models.Agent, ideaId 
 	})
 }
 
+// personalIdeaLasts is how long a personal idea stays on offer when nobody
+// said when it stops mattering, and personalIdeaLastsMost how far ahead one
+// may say it stops mattering.
+const (
+	personalIdeaLasts     = 14 * 24 * time.Hour
+	personalIdeaLastsMost = 366 * 24 * time.Hour
+)
+
+// IdeaProposal is a personal idea as whoever proposes it words it: the
+// `idea` tool's propose action through ProposeAgentIdea, and a dream that
+// ends with its ideas in an object. The JSON names are the tool's own
+// parameter names, which is what the dream's prompt asks the object for.
+type IdeaProposal struct {
+	IdeaCategory     string                     `json:"idea_category"`
+	Emoji            string                     `json:"emoji"`
+	Headline         string                     `json:"headline"`
+	Body             string                     `json:"body"`
+	OpeningRequest   string                     `json:"opening_request"`
+	NeededToolNames  []string                   `json:"needed_tool_names"`
+	Evidence         []models.AgentIdeaEvidence `json:"evidence"`
+	SuggestionReason string                     `json:"suggestion_reason"`
+	// ExpiresOn is the day it stops mattering, as 2006-01-02; two weeks
+	// from now when left out.
+	ExpiresOn string `json:"expires_on"`
+}
+
+// Idea is the proposal as the idea ProposeIdea checks and keeps, or why
+// the day it stops mattering cannot be read.
+func (self *IdeaProposal) Idea(now time.Time) (*models.AgentIdea, error) {
+	expires := now.Add(personalIdeaLasts)
+	if on := strings.TrimSpace(self.ExpiresOn); on != "" {
+		day, err := time.ParseInLocation("2006-01-02", on, time.Local)
+		if err != nil {
+			return nil, fmt.Errorf("the day it stops mattering is written as 2006-01-02, not %q", on)
+		}
+		expires = day.Add(24 * time.Hour)
+		if expires.Before(now) || expires.After(now.Add(personalIdeaLastsMost)) {
+			return nil, fmt.Errorf("the day it stops mattering is between today and a year from now")
+		}
+	}
+	return &models.AgentIdea{
+		IdeaCategory: models.AgentIdeaCategory(strings.TrimSpace(self.IdeaCategory)), Emoji: strings.TrimSpace(self.Emoji),
+		Headline: strings.TrimSpace(self.Headline), Body: strings.TrimSpace(self.Body),
+		OpeningRequest: strings.TrimSpace(self.OpeningRequest), NeededToolNames: self.NeededToolNames,
+		Evidence: self.Evidence, SuggestionReason: strings.TrimSpace(self.SuggestionReason), ExpiresAt: &expires,
+	}, nil
+}
+
 // ProposeIdea keeps an idea found for the person, once it passes the check
 // every idea passes, whoever proposed it: the words and the tools
 // (checkIdea), what prompted it (checkEvidence), that it is not one already
