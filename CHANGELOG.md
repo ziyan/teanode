@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.81.2] - 2026-09-29
+
+### Fixed
+
+- A goal no longer takes a turn of its own while another turn runs in its conversation, or a minute after the person's turn that set it and told it to wait. (#232)
+- Starting a goal from the Goals tab asks the agent to propose the goal and a plan before setting it. (#232)
+
 ## [0.81.1] - 2026-09-29
 
 ### Changed
