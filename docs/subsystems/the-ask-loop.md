@@ -174,12 +174,20 @@ conversation that started it takes a turn that opens with
 through the same waker as a background command (`background.go`): the same
 two seconds of gathering, the same twenty woken turns before the person
 writes again, counted together with the commands', and a note instead of a
-turn when out of them or out of budget. Stopped work wakes nothing, and a
-turn with nobody present starts none.
+turn when out of them or out of budget. The count is the conversation's
+`background_wake_count`, added to when a woken turn starts and set back to
+nothing in the transaction that keeps a message the person wrote, so it holds
+whichever instance each wake lands on. A wake for finished work claims the
+row first (`wake_claimed_at`), from the job's own wake and from the sweep
+alike, and only the claimer wakes; a claim older than half an hour is a
+server's that went down mid-wake, and is taken again. Stopped work wakes
+nothing, and a turn with nobody present starts none.
 
 A subagent in the background keeps the tools of the turn that started it,
 less `subagent`, `survey` and `background_work`, fixed in its row when it
-starts. The turn it would show a card in has ended, so it shows none
+starts, and the permissions of that turn, which the operations it runs with
+are narrowed to: made afresh for the person when it runs, it can still do no
+more than the turn that started it could. The turn it would show a card in has ended, so it shows none
 (`AskSettings.isUnattended`): a call that needs the person's word is refused,
 and it says what it would have done for the woken turn to take to them. The
 `background_work` tool lists, reads and stops the work, offered wherever the

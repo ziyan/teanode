@@ -54,14 +54,21 @@ The command line and the API start a survey and ask for it every few
 seconds, so no request is held open for minutes. `SurveyAgentMemory` stays
 for clients that ask it.
 
-Work can run twice: a job claimed again after a restart runs from the start,
-and the conversation may be woken twice for it. That costs the work again,
-which the background command decision already accepts for a wake, and it is
-bounded by the same twenty turns.
+Work can run twice: a job claimed again after a restart runs from the start.
+That costs the work again, which the background command decision already
+accepts for a wake. The conversation is woken once for it all the same: the
+wake claims the row first, and only the claimer wakes, so the instance that
+ran the work and another instance's sweep never both do. A claim is held for
+half an hour, longer than a woken turn takes; one older than that belongs to a
+server that went down mid-wake, and the sweep takes it again.
 
 The twenty is now the bound on chains of either kind: a survey whose woken
-turn starts a subagent whose woken turn starts a command is one chain. A
-subagent in the background can do less than a woken turn, never more.
+turn starts a subagent whose woken turn starts a command is one chain. The
+count lives on the conversation's row, not in one instance's memory, so a
+chain spread over instances stops at twenty too. A subagent in the background
+can do less than a woken turn, never more: it runs with the permissions of
+the turn that started it, kept in its row, whatever the person may do by the
+time it runs.
 
 Work is bounded at twenty minutes, inside its job's bound, so reaching it is
 a failure on the row rather than a job put back in the queue. Work whose job

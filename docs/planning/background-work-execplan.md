@@ -17,13 +17,20 @@ To see it working: in the drawer ask "survey my notes on the garden in the backg
 - [x] (2026-09-29) Milestone 2: waking the conversation when it finishes, through the same waker and the same count of twenty as background commands; a note instead when out of turns or budget; stopped work wakes nothing.
 - [x] (2026-09-29) Milestone 3: the tools, the API and the command line: survey and subagent with `background`, the `background_work` tool, `StartAgentSurvey`, `ListAgentBackgroundWork`, `GetAgentBackgroundWork` and `StopAgentBackgroundWork` with their client documents, `teanode agent survey` by start and ask, and `teanode agent background list|show|stop`.
 - [x] (2026-09-29) Milestone 4, the dashboard and docs: the agent page's Activity tab lists background work above the runs, with Stop while it is queued or running and Open for the run that holds a finished one's result; the drawer draws a `[background work]` turn as a quiet line; `the-ask-loop.md`, `jobs-and-schedules.md`, `memory.md`, `devices.md`, `command-line.md` and `docs/decisions/20260929-background-work-wakes-the-conversation-that-started-it.md`.
+- [x] (2026-09-29) Review fixes: a wake claims its row so two instances never both wake a conversation; the count of woken turns moved to the conversation's row (migration 0122 for both); a background subagent is held to the permissions of the turn that started it; `teanode agent survey` keeps waiting through passing failures, gives up after thirty minutes, and names the id on every exit; the dashboard's Open shows the result text itself, and a list that cannot be read says so in a toast.
 - [ ] Milestone 4, the rest: deploy, then in the drawer start a survey in the background with an invented question, see the immediate answer, the woken turn with the report, and `teanode agent background list` in between. Left for the session that deploys.
 
 ## Surprises & Discoveries
 
 - The general stale-claim rule puts back any running job claimed more than fifteen minutes ago, except the night and the ingest. A survey may take a quarter of an hour, so background work would have been claimed a second time beside itself; it gets a bound of its own, released by kind the way the night and the ingest are.
   Evidence: `ReleaseStaleAgentJobs` in `internal/db/database_agent.go`, and `jobTimeout` defaulting to ten minutes.
-- A job cut off by its own deadline goes back in the queue without a mark (`outcomeForJob`), which for background work would run it again forever. The work gets a bound (`backgroundWorkLongest`, twenty minutes) a little inside the job's, so reaching it is recorded as failed on the row and the job ends done.
+- Review found the waker's guards were all in one instance's memory: the in-flight set kept the job's wake and the sweep apart only on the same instance, so another instance's sweep a minute later woke the conversation a second time while the first turn still ran; and `backgroundWakeCounts` was per instance, so a chain of woken turns spread over instances never reached twenty.
+  Evidence: `wakeForBackgroundWork` and `tryWakeForBackground` in `internal/agent/background.go` before commit fbfafb35.
+- Nothing narrows a turn's operations below the person's own permissions today: every `agentOperations` is built from `EffectivePermissions` of the user, and `Execute` resolves the principal again at each call. A background subagent that made its operations afresh would still have reached any permission granted between its start and its run.
+  Evidence: `agentOperations` in `internal/api/v1api/apigraph/agent_ask.go`, `operationsFor` in `agent_memory.go`, `mcpPerson` in `agent_mcp.go`.
+- The client reported a proxy's 502 page as an untyped error, so the command line could not tell a server restarting from a real refusal.
+  Evidence: the two GraphQL paths in `internal/client/client.go`.
+ goes back in the queue without a mark (`outcomeForJob`), which for background work would run it again forever. The work gets a bound (`backgroundWorkLongest`, twenty minutes) a little inside the job's, so reaching it is recorded as failed on the row and the job ends done.
 
 ## Decision Log
 
@@ -70,6 +77,21 @@ To see it working: in the drawer ask "survey my notes on the garden in the backg
 - Decision: on the dashboard each piece of work is a `SettingsRow` with one text action: Stop (`link danger`) while queued or running, Open once done, which opens the run holding the result in the drawer as the activity table opens a run (a subagent's one run; a survey's last, the one that combined the parts). Stop asks nothing first and says how it went in a toast, as a background command's Stop does. The card is absent when there is no work, like the background commands card.
   Rationale: `docs/coding/frontend-design.md` (one action is a word; toasts for success and failure), and the runs' reader is the transcript the drawer already opens.
   Date/Author: 2026-09-29.
+- Decision (review, superseding the Open above): Open, on done or failed work, reads the work and shows its `resultText` in a wide `ConfirmDialog` through the `Markdown` reader the transcript uses, or the error for failed work, with the runs it made listed under it as links that open each in the drawer. A list that cannot be read says so once in a toast, de-duplicated as `backgroundCommands.tsx` does.
+  Rationale: which run holds a survey's report is a guess (the last one happened to be the combining run), and the result is on the row already; the runs stay a click away for somebody who wants the working.
+  Date/Author: 2026-09-29.
+- Decision: a wake for finished work claims the row first with a conditional update (`agent_background_work.wake_claimed_at`, set only where `woken_at` is null and the claim is null or older than thirty minutes), from the job's own wake and from the sweep; only the claimer wakes, the sweep lists only unclaimed or expired rows, and a wake given up releases its claim.
+  Rationale: the database is the one thing every instance shares; thirty minutes is longer than a woken turn takes, so the claimer is never raced while its turn runs, and short enough that a server that went down mid-wake delays the wake, not loses it inside the sweep's hour.
+  Date/Author: 2026-09-29.
+- Decision: the count of woken turns is `agent_conversation.background_wake_count`, added to by the waker once `Ask` has started the woken turn (commands and work alike, as before), and reset in `keepPersonTurn`, in the transaction that stores what the person wrote (a turn not headless and not of surface `background`, and steered messages too). The in-memory map and `personTookTurn` are gone. `UpdateAgentConversation` does not write the column, so a change to the conversation never loses a count.
+  Rationale: the bound has to hold whichever instance each wake of a chain lands on; resetting with the message itself means a wake on any instance reads the two together.
+  Date/Author: 2026-09-29.
+- Decision: a background subagent keeps the starting turn's `Operations.Permissions()` in `work_request.startingTurnPermissions`, and when it runs its operations, made afresh for the person, are narrowed to it (`narrowOperations`): `agentOperations.NarrowedTo` intersects the set it offers tools by, and holds every `Execute` to the person's permissions at the call intersected with the limit (`EffectivePermissions.Within`). A row without the set, from before this, is run unnarrowed.
+  Rationale: made afresh, the operations follow a permission taken away since; narrowed, they never reach one granted since, or anything the starting turn could not.
+  Date/Author: 2026-09-29.
+- Decision: `teanode agent survey` retries a read that fails with a `client.ConnectionError` or a `client.StatusError` of 5xx, 429 or 408 (`client.IsTransient`), doubling the wait up to a minute, says each failure on standard error, stops waiting after thirty minutes, and names the id and `teanode agent background show <id>` on every exit, including success.
+  Rationale: the survey goes on on the server whatever happens to the command; a server restarting behind its proxy is the ordinary failure and must not end the wait, and whoever is left without the report needs the id to read it later.
+  Date/Author: 2026-09-29.
 
 ## Outcomes & Retrospective
 
@@ -106,7 +128,7 @@ Milestone 1 when a queued row runs, stores its result and run ids, survives a re
 
 ## Idempotence and Recovery
 
-The migration only creates a table; its reverse drops it. A job run twice after a restart runs the work twice and wakes once per finish, at worst twice, which the background command decision already accepts. A row whose job vanished is failed by the sweep, never left running.
+The migration only creates a table; its reverse drops it. A job run twice after a restart runs the work twice, which the background command decision already accepts; the conversation is woken once, by whoever claims the row's wake. Migration 0122 only adds two columns; its reverse drops them. A row whose job vanished is failed by the sweep, never left running.
 
 ## Interfaces and Dependencies
 
