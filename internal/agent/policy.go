@@ -17,6 +17,10 @@ import (
 // feature is off for the deployment, or there is no model to ask.
 var ErrUnavailable = errors.New("agent: unavailable")
 
+// errTurnRunning says a turn that yields to others was not started,
+// because another is running in its conversation.
+var errTurnRunning = errors.New("agent: a turn is running in the conversation")
+
 // ErrNotGranted says the person has not let their agent do this with this
 // source.
 var ErrNotGranted = errors.New("agent: not granted for this mailbox")

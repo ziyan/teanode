@@ -486,3 +486,110 @@ func TestGoalStopsAfterTurnsAlone(t *testing.T) {
 		t.Fatalf("the turn after the person's word goes on working: %+v", after)
 	}
 }
+
+// Setting a goal makes it due at once, so the sweep queues its job while
+// the person's own turn -- the one that set it -- is still going, and that
+// turn may yet tell it to wait. The goal's job does not start a second
+// turn beside theirs: it is put back without counting against the caps,
+// and when it comes back after their turn it reads the goal again, finds
+// it waiting on what they were just asked, and runs nothing.
+func TestGoalWaitsForTheTurnRunningInItsConversation(t *testing.T) {
+	world := startGoalWorld(t, []string{deleteRound, goalWaitRound, answerRound}, "sort out the plumber's invoice with me")
+	defer world.close()
+
+	// The person's turn, held open on a confirmation card.
+	operations := &fakeOperations{permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailRead}, {Permission: models.PermissionMailWrite}})}
+	run, err := world.worker.Ask(&agent.AskSettings{Agent: world.found, Owner: world.owner, Operations: operations, Conversation: world.conversation, Message: "delete it for good, then wait for me", Surface: "drawer"})
+	if err != nil {
+		t.Fatalf("Ask: %s", err)
+	}
+	events, unsubscribe := run.Subscribe()
+	defer unsubscribe()
+	var confirmation *agent.Event
+	for event := range events {
+		if event.Kind == agent.EventConfirmation {
+			copied := event
+			confirmation = &copied
+			break
+		}
+	}
+	if confirmation == nil {
+		t.Fatal("the person's turn should be waiting on a card")
+	}
+
+	// The goal's job comes due meanwhile. Not Wait: that would wait for
+	// the person's turn too.
+	listGoalJobs := func() []*models.AgentJob {
+		var jobs []*models.AgentJob
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			jobs, _ = tx.ListAgentJobs(&db.AgentJobFilter{AgentID: world.found.ID, Kinds: []models.AgentJobKind{models.AgentJobGoal}}, nil)
+		})
+		return jobs
+	}
+	before := time.Now()
+	if err := world.worker.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	var jobs []*models.AgentJob
+	for {
+		jobs = listGoalJobs()
+		if len(jobs) == 1 && jobs[0].Attempts == 1 && jobs[0].Status == models.AgentJobQueued || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if len(jobs) != 1 || jobs[0].Status != models.AgentJobQueued || jobs[0].Attempts != 1 || jobs[0].FailureCount != 0 {
+		t.Fatalf("the goal's job should be put back, not done or failed: %+v", jobs)
+	}
+	if jobs[0].NotBefore == nil || jobs[0].NotBefore.Sub(before) < 30*time.Second || jobs[0].NotBefore.Sub(before) > 2*time.Minute {
+		t.Fatalf("the job should come back in about a minute: %v", jobs[0].NotBefore)
+	}
+	if count := len(*world.requests); count != 1 {
+		t.Fatalf("only the person's turn has asked the model anything: %d requests", count)
+	}
+
+	// Their turn goes on: they decline the card, and the turn says the
+	// goal waits for them.
+	if !run.Resolve(confirmation.CallID, false) {
+		t.Fatal("the card should be open")
+	}
+	for event := range events {
+		if event.Kind == agent.EventDone {
+			break
+		}
+	}
+	waiting := world.read(t)
+	if waiting.GoalState != models.GoalWaiting {
+		t.Fatalf("the person's own turn told the goal to wait, and that stands after it: %+v", waiting)
+	}
+
+	// The job comes back after its minute and finds nothing owed.
+	requestsBefore := len(*world.requests)
+	if err := world.worker.TickAt(context.Background(), time.Now().Add(2*time.Minute)); err != nil {
+		t.Fatalf("TickAt: %s", err)
+	}
+	world.worker.Wait()
+	deadline = time.Now().Add(15 * time.Second)
+	for {
+		jobs = listGoalJobs()
+		if len(jobs) == 1 && jobs[0].Status == models.AgentJobDone || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if len(jobs) != 1 || jobs[0].Status != models.AgentJobDone {
+		t.Fatalf("the job should finish with nothing to do: %+v", jobs)
+	}
+	if count := len(*world.requests); count != requestsBefore {
+		t.Fatalf("a goal waiting for the person takes no turn: %d requests, %d before", count, requestsBefore)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		messages, _ := tx.ListAgentMessages(world.conversation.ID, nil)
+		for _, message := range messages {
+			if strings.HasPrefix(message.Content, models.GoalCheckInMarker) {
+				t.Fatalf("no check-in should be in the conversation: %q", message.Content)
+			}
+		}
+	})
+}
