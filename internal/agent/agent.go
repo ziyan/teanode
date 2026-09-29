@@ -149,19 +149,18 @@ type Agent struct {
 	computers      map[string]map[string]*attachedComputer
 
 	// The background commands and work that ended and have a turn still
-	// to come, by id; what each conversation has waiting to wake it; and
-	// how many turns they have woken in each since the person last wrote
-	// there.
+	// to come, by id, and what each conversation has waiting to wake it.
+	// How many turns they have woken since the person last wrote is on
+	// the conversation's row, where every instance reads it.
 	//
 	// The same lock holds the cancel of each piece of background work
 	// running on this instance, by id, for a stop; and lastBackgroundSweep
 	// is when lost background work was last looked for.
-	backgroundMutex      sync.Mutex
-	backgroundInFlight   map[string]bool
-	backgroundWakes      map[string]*backgroundWake
-	backgroundWakeCounts map[string]int
-	runningWork          map[string]context.CancelCauseFunc
-	lastBackgroundSweep  time.Time
+	backgroundMutex     sync.Mutex
+	backgroundInFlight  map[string]bool
+	backgroundWakes     map[string]*backgroundWake
+	runningWork         map[string]context.CancelCauseFunc
+	lastBackgroundSweep time.Time
 
 	contextsMutex sync.Mutex
 	contextsOpen  int

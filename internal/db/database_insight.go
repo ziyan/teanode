@@ -64,6 +64,13 @@ type InsightOperation interface {
 	// met, the ideas it was carrying out are done, and started again when
 	// it is taken back up.
 	UpdateAgentConversation(conversationId string, modify func(*models.AgentConversation) error) (*models.AgentConversation, error)
+
+	// AddAgentConversationBackgroundWake counts one more turn woken by
+	// background commands or work in a conversation, and
+	// ResetAgentConversationBackgroundWakes starts the count again, for
+	// the person having written.
+	AddAgentConversationBackgroundWake(conversationId string) error
+	ResetAgentConversationBackgroundWakes(conversationId string) error
 	ListAgentConversations(agentId string, kinds []models.AgentConversationKind, options *Options) ([]*models.AgentConversation, error)
 
 	// ListAgentRuns is the runs, newest first, narrowed by the filter and
@@ -175,6 +182,10 @@ type agentConversationModel struct {
 	GoalNote   string     `gorm:"column:goal_note"`
 	GoalNextAt *time.Time `gorm:"column:goal_next_at"`
 	GoalSetAt  *time.Time `gorm:"column:goal_set_at"`
+
+	// How many turns background commands and work have woken since the
+	// person last wrote. See migration 0122.
+	BackgroundWakeCount int `gorm:"column:background_wake_count"`
 }
 
 func (agentConversationModel) TableName() string { return "agent_conversation" }
@@ -412,6 +423,8 @@ func conversationFromModel(model *agentConversationModel) *models.AgentConversat
 		Goal:              model.Goal,
 		GoalState:         models.AgentGoalState(model.GoalState),
 		GoalNote:          model.GoalNote,
+
+		BackgroundWakeCount: model.BackgroundWakeCount,
 	}
 	if model.GoalNextAt != nil {
 		at := model.GoalNextAt.In(time.Local)
@@ -489,6 +502,18 @@ func (self *transaction) GetAgentConversation(conversationId string) (*models.Ag
 		return nil, nil
 	}
 	return conversationFromModel(&model), nil
+}
+
+func (self *transaction) AddAgentConversationBackgroundWake(conversationId string) error {
+	return self.tx.Model(&agentConversationModel{}).Where(`"id" = ?`, conversationId).
+		Update("background_wake_count", gorm.Expr(`"background_wake_count" + 1`)).Error
+}
+
+func (self *transaction) ResetAgentConversationBackgroundWakes(conversationId string) error {
+	// Only when there is a count: most of what a person writes follows no
+	// woken turn, and an update that changes nothing still takes the row.
+	return self.tx.Model(&agentConversationModel{}).Where(`"id" = ? AND "background_wake_count" <> 0`, conversationId).
+		Update("background_wake_count", 0).Error
 }
 
 // ListAgentGoalsInProgress: see the interface.

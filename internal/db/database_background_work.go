@@ -41,10 +41,23 @@ type BackgroundWorkOperation interface {
 	// MarkAgentBackgroundWorkWoken notes that the conversation was told.
 	MarkAgentBackgroundWorkWoken(workIds []string, at time.Time) error
 
+	// ClaimAgentBackgroundWorkWake takes the waking of the conversation
+	// for a piece of finished work, and says whether the caller has it:
+	// false when the conversation has been told, or when somebody else
+	// claimed it at or after claimExpiredBefore. Only the claimer wakes,
+	// so two instances never both do.
+	ClaimAgentBackgroundWorkWake(workId string, at, claimExpiredBefore time.Time) (bool, error)
+
+	// ReleaseAgentBackgroundWorkWakes lets go of claims whose wake was
+	// given up, for the sweep to take again without waiting for them to
+	// expire.
+	ReleaseAgentBackgroundWorkWakes(workIds []string) error
+
 	// ListAgentBackgroundWorkToWake is the work that finished between the
 	// two moments, done or failed, whose conversation should be woken and
-	// has not been: what a wake lost to a restart left behind.
-	ListAgentBackgroundWorkToWake(finishedAfter, finishedBefore time.Time, limit int) ([]*models.AgentBackgroundWork, error)
+	// has not been, and which nobody has claimed since claimExpiredBefore:
+	// what a wake lost to a restart left behind.
+	ListAgentBackgroundWorkToWake(finishedAfter, finishedBefore, claimExpiredBefore time.Time, limit int) ([]*models.AgentBackgroundWork, error)
 
 	// FailStaleAgentBackgroundWork marks work still queued or running that
 	// was made before the moment as failed, with the reason given.
@@ -71,6 +84,7 @@ type agentBackgroundWorkModel struct {
 	StartedAt       *time.Time `gorm:"column:started_at"`
 	FinishedAt      *time.Time `gorm:"column:finished_at"`
 	WokenAt         *time.Time `gorm:"column:woken_at"`
+	WakeClaimedAt   *time.Time `gorm:"column:wake_claimed_at"`
 }
 
 func (agentBackgroundWorkModel) TableName() string { return "agent_background_work" }
@@ -83,6 +97,7 @@ func (self *agentBackgroundWorkModel) toModel() *models.AgentBackgroundWork {
 		ResultText: self.ResultText, RunIDs: []string{}, ErrorMessage: self.ErrorMessage,
 		CreatedAt: self.CreatedAt.In(time.Local), StartedAt: localTime(self.StartedAt),
 		FinishedAt: localTime(self.FinishedAt), WokenAt: localTime(self.WokenAt),
+		WakeClaimedAt: localTime(self.WakeClaimedAt),
 	}
 	if len(self.WorkRequest) > 0 {
 		if err := json.Unmarshal(self.WorkRequest, &work.WorkRequest); err != nil {
@@ -201,7 +216,23 @@ func (self *transaction) MarkAgentBackgroundWorkWoken(workIds []string, at time.
 		Update("woken_at", at).Error
 }
 
-func (self *transaction) ListAgentBackgroundWorkToWake(finishedAfter, finishedBefore time.Time, limit int) ([]*models.AgentBackgroundWork, error) {
+func (self *transaction) ClaimAgentBackgroundWorkWake(workId string, at, claimExpiredBefore time.Time) (bool, error) {
+	result := self.tx.Model(&agentBackgroundWorkModel{}).
+		Where(`"id" = ? AND "woken_at" IS NULL AND ("wake_claimed_at" IS NULL OR "wake_claimed_at" < ?)`, workId, claimExpiredBefore).
+		Update("wake_claimed_at", at)
+	return result.RowsAffected == 1, result.Error
+}
+
+func (self *transaction) ReleaseAgentBackgroundWorkWakes(workIds []string) error {
+	if len(workIds) == 0 {
+		return nil
+	}
+	return self.tx.Model(&agentBackgroundWorkModel{}).
+		Where(`"id" IN ? AND "woken_at" IS NULL`, uniqueStrings(workIds)).
+		Update("wake_claimed_at", nil).Error
+}
+
+func (self *transaction) ListAgentBackgroundWorkToWake(finishedAfter, finishedBefore, claimExpiredBefore time.Time, limit int) ([]*models.AgentBackgroundWork, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -210,6 +241,7 @@ func (self *transaction) ListAgentBackgroundWorkToWake(finishedAfter, finishedBe
 		Where(`"work_status" IN ? AND "conversation_id" <> '' AND "is_person_present" AND "woken_at" IS NULL`,
 			[]string{string(models.BackgroundWorkDone), string(models.BackgroundWorkFailed)}).
 		Where(`"finished_at" > ? AND "finished_at" <= ?`, finishedAfter, finishedBefore).
+		Where(`("wake_claimed_at" IS NULL OR "wake_claimed_at" < ?)`, claimExpiredBefore).
 		Order(`"finished_at" ASC`).Limit(limit).Find(&found).Error; err != nil {
 		return nil, err
 	}

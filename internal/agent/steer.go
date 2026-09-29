@@ -197,5 +197,21 @@ func keepPersonTurn(tx db.Transaction, settings *AskSettings) (*models.AgentMess
 	if err := tx.ClaimAgentAttachments(attachmentIds, settings.Conversation.ID, saved.ID); err != nil {
 		return nil, err
 	}
+	// The person writing is what lets ended background commands and
+	// finished background work wake the conversation again. In the
+	// transaction that keeps what they wrote, so that a wake on any
+	// instance reads the two together.
+	if isPersonWriting(settings) {
+		if err := tx.ResetAgentConversationBackgroundWakes(settings.Conversation.ID); err != nil {
+			return nil, err
+		}
+	}
 	return saved, nil
+}
+
+// isPersonWriting says the message a turn keeps is the person's own: not
+// a turn with nobody present, and not one an ended command or finished
+// work woke.
+func isPersonWriting(settings *AskSettings) bool {
+	return !settings.Headless && settings.Surface != backgroundSurface
 }

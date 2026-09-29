@@ -55,6 +55,13 @@ const (
 	backgroundWorkWakeAfter  = time.Minute
 	backgroundWorkWakeWithin = time.Hour
 
+	// backgroundWorkWakeClaimExpiry is how long a claim on waking the
+	// conversation for finished work holds. Longer than a woken turn
+	// takes, so that the claimer is never raced by another instance while
+	// its turn runs; a claim this old is taken to be a server's that went
+	// down mid-wake, and the sweep takes it again.
+	backgroundWorkWakeClaimExpiry = 30 * time.Minute
+
 	// backgroundWorkResultCharacters is how much of a result the wake
 	// carries. A survey's report is usually shorter; the whole of it is
 	// read with the background_work tool.
@@ -345,7 +352,7 @@ func (self *Agent) sweepBackgroundWork(ctx context.Context, now time.Time) {
 		} else if failed > 0 {
 			log.Noticef("failed %d piece(s) of background work whose job was lost", failed)
 		}
-		lost, err = tx.ListAgentBackgroundWorkToWake(now.Add(-backgroundWorkWakeWithin), now.Add(-backgroundWorkWakeAfter), 0)
+		lost, err = tx.ListAgentBackgroundWorkToWake(now.Add(-backgroundWorkWakeWithin), now.Add(-backgroundWorkWakeAfter), now.Add(-backgroundWorkWakeClaimExpiry), 0)
 		return err
 	}); err != nil {
 		log.Warningf("cannot sweep the background work: %s", err)

@@ -188,6 +188,11 @@ type AgentConversation struct {
 	// GoalSetAt is when the goal was set, for the panel that says since
 	// when the agent has been at it.
 	GoalSetAt *time.Time `json:"goalSetAt,omitempty"`
+
+	// BackgroundWakeCount is how many turns ended background commands and
+	// finished background work have woken here since the person last
+	// wrote, which bounds a chain of them.
+	BackgroundWakeCount int `json:"backgroundWakeCount,omitempty"`
 }
 
 // AgentGoalState is where a conversation's goal stands.

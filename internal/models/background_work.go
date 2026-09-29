@@ -76,4 +76,8 @@ type AgentBackgroundWork struct {
 	StartedAt  *time.Time `json:"startedAt,omitempty"`
 	FinishedAt *time.Time `json:"finishedAt,omitempty"`
 	WokenAt    *time.Time `json:"wokenAt,omitempty"`
+
+	// WakeClaimedAt is when an instance took the waking of the
+	// conversation for it, so that no other does too.
+	WakeClaimedAt *time.Time `json:"wakeClaimedAt,omitempty"`
 }

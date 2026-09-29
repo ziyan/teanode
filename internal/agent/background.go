@@ -96,22 +96,28 @@ func (self *Agent) ensureBackgroundLocked() {
 	if self.backgroundInFlight == nil {
 		self.backgroundInFlight = map[string]bool{}
 		self.backgroundWakes = map[string]*backgroundWake{}
-		self.backgroundWakeCounts = map[string]int{}
 	}
 }
 
 // wakeForBackgroundWork has finished work wake the conversation that
 // started it, with whatever else ends there meanwhile. Work started from
 // the API, or by a turn with nobody present, wakes nothing.
+//
+// The row is claimed first, and only the claimer wakes: the instance that
+// ran the work and another instance's sweep can both find it finished and
+// unwoken, and without the claim both woke the conversation.
 func (self *Agent) wakeForBackgroundWork(work *models.AgentBackgroundWork) {
 	if work.ConversationID == "" || !work.IsPersonPresent {
+		return
+	}
+	if !self.claimBackgroundWorkWake(work.ID) {
 		return
 	}
 	self.backgroundMutex.Lock()
 	defer self.backgroundMutex.Unlock()
 	self.ensureBackgroundLocked()
-	// Found again by the sweep while its turn is still to come: the turn
-	// already has it.
+	// Its turn is still to come here, and has run so long that the claim
+	// expired and this instance took it again: the turn already has it.
 	if self.backgroundInFlight[backgroundWorkInFlight(work.ID)] {
 		return
 	}
@@ -225,6 +231,7 @@ func (self *Agent) wakeForBackground(conversationId string) {
 	}
 	if err != nil {
 		log.Warningf("cannot wake conversation %q for background work or a command that ended; a command is said again when the computer next connects, and work is found again by the sweep: %s", conversationId, err)
+		self.releaseBackgroundWorkWakes(wake.works)
 	}
 	for _, ending := range wake.endings {
 		delete(self.backgroundInFlight, ending.status.ID)
@@ -299,14 +306,13 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 		return nil
 	}
 
-	self.backgroundMutex.Lock()
-	wokenCount := self.backgroundWakeCounts[conversationId]
-	self.backgroundMutex.Unlock()
 	// Out of turns or out of budget: the endings are written into the
 	// transcript for the person and the next turn to read, and no model is
 	// asked anything. Commands and work share the count: a survey whose
-	// turn starts a subagent whose turn starts a command is one chain.
-	if wokenCount >= backgroundWakesAlone || deferral != nil {
+	// turn starts a subagent whose turn starts a command is one chain. The
+	// count is the conversation's row, so the bound holds whichever
+	// instance each wake of the chain lands on.
+	if conversation.BackgroundWakeCount >= backgroundWakesAlone || deferral != nil {
 		reason := fmt.Sprintf("%d turns since you last wrote were woken by background commands and work", backgroundWakesAlone)
 		if deferral != nil {
 			reason = deferral.Reason
@@ -335,10 +341,14 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 		return err
 	}
 	// Counted once the turn is started, so a wake that failed does not
-	// spend one of the conversation's turns.
-	self.backgroundMutex.Lock()
-	self.backgroundWakeCounts[conversationId]++
-	self.backgroundMutex.Unlock()
+	// spend one of the conversation's turns. The turn runs whether or not
+	// the count is written; a count that was not costs the chain one more
+	// turn before the bound, not the turn.
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		return tx.AddAgentConversationBackgroundWake(conversationId)
+	}); err != nil {
+		log.Warningf("cannot count the turn woken in conversation %q: %s", conversationId, err)
+	}
 	events, unsubscribe := turn.Subscribe()
 	defer unsubscribe()
 	for range events {
@@ -368,11 +378,44 @@ func (self *Agent) currentComputer(agentId string, attached *attachedComputer) *
 	return attached
 }
 
-// personTookTurn starts a conversation's count of woken turns again.
-func (self *Agent) personTookTurn(conversationId string) {
-	self.backgroundMutex.Lock()
-	delete(self.backgroundWakeCounts, conversationId)
-	self.backgroundMutex.Unlock()
+// claimBackgroundWorkWake takes the waking of the conversation for a
+// piece of finished work, and says whether this instance has it. A claim
+// held by an instance that stopped before the turn was over expires after
+// backgroundWorkWakeClaimExpiry, and the sweep takes it then.
+func (self *Agent) claimBackgroundWorkWake(workId string) bool {
+	ctx, cancel := context.WithTimeout(self.ctx, jobCompletionTimeout)
+	defer cancel()
+	now := time.Now()
+	isClaimed := false
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		isClaimed, err = tx.ClaimAgentBackgroundWorkWake(workId, now, now.Add(-backgroundWorkWakeClaimExpiry))
+		return err
+	}); err != nil {
+		log.Warningf("cannot claim the wake for background work %s; the sweep tries again: %s", workId, err)
+		return false
+	}
+	return isClaimed
+}
+
+// releaseBackgroundWorkWakes lets go of the claims of a wake that was
+// given up, for the sweep to take again at its next pass rather than once
+// they expire.
+func (self *Agent) releaseBackgroundWorkWakes(works []*models.AgentBackgroundWork) {
+	if len(works) == 0 {
+		return
+	}
+	workIds := make([]string, 0, len(works))
+	for _, work := range works {
+		workIds = append(workIds, work.ID)
+	}
+	// Not the server's context, which a stop has already ended.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(self.ctx), jobCompletionTimeout)
+	defer cancel()
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		return tx.ReleaseAgentBackgroundWorkWakes(workIds)
+	}); err != nil {
+		log.Warningf("cannot let go of the wake for background work %v; it is taken again once it expires: %s", workIds, err)
+	}
 }
 
 // backgroundWakeMessage is what the woken turn is given.
