@@ -399,6 +399,17 @@ func renderPage(node *models.AgentNode, facts []*models.AgentFact, edges []*mode
 	if summary := strings.TrimSpace(node.Summary); summary != "" {
 		builder.WriteString("\n\n" + summary)
 	}
+	// The overview under the opening: how the thing works, as the night
+	// last wrote it from this page and the pages under and beside it.
+	// Dated, because it is a summary of the facts below as they were
+	// then, and the facts are what to trust where the two disagree.
+	if overview := strings.TrimSpace(node.Overview); overview != "" {
+		heading := "Overview"
+		if node.OverviewWrittenAt != nil {
+			heading += ", written " + node.OverviewWrittenAt.Format("2 January 2006")
+		}
+		builder.WriteString("\n\n" + heading + ":\n\n" + overview)
+	}
 	if len(facts) > 0 {
 		builder.WriteString("\n")
 		for _, fact := range facts {

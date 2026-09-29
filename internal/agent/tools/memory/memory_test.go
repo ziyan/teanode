@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -52,5 +53,27 @@ func TestAPageSaysWhichLinksAreProposed(t *testing.T) {
 	}
 	if !strings.Contains(page, "← people/bo-nakamura perhaps knows this (the agent's guess)") {
 		t.Fatalf("and so is one pointing this way:\n%s", page)
+	}
+}
+
+// A page the model opens carries its overview under its opening and above
+// its facts, with when it was written; a page with none carries nothing.
+func TestAPageCarriesItsOverview(t *testing.T) {
+	writtenAt := time.Date(2030, time.January, 2, 10, 0, 0, 0, time.UTC)
+	node := &models.AgentNode{
+		Path: "places/allotment", Name: "Allotment", Kind: models.NodePlace, Summary: "A plot by the river.",
+		Overview: "## What it is\n\nFour beds and a shed.", OverviewWrittenAt: &writtenAt,
+	}
+	facts := []*models.AgentFact{{Number: 1, Kind: models.FactPlain, Text: "The shed leaks."}}
+	page := renderPage(node, facts, nil, nil)
+	opening := strings.Index(page, "A plot by the river.")
+	overview := strings.Index(page, "Overview, written 2 January 2030:\n\n## What it is\n\nFour beds and a shed.")
+	fact := strings.Index(page, "#1 The shed leaks.")
+	if opening < 0 || overview < opening || fact < overview {
+		t.Errorf("the overview is under the opening and above the facts:\n%s", page)
+	}
+	node.Overview = ""
+	if strings.Contains(renderPage(node, facts, nil, nil), "Overview") {
+		t.Errorf("a page with no overview says nothing about one")
 	}
 }
