@@ -149,7 +149,7 @@ func (self *Agent) Survey(ctx context.Context, agent *models.Agent, owner *model
 
 	run := self.runFor(agent, owner, nil, "")
 	knowledgeLanguage := languageName(KnowledgeLanguage(agent, owner))
-	shortQuestion := strings.TrimSpace(strings.ReplaceAll(cutRunes(question, surveyTitleLength), "\n", " "))
+	shortQuestion := cutAtWord(question, surveyTitleLength)
 	parts := self.surveyPages(ctx, run, scope.pages, question, shortQuestion, knowledgeLanguage)
 	if err := ctx.Err(); err != nil {
 		return nil, err

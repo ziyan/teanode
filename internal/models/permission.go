@@ -266,6 +266,39 @@ func (self *EffectivePermissions) Covers(other *EffectivePermissions) bool {
 	return true
 }
 
+// Within is what these permissions and the limit both allow: a
+// server-wide permission held in both, and a domain permission held over a
+// domain in both, whether through that domain or through the all-domains
+// permission that widens it. For work that must never do more than the
+// turn that started it, whatever the person may do by the time it runs.
+func (self *EffectivePermissions) Within(limit *EffectivePermissions) *EffectivePermissions {
+	var grants []Grant
+	if self != nil && limit != nil {
+		for _, permission := range self.Everywhere {
+			if limit.Has(permission) {
+				grants = append(grants, Grant{Permission: permission})
+				continue
+			}
+			// All domains here, some of them in the limit: those.
+			if widened := permission.Widens(); widened != "" {
+				for _, entry := range limit.ByDomain {
+					if slices.Contains(entry.Permissions, widened) {
+						grants = append(grants, Grant{Permission: widened, DomainID: entry.DomainID})
+					}
+				}
+			}
+		}
+		for _, entry := range self.ByDomain {
+			for _, permission := range entry.Permissions {
+				if limit.HasOverDomain(permission, entry.DomainID) {
+					grants = append(grants, Grant{Permission: permission, DomainID: entry.DomainID})
+				}
+			}
+		}
+	}
+	return NewEffectivePermissions(grants)
+}
+
 // DomainsWith lists the domains a domain permission is held over, and whether
 // it is held over all of them.
 func (self *EffectivePermissions) DomainsWith(permission Permission) (domainIds []string, all bool) {

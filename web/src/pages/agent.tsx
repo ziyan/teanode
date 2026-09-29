@@ -21,6 +21,7 @@ import {
   BackgroundOutputDialog,
   useBackgroundCommands,
 } from '../components/backgroundCommands'
+import { BackgroundWorkCard } from '../components/backgroundWork'
 import { PencilIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tabs, TabItem } from '../components/tabs'
@@ -436,6 +437,7 @@ export function AgentPage() {
       ) : null}
       {tab === 'activity' ? (
         <>
+          <BackgroundWorkCard />
           <ActivityCard
             job={runsOf}
             onAll={() => {

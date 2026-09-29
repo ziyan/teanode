@@ -93,6 +93,11 @@ cannot retain the separate failure allowance or claim-identity protection.
   subject is the conversation, so the queue's own rule of one open job per
   agent, kind and subject is what keeps a conversation to one goal turn at a
   time.
+- **background** — one survey or subagent the agent did not wait for. Its
+  subject is the `agent_background_work` row, which holds what was asked and
+  keeps what came of it; see `the-ask-loop.md`. It has a bound of its own,
+  twenty minutes, a little inside the job's, so work that reaches it fails on
+  its row rather than going back in the queue.
 - **noop** — proves the queue end to end.
 
 ## Replying on somebody's behalf

@@ -138,3 +138,40 @@ func TestNobodyHandsOutWhatTheyDoNotHold(t *testing.T) {
 		t.Fatalf("holding it everywhere covers holding it over one: %+v", everywhere)
 	}
 }
+
+// Within keeps what both sets allow: a server permission held in both, a
+// domain permission held over a domain in both, and an all-domains
+// permission cut down to the domains the limit names.
+func TestWithinKeepsWhatBothAllow(t *testing.T) {
+	t.Parallel()
+
+	held := NewEffectivePermissions([]Grant{
+		{Permission: PermissionAgentUse},
+		{Permission: PermissionMailRead},
+		{Permission: PermissionDomainManageAll},
+		{Permission: PermissionMailAudit, DomainID: "domain-a"},
+	})
+	limit := NewEffectivePermissions([]Grant{
+		{Permission: PermissionAgentUse},
+		{Permission: PermissionDomainManage, DomainID: "domain-b"},
+		{Permission: PermissionMailAudit, DomainID: "domain-a"},
+		{Permission: PermissionServerManage},
+	})
+	within := held.Within(limit)
+	if !within.Has(PermissionAgentUse) || within.Has(PermissionMailRead) || within.Has(PermissionServerManage) {
+		t.Errorf("server permissions held in both: %+v", within)
+	}
+	if within.Has(PermissionDomainManageAll) || !within.HasOverDomain(PermissionDomainManage, "domain-b") ||
+		within.HasOverDomain(PermissionDomainManage, "domain-c") {
+		t.Errorf("every domain, cut down to the limit's: %+v", within)
+	}
+	if !within.HasOverDomain(PermissionMailAudit, "domain-a") {
+		t.Errorf("a domain permission held over the same domain: %+v", within)
+	}
+	if !limit.Covers(within) || !held.Covers(within) {
+		t.Errorf("more than one of the two: %+v", within)
+	}
+	if nothing := held.Within(nil); len(nothing.Everywhere) != 0 || len(nothing.ByDomain) != 0 {
+		t.Errorf("within no limit is nothing: %+v", nothing)
+	}
+}

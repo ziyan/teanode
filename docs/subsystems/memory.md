@@ -736,8 +736,12 @@ scope for its part of the answer, several at once, each run free to look up
 facts, documents and code but not to change anything, then combining the
 parts into one report whose sections follow the question and whose
 citations are kept. The scope is a theme, a page, or everything. The agent's
-`survey` tool (offered only when the person is there), `teanode agent survey`
-and the `SurveyAgentMemory` query run it; its runs are of kind survey.
+`survey` tool (offered only when the person is there) starts one in the
+background unless told to wait, and the conversation is woken with the report;
+`teanode agent survey` starts one with the `StartAgentSurvey` mutation and
+asks for it with `GetAgentBackgroundWork` until it is done, so no request is
+held open for the minutes it takes; the `SurveyAgentMemory` query still runs
+one in its request. Its runs are of kind survey.
 Recall carries the start of a chosen page's overview and a theme's
 reflections, and every prompt's index opens with the top-level themes.
 

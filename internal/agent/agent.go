@@ -148,14 +148,19 @@ type Agent struct {
 	computersMutex sync.Mutex
 	computers      map[string]map[string]*attachedComputer
 
-	// The background commands that ended and have a turn still to come,
-	// by command id; what each conversation has waiting to wake it; and
-	// how many turns ended commands have woken in each since the person
-	// last wrote there.
-	backgroundMutex      sync.Mutex
-	backgroundInFlight   map[string]bool
-	backgroundWakes      map[string]*backgroundWake
-	backgroundWakeCounts map[string]int
+	// The background commands and work that ended and have a turn still
+	// to come, by id, and what each conversation has waiting to wake it.
+	// How many turns they have woken since the person last wrote is on
+	// the conversation's row, where every instance reads it.
+	//
+	// The same lock holds the cancel of each piece of background work
+	// running on this instance, by id, for a stop; and lastBackgroundSweep
+	// is when lost background work was last looked for.
+	backgroundMutex     sync.Mutex
+	backgroundInFlight  map[string]bool
+	backgroundWakes     map[string]*backgroundWake
+	runningWork         map[string]context.CancelCauseFunc
+	lastBackgroundSweep time.Time
 
 	contextsMutex sync.Mutex
 	contextsOpen  int
@@ -234,6 +239,7 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobDream, self.runDream)
 	self.Register(models.AgentJobSpeakFirst, self.runSpeakFirst)
 	self.Register(models.AgentJobEvaluate, self.runEvaluation)
+	self.Register(models.AgentJobBackground, self.runBackgroundWork)
 	self.catalog = FullCatalog()
 	return self
 }
@@ -410,6 +416,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.queueDreaming(ctx, now)
 	self.queueSpeakingFirst(ctx, now)
 	self.queueEvaluating(ctx, now)
+	self.sweepBackgroundWork(ctx, now)
 	self.sweepBrowsers()
 	self.sweepSessions()
 
@@ -431,6 +438,11 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 			log.Warningf("cannot put back an ingest that died: %s", err)
 		} else if released > 0 {
 			log.Noticef("put back %d ingest(s) that died", released)
+		}
+		if released, err := tx.ReleaseStaleAgentJobsOfKind(models.AgentJobBackground, now.Add(-jobClaimLifetime(models.AgentJobBackground))); err != nil {
+			log.Warningf("cannot put back background work that died: %s", err)
+		} else if released > 0 {
+			log.Noticef("put back %d piece(s) of background work that died", released)
 		}
 		if released, err := tx.ReleaseStaleAgentJobs(now.Add(-jobClaimLifetime(models.AgentJobNoop))); err != nil {
 			return err
@@ -582,6 +594,9 @@ func (self *Agent) scavenge(ctx context.Context, now time.Time) {
 			return err
 		}
 		if _, err := tx.ScavengeAgentReplies(now.Add(-runs)); err != nil {
+			return err
+		}
+		if _, err := tx.ScavengeAgentBackgroundWork(now.Add(-runs)); err != nil {
 			return err
 		}
 		return self.scavengeAttachments(ctx, tx, now)

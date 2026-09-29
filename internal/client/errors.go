@@ -3,6 +3,7 @@ package client
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 )
 
@@ -41,6 +42,44 @@ func (self *ConnectionError) Error() string {
 
 func (self *ConnectionError) Unwrap() error {
 	return self.Cause
+}
+
+// StatusError is a reply that was not a GraphQL answer with HTTP 200:
+// what a proxy in front of the server says while the server restarts, or
+// a server that failed. Cause is why the body could not be read, when it
+// could not.
+type StatusError struct {
+	URL        string
+	StatusCode int
+	Cause      error
+}
+
+func (self *StatusError) Error() string {
+	if self.Cause != nil {
+		return fmt.Sprintf("client: %s answered with something that is not a GraphQL reply (HTTP %d): %s", self.URL, self.StatusCode, self.Cause)
+	}
+	return fmt.Sprintf("client: %s answered HTTP %d", self.URL, self.StatusCode)
+}
+
+func (self *StatusError) Unwrap() error {
+	return self.Cause
+}
+
+// IsTransient says whether asking again later may well be answered: the
+// server could not be reached, took too long, or it or a proxy in front
+// of it failed or asked to be asked later. A refused token, a missing
+// thing or a refused request is answered the same way every time.
+func IsTransient(err error) bool {
+	var connection *ConnectionError
+	if errors.As(err, &connection) {
+		return true
+	}
+	var status *StatusError
+	if errors.As(err, &status) {
+		return status.StatusCode >= http.StatusInternalServerError || status.StatusCode == http.StatusTooManyRequests ||
+			status.StatusCode == http.StatusRequestTimeout
+	}
+	return false
 }
 
 // ReadOnlyError is a mutation refused by a read-only client before it was

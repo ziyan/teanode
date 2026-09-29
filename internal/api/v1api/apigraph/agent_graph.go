@@ -59,8 +59,10 @@ type AgentGraphQuery interface {
 	// combining the parts into one report with citations. Minutes of
 	// model calls, about one a page and one more, priced as runs of kind
 	// survey; nothing in the graph changes. A query rather than a
-	// mutation so that no transaction is held open while it runs. Needs
-	// agent:use.
+	// mutation so that no transaction is held open while it runs. Kept for
+	// the clients that ask it; the command line starts a survey with
+	// StartAgentSurvey and asks for its report, so that no request is held
+	// open for minutes either. Needs agent:use.
 	SurveyAgentMemory(ctx context.Context, arguments SurveyAgentMemoryArguments) (*AgentSurveyView, error)
 
 	// What has been filed lately: what the agent page shows under

@@ -270,6 +270,22 @@ func addsInformation(richer, plainer string) bool {
 // cutRunes shortens text to a number of characters without cutting one in
 // half: a byte cut through a character embeds a replacement mark instead
 // of the word it was part of.
+// cutAtWord is text shortened to at most characters, ending at the last
+// whole word and marked with an ellipsis, for a title a person reads: a
+// word cut in half reads as a typo.
+func cutAtWord(text string, characters int) string {
+	text = strings.Join(strings.Fields(text), " ")
+	runes := []rune(text)
+	if len(runes) <= characters {
+		return text
+	}
+	cut := string(runes[:characters-1])
+	if space := strings.LastIndex(cut, " "); space > characters/2 {
+		cut = cut[:space]
+	}
+	return strings.TrimRight(cut, " ,;:.-") + "…"
+}
+
 func cutRunes(text string, characters int) string {
 	runes := []rune(text)
 	if len(runes) <= characters {

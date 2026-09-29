@@ -1765,19 +1765,18 @@ func knownQuestionKind(kind string) bool {
 	return false
 }
 
-// runAgentGraphRecall is one question through the same recall a turn
-// uses, printed rather than graded.
-//
-// The query behind it was reachable only by writing a question set and
-// running `memory evaluate` over it, which answers hit or miss and not
-// "why did it not know that?". Asking costs nothing -- no model is asked
-// anything, and a page recall expands here is not marked as used, so the
-// same graph answers the same twice and asking does not itself change
-// what tomorrow's night reads.
-// surveyTimeout is how long the command waits for a survey: the
-// quarter of an hour the server gives one, and a minute more for the
-// answer to arrive.
-const surveyTimeout = 16 * time.Minute
+// surveyPollEvery is how often the command asks whether a survey it
+// started has finished; a read that failed for a passing reason is tried
+// again after twice as long each time, up to surveyRetryLongest; and
+// after surveyWaitLongest the command stops waiting and says how to look
+// again. A survey is bounded at about twenty minutes on the server, so a
+// wait that long is a server that has not been answering. Variables so
+// that a test need not wait.
+var (
+	surveyPollEvery    = 3 * time.Second
+	surveyRetryLongest = time.Minute
+	surveyWaitLongest  = 30 * time.Minute
+)
 
 func newAgentSurveyCommand() *cli.Command {
 	return &cli.Command{
@@ -1785,9 +1784,14 @@ func newAgentSurveyCommand() *cli.Command {
 		Usage: "answer a broad question about a whole area of what your agent knows -- a theme, a page and what is under it, or everything -- " +
 			"by asking each overview in it for its part and combining the parts into a report with citations; " +
 			"minutes, about one model call a page and one more, priced as runs of kind survey",
+		Description: "The survey runs on the server as background work. This command starts it and asks every few\n" +
+			"seconds whether it has finished, so no request is held open for the minutes it takes. A read that\n" +
+			"fails for a passing reason is tried again; after thirty minutes it stops waiting. Stopping the\n" +
+			"command leaves the survey running, to be read with 'teanode agent background show <id>'.",
 		ArgsUsage: "<question>",
 		Flags: []cli.Flag{JSONFlag(),
 			&cli.StringFlag{Name: "scope", Usage: "the page to survey under, such as themes/<one> or projects/<one>; everything when left out"},
+			&cli.BoolFlag{Name: "no-wait", Usage: "print the id of the survey and return; 'teanode agent background show <id>' reads it"},
 		},
 		Action: runAgentSurvey,
 	}
@@ -1802,24 +1806,84 @@ func runAgentSurvey(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	connection.SetTimeout(surveyTimeout)
-	surveyed, err := client.SurveyAgentMemory(ctx, connection, question, strings.TrimSpace(command.String("scope")))
+	work, err := client.StartAgentSurvey(ctx, connection, question, strings.TrimSpace(command.String("scope")))
 	if err != nil {
 		return describeError(command, err)
 	}
-	if surveyed == nil {
-		surveyed = &client.AgentSurvey{}
+	if work == nil {
+		return fmt.Errorf("the server started no survey")
+	}
+	if command.Bool("no-wait") {
+		if command.Bool("json") {
+			return PrintJSON(work)
+		}
+		_, _ = fmt.Fprintf(command.Writer, "%s\n", work.ID)
+		return nil
+	}
+	work, err = waitForSurvey(ctx, command, connection, work.ID)
+	if err != nil {
+		return err
 	}
 	if command.Bool("json") {
-		return PrintJSON(surveyed)
+		return PrintJSON(work)
 	}
-	_, _ = fmt.Fprintln(command.Writer, strings.TrimSpace(surveyed.Report))
-	if len(surveyed.RunIDs) > 0 {
-		_, _ = fmt.Fprintf(command.Writer, "\nThe runs, each openable with 'teanode agent run show': %s\n", strings.Join(surveyed.RunIDs, ", "))
+	if work.WorkStatus != "done" {
+		return fmt.Errorf("the survey %s %s: %s", work.ID, backgroundWorkState(work), work.ErrorMessage)
 	}
+	_, _ = fmt.Fprintln(command.Writer, strings.TrimSpace(forTerminal(work.ResultText)))
+	if len(work.RunIDs) > 0 {
+		_, _ = fmt.Fprintf(command.Writer, "\nThe runs, each openable with 'teanode agent run show': %s\n", strings.Join(work.RunIDs, ", "))
+	}
+	_, _ = fmt.Fprintf(command.Writer, "The survey is %s; 'teanode agent background show %s' reads it again.\n", work.ID, work.ID)
 	return nil
 }
 
+// waitForSurvey asks for a survey until it has finished. A read that
+// fails for a passing reason -- the server restarting behind its proxy, a
+// network that dropped -- is tried again, less often each time, since the
+// survey goes on on the server regardless. Every way out other than the
+// survey finishing names it, so that it can be looked at again.
+func waitForSurvey(ctx context.Context, command *cli.Command, connection *client.Client, workId string) (*client.AgentBackgroundWork, error) {
+	lookAgain := fmt.Sprintf("'teanode agent background show %s' reads it", workId)
+	giveUpAt := time.Now().Add(surveyWaitLongest)
+	wait := surveyPollEvery
+	for {
+		work, err := client.GetAgentBackgroundWork(ctx, connection, workId)
+		switch {
+		case ctx.Err() != nil:
+			return nil, fmt.Errorf("stopped waiting; the survey goes on as %s, and %s", workId, lookAgain)
+		case err == nil && work == nil:
+			return nil, fmt.Errorf("the server has no survey %s any more", workId)
+		case err == nil && work.IsFinished():
+			return work, nil
+		case err == nil:
+			wait = surveyPollEvery
+		case client.IsTransient(err):
+			wait = min(2*wait, surveyRetryLongest)
+			_, _ = fmt.Fprintf(command.ErrWriter, "cannot read the survey %s just now, trying again in %s: %s\n", workId, wait, err)
+		default:
+			return nil, describeError(command, fmt.Errorf("cannot read the survey %s, which may go on; %s: %w", workId, lookAgain, err))
+		}
+		if time.Now().Add(wait).After(giveUpAt) {
+			return nil, fmt.Errorf("stopped waiting after %s; the survey %s may go on, and %s", surveyWaitLongest, workId, lookAgain)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("stopped waiting; the survey goes on as %s, and %s", workId, lookAgain)
+		case <-time.After(wait):
+		}
+	}
+}
+
+// runAgentGraphRecall is one question through the same recall a turn
+// uses, printed rather than graded.
+//
+// The query behind it was reachable only by writing a question set and
+// running `memory evaluate` over it, which answers hit or miss and not
+// "why did it not know that?". Asking costs nothing -- no model is asked
+// anything, and a page recall expands here is not marked as used, so the
+// same graph answers the same twice and asking does not itself change
+// what tomorrow's night reads.
 func runAgentGraphRecall(ctx context.Context, command *cli.Command) error {
 	question := strings.TrimSpace(strings.Join(command.Args().Slice(), " "))
 	if question == "" {

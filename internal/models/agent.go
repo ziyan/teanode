@@ -492,9 +492,15 @@ const (
 	AgentJobSurvey AgentJobKind = "survey"
 
 	// AgentJobSubagent names the run of a subagent: a piece of work a turn
-	// handed to a run of its own. Never queued; it runs inside the turn
-	// that started it.
+	// handed to a run of its own. Never queued itself: a subagent runs
+	// inside the turn that started it, or in a background job.
 	AgentJobSubagent AgentJobKind = "subagent"
+
+	// AgentJobBackground runs one piece of background work, a survey or a
+	// subagent the agent did not wait for. Its subject is the
+	// agent_background_work row, which says what to run and keeps what
+	// came of it.
+	AgentJobBackground AgentJobKind = "background"
 )
 
 // AgentJobStatus is where a job is.

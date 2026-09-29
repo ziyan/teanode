@@ -139,6 +139,13 @@ type AskSettings struct {
 	// conversation, not the run this is happening in.
 	confirmVia *AskRun
 
+	// isUnattended is a run nobody is at the other end of, though it is
+	// not headless: a subagent running in the background, after the turn
+	// that started it has ended. It keeps the tools that turn had, and
+	// puts no card to anybody -- a call that needs the person's word is
+	// refused, as in a headless run.
+	isUnattended bool
+
 	// subagentDepth is how deep in subagents this run is: zero for a turn
 	// somebody asked for, one inside a subagent. One is the limit, and it
 	// is what keeps the subagent tool out of its own catalog.
@@ -396,11 +403,6 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 		self.latest[settings.Conversation.ID] = run
 	}
 	self.runsMutex.Unlock()
-	// The person writing is what lets ended background commands wake the
-	// conversation again.
-	if !settings.Headless && settings.Surface != backgroundSurface {
-		self.personTookTurn(settings.Conversation.ID)
-	}
 	self.waitGroup.Add(1)
 	// A turn is the model's own instructions carried out against a stranger's
 	// mail, over tools that reach servers this program did not write. It is
@@ -515,7 +517,9 @@ func (self *AskRun) Database() db.Database                { return self.agent.se
 func (self *AskRun) Configuration() *config.Configuration { return self.agent.settings.Configuration() }
 func (self *AskRun) Surface() string                      { return self.settings.Surface }
 func (self *AskRun) Headless() bool                       { return self.settings.Headless }
-func (self *AskRun) CanAsk() bool                         { return !self.settings.Headless || self.settings.CanAsk }
+func (self *AskRun) CanAsk() bool {
+	return (!self.settings.Headless || self.settings.CanAsk) && !self.settings.isUnattended
+}
 
 // resultCharacters is how much of a tool's answer the history keeps.
 func (self *AskRun) resultCharacters() int {
@@ -845,6 +849,14 @@ func (self *AskRun) turn() error {
 		FeatureAllowed(configuration, "subagents") && !listed(configuration.Agent.Tools.Disabled, survey) {
 		self.offered = append(self.offered, survey)
 		self.loaded[survey.Name] = true
+	}
+	// What the two above leave running in the background, to read and to
+	// stop, wherever either can start it: a turn with somebody present,
+	// not inside a subagent.
+	if work := self.agent.backgroundWorkTool(); !settings.Headless && settings.subagentDepth == 0 &&
+		FeatureAllowed(configuration, "subagents") && !listed(configuration.Agent.Tools.Disabled, work) {
+		self.offered = append(self.offered, work)
+		self.loaded[work.Name] = true
 	}
 	// The browser tool goes when the operator switched the browser off,
 	// and when there is neither a headless browser nor the person's own

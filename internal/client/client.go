@@ -203,13 +203,13 @@ func (self *Client) Execute(ctx context.Context, query string, variables map[str
 		Errors Errors          `json:"errors"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
-		return fmt.Errorf("client: %s answered with something that is not a GraphQL reply (HTTP %d): %w", self.url, response.StatusCode, err)
+		return &StatusError{URL: self.url, StatusCode: response.StatusCode, Cause: err}
 	}
 	if len(envelope.Errors) > 0 {
 		return classify(envelope.Errors)
 	}
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("client: %s answered HTTP %d", self.url, response.StatusCode)
+		return &StatusError{URL: self.url, StatusCode: response.StatusCode}
 	}
 	if result == nil || len(envelope.Data) == 0 {
 		return nil
@@ -264,13 +264,13 @@ func (self *Client) executeAllowed(ctx context.Context, query string, variables 
 		Errors Errors          `json:"errors"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
-		return fmt.Errorf("client: %s answered with something that is not a GraphQL reply (HTTP %d): %w", self.url, response.StatusCode, err)
+		return &StatusError{URL: self.url, StatusCode: response.StatusCode, Cause: err}
 	}
 	if len(envelope.Errors) > 0 {
 		return classify(envelope.Errors)
 	}
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("client: %s answered HTTP %d", self.url, response.StatusCode)
+		return &StatusError{URL: self.url, StatusCode: response.StatusCode}
 	}
 	if result == nil || len(envelope.Data) == 0 {
 		return nil

@@ -270,6 +270,24 @@ type agentOperations struct {
 	graph       *graph
 	user        *models.User
 	permissions *models.EffectivePermissions
+
+	// permissionLimit, when set, is what every call is held to besides
+	// the person's own permissions: work that must never do more than the
+	// turn that started it. See NarrowedTo.
+	permissionLimit *models.EffectivePermissions
+}
+
+// NarrowedTo is these operations held to the limit as well: each call is
+// made with the person's permissions as they are at the call, less
+// whatever the limit does not allow.
+func (self *agentOperations) NarrowedTo(limit *models.EffectivePermissions) agent.Operations {
+	narrowed := *self
+	narrowed.permissions = self.permissions.Within(limit)
+	narrowed.permissionLimit = limit
+	if self.permissionLimit != nil {
+		narrowed.permissionLimit = self.permissionLimit.Within(limit)
+	}
+	return &narrowed
 }
 
 func (self *agentOperations) Execute(ctx context.Context, document string, variables map[string]any, result any) error {
@@ -300,6 +318,9 @@ func (self *agentOperations) Execute(ctx context.Context, document string, varia
 		}
 		if principal == nil {
 			return api.ErrNotLoggedIn
+		}
+		if self.permissionLimit != nil {
+			principal.Permissions = principal.Permissions.Within(self.permissionLimit)
 		}
 		ctx = api.ContextWithPrincipal(ctx, principal)
 		prepared.Context = ctx

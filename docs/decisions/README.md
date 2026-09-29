@@ -98,3 +98,9 @@ how a connected server whose authorization is sent only to a loopback address
 is connected from the dashboard: the person's attached computer listens there
 and sends the browser on to the dashboard, which finishes it. It also says why
 the person then has to finish it on that computer.
+
+`20260929-background-work-wakes-the-conversation-that-started-it.md` says
+how a survey or a subagent the agent did not wait for extends the
+background command decision: a row and a queued job rather than the person's
+computer, woken through the same waker and counted against the same twenty
+turns, and why a subagent there shows no card.
