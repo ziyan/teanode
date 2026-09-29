@@ -303,7 +303,8 @@ type AgentPricing struct {
 // AgentModels assigns work to models. Every value is "provider:model".
 //
 // Resolution is the override for a kind of work, else Fast for the cheap
-// kinds (triage, summarize, compact), else Default.
+// kinds (triage, summarize, compact, scan), else Default. Synthesize falls
+// back to what Research resolves to instead.
 type AgentModels struct {
 	Default   string `yaml:"default"`
 	Fast      string `yaml:"fast,omitempty"`
@@ -342,6 +343,13 @@ type AgentModels struct {
 	// can follow an instruction. Empty falls back to Fast.
 	Scan string `yaml:"scan,omitempty"`
 
+	// Synthesize is the model for deciding what matters across many pages
+	// with nobody present: writing an overview of a page or a theme,
+	// reflecting on a theme, and answering a survey's question for one
+	// area. Fewer calls than the scan, each a judgment. Empty falls back
+	// to Research.
+	Synthesize string `yaml:"synthesize,omitempty"`
+
 	Triage    string `yaml:"triage,omitempty"`
 	Research  string `yaml:"research,omitempty"`
 	Summarize string `yaml:"summarize,omitempty"`
@@ -370,10 +378,14 @@ const (
 
 	// AgentWorkScan is the bulk understanding described on Models.Scan.
 	AgentWorkScan AgentWork = "scan"
+
+	// AgentWorkSynthesize is the judgment across many pages described on
+	// Models.Synthesize.
+	AgentWorkSynthesize AgentWork = "synthesize"
 )
 
 // AgentWorks is every kind, in the order the settings page shows them.
-var AgentWorks = []AgentWork{AgentWorkTriage, AgentWorkResearch, AgentWorkSummarize, AgentWorkReply, AgentWorkAsk, AgentWorkSchedule, AgentWorkCompact, AgentWorkScan}
+var AgentWorks = []AgentWork{AgentWorkTriage, AgentWorkResearch, AgentWorkSummarize, AgentWorkReply, AgentWorkAsk, AgentWorkSchedule, AgentWorkCompact, AgentWorkScan, AgentWorkSynthesize}
 
 // ForWork is the model name assigned to a kind of work.
 func (self *AgentModels) ForWork(work AgentWork) string {
@@ -396,6 +408,11 @@ func (self *AgentModels) ForWork(work AgentWork) string {
 		override, fast = self.Compact, true
 	case AgentWorkScan:
 		override, fast = self.Scan, true
+	case AgentWorkSynthesize:
+		if self.Synthesize != "" {
+			return self.Synthesize
+		}
+		return self.ForWork(AgentWorkResearch)
 	}
 	if override != "" {
 		return override
@@ -1035,6 +1052,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 	checkModel("agent.models.ask", agent.Models.Ask)
 	checkModel("agent.models.schedule", agent.Models.Schedule)
 	checkModel("agent.models.compact", agent.Models.Compact)
+	checkModel("agent.models.synthesize", agent.Models.Synthesize)
 	for index, choice := range agent.Models.Choices {
 		checkModel(fmt.Sprintf("agent.models.choices[%d]", index), choice)
 	}
