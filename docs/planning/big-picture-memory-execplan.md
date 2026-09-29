@@ -23,7 +23,7 @@ To see it working: on the development server, `teanode agent memory get projects
 - [x] (2026-09-28) Surveyed the checkout profile, the graph model, the dream, recall and the subagent tool; wrote this plan.
 - [x] (2026-09-28) Milestone 1: dependencies read from build files on the device (`internal/computer/scan_dependencies.go`: go.mod, package.json, pyproject.toml, setup.py, setup.cfg, Cargo.toml, the top CMakeLists.txt, and jhbuild modulesets with their includes), components inside a checkout (`internal/computer/scan_components.go`), and `depends_on` links between checkout and component pages (`internal/agent/ingest_dependencies.go`, `internal/agent/ingest_components.go`), with the dependencies that are not checkouts counted in one keyed fact.
 - [x] (2026-09-28) Milestone 2: activity per checkout as one keyed fact, "Activity: ...", rewritten at every pass (`internal/agent/ingest_activity.go`): commits in the last 90 and 365 days and authors in the last 365 counted on the device, open issues, issues opened and merge requests merged in the last 90 days from code-host posts.
-- [ ] Milestone 3: overviews for every kind of page, written bottom-up by the dream; shown in the dashboard, the CLI and the memory tool.
+- [x] (2026-09-28) Milestone 3: overviews for every kind of page, written bottom-up by the dream (`internal/agent/dream_overview.go`, `dream_overview_files.go`, `prompts/overview.txt`; migration 0118; `internal/db/database_overview.go`); shown in the Knowledge page, `teanode agent memory get` and `memory overview [--rewrite]`, the memory tool's `get`, and counted in the dream log.
 - [ ] Milestone 4: themes: the graph clustered in two levels, each theme a page with an overview written from its members'.
 - [ ] Milestone 5: reflections: higher-level observations over a theme, with evidence, as facts of their own kind.
 - [ ] Milestone 6: the survey: map-reduce answers over overviews and reflections, as a tool, a command and an operation; recall carries overviews and reflections for broad questions.
@@ -41,6 +41,10 @@ To see it working: on the development server, `teanode agent memory get projects
 - Observation: `PutAgentEdge` upserts on (from, to, relation) and overwrites the evidence and the note, so a program writing a link the person already drew would take their link over, and later delete it. A writer that owns links has to read before it writes.
 - Observation: deleting a page is the person's alone (`DeleteAgentNode`'s contract); the nightly run marks pages dormant. A component that leaves its checkout is therefore made dormant, and comes back when it returns.
 - Observation: the device and the server need no protocol change for any of this. The new profile fields are optional JSON; a server that predates them ignores them, and a program that predates them sends none, which the server reads as nothing known (no links, no dependency fact, no commit counts).
+
+- Observation: `PutAgentNode` saves the whole row from the caller's copy (`tx.Save`), and most callers build that copy from what a source says. An overview column in the row struct would be blanked by every pass over a checkout. The columns are read-only in GORM (`->`) and written only by `SetAgentNodeOverview`.
+- Observation: nothing records which source and directory a checkout page came from except its keyed "checkout" line ("The checkout is at <where> on <computer>."), and a component's page only its "component" line ("A part of <checkout>, in <directory>, built by <file>."). The overview phase reads these back to find key files; the writers now go through `checkoutLine` and `componentLine` beside the readers `checkoutLocationOf` and `componentLocationOf`.
+- Observation: the knowledge index reads a file by `GetAgentDocumentByExternal(sourceId, <path relative to the source>)` and `indexed.Read`; a checkout's files are at `<checkout directory relative to the source>/<path in the checkout>`, as `describeCheckout` already reads the readme.
 
 ## Decision Log
 
@@ -102,6 +106,26 @@ To see it working: on the development server, `teanode agent memory get projects
   Date/Author: 2026-09-28.
 - Decision: the nightly walk (`dreamAssociate`) is neither offered `depends_on` nor allowed to propose it.
   Rationale: a guessed build dependency among exact ones is a wrong link that looks right, and clustering will weight these links.
+  Date/Author: 2026-09-28.
+- Decision: the fingerprint (`overview_inputs`) is a SHA-256 worked out in SQL (`overviewInputsExpression` in `internal/db/database_overview.go`) over the opening, each live fact's number and modification time, each live child's id and `overview_written_at`, and each link's direction, relation, other end, note and the other end's opening. It is hashed for every eligible page in the one listing query and again for one page right before its prompt is read, and that second hash is what the overview is stored with.
+  Rationale: every input is a column, so a page nobody touched costs no read of its facts and no model call. Weights and use times are left out because the quiet half moves them every night. Checkout and component pages need no extra inputs: their HEAD, build-file and activity lines are keyed facts rewritten in place, so their modification times already move with them. Hashing again just before the read means a child written earlier the same night is part of its parent's hash, and anything that changes during the call leaves the page due.
+  Date/Author: 2026-09-28.
+- Decision: the order is depth (slashes in the path) descending, then importance, then path; one depth is written at a time, with `RewriteConcurrency` pages of it at once. Overviews run after consolidate, organize and split, with at most half the remaining night (`dreamBudget.overviewUntil`) and within the night's token share like every phase.
+  Rationale: children before parents without a graph walk; pages of one depth are never each other's children.
+  Date/Author: 2026-09-28.
+- Decision: evidence is a JSON column `overview_evidence` of the same `Evidence` objects facts carry: kind memory with the page id and path for a cited page, kind document with the document id and path for a cited file. Only pages and files the prompt showed are kept, at most 24.
+  Rationale: the simplest store that the API and the dashboard can already read, and filtering to what was shown keeps a made-up path from reading as a citation.
+  Date/Author: 2026-09-28.
+- Decision: the model answers with `sections` (heading and text, headings in the knowledge language), `citedPages` and `citedFiles`; the code renders `## heading` sections, drops empty ones, and bounds each (2500 characters, six sections, 10000 in all). An unreadable answer, or one with no text, leaves the page as it was and still due.
+  Rationale: headings in the person's language without the code knowing five translations; nothing half-written is stored.
+  Date/Author: 2026-09-28.
+- Decision: an overview write is not a page revision, and `overview_inputs` is not in the API (`json:"-"`).
+  Rationale: an overview is derived from inputs that each have their own history; a revision per nightly rewrite would bury the person's own changes. The hash means nothing to a reader.
+  Date/Author: 2026-09-28.
+- Decision: only a page read on its own asks for the overview (`AgentGraphPage`, the memory tool's `get`); index and search listings do not.
+  Rationale: an index of four hundred pages has no use for four hundred overviews of up to 10000 characters each.
+  Date/Author: 2026-09-28.
+- Decision: migration number 0118 (main's latest was 0117 when this was written).
   Date/Author: 2026-09-28.
 
 ## Outcomes & Retrospective
