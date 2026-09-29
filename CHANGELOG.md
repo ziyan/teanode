@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.81.0] - 2026-09-29
+
+### Added
+
+- Surveys and subagents in the background: the agent goes on, and the conversation is woken with the result when the work finishes. `teanode agent background` lists, shows and stops it, and the Activity tab shows it. (#229)
+
+### Changed
+
+- `teanode agent survey` starts the survey and waits for its result without holding one long request open. (#229)
+
 ## [0.80.1] - 2026-09-29
 
 ### Fixed
