@@ -3002,4 +3002,6 @@ export const zh: Catalog = {
   'agent.dreamThemesMade': '新建了 {count} 个主题',
   'agent.dreamThemesUpdated': '更新了 {count} 个主题',
   'agent.dreamReflectionsWritten': '写了 {count} 条反思',
+  'agentSettings.work.synthesize': '跨页面的判断：概述、反思、调查的各个页面',
+  'agentSettings.modelInheritResearch': '与研究相同（未设置研究时用默认模型）',
 }

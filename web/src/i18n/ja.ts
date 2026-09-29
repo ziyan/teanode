@@ -3093,4 +3093,6 @@ export const ja: Catalog = {
   'agent.dreamThemesMade': 'テーマ {count} 件作成',
   'agent.dreamThemesUpdated': 'テーマ {count} 件更新',
   'agent.dreamReflectionsWritten': '振り返り {count} 件',
+  'agentSettings.work.synthesize': 'ページをまたぐ判断：概要、振り返り、調査の各ページ',
+  'agentSettings.modelInheritResearch': 'リサーチと同じ（リサーチ未設定なら既定）',
 }

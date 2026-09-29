@@ -38,7 +38,7 @@ const settingsSelection = `{
 		enabled instructions currency effort allowPrivateAddresses skipCertificateCheck
 		providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
 		skillSecrets { skill key hasValue }
-		models { default fast embedding triage research summarize reply ask schedule compact choices scan decide embeddingDimensions }
+		models { default fast embedding triage research summarize reply ask schedule compact choices scan synthesize decide embeddingDimensions }
 		features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
 		limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency embeddingTokensPerDay dreamShare ingestChunksPerRun }
 		retention { runs corrections }
@@ -50,13 +50,16 @@ const settingsSelection = `{
 	}
 }`
 
+// DocumentGetSettings reads every section of the settings.
+const DocumentGetSettings = `query { GetSettings ` + settingsSelection + ` }`
+
 // GetSettings returns the optional integrations. Secrets are never returned;
 // a field that is set reads back as whether it is set.
 func GetSettings(ctx context.Context, connection *Client) (Settings, error) {
 	var result struct {
 		GetSettings Settings `json:"GetSettings"`
 	}
-	if err := connection.Execute(ctx, `query { GetSettings `+settingsSelection+` }`, nil, &result); err != nil {
+	if err := connection.Execute(ctx, DocumentGetSettings, nil, &result); err != nil {
 		return nil, err
 	}
 	return result.GetSettings, nil

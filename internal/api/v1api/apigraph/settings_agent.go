@@ -139,6 +139,9 @@ type AgentModelsSettings struct {
 	// Scan is the model for bulk understanding with nobody present, and
 	// EmbeddingDimensions the width to ask the embedding model for.
 	Scan string `json:"scan"`
+	// Synthesize is the model for deciding what matters across many
+	// pages: overviews, reflections, and a survey's run for one page.
+	Synthesize string `json:"synthesize"`
 	// Decide is the model for a question whose answers are known in
 	// advance, which is the one that writes nothing.
 	Decide              string `json:"decide"`
@@ -287,6 +290,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			Choices:   nonNil(agent.Models.Choices),
 
 			Scan:                agent.Models.Scan,
+			Synthesize:          agent.Models.Synthesize,
 			Decide:              agent.Models.Decide,
 			EmbeddingDimensions: agent.Models.EmbeddingDimensions,
 		},
@@ -488,6 +492,9 @@ type AgentModelsParameters struct {
 	Compact   *string   `json:"compact"`
 	Choices   *[]string `json:"choices"`
 	Scan      *string   `json:"scan"`
+	// Synthesize is the model for deciding what matters across many
+	// pages; empty falls back to research.
+	Synthesize *string `json:"synthesize"`
 	// Decide is the model for a question whose answers are known in
 	// advance. It is the one model field that names a provider which
 	// writes nothing, and it was the one field this input never carried:
@@ -705,6 +712,7 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		applyString(&models.Fast, parameters.Models.Fast)
 		applyString(&models.Embedding, parameters.Models.Embedding)
 		applyString(&models.Scan, parameters.Models.Scan)
+		applyString(&models.Synthesize, parameters.Models.Synthesize)
 		applyString(&models.Decide, parameters.Models.Decide)
 		applyInt(&models.EmbeddingDimensions, parameters.Models.EmbeddingDimensions)
 		applyString(&models.Triage, parameters.Models.Triage)

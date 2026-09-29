@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/ziyan/teanode/internal/computer"
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
@@ -52,6 +53,17 @@ func overviewProvider(t *testing.T) (*httptest.Server, func() []string) {
 	}
 }
 
+// isAskedOfModel says whether a request to the provider named the model.
+func isAskedOfModel(body, model string) bool {
+	return strings.Contains(body, `"model":"`+model+`"`)
+}
+
+// synthesizeOnJudge assigns the synthesize work a model of its own, so a
+// test can see which calls ask for it.
+func synthesizeOnJudge(configuration *config.Configuration) {
+	configuration.Agent.Models.Synthesize = "p:judge"
+}
+
 // A night writes the overviews that are due, the pages under a page
 // before the page, cites only what it was shown, and shows a checkout's
 // page its key files; the next night, with nothing changed, writes none.
@@ -59,7 +71,7 @@ func TestTheNightWritesOverviewsChildrenFirstAndOnlyWhenDue(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	t.Cleanup(release)
 	provider, sentPrompts := overviewProvider(t)
-	worker, run := digestSplitWorld(t, database, provider.URL)
+	worker, run := digestSplitWorldWith(t, database, provider.URL, synthesizeOnJudge)
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		if _, err := tx.PutAgentNode(&models.AgentNode{AgentID: run.Agent.ID, Path: "things/garden-shed", Kind: models.NodeThing, Name: "Garden shed"}); err != nil {
@@ -133,6 +145,11 @@ func TestTheNightWritesOverviewsChildrenFirstAndOnlyWhenDue(t *testing.T) {
 		return isAsked
 	}
 	firstNight := askedAbout(sentPrompts())
+	for _, prompt := range sentPrompts() {
+		if !isAskedOfModel(prompt, "judge") {
+			t.Errorf("an overview was not written on the synthesize model")
+		}
+	}
 	if !firstNight["things/garden-shed/rake"] || !firstNight["things/garden-shed/hoe"] || !firstNight["projects/example-app"] || firstNight["things/garden-shed"] {
 		t.Errorf("the first night promptCount about %v", firstNight)
 	}

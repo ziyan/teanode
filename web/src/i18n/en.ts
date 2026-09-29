@@ -3131,4 +3131,6 @@ export const en = {
   'agent.dreamThemesMade': '{count} themes made',
   'agent.dreamThemesUpdated': '{count} themes updated',
   'agent.dreamReflectionsWritten': '{count} reflections written',
+  'agentSettings.work.synthesize': 'Judgment across pages: overviews, reflections, a survey’s pages',
+  'agentSettings.modelInheritResearch': 'Same as research (the default when research is not set)',
 }

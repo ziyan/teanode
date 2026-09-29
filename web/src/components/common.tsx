@@ -7,7 +7,9 @@ import { useToast } from './toast'
 import { Mail, graphql } from '../api'
 import { Key, useTranslation } from '../i18n/i18n'
 
+// A tag with nothing to say draws nothing, rather than an empty pill.
 export function Tag({ value, tone }: { value: string; tone?: 'good' | 'bad' | 'warn' }) {
+  if (!value) return null
   return <span className={tone ? `tag ${tone}` : 'tag'}>{value}</span>
 }
 

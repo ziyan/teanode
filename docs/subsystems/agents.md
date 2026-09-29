@@ -181,7 +181,8 @@ checkout, the title a conversation is given, the note a long conversation is
 compacted into, the draft the composer asks for. A call that needs no tools
 is a turn with none and one round, and its transcript is the prompt, the
 answer and what it cost. The kind of work chooses the model — the dream and
-the ingest run on the `scan` model, sorting on `triage` — and the feature
+the ingest run on the `scan` model, the dream's overviews and reflections
+on `synthesize`, sorting on `triage` — and the feature
 that owns the work gates it; the `ask` feature gates only the person's own
 chat. What this buys is that the person can open anything the agent did:
 the activity table on the agent page and `teanode agent run list` show every

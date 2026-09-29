@@ -132,3 +132,23 @@ func TestPricingForIgnoresTheWidthSuffix(t *testing.T) {
 		t.Fatalf("an unpriced model falls back to the provider's rate, not %v", got)
 	}
 }
+
+// The synthesize model falls back to what research resolves to, and never
+// to the fast model the scan uses: an overview is a judgment, not bulk.
+func TestSynthesizeFallsBackToResearchThenDefault(t *testing.T) {
+	models := &AgentModels{Default: "local:large", Fast: "local:small", Scan: "local:tiny"}
+	if model := models.ForWork(AgentWorkSynthesize); model != "local:large" {
+		t.Fatalf("with nothing set it is the default, not fast: %q", model)
+	}
+	models.Research = "local:research"
+	if model := models.ForWork(AgentWorkSynthesize); model != "local:research" {
+		t.Fatalf("with research set it is research: %q", model)
+	}
+	models.Synthesize = "local:judge"
+	if model := models.ForWork(AgentWorkSynthesize); model != "local:judge" {
+		t.Fatalf("its own override wins: %q", model)
+	}
+	if model := models.ForWork(AgentWorkScan); model != "local:tiny" {
+		t.Fatalf("the scan keeps its own model: %q", model)
+	}
+}

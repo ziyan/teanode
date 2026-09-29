@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -160,7 +161,7 @@ func (self *Agent) writeOverview(ctx context.Context, run *Run, page *models.Age
 	if err != nil {
 		return false
 	}
-	said, err := self.dreamThink(ctx, run, budget, "Wrote the overview of "+page.Path, prompt, false)
+	said, err := self.dreamThinkFor(ctx, run, budget, "Wrote the overview of "+page.Path, prompt, false, config.AgentWorkSynthesize)
 	if err != nil {
 		log.Warningf("cannot write the overview of %q: %s", page.Path, err)
 		return false

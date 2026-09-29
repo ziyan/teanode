@@ -113,6 +113,8 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ListAgentBackgroundCommands": client.DocumentListAgentBackgroundCommands,
 		"ReadAgentBackgroundCommand":  client.DocumentReadAgentBackgroundCommand,
 		"StopAgentBackgroundCommand":  client.DocumentStopAgentBackgroundCommand,
+		// Every settings section, the agent's model slots among them.
+		"GetSettings": client.DocumentGetSettings,
 	}
 
 	for name, document := range documents {

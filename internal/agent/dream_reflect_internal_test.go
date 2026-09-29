@@ -60,7 +60,7 @@ func TestTheNightReflectsOnAThemeAndSupersedesTheLastReflection(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	t.Cleanup(release)
 	provider, sentPrompts := promptedProvider(t, func(string) string { return reflectionAnswerText })
-	worker, run := digestSplitWorld(t, database, provider.URL)
+	worker, run := digestSplitWorldWith(t, database, provider.URL, synthesizeOnJudge)
 	idByPath := reflectionWorld(t, database, run.Agent.ID)
 
 	record := &models.AgentDream{}
@@ -70,6 +70,9 @@ func TestTheNightReflectsOnAThemeAndSupersedesTheLastReflection(t *testing.T) {
 	}
 	if prompt := sentPrompts()[0]; !strings.Contains(prompt, "projects/orchard-north#1 The trees were pruned late again.") {
 		t.Errorf("the prompt does not show the members' facts to cite: %q", prompt)
+	}
+	if !isAskedOfModel(sentPrompts()[0], "judge") {
+		t.Errorf("the reflection was not asked of the synthesize model")
 	}
 	var first *models.AgentFact
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
@@ -123,7 +126,7 @@ func TestTheThemesAreReflectedOnTogetherOnceAWeek(t *testing.T) {
 	t.Cleanup(release)
 	answer := `{"reflections": [{"text": "Both themes follow the seasons.", "reflectionKind": "trend", "citations": ["themes/orchard-work", "themes/tide-tables"]}]}`
 	provider, sentPrompts := promptedProvider(t, func(string) string { return answer })
-	worker, run := digestSplitWorld(t, database, provider.URL)
+	worker, run := digestSplitWorldWith(t, database, provider.URL, synthesizeOnJudge)
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		for _, path := range []string{"themes/orchard-work", "themes/tide-tables"} {
 			theme, err := tx.PutAgentNode(&models.AgentNode{AgentID: run.Agent.ID, Path: path, Kind: models.NodeTopic, Name: models.LastSegment(path)})
@@ -140,6 +143,9 @@ func TestTheThemesAreReflectedOnTogetherOnceAWeek(t *testing.T) {
 	budget := newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0)
 	if written := worker.reflectAcrossThemes(t.Context(), run, budget, now); written != 1 {
 		t.Fatalf("%d reflections across the themes", written)
+	}
+	if !isAskedOfModel(sentPrompts()[0], "judge") {
+		t.Errorf("the weekly reflection was not asked of the synthesize model")
 	}
 	var reflections *models.AgentNode
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {

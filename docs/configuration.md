@@ -1248,6 +1248,12 @@ page, consolidating a page from its facts. It runs over everything the
 person has, so it should be the cheapest model that can follow an
 instruction. Empty falls back to `fast`, then to `default`.
 
+**`synthesize`** — The model for deciding what matters across many pages
+with nobody present: writing an overview of a page or a theme, reflecting
+on a theme, and answering a survey's question for one area. Fewer calls
+than the scan, each a judgment. Empty falls back to `research`, then to
+`default` (never to `fast`).
+
 **`triage`**, **`research`**, **`summarize`**, **`reply`**, **`ask`**,
 **`schedule`** — Overrides per kind of work. Resolution is the override,
 else `fast` for triage and summarize, else `default`.

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
@@ -254,7 +255,10 @@ func TestTheSurveyAsksEachPageAtMostSixAtOnceAndCombinesTheParts(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	t.Cleanup(release)
 	provider, asked := surveyProvider(t, map[string]bool{"orchard-2": true}, map[string]bool{"orchard-3": true})
-	worker, run := digestSplitWorld(t, database, provider.URL)
+	worker, run := digestSplitWorldWith(t, database, provider.URL, func(configuration *config.Configuration) {
+		configuration.Agent.Models.Synthesize = "p:judge"
+		configuration.Agent.Models.Research = "p:researcher"
+	})
 	surveyOrchards(t, database, run.Agent.ID)
 
 	surveyed, err := worker.Survey(t.Context(), run.Agent, run.Owner, "What are the strengths of the orchards?", "themes/orchards")
@@ -272,7 +276,13 @@ func TestTheSurveyAsksEachPageAtMostSixAtOnceAndCombinesTheParts(t *testing.T) {
 	for _, body := range bodies {
 		if strings.Contains(body, "Combine them into one report") {
 			combining = body
+			if !isAskedOfModel(body, "researcher") {
+				t.Errorf("the combining call is not on the research model")
+			}
 			continue
+		}
+		if !isAskedOfModel(body, "judge") {
+			t.Errorf("a page's run is not on the synthesize model")
 		}
 		if !strings.Contains(body, `"name":"memory"`) || strings.Contains(body, `"name":"survey"`) {
 			t.Errorf("a page's run has the lookups and not the survey")

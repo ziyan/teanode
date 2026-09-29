@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -270,7 +271,7 @@ func (self *Agent) reflect(ctx context.Context, run *Run, budget *dreamBudget, p
 	if isAcrossThemes {
 		title = "Reflected on the themes together"
 	}
-	said, err := self.dreamThink(ctx, run, budget, title, prompt, false)
+	said, err := self.dreamThinkFor(ctx, run, budget, title, prompt, false, config.AgentWorkSynthesize)
 	if err != nil {
 		log.Warningf("cannot reflect on %q: %s", page.Path, err)
 		return 0
