@@ -490,3 +490,25 @@ func TestAlertJobReadsThePressingFirstAndSleepsOnTheHeld(t *testing.T) {
 		t.Fatalf("the job waits for seven, not two minutes: %+v", jobs)
 	}
 }
+
+// A candidate the job comes to a day late, after a failed or budget-held
+// run, is dropped as old without asking the model, and so is one whose
+// message was received more than a day ago.
+func TestAlertJobDropsWhatIsNoLongerNews(t *testing.T) {
+	provider := &alertModel{answers: []string{`{"alerts":[],"dropped":[]}`}}
+	server := provider.serve(t)
+	fixture := newAlertFixtureWith(t, server.URL, zoneAtHour(t, 12))
+	lateCandidate := fixture.candidate(t, models.AlertCandidateMessage, models.AlertSignalNow, "security@bank.example.com", "New device added", "A new device was added.")
+	oldMessage := fixture.candidate(t, models.AlertCandidateMessage, models.AlertSignalSoon, "office@school.example.org", "Trip form due", "Please return the form.")
+	dbtest.Exec(t, fixture.database, fmt.Sprintf(`UPDATE "agent_alert_candidate" SET "created_at" = now() - interval '30 hours' WHERE "id" = '%s'`, lateCandidate.ID))
+	dbtest.Exec(t, fixture.database, fmt.Sprintf(`UPDATE "mail" SET "received_at" = now() - interval '30 hours' WHERE "id" = '%s'`, oldMessage.MailID))
+	fixture.decide(t)
+	if provider.callCount() != 0 || len(fixture.alerts(t)) != 0 {
+		t.Fatalf("nothing old is decided: %d calls", provider.callCount())
+	}
+	for _, candidate := range []*models.AgentAlertCandidate{lateCandidate, oldMessage} {
+		if dropped := fixture.candidateByID(t, candidate.ID); dropped.DroppedAt == nil || dropped.DropReason != alertStaleReason {
+			t.Fatalf("dropped as no longer news: %+v", dropped)
+		}
+	}
+}

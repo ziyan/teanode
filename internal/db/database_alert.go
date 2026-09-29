@@ -23,6 +23,10 @@ type AlertOperation interface {
 	// morning does not hide what came in pressing behind it.
 	ListWaitingAgentAlertCandidates(agentId string, limit int) ([]*models.AgentAlertCandidate, error)
 
+	// DropAgentAlertCandidatesMadeBefore drops the agent's waiting
+	// candidates made before the moment given, with the reason given.
+	DropAgentAlertCandidatesMadeBefore(agentId string, createdBefore time.Time, dropReason string, droppedAt time.Time) error
+
 	// ListAgentAlertCandidatesByID is these candidates of the agent,
 	// whatever became of them, oldest first.
 	ListAgentAlertCandidatesByID(agentId string, candidateIds []string) ([]*models.AgentAlertCandidate, error)
@@ -145,6 +149,12 @@ func (self *transaction) ListWaitingAgentAlertCandidates(agentId string, limit i
 		candidates = append(candidates, found[index].toModel())
 	}
 	return candidates, nil
+}
+
+func (self *transaction) DropAgentAlertCandidatesMadeBefore(agentId string, createdBefore time.Time, dropReason string, droppedAt time.Time) error {
+	return self.tx.Model(&agentAlertCandidateModel{}).
+		Where("\"agent_id\" = ? AND \"alert_id\" = '' AND \"dropped_at\" IS NULL AND \"created_at\" < ?", agentId, createdBefore).
+		Updates(map[string]any{"dropped_at": droppedAt, "drop_reason": dropReason}).Error
 }
 
 func (self *transaction) ListAgentAlertCandidatesByID(agentId string, candidateIds []string) ([]*models.AgentAlertCandidate, error) {

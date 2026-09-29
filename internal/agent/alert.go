@@ -56,6 +56,10 @@ const (
 	// the dashboard hears it by, and opens the drawer for.
 	alertSurface = "alert"
 
+	// alertStaleReason is what a candidate is dropped with when the job
+	// comes to it, or to its message, past the freshness bound.
+	alertStaleReason = "older than a day when the alert job came to it, and no longer news"
+
 	// alertAfterTurn is how long the job waits when a turn is running in
 	// the main conversation, before it looks again: the same minute a
 	// goal's job waits.
@@ -169,6 +173,15 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 	now := time.Now()
 	location := Location(run.Owner)
 
+	// What waited past the freshness bound, a job that failed or was held
+	// back by the budget meanwhile, is not news any more: dropped first,
+	// whatever else this run comes to.
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		return tx.DropAgentAlertCandidatesMadeBefore(run.Agent.ID, now.Add(-alertFreshness), alertStaleReason, now)
+	}); err != nil {
+		return err
+	}
+
 	var waiting []*models.AgentAlertCandidate
 	var recent []*models.AgentAlert
 	var memories []string
@@ -243,12 +256,17 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 
 	var labeled []*labeledCandidate
 	var mutedIds []string
+	var staleIds []string
 	for _, candidate := range waiting {
 		mail := mailsById[candidate.MailID]
 		if mail == nil {
 			if !slices.Contains(gone, candidate.ID) {
 				gone = append(gone, candidate.ID)
 			}
+			continue
+		}
+		if !mail.ReceivedAt.IsZero() && now.Sub(mail.ReceivedAt) > alertFreshness {
+			staleIds = append(staleIds, candidate.ID)
 			continue
 		}
 		// A candidate made before the person muted what it is about.
@@ -267,9 +285,12 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 		}
 		labeled = append(labeled, &labeledCandidate{label: fmt.Sprintf("c%d", len(labeled)+1), candidate: candidate, message: message, facts: facts})
 	}
-	if len(gone) > 0 || len(mutedIds) > 0 {
+	if len(gone) > 0 || len(mutedIds) > 0 || len(staleIds) > 0 {
 		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 			if err := tx.DropAgentAlertCandidates(gone, "its message or its mailbox is gone, or the mailbox no longer alerts", now); err != nil {
+				return err
+			}
+			if err := tx.DropAgentAlertCandidates(staleIds, alertStaleReason, now); err != nil {
 				return err
 			}
 			return tx.DropAgentAlertCandidates(mutedIds, alertMutedReason, now)
