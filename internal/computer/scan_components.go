@@ -198,7 +198,7 @@ func readComponent(directory, fileDirectory, base string, targets *cmakeTargets)
 			return component, false
 		}
 		if name == "" {
-			name = targets.declaredIn[fileDirectory][0]
+			name = targets.mainTarget(fileDirectory)
 		}
 		component.Name, component.Ecosystem = name, EcosystemCMake
 		component.Dependencies = targets.foundIn[fileDirectory]
@@ -313,8 +313,10 @@ type cmakeTargets struct {
 	declaredIn  map[string][]string
 	directoryOf map[string]string
 
-	// linked is what each target links, by target name.
-	linked map[string][]string
+	// linked is what each target links, by target name, and isLibrary
+	// says which targets add_library declared.
+	linked    map[string][]string
+	isLibrary map[string]bool
 
 	// projectOf is the project each directory's file names, and foundIn
 	// the packages it finds.
@@ -354,7 +356,7 @@ var (
 func cmakeTargetsOf(directory string, files []string) *cmakeTargets {
 	targets := &cmakeTargets{
 		declaredIn: map[string][]string{}, directoryOf: map[string]string{},
-		linked: map[string][]string{}, projectOf: map[string]string{}, foundIn: map[string][]string{},
+		linked: map[string][]string{}, isLibrary: map[string]bool{}, projectOf: map[string]string{}, foundIn: map[string][]string{},
 	}
 	commandsByFile := make(map[string][][]string, len(files))
 	for _, file := range files {
@@ -433,6 +435,7 @@ func cmakeTargetsOf(directory string, files []string) *cmakeTargets {
 				if _, isTaken := targets.directoryOf[target]; !isTaken {
 					targets.directoryOf[target] = fileDirectory
 					targets.declaredIn[fileDirectory] = append(targets.declaredIn[fileDirectory], target)
+					targets.isLibrary[target] = command[0] == "add_library"
 				}
 			case "target_link_libraries":
 				target, isName := name(command[1])
@@ -451,6 +454,42 @@ func cmakeTargetsOf(directory string, files []string) *cmakeTargets {
 		}
 	}
 	return targets
+}
+
+// cmakeSideTarget matches the names of targets that are beside the point
+// of a directory: its tests, fuzzers, checks, examples and benchmarks.
+var cmakeSideTarget = regexp.MustCompile(`(?i)(^|[_\-.])(tests?|fuzz\w*|checks?|check_\w+|examples?|bench\w*|demos?|samples?)($|[_\-.])`)
+
+// mainTarget is the target a directory with no project() of its own is
+// known by, when it declares several: the one the rest of the checkout
+// links most, a library before a program, and not one of its tests or
+// examples. A directory that builds a library and a program that checks
+// it is the library, whichever of the two its file declares first.
+func (self *cmakeTargets) mainTarget(fileDirectory string) string {
+	declared := self.declaredIn[fileDirectory]
+	linkedCount := map[string]int{}
+	for target, linkedTargets := range self.linked {
+		if self.directoryOf[target] == fileDirectory {
+			continue // its own programs linking it say nothing
+		}
+		for _, linked := range linkedTargets {
+			linkedCount[linked]++
+		}
+	}
+	best, bestScore := "", -1
+	for _, target := range declared {
+		score := linkedCount[target] * 4
+		if self.isLibrary[target] {
+			score += 2
+		}
+		if !cmakeSideTarget.MatchString(target) {
+			score += 3
+		}
+		if score > bestScore || (score == bestScore && len(target) < len(best)) {
+			best, bestScore = target, score
+		}
+	}
+	return best
 }
 
 // resolveName is a word of a CMake command as a name, with the project

@@ -266,3 +266,29 @@ func TestComponentsAreKeptShallowestFirst(test *testing.T) {
 		test.Fatalf("%d components, the first %+v", len(components), components[0])
 	}
 }
+
+// A directory that builds a library and the programs that check it is the
+// library, whichever its file declares first, and the rest of the
+// checkout's links to that library land on it.
+func TestAComponentIsNamedAfterItsMainTarget(test *testing.T) {
+	directory := test.TempDir()
+	tracked := writeCheckoutFiles(test, directory, map[string]string{
+		"CMakeLists.txt": "add_subdirectory(core)\nadd_subdirectory(app)\n",
+		"core/CMakeLists.txt": "add_executable(check_gardencore_accuracy check.cpp)\n" +
+			"add_library(gardencore SHARED plants.cpp)\n" +
+			"add_executable(gardencore_fuzz fuzz.cpp)\n" +
+			"target_link_libraries(check_gardencore_accuracy gardencore)\n",
+		"app/CMakeLists.txt": "add_executable(gardenapp main.cpp)\ntarget_link_libraries(gardenapp PRIVATE gardencore)\n",
+	})
+	components := repositoryComponents(directory, tracked, nil, nil)
+	names := map[string]RepositoryComponent{}
+	for _, component := range components {
+		names[component.Path] = component
+	}
+	if got := names["core"].Name; got != "gardencore" {
+		test.Errorf("the core directory is named %q", got)
+	}
+	if got := names["app"].Dependencies; len(got) != 1 || got[0] != "gardencore" {
+		test.Errorf("the app needs %v", got)
+	}
+}
