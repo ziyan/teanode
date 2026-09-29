@@ -22,8 +22,16 @@ type OverviewOperation interface {
 	// pages with at least leastFactCount live facts or a live page under
 	// them, whose inputs have changed since the overview was written.
 	// Deepest first, so a page is written after the pages under it, and
-	// most important first within a depth.
+	// most important first within a depth. Not a theme: see
+	// ListAgentThemesForOverview.
 	ListAgentNodesForOverview(agentId string, leastFactCount, limit int) ([]*models.AgentNode, error)
+
+	// ListAgentThemesForOverview is the same for the theme pages: a theme
+	// with members, or with a theme under it, whose inputs have changed.
+	// Its own listing so the pages a theme is written from come first,
+	// and so a night with more pages due than it writes still writes a
+	// few themes.
+	ListAgentThemesForOverview(agentId string, limit int) ([]*models.AgentNode, error)
 
 	// AgentNodeOverviewInputs is the hash of a page's inputs as they are
 	// now, which is what an overview written from them is marked with.
@@ -52,7 +60,13 @@ type OverviewOperation interface {
 //   - each live page under it and when its overview was written, so a
 //     child written again makes its parent due;
 //   - each link, which way it points, its relation and note, and the
-//     opening of the page at the other end.
+//     opening of the page at the other end; but not a theme's link to one
+//     of its members, seen from the member, since a theme is written from
+//     its members and not the other way round;
+//   - for a theme, each member and when its overview was written, so a
+//     member written again makes its theme due. NULL for any other page,
+//     which concat_ws leaves out, so the hash of a page that is not a
+//     theme is what it was before themes existed.
 //
 // Not a link's weight, nor when anything was used: the night reweights
 // every link and the index moves every day, and neither changes what an
@@ -72,8 +86,13 @@ const overviewInputsExpression = `encode(sha256(convert_to(concat_ws(E'\n',
 		UNION ALL
 		SELECT concat_ws(' ', '<', e."relation", e."from_id", e."note", other."summary") AS line
 			FROM "agent_edge" e JOIN "agent_node" other ON other."id" = e."from_id"
-			WHERE e."to_id" = n."id"
-	) link), '')
+			WHERE e."to_id" = n."id" AND other."path" NOT LIKE 'themes/%'
+	) link), ''),
+	CASE WHEN n."path" LIKE 'themes/%' THEN
+		COALESCE((SELECT string_agg(member."id" || '@' || COALESCE(extract(epoch FROM member."overview_written_at")::text, ''), ',' ORDER BY member."id")
+			FROM "agent_edge" e JOIN "agent_node" member ON member."id" = e."to_id"
+			WHERE e."from_id" = n."id" AND e."relation" = 'about' AND NOT member."dormant"), '')
+	END
 ), 'UTF8')), 'hex')`
 
 // overviewDepthExpression is how deep a page is: the slashes in its path.
@@ -87,7 +106,7 @@ func (self *transaction) ListAgentNodesForOverview(agentId string, leastFactCoun
 		SELECT due.* FROM (
 			SELECT n.*, `+overviewInputsExpression+` AS "overview_inputs_now", `+overviewDepthExpression+` AS "depth"
 			FROM "agent_node" n
-			WHERE n."agent_id" = ? AND NOT n."dormant"
+			WHERE n."agent_id" = ? AND NOT n."dormant" AND n."path" NOT LIKE 'themes/%'
 			  AND (
 				(SELECT count(*) FROM "agent_fact" f
 					WHERE f."node_id" = n."id" AND NOT f."dormant" AND f."superseded_by" IS NULL) >= ?
@@ -97,6 +116,25 @@ func (self *transaction) ListAgentNodesForOverview(agentId string, leastFactCoun
 		WHERE due."overview_inputs_now" <> due."overview_inputs"
 		ORDER BY due."depth" DESC, due."importance" DESC, due."path" ASC
 		LIMIT ?`, agentId, leastFactCount, limit))
+}
+
+func (self *transaction) ListAgentThemesForOverview(agentId string, limit int) ([]*models.AgentNode, error) {
+	if limit <= 0 {
+		limit = 8
+	}
+	return self.nodesFrom(self.tx.Raw(`
+		SELECT due.* FROM (
+			SELECT n.*, `+overviewInputsExpression+` AS "overview_inputs_now", `+overviewDepthExpression+` AS "depth"
+			FROM "agent_node" n
+			WHERE n."agent_id" = ? AND NOT n."dormant" AND n."path" LIKE 'themes/%'
+			  AND (
+				EXISTS (SELECT 1 FROM "agent_edge" e WHERE e."from_id" = n."id" AND e."relation" = 'about')
+				OR EXISTS (SELECT 1 FROM "agent_node" child WHERE child."parent_id" = n."id" AND NOT child."dormant")
+			  )
+		) due
+		WHERE due."overview_inputs_now" <> due."overview_inputs"
+		ORDER BY due."depth" DESC, due."importance" DESC, due."path" ASC
+		LIMIT ?`, agentId, limit))
 }
 
 func (self *transaction) AgentNodeOverviewInputs(agentId, nodeId string) (string, error) {

@@ -168,6 +168,7 @@ type Transaction interface {
 	KnowledgeOperation
 	DreamOperation
 	OverviewOperation
+	ThemeOperation
 	RevisionOperation
 	MemoryOperation
 	ConnectionOperation

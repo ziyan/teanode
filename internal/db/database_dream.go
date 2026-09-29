@@ -199,13 +199,16 @@ type agentDreamModel struct {
 	Backlog    int        `gorm:"column:backlog"`
 	Coarse     bool       `gorm:"column:coarse"`
 
-	Revised          int `gorm:"column:revised"`
-	OverviewsWritten int `gorm:"column:overviews_written"`
-	Strengthened     int `gorm:"column:strengthened"`
-	Associated       int `gorm:"column:associated"`
-	Rehearsed        int `gorm:"column:rehearsed"`
-	Gaps             int `gorm:"column:gaps"`
-	Unknown          int `gorm:"column:unknown"`
+	Revised            int `gorm:"column:revised"`
+	OverviewsWritten   int `gorm:"column:overviews_written"`
+	ThemesMade         int `gorm:"column:themes_made"`
+	ThemesUpdated      int `gorm:"column:themes_updated"`
+	ReflectionsWritten int `gorm:"column:reflections_written"`
+	Strengthened       int `gorm:"column:strengthened"`
+	Associated         int `gorm:"column:associated"`
+	Rehearsed          int `gorm:"column:rehearsed"`
+	Gaps               int `gorm:"column:gaps"`
+	Unknown            int `gorm:"column:unknown"`
 
 	Proposals []byte `gorm:"column:proposals;type:jsonb"`
 	Tokens    int64  `gorm:"column:tokens"`
@@ -262,8 +265,9 @@ func (self *transaction) FinishAgentDream(dream *models.AgentDream) error {
 		"coarse": dream.Coarse, "proposals": encoded, "tokens": dream.Tokens,
 		"strengthened": dream.Strengthened, "associated": dream.Associated, "revised": dream.Revised,
 		"rehearsed": dream.Rehearsed, "gaps": dream.Gaps, "unknown": dream.Unknown,
-		"overviews_written": dream.OverviewsWritten,
-		"notes":             dream.Notes, "last_error": dream.LastError,
+		"overviews_written": dream.OverviewsWritten, "themes_made": dream.ThemesMade,
+		"themes_updated": dream.ThemesUpdated, "reflections_written": dream.ReflectionsWritten,
+		"notes": dream.Notes, "last_error": dream.LastError,
 	}).Error
 }
 
@@ -304,8 +308,9 @@ func (self *transaction) ListAgentDreams(agentId string, limit int) ([]*models.A
 			Coarse: row.Coarse, Tokens: row.Tokens, Notes: row.Notes, LastError: row.LastError,
 			Strengthened: row.Strengthened, Associated: row.Associated, Revised: row.Revised,
 			Rehearsed: row.Rehearsed, Gaps: row.Gaps, Unknown: row.Unknown,
-			OverviewsWritten: row.OverviewsWritten,
-			Proposals:        []models.DreamProposal{},
+			OverviewsWritten: row.OverviewsWritten, ThemesMade: row.ThemesMade,
+			ThemesUpdated: row.ThemesUpdated, ReflectionsWritten: row.ReflectionsWritten,
+			Proposals: []models.DreamProposal{},
 		}
 		if len(row.Proposals) > 0 {
 			if err := json.Unmarshal(row.Proposals, &dream.Proposals); err != nil {
@@ -595,13 +600,18 @@ func (self *transaction) ListAgentNodesToConsolidate(agentId string, limit int) 
 	// without this clause such a page is never looked at again, because
 	// the test for "due" was the existence of a fact that had changed.
 	//
+	// Not a theme: its opening is written by the theme phase when it
+	// names the group, and it has no facts but the night's reflections,
+	// so the second clause would blank it every night and the first
+	// would rewrite it from the reflections.
+	//
 	// Not a folder or a month: their openings are written from what is
 	// under them and from the month's record, never from facts of their
 	// own, and clearing them blanked every month the timeline wrote, which
 	// made the month owed again, to be written and blanked the next night.
 	return self.nodesFrom(self.tx.Raw(`
 		SELECT n.* FROM "agent_node" n
-		WHERE n."agent_id" = ? AND NOT n."dormant"
+		WHERE n."agent_id" = ? AND NOT n."dormant" AND n."path" NOT LIKE 'themes/%'
 		  AND (
 			EXISTS (
 				SELECT 1 FROM "agent_fact" f
@@ -757,6 +767,10 @@ func (self *transaction) AgentImportanceThreshold(agentId string, target int) (f
 // Out of the index, not out of the graph: a dormant page is still found
 // by searching for it, and its facts are still read when it is. What it
 // loses is the right to take up room in every prompt.
+//
+// Not a theme: whether a theme is live is the theme phase's to say, from
+// whether its group still exists, and a theme retired here would lose its
+// overview while its members were still together.
 func (self *transaction) RetireAgentNodes(agentId string, threshold float64, before time.Time) (int, error) {
 	if threshold <= 0 {
 		return 0, nil
@@ -765,6 +779,7 @@ func (self *transaction) RetireAgentNodes(agentId string, threshold float64, bef
 		UPDATE "agent_node" SET "dormant" = true
 		WHERE "agent_id" = ? AND NOT "dormant" AND NOT "pinned"
 		  AND "kind" NOT IN ('self', 'folder', 'period')
+		  AND "path" NOT LIKE 'themes/%'
 		  AND "importance" < ?
 		  AND COALESCE("used_at", "modified_at") < ?`, agentId, threshold, before)
 	return int(result.RowsAffected), result.Error

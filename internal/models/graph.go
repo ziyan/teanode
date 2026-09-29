@@ -65,7 +65,23 @@ const (
 	// own span on each checkout. A hundred checkouts are a hundred lines,
 	// which would bury the page that says who they are.
 	PathWork = "self/work"
+
+	// PathThemes is where the night keeps the themes it finds by
+	// clustering the links: groups of pages more linked to one another
+	// than to the rest. Not one of the roots every graph starts with; the
+	// night makes it the first time it has a theme to put there.
+	PathThemes = "themes"
+
+	// PathReflections is the person's own page of the night's
+	// observations across their themes, written about once a week.
+	PathReflections = "self/reflections"
 )
+
+// IsThemePath says whether a path is a theme's page: anything under
+// themes, not the folder itself.
+func IsThemePath(path string) bool {
+	return strings.HasPrefix(path, PathThemes+"/")
+}
 
 // IsThePerson says whether a path under people names the person whose
 // agent this is: by their username, by any word of their name, by their
@@ -199,10 +215,20 @@ const (
 	FactDecision   AgentFactKind = "decision"
 	FactEvent      AgentFactKind = "event"
 	FactHowTo      AgentFactKind = "howto"
+
+	// FactReflection is an observation the night made over a theme --
+	// a pattern, a tension, a trend, a risk, a question -- citing the
+	// pages and facts it rests on. Nobody said it; the night worked it out
+	// from what the notes say, so only the night writes one.
+	FactReflection AgentFactKind = "reflection"
 )
 
 // AgentFactKinds is every kind.
-var AgentFactKinds = []AgentFactKind{FactPlain, FactPreference, FactDecision, FactEvent, FactHowTo}
+var AgentFactKinds = []AgentFactKind{FactPlain, FactPreference, FactDecision, FactEvent, FactHowTo, FactReflection}
+
+// AgentFactKindsFiled is the kinds a conversation, a tool or a person
+// files: every kind but a reflection.
+var AgentFactKindsFiled = []AgentFactKind{FactPlain, FactPreference, FactDecision, FactEvent, FactHowTo}
 
 // IsAgentFactKind says whether a word names a kind.
 func IsAgentFactKind(kind AgentFactKind) bool {
@@ -220,6 +246,13 @@ func IsAgentFactKind(kind AgentFactKind) bool {
 // agent following a stranger.
 func (self AgentFactKind) FromThePerson() bool {
 	return self == FactPreference || self == FactDecision
+}
+
+// FromTheNight says whether a kind is only ever written by the night's
+// own reasoning. A model filing a conversation that calls its sentence a
+// reflection is filing a fact, and it is filed as one.
+func (self AgentFactKind) FromTheNight() bool {
+	return self == FactReflection
 }
 
 // EvidenceKind is where a fact came from.
@@ -242,6 +275,11 @@ const (
 	// kind so that no reader mistakes the walk for a document.
 	EvidenceDream EvidenceKind = "dream"
 )
+
+// ReflectionEvidencePrefix begins the night's own line of evidence on a
+// reflection, which names what kind of observation it is: "reflection:
+// pattern", "reflection: risk".
+const ReflectionEvidencePrefix = "reflection: "
 
 // Evidence is one place a fact came from, with the words it was read in.
 type Evidence struct {
@@ -681,6 +719,33 @@ func (self *AgentFact) Addressed(audience AgentAudience) bool {
 		}
 	}
 	return false
+}
+
+// ReflectionKind is what kind of observation a reflection is -- a
+// pattern, a tension, a trend, a risk, a question -- from the night's own
+// line in its evidence; empty for any other fact.
+func (self *AgentFact) ReflectionKind() string {
+	if self.Kind != FactReflection {
+		return ""
+	}
+	for _, evidence := range self.Evidence {
+		if evidence.Kind == EvidenceDream && strings.HasPrefix(evidence.Quote, ReflectionEvidencePrefix) {
+			return strings.TrimPrefix(evidence.Quote, ReflectionEvidencePrefix)
+		}
+	}
+	return ""
+}
+
+// Citations is the pages and facts a reflection cites, as a reader names
+// them: "projects/example-app", "projects/example-lib#2".
+func (self *AgentFact) Citations() []string {
+	var citations []string
+	for _, evidence := range self.Evidence {
+		if evidence.Kind == EvidenceMemory && evidence.Quote != "" {
+			citations = append(citations, evidence.Quote)
+		}
+	}
+	return citations
 }
 
 // Live says whether a fact is one the page still states: not superseded,

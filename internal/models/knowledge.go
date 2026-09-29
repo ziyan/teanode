@@ -520,6 +520,14 @@ type AgentDream struct {
 	// written again because what it was written from had changed.
 	OverviewsWritten int `json:"overviewsWritten"`
 
+	// ThemesMade is how many theme pages the night made for groups it
+	// found, ThemesUpdated how many it kept whose members changed or that
+	// it moved, and ReflectionsWritten how many observations it wrote over
+	// its themes.
+	ThemesMade         int `json:"themesMade"`
+	ThemesUpdated      int `json:"themesUpdated"`
+	ReflectionsWritten int `json:"reflectionsWritten"`
+
 	// Backlog is how much was still waiting when it stopped. A cap here
 	// is pacing, never truncation: what is not read tonight is read
 	// tomorrow, and this is the number that says how many nights that is.
