@@ -97,7 +97,7 @@ func (self *alertFixture) candidate(t *testing.T, candidateKind models.AlertCand
 		}
 		candidate := &models.AgentAlertCandidate{AgentID: self.agent.ID, MailboxID: self.mailbox.ID, MailID: mail.ID, CandidateKind: candidateKind, AlertSignal: alertSignal, CandidateReason: "worth a look"}
 		if candidateKind == models.AlertCandidateBurst {
-			candidate.BurstKey, candidate.BurstCount = "photos.example.com|your sign-in code is", 6
+			candidate.BurstKey, candidate.BurstCount = "no-reply@photos.example.com|your sign-in code is", 6
 		}
 		if created, err = tx.CreateAgentAlertCandidate(candidate); err != nil {
 			t.Fatalf("CreateAgentAlertCandidate: %s", err)

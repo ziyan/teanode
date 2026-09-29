@@ -99,7 +99,7 @@ func TestMutedCandidatesAreDroppedAsMuted(t *testing.T) {
 	}
 	fixture.mute(t, models.AlertMuteDomain, "@lottery.example.net")
 	fixture.mute(t, models.AlertMuteKind, "Receipt")
-	fixture.mute(t, models.AlertMuteSubjectKey, "photos.example.com|your sign-in code is")
+	fixture.mute(t, models.AlertMuteSubjectKey, "no-reply@photos.example.com|your sign-in code is")
 
 	fixture.arrive(t, "Deals <deals@shop.example.com>", "Your parcel is delayed", urgent("notification"))
 	fixture.arrive(t, "win@mail.lottery.example.net", "You won", urgent("promotion"))

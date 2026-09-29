@@ -39,8 +39,8 @@ type AgentAlertCandidate struct {
 	AlertSignal     string `json:"alertSignal"`
 	CandidateReason string `json:"candidateReason"`
 
-	// BurstKey is a burst's sender domain and its subject with the digits
-	// taken out; BurstCount how many messages it counted.
+	// BurstKey is a burst's sender address and its subject with the
+	// digits taken out; BurstCount how many messages it counted.
 	BurstKey   string `json:"burstKey,omitempty"`
 	BurstCount int    `json:"burstCount,omitempty"`
 

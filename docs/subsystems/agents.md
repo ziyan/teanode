@@ -170,10 +170,12 @@ says why it is built this way.
 
 Two things make a **candidate** (`internal/agent/alert_candidate.go`). The
 sorting says a message is worth telling now or today (`alert_signal` on the
-insight), or a count notices a **burst**: five or more messages in six
-hours from one domain whose subjects differ only in their digits, which no
-single message's sorting can see. Mailing lists, replies, Junk and Trash
-and anything older than a day never make one. Nothing is decided there.
+insight), or a count notices a **burst**: five or more messages received
+in six hours from one address whose subjects differ only in their digits,
+which no single message's sorting can see. Mailing lists, replies, Junk and
+Trash, subjects with fewer than three letters once the digits are out, old
+mail moved in, and anything older than a day never make one. Nothing is
+decided there.
 
 The **alert job** (`internal/agent/alert.go`) waits two minutes for
 candidates to gather, so that three messages about one incident are one

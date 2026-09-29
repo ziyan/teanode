@@ -3,6 +3,7 @@ package db
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm/clause"
@@ -28,12 +29,15 @@ type AlertOperation interface {
 	// mailbox with this key made since the moment given, or nil.
 	LatestAgentBurstCandidate(agentId, mailboxId, burstKey string, since time.Time) (*models.AgentAlertCandidate, error)
 
-	// ListMailSubjectsFromDomain is the subjects of the messages that
-	// arrived in a mailbox since the moment given from an address at the
-	// domain, leaving out Junk, Trash, Drafts and Sent: what a burst is
-	// counted over. One query over the mailbox's items by the time they
-	// were added, which is indexed.
-	ListMailSubjectsFromDomain(mailboxId, fromDomain string, since time.Time, limit int) ([]string, error)
+	// ListMailSubjectsFromSender is the subjects of the messages from an
+	// address that were received since the moment given and are in a
+	// mailbox, leaving out Junk, Trash, Drafts and Sent: what a burst is
+	// counted over. Old mail moved or copied in since is not counted: it
+	// was received before. One query over the mailbox's items by the time
+	// they were added, which is indexed (mailbox_item_list); an item is
+	// never added before its message was received, so bounding both by
+	// the same moment leaves nothing out.
+	ListMailSubjectsFromSender(mailboxId, senderAddress string, since time.Time, limit int) ([]string, error)
 
 	// LockWaitingAgentAlertCandidates takes these candidates for telling
 	// or dropping, holding them until the transaction ends, and returns
@@ -167,18 +171,19 @@ func (self *transaction) LatestAgentBurstCandidate(agentId, mailboxId, burstKey 
 	return found[0].toModel(), nil
 }
 
-func (self *transaction) ListMailSubjectsFromDomain(mailboxId, fromDomain string, since time.Time, limit int) ([]string, error) {
+func (self *transaction) ListMailSubjectsFromSender(mailboxId, senderAddress string, since time.Time, limit int) ([]string, error) {
 	if limit <= 0 {
 		limit = 500
 	}
+	senderAddress = strings.ToLower(strings.TrimSpace(senderAddress))
 	var subjects []string
 	err := self.tx.Raw(`SELECT "mail"."subject" FROM "mailbox_item"
 		JOIN "mailbox_folder" ON "mailbox_folder"."id" = "mailbox_item"."folder_id"
 		JOIN "mail" ON "mail"."id" = "mailbox_item"."mail_id"
 		WHERE "mailbox_folder"."mailbox_id" = ? AND "mailbox_folder"."kind" NOT IN ('junk', 'trash', 'drafts', 'sent')
-		  AND "mailbox_item"."deleted" = false AND "mailbox_item"."added_at" >= ?
-		  AND lower(split_part("mail"."from", '@', 2)) = ?
-		ORDER BY "mailbox_item"."added_at" DESC LIMIT ?`, mailboxId, since, fromDomain, limit).Scan(&subjects).Error
+		  AND "mailbox_item"."deleted" = false AND "mailbox_item"."added_at" >= ? AND "mail"."received_at" >= ?
+		  AND (lower("mail"."from") = ? OR lower("mail"."from") LIKE ?)
+		ORDER BY "mailbox_item"."added_at" DESC LIMIT ?`, mailboxId, since, since, senderAddress, "%<"+escapeLike(senderAddress)+">", limit).Scan(&subjects).Error
 	if subjects == nil {
 		subjects = []string{}
 	}

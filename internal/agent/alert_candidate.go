@@ -34,6 +34,12 @@ const (
 	// burstSubjectLimit bounds what one count reads.
 	burstSubjectLimit = 500
 
+	// burstSubjectLetters is how many letters a subject keeps once its
+	// digits are out for its messages to be counted as alike: a subject
+	// that was only a number, or a date, says nothing about what the
+	// messages are.
+	burstSubjectLetters = 3
+
 	// alertFreshness is how old a message may be and still make a
 	// candidate. A mailbox granted today has its older mail sorted too,
 	// and last month's notice is not news.
@@ -99,9 +105,22 @@ func isReplySubject(pattern string) bool {
 }
 
 // burstKeyOf is what a burst is known by within a mailbox: the sender's
-// domain and the subject's pattern.
-func burstKeyOf(fromDomain, subjectPattern string) string {
-	return fromDomain + "|" + subjectPattern
+// address and the subject's pattern. The address, not its domain: five
+// people at one company writing about the same lunch are a conversation,
+// and a service sends its codes from one address.
+func burstKeyOf(senderAddress, subjectPattern string) string {
+	return senderAddress + "|" + subjectPattern
+}
+
+// letterCount is how many letters a text has.
+func letterCount(text string) int {
+	count := 0
+	for _, character := range text {
+		if unicode.IsLetter(character) {
+			count++
+		}
+	}
+	return count
 }
 
 // isBurstGrown says a burst counted again has grown enough since the last
@@ -186,15 +205,16 @@ func (self *Agent) burstCandidate(tx db.Transaction, run *Run, mail *models.Mail
 	if mail.ListKey != "" {
 		return nil, nil
 	}
-	fromDomain := addressDomain(mail.From)
-	if fromDomain == "" {
-		fromDomain = addressDomain(mail.Sender)
+	from := mail.From
+	if from == "" {
+		from = mail.Sender
 	}
+	senderAddress := alertSenderAddress(from)
 	subjectPattern := AlertSubjectPattern(mail.Subject)
-	if fromDomain == "" || isReplySubject(subjectPattern) {
+	if !strings.Contains(senderAddress, "@") || isReplySubject(subjectPattern) || letterCount(subjectPattern) < burstSubjectLetters {
 		return nil, nil
 	}
-	subjects, err := tx.ListMailSubjectsFromDomain(run.Mailbox.ID, fromDomain, now.Add(-burstWindow), burstSubjectLimit)
+	subjects, err := tx.ListMailSubjectsFromSender(run.Mailbox.ID, senderAddress, now.Add(-burstWindow), burstSubjectLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +227,7 @@ func (self *Agent) burstCandidate(tx db.Transaction, run *Run, mail *models.Mail
 	if burstCount < burstThreshold {
 		return nil, nil
 	}
-	burstKey := burstKeyOf(fromDomain, subjectPattern)
+	burstKey := burstKeyOf(senderAddress, subjectPattern)
 	previous, err := tx.LatestAgentBurstCandidate(run.Agent.ID, run.Mailbox.ID, burstKey, now.Add(-burstWindow))
 	if err != nil {
 		return nil, err
@@ -217,7 +237,7 @@ func (self *Agent) burstCandidate(tx db.Transaction, run *Run, mail *models.Mail
 	}
 	return &models.AgentAlertCandidate{
 		AgentID: run.Agent.ID, MailboxID: run.Mailbox.ID, MailID: mail.ID, CandidateKind: models.AlertCandidateBurst,
-		CandidateReason: fmt.Sprintf("%d messages from %s alike in the last %d hours", burstCount, fromDomain, int(burstWindow.Hours())),
+		CandidateReason: fmt.Sprintf("%d messages from %s alike in the last %d hours", burstCount, senderAddress, int(burstWindow.Hours())),
 		BurstKey:        burstKey, BurstCount: burstCount,
 	}, nil
 }

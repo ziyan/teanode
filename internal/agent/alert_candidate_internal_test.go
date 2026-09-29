@@ -171,7 +171,7 @@ func TestBurstOfCodesMakesOneCandidate(t *testing.T) {
 	}
 	fixture.arrive(t, "no-reply@photos.example.com", "Your sign-in code is 998877", nil)
 	waiting := fixture.waiting(t)
-	if len(waiting) != 1 || waiting[0].CandidateKind != models.AlertCandidateBurst || waiting[0].BurstCount != 5 || waiting[0].BurstKey != "photos.example.com|your sign-in code is" {
+	if len(waiting) != 1 || waiting[0].CandidateKind != models.AlertCandidateBurst || waiting[0].BurstCount != 5 || waiting[0].BurstKey != "no-reply@photos.example.com|your sign-in code is" {
 		t.Fatalf("the fifth code makes one burst candidate: %+v", waiting)
 	}
 	fixture.arrive(t, "no-reply@photos.example.com", "Your sign-in code is 123123", nil)
@@ -238,5 +238,41 @@ func TestPressingCandidateBringsTheJobForward(t *testing.T) {
 	jobs = fixture.alertJobs(t)
 	if len(jobs) != 1 || jobs[0].NotBefore == nil || time.Until(*jobs[0].NotBefore) > 3*time.Minute {
 		t.Fatalf("what may not wait brings it forward: %+v", jobs)
+	}
+}
+
+// A burst is one sender's: five people at one company writing about the
+// same lunch are not one. A subject that is only a number is not counted,
+// and neither is old mail moved into the mailbox now, which was received
+// long before the window.
+func TestBurstIsOneSendersFreshMail(t *testing.T) {
+	fixture := newAlertFixture(t)
+	for _, name := range []string{"avery", "blake", "casey", "devon", "emery"} {
+		fixture.arrive(t, name+"@team.example.com", "Lunch on Friday", nil)
+	}
+	for index := 0; index < 5; index++ {
+		fixture.arrive(t, "alerts@numbers.example.net", fmt.Sprintf("#%06d", 400000+index*7919), nil)
+	}
+	if waiting := fixture.waiting(t); len(waiting) != 0 {
+		t.Fatalf("five people at one domain, and subjects that are only numbers, are not bursts: %+v", waiting)
+	}
+
+	// Four codes from last week, moved into the inbox today, and one
+	// fresh one: one message in the window, not five.
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		for index := 0; index < 4; index++ {
+			old, err := tx.CreateMail(&models.Mail{Subject: fmt.Sprintf("Your sign-in code is %06d", 500000+index*7919), From: "no-reply@photos.example.com",
+				Kind: models.MailKindIncoming, ReceivedAt: time.Now().Add(-7 * 24 * time.Hour)}, nil)
+			if err != nil {
+				t.Fatalf("CreateMail: %s", err)
+			}
+			if _, err := tx.AddItem(fixture.inbox.ID, old.ID, "", models.MailboxItemFlags{}); err != nil {
+				t.Fatalf("AddItem: %s", err)
+			}
+		}
+	})
+	fixture.arrive(t, "no-reply@photos.example.com", "Your sign-in code is 998877", nil)
+	if waiting := fixture.waiting(t); len(waiting) != 0 {
+		t.Fatalf("old mail moved in now is not counted: %+v", waiting)
 	}
 }
