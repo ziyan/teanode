@@ -102,6 +102,10 @@ type labeledCandidate struct {
 	label     string
 	candidate *models.AgentAlertCandidate
 	message   *MessageContext
+
+	// facts are who it is from and what it is about, as a mute reads them
+	// and as the alert that tells it records them.
+	facts *alertFacts
 }
 
 // AlertPrompt renders the decision's prompt. The mail, and everything the
@@ -251,7 +255,8 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 		if from == "" {
 			from = mail.Sender
 		}
-		if mutedBy(mutes, candidateFacts(candidate, from, categoriesByMail[mail.ID])) != nil {
+		facts := candidateFacts(candidate, from, categoriesByMail[mail.ID])
+		if mutedBy(mutes, facts) != nil {
 			mutedIds = append(mutedIds, candidate.ID)
 			continue
 		}
@@ -259,7 +264,7 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 		if err != nil {
 			return err
 		}
-		labeled = append(labeled, &labeledCandidate{label: fmt.Sprintf("c%d", len(labeled)+1), candidate: candidate, message: message})
+		labeled = append(labeled, &labeledCandidate{label: fmt.Sprintf("c%d", len(labeled)+1), candidate: candidate, message: message, facts: facts})
 	}
 	if len(gone) > 0 || len(mutedIds) > 0 {
 		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
@@ -435,6 +440,10 @@ type plannedAlert struct {
 	alertText  string
 	isUrgent   bool
 	candidates []*models.AgentAlertCandidate
+
+	// covered is what the candidates are about, recorded with the alert
+	// for a mute taken from it.
+	covered *coveredTerms
 }
 
 // droppedCandidate is a candidate not to be told, and why.
@@ -460,9 +469,9 @@ type alertPlan struct {
 // wait.
 func planAlerts(decision *AlertDecision, labeled []*labeledCandidate, recent []*models.AgentAlert, now time.Time, location *time.Location, bounds *alertBounds) *alertPlan {
 	plan := &alertPlan{}
-	byLabel := map[string]*models.AgentAlertCandidate{}
+	byLabel := map[string]*labeledCandidate{}
 	for _, entry := range labeled {
-		byLabel[entry.label] = entry.candidate
+		byLabel[entry.label] = entry
 	}
 	decided := map[string]bool{}
 	drop := func(candidates []*models.AgentAlertCandidate, dropReason string) {
@@ -489,13 +498,15 @@ func planAlerts(decision *AlertDecision, labeled []*labeledCandidate, recent []*
 	sort.SliceStable(alerts, func(left, right int) bool { return alerts[left].IsUrgent && !alerts[right].IsUrgent })
 	for _, decidedAlert := range alerts {
 		var covered []*models.AgentAlertCandidate
+		var coveredFacts []*alertFacts
 		for _, label := range decidedAlert.CandidateIDs {
-			candidate := byLabel[strings.TrimSpace(label)]
-			if candidate == nil || decided[candidate.ID] {
+			entry := byLabel[strings.TrimSpace(label)]
+			if entry == nil || decided[entry.candidate.ID] {
 				continue
 			}
-			decided[candidate.ID] = true
-			covered = append(covered, candidate)
+			decided[entry.candidate.ID] = true
+			covered = append(covered, entry.candidate)
+			coveredFacts = append(coveredFacts, entry.facts)
 		}
 		if len(covered) == 0 {
 			continue
@@ -505,6 +516,9 @@ func planAlerts(decision *AlertDecision, labeled []*labeledCandidate, recent []*
 			drop(covered, "the decision had nothing to say about it")
 			continue
 		}
+		// The candidates were matched against the mutes before the model
+		// was asked; the model's own key is matched as well, for a mute
+		// the person named by a subject in their words.
 		subjectKey := alertSubjectKey(decidedAlert.SubjectKey, covered[0])
 		if mutedBy(bounds.mutes, &alertFacts{subjectKeys: []string{subjectKey}}) != nil {
 			drop(covered, alertMutedReason)
@@ -528,13 +542,16 @@ func planAlerts(decision *AlertDecision, labeled []*labeledCandidate, recent []*
 		}
 		sentTodayCount++
 		lastSaid[subjectKey] = now
-		plan.sends = append(plan.sends, &plannedAlert{subjectKey: subjectKey, alertText: alertText, isUrgent: decidedAlert.IsUrgent, candidates: covered})
+		plan.sends = append(plan.sends, &plannedAlert{
+			subjectKey: subjectKey, alertText: alertText, isUrgent: decidedAlert.IsUrgent, candidates: covered, covered: coveredTermsOf(coveredFacts),
+		})
 	}
 	for _, dropped := range decision.Dropped {
-		candidate := byLabel[strings.TrimSpace(dropped.CandidateID)]
-		if candidate == nil || decided[candidate.ID] {
+		entry := byLabel[strings.TrimSpace(dropped.CandidateID)]
+		if entry == nil || decided[entry.candidate.ID] {
 			continue
 		}
+		candidate := entry.candidate
 		decided[candidate.ID] = true
 		dropReason := strings.TrimSpace(dropped.DropReason)
 		if dropReason == "" {
@@ -653,9 +670,15 @@ func (self *Agent) deliverAlert(ctx context.Context, run *Run, conversationId st
 			if err != nil {
 				return err
 			}
+			covered := planned.covered
+			if covered == nil {
+				covered = &coveredTerms{}
+			}
 			if alert, err = tx.CreateAgentAlert(&models.AgentAlert{
 				AgentID: run.Agent.ID, SubjectKey: planned.subjectKey, AlertText: planned.alertText, IsUrgent: planned.isUrgent,
 				CandidateIDs: candidateIds, ConversationID: conversation.ID, MessageID: said.ID, SentAt: now,
+				CoveredBurstKeys: covered.burstKeys, CoveredSenderAddresses: covered.senderAddresses,
+				CoveredSenderDomains: covered.senderDomains, CoveredMailCategories: covered.mailCategories,
 			}); err != nil {
 				return err
 			}

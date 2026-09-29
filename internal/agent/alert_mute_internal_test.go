@@ -196,7 +196,8 @@ func TestAlertSwitchesAreTheGate(t *testing.T) {
 	}
 }
 
-// A mute from an alert takes its target from what the alert was about.
+// A mute from an alert takes its target from what the alert was about;
+// an alert recorded without its terms has them read from its candidates.
 func TestMuteFromAnAlertTakesItsTarget(t *testing.T) {
 	fixture := newAlertFixture(t)
 	mail := fixture.arrive(t, "Security <security@bank.example.com>", "New device added", &models.MailInsight{Category: "notification", AlertSignal: models.AlertSignalNow})
@@ -215,7 +216,7 @@ func TestMuteFromAnAlertTakesItsTarget(t *testing.T) {
 		}
 	})
 	for muteScope, want := range map[models.AlertMuteScope]string{
-		"":                         "bank new device",
+		"":                         "security@bank.example.com",
 		models.AlertMuteSender:     "security@bank.example.com",
 		models.AlertMuteDomain:     "bank.example.com",
 		models.AlertMuteKind:       "notification",
@@ -242,4 +243,95 @@ func TestMuteFromAnAlertTakesItsTarget(t *testing.T) {
 			t.Fatal("a domain that is not one is refused")
 		}
 	})
+}
+
+// Muting an alert mutes what it was about, not the words the model chose
+// for it: the burst of an alert about one, the sender of an alert about a
+// message. The next burst of the same codes, and the next message from
+// the same sender, are dropped as muted before any model is asked,
+// whatever subject key the model would have given them.
+func TestMuteFromAnAlertHoldsWhateverTheModelCallsTheNext(t *testing.T) {
+	provider := &alertModel{answers: []string{
+		`{"alerts":[{"subject_key":"Photo App sign-in codes","is_urgent":false,"candidate_ids":["c1"],"alert_text":"Someone has been asking for sign-in codes to your photo app."}],"dropped":[]}`,
+		`{"alerts":[{"subject_key":"a new device at the bank","is_urgent":false,"candidate_ids":["c1"],"alert_text":"A new device was added to your bank account."}],"dropped":[]}`,
+	}}
+	server := provider.serve(t)
+	fixture := newAlertFixtureWith(t, server.URL, zoneAtHour(t, 12))
+	muteLatest := func() *models.AgentAlertMute {
+		t.Helper()
+		var mute *models.AgentAlertMute
+		dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+			alerts, err := tx.ListRecentAgentAlerts(fixture.agent.ID, 1)
+			if err != nil || len(alerts) != 1 {
+				t.Fatalf("ListRecentAgentAlerts: %d %v", len(alerts), err)
+			}
+			if mute, err = MuteAlert(tx, fixture.agent, alerts[0].ID, "", ""); err != nil {
+				t.Fatalf("MuteAlert: %s", err)
+			}
+		})
+		return mute
+	}
+
+	fixture.candidate(t, models.AlertCandidateBurst, models.AlertSignalNone, "no-reply@photos.example.com", "Your sign-in code is 123456", "Your code is 123456.")
+	fixture.decide(t)
+	if alerts := fixture.alerts(t); len(alerts) != 1 || len(alerts[0].CoveredBurstKeys) != 1 || alerts[0].CoveredSenderAddresses[0] != "no-reply@photos.example.com" {
+		t.Fatalf("the alert records what it covered: %+v", alerts)
+	}
+	if mute := muteLatest(); mute.MuteScope != models.AlertMuteSubjectKey || mute.MuteTarget != "no-reply@photos.example.com|your sign-in code is" {
+		t.Fatalf("an alert about a burst mutes the burst: %+v", mute)
+	}
+	for index := 0; index < 5; index++ {
+		fixture.arrive(t, "no-reply@photos.example.com", fmt.Sprintf("Your sign-in code is %06d", 600000+index*7919), nil)
+	}
+	if waiting := fixture.waiting(t); len(waiting) != 0 {
+		t.Fatalf("the same codes again are muted: %+v", waiting)
+	}
+
+	fixture.candidate(t, models.AlertCandidateMessage, models.AlertSignalNow, "Security <security@bank.example.com>", "New device added", "A new device was added.")
+	fixture.decide(t)
+	if mute := muteLatest(); mute.MuteScope != models.AlertMuteSender || mute.MuteTarget != "security@bank.example.com" {
+		t.Fatalf("an alert about a message mutes its sender: %+v", mute)
+	}
+	calls := provider.callCount()
+	fixture.arrive(t, "security@bank.example.com", "Your statement is ready", &models.MailInsight{Category: "notification", AlertSignal: models.AlertSignalNow})
+	if waiting := fixture.waiting(t); len(waiting) != 0 {
+		t.Fatalf("the next message from the sender is muted: %+v", waiting)
+	}
+	// Made before the mute, as by a sorting that ran meanwhile: the job
+	// drops it without asking the model.
+	late := fixture.candidate(t, models.AlertCandidateMessage, models.AlertSignalNow, "security@bank.example.com", "Password changed", "Your password was changed.")
+	fixture.decide(t)
+	if provider.callCount() != calls {
+		t.Fatalf("no model is asked about what is muted: %d calls", provider.callCount()-calls)
+	}
+	if dropped := fixture.candidateByID(t, late.ID); dropped.DropReason != alertMutedReason {
+		t.Fatalf("dropped as muted: %+v", dropped)
+	}
+}
+
+// A target named without a scope is read: an address, a domain, else a
+// subject; a burst key, which has an address in it, is a subject.
+func TestMuteScopeIsReadFromTheTarget(t *testing.T) {
+	for target, want := range map[string]models.AlertMuteScope{
+		"offers@shop.example.com":                  models.AlertMuteSender,
+		"Offers <offers@shop.example.com>":         models.AlertMuteSubjectKey,
+		"@shop.example.com":                        models.AlertMuteDomain,
+		"shop.example.com":                         models.AlertMuteDomain,
+		"school trip":                              models.AlertMuteSubjectKey,
+		"notification":                             models.AlertMuteSubjectKey,
+		"no-reply@photos.example.com|your code is": models.AlertMuteSubjectKey,
+	} {
+		if got := inferAlertMuteScope(target); got != want {
+			t.Fatalf("%q reads as %s, not %s", target, got, want)
+		}
+	}
+	fixture := newAlertFixture(t)
+	for target, want := range map[string]string{"Offers@Shop.example.com": "sender", "shop.example.net": "domain", "School Trip": "subjectKey"} {
+		dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+			mute, err := MuteAlert(tx, fixture.agent, "", "", target)
+			if err != nil || string(mute.MuteScope) != want {
+				t.Fatalf("%q: %+v %v", target, mute, err)
+			}
+		})
+	}
 }

@@ -208,7 +208,13 @@ a kind: `burst`, or a category of the sorting such as `notification`. The
 candidate step and the alert job both read the mutes, and what matches is
 dropped with the reason `muted`. A mute is a row rather than a memory the
 model is shown, so it holds however the next message is worded, and it can
-be listed and taken back. The same operations serve every door: the
+be listed and taken back. Every alert records what it covered in terms the
+model's wording does not change (the burst keys, the senders' addresses and
+domains, the sorting's categories), and muting an alert names those: the
+burst of an alert about one, the sender of an alert about a message, not
+the subject key the model chose, which the next alert may word
+differently. A target named without a scope is read as an address, a
+domain, or else a subject. The same operations serve every door: the
 Overview tab's Alerts card and the switches beside speaking first, the
 Mail tab's switch per mailbox, `teanode agent alert` and `agent settings
 set`, and `agent_profile`'s `no_alerts`, `alerts_on`, `mute_alert` and

@@ -53,7 +53,8 @@ type AlertOperation interface {
 	// worth telling, and why.
 	DropAgentAlertCandidates(candidateIds []string, dropReason string, at time.Time) error
 
-	// CreateAgentAlert records what the person was told.
+	// CreateAgentAlert records what the person was told, under the id it
+	// carries when it has one.
 	CreateAgentAlert(alert *models.AgentAlert) (*models.AgentAlert, error)
 
 	// ListAgentAlertsSince is what the person was told since the moment
@@ -239,6 +240,11 @@ type agentAlertModel struct {
 	ConversationID string    `gorm:"column:conversation_id"`
 	MessageID      string    `gorm:"column:message_id"`
 	SentAt         time.Time `gorm:"column:sent_at"`
+
+	CoveredBurstKeys       []byte `gorm:"column:covered_burst_keys;type:jsonb"`
+	CoveredSenderAddresses []byte `gorm:"column:covered_sender_addresses;type:jsonb"`
+	CoveredSenderDomains   []byte `gorm:"column:covered_sender_domains;type:jsonb"`
+	CoveredMailCategories  []byte `gorm:"column:covered_mail_categories;type:jsonb"`
 }
 
 func (agentAlertModel) TableName() string { return "agent_alert" }
@@ -251,28 +257,63 @@ func (self *agentAlertModel) toModel() (*models.AgentAlert, error) {
 	if err := decodeJSON(self.CandidateIDs, &alert.CandidateIDs); err != nil {
 		return nil, fmt.Errorf("db: cannot read the candidates of alert %q: %w", self.ID, err)
 	}
+	for _, covered := range []struct {
+		encoded []byte
+		decoded *[]string
+	}{
+		{self.CoveredBurstKeys, &alert.CoveredBurstKeys},
+		{self.CoveredSenderAddresses, &alert.CoveredSenderAddresses},
+		{self.CoveredSenderDomains, &alert.CoveredSenderDomains},
+		{self.CoveredMailCategories, &alert.CoveredMailCategories},
+	} {
+		*covered.decoded = []string{}
+		if err := decodeJSON(covered.encoded, covered.decoded); err != nil {
+			return nil, fmt.Errorf("db: cannot read what alert %q covered: %w", self.ID, err)
+		}
+	}
 	return alert, nil
+}
+
+// encodeStrings is a list as the JSON a jsonb column keeps, an empty one
+// for none.
+func encodeStrings(values []string) ([]byte, error) {
+	if values == nil {
+		values = []string{}
+	}
+	return json.Marshal(values)
 }
 
 func (self *transaction) CreateAgentAlert(alert *models.AgentAlert) (*models.AgentAlert, error) {
 	if alert.AgentID == "" {
 		return nil, fmt.Errorf("db: an alert needs an agent")
 	}
-	candidateIds := alert.CandidateIDs
-	if candidateIds == nil {
-		candidateIds = []string{}
-	}
-	encoded, err := json.Marshal(candidateIds)
-	if err != nil {
-		return nil, err
-	}
 	sentAt := alert.SentAt
 	if sentAt.IsZero() {
 		sentAt = time.Now()
 	}
+	alertId := alert.ID
+	if alertId == "" {
+		alertId = newID()
+	}
 	model := &agentAlertModel{
-		ID: newID(), AgentID: alert.AgentID, SubjectKey: alert.SubjectKey, AlertText: alert.AlertText, IsUrgent: alert.IsUrgent,
-		CandidateIDs: encoded, ConversationID: alert.ConversationID, MessageID: alert.MessageID, SentAt: sentAt,
+		ID: alertId, AgentID: alert.AgentID, SubjectKey: alert.SubjectKey, AlertText: alert.AlertText, IsUrgent: alert.IsUrgent,
+		ConversationID: alert.ConversationID, MessageID: alert.MessageID, SentAt: sentAt,
+	}
+	for _, covered := range []struct {
+		decoded []string
+		encoded *[]byte
+	}{
+		{alert.CandidateIDs, &model.CandidateIDs},
+		{alert.CoveredBurstKeys, &model.CoveredBurstKeys},
+		{alert.CoveredSenderAddresses, &model.CoveredSenderAddresses},
+		{alert.CoveredSenderDomains, &model.CoveredSenderDomains},
+		{alert.CoveredMailCategories, &model.CoveredMailCategories},
+	} {
+		encoded, err := encodeStrings(covered.decoded)
+		if err != nil {
+			return nil, err
+		}
+		*covered.encoded = encoded
 	}
 	if err := self.tx.Create(model).Error; err != nil {
 		return nil, err

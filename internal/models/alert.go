@@ -78,6 +78,16 @@ type AgentAlert struct {
 	ConversationID string    `json:"conversationId"`
 	MessageID      string    `json:"messageId"`
 	SentAt         time.Time `json:"sentAt"`
+
+	// What the alert was about in terms the model's wording does not
+	// change, which a mute taken from it names: the burst keys of the
+	// bursts it covered, the addresses and domains of the senders, and
+	// what the sorting called the messages. Empty for an alert recorded
+	// before they were kept.
+	CoveredBurstKeys       []string `json:"coveredBurstKeys"`
+	CoveredSenderAddresses []string `json:"coveredSenderAddresses"`
+	CoveredSenderDomains   []string `json:"coveredSenderDomains"`
+	CoveredMailCategories  []string `json:"coveredMailCategories"`
 }
 
 // AlertMuteScope is what a mute is matched against.

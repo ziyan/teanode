@@ -89,8 +89,8 @@ func TestAgentProfileAlertActions(t *testing.T) {
 	}
 
 	operations, result := call(`{"action":"mute_alert"}`)
-	if len(operations.sent) != 2 || operations.sent[1].variables["alertId"] != "alert-latest" || operations.sent[1].variables["muteScope"] != "subjectKey" {
-		t.Fatalf("mute_alert mutes the latest alert by its subject: %+v", operations.sent)
+	if len(operations.sent) != 2 || operations.sent[1].variables["alertId"] != "alert-latest" || operations.sent[1].variables["muteScope"] != nil {
+		t.Fatalf("mute_alert mutes the latest alert by what it was about, the server's choice: %+v", operations.sent)
 	}
 	if !strings.Contains(result.Content, "photo app sign-in codes") {
 		t.Fatalf("and says what it muted: %q", result.Content)

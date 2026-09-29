@@ -86,8 +86,8 @@ func (self *graph) MuteAgentAlert(ctx context.Context, arguments MuteAgentAlertA
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(arguments.AlertID) == "" && (strings.TrimSpace(arguments.MuteScope) == "" || strings.TrimSpace(arguments.MuteTarget) == "") {
-		return nil, fmt.Errorf("%w: name an alert, or a scope and what to mute", api.ErrInvalidArguments)
+	if strings.TrimSpace(arguments.AlertID) == "" && strings.TrimSpace(arguments.MuteTarget) == "" {
+		return nil, fmt.Errorf("%w: name an alert, or what to mute", api.ErrInvalidArguments)
 	}
 	mute, err := agent.MuteAlert(self.writing(ctx), found, arguments.AlertID, models.AlertMuteScope(strings.TrimSpace(arguments.MuteScope)), arguments.MuteTarget)
 	if err != nil {

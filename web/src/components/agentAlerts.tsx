@@ -30,7 +30,10 @@ export type AgentAlert = {
   subjectKey: string
   isUrgent: boolean
   covered: AlertCovered[]
+  muteChoices: MuteChoice[]
 }
+
+export type MuteChoice = { muteScope: MuteScope; muteTarget: string }
 
 export type AlertMute = { id: string; muteScope: MuteScope; muteTarget: string; createdAt: string }
 
@@ -38,7 +41,8 @@ export type MuteScope = 'subjectKey' | 'sender' | 'domain' | 'kind'
 
 const ALERTS = `query {
   ListAgentAlerts(first: 20) { id alertText sentAt subjectKey isUrgent
-    covered { mailId subject fromAddress candidateKind mailCategory } }
+    covered { mailId subject fromAddress candidateKind mailCategory }
+    muteChoices { muteScope muteTarget } }
   ListAgentAlertMutes { id muteScope muteTarget createdAt }
 }`
 
@@ -48,23 +52,11 @@ const MUTE_ALERT = `mutation ($alertId: String, $muteScope: String) {
 
 const UNMUTE_ALERT = `mutation ($muteId: String!) { UnmuteAgentAlert(muteId: $muteId) }`
 
-// muteTargets is what each scope would mute for an alert, taken the way
-// the server takes it: the subject key, and the sender, its domain and
-// its kind from the first message the alert was about.
-export function muteTargets(alert: AgentAlert): { muteScope: MuteScope; muteTarget: string }[] {
-  const targets: { muteScope: MuteScope; muteTarget: string }[] = [
-    { muteScope: 'subjectKey', muteTarget: alert.subjectKey },
-  ]
-  const first = alert.covered[0]
-  if (!first) return targets
-  if (first.fromAddress) {
-    targets.push({ muteScope: 'sender', muteTarget: first.fromAddress })
-    const domain = first.fromAddress.split('@')[1]
-    if (domain) targets.push({ muteScope: 'domain', muteTarget: domain })
-  }
-  const kind = first.candidateKind === 'burst' ? 'burst' : first.mailCategory
-  if (kind) targets.push({ muteScope: 'kind', muteTarget: kind })
-  return targets
+// muteTargets is what each scope would mute for an alert, as the server
+// works it out from what the alert covered, the default first: the burst
+// for an alert about one, the sender for an alert about a message.
+export function muteTargets(alert: AgentAlert): MuteChoice[] {
+  return alert.muteChoices ?? []
 }
 
 export function AlertsCard() {
@@ -126,7 +118,7 @@ export function AlertsCard() {
                 disabled={busy}
                 aria-label={`${alert.subjectKey}: ${t('alerts.mute')}`}
                 onClick={() => {
-                  setMuteScope('subjectKey')
+                  setMuteScope(muteTargets(alert)[0]?.muteScope ?? 'subjectKey')
                   setMuting(alert)
                 }}
               >

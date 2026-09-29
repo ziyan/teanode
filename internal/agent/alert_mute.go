@@ -3,6 +3,8 @@ package agent
 import (
 	"fmt"
 	netmail "net/mail"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -52,9 +54,13 @@ func clockMinute(clock, fallback string) int {
 }
 
 // alertFacts are what a mute is matched against: who a candidate is from,
-// what it is about, and what kind of thing it is.
+// what it is about, and what kind of thing it is. All of them come from
+// the mail and the count, never from how a model worded anything, so a
+// mute of them holds for the next message alike.
 type alertFacts struct {
 	senderAddress string
+	burstKey      string
+	mailCategory  string
 	subjectKeys   []string
 	kinds         []string
 }
@@ -62,7 +68,7 @@ type alertFacts struct {
 // candidateFacts are the facts of a candidate about a message from the
 // address given, which the sorting filed under the category given.
 func candidateFacts(candidate *models.AgentAlertCandidate, from, category string) *alertFacts {
-	facts := &alertFacts{senderAddress: alertSenderAddress(from)}
+	facts := &alertFacts{senderAddress: alertSenderAddress(from), burstKey: candidate.BurstKey}
 	if candidate.BurstKey != "" {
 		facts.subjectKeys = append(facts.subjectKeys, candidate.BurstKey)
 	}
@@ -70,9 +76,73 @@ func candidateFacts(candidate *models.AgentAlertCandidate, from, category string
 		facts.kinds = append(facts.kinds, models.AlertKindBurst)
 	}
 	if category = strings.ToLower(strings.TrimSpace(category)); category != "" {
+		facts.mailCategory = category
 		facts.kinds = append(facts.kinds, category)
 	}
 	return facts
+}
+
+// coveredTerms is what an alert was about in the terms a mute names.
+type coveredTerms struct {
+	burstKeys       []string
+	senderAddresses []string
+	senderDomains   []string
+	mailCategories  []string
+}
+
+// coveredTermsOf gathers the facts of the candidates an alert covers,
+// each term once, in the order the candidates came.
+func coveredTermsOf(facts []*alertFacts) *coveredTerms {
+	terms := &coveredTerms{}
+	appendOnce := func(values []string, value string) []string {
+		if value == "" || slices.Contains(values, value) {
+			return values
+		}
+		return append(values, value)
+	}
+	for _, fact := range facts {
+		if fact == nil {
+			continue
+		}
+		terms.burstKeys = appendOnce(terms.burstKeys, fact.burstKey)
+		terms.senderAddresses = appendOnce(terms.senderAddresses, fact.senderAddress)
+		terms.senderDomains = appendOnce(terms.senderDomains, addressDomain(fact.senderAddress))
+		terms.mailCategories = appendOnce(terms.mailCategories, fact.mailCategory)
+	}
+	return terms
+}
+
+// alertCoveredTerms is what an alert was about: as recorded with it, or,
+// for one recorded before the terms were kept, read from its candidates
+// and their messages.
+func alertCoveredTerms(tx db.Transaction, alert *models.AgentAlert) (*coveredTerms, error) {
+	if len(alert.CoveredBurstKeys) > 0 || len(alert.CoveredSenderAddresses) > 0 {
+		return &coveredTerms{
+			burstKeys: alert.CoveredBurstKeys, senderAddresses: alert.CoveredSenderAddresses,
+			senderDomains: alert.CoveredSenderDomains, mailCategories: alert.CoveredMailCategories,
+		}, nil
+	}
+	candidates, err := tx.ListAgentAlertCandidatesByID(alert.AgentID, alert.CandidateIDs)
+	if err != nil {
+		return nil, err
+	}
+	covered, err := coveredByAlert(tx, alert)
+	if err != nil {
+		return nil, err
+	}
+	byMail := map[string]*AlertCovered{}
+	for _, entry := range covered {
+		byMail[entry.MailID] = entry
+	}
+	facts := make([]*alertFacts, 0, len(candidates))
+	for _, candidate := range candidates {
+		from, category := "", ""
+		if entry := byMail[candidate.MailID]; entry != nil {
+			from, category = entry.FromAddress, entry.MailCategory
+		}
+		facts = append(facts, candidateFacts(candidate, from, category))
+	}
+	return coveredTermsOf(facts), nil
 }
 
 // mutedBy is the first mute that matches the facts, or nil. A domain
@@ -183,6 +253,9 @@ type AlertView struct {
 	SubjectKey string          `json:"subjectKey"`
 	IsUrgent   bool            `json:"isUrgent"`
 	Covered    []*AlertCovered `json:"covered"`
+
+	// MuteChoices is what a Mute of the alert offers, the default first.
+	MuteChoices []*AlertMuteChoice `json:"muteChoices"`
 }
 
 // ListAlertViews is the agent's latest alerts, newest first, each with the
@@ -198,8 +271,13 @@ func ListAlertViews(tx db.Transaction, agentId string, limit int) ([]*AlertView,
 		if err != nil {
 			return nil, err
 		}
+		terms, err := alertCoveredTerms(tx, alert)
+		if err != nil {
+			return nil, err
+		}
 		views = append(views, &AlertView{
 			ID: alert.ID, AlertText: alert.AlertText, SentAt: alert.SentAt, SubjectKey: alert.SubjectKey, IsUrgent: alert.IsUrgent, Covered: covered,
+			MuteChoices: alertMuteChoices(alert, terms),
 		})
 	}
 	return views, nil
@@ -258,17 +336,106 @@ func coveredByAlert(tx db.Transaction, alert *models.AgentAlert) ([]*AlertCovere
 	return covered, nil
 }
 
+// AlertMuteChoice is one way to mute an alert: the scope, and what it
+// would mute, several joined by commas.
+type AlertMuteChoice struct {
+	MuteScope  models.AlertMuteScope `json:"muteScope"`
+	MuteTarget string                `json:"muteTarget"`
+}
+
+// alertMuteChoices is what each scope would mute for an alert, the default
+// first: the burst for an alert about a burst, the sender for one about a
+// message.
+func alertMuteChoices(alert *models.AgentAlert, terms *coveredTerms) []*AlertMuteChoice {
+	choices := []*AlertMuteChoice{}
+	add := func(muteScope models.AlertMuteScope, targets []string) {
+		if len(targets) > 0 {
+			choices = append(choices, &AlertMuteChoice{MuteScope: muteScope, MuteTarget: strings.Join(targets, ", ")})
+		}
+	}
+	defaultScope := defaultAlertMuteScope(terms)
+	add(defaultScope, muteTargetsOf(alert, terms, defaultScope))
+	for _, muteScope := range []models.AlertMuteScope{models.AlertMuteSubjectKey, models.AlertMuteSender, models.AlertMuteDomain, models.AlertMuteKind} {
+		if muteScope != defaultScope {
+			add(muteScope, muteTargetsOf(alert, terms, muteScope))
+		}
+	}
+	return choices
+}
+
+// defaultAlertMuteScope is what "don't tell me about these" mutes of an
+// alert when the person does not say: its bursts when it was about any,
+// else its senders. Never the model's subject key alone, which the next
+// alert about the same thing may word differently.
+func defaultAlertMuteScope(terms *coveredTerms) models.AlertMuteScope {
+	if len(terms.burstKeys) == 0 && len(terms.senderAddresses) > 0 {
+		return models.AlertMuteSender
+	}
+	return models.AlertMuteSubjectKey
+}
+
+// muteTargetsOf is what a scope mutes of an alert. The subject of an alert
+// about bursts is their burst keys, which the next candidate of the same
+// burst carries; of one about messages, the model's subject key.
+func muteTargetsOf(alert *models.AgentAlert, terms *coveredTerms, muteScope models.AlertMuteScope) []string {
+	switch muteScope {
+	case models.AlertMuteSubjectKey:
+		if len(terms.burstKeys) > 0 {
+			return terms.burstKeys
+		}
+		if alert.SubjectKey != "" {
+			return []string{alert.SubjectKey}
+		}
+	case models.AlertMuteSender:
+		return terms.senderAddresses
+	case models.AlertMuteDomain:
+		return terms.senderDomains
+	case models.AlertMuteKind:
+		if len(terms.burstKeys) > 0 {
+			return []string{models.AlertKindBurst}
+		}
+		return terms.mailCategories
+	}
+	return nil
+}
+
+// inferAlertMuteScope is the scope of a target named without one: an
+// address when it has an @, a domain when it reads as one, and otherwise
+// a subject key. A burst key has an address in it, and a space or a bar
+// too, which no address or domain has.
+func inferAlertMuteScope(muteTarget string) models.AlertMuteScope {
+	muteTarget = strings.TrimSpace(muteTarget)
+	switch {
+	case strings.ContainsAny(muteTarget, " \t|"):
+		return models.AlertMuteSubjectKey
+	case strings.Contains(muteTarget, "@"):
+		if strings.HasPrefix(muteTarget, "@") {
+			return models.AlertMuteDomain
+		}
+		return models.AlertMuteSender
+	case domainLike.MatchString(muteTarget):
+		return models.AlertMuteDomain
+	}
+	return models.AlertMuteSubjectKey
+}
+
+// domainLike is a name with a dot and a top-level name of letters.
+var domainLike = regexp.MustCompile(`(?i)^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$`)
+
 // MuteAlert keeps a mute for the agent. With an alert, the target may be
-// left out and is taken from it: its subject key, or the sender, the
-// sender's domain or the kind of the first message it covered; the scope
-// left out is the subject key. Without one, the scope and the target are
-// the person's own.
+// left out and is taken from what the alert covered: by default its
+// bursts, or its senders when it was about messages; or the scope asked
+// for. Every target of that scope is muted, and the first mute returned.
+// Without an alert, the target is the person's own, and its scope, when
+// they leave it out, is read from it.
 func MuteAlert(tx db.Transaction, agent *models.Agent, alertId string, muteScope models.AlertMuteScope, muteTarget string) (*models.AgentAlertMute, error) {
 	alertId = strings.TrimSpace(alertId)
-	if muteScope == "" && alertId != "" {
-		muteScope = models.AlertMuteSubjectKey
+	muteTarget = strings.TrimSpace(muteTarget)
+	if muteScope == "" && muteTarget != "" {
+		muteScope = inferAlertMuteScope(muteTarget)
 	}
-	if alertId != "" && strings.TrimSpace(muteTarget) == "" {
+	targets := []string{muteTarget}
+	if alertId != "" && muteTarget == "" {
 		alert, err := tx.GetAgentAlert(agent.ID, alertId)
 		if err != nil {
 			return nil, err
@@ -276,43 +443,33 @@ func MuteAlert(tx db.Transaction, agent *models.Agent, alertId string, muteScope
 		if alert == nil {
 			return nil, fmt.Errorf("there is no alert %q", alertId)
 		}
-		if muteTarget, err = muteTargetOf(tx, alert, muteScope); err != nil {
+		terms, err := alertCoveredTerms(tx, alert)
+		if err != nil {
 			return nil, err
 		}
-	}
-	normalized, err := NormalizeAlertMute(muteScope, muteTarget)
-	if err != nil {
-		return nil, err
-	}
-	return tx.CreateAgentAlertMute(&models.AgentAlertMute{AgentID: agent.ID, MuteScope: muteScope, MuteTarget: normalized, AlertID: alertId})
-}
-
-// muteTargetOf is what an alert says for a scope.
-func muteTargetOf(tx db.Transaction, alert *models.AgentAlert, muteScope models.AlertMuteScope) (string, error) {
-	if muteScope == models.AlertMuteSubjectKey {
-		return alert.SubjectKey, nil
-	}
-	covered, err := coveredByAlert(tx, alert)
-	if err != nil {
-		return "", err
-	}
-	if len(covered) == 0 {
-		return "", fmt.Errorf("the messages the alert was about are gone; mute it by its subject key instead")
-	}
-	first := covered[0]
-	switch muteScope {
-	case models.AlertMuteSender:
-		return first.FromAddress, nil
-	case models.AlertMuteDomain:
-		return addressDomain(first.FromAddress), nil
-	case models.AlertMuteKind:
-		if first.CandidateKind == string(models.AlertCandidateBurst) {
-			return models.AlertKindBurst, nil
+		if muteScope == "" {
+			muteScope = defaultAlertMuteScope(terms)
 		}
-		if first.MailCategory == "" {
-			return "", fmt.Errorf("the message the alert was about has no category; mute its sender instead")
+		if !muteScope.IsValid() {
+			return nil, fmt.Errorf("%q is not sender, domain, subjectKey or kind", muteScope)
 		}
-		return first.MailCategory, nil
+		if targets = muteTargetsOf(alert, terms, muteScope); len(targets) == 0 {
+			return nil, fmt.Errorf("the alert says nothing to mute by %s; the messages it was about may be gone, so mute it by another scope", muteScope)
+		}
 	}
-	return "", fmt.Errorf("%q is not sender, domain, subjectKey or kind", muteScope)
+	var first *models.AgentAlertMute
+	for _, target := range targets {
+		normalized, err := NormalizeAlertMute(muteScope, target)
+		if err != nil {
+			return nil, err
+		}
+		mute, err := tx.CreateAgentAlertMute(&models.AgentAlertMute{AgentID: agent.ID, MuteScope: muteScope, MuteTarget: normalized, AlertID: alertId})
+		if err != nil {
+			return nil, err
+		}
+		if first == nil {
+			first = mute
+		}
+	}
+	return first, nil
 }

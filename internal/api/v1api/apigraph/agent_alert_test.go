@@ -78,8 +78,9 @@ func TestAlertSettingsRoundTrip(t *testing.T) {
 	}
 }
 
-// Muted from an alert, by a scope the person names, listed, and taken
-// back; an alert listed with what it covered.
+// Muted from an alert, by default and by a scope the person names, or by
+// a target alone, listed, and taken back; an alert listed with what it
+// covered and what a Mute of it offers.
 func TestAlertMutesThroughTheAPI(t *testing.T) {
 	database, resolver, principal, created := alertAPIFixture(t)
 	var alert *models.AgentAlert
@@ -92,7 +93,7 @@ func TestAlertMutesThroughTheAPI(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateMail: %s", err)
 		}
-		candidate, err := tx.CreateAgentAlertCandidate(&models.AgentAlertCandidate{AgentID: created.ID, MailboxID: mailbox.ID, MailID: mail.ID, CandidateKind: models.AlertCandidateBurst, BurstKey: "photos.example.com|your sign-in code is", BurstCount: 6})
+		candidate, err := tx.CreateAgentAlertCandidate(&models.AgentAlertCandidate{AgentID: created.ID, MailboxID: mailbox.ID, MailID: mail.ID, CandidateKind: models.AlertCandidateBurst, BurstKey: "no-reply@photos.example.com|your sign-in code is", BurstCount: 6})
 		if err != nil {
 			t.Fatalf("CreateAgentAlertCandidate: %s", err)
 		}
@@ -106,9 +107,12 @@ func TestAlertMutesThroughTheAPI(t *testing.T) {
 		if err != nil || len(alerts) != 1 || alerts[0].ID != alert.ID || len(alerts[0].Covered) != 1 || alerts[0].Covered[0].CandidateKind != "burst" {
 			t.Fatalf("ListAgentAlerts: %+v %v", alerts, err)
 		}
+		if choices := alerts[0].MuteChoices; len(choices) == 0 || choices[0].MuteScope != models.AlertMuteSubjectKey || choices[0].MuteTarget != "no-reply@photos.example.com|your sign-in code is" {
+			t.Fatalf("a Mute offers the burst first: %+v", choices)
+		}
 		bySubject, err := resolver.MuteAgentAlert(ctx, MuteAgentAlertArguments{AlertID: alert.ID})
-		if err != nil || bySubject.MuteScope != models.AlertMuteSubjectKey || bySubject.MuteTarget != "photo app sign-in codes" {
-			t.Fatalf("muted by its subject key: %+v %v", bySubject, err)
+		if err != nil || bySubject.MuteScope != models.AlertMuteSubjectKey || bySubject.MuteTarget != "no-reply@photos.example.com|your sign-in code is" {
+			t.Fatalf("muted by its burst, not the model's words: %+v %v", bySubject, err)
 		}
 		if byKind, err := resolver.MuteAgentAlert(ctx, MuteAgentAlertArguments{AlertID: alert.ID, MuteScope: "kind"}); err != nil || byKind.MuteTarget != "burst" {
 			t.Fatalf("muted by its kind: %+v %v", byKind, err)
@@ -116,13 +120,16 @@ func TestAlertMutesThroughTheAPI(t *testing.T) {
 		if bySender, err := resolver.MuteAgentAlert(ctx, MuteAgentAlertArguments{MuteScope: "sender", MuteTarget: "Offers@Shop.example.com"}); err != nil || bySender.MuteTarget != "offers@shop.example.com" {
 			t.Fatalf("muted by a sender named: %+v %v", bySender, err)
 		}
+		if byTarget, err := resolver.MuteAgentAlert(ctx, MuteAgentAlertArguments{MuteTarget: "lottery.example.net"}); err != nil || byTarget.MuteScope != models.AlertMuteDomain {
+			t.Fatalf("a target named alone has its scope read from it: %+v %v", byTarget, err)
+		}
 		for _, refused := range []MuteAgentAlertArguments{{}, {MuteScope: "sender"}, {MuteScope: "color", MuteTarget: "blue"}, {AlertID: "no-such-alert"}} {
 			if _, err := resolver.MuteAgentAlert(ctx, refused); err == nil {
 				t.Fatalf("refused: %+v", refused)
 			}
 		}
 		mutes, err := resolver.ListAgentAlertMutes(ctx)
-		if err != nil || len(mutes) != 3 {
+		if err != nil || len(mutes) != 4 {
 			t.Fatalf("ListAgentAlertMutes: %+v %v", mutes, err)
 		}
 		if isUnmuted, err := resolver.UnmuteAgentAlert(ctx, UnmuteAgentAlertArguments{MuteID: bySubject.ID}); err != nil || !isUnmuted {
@@ -131,8 +138,8 @@ func TestAlertMutesThroughTheAPI(t *testing.T) {
 		if _, err := resolver.UnmuteAgentAlert(ctx, UnmuteAgentAlertArguments{MuteID: bySubject.ID}); err == nil {
 			t.Fatal("a mute taken back is gone")
 		}
-		if mutes, _ := resolver.ListAgentAlertMutes(ctx); len(mutes) != 2 {
-			t.Fatalf("two left: %+v", mutes)
+		if mutes, _ := resolver.ListAgentAlertMutes(ctx); len(mutes) != 3 {
+			t.Fatalf("three left: %+v", mutes)
 		}
 	})
 }

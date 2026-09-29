@@ -16,6 +16,15 @@ type AgentAlert struct {
 	SubjectKey string               `json:"subjectKey"`
 	IsUrgent   bool                 `json:"isUrgent"`
 	Covered    []*AgentAlertCovered `json:"covered"`
+
+	// MuteChoices is what a mute of the alert offers, the default first.
+	MuteChoices []*AgentAlertMuteChoice `json:"muteChoices"`
+}
+
+// AgentAlertMuteChoice is one way to mute an alert, and what it mutes.
+type AgentAlertMuteChoice struct {
+	MuteScope  string `json:"muteScope"`
+	MuteTarget string `json:"muteTarget"`
 }
 
 // AgentAlertCovered is one message an alert was about.
@@ -41,7 +50,8 @@ const agentAlertMuteFields = `{ id muteScope muteTarget alertId createdAt }`
 const (
 	DocumentListAgentAlerts = `query ($first: Int) {
   ListAgentAlerts(first: $first) { id alertText sentAt subjectKey isUrgent
-    covered { mailId subject fromAddress candidateKind mailCategory } }
+    covered { mailId subject fromAddress candidateKind mailCategory }
+    muteChoices { muteScope muteTarget } }
 }`
 
 	DocumentListAgentAlertMutes = `query { ListAgentAlertMutes ` + agentAlertMuteFields + ` }`
