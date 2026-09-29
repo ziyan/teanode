@@ -12,7 +12,7 @@ import {
   formatTime,
 } from '../components/common'
 import { Column, DataTable, Range } from '../components/dataTable'
-import { RUN_KINDS } from '../agentRuns'
+import { RUN_KINDS, runKindLabel } from '../agentRuns'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { BudgetBar } from '../components/budgetBar'
 import {
@@ -1549,7 +1549,7 @@ function ReachCard() {
           <SettingsRow
             key={key}
             title={reach.name}
-            badge={<Tag value={reach.kind} />}
+            badge={<Tag value={t(reach.kind === 'skill' ? 'agent.reachKind.skill' : 'agent.reachKind.server')} />}
             // A server that runs on a computer, with several attached and
             // none chosen, has nowhere to run: its calls say so, and so does
             // its row, which is where the choice is made.
@@ -3337,9 +3337,9 @@ function ActivityCard({ job, onAll }: { job: { id: string; when: string } | null
       header: t('agent.runKind'),
       width: '8rem',
       filter: 'select',
-      options: RUN_KINDS.map((kind) => ({ value: kind, label: kind })),
+      options: RUN_KINDS.map((kind) => ({ value: kind, label: runKindLabel(t, kind) })),
       value: (run) => run.jobKind,
-      render: (run) => <Tag value={run.jobKind} />,
+      render: (run) => <Tag value={runKindLabel(t, run.jobKind)} />,
     },
     { key: 'title', header: t('agent.runWhat'), filter: 'text', truncate: true, value: (run) => run.title },
     {

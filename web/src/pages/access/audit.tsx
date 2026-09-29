@@ -158,7 +158,7 @@ export function AuditTab() {
           }
           badge={
             <Tag
-              value={event.action}
+              value={t(`access.audit.badge.${event.action}`)}
               tone={event.action === 'delete' ? 'bad' : event.action === 'create' ? 'good' : undefined}
             />
           }
