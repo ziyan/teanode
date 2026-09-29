@@ -182,7 +182,8 @@ func TestAlertJobTellsTheBurstAndDropsTheNewsletter(t *testing.T) {
 	fixture.decide(t)
 
 	// The drawer hears it as a turn on the alert surface, which it opens
-	// for: begun, answered and done.
+	// for: begun, answered and done. The line it is written under names
+	// it, for the model to mute that one when the person answers it.
 	var heard []Event
 	for len(heard) < 3 {
 		select {
@@ -206,7 +207,7 @@ func TestAlertJobTellsTheBurstAndDropsTheNewsletter(t *testing.T) {
 		t.Fatalf("said in the agent's words, without the link: %q", alerts[0].AlertText)
 	}
 	messages := fixture.mainMessages(t)
-	if len(messages) != 2 || messages[0].Role != "user" || !strings.HasPrefix(messages[0].Content, models.AlertMarker) || messages[1].Role != "assistant" || messages[1].ID != alerts[0].MessageID || messages[1].Content != alerts[0].AlertText {
+	if len(messages) != 2 || messages[0].Role != "user" || !strings.HasPrefix(messages[0].Content, models.AlertMarker) || !strings.Contains(messages[0].Content, "alert_id "+alerts[0].ID) || messages[1].Role != "assistant" || messages[1].ID != alerts[0].MessageID || messages[1].Content != alerts[0].AlertText {
 		t.Fatalf("the main conversation carries the alert under its marker: %+v", messages)
 	}
 	if told := fixture.candidateByID(t, burst.ID); told.AlertID != alerts[0].ID {

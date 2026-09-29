@@ -95,6 +95,14 @@ func TestAgentProfileAlertActions(t *testing.T) {
 	if !strings.Contains(result.Content, "photo app sign-in codes") {
 		t.Fatalf("and says what it muted: %q", result.Content)
 	}
+	operations, _ = call(`{"action":"mute_alert","alert_id":"alert-earlier"}`)
+	if len(operations.sent) != 1 || operations.sent[0].variables["alertId"] != "alert-earlier" {
+		t.Fatalf("mute_alert mutes the alert the person answered, by its id: %+v", operations.sent)
+	}
+	operations, _ = call(`{"action":"mute_alert","mute_target":"offers@shop.example.com"}`)
+	if len(operations.sent) != 1 || operations.sent[0].variables["muteScope"] != nil || operations.sent[0].variables["muteTarget"] != "offers@shop.example.com" {
+		t.Fatalf("a target without a scope leaves the scope to be read from it: %+v", operations.sent)
+	}
 	operations, _ = call(`{"action":"mute_alert","mute_scope":"sender","mute_target":"offers@shop.example.com"}`)
 	if len(operations.sent) != 1 || operations.sent[0].variables["muteTarget"] != "offers@shop.example.com" || operations.sent[0].variables["alertId"] != nil {
 		t.Fatalf("a target named is muted as named: %+v", operations.sent)

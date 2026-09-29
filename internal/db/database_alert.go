@@ -51,7 +51,7 @@ type AlertOperation interface {
 
 	// DropAgentAlertCandidates records that these candidates were not
 	// worth telling, and why.
-	DropAgentAlertCandidates(candidateIds []string, dropReason string, at time.Time) error
+	DropAgentAlertCandidates(candidateIds []string, dropReason string, droppedAt time.Time) error
 
 	// CreateAgentAlert records what the person was told, under the id it
 	// carries when it has one.
@@ -221,13 +221,13 @@ func (self *transaction) MarkAgentAlertCandidatesAlerted(candidateIds []string, 
 	return self.tx.Model(&agentAlertCandidateModel{}).Where("\"id\" IN ?", candidateIds).Update("alert_id", alertId).Error
 }
 
-func (self *transaction) DropAgentAlertCandidates(candidateIds []string, dropReason string, at time.Time) error {
+func (self *transaction) DropAgentAlertCandidates(candidateIds []string, dropReason string, droppedAt time.Time) error {
 	if len(candidateIds) == 0 {
 		return nil
 	}
 	return self.tx.Model(&agentAlertCandidateModel{}).
 		Where("\"id\" IN ? AND \"alert_id\" = '' AND \"dropped_at\" IS NULL", candidateIds).
-		Updates(map[string]any{"dropped_at": at, "drop_reason": dropReason}).Error
+		Updates(map[string]any{"dropped_at": droppedAt, "drop_reason": dropReason}).Error
 }
 
 type agentAlertModel struct {

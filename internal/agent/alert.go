@@ -14,6 +14,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/security"
 )
 
 // The alert job: the waiting candidates (alert_candidate.go), gathered for
@@ -628,9 +629,10 @@ func alertSubjectKey(subjectKey string, candidate *models.AgentAlertCandidate) s
 
 // alertCheckIn is the line an alert is written under in the conversation:
 // the marker, and what the agent is told when it reads the conversation
-// back, so that an answer to it is understood as one.
-func alertCheckIn(owner *models.User) string {
-	return models.AlertMarker + " Nobody asked for this: " + personName(owner) + "'s mail showed something they should know, and you told them, unasked. What you said follows. If they answer, it is about this; if they say they do not want to hear about things like it, mute it with agent_profile's mute_alert, and if they want no alerts at all, no_alerts."
+// back, so that an answer to it is understood as one. The alert's id is in
+// it, so that "not these" said about an earlier alert mutes that one.
+func alertCheckIn(owner *models.User, alertId string) string {
+	return models.AlertMarker + " Nobody asked for this: " + personName(owner) + "'s mail showed something they should know, and you told them, unasked (alert " + alertId + "). What you said follows. If they answer, it is about this; if they say they do not want to hear about things like it, mute it with agent_profile's mute_alert and alert_id " + alertId + ", and if they want no alerts at all, no_alerts."
 }
 
 // deliverAlert says one alert in the main conversation and records it, in
@@ -643,7 +645,8 @@ func alertCheckIn(owner *models.User) string {
 // commit; errTurnRunning when one is running.
 func (self *Agent) deliverAlert(ctx context.Context, run *Run, conversationId string, planned *plannedAlert, now time.Time) error {
 	var alert *models.AgentAlert
-	var checkIn string
+	alertId := security.NewULID()
+	checkIn := alertCheckIn(run.Owner, alertId)
 	isWritten, err := self.whileNoTurnRuns(conversationId, func() error {
 		return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 			candidateIds := make([]string, 0, len(planned.candidates))
@@ -662,7 +665,6 @@ func (self *Agent) deliverAlert(ctx context.Context, run *Run, conversationId st
 			if err != nil {
 				return err
 			}
-			checkIn = alertCheckIn(run.Owner)
 			if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: "user", Content: checkIn}); err != nil {
 				return err
 			}
@@ -675,7 +677,7 @@ func (self *Agent) deliverAlert(ctx context.Context, run *Run, conversationId st
 				covered = &coveredTerms{}
 			}
 			if alert, err = tx.CreateAgentAlert(&models.AgentAlert{
-				AgentID: run.Agent.ID, SubjectKey: planned.subjectKey, AlertText: planned.alertText, IsUrgent: planned.isUrgent,
+				ID: alertId, AgentID: run.Agent.ID, SubjectKey: planned.subjectKey, AlertText: planned.alertText, IsUrgent: planned.isUrgent,
 				CandidateIDs: candidateIds, ConversationID: conversation.ID, MessageID: said.ID, SentAt: now,
 				CoveredBurstKeys: covered.burstKeys, CoveredSenderAddresses: covered.senderAddresses,
 				CoveredSenderDomains: covered.senderDomains, CoveredMailCategories: covered.mailCategories,
