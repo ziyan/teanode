@@ -185,6 +185,11 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 	self.dreamConsolidate(ctx, run, record, budget)
 	self.dreamOrganize(ctx, run, record, budget)
 	self.dreamSplit(ctx, run, record, budget)
+	// Overviews after the openings are rewritten and the crowded pages
+	// divided, since both are what an overview is written from; and
+	// given half of what is left, like the openings.
+	budget.overviewUntil = halfway(ctx, time.Now())
+	self.dreamOverviews(ctx, run, record, budget)
 	self.dreamQuietHalf(ctx, run, record, time.Now())
 	self.dreamAssociate(ctx, run, record, budget)
 	// Vectors before rehearsal, because rehearsal asks the graph by

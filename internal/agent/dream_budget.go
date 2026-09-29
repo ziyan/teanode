@@ -51,6 +51,10 @@ type dreamBudget struct {
 	// vectors and the night's own record never came.
 	consolidateUntil time.Time
 
+	// overviewUntil is when writing overviews has to stop, for the same
+	// reason again: the phases after it are what the night is for too.
+	overviewUntil time.Time
+
 	// refused is a provider that will not answer anything, because the
 	// account it bills cannot pay. Nothing the night does next changes
 	// that, so it counts as having nothing left to spend.
@@ -138,6 +142,11 @@ func halfway(ctx context.Context, now time.Time) time.Time {
 // consolidatingTimeLeft says whether rewriting pages may go on.
 func (self *dreamBudget) consolidatingTimeLeft() bool {
 	return self.consolidateUntil.IsZero() || time.Now().Before(self.consolidateUntil)
+}
+
+// overviewingTimeLeft says whether writing overviews may go on.
+func (self *dreamBudget) overviewingTimeLeft() bool {
+	return self.overviewUntil.IsZero() || time.Now().Before(self.overviewUntil)
 }
 
 // readingTimeLeft says whether the reading may go on.

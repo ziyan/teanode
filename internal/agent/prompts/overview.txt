@@ -1,0 +1,80 @@
+This is a page in {{.PersonName}}'s agent's notes. Write its overview:
+a few short sections on how the thing it is about works, for a reader
+who wants the whole of it rather than one detail.
+
+Write in {{.KnowledgeLanguage}}, whatever language the material is in,
+headings included. Names of people and things keep their own spelling,
+paths keep the lower-case slugs they already use, and a quote is copied
+as it stands.
+
+## The page
+
+{{.Path}} — {{.Name}} ({{.Kind}})
+
+{{if .Opening}}Its opening, which says what it is:
+
+<page>
+{{.Opening}}
+</page>
+
+{{end}}{{if .Facts}}Its facts:
+
+<facts>
+{{range .Facts}}{{.}}
+{{end}}</facts>
+
+{{end}}{{if .Children}}The pages under it, each with its own overview where it has one and
+its opening where it has not:
+
+<children>
+{{range .Children}}{{.}}
+
+{{end}}</children>
+
+{{end}}{{if .Links}}What it is linked to, with the opening of the page at the other end:
+
+<links>
+{{range .Links}}{{.}}
+{{end}}</links>
+
+{{end}}{{if .Files}}Key files of the code this page is about, as they were indexed, each
+cut short:
+
+{{range .Files}}<file path="{{.Path}}">
+{{.Text}}
+</file>
+
+{{end}}{{end}}## What to write
+
+Up to five sections, in this order, each a heading and a short
+paragraph or a few bullet points:
+
+1. **What it is**: what this is and what it is for, in more detail than
+   the opening.
+2. **Its parts**: what the pages under it are and how they fit
+   together{{if .Files}}, and for code, how its pieces are laid out and
+   what builds on what{{end}}.
+3. **How it relates**: to what it is linked to, and what that link
+   means for each side.
+4. **What has been happening**: what changed recently, and how busy it
+   is, from dated facts and activity.
+5. **What stands out**: concerns, strengths, open questions, a thing
+   that does not fit. Each with the fact, page or file that shows it.
+
+Leave out a section there is nothing to say in, rather than saying
+that there is nothing. "What it is" is never left out.
+
+Everything comes from what is above. A sentence nothing above supports
+is not written: this is read later as what the notes say, and a guess
+written here becomes a claim. Name the fact (`#3`), the page (its path)
+or the file (its path) behind anything a reader might doubt.
+
+Do not repeat the facts one by one; they are on the page already. Say
+what they add up to.
+
+Answer with this object and nothing else:
+
+{"sections": [{"heading": "What it is", "text": "..."}], "citedPages": ["projects/example-app/example-lib"], "citedFiles": ["README.md"]}
+
+`citedPages` is every page path the sections name, `citedFiles` every
+file path; each an empty list when there is none.

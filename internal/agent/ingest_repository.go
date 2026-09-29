@@ -138,7 +138,7 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 			facts = append(facts, line{"description", "Its readme says: " + description})
 		}
 		if where != "" {
-			facts = append(facts, line{"checkout", "The checkout is at " + where + " on " + source.Specification.Computer + "."})
+			facts = append(facts, line{checkoutFactKey, checkoutLine(where, source.Specification.Computer)})
 		}
 		if len(profile.Remotes) > 0 {
 			facts = append(facts, line{"remote", "Lives at " + profile.Remotes[0] + "."})
@@ -627,4 +627,30 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 		about = []string{opening}
 	}
 	return opening, about, links
+}
+
+// checkoutFactKey is the key of the line on a checkout's page that says
+// where it is. The overview of the page reads it back to find the
+// checkout's files among what its source indexed.
+const checkoutFactKey = "checkout"
+
+// checkoutLine is the line that says where a checkout is: a directory on
+// a computer.
+func checkoutLine(where, computerName string) string {
+	return "The checkout is at " + where + " on " + computerName + "."
+}
+
+// checkoutLocationOf reads checkoutLine back, and false for any other
+// words.
+func checkoutLocationOf(text string) (string, string, bool) {
+	rest, hasPrefix := strings.CutPrefix(text, "The checkout is at ")
+	if !hasPrefix {
+		return "", "", false
+	}
+	rest = strings.TrimSuffix(rest, ".")
+	at := strings.LastIndex(rest, " on ")
+	if at <= 0 {
+		return "", "", false
+	}
+	return rest[:at], rest[at+len(" on "):], true
 }

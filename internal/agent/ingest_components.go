@@ -76,6 +76,29 @@ func componentLine(checkoutName string, component computer.RepositoryComponent) 
 	return fmt.Sprintf("A part of %s, in %s, built by %s.", checkoutName, component.Path, component.File)
 }
 
+// componentLocationOf reads componentLine back: the component's
+// directory in its checkout, empty for a module built from the whole
+// checkout, and the build file that makes it; false for any other words.
+func componentLocationOf(text string) (string, string, bool) {
+	text = strings.TrimSuffix(text, ".")
+	builtBy := strings.LastIndex(text, ", built by ")
+	if builtBy <= 0 {
+		return "", "", false
+	}
+	buildFile, before := text[builtBy+len(", built by "):], text[:builtBy]
+	switch {
+	case strings.HasPrefix(before, "A module of "):
+		return "", buildFile, buildFile != ""
+	case strings.HasPrefix(before, "A part of "):
+		at := strings.LastIndex(before, ", in ")
+		if at <= 0 {
+			return "", "", false
+		}
+		return before[at+len(", in "):], buildFile, buildFile != ""
+	}
+	return "", "", false
+}
+
 // fileCheckoutComponents keeps a page for each component of a checkout,
 // under the checkout's page, and makes dormant the pages of components it
 // no longer has.
