@@ -238,7 +238,10 @@ type AgentDream struct {
 	Gaps         int `json:"gaps"`
 	Unknown      int `json:"unknown"`
 
-	OverviewsWritten int `json:"overviewsWritten"`
+	OverviewsWritten   int `json:"overviewsWritten"`
+	ThemesMade         int `json:"themesMade"`
+	ThemesUpdated      int `json:"themesUpdated"`
+	ReflectionsWritten int `json:"reflectionsWritten"`
 
 	Tokens    int64  `json:"tokens"`
 	LastError string `json:"lastError"`
@@ -265,7 +268,7 @@ const sourceFields = `{ id kind name specification { type settings computer path
 const revisionFields = `{ revision kind actor summary change before after path reason createdAt }`
 const passageFields = `{ documentId externalId title url kind author sourceId source happenedAt private number text score }`
 const extractFields = `{ documentId externalId title url kind author sourceId source happenedAt private from text total next }`
-const dreamFields = `{ id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse strengthened associated rehearsed gaps unknown revised overviewsWritten tokens lastError cost currency proposals { kind path to reason } }`
+const dreamFields = `{ id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse strengthened associated rehearsed gaps unknown revised overviewsWritten themesMade themesUpdated reflectionsWritten tokens lastError cost currency proposals { kind path to reason } }`
 
 // The documents.
 const (

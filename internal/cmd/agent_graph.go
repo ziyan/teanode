@@ -503,6 +503,32 @@ func printOverview(command *cli.Command, node *client.AgentNode) {
 	_, _ = fmt.Fprintf(command.Writer, "\n%s:\n\n%s\n", heading, overview)
 }
 
+// printReflections writes the night's observations on a page under their
+// own heading, apart from the facts, each with its kind and what it
+// cites, since an observation is only as good as what it rests on.
+func printReflections(command *cli.Command, reflections []*client.AgentFact) {
+	if len(reflections) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(command.Writer, "\nReflections:\n\n")
+	for _, fact := range reflections {
+		line := fmt.Sprintf("#%d %s", fact.Number, fact.Text)
+		var citations []string
+		for _, evidence := range fact.Evidence {
+			switch {
+			case evidence.Kind == string(models.EvidenceDream) && strings.HasPrefix(evidence.Quote, models.ReflectionEvidencePrefix):
+				line += "  (" + strings.TrimPrefix(evidence.Quote, models.ReflectionEvidencePrefix) + ")"
+			case evidence.Kind == string(models.EvidenceMemory) && evidence.Quote != "":
+				citations = append(citations, evidence.Quote)
+			}
+		}
+		_, _ = fmt.Fprintln(command.Writer, line)
+		if len(citations) > 0 {
+			_, _ = fmt.Fprintf(command.Writer, "   citing %s\n", strings.Join(citations, ", "))
+		}
+	}
+}
+
 func runAgentGraphOverview(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() < 1 {
 		return fmt.Errorf("which page? teanode agent memory overview projects/example-app")
@@ -578,9 +604,19 @@ func runAgentGraphGet(ctx context.Context, command *cli.Command) error {
 		_, _ = fmt.Fprintf(command.Writer, "\n%s\n", summary)
 	}
 	printOverview(command, node)
-	if len(page.Facts) > 0 {
+	var facts []*client.AgentFact
+	var reflections []*client.AgentFact
+	for _, fact := range page.Facts {
+		if fact.Kind == string(models.FactReflection) {
+			reflections = append(reflections, fact)
+		} else {
+			facts = append(facts, fact)
+		}
+	}
+	printReflections(command, reflections)
+	if len(facts) > 0 {
 		_, _ = fmt.Fprintln(command.Writer)
-		for _, fact := range page.Facts {
+		for _, fact := range facts {
 			line := fmt.Sprintf("#%d %s", fact.Number, fact.Text)
 			var notes []string
 			if fact.Kind != "fact" {
@@ -1448,6 +1484,8 @@ func runDreamLog(ctx context.Context, command *cli.Command) error {
 			{dream.Gaps, "it could not answer"}, {dream.Unknown, "it could not try"},
 			{dream.Revised, "lines an older version left"},
 			{dream.OverviewsWritten, "overviews written"},
+			{dream.ThemesMade, "themes made"}, {dream.ThemesUpdated, "themes updated"},
+			{dream.ReflectionsWritten, "reflections written"},
 			{dream.Merged, "said twice, merged"},
 		} {
 			if pair.count > 0 {
