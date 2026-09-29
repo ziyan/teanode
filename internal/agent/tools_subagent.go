@@ -87,7 +87,7 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 	}
 	title := strings.TrimSpace(arguments.Title)
 	if title == "" {
-		title = cut(prompt, 60)
+		title = cutAtWord(prompt, 60)
 	}
 	if arguments.Background {
 		return self.startBackgroundSubagent(ctx, parent, prompt, title)

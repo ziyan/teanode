@@ -226,7 +226,7 @@ export function BackgroundWorkCard() {
             isStoppable(work) ? (
               <button
                 type="button"
-                className="link danger"
+                className="danger"
                 aria-label={`${work.title}: ${t('backgroundWork.stop')}`}
                 disabled={stopping === work.id}
                 onClick={() => void stop(work)}
@@ -236,7 +236,6 @@ export function BackgroundWorkCard() {
             ) : isOpenable(work) ? (
               <button
                 type="button"
-                className="link"
                 aria-label={`${work.title}: ${t('backgroundWork.open')}`}
                 onClick={() => setOpened(work)}
               >

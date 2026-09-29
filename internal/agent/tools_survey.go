@@ -115,7 +115,7 @@ func NewBackgroundSurvey(agentId, question, scopePath string) *models.AgentBackg
 	question = strings.TrimSpace(question)
 	return &models.AgentBackgroundWork{
 		AgentID: agentId, WorkKind: models.BackgroundWorkSurvey,
-		Title:       "Survey: " + strings.TrimSpace(strings.ReplaceAll(cutRunes(question, surveyTitleLength), "\n", " ")),
+		Title:       "Survey: " + cutAtWord(question, surveyTitleLength),
 		WorkRequest: models.AgentBackgroundWorkRequest{Question: question, ScopePath: strings.TrimSpace(scopePath)},
 	}
 }

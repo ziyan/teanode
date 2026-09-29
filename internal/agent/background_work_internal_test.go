@@ -689,3 +689,19 @@ func TestABackgroundSubagentRunsWithTheStartingTurnsPermissions(t *testing.T) {
 		t.Errorf("no limit, kept before there was one, leaves them as they are")
 	}
 }
+
+// A title shortened for a person ends at a word, with an ellipsis, and a
+// short one is left alone.
+func TestATitleIsCutAtAWord(t *testing.T) {
+	for _, expected := range []struct {
+		text, cut string
+	}{
+		{"Which seeds did I order", "Which seeds did I order"},
+		{"What do my notes say about the orchard and the tide tables", "What do my notes say about the…"},
+		{"  spaced\n out   words  ", "spaced out words"},
+	} {
+		if got := cutAtWord(expected.text, 32); got != expected.cut {
+			t.Errorf("cutAtWord(%q) = %q, not %q", expected.text, got, expected.cut)
+		}
+	}
+}
