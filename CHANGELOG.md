@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.79.0] - 2026-09-29
+
+### Added
+
+- Overviews, themes and reflections in the agent's memory, written by its dreams, and `teanode agent survey` and the agent's survey tool, which answer questions about a whole area from them. (#225)
+- Checkouts' dependencies and components, read from their build files, as links and pages in the agent's memory. (#225)
+
 ## [0.78.3] - 2026-09-29
 
 ### Fixed
