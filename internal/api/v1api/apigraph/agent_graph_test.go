@@ -175,6 +175,11 @@ func TestEditingAFactKeepsTheAudiencesNobodyChanged(t *testing.T) {
 		if got := audiencesOf(written); got != "ask,triage,reply" {
 			t.Fatalf("a fact is addressed to what it was given, and to the conversation: %q", got)
 		}
+		if _, err := resolver.SaveAgentFact(ctx, SaveAgentFactArguments{
+			Path: "people/alice-chen", Kind: "reflection", Text: "Every Friday note is read first by the same person.",
+		}); !errors.Is(err, api.ErrInvalidArguments) {
+			t.Errorf("a reflection saved by hand: %v", err)
+		}
 
 		edited, err := resolver.SaveAgentFact(ctx, SaveAgentFactArguments{
 			Path:   "people/alice-chen",

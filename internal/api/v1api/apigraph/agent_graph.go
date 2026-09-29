@@ -1096,6 +1096,14 @@ func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentM
 	return result, nil
 }
 
+// SurveyAgentMemory runs a survey, which is paid work: one model run per
+// page in scope and one more, minutes of them. It is a query all the same,
+// deliberately. A mutation runs inside one database transaction for the
+// whole request (graphView), which a quarter of an hour of model calls
+// must not hold open; a query is left out of the per-resolver transaction
+// (isModelBackedQuery) and reads in short phases around the work. What a
+// query usually promises, that asking twice costs nothing, it does not
+// keep: a client must not retry it, or run it to prefetch.
 func (self *graph) SurveyAgentMemory(ctx context.Context, arguments SurveyAgentMemoryArguments) (*AgentSurveyView, error) {
 	principal, found, err := self.requireRecallPerson(ctx)
 	if err != nil {
@@ -1679,6 +1687,12 @@ func (self *graph) SaveAgentFact(ctx context.Context, arguments SaveAgentFactArg
 	kind := models.AgentFactKind(strings.TrimSpace(arguments.Kind))
 	if !models.IsAgentFactKind(kind) {
 		kind = models.FactPlain
+	}
+	// A reflection is the night's reading of a theme, citing what it rests
+	// on, and superseded by the next one; written from here it would be a
+	// claim dressed as that reading, and the next night would fold it away.
+	if kind.FromTheNight() {
+		return nil, fmt.Errorf("%w: a %s is written by the night, not saved by hand; save it as a fact", api.ErrInvalidArguments, kind)
 	}
 	var happened *time.Time
 	if said := strings.TrimSpace(arguments.Happened); said != "" {
