@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.80.1] - 2026-09-29
+
+### Fixed
+
+- Components inside a checkout were sometimes named after a test or check program rather than the library they build. (#227)
+
 ## [0.80.0] - 2026-09-29
 
 ### Added
