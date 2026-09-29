@@ -157,6 +157,12 @@ type agentModel struct {
 	IsIdeasEnabled         bool       `gorm:"column:is_ideas_enabled"`
 	SpeakFirstSnoozedUntil *time.Time `gorm:"column:speak_first_snoozed_until"`
 
+	// The person's say over alerts. See migration 0126.
+	IsAlertsEnabled bool   `gorm:"column:is_alerts_enabled"`
+	AlertQuietStart string `gorm:"column:alert_quiet_start"`
+	AlertQuietEnd   string `gorm:"column:alert_quiet_end"`
+	AlertDailyMost  int    `gorm:"column:alert_daily_most"`
+
 	// When the links were last faded. See migration 0084.
 	DecayedAt *time.Time `gorm:"column:decayed_at"`
 }
@@ -229,6 +235,10 @@ func agentFromModel(model *agentModel) (*models.Agent, error) {
 		IsMemoryCheckEnabled:   model.IsMemoryCheckEnabled,
 		IsIdeasEnabled:         model.IsIdeasEnabled,
 		SpeakFirstSnoozedUntil: localTime(model.SpeakFirstSnoozedUntil),
+		IsAlertsEnabled:        model.IsAlertsEnabled,
+		AlertQuietStart:        model.AlertQuietStart,
+		AlertQuietEnd:          model.AlertQuietEnd,
+		AlertDailyMost:         model.AlertDailyMost,
 	}
 	if model.DreamedAt != nil {
 		at := model.DreamedAt.In(time.Local)
@@ -288,6 +298,10 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		IsIdeasEnabled:         agent.IsIdeasEnabled,
 		SpeakFirstSnoozedUntil: agent.SpeakFirstSnoozedUntil,
 		DecayedAt:              agent.DecayedAt,
+		IsAlertsEnabled:        agent.IsAlertsEnabled,
+		AlertQuietStart:        agent.AlertQuietStart,
+		AlertQuietEnd:          agent.AlertQuietEnd,
+		AlertDailyMost:         agent.AlertDailyMost,
 	}
 	var err error
 	if model.Voice, err = encodeJSON(agent.Voice); err != nil {
@@ -401,9 +415,10 @@ func (self *transaction) CreateAgent(agent *models.Agent) (*models.Agent, error)
 	created.CreatedAt = time.Now()
 	created.ModifiedAt = created.CreatedAt
 	// On, as the columns default: a new agent introduces itself, checks
-	// what it remembers and offers ideas until the person says otherwise. A
-	// Go false here is the zero value nobody chose, not a choice.
-	created.IsMemoryCheckEnabled, created.IsIdeasEnabled = true, true
+	// what it remembers, offers ideas and tells the person what their mail
+	// says they should know until the person says otherwise. A Go false
+	// here is the zero value nobody chose, not a choice.
+	created.IsMemoryCheckEnabled, created.IsIdeasEnabled, created.IsAlertsEnabled = true, true, true
 	model, err := agentToModel(&created)
 	if err != nil {
 		return nil, err
@@ -462,6 +477,10 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 			"dream_bootstrap":         model.DreamBootstrap,
 			"is_memory_check_enabled": model.IsMemoryCheckEnabled,
 			"is_ideas_enabled":        model.IsIdeasEnabled,
+			"is_alerts_enabled":       model.IsAlertsEnabled,
+			"alert_quiet_start":       model.AlertQuietStart,
+			"alert_quiet_end":         model.AlertQuietEnd,
+			"alert_daily_most":        model.AlertDailyMost,
 			"decayed_at":              model.DecayedAt,
 		}).Error
 	}); err != nil {

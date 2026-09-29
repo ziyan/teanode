@@ -42,16 +42,16 @@ const (
 
 // isAlertingAllowed says whether the agent may tell the person about what
 // arrives, unasked: for the whole agent when source is nil, or for one
-// mailbox. On wherever the agent sorts the mail, for now; the switches
-// the person turns it off with read here too when they exist.
+// mailbox. Wherever the agent sorts the mail, unless the person switched
+// alerts off for the agent or for that mailbox.
 func isAlertingAllowed(configuration *config.Configuration, agent *models.Agent, source *models.AgentMailbox) bool {
-	if !agent.Active() || !FeatureAllowed(configuration, "triage") {
+	if !agent.Active() || !agent.IsAlertsEnabled || !FeatureAllowed(configuration, "triage") {
 		return false
 	}
 	if source == nil {
 		return true
 	}
-	return source.Granted && source.Triage != nil && source.Triage.Enabled
+	return source.Granted && source.Triage != nil && source.Triage.Enabled && source.IsAlertsEnabled()
 }
 
 // AlertSubjectPattern is a subject with what changes from one message of
@@ -144,12 +144,34 @@ func (self *Agent) noteAlertCandidates(tx db.Transaction, run *Run, mail *models
 	if len(candidates) == 0 {
 		return nil
 	}
-	isPressing := false
+	mutes, err := tx.ListAgentAlertMutes(run.Agent.ID)
+	if err != nil {
+		return err
+	}
+	from := mail.From
+	if from == "" {
+		from = mail.Sender
+	}
+	isWaiting, isPressing := false, false
 	for _, candidate := range candidates {
-		if _, err := tx.CreateAgentAlertCandidate(candidate); err != nil {
+		created, err := tx.CreateAgentAlertCandidate(candidate)
+		if err != nil {
 			return err
 		}
+		// Kept, and dropped at once: what the person said not to be told
+		// about is still written down, so the list of what was dropped
+		// shows the mute working.
+		if mutedBy(mutes, candidateFacts(candidate, from, insight.Category)) != nil {
+			if err := tx.DropAgentAlertCandidates([]string{created.ID}, alertMutedReason, now); err != nil {
+				return err
+			}
+			continue
+		}
+		isWaiting = true
 		isPressing = isPressing || candidate.AlertSignal == models.AlertSignalNow || candidate.CandidateKind == models.AlertCandidateBurst
+	}
+	if !isWaiting {
+		return nil
 	}
 	return queueAlert(tx, run.Agent.ID, isPressing, now)
 }

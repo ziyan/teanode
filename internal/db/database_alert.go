@@ -59,6 +59,23 @@ type AlertOperation interface {
 	// AdvanceAgentJob brings a queued job of this agent, kind and subject
 	// forward to the moment given, when it was waiting for later.
 	AdvanceAgentJob(agentId string, kind models.AgentJobKind, subjectId string, notBefore time.Time) error
+
+	// GetAgentAlert is one alert of the agent, or nil.
+	GetAgentAlert(agentId, alertId string) (*models.AgentAlert, error)
+
+	// ListRecentAgentAlerts is the agent's latest alerts, newest first.
+	ListRecentAgentAlerts(agentId string, limit int) ([]*models.AgentAlert, error)
+
+	// CreateAgentAlertMute keeps a mute. One with the same scope and
+	// target already there is returned as it is rather than kept twice.
+	CreateAgentAlertMute(mute *models.AgentAlertMute) (*models.AgentAlertMute, error)
+
+	// ListAgentAlertMutes is the agent's mutes, newest first.
+	ListAgentAlertMutes(agentId string) ([]*models.AgentAlertMute, error)
+
+	// DeleteAgentAlertMute removes one mute of the agent, saying whether
+	// there was one.
+	DeleteAgentAlertMute(agentId, muteId string) (bool, error)
 }
 
 type agentAlertCandidateModel struct {
@@ -272,4 +289,91 @@ func (self *transaction) ListAgentAlertsSince(agentId string, since time.Time) (
 		alerts = append(alerts, alert)
 	}
 	return alerts, nil
+}
+
+func (self *transaction) GetAgentAlert(agentId, alertId string) (*models.AgentAlert, error) {
+	var found []agentAlertModel
+	if err := self.tx.Where("\"agent_id\" = ? AND \"id\" = ?", agentId, alertId).Limit(1).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return found[0].toModel()
+}
+
+func (self *transaction) ListRecentAgentAlerts(agentId string, limit int) ([]*models.AgentAlert, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	var found []agentAlertModel
+	if err := self.tx.Where("\"agent_id\" = ?", agentId).Order("\"sent_at\" DESC, \"id\" DESC").Limit(limit).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	alerts := make([]*models.AgentAlert, 0, len(found))
+	for index := range found {
+		alert, err := found[index].toModel()
+		if err != nil {
+			return nil, err
+		}
+		alerts = append(alerts, alert)
+	}
+	return alerts, nil
+}
+
+type agentAlertMuteModel struct {
+	ID         string    `gorm:"column:id;primaryKey"`
+	AgentID    string    `gorm:"column:agent_id"`
+	MuteScope  string    `gorm:"column:mute_scope"`
+	MuteTarget string    `gorm:"column:mute_target"`
+	AlertID    string    `gorm:"column:alert_id"`
+	CreatedAt  time.Time `gorm:"column:created_at"`
+}
+
+func (agentAlertMuteModel) TableName() string { return "agent_alert_mute" }
+
+func (self *agentAlertMuteModel) toModel() *models.AgentAlertMute {
+	return &models.AgentAlertMute{
+		ID: self.ID, AgentID: self.AgentID, MuteScope: models.AlertMuteScope(self.MuteScope), MuteTarget: self.MuteTarget,
+		AlertID: self.AlertID, CreatedAt: self.CreatedAt.In(time.Local),
+	}
+}
+
+func (self *transaction) CreateAgentAlertMute(mute *models.AgentAlertMute) (*models.AgentAlertMute, error) {
+	if mute.AgentID == "" || !mute.MuteScope.IsValid() || mute.MuteTarget == "" {
+		return nil, fmt.Errorf("db: a mute needs an agent, a scope and a target")
+	}
+	model := &agentAlertMuteModel{
+		ID: newID(), AgentID: mute.AgentID, MuteScope: string(mute.MuteScope), MuteTarget: mute.MuteTarget,
+		AlertID: mute.AlertID, CreatedAt: time.Now(),
+	}
+	if err := self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(model).Error; err != nil {
+		return nil, err
+	}
+	var found []agentAlertMuteModel
+	if err := self.tx.Where("\"agent_id\" = ? AND \"mute_scope\" = ? AND \"mute_target\" = ?", model.AgentID, model.MuteScope, model.MuteTarget).
+		Limit(1).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, fmt.Errorf("db: the mute was not kept")
+	}
+	return found[0].toModel(), nil
+}
+
+func (self *transaction) ListAgentAlertMutes(agentId string) ([]*models.AgentAlertMute, error) {
+	var found []agentAlertMuteModel
+	if err := self.tx.Where("\"agent_id\" = ?", agentId).Order("\"created_at\" DESC, \"id\" DESC").Find(&found).Error; err != nil {
+		return nil, err
+	}
+	mutes := make([]*models.AgentAlertMute, 0, len(found))
+	for index := range found {
+		mutes = append(mutes, found[index].toModel())
+	}
+	return mutes, nil
+}
+
+func (self *transaction) DeleteAgentAlertMute(agentId, muteId string) (bool, error) {
+	result := self.tx.Where("\"agent_id\" = ? AND \"id\" = ?", agentId, muteId).Delete(&agentAlertMuteModel{})
+	return result.RowsAffected > 0, result.Error
 }

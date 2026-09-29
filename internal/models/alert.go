@@ -79,3 +79,48 @@ type AgentAlert struct {
 	MessageID      string    `json:"messageId"`
 	SentAt         time.Time `json:"sentAt"`
 }
+
+// AlertMuteScope is what a mute is matched against.
+type AlertMuteScope string
+
+// The four things the person can say not to be told about: one sender's
+// address, everybody at a domain, one subject (an alert's subject key, or
+// a burst's), or a kind of alert (a burst, or a category of the sorting,
+// such as notification or receipt).
+const (
+	AlertMuteSender     AlertMuteScope = "sender"
+	AlertMuteDomain     AlertMuteScope = "domain"
+	AlertMuteSubjectKey AlertMuteScope = "subjectKey"
+	AlertMuteKind       AlertMuteScope = "kind"
+)
+
+// IsValid says the scope is one of the four.
+func (self AlertMuteScope) IsValid() bool {
+	switch self {
+	case AlertMuteSender, AlertMuteDomain, AlertMuteSubjectKey, AlertMuteKind:
+		return true
+	}
+	return false
+}
+
+// AlertKindBurst is the kind a mute names to silence every burst, whatever
+// it is of.
+const AlertKindBurst = "burst"
+
+// AgentAlertMute is the person's "don't tell me about these": a candidate
+// or an alert that matches it is dropped, saying it was muted.
+type AgentAlertMute struct {
+	ID      string `json:"id"`
+	AgentID string `json:"agentId"`
+
+	// MuteScope is what MuteTarget is: an address, a domain, a subject
+	// key or a kind, in lower case.
+	MuteScope  AlertMuteScope `json:"muteScope"`
+	MuteTarget string         `json:"muteTarget"`
+
+	// AlertID is the alert the person muted from, when they did; empty
+	// when they named the target themselves.
+	AlertID string `json:"alertId"`
+
+	CreatedAt time.Time `json:"createdAt"`
+}

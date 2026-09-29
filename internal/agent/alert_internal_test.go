@@ -248,7 +248,7 @@ func TestAlertJobHoldsTheNightAndLetsTheUrgentThrough(t *testing.T) {
 	}
 	jobs := fixture.alertJobs(t)
 	location, _ := time.LoadLocation(zone)
-	if len(jobs) != 1 || jobs[0].Status != models.AgentJobQueued || jobs[0].NotBefore == nil || jobs[0].NotBefore.In(location).Hour() != alertQuietUntilHour || time.Until(*jobs[0].NotBefore) > 5*time.Hour {
+	if len(jobs) != 1 || jobs[0].Status != models.AgentJobQueued || jobs[0].NotBefore == nil || jobs[0].NotBefore.In(location).Hour() != 7 || time.Until(*jobs[0].NotBefore) > 5*time.Hour {
 		t.Fatalf("the job is put back to seven: %+v", jobs)
 	}
 
@@ -276,6 +276,7 @@ func TestAlertJobHoldsTheNightAndLetsTheUrgentThrough(t *testing.T) {
 func TestPlanAlertsKeepsTheBounds(t *testing.T) {
 	location := time.UTC
 	noon := time.Date(2026, 3, 4, 12, 0, 0, 0, location)
+	defaults := alertBoundsOf(&models.Agent{}, nil)
 	labeled := func(count int) []*labeledCandidate {
 		entries := make([]*labeledCandidate, 0, count)
 		for index := 1; index <= count; index++ {
@@ -293,7 +294,7 @@ func TestPlanAlertsKeepsTheBounds(t *testing.T) {
 	for index := 0; index < 3; index++ {
 		sentToday = append(sentToday, &models.AgentAlert{SubjectKey: fmt.Sprintf("earlier %d", index), SentAt: noon.Add(-time.Duration(index+1) * time.Hour)})
 	}
-	plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("a", "c1", false), alert("b", "c2", false), alert("c", "c3", true)}}, labeled(3), sentToday, noon, location)
+	plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("a", "c1", false), alert("b", "c2", false), alert("c", "c3", true)}}, labeled(3), sentToday, noon, location, defaults)
 	if len(plan.sends) != 2 || plan.sends[0].subjectKey != "c" || plan.sends[1].subjectKey != "a" || len(plan.drops) != 1 || plan.drops[0].candidateId != "candidate-2" || !strings.Contains(plan.drops[0].dropReason, "5") {
 		t.Fatalf("two more make five, the urgent first: %+v", plan)
 	}
@@ -302,46 +303,46 @@ func TestPlanAlertsKeepsTheBounds(t *testing.T) {
 	for index := 0; index < 5; index++ {
 		yesterday = append(yesterday, &models.AgentAlert{SubjectKey: fmt.Sprintf("yesterday %d", index), SentAt: noon.Add(-20 * time.Hour)})
 	}
-	if plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("a", "c1", false)}}, labeled(1), yesterday, noon, location); len(plan.sends) != 1 {
+	if plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("a", "c1", false)}}, labeled(1), yesterday, noon, location, defaults); len(plan.sends) != 1 {
 		t.Fatalf("a new day: %+v", plan)
 	}
 
 	// Said this week: dropped, unless it changed and the model says how.
 	told := []*models.AgentAlert{{SubjectKey: "photo app sign-in codes", SentAt: noon.Add(-48 * time.Hour)}}
-	plan = planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("Photo App  Sign-in Codes", "c1", false)}}, labeled(1), told, noon, location)
+	plan = planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("Photo App  Sign-in Codes", "c1", false)}}, labeled(1), told, noon, location, defaults)
 	if len(plan.sends) != 0 || len(plan.drops) != 1 || !strings.Contains(plan.drops[0].dropReason, "already told") {
 		t.Fatalf("the same thing is not said twice: %+v", plan)
 	}
 	changed := alert("photo app sign-in codes", "c1", false)
 	changed.HasChanged, changed.ChangeReason = true, "the codes went from six to fourteen"
-	if plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{changed}}, labeled(1), told, noon, location); len(plan.sends) != 1 {
+	if plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{changed}}, labeled(1), told, noon, location, defaults); len(plan.sends) != 1 {
 		t.Fatalf("a change the model names is said: %+v", plan)
 	}
 	changed.ChangeReason = ""
-	if plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{changed}}, labeled(1), told, noon, location); len(plan.sends) != 0 {
+	if plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{changed}}, labeled(1), told, noon, location, defaults); len(plan.sends) != 0 {
 		t.Fatalf("a change without a reason is not: %+v", plan)
 	}
 	// Two alerts of one run with the same key are one.
-	if plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("a", "c1", false), alert("a", "c2", false)}}, labeled(2), nil, noon, location); len(plan.sends) != 1 || len(plan.drops) != 1 {
+	if plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("a", "c1", false), alert("a", "c2", false)}}, labeled(2), nil, noon, location, defaults); len(plan.sends) != 1 || len(plan.drops) != 1 {
 		t.Fatalf("one key, said once: %+v", plan)
 	}
 
 	// The night: held unless urgent.
 	night := time.Date(2026, 3, 4, 23, 30, 0, 0, location)
-	plan = planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("a", "c1", false), alert("b", "c2", true)}}, labeled(2), nil, night, location)
+	plan = planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("a", "c1", false), alert("b", "c2", true)}}, labeled(2), nil, night, location, defaults)
 	if len(plan.sends) != 1 || plan.sends[0].subjectKey != "b" || plan.heldCount != 1 || len(plan.drops) != 0 {
 		t.Fatalf("the night holds what can wait: %+v", plan)
 	}
-	if morning := nextAlertMorning(night, location); !morning.Equal(time.Date(2026, 3, 5, 7, 0, 0, 0, location)) {
+	if morning := nextAlertMorning(night, location, defaults); !morning.Equal(time.Date(2026, 3, 5, 7, 0, 0, 0, location)) {
 		t.Fatalf("held until seven: %s", morning)
 	}
-	if morning := nextAlertMorning(time.Date(2026, 3, 5, 3, 0, 0, 0, location), location); !morning.Equal(time.Date(2026, 3, 5, 7, 0, 0, 0, location)) {
+	if morning := nextAlertMorning(time.Date(2026, 3, 5, 3, 0, 0, 0, location), location, defaults); !morning.Equal(time.Date(2026, 3, 5, 7, 0, 0, 0, location)) {
 		t.Fatalf("after midnight, the same morning: %s", morning)
 	}
 
 	// A candidate the model did not mention, or named twice, is dropped
 	// once; an unknown label is ignored.
-	plan = planAlerts(&AlertDecision{Alerts: []AlertDecided{{SubjectKey: "a", CandidateIDs: []string{"c1", "c9"}, AlertText: "Something."}}, Dropped: []AlertDropped{{CandidateID: "c1"}}}, labeled(2), nil, noon, location)
+	plan = planAlerts(&AlertDecision{Alerts: []AlertDecided{{SubjectKey: "a", CandidateIDs: []string{"c1", "c9"}, AlertText: "Something."}}, Dropped: []AlertDropped{{CandidateID: "c1"}}}, labeled(2), nil, noon, location, defaults)
 	if len(plan.sends) != 1 || len(plan.sends[0].candidates) != 1 || len(plan.drops) != 1 || plan.drops[0].candidateId != "candidate-2" {
 		t.Fatalf("every candidate goes somewhere once: %+v", plan)
 	}
