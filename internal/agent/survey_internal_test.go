@@ -118,6 +118,10 @@ func TestTheSurveyScopeFollowsTheThemesAndThePages(t *testing.T) {
 		{"themes/outdoor-life/orchard-work", "projects/orchard-north projects/orchard-south"},
 		{"projects/orchard-north", "projects/orchard-north projects/orchard-north/pruning"},
 		{"projects/orchard-east", "projects/orchard-east"},
+		// A page whose children are not themes still reaches the theme
+		// found under it: all three of the orchard theme's members are
+		// projects, and none of the tide theme's is.
+		{"projects", "projects/orchard-north projects/orchard-south themes/outdoor-life/orchard-work"},
 	} {
 		if got := strings.Join(surveyPaths(resolve(expected.scopePath)), " "); got != expected.paths {
 			t.Errorf("a survey of %q asks %q, not %q", expected.scopePath, got, expected.paths)

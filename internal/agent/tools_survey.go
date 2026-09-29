@@ -27,7 +27,7 @@ func (self *Agent) surveyTool() *Tool {
 			"It takes minutes and costs about one call per page in scope plus one; scope it to a theme or a page when the question is about one area. The report ends with the pages it covered and any it could not.",
 		Parameters: tools.Object(map[string]any{
 			"question": tools.StringProperty("the question, in full, as the person would want it answered"),
-			"scope":    tools.StringProperty("a page path to survey under: a theme (themes/...), a project, any page; empty for everything"),
+			"scope":    tools.StringProperty("a page path to survey under: best a theme from the index (themes/...); a project or any page also brings in the themes found under it; empty for everything"),
 		}, "question"),
 		Guidance: "survey: for a broad question about a whole area -- strengths and weaknesses, how the parts fit together, what patterns run through it -- survey that area rather than piecing an answer together from a few recalled facts; it returns a report worth keeping, so offer to keep it as an artifact.",
 		Run:      self.runSurvey,

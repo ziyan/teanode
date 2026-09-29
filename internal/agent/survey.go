@@ -38,6 +38,12 @@ const (
 	surveyPageCount   = 40
 	surveyConcurrency = 6
 
+	// A theme is asked in a survey of a page when at least
+	// surveyThemeLeastMembers of its members, and at least
+	// surveyThemeShareUnder of them, are under that page.
+	surveyThemeLeastMembers = 3
+	surveyThemeShareUnder   = 0.3
+
 	// surveyPageRounds is how many rounds one page's run may take: a
 	// few lookups and an answer. surveyPageLongest is how long it may
 	// take before it is stopped and counted as failed.
@@ -371,6 +377,16 @@ func resolveSurveyScope(tx db.Transaction, agentId, scopePath string) (*surveySc
 			pages = append(pages, scopePage)
 		}
 		pages = append(pages, withOverviews(held)...)
+		if !models.IsThemePath(scopePage.Path) {
+			// A page's own children are the tree's view of it; the themes
+			// found under it are the links' view, and on a large page
+			// they are where the overviews of its parts are.
+			themes, err := themesUnder(tx, agentId, scopePage.Path)
+			if err != nil {
+				return nil, err
+			}
+			pages = append(pages, themes...)
+		}
 		if len(pages) == 0 {
 			pages = []*models.AgentNode{scopePage}
 		}
@@ -403,6 +419,64 @@ func resolveSurveyScope(tx db.Transaction, agentId, scopePath string) (*surveySc
 		scope.reflections = reflectionLines(reflectionsPage.Path, facts)
 	}
 	return scope, nil
+}
+
+// themesUnder is the themes with an overview whose members are mostly
+// pages under path: at least surveyThemeLeastMembers of them, and at least
+// surveyThemeShareUnder of its members. Where a theme and a theme it is
+// divided into both qualify, both are asked; the survey reads each as one
+// part and the combining call sees them together.
+func themesUnder(tx db.Transaction, agentId, path string) ([]*models.AgentNode, error) {
+	themes, err := tx.ListAgentNodesUnder(agentId, models.PathThemes, themeListed)
+	if err != nil {
+		return nil, err
+	}
+	themeById := map[string]*models.AgentNode{}
+	for _, theme := range withOverviews(themes) {
+		if models.IsThemePath(theme.Path) {
+			themeById[theme.ID] = theme
+		}
+	}
+	if len(themeById) == 0 {
+		return nil, nil
+	}
+	edges, err := tx.ListAgentEdgesByRelation(agentId, models.EdgeAboutPlace)
+	if err != nil {
+		return nil, err
+	}
+	membersByTheme := map[string][]string{}
+	var memberIds []string
+	for _, edge := range edges {
+		if themeById[edge.FromID] != nil {
+			membersByTheme[edge.FromID] = append(membersByTheme[edge.FromID], edge.ToID)
+			memberIds = append(memberIds, edge.ToID)
+		}
+	}
+	members, err := tx.GetAgentNodes(agentId, memberIds)
+	if err != nil {
+		return nil, err
+	}
+	isUnder := map[string]bool{}
+	prefix := path + "/"
+	for _, member := range members {
+		if member.Path == path || strings.HasPrefix(member.Path, prefix) {
+			isUnder[member.ID] = true
+		}
+	}
+	var found []*models.AgentNode
+	for themeId, themeMemberIds := range membersByTheme {
+		underCount := 0
+		for _, memberId := range themeMemberIds {
+			if isUnder[memberId] {
+				underCount++
+			}
+		}
+		if underCount >= surveyThemeLeastMembers && float64(underCount) >= surveyThemeShareUnder*float64(len(themeMemberIds)) {
+			found = append(found, themeById[themeId])
+		}
+	}
+	sort.Slice(found, func(left, right int) bool { return found[left].Path < found[right].Path })
+	return found, nil
 }
 
 // heldBy is what a page holds, live: a theme of pages its members, a
