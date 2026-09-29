@@ -53,6 +53,16 @@ type AgentGraphQuery interface {
 	// Needs agent:use.
 	RecallAgentMemory(ctx context.Context, arguments RecallAgentMemoryArguments) (*RecallAgentMemoryResult, error)
 
+	// Answer a broad question about a whole area of the graph -- a theme,
+	// a page and what is under it, or everything when scopePath is left
+	// out -- by asking each overview in it for its part of the answer and
+	// combining the parts into one report with citations. Minutes of
+	// model calls, about one a page and one more, priced as runs of kind
+	// survey; nothing in the graph changes. A query rather than a
+	// mutation so that no transaction is held open while it runs. Needs
+	// agent:use.
+	SurveyAgentMemory(ctx context.Context, arguments SurveyAgentMemoryArguments) (*AgentSurveyView, error)
+
 	// What has been filed lately: what the agent page shows under
 	// "Learned". Needs agent:use.
 	ListAgentLearned(ctx context.Context, arguments ListAgentLearnedArguments) ([]*AgentLearnedFact, error)
@@ -253,6 +263,13 @@ type SearchAgentGraphArguments struct {
 // would have typed it.
 type RecallAgentMemoryArguments struct {
 	Question string `json:"question"`
+}
+
+// SurveyAgentMemoryArguments are the question a survey answers and
+// where: a page's path, or nothing for everything.
+type SurveyAgentMemoryArguments struct {
+	Question  string `json:"question"`
+	ScopePath string `json:"scopePath" graphapi:"nullable"`
 }
 
 type ListAgentLearnedArguments struct {
@@ -514,6 +531,22 @@ type RecalledAgentPage struct {
 	// it carried none.
 	Summary string               `json:"summary" graphapi:"nullable"`
 	Facts   []*RecalledAgentFact `json:"facts"`
+}
+
+// AgentSurveyView is what a survey answered.
+type AgentSurveyView struct {
+	// Report is the combined answer in markdown, ending with the pages it
+	// covered and any it could not.
+	Report string `json:"report"`
+
+	// CoveredPaths is the pages whose run answered, and FailedPaths the
+	// ones whose run did not finish.
+	CoveredPaths []string `json:"coveredPaths"`
+	FailedPaths  []string `json:"failedPaths"`
+
+	// RunIDs is every run the survey made: one a page and the one that
+	// combined them, each a transcript the person can open.
+	RunIDs []string `json:"runIds"`
 }
 
 // RecalledAgentFact is a fact as the page cites it: its number and what
@@ -1061,6 +1094,38 @@ func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentM
 		result.Pages = append(result.Pages, carried)
 	}
 	return result, nil
+}
+
+func (self *graph) SurveyAgentMemory(ctx context.Context, arguments SurveyAgentMemoryArguments) (*AgentSurveyView, error) {
+	principal, found, err := self.requireRecallPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	question := strings.TrimSpace(arguments.Question)
+	if question == "" {
+		return nil, fmt.Errorf("ask a question to survey")
+	}
+	surveyed, err := worker.Survey(ctx, found, principal.User, question, arguments.ScopePath)
+	if err != nil {
+		return nil, err
+	}
+	// Asked again after the minutes the survey took, so a grant revoked
+	// while it ran does not release what it found.
+	_, current, err := self.requireRecallPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if current.ID != found.ID {
+		return nil, agent.ErrUnavailable
+	}
+	return &AgentSurveyView{
+		Report: surveyed.Report, CoveredPaths: nonNil(surveyed.CoveredPaths),
+		FailedPaths: nonNil(surveyed.FailedPaths), RunIDs: nonNil(surveyed.RunIDs),
+	}, nil
 }
 
 func (self *graph) ListAgentLearned(ctx context.Context, arguments ListAgentLearnedArguments) ([]*AgentLearnedFact, error) {

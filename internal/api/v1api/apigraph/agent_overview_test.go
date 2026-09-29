@@ -2,9 +2,11 @@ package apigraph
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
@@ -60,4 +62,30 @@ func TestAnOverviewAskedForAgainIsDueAndKept(t *testing.T) {
 			t.Errorf("the hash is cleared and the overview kept: %q %q", page.OverviewInputs, page.Overview)
 		}
 	})
+}
+
+// A survey needs the agent, a question, and agent:use.
+func TestASurveyIsRefusedWithoutTheAgentOrAQuestion(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+
+	var person *models.User
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if person, err = tx.CreateUser(&models.User{Username: "surveyor", Name: "Example Surveyor"}); err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if _, err := tx.CreateAgent(&models.Agent{UserID: person.ID, Enabled: true}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+	})
+	resolver := &graph{database: database, config: config.NewMemoryStore(config.Default()), settings: &api.Settings{}}
+	allowed := &api.Principal{User: person, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionAgentUse}})}
+	if _, err := resolver.SurveyAgentMemory(api.ContextWithPrincipal(context.Background(), allowed), SurveyAgentMemoryArguments{Question: "What stands out?"}); !errors.Is(err, agent.ErrUnavailable) {
+		t.Errorf("a survey with no agent to run it: %v", err)
+	}
+	refused := &api.Principal{User: person, Permissions: models.NewEffectivePermissions(nil)}
+	if _, err := resolver.SurveyAgentMemory(api.ContextWithPrincipal(context.Background(), refused), SurveyAgentMemoryArguments{Question: "What stands out?"}); err == nil || errors.Is(err, agent.ErrUnavailable) {
+		t.Errorf("a survey without agent:use: %v", err)
+	}
 }

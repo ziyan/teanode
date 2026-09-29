@@ -17,6 +17,12 @@ type queryExecution struct {
 	User     *models.User
 }
 
+// isModelBackedQuery is the queries that ask a model, or wait on runs
+// that do, and so read in phases of their own rather than inside one
+// transaction held open while the model answers: recall for a question
+// embeds it, and a survey is minutes of runs.
+var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgentMemory": true}
+
 // Queries materialize their results within each root resolver. Keeping the
 // transaction there lets model-backed resolvers use separate read phases.
 // Mutations retain the existing request transaction.
@@ -28,7 +34,7 @@ func (self *graph) wrapQueryTransactions() {
 		}
 		field.Resolve = func(parameters graphql.ResolveParams) (interface{}, error) {
 			execution, isQuery := parameters.Context.Value(queryExecutionKey{}).(*queryExecution)
-			if !isQuery || fieldName == "RecallAgentMemory" {
+			if !isQuery || isModelBackedQuery[fieldName] {
 				return resolve(parameters)
 			}
 			var resolved interface{}

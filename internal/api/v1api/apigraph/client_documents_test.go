@@ -74,6 +74,7 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"SearchAgentDocuments":            client.DocumentSearchAgentDocuments,
 		"ReadAgentDocument":               client.DocumentReadAgentDocument,
 		"RecallAgentMemory":               client.DocumentRecallAgentMemory,
+		"SurveyAgentMemory":               client.DocumentSurveyAgentMemory,
 		"EvaluateAgentAnswer":             client.DocumentEvaluateAgentAnswer,
 		"SpeakFirstNow":                   client.DocumentSpeakFirstNow,
 		"ListAgentEvaluationQuestions":    client.DocumentListAgentEvaluationQuestions,
