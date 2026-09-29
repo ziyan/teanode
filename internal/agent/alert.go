@@ -625,22 +625,70 @@ func nextAlertMorning(now time.Time, location *time.Location, bounds *alertBound
 var (
 	// markdownLink is a link written in Markdown, whose words are kept.
 	markdownLink = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
-	// bareAddress is a web address written out.
-	bareAddress = regexp.MustCompile(`(?i)\b(?:https?://|www\.)\S+`)
+	// webAddress is a web address written out with its scheme or www,
+	// without the punctuation that ends the sentence after it.
+	webAddress = regexp.MustCompile(`(?i)\b(?:https?://|www\.)\S*[^\s.,;:!?)\]'"]`)
+	// emailAddress is an address somebody could be written to.
+	emailAddress = regexp.MustCompile(`(?i)\b[a-z0-9._%+-]+@(?:[a-z0-9-]+\.)+[a-z]{2,}\b`)
+	// hostName is a name a browser would go to, with or without a path:
+	// photos.example.com/reset, or a shortener's bit.ly/abc. A top-level
+	// name is letters, so a decimal or a version is not one.
+	hostName = regexp.MustCompile(`(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}\b(?:/\S*[^\s.,;:!?)\]'"])?/?`)
+	// phoneLike is what might be a telephone number; phoneNumber decides.
+	phoneLike = regexp.MustCompile(`\+?\(?\d[\d ().-]{5,}\d`)
+	// calendarDate is a date written with digits, which is not a number to
+	// call.
+	calendarDate = regexp.MustCompile(`^(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4})$`)
 	// extraSpace is what taking an address out leaves behind.
 	extraSpace = regexp.MustCompile(`[ \t]{2,}`)
 )
 
-// cleanAlertText is what the model wrote with any address taken out, and
-// cut to length. The prompt asks for no links; this is the same rule where
-// a model cannot be talked out of it, because an alert is read as the
-// agent's word, and a link in it that came from a phishing message is the
-// phishing message delivered by the agent.
+// What an address, a host, an email address or a telephone number in an
+// alert is replaced with: what it was, not where it pointed.
+const (
+	alertLinkRemoved    = "(link removed)"
+	alertAddressRemoved = "(address removed)"
+	alertNumberRemoved  = "(number removed)"
+)
+
+// cleanAlertText is what the model wrote with anything that leads
+// somewhere taken out, and cut to length: web addresses, host names with
+// or without a path (a shortener's included), email addresses and
+// telephone numbers. A service named without its domain is left alone.
+// The prompt asks for none of them; this is the same rule where a model
+// cannot be talked out of it, because an alert is read as the agent's
+// word, and a link, an address or a number to call in it that came from a
+// phishing message is the phishing message delivered by the agent.
 func cleanAlertText(alertText string) string {
 	alertText = markdownLink.ReplaceAllString(alertText, "$1")
-	alertText = bareAddress.ReplaceAllString(alertText, "")
+	alertText = webAddress.ReplaceAllString(alertText, alertLinkRemoved)
+	alertText = emailAddress.ReplaceAllString(alertText, alertAddressRemoved)
+	alertText = hostName.ReplaceAllString(alertText, alertLinkRemoved)
+	alertText = phoneLike.ReplaceAllStringFunc(alertText, func(found string) string {
+		if isPhoneNumber(found) {
+			return alertNumberRemoved
+		}
+		return found
+	})
 	alertText = extraSpace.ReplaceAllString(alertText, " ")
 	return cutRunes(strings.TrimSpace(alertText), alertTextCharacters)
+}
+
+// isPhoneNumber says whether digits written with spaces, dots, dashes or
+// brackets read as a telephone number: seven to fifteen digits, not a
+// date, and either written with a plus or a separator or ten digits long,
+// so that an order number or a year in a sentence is left alone.
+func isPhoneNumber(found string) bool {
+	digitCount := 0
+	for _, character := range found {
+		if character >= '0' && character <= '9' {
+			digitCount++
+		}
+	}
+	if digitCount < 7 || digitCount > 15 || calendarDate.MatchString(found) {
+		return false
+	}
+	return strings.HasPrefix(found, "+") || strings.ContainsAny(found, " ().-") || digitCount >= 10
 }
 
 // alertSubjectKey is the model's key in one form, or, when it gave none,

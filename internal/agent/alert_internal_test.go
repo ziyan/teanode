@@ -356,6 +356,22 @@ func TestCleanAlertTextTakesOutAddresses(t *testing.T) {
 	if strings.Contains(cleaned, "http") || strings.Contains(cleaned, "www.") || !strings.Contains(cleaned, "Reschedule here") {
 		t.Fatalf("cleaned: %q", cleaned)
 	}
+	for written, want := range map[string]string{
+		"Check your sign-ins at photos.example.com/security.":                 "Check your sign-ins at (link removed).",
+		"Someone asked for a code at login.photos.example.com.":               "Someone asked for a code at (link removed).",
+		"Pay the fine at pay-now.example.org/fines?case=12 before Friday.":    "Pay the fine at (link removed) before Friday.",
+		"The message points to bit.ly/3xAbCd, which you should not open.":     "The message points to (link removed), which you should not open.",
+		"It asks you to reply to refunds@parcels.example.net with your card.": "It asks you to reply to (address removed) with your card.",
+		"It asks you to call +1 (555) 010-0199 today.":                        "It asks you to call (number removed) today.",
+		"Or 555-010-0199, or 020 7946 0958.":                                  "Or (number removed), or (number removed).",
+		"Photo App says your password changed at 03:12 on 2026-09-28.":        "Photo App says your password changed at 03:12 on 2026-09-28.",
+		"Fourteen codes since 28/09/2026, order 12345678, total 1.5 GB.":      "Fourteen codes since 28/09/2026, order 12345678, total 1.5 GB.",
+		"Your bank, Example Savings, saw a new device.":                       "Your bank, Example Savings, saw a new device.",
+	} {
+		if got := cleanAlertText(written); got != want {
+			t.Fatalf("%q\n  became %q\n  not    %q", written, got, want)
+		}
+	}
 	if len([]rune(cleanAlertText(strings.Repeat("word ", 200)))) > alertTextCharacters {
 		t.Fatal("an alert is at most 400 characters")
 	}

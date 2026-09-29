@@ -190,7 +190,8 @@ by a stranger's message is what bounds are for:
   cannot wait; what waited is decided again in the morning;
 - nothing said twice in a week under the same subject key, unless the model
   says what changed;
-- no web address, whatever the model wrote;
+- no web address, host name, link shortener, email address or telephone
+  number, whatever the model wrote;
 - nothing the person muted.
 
 An alert is written into the main conversation under an `[alert]` line,
