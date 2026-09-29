@@ -16,8 +16,8 @@ To see it working: send the account's own mailbox a message that reads like a sc
 - [x] (2026-09-29) Milestone 1: triage says whether a message is worth telling now (`alert_signal`, `alert_reason`), and a program notices a burst of similar messages (`alert_candidate.go`, migration 0123).
 - [x] (2026-09-29) Milestone 2: the alert job (`alert.go`, `prompts/alert.txt`, migration 0124): gathers candidates, decides with the person's triage memories and recalled pages, writes one short message, bounded in code by quiet hours, a daily cap of five and a week's subject keys; the drawer opens for it.
 - [x] (2026-09-29) Milestone 3: delivery: the main conversation and the linked chat app, which also receives the agent's other unasked turns (`internal/channel/relay.go`, migration 0125).
-- [ ] Milestone 4: control: a setting per mailbox and for the whole agent, quiet hours, the list of recent alerts, and "don't tell me about these" from any door.
-- [ ] Milestone 5: docs, deploy, and the two scenarios above on the development server.
+- [x] (2026-09-29) Milestone 4: control: `isAlertsEnabled`, `alertQuietStart`/`alertQuietEnd` and `alertDailyMost` on the agent and `AgentMailbox.alerts` per mailbox (migration 0126), read by `isAlertingAllowed` and `alertBoundsOf`; mutes in `agent_alert_mute` (`alert_mute.go`), read by the candidate step and the job; `ListAgentAlerts`, `ListAgentAlertMutes`, `MuteAgentAlert`, `UnmuteAgentAlert`; `teanode agent alert list|mute|mutes|unmute` and the settings keys; `agent_profile`'s `no_alerts`, `alerts_on`, `mute_alert`, `unmute_alert`; the Alerts card on the Overview tab, the switches beside speaking first, the switch per mailbox under Sorting.
+- [ ] Milestone 5: docs (done with Milestone 4: the alerts section in `docs/subsystems/agents.md`, the command-line rows, the decision record), deploy, and the two scenarios above on the development server.
 
 ## Surprises & Discoveries
 
@@ -28,6 +28,7 @@ To see it working: send the account's own mailbox a message that reads like a sc
 - Observation: the job queue's rule of one open job per agent, kind and subject counts a running job as open, so a candidate arriving while the alert job runs cannot queue another. The job looks again when it finishes and puts itself back two minutes out (a `Deferral`) when anything arrived meanwhile; the same `Deferral` is how a night's hold waits for 07:00.
 - Observation: a chat message steered into a turn of the agent's own that is already running is not followed by the chat, and that turn's answer is not relayed either, because its last opening message is the person's. It was so before this plan; left alone.
 - Observation: a question card raised by a turn of the agent's own (the memory check asks some) is not sent to the chat; only the turn's last word is.
+- Observation: the command line and the dashboard change a mailbox's policy by reading it and sending the whole of it back, so a field missing from their selection is dropped on the next save. For `alerts` that would have been harmless (absent is on) but silently undone an "off"; both selections now carry `alerts { enabled }`, and `ReadAgent`, `UpdateAgent` and `GrantAgentMailbox` joined `TestClientDocumentsMatchTheSchema`, which had not checked them.
 
 ## Decision Log
 
@@ -64,10 +65,22 @@ To see it working: send the account's own mailbox a message that reads like a sc
   Date/Author: 2026-09-29.
 - Decision: `isAlertingAllowed` (on wherever the mailbox is triaged and the triage feature is allowed) is the one place the switches of Milestone 4 will be read.
   Date/Author: 2026-09-29.
+- Decision: the agent-wide settings are columns on `agent`, as `is_ideas_enabled` and `dream_from` are: `is_alerts_enabled` defaults to true (existing agents included), and `alert_quiet_start`, `alert_quiet_end` and `alert_daily_most` are empty and zero for the defaults (22:00, 07:00, 5), the convention `DreamFrom` and `AutoReply.DailyLimit` already use. The same time at both ends is no night. The mailbox's switch is `AgentMailbox.alerts`, a pointer in the policy's JSON whose absence means on, so every mailbox granted before it alerts without a migration.
+  Rationale: the person's settings live where the neighbors' do; an absent value meaning on is what "on by default where the agent sorts" needs without rewriting stored policies.
+  Date/Author: 2026-09-29.
+- Decision: a mute is a row of a small table, `agent_alert_mute` (scope `sender`, `domain`, `subjectKey` or `kind`, and its target in lower case; unique per agent, scope and target), not a triage memory as first planned. The candidate step keeps a matching candidate and drops it at once with the reason `muted`, queuing nothing; the job drops a waiting candidate that a later mute matches before asking the model, and drops a decided alert whose subject key is muted. A domain matches its subdomains. A kind is `burst` or a category of the sorting, read from the message's insight.
+  Rationale: a memory is prose the model is shown and can be argued out of by the next message; "stop" from the person has to hold, and has to be listable and taken back by id from three doors. Keeping the muted candidate makes the mute visible in what was dropped.
+  Date/Author: 2026-09-29.
+- Decision: muting from an alert takes the target from it: its subject key by default, or the sender, the sender's domain or the kind of the first message it covered. The agent's door is actions on `agent_profile` (`no_alerts`, `alerts_on`, `mute_alert`, `unmute_alert`) rather than a tool of its own, per the catalog's fuse; `mute_alert` with nothing named mutes the latest alert, which is what "don't tell me about these" after an alert means, and the alert's check-in line now names it.
+  Date/Author: 2026-09-29.
+- Decision: on the dashboard the Alerts card is on the Overview tab, where speaking first and ideas are switched, with a Mute button per alert opening a dialog to choose the subject, sender, domain or kind, and the muted list with Unmute below; the switch, the night and the day's most are a subform of the Advanced card beside speaking first; the per-mailbox switch sits under Sorting on the Mail tab, since alerts follow the sorting.
+  Date/Author: 2026-09-29.
 
 ## Outcomes & Retrospective
 
 Milestones 1 to 3 (2026-09-29): candidates from triage and from bursts, the alert job with its bounds, delivery to the main conversation, the drawer and the linked chat app, which now also carries speaking first, schedules, goal check-ins and background wakes. Tests cover triage's new fields, burst counting with invented messages, gathering into one job, the job with a stubbed model (one alert for a burst, a dropped newsletter, the night's hold and the urgent exception, the cap, no repeat), the fenced prompt, and the chat sending each own turn once across a restart. Milestones 4 and 5 remain: the switches and mute, docs and the scenarios on the development server.
+
+Milestone 4 (2026-09-29): the switches, the night and the day's most, and mutes, from the dashboard, the command line and the conversation. Tests cover the settings round trip and defaults through `UpdateAgent`, the night and the cap from the settings (including a night inside one day and none at all), mutes by sender, domain, subject key and kind dropping the next candidate as muted, a mute made after a candidate dropping it in the job without a model call, unmute, the switches as the gate, a mute taken from an alert, the GraphQL operations, the command line, the tool's actions and the client documents. Milestone 5 remains: deploy and the two scenarios.
 
 ## Context and Orientation
 
