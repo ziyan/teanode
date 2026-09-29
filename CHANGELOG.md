@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.80.0] - 2026-09-29
+
+### Added
+
+- A `synthesize` model slot for writing overviews and reflections and answering a survey's parts. (#226)
+
+### Fixed
+
+- Subagent runs showed an empty kind in the runs list. (#226)
+- The scan model was not checked in configuration. (#226)
+
 ## [0.79.0] - 2026-09-29
 
 ### Added
