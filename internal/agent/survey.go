@@ -270,12 +270,13 @@ func (self *Agent) surveyPage(ctx context.Context, run *Run, surveyedPage *surve
 	}
 	// Read-only, with the lookups a dream's describing of a checkout
 	// gets: the graph and the sources, and nothing that acts. On the
-	// research model rather than the scan one: judging what one area says
-	// about a question is most of a survey's thinking, a survey is asked
-	// for rather than run every night, and the scan model's parts read as
-	// summaries of the overview rather than answers to the question.
+	// synthesize model rather than the scan one: judging what one area
+	// says about a question is most of a survey's thinking, a survey is
+	// asked for rather than run every night, and the scan model's parts
+	// read as summaries of the overview rather than answers to the
+	// question. Unset, synthesize is the research model.
 	thinking, err := self.think(ctx, run, fmt.Sprintf("Survey: %s, %s", shortQuestion, page.Path), prompt,
-		lookupTools, surveyPageRounds, models.AgentJobSurvey, config.AgentWorkResearch)
+		lookupTools, surveyPageRounds, models.AgentJobSurvey, config.AgentWorkSynthesize)
 	part := &surveyPart{}
 	if thinking != nil && thinking.Conversation != nil {
 		part.conversationId = thinking.Conversation.ID

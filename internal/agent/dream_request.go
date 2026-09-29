@@ -55,7 +55,15 @@ const dreamFrame = "You are working through your own memory with nobody present.
 // dream's budget. What comes back is the last thing the run said; the
 // caller reads the object out of it as it read the response before.
 func (self *Agent) dreamThink(ctx context.Context, run *Run, budget *dreamBudget, title, prompt string, lookups bool) (string, error) {
-	thinking, err := self.dreamThought(ctx, run, budget, title, prompt, lookups)
+	return self.dreamThinkFor(ctx, run, budget, title, prompt, lookups, config.AgentWorkScan)
+}
+
+// dreamThinkFor is dreamThink on the model for another kind of work: the
+// overviews and the reflections, which judge what matters across many
+// pages, ask for the synthesize model rather than the scan's. The dream's
+// budget applies to them the same.
+func (self *Agent) dreamThinkFor(ctx context.Context, run *Run, budget *dreamBudget, title, prompt string, lookups bool, work config.AgentWork) (string, error) {
+	thinking, err := self.dreamCall(ctx, run, budget, title, prompt, nil, lookups, work, budget.reserve)
 	if err != nil {
 		return "", err
 	}
@@ -80,7 +88,7 @@ func (self *Agent) dreamThought(ctx context.Context, run *Run, budget *dreamBudg
 // settled here exactly as it is for a call in words, which is what makes
 // a night that has spent its share stop looking at pictures too.
 func (self *Agent) dreamThoughtAbout(ctx context.Context, run *Run, budget *dreamBudget, title, prompt string, pictures []llm.ContentPart, lookups bool) (*thought, error) {
-	return self.dreamCall(ctx, run, budget, title, prompt, pictures, lookups, budget.reserve)
+	return self.dreamCall(ctx, run, budget, title, prompt, pictures, lookups, config.AgentWorkScan, budget.reserve)
 }
 
 // dreamThoughtBeyondShare is dreamThought for the one call a night makes
@@ -88,12 +96,13 @@ func (self *Agent) dreamThoughtAbout(ctx context.Context, run *Run, budget *drea
 // once a day (see dreamIdeas). Every other call goes through
 // dreamThoughtAbout and stops when the share does.
 func (self *Agent) dreamThoughtBeyondShare(ctx context.Context, run *Run, budget *dreamBudget, title, prompt string, lookups bool) (*thought, error) {
-	return self.dreamCall(ctx, run, budget, title, prompt, nil, lookups, budget.reserveBeyondShare)
+	return self.dreamCall(ctx, run, budget, title, prompt, nil, lookups, config.AgentWorkScan, budget.reserveBeyondShare)
 }
 
-// dreamCall is the body of both, with reserve saying whether the call
-// may be made and claiming its estimate when it may.
-func (self *Agent) dreamCall(ctx context.Context, run *Run, budget *dreamBudget, title, prompt string, pictures []llm.ContentPart, lookups bool, reserve func() bool) (*thought, error) {
+// dreamCall is the body of all of them, with work naming the model and
+// reserve saying whether the call may be made and claiming its estimate
+// when it may.
+func (self *Agent) dreamCall(ctx context.Context, run *Run, budget *dreamBudget, title, prompt string, pictures []llm.ContentPart, lookups bool, work config.AgentWork, reserve func() bool) (*thought, error) {
 	// A call with nothing to look up answers from its prompt, so it keeps
 	// the read-only turn it always had; there is nothing for a tool to do
 	// in it and no reason to offer one.
@@ -113,7 +122,7 @@ func (self *Agent) dreamCall(ctx context.Context, run *Run, budget *dreamBudget,
 	if !reserve() {
 		return nil, errNothingLeftToSpend
 	}
-	thinking, err := think(ctx, run, title, prompt, pictures, tools, rounds, models.AgentJobDream, config.AgentWorkScan)
+	thinking, err := think(ctx, run, title, prompt, pictures, tools, rounds, models.AgentJobDream, work)
 	usage := llm.Usage{}
 	if thinking != nil {
 		usage = thinking.Usage

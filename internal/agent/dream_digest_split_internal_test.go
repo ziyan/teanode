@@ -97,6 +97,13 @@ func digestSplitProvider(most int) (*httptest.Server, func() []digestSplitCall) 
 // person who owns it, and a run to read in.
 func digestSplitWorld(t *testing.T, database db.Database, providerURL string) (*Agent, *Run) {
 	t.Helper()
+	return digestSplitWorldWith(t, database, providerURL, nil)
+}
+
+// digestSplitWorldWith is digestSplitWorld with the configuration changed
+// before the models are opened, for a test that assigns another model.
+func digestSplitWorldWith(t *testing.T, database db.Database, providerURL string, configure func(*config.Configuration)) (*Agent, *Run) {
+	t.Helper()
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
 	// Whether a night is due depends on the wall clock, and this test
@@ -105,6 +112,9 @@ func digestSplitWorld(t *testing.T, database db.Database, providerURL string) (*
 	configuration.Agent.Providers = []config.AgentProvider{{Name: "p", Kind: "openai", BaseURL: providerURL, APIKey: "k"}}
 	configuration.Agent.Models.Default = "p:thinker"
 	configuration.Agent.Models.Scan = "p:scan"
+	if configure != nil {
+		configure(configuration)
+	}
 	registry, err := llm.Open(&configuration.Agent)
 	if err != nil {
 		t.Fatalf("llm.Open: %s", err)
