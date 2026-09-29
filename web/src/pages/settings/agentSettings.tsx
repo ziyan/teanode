@@ -99,6 +99,7 @@ export type Agent = {
     schedule: string
     compact: string
     scan: string
+    synthesize: string
     embeddingDimensions: number
     choices: string[]
   }
@@ -143,7 +144,7 @@ export type Agent = {
 export const AGENT_SELECTION = `agent {
   enabled instructions allowPrivateAddresses skipCertificateCheck
   providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
-  models { default fast embedding triage research summarize reply ask schedule compact scan embeddingDimensions choices }
+  models { default fast embedding triage research summarize reply ask schedule compact scan synthesize embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
   limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay }
   retention { runs corrections }
@@ -179,7 +180,17 @@ const FEATURES = [
 ] as const
 
 const BASE_MODELS = ['default', 'fast', 'embedding'] as const
-const WORK_MODELS = ['triage', 'research', 'summarize', 'reply', 'ask', 'schedule', 'compact', 'scan'] as const
+const WORK_MODELS = [
+  'triage',
+  'research',
+  'summarize',
+  'reply',
+  'ask',
+  'schedule',
+  'compact',
+  'scan',
+  'synthesize',
+] as const
 
 function list(values: string[]): string {
   return values.join(', ')
@@ -616,6 +627,7 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
                         'ask',
                         'schedule',
                         'compact',
+                        'synthesize',
                       ] as const
                     ).map((field) => [field, rename(models[field])]),
                   ),
@@ -938,7 +950,9 @@ function ModelsForm({ settings, onSaved, known }: Props & { known: string[] }) {
                 value={models[field]}
                 known={known}
                 label={t(`agentSettings.work.${field}`)}
-                placeholder={t('agentSettings.modelInherit')}
+                placeholder={t(
+                  field === 'synthesize' ? 'agentSettings.modelInheritResearch' : 'agentSettings.modelInherit',
+                )}
                 onChange={(value) => setModels({ ...models, [field]: value })}
               />
             ))}
