@@ -216,6 +216,16 @@ type UpdateAgentArguments struct {
 	IsMemoryCheckEnabled *bool `json:"isMemoryCheckEnabled"`
 	IsIdeasEnabled       *bool `json:"isIdeasEnabled"`
 
+	// IsAlertsEnabled says whether the agent may tell the person, unasked,
+	// what their mail says they should know now. AlertQuietStart and
+	// AlertQuietEnd are their night for it, as "HH:MM" in their own zone,
+	// empty for the default; AlertDailyMost is the most a day, zero for
+	// the default.
+	IsAlertsEnabled *bool   `json:"isAlertsEnabled"`
+	AlertQuietStart *string `json:"alertQuietStart"`
+	AlertQuietEnd   *string `json:"alertQuietEnd"`
+	AlertDailyMost  *int    `json:"alertDailyMost"`
+
 	// Forget deletes the agent and everything it holds; the other fields
 	// are ignored when it is set.
 	Forget *bool `json:"forget"`
@@ -547,6 +557,26 @@ func (self *graph) UpdateAgent(ctx context.Context, arguments UpdateAgentArgumen
 		}
 		if arguments.IsIdeasEnabled != nil {
 			agent.IsIdeasEnabled = *arguments.IsIdeasEnabled
+		}
+		if arguments.IsAlertsEnabled != nil {
+			agent.IsAlertsEnabled = *arguments.IsAlertsEnabled
+		}
+		if arguments.AlertQuietStart != nil {
+			start, err := clockTime(*arguments.AlertQuietStart)
+			if err != nil {
+				return err
+			}
+			agent.AlertQuietStart = start
+		}
+		if arguments.AlertQuietEnd != nil {
+			end, err := clockTime(*arguments.AlertQuietEnd)
+			if err != nil {
+				return err
+			}
+			agent.AlertQuietEnd = end
+		}
+		if arguments.AlertDailyMost != nil {
+			agent.AlertDailyMost = *arguments.AlertDailyMost
 		}
 		return nil
 	})

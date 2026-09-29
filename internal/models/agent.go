@@ -106,6 +106,46 @@ type Agent struct {
 	IsMemoryCheckEnabled   bool       `json:"isMemoryCheckEnabled"`
 	IsIdeasEnabled         bool       `json:"isIdeasEnabled"`
 	SpeakFirstSnoozedUntil *time.Time `json:"speakFirstSnoozedUntil,omitempty" graphapi:"nullable"`
+
+	// IsAlertsEnabled is the person's switch for alerts: the agent telling
+	// them, unasked, what their mail says they should know now. On for a
+	// new agent. AlertQuietStart and AlertQuietEnd are their night, as
+	// "22:00" in their own zone, when only what cannot wait is said; empty
+	// means the default, and the two the same means no night at all.
+	// AlertDailyMost is how many alerts a day at most; zero means the
+	// default. See internal/agent/alert.go.
+	IsAlertsEnabled bool   `json:"isAlertsEnabled"`
+	AlertQuietStart string `json:"alertQuietStart,omitempty" graphapi:"nullable"`
+	AlertQuietEnd   string `json:"alertQuietEnd,omitempty" graphapi:"nullable"`
+	AlertDailyMost  int    `json:"alertDailyMost"`
+}
+
+// The bounds alerts keep when the person has not said: a night from ten
+// to seven in their own zone, and five a day.
+const (
+	AlertQuietStartDefault = "22:00"
+	AlertQuietEndDefault   = "07:00"
+	AlertDailyMostDefault  = 5
+)
+
+// AlertQuietHours is the person's night for alerts, filled in.
+func (self *Agent) AlertQuietHours() (string, string) {
+	start, end := self.AlertQuietStart, self.AlertQuietEnd
+	if start == "" {
+		start = AlertQuietStartDefault
+	}
+	if end == "" {
+		end = AlertQuietEndDefault
+	}
+	return start, end
+}
+
+// EffectiveAlertDailyMost resolves the zero value.
+func (self *Agent) EffectiveAlertDailyMost() int {
+	if self == nil || self.AlertDailyMost <= 0 {
+		return AlertDailyMostDefault
+	}
+	return self.AlertDailyMost
 }
 
 // DreamWindow is the hours of this person's night, filled in.
@@ -216,6 +256,17 @@ func (self *Agent) Validate() error {
 	if self.DailyTokens < 0 {
 		errors.add("dailyTokens", "must not be negative")
 	}
+	for field, clock := range map[string]string{"alertQuietStart": self.AlertQuietStart, "alertQuietEnd": self.AlertQuietEnd} {
+		if clock == "" {
+			continue
+		}
+		if _, err := time.Parse("15:04", clock); err != nil {
+			errors.add(field, "%q is not a time of day like 22:00", clock)
+		}
+	}
+	if self.AlertDailyMost < 0 || self.AlertDailyMost > 50 {
+		errors.add("alertDailyMost", "must be between 0 and 50")
+	}
 	return errors.ErrOrNil()
 }
 
@@ -256,6 +307,22 @@ type AgentMailbox struct {
 	Search       bool            `json:"search"`
 	Research     bool            `json:"research"`
 	AutoReply    *AgentAutoReply `json:"autoReply,omitempty" graphapi:"nullable"`
+
+	// Alerts is whether what arrives here may be told to the person
+	// unasked. Nil means on: a mailbox granted before alerts existed, or
+	// granted without saying, alerts wherever it is sorted.
+	Alerts *AgentAlerts `json:"alerts,omitempty" graphapi:"nullable"`
+}
+
+// AgentAlerts is the alerting policy for one source.
+type AgentAlerts struct {
+	Enabled bool `json:"enabled"`
+}
+
+// IsAlertsEnabled says whether the source alerts, reading an absent
+// policy as on.
+func (self *AgentMailbox) IsAlertsEnabled() bool {
+	return self != nil && (self.Alerts == nil || self.Alerts.Enabled)
 }
 
 // AgentTriage is the sorting policy for one source.
@@ -501,6 +568,12 @@ const (
 	// agent_background_work row, which says what to run and keeps what
 	// came of it.
 	AgentJobBackground AgentJobKind = "background"
+
+	// AgentJobAlert decides which of the waiting alert candidates the
+	// person is told about, and tells them. Its subject is the agent, so
+	// the queue's rule of one open job per agent, kind and subject is what
+	// gathers candidates arriving together into one decision.
+	AgentJobAlert AgentJobKind = "alert"
 )
 
 // AgentJobStatus is where a job is.

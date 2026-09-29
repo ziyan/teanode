@@ -240,6 +240,7 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobSpeakFirst, self.runSpeakFirst)
 	self.Register(models.AgentJobEvaluate, self.runEvaluation)
 	self.Register(models.AgentJobBackground, self.runBackgroundWork)
+	self.Register(models.AgentJobAlert, self.runAlert)
 	self.catalog = FullCatalog()
 	return self
 }

@@ -199,6 +199,20 @@ func (self *Agent) isTurnRunning(conversationId string) bool {
 	return latest != nil && !latest.isFinished()
 }
 
+// whileNoTurnRuns does work holding the lock Ask starts turns under, when
+// no turn is in flight in the conversation, and says whether it did: what
+// the work writes into the conversation is then never written between a
+// turn's opening message and its answer. The work is kept short, since
+// every turn waits on the lock meanwhile.
+func (self *Agent) whileNoTurnRuns(conversationId string, work func() error) (bool, error) {
+	self.runsMutex.Lock()
+	defer self.runsMutex.Unlock()
+	if latest := self.latest[conversationId]; latest != nil && !latest.isFinished() {
+		return false, nil
+	}
+	return true, work()
+}
+
 // SpeakFirstNow queues the agent to speak first for a reason now, outside
 // the sweep's rules: the person asked, from the dashboard or the command
 // line. One already queued or running is left to run.

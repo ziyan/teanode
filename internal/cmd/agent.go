@@ -37,6 +37,7 @@ func NewAgentCommand() *cli.Command {
 			newAgentBackgroundCommand(),
 			newAgentSkillCommand(),
 			newAgentIdeaCommand(),
+			newAgentAlertCommand(),
 			newAgentSourceTypeCommand(),
 			newAgentScheduleCommand(),
 			newAgentKnowledgeCommand(),
@@ -190,6 +191,9 @@ func newAgentSettingsCommand() *cli.Command {
 				ArgsUsage: "key=value [key=value ...]",
 				Description: "Keys: enabled, name, instructions, language, knowledge-language, ask-model, confirm (comma list),\n" +
 					"dream-from, dream-until (HH:MM in your zone: when it may dream),\n" +
+					"alerts (true|false: whether it tells you unasked what your mail says you should know now),\n" +
+					"alert-quiet-start, alert-quiet-end (HH:MM in your zone: its night, when only what cannot wait is said),\n" +
+					"alert-daily-most (how many a day at most; 0 for the default of 5),\n" +
 					"voice.tone (formal|neutral|casual), voice.length (short|medium|long), voice.greeting,\n" +
 					"voice.signoff, notify.held-reply, notify.high-priority, notify.run-failed (off|dashboard|mail).\n" +
 					"A value of \"-\" reads standard input.\n\n" +
@@ -261,6 +265,7 @@ func newAgentSourceCommand() *cli.Command {
 				Usage:     "change what the agent does in a mailbox",
 				ArgsUsage: "key=value [key=value ...]",
 				Description: "Keys: triage, triage.backfill (none|recent|all), triage.reply-expectation (direct|any),\n" +
+					"alerts (whether what arrives here may be told to you unasked; on by default where it is sorted),\n" +
 					"summaries, summaries.minimum, summaries.style (brief|detailed), draft-replies, search, research,\n" +
 					"auto-reply, auto-reply.guidance, auto-reply.scope (known|everyone|list), auto-reply.allow,\n" +
 					"auto-reply.never, auto-reply.categories, auto-reply.when (always|outsideHours|whenAway),\n" +
@@ -538,6 +543,10 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 		DreamFrom          string     `json:"dreamFrom"`
 		DreamUntil         string     `json:"dreamUntil"`
 		DreamedAt          *time.Time `json:"dreamedAt"`
+		IsAlertsEnabled    bool       `json:"isAlertsEnabled"`
+		AlertQuietStart    string     `json:"alertQuietStart"`
+		AlertQuietEnd      string     `json:"alertQuietEnd"`
+		AlertDailyMost     int        `json:"alertDailyMost"`
 		DailyTokens        int64      `json:"dailyTokens"`
 		DailyCost          float64    `json:"dailyCost"`
 		OperatorDisabledAt *time.Time `json:"operatorDisabledAt"`
@@ -577,6 +586,14 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 		hours += ", last ran " + formatTime(agent.DreamedAt)
 	}
 	fields = append(fields, [2]string{"dreams", hours})
+	// Alerts, with the defaults filled in for the same reason.
+	alerts := "off"
+	if agent.IsAlertsEnabled {
+		settings := &models.Agent{AlertQuietStart: agent.AlertQuietStart, AlertQuietEnd: agent.AlertQuietEnd, AlertDailyMost: agent.AlertDailyMost}
+		start, end := settings.AlertQuietHours()
+		alerts = fmt.Sprintf("on, at most %d a day, quiet from %s to %s", settings.EffectiveAlertDailyMost(), start, end)
+	}
+	fields = append(fields, [2]string{"alerts", alerts})
 	if view.Budget != nil {
 		limit := "unlimited"
 		if view.Budget.Limit > 0 {
@@ -648,6 +665,22 @@ func runAgentSettingsSet(ctx context.Context, command *cli.Command) error {
 			variables["dreamFrom"] = value
 		case "dream-until":
 			variables["dreamUntil"] = value
+		case "alerts":
+			enabled, err := parseBool(key, value)
+			if err != nil {
+				return err
+			}
+			variables["isAlertsEnabled"] = enabled
+		case "alert-quiet-start":
+			variables["alertQuietStart"] = value
+		case "alert-quiet-end":
+			variables["alertQuietEnd"] = value
+		case "alert-daily-most":
+			most, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("%s: %q is not a number", key, value)
+			}
+			variables["alertDailyMost"] = most
 		case "confirm":
 			variables["confirm"] = commaList(value)
 		case "voice.tone", "voice.length", "voice.greeting", "voice.signoff":
@@ -763,6 +796,7 @@ func printSources(command *cli.Command, view *client.AgentView) error {
 			Triage    *struct{ Enabled bool } `json:"triage"`
 			Summaries *struct{ Enabled bool } `json:"summaries"`
 			AutoReply *struct{ Enabled bool } `json:"autoReply"`
+			Alerts    *struct{ Enabled bool } `json:"alerts"`
 		}
 		if len(source.Policy) > 0 {
 			_ = json.Unmarshal(source.Policy, &policy)
@@ -770,9 +804,11 @@ func printSources(command *cli.Command, view *client.AgentView) error {
 		on := func(flag *struct{ Enabled bool }) string {
 			return yesNo(flag != nil && flag.Enabled)
 		}
-		rows = append(rows, []string{source.Name, source.MailboxID, yesNo(policy.Granted), on(policy.Triage), on(policy.Summaries), on(policy.AutoReply), strings.Join(source.Addresses, ", ")})
+		// Alerts follow the sorting, and an absent policy is on.
+		isAlerting := policy.Triage != nil && policy.Triage.Enabled && (policy.Alerts == nil || policy.Alerts.Enabled)
+		rows = append(rows, []string{source.Name, source.MailboxID, yesNo(policy.Granted), on(policy.Triage), yesNo(isAlerting), on(policy.Summaries), on(policy.AutoReply), strings.Join(source.Addresses, ", ")})
 	}
-	if err := printTable([]string{"MAILBOX", "ID", "GRANTED", "SORTING", "SUMMARIES", "ANSWERING", "ADDRESSES"}, rows); err != nil {
+	if err := printTable([]string{"MAILBOX", "ID", "GRANTED", "SORTING", "ALERTS", "SUMMARIES", "ANSWERING", "ADDRESSES"}, rows); err != nil {
 		return err
 	}
 	if len(view.Collections) == 0 {
@@ -932,12 +968,12 @@ func runAgentSourceSet(ctx context.Context, command *cli.Command) error {
 	policy := policyMap(source)
 	for key, value := range values {
 		switch key {
-		case "triage", "summaries", "auto-reply":
+		case "triage", "summaries", "auto-reply", "alerts":
 			enabled, err := parseBool(key, value)
 			if err != nil {
 				return err
 			}
-			nested(policy, map[string]string{"triage": "triage", "summaries": "summaries", "auto-reply": "autoReply"}[key])["enabled"] = enabled
+			nested(policy, map[string]string{"triage": "triage", "summaries": "summaries", "auto-reply": "autoReply", "alerts": "alerts"}[key])["enabled"] = enabled
 		case "draft-replies", "search", "research":
 			enabled, err := parseBool(key, value)
 			if err != nil {

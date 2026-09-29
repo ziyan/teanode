@@ -24,6 +24,8 @@ type TriageAnswer struct {
 	Extract     bool     `json:"extract"`
 	Summary     string   `json:"summary"`
 	ActionItems []string `json:"action_items"`
+	AlertSignal string   `json:"alert_signal"`
+	AlertReason string   `json:"alert_reason"`
 }
 
 // TriageInput is everything the prompt is built from, so the prompt can be
@@ -140,6 +142,23 @@ func InterpretTriage(answer *TriageAnswer, agent *models.Agent) (*models.MailIns
 	case "newsletter", "notification", "receipt", "promotion", "social":
 		needsReply = false
 	}
+	// Anything but the two words that mean something is nothing to say,
+	// and so is a message the sorting itself called junk or phishing: the
+	// person is not to be interrupted for a scam, however urgent it reads,
+	// because urgency is what a scam is written to have.
+	alertSignal := strings.ToLower(strings.TrimSpace(answer.AlertSignal))
+	switch alertSignal {
+	case models.AlertSignalSoon, models.AlertSignalNow:
+	default:
+		alertSignal = models.AlertSignalNone
+	}
+	if UnwantedCategory(category) {
+		alertSignal = models.AlertSignalNone
+	}
+	alertReason := ""
+	if alertSignal != models.AlertSignalNone {
+		alertReason = cutRunes(strings.TrimSpace(answer.AlertReason), 200)
+	}
 	return &models.MailInsight{
 		Category:      category,
 		Priority:      priority,
@@ -148,6 +167,8 @@ func InterpretTriage(answer *TriageAnswer, agent *models.Agent) (*models.MailIns
 		ExtractAsked:  answer.Extract,
 		Summary:       summary,
 		ActionItems:   items,
+		AlertSignal:   alertSignal,
+		AlertReason:   alertReason,
 	}, nil
 }
 
@@ -327,7 +348,10 @@ func (self *Agent) fileInsight(ctx context.Context, run *Run, mail *models.Mail,
 				}
 			}
 		}
-		return nil
+		// Whether the person should hear of it, or of the run of messages
+		// like it, without opening their mail: candidates for the alert
+		// job, which decides later and with more in hand.
+		return self.noteAlertCandidates(tx, run, mail, insight, time.Now())
 	})
 }
 

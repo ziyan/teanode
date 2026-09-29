@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -88,6 +89,15 @@ func (self *Bot) Run(ctx context.Context, handle func(ctx context.Context, incom
 			go handle(ctx, incoming, &chat{client: self.client, chatId: message.Chat.ID})
 		}
 	}
+}
+
+// ChatFor is the chat with this id, as the link keeps it.
+func (self *Bot) ChatFor(chatId string) (channel.Chat, error) {
+	id, err := strconv.ParseInt(chatId, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("telegram: %q is not a chat", chatId)
+	}
+	return &chat{client: self.client, chatId: id}, nil
 }
 
 func (self *Bot) incoming(message *Message) *channel.Incoming {

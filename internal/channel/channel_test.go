@@ -322,3 +322,124 @@ func TestTelegramBotCarriesTheMainChat(t *testing.T) {
 		t.Fatal("the page is not sent as a file too")
 	}
 }
+
+// occurrences is how many things the bot sent carry the words.
+func (self *fakeTelegram) occurrences(words string) int {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	total := 0
+	for _, line := range self.sent {
+		if strings.Contains(line, words) {
+			total++
+		}
+	}
+	return total
+}
+
+// What the agent says in the main conversation on its own -- an alert, a
+// turn it took speaking first -- reaches the linked chat once, its last
+// word only; what the person asked in the drawer is not sent, and a bot
+// started again does not send anything a second time.
+func TestTelegramBotSendsTheAgentsOwnTurnsOnce(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	configuration := config.Default()
+	configuration.Server.Secret = strings.Repeat("not-a-secret-", 4)
+	configuration.Agent.Enabled = true
+	store, err := storage.Open(&storage.Settings{Directory: t.TempDir()})
+	if err != nil {
+		t.Fatalf("storage.Open: %s", err)
+	}
+	worker := agent.New(&agent.Settings{Database: database, Storage: store, Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour})
+	sealed, err := worker.SealSecret("TOKEN")
+	if err != nil {
+		t.Fatalf("SealSecret: %s", err)
+	}
+	var found *models.Agent
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "robin", Name: "Robin Example"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if found, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if _, err := tx.PutAgentChannel(&models.AgentChannel{AgentID: found.ID, Kind: models.AgentChannelTelegram, Token: sealed, LinkCode: "ABC123", Enabled: true}); err != nil {
+			t.Fatalf("PutAgentChannel: %s", err)
+		}
+	})
+
+	fake := &fakeTelegram{}
+	server := fake.serve()
+	defer server.Close()
+	start := func() *channel.Manager {
+		manager := channel.New(&channel.Settings{
+			Worker: worker, Database: database, Storage: store, Configuration: func() *config.Configuration { return configuration }, Instance: "test",
+			Openers: map[models.AgentChannelKind]channel.Opener{models.AgentChannelTelegram: func(ctx context.Context, token string) (channel.Bot, error) {
+				return telegram.OpenAt(ctx, token, server.URL)
+			}},
+			RelayEvery: 200 * time.Millisecond,
+		})
+		manager.Start()
+		return manager
+	}
+	manager := start()
+	fake.push("/link ABC123")
+	fake.wait(t, "Linked.")
+	// The bot looks from the moment it was linked on.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var stored *models.AgentChannel
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			stored, _ = tx.GetAgentChannel(found.ID, models.AgentChannelTelegram)
+		})
+		if stored != nil && stored.RelayedThrough != "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the bot never started looking at the main conversation")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		main, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: found.ID, Kind: models.AgentConversationMain, LastAt: time.Now()})
+		if err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		for _, message := range []*models.AgentMessage{
+			{Role: "user", Content: models.AlertMarker + " Nobody asked for this."},
+			{Role: "assistant", Content: "Heads up: the daycare says a child in the class has croup."},
+			{Role: "user", Content: "what is on today?"},
+			{Role: "assistant", Content: "Nothing today, as far as I can see."},
+			{Role: "user", Content: models.SpeakFirstMarker + " Offer an idea."},
+			{Role: "assistant", Content: "Let me look first.", ToolCalls: []models.AgentToolCall{{ID: "call_1", Name: "memory", Arguments: `{}`}}},
+			{Role: "tool", ToolCallID: "call_1", Name: "memory", Content: `{"pages":[]}`},
+			{Role: "assistant", Content: "Good morning. An idea for the garden, if you want one."},
+		} {
+			message.ConversationID = main.ID
+			if _, err := tx.AppendAgentMessage(message); err != nil {
+				t.Fatalf("AppendAgentMessage: %s", err)
+			}
+		}
+	})
+	fake.wait(t, "Heads up: the daycare says")
+	fake.wait(t, "Good morning. An idea for the garden")
+	time.Sleep(time.Second)
+	if fake.occurrences("Heads up: the daycare says") != 1 || fake.occurrences("Good morning. An idea") != 1 {
+		t.Fatalf("each is sent once: %d, %d", fake.occurrences("Heads up: the daycare says"), fake.occurrences("Good morning. An idea"))
+	}
+	if fake.occurrences("Nothing today") != 0 || fake.occurrences("Let me look first") != 0 {
+		t.Fatal("what the person asked elsewhere, and a round that went on to a tool, are not sent")
+	}
+
+	// Started again, it has nothing new to send.
+	manager.Stop()
+	manager = start()
+	defer manager.Stop()
+	time.Sleep(4 * time.Second)
+	if fake.occurrences("Heads up: the daycare says") != 1 || fake.occurrences("Good morning. An idea") != 1 {
+		t.Fatalf("nothing is sent twice after a restart: %d, %d", fake.occurrences("Heads up: the daycare says"), fake.occurrences("Good morning. An idea"))
+	}
+}
