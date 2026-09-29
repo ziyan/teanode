@@ -3,7 +3,7 @@
 // lines the person wants added to its standing instructions. It is also
 // where the person's word about the agent starting conversations on its
 // own is kept: its introduction done, not now, no more ideas, no more
-// memory checks.
+// memory checks, no alerts, and "don't tell me about these".
 package agentprofile
 
 import (
@@ -14,6 +14,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/operator"
+	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -31,12 +32,15 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "agent_profile", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "Your own profile, as the person tells it to you. `set` changes your name, the language you talk to them in, or adds a line to your standing instructions (never replaces them). `onboarding_done` ends your introduction. `not_now` keeps you from starting a conversation on your own for a day. `no_more_ideas` and `no_more_memory_checks` switch those off, only when they say they never want them; stopping one check or dismissing one idea is not that. `ideas_on` and `memory_checks_on` switch them back on. For the person's own name use account_update.",
+				Description: "Your own profile, as the person tells it to you. `set` changes your name, the language you talk to them in, or adds a line to your standing instructions (never replaces them). `onboarding_done` ends your introduction. `not_now` keeps you from starting a conversation on your own for a day. `no_more_ideas` and `no_more_memory_checks` switch those off, only when they say they never want them; stopping one check or dismissing one idea is not that. `ideas_on` and `memory_checks_on` switch them back on. `no_alerts` stops you telling them unasked what their mail says they should know, only when they want none at all; `alerts_on` starts it again. When they say not to be told about something like an alert again, `mute_alert`: by the alert's subject (the default), its sender, the sender's domain or its kind (mute_scope sender, domain, subjectKey or kind); the latest alert unless alert_id names another, or give mute_target to name the address, domain, key or kind (burst, or a category such as notification) yourself. `unmute_alert` takes one back, by mute_scope and mute_target. For the person's own name use account_update.",
 				Parameters: tools.Object(map[string]any{
-					"action":          tools.EnumProperty("what to do", "set", "onboarding_done", "not_now", "no_more_ideas", "no_more_memory_checks", "ideas_on", "memory_checks_on"),
+					"action":          tools.EnumProperty("what to do", "set", "onboarding_done", "not_now", "no_more_ideas", "no_more_memory_checks", "ideas_on", "memory_checks_on", "no_alerts", "alerts_on", "mute_alert", "unmute_alert"),
 					"agent_name":      tools.StringProperty("for set: what they want to call you"),
 					"language":        tools.StringProperty("for set: the language to talk to them in, as a tag: en, ja, zh"),
 					"add_instruction": tools.StringProperty("for set: one line to add to your standing instructions, in their words: what they want help with, how they like to be written to"),
+					"alert_id":        tools.StringProperty("for mute_alert: the alert to mute from; the latest when left out"),
+					"mute_scope":      tools.EnumProperty("for mute_alert and unmute_alert: what to match; subjectKey when left out", string(models.AlertMuteSubjectKey), string(models.AlertMuteSender), string(models.AlertMuteDomain), string(models.AlertMuteKind)),
+					"mute_target":     tools.StringProperty("for mute_alert: the address, domain, subject key or kind, when not taken from the alert; for unmute_alert: the one to take back"),
 				}, "action"),
 				Preview: tools.PreviewOf(func(call arguments) string {
 					switch strings.TrimSpace(call.Action) {
@@ -67,6 +71,14 @@ func init() {
 						return "Switch the agent's ideas on"
 					case "memory_checks_on":
 						return "Switch the agent's memory checks on"
+					case "no_alerts":
+						return "Switch the agent's alerts off"
+					case "alerts_on":
+						return "Switch the agent's alerts on"
+					case "mute_alert":
+						return "Stop the agent telling you about these"
+					case "unmute_alert":
+						return "Let the agent tell you about these again"
 					}
 					return "Change the agent's profile"
 				}),
@@ -82,6 +94,9 @@ type arguments struct {
 	AgentName      string `json:"agent_name"`
 	Language       string `json:"language"`
 	AddInstruction string `json:"add_instruction"`
+	AlertID        string `json:"alert_id"`
+	MuteScope      string `json:"mute_scope"`
+	MuteTarget     string `json:"mute_target"`
 }
 
 func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -132,9 +147,92 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			return nil, err
 		}
 		return noted("memory checks are on"), nil
+	case "no_alerts":
+		if _, err := operator.Execute(ctx, `mutation { UpdateAgent(isAlertsEnabled: false) { agent { id } } }`, nil); err != nil {
+			return nil, err
+		}
+		return noted("alerts are off: you will not tell them about their mail unasked; the person can switch them on again in the agent's settings"), nil
+	case "alerts_on":
+		if _, err := operator.Execute(ctx, `mutation { UpdateAgent(isAlertsEnabled: true) { agent { id } } }`, nil); err != nil {
+			return nil, err
+		}
+		return noted("alerts are on"), nil
+	case "mute_alert":
+		return muteAlert(ctx, asked)
+	case "unmute_alert":
+		return unmuteAlert(ctx, asked)
 	default:
-		return nil, fmt.Errorf("%q is not set, onboarding_done, not_now, no_more_ideas, no_more_memory_checks, ideas_on or memory_checks_on", action)
+		return nil, fmt.Errorf("%q is not set, onboarding_done, not_now, no_more_ideas, no_more_memory_checks, ideas_on, memory_checks_on, no_alerts, alerts_on, mute_alert or unmute_alert", action)
 	}
+}
+
+// muteAlert is "don't tell me about these", through the same operation as
+// the Mute button on the agent page. Said after an alert, "these" is the
+// latest one.
+func muteAlert(ctx context.Context, asked arguments) (*tools.Result, error) {
+	variables := map[string]any{"muteScope": strings.TrimSpace(asked.MuteScope)}
+	if variables["muteScope"] == "" {
+		variables["muteScope"] = string(models.AlertMuteSubjectKey)
+	}
+	if target := strings.TrimSpace(asked.MuteTarget); target != "" {
+		variables["muteTarget"] = target
+	} else {
+		alertId := strings.TrimSpace(asked.AlertID)
+		if alertId == "" {
+			var listed struct {
+				ListAgentAlerts []struct {
+					ID string `json:"id"`
+				} `json:"ListAgentAlerts"`
+			}
+			if err := tools.MustRun(ctx).Operations().Execute(ctx, client.DocumentListAgentAlerts, map[string]any{"first": 1}, &listed); err != nil {
+				return nil, err
+			}
+			if len(listed.ListAgentAlerts) == 0 {
+				return nil, fmt.Errorf("you have told them nothing unasked yet; give mute_scope and mute_target to name what to mute")
+			}
+			alertId = listed.ListAgentAlerts[0].ID
+		}
+		variables["alertId"] = alertId
+	}
+	var muted struct {
+		MuteAgentAlert struct {
+			MuteScope  string `json:"muteScope"`
+			MuteTarget string `json:"muteTarget"`
+		} `json:"MuteAgentAlert"`
+	}
+	if err := tools.MustRun(ctx).Operations().Execute(ctx, client.DocumentMuteAgentAlert, variables, &muted); err != nil {
+		return nil, err
+	}
+	return noted(fmt.Sprintf("muted %s %q: you will not tell them about it unasked; the person can unmute it on the agent page", muted.MuteAgentAlert.MuteScope, muted.MuteAgentAlert.MuteTarget)), nil
+}
+
+// unmuteAlert takes a mute back, found by what it matches.
+func unmuteAlert(ctx context.Context, asked arguments) (*tools.Result, error) {
+	muteScope, muteTarget := strings.TrimSpace(asked.MuteScope), strings.ToLower(strings.TrimSpace(asked.MuteTarget))
+	var listed struct {
+		ListAgentAlertMutes []struct {
+			ID         string `json:"id"`
+			MuteScope  string `json:"muteScope"`
+			MuteTarget string `json:"muteTarget"`
+		} `json:"ListAgentAlertMutes"`
+	}
+	if err := tools.MustRun(ctx).Operations().Execute(ctx, client.DocumentListAgentAlertMutes, nil, &listed); err != nil {
+		return nil, err
+	}
+	names := []string{}
+	for _, mute := range listed.ListAgentAlertMutes {
+		if strings.ToLower(mute.MuteTarget) == muteTarget && (muteScope == "" || mute.MuteScope == muteScope) {
+			if _, err := operator.Execute(ctx, client.DocumentUnmuteAgentAlert, map[string]any{"muteId": mute.ID}); err != nil {
+				return nil, err
+			}
+			return noted(fmt.Sprintf("unmuted %s %q", mute.MuteScope, mute.MuteTarget)), nil
+		}
+		names = append(names, fmt.Sprintf("%s %q", mute.MuteScope, mute.MuteTarget))
+	}
+	if len(names) == 0 {
+		return nil, fmt.Errorf("nothing is muted")
+	}
+	return nil, fmt.Errorf("no mute matches %q; muted are: %s", muteTarget, strings.Join(names, ", "))
 }
 
 // set changes the profile through the same mutation the settings page
