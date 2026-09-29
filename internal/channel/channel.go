@@ -307,10 +307,20 @@ func (self *Manager) run(ctx context.Context, channel *models.AgentChannel) erro
 	self.note(channel.ID, bot.Name(), "", &now)
 	log.Noticef("the %s bot %q of agent %s is running on %s", channel.Kind, bot.Name(), channel.AgentID, self.settings.Instance)
 	conversation := &chatState{manager: self, channelId: channel.ID, agentId: channel.AgentID, kind: channel.Kind, bot: bot}
+	// The relay lives as long as this bot, not as long as the manager: a
+	// bot that stopped on its own is started again at the next tick, and
+	// a relay left behind would send the same turns beside the new one's.
+	relayContext, stopRelay := context.WithCancel(ctx)
+	relayDone := make(chan struct{})
 	self.wait.Add(1)
 	go func() {
 		defer self.wait.Done()
-		conversation.relay(ctx)
+		defer close(relayDone)
+		conversation.relay(relayContext)
+	}()
+	defer func() {
+		stopRelay()
+		<-relayDone
 	}()
 	return bot.Run(ctx, conversation.handle)
 }
