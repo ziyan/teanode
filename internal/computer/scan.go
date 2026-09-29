@@ -421,6 +421,10 @@ type RepositoryModule struct {
 
 	Dependencies []string `json:"dependencies,omitempty"`
 	File         string   `json:"file"`
+
+	// isMetamodule marks a metamodule while the modulesets are read; see
+	// expandMetamodules, which takes them out before a profile is sent.
+	isMetamodule bool
 }
 
 // RepositoryActivity is how many commits a checkout had lately and by how

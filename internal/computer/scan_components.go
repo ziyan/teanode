@@ -103,11 +103,20 @@ func repositoryComponents(directory string, tracked []string, ownNames []string,
 	sort.Strings(cmakeFiles)
 	targets := cmakeTargetsOf(directory, cmakeFiles)
 
+	// Shallowest first, then by name, so a checkout with more components
+	// than the bound keeps its top-level parts rather than whatever sorts
+	// first, all of one deep subtree.
 	directories := make([]string, 0, len(filesByDirectory))
 	for fileDirectory := range filesByDirectory {
 		directories = append(directories, fileDirectory)
 	}
-	sort.Strings(directories)
+	sort.Slice(directories, func(left, right int) bool {
+		leftDepth, rightDepth := strings.Count(directories[left], "/"), strings.Count(directories[right], "/")
+		if leftDepth != rightDepth {
+			return leftDepth < rightDepth
+		}
+		return directories[left] < directories[right]
+	})
 	var components []RepositoryComponent
 	for _, fileDirectory := range directories {
 		if len(components) >= componentEntries {
@@ -318,28 +327,41 @@ type cmakeTargets struct {
 // ends the command.
 var cmakeCommand = regexp.MustCompile(`(?is)\b(add_library|add_executable|target_link_libraries|project|find_package)\s*\(([^)]*)\)`)
 
-// cmakeKeywords are the words of those commands that are not names.
-var cmakeKeywords = map[string]bool{
-	"STATIC": true, "SHARED": true, "MODULE": true, "OBJECT": true, "INTERFACE": true,
-	"PUBLIC": true, "PRIVATE": true, "LINK_PUBLIC": true, "LINK_PRIVATE": true,
-	"LINK_INTERFACE_LIBRARIES": true, "debug": true, "optimized": true, "general": true,
-	"WIN32": true, "MACOSX_BUNDLE": true, "EXCLUDE_FROM_ALL": true,
-}
+// cmakeTargetKeywords are the words add_library and add_executable take
+// after the target's name that are not names, and cmakeLinkKeywords the
+// ones target_link_libraries takes among what it links.
+var (
+	cmakeTargetKeywords = map[string]bool{
+		"SHARED": true, "STATIC": true, "MODULE": true, "INTERFACE": true, "OBJECT": true,
+		"IMPORTED": true, "ALIAS": true, "GLOBAL": true, "EXCLUDE_FROM_ALL": true,
+		"WIN32": true, "MACOSX_BUNDLE": true,
+	}
+	cmakeLinkKeywords = map[string]bool{
+		"PUBLIC": true, "PRIVATE": true, "INTERFACE": true, "LINK_PUBLIC": true, "LINK_PRIVATE": true,
+		"LINK_INTERFACE_LIBRARIES": true, "debug": true, "optimized": true, "general": true,
+	}
+)
 
 // cmakeTargetsOf reads the CMake files of a checkout for what they declare
-// and link. Nothing is evaluated: a name held in a variable is not a name
-// here.
+// and link.
+//
+// Nothing is evaluated, with one exception: ${PROJECT_NAME} is the name
+// of the nearest project() at or above the file's directory, and
+// ${CMAKE_PROJECT_NAME} that of the top one, which is how most libraries
+// name their own target. Any other variable is not a name here: a target
+// named by one is skipped, and a linked name held in one is left out,
+// rather than taking the word after it for the target.
 func cmakeTargetsOf(directory string, files []string) *cmakeTargets {
 	targets := &cmakeTargets{
 		declaredIn: map[string][]string{}, directoryOf: map[string]string{},
 		linked: map[string][]string{}, projectOf: map[string]string{}, foundIn: map[string][]string{},
 	}
+	commandsByFile := make(map[string][][]string, len(files))
 	for _, file := range files {
 		content, isRead := readBuildFile(directory, file)
 		if !isRead {
 			continue
 		}
-		fileDirectory := path.Dir(file)
 		var uncommented strings.Builder
 		for _, line := range strings.Split(string(content), "\n") {
 			if comment := strings.Index(line, "#"); comment >= 0 {
@@ -349,48 +371,127 @@ func cmakeTargetsOf(directory string, files []string) *cmakeTargets {
 			uncommented.WriteByte('\n')
 		}
 		for _, match := range cmakeCommand.FindAllStringSubmatch(uncommented.String(), -1) {
-			var words []string
+			command := []string{strings.ToLower(match[1])}
 			for _, word := range strings.Fields(match[2]) {
-				word = strings.Trim(word, "\"")
-				if word != "" && !strings.HasPrefix(word, "$") && !strings.HasPrefix(word, "-") {
-					words = append(words, word)
+				if word = strings.Trim(word, "\""); word != "" {
+					command = append(command, word)
 				}
 			}
-			if len(words) == 0 {
+			commandsByFile[file] = append(commandsByFile[file], command)
+		}
+	}
+	// The projects first, every file's, so a file read before the one
+	// above it still knows its project's name.
+	for _, file := range files {
+		for _, command := range commandsByFile[file] {
+			fileDirectory := path.Dir(file)
+			if command[0] == "project" && len(command) > 1 && !strings.Contains(command[1], "$") && targets.projectOf[fileDirectory] == "" {
+				targets.projectOf[fileDirectory] = command[1]
+			}
+		}
+	}
+	for _, file := range files {
+		fileDirectory := path.Dir(file)
+		name := func(word string) (string, bool) {
+			return targets.resolveName(fileDirectory, word)
+		}
+		for _, command := range commandsByFile[file] {
+			if len(command) < 2 {
 				continue
 			}
-			switch strings.ToLower(match[1]) {
-			case "project":
-				if targets.projectOf[fileDirectory] == "" {
-					targets.projectOf[fileDirectory] = words[0]
-				}
+			switch command[0] {
 			case "find_package":
-				targets.foundIn[fileDirectory] = append(targets.foundIn[fileDirectory], words[0])
+				if found, isName := name(command[1]); isName {
+					targets.foundIn[fileDirectory] = append(targets.foundIn[fileDirectory], found)
+				}
 			case "add_library", "add_executable":
-				target := words[0]
-				if len(words) > 2 && words[1] == "ALIAS" {
-					if owner, found := targets.directoryOf[words[2]]; found {
+				target, isName := name(command[1])
+				if !isName {
+					continue
+				}
+				isImported, isAlias, aliased := false, false, ""
+				for index, word := range command[2:] {
+					switch {
+					case word == "IMPORTED":
+						isImported = true
+					case word == "ALIAS":
+						isAlias = true
+						if index+3 < len(command) {
+							aliased, _ = name(command[index+3])
+						}
+					}
+				}
+				if isImported {
+					continue // somebody else's, found rather than built
+				}
+				if isAlias {
+					if owner, found := targets.directoryOf[aliased]; found {
 						targets.directoryOf[target] = owner
 					}
 					continue
 				}
-				if len(words) > 1 && words[1] == "IMPORTED" {
-					continue // somebody else's, found rather than built
-				}
-				if _, taken := targets.directoryOf[target]; !taken {
+				if _, isTaken := targets.directoryOf[target]; !isTaken {
 					targets.directoryOf[target] = fileDirectory
 					targets.declaredIn[fileDirectory] = append(targets.declaredIn[fileDirectory], target)
 				}
 			case "target_link_libraries":
-				for _, linked := range words[1:] {
-					if !cmakeKeywords[linked] {
-						targets.linked[words[0]] = append(targets.linked[words[0]], linked)
+				target, isName := name(command[1])
+				if !isName {
+					continue
+				}
+				for _, word := range command[2:] {
+					if cmakeLinkKeywords[word] || strings.HasPrefix(word, "-") {
+						continue
+					}
+					if linked, isName := name(word); isName {
+						targets.linked[target] = append(targets.linked[target], linked)
 					}
 				}
 			}
 		}
 	}
 	return targets
+}
+
+// resolveName is a word of a CMake command as a name, with the project
+// variables put in; false for a word that still holds a variable or a
+// generator expression, which nothing here can know the value of.
+func (self *cmakeTargets) resolveName(fileDirectory, word string) (string, bool) {
+	if strings.Contains(word, "${PROJECT_NAME}") {
+		project := self.nearestProject(fileDirectory)
+		if project == "" {
+			return "", false
+		}
+		word = strings.ReplaceAll(word, "${PROJECT_NAME}", project)
+	}
+	if strings.Contains(word, "${CMAKE_PROJECT_NAME}") {
+		project := self.projectOf["."]
+		if project == "" {
+			project = self.nearestProject(fileDirectory)
+		}
+		if project == "" {
+			return "", false
+		}
+		word = strings.ReplaceAll(word, "${CMAKE_PROJECT_NAME}", project)
+	}
+	if word == "" || strings.Contains(word, "$") || cmakeTargetKeywords[word] {
+		return "", false
+	}
+	return word, true
+}
+
+// nearestProject is the project a directory's files are in: its own
+// project(), or the nearest one above it.
+func (self *cmakeTargets) nearestProject(fileDirectory string) string {
+	for {
+		if project := self.projectOf[fileDirectory]; project != "" {
+			return project
+		}
+		if fileDirectory == "." || fileDirectory == "/" || fileDirectory == "" {
+			return ""
+		}
+		fileDirectory = path.Dir(fileDirectory)
+	}
 }
 
 // ownRepositoryNames is what a checkout's repository may be called: the

@@ -15,10 +15,13 @@ import (
 // The bounds of reading a checkout's build files. A build file larger
 // than a megabyte is generated or is data, and a checkout that names more
 // than five hundred things it needs is one whose list says nothing a
-// person could read anyway.
+// person could read anyway. Modules have a bound of their own: a
+// moduleset of a whole product lists hundreds, and a long list of what
+// the checkout itself needs must not crowd them out, nor they it.
 const (
 	dependencyFileBytes = 1 << 20
 	dependencyEntries   = 500
+	moduleEntries       = 500
 )
 
 // The ecosystems a dependency can come from, which is which kind of build
@@ -105,7 +108,7 @@ func repositoryDependencies(directory string, tracked []string) ([]RepositoryDep
 	for _, file := range modulesets {
 		isQueued[file] = true
 	}
-	for len(modulesets) > 0 && len(dependencies)+len(modules) < dependencyEntries {
+	for len(modulesets) > 0 && len(modules) < moduleEntries {
 		file := modulesets[0]
 		modulesets = modulesets[1:]
 		content, isRead := readBuildFile(directory, file)
@@ -114,7 +117,7 @@ func repositoryDependencies(directory string, tracked []string) ([]RepositoryDep
 		}
 		found, includes := modulesetModules(content, file)
 		for _, module := range found {
-			if len(dependencies)+len(modules) >= dependencyEntries {
+			if len(modules) >= moduleEntries {
 				break
 			}
 			modules = append(modules, module)
@@ -126,7 +129,66 @@ func repositoryDependencies(directory string, tracked []string) ([]RepositoryDep
 			}
 		}
 	}
-	return dependencies, modules
+	return dependencies, expandMetamodules(modules)
+}
+
+// expandMetamodules is the modules with each metamodule taken out and a
+// dependency on one replaced by the modules it groups. A metamodule
+// builds nothing and has no repository: a module that needs one needs
+// what it lists, and a metamodule left in would be resolved by its name
+// to whatever checkout happens to share it. The modules of every file
+// read are expanded together, since a metamodule in one moduleset often
+// groups modules another declares.
+func expandMetamodules(modules []RepositoryModule) []RepositoryModule {
+	membersByMetamodule := map[string][]string{}
+	for _, module := range modules {
+		if module.isMetamodule {
+			if _, isKnown := membersByMetamodule[module.Name]; !isKnown {
+				membersByMetamodule[module.Name] = module.Dependencies
+			}
+		}
+	}
+	if len(membersByMetamodule) == 0 {
+		return modules
+	}
+	// A metamodule may list another; each is walked once, so a cycle
+	// ends.
+	var expand func(name string, isVisited map[string]bool, into *[]string)
+	expand = func(name string, isVisited map[string]bool, into *[]string) {
+		members, isMetamodule := membersByMetamodule[name]
+		if !isMetamodule {
+			*into = append(*into, name)
+			return
+		}
+		if isVisited[name] {
+			return
+		}
+		isVisited[name] = true
+		for _, member := range members {
+			expand(member, isVisited, into)
+		}
+	}
+	expanded := make([]RepositoryModule, 0, len(modules))
+	for _, module := range modules {
+		if module.isMetamodule {
+			continue
+		}
+		var dependencies []string
+		isVisited := map[string]bool{}
+		for _, dependency := range module.Dependencies {
+			expand(dependency, isVisited, &dependencies)
+		}
+		isListed := map[string]bool{}
+		module.Dependencies = nil
+		for _, dependency := range dependencies {
+			if !isListed[dependency] && dependency != module.Name {
+				isListed[dependency] = true
+				module.Dependencies = append(module.Dependencies, dependency)
+			}
+		}
+		expanded = append(expanded, module)
+	}
+	return expanded
 }
 
 // isOthersBuildFile says whether a tracked path is under a directory that
@@ -166,7 +228,7 @@ func readBuildFile(directory, file string) ([]byte, bool) {
 // requirement is one of theirs, not the checkout's.
 func goRequirements(content []byte) []string {
 	var names []string
-	inBlock := false
+	isInBlock := false
 	for _, line := range strings.Split(string(content), "\n") {
 		line = strings.TrimSpace(line)
 		isIndirect := strings.Contains(line, "// indirect")
@@ -174,12 +236,12 @@ func goRequirements(content []byte) []string {
 			line = strings.TrimSpace(line[:comment])
 		}
 		switch {
-		case inBlock && line == ")":
-			inBlock = false
+		case isInBlock && line == ")":
+			isInBlock = false
 			continue
-		case inBlock:
+		case isInBlock:
 		case line == "require (" || line == "require(":
-			inBlock = true
+			isInBlock = true
 			continue
 		default:
 			after, isRequire := strings.CutPrefix(line, "require ")
@@ -291,15 +353,15 @@ func untilListCloses(line string) (string, bool) {
 func pyprojectDependencies(content []byte) []string {
 	var names []string
 	table := ""
-	inList := false
+	isInList := false
 	for _, line := range strings.Split(string(content), "\n") {
 		line = strings.TrimSpace(line)
-		if inList {
+		if isInList {
 			before, isClosed := untilListCloses(line)
 			for _, requirement := range quotedStrings(before) {
 				names = append(names, pythonRequirementName(requirement))
 			}
-			inList = !isClosed
+			isInList = !isClosed
 			continue
 		}
 		if name, isTable := tomlTable(line); isTable {
@@ -320,7 +382,7 @@ func pyprojectDependencies(content []byte) []string {
 			for _, requirement := range quotedStrings(before) {
 				names = append(names, pythonRequirementName(requirement))
 			}
-			inList = !isClosed
+			isInList = !isClosed
 		case "tool.poetry.dependencies":
 			if key := tomlKey(line); key != "" && key != "python" && !strings.HasPrefix(key, "#") {
 				names = append(names, pythonRequirementName(key))
@@ -333,7 +395,9 @@ func pyprojectDependencies(content []byte) []string {
 // setupPyRequirements is the list a setup.py passes as install_requires,
 // when it is written out as a list of strings there. One built by code
 // elsewhere in the file is not read: running the file is the only way to
-// know it, and this does not run anything.
+// know it, and this does not run anything. The list ends at the bracket
+// that closes it, not at the first one: the extras of "example-lib[fast]"
+// are inside a string.
 func setupPyRequirements(content []byte) []string {
 	text := string(content)
 	start := strings.Index(text, "install_requires")
@@ -341,17 +405,19 @@ func setupPyRequirements(content []byte) []string {
 		return nil
 	}
 	text = text[start:]
-	open := strings.Index(text, "[")
-	if open < 0 {
-		return nil
-	}
-	close := strings.Index(text[open:], "]")
-	if close < 0 {
+	listStart := strings.Index(text, "[")
+	if listStart < 0 {
 		return nil
 	}
 	var names []string
-	for _, requirement := range quotedStrings(text[open : open+close]) {
-		names = append(names, pythonRequirementName(requirement))
+	for _, line := range strings.Split(text[listStart+1:], "\n") {
+		before, isClosed := untilListCloses(line)
+		for _, requirement := range quotedStrings(before) {
+			names = append(names, pythonRequirementName(requirement))
+		}
+		if isClosed {
+			break
+		}
 	}
 	return names
 }
@@ -361,13 +427,13 @@ func setupPyRequirements(content []byte) []string {
 func setupCfgRequirements(content []byte) []string {
 	var names []string
 	section := ""
-	inValue := false
+	isInValue := false
 	for _, raw := range strings.Split(string(content), "\n") {
 		line := strings.TrimSpace(raw)
 		if comment := strings.Index(line, "#"); comment >= 0 {
 			line = strings.TrimSpace(line[:comment])
 		}
-		if inValue {
+		if isInValue {
 			if raw != "" && (raw[0] == ' ' || raw[0] == '\t') {
 				names = append(names, pythonRequirementName(line))
 				continue
@@ -375,7 +441,7 @@ func setupCfgRequirements(content []byte) []string {
 			if line == "" {
 				continue
 			}
-			inValue = false
+			isInValue = false
 		}
 		if name, isSection := tomlTable(line); isSection {
 			section = name
@@ -388,7 +454,7 @@ func setupCfgRequirements(content []byte) []string {
 		for _, requirement := range strings.Split(value, ";") {
 			names = append(names, pythonRequirementName(requirement))
 		}
-		inValue = true
+		isInValue = true
 	}
 	return names
 }
@@ -443,9 +509,12 @@ func cmakePackages(content []byte) []string {
 //
 // A module is any element directly under the moduleset with an `id`:
 // autotools, cmake, meson, distutils, metamodule and the rest. Its
-// repository is the last segment of its branch's `module`, the path of
-// the repository on the server it names; a module without one is built
-// from a repository of its own name, which is what jhbuild does too.
+// repository is the directory its branch is checked out into when the
+// branch says (`checkoutdir`), and otherwise the last segment of the
+// branch's `module`, the path of the repository on the server it names;
+// a module without either is built from a repository of its own name,
+// which is what jhbuild does too. A metamodule is marked, for
+// expandMetamodules to take out.
 func modulesetModules(content []byte, file string) ([]RepositoryModule, []string) {
 	decoder := xml.NewDecoder(bytes.NewReader(content))
 	decoder.Strict = false
@@ -455,7 +524,7 @@ func modulesetModules(content []byte, file string) ([]RepositoryModule, []string
 	var includes []string
 	var current *RepositoryModule
 	depth := 0
-	inDependencies := false
+	isInDependencies := false
 	for {
 		token, err := decoder.Token()
 		if err != nil {
@@ -474,24 +543,29 @@ func modulesetModules(content []byte, file string) ([]RepositoryModule, []string
 					includes = append(includes, include)
 				}
 			case depth == 2 && attributes["id"] != "":
-				modules = append(modules, RepositoryModule{Name: attributes["id"], Repository: attributes["id"], File: file})
+				modules = append(modules, RepositoryModule{
+					Name: attributes["id"], Repository: attributes["id"], File: file,
+					isMetamodule: element.Name.Local == "metamodule",
+				})
 				current = &modules[len(modules)-1]
 			case current != nil && element.Name.Local == "branch":
-				if repository := repositoryOfModulePath(attributes["module"]); repository != "" {
+				if repository := repositoryOfModulePath(attributes["checkoutdir"]); repository != "" {
+					current.Repository = repository
+				} else if repository := repositoryOfModulePath(attributes["module"]); repository != "" {
 					current.Repository = repository
 				}
 			case current != nil && element.Name.Local == "dependencies":
-				inDependencies = true
-			case current != nil && inDependencies && element.Name.Local == "dep" && attributes["package"] != "":
+				isInDependencies = true
+			case current != nil && isInDependencies && element.Name.Local == "dep" && attributes["package"] != "":
 				current.Dependencies = append(current.Dependencies, attributes["package"])
 			}
 		case xml.EndElement:
 			switch {
 			case depth == 2:
 				current = nil
-				inDependencies = false
+				isInDependencies = false
 			case element.Name.Local == "dependencies":
-				inDependencies = false
+				isInDependencies = false
 			}
 			depth--
 		}

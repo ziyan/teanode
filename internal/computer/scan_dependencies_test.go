@@ -1,6 +1,7 @@
 package computer
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -49,7 +50,7 @@ func TestDependenciesAreReadFromEveryBuildFile(test *testing.T) {
 		"package.json": `{"name": "example-app", "dependencies": {"example-widgets": "^2.0.0", "@example/ui": "1.x"}, "devDependencies": {"example-test-runner": "^9"}}`,
 		"pyproject.toml": "[project]\nname = \"example-app\"\ndependencies = [\n  \"Example_Lib[fast]>=1.2\",\n  \"example-client ; python_version>'3.9'\",\n]\n\n" +
 			"[project.optional-dependencies]\ntest = [\"example-test-runner\"]\n\n[tool.poetry.dependencies]\npython = \"^3.11\"\nexample-poetry-lib = \"^1\"\n",
-		"setup.py":  "from setuptools import setup\nsetup(\n    name='example-app',\n    install_requires=['example-setup-lib>=2', \"example-other\"],\n)\n",
+		"setup.py":  "from setuptools import setup\nsetup(\n    name='example-app',\n    install_requires=['example-setup-lib[fast]>=2', \"example-other\",\n        'example-third'],\n    extras_require={'docs': ['example-docs']},\n)\n",
 		"setup.cfg": "[metadata]\nname = example-app\n\n[options]\ninstall_requires =\n    example-cfg-lib>=1\n    example-cfg-two\npython_requires = >=3.9\n",
 		"Cargo.toml": "[package]\nname = \"example-app\"\n\n[dependencies]\nexample-crate = \"1\"\nexample-path = { path = \"../example-path\" }\n\n" +
 			"[dependencies.example-table]\nversion = \"2\"\n\n[dev-dependencies]\nexample-bench = \"1\"\n",
@@ -63,7 +64,7 @@ func TestDependenciesAreReadFromEveryBuildFile(test *testing.T) {
 		"go.mod":         {"git.example.com/core/example-lib", "git.example.com/core/example-log"},
 		"package.json":   {"@example/ui", "example-widgets"},
 		"pyproject.toml": {"example-lib", "example-client", "example-poetry-lib"},
-		"setup.py":       {"example-setup-lib", "example-other"},
+		"setup.py":       {"example-setup-lib", "example-other", "example-third"},
 		"setup.cfg":      {"example-cfg-lib", "example-cfg-two"},
 		"Cargo.toml":     {"example-crate", "example-path", "example-table"},
 		"CMakeLists.txt": {"ExampleLib", "examplelog"},
@@ -129,8 +130,18 @@ func TestAModulesetsModulesAndTheirRepositories(test *testing.T) {
     <after><dep package="exampleoptional"/></after>
   </cmake>
   <metamodule id="exampleall">
-    <dependencies><dep package="exampleappcpp"/></dependencies>
+    <dependencies><dep package="exampleappcpp"/><dep package="examplegroup"/></dependencies>
   </metamodule>
+  <metamodule id="examplegroup">
+    <dependencies><dep package="exampletool"/><dep package="exampleall"/></dependencies>
+  </metamodule>
+  <cmake id="exampletool">
+    <branch repo="example" module="tools/example-tool-source.git" checkoutdir="example-tool"/>
+  </cmake>
+  <cmake id="examplerelease">
+    <branch repo="example" module="apps/example-release.git"/>
+    <dependencies><dep package="exampleall"/></dependencies>
+  </cmake>
 </moduleset>
 `,
 		"modulesets/common.xml": `<moduleset><autotools id="examplebase"><branch repo="example" module="core/example-base"/></autotools></moduleset>`,
@@ -142,7 +153,11 @@ func TestAModulesetsModulesAndTheirRepositories(test *testing.T) {
 	want := []RepositoryModule{
 		{Name: "examplelibcpp", Repository: "example-lib", File: "modulesets/example.modules"},
 		{Name: "exampleappcpp", Repository: "example-app", Dependencies: []string{"examplelibcpp", "examplebase"}, File: "modulesets/example.modules"},
-		{Name: "exampleall", Repository: "exampleall", Dependencies: []string{"exampleappcpp"}, File: "modulesets/example.modules"},
+		// A branch checked out into a directory of another name is that
+		// directory's; a metamodule is not a module, and a dependency on
+		// one is on what it groups, a metamodule inside it included.
+		{Name: "exampletool", Repository: "example-tool", File: "modulesets/example.modules"},
+		{Name: "examplerelease", Repository: "example-release", Dependencies: []string{"exampleappcpp", "exampletool"}, File: "modulesets/example.modules"},
 		{Name: "examplebase", Repository: "example-base", File: "modulesets/common.xml"},
 	}
 	if !reflect.DeepEqual(modules, want) {
@@ -164,8 +179,10 @@ func TestDependenciesAreBounded(test *testing.T) {
 		"example.modules": `<moduleset><cmake id="exampleone"/></moduleset>`,
 	})
 	dependencies, modules := repositoryDependencies(directory, tracked)
-	if len(dependencies)+len(modules) != dependencyEntries {
-		test.Fatalf("read %d dependencies and %d modules, want %d in all", len(dependencies), len(modules), dependencyEntries)
+	// Each list has its own bound, so a long go.mod does not crowd out
+	// the moduleset.
+	if len(dependencies) != dependencyEntries || len(modules) != 1 {
+		test.Fatalf("read %d dependencies and %d modules, want %d and 1", len(dependencies), len(modules), dependencyEntries)
 	}
 }
 
@@ -207,5 +224,45 @@ func TestAMonoreposPartsAreComponents(test *testing.T) {
 	components = repositoryComponents(directory, nil, []string{"example-mono"}, modules[:1])
 	if len(components) != 0 {
 		test.Fatalf("one module is not split off: %+v", components)
+	}
+}
+
+// A CMake target named by the project's variable is the project's name,
+// the words around a target that are not names are skipped, and a target
+// named by any other variable is not read at all.
+func TestCMakeTargetsNamedByTheProjectAreRead(test *testing.T) {
+	directory := test.TempDir()
+	tracked := writeCheckoutFiles(test, directory, map[string]string{
+		"CMakeLists.txt": "project(examplesuite)\nadd_subdirectory(libs/codec)\nadd_subdirectory(apps/player)\n",
+		"libs/codec/CMakeLists.txt": "project(examplecodec)\nadd_library(${PROJECT_NAME} SHARED codec.c)\n" +
+			"add_library(example::codec ALIAS ${PROJECT_NAME})\n",
+		"libs/imported/CMakeLists.txt": "add_library(exampleimported SHARED IMPORTED GLOBAL)\nadd_library(${EXAMPLE_GENERATED_NAME} STATIC generated.c)\n",
+		"libs/nested/CMakeLists.txt":   "add_library(${PROJECT_NAME}_nested STATIC EXCLUDE_FROM_ALL nested.c)\n",
+		"apps/player/CMakeLists.txt": "add_executable(${CMAKE_PROJECT_NAME}-player WIN32 main.c)\n" +
+			"target_link_libraries(${CMAKE_PROJECT_NAME}-player PUBLIC example::codec PRIVATE ${EXAMPLE_EXTRA_LIBRARIES}\n" +
+			"  debug examplenested optimized $<TARGET_NAME:examplecodec> general examplesuite_nested)\n",
+	})
+	components := repositoryComponents(directory, tracked, nil, nil)
+	want := []RepositoryComponent{
+		{Path: "apps/player", Name: "examplesuite-player", Ecosystem: EcosystemCMake, File: "apps/player/CMakeLists.txt",
+			Dependencies: []string{"examplecodec", "examplesuite_nested"}},
+		{Path: "libs/codec", Name: "examplecodec", Ecosystem: EcosystemCMake, File: "libs/codec/CMakeLists.txt"},
+		{Path: "libs/nested", Name: "examplesuite_nested", Ecosystem: EcosystemCMake, File: "libs/nested/CMakeLists.txt"},
+	}
+	if !reflect.DeepEqual(components, want) {
+		test.Fatalf("components:\n got %+v\nwant %+v", components, want)
+	}
+}
+
+// With more components than the bound, the shallowest are kept.
+func TestComponentsAreKeptShallowestFirst(test *testing.T) {
+	directory := test.TempDir()
+	files := map[string]string{"zeta/go.mod": "module example.com/zeta\n"}
+	for index := range componentEntries {
+		files[fmt.Sprintf("alpha/deep/part%03d/go.mod", index)] = fmt.Sprintf("module example.com/part%03d\n", index)
+	}
+	components := repositoryComponents(directory, writeCheckoutFiles(test, directory, files), nil, nil)
+	if len(components) != componentEntries || components[0].Path != "zeta" {
+		test.Fatalf("%d components, the first %+v", len(components), components[0])
 	}
 }
