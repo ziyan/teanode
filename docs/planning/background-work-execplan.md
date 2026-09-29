@@ -14,7 +14,7 @@ To see it working: in the drawer ask "survey my notes on the garden in the backg
 
 - [x] (2026-09-29) Read how background shell commands wake a conversation (`internal/agent/background.go`) and how jobs run; wrote this plan.
 - [x] (2026-09-29) Milestone 1: the record and the job: `agent_background_work` (migration 0121), the job kind `background`, stopping (here through a cancel, elsewhere through the row), the result kept, and a sweep that fails work whose job was lost.
-- [ ] Milestone 2: waking the conversation when it finishes, sharing the bounds background commands have.
+- [x] (2026-09-29) Milestone 2: waking the conversation when it finishes, through the same waker and the same count of twenty as background commands; a note instead when out of turns or budget; stopped work wakes nothing.
 - [ ] Milestone 3: the tools, the API and the command line: survey and subagent with `background`, list/read/stop everywhere, `teanode agent survey` by start and wait.
 - [ ] Milestone 4: the dashboard, docs, a decision record, deploy, and a check end to end.
 
@@ -47,6 +47,12 @@ To see it working: in the drawer ask "survey my notes on the garden in the backg
   Date/Author: 2026-09-29.
 - Decision: a subagent started in the background has the tools its parent had, minus `subagent` and minus anything outward-facing unless the parent turn had the person present, which is the same rule its woken turn follows.
   Rationale: it runs after the person may have looked away, like a woken turn, and must not be able to do more than one.
+  Date/Author: 2026-09-29.
+- Decision: finished work joins the waker in `background.go` as a second kind of ending (`backgroundWake.works`), under the same in-flight set (keyed `work:<id>`), the same gathering, retries and `backgroundWakeCounts`. A wake of work alone begins with `[background work]`; one with commands begins with `[background command]`, and every piece of work in either is marked `[background work]` again. The result is fenced and cut at 12,000 characters; a failure's message is fenced too.
+  Rationale: one counter is what makes a chain of work that starts commands that start work stop at twenty.
+  Date/Author: 2026-09-29.
+- Decision: a wake lost to a restart is recovered by the minute's sweep, which wakes done or failed work with a conversation, the person present and no `woken_at`, finished between one minute and one hour ago. `woken_at` is written when the woken turn is over (or the note written, or the conversation found gone).
+  Rationale: a computer says an ending again until it is acknowledged; the row is what says it again here. Finished longer than an hour ago is no longer news.
   Date/Author: 2026-09-29.
 
 ## Outcomes & Retrospective

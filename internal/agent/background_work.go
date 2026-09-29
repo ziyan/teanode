@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -20,6 +21,11 @@ import (
 // restart finds the row running and runs it again, which costs the work
 // twice and wakes the conversation at most twice, as the background
 // command decision already accepts.
+//
+// When it finishes, the conversation that started it is woken the way an
+// ended command wakes it: the same gathering, the same count of woken
+// turns before the person writes again, the same note instead when out of
+// turns or budget. See background.go.
 
 const (
 	// backgroundWorkLongest is how long one piece of work may run: a
@@ -33,12 +39,26 @@ const (
 	// cancel.
 	backgroundWorkStopCheck = 5 * time.Second
 
-	// backgroundWorkSweepEvery is how often lost work is looked for.
+	// backgroundWorkSweepEvery is how often lost work is looked for:
+	// work whose job vanished, and finished work whose wake was lost.
 	backgroundWorkSweepEvery = time.Minute
 
 	// backgroundWorkStaleAfter is how old queued or running work is
 	// before it is taken to have lost its job and is failed.
 	backgroundWorkStaleAfter = 24 * time.Hour
+
+	// Finished work whose conversation was not woken is woken by the
+	// sweep once it has been finished backgroundWorkWakeAfter, which
+	// leaves the wake the job itself hands over its time, and until it
+	// has been finished backgroundWorkWakeWithin, after which it is too
+	// late to be news.
+	backgroundWorkWakeAfter  = time.Minute
+	backgroundWorkWakeWithin = time.Hour
+
+	// backgroundWorkResultCharacters is how much of a result the wake
+	// carries. A survey's report is usually shorter; the whole of it is
+	// read with the background_work tool.
+	backgroundWorkResultCharacters = 12000
 )
 
 // errBackgroundWorkStopped is the cause a piece of work is cancelled with
@@ -103,7 +123,7 @@ func (self *Agent) cancelRunningWork(workId string) {
 }
 
 // runBackgroundWork is the job: it runs the work its subject names and
-// keeps what came of it.
+// keeps what came of it, then wakes the conversation that started it.
 func (self *Agent) runBackgroundWork(ctx context.Context, run *Run) error {
 	var work *models.AgentBackgroundWork
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
@@ -171,10 +191,20 @@ func (self *Agent) runBackgroundWork(ctx context.Context, run *Run) error {
 	// Written on a context of its own, since the work's may be done.
 	finishContext, cancelFinish := context.WithTimeout(context.WithoutCancel(ctx), jobCompletionTimeout)
 	defer cancelFinish()
-	return run.Database().TransactionContext(finishContext, func(tx db.Transaction) error {
-		_, err := tx.FinishAgentBackgroundWork(work)
+	isFinished := false
+	if err := run.Database().TransactionContext(finishContext, func(tx db.Transaction) (err error) {
+		isFinished, err = tx.FinishAgentBackgroundWork(work)
 		return err
-	})
+	}); err != nil {
+		return err
+	}
+	// Stopped while it ran: the row already says so, and stopped work
+	// wakes nothing.
+	if !isFinished || work.WorkStatus == models.BackgroundWorkStopped {
+		return nil
+	}
+	self.wakeForBackgroundWork(work)
+	return nil
 }
 
 // watchForStop cancels work whose row says it was stopped, for a stop
@@ -275,19 +305,56 @@ func (self *Agent) backgroundSubagent(ctx context.Context, run *Run, work *model
 	return answer, runIds, err
 }
 
-// sweepBackgroundWork fails work whose job was lost. Once a minute.
+// sweepBackgroundWork fails work whose job was lost, and wakes the
+// conversations of finished work whose wake was lost to a restart. Once a
+// minute.
 func (self *Agent) sweepBackgroundWork(ctx context.Context, now time.Time) {
 	if now.Sub(self.lastBackgroundSweep) < backgroundWorkSweepEvery {
 		return
 	}
 	self.lastBackgroundSweep = now
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		failed, err := tx.FailStaleAgentBackgroundWork(now.Add(-backgroundWorkStaleAfter), "its job was lost before it finished")
-		if failed > 0 {
+	var lost []*models.AgentBackgroundWork
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		if failed, err := tx.FailStaleAgentBackgroundWork(now.Add(-backgroundWorkStaleAfter), "its job was lost before it finished"); err != nil {
+			return err
+		} else if failed > 0 {
 			log.Noticef("failed %d piece(s) of background work whose job was lost", failed)
 		}
+		lost, err = tx.ListAgentBackgroundWorkToWake(now.Add(-backgroundWorkWakeWithin), now.Add(-backgroundWorkWakeAfter), 0)
 		return err
 	}); err != nil {
 		log.Warningf("cannot sweep the background work: %s", err)
+		return
 	}
+	for _, work := range lost {
+		self.wakeForBackgroundWork(work)
+	}
+}
+
+// backgroundWorkWhat says what a piece of work is, in a line.
+func backgroundWorkWhat(work *models.AgentBackgroundWork) string {
+	switch work.WorkKind {
+	case models.BackgroundWorkSurvey:
+		scope := "everything"
+		if strings.TrimSpace(work.WorkRequest.ScopePath) != "" {
+			scope = work.WorkRequest.ScopePath
+		}
+		return fmt.Sprintf("a survey of %s: %q", scope, work.WorkRequest.Question)
+	case models.BackgroundWorkSubagent:
+		return fmt.Sprintf("a subagent: %q", work.Title)
+	}
+	return string(work.WorkKind)
+}
+
+// backgroundWorkOutcome is how a piece of work ended, in a word or two.
+func backgroundWorkOutcome(work *models.AgentBackgroundWork) string {
+	switch work.WorkStatus {
+	case models.BackgroundWorkDone:
+		return "finished"
+	case models.BackgroundWorkFailed:
+		return "failed"
+	case models.BackgroundWorkStopped:
+		return "stopped before it finished"
+	}
+	return string(work.WorkStatus)
 }

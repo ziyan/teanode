@@ -219,6 +219,11 @@ const GoalCheckInMarker = "[goal check-in]"
 // person did not write it.
 const BackgroundCommandMarker = "[background command]"
 
+// BackgroundWorkMarker begins the message the agent is woken with when a
+// survey or a subagent it left running in the background finishes, and
+// each finished piece of work within that message.
+const BackgroundWorkMarker = "[background work]"
+
 // ScheduleMarker begins the message a schedule's turn is given when it
 // answers in a conversation: the agent's own turn, at a time somebody set,
 // and not the person's words.
@@ -227,7 +232,7 @@ const ScheduleMarker = "[schedule]"
 // OwnTurnMarkers are the markers of every turn the agent takes on its own
 // in a person's conversation: what anything looking for the person's own
 // last word must pass over.
-var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, ScheduleMarker, SpeakFirstMarker}
+var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker}
 
 // SpeakFirstMarker begins the message a turn the agent starts on its own
 // is given: an introduction, a memory check, an idea. Nobody wrote it; the

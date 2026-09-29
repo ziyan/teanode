@@ -31,6 +31,10 @@ import (
 // the person took, never one of the agent's own with nobody present, and
 // that a chain of commands that wake turns that start commands stops after
 // backgroundWakesAlone, until the person writes again.
+//
+// Finished background work -- a survey or a subagent the agent did not
+// wait for, background_work.go -- wakes the conversation through the same
+// waker, under the same bounds and the same count.
 
 const (
 	// backgroundWakeGather is how long an ending waits for others before
@@ -38,8 +42,9 @@ const (
 	// together, and they are one turn, not three.
 	backgroundWakeGather = 2 * time.Second
 
-	// backgroundWakesAlone is how many turns ended commands wake in one
-	// conversation before the person writes again.
+	// backgroundWakesAlone is how many turns ended commands and finished
+	// background work wake in one conversation, together, before the
+	// person writes again.
 	backgroundWakesAlone = 20
 
 	// A wake that failed is tried again after backgroundWakeRetry, and
@@ -52,7 +57,8 @@ const (
 	// more with the shell tool's read.
 	backgroundTailCharacters = 4000
 
-	// backgroundSurface is the surface of a turn an ended command wakes.
+	// backgroundSurface is the surface of a turn an ended command or
+	// finished background work wakes.
 	backgroundSurface = "background"
 
 	// backgroundListWait is how long listing waits for each computer. The
@@ -67,13 +73,56 @@ type backgroundEnding struct {
 	status   *computer.BackgroundStatus
 }
 
-// backgroundWake is what a conversation has waiting to wake it, and how
-// many times waking it has failed.
+// backgroundWake is what a conversation has waiting to wake it -- ended
+// commands and finished background work -- and how many times waking it
+// has failed.
 type backgroundWake struct {
 	agentId      string
 	endings      []backgroundEnding
+	works        []*models.AgentBackgroundWork
 	isQueued     bool
 	attemptCount int
+}
+
+// backgroundWorkInFlight is the key finished work is held under in the
+// background in-flight set, apart from the ids of commands.
+func backgroundWorkInFlight(workId string) string {
+	return "work:" + workId
+}
+
+// ensureBackgroundLocked makes the maps the background waker keeps.
+// Called with the background lock held.
+func (self *Agent) ensureBackgroundLocked() {
+	if self.backgroundInFlight == nil {
+		self.backgroundInFlight = map[string]bool{}
+		self.backgroundWakes = map[string]*backgroundWake{}
+		self.backgroundWakeCounts = map[string]int{}
+	}
+}
+
+// wakeForBackgroundWork has finished work wake the conversation that
+// started it, with whatever else ends there meanwhile. Work started from
+// the API, or by a turn with nobody present, wakes nothing.
+func (self *Agent) wakeForBackgroundWork(work *models.AgentBackgroundWork) {
+	if work.ConversationID == "" || !work.IsPersonPresent {
+		return
+	}
+	self.backgroundMutex.Lock()
+	defer self.backgroundMutex.Unlock()
+	self.ensureBackgroundLocked()
+	// Found again by the sweep while its turn is still to come: the turn
+	// already has it.
+	if self.backgroundInFlight[backgroundWorkInFlight(work.ID)] {
+		return
+	}
+	self.backgroundInFlight[backgroundWorkInFlight(work.ID)] = true
+	wake := self.backgroundWakes[work.ConversationID]
+	if wake == nil {
+		wake = &backgroundWake{agentId: work.AgentID}
+		self.backgroundWakes[work.ConversationID] = wake
+	}
+	wake.works = append(wake.works, work)
+	self.queueWakeLocked(work.ConversationID, wake, backgroundWakeGather)
 }
 
 // ComputerBackgroundEnded is a computer saying a background command ended.
@@ -108,11 +157,7 @@ func (self *Agent) ComputerBackgroundEnded(agentId string, connection DeviceConn
 
 	self.backgroundMutex.Lock()
 	defer self.backgroundMutex.Unlock()
-	if self.backgroundInFlight == nil {
-		self.backgroundInFlight = map[string]bool{}
-		self.backgroundWakes = map[string]*backgroundWake{}
-		self.backgroundWakeCounts = map[string]int{}
-	}
+	self.ensureBackgroundLocked()
 	// Said again after a reconnect while its turn is still to come: the
 	// turn already has it.
 	if self.backgroundInFlight[status.ID] {
@@ -152,13 +197,13 @@ func (self *Agent) queueWakeLocked(conversationId string, wake *backgroundWake, 
 // provider -- is tried again a minute later, a few times, with whatever
 // else ended meanwhile. After that the endings are let go of without
 // being acknowledged, and the computer says them again when it next
-// connects.
+// connects; finished work is left unwoken, and the sweep finds it again.
 func (self *Agent) wakeForBackground(conversationId string) {
 	self.backgroundMutex.Lock()
 	wake := self.backgroundWakes[conversationId]
 	delete(self.backgroundWakes, conversationId)
 	self.backgroundMutex.Unlock()
-	if wake == nil || len(wake.endings) == 0 {
+	if wake == nil || (len(wake.endings) == 0 && len(wake.works) == 0) {
 		return
 	}
 	err := self.tryWakeForBackground(conversationId, wake)
@@ -166,11 +211,12 @@ func (self *Agent) wakeForBackground(conversationId string) {
 	self.backgroundMutex.Lock()
 	defer self.backgroundMutex.Unlock()
 	if err != nil && wake.attemptCount+1 < backgroundWakeAttempts && self.ctx.Err() == nil {
-		log.Warningf("cannot wake conversation %q for a background command that ended, trying again in %s: %s", conversationId, backgroundWakeRetry, err)
+		log.Warningf("cannot wake conversation %q for background work or a command that ended, trying again in %s: %s", conversationId, backgroundWakeRetry, err)
 		// What ended while this one failed joins it.
-		retry := &backgroundWake{agentId: wake.agentId, endings: wake.endings, attemptCount: wake.attemptCount + 1}
+		retry := &backgroundWake{agentId: wake.agentId, endings: wake.endings, works: wake.works, attemptCount: wake.attemptCount + 1}
 		if waiting := self.backgroundWakes[conversationId]; waiting != nil {
 			retry.endings = append(retry.endings, waiting.endings...)
+			retry.works = append(retry.works, waiting.works...)
 			retry.isQueued = waiting.isQueued
 		}
 		self.backgroundWakes[conversationId] = retry
@@ -178,17 +224,21 @@ func (self *Agent) wakeForBackground(conversationId string) {
 		return
 	}
 	if err != nil {
-		log.Warningf("cannot wake conversation %q for a background command that ended; it is said again when the computer next connects: %s", conversationId, err)
+		log.Warningf("cannot wake conversation %q for background work or a command that ended; a command is said again when the computer next connects, and work is found again by the sweep: %s", conversationId, err)
 	}
 	for _, ending := range wake.endings {
 		delete(self.backgroundInFlight, ending.status.ID)
 	}
+	for _, work := range wake.works {
+		delete(self.backgroundInFlight, backgroundWorkInFlight(work.ID))
+	}
 }
 
 // tryWakeForBackground starts the turn that tells the agent, then
-// acknowledges the endings once that turn is over. A server that stops
-// before then leaves them unacknowledged, and the computer says them
-// again: a turn twice is better than none.
+// acknowledges the endings, and marks the work woken, once that turn is
+// over. A server that stops before then leaves them unacknowledged, and
+// the computer says them again, or the sweep finds the work again: a turn
+// twice is better than none.
 func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundWake) error {
 	// Told to the computer as it is attached now: a turn can outlast the
 	// connection the ending came in on, and an acknowledgement sent to
@@ -197,6 +247,21 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 	acknowledge := func() {
 		for _, ending := range wake.endings {
 			self.acknowledgeBackground(self.currentComputer(wake.agentId, ending.computer), ending.status.ID)
+		}
+		if len(wake.works) == 0 {
+			return
+		}
+		workIds := make([]string, 0, len(wake.works))
+		for _, work := range wake.works {
+			workIds = append(workIds, work.ID)
+		}
+		// Not the server's context, which a stop has already ended.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(self.ctx), jobCompletionTimeout)
+		defer cancel()
+		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+			return tx.MarkAgentBackgroundWorkWoken(workIds, time.Now())
+		}); err != nil {
+			log.Warningf("cannot mark background work %v as told: %s", workIds, err)
 		}
 	}
 
@@ -227,7 +292,8 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 		return err
 	}
 	// The conversation is gone, or the agent is off: there is nobody to
-	// tell, and the output can still be read on the computer.
+	// tell, and the output can still be read on the computer, the result
+	// through the API.
 	if conversation == nil || !FeatureAllowed(configuration, "ask") || self.operations == nil {
 		acknowledge()
 		return nil
@@ -238,13 +304,14 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 	self.backgroundMutex.Unlock()
 	// Out of turns or out of budget: the endings are written into the
 	// transcript for the person and the next turn to read, and no model is
-	// asked anything.
+	// asked anything. Commands and work share the count: a survey whose
+	// turn starts a subagent whose turn starts a command is one chain.
 	if wokenCount >= backgroundWakesAlone || deferral != nil {
-		reason := fmt.Sprintf("%d turns since you last wrote were woken by background commands", backgroundWakesAlone)
+		reason := fmt.Sprintf("%d turns since you last wrote were woken by background commands and work", backgroundWakesAlone)
 		if deferral != nil {
 			reason = deferral.Reason
 		}
-		note := fmt.Sprintf("%s; not woken again (%s).", backgroundEndingsLine(wake.endings), reason)
+		note := fmt.Sprintf("%s; not woken again (%s).", backgroundEndedLine(wake.endings, wake.works), reason)
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 			_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversationId, Role: models.AgentMessageNote, Content: note})
 			return err
@@ -261,7 +328,7 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 	}
 	turn, err := self.Ask(&AskSettings{
 		Agent: agent, Owner: owner, Operations: operations, Conversation: conversation,
-		Message: backgroundWakeMessage(wake.endings), Surface: backgroundSurface,
+		Message: backgroundWakeMessage(wake.endings, wake.works), Surface: backgroundSurface,
 		UsageKind: backgroundSurface,
 	})
 	if err != nil {
@@ -310,15 +377,22 @@ func (self *Agent) personTookTurn(conversationId string) {
 
 // backgroundWakeMessage is what the woken turn is given.
 //
-// It begins with the marker, so the transcript's readers know the person
-// did not write it, and it carries the output fenced, because what a
-// command printed is data from the machine and never an instruction.
-func backgroundWakeMessage(endings []backgroundEnding) string {
+// It begins with a marker, so the transcript's readers know the person
+// did not write it, and it carries the output and the results fenced,
+// because what a command printed is data from the machine, and what a
+// survey or a subagent answered was made from what it read, and neither
+// is ever an instruction.
+func backgroundWakeMessage(endings []backgroundEnding, works []*models.AgentBackgroundWork) string {
 	var builder strings.Builder
-	if len(endings) == 1 {
+	switch {
+	case len(endings) == 1:
 		builder.WriteString(models.BackgroundCommandMarker + " A command you left running in the background has ended. This is not the person speaking; they may not be watching.\n")
-	} else {
+	case len(endings) > 1:
 		fmt.Fprintf(&builder, "%s %d commands you left running in the background have ended. This is not the person speaking; they may not be watching.\n", models.BackgroundCommandMarker, len(endings))
+	case len(works) == 1:
+		builder.WriteString(models.BackgroundWorkMarker + " Work you started in the background has finished. This is not the person speaking; they may not be watching.\n")
+	default:
+		fmt.Fprintf(&builder, "%s %d pieces of work you started in the background have finished. This is not the person speaking; they may not be watching.\n", models.BackgroundWorkMarker, len(works))
 	}
 	for _, ending := range endings {
 		status := ending.status
@@ -333,7 +407,34 @@ func backgroundWakeMessage(endings []backgroundEnding) string {
 		fmt.Fprintf(&output, "stderr (%d bytes in all%s):\n%s", status.StderrByteCount, lastOf(status.IsStderrTruncated), lastCharacters(status.Stderr, backgroundTailCharacters))
 		builder.WriteString(fenced(output.String()) + "\n")
 	}
-	builder.WriteString("\nCarry on with what you started it for: act on how it ended, and tell the person what came of it. shell with action read and the id gives more of the output.")
+	for _, work := range works {
+		builder.WriteString("\n")
+		// Each piece of work is marked too, so that one finishing beside
+		// a command is not read as part of the command's output.
+		fmt.Fprintf(&builder, "%s id: %s\nwhat: %s\noutcome: %s\n", models.BackgroundWorkMarker, work.ID, backgroundWorkWhat(work), backgroundWorkOutcome(work))
+		if work.StartedAt != nil && work.FinishedAt != nil {
+			fmt.Fprintf(&builder, "ran for: %s\n", work.FinishedAt.Sub(*work.StartedAt).Round(time.Second))
+		}
+		if work.WorkStatus == models.BackgroundWorkFailed {
+			builder.WriteString("error:\n" + fenced(work.ErrorMessage) + "\n")
+			continue
+		}
+		characterCount := len([]rune(work.ResultText))
+		shown := cutRunes(work.ResultText, backgroundWorkResultCharacters)
+		if characterCount > backgroundWorkResultCharacters {
+			fmt.Fprintf(&builder, "result (%d characters in all, the first of it here):\n", characterCount)
+		} else {
+			builder.WriteString("result:\n")
+		}
+		builder.WriteString(fenced(shown) + "\n")
+	}
+	builder.WriteString("\nCarry on with what you started it for: act on how it ended, and tell the person what came of it.")
+	if len(endings) > 0 {
+		builder.WriteString(" shell with action read and the id gives more of the output.")
+	}
+	if len(works) > 0 {
+		builder.WriteString(" background_work with action read and the id gives the whole of a result.")
+	}
 	return builder.String()
 }
 
@@ -352,13 +453,25 @@ func backgroundOutcome(status *computer.BackgroundStatus) string {
 	return fmt.Sprintf("exit code: %d", status.ExitCode)
 }
 
-// backgroundEndingsLine is the endings in a line, for a note.
-func backgroundEndingsLine(endings []backgroundEnding) string {
-	described := make([]string, 0, len(endings))
-	for _, ending := range endings {
-		described = append(described, fmt.Sprintf("%q on %s, %s", tools.FirstWords(ending.status.Command, 8), ending.computer.name, backgroundOutcome(ending.status)))
+// backgroundEndedLine is the endings and the finished work in a line,
+// for a note.
+func backgroundEndedLine(endings []backgroundEnding, works []*models.AgentBackgroundWork) string {
+	var said []string
+	if len(endings) > 0 {
+		described := make([]string, 0, len(endings))
+		for _, ending := range endings {
+			described = append(described, fmt.Sprintf("%q on %s, %s", tools.FirstWords(ending.status.Command, 8), ending.computer.name, backgroundOutcome(ending.status)))
+		}
+		said = append(said, "Background commands ended: "+strings.Join(described, "; "))
 	}
-	return "Background commands ended: " + strings.Join(described, "; ")
+	if len(works) > 0 {
+		described := make([]string, 0, len(works))
+		for _, work := range works {
+			described = append(described, fmt.Sprintf("%s (%s), %s", backgroundWorkWhat(work), work.ID, backgroundWorkOutcome(work)))
+		}
+		said = append(said, "Background work finished: "+strings.Join(described, "; "))
+	}
+	return strings.Join(said, ". ")
 }
 
 func lastOf(isTruncated bool) string {
