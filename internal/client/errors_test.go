@@ -111,3 +111,46 @@ func TestUnreachableIsConnectionError(t *testing.T) {
 		t.Errorf("a refused connection should be a ConnectionError, got %v", err)
 	}
 }
+
+// What a proxy says while the server restarts, a server that failed and a
+// server that cannot be reached are worth asking again; an answer the
+// server gave is not.
+func TestTransientErrorsAreToldApart(t *testing.T) {
+	answer, status := `<html>Bad Gateway</html>`, http.StatusBadGateway
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.WriteHeader(status)
+		_, _ = response.Write([]byte(answer))
+	}))
+	defer server.Close()
+	connection, err := New(Options{URL: server.URL, Token: "tnt_x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	err = connection.Execute(ctx, `query { ListDomains { id } }`, nil, nil)
+	var answered *StatusError
+	if !errors.As(err, &answered) || answered.StatusCode != http.StatusBadGateway || !IsTransient(err) {
+		t.Errorf("a proxy's page is a transient status error, got %v", err)
+	}
+	answer, status = `{"data":null}`, http.StatusServiceUnavailable
+	if err := connection.Execute(ctx, `query { ListDomains { id } }`, nil, nil); !IsTransient(err) || err.Error() != "client: "+server.URL+" answered HTTP 503" {
+		t.Errorf("a server that failed is transient, got %v", err)
+	}
+	answer, status = `not json`, http.StatusBadRequest
+	if err := connection.Execute(ctx, `query { ListDomains { id } }`, nil, nil); err == nil || IsTransient(err) {
+		t.Errorf("a refused request is not transient, got %v", err)
+	}
+	answer, status = `{"errors":[{"message":"api: not found"}]}`, http.StatusOK
+	if err := connection.Execute(ctx, `query { ListDomains { id } }`, nil, nil); err == nil || IsTransient(err) {
+		t.Errorf("an answer is not transient, got %v", err)
+	}
+
+	unreachable, err := New(Options{URL: "http://127.0.0.1:1", Token: "tnt_x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unreachable.Execute(ctx, `query { ListDomains { id } }`, nil, nil); !IsTransient(err) {
+		t.Errorf("a server that cannot be reached is transient, got %v", err)
+	}
+}

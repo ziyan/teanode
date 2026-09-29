@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -136,5 +138,109 @@ func TestTheBackgroundCommandListsAndStops(test *testing.T) {
 	}
 	if sent := asked(); sent[1]["id"] != "work-2" || sent[2]["id"] != "work-1" {
 		test.Errorf("sent %v", sent)
+	}
+}
+
+// surveyWaitFor sets how the survey command waits, for one test.
+func surveyWaitFor(test *testing.T, pollEvery, waitLongest time.Duration) {
+	test.Helper()
+	polled, retried, waited := surveyPollEvery, surveyRetryLongest, surveyWaitLongest
+	surveyPollEvery, surveyRetryLongest, surveyWaitLongest = pollEvery, 4*pollEvery, waitLongest
+	test.Cleanup(func() { surveyPollEvery, surveyRetryLongest, surveyWaitLongest = polled, retried, waited })
+}
+
+// runSurveyAgainst runs the survey command against a server and hands
+// back what it printed, what it said on the side, and how it ended.
+func runSurveyAgainst(ctx context.Context, server *httptest.Server, question string) (string, string, error) {
+	var written, said bytes.Buffer
+	command := &cli.Command{
+		Name: "fixture", Writer: &written, ErrWriter: &said,
+		Flags:    []cli.Flag{&cli.StringFlag{Name: "url", Value: server.URL}, &cli.StringFlag{Name: "token", Value: "fixture-token"}},
+		Commands: []*cli.Command{NewAgentCommand()},
+	}
+	err := command.Run(ctx, []string{"fixture", "agent", "survey", question})
+	return written.String(), said.String(), err
+}
+
+// A read the proxy in front of a restarting server fails is asked again,
+// and the report is printed with the survey's id once it has finished.
+func TestTheSurveyCommandAsksAgainAfterAPassingFailure(test *testing.T) {
+	surveyWaitFor(test, 10*time.Millisecond, time.Minute)
+	inner, _ := backgroundWorkServer(test, 1, finishedSurvey)
+	var mutex sync.Mutex
+	readCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		if strings.Contains(string(body), "GetAgentBackgroundWork") {
+			mutex.Lock()
+			readCount++
+			isFirstRead := readCount == 1
+			mutex.Unlock()
+			if isFirstRead {
+				response.WriteHeader(http.StatusBadGateway)
+				_, _ = response.Write([]byte("<html>Bad Gateway</html>"))
+				return
+			}
+		}
+		forwarded, err := http.Post(inner.URL+request.URL.Path, "application/json", bytes.NewReader(body))
+		if err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		defer func() { _ = forwarded.Body.Close() }()
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = io.Copy(response, forwarded.Body)
+	}))
+	test.Cleanup(server.Close)
+
+	printed, said, err := runSurveyAgainst(test.Context(), server, "what are the strengths of the orchards?")
+	if err != nil {
+		test.Fatalf("a passing failure ended the wait: %s", err)
+	}
+	if !strings.HasPrefix(printed, "## Strengths") || !strings.Contains(printed, "'teanode agent background show work-1'") {
+		test.Errorf("the report and its id: %q", printed)
+	}
+	if !strings.Contains(said, "cannot read the survey work-1 just now") || !strings.Contains(said, "502") {
+		test.Errorf("the failure is said on the side: %q", said)
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
+	if readCount < 3 {
+		test.Errorf("read %d times", readCount)
+	}
+}
+
+// Waiting stops after its bound, or when the command is interrupted, and
+// either way names the survey and how to read it later; a failure that
+// is not a passing one ends the wait at once, naming it too.
+func TestTheSurveyCommandNamesTheSurveyWhenItStopsWaiting(test *testing.T) {
+	surveyWaitFor(test, 10*time.Millisecond, 50*time.Millisecond)
+	server, _ := backgroundWorkServer(test, 1000, finishedSurvey)
+	_, _, err := runSurveyAgainst(test.Context(), server, "what is everything?")
+	if err == nil || !strings.Contains(err.Error(), "stopped waiting after") || !strings.Contains(err.Error(), "'teanode agent background show work-1'") {
+		test.Errorf("the bound: %v", err)
+	}
+
+	surveyWaitFor(test, 10*time.Millisecond, time.Minute)
+	ctx, cancel := context.WithTimeout(test.Context(), 100*time.Millisecond)
+	defer cancel()
+	_, _, err = runSurveyAgainst(ctx, server, "what is everything?")
+	if err == nil || !strings.Contains(err.Error(), "goes on as work-1") || !strings.Contains(err.Error(), "'teanode agent background show work-1'") {
+		test.Errorf("interrupted: %v", err)
+	}
+
+	refusing := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		response.Header().Set("Content-Type", "application/json")
+		if strings.Contains(string(body), "StartAgentSurvey") {
+			_, _ = response.Write([]byte(`{"data":{"StartAgentSurvey":{"id":"work-1","workKind":"survey","workStatus":"queued","createdAt":"2026-09-29T10:00:00Z"}}}`))
+			return
+		}
+		_, _ = response.Write([]byte(`{"errors":[{"message":"the agent is off"}]}`))
+	}))
+	test.Cleanup(refusing.Close)
+	_, _, err = runSurveyAgainst(test.Context(), refusing, "what is everything?")
+	if err == nil || !strings.Contains(err.Error(), "the agent is off") || !strings.Contains(err.Error(), "work-1") {
+		test.Errorf("a refusal: %v", err)
 	}
 }
