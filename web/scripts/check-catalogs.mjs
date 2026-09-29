@@ -56,6 +56,10 @@ const SAME_ON_PURPOSE = new Set([
 
 // entries pulls "key: value" pairs out of a catalogue.
 //
+// Keys may carry a colon or a hyphen: a permission's key is its name, such
+// as access.permission.mail:audit-all, and a pattern without them skipped
+// those keys without a word.
+//
 // Values may be single or double quoted — the formatter switches to double
 // quotes for a string containing an apostrophe — and may be split across lines
 // with +, so a value is read to its closing quote rather than to the end of
@@ -63,7 +67,7 @@ const SAME_ON_PURPOSE = new Set([
 function entries(source) {
   const found = new Map()
   const quoted = String.raw`'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"`
-  const pattern = new RegExp(String.raw`^\s*'([\w.]+)':\s*((?:(?:${quoted})\s*\+?\s*)+),?\s*$`, 'gms')
+  const pattern = new RegExp(String.raw`^\s*'([\w.:-]+)':\s*((?:(?:${quoted})\s*\+?\s*)+),?\s*$`, 'gms')
 
   for (const match of source.matchAll(pattern)) {
     const pieces = [...match[2].matchAll(new RegExp(quoted, 'g'))].map((piece) =>
