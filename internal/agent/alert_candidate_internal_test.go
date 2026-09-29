@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -8,7 +9,9 @@ import (
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/storage"
 )
 
 func TestAlertSubjectPatternTakesOutWhatChanges(t *testing.T) {
@@ -39,7 +42,7 @@ func TestIsBurstGrownByHalf(t *testing.T) {
 }
 
 // alertFixture is a person with an agent that sorts one mailbox, and a
-// worker without a model: candidates are made without one.
+// worker. Candidates are made without a model; the alert job is given one.
 type alertFixture struct {
 	database db.Database
 	worker   *Agent
@@ -50,17 +53,40 @@ type alertFixture struct {
 }
 
 func newAlertFixture(t *testing.T) *alertFixture {
+	return newAlertFixtureWith(t, "", "UTC")
+}
+
+// newAlertFixtureWith is newAlertFixture with a model at providerURL, when
+// one is given, and the person in the zone given.
+func newAlertFixtureWith(t *testing.T, providerURL, zone string) *alertFixture {
 	t.Helper()
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	t.Cleanup(closeDatabase)
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
 	configuration.Agent.Features.Dreaming = new(bool)
-	worker := New(&Settings{Database: database, Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour})
+	settings := &Settings{Database: database, Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour}
+	if providerURL != "" {
+		configuration.Agent.Providers = []config.AgentProvider{{Name: "p", Kind: "openai", BaseURL: providerURL, APIKey: "k"}}
+		configuration.Agent.Models.Default = "p:thinker"
+		registry, err := llm.Open(&configuration.Agent)
+		if err != nil {
+			t.Fatalf("llm.Open: %s", err)
+		}
+		store, err := storage.Open(&storage.Settings{Directory: t.TempDir()})
+		if err != nil {
+			t.Fatalf("storage.Open: %s", err)
+		}
+		settings.Registry, settings.Storage = registry, store
+	}
+	worker := New(settings)
+	worker.SetOperationsFactory(func(context.Context, *models.User) (Operations, error) {
+		return &digestSplitOperations{}, nil
+	})
 	fixture := &alertFixture{database: database, worker: worker}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		var err error
-		if fixture.owner, err = tx.CreateUser(&models.User{Username: "robin", Name: "Robin Example", Timezone: "UTC"}); err != nil {
+		if fixture.owner, err = tx.CreateUser(&models.User{Username: "robin", Name: "Robin Example", Timezone: zone}); err != nil {
 			t.Fatalf("CreateUser: %s", err)
 		}
 		if fixture.agent, err = tx.CreateAgent(&models.Agent{UserID: fixture.owner.ID, Enabled: true}); err != nil {

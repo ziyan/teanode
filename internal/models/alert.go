@@ -57,3 +57,25 @@ type AgentAlertCandidate struct {
 func (self *AgentAlertCandidate) IsWaiting() bool {
 	return self.AlertID == "" && self.DroppedAt == nil
 }
+
+// AgentAlert is what the agent told the person unasked, as it was said in
+// the main conversation.
+type AgentAlert struct {
+	ID      string `json:"id"`
+	AgentID string `json:"agentId"`
+
+	// SubjectKey is the sender and what it is about, in the same words
+	// each time the same thing comes up, which is how nothing is said
+	// twice.
+	SubjectKey string `json:"subjectKey"`
+	AlertText  string `json:"alertText"`
+
+	// IsUrgent says it could not wait for the morning, and was said at
+	// night if that is when it came.
+	IsUrgent bool `json:"isUrgent"`
+
+	CandidateIDs   []string  `json:"candidateIds"`
+	ConversationID string    `json:"conversationId"`
+	MessageID      string    `json:"messageId"`
+	SentAt         time.Time `json:"sentAt"`
+}

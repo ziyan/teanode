@@ -1202,6 +1202,7 @@ export const ja: Catalog = {
   'agentDrawer.backgroundWorkEnded': 'バックグラウンドの作業が完了',
   'agentDrawer.scheduleTurn': 'スケジュールのターン',
   'agentDrawer.speakFirstTurn': 'エージェントから話しかけました',
+  'agentDrawer.alertTurn': 'メールからのお知らせ',
   'agentDrawer.approvedLater': 'ターン終了後に承認しました',
   'agentDrawer.declinedLater': 'ターン終了後に却下しました',
   'agentDrawer.backgroundCommands': 'バックグラウンドのコマンド',

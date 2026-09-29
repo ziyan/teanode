@@ -1165,6 +1165,7 @@ export const zh: Catalog = {
   'agentDrawer.backgroundWorkEnded': '后台工作已完成',
   'agentDrawer.scheduleTurn': '定时回合',
   'agentDrawer.speakFirstTurn': '由助手主动发起',
+  'agentDrawer.alertTurn': '来自邮件的提醒',
   'agentDrawer.approvedLater': '在回合结束后批准',
   'agentDrawer.declinedLater': '在回合结束后拒绝',
   'agentDrawer.backgroundCommands': '后台命令',

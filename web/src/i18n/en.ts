@@ -1208,6 +1208,7 @@ export const en = {
   'agentDrawer.backgroundWorkEnded': 'Background work finished',
   'agentDrawer.scheduleTurn': 'Scheduled turn',
   'agentDrawer.speakFirstTurn': 'Started by the agent',
+  'agentDrawer.alertTurn': 'Alert from your mail',
   'agentDrawer.approvedLater': 'Approved after the turn ended',
   'agentDrawer.declinedLater': 'Declined after the turn ended',
   'agentDrawer.backgroundCommands': 'Background commands',

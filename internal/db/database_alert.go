@@ -1,8 +1,11 @@
 package db
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
+
+	"gorm.io/gorm/clause"
 
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -17,6 +20,10 @@ type AlertOperation interface {
 	// dropped, oldest first.
 	ListWaitingAgentAlertCandidates(agentId string, limit int) ([]*models.AgentAlertCandidate, error)
 
+	// ListAgentAlertCandidatesByID is these candidates of the agent,
+	// whatever became of them, oldest first.
+	ListAgentAlertCandidatesByID(agentId string, candidateIds []string) ([]*models.AgentAlertCandidate, error)
+
 	// LatestAgentBurstCandidate is the newest burst candidate of a
 	// mailbox with this key made since the moment given, or nil.
 	LatestAgentBurstCandidate(agentId, mailboxId, burstKey string, since time.Time) (*models.AgentAlertCandidate, error)
@@ -27,6 +34,27 @@ type AlertOperation interface {
 	// counted over. One query over the mailbox's items by the time they
 	// were added, which is indexed.
 	ListMailSubjectsFromDomain(mailboxId, fromDomain string, since time.Time, limit int) ([]string, error)
+
+	// LockWaitingAgentAlertCandidates takes these candidates for telling
+	// or dropping, holding them until the transaction ends, and returns
+	// those still waiting: a run that finds one already told does not
+	// tell it again.
+	LockWaitingAgentAlertCandidates(agentId string, candidateIds []string) ([]*models.AgentAlertCandidate, error)
+
+	// MarkAgentAlertCandidatesAlerted records the alert that told the
+	// person about these candidates.
+	MarkAgentAlertCandidatesAlerted(candidateIds []string, alertId string) error
+
+	// DropAgentAlertCandidates records that these candidates were not
+	// worth telling, and why.
+	DropAgentAlertCandidates(candidateIds []string, dropReason string, at time.Time) error
+
+	// CreateAgentAlert records what the person was told.
+	CreateAgentAlert(alert *models.AgentAlert) (*models.AgentAlert, error)
+
+	// ListAgentAlertsSince is what the person was told since the moment
+	// given, newest first.
+	ListAgentAlertsSince(agentId string, since time.Time) ([]*models.AgentAlert, error)
 
 	// AdvanceAgentJob brings a queued job of this agent, kind and subject
 	// forward to the moment given, when it was waiting for later.
@@ -95,6 +123,21 @@ func (self *transaction) ListWaitingAgentAlertCandidates(agentId string, limit i
 	return candidates, nil
 }
 
+func (self *transaction) ListAgentAlertCandidatesByID(agentId string, candidateIds []string) ([]*models.AgentAlertCandidate, error) {
+	candidates := []*models.AgentAlertCandidate{}
+	if len(candidateIds) == 0 {
+		return candidates, nil
+	}
+	var found []agentAlertCandidateModel
+	if err := self.tx.Where("\"agent_id\" = ? AND \"id\" IN ?", agentId, candidateIds).Order("\"created_at\" ASC, \"id\" ASC").Find(&found).Error; err != nil {
+		return nil, err
+	}
+	for index := range found {
+		candidates = append(candidates, found[index].toModel())
+	}
+	return candidates, nil
+}
+
 func (self *transaction) LatestAgentBurstCandidate(agentId, mailboxId, burstKey string, since time.Time) (*models.AgentAlertCandidate, error) {
 	var found []agentAlertCandidateModel
 	if err := self.tx.Where("\"agent_id\" = ? AND \"mailbox_id\" = ? AND \"burst_key\" = ? AND \"created_at\" >= ?", agentId, mailboxId, burstKey, since).
@@ -129,4 +172,104 @@ func (self *transaction) AdvanceAgentJob(agentId string, kind models.AgentJobKin
 	return self.tx.Model(&agentJobModel{}).
 		Where("\"agent_id\" = ? AND \"kind\" = ? AND \"subject_id\" = ? AND \"status\" = ? AND \"not_before\" > ?", agentId, string(kind), subjectId, string(models.AgentJobQueued), notBefore).
 		Update("not_before", notBefore).Error
+}
+
+func (self *transaction) LockWaitingAgentAlertCandidates(agentId string, candidateIds []string) ([]*models.AgentAlertCandidate, error) {
+	candidates := []*models.AgentAlertCandidate{}
+	if len(candidateIds) == 0 {
+		return candidates, nil
+	}
+	var found []agentAlertCandidateModel
+	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("\"agent_id\" = ? AND \"id\" IN ? AND \"alert_id\" = '' AND \"dropped_at\" IS NULL", agentId, candidateIds).
+		Order("\"created_at\" ASC, \"id\" ASC").Find(&found).Error; err != nil {
+		return nil, err
+	}
+	for index := range found {
+		candidates = append(candidates, found[index].toModel())
+	}
+	return candidates, nil
+}
+
+func (self *transaction) MarkAgentAlertCandidatesAlerted(candidateIds []string, alertId string) error {
+	if len(candidateIds) == 0 {
+		return nil
+	}
+	return self.tx.Model(&agentAlertCandidateModel{}).Where("\"id\" IN ?", candidateIds).Update("alert_id", alertId).Error
+}
+
+func (self *transaction) DropAgentAlertCandidates(candidateIds []string, dropReason string, at time.Time) error {
+	if len(candidateIds) == 0 {
+		return nil
+	}
+	return self.tx.Model(&agentAlertCandidateModel{}).
+		Where("\"id\" IN ? AND \"alert_id\" = '' AND \"dropped_at\" IS NULL", candidateIds).
+		Updates(map[string]any{"dropped_at": at, "drop_reason": dropReason}).Error
+}
+
+type agentAlertModel struct {
+	ID             string    `gorm:"column:id;primaryKey"`
+	AgentID        string    `gorm:"column:agent_id"`
+	SubjectKey     string    `gorm:"column:subject_key"`
+	AlertText      string    `gorm:"column:alert_text"`
+	IsUrgent       bool      `gorm:"column:is_urgent"`
+	CandidateIDs   []byte    `gorm:"column:candidate_ids;type:jsonb"`
+	ConversationID string    `gorm:"column:conversation_id"`
+	MessageID      string    `gorm:"column:message_id"`
+	SentAt         time.Time `gorm:"column:sent_at"`
+}
+
+func (agentAlertModel) TableName() string { return "agent_alert" }
+
+func (self *agentAlertModel) toModel() (*models.AgentAlert, error) {
+	alert := &models.AgentAlert{
+		ID: self.ID, AgentID: self.AgentID, SubjectKey: self.SubjectKey, AlertText: self.AlertText, IsUrgent: self.IsUrgent,
+		CandidateIDs: []string{}, ConversationID: self.ConversationID, MessageID: self.MessageID, SentAt: self.SentAt.In(time.Local),
+	}
+	if err := decodeJSON(self.CandidateIDs, &alert.CandidateIDs); err != nil {
+		return nil, fmt.Errorf("db: cannot read the candidates of alert %q: %w", self.ID, err)
+	}
+	return alert, nil
+}
+
+func (self *transaction) CreateAgentAlert(alert *models.AgentAlert) (*models.AgentAlert, error) {
+	if alert.AgentID == "" {
+		return nil, fmt.Errorf("db: an alert needs an agent")
+	}
+	candidateIds := alert.CandidateIDs
+	if candidateIds == nil {
+		candidateIds = []string{}
+	}
+	encoded, err := json.Marshal(candidateIds)
+	if err != nil {
+		return nil, err
+	}
+	sentAt := alert.SentAt
+	if sentAt.IsZero() {
+		sentAt = time.Now()
+	}
+	model := &agentAlertModel{
+		ID: newID(), AgentID: alert.AgentID, SubjectKey: alert.SubjectKey, AlertText: alert.AlertText, IsUrgent: alert.IsUrgent,
+		CandidateIDs: encoded, ConversationID: alert.ConversationID, MessageID: alert.MessageID, SentAt: sentAt,
+	}
+	if err := self.tx.Create(model).Error; err != nil {
+		return nil, err
+	}
+	return model.toModel()
+}
+
+func (self *transaction) ListAgentAlertsSince(agentId string, since time.Time) ([]*models.AgentAlert, error) {
+	var found []agentAlertModel
+	if err := self.tx.Where("\"agent_id\" = ? AND \"sent_at\" >= ?", agentId, since).Order("\"sent_at\" DESC").Find(&found).Error; err != nil {
+		return nil, err
+	}
+	alerts := make([]*models.AgentAlert, 0, len(found))
+	for index := range found {
+		alert, err := found[index].toModel()
+		if err != nil {
+			return nil, err
+		}
+		alerts = append(alerts, alert)
+	}
+	return alerts, nil
 }
