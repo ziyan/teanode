@@ -32,11 +32,11 @@ func overviewProvider(t *testing.T) (*httptest.Server, func() []string) {
 		mutex.Lock()
 		prompts = append(prompts, string(body))
 		mutex.Unlock()
-		var asked struct {
+		var promptCount struct {
 			Stream bool `json:"stream"`
 		}
-		_ = json.Unmarshal(body, &asked)
-		if asked.Stream {
+		_ = json.Unmarshal(body, &promptCount)
+		if promptCount.Stream {
 			writer.Header().Set("Content-Type", "text/event-stream")
 			_, _ = fmt.Fprintf(writer, "data: {\"choices\":[{\"delta\":{\"content\":%s},\"finish_reason\":\"stop\"}],\"usage\":{}}\n\ndata: [DONE]\n\n", content)
 			return
@@ -134,15 +134,15 @@ func TestTheNightWritesOverviewsChildrenFirstAndOnlyWhenDue(t *testing.T) {
 	}
 	firstNight := askedAbout(sentPrompts())
 	if !firstNight["things/garden-shed/rake"] || !firstNight["things/garden-shed/hoe"] || !firstNight["projects/example-app"] || firstNight["things/garden-shed"] {
-		t.Errorf("the first night asked about %v", firstNight)
+		t.Errorf("the first night promptCount about %v", firstNight)
 	}
 
 	// The next night, the shed, from what its tools say now; the tools
 	// are not written again.
-	asked := len(sentPrompts())
+	promptCount := len(sentPrompts())
 	next := &models.AgentDream{}
 	worker.dreamOverviews(t.Context(), run, next, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
-	if secondNight := askedAbout(sentPrompts()[asked:]); !secondNight["things/garden-shed"] || secondNight["things/garden-shed/rake"] {
+	if secondNight := askedAbout(sentPrompts()[promptCount:]); !secondNight["things/garden-shed"] || secondNight["things/garden-shed/rake"] {
 		t.Fatalf("the second night wrote %d overviews, asking about %v", next.OverviewsWritten, secondNight)
 	}
 
@@ -175,16 +175,16 @@ func TestTheNightWritesOverviewsChildrenFirstAndOnlyWhenDue(t *testing.T) {
 		t.Errorf("a night with nothing changed wrote %d overviews", again.OverviewsWritten)
 	}
 
-	// With the night's share gone, nothing is asked at all.
+	// With the night's share gone, nothing is promptCount at all.
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		if err := tx.ClearAgentNodeOverviewInputs(run.Agent.ID, mustPage(t, tx, run.Agent.ID, "things/garden-shed").ID); err != nil {
 			t.Fatalf("ClearAgentNodeOverviewInputs: %s", err)
 		}
 	})
-	asked = len(sentPrompts())
+	promptCount = len(sentPrompts())
 	spent := &models.AgentDream{}
 	worker.dreamOverviews(t.Context(), run, spent, &dreamBudget{exhausted: true})
-	if spent.OverviewsWritten != 0 || len(sentPrompts()) != asked {
+	if spent.OverviewsWritten != 0 || len(sentPrompts()) != promptCount {
 		t.Errorf("a night with no share left wrote %d overviews", spent.OverviewsWritten)
 	}
 }

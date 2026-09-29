@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -33,6 +34,12 @@ func (self *Agent) surveyTool() *Tool {
 	}
 }
 
+// errSurveyedThisTurn is a second survey in one turn. A survey is
+// minutes of calls and costs one per page in scope; a model that asks for
+// another in the same turn is almost always asking the same question
+// again, and has the first report already.
+var errSurveyedThisTurn = errors.New("a survey already ran in this turn; its report is in the result above, so answer from it, or ask the person before surveying again in the next turn")
+
 func (self *Agent) runSurvey(ctx context.Context, call *Call) (*Result, error) {
 	arguments, err := tools.DecodeArguments[struct {
 		Question string `json:"question"`
@@ -45,22 +52,33 @@ func (self *Agent) runSurvey(ctx context.Context, call *Call) (*Result, error) {
 	if question == "" {
 		return nil, fmt.Errorf("say what the survey is to answer")
 	}
-	parent, ok := tools.MustRun(ctx).(*AskRun)
-	if !ok {
+	parent, isTurn := tools.MustRun(ctx).(*AskRun)
+	if !isTurn {
 		return nil, fmt.Errorf("a survey can only be started from a turn")
+	}
+	// One a turn, claimed before it starts, so two calls in one round do
+	// not both run.
+	parent.mutex.Lock()
+	hasSurveyed := parent.hasSurveyed
+	parent.hasSurveyed = true
+	parent.mutex.Unlock()
+	if hasSurveyed {
+		return nil, errSurveyedThisTurn
 	}
 	surveyed, err := self.Survey(ctx, parent.settings.Agent, parent.settings.Owner, question, arguments.Scope)
 	if err != nil {
 		return nil, err
 	}
+	// The keys the API answers with (AgentSurveyView), so the same thing
+	// has one name wherever it is read.
 	result, err := tools.JSONResult(map[string]any{
-		"report":  surveyed.Report,
-		"covered": surveyed.CoveredPaths,
-		"failed":  surveyed.FailedPaths,
+		"report":       surveyed.Report,
+		"coveredPaths": surveyed.CoveredPaths,
+		"failedPaths":  surveyed.FailedPaths,
 		// Where the working is, a run per page and the one that
 		// combined them, for a person who wants to see what was read.
-		"runs": surveyed.RunIDs,
-		"note": "Give them the report, keeping its citations. It is long and worth keeping: offer to keep it with the artifact tool as a Markdown document.",
+		"runIds": surveyed.RunIDs,
+		"note":   "Give them the report, keeping its citations. It is long and worth keeping: offer to keep it with the artifact tool as a Markdown document.",
 	})
 	if err != nil {
 		return nil, err

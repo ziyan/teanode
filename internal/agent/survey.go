@@ -217,11 +217,11 @@ func (self *Agent) surveyPages(ctx context.Context, run *Run, pages []*surveyPag
 
 	parts := make([]*surveyPart, len(pages))
 	slots := make(chan struct{}, surveyConcurrency)
-	var waiting sync.WaitGroup
-	for index, asked := range pages {
-		waiting.Add(1)
+	var pageRuns sync.WaitGroup
+	for index, surveyedPage := range pages {
+		pageRuns.Add(1)
 		go func() {
-			defer waiting.Done()
+			defer pageRuns.Done()
 			select {
 			case slots <- struct{}{}:
 			case <-pagesContext.Done():
@@ -229,22 +229,22 @@ func (self *Agent) surveyPages(ctx context.Context, run *Run, pages []*surveyPag
 				return
 			}
 			defer func() { <-slots }()
-			parts[index] = self.surveyPage(pagesContext, run, asked, question, shortQuestion, knowledgeLanguage)
+			parts[index] = self.surveyPage(pagesContext, run, surveyedPage, question, shortQuestion, knowledgeLanguage)
 		}()
 	}
-	waiting.Wait()
+	pageRuns.Wait()
 	return parts
 }
 
 // surveyPage is one page's run: the question, what the page says, and
 // the lookups, with nothing that changes anything.
-func (self *Agent) surveyPage(ctx context.Context, run *Run, asked *surveyPage, question, shortQuestion, knowledgeLanguage string) *surveyPart {
+func (self *Agent) surveyPage(ctx context.Context, run *Run, surveyedPage *surveyPage, question, shortQuestion, knowledgeLanguage string) *surveyPart {
 	if ctx.Err() != nil {
 		return &surveyPart{isFailed: true}
 	}
 	ctx, cancel := context.WithTimeout(ctx, surveyPageLongest)
 	defer cancel()
-	page := asked.page
+	page := surveyedPage.page
 	prompt, err := render("survey_part.txt", map[string]any{
 		"PersonName":        personName(run.Owner),
 		"KnowledgeLanguage": knowledgeLanguage,
@@ -254,9 +254,9 @@ func (self *Agent) surveyPage(ctx context.Context, run *Run, asked *surveyPage, 
 		"Kind":              string(page.Kind),
 		"Opening":           strings.TrimSpace(page.Summary),
 		"Overview":          strings.TrimSpace(page.Overview),
-		"Reflections":       asked.reflections,
-		"Facts":             asked.facts,
-		"Pages":             asked.heldPages,
+		"Reflections":       surveyedPage.reflections,
+		"Facts":             surveyedPage.facts,
+		"Pages":             surveyedPage.heldPages,
 	})
 	if err != nil {
 		log.Warningf("cannot write the survey prompt for %q: %s", page.Path, err)
@@ -386,11 +386,11 @@ func resolveSurveyScope(tx db.Transaction, agentId, scopePath string) (*surveySc
 		pages = pages[:surveyPageCount]
 	}
 	for _, page := range pages {
-		asked, err := readSurveyPage(tx, agentId, page)
+		surveyedPage, err := readSurveyPage(tx, agentId, page)
 		if err != nil {
 			return nil, err
 		}
-		scope.pages = append(scope.pages, asked)
+		scope.pages = append(scope.pages, surveyedPage)
 	}
 
 	if reflectionsPage, err := tx.GetAgentNode(agentId, reflectionsPath); err != nil {
@@ -445,7 +445,7 @@ func heldBy(tx db.Transaction, agentId string, page *models.AgentNode) ([]*model
 // readSurveyPage is what one page's run is shown beyond the page itself:
 // its reflections, its facts and the pages it holds.
 func readSurveyPage(tx db.Transaction, agentId string, page *models.AgentNode) (*surveyPage, error) {
-	asked := &surveyPage{page: page}
+	surveyedPage := &surveyPage{page: page}
 	facts, err := tx.ListAgentFactsLively(agentId, page.ID, surveyFactCount)
 	if err != nil {
 		return nil, err
@@ -458,7 +458,7 @@ func readSurveyPage(tx db.Transaction, agentId string, page *models.AgentNode) (
 	}
 	sort.SliceStable(stated, func(left, right int) bool { return stated[left].Number < stated[right].Number })
 	for _, fact := range stated {
-		asked.facts = append(asked.facts, fact.Reference(page.Path)+" "+cutRunes(fact.Line(), surveyFactLength))
+		surveyedPage.facts = append(surveyedPage.facts, fact.Reference(page.Path)+" "+cutRunes(fact.Line(), surveyFactLength))
 	}
 	// Every reflection, not the few the lively order put among the
 	// facts: they are the night's reading of the whole page.
@@ -466,19 +466,19 @@ func readSurveyPage(tx db.Transaction, agentId string, page *models.AgentNode) (
 	if err != nil {
 		return nil, err
 	}
-	asked.reflections = reflectionLines(page.Path, reflections)
+	surveyedPage.reflections = reflectionLines(page.Path, reflections)
 	held, err := heldBy(tx, agentId, page)
 	if err != nil {
 		return nil, err
 	}
 	for index, heldPage := range held {
 		if index >= surveyHeldCount {
-			asked.heldPages = append(asked.heldPages, fmt.Sprintf("… and %d more", len(held)-surveyHeldCount))
+			surveyedPage.heldPages = append(surveyedPage.heldPages, fmt.Sprintf("… and %d more", len(held)-surveyHeldCount))
 			break
 		}
-		asked.heldPages = append(asked.heldPages, heldPage.Path+" — "+heldPage.Name)
+		surveyedPage.heldPages = append(surveyedPage.heldPages, heldPage.Path+" — "+heldPage.Name)
 	}
-	return asked, nil
+	return surveyedPage, nil
 }
 
 // reflectionLines is a page's live reflections as a prompt shows them:

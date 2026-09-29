@@ -348,17 +348,26 @@ func TestTheSurveyToolAnswersWithTheReport(t *testing.T) {
 		t.Fatalf("the survey tool: %s", err)
 	}
 	var answered struct {
-		Report  string   `json:"report"`
-		Covered []string `json:"covered"`
-		Runs    []string `json:"runs"`
+		Report       string   `json:"report"`
+		CoveredPaths []string `json:"coveredPaths"`
+		FailedPaths  []string `json:"failedPaths"`
+		RunIDs       []string `json:"runIds"`
 	}
 	if err := json.Unmarshal([]byte(result.Content), &answered); err != nil {
 		t.Fatalf("the answer is not an object: %s", err)
 	}
-	if !strings.HasPrefix(answered.Report, "## Strengths") || len(answered.Covered) != 8 || len(answered.Runs) != 9 {
+	if !strings.HasPrefix(answered.Report, "## Strengths") || len(answered.CoveredPaths) != 8 || len(answered.RunIDs) != 9 {
 		t.Errorf("the tool answered %+v", answered)
 	}
 	if _, err := tool.Run(tools.WithRun(t.Context(), turn), &tools.Call{Arguments: json.RawMessage(`{"question": " "}`)}); err == nil {
 		t.Errorf("a survey of no question ran")
+	}
+	// One survey a turn: a second is refused without a call.
+	_, bodiesBefore := asked()
+	if _, err := tool.Run(tools.WithRun(t.Context(), turn), &tools.Call{Arguments: json.RawMessage(`{"question": "And the weaknesses?"}`)}); !errors.Is(err, errSurveyedThisTurn) {
+		t.Errorf("a second survey in one turn: %v", err)
+	}
+	if _, bodiesAfter := asked(); len(bodiesAfter) != len(bodiesBefore) {
+		t.Errorf("a refused survey made %d calls", len(bodiesAfter)-len(bodiesBefore))
 	}
 }
