@@ -134,6 +134,8 @@ present never leaves a command running, and a conversation takes at most
 twenty woken turns before the person writes there again. Why, and what it
 costs:
 `docs/decisions/20260923-a-background-command-wakes-the-conversation-that-started-it.md`.
+A survey or a subagent the agent did not wait for wakes the conversation the
+same way, under the same count (`the-ask-loop.md`).
 
 A program that predates background commands does not name them in its hello,
 and the server asks it for none: its commands are killed at the end of their

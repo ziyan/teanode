@@ -157,6 +157,34 @@ The loop's one part in this: after a person's own turn ends, a goal on that
 conversation that was `waiting` for them goes back to working, a minute out.
 The agent's own turns never resume anything.
 
+## Work left in the background
+
+A `subagent` hands a piece of work to a run of its own, and a `survey` asks
+each overview in an area for its part of an answer; both are built by the
+agent rather than registered, because they start runs. Either can be started
+without waiting for it (`background_work.go`). The survey does so unless told
+to wait; the subagent when told to. The call answers at once with a
+`backgroundWorkId`, and the turn goes on or ends.
+
+The work is a row of `agent_background_work`, run by a job of kind
+`background`, so a deploy does not lose it: a job claimed again after a
+restart finds its row running and runs it again. When it finishes, the
+conversation that started it takes a turn that opens with
+`models.BackgroundWorkMarker` and carries the result fenced as untrusted data,
+through the same waker as a background command (`background.go`): the same
+two seconds of gathering, the same twenty woken turns before the person
+writes again, counted together with the commands', and a note instead of a
+turn when out of them or out of budget. Stopped work wakes nothing, and a
+turn with nobody present starts none.
+
+A subagent in the background keeps the tools of the turn that started it,
+less `subagent`, `survey` and `background_work`, fixed in its row when it
+starts. The turn it would show a card in has ended, so it shows none
+(`AskSettings.isUnattended`): a call that needs the person's word is refused,
+and it says what it would have done for the woken turn to take to them. The
+`background_work` tool lists, reads and stops the work, offered wherever the
+two that start it are.
+
 ## Ending
 
 Every path emits `done` last. A stop writes `stopped` into the transcript so a

@@ -16,7 +16,8 @@ To see it working: in the drawer ask "survey my notes on the garden in the backg
 - [x] (2026-09-29) Milestone 1: the record and the job: `agent_background_work` (migration 0121), the job kind `background`, stopping (here through a cancel, elsewhere through the row), the result kept, and a sweep that fails work whose job was lost.
 - [x] (2026-09-29) Milestone 2: waking the conversation when it finishes, through the same waker and the same count of twenty as background commands; a note instead when out of turns or budget; stopped work wakes nothing.
 - [x] (2026-09-29) Milestone 3: the tools, the API and the command line: survey and subagent with `background`, the `background_work` tool, `StartAgentSurvey`, `ListAgentBackgroundWork`, `GetAgentBackgroundWork` and `StopAgentBackgroundWork` with their client documents, `teanode agent survey` by start and ask, and `teanode agent background list|show|stop`.
-- [ ] Milestone 4: the dashboard, docs, a decision record, deploy, and a check end to end.
+- [x] (2026-09-29) Milestone 4, the dashboard and docs: the agent page's Activity tab lists background work above the runs, with Stop while it is queued or running and Open for the run that holds a finished one's result; the drawer draws a `[background work]` turn as a quiet line; `the-ask-loop.md`, `jobs-and-schedules.md`, `memory.md`, `devices.md`, `command-line.md` and `docs/decisions/20260929-background-work-wakes-the-conversation-that-started-it.md`.
+- [ ] Milestone 4, the rest: deploy, then in the drawer start a survey in the background with an invented question, see the immediate answer, the woken turn with the report, and `teanode agent background list` in between. Left for the session that deploys.
 
 ## Surprises & Discoveries
 
@@ -66,10 +67,13 @@ To see it working: in the drawer ask "survey my notes on the garden in the backg
 - Decision: `StartAgentSurvey` refuses at once when nothing can run a survey (`Agent.CanSurvey`), rather than queueing work that fails. The client's `SurveyAgentMemory` call and its document are removed, since nothing sends them; the query stays on the server.
   Rationale: a client function nobody calls is a second way to do one thing; the schema test covers the documents that are sent.
   Date/Author: 2026-09-29.
+- Decision: on the dashboard each piece of work is a `SettingsRow` with one text action: Stop (`link danger`) while queued or running, Open once done, which opens the run holding the result in the drawer as the activity table opens a run (a subagent's one run; a survey's last, the one that combined the parts). Stop asks nothing first and says how it went in a toast, as a background command's Stop does. The card is absent when there is no work, like the background commands card.
+  Rationale: `docs/coding/frontend-design.md` (one action is a word; toasts for success and failure), and the runs' reader is the transcript the drawer already opens.
+  Date/Author: 2026-09-29.
 
 ## Outcomes & Retrospective
 
-Nothing yet.
+Milestones 1 to 4 are in code, tested and documented; the end-to-end check on a deployed server is still to do. What shipped matches the plan's shape, with three narrowings recorded above: a turn with nobody present starts no background work at all (so the outward-facing rule for the subagent has nothing to act on), a background subagent shows no cards, and one survey a turn holds whether it waits or not. The one thing the plan did not foresee was the job queue's own bounds: the general stale-claim release and the requeue on a deadline both had to be kept away from background work, or a survey would have been run twice at once, or forever.
 
 ## Context and Orientation
 

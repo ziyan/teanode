@@ -37,6 +37,7 @@ import {
   ComputerIcon,
   GlobeIcon,
   InboxIcon,
+  ListIcon,
   PaperclipIcon,
   PencilIcon,
   StarIcon,
@@ -119,6 +120,11 @@ const GOAL_CHECK_IN_MARKER = '[goal check-in]'
 // shape, and is drawn the same quiet way.
 const BACKGROUND_COMMAND_MARKER = '[background command]'
 
+// The marker a turn begins with when a survey or a subagent the agent left
+// running in the background has finished, which is
+// models.BackgroundWorkMarker on the server. Drawn the same quiet way.
+const BACKGROUND_WORK_MARKER = '[background work]'
+
 // The marker a schedule's turn begins with when it answers in a
 // conversation, which is models.ScheduleMarker on the server.
 const SCHEDULE_MARKER = '[schedule]'
@@ -142,7 +148,7 @@ const CARD_FRESH_MS = 60 * 60 * 1000
 
 // Which kind of turn of the agent's own a user message opens, if it opens
 // one at all.
-type CheckInOrigin = 'goal' | 'background' | 'schedule' | 'speakFirst' | 'approved' | 'declined'
+type CheckInOrigin = 'goal' | 'background' | 'backgroundWork' | 'schedule' | 'speakFirst' | 'approved' | 'declined'
 
 // The markers a turn begins with when the person answers a card after the
 // turn that raised it had ended, which are agent.AnsweringMarker,
@@ -155,6 +161,7 @@ const DECLINED_MARKER = '[declined]'
 function checkInOriginOf(text: string): CheckInOrigin | null {
   if (text.startsWith(GOAL_CHECK_IN_MARKER)) return 'goal'
   if (text.startsWith(BACKGROUND_COMMAND_MARKER)) return 'background'
+  if (text.startsWith(BACKGROUND_WORK_MARKER)) return 'backgroundWork'
   if (text.startsWith(SCHEDULE_MARKER)) return 'schedule'
   if (text.startsWith(SPEAK_FIRST_MARKER)) return 'speakFirst'
   if (text.startsWith(APPROVED_MARKER)) return 'approved'
@@ -1893,6 +1900,7 @@ function goalStateKey(state: GoalState): `agentDrawer.goal.${GoalState}` {
 const CHECK_IN_LABEL = {
   goal: 'agentDrawer.goal.checkIn',
   background: 'agentDrawer.backgroundEnded',
+  backgroundWork: 'agentDrawer.backgroundWorkEnded',
   schedule: 'agentDrawer.scheduleTurn',
   speakFirst: 'agentDrawer.speakFirstTurn',
   approved: 'agentDrawer.approvedLater',
@@ -1901,6 +1909,7 @@ const CHECK_IN_LABEL = {
 
 function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
   if (origin === 'background') return <TerminalIcon size={12} />
+  if (origin === 'backgroundWork') return <ListIcon size={12} />
   if (origin === 'schedule') return <CalendarIcon size={12} />
   if (origin === 'speakFirst') return <SparkIcon size={12} />
   if (origin === 'approved') return <CheckIcon size={12} />
