@@ -490,6 +490,11 @@ const (
 	// for it, and its runs are priced apart so that what one cost can be
 	// read on its own.
 	AgentJobSurvey AgentJobKind = "survey"
+
+	// AgentJobSubagent names the run of a subagent: a piece of work a turn
+	// handed to a run of its own. Never queued; it runs inside the turn
+	// that started it.
+	AgentJobSubagent AgentJobKind = "subagent"
 )
 
 // AgentJobStatus is where a job is.

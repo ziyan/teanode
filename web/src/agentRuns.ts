@@ -18,6 +18,8 @@ export const RUN_KINDS = [
   'evaluate',
   // A survey: one run per page it asked, and one that combined them.
   'survey',
+  // Work a turn handed to a run of its own.
+  'subagent',
   // A tool called, or a question asked, by a program over MCP.
   'mcp',
 ]

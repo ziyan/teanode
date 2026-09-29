@@ -95,6 +95,7 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 			AgentID: parent.settings.Agent.ID,
 			Kind:    models.AgentConversationRun,
 			Title:   "Subagent: " + title,
+			JobKind: string(models.AgentJobSubagent),
 			Surface: "subagent",
 			LastAt:  time.Now(),
 		})
