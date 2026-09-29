@@ -1,6 +1,6 @@
 # A background command wakes the conversation that started it
 
-- Status: accepted
+- Status: accepted; amended by `20260929-a-round-runs-its-reads-together.md`, where the reads of a round run together
 - Date: 2026-09-23
 - Deciders: the-owner
 

@@ -104,3 +104,9 @@ how a survey or a subagent the agent did not wait for extends the
 background command decision: a row and a queued job rather than the person's
 computer, woken through the same waker and counted against the same twenty
 turns, and why a subagent there shows no card.
+
+`20260929-a-round-runs-its-reads-together.md` says how a round's tool calls
+run: reads that follow each other together, anything else alone and in its
+place, with what they answered kept in the model's order and one card at a
+time. It amends the background command decision's line about the loop
+running them in order.

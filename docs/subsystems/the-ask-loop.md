@@ -86,14 +86,41 @@ by `settings.MaxRounds`. Each round:
 8. **Usage** is added to the run's total and recorded as an hourly row.
 9. **The answer** is appended to history and stored, with a usage note
    carrying the model, the four token counts and the cost.
-10. **Tool calls**, in order. No tool calls ends the turn.
+10. **Tool calls**, a batch at a time (below). No tool calls ends the turn.
 
 A turn that uses every round ends with `stopped after the most rounds a turn
 may take`.
 
+## Running a round's calls
+
+A model can ask for many calls in one answer, and most are reads.
+`roundBatches` divides them, in the model's order, into batches: calls
+that follow each other and only read are one batch, and every other call
+is a batch of its own. A call only reads when its risk for these
+arguments is `read` and it raises no card before it runs. The browser is
+never one, even to read, because the run has one page and a read after a
+navigation reads what the navigation left; nor is a call the fast model
+judges (`judgedToAsk`), since whether it asks is not known in advance.
+`subagent` and `survey` are reads by their risk, and run with the others.
+
+`runBatch` says each call of a batch has started, in the model's order,
+then runs them together, at most `concurrentToolCalls` (6) at once, each
+saying its result as it comes. A change is a barrier: it starts after
+everything before it has answered, and nothing after it starts until it
+has, so a read asked for after a change reads the change. Stop cancels
+the context every call of the batch runs under.
+
+Only the calls run together. Everything the loop keeps happens after the
+batch, one call at a time and in the model's order: the tool message in
+the history and in the transcript, the count of identical failures and
+the stop when one is stuck, and the pictures to look at. `runTool` keeps
+nothing on the run for that reason. A panic in a call running beside
+others answers that call `{"error": "the tool failed"}`; alone, it ends
+the turn as before.
+
 ## Running one tool call
 
-`runTool` emits `tool_call`, then, in order:
+`runTool` runs one call, in order:
 
 - **Resolve the name.** Unknown but deferred answers `is not loaded; call
   tool_search to load it first`; unknown entirely answers `there is no tool
@@ -133,6 +160,16 @@ model that keeps asking for something refused runs to the round bound instead.
 
 Both are the same shape: the run registers a channel under the call id, emits
 an event, and waits ten minutes.
+
+A run puts one card at a time (`takeCardSlot`). The reads of a round run
+together, and two subagents among them, or a subagent and `ask_user`, can
+each come to something that asks; a subagent's card is shown in the
+parent's conversation, so both would be there at once. A chat app keeps
+one card waiting per chat, so its "yes" would answer the second while the
+first waited out its time, and a message typed into the drawer answers
+the newest question. So the second card waits for the first to be
+answered, and the work around them goes on. A card still waiting when the
+turn is stopped is never put.
 
 - `confirmation` carries the tool, the arguments, the risk and a preview line.
   Answered with `Resolve(callID, approve)`.
@@ -243,6 +280,7 @@ deliberately absent.
 | `askHistoryTokens` | 30000 | history before a round compacts, when half the window is smaller or not known |
 | `askTailMessages` | 12 | messages kept verbatim by a compaction |
 | `askResultCharacters` | 24000 | one tool answer in the history |
+| `concurrentToolCalls` | 6 | calls of one batch running at once |
 | `attachmentImagesPerTurn` | 8 | pictures in one turn |
 | `maxRoundsPerAsk` | 40 | rounds, operator-set |
 | `MaxTokens` | 4000 | one answer |
