@@ -77,3 +77,37 @@ func TestActivityRanges(test *testing.T) {
 		}
 	}
 }
+
+// A pass whose counts moved within their ranges leaves the checkout's
+// overview as it was: the activity line is not rewritten, so the hash
+// of what the overview is written from does not move.
+func TestActivityWithinItsRangesLeavesTheOverviewAlone(test *testing.T) {
+	database, worker, run, source := ingestionPageFixture(test)
+	inputsAfter := func(commitCount int) string {
+		page := exampleCheckouts(true, true)
+		page.Entries[0].Repository.Activity = &computer.RepositoryActivity{
+			CommitCountLast90Days: commitCount, CommitCountLast365Days: 3 * commitCount, AuthorCountLast365Days: 2,
+		}
+		if _, _, err := worker.fileComputerPage(test.Context(), run, source, page, nil); err != nil {
+			test.Fatalf("fileComputerPage: %s", err)
+		}
+		var inputs string
+		dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+			application, err := tx.GetAgentNode(source.AgentID, "projects/example-app")
+			if err != nil || application == nil {
+				test.Fatalf("the app's page: %v %v", application, err)
+			}
+			if inputs, err = tx.AgentNodeOverviewInputs(source.AgentID, application.ID); err != nil {
+				test.Fatal(err)
+			}
+		})
+		return inputs
+	}
+	before := inputsAfter(7)
+	if after := inputsAfter(9); after != before {
+		test.Errorf("a count moving within its range made the overview due")
+	}
+	if after := inputsAfter(30); after == before {
+		test.Errorf("a count moving to another range left the overview as it was")
+	}
+}

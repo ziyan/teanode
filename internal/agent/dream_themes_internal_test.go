@@ -177,8 +177,11 @@ func TestTheNightKeepsThemesInTwoLevels(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListAgentThemesForOverview: %s", err)
 		}
-		if len(due) != 3 || due[2].Path != "themes/outdoor-life" {
-			t.Errorf("the themes due an overview are %v", pathsOf(due))
+		// The theme of themes waits for the themes under it, which are
+		// due as well.
+		if paths := pathsOf(due); len(paths) != 2 || strings.Contains(strings.Join(paths, " "), "themes/outdoor-life ") ||
+			paths[0] == "themes/outdoor-life" || paths[1] == "themes/outdoor-life" {
+			t.Errorf("the themes ready for an overview are %v", paths)
 		}
 	})
 

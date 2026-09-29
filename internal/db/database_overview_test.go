@@ -131,9 +131,9 @@ func TestOverviewInputsChangeOnlyWithWhatTheOverviewIsWrittenFrom(t *testing.T) 
 	})
 }
 
-// A page is listed after the pages under it, so its overview is written
-// from theirs; and a child written again makes its parent due.
-func TestOverviewsAreListedDeepestFirst(t *testing.T) {
+// A page waits while a page directly under it is due, so its overview is
+// written from theirs; and a child written again makes its parent due.
+func TestAPageWaitsForThePagesUnderIt(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
@@ -151,28 +151,14 @@ func TestOverviewsAreListedDeepestFirst(t *testing.T) {
 		}
 
 		paths := overviewPaths(t, tx, agent.ID)
-		position := map[string]int{}
-		for index, path := range paths {
-			position[path] = index
+		if !isListed(paths, rows[0].Path) || !isListed(paths, rows[1].Path) || isListed(paths, orchard.Path) {
+			t.Fatalf("the rows are ready and the orchard waits for them: %v", paths)
 		}
-		for _, row := range rows {
-			if _, isThere := position[row.Path]; !isThere {
-				t.Fatalf("%s is not listed: %v", row.Path, paths)
-			}
-			if _, isThere := position[orchard.Path]; !isThere || position[row.Path] > position[orchard.Path] {
-				t.Fatalf("a page is listed after the pages under it: %v", paths)
-			}
+		writeOverviews(t, tx, agent.ID, rows...)
+		if paths := overviewPaths(t, tx, agent.ID); !isListed(paths, orchard.Path) {
+			t.Fatalf("with its rows written the orchard is ready: %v", paths)
 		}
-
-		for _, page := range append(rows, orchard) {
-			inputs, err := tx.AgentNodeOverviewInputs(agent.ID, page.ID)
-			if err != nil {
-				t.Fatalf("AgentNodeOverviewInputs: %s", err)
-			}
-			if err := tx.SetAgentNodeOverview(agent.ID, page.ID, "## What it is\n\nAn orchard.", nil, inputs, time.Now()); err != nil {
-				t.Fatalf("SetAgentNodeOverview: %s", err)
-			}
-		}
+		writeOverviews(t, tx, agent.ID, orchard)
 		if paths := overviewPaths(t, tx, agent.ID); isListed(paths, orchard.Path) || isListed(paths, rows[0].Path) {
 			t.Fatalf("nothing changed and something is due: %v", paths)
 		}
@@ -189,4 +175,89 @@ func TestOverviewsAreListedDeepestFirst(t *testing.T) {
 			t.Fatalf("a page whose child's overview was written again is due")
 		}
 	})
+}
+
+// A page with nothing due under it is ready the first night, however
+// many deeper pages elsewhere are due; the most important come first;
+// and a page below the median importance waits.
+func TestAPageIsReadyWhenNothingUnderItIsDue(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		withFacts := func(path string, importance float32) *models.AgentNode {
+			page, err := tx.PutAgentNode(&models.AgentNode{AgentID: agent.ID, Path: path, Kind: models.NodeThing, Name: path, Importance: importance})
+			if err != nil {
+				t.Fatalf("PutAgentNode %q: %s", path, err)
+			}
+			addFacts(t, tx, agent.ID, page.ID, "It is old.", "It is heavy.", "It is green.")
+			return page
+		}
+		withFacts("things/boat/hull/keel/bolt", 0.5)
+		withFacts("things/boat/hull/keel", 0.5)
+		withFacts("things/copper-kettle", 0.9)
+		withFacts("things/garden-hose", 0.7)
+		withFacts("things/spare-button", 0.1)
+
+		paths := overviewPaths(t, tx, agent.ID)
+		want := []string{"things/copper-kettle", "things/garden-hose", "things/boat/hull/keel/bolt"}
+		if fmt.Sprint(paths) != fmt.Sprint(want) {
+			t.Fatalf("ready: %v, want %v", paths, want)
+		}
+	})
+}
+
+// Writing reflections on a theme does not make its overview due: they
+// are written from the overview.
+func TestReflectionsAreNotWhatAnOverviewIsWrittenFrom(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		putNode(t, tx, agent.ID, "themes", models.NodeFolder, "Themes")
+		theme := putNode(t, tx, agent.ID, "themes/boatyard", models.NodeTopic, "Boatyard")
+		member := putNode(t, tx, agent.ID, "things/rowing-boat", models.NodeThing, "Rowing boat")
+		if err := tx.PutAgentEdge(&models.AgentEdge{AgentID: agent.ID, FromID: theme.ID, ToID: member.ID, Relation: models.EdgeAboutPlace, Status: models.EdgeStated}); err != nil {
+			t.Fatalf("PutAgentEdge: %s", err)
+		}
+		writeOverviews(t, tx, agent.ID, theme)
+		before, err := tx.AgentNodeOverviewInputs(agent.ID, theme.ID)
+		if err != nil {
+			t.Fatalf("AgentNodeOverviewInputs: %s", err)
+		}
+		if _, err := tx.AddAgentFact(&models.AgentFact{AgentID: agent.ID, NodeID: theme.ID, Kind: models.FactReflection,
+			Text: "Every boat here needs the same repair.", Confidence: 0.7}); err != nil {
+			t.Fatalf("AddAgentFact: %s", err)
+		}
+		after, err := tx.AgentNodeOverviewInputs(agent.ID, theme.ID)
+		if err != nil {
+			t.Fatalf("AgentNodeOverviewInputs: %s", err)
+		}
+		if after != before {
+			t.Errorf("a reflection made the theme's overview due")
+		}
+		due, err := tx.ListAgentThemesForOverview(agent.ID, 10)
+		if err != nil {
+			t.Fatalf("ListAgentThemesForOverview: %s", err)
+		}
+		if len(due) != 0 {
+			t.Errorf("themes due after a reflection: %v", due)
+		}
+	})
+}
+
+// writeOverviews marks pages written from their inputs as they are now.
+func writeOverviews(t *testing.T, tx db.Transaction, agentId string, pages ...*models.AgentNode) {
+	t.Helper()
+	for _, page := range pages {
+		inputs, err := tx.AgentNodeOverviewInputs(agentId, page.ID)
+		if err != nil {
+			t.Fatalf("AgentNodeOverviewInputs: %s", err)
+		}
+		if err := tx.SetAgentNodeOverview(agentId, page.ID, "## What it is\n\nA page.", nil, inputs, time.Now()); err != nil {
+			t.Fatalf("SetAgentNodeOverview: %s", err)
+		}
+	}
 }

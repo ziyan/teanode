@@ -111,32 +111,39 @@ func TestTheNightWritesOverviewsChildrenFirstAndOnlyWhenDue(t *testing.T) {
 		}
 	})
 
+	// The first night writes the tools and the checkout; the shed, with
+	// its tools due, waits.
 	record := &models.AgentDream{}
 	worker.dreamOverviews(t.Context(), run, record, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
-	if record.OverviewsWritten < 4 {
-		t.Fatalf("%d overviews were written; the two tools, the shed and the checkout were due", record.OverviewsWritten)
+	if record.OverviewsWritten != 3 {
+		t.Fatalf("%d overviews were written; the two tools and the checkout were ready", record.OverviewsWritten)
 	}
-
-	// The tools before the shed: the order the prompts were sent in.
-	prompts := sentPrompts()
-	position := map[string]int{}
-	for index, prompt := range prompts {
-		for _, path := range []string{"things/garden-shed/rake", "things/garden-shed/hoe", "things/garden-shed", "projects/example-app"} {
-			if _, isThere := position[path]; !isThere && strings.Contains(prompt, `## The page\n\n`+path+" ") {
-				position[path] = index
+	askedAbout := func(prompts []string) map[string]bool {
+		isAsked := map[string]bool{}
+		for _, prompt := range prompts {
+			for _, path := range []string{"things/garden-shed/rake", "things/garden-shed/hoe", "things/garden-shed", "projects/example-app"} {
+				if strings.Contains(prompt, `## The page\n\n`+path+" ") {
+					isAsked[path] = true
+				}
+			}
+			if strings.Contains(prompt, `## The page\n\nprojects/example-app `) && !strings.Contains(prompt, "seed catalogues into planting calendars") {
+				t.Errorf("the checkout's prompt does not carry its readme")
 			}
 		}
-		if strings.Contains(prompt, `## The page\n\nprojects/example-app `) && !strings.Contains(prompt, "seed catalogues into planting calendars") {
-			t.Errorf("the checkout's prompt does not carry its readme")
-		}
+		return isAsked
 	}
-	if _, isThere := position["projects/example-app"]; !isThere {
-		t.Errorf("the checkout was not asked about: %v", position)
+	firstNight := askedAbout(sentPrompts())
+	if !firstNight["things/garden-shed/rake"] || !firstNight["things/garden-shed/hoe"] || !firstNight["projects/example-app"] || firstNight["things/garden-shed"] {
+		t.Errorf("the first night asked about %v", firstNight)
 	}
-	for _, tool := range []string{"things/garden-shed/rake", "things/garden-shed/hoe"} {
-		if _, isThere := position[tool]; !isThere || position[tool] > position["things/garden-shed"] {
-			t.Errorf("the shed was written before %s: %v", tool, position)
-		}
+
+	// The next night, the shed, from what its tools say now; the tools
+	// are not written again.
+	asked := len(sentPrompts())
+	next := &models.AgentDream{}
+	worker.dreamOverviews(t.Context(), run, next, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	if secondNight := askedAbout(sentPrompts()[asked:]); !secondNight["things/garden-shed"] || secondNight["things/garden-shed/rake"] {
+		t.Fatalf("the second night wrote %d overviews, asking about %v", next.OverviewsWritten, secondNight)
 	}
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
@@ -160,6 +167,8 @@ func TestTheNightWritesOverviewsChildrenFirstAndOnlyWhenDue(t *testing.T) {
 		}
 	})
 
+	// The folder above the shed the night after; then nothing.
+	worker.dreamOverviews(t.Context(), run, &models.AgentDream{}, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
 	again := &models.AgentDream{}
 	worker.dreamOverviews(t.Context(), run, again, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
 	if again.OverviewsWritten != 0 {
@@ -172,7 +181,7 @@ func TestTheNightWritesOverviewsChildrenFirstAndOnlyWhenDue(t *testing.T) {
 			t.Fatalf("ClearAgentNodeOverviewInputs: %s", err)
 		}
 	})
-	asked := len(sentPrompts())
+	asked = len(sentPrompts())
 	spent := &models.AgentDream{}
 	worker.dreamOverviews(t.Context(), run, spent, &dreamBudget{exhausted: true})
 	if spent.OverviewsWritten != 0 || len(sentPrompts()) != asked {

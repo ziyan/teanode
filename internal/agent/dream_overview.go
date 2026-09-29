@@ -14,10 +14,11 @@ import (
 
 // The bounds of the overview phase.
 const (
-	// dreamOverviews is how many overviews one night writes, and
-	// dreamThemeOverviews how many of the themes' on top of those.
-	dreamOverviews      = 20
-	dreamThemeOverviews = 8
+	// dreamOverviews is how many overviews of pages one night writes, and
+	// dreamThemeOverviews how many of the themes' before those, each
+	// within the night's budget like any call.
+	dreamOverviews      = 40
+	dreamThemeOverviews = 16
 
 	// overviewLeastFactCount is how many facts a page with nothing under
 	// it needs before it gets an overview. Below it the opening says all
@@ -35,6 +36,12 @@ const (
 	overviewChildLength   = 1500
 	overviewOpeningLength = 400
 
+	// overviewMemberFactCount is how many facts a theme's prompt shows of
+	// a member that has no overview yet, the most wanted first, and
+	// overviewMemberFactLength how much of each.
+	overviewMemberFactCount  = 5
+	overviewMemberFactLength = 200
+
 	// overviewSectionCount, overviewSectionLength and overviewLength
 	// bound what is kept of an answer.
 	overviewSectionCount  = 6
@@ -45,28 +52,25 @@ const (
 	overviewEvidenceCount = 24
 )
 
-// dreamOverviews writes the overviews whose inputs have changed, the
-// pages under a page before the page itself.
+// dreamOverviews writes the overviews whose inputs have changed: the
+// themes first, the top of the structure and what a survey reads, and
+// then the pages, most important first in each.
 //
-// The listing is deepest first, and the pages of one depth are written a
-// few at once, as the openings are: none of them is under another, so
-// none is written from another's overview. A page is written only after
-// every deeper page of the night has been, which is what lets a parent be
-// written from what its children say tonight rather than last week.
+// Only pages that are ready are listed: none of the pages directly under
+// one is due as well (see ListAgentNodesForOverview). A page with a child
+// due waits a night, and is then written from what the child says now.
+// So none of a night's pages is under another, and they are written a
+// few at once, as the openings are.
 func (self *Agent) dreamOverviews(ctx context.Context, run *Run, record *models.AgentDream, budget *dreamBudget) {
 	if !budget.left() {
 		return
 	}
-	var pages []*models.AgentNode
+	var themes, pages []*models.AgentNode
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		if pages, err = tx.ListAgentNodesForOverview(run.Agent.ID, overviewLeastFactCount, dreamOverviews); err != nil {
+		if themes, err = tx.ListAgentThemesForOverview(run.Agent.ID, dreamThemeOverviews); err != nil {
 			return err
 		}
-		// The themes after every other page, so a theme is written from
-		// what its members say tonight. Deepest first among them too: a
-		// theme of themes is written after the themes under it.
-		themes, err := tx.ListAgentThemesForOverview(run.Agent.ID, dreamThemeOverviews)
-		pages = append(pages, themes...)
+		pages, err = tx.ListAgentNodesForOverview(run.Agent.ID, overviewLeastFactCount, dreamOverviews)
 		return err
 	}); err != nil {
 		log.Warningf("cannot list the pages due an overview: %s", err)
@@ -76,16 +80,10 @@ func (self *Agent) dreamOverviews(ctx context.Context, run *Run, record *models.
 	if concurrency < 1 {
 		concurrency = 1
 	}
-	for start := 0; start < len(pages); {
-		depth := strings.Count(pages[start].Path, "/")
-		isTheme := models.IsThemePath(pages[start].Path)
-		end := start
-		for end < len(pages) && strings.Count(pages[end].Path, "/") == depth && models.IsThemePath(pages[end].Path) == isTheme {
-			end++
-		}
+	for _, batch := range [][]*models.AgentNode{themes, pages} {
 		slots := make(chan struct{}, concurrency)
 		var group sync.WaitGroup
-		for _, page := range pages[start:end] {
+		for _, page := range batch {
 			if ctx.Err() != nil || !budget.left() || !budget.overviewingTimeLeft() {
 				break
 			}
@@ -105,7 +103,6 @@ func (self *Agent) dreamOverviews(ctx context.Context, run *Run, record *models.
 		if ctx.Err() != nil || !budget.left() || !budget.overviewingTimeLeft() {
 			return
 		}
-		start = end
 	}
 }
 
@@ -207,6 +204,11 @@ func readOverviewInputs(tx db.Transaction, agentId string, page *models.AgentNod
 		return nil, err
 	}
 	for _, fact := range facts {
+		// A reflection is written from the overview, not the other way
+		// round; the hash leaves it out for the same reason.
+		if fact.Kind == models.FactReflection {
+			continue
+		}
 		inputs.facts = append(inputs.facts, fmt.Sprintf("#%d %s", fact.Number, fact.Line()))
 	}
 
@@ -252,9 +254,15 @@ func readOverviewInputs(tx db.Transaction, agentId string, page *models.AgentNod
 		if err != nil {
 			return nil, err
 		}
+		// A member a theme under this one holds is shown by that theme's
+		// overview, among the children, and not again here.
+		isHeldBelow, err := membersHeldByThemesUnder(tx, agentId, children)
+		if err != nil {
+			return nil, err
+		}
 		live := make([]*models.AgentNode, 0, len(members))
 		for _, member := range members {
-			if !member.Dormant {
+			if !member.Dormant && !isHeldBelow[member.ID] {
 				live = append(live, member)
 			}
 		}
@@ -269,7 +277,24 @@ func readOverviewInputs(tx db.Transaction, agentId string, page *models.AgentNod
 		}
 		for _, member := range live {
 			inputs.pageIdByPath[member.Path] = member.ID
-			inputs.members = append(inputs.members, overviewOfPage(member))
+			said := overviewOfPage(member)
+			// A member with no overview yet is shown by its opening and
+			// its most wanted facts, so the theme need not wait for it.
+			if strings.TrimSpace(member.Overview) == "" {
+				facts, err := tx.ListAgentFactsLively(agentId, member.ID, overviewMemberFactCount+5)
+				if err != nil {
+					return nil, err
+				}
+				shown := 0
+				for _, fact := range facts {
+					if fact.Kind == models.FactReflection || shown >= overviewMemberFactCount {
+						continue
+					}
+					said += "\n- " + fact.Reference(member.Path) + " " + cutRunes(strings.ReplaceAll(fact.Line(), "\n", " "), overviewMemberFactLength)
+					shown++
+				}
+			}
+			inputs.members = append(inputs.members, said)
 		}
 	}
 	sort.SliceStable(edges, func(left, right int) bool { return edges[left].Weight > edges[right].Weight })
@@ -371,4 +396,25 @@ func overviewEvidence(answer overviewAnswer, inputs *overviewInputs) []models.Ev
 		}
 	}
 	return evidence
+}
+
+// membersHeldByThemesUnder is the pages the live themes among children
+// are about: what a theme that has been divided holds below itself.
+func membersHeldByThemesUnder(tx db.Transaction, agentId string, children []*models.AgentNode) (map[string]bool, error) {
+	isHeld := map[string]bool{}
+	for _, child := range children {
+		if child.Dormant || !models.IsThemePath(child.Path) {
+			continue
+		}
+		edges, err := tx.ListAgentEdges(agentId, child.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, edge := range edges {
+			if edge.FromID == child.ID && edge.Relation == models.EdgeAboutPlace {
+				isHeld[edge.ToID] = true
+			}
+		}
+	}
+	return isHeld, nil
 }
