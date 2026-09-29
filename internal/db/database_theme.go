@@ -28,6 +28,17 @@ type ThemeOperation interface {
 	// ListAgentFactsOnNodesSince is the live facts on any of the given
 	// pages filed since a time, newest first.
 	ListAgentFactsOnNodesSince(agentId string, nodeIds []string, since time.Time, limit int) ([]*models.AgentFact, error)
+
+	// ListAgentTopThemes is the live pages directly under themes, the
+	// most important first: the themes of themes and the themes in no
+	// group, which is the top of the structure a survey and the prompt's
+	// index start from.
+	ListAgentTopThemes(agentId string, limit int) ([]*models.AgentNode, error)
+
+	// ListAgentNodesWithOverviews is the live pages that have an
+	// overview, the most important first, for a survey of a graph the
+	// night has not grouped into themes yet.
+	ListAgentNodesWithOverviews(agentId string, limit int) ([]*models.AgentNode, error)
 }
 
 // AgentGraphShapePage is a page as clustering reads it: where it is,
@@ -109,4 +120,21 @@ func (self *transaction) ListAgentFactsOnNodesSince(agentId string, nodeIds []st
 	}
 	return self.factsFrom(self.tx.Where(`"agent_id" = ? AND "node_id" IN ? AND NOT "dormant" AND "superseded_by" IS NULL AND "created_at" >= ?`,
 		agentId, nodeIds, since).Order(`"created_at" DESC, "number" DESC`).Limit(limit))
+}
+
+func (self *transaction) ListAgentTopThemes(agentId string, limit int) ([]*models.AgentNode, error) {
+	if limit <= 0 {
+		limit = 40
+	}
+	return self.nodesFrom(self.tx.Where(`"agent_id" = ? AND NOT "dormant" AND "path" LIKE ? AND strpos(substr("path", ?), '/') = 0`,
+		agentId, models.PathThemes+"/%", len(models.PathThemes)+2).
+		Order(`"importance" DESC, "path" ASC`).Limit(limit))
+}
+
+func (self *transaction) ListAgentNodesWithOverviews(agentId string, limit int) ([]*models.AgentNode, error) {
+	if limit <= 0 {
+		limit = 40
+	}
+	return self.nodesFrom(self.tx.Where(`"agent_id" = ? AND NOT "dormant" AND "overview" <> ''`, agentId).
+		Order(`"importance" DESC, "path" ASC`).Limit(limit))
 }

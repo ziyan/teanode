@@ -102,6 +102,52 @@ func TestAThemeIsDueAReflectionWhenItsOverviewIsNewer(t *testing.T) {
 	})
 }
 
+// The top of the themes is the live pages directly under themes, and
+// the pages with overviews are the live ones that have one.
+func TestTheTopThemesAndThePagesWithOverviewsAreListed(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		for _, path := range []string{"themes/outdoor-life", "themes/outdoor-life/orchard-work", "themes/tide-tables", "themes/gone-quiet", "topics/tides"} {
+			page, err := tx.PutAgentNode(&models.AgentNode{
+				AgentID: agent.ID, Path: path, Kind: models.NodeTopic, Name: models.LastSegment(path), Dormant: path == "themes/gone-quiet",
+			})
+			if err != nil {
+				t.Fatalf("PutAgentNode: %s", err)
+			}
+			if path != "themes/tide-tables" {
+				if err := tx.SetAgentNodeOverview(agent.ID, page.ID, "## What it is\n\nA page.", nil, "written", time.Now()); err != nil {
+					t.Fatalf("SetAgentNodeOverview: %s", err)
+				}
+			}
+		}
+		top, err := tx.ListAgentTopThemes(agent.ID, 10)
+		if err != nil {
+			t.Fatalf("ListAgentTopThemes: %s", err)
+		}
+		var topPaths []string
+		for _, page := range top {
+			topPaths = append(topPaths, page.Path)
+		}
+		if len(topPaths) != 2 || !isListed(topPaths, "themes/outdoor-life") || !isListed(topPaths, "themes/tide-tables") {
+			t.Errorf("the top themes are %v", topPaths)
+		}
+		written, err := tx.ListAgentNodesWithOverviews(agent.ID, 10)
+		if err != nil {
+			t.Fatalf("ListAgentNodesWithOverviews: %s", err)
+		}
+		var writtenPaths []string
+		for _, page := range written {
+			writtenPaths = append(writtenPaths, page.Path)
+		}
+		if len(writtenPaths) != 3 || isListed(writtenPaths, "themes/tide-tables") {
+			t.Errorf("the pages with overviews are %v", writtenPaths)
+		}
+	})
+}
+
 func mustNode(t *testing.T, tx db.Transaction, agentId, path string) *models.AgentNode {
 	t.Helper()
 	node, err := tx.GetAgentNode(agentId, path)
