@@ -144,6 +144,11 @@ type AgentGraphMutation interface {
 	// next turn. Needs agent:use.
 	DreamAgentNow(ctx context.Context, arguments DreamAgentNowArguments) (bool, error)
 
+	// Have the next night write a page's overview again, whether or not
+	// what it is written from has changed. The overview it has stays
+	// until then. Needs agent:use.
+	RewriteAgentOverview(ctx context.Context, arguments RewriteAgentOverviewArguments) (bool, error)
+
 	// Answer one question of a memory evaluation from memory, from the
 	// sources or from both, and grade the answer against the one the
 	// person gave. Two model calls, priced as runs of kind evaluate;
@@ -289,6 +294,10 @@ type MoveAgentNodeArguments struct {
 // tick with wider limits until nothing waits to be read.
 type DreamAgentNowArguments struct {
 	Bootstrap *bool `json:"bootstrap" graphapi:"nullable"`
+}
+
+type RewriteAgentOverviewArguments struct {
+	Path string `json:"path"`
 }
 
 type EvaluateAgentAnswerArguments struct {
@@ -1528,6 +1537,26 @@ func (self *graph) SaveAgentNode(ctx context.Context, arguments SaveAgentNodeArg
 		node.Pinned = *arguments.Pinned
 	}
 	return tx.PutAgentNode(node)
+}
+
+func (self *graph) RewriteAgentOverview(ctx context.Context, arguments RewriteAgentOverviewArguments) (bool, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	path := models.NormalizePath(arguments.Path)
+	tx := self.writing(ctx)
+	node, err := tx.GetAgentNode(found.ID, path)
+	if err != nil {
+		return false, err
+	}
+	if node == nil {
+		return false, fmt.Errorf("there is no page at %q", path)
+	}
+	if err := tx.ClearAgentNodeOverviewInputs(found.ID, node.ID); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (self *graph) MoveAgentNode(ctx context.Context, arguments MoveAgentNodeArguments) (*models.AgentNode, error) {

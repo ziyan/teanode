@@ -23,6 +23,11 @@ type AgentNode struct {
 	Dormant    bool       `json:"dormant"`
 	UsedAt     *time.Time `json:"usedAt"`
 	ModifiedAt time.Time  `json:"modifiedAt"`
+
+	// Overview is how the thing works, in markdown sections the night
+	// writes; asked for only when one page is read.
+	Overview          string     `json:"overview"`
+	OverviewWrittenAt *time.Time `json:"overviewWrittenAt"`
 }
 
 // AgentFact is one sentence on a page.
@@ -233,6 +238,8 @@ type AgentDream struct {
 	Gaps         int `json:"gaps"`
 	Unknown      int `json:"unknown"`
 
+	OverviewsWritten int `json:"overviewsWritten"`
+
 	Tokens    int64  `json:"tokens"`
 	LastError string `json:"lastError"`
 
@@ -248,12 +255,17 @@ type AgentDream struct {
 }
 
 const nodeFields = `{ id path kind name aliases summary contactId pinned importance dormant usedAt modifiedAt }`
+
+// pageNodeFields is nodeFields and the overview, for a page read on its
+// own: an index of four hundred pages has no use for four hundred
+// overviews.
+const pageNodeFields = `{ id path kind name aliases summary contactId pinned importance dormant usedAt modifiedAt overview overviewWrittenAt }`
 const factFields = `{ id number kind text happenedAt confidence inferred evidence { kind id quote } audiences dormant createdAt }`
 const sourceFields = `{ id kind name specification { type settings computer path format include exclude tool start depth mailboxId readEveryCheckout commitsPerPass ownCommitsAtLeast } rootPath enabled cron lastRunAt nextRunAt lastError documentCount chunkCount refusedCount more unknownAuthors checkoutsKeptToProfile filesKeptToProfile }`
 const revisionFields = `{ revision kind actor summary change before after path reason createdAt }`
 const passageFields = `{ documentId externalId title url kind author sourceId source happenedAt private number text score }`
 const extractFields = `{ documentId externalId title url kind author sourceId source happenedAt private from text total next }`
-const dreamFields = `{ id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse strengthened associated rehearsed gaps unknown revised tokens lastError cost currency proposals { kind path to reason } }`
+const dreamFields = `{ id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse strengthened associated rehearsed gaps unknown revised overviewsWritten tokens lastError cost currency proposals { kind path to reason } }`
 
 // The documents.
 const (
@@ -262,7 +274,7 @@ const (
 	}`
 	DocumentAgentGraphPage = `query ($path: String!) {
 		AgentGraphPage(path: $path) {
-			node ` + nodeFields + `
+			node ` + pageNodeFields + `
 			facts ` + factFields + `
 			edges { relation status fromPath toPath }
 			children ` + nodeFields + `
@@ -322,6 +334,7 @@ const (
 	DocumentDeleteAgentKnowledgeSource = `mutation ($sourceId: String!) { DeleteAgentKnowledgeSource(sourceId: $sourceId) }`
 	DocumentSyncAgentKnowledgeSource   = `mutation ($sourceId: String!) { SyncAgentKnowledgeSource(sourceId: $sourceId) }`
 	DocumentDreamAgentNow              = `mutation ($bootstrap: Boolean) { DreamAgentNow(bootstrap: $bootstrap) }`
+	DocumentRewriteAgentOverview       = `mutation ($path: String!) { RewriteAgentOverview(path: $path) }`
 	DocumentRereadAgentDocuments       = `mutation ($minutes: Int!) { RereadAgentDocuments(minutes: $minutes) }`
 	DocumentLinkAgentNodes             = `mutation ($path: String!, $to: String!, $relation: String!, $note: String) { LinkAgentNodes(path: $path, to: $to, relation: $relation, note: $note) }`
 	DocumentUnlinkAgentNodes           = `mutation ($path: String!, $to: String!, $relation: String!) { UnlinkAgentNodes(path: $path, to: $to, relation: $relation) }`
@@ -628,6 +641,15 @@ func DreamAgentNow(ctx context.Context, connection *Client, bootstrap *bool) err
 		variables["bootstrap"] = *bootstrap
 	}
 	return connection.Execute(ctx, DocumentDreamAgentNow, variables, &result)
+}
+
+// RewriteAgentOverview has the next night write a page's overview again,
+// whether or not what it is written from has changed.
+func RewriteAgentOverview(ctx context.Context, connection *Client, path string) error {
+	var result struct {
+		RewriteAgentOverview bool `json:"RewriteAgentOverview"`
+	}
+	return connection.Execute(ctx, DocumentRewriteAgentOverview, map[string]any{"path": path}, &result)
 }
 
 // LinkAgentNodes joins two pages.

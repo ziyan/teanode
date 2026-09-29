@@ -103,6 +103,11 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ListAgentSchedules":      client.DocumentListAgentSchedules,
 		"SaveAgentSchedule":       client.DocumentSaveAgentSchedule,
 		"SaveAgentNode":           client.DocumentSaveAgentNode,
+		// A page read on its own carries its overview, the night's record
+		// counts the overviews written, and a person can ask for one again.
+		"AgentGraphPage":       client.DocumentAgentGraphPage,
+		"ListAgentDreams":      client.DocumentListAgentDreams,
+		"RewriteAgentOverview": client.DocumentRewriteAgentOverview,
 		// What the agent's shell left running on the person's computers.
 		"ListAgentBackgroundCommands": client.DocumentListAgentBackgroundCommands,
 		"ReadAgentBackgroundCommand":  client.DocumentReadAgentBackgroundCommand,

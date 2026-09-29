@@ -45,6 +45,16 @@ func newAgentGraphCommands() []*cli.Command {
 			Action:    runAgentGraphGet,
 		},
 		{
+			Name:      "overview",
+			Usage:     "how the thing a page is about works, as the night last wrote it from the page and the pages under and beside it",
+			ArgsUsage: "<path>",
+			Flags: []cli.Flag{
+				JSONFlag(),
+				&cli.BoolFlag{Name: "rewrite", Usage: "have the next dream write it again, whether or not what it is written from has changed"},
+			},
+			Action: runAgentGraphOverview,
+		},
+		{
 			Name:      "search",
 			Usage:     "find pages and facts by words",
 			ArgsUsage: "<words>",
@@ -479,6 +489,57 @@ func runAgentGraphIndex(ctx context.Context, command *cli.Command) error {
 // graph is larger, which the line above tells the person to do.
 const indexPages = 1000
 
+// printOverview writes a page's overview under a heading that says when
+// it was written, and nothing for a page that has none.
+func printOverview(command *cli.Command, node *client.AgentNode) {
+	overview := strings.TrimSpace(node.Overview)
+	if overview == "" {
+		return
+	}
+	heading := "Overview"
+	if node.OverviewWrittenAt != nil {
+		heading += ", written " + node.OverviewWrittenAt.Local().Format("2 Jan 2006")
+	}
+	_, _ = fmt.Fprintf(command.Writer, "\n%s:\n\n%s\n", heading, overview)
+}
+
+func runAgentGraphOverview(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 1 {
+		return fmt.Errorf("which page? teanode agent memory overview projects/example-app")
+	}
+	path := command.Args().First()
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if command.Bool("rewrite") {
+		if err := client.RewriteAgentOverview(ctx, connection, path); err != nil {
+			return describeError(command, err)
+		}
+		if command.Bool("json") {
+			return PrintJSON(map[string]any{"path": path, "isRewriteAsked": true})
+		}
+		_, _ = fmt.Fprintf(command.Writer, "the next dream writes the overview of %s again; the one it has stays until then\n", path)
+		return nil
+	}
+	page, err := client.AgentGraphPageOf(ctx, connection, path)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if page == nil || page.Node == nil {
+		return fmt.Errorf("there is no page at %s", path)
+	}
+	if command.Bool("json") {
+		return PrintJSON(map[string]any{"path": page.Node.Path, "overview": page.Node.Overview, "overviewWrittenAt": page.Node.OverviewWrittenAt})
+	}
+	if strings.TrimSpace(page.Node.Overview) == "" {
+		_, _ = fmt.Fprintf(command.Writer, "%s has no overview yet: a dream writes one for a page with at least three facts or pages under it\n", page.Node.Path)
+		return nil
+	}
+	printOverview(command, page.Node)
+	return nil
+}
+
 func runAgentGraphGet(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() < 1 {
 		return fmt.Errorf("which page? teanode agent memory get people/alice-chen")
@@ -516,6 +577,7 @@ func runAgentGraphGet(ctx context.Context, command *cli.Command) error {
 	if summary := strings.TrimSpace(node.Summary); summary != "" {
 		_, _ = fmt.Fprintf(command.Writer, "\n%s\n", summary)
 	}
+	printOverview(command, node)
 	if len(page.Facts) > 0 {
 		_, _ = fmt.Fprintln(command.Writer)
 		for _, fact := range page.Facts {
@@ -1385,6 +1447,7 @@ func runDreamLog(ctx context.Context, command *cli.Command) error {
 			// twelve questions memory answered.
 			{dream.Gaps, "it could not answer"}, {dream.Unknown, "it could not try"},
 			{dream.Revised, "lines an older version left"},
+			{dream.OverviewsWritten, "overviews written"},
 			{dream.Merged, "said twice, merged"},
 		} {
 			if pair.count > 0 {
