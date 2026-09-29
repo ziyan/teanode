@@ -1765,19 +1765,9 @@ func knownQuestionKind(kind string) bool {
 	return false
 }
 
-// runAgentGraphRecall is one question through the same recall a turn
-// uses, printed rather than graded.
-//
-// The query behind it was reachable only by writing a question set and
-// running `memory evaluate` over it, which answers hit or miss and not
-// "why did it not know that?". Asking costs nothing -- no model is asked
-// anything, and a page recall expands here is not marked as used, so the
-// same graph answers the same twice and asking does not itself change
-// what tomorrow's night reads.
-// surveyTimeout is how long the command waits for a survey: the
-// quarter of an hour the server gives one, and a minute more for the
-// answer to arrive.
-const surveyTimeout = 16 * time.Minute
+// surveyPollEvery is how often the command asks whether a survey it
+// started has finished. A variable so that a test need not wait.
+var surveyPollEvery = 3 * time.Second
 
 func newAgentSurveyCommand() *cli.Command {
 	return &cli.Command{
@@ -1785,9 +1775,13 @@ func newAgentSurveyCommand() *cli.Command {
 		Usage: "answer a broad question about a whole area of what your agent knows -- a theme, a page and what is under it, or everything -- " +
 			"by asking each overview in it for its part and combining the parts into a report with citations; " +
 			"minutes, about one model call a page and one more, priced as runs of kind survey",
+		Description: "The survey runs on the server as background work. This command starts it and asks every few\n" +
+			"seconds whether it has finished, so no request is held open for the minutes it takes; stopping the\n" +
+			"command leaves it running, to be read with 'teanode agent background show'.",
 		ArgsUsage: "<question>",
 		Flags: []cli.Flag{JSONFlag(),
 			&cli.StringFlag{Name: "scope", Usage: "the page to survey under, such as themes/<one> or projects/<one>; everything when left out"},
+			&cli.BoolFlag{Name: "no-wait", Usage: "print the id of the survey and return; 'teanode agent background show <id>' reads it"},
 		},
 		Action: runAgentSurvey,
 	}
@@ -1802,24 +1796,56 @@ func runAgentSurvey(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	connection.SetTimeout(surveyTimeout)
-	surveyed, err := client.SurveyAgentMemory(ctx, connection, question, strings.TrimSpace(command.String("scope")))
+	work, err := client.StartAgentSurvey(ctx, connection, question, strings.TrimSpace(command.String("scope")))
 	if err != nil {
 		return describeError(command, err)
 	}
-	if surveyed == nil {
-		surveyed = &client.AgentSurvey{}
+	if work == nil {
+		return fmt.Errorf("the server started no survey")
+	}
+	if command.Bool("no-wait") {
+		if command.Bool("json") {
+			return PrintJSON(work)
+		}
+		_, _ = fmt.Fprintf(command.Writer, "%s\n", work.ID)
+		return nil
+	}
+	for {
+		work, err = client.GetAgentBackgroundWork(ctx, connection, work.ID)
+		if err != nil {
+			return describeError(command, err)
+		}
+		if work.IsFinished() {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("stopped waiting; the survey goes on as %s, and 'teanode agent background show %s' reads it", work.ID, work.ID)
+		case <-time.After(surveyPollEvery):
+		}
 	}
 	if command.Bool("json") {
-		return PrintJSON(surveyed)
+		return PrintJSON(work)
 	}
-	_, _ = fmt.Fprintln(command.Writer, strings.TrimSpace(surveyed.Report))
-	if len(surveyed.RunIDs) > 0 {
-		_, _ = fmt.Fprintf(command.Writer, "\nThe runs, each openable with 'teanode agent run show': %s\n", strings.Join(surveyed.RunIDs, ", "))
+	if work.WorkStatus != "done" {
+		return fmt.Errorf("the survey %s: %s", backgroundWorkState(work), work.ErrorMessage)
+	}
+	_, _ = fmt.Fprintln(command.Writer, strings.TrimSpace(forTerminal(work.ResultText)))
+	if len(work.RunIDs) > 0 {
+		_, _ = fmt.Fprintf(command.Writer, "\nThe runs, each openable with 'teanode agent run show': %s\n", strings.Join(work.RunIDs, ", "))
 	}
 	return nil
 }
 
+// runAgentGraphRecall is one question through the same recall a turn
+// uses, printed rather than graded.
+//
+// The query behind it was reachable only by writing a question set and
+// running `memory evaluate` over it, which answers hit or miss and not
+// "why did it not know that?". Asking costs nothing -- no model is asked
+// anything, and a page recall expands here is not marked as used, so the
+// same graph answers the same twice and asking does not itself change
+// what tomorrow's night reads.
 func runAgentGraphRecall(ctx context.Context, command *cli.Command) error {
 	question := strings.TrimSpace(strings.Join(command.Args().Slice(), " "))
 	if question == "" {

@@ -15,7 +15,7 @@ To see it working: in the drawer ask "survey my notes on the garden in the backg
 - [x] (2026-09-29) Read how background shell commands wake a conversation (`internal/agent/background.go`) and how jobs run; wrote this plan.
 - [x] (2026-09-29) Milestone 1: the record and the job: `agent_background_work` (migration 0121), the job kind `background`, stopping (here through a cancel, elsewhere through the row), the result kept, and a sweep that fails work whose job was lost.
 - [x] (2026-09-29) Milestone 2: waking the conversation when it finishes, through the same waker and the same count of twenty as background commands; a note instead when out of turns or budget; stopped work wakes nothing.
-- [ ] Milestone 3: the tools, the API and the command line: survey and subagent with `background`, list/read/stop everywhere, `teanode agent survey` by start and wait.
+- [x] (2026-09-29) Milestone 3: the tools, the API and the command line: survey and subagent with `background`, the `background_work` tool, `StartAgentSurvey`, `ListAgentBackgroundWork`, `GetAgentBackgroundWork` and `StopAgentBackgroundWork` with their client documents, `teanode agent survey` by start and ask, and `teanode agent background list|show|stop`.
 - [ ] Milestone 4: the dashboard, docs, a decision record, deploy, and a check end to end.
 
 ## Surprises & Discoveries
@@ -53,6 +53,18 @@ To see it working: in the drawer ask "survey my notes on the garden in the backg
   Date/Author: 2026-09-29.
 - Decision: a wake lost to a restart is recovered by the minute's sweep, which wakes done or failed work with a conversation, the person present and no `woken_at`, finished between one minute and one hour ago. `woken_at` is written when the woken turn is over (or the note written, or the conversation found gone).
   Rationale: a computer says an ending again until it is acknowledged; the row is what says it again here. Finished longer than an hour ago is no longer news.
+  Date/Author: 2026-09-29.
+- Decision: a turn with nobody present starts no background work; the tools refuse and say to wait instead. So work a tool starts always has the person present, and the plan's "minus anything outward-facing unless the person was present" never has anything to remove; the background subagent keeps the parent's tools less `subagent`, `survey` and `background_work`, and its cards are refused as above.
+  Rationale: the background command decision's rule, that a turn with nobody present never leaves a command running; it has ended by the time the work finishes and nobody reads it.
+  Date/Author: 2026-09-29.
+- Decision: one survey a turn whether it waits or not; a second is refused with `errSurveyedThisTurn`, reworded to cover both. A woken turn is a turn of its own and may start one, which the twenty bound.
+  Rationale: starting it in the background does not change what it costs, one call a page in scope, and a second survey in one turn is almost always the same question again.
+  Date/Author: 2026-09-29.
+- Decision: `background_work` is built by the agent, like `survey` and `subagent`, and offered where they are (a turn with somebody present, not in a subagent, the `subagents` feature on), in the round from the start. It is not registered in the catalog, so `TestTheCatalogStaysShort` is unchanged.
+  Rationale: stopping has to reach the cancel of work running on this instance, which only the agent holds; and the woken message names the tool, which a deferred tool would answer with "not loaded".
+  Date/Author: 2026-09-29.
+- Decision: `StartAgentSurvey` refuses at once when nothing can run a survey (`Agent.CanSurvey`), rather than queueing work that fails. The client's `SurveyAgentMemory` call and its document are removed, since nothing sends them; the query stays on the server.
+  Rationale: a client function nobody calls is a second way to do one thing; the schema test covers the documents that are sent.
   Date/Author: 2026-09-29.
 
 ## Outcomes & Retrospective

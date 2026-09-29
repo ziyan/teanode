@@ -300,9 +300,6 @@ const (
 			pages { path facts { number text } }
 		}
 	}`
-	DocumentSurveyAgentMemory = `query ($question: String!, $scopePath: String) {
-		SurveyAgentMemory(question: $question, scopePath: $scopePath) { report coveredPaths failedPaths runIds }
-	}`
 	DocumentListAgentLearned = `query ($days: Int, $first: Int) {
 		ListAgentLearned(days: $days, first: $first) { fact ` + factFields + ` path name }
 	}`
@@ -396,32 +393,6 @@ func RecallAgentMemory(ctx context.Context, connection *Client, question string)
 		return nil, err
 	}
 	return result.RecallAgentMemory, nil
-}
-
-// AgentSurvey is what a survey answered: the report, the pages it
-// covered and could not, and the runs it made.
-type AgentSurvey struct {
-	Report       string   `json:"report"`
-	CoveredPaths []string `json:"coveredPaths"`
-	FailedPaths  []string `json:"failedPaths"`
-	RunIDs       []string `json:"runIds"`
-}
-
-// SurveyAgentMemory answers a broad question about a whole area of the
-// graph, a page's path or everything when scopePath is empty. It takes
-// minutes; the caller sets the connection's timeout to match.
-func SurveyAgentMemory(ctx context.Context, connection *Client, question, scopePath string) (*AgentSurvey, error) {
-	var result struct {
-		SurveyAgentMemory *AgentSurvey `json:"SurveyAgentMemory"`
-	}
-	variables := map[string]any{"question": question}
-	if scopePath != "" {
-		variables["scopePath"] = scopePath
-	}
-	if err := connection.Execute(ctx, DocumentSurveyAgentMemory, variables, &result); err != nil {
-		return nil, err
-	}
-	return result.SurveyAgentMemory, nil
 }
 
 // AgentAnswerEvaluation is one question of a memory evaluation, answered

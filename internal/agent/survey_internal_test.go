@@ -348,8 +348,8 @@ func TestTheSurveyToolAnswersWithTheReport(t *testing.T) {
 	for range events {
 	}
 	unsubscribe()
-	if _, bodies := asked(); len(bodies) == 0 || !strings.Contains(bodies[0], `"name":"survey"`) {
-		t.Errorf("a person's turn is not offered the survey")
+	if _, bodies := asked(); len(bodies) == 0 || !strings.Contains(bodies[0], `"name":"survey"`) || !strings.Contains(bodies[0], `"name":"background_work"`) {
+		t.Errorf("a person's turn is not offered the survey and what it leaves in the background")
 	}
 
 	tool := worker.surveyTool()
@@ -357,7 +357,7 @@ func TestTheSurveyToolAnswersWithTheReport(t *testing.T) {
 		t.Errorf("the survey is %q", tool.Risk)
 	}
 	turn := &AskRun{agent: worker, settings: &AskSettings{Agent: run.Agent, Owner: run.Owner}, promptMemories: map[string]bool{}}
-	result, err := tool.Run(tools.WithRun(t.Context(), turn), &tools.Call{Arguments: json.RawMessage(`{"question": "What are the strengths of the orchards?", "scope": "themes/orchards"}`)})
+	result, err := tool.Run(tools.WithRun(t.Context(), turn), &tools.Call{Arguments: json.RawMessage(`{"question": "What are the strengths of the orchards?", "scope": "themes/orchards", "background": false}`)})
 	if err != nil {
 		t.Fatalf("the survey tool: %s", err)
 	}

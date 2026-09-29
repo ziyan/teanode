@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
@@ -401,5 +403,93 @@ func TestBackgroundWorkSharesTheTwentyWokenTurns(t *testing.T) {
 	worker.Wait()
 	if woken, _ := wokenMessages(t, database, conversation.ID); len(woken) != 2 {
 		t.Fatalf("work from the API woke something: %d", len(woken))
+	}
+}
+
+// The survey starts in the background unless told to wait, once a turn
+// either way; the subagent starts there when told to, with the tools of
+// the turn less the ones that start or manage such work; neither starts
+// from a turn with nobody present; and background_work lists, reads and
+// stops what they started.
+func TestTheToolsStartReadAndStopBackgroundWork(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	provider, callCount := answeringProvider(t, "Done.", nil, nil)
+	worker, run := digestSplitWorld(t, database, provider.URL)
+	conversation := backgroundConversation(t, database, run.Agent.ID)
+	turn := &AskRun{
+		agent:    worker,
+		settings: &AskSettings{Agent: run.Agent, Owner: run.Owner, Conversation: conversation, ReadOnlyTools: map[string]bool{"memory": true}},
+		offered: []*Tool{
+			{Name: "subagent"}, {Name: "survey"}, {Name: "background_work"}, {Name: "memory"}, {Name: "mail_search"},
+		},
+		promptMemories: map[string]bool{},
+	}
+	ctx := tools.WithRun(t.Context(), turn)
+	started := func(result *tools.Result, err error) string {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("started: %s", err)
+		}
+		var answered struct {
+			BackgroundWorkID string `json:"backgroundWorkId"`
+			Note             string `json:"note"`
+		}
+		if err := json.Unmarshal([]byte(result.Content), &answered); err != nil || answered.BackgroundWorkID == "" || !strings.Contains(answered.Note, "woken") {
+			t.Fatalf("the start answers with the id and what happens next: %s %v", result.Content, err)
+		}
+		return answered.BackgroundWorkID
+	}
+
+	surveyId := started(worker.surveyTool().Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"question": "How do the orchards fit together?", "scope": "themes/orchards"}`)}))
+	survey := readWork(t, database, run.Agent.ID, surveyId)
+	if survey.WorkKind != models.BackgroundWorkSurvey || survey.ConversationID != conversation.ID || !survey.IsPersonPresent ||
+		survey.WorkRequest.ScopePath != "themes/orchards" || survey.Title != "Survey: How do the orchards fit together?" {
+		t.Fatalf("the survey is kept to wake this conversation: %+v", survey)
+	}
+	if _, err := worker.surveyTool().Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"question": "And the weaknesses?"}`)}); !errors.Is(err, errSurveyedThisTurn) {
+		t.Errorf("a second survey in the turn, in the background: %v", err)
+	}
+
+	subagentId := started(worker.subagentTool().Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"prompt": "Count the invoices.", "title": "count invoices", "background": true}`)}))
+	subagent := readWork(t, database, run.Agent.ID, subagentId)
+	if subagent.WorkKind != models.BackgroundWorkSubagent || subagent.WorkRequest.Prompt != "Count the invoices." || subagent.Title != "count invoices" ||
+		strings.Join(subagent.WorkRequest.AllowedToolNames, ",") != "mail_search,memory" || strings.Join(subagent.WorkRequest.ReadOnlyToolNames, ",") != "memory" {
+		t.Fatalf("the subagent keeps the turn's tools less the ones that start work: %+v", subagent)
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		queued, err := tx.CountAgentJobs(&db.AgentJobFilter{AgentID: run.Agent.ID, Kinds: []models.AgentJobKind{models.AgentJobBackground}, Statuses: []models.AgentJobStatus{models.AgentJobQueued}})
+		if err != nil || queued != 2 {
+			t.Fatalf("a job for each: %d %v", queued, err)
+		}
+	})
+	if callCount() != 0 {
+		t.Errorf("starting asked a model")
+	}
+
+	headless := &AskRun{agent: worker, settings: &AskSettings{Agent: run.Agent, Owner: run.Owner, Conversation: conversation, Headless: true}}
+	if _, err := worker.subagentTool().Run(tools.WithRun(t.Context(), headless), &tools.Call{Arguments: json.RawMessage(`{"prompt": "Look.", "background": true}`)}); err == nil {
+		t.Errorf("a turn with nobody present started background work")
+	}
+
+	tool := worker.backgroundWorkTool()
+	if tool.RiskFor(json.RawMessage(`{"action":"stop","id":"x"}`)) != tools.RiskWrite || tool.RiskFor(json.RawMessage(`{"action":"read","id":"x"}`)) != tools.RiskRead {
+		t.Errorf("stopping writes and reading reads")
+	}
+	listed, err := tool.Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"action": "list"}`)})
+	if err != nil || !strings.Contains(listed.Content, subagentId) || !strings.Contains(listed.Content, surveyId) || strings.Contains(listed.Content, "resultText") {
+		t.Fatalf("listed without results: %v %v", listed, err)
+	}
+	stopped, err := tool.Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"action": "stop", "id": "` + subagentId + `"}`)})
+	if err != nil || !strings.Contains(stopped.Content, `"workStatus":"stopped"`) {
+		t.Fatalf("stopped: %v %v", stopped, err)
+	}
+	finished := finishedWork(t, database, run.Agent.ID, conversation.ID, "look around")
+	read, err := tool.Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"action": "read", "id": "` + finished.ID + `"}`)})
+	if err != nil || !read.Untrusted || !strings.Contains(read.Content, `"resultText":"Found it."`) {
+		t.Fatalf("read with its result, as data: %v %v", read, err)
+	}
+	if _, err := tool.Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"action": "read", "id": "not-one"}`)}); err == nil {
+		t.Errorf("read what is not there")
 	}
 }

@@ -855,6 +855,14 @@ func (self *AskRun) turn() error {
 		self.offered = append(self.offered, survey)
 		self.loaded[survey.Name] = true
 	}
+	// What the two above leave running in the background, to read and to
+	// stop, wherever either can start it: a turn with somebody present,
+	// not inside a subagent.
+	if work := self.agent.backgroundWorkTool(); !settings.Headless && settings.subagentDepth == 0 &&
+		FeatureAllowed(configuration, "subagents") && !listed(configuration.Agent.Tools.Disabled, work) {
+		self.offered = append(self.offered, work)
+		self.loaded[work.Name] = true
+	}
 	// The browser tool goes when the operator switched the browser off,
 	// and when there is neither a headless browser nor the person's own
 	// browser to drive; their browser, connected through the extension

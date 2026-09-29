@@ -78,6 +78,31 @@ func (self *Agent) QueueBackgroundWork(tx db.Transaction, work *models.AgentBack
 	return created, nil
 }
 
+// CanSurvey says whether a survey can be run now, for the API to refuse
+// one at once rather than queue work that fails.
+func (self *Agent) CanSurvey() bool {
+	return self != nil && self.canThink(self.settings.Configuration())
+}
+
+// startBackgroundWork records work a turn started and queues it, to wake
+// the turn's conversation when it finishes. A turn with nobody present
+// starts none, as it starts no background command: it has ended by the
+// time the work finishes, and nobody is reading it.
+func (self *Agent) startBackgroundWork(ctx context.Context, parent *AskRun, work *models.AgentBackgroundWork) (*models.AgentBackgroundWork, error) {
+	if parent.settings.Headless || parent.settings.Conversation == nil {
+		return nil, fmt.Errorf("nobody is present to be told when it finishes; set background to false and wait for it")
+	}
+	work.ConversationID, work.IsPersonPresent = parent.settings.Conversation.ID, true
+	var started *models.AgentBackgroundWork
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		started, err = self.QueueBackgroundWork(tx, work)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return started, nil
+}
+
 // StopBackgroundWork stops one of the agent's, in the caller's
 // transaction: the row says stopped at once, and the work, when it runs
 // here, is cancelled once that is committed. Work running on another

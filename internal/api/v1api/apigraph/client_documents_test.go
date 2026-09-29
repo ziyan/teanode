@@ -74,7 +74,6 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"SearchAgentDocuments":            client.DocumentSearchAgentDocuments,
 		"ReadAgentDocument":               client.DocumentReadAgentDocument,
 		"RecallAgentMemory":               client.DocumentRecallAgentMemory,
-		"SurveyAgentMemory":               client.DocumentSurveyAgentMemory,
 		"EvaluateAgentAnswer":             client.DocumentEvaluateAgentAnswer,
 		"SpeakFirstNow":                   client.DocumentSpeakFirstNow,
 		"ListAgentEvaluationQuestions":    client.DocumentListAgentEvaluationQuestions,
@@ -113,6 +112,12 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ListAgentBackgroundCommands": client.DocumentListAgentBackgroundCommands,
 		"ReadAgentBackgroundCommand":  client.DocumentReadAgentBackgroundCommand,
 		"StopAgentBackgroundCommand":  client.DocumentStopAgentBackgroundCommand,
+		// The surveys and subagents it did not wait for, and the survey the
+		// command line starts and waits for by asking.
+		"StartAgentSurvey":        client.DocumentStartAgentSurvey,
+		"ListAgentBackgroundWork": client.DocumentListAgentBackgroundWork,
+		"GetAgentBackgroundWork":  client.DocumentGetAgentBackgroundWork,
+		"StopAgentBackgroundWork": client.DocumentStopAgentBackgroundWork,
 		// Every settings section, the agent's model slots among them.
 		"GetSettings": client.DocumentGetSettings,
 	}
