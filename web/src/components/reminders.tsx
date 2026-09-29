@@ -188,7 +188,9 @@ export function RemindersView() {
             {/* Adding is the list's first line, as on a phone: type, and
                 the day and the button come once there is something to add. */}
             <li className="reminder-row reminder-add">
-              <PlusIcon className="reminder-add-mark" aria-hidden="true" />
+              <span className="reminder-check">
+                <PlusIcon className="reminder-add-mark" aria-hidden="true" />
+              </span>
               <form
                 onSubmit={(event) => {
                   event.preventDefault()
@@ -271,13 +273,15 @@ function ReminderRow({
   const due = dueOf(reminder, language)
   return (
     <li className={['reminder-row', reminder.isDone ? 'done' : ''].filter(Boolean).join(' ')}>
-      <input
-        type="checkbox"
-        checked={reminder.isDone}
-        disabled={busy}
-        aria-label={`${reminder.title}: ${reminder.isDone ? t('reminders.reopen') : t('reminders.markDone')}`}
-        onChange={(event) => onDone(reminder, event.target.checked)}
-      />
+      <span className="reminder-check">
+        <input
+          type="checkbox"
+          checked={reminder.isDone}
+          disabled={busy}
+          aria-label={`${reminder.title}: ${reminder.isDone ? t('reminders.reopen') : t('reminders.markDone')}`}
+          onChange={(event) => onDone(reminder, event.target.checked)}
+        />
+      </span>
       <button type="button" className="reminder-text" onClick={() => onOpen(reminder)}>
         <span className="reminder-title">{reminder.title}</span>
         {due ? (

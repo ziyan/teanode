@@ -508,6 +508,22 @@ The dream log's Open
 button on the agent page shows that dream's runs in the activity table, and
 `teanode agent dream runs <id>` lists them for `teanode agent run show`.
 
+**Look for ideas.** Before the reading, and at most once in twenty
+hours, one call looks through the person's recent mail, calendar and
+memory for work the agent could take off their hands. It ends with its
+ideas in an object, like every other call of the dream, and the code puts
+each through `ProposeIdea`, the function behind the `idea` tool's propose,
+so a dream's idea passes the same checks as one proposed in conversation:
+the tools it needs, evidence that resolves, not a repeat, and a model's
+judgment that it promises nothing its tools cannot do. The run's title
+says what came of it ("Looked for ideas: kept 2 of 3; refused: ..."), and
+that run is also how the next dream knows when the agent last looked.
+It comes first because a dream working through a backlog spends its whole
+share on the reading, and placed after it the look for ideas never ran; it
+is the one call let past a spent share, stopped only by a provider that
+will not bill the account. It does not run while the Ideas switch is off
+or eight personal ideas are already waiting.
+
 **Read what arrived.** Documents, by priority rather than by order: what
 the person wrote, then what they took part in, then the rest, newest
 first, and a chat archive only where the person was in the thread: a

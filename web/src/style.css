@@ -10937,6 +10937,14 @@ main.content:has(> .knowledge-frame) {
   }
 }
 
+/* An idea of their own carries its reason and what prompted it under it, so
+   it is read rather than scanned: one column, at a line length that reads,
+   rather than half the card beside an empty half. */
+.idea-list.idea-list-personal {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 720px;
+}
+
 .idea-row {
   position: relative;
   padding-right: 28px;
@@ -11191,7 +11199,7 @@ button.idea-history-title {
   box-sizing: content-box;
   width: 13px;
   height: 13px;
-  margin: 5px 6px 0 4px;
+  margin: 0 6px 0 4px;
   color: var(--muted);
 }
 
@@ -11299,9 +11307,20 @@ button.idea-history-title {
   border-bottom: 1px solid var(--border);
 }
 
-.reminder-row input[type='checkbox'] {
+/* The box sits in a slot one title line tall and is centered in it, so it
+   lines up with the first line of the title however many lines follow, and
+   is not stretched to a phone's touch height. The + on the adding line
+   takes the same slot. */
+.reminder-check {
+  display: flex;
   flex: none;
-  margin-top: 2px;
+  align-items: center;
+  height: 22px;
+}
+
+.reminder-row .reminder-check input[type='checkbox'] {
+  min-height: 0;
+  margin: 0 6px 0 4px;
 }
 
 .reminder-text {
@@ -11319,6 +11338,7 @@ button.idea-history-title {
 }
 
 .reminder-title {
+  line-height: 22px;
   overflow-wrap: anywhere;
 }
 
