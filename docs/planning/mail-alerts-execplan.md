@@ -29,6 +29,7 @@ To see it working: send the account's own mailbox a message that reads like a sc
 - Observation: a chat message steered into a turn of the agent's own that is already running is not followed by the chat, and that turn's answer is not relayed either, because its last opening message is the person's. It was so before this plan; left alone.
 - Observation: a question card raised by a turn of the agent's own (the memory check asks some) is not sent to the chat; only the turn's last word is.
 - Observation: the command line and the dashboard change a mailbox's policy by reading it and sending the whole of it back, so a field missing from their selection is dropped on the next save. For `alerts` that would have been harmless (absent is on) but silently undone an "off"; both selections now carry `alerts { enabled }`, and `ReadAgent`, `UpdateAgent` and `GrantAgentMailbox` joined `TestClientDocumentsMatchTheSchema`, which had not checked them.
+- Observation (review, 2026-09-29): the alert job wrote into the main conversation whatever else ran there, so an alert could land between the person's message and its answer; a bot that stopped on its own left its relay running beside the next one; a re-linked or re-enabled bot sent the backlog since it last looked; a mute from an alert named the model's subject key, which the next alert could word differently; more than thirty held candidates hid an urgent one behind them while the follow-up re-ran the job every two minutes all night; a failed or budget-held job could alert on day-old mail; five people at one domain writing the same subject made a burst, and so did old mail moved in; bare host names, shorteners, email addresses and telephone numbers survived the alert text; and the model had no way to name which alert the person answered.
 
 ## Decision Log
 
@@ -74,6 +75,27 @@ To see it working: send the account's own mailbox a message that reads like a sc
 - Decision: muting from an alert takes the target from it: its subject key by default, or the sender, the sender's domain or the kind of the first message it covered. The agent's door is actions on `agent_profile` (`no_alerts`, `alerts_on`, `mute_alert`, `unmute_alert`) rather than a tool of its own, per the catalog's fuse; `mute_alert` with nothing named mutes the latest alert, which is what "don't tell me about these" after an alert means, and the alert's check-in line now names it.
   Date/Author: 2026-09-29.
 - Decision: on the dashboard the Alerts card is on the Overview tab, where speaking first and ideas are switched, with a Mute button per alert opening a dialog to choose the subject, sender, domain or kind, and the muted list with Unmute below; the switch, the night and the day's most are a subform of the Advanced card beside speaking first; the per-mailbox switch sits under Sorting on the Mail tab, since alerts follow the sorting.
+  Date/Author: 2026-09-29.
+
+- Decision: the alert job checks for a turn in flight in the main conversation before the model is asked and defers a minute (`alertAfterTurn`) without deciding; each alert is written holding the lock Ask starts turns under (`whileNoTurnRuns`), after looking again. A turn that started while the decision ran leaves what was not said waiting, decided again next run, rather than keeping decided-but-unsaid alerts for later.
+  Rationale: deciding again costs one call in a rare race; keeping undelivered decisions needs a store and rules for when they go stale.
+  Date/Author: 2026-09-29.
+- Decision: each run of a bot gives its relay its own context, cancelled and waited for when `Bot.Run` returns, so a channel has at most one relay.
+  Date/Author: 2026-09-29.
+- Decision: `PutAgentChannel` moves `relayed_through` to the newest message of the agent's main conversations (a fresh ULID when there is none) whenever the link, the linked sender or the token changes, or the bot is switched back on; the link code alone leaves it. This replaces "a new link starts from the moment it is made" in the relay.
+  Date/Author: 2026-09-29.
+- Decision: each `agent_alert` records what it covered in stable terms (migration 0127: `covered_burst_keys`, `covered_sender_addresses`, `covered_sender_domains`, `covered_mail_categories`). Muting an alert without a scope mutes its burst keys (scope `subjectKey`), or its sender addresses when it covered no burst; every target of the scope gets a row. `subjectKey` of an alert about a burst is its burst key. Alerts from before 0127 have their terms read from their candidates. The alert list offers `muteChoices`, the default first, which the dashboard shows. A target without a scope is read: a space or `|` is a subject key, an `@` an address (a leading `@` a domain), a dotted name a domain, else a subject key. The model's key is still matched against the mutes.
+  Rationale: the model makes up the subject key each time; "stop" has to hold for the next message from the same sender or of the same burst.
+  Date/Author: 2026-09-29.
+- Decision: waiting candidates are read pressing first (signal `now`, or a burst), then oldest. When a run held alerts, only a pressing candidate created after the run read brings the next run forward; otherwise it waits for the morning. Without a hold, anything left unread brings it two minutes forward as before.
+  Date/Author: 2026-09-29.
+- Decision: the job drops, before anything else, waiting candidates made more than `alertFreshness` (a day) ago, and in its loop those whose message was received more than a day ago, with the reason saying so.
+  Date/Author: 2026-09-29.
+- Decision: a burst is keyed by the sender's address (not domain), counts messages by `mail.received_at` while the query stays bounded by `mailbox_item.added_at` for the `mailbox_item_list` index (an item is never added before its message was received), and ignores subjects with fewer than three letters once the digits are out.
+  Date/Author: 2026-09-29.
+- Decision: the alert text loses host names with or without a path, shorteners, email addresses and telephone numbers (seven to fifteen digits written with a plus or a separator, or ten long; not a date), each replaced by "(link removed)", "(address removed)" or "(number removed)". A service named without a domain stays.
+  Date/Author: 2026-09-29.
+- Decision: the check-in line names the alert's id and says to pass it as `alert_id`; the alert is created with that id.
   Date/Author: 2026-09-29.
 
 ## Outcomes & Retrospective

@@ -194,7 +194,13 @@ by a stranger's message is what bounds are for:
   number, whatever the model wrote;
 - nothing the person muted.
 
-An alert is written into the main conversation under an `[alert]` line,
+The job decides nothing while a turn runs in the main conversation, and
+comes back a minute later; candidates that may not wait are read first,
+and anything older than a day when the job comes to it is dropped as no
+longer news.
+
+An alert is written into the main conversation under an `[alert]` line
+that names it,
 recorded in `agent_alert` in the same transaction, heard by the drawer as a
 turn, and sent to the chat app the person linked, which carries every turn
 of the agent's own (`internal/channel/relay.go`).
