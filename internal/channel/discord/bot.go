@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/channel"
@@ -58,6 +59,15 @@ func (self *Bot) Run(ctx context.Context, handle func(ctx context.Context, incom
 		}
 		go handle(ctx, incoming, &chat{client: self.client, channelId: message.ChannelID})
 	})
+}
+
+// ChatFor is the channel with this id, as the link keeps it: the direct
+// message's channel, or the server channel the code was sent from.
+func (self *Bot) ChatFor(chatId string) (channel.Chat, error) {
+	if strings.TrimSpace(chatId) == "" {
+		return nil, fmt.Errorf("discord: no channel to write to")
+	}
+	return &chat{client: self.client, channelId: chatId}, nil
 }
 
 func (self *Bot) incoming(message *Message) *channel.Incoming {

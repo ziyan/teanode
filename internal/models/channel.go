@@ -58,6 +58,10 @@ type AgentChannel struct {
 	// when its claim lapses unless renewed: one instance runs a bot.
 	ClaimedBy    string     `json:"claimedBy,omitempty"`
 	ClaimedUntil *time.Time `json:"claimedUntil,omitempty"`
+
+	// RelayedThrough is the last message of the main conversation the bot
+	// has looked at for the agent's own turns to send on to the chat.
+	RelayedThrough string `json:"-"`
 }
 
 // Linked says whether a chat has linked itself to the bot.

@@ -30,6 +30,13 @@ type ChannelOperation interface {
 	// NoteAgentChannel records what the running bot saw: its name, the
 	// last time it was heard from, and what went wrong.
 	NoteAgentChannel(channelId, botName, lastError string, seenAt *time.Time) error
+
+	// AdvanceAgentChannelRelay moves how far the bot has looked for the
+	// agent's own turns from one message to another, and says whether it
+	// did: it does only while this instance holds the bot and nobody moved
+	// it since it was read, which is what keeps a turn from being sent
+	// twice.
+	AdvanceAgentChannelRelay(channelId, instance, fromMessageId, throughMessageId string) (bool, error)
 }
 
 type agentChannelModel struct {
@@ -50,12 +57,13 @@ type agentChannelModel struct {
 	LastSeenAt       *time.Time `gorm:"column:last_seen_at"`
 	ClaimedBy        string     `gorm:"column:claimed_by"`
 	ClaimedUntil     *time.Time `gorm:"column:claimed_until"`
+	RelayedThrough   string     `gorm:"column:relayed_through"`
 }
 
 func (agentChannelModel) TableName() string { return "agent_channel" }
 
 func (self *agentChannelModel) toModel() *models.AgentChannel {
-	return &models.AgentChannel{ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, Kind: models.AgentChannelKind(self.Kind), Token: self.Token, BotName: self.BotName, LinkedID: self.LinkedID, LinkedName: self.LinkedName, LinkedSenderID: self.LinkedSenderID, LinkedSenderName: self.LinkedSenderName, LinkCode: self.LinkCode, Enabled: self.Enabled, LastError: self.LastError, LastSeenAt: self.LastSeenAt, ClaimedBy: self.ClaimedBy, ClaimedUntil: self.ClaimedUntil}
+	return &models.AgentChannel{ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, Kind: models.AgentChannelKind(self.Kind), Token: self.Token, BotName: self.BotName, LinkedID: self.LinkedID, LinkedName: self.LinkedName, LinkedSenderID: self.LinkedSenderID, LinkedSenderName: self.LinkedSenderName, LinkCode: self.LinkCode, Enabled: self.Enabled, LastError: self.LastError, LastSeenAt: self.LastSeenAt, ClaimedBy: self.ClaimedBy, ClaimedUntil: self.ClaimedUntil, RelayedThrough: self.RelayedThrough}
 }
 
 func (self *transaction) PutAgentChannel(channel *models.AgentChannel) (*models.AgentChannel, error) {
@@ -146,4 +154,11 @@ func (self *transaction) NoteAgentChannel(channelId, botName, lastError string, 
 		changes["last_seen_at"] = seenAt
 	}
 	return self.tx.Model(&agentChannelModel{}).Where("\"id\" = ?", channelId).Updates(changes).Error
+}
+
+func (self *transaction) AdvanceAgentChannelRelay(channelId, instance, fromMessageId, throughMessageId string) (bool, error) {
+	result := self.tx.Model(&agentChannelModel{}).
+		Where("\"id\" = ? AND \"claimed_by\" = ? AND \"relayed_through\" = ?", channelId, instance, fromMessageId).
+		Update("relayed_through", throughMessageId)
+	return result.RowsAffected > 0, result.Error
 }
