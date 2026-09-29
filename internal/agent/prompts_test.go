@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -123,6 +124,33 @@ func TestInterpretTriageRefusesWhatIsNotInTheVocabulary(t *testing.T) {
 	insight, _ = InterpretTriage(&TriageAnswer{Category: "spam", Priority: "HIGH"}, agent)
 	if insight.Category != "other" || insight.Priority != "high" {
 		t.Fatalf("insight %+v", insight)
+	}
+}
+
+// The alert signal is one of three words, with its line only when it says
+// something, and never for a message the sorting called a scam.
+func TestInterpretTriageReadsTheAlertSignal(t *testing.T) {
+	agent := &models.Agent{}
+	insight, _ := InterpretTriage(&TriageAnswer{Category: "personal", AlertSignal: " NOW ", AlertReason: " A child in the class has croup. "}, agent)
+	if insight.AlertSignal != models.AlertSignalNow || insight.AlertReason != "A child in the class has croup." {
+		t.Fatalf("insight %+v", insight)
+	}
+	insight, _ = InterpretTriage(&TriageAnswer{Category: "notification", AlertSignal: "urgent", AlertReason: "something"}, agent)
+	if insight.AlertSignal != models.AlertSignalNone || insight.AlertReason != "" {
+		t.Fatalf("a word outside the vocabulary is none: %+v", insight)
+	}
+	insight, _ = InterpretTriage(&TriageAnswer{Category: "phishing", AlertSignal: "now", AlertReason: "Your account will be closed"}, agent)
+	if insight.AlertSignal != models.AlertSignalNone {
+		t.Fatalf("a scam is never worth an interruption: %+v", insight)
+	}
+	insight, _ = InterpretTriage(&TriageAnswer{Category: "notification"}, agent)
+	if insight.AlertSignal != models.AlertSignalNone {
+		t.Fatalf("an answer without the field is none: %+v", insight)
+	}
+	// Read from the JSON the model writes.
+	answer, err := llm.Extract[TriageAnswer](`{"category":"personal","priority":"high","alert_signal":"soon","alert_reason":"The pharmacy could not fill the prescription."}`)
+	if err != nil || answer.AlertSignal != "soon" || answer.AlertReason != "The pharmacy could not fill the prescription." {
+		t.Fatalf("answer %+v, %v", answer, err)
 	}
 }
 

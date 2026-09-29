@@ -501,6 +501,12 @@ const (
 	// agent_background_work row, which says what to run and keeps what
 	// came of it.
 	AgentJobBackground AgentJobKind = "background"
+
+	// AgentJobAlert decides which of the waiting alert candidates the
+	// person is told about, and tells them. Its subject is the agent, so
+	// the queue's rule of one open job per agent, kind and subject is what
+	// gathers candidates arriving together into one decision.
+	AgentJobAlert AgentJobKind = "alert"
 )
 
 // AgentJobStatus is where a job is.

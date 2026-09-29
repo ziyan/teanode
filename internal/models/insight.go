@@ -42,6 +42,12 @@ type MailInsight struct {
 	// reader. Nothing here has been written anywhere.
 	Proposals []MailProposal `json:"proposals"`
 
+	// AlertSignal is whether the sorting thought the person should hear
+	// about this message without opening their mail: AlertSignalNone,
+	// AlertSignalSoon or AlertSignalNow. AlertReason is its line on why.
+	AlertSignal string `json:"alertSignal"`
+	AlertReason string `json:"alertReason,omitempty"`
+
 	Model     string    `json:"model"`
 	RunID     string    `json:"runId"`
 	CreatedAt time.Time `json:"createdAt"`

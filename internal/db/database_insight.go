@@ -145,6 +145,8 @@ type mailInsightModel struct {
 	Proposals     []byte    `gorm:"column:proposals;type:jsonb"`
 	Notes         string    `gorm:"column:notes"`
 	NotesRunID    string    `gorm:"column:notes_run_id"`
+	AlertSignal   string    `gorm:"column:alert_signal"`
+	AlertReason   string    `gorm:"column:alert_reason"`
 	Model         string    `gorm:"column:model"`
 	RunID         string    `gorm:"column:run_id"`
 	CreatedAt     time.Time `gorm:"column:created_at"`
@@ -221,6 +223,8 @@ func insightFromModel(model *mailInsightModel) (*models.MailInsight, error) {
 		Proposals:     []models.MailProposal{},
 		Notes:         model.Notes,
 		NotesRunID:    model.NotesRunID,
+		AlertSignal:   model.AlertSignal,
+		AlertReason:   model.AlertReason,
 		Model:         model.Model,
 		RunID:         model.RunID,
 		CreatedAt:     model.CreatedAt.In(time.Local),
@@ -260,6 +264,10 @@ func (self *transaction) PutMailInsight(insight *models.MailInsight) error {
 	if err != nil {
 		return err
 	}
+	alertSignal := insight.AlertSignal
+	if alertSignal == "" {
+		alertSignal = models.AlertSignalNone
+	}
 	model := &mailInsightModel{
 		MailID:        insight.MailID,
 		MailboxID:     insight.MailboxID,
@@ -274,13 +282,15 @@ func (self *transaction) PutMailInsight(insight *models.MailInsight) error {
 		Proposals:     encodedProposals,
 		Notes:         insight.Notes,
 		NotesRunID:    insight.NotesRunID,
+		AlertSignal:   alertSignal,
+		AlertReason:   insight.AlertReason,
 		Model:         insight.Model,
 		RunID:         insight.RunID,
 		CreatedAt:     time.Now(),
 	}
 	return self.tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "mail_id"}, {Name: "mailbox_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"agent_id", "category", "priority", "needs_reply", "research_asked", "extract_asked", "summary", "action_items", "model", "run_id", "created_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"agent_id", "category", "priority", "needs_reply", "research_asked", "extract_asked", "summary", "action_items", "alert_signal", "alert_reason", "model", "run_id", "created_at"}),
 	}).Create(model).Error
 }
 
