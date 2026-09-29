@@ -77,3 +77,28 @@ func TestAPageCarriesItsOverview(t *testing.T) {
 		t.Errorf("a page with no overview says nothing about one")
 	}
 }
+
+// A theme's reflections are shown apart from its facts, under the
+// overview, each with its kind and what it cites; and a reflection is not
+// a kind the model may file.
+func TestAPageCarriesItsReflectionsApart(t *testing.T) {
+	node := &models.AgentNode{Path: "themes/allotments", Name: "Allotments", Kind: models.NodeTopic, Overview: "## What it is\n\nTwo plots."}
+	facts := []*models.AgentFact{
+		{Number: 1, Kind: models.FactPlain, Text: "The plots share a water butt."},
+		{Number: 2, Kind: models.FactReflection, Text: "Both plots flood every spring.", Inferred: true, Evidence: []models.Evidence{
+			{Kind: models.EvidenceDream, Quote: models.ReflectionEvidencePrefix + "pattern"},
+			{Kind: models.EvidenceMemory, ID: "one", Quote: "places/plot-east#3"},
+			{Kind: models.EvidenceMemory, ID: "two", Quote: "places/plot-west"},
+		}},
+	}
+	page := renderPage(node, facts, nil, nil)
+	reflection := strings.Index(page, "#2 Both plots flood every spring. [pattern] (citing places/plot-east#3, places/plot-west)")
+	overview := strings.Index(page, "Two plots.")
+	fact := strings.Index(page, "#1 The plots share a water butt.")
+	if reflection < overview || fact < reflection {
+		t.Errorf("the reflection is under the overview and apart from the facts:\n%s", page)
+	}
+	if strings.Contains(joinKinds(), "reflection") {
+		t.Errorf("the kinds offered to the model include reflection: %s", joinKinds())
+	}
+}

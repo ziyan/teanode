@@ -55,8 +55,8 @@ func init() {
 		for _, kind := range models.AgentNodeKinds {
 			kinds = append(kinds, string(kind))
 		}
-		factKinds := make([]string, 0, len(models.AgentFactKinds))
-		for _, kind := range models.AgentFactKinds {
+		factKinds := make([]string, 0, len(models.AgentFactKindsFiled))
+		for _, kind := range models.AgentFactKindsFiled {
 			factKinds = append(factKinds, string(kind))
 		}
 		relations := make([]string, 0, len(models.AgentEdgeRelations))
@@ -410,6 +410,31 @@ func renderPage(node *models.AgentNode, facts []*models.AgentFact, edges []*mode
 		}
 		builder.WriteString("\n\n" + heading + ":\n\n" + overview)
 	}
+	// The night's reflections apart from the facts, each with what it
+	// cites: an observation over the pages this one groups is the night's
+	// own reasoning, and read among the facts it looked like something
+	// somebody had said.
+	var reflections, stated []*models.AgentFact
+	for _, fact := range facts {
+		if fact.Kind == models.FactReflection {
+			reflections = append(reflections, fact)
+		} else {
+			stated = append(stated, fact)
+		}
+	}
+	if len(reflections) > 0 {
+		builder.WriteString("\n\nReflections, the night's own observations, each citing what it rests on:\n")
+		for _, fact := range reflections {
+			builder.WriteString("\n#" + strconv.Itoa(fact.Number) + " " + strings.TrimSpace(fact.Text))
+			if reflectionKind := fact.ReflectionKind(); reflectionKind != "" {
+				builder.WriteString(" [" + reflectionKind + "]")
+			}
+			if citations := fact.Citations(); len(citations) > 0 {
+				builder.WriteString(" (citing " + strings.Join(citations, ", ") + ")")
+			}
+		}
+	}
+	facts = stated
 	if len(facts) > 0 {
 		builder.WriteString("\n")
 		for _, fact := range facts {
@@ -694,7 +719,7 @@ func noteAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 	if kind == "" {
 		kind = models.FactPlain
 	}
-	if !models.IsAgentFactKind(kind) {
+	if !models.IsAgentFactKind(kind) || kind.FromTheNight() {
 		return nil, fmt.Errorf("%q is not a kind of fact; use one of %s", arguments.FactKind, joinKinds())
 	}
 	happened, err := whenItWasTrue(run, arguments.Happened)
@@ -756,7 +781,7 @@ func editFactAction(ctx context.Context, run tools.Run, arguments *memoryArgumen
 	// decision made in June into an undated fact every time a word in
 	// it was fixed.
 	kind := models.AgentFactKind(strings.ToLower(strings.TrimSpace(arguments.FactKind)))
-	if kind != "" && !models.IsAgentFactKind(kind) {
+	if kind != "" && (!models.IsAgentFactKind(kind) || kind.FromTheNight()) {
 		return nil, fmt.Errorf("%q is not a kind of fact; use one of %s", arguments.FactKind, joinKinds())
 	}
 	var happened *time.Time
@@ -906,8 +931,8 @@ func titleFromSlug(slug string) string {
 }
 
 func joinKinds() string {
-	names := make([]string, 0, len(models.AgentFactKinds))
-	for _, kind := range models.AgentFactKinds {
+	names := make([]string, 0, len(models.AgentFactKindsFiled))
+	for _, kind := range models.AgentFactKindsFiled {
 		names = append(names, string(kind))
 	}
 	return strings.Join(names, ", ")
