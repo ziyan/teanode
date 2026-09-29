@@ -3125,7 +3125,7 @@ export const en = {
   'goals.set': 'Set a goal',
   'goals.setHint': 'Pick an area and say what you are after. Your agent proposes a goal and a plan, and sets it once you agree.',
   'goals.newTitle': 'A goal: {area}',
-  'goals.draft': 'I would like to set a goal about {area}.',
+  'goals.draft': 'I would like to set a goal about {area}. Propose a goal and a plan first, and set it once I agree.',
   'notes.new': 'New note',
   'notes.untitled': 'Untitled',
   'notes.none': 'No notes yet. Notes written here or on your phone appear here.',
