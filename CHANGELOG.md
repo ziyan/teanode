@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.78.3] - 2026-09-29
+
+### Fixed
+
+- The agent's dream kept none of the ideas it found, and most dreams never looked for any. (#224)
+- The For you ideas no longer sit in half the width. (#224)
+
 ## [0.78.2] - 2026-09-28
 
 ### Fixed
