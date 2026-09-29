@@ -741,6 +741,14 @@ and the `SurveyAgentMemory` query run it; its runs are of kind survey.
 Recall carries the start of a chosen page's overview and a theme's
 reflections, and every prompt's index opens with the top-level themes.
 
+**Which model does what.** The overviews, the reflections (the weekly one
+too) and each page's run of a survey are judgments, a few calls a night,
+and run on `agent.models.synthesize`, which falls back to `research` and
+then to `default`. Naming a theme is a short label over a list and stays
+on `scan` with the rest of the night; a survey's combining call runs on
+`research`. The dream's budget covers the synthesize calls the same as the
+scan's.
+
 ## Facts that say nothing
 
 A page already carries three things: its name, what kind of thing it is,
