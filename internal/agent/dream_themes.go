@@ -23,6 +23,10 @@ const (
 	themeNamingMembers       = 25
 	themeNamingOpeningLength = 300
 
+	// themeNamingTakenMost is how many names already in use the naming
+	// prompt lists, so a new theme is called something else.
+	themeNamingTakenMost = 60
+
 	// themeListed is how many pages under themes the phase reads.
 	themeListed = 5000
 
@@ -127,6 +131,23 @@ func (self *Agent) dreamThemes(ctx context.Context, run *Run, record *models.Age
 
 	levelOneKnown, levelTwoKnown := knownThemes(themePages, aboutEdges)
 
+	// The names already given, so a new theme is not called what another
+	// is: a part named after the theme it is a part of, or two siblings
+	// under one name, says nothing about what sets it apart.
+	takenNames := make([]string, 0, len(themePages))
+	for _, page := range themePages {
+		if name := strings.TrimSpace(page.Name); name != "" {
+			takenNames = append(takenNames, name)
+		}
+	}
+	nameTheme := func(members []string, isGroupOfThemes bool, parentName string) (string, string, bool) {
+		name, opening, isNamed := self.nameTheme(ctx, run, budget, members, isGroupOfThemes, parentName, takenNames)
+		if isNamed {
+			takenNames = append(takenNames, name)
+		}
+		return name, opening, isNamed
+	}
+
 	// Every group of pages: the level-one groups, largest first, and the
 	// parts the large ones divide into.
 	levelOneGroups := make([]*pageGroup, len(clustering.levelOne))
@@ -171,7 +192,7 @@ func (self *Agent) dreamThemes(ctx context.Context, run *Run, record *models.Age
 		if !canName() {
 			break
 		}
-		name, opening, isNamed := self.nameTheme(ctx, run, budget, self.themeMemberLines(ctx, run, group.memberIds, importanceById), false)
+		name, opening, isNamed := nameTheme(self.themeMemberLines(ctx, run, group.memberIds, importanceById), false, "")
 		named++
 		if isNamed {
 			group.plan = &plannedTheme{name: name, opening: opening, memberIds: group.memberIds}
@@ -209,7 +230,7 @@ func (self *Agent) dreamThemes(ctx context.Context, run *Run, record *models.Age
 		for _, index := range indexes {
 			lines = append(lines, levelOnePlans[index].line())
 		}
-		name, opening, isNamed := self.nameTheme(ctx, run, budget, lines, true)
+		name, opening, isNamed := nameTheme(lines, true, "")
 		named++
 		if isNamed {
 			levelTwoPlans = append(levelTwoPlans, &plannedTheme{name: name, opening: opening, levelOneIndexes: indexes})
@@ -235,7 +256,7 @@ func (self *Agent) dreamThemes(ctx context.Context, run *Run, record *models.Age
 		if !canName() {
 			break
 		}
-		name, opening, isNamed := self.nameTheme(ctx, run, budget, self.themeMemberLines(ctx, run, part.memberIds, importanceById), false)
+		name, opening, isNamed := nameTheme(self.themeMemberLines(ctx, run, part.memberIds, importanceById), false, part.parent.plan.themeName())
 		named++
 		if isNamed {
 			part.plan = &plannedTheme{name: name, opening: opening, memberIds: part.memberIds}
@@ -259,6 +280,24 @@ func (self *Agent) dreamThemes(ctx context.Context, run *Run, record *models.Age
 }
 
 // line is a planned theme as a naming prompt shows it.
+// lastNames is at most the last few names, the newest being the ones most
+// likely to be siblings of the group being named.
+func lastNames(names []string, most int) []string {
+	if len(names) <= most {
+		return names
+	}
+	return names[len(names)-most:]
+}
+
+// themeName is what the theme is called: its page's name, or the name the
+// model gave a new one.
+func (self *plannedTheme) themeName() string {
+	if self.known != nil {
+		return self.known.page.Name
+	}
+	return self.name
+}
+
 func (self *plannedTheme) line() string {
 	name, opening := self.name, self.opening
 	if self.known != nil {
@@ -398,8 +437,9 @@ type themeNameAnswer struct {
 }
 
 // nameTheme asks the model what a group is called, and says whether it
-// answered with a name.
-func (self *Agent) nameTheme(ctx context.Context, run *Run, budget *dreamBudget, members []string, isGroupOfThemes bool) (string, string, bool) {
+// answered with a name. parentName is the theme a part is a part of, empty
+// for a theme at the top; takenNames are the names other themes have.
+func (self *Agent) nameTheme(ctx context.Context, run *Run, budget *dreamBudget, members []string, isGroupOfThemes bool, parentName string, takenNames []string) (string, string, bool) {
 	if len(members) == 0 {
 		return "", "", false
 	}
@@ -408,6 +448,8 @@ func (self *Agent) nameTheme(ctx context.Context, run *Run, budget *dreamBudget,
 		"PersonName":        personName(run.Owner),
 		"Members":           members,
 		"IsGroupOfThemes":   isGroupOfThemes,
+		"ParentName":        parentName,
+		"TakenNames":        lastNames(takenNames, themeNamingTakenMost),
 	})
 	if err != nil {
 		return "", "", false

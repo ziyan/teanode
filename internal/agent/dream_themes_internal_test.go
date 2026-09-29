@@ -388,3 +388,38 @@ func TestThePartsOfALargeThemeAreThemesUnderIt(t *testing.T) {
 		}
 	})
 }
+
+// A part is named against the theme it is part of and the names already
+// taken, so it is not called what its parent or a sibling is.
+func TestAPartIsNamedApartFromItsThemeAndOthers(t *testing.T) {
+	prompt, err := render("theme_name.txt", map[string]any{
+		"KnowledgeLanguage": "English",
+		"PersonName":        "Robin",
+		"Members":           []string{"topics/hives-0 — hives"},
+		"IsGroupOfThemes":   false,
+		"ParentName":        "Beekeeping",
+		"TakenNames":        lastNames([]string{"Beekeeping", "Honey"}, themeNamingTakenMost),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wanted := range []string{`part of the theme "Beekeeping"`, "- Beekeeping", "- Honey"} {
+		if !strings.Contains(prompt, wanted) {
+			t.Errorf("the prompt does not say %q", wanted)
+		}
+	}
+	top, err := render("theme_name.txt", map[string]any{
+		"KnowledgeLanguage": "English",
+		"PersonName":        "Robin",
+		"Members":           []string{"topics/hives-0 — hives"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(top, "part of the theme") || strings.Contains(top, "already used") {
+		t.Errorf("a theme at the top with no names taken is told of a parent or of names: %s", top)
+	}
+	if got := lastNames([]string{"a", "b", "c"}, 2); len(got) != 2 || got[0] != "b" {
+		t.Errorf("lastNames kept %v", got)
+	}
+}

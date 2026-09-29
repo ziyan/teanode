@@ -28,6 +28,12 @@ where it has one:{{end}}
 - **opening**: one or two sentences saying what the group is about and
   what its {{if .IsGroupOfThemes}}themes{{else}}pages{{end}} have in common.
 
+{{if .ParentName}}The group is a part of the theme "{{.ParentName}}". Name what sets this
+part apart from the rest of that theme, not the theme itself.
+{{end}}{{if .TakenNames}}These names are already used by other themes; call this group something
+else, which says how it differs from them:
+{{range .TakenNames}}- {{.}}
+{{end}}{{end}}
 Everything comes from what is above. Where the group has no one clear
 subject, name what most of it is about and say in the opening what else
 is in it.
