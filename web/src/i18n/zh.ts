@@ -2987,4 +2987,7 @@ export const zh: Catalog = {
   'notes.notEditable': '这条备忘录包含图片或附件。请在手机上修改。',
   'notes.deleteTitle': '删除这条备忘录？',
   'notes.deleteBody': '“{title}”将从这里删除，并在下次同步时从手机上删除。',
+  'knowledge.overview': '概览',
+  'knowledge.overviewHint': '这是怎么运作的：助手在做梦时根据这一页、它下面的页面和与它相连的页面写成。写于{when}。',
+  'agent.dreamOverviewsWritten': '写了 {count} 篇概览',
 }

@@ -49,7 +49,7 @@ function messageOf(caught: unknown): string {
 
 const PAGE = `query ($path: String!) {
   AgentGraphPage(path: $path) {
-    node { id path kind name aliases summary contactId pinned dormant usedAt modifiedAt }
+    node { id path kind name aliases summary contactId pinned dormant usedAt modifiedAt overview overviewWrittenAt }
     facts { id number kind text happenedAt inferred evidence { kind id quote } audiences createdAt }
     folded { into fact { id number text } }
     children { id path kind name summary }
@@ -181,6 +181,10 @@ type Node = {
   importance?: number
   usedAt?: string | null
   modifiedAt?: string
+  // How the thing works, in markdown sections the night writes; only a
+  // page read on its own asks for it.
+  overview?: string
+  overviewWrittenAt?: string | null
 }
 
 type Evidence = { kind: string; id: string; quote: string }
@@ -1772,6 +1776,23 @@ function PageView({
           <SettingsEmpty>{t('knowledge.noSummary')}</SettingsEmpty>
         )}
       </SettingsSection>
+
+      {/* Under the opening, which says what the page is: the overview says
+          how it works, from the pages under and beside it as well as its
+          own facts. Only where the night has written one. */}
+      {node.overview ? (
+        <SettingsSection
+          card
+          title={t('knowledge.overview')}
+          description={t('knowledge.overviewHint', {
+            when: node.overviewWrittenAt ? new Date(node.overviewWrittenAt).toLocaleDateString() : '',
+          })}
+        >
+          <div className="knowledge-overview">
+            <Markdown text={node.overview} />
+          </div>
+        </SettingsSection>
+      ) : null}
 
       <SettingsSection
         card

@@ -3078,4 +3078,7 @@ export const ja: Catalog = {
   'notes.notEditable': 'このメモには画像または添付ファイルがあります。スマートフォンで変更してください。',
   'notes.deleteTitle': 'このメモを削除しますか？',
   'notes.deleteBody': '「{title}」はここから削除され、次の同期でスマートフォンからも削除されます。',
+  'knowledge.overview': '概要',
+  'knowledge.overviewHint': 'これがどう成り立っているか。エージェントが夢を見ている間に、このページ、その下のページ、つながっているページから書いたもの。{when}に書かれました。',
+  'agent.dreamOverviewsWritten': '概要 {count} 件',
 }

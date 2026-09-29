@@ -3116,4 +3116,7 @@ export const en = {
   'notes.notEditable': 'This note has pictures or attachments. Change it on your phone.',
   'notes.deleteTitle': 'Delete this note?',
   'notes.deleteBody': '"{title}" is deleted here and from your phone at its next sync.',
+  'knowledge.overview': 'Overview',
+  'knowledge.overviewHint': 'How this works, as your agent last wrote it while dreaming, from this page and the pages under and beside it. Written {when}.',
+  'agent.dreamOverviewsWritten': '{count} overviews written',
 }
