@@ -190,6 +190,11 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 	// given half of what is left, like the openings.
 	budget.overviewUntil = halfway(ctx, time.Now())
 	self.dreamOverviews(ctx, run, record, budget)
+	// Themes after the overviews, so a theme made tonight is written up
+	// tomorrow from members whose overviews are as new as they get.
+	// Bounded by count rather than by a share of the night: at most a
+	// dozen names.
+	self.dreamThemes(ctx, run, record, budget)
 	self.dreamQuietHalf(ctx, run, record, time.Now())
 	self.dreamAssociate(ctx, run, record, budget)
 	// Vectors before rehearsal, because rehearsal asks the graph by

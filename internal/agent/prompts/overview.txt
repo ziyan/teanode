@@ -31,6 +31,15 @@ its opening where it has not:
 
 {{end}}</children>
 
+{{end}}{{if .Members}}This page is a theme: a group of pages more linked to one another
+than to the rest, found from the links. The pages in it, each with its
+own overview where it has one and its opening where it has not:
+
+<members>
+{{range .Members}}{{.}}
+
+{{end}}</members>
+
 {{end}}{{if .Links}}What it is linked to, with the opening of the page at the other end:
 
 <links>
@@ -51,7 +60,7 @@ paragraph or a few bullet points:
 
 1. **What it is**: what this is and what it is for, in more detail than
    the opening.
-2. **Its parts**: what the pages under it are and how they fit
+2. **Its parts**: what the pages under it{{if .Members}}, or in it,{{end}} are and how they fit
    together{{if .Files}}, and for code, how its pieces are laid out and
    what builds on what{{end}}.
 3. **How it relates**: to what it is linked to, and what that link

@@ -1,0 +1,33 @@
+These are {{if .IsGroupOfThemes}}themes{{else}}pages{{end}} in {{.PersonName}}'s agent's notes that are
+more linked to one another than to the rest of the notes. A program
+found the group from the links between them; nobody has named it yet.
+Name it.
+
+Write in {{.KnowledgeLanguage}}, whatever language the material is in.
+Names of people and things keep their own spelling.
+
+## The group
+
+{{if .IsGroupOfThemes}}The themes it holds, each with what it is about:{{else}}The pages in it, the most important first, each with its opening
+where it has one:{{end}}
+
+<members>
+{{range .Members}}{{.}}
+{{end}}</members>
+
+## What to write
+
+- **name**: two to five words for what holds the group together, the
+  way {{.PersonName}} would say it: "Home workshop", "Seed catalogue
+  app", "Family travel". Not a path, not a list of the members, not
+  "Group of projects".
+- **opening**: one or two sentences saying what the group is about and
+  what its {{if .IsGroupOfThemes}}themes{{else}}pages{{end}} have in common.
+
+Everything comes from what is above. Where the group has no one clear
+subject, name what most of it is about and say in the opening what else
+is in it.
+
+Answer with this object and nothing else:
+
+{"name": "Home workshop", "opening": "..."}

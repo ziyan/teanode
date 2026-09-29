@@ -14,8 +14,10 @@ import (
 
 // The bounds of the overview phase.
 const (
-	// dreamOverviews is how many overviews one night writes.
-	dreamOverviews = 20
+	// dreamOverviews is how many overviews one night writes, and
+	// dreamThemeOverviews how many of the themes' on top of those.
+	dreamOverviews      = 20
+	dreamThemeOverviews = 8
 
 	// overviewLeastFactCount is how many facts a page with nothing under
 	// it needs before it gets an overview. Below it the opening says all
@@ -57,7 +59,14 @@ func (self *Agent) dreamOverviews(ctx context.Context, run *Run, record *models.
 	}
 	var pages []*models.AgentNode
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		pages, err = tx.ListAgentNodesForOverview(run.Agent.ID, overviewLeastFactCount, dreamOverviews)
+		if pages, err = tx.ListAgentNodesForOverview(run.Agent.ID, overviewLeastFactCount, dreamOverviews); err != nil {
+			return err
+		}
+		// The themes after every other page, so a theme is written from
+		// what its members say tonight. Deepest first among them too: a
+		// theme of themes is written after the themes under it.
+		themes, err := tx.ListAgentThemesForOverview(run.Agent.ID, dreamThemeOverviews)
+		pages = append(pages, themes...)
 		return err
 	}); err != nil {
 		log.Warningf("cannot list the pages due an overview: %s", err)
@@ -69,8 +78,9 @@ func (self *Agent) dreamOverviews(ctx context.Context, run *Run, record *models.
 	}
 	for start := 0; start < len(pages); {
 		depth := strings.Count(pages[start].Path, "/")
+		isTheme := models.IsThemePath(pages[start].Path)
 		end := start
-		for end < len(pages) && strings.Count(pages[end].Path, "/") == depth {
+		for end < len(pages) && strings.Count(pages[end].Path, "/") == depth && models.IsThemePath(pages[end].Path) == isTheme {
 			end++
 		}
 		slots := make(chan struct{}, concurrency)
@@ -114,6 +124,7 @@ type overviewInputs struct {
 	overviewInputsHash string
 	facts              []string
 	children           []string
+	members            []string
 	links              []string
 	files              []overviewFile
 
@@ -145,6 +156,7 @@ func (self *Agent) writeOverview(ctx context.Context, run *Run, page *models.Age
 		"Opening":           page.Summary,
 		"Facts":             inputs.facts,
 		"Children":          inputs.children,
+		"Members":           inputs.members,
 		"Links":             inputs.links,
 		"Files":             files,
 	})
@@ -214,19 +226,51 @@ func readOverviewInputs(tx db.Transaction, agentId string, page *models.AgentNod
 	}
 	for _, child := range live {
 		inputs.pageIdByPath[child.Path] = child.ID
-		said := cutRunes(strings.TrimSpace(child.Overview), overviewChildLength)
-		if said == "" {
-			said = cutRunes(strings.TrimSpace(child.Summary), overviewOpeningLength)
-		}
-		if said == "" {
-			said = "(nothing written about it yet)"
-		}
-		inputs.children = append(inputs.children, fmt.Sprintf("### %s — %s (%s)\n%s", child.Path, child.Name, child.Kind, said))
+		inputs.children = append(inputs.children, overviewOfPage(child))
 	}
 
-	edges, err := tx.ListAgentEdges(agentId, page.ID)
+	allEdges, err := tx.ListAgentEdges(agentId, page.ID)
 	if err != nil {
 		return nil, err
+	}
+	// A theme's members are what it is written from, as a page's children
+	// are, and are shown the same way; the links from themes to a page
+	// are not what the page is written from at all.
+	edges := make([]*models.AgentEdge, 0, len(allEdges))
+	var memberIds []string
+	for _, edge := range allEdges {
+		switch {
+		case models.IsThemePath(page.Path) && edge.FromID == page.ID && edge.Relation == models.EdgeAboutPlace:
+			memberIds = append(memberIds, edge.ToID)
+		case edge.ToID == page.ID && models.IsThemePath(edge.FromPath):
+		default:
+			edges = append(edges, edge)
+		}
+	}
+	if len(memberIds) > 0 {
+		members, err := tx.GetAgentNodes(agentId, memberIds)
+		if err != nil {
+			return nil, err
+		}
+		live := make([]*models.AgentNode, 0, len(members))
+		for _, member := range members {
+			if !member.Dormant {
+				live = append(live, member)
+			}
+		}
+		sort.SliceStable(live, func(left, right int) bool {
+			if live[left].Importance != live[right].Importance {
+				return live[left].Importance > live[right].Importance
+			}
+			return live[left].Path < live[right].Path
+		})
+		if len(live) > overviewChildCount {
+			live = live[:overviewChildCount]
+		}
+		for _, member := range live {
+			inputs.pageIdByPath[member.Path] = member.ID
+			inputs.members = append(inputs.members, overviewOfPage(member))
+		}
 	}
 	sort.SliceStable(edges, func(left, right int) bool { return edges[left].Weight > edges[right].Weight })
 	if len(edges) > overviewLinkCount {
@@ -264,6 +308,19 @@ func readOverviewInputs(tx db.Transaction, agentId string, page *models.AgentNod
 		return nil, err
 	}
 	return inputs, nil
+}
+
+// overviewOfPage is a page under or in the one being written, as its
+// prompt shows it: its overview where it has one, its opening where not.
+func overviewOfPage(page *models.AgentNode) string {
+	said := cutRunes(strings.TrimSpace(page.Overview), overviewChildLength)
+	if said == "" {
+		said = cutRunes(strings.TrimSpace(page.Summary), overviewOpeningLength)
+	}
+	if said == "" {
+		said = "(nothing written about it yet)"
+	}
+	return fmt.Sprintf("### %s — %s (%s)\n%s", page.Path, page.Name, page.Kind, said)
 }
 
 // renderOverview is an answer's sections as markdown, each under its own
