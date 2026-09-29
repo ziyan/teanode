@@ -102,6 +102,14 @@ export function translate(catalog: Catalog, key: Key, values?: Values): string {
   })
 }
 
+// translateNow is t() for code outside a component: the API client, the
+// upload and the passkey ceremonies, whose errors reach the person as they
+// are thrown. It reads the language the way the provider does, and a
+// catalog that has not arrived yet leaves the words in English.
+export function translateNow(key: Key, values?: Values): string {
+  return translate(CATALOGS[detectLanguage()] ?? en, key, values)
+}
+
 interface Translation {
   t: (key: Key, values?: Values) => string
   // plural picks the right form for a count in the reader's language, through

@@ -6,6 +6,8 @@
 // which is why there is no hand-rolled base64 here — getting it subtly wrong
 // produces a challenge mismatch that reads as a server bug and is not one.
 
+import { translateNow } from './i18n/i18n'
+
 // isPasskeySupported reports whether this browser can do any of it. Checked
 // before offering the button: one that cannot work is worse than none, because
 // somebody commits to it before finding out.
@@ -25,7 +27,7 @@ export async function getAssertion(options: string): Promise<string> {
   const request = PublicKeyCredential.parseRequestOptionsFromJSON(parsed.publicKey ?? parsed)
   const credential = await navigator.credentials.get({ publicKey: request })
   if (!credential) {
-    throw new Error('no passkey was returned')
+    throw new Error(translateNow('passkeys.noneReturned'))
   }
   return JSON.stringify((credential as PublicKeyCredential).toJSON())
 }
@@ -36,7 +38,7 @@ export async function createCredential(options: string): Promise<string> {
   const creation = PublicKeyCredential.parseCreationOptionsFromJSON(parsed.publicKey ?? parsed)
   const credential = await navigator.credentials.create({ publicKey: creation })
   if (!credential) {
-    throw new Error('no passkey was created')
+    throw new Error(translateNow('passkeys.noneCreated'))
   }
   return JSON.stringify((credential as PublicKeyCredential).toJSON())
 }

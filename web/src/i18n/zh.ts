@@ -6,6 +6,7 @@ import type { Catalog } from './i18n'
 // 和配置文件里就是这样写的，翻译过来反而让人对不上。
 export const zh: Catalog = {
   'app.name': 'TeaNode',
+  'breadcrumb.label': '当前位置',
   'nav.mail': '邮件',
   'nav.queue': '队列',
   'nav.reports': '报告',
@@ -100,6 +101,9 @@ export const zh: Catalog = {
   'login.or': '或',
   'login.withPasskey': '使用通行密钥登录',
   'login.passkeyFailed': '无法使用该通行密钥登录。',
+  'api.notSignedIn': '你尚未登录。',
+  'api.serverReturned': '服务器返回了 {statusCode}。',
+  'api.subscriptionRefused': '服务器拒绝了实时更新。',
   'login.signingIn': '正在登录…',
   'login.failed': '无法登录',
   'setupAccount.intro': '此服务器还没有账号。请设置用户名和密码。',
@@ -375,6 +379,7 @@ export const zh: Catalog = {
   'domain.credentialUsername': '用户名',
   'domain.credentialPassword': '密码',
   'domain.credentialNote': '用途备注',
+  'domain.credentialNotePlaceholder': '笔记本电脑',
   'domain.credentialsEmpty': '还没有机器通过这个域名发信。',
   'domain.credentialShownOnce': '请现在就把它输入那台机器。它只显示这一次，之后无法再次查看。',
   'domain.credentialRemove': '删除凭据',
@@ -507,6 +512,8 @@ export const zh: Catalog = {
   'passkeys.removeBody': '{name} 将无法再用于登录。你的密码仍然有效，因此不会被锁在外面。',
   'passkeys.notAdded': '未添加通行密钥：提示被关闭、超时，或被浏览器拒绝。',
   'passkeys.failed': '操作失败。',
+  'passkeys.noneReturned': '浏览器没有返回通行密钥。',
+  'passkeys.noneCreated': '浏览器没有创建通行密钥。',
 
   'passkeyNudge.title': '不用密码登录',
   'passkeyNudge.body':
@@ -594,6 +601,7 @@ export const zh: Catalog = {
   'tokens.revokeBody': '使用 {name} 的一切会立刻停止工作。此操作无法撤销，请改为签发新的令牌。',
   'common.copy': '复制',
   'common.copied': '已复制',
+  'upload.failed': '上传失败。',
   'common.copyFailed': '请手动复制',
 
   'sessions.title': '会话',
@@ -2138,11 +2146,15 @@ export const zh: Catalog = {
   'invitation.said.declined': '已拒绝，并已通知发起人',
   'invitation.said.tentative': '已回复待定，并已通知发起人',
   'invitation.pending': '尚未确认您的答复。请先重试，再选择其他答复。',
+  'invitation.pendingUnreadable': '无法读取此标签页中保留的未确认答复。',
+  'invitation.pendingFirst': '请先确认待处理的答复，再选择其他答复。',
   'invitation.retry': '重试答复',
   'invitation.refreshFailed': '您的请求已完成，但无法刷新邀请。',
   'invitation.failed': '操作没有成功',
   'calendar.pendingSave': '此日程可能已保存。请先确认此更改，再编辑或保存其他日程。',
   'calendar.pendingDelete': '此日程可能已删除。请先确认此更改，再进行其他更改。',
+  'calendar.pendingUnreadable': '无法读取此标签页中保留的未完成日历更改。',
+  'calendar.pendingFirst': '请先确认待处理的日历更改。',
   'calendar.retry': '重试日历更改',
   'calendar.recovered': '日历更改已完成',
   'calendar.refreshFailed': '您的请求已完成，但无法刷新日历。',

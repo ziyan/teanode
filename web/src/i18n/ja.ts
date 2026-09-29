@@ -6,6 +6,7 @@ import type { Catalog } from './i18n'
 // 設定ファイルにその綴りで現れるので、訳すと突き合わせられなくなる。
 export const ja: Catalog = {
   'app.name': 'TeaNode',
+  'breadcrumb.label': '現在の位置',
   'nav.mail': 'メール',
   'nav.queue': 'キュー',
   'nav.reports': 'レポート',
@@ -101,6 +102,9 @@ export const ja: Catalog = {
   'login.or': 'または',
   'login.withPasskey': 'パスキーでサインイン',
   'login.passkeyFailed': 'このパスキーではサインインできませんでした。',
+  'api.notSignedIn': 'サインインしていません。',
+  'api.serverReturned': 'サーバーが {statusCode} を返しました。',
+  'api.subscriptionRefused': 'サーバーがライブ更新を拒否しました。',
   'login.signingIn': 'サインインしています…',
   'login.failed': 'サインインできませんでした',
   'setupAccount.intro': 'このサーバーにはまだアカウントがありません。ユーザー名とパスワードを決めてください。',
@@ -383,6 +387,7 @@ export const ja: Catalog = {
   'domain.credentialUsername': 'ユーザー名',
   'domain.credentialPassword': 'パスワード',
   'domain.credentialNote': '用途のメモ',
+  'domain.credentialNotePlaceholder': 'ノートパソコン',
   'domain.credentialsEmpty': 'このドメインから送信する機器はまだありません。',
   'domain.credentialShownOnce': '今すぐ機器に入力してください。この一度だけ表示され、二度と表示できません。',
   'domain.credentialRemove': '認証情報を削除',
@@ -521,6 +526,8 @@ export const ja: Catalog = {
     '{name} ではサインインできなくなります。パスワードは引き続き使えるので締め出されることはありません。',
   'passkeys.notAdded': 'パスキーは追加されませんでした。ダイアログが閉じられたか、時間切れか、ブラウザが拒否しました。',
   'passkeys.failed': '失敗しました。',
+  'passkeys.noneReturned': 'ブラウザーからパスキーが返されませんでした。',
+  'passkeys.noneCreated': 'ブラウザーでパスキーが作成されませんでした。',
 
   'passkeyNudge.title': 'パスワードなしでサインイン',
   'passkeyNudge.body':
@@ -613,6 +620,7 @@ export const ja: Catalog = {
     '{name} を使っているものは直ちに動作しなくなります。取り消せません。新しいトークンを発行してください。',
   'common.copy': 'コピー',
   'common.copied': 'コピーしました',
+  'upload.failed': 'アップロードに失敗しました。',
   'common.copyFailed': '手動でコピーしてください',
 
   'sessions.title': 'セッション',
@@ -2205,11 +2213,15 @@ export const ja: Catalog = {
   'invitation.said.declined': '不参加と回答し、主催者に伝えました',
   'invitation.said.tentative': '未定と回答し、主催者に伝えました',
   'invitation.pending': '回答が確認されていません。別の回答を選ぶ前に再試行してください。',
+  'invitation.pendingUnreadable': 'このタブに残っている未確認の回答を読み取れませんでした。',
+  'invitation.pendingFirst': '別の回答を選ぶ前に、保留中の回答を確認してください。',
   'invitation.retry': '回答を再試行',
   'invitation.refreshFailed': 'リクエストは完了しましたが、招待を更新できませんでした。',
   'invitation.failed': 'うまくいきませんでした',
   'calendar.pendingSave': '予定はすでに保存されている可能性があります。別の予定を編集・保存する前に、この変更を確認してください。',
   'calendar.pendingDelete': '予定はすでに削除されている可能性があります。別の変更を行う前に、この変更を確認してください。',
+  'calendar.pendingUnreadable': 'このタブに残っている未完了のカレンダー変更を読み取れませんでした。',
+  'calendar.pendingFirst': '先に保留中のカレンダー変更を確認してください。',
   'calendar.retry': 'カレンダーの変更を再試行',
   'calendar.recovered': 'カレンダーの変更が完了しました',
   'calendar.refreshFailed': 'リクエストは完了しましたが、カレンダーを更新できませんでした。',

@@ -5,6 +5,7 @@
 // rewording a sentence does not mean renaming a key everywhere it is used.
 export const en = {
   'app.name': 'TeaNode',
+  'breadcrumb.label': 'Where you are',
   'nav.mail': 'Mail',
   'nav.queue': 'Queue',
   'nav.reports': 'Reports',
@@ -100,6 +101,9 @@ export const en = {
   'login.or': 'or',
   'login.withPasskey': 'Sign in with a passkey',
   'login.passkeyFailed': 'That passkey could not be used to sign in.',
+  'api.notSignedIn': 'You are not signed in.',
+  'api.serverReturned': 'The server returned {statusCode}.',
+  'api.subscriptionRefused': 'The server refused the live update.',
   'login.signingIn': 'signing in…',
   'login.failed': 'could not log in',
   'setupAccount.intro': 'This server has no account yet. Choose a username and password.',
@@ -385,6 +389,7 @@ export const en = {
   'domain.credentialUsername': 'Username',
   'domain.credentialPassword': 'Password',
   'domain.credentialNote': 'What will hold it',
+  'domain.credentialNotePlaceholder': 'laptop',
   'domain.credentialsEmpty': 'No machine sends through this domain yet.',
   'domain.credentialShownOnce': 'Type this into the machine now. It is shown this once and cannot be shown again.',
   'domain.credentialRemove': 'Remove credential',
@@ -522,6 +527,8 @@ export const en = {
     '{name} stops being able to sign in. Your password still works, so this does not lock you out.',
   'passkeys.notAdded': 'No passkey was added: the prompt was closed, timed out, or the browser refused it.',
   'passkeys.failed': 'That did not work.',
+  'passkeys.noneReturned': 'The browser returned no passkey.',
+  'passkeys.noneCreated': 'The browser did not create a passkey.',
 
   // The one-line suggestion above the page for an account with no passkey,
   // on a server that offers them.
@@ -617,6 +624,7 @@ export const en = {
   'tokens.revokeBody': 'Anything using {name} stops working at once. This cannot be undone; issue a new token instead.',
   'common.copy': 'Copy',
   'common.copied': 'Copied',
+  'upload.failed': 'The upload failed.',
   'common.copyFailed': 'Copy it by hand',
 
   'sessions.title': 'Sessions',
@@ -2220,11 +2228,15 @@ export const en = {
   'invitation.said.declined': 'Declined, and the organizer has been told',
   'invitation.said.tentative': 'Answered maybe, and the organizer has been told',
   'invitation.pending': 'Your answer has not been confirmed. Retry it before choosing another answer.',
+  'invitation.pendingUnreadable': 'The unconfirmed answer kept in this tab could not be read.',
+  'invitation.pendingFirst': 'Confirm the pending answer before choosing another.',
   'invitation.retry': 'Retry answer',
   'invitation.refreshFailed': 'Your request is complete, but the invitation could not be refreshed.',
   'invitation.failed': 'That did not work',
   'calendar.pendingSave': 'This event may already have been saved. Resolve this change before editing or saving another event.',
   'calendar.pendingDelete': 'This event may already have been deleted. Resolve this change before making another change.',
+  'calendar.pendingUnreadable': 'The unfinished calendar change kept in this tab could not be read.',
+  'calendar.pendingFirst': 'Resolve the pending calendar change first.',
   'calendar.retry': 'Retry calendar change',
   'calendar.recovered': 'Calendar change completed',
   'calendar.refreshFailed': 'Your request is complete, but the calendar could not be refreshed.',

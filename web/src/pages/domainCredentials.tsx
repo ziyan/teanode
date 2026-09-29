@@ -105,7 +105,11 @@ export function DomainCredentialsTab({ domain, run }: DomainTabProps) {
         >
           <label>
             <span>{t('domain.credentialNote')}</span>
-            <input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="laptop" />
+            <input
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              placeholder={t('domain.credentialNotePlaceholder')}
+            />
           </label>
         </FormDialog>
       )}
