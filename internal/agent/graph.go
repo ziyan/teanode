@@ -12,6 +12,11 @@ const (
 	indexTokens  = 1500
 	recallTokens = 1200
 
+	// indexThemes is how many of the themes at the top of the structure
+	// the index carries ahead of the pages ranked by importance: a line
+	// each, within indexTokens like every other line.
+	indexThemes = 12
+
 	// runIndexTokens is what a run with nobody present carries. Larger,
 	// because such a run cannot ask for more.
 	runIndexTokens = 1000
@@ -57,6 +62,16 @@ const (
 	// of its own, say -- ranked high and filled every page slot while the
 	// facts that answered the question were left out.
 	recallPagesUnhit = 2
+
+	// recallOverviewLength is how much of a page's overview recall
+	// carries: its first section, which says what the thing is and how
+	// it works, cut to about a hundred and fifty tokens so that five
+	// pages still fit. recallReflections is how many of a theme's
+	// reflections it carries, and recallReflectionLength how much of
+	// each.
+	recallOverviewLength   = 600
+	recallReflections      = 3
+	recallReflectionLength = 400
 
 	// recallBlocks is how many lines the overlay carries in all, and
 	// recallGraphBlocks how many of them the graph may fill: the
