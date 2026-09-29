@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -53,6 +54,11 @@ const (
 	// alertSurface is what an alert is said on: the note of the events
 	// the dashboard hears it by, and opens the drawer for.
 	alertSurface = "alert"
+
+	// alertAfterTurn is how long the job waits when a turn is running in
+	// the main conversation, before it looks again: the same minute a
+	// goal's job waits.
+	alertAfterTurn = time.Minute
 )
 
 // AlertDecision is the JSON the model is asked for.
@@ -268,6 +274,16 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 	if len(labeled) == 0 {
 		return nil
 	}
+	// Nothing is decided while a turn runs in the main conversation: the
+	// alert would be written between the person's words and the answer
+	// to them. Waiting before the decision costs nothing.
+	main, err := self.alertConversation(ctx, run)
+	if err != nil {
+		return err
+	}
+	if self.isTurnRunning(main.ID) {
+		return alertBehindTurn(now)
+	}
 
 	prompt, err := AlertPrompt(&AlertInput{
 		Owner: run.Owner, Language: languageName(KnowledgeLanguage(run.Agent, run.Owner)), Now: now,
@@ -301,11 +317,34 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 		}
 	}
 	for _, planned := range plan.sends {
-		if err := self.deliverAlert(ctx, run, planned, now); err != nil {
+		err := self.deliverAlert(ctx, run, main.ID, planned, now)
+		// A turn began while the decision ran. What was not said stays
+		// waiting, and is decided again once the turn has ended.
+		if errors.Is(err, errTurnRunning) {
+			return alertBehindTurn(time.Now())
+		}
+		if err != nil {
 			return err
 		}
 	}
 	return self.alertFollowUp(ctx, run, labeled, plan, location, bounds)
+}
+
+// alertConversation is the main conversation alerts are said in, made
+// when there is none yet.
+func (self *Agent) alertConversation(ctx context.Context, run *Run) (*models.AgentConversation, error) {
+	var main *models.AgentConversation
+	err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		main, err = scheduleConversation(tx, run.Agent.ID, "")
+		return err
+	})
+	return main, err
+}
+
+// alertBehindTurn puts the alert job back until a turn running in the
+// main conversation has had time to end.
+func alertBehindTurn(now time.Time) error {
+	return &Deferral{Until: now.Add(alertAfterTurn), Reason: "a turn is running in the main conversation"}
 }
 
 // alertFollowUp says when the job runs next: in the morning when an alert
@@ -581,43 +620,53 @@ func alertCheckIn(owner *models.User) string {
 // one transaction: the candidates are taken first, and an alert whose
 // candidates another run already told is not said again. Then the drawer
 // and every other listener hear it as a turn's events would be heard.
-func (self *Agent) deliverAlert(ctx context.Context, run *Run, planned *plannedAlert, now time.Time) error {
+//
+// Written only while no turn runs in the conversation, and under the lock
+// Ask starts turns with, so no turn can start between the look and the
+// commit; errTurnRunning when one is running.
+func (self *Agent) deliverAlert(ctx context.Context, run *Run, conversationId string, planned *plannedAlert, now time.Time) error {
 	var alert *models.AgentAlert
 	var checkIn string
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		candidateIds := make([]string, 0, len(planned.candidates))
-		for _, candidate := range planned.candidates {
-			candidateIds = append(candidateIds, candidate.ID)
-		}
-		taken, err := tx.LockWaitingAgentAlertCandidates(run.Agent.ID, candidateIds)
-		if err != nil || len(taken) == 0 {
-			return err
-		}
-		candidateIds = candidateIds[:0]
-		for _, candidate := range taken {
-			candidateIds = append(candidateIds, candidate.ID)
-		}
-		conversation, err := scheduleConversation(tx, run.Agent.ID, "")
-		if err != nil {
-			return err
-		}
-		checkIn = alertCheckIn(run.Owner)
-		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: "user", Content: checkIn}); err != nil {
-			return err
-		}
-		said, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: "assistant", Content: planned.alertText})
-		if err != nil {
-			return err
-		}
-		if alert, err = tx.CreateAgentAlert(&models.AgentAlert{
-			AgentID: run.Agent.ID, SubjectKey: planned.subjectKey, AlertText: planned.alertText, IsUrgent: planned.isUrgent,
-			CandidateIDs: candidateIds, ConversationID: conversation.ID, MessageID: said.ID, SentAt: now,
-		}); err != nil {
-			return err
-		}
-		return tx.MarkAgentAlertCandidatesAlerted(candidateIds, alert.ID)
-	}); err != nil {
+	isWritten, err := self.whileNoTurnRuns(conversationId, func() error {
+		return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			candidateIds := make([]string, 0, len(planned.candidates))
+			for _, candidate := range planned.candidates {
+				candidateIds = append(candidateIds, candidate.ID)
+			}
+			taken, err := tx.LockWaitingAgentAlertCandidates(run.Agent.ID, candidateIds)
+			if err != nil || len(taken) == 0 {
+				return err
+			}
+			candidateIds = candidateIds[:0]
+			for _, candidate := range taken {
+				candidateIds = append(candidateIds, candidate.ID)
+			}
+			conversation, err := scheduleConversation(tx, run.Agent.ID, conversationId)
+			if err != nil {
+				return err
+			}
+			checkIn = alertCheckIn(run.Owner)
+			if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: "user", Content: checkIn}); err != nil {
+				return err
+			}
+			said, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: "assistant", Content: planned.alertText})
+			if err != nil {
+				return err
+			}
+			if alert, err = tx.CreateAgentAlert(&models.AgentAlert{
+				AgentID: run.Agent.ID, SubjectKey: planned.subjectKey, AlertText: planned.alertText, IsUrgent: planned.isUrgent,
+				CandidateIDs: candidateIds, ConversationID: conversation.ID, MessageID: said.ID, SentAt: now,
+			}); err != nil {
+				return err
+			}
+			return tx.MarkAgentAlertCandidatesAlerted(candidateIds, alert.ID)
+		})
+	})
+	if err != nil {
 		return err
+	}
+	if !isWritten {
+		return errTurnRunning
 	}
 	if alert == nil {
 		return nil

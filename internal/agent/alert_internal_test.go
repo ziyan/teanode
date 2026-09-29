@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -387,5 +388,67 @@ func TestAlertPromptFencesTheMail(t *testing.T) {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("the prompt lacks %q:\n%s", want, prompt)
 		}
+	}
+}
+
+// While a turn runs in the main conversation the job decides nothing and
+// comes back a minute later, its candidate still waiting and no model
+// asked; the turn over, the alert is said. A turn that starts between the
+// decision and the writing is checked for again under the lock turns
+// start with, and the alert is not written beside it.
+func TestAlertJobWaitsForTheTurnInFlight(t *testing.T) {
+	provider := &alertModel{answers: []string{`{"alerts":[{"subject_key":"bank new device","is_urgent":true,"candidate_ids":["c1"],"alert_text":"A new device was just added to your bank account."}],"dropped":[]}`}}
+	server := provider.serve(t)
+	fixture := newAlertFixtureWith(t, server.URL, zoneAtHour(t, 12))
+	notice := fixture.candidate(t, models.AlertCandidateMessage, models.AlertSignalNow, "security@bank.example.com", "New device added", "A new device was added to your account.")
+	var main *models.AgentConversation
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		var err error
+		if main, err = scheduleConversation(tx, fixture.agent.ID, ""); err != nil {
+			t.Fatalf("scheduleConversation: %s", err)
+		}
+	})
+	running := &AskRun{ID: "turn-in-flight", settings: &AskSettings{Conversation: main}}
+	fixture.worker.runsMutex.Lock()
+	fixture.worker.runs = map[string]*AskRun{running.ID: running}
+	fixture.worker.latest = map[string]*AskRun{main.ID: running}
+	fixture.worker.runsMutex.Unlock()
+
+	fixture.decide(t)
+	if provider.callCount() != 0 || len(fixture.alerts(t)) != 0 || len(fixture.mainMessages(t)) != 0 {
+		t.Fatalf("nothing is decided or said while a turn runs: %d calls, %+v", provider.callCount(), fixture.mainMessages(t))
+	}
+	if waiting := fixture.candidateByID(t, notice.ID); !waiting.IsWaiting() {
+		t.Fatalf("the candidate still waits: %+v", waiting)
+	}
+	jobs := fixture.alertJobs(t)
+	if len(jobs) != 1 || jobs[0].Status != models.AgentJobQueued || jobs[0].NotBefore == nil || time.Until(*jobs[0].NotBefore) > alertAfterTurn || time.Until(*jobs[0].NotBefore) < alertAfterTurn/2 {
+		t.Fatalf("the job comes back in a minute: %+v", jobs)
+	}
+
+	// Decided, and a turn started before the writing: nothing is written.
+	planned := &plannedAlert{subjectKey: "bank new device", alertText: "A new device was just added.", isUrgent: true, candidates: []*models.AgentAlertCandidate{notice}}
+	if err := fixture.worker.deliverAlert(t.Context(), fixture.run(), main.ID, planned, time.Now()); !errors.Is(err, errTurnRunning) {
+		t.Fatalf("the writing looks again under the lock: %v", err)
+	}
+	if len(fixture.mainMessages(t)) != 0 || !fixture.candidateByID(t, notice.ID).IsWaiting() {
+		t.Fatal("nothing is written beside the turn")
+	}
+
+	// The turn over, the alert is said.
+	running.mutex.Lock()
+	running.finished = true
+	running.mutex.Unlock()
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		if err := tx.AdvanceAgentJob(fixture.agent.ID, models.AgentJobAlert, fixture.agent.ID, time.Now().Add(-time.Second)); err != nil {
+			t.Fatalf("AdvanceAgentJob: %s", err)
+		}
+	})
+	if err := fixture.worker.Tick(t.Context()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	fixture.worker.Wait()
+	if alerts := fixture.alerts(t); len(alerts) != 1 || len(fixture.mainMessages(t)) != 2 {
+		t.Fatalf("said once the turn ended: %+v", alerts)
 	}
 }
