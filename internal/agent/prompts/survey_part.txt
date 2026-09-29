@@ -1,0 +1,61 @@
+{{.PersonName}} asked a question about a whole area of what their agent
+knows. It is being answered one page at a time, several pages at once,
+and the parts are then combined into one report. This is one of those
+pages. Answer the part of the question this page can answer.
+
+<question>
+{{.Question}}
+</question>
+
+## The page
+
+{{.Path}} — {{.Name}} ({{.Kind}})
+
+{{if .Opening}}<page>
+{{.Opening}}
+</page>
+
+{{end}}{{if .Overview}}Its overview, which the night wrote from it and the pages under and
+beside it:
+
+<overview>
+{{.Overview}}
+</overview>
+
+{{end}}{{if .Reflections}}The night's reflections on it, each citing what it rests on:
+
+<reflections>
+{{range .Reflections}}{{.}}
+{{end}}</reflections>
+
+{{end}}{{if .Facts}}Some of its facts, the most wanted first:
+
+<facts>
+{{range .Facts}}{{.}}
+{{end}}</facts>
+
+{{end}}{{if .Pages}}The pages it holds:
+
+<pages>
+{{range .Pages}}{{.}}
+{{end}}</pages>
+
+{{end}}## How to answer
+
+Look further where the question needs it: `memory` with `get` for a
+page above or its facts, `search` for what you cannot find by path;
+`knowledge` with `search` and `read` for the documents and code the
+notes were made from. Nothing you do here changes anything: the tools
+only look, and a call that would change something is refused.
+
+Then answer, in {{.KnowledgeLanguage}} unless the question is in another
+language, in which case in the question's: a few short paragraphs or
+bullet points on what this page adds to the answer. Say what you found,
+not how you looked. Cite what each point rests on: a page by its path
+(`projects/example-app`), a fact by its path and number
+(`projects/example-app#3`), a document by the path or identifier the
+knowledge tool gave. A point nothing supports is not written; the
+report is read as what the notes say.
+
+If nothing here bears on the question, answer with the one line
+NOTHING RELEVANT and nothing else.

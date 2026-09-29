@@ -829,6 +829,16 @@ func (self *AskRun) turn() error {
 			self.loaded[subagent.Name] = true
 		}
 	}
+	// A survey over the graph, built for the same reason: it starts runs.
+	// In the round from the start, since its guidance is what tells the
+	// model to reach for it on a broad question instead of answering
+	// from the few facts recall carried. Not in a run with nobody
+	// present: the night is given every tool, and a survey is minutes of
+	// calls that nobody is there to have asked for.
+	if survey := self.agent.surveyTool(); !settings.Headless && !listed(configuration.Agent.Tools.Disabled, survey) {
+		self.offered = append(self.offered, survey)
+		self.loaded[survey.Name] = true
+	}
 	// The browser tool goes when the operator switched the browser off,
 	// and when there is neither a headless browser nor the person's own
 	// browser to drive; their browser, connected through the extension

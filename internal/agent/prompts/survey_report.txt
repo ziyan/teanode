@@ -1,0 +1,39 @@
+{{.PersonName}} asked a question about a whole area of what their agent
+knows. Each page in that area was asked for its part of the answer, and
+these are the parts. Combine them into one report.
+
+<question>
+{{.Question}}
+</question>
+
+{{if .Reflections}}The night's reflections over the whole of it, each citing what it rests
+on:
+
+<reflections>
+{{range .Reflections}}{{.}}
+{{end}}</reflections>
+
+{{end}}The parts, each under the page it came from:
+
+<answers>
+{{range .Answers}}{{.}}
+
+{{end}}</answers>
+
+## What to write
+
+A report in markdown, in {{.KnowledgeLanguage}} unless the question is in
+another language, in which case in the question's. Its sections follow
+the question: a question asking for strengths, weaknesses and what to
+do next gets a section for each; one asking how the parts fit together
+gets the parts and then how they fit. Open with two or three sentences
+that answer the question outright.
+
+Combine rather than list: where parts say the same thing, say it once;
+where they disagree, say so and cite both. Keep every citation a part
+gives, as it gives it (`projects/example-app`, `projects/example-app#3`,
+a document's path), beside the point it supports. Write nothing the
+parts do not say: this is read as what the notes say, and a point
+without a part behind it is a guess.
+
+Answer with the report and nothing else.

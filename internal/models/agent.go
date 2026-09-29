@@ -483,6 +483,13 @@ const (
 	// with nobody having asked: to introduce itself, to check what it
 	// remembers, or to offer an idea. Its subject is the reason.
 	AgentJobSpeakFirst AgentJobKind = "speak_first"
+
+	// AgentJobSurvey names the runs of a survey: one for each page it
+	// asks for its part of an answer, and one that combines the parts.
+	// Never queued; a survey runs in the request or the turn that asked
+	// for it, and its runs are priced apart so that what one cost can be
+	// read on its own.
+	AgentJobSurvey AgentJobKind = "survey"
 )
 
 // AgentJobStatus is where a job is.
