@@ -333,7 +333,7 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 			return err
 		}
 	}
-	return self.alertFollowUp(ctx, run, labeled, plan, location, bounds)
+	return self.alertFollowUp(ctx, run, labeled, plan, now, location, bounds)
 }
 
 // alertConversation is the main conversation alerts are said in, made
@@ -354,9 +354,13 @@ func alertBehindTurn(now time.Time) error {
 }
 
 // alertFollowUp says when the job runs next: in the morning when an alert
-// was held for it, and shortly when candidates arrived while this one ran,
-// which a job already running could not be queued again for.
-func (self *Agent) alertFollowUp(ctx context.Context, run *Run, labeled []*labeledCandidate, plan *alertPlan, location *time.Location, bounds *alertBounds) error {
+// was held for it, and shortly when candidates wait that this run did not
+// read, which a job already running could not be queued again for. Held
+// for the morning, only something pressing that arrived after readAt
+// brings it forward: what this run read and held, or left unread behind
+// a backlog, waits for the morning with it, rather than being read again
+// every two minutes all night.
+func (self *Agent) alertFollowUp(ctx context.Context, run *Run, labeled []*labeledCandidate, plan *alertPlan, readAt time.Time, location *time.Location, bounds *alertBounds) error {
 	now := time.Now()
 	var until time.Time
 	reason := ""
@@ -367,7 +371,7 @@ func (self *Agent) alertFollowUp(ctx context.Context, run *Run, labeled []*label
 	for _, entry := range labeled {
 		decided[entry.candidate.ID] = true
 	}
-	isArrived, isPressing := false, false
+	isLeft, isNewAndPressing := false, false
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		waiting, err := tx.ListWaitingAgentAlertCandidates(run.Agent.ID, alertCandidatesAtOnce*2)
 		if err != nil {
@@ -377,15 +381,19 @@ func (self *Agent) alertFollowUp(ctx context.Context, run *Run, labeled []*label
 			if decided[candidate.ID] {
 				continue
 			}
-			isArrived = true
-			isPressing = isPressing || candidate.AlertSignal == models.AlertSignalNow || candidate.CandidateKind == models.AlertCandidateBurst
+			isLeft = true
+			isPressing := candidate.AlertSignal == models.AlertSignalNow || candidate.CandidateKind == models.AlertCandidateBurst
+			isNewAndPressing = isNewAndPressing || (isPressing && candidate.CreatedAt.After(readAt))
 		}
 		return nil
 	}); err != nil {
 		return err
 	}
-	if isArrived && (until.IsZero() || isPressing) {
-		until, reason = now.Add(alertGather), "candidates arrived while the last decision ran"
+	switch {
+	case plan.heldCount > 0 && isNewAndPressing:
+		until, reason = now.Add(alertGather), "something pressing arrived while the last decision ran"
+	case plan.heldCount == 0 && isLeft:
+		until, reason = now.Add(alertGather), "candidates wait that the last decision did not read"
 	}
 	if until.IsZero() {
 		return nil

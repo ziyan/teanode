@@ -18,7 +18,9 @@ type AlertOperation interface {
 	CreateAgentAlertCandidate(candidate *models.AgentAlertCandidate) (*models.AgentAlertCandidate, error)
 
 	// ListWaitingAgentAlertCandidates is the candidates neither told nor
-	// dropped, oldest first.
+	// dropped: those that may not wait first (the sorting said now, or a
+	// burst), then the rest, each oldest first. A backlog held for the
+	// morning does not hide what came in pressing behind it.
 	ListWaitingAgentAlertCandidates(agentId string, limit int) ([]*models.AgentAlertCandidate, error)
 
 	// ListAgentAlertCandidatesByID is these candidates of the agent,
@@ -135,7 +137,7 @@ func (self *transaction) ListWaitingAgentAlertCandidates(agentId string, limit i
 	}
 	var found []agentAlertCandidateModel
 	if err := self.tx.Where("\"agent_id\" = ? AND \"alert_id\" = '' AND \"dropped_at\" IS NULL", agentId).
-		Order("\"created_at\" ASC, \"id\" ASC").Limit(limit).Find(&found).Error; err != nil {
+		Order("(\"alert_signal\" = 'now' OR \"candidate_kind\" = 'burst') DESC, \"created_at\" ASC, \"id\" ASC").Limit(limit).Find(&found).Error; err != nil {
 		return nil, err
 	}
 	candidates := make([]*models.AgentAlertCandidate, 0, len(found))

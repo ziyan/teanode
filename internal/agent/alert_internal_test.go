@@ -234,7 +234,8 @@ func TestAlertJobTellsTheBurstAndDropsTheNewsletter(t *testing.T) {
 func TestAlertJobHoldsTheNightAndLetsTheUrgentThrough(t *testing.T) {
 	provider := &alertModel{answers: []string{
 		`{"alerts":[{"subject_key":"school trip form","is_urgent":false,"candidate_ids":["c1"],"alert_text":"The school trip form is due tomorrow."}],"dropped":[]}`,
-		`{"alerts":[{"subject_key":"bank new device","is_urgent":true,"candidate_ids":["c2"],"alert_text":"A new device was just added to your bank account. If that wasn't you, call your bank now."},{"subject_key":"school trip form","is_urgent":false,"candidate_ids":["c1"],"alert_text":"The school trip form is due tomorrow."}],"dropped":[]}`,
+		// The one that may not wait is read first, as c1.
+		`{"alerts":[{"subject_key":"bank new device","is_urgent":true,"candidate_ids":["c1"],"alert_text":"A new device was just added to your bank account. If that wasn't you, call your bank now."},{"subject_key":"school trip form","is_urgent":false,"candidate_ids":["c2"],"alert_text":"The school trip form is due tomorrow."}],"dropped":[]}`,
 	}}
 	server := provider.serve(t)
 	zone := zoneAtHour(t, 3)
@@ -451,5 +452,41 @@ func TestAlertJobWaitsForTheTurnInFlight(t *testing.T) {
 	fixture.worker.Wait()
 	if alerts := fixture.alerts(t); len(alerts) != 1 || len(fixture.mainMessages(t)) != 2 {
 		t.Fatalf("said once the turn ended: %+v", alerts)
+	}
+}
+
+// Thirty-one candidates held at three in the morning and one that cannot
+// wait, the last to arrive: the job reads the urgent one first and says
+// it, holds the rest, and waits for the morning rather than reading the
+// same held ones again every two minutes.
+func TestAlertJobReadsThePressingFirstAndSleepsOnTheHeld(t *testing.T) {
+	var heldLabels []string
+	for index := 2; index <= alertCandidatesAtOnce; index++ {
+		heldLabels = append(heldLabels, fmt.Sprintf("%q", fmt.Sprintf("c%d", index)))
+	}
+	provider := &alertModel{answers: []string{`{"alerts":[` +
+		`{"subject_key":"bank new device","is_urgent":true,"candidate_ids":["c1"],"alert_text":"A new device was just added to your bank account."},` +
+		`{"subject_key":"school notes","is_urgent":false,"candidate_ids":[` + strings.Join(heldLabels, ",") + `],"alert_text":"The school sent a pile of notes."}` +
+		`],"dropped":[]}`}}
+	server := provider.serve(t)
+	zone := zoneAtHour(t, 3)
+	fixture := newAlertFixtureWith(t, server.URL, zone)
+	for index := 0; index < alertCandidatesAtOnce+1; index++ {
+		fixture.candidate(t, models.AlertCandidateMessage, models.AlertSignalSoon, "office@school.example.org", fmt.Sprintf("Note %d from the office", index), "A note.")
+	}
+	urgent := fixture.candidate(t, models.AlertCandidateMessage, models.AlertSignalNow, "security@bank.example.com", "New device added", "A new device was added to your account.")
+	fixture.decide(t)
+
+	alerts := fixture.alerts(t)
+	if len(alerts) != 1 || !alerts[0].IsUrgent || len(alerts[0].CandidateIDs) != 1 || alerts[0].CandidateIDs[0] != urgent.ID {
+		t.Fatalf("the urgent one is read and said: %+v", alerts)
+	}
+	if waiting := fixture.waiting(t); len(waiting) != alertCandidatesAtOnce+1 {
+		t.Fatalf("the rest wait for the morning: %d", len(waiting))
+	}
+	jobs := fixture.alertJobs(t)
+	location, _ := time.LoadLocation(zone)
+	if len(jobs) != 1 || jobs[0].Status != models.AgentJobQueued || jobs[0].NotBefore == nil || jobs[0].NotBefore.In(location).Hour() != 7 {
+		t.Fatalf("the job waits for seven, not two minutes: %+v", jobs)
 	}
 }
