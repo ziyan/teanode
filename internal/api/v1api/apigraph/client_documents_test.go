@@ -97,12 +97,21 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ProposeAgentIdea":        client.DocumentProposeAgentIdea,
 		"StartAgentIdea":          client.DocumentStartAgentIdea,
 		"SetAgentIdeaStatus":      client.DocumentSetAgentIdeaStatus,
-		"ListAgentRuns":           client.DocumentListAgentRuns,
-		"ListAllAgentRuns":        client.DocumentListAllAgentRuns,
-		"StopAgentRun":            client.DocumentStopAgentRun,
-		"ListAgentSchedules":      client.DocumentListAgentSchedules,
-		"SaveAgentSchedule":       client.DocumentSaveAgentSchedule,
-		"SaveAgentNode":           client.DocumentSaveAgentNode,
+		// The agent and its settings, alerts' switch and night among them.
+		"ReadAgent":         client.DocumentReadAgent,
+		"UpdateAgent":       client.DocumentUpdateAgent,
+		"GrantAgentMailbox": client.DocumentGrantAgentMailbox,
+		// What the agent told the person unasked, and what they muted.
+		"ListAgentAlerts":     client.DocumentListAgentAlerts,
+		"ListAgentAlertMutes": client.DocumentListAgentAlertMutes,
+		"MuteAgentAlert":      client.DocumentMuteAgentAlert,
+		"UnmuteAgentAlert":    client.DocumentUnmuteAgentAlert,
+		"ListAgentRuns":       client.DocumentListAgentRuns,
+		"ListAllAgentRuns":    client.DocumentListAllAgentRuns,
+		"StopAgentRun":        client.DocumentStopAgentRun,
+		"ListAgentSchedules":  client.DocumentListAgentSchedules,
+		"SaveAgentSchedule":   client.DocumentSaveAgentSchedule,
+		"SaveAgentNode":       client.DocumentSaveAgentNode,
 		// A page read on its own carries its overview, the night's record
 		// counts the overviews written, and a person can ask for one again.
 		"AgentGraphPage":       client.DocumentAgentGraphPage,

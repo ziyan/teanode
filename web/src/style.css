@@ -11569,3 +11569,23 @@ button.idea-history-title {
   align-items: baseline;
   overflow-wrap: anywhere;
 }
+
+/* Alerts on the agent's Overview: what was said reads as a sentence, not a
+   name, so it wraps at the measure; each message it was about is a line of
+   its own under the time it was said. */
+.alert-text {
+  font-weight: normal;
+  max-width: var(--measure);
+  overflow-wrap: break-word;
+}
+
+.alert-covered {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+/* The night's two clocks and the day's most on one line, folding under
+   each other on a phone. */
+.alert-settings input[type='time'] {
+  min-width: 7rem;
+}

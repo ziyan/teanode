@@ -42,6 +42,12 @@ type MailInsight struct {
 	// reader. Nothing here has been written anywhere.
 	Proposals []MailProposal `json:"proposals"`
 
+	// AlertSignal is whether the sorting thought the person should hear
+	// about this message without opening their mail: AlertSignalNone,
+	// AlertSignalSoon or AlertSignalNow. AlertReason is its line on why.
+	AlertSignal string `json:"alertSignal"`
+	AlertReason string `json:"alertReason,omitempty"`
+
 	Model     string    `json:"model"`
 	RunID     string    `json:"runId"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -237,12 +243,17 @@ const ScheduleMarker = "[schedule]"
 // OwnTurnMarkers are the markers of every turn the agent takes on its own
 // in a person's conversation: what anything looking for the person's own
 // last word must pass over.
-var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker}
+var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker, AlertMarker}
 
 // SpeakFirstMarker begins the message a turn the agent starts on its own
 // is given: an introduction, a memory check, an idea. Nobody wrote it; the
 // agent is about to speak first.
 const SpeakFirstMarker = "[speaking first]"
+
+// AlertMarker begins the message an alert is written under in the main
+// conversation: the agent telling the person, unasked, what their mail
+// showed. Nobody wrote it and no turn ran; the agent's words follow it.
+const AlertMarker = "[alert]"
 
 // GoalChangeNote is the line the conversation gets when its goal changes
 // hands: set, changed, cleared, or met. Empty when nothing worth a line

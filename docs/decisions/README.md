@@ -110,3 +110,9 @@ run: reads that follow each other together, anything else alone and in its
 place, with what they answered kept in the model's order and one card at a
 time. It amends the background command decision's line about the loop
 running them in order.
+
+`20260929-the-agent-tells-the-person-what-their-mail-says.md` says why the
+agent tells the person, unasked, what their mail says they should know now:
+candidates from the sorting and from a count of bursts, one decision with
+their memory in hand, bounds kept in code rather than in the prompt, and a
+mute that is a row rather than a memory.

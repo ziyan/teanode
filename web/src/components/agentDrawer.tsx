@@ -47,6 +47,7 @@ import {
   TargetIcon,
   TerminalIcon,
   TrashIcon,
+  WarningIcon,
   ExternalIcon,
 } from './icons'
 import { BackgroundCommand, BackgroundPanel, useBackgroundCommands } from './backgroundCommands'
@@ -138,6 +139,12 @@ const SPEAK_FIRST_MARKER = '[speaking first]'
 // turn that begins with it in the main conversation opens the drawer.
 const SPEAK_FIRST_SURFACE = 'speak_first:'
 
+// The marker an alert is written under: the agent telling the person,
+// unasked, what their mail showed, which is models.AlertMarker on the
+// server. Its surface opens the drawer as speaking first does.
+const ALERT_MARKER = '[alert]'
+const ALERT_SURFACE = 'alert'
+
 // What a question card answers when the person would rather talk than
 // pick, which is askuser.ChatAboutIt on the server: the same in every
 // language, so the tool can tell it from an answer.
@@ -148,7 +155,8 @@ const CARD_FRESH_MS = 60 * 60 * 1000
 
 // Which kind of turn of the agent's own a user message opens, if it opens
 // one at all.
-type CheckInOrigin = 'goal' | 'background' | 'backgroundWork' | 'schedule' | 'speakFirst' | 'approved' | 'declined'
+type CheckInOrigin =
+  'goal' | 'background' | 'backgroundWork' | 'schedule' | 'speakFirst' | 'alert' | 'approved' | 'declined'
 
 // The markers a turn begins with when the person answers a card after the
 // turn that raised it had ended, which are agent.AnsweringMarker,
@@ -164,6 +172,7 @@ function checkInOriginOf(text: string): CheckInOrigin | null {
   if (text.startsWith(BACKGROUND_WORK_MARKER)) return 'backgroundWork'
   if (text.startsWith(SCHEDULE_MARKER)) return 'schedule'
   if (text.startsWith(SPEAK_FIRST_MARKER)) return 'speakFirst'
+  if (text.startsWith(ALERT_MARKER)) return 'alert'
   if (text.startsWith(APPROVED_MARKER)) return 'approved'
   if (text.startsWith(DECLINED_MARKER)) return 'declined'
   return null
@@ -1903,6 +1912,7 @@ const CHECK_IN_LABEL = {
   backgroundWork: 'agentDrawer.backgroundWorkEnded',
   schedule: 'agentDrawer.scheduleTurn',
   speakFirst: 'agentDrawer.speakFirstTurn',
+  alert: 'agentDrawer.alertTurn',
   approved: 'agentDrawer.approvedLater',
   declined: 'agentDrawer.declinedLater',
 } as const
@@ -1912,6 +1922,7 @@ function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
   if (origin === 'backgroundWork') return <ListIcon size={12} />
   if (origin === 'schedule') return <CalendarIcon size={12} />
   if (origin === 'speakFirst') return <SparkIcon size={12} />
+  if (origin === 'alert') return <WarningIcon size={12} />
   if (origin === 'approved') return <CheckIcon size={12} />
   if (origin === 'declined') return <CloseIcon size={12} />
   return <TargetIcon size={12} />
@@ -2501,8 +2512,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   useAgentPresence(available && !standalone)
 
   // A turn the agent starts on its own in the main conversation -- its
-  // introduction, a memory check, an idea -- opens the drawer on it: a
-  // message nobody sees might as well not have been written. Followed
+  // introduction, a memory check, an idea, an alert -- opens the drawer on
+  // it: a message nobody sees might as well not have been written. Followed
   // whenever the drawer is not already showing the main conversation,
   // which is when the drawer's own subscription would not hear it.
   const isShowingMain = open && loaded?.kind === 'main'
@@ -2514,7 +2525,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       { conversationId: '' },
       (data) => {
         const event = data.AgentConversationEvents
-        if (stopped || event.kind !== 'asked' || !(event.note ?? '').startsWith(SPEAK_FIRST_SURFACE)) return
+        const note = event.note ?? ''
+        if (stopped || event.kind !== 'asked' || !(note.startsWith(SPEAK_FIRST_SURFACE) || note === ALERT_SURFACE))
+          return
         void loadConversations()
           .then((listed) => {
             const main = listed.find((conversation) => conversation.kind === 'main')

@@ -6,6 +6,9 @@
 // on the main conversation, the bot types while it works, streams the
 // answer into a message it keeps editing, sends what the agent made, asks
 // on the same cards the drawer shows, and answers a handful of commands.
+// What the agent says in the main conversation that no chat message asked
+// for -- an alert, speaking first, a schedule, a goal's check-in -- is sent
+// to the linked chat too, once.
 package channel
 
 import (
@@ -43,6 +46,16 @@ const (
 	// preview message: often enough to read along, seldom enough for the
 	// app's limits.
 	previewEvery = 1200 * time.Millisecond
+	// relayEvery is how often the bot looks for the agent's own turns in
+	// the main conversation when it has heard nothing sooner.
+	relayEvery = 15 * time.Second
+	// relaySettle is how old a message must be before the bot looks at
+	// it: a message written in a transaction that has not committed yet
+	// sorts before one that has, and the bot must not move past it unseen.
+	relaySettle = 3 * time.Second
+	// relayAtOnce bounds how many of the agent's own answers one look
+	// sends; the rest go at the next.
+	relayAtOnce = 20
 )
 
 // Chat is a linked chat as the turn writes into it.
@@ -96,6 +109,9 @@ type Bot interface {
 	// Run delivers messages until the context ends or the connection
 	// fails for good.
 	Run(ctx context.Context, handle func(ctx context.Context, incoming *Incoming, chat Chat)) error
+	// ChatFor is a chat to write into that nothing was heard from: the
+	// linked one, for what the agent says unasked.
+	ChatFor(chatId string) (Chat, error)
 }
 
 // Opener makes a Bot for a token.
@@ -111,6 +127,9 @@ type Settings struct {
 	Instance string
 	// Openers make a bot per app kind.
 	Openers map[models.AgentChannelKind]Opener
+	// RelayEvery is how often a bot looks for the agent's own turns to
+	// send on when it has heard of none; relayEvery when zero.
+	RelayEvery time.Duration
 }
 
 // Manager runs the bots.
@@ -288,6 +307,21 @@ func (self *Manager) run(ctx context.Context, channel *models.AgentChannel) erro
 	self.note(channel.ID, bot.Name(), "", &now)
 	log.Noticef("the %s bot %q of agent %s is running on %s", channel.Kind, bot.Name(), channel.AgentID, self.settings.Instance)
 	conversation := &chatState{manager: self, channelId: channel.ID, agentId: channel.AgentID, kind: channel.Kind, bot: bot}
+	// The relay lives as long as this bot, not as long as the manager: a
+	// bot that stopped on its own is started again at the next tick, and
+	// a relay left behind would send the same turns beside the new one's.
+	relayContext, stopRelay := context.WithCancel(ctx)
+	relayDone := make(chan struct{})
+	self.wait.Add(1)
+	go func() {
+		defer self.wait.Done()
+		defer close(relayDone)
+		conversation.relay(relayContext)
+	}()
+	defer func() {
+		stopRelay()
+		<-relayDone
+	}()
 	return bot.Run(ctx, conversation.handle)
 }
 

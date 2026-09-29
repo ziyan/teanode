@@ -160,6 +160,74 @@ how a calendar stops being trusted — the same reasoning as the hold window on
 an automatic reply. `SetMailProposalStatus` records what the person did, so a
 card they have dealt with does not come back.
 
+## Telling the person, unasked
+
+Sorting reads every message and says nothing, which is right for almost all
+of them and wrong for a few: a notice about an illness in a child's class,
+or fourteen sign-in codes overnight that nobody asked for. For those the
+agent speaks first. `docs/decisions/20260929-the-agent-tells-the-person-what-their-mail-says.md`
+says why it is built this way.
+
+Two things make a **candidate** (`internal/agent/alert_candidate.go`). The
+sorting says a message is worth telling now or today (`alert_signal` on the
+insight), or a count notices a **burst**: five or more messages received
+in six hours from one address whose subjects differ only in their digits,
+which no single message's sorting can see. Mailing lists, replies, Junk and
+Trash, subjects with fewer than three letters once the digits are out, old
+mail moved in, and anything older than a day never make one. Nothing is
+decided there.
+
+The **alert job** (`internal/agent/alert.go`) waits two minutes for
+candidates to gather, so that three messages about one incident are one
+alert, then asks the synthesize model once, with the person's triage
+memories, the pages their memory holds about the senders, and what they
+were told this week. The model writes the alerts in the agent's voice; the
+code keeps the bounds, because a model talked into interrupting somebody
+by a stranger's message is what bounds are for:
+
+- at most five a day, the urgent first;
+- nothing in the person's night, 22:00 to 07:00 in their zone, unless it
+  cannot wait; what waited is decided again in the morning;
+- nothing said twice in a week under the same subject key, unless the model
+  says what changed;
+- no web address, host name, link shortener, email address or telephone
+  number, whatever the model wrote;
+- nothing the person muted.
+
+The job decides nothing while a turn runs in the main conversation, and
+comes back a minute later; candidates that may not wait are read first,
+and anything older than a day when the job comes to it is dropped as no
+longer news.
+
+An alert is written into the main conversation under an `[alert]` line
+that names it,
+recorded in `agent_alert` in the same transaction, heard by the drawer as a
+turn, and sent to the chat app the person linked, which carries every turn
+of the agent's own (`internal/channel/relay.go`).
+
+**The person's say.** Alerts are on for every agent (`isAlertsEnabled`) and
+for every mailbox the agent sorts (`AgentMailbox.alerts`, absent meaning
+on). The night and the day's most are theirs to change (`alertQuietStart`,
+`alertQuietEnd`, `alertDailyMost`; the same time at both ends is no night).
+"Don't tell me about these" is a **mute**, a row of `agent_alert_mute`
+naming a sender's address, a domain (and its subdomains), a subject key, or
+a kind: `burst`, or a category of the sorting such as `notification`. The
+candidate step and the alert job both read the mutes, and what matches is
+dropped with the reason `muted`. A mute is a row rather than a memory the
+model is shown, so it holds however the next message is worded, and it can
+be listed and taken back. Every alert records what it covered in terms the
+model's wording does not change (the burst keys, the senders' addresses and
+domains, the sorting's categories), and muting an alert names those: the
+burst of an alert about one, the sender of an alert about a message, not
+the subject key the model chose, which the next alert may word
+differently. A target named without a scope is read as an address, a
+domain, or else a subject. The same operations serve every door: the
+Overview tab's Alerts card and the switches beside speaking first, the
+Mail tab's switch per mailbox, `teanode agent alert` and `agent settings
+set`, and `agent_profile`'s `no_alerts`, `alerts_on`, `mute_alert` and
+`unmute_alert`, which the agent calls when the person answers an alert with
+"stop telling me about these".
+
 ## Runs
 
 Everything a model does happens inside a *run*. There are two shapes.
@@ -171,7 +239,7 @@ permission. `docs/subsystems/the-ask-loop.md` is the whole of it.
 **A job** is work nobody is watching: a row in `agent_job` claimed by one
 instance and run to completion. The kinds are `triage`, `research`,
 `summarize`, `embed`, `reply`, `send`, `schedule`, `backfill`, `remember`,
-`ingest`, `dream` and `noop`. `docs/subsystems/jobs-and-schedules.md` covers
+`ingest`, `dream`, `alert` and `noop`. `docs/subsystems/jobs-and-schedules.md` covers
 the queue.
 
 There is no third shape. **Every model call is a turn of the same loop**, in

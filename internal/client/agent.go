@@ -103,13 +103,15 @@ type AgentJob struct {
 const agentViewSelection = `{
 	agent { id name enabled instructions language knowledgeLanguage askModel dreamFrom dreamUntil dreamedAt
 		dailyTokens dailyCost operatorDisabledAt confirm
+		isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost
 		voice { tone length greeting signoff }
 		categories { name description }
 		notifications { heldReply highPriority runFailed } }
 	sources { mailboxId name addresses policy { granted draftReplies search research
 		triage { enabled backfill replyExpectation }
 		summaries { enabled minimumMessages style }
-		autoReply { enabled guidance scope allow never categories when hours { from until days } holdMinutes dailyLimit } } }
+		autoReply { enabled guidance scope allow never categories when hours { from until days } holdMinutes dailyLimit }
+		alerts { enabled } } }
 	collections { id name kind granted items }
 	allowed { enabled triage summaries draftReplies search research autoReply ask schedules browser connectedServers }
 	budget { used limit resetsAt cost costLimit currency }
@@ -118,7 +120,7 @@ const agentViewSelection = `{
 
 const agentSummarySelection = `{
 	agentId userId username name enabled operatorDisabledAt dailyTokens dailyCost dead queued
-	sources { mailboxId name addresses policy { granted draftReplies search research triage { enabled } summaries { enabled } autoReply { enabled } } }
+	sources { mailboxId name addresses policy { granted draftReplies search research triage { enabled } summaries { enabled } autoReply { enabled } alerts { enabled } } }
 	today { used limit resetsAt cost costLimit currency } lastRunAt
 }`
 
@@ -131,10 +133,13 @@ const (
 	DocumentUpdateAgent = `mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String, $knowledgeLanguage: String,
 		$voice: AgentVoiceInput, $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput,
 		$confirm: [String!], $askModel: String, $dreamFrom: String, $dreamUntil: String,
+		$isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int,
 		$forget: Boolean) {
 		UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, knowledgeLanguage: $knowledgeLanguage,
 			voice: $voice, categories: $categories, notifications: $notifications, confirm: $confirm,
-			askModel: $askModel, dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, forget: $forget) ` + agentViewSelection + `
+			askModel: $askModel, dreamFrom: $dreamFrom, dreamUntil: $dreamUntil,
+			isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart, alertQuietEnd: $alertQuietEnd,
+			alertDailyMost: $alertDailyMost, forget: $forget) ` + agentViewSelection + `
 	}`
 
 	DocumentGrantAgentMailbox = `mutation ($mailboxId: String!, $policy: AgentMailboxInput) {

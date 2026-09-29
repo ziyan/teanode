@@ -117,6 +117,16 @@ type InsightOperation interface {
 
 	AppendAgentMessage(message *models.AgentMessage) (*models.AgentMessage, error)
 	ListAgentMessages(conversationId string, options *Options) ([]*models.AgentMessage, error)
+	// ListAgentOwnTurnAnswers is what the agent answered in a conversation
+	// in turns of its own -- its last word of each round, never a round
+	// that went on to call a tool -- after the message given and before
+	// the moment given, oldest first. A turn of its own is one whose
+	// opening message carries one of models.OwnTurnMarkers: nobody wrote
+	// to it, so nobody's chat followed it.
+	ListAgentOwnTurnAnswers(conversationId, afterMessageId string, before time.Time, limit int) ([]*models.AgentMessage, error)
+	// LastAgentMessageID is the newest message of a conversation written
+	// before the moment given, or empty.
+	LastAgentMessageID(conversationId string, before time.Time) (string, error)
 	// HasAgentToolAnswerContaining says whether a tool's answer in the
 	// conversation holds any of the texts: what a page, a search or a
 	// message showed the agent, as opposed to what the agent wrote.
@@ -145,6 +155,8 @@ type mailInsightModel struct {
 	Proposals     []byte    `gorm:"column:proposals;type:jsonb"`
 	Notes         string    `gorm:"column:notes"`
 	NotesRunID    string    `gorm:"column:notes_run_id"`
+	AlertSignal   string    `gorm:"column:alert_signal"`
+	AlertReason   string    `gorm:"column:alert_reason"`
 	Model         string    `gorm:"column:model"`
 	RunID         string    `gorm:"column:run_id"`
 	CreatedAt     time.Time `gorm:"column:created_at"`
@@ -221,6 +233,8 @@ func insightFromModel(model *mailInsightModel) (*models.MailInsight, error) {
 		Proposals:     []models.MailProposal{},
 		Notes:         model.Notes,
 		NotesRunID:    model.NotesRunID,
+		AlertSignal:   model.AlertSignal,
+		AlertReason:   model.AlertReason,
 		Model:         model.Model,
 		RunID:         model.RunID,
 		CreatedAt:     model.CreatedAt.In(time.Local),
@@ -260,6 +274,10 @@ func (self *transaction) PutMailInsight(insight *models.MailInsight) error {
 	if err != nil {
 		return err
 	}
+	alertSignal := insight.AlertSignal
+	if alertSignal == "" {
+		alertSignal = models.AlertSignalNone
+	}
 	model := &mailInsightModel{
 		MailID:        insight.MailID,
 		MailboxID:     insight.MailboxID,
@@ -274,13 +292,15 @@ func (self *transaction) PutMailInsight(insight *models.MailInsight) error {
 		Proposals:     encodedProposals,
 		Notes:         insight.Notes,
 		NotesRunID:    insight.NotesRunID,
+		AlertSignal:   alertSignal,
+		AlertReason:   insight.AlertReason,
 		Model:         insight.Model,
 		RunID:         insight.RunID,
 		CreatedAt:     time.Now(),
 	}
 	return self.tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "mail_id"}, {Name: "mailbox_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"agent_id", "category", "priority", "needs_reply", "research_asked", "extract_asked", "summary", "action_items", "model", "run_id", "created_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"agent_id", "category", "priority", "needs_reply", "research_asked", "extract_asked", "summary", "action_items", "alert_signal", "alert_reason", "model", "run_id", "created_at"}),
 	}).Create(model).Error
 }
 
@@ -936,6 +956,50 @@ func (self *transaction) ListAgentMessages(conversationId string, options *Optio
 		messages = append(messages, message)
 	}
 	return messages, nil
+}
+
+func (self *transaction) ListAgentOwnTurnAnswers(conversationId, afterMessageId string, before time.Time, limit int) ([]*models.AgentMessage, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	markers := make([]string, 0, len(models.OwnTurnMarkers))
+	for _, marker := range models.OwnTurnMarkers {
+		markers = append(markers, escapeLike(marker)+"%")
+	}
+	var found []agentMessageModel
+	if err := self.tx.Raw(`SELECT "answer".* FROM "agent_message" AS "answer"
+		WHERE "answer"."conversation_id" = ? AND "answer"."id" > ? AND "answer"."created_at" < ?
+		  AND "answer"."role" = 'assistant' AND "answer"."content" <> ''
+		  AND ("answer"."tool_calls" IS NULL OR jsonb_typeof("answer"."tool_calls") <> 'array' OR jsonb_array_length("answer"."tool_calls") = 0)
+		  AND (SELECT "opening"."content" FROM "agent_message" AS "opening"
+		       WHERE "opening"."conversation_id" = "answer"."conversation_id" AND "opening"."role" = 'user'
+		         AND ("opening"."created_at", "opening"."id") < ("answer"."created_at", "answer"."id")
+		       ORDER BY "opening"."created_at" DESC, "opening"."id" DESC LIMIT 1) LIKE ANY (?)
+		ORDER BY "answer"."created_at" ASC, "answer"."id" ASC LIMIT ?`,
+		conversationId, afterMessageId, before, pq.Array(markers), limit).Scan(&found).Error; err != nil {
+		return nil, err
+	}
+	messages := make([]*models.AgentMessage, 0, len(found))
+	for index := range found {
+		message, err := messageFromModel(&found[index])
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+	return messages, nil
+}
+
+func (self *transaction) LastAgentMessageID(conversationId string, before time.Time) (string, error) {
+	var ids []string
+	if err := self.tx.Model(&agentMessageModel{}).Where("\"conversation_id\" = ? AND \"created_at\" < ?", conversationId, before).
+		Order("\"created_at\" DESC, \"id\" DESC").Limit(1).Pluck("id", &ids).Error; err != nil {
+		return "", err
+	}
+	if len(ids) == 0 {
+		return "", nil
+	}
+	return ids[0], nil
 }
 
 func (self *transaction) HasAgentToolAnswerContaining(conversationId string, texts ...string) (bool, error) {
