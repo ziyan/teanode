@@ -1563,6 +1563,11 @@ function PageView({
   const [factsShown, setFactsShown] = useState(PAGE_SIZE)
   const me = useSession().name || ''
   const node = page.node
+  // The night's reflections are its own observations over what a theme
+  // groups, not something anybody said, so they are shown under the
+  // overview with what they cite rather than among the facts.
+  const reflections = page.facts.filter((fact) => fact.kind === 'reflection')
+  const facts = page.facts.filter((fact) => fact.kind !== 'reflection')
   const [editing, setEditing] = useState(false)
   const [adding, setAdding] = useState<Fact | null | undefined>(undefined)
   const [removing, setRemoving] = useState<Fact | null>(null)
@@ -1794,6 +1799,43 @@ function PageView({
         </SettingsSection>
       ) : null}
 
+      {reflections.length > 0 ? (
+        <SettingsSection card title={t('knowledge.reflections')} description={t('knowledge.reflectionsHint')}>
+          {reflections.map((fact) => {
+            const reflectionKind = reflectionKindOf(fact)
+            const citations = fact.evidence.filter((evidence) => evidence.kind === 'memory' && evidence.quote)
+            return (
+              <SettingsRow
+                key={fact.id}
+                title={`#${fact.number} ${fact.text}`}
+                badge={
+                  reflectionKind ? (
+                    <Tag
+                      value={t(`knowledge.reflectionKind.${reflectionKind}` as 'knowledge.reflectionKind.pattern')}
+                    />
+                  ) : null
+                }
+                subtitle={
+                  <span className="knowledge-citations">
+                    <span className="muted">{t('knowledge.citing')}</span>
+                    {citations.map((evidence) => (
+                      <button
+                        key={evidence.quote}
+                        type="button"
+                        className="link"
+                        onClick={() => onSelect(evidence.quote.split('#')[0])}
+                      >
+                        {evidence.quote}
+                      </button>
+                    ))}
+                  </span>
+                }
+              />
+            )
+          })}
+        </SettingsSection>
+      ) : null}
+
       <SettingsSection
         card
         title={t('knowledge.facts')}
@@ -1804,8 +1846,8 @@ function PageView({
           </button>
         }
       >
-        {page.facts.length === 0 ? <SettingsEmpty>{t('knowledge.noFacts')}</SettingsEmpty> : null}
-        {page.facts.slice(0, factsShown).map((fact) => (
+        {facts.length === 0 ? <SettingsEmpty>{t('knowledge.noFacts')}</SettingsEmpty> : null}
+        {facts.slice(0, factsShown).map((fact) => (
           <SettingsRow
             key={fact.id}
             title={`#${fact.number} ${fact.text}`}
@@ -1854,9 +1896,9 @@ function PageView({
             }
           />
         ))}
-        {page.facts.length > factsShown ? (
+        {facts.length > factsShown ? (
           <button type="button" className="show-more" onClick={() => setFactsShown((count) => count + PAGE_SIZE)}>
-            {t('knowledge.showMore', { count: Math.min(PAGE_SIZE, page.facts.length - factsShown) })}
+            {t('knowledge.showMore', { count: Math.min(PAGE_SIZE, facts.length - factsShown) })}
           </button>
         ) : null}
         {/* What the page used to say and no longer states. Shown because
@@ -2126,6 +2168,15 @@ function cut(text: string, length = 200): string {
 // shown under the quote. A fact read out of a screenshot is worth little
 // to somebody who cannot see the screenshot, and the name of a file in an
 // archive of fifty thousand says nothing on its own.
+// reflectionKindOf is what kind of observation a reflection is -- a
+// pattern, a tension, a trend, a risk or a question -- from the night's
+// own line in its evidence, or empty where it has none.
+function reflectionKindOf(fact: Fact): string {
+  const line = fact.evidence.find((evidence) => evidence.kind === 'dream' && evidence.quote.startsWith('reflection: '))
+  const reflectionKind = line ? line.quote.slice('reflection: '.length) : ''
+  return ['pattern', 'tension', 'trend', 'risk', 'question'].includes(reflectionKind) ? reflectionKind : ''
+}
+
 function Provenance({ fact, attachments }: { fact: Fact; attachments?: Attachment[] }) {
   const { t } = useTranslation()
   const first = fact.evidence[0]

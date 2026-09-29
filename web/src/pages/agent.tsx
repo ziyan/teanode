@@ -817,7 +817,7 @@ const DREAMS = `
   query ($first: Int) {
     ListAgentDreams(first: $first) {
       id jobId startedAt finishedAt digested filed merged rewritten moved dormant embedded backlog coarse
-      strengthened associated rehearsed gaps unknown revised overviewsWritten notes lastError cost currency
+      strengthened associated rehearsed gaps unknown revised overviewsWritten themesMade themesUpdated reflectionsWritten notes lastError cost currency
       proposals { kind path to reason }
     }
   }`
@@ -942,6 +942,9 @@ type Dream = {
   unknown: number
   revised: number
   overviewsWritten: number
+  themesMade: number
+  themesUpdated: number
+  reflectionsWritten: number
   // What the night wrote down about the questions it asked itself, one
   // line each. Prose rather than counts: "answered: ..." and "gap: ..."
   // are the sentences a person reads to see whether the night was any
@@ -3415,6 +3418,9 @@ function whatItDid(dream: Dream, t: ReturnType<typeof useTranslation>['t']): str
     dream.rehearsed > 0 ? t('agent.dreamUnknown', { count: dream.unknown }) : '',
     dream.revised > 0 ? t('agent.dreamRevised', { count: dream.revised }) : '',
     dream.overviewsWritten > 0 ? t('agent.dreamOverviewsWritten', { count: dream.overviewsWritten }) : '',
+    dream.themesMade > 0 ? t('agent.dreamThemesMade', { count: dream.themesMade }) : '',
+    dream.themesUpdated > 0 ? t('agent.dreamThemesUpdated', { count: dream.themesUpdated }) : '',
+    dream.reflectionsWritten > 0 ? t('agent.dreamReflectionsWritten', { count: dream.reflectionsWritten }) : '',
   ].filter(Boolean)
 }
 

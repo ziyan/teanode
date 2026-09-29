@@ -11520,3 +11520,13 @@ button.idea-history-title {
   max-width: var(--measure);
   overflow-wrap: break-word;
 }
+
+/* A reflection's citations: the pages and facts it rests on, each a link
+   to its page, wrapping onto as many lines as it needs. */
+.knowledge-citations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  align-items: baseline;
+  overflow-wrap: anywhere;
+}
