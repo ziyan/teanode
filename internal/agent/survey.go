@@ -312,7 +312,8 @@ var errNoSuchScope = errors.New("there is no page at that path to survey")
 // over the whole:
 //
 //   - a theme of pages: its members that have an overview, with the
-//     theme's reflections;
+//     theme's reflections; for a large theme divided into themes under
+//     it, those themes and the members none of them holds;
 //   - a theme of themes: the themes under it that have an overview;
 //   - any other page: the page if it has an overview, and the pages
 //     under it that have one;
@@ -405,32 +406,40 @@ func resolveSurveyScope(tx db.Transaction, agentId, scopePath string) (*surveySc
 }
 
 // heldBy is what a page holds, live: a theme of pages its members, a
-// theme of themes the themes under it, and any other page its children.
+// theme of themes the themes under it, a large theme the themes it is
+// divided into and the members none of them holds, and any other page its
+// children.
 func heldBy(tx db.Transaction, agentId string, page *models.AgentNode) ([]*models.AgentNode, error) {
-	if models.IsThemePath(page.Path) {
-		edges, err := tx.ListAgentEdges(agentId, page.ID)
-		if err != nil {
-			return nil, err
-		}
-		var memberIds []string
-		for _, edge := range edges {
-			if edge.FromID == page.ID && edge.Relation == models.EdgeAboutPlace {
-				memberIds = append(memberIds, edge.ToID)
-			}
-		}
-		if len(memberIds) > 0 {
-			members, err := tx.GetAgentNodes(agentId, memberIds)
-			if err != nil {
-				return nil, err
-			}
-			return livePages(members), nil
-		}
-	}
 	children, err := tx.ListAgentNodeChildren(agentId, page.ID)
 	if err != nil {
 		return nil, err
 	}
-	return livePages(children), nil
+	if !models.IsThemePath(page.Path) {
+		return livePages(children), nil
+	}
+	isHeldBelow, err := membersHeldByThemesUnder(tx, agentId, children)
+	if err != nil {
+		return nil, err
+	}
+	edges, err := tx.ListAgentEdges(agentId, page.ID)
+	if err != nil {
+		return nil, err
+	}
+	var memberIds []string
+	for _, edge := range edges {
+		if edge.FromID == page.ID && edge.Relation == models.EdgeAboutPlace && !isHeldBelow[edge.ToID] {
+			memberIds = append(memberIds, edge.ToID)
+		}
+	}
+	held := livePages(children)
+	if len(memberIds) > 0 {
+		members, err := tx.GetAgentNodes(agentId, memberIds)
+		if err != nil {
+			return nil, err
+		}
+		held = append(held, livePages(members)...)
+	}
+	return held, nil
 }
 
 // readSurveyPage is what one page's run is shown beyond the page itself:

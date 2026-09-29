@@ -12,9 +12,10 @@ import (
 
 // The bounds of the theme phase.
 const (
-	// dreamNewThemes is how many themes one night names. Each costs a
-	// model call; a group left unnamed tonight is found again tomorrow.
-	dreamNewThemes = 12
+	// dreamNewThemes is how many themes one night names, each call within
+	// the night's budget. Each costs a model call; a group left unnamed
+	// tonight is found again tomorrow.
+	dreamNewThemes = 40
 
 	// themeNamingMembers is how many of a group's pages the naming prompt
 	// shows, the most important first, and themeNamingOpeningLength how
@@ -60,21 +61,37 @@ type plannedTheme struct {
 	memberIds       []string
 	levelOneIndexes []int
 
-	// page is where it was written, and parent the theme of themes it
-	// is under, if any.
+	// page is where it was written, and parent the theme it is under, if
+	// any: for a theme of pages, the theme of themes that holds it; for a
+	// part of a large theme, the theme it is a part of.
 	page   *models.AgentNode
 	parent *plannedTheme
+}
+
+// pageGroup is a group of pages tonight's clustering found: a level-one
+// group, or a part a large one divides into (depth one or more, under
+// parent), with the plan for its theme once it has one.
+type pageGroup struct {
+	memberIds []string
+	depth     int
+	parent    *pageGroup
+	plan      *plannedTheme
 }
 
 // dreamThemes clusters the graph into themes in two levels, and keeps a
 // page for each: themes/<slug> for a theme of themes and for a theme of
 // pages in no such group, themes/<theme of themes>/<slug> for the rest.
+// A theme of more than themeSplitMembers pages is divided into the parts
+// inside it, each a theme under it (splitThemeGroup); it keeps its links
+// to all its pages, and its overview is written from its parts' and from
+// the pages no part holds.
 //
 // A theme keeps its page as its members change as long as more than half
 // of the members it had are still together, so a path somebody has
 // bookmarked or a survey cited stays where it was. A new group is named
 // by the model; a group that has gone makes its page dormant, never
-// deleted.
+// deleted, and keeps its links, so the group coming back wakes it where
+// it was, with its reflections and whatever cited it.
 func (self *Agent) dreamThemes(ctx context.Context, run *Run, record *models.AgentDream, budget *dreamBudget) {
 	var shapePages []*db.AgentGraphShapePage
 	var shapeLinks []*db.AgentGraphShapeLink
@@ -110,26 +127,59 @@ func (self *Agent) dreamThemes(ctx context.Context, run *Run, record *models.Age
 
 	levelOneKnown, levelTwoKnown := knownThemes(themePages, aboutEdges)
 
-	// The themes of pages: kept where one matches, named where none does.
-	levelOnePlans := make([]*plannedTheme, len(clustering.levelOne))
-	for index, group := range clustering.levelOne {
-		if known := matchTheme(group, levelOneKnown); known != nil {
-			levelOnePlans[index] = &plannedTheme{known: known, memberIds: group}
+	// Every group of pages: the level-one groups, largest first, and the
+	// parts the large ones divide into.
+	levelOneGroups := make([]*pageGroup, len(clustering.levelOne))
+	var allGroups, parts []*pageGroup
+	var addParts func(parent *pageGroup, splits []*themeSplit)
+	addParts = func(parent *pageGroup, splits []*themeSplit) {
+		for _, split := range splits {
+			part := &pageGroup{memberIds: split.memberIds, depth: parent.depth + 1, parent: parent}
+			allGroups = append(allGroups, part)
+			parts = append(parts, part)
+			addParts(part, split.splits)
 		}
 	}
+	for index, memberIds := range clustering.levelOne {
+		levelOneGroups[index] = &pageGroup{memberIds: memberIds}
+		allGroups = append(allGroups, levelOneGroups[index])
+		addParts(levelOneGroups[index], clustering.splits[index])
+	}
+
+	// Kept where a known theme matches, the deepest groups first: a part
+	// holds more than half of the theme it used to be, where the large
+	// group around it would hold more than half of that too and take its
+	// page.
+	matchingOrder := append([]*pageGroup(nil), allGroups...)
+	sort.SliceStable(matchingOrder, func(left, right int) bool { return matchingOrder[left].depth > matchingOrder[right].depth })
+	for _, group := range matchingOrder {
+		if known := matchTheme(group.memberIds, levelOneKnown); known != nil {
+			group.plan = &plannedTheme{known: known, memberIds: group.memberIds}
+		}
+	}
+
+	// Named where none does, the top of the structure first: the
+	// level-one groups, then the themes of themes over them, then the
+	// parts, largest first, each only once the theme it is a part of has
+	// a page to stand under.
 	named := 0
-	for index, group := range clustering.levelOne {
-		if levelOnePlans[index] != nil {
+	canName := func() bool { return named < dreamNewThemes && ctx.Err() == nil && budget.left() }
+	for _, group := range levelOneGroups {
+		if group.plan != nil {
 			continue
 		}
-		if named >= dreamNewThemes || ctx.Err() != nil || !budget.left() {
+		if !canName() {
 			break
 		}
-		name, opening, isNamed := self.nameTheme(ctx, run, budget, self.themeMemberLines(ctx, run, group, importanceById), false)
+		name, opening, isNamed := self.nameTheme(ctx, run, budget, self.themeMemberLines(ctx, run, group.memberIds, importanceById), false)
 		named++
 		if isNamed {
-			levelOnePlans[index] = &plannedTheme{name: name, opening: opening, memberIds: group}
+			group.plan = &plannedTheme{name: name, opening: opening, memberIds: group.memberIds}
 		}
+	}
+	levelOnePlans := make([]*plannedTheme, len(levelOneGroups))
+	for index, group := range levelOneGroups {
+		levelOnePlans[index] = group.plan
 	}
 
 	// The themes of themes, over the themes of pages that have a plan.
@@ -152,7 +202,7 @@ func (self *Agent) dreamThemes(ctx context.Context, run *Run, record *models.Age
 			levelTwoPlans = append(levelTwoPlans, &plannedTheme{known: known, levelOneIndexes: indexes})
 			continue
 		}
-		if named >= dreamNewThemes || ctx.Err() != nil || !budget.left() {
+		if !canName() {
 			continue
 		}
 		var lines []string
@@ -171,9 +221,38 @@ func (self *Agent) dreamThemes(ctx context.Context, run *Run, record *models.Age
 		}
 	}
 
+	namingOrder := append([]*pageGroup(nil), parts...)
+	sort.SliceStable(namingOrder, func(left, right int) bool {
+		if namingOrder[left].depth != namingOrder[right].depth {
+			return namingOrder[left].depth < namingOrder[right].depth
+		}
+		return len(namingOrder[left].memberIds) > len(namingOrder[right].memberIds)
+	})
+	for _, part := range namingOrder {
+		if part.plan != nil || part.parent.plan == nil {
+			continue
+		}
+		if !canName() {
+			break
+		}
+		name, opening, isNamed := self.nameTheme(ctx, run, budget, self.themeMemberLines(ctx, run, part.memberIds, importanceById), false)
+		named++
+		if isNamed {
+			part.plan = &plannedTheme{name: name, opening: opening, memberIds: part.memberIds}
+		}
+	}
+	// Parents first, so each part has its theme's page to stand under.
+	var partPlans []*plannedTheme
+	for _, part := range namingOrder {
+		if part.plan != nil {
+			part.plan.parent = part.parent.plan
+			partPlans = append(partPlans, part.plan)
+		}
+	}
+
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		tx.AsActor(models.ActorDream)
-		return writeThemes(tx, run.Agent.ID, record, levelOnePlans, levelTwoPlans, levelOneKnown, levelTwoKnown)
+		return writeThemes(tx, run.Agent.ID, record, levelOnePlans, levelTwoPlans, partPlans, levelOneKnown, levelTwoKnown)
 	}); err != nil {
 		log.Warningf("cannot keep the night's themes: %s", err)
 	}
@@ -192,9 +271,11 @@ func (self *plannedTheme) line() string {
 	return line
 }
 
-// knownThemes is the theme pages as they stand: a theme of pages is one
-// with links of its own to members; a theme of themes is one directly
-// under themes with a theme of pages under it and no members.
+// knownThemes is the theme pages as they stand, dormant ones included, so
+// a group that comes back wakes its old theme: a theme of pages is one
+// with links of its own to members (a part of a large theme is one too);
+// a theme of themes is one directly under themes with a theme of pages
+// under it and no members.
 func knownThemes(themePages []*models.AgentNode, aboutEdges []*models.AgentEdge) ([]*knownTheme, []*knownTheme) {
 	byId := map[string]*knownTheme{}
 	for _, page := range themePages {
@@ -355,7 +436,9 @@ func (self *Agent) nameTheme(ctx context.Context, run *Run, budget *dreamBudget,
 
 // writeThemes keeps the night's themes: the pages made, kept, moved,
 // woken or put to sleep, and each theme of pages linked to its members.
-func writeThemes(tx db.Transaction, agentId string, record *models.AgentDream, levelOnePlans, levelTwoPlans []*plannedTheme, levelOneKnown, levelTwoKnown []*knownTheme) error {
+// partPlans are the parts of large themes, each after the theme it is a
+// part of.
+func writeThemes(tx db.Transaction, agentId string, record *models.AgentDream, levelOnePlans, levelTwoPlans, partPlans []*plannedTheme, levelOneKnown, levelTwoKnown []*knownTheme) error {
 	if len(levelOnePlans) > 0 || len(levelOneKnown) > 0 {
 		root, err := tx.GetAgentNode(agentId, models.PathThemes)
 		if err != nil {
@@ -391,18 +474,37 @@ func writeThemes(tx db.Transaction, agentId string, record *models.AgentDream, l
 			return err
 		}
 	}
-
-	// What no group kept: its links go and its page sleeps.
-	for _, theme := range levelOneKnown {
-		if theme.isMatched {
-			continue
-		}
-		for memberId := range theme.memberIds {
-			if err := tx.DeleteAgentEdge(agentId, theme.page.ID, memberId, models.EdgeAboutPlace); err != nil {
+	for _, plan := range partPlans {
+		var parentPath string
+		switch {
+		case plan.parent != nil && plan.parent.page != nil:
+			parentPath = plan.parent.page.Path
+		case plan.known != nil:
+			// The theme it is a part of was not named tonight: the part
+			// stays where it is until it is.
+			current, err := themePageNow(tx, agentId, plan.known.page)
+			if err != nil || current == nil {
 				return err
 			}
+			parentPath = models.ParentPath(current.Path)
+		default:
+			continue
 		}
-		if err := setThemeDormant(tx, agentId, theme.page.Path, true); err != nil {
+		if err := keepTheme(tx, agentId, record, plan, parentPath, isUpdated); err != nil {
+			return err
+		}
+		if err := linkThemeMembers(tx, agentId, plan, isUpdated); err != nil {
+			return err
+		}
+	}
+
+	// What no group kept sleeps, with its links, so that the group coming
+	// back finds it and wakes it where it was.
+	for _, theme := range levelOneKnown {
+		if theme.isMatched || theme.page.Dormant {
+			continue
+		}
+		if err := setThemeDormant(tx, agentId, theme.page, true); err != nil {
 			return err
 		}
 		isUpdated[theme.page.ID] = true
@@ -411,13 +513,23 @@ func writeThemes(tx db.Transaction, agentId string, record *models.AgentDream, l
 		if theme.isMatched || theme.page.Dormant {
 			continue
 		}
-		if err := setThemeDormant(tx, agentId, theme.page.Path, true); err != nil {
+		if err := setThemeDormant(tx, agentId, theme.page, true); err != nil {
 			return err
 		}
 		isUpdated[theme.page.ID] = true
 	}
 	record.ThemesUpdated += len(isUpdated)
 	return nil
+}
+
+// themePageNow is a theme's page as it is now: a theme above it may have
+// been moved since it was read, and taken it along.
+func themePageNow(tx db.Transaction, agentId string, page *models.AgentNode) (*models.AgentNode, error) {
+	pages, err := tx.GetAgentNodes(agentId, []string{page.ID})
+	if err != nil || len(pages) == 0 {
+		return nil, err
+	}
+	return pages[0], nil
 }
 
 // keepTheme makes a planned theme's page, or wakes and moves the one it
@@ -438,11 +550,18 @@ func keepTheme(tx db.Transaction, agentId string, record *models.AgentDream, pla
 		record.ThemesMade++
 		return nil
 	}
-	page := plan.known.page
+	page, err := themePageNow(tx, agentId, plan.known.page)
+	if err != nil {
+		return err
+	}
+	if page == nil {
+		return fmt.Errorf("the theme %q is gone", plan.known.page.Path)
+	}
 	if page.Dormant {
-		if err := setThemeDormant(tx, agentId, page.Path, false); err != nil {
+		if err := setThemeDormant(tx, agentId, page, false); err != nil {
 			return err
 		}
+		page.Dormant = false
 		isUpdated[page.ID] = true
 	}
 	if models.ParentPath(page.Path) != parentPath {
@@ -533,13 +652,13 @@ func freeThemePath(tx db.Transaction, agentId, parentPath, name string) (string,
 }
 
 // setThemeDormant wakes a theme's page or puts it to sleep, from the page
-// as it stands, so nothing else of it moves.
-func setThemeDormant(tx db.Transaction, agentId, path string, isDormant bool) error {
-	page, err := tx.GetAgentNode(agentId, path)
-	if err != nil || page == nil || page.Dormant == isDormant {
+// as it stands now, so nothing else of it moves.
+func setThemeDormant(tx db.Transaction, agentId string, page *models.AgentNode, isDormant bool) error {
+	current, err := themePageNow(tx, agentId, page)
+	if err != nil || current == nil || current.Dormant == isDormant {
 		return err
 	}
-	page.Dormant = isDormant
-	_, err = tx.PutAgentNode(page)
+	current.Dormant = isDormant
+	_, err = tx.PutAgentNode(current)
 	return err
 }

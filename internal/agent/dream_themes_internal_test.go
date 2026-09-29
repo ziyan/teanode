@@ -229,12 +229,14 @@ func TestTheNightKeepsThemesInTwoLevels(t *testing.T) {
 		}
 	})
 
-	// The tides come apart: their theme sleeps and loses its links, the
+	// The tides come apart: their theme sleeps, keeping its links, the
 	// theme of themes has one theme left and sleeps too, and the orchard
 	// theme moves up to stand on its own.
+	var tideLinks [][2]string
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		for _, edge := range mustEdges(t, tx, run.Agent.ID) {
 			if edge.Relation == models.EdgeRelatedTo && strings.HasPrefix(edge.ToPath, "topics/tide-") {
+				tideLinks = append(tideLinks, [2]string{edge.FromID, edge.ToID})
 				if err := tx.DeleteAgentEdge(run.Agent.ID, edge.FromID, edge.ToID, edge.Relation); err != nil {
 					t.Fatalf("DeleteAgentEdge: %s", err)
 				}
@@ -247,14 +249,37 @@ func TestTheNightKeepsThemesInTwoLevels(t *testing.T) {
 		if tides := mustPage(t, tx, run.Agent.ID, "themes/outdoor-life/tide-tables"); !tides.Dormant {
 			t.Errorf("the tide theme is still awake")
 		}
-		if got := themeMembers(t, tx, run.Agent.ID, "themes/outdoor-life/tide-tables"); len(got) != 0 {
-			t.Errorf("the sleeping tide theme still has members %v", got)
+		if got := themeMembers(t, tx, run.Agent.ID, "themes/outdoor-life/tide-tables"); len(got) != 4 {
+			t.Errorf("the sleeping tide theme kept members %v", got)
 		}
 		if outdoor := mustPage(t, tx, run.Agent.ID, "themes/outdoor-life"); !outdoor.Dormant {
 			t.Errorf("the theme of themes with one theme left is still awake")
 		}
 		if orchard, err := tx.GetAgentNode(run.Agent.ID, "themes/orchard-work"); err != nil || orchard == nil || orchard.Dormant {
 			t.Errorf("the orchard theme did not move up: %v %v", orchard, err)
+		}
+	})
+
+	// The tides come back the next night: their theme wakes where it was,
+	// with nothing named again.
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		for _, tideLink := range tideLinks {
+			link(t, tx, run.Agent.ID, tideLink[0], tideLink[1])
+		}
+	})
+	asked = len(sentPrompts())
+	back := &models.AgentDream{}
+	worker.dreamThemes(t.Context(), run, back, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	if back.ThemesMade != 0 || len(sentPrompts()) != asked {
+		t.Errorf("the tides coming back made %d themes and asked %d times", back.ThemesMade, len(sentPrompts())-asked)
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		tides := mustPage(t, tx, run.Agent.ID, "themes/outdoor-life/tide-tables")
+		if tides.Dormant {
+			t.Errorf("the tide theme did not wake")
+		}
+		if outdoor := mustPage(t, tx, run.Agent.ID, "themes/outdoor-life"); outdoor.Dormant {
+			t.Errorf("the theme of themes did not wake")
 		}
 	})
 }
@@ -290,4 +315,76 @@ func TestThemesAreNotNamedWithoutBudget(t *testing.T) {
 	if record.ThemesMade != 0 || len(sentPrompts()) != 0 {
 		t.Errorf("a night with nothing left made %d themes and asked %d times", record.ThemesMade, len(sentPrompts()))
 	}
+}
+
+// A large theme's parts are themes under it, each linked to its own
+// pages; the large theme keeps its links to all of them, and a later
+// night that finds the same parts keeps their pages where they are.
+func TestThePartsOfALargeThemeAreThemesUnderIt(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	t.Cleanup(release)
+	_, run := digestSplitWorld(t, database, "http://127.0.0.1:1")
+	partIds := map[string][]string{}
+	var allIds []string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		for _, part := range []string{"hives", "honey"} {
+			for index := range 3 {
+				page, err := tx.PutAgentNode(&models.AgentNode{AgentID: run.Agent.ID, Path: fmt.Sprintf("topics/%s-%d", part, index), Kind: models.NodeTopic, Name: part})
+				if err != nil {
+					t.Fatalf("PutAgentNode: %s", err)
+				}
+				partIds[part] = append(partIds[part], page.ID)
+				allIds = append(allIds, page.ID)
+			}
+		}
+	})
+	write := func(levelOne *plannedTheme, parts ...*plannedTheme) {
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			tx.AsActor(models.ActorDream)
+			themePages, err := tx.ListAgentNodesUnder(run.Agent.ID, models.PathThemes, themeListed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			aboutEdges, err := tx.ListAgentEdgesByRelation(run.Agent.ID, models.EdgeAboutPlace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			levelOneKnown, levelTwoKnown := knownThemes(themePages, aboutEdges)
+			for _, plan := range append([]*plannedTheme{levelOne}, parts...) {
+				if plan.name == "" {
+					plan.known = matchTheme(plan.memberIds, levelOneKnown)
+				}
+			}
+			if err := writeThemes(tx, run.Agent.ID, &models.AgentDream{}, []*plannedTheme{levelOne}, nil, parts, levelOneKnown, levelTwoKnown); err != nil {
+				t.Fatalf("writeThemes: %s", err)
+			}
+		})
+	}
+	beekeeping := &plannedTheme{name: "Beekeeping", memberIds: allIds}
+	write(beekeeping,
+		&plannedTheme{name: "Hives", memberIds: partIds["hives"], parent: beekeeping},
+		&plannedTheme{name: "Honey", memberIds: partIds["honey"], parent: beekeeping})
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if got := themeMembers(t, tx, run.Agent.ID, "themes/beekeeping"); len(got) != 6 {
+			t.Errorf("the large theme's members are %v", got)
+		}
+		for _, part := range []string{"hives", "honey"} {
+			if got := themeMembers(t, tx, run.Agent.ID, "themes/beekeeping/"+part); len(got) != 3 {
+				t.Errorf("the %s part's members are %v", part, got)
+			}
+		}
+	})
+
+	// The same parts again, found by their members.
+	again := &plannedTheme{memberIds: allIds}
+	write(again,
+		&plannedTheme{memberIds: partIds["hives"], parent: again},
+		&plannedTheme{memberIds: partIds["honey"], parent: again})
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		for _, path := range []string{"themes/beekeeping", "themes/beekeeping/hives", "themes/beekeeping/honey"} {
+			if page := mustPage(t, tx, run.Agent.ID, path); page.Dormant {
+				t.Errorf("%s is asleep", path)
+			}
+		}
+	})
 }

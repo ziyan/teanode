@@ -174,3 +174,60 @@ func TestThemeOverlapIsMoreThanHalfOfTheMembers(t *testing.T) {
 		t.Errorf("three of four did not match: %d", shared)
 	}
 }
+
+// A group of three hundred pages made of three dense parts, linked to one
+// another here and there, divides into three themes of a hundred, none
+// of which divides again.
+func TestALargeGroupDividesIntoTheGroupsInsideIt(t *testing.T) {
+	world := &themeWorld{}
+	var memberIds []string
+	seed := uint32(7)
+	random := func(bound int) int {
+		seed = seed*1664525 + 1013904223
+		return int(seed>>8) % bound
+	}
+	for _, part := range []string{"north", "south", "east"} {
+		var paths []string
+		for index := range 100 {
+			path := fmt.Sprintf("topics/%s-%03d", part, index)
+			world.page(path, models.NodeTopic)
+			paths = append(paths, path)
+		}
+		for left := range paths {
+			for right := left + 1; right < len(paths); right++ {
+				if random(100) < 20 {
+					world.link(paths[left], paths[right], models.EdgeRelatedTo)
+				}
+			}
+		}
+		memberIds = append(memberIds, paths...)
+	}
+	for range 40 {
+		world.link(memberIds[random(300)], memberIds[random(300)], models.EdgeRelatedTo)
+	}
+	weights := themeWeights(world.links, func(string) bool { return true })
+
+	splits := splitThemeGroup(memberIds, weights, 1)
+	if len(splits) != 3 {
+		t.Fatalf("%d parts, want 3", len(splits))
+	}
+	for _, split := range splits {
+		if len(split.memberIds) != 100 || split.splits != nil {
+			t.Errorf("a part of %d pages, divided into %d", len(split.memberIds), len(split.splits))
+		}
+		part := split.memberIds[0][len("topics/"):][:5]
+		for _, pageId := range split.memberIds {
+			if pageId[len("topics/"):][:5] != part {
+				t.Errorf("%s is in the %s part", pageId, part)
+			}
+		}
+	}
+	// A group no larger than the bound is left whole, and so is one
+	// three levels down.
+	if splits := splitThemeGroup(memberIds[:themeSplitMembers], weights, 1); splits != nil {
+		t.Errorf("a group of %d pages was divided", themeSplitMembers)
+	}
+	if splits := splitThemeGroup(memberIds, weights, themeSplitDepth+1); splits != nil {
+		t.Errorf("a group was divided past the deepest level")
+	}
+}

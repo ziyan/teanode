@@ -43,6 +43,15 @@ const (
 	// needs before that is judged at all.
 	themeGiantShare      = 0.4
 	themeGiantLeastPages = 20
+
+	// themeSplitMembers is how many pages a theme may hold before it is
+	// divided into themes under it, themeSplitDepth how many levels deep
+	// those may go below the theme they divide, and themeSplitLeastMembers
+	// how many pages a group needs to be a theme of its own there; a
+	// smaller one stays with the theme above.
+	themeSplitMembers      = 120
+	themeSplitDepth        = 3
+	themeSplitLeastMembers = 5
 )
 
 // themePage is a page as the clustering reads it.
@@ -69,6 +78,10 @@ type themeClustering struct {
 	// indexes of its groups in levelOne in order, the largest first.
 	levelTwo [][]int
 
+	// splits is, beside each level-one group, the groups it divides into
+	// when it is too large for one overview; nil for one that is not.
+	splits [][]*themeSplit
+
 	// hubIds is the pages left out of propagation for being linked to
 	// far more than the rest, which joined a group afterwards.
 	hubIds []string
@@ -77,6 +90,13 @@ type themeClustering struct {
 	// was divided again with only the links inside each root of the tree
 	// (people, projects, topics and so on) counted.
 	isSplitByRoot bool
+}
+
+// themeSplit is one group a large theme divides into, and the groups it
+// divides into in turn.
+type themeSplit struct {
+	memberIds []string
+	splits    []*themeSplit
 }
 
 // themeWeight is what a link counts for. A build dependency and a part
@@ -114,34 +134,8 @@ func clusterThemes(pages []themePage, links []themeLink) themeClustering {
 	weights := themeWeights(links, func(id string) bool { _, isCandidate := rootById[id]; return isCandidate })
 	clustering := themeClustering{}
 
-	// The hubs are found, left out, and put back where their links go.
-	hubIds := themeHubs(weights)
+	labelById, hubIds := propagateAroundHubs(weights)
 	clustering.hubIds = hubIds
-	isHub := map[string]bool{}
-	for _, hubId := range hubIds {
-		isHub[hubId] = true
-	}
-	withoutHubs := map[string]map[string]float64{}
-	for pageId, neighbours := range weights {
-		if isHub[pageId] {
-			continue
-		}
-		for neighbourId, weight := range neighbours {
-			if !isHub[neighbourId] {
-				addThemeWeight(withoutHubs, pageId, neighbourId, weight/2)
-			}
-		}
-	}
-	labelById := propagateLabels(withoutHubs)
-	assignLeftOut(labelById, weights, hubIds)
-	// A page whose only links were to hubs goes where its hub went.
-	var leftOut []string
-	for _, pageId := range sortedKeys(weights) {
-		if _, isLabelled := labelById[pageId]; !isLabelled {
-			leftOut = append(leftOut, pageId)
-		}
-	}
-	assignLeftOut(labelById, weights, leftOut)
 
 	groups := groupsOf(labelById)
 	linkedCount := len(labelById)
@@ -179,6 +173,7 @@ func clusterThemes(pages []themePage, links []themeLink) themeClustering {
 	for _, group := range groups {
 		if len(group) >= themeLeastMembers {
 			clustering.levelOne = append(clustering.levelOne, group)
+			clustering.splits = append(clustering.splits, splitThemeGroup(group, weights, 1))
 		}
 	}
 
@@ -214,6 +209,83 @@ func clusterThemes(pages []themePage, links []themeLink) themeClustering {
 		clustering.levelTwo = append(clustering.levelTwo, indexes)
 	}
 	return clustering
+}
+
+// propagateAroundHubs is label propagation with the hubs found, left out,
+// and put back where their links go; a page whose only links were to
+// hubs goes where its hub went. It answers with the labels and the hubs.
+func propagateAroundHubs(weights map[string]map[string]float64) (map[string]string, []string) {
+	hubIds := themeHubs(weights)
+	isHub := map[string]bool{}
+	for _, hubId := range hubIds {
+		isHub[hubId] = true
+	}
+	withoutHubs := map[string]map[string]float64{}
+	for pageId, neighbours := range weights {
+		if isHub[pageId] {
+			continue
+		}
+		for neighbourId, weight := range neighbours {
+			if !isHub[neighbourId] {
+				addThemeWeight(withoutHubs, pageId, neighbourId, weight/2)
+			}
+		}
+	}
+	labelById := propagateLabels(withoutHubs)
+	assignLeftOut(labelById, weights, hubIds)
+	var leftOut []string
+	for _, pageId := range sortedKeys(weights) {
+		if _, isLabelled := labelById[pageId]; !isLabelled {
+			leftOut = append(leftOut, pageId)
+		}
+	}
+	assignLeftOut(labelById, weights, leftOut)
+	return labelById, hubIds
+}
+
+// splitThemeGroup divides a group too large for one overview into the
+// groups it holds, clustered the same way over the links among its own
+// members only, and those again while they are too large, at most
+// themeSplitDepth levels down; depth is the level being made, from 1.
+//
+// Over the whole graph, modularity cannot see groups smaller than a
+// size set by the whole graph's links (its resolution limit), so a
+// graph of thousands of pages settles on a dozen groups of hundreds.
+// Over one group's links alone that size is the group's, and the parts
+// inside it show. A group smaller than themeSplitLeastMembers stays with
+// the theme above, and a group that does not divide into at least two
+// such parts is left whole.
+func splitThemeGroup(memberIds []string, weights map[string]map[string]float64, depth int) []*themeSplit {
+	if len(memberIds) <= themeSplitMembers || depth > themeSplitDepth {
+		return nil
+	}
+	isMember := make(map[string]bool, len(memberIds))
+	for _, pageId := range memberIds {
+		isMember[pageId] = true
+	}
+	within := map[string]map[string]float64{}
+	for _, pageId := range memberIds {
+		for neighbourId, weight := range weights[pageId] {
+			if isMember[neighbourId] {
+				addThemeWeight(within, pageId, neighbourId, weight/2)
+			}
+		}
+	}
+	labelById, _ := propagateAroundHubs(within)
+	var parts [][]string
+	for _, group := range groupsOf(labelById) {
+		if len(group) >= themeSplitLeastMembers {
+			parts = append(parts, group)
+		}
+	}
+	if len(parts) < 2 {
+		return nil
+	}
+	splits := make([]*themeSplit, 0, len(parts))
+	for _, part := range parts {
+		splits = append(splits, &themeSplit{memberIds: part, splits: splitThemeGroup(part, weights, depth+1)})
+	}
+	return splits
 }
 
 // themeWeights is the links as an undirected weighted graph between the
