@@ -1,0 +1,192 @@
+package db_test
+
+import (
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/models"
+)
+
+// overviewPaths is the paths of the pages due an overview, in the order
+// they are listed.
+func overviewPaths(t *testing.T, tx db.Transaction, agentId string) []string {
+	t.Helper()
+	due, err := tx.ListAgentNodesForOverview(agentId, 3, 50)
+	if err != nil {
+		t.Fatalf("ListAgentNodesForOverview: %s", err)
+	}
+	paths := make([]string, 0, len(due))
+	for _, page := range due {
+		paths = append(paths, page.Path)
+	}
+	return paths
+}
+
+func addFacts(t *testing.T, tx db.Transaction, agentId, nodeId string, texts ...string) []*models.AgentFact {
+	t.Helper()
+	var facts []*models.AgentFact
+	for _, text := range texts {
+		fact, err := tx.AddAgentFact(&models.AgentFact{AgentID: agentId, NodeID: nodeId, Kind: models.FactPlain, Text: text})
+		if err != nil {
+			t.Fatalf("AddAgentFact: %s", err)
+		}
+		facts = append(facts, fact)
+	}
+	return facts
+}
+
+func isListed(paths []string, path string) bool {
+	for _, each := range paths {
+		if each == path {
+			return true
+		}
+	}
+	return false
+}
+
+// The hash of what an overview is written from stays the same while
+// nothing changes, and moves when a fact does, and a page with too
+// little to say is never due.
+func TestOverviewInputsChangeOnlyWithWhatTheOverviewIsWrittenFrom(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		kettle := putNode(t, tx, agent.ID, "things/copper-kettle", models.NodeThing, "Copper kettle")
+		facts := addFacts(t, tx, agent.ID, kettle.ID,
+			"The copper kettle whistles when it boils.",
+			"The copper kettle was bought at a flea market.",
+			"The copper kettle needs polishing every autumn.")
+		spoon := putNode(t, tx, agent.ID, "things/wooden-spoon", models.NodeThing, "Wooden spoon")
+		addFacts(t, tx, agent.ID, spoon.ID, "The wooden spoon hangs by the stove.")
+
+		paths := overviewPaths(t, tx, agent.ID)
+		if !isListed(paths, kettle.Path) {
+			t.Fatalf("a page of three facts and no overview is due, and was not listed: %v", paths)
+		}
+		if isListed(paths, spoon.Path) {
+			t.Fatalf("a page of one fact and nothing under it gets no overview, and was listed: %v", paths)
+		}
+
+		first, err := tx.AgentNodeOverviewInputs(agent.ID, kettle.ID)
+		if err != nil || len(first) != 64 {
+			t.Fatalf("AgentNodeOverviewInputs: %q %v", first, err)
+		}
+		again, err := tx.AgentNodeOverviewInputs(agent.ID, kettle.ID)
+		if err != nil || again != first {
+			t.Fatalf("the same inputs hashed twice gave %q and %q (%v)", first, again, err)
+		}
+		if err := tx.SetAgentNodeOverview(agent.ID, kettle.ID, "## What it is\n\nA kettle.",
+			[]models.Evidence{{Kind: models.EvidenceMemory, Quote: kettle.Path}}, first, time.Now()); err != nil {
+			t.Fatalf("SetAgentNodeOverview: %s", err)
+		}
+		if isListed(overviewPaths(t, tx, agent.ID), kettle.Path) {
+			t.Fatalf("a page whose overview was written from its inputs as they are is not due")
+		}
+
+		// Writing the page whole, as a source does, keeps the overview.
+		rewritten := *kettle
+		rewritten.Aliases = []string{"the kettle"}
+		if _, err := tx.PutAgentNode(&rewritten); err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+		stored, err := tx.GetAgentNode(agent.ID, kettle.Path)
+		if err != nil || stored == nil {
+			t.Fatalf("GetAgentNode: %v %v", stored, err)
+		}
+		if stored.Overview != "## What it is\n\nA kettle." || stored.OverviewInputs != first || stored.OverviewWrittenAt == nil ||
+			len(stored.OverviewEvidence) != 1 {
+			t.Fatalf("a page saved whole lost its overview: %+v", stored)
+		}
+
+		if _, err := tx.UpdateAgentFact(agent.ID, facts[2].ID, func(fact *models.AgentFact) error {
+			fact.Text = "The copper kettle needs polishing every spring."
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateAgentFact: %s", err)
+		}
+		changed, err := tx.AgentNodeOverviewInputs(agent.ID, kettle.ID)
+		if err != nil || changed == first {
+			t.Fatalf("a fact that changed left the hash where it was: %q (%v)", changed, err)
+		}
+		if !isListed(overviewPaths(t, tx, agent.ID), kettle.Path) {
+			t.Fatalf("a page one of whose facts changed is due again")
+		}
+
+		// Asked for by hand: clearing the hash makes it due, and the
+		// overview it has stays until the next is written.
+		if err := tx.SetAgentNodeOverview(agent.ID, kettle.ID, "## What it is\n\nA kettle.", nil, changed, time.Now()); err != nil {
+			t.Fatalf("SetAgentNodeOverview: %s", err)
+		}
+		if err := tx.ClearAgentNodeOverviewInputs(agent.ID, kettle.ID); err != nil {
+			t.Fatalf("ClearAgentNodeOverviewInputs: %s", err)
+		}
+		if !isListed(overviewPaths(t, tx, agent.ID), kettle.Path) {
+			t.Fatalf("a page whose hash was cleared is due")
+		}
+	})
+}
+
+// A page is listed after the pages under it, so its overview is written
+// from theirs; and a child written again makes its parent due.
+func TestOverviewsAreListedDeepestFirst(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		agent := graphAgent(t, tx)
+		orchard := putNode(t, tx, agent.ID, "places/orchard", models.NodePlace, "Orchard")
+		var rows []*models.AgentNode
+		for index := 1; index <= 2; index++ {
+			row := putNode(t, tx, agent.ID, fmt.Sprintf("places/orchard/row-%d", index), models.NodePlace, fmt.Sprintf("Row %d", index))
+			addFacts(t, tx, agent.ID, row.ID,
+				fmt.Sprintf("Row %d has apple trees.", index),
+				fmt.Sprintf("Row %d is pruned in February.", index),
+				fmt.Sprintf("Row %d faces south.", index))
+			rows = append(rows, row)
+		}
+
+		paths := overviewPaths(t, tx, agent.ID)
+		position := map[string]int{}
+		for index, path := range paths {
+			position[path] = index
+		}
+		for _, row := range rows {
+			if _, isThere := position[row.Path]; !isThere {
+				t.Fatalf("%s is not listed: %v", row.Path, paths)
+			}
+			if _, isThere := position[orchard.Path]; !isThere || position[row.Path] > position[orchard.Path] {
+				t.Fatalf("a page is listed after the pages under it: %v", paths)
+			}
+		}
+
+		for _, page := range append(rows, orchard) {
+			inputs, err := tx.AgentNodeOverviewInputs(agent.ID, page.ID)
+			if err != nil {
+				t.Fatalf("AgentNodeOverviewInputs: %s", err)
+			}
+			if err := tx.SetAgentNodeOverview(agent.ID, page.ID, "## What it is\n\nAn orchard.", nil, inputs, time.Now()); err != nil {
+				t.Fatalf("SetAgentNodeOverview: %s", err)
+			}
+		}
+		if paths := overviewPaths(t, tx, agent.ID); isListed(paths, orchard.Path) || isListed(paths, rows[0].Path) {
+			t.Fatalf("nothing changed and something is due: %v", paths)
+		}
+
+		// A child written again changes what its parent is written from.
+		inputs, err := tx.AgentNodeOverviewInputs(agent.ID, rows[0].ID)
+		if err != nil {
+			t.Fatalf("AgentNodeOverviewInputs: %s", err)
+		}
+		if err := tx.SetAgentNodeOverview(agent.ID, rows[0].ID, "## What it is\n\nThe first row.", nil, inputs, time.Now().Add(time.Second)); err != nil {
+			t.Fatalf("SetAgentNodeOverview: %s", err)
+		}
+		if !isListed(overviewPaths(t, tx, agent.ID), orchard.Path) {
+			t.Fatalf("a page whose child's overview was written again is due")
+		}
+	})
+}

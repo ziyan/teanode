@@ -165,6 +165,27 @@ type AgentNode struct {
 	Dormant bool `json:"dormant"`
 
 	UsedAt *time.Time `json:"usedAt,omitempty"`
+
+	// Overview is how the thing works, in several short markdown sections,
+	// written by the night from the page's facts, the overviews of the
+	// pages under it and the openings of the pages it is linked to. The
+	// opening says what a page is and every prompt's index carries it; the
+	// overview is longer and is read only when the page itself is.
+	//
+	// Written only by the night's overview phase, and never by writing the
+	// page, so a page saved from a copy read before an overview was written
+	// does not put the old one back.
+	Overview          string     `json:"overview,omitempty"`
+	OverviewWrittenAt *time.Time `json:"overviewWrittenAt,omitempty"`
+
+	// OverviewInputs is a hash of what the overview was written from. The
+	// night writes it again when the hash of the page's inputs as they are
+	// now is different; empty means it is due.
+	OverviewInputs string `json:"-"`
+
+	// OverviewEvidence is the pages (kind memory, the path as the quote)
+	// and the files (kind document) the overview cites.
+	OverviewEvidence []Evidence `json:"overviewEvidence,omitempty"`
 }
 
 // AgentFactKind is what sort of statement a fact is.

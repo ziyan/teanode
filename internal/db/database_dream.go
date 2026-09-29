@@ -199,12 +199,13 @@ type agentDreamModel struct {
 	Backlog    int        `gorm:"column:backlog"`
 	Coarse     bool       `gorm:"column:coarse"`
 
-	Revised      int `gorm:"column:revised"`
-	Strengthened int `gorm:"column:strengthened"`
-	Associated   int `gorm:"column:associated"`
-	Rehearsed    int `gorm:"column:rehearsed"`
-	Gaps         int `gorm:"column:gaps"`
-	Unknown      int `gorm:"column:unknown"`
+	Revised          int `gorm:"column:revised"`
+	OverviewsWritten int `gorm:"column:overviews_written"`
+	Strengthened     int `gorm:"column:strengthened"`
+	Associated       int `gorm:"column:associated"`
+	Rehearsed        int `gorm:"column:rehearsed"`
+	Gaps             int `gorm:"column:gaps"`
+	Unknown          int `gorm:"column:unknown"`
 
 	Proposals []byte `gorm:"column:proposals;type:jsonb"`
 	Tokens    int64  `gorm:"column:tokens"`
@@ -261,7 +262,8 @@ func (self *transaction) FinishAgentDream(dream *models.AgentDream) error {
 		"coarse": dream.Coarse, "proposals": encoded, "tokens": dream.Tokens,
 		"strengthened": dream.Strengthened, "associated": dream.Associated, "revised": dream.Revised,
 		"rehearsed": dream.Rehearsed, "gaps": dream.Gaps, "unknown": dream.Unknown,
-		"notes": dream.Notes, "last_error": dream.LastError,
+		"overviews_written": dream.OverviewsWritten,
+		"notes":             dream.Notes, "last_error": dream.LastError,
 	}).Error
 }
 
@@ -302,7 +304,8 @@ func (self *transaction) ListAgentDreams(agentId string, limit int) ([]*models.A
 			Coarse: row.Coarse, Tokens: row.Tokens, Notes: row.Notes, LastError: row.LastError,
 			Strengthened: row.Strengthened, Associated: row.Associated, Revised: row.Revised,
 			Rehearsed: row.Rehearsed, Gaps: row.Gaps, Unknown: row.Unknown,
-			Proposals: []models.DreamProposal{},
+			OverviewsWritten: row.OverviewsWritten,
+			Proposals:        []models.DreamProposal{},
 		}
 		if len(row.Proposals) > 0 {
 			if err := json.Unmarshal(row.Proposals, &dream.Proposals); err != nil {

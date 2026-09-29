@@ -516,6 +516,10 @@ type AgentDream struct {
 	// one rather than the person having to.
 	Revised int `json:"revised"`
 
+	// OverviewsWritten is how many pages had their overview written, or
+	// written again because what it was written from had changed.
+	OverviewsWritten int `json:"overviewsWritten"`
+
 	// Backlog is how much was still waiting when it stopped. A cap here
 	// is pacing, never truncation: what is not read tonight is read
 	// tomorrow, and this is the number that says how many nights that is.

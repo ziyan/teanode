@@ -216,6 +216,17 @@ type agentNodeModel struct {
 	CreatedAt  time.Time  `gorm:"column:created_at"`
 	ModifiedAt time.Time  `gorm:"column:modified_at"`
 
+	// The overview is read with the page and never written with it: "->"
+	// keeps these columns out of Save and Create. A page is saved whole
+	// from whatever copy the writer holds, and most writers build that
+	// copy from what a source says, with no overview in it; saved with
+	// the row, every pass over a checkout blanked what the night wrote.
+	// SetAgentNodeOverview is the one writer.
+	Overview          string     `gorm:"column:overview;->"`
+	OverviewWrittenAt *time.Time `gorm:"column:overview_written_at;->"`
+	OverviewInputs    string     `gorm:"column:overview_inputs;->"`
+	OverviewEvidence  []byte     `gorm:"column:overview_evidence;type:jsonb;->"`
+
 	// next_fact_number and next_revision are deliberately absent, the way
 	// next_revision always has been. They are counters this package moves
 	// with one statement that reads and writes them at once; a row struct
@@ -303,7 +314,13 @@ func (self *agentNodeModel) toModel() (*models.AgentNode, error) {
 		Name: self.Name, Summary: self.Summary, Pinned: self.Pinned, Importance: self.Importance,
 		Dormant: self.Dormant, UsedAt: self.UsedAt, Version: self.Version,
 		CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt,
-		Aliases: []string{},
+		Aliases:  []string{},
+		Overview: self.Overview, OverviewWrittenAt: self.OverviewWrittenAt, OverviewInputs: self.OverviewInputs,
+	}
+	if len(self.OverviewEvidence) > 0 {
+		if err := json.Unmarshal(self.OverviewEvidence, &node.OverviewEvidence); err != nil {
+			return nil, err
+		}
 	}
 	if self.ParentID != nil {
 		node.ParentID = *self.ParentID
