@@ -627,6 +627,7 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
                         'ask',
                         'schedule',
                         'compact',
+                        'scan',
                         'synthesize',
                       ] as const
                     ).map((field) => [field, rename(models[field])]),

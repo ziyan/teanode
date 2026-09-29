@@ -1052,6 +1052,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 	checkModel("agent.models.ask", agent.Models.Ask)
 	checkModel("agent.models.schedule", agent.Models.Schedule)
 	checkModel("agent.models.compact", agent.Models.Compact)
+	checkModel("agent.models.scan", agent.Models.Scan)
 	checkModel("agent.models.synthesize", agent.Models.Synthesize)
 	for index, choice := range agent.Models.Choices {
 		checkModel(fmt.Sprintf("agent.models.choices[%d]", index), choice)
