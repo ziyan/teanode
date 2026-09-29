@@ -42,6 +42,12 @@ const (
 	// asking.
 	goalAfterPerson = time.Minute
 
+	// goalAfterOtherTurn is how long a goal's job waits when it comes due
+	// while another turn runs in the conversation, before it looks again.
+	// The same minute, for the same reason: the turn it waited for was
+	// most often the person's.
+	goalAfterOtherTurn = time.Minute
+
 	// goalTurnsPerDay is as many turns of its own as one conversation
 	// takes in a day, counted from the job rows rather than kept in a
 	// column. Forty-eight is a turn every half hour around the clock,
@@ -103,25 +109,11 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 	if self.operations == nil {
 		return fmt.Errorf("no way to act as the person")
 	}
-	var conversation *models.AgentConversation
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		found, err := tx.GetAgentConversation(run.Job.SubjectID)
-		if err != nil || found == nil {
-			return err
-		}
-		// Cleared, met, or waiting for the person since the job was
-		// queued: there is nothing owed.
-		if found.AgentID == run.Agent.ID && found.Goal != "" && found.GoalState == models.GoalWorking {
-			conversation = found
-		}
-		return nil
-	}); err != nil {
+	now := time.Now()
+	conversation, err := self.goalOwed(ctx, run, now)
+	if err != nil || conversation == nil {
 		return err
 	}
-	if conversation == nil {
-		return nil
-	}
-	now := time.Now()
 	local := now.In(Location(run.Owner))
 	midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
 
@@ -229,8 +221,17 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 	if err != nil {
 		return err
 	}
+	// Read again right before the turn: counting and the budget took a
+	// moment, and a person's turn may have started, or changed the goal,
+	// in it.
+	if conversation, err = self.goalOwed(ctx, run, now); err != nil || conversation == nil {
+		return err
+	}
 	failure, err := self.goalTurn(ctx, run, operations, conversation,
 		goalCheckIn(conversation, run.Owner, now, int(today)+1), nil, configuration.Agent.Limits.MaxRoundsPerAsk)
+	if errors.Is(err, errTurnRunning) {
+		return goalBehindTurn(now)
+	}
 	if err != nil {
 		return err
 	}
@@ -246,7 +247,9 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 	// nothing about when to look again or whether it was done.
 	if failure == "" && after.GoalState == models.GoalWorking && (after.GoalNextAt == nil || !after.GoalNextAt.After(now)) {
 		failure, err = self.goalTurn(ctx, run, operations, after, goalCheckInAgain(), map[string]bool{"goal": true}, 2)
-		if err != nil {
+		// The person started a turn between the two: theirs goes first,
+		// and this one is moved on below as a turn that said nothing.
+		if err != nil && !errors.Is(err, errTurnRunning) {
 			return err
 		}
 		after, err = self.goalAfterTurn(ctx, run, conversation.ID)
@@ -290,6 +293,47 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 	return nil
 }
 
+// goalOwed is the conversation when its goal is owed a turn now, read
+// fresh: nil when the goal was cleared, met, waits for the person, or was
+// moved later since the job was queued, and a Deferral while another turn
+// runs in the conversation.
+//
+// That other turn is most often the person's own, the one that set the
+// goal: setting it makes it due at once, so the sweep queues this job
+// while their turn is still going on, and that turn may yet say to wait
+// or when to look. Waiting it out with a Deferral, rather than finishing
+// the job, keeps it off the day's cap and the turns-alone count, and the
+// job reads the state again when it comes back.
+func (self *Agent) goalOwed(ctx context.Context, run *Run, now time.Time) (*models.AgentConversation, error) {
+	var owed *models.AgentConversation
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		found, err := tx.GetAgentConversation(run.Job.SubjectID)
+		if err != nil || found == nil {
+			return err
+		}
+		if found.AgentID != run.Agent.ID || found.Goal == "" || found.GoalState != models.GoalWorking {
+			return nil
+		}
+		if found.GoalNextAt != nil && found.GoalNextAt.After(now) {
+			return nil
+		}
+		if self.isTurnRunning(found.ID) {
+			return goalBehindTurn(now)
+		}
+		owed = found
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return owed, nil
+}
+
+// goalBehindTurn puts the goal's job back until another turn in its
+// conversation has had time to end.
+func goalBehindTurn(now time.Time) error {
+	return &Deferral{Until: now.Add(goalAfterOtherTurn), Reason: "another turn is running in the conversation"}
+}
+
 // goalTurn runs one headless turn in the person's conversation and waits
 // for it, answering with what went wrong when something did.
 func (self *Agent) goalTurn(ctx context.Context, run *Run, operations Operations, conversation *models.AgentConversation, message string, allow map[string]bool, rounds int) (string, error) {
@@ -297,6 +341,7 @@ func (self *Agent) goalTurn(ctx context.Context, run *Run, operations Operations
 		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
 		Message: message, Surface: "goal", Headless: true, Allow: allow,
 		UsageKind: string(models.AgentJobGoal), MaxRounds: rounds,
+		shouldYieldToRunningTurn: true,
 	})
 	if err != nil {
 		return "", err
@@ -482,8 +527,13 @@ func firstWords(text string, characters int) string {
 // is answered first, and the check-in that follows a minute later reads
 // that answer as part of the conversation. A turn of the agent's own never
 // resumes anything -- only the person can.
+//
+// Only a goal that was already waiting when their turn began. One this
+// very turn set and then told to wait is waiting on what the turn just
+// asked them, and resuming it would take a check-in a minute later that
+// finds nothing new.
 func (self *AskRun) resumeGoalAfterPerson() {
-	if self.settings.Headless || self.settings.Surface == backgroundSurface {
+	if self.settings.Headless || self.settings.Surface == backgroundSurface || !self.isGoalWaitingAtStart {
 		return
 	}
 	conversationId := self.settings.Conversation.ID
@@ -500,4 +550,24 @@ func (self *AskRun) resumeGoalAfterPerson() {
 	}); err != nil {
 		log.Warningf("cannot start the goal on conversation %q again: %s", conversationId, err)
 	}
+}
+
+// isGoalWaiting says whether the conversation's goal is waiting for the
+// person, read when a turn of theirs begins.
+func (self *AskRun) isGoalWaiting() bool {
+	if self.settings.Headless || self.settings.Surface == backgroundSurface {
+		return false
+	}
+	var conversation *models.AgentConversation
+	if err := self.agent.settings.Database.TransactionContext(self.ctx, func(tx db.Transaction) (err error) {
+		conversation, err = tx.GetAgentConversation(self.settings.Conversation.ID)
+		return err
+	}); err != nil {
+		// Unread, it is taken as waiting: the person having written is
+		// what resumes a goal, and a goal left waiting that should not
+		// be is the worse way to be wrong.
+		log.Warningf("cannot read the goal of conversation %q: %s", self.settings.Conversation.ID, err)
+		return true
+	}
+	return conversation != nil && conversation.Goal != "" && conversation.GoalState == models.GoalWaiting
 }

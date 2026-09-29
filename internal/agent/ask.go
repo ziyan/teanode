@@ -152,6 +152,13 @@ type AskSettings struct {
 	// is what keeps the subagent tool out of its own catalog.
 	subagentDepth int
 
+	// shouldYieldToRunningTurn refuses the turn, with errTurnRunning,
+	// when another is already running in the conversation, rather than
+	// queuing it behind that one. A goal's own turn is written from the
+	// state it read before starting, and a person's turn running at the
+	// same moment may be the one changing that state.
+	shouldYieldToRunningTurn bool
+
 	// Short asks for the one-paragraph conduct rather than the full rules.
 	// A run with nobody present and six tools does not need the page about
 	// how to talk to somebody, and sorting runs on every message that
@@ -305,6 +312,10 @@ type AskRun struct {
 	previous *AskRun
 	done     chan struct{}
 
+	// isGoalWaitingAtStart says the conversation's goal was waiting for
+	// the person when this turn of theirs began; see resumeGoalAfterPerson.
+	isGoalWaitingAtStart bool
+
 	// steeredInto is the running turn this message was handed to, and
 	// isTakenIn says that turn read it. steering is what the person wrote
 	// while this turn runs, taken in at its next round, and
@@ -388,6 +399,11 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 	if self.runs == nil {
 		self.runs = map[string]*AskRun{}
 		self.latest = map[string]*AskRun{}
+	}
+	if previous := self.latest[settings.Conversation.ID]; settings.shouldYieldToRunningTurn && previous != nil && !previous.isFinished() {
+		self.runsMutex.Unlock()
+		run.cancel()
+		return nil, errTurnRunning
 	}
 	self.runs[run.ID] = run
 	// One turn at a time per conversation: a second one waits for the
@@ -731,6 +747,7 @@ func (self *AskRun) loop() {
 		}
 	}
 	self.chooseDepth()
+	self.isGoalWaitingAtStart = self.isGoalWaiting()
 	if err := self.turn(); err != nil {
 		if errors.Is(err, context.Canceled) {
 			// Said in the transcript too, so that the words cut short
