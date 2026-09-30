@@ -2038,9 +2038,11 @@ func (self *graph) DeleteAgentKnowledgeSource(ctx context.Context, arguments Del
 	}
 	// A finance source is ended at its provider first, best effort, so the
 	// operator stops paying for a link nobody can reach, and its assets
-	// keep their history as manual ones, closed today so net worth stops
-	// counting an account nothing values any more.
-	closedOn := personToday(principal)
+	// keep their history as manual ones, closed on the day before, so net
+	// worth stops counting an account nothing values any more from today:
+	// an institution linked again today, through either provider, then
+	// counts each account once on the day of the move.
+	closedOn := personYesterday(principal)
 	if worker := self.agentWorker(); worker != nil {
 		if err := worker.BeforeDeletingSource(ctx, tx, source, closedOn); err != nil {
 			return false, err
