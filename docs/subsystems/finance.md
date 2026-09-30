@@ -10,8 +10,9 @@ the command line is `teanode finance`.
 
 The designs and the reasons for them are in
 `docs/planning/finance-accounts-execplan.md`,
-`docs/planning/net-worth-execplan.md` and `docs/planning/budgets-execplan.md`,
-and in the decision records they cite. This document says how it works now.
+`docs/planning/net-worth-execplan.md`, `docs/planning/budgets-execplan.md` and
+`docs/planning/finance-investments-execplan.md`, and in the decision records
+they cite. This document says how it works now.
 
 ## Names
 
@@ -33,6 +34,10 @@ tool and the dashboard.
   **liability** (an asset whose value subtracts), **valuation** (one value of
   one asset on one day) and **valuation source** (`finance_sync`,
   `agent_reading`, `manual`, `agent_estimate`).
+- **finance security** (something an investment account can hold: a share,
+  a fund, a bond, a coin), **holding** (an asset that is one security in one
+  finance account) and **trade** (a buy, a sell, a cancelled trade or a
+  security moved in or out).
 - **spending rule**, **budget**, **budget pace** (`under`, `on_track`,
   `at_risk`, `over`), **savings target**, **reporting currency**,
   **exchange rate**, **categorize model**.
@@ -143,6 +148,39 @@ Accounts reachable only through a connected server are read by the agent on a
 daily schedule the person creates, which records the value with the `finance`
 tool. Houses and cars are estimated from the web only where the person allowed
 it for that asset, on a schedule, with a range and the pages used.
+
+## Investments
+
+A Plaid link asks for transactions, and for investments as an optional
+product when the operator turns it on (`agent.finance.plaid.products`).
+Plaid adds it where the institution and the accounts the person chose have
+it, so one link can hold both a checking account and a brokerage account. A
+sync reads holdings and investment transactions only for a finance source
+whose link has the product (Plaid's `/item/get` says), since reading them for
+one without it would start billing for it. A link made before investments
+were turned on gets them by being linked again.
+
+Holdings are assets: one per security per finance account, valued at every
+sync with the day's quantity, unit price and cost basis on the valuation
+(`heldQuantity`, `unitPrice`, `costBasis`), and linked to its security
+(`financeSecurityId`, with ticker symbol, name and kind). The finance
+account's own asset holds only its cash, valued at the account's balance less
+its holdings, because Plaid's balance of an investment account already counts
+the holdings. Plaid's cash holdings are that cash, not assets of their own. A
+holding no longer reported is valued at zero and closed on that day. When the
+holdings cannot be read on a sync, nothing is recorded that day for that
+finance source's investment accounts, and the earlier values carry forward.
+So net worth, savings targets measured by assets, and each position's history
+come from the same valuations as any other asset.
+
+A trade swaps cash for a security inside one account, so it is its own row
+in `agent_finance_trade` (`FinanceTrades`, `teanode finance trades`, the
+tool's `trades`), never a finance transaction: it is not spending or income,
+and it takes no part in budgets, cash flow, spending rules or transfer
+matching. The cash that does come and go in an investment account (dividends,
+interest, fees, deposits and withdrawals) is a finance transaction like any
+other, with Plaid's categories, and goes through the same spending
+categories and transfer detection.
 
 ## Spending categories, budgets and savings targets
 

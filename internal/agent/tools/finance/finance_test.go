@@ -219,7 +219,7 @@ func TestFinanceRiskPerOperation(test *testing.T) {
 	test.Parallel()
 	tool := financeTool(test)
 	reads := map[string]bool{
-		"providers": true, "sources": true, "accounts": true, "transactions": true, "spending_summary": true,
+		"providers": true, "sources": true, "accounts": true, "transactions": true, "trades": true, "spending_summary": true,
 		"exchange_rate": true, "convert_currency": true, "net_worth": true, "assets": true, "asset_history": true,
 		"spending_categories": true, "spending_rules": true, "budgets": true, "budget_status": true,
 		"spending_by_day": true, "cash_flow": true, "savings_targets": true,
@@ -386,6 +386,34 @@ func TestFinanceToolTransactionsAreUntrusted(test *testing.T) {
 	sent := operations.variables[0]
 	if sent["financeAccountId"] != "account-one" || sent["limit"] != 20 || sent["isUncategorized"] != true {
 		test.Errorf("sent %v", sent)
+	}
+}
+
+// Trades carry what the institution wrote, and come back marked
+// untrusted, with the arguments passed on in the API's spelling and a month
+// spread into its first and last day.
+func TestFinanceToolTradesAreUntrusted(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"FinanceTrades": `{"financeTrades":[{"id":"trade-one","tradeKind":"buy","tradedQuantity":"3","unitPrice":"101.25","tradeAmount":"-303.75","currencyCode":"USD","description":"BOUGHT INVENTED FUND"}],"nextCursor":""}`,
+	}}
+	result, err := call(test, operations, `{"operation":"trades","finance_account_id":"account-one","finance_security_id":"security-one","limit":20,"month":"2026-02"}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !result.Untrusted || !strings.Contains(result.Content, "BOUGHT INVENTED FUND") {
+		test.Errorf("%+v", result)
+	}
+	sent := operations.variables[0]
+	if sent["financeAccountId"] != "account-one" || sent["financeSecurityId"] != "security-one" || sent["limit"] != 20 ||
+		sent["from"] != "2026-02-01" || sent["to"] != "2026-02-28" || sent["month"] != nil {
+		test.Errorf("sent %v", sent)
+	}
+	if !strings.Contains(operations.documents[0], "FinanceTrades(") {
+		test.Errorf("sent %s", operations.documents[0])
+	}
+	if _, err := call(test, operations, `{"operation":"trades","text":"fund"}`); err == nil || !strings.Contains(err.Error(), "does not take text") {
+		test.Errorf("trades took text: %v", err)
 	}
 }
 

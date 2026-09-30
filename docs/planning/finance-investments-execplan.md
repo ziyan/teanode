@@ -71,11 +71,18 @@ One name per thing, as in the plans this builds on. Added here:
 - [x] (2026-09-30) Wrote this plan.
 - [x] (2026-09-30) Revised: trades moved out of finance transactions into
   their own table.
-- [ ] Milestone 1: Plaid asks for investments where the institution has
-  them, and reads holdings, trades and investment cash movements.
-- [ ] Milestone 2: the migration, securities, holdings as assets and trades
-  in the database.
-- [ ] Milestone 3: the API, the command line, the tool and the dashboard.
+- [x] (2026-09-30) Milestone 1: Plaid asks for investments where the
+  institution has them, and reads holdings, trades and investment cash
+  movements. Four tests in `internal/finance/plaid_investments_test.go`.
+- [x] (2026-09-30) Milestone 2: the migration, securities, holdings as
+  assets and trades in the database. Six tests in
+  `internal/db/database_finance_investments_test.go`; the whole `db`
+  package passes against PostgreSQL.
+- [x] (2026-09-30) Milestone 3: the API, the command line, the tool and
+  the dashboard. `FinanceTrades`, `teanode finance trades`, the tool's
+  `trades`; holding columns in `assets` and `asset-history` (shown only
+  when there are holdings); a holding's quantity and price in the assets
+  table, and its security, history columns and trades on its page.
 - [ ] Milestone 4: deploy, turn investments on, relink the brokerage, and
   check it in production.
 
@@ -86,6 +93,19 @@ One name per thing, as in the plans this builds on. Added here:
   for a link that had them.
   Evidence: Plaid's description of the endpoint; the owner's brokerage link
   showed only its two cash accounts.
+
+- Observation: with transactions as the one required product, Plaid Link
+  hides an institution that offers investments and not transactions (some
+  workplace retirement plans). Not addressed here; the way to reach them
+  is a second link that asks for investments alone, a later change.
+  Evidence: Plaid Link shows only institutions that support every product
+  in `products`.
+
+- Observation: `FinanceSyncApplied.CreatedAssetIDs` also lists an account
+  asset taken back after a relink, as it did before this plan; the
+  holdings' takeback does not add to it. The relink test checks asset ids
+  rather than that list.
+  Evidence: `TestFinanceHoldingTakenBackAfterRelinking`.
 
 - Observation: the SimpleFIN Bridge also sends a `holdings` list per
   account, already kept in provider metadata. Reading it is left for later;

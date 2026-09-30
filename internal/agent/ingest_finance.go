@@ -154,8 +154,9 @@ func (self *Agent) runFinanceSync(ctx context.Context, run *Run, source *models.
 	}
 	cursor[models.FinanceCursorProviderCursor] = syncResult.NextCursor
 	delete(cursor, models.FinanceCursorIsSignInRequired)
-	log.Debugf("finance source %q synced: %d finance transaction(s) written, %d removed, %d pending replaced",
-		source.ID, applied.WrittenTransactionCount, applied.RemovedTransactionCount, applied.ReplacedPendingTransactionCount)
+	log.Debugf("finance source %q synced: %d finance transaction(s) written, %d removed, %d pending replaced, %d trade(s) written, %d valuation(s) recorded",
+		source.ID, applied.WrittenTransactionCount, applied.RemovedTransactionCount, applied.ReplacedPendingTransactionCount,
+		applied.WrittenTradeCount, applied.RecordedValuationCount)
 
 	// Transfers are looked for across the whole history once, on the first
 	// sync that follows through, and over the last week after that. A first

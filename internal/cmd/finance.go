@@ -135,6 +135,16 @@ func NewFinanceCommand() *cli.Command {
 				Action: runFinanceTransactions,
 			},
 			{
+				Name: "trades", Usage: "your trades in investment accounts, newest first: buys, sells and securities moved in or out",
+				Flags: append(rangeFlags(), JSONFlag(),
+					&cli.StringFlag{Name: "finance-account", Usage: "only this finance account's, by id"},
+					&cli.StringFlag{Name: "finance-security", Usage: "only this security's, by the financeSecurityId assets --json gives"},
+					&cli.IntFlag{Name: "limit", Usage: "how many, at most 200", Value: 50},
+					&cli.StringFlag{Name: "after", Usage: "the next page: the cursor the page before printed"},
+				),
+				Action: runFinanceTrades,
+			},
+			{
 				Name: "spending-summary", Usage: "money out and money in by spending category, merchant, month or account",
 				Flags: append(rangeFlags(), JSONFlag(), currencyFlag(),
 					&cli.StringFlag{Name: "group-by", Usage: "spendingCategory (the default), providerCategory, merchant, month or financeAccount"},
@@ -257,7 +267,7 @@ const financeOperationKey = "operation"
 // so the parity test that checks these names checks what runs.
 var financeSubcommandOperations = map[string]string{
 	"providers": "FinanceProviders", "link-simplefin": "LinkSimpleFIN", "import-credential": "ImportFinanceCredential",
-	"sources": "FinanceSources", "accounts": "FinanceAccounts", "transactions": "FinanceTransactions", "spending-summary": "FinanceSpendingSummary",
+	"sources": "FinanceSources", "accounts": "FinanceAccounts", "transactions": "FinanceTransactions", "trades": "FinanceTrades", "spending-summary": "FinanceSpendingSummary",
 	"exchange-rate": "ExchangeRate", "convert-currency": "ConvertCurrency", "reporting-currency": "ReportingCurrency",
 	"set-reporting-currency": "SetReportingCurrency", "net-worth": "NetWorth", "assets": "Assets",
 	"asset-history": "AssetHistory", "create-asset": "CreateAsset", "update-asset": "UpdateAsset",
@@ -405,6 +415,58 @@ func money(amount, currencyCode string) string {
 		return written
 	}
 	return written + " " + currencyCode
+}
+
+// decimal is a stored decimal without the zeros its column pads it with:
+// a quantity of 3.00000000 reads as 3.
+func decimal(amount string) string {
+	if !strings.Contains(amount, ".") {
+		return amount
+	}
+	if _, isNumber := new(big.Rat).SetString(amount); !isNumber {
+		return amount
+	}
+	return strings.TrimSuffix(strings.TrimRight(amount, "0"), ".")
+}
+
+// unitPrice is the price of one unit with its currency: at least the
+// places the currency is written with, and more where the price has them,
+// since a fund or a coin is priced finer than a cent.
+func unitPrice(amount, currencyCode string) string {
+	if amount == "" {
+		return ""
+	}
+	written := decimal(amount)
+	places, isListed := currencyMinorUnits[strings.ToUpper(currencyCode)]
+	if !isListed {
+		places = 2
+	}
+	if _, isNumber := new(big.Rat).SetString(written); isNumber {
+		wholePart, fractionPart, _ := strings.Cut(written, ".")
+		if len(fractionPart) < places {
+			fractionPart += strings.Repeat("0", places-len(fractionPart))
+		}
+		written = wholePart
+		if fractionPart != "" {
+			written += "." + fractionPart
+		}
+	}
+	if currencyCode == "" {
+		return written
+	}
+	return written + " " + currencyCode
+}
+
+// securityLabel is how a security reads in a column: its ticker symbol,
+// else its name; empty for none.
+func securityLabel(security *client.FinanceSecurity) string {
+	if security == nil {
+		return ""
+	}
+	if security.TickerSymbol != "" {
+		return security.TickerSymbol
+	}
+	return truncate(security.SecurityName, 32)
 }
 
 // dayOf is a time as the day it fell on here, or "never".
@@ -906,6 +968,47 @@ func runFinanceTransactions(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
+func runFinanceTrades(ctx context.Context, command *cli.Command) error {
+	from, to, err := rangeOf(command)
+	if err != nil {
+		return err
+	}
+	variables := map[string]any{"from": from, "to": to, "limit": int(command.Int("limit"))}
+	setString(command, variables, "finance-account", "financeAccountId")
+	setString(command, variables, "finance-security", "financeSecurityId")
+	setString(command, variables, "after", "after")
+	var page *client.FinanceTradePage
+	if err := financeCall(ctx, command, operationOf(command), variables, &page); err != nil {
+		return err
+	}
+	if command.Bool("json") {
+		return PrintJSON(page)
+	}
+	if len(page.FinanceTrades) == 0 {
+		_, _ = fmt.Fprintln(command.Writer, "no trades match")
+		return nil
+	}
+	rows := make([][]string, 0, len(page.FinanceTrades))
+	for _, trade := range page.FinanceTrades {
+		tradeKind := trade.TradeKind
+		if trade.TradeSubkind != "" && trade.TradeSubkind != trade.TradeKind {
+			tradeKind += " (" + trade.TradeSubkind + ")"
+		}
+		rows = append(rows, []string{
+			trade.TradedOn, tradeKind, securityLabel(trade.FinanceSecurity), decimal(trade.TradedQuantity),
+			unitPrice(trade.UnitPrice, trade.CurrencyCode), money(trade.TradeAmount, trade.CurrencyCode),
+			money(trade.FeeAmount, trade.CurrencyCode), truncate(trade.Description, 48), trade.ID,
+		})
+	}
+	if err := printTable([]string{"traded", "kind", "security", "quantity", "unit price", "amount", "fee", "description", "id"}, rows); err != nil {
+		return err
+	}
+	if page.NextCursor != "" {
+		fmt.Fprintf(os.Stderr, "note: there are more; add --after %s for the next page\n", page.NextCursor)
+	}
+	return nil
+}
+
 func runFinanceSpendingSummary(ctx context.Context, command *cli.Command) error {
 	from, to, err := rangeOf(command)
 	if err != nil {
@@ -1101,6 +1204,7 @@ func runFinanceAssets(ctx context.Context, command *cli.Command) error {
 	rows := make([][]string, 0, len(assets))
 	for _, asset := range assets {
 		value, valuedOn := "", ""
+		heldQuantity, heldUnitPrice, costBasis := "", "", ""
 		if asset.LatestValuation != nil {
 			amount := asset.LatestValuation.Value
 			if asset.IsLiability {
@@ -1112,14 +1216,55 @@ func runFinanceAssets(ctx context.Context, command *cli.Command) error {
 				}
 			}
 			value, valuedOn = money(amount, asset.LatestValuation.CurrencyCode), asset.LatestValuation.ValuedOn
+			heldQuantity, heldUnitPrice, costBasis = holdingColumns(asset.LatestValuation)
 		}
 		closed := ""
 		if asset.ClosedOn != "" {
 			closed = "closed " + asset.ClosedOn
 		}
-		rows = append(rows, []string{asset.ID, asset.AssetName, asset.AssetKind, value, valuedOn, asset.ValuationSource, closed})
+		rows = append(rows, []string{
+			asset.ID, asset.AssetName, asset.AssetKind, securityLabel(asset.FinanceSecurity), value, heldQuantity, heldUnitPrice, costBasis,
+			valuedOn, asset.ValuationSource, closed,
+		})
 	}
-	return printTable([]string{"id", "asset", "kind", "value", "valued on", "valuation source", ""}, rows)
+	headers := []string{"id", "asset", "kind", "security", "value", "quantity", "unit price", "cost basis", "valued on", "valuation source", ""}
+	isAnyHolding := false
+	for _, asset := range assets {
+		isAnyHolding = isAnyHolding || asset.FinanceSecurity != nil
+	}
+	if !isAnyHolding {
+		headers, rows = withoutColumns(headers, rows, 3, 5, 6, 7)
+	}
+	return printTable(headers, rows)
+}
+
+// withoutColumns drops columns by index from a table's headers and rows:
+// the holding columns, for someone who holds no securities.
+func withoutColumns(headers []string, rows [][]string, columnIndexes ...int) ([]string, [][]string) {
+	isDropped := map[int]bool{}
+	for _, columnIndex := range columnIndexes {
+		isDropped[columnIndex] = true
+	}
+	keep := func(cells []string) []string {
+		kept := make([]string, 0, len(cells))
+		for cellIndex, cell := range cells {
+			if !isDropped[cellIndex] {
+				kept = append(kept, cell)
+			}
+		}
+		return kept
+	}
+	keptRows := make([][]string, 0, len(rows))
+	for _, row := range rows {
+		keptRows = append(keptRows, keep(row))
+	}
+	return keep(headers), keptRows
+}
+
+// holdingColumns are a holding's quantity, unit price and cost basis on a
+// valuation's day, as its columns read; empty for any other asset.
+func holdingColumns(valuation *client.AssetValuation) (string, string, string) {
+	return decimal(valuation.HeldQuantity), unitPrice(valuation.UnitPrice, valuation.CurrencyCode), money(valuation.CostBasis, valuation.CurrencyCode)
 }
 
 func runFinanceAssetHistory(ctx context.Context, command *cli.Command) error {
@@ -1136,10 +1281,25 @@ func runFinanceAssetHistory(ctx context.Context, command *cli.Command) error {
 	}
 	rows := make([][]string, 0, len(history.AssetValuations))
 	for _, valuation := range history.AssetValuations {
-		rows = append(rows, []string{valuation.ValuedOn, money(valuation.Value, valuation.CurrencyCode), valuation.ValuationSource, truncate(valuation.ValuationNote, 60), valuation.ID})
+		heldQuantity, heldUnitPrice, costBasis := holdingColumns(valuation)
+		rows = append(rows, []string{
+			valuation.ValuedOn, money(valuation.Value, valuation.CurrencyCode), heldQuantity, heldUnitPrice, costBasis,
+			valuation.ValuationSource, truncate(valuation.ValuationNote, 60), valuation.ID,
+		})
 	}
-	_, _ = fmt.Fprintf(command.Writer, "%s (%s)\n", history.Asset.AssetName, history.Asset.AssetKind)
-	return printTable([]string{"valued on", "value", "valuation source", "note", "id"}, rows)
+	what := history.Asset.AssetKind
+	if security := history.Asset.FinanceSecurity; security != nil {
+		what += ", " + security.SecurityName
+		if security.TickerSymbol != "" {
+			what += " " + security.TickerSymbol
+		}
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s (%s)\n", history.Asset.AssetName, forTerminal(what))
+	headers := []string{"valued on", "value", "quantity", "unit price", "cost basis", "valuation source", "note", "id"}
+	if history.Asset.FinanceSecurity == nil {
+		headers, rows = withoutColumns(headers, rows, 2, 3, 4)
+	}
+	return printTable(headers, rows)
 }
 
 func runFinanceCreateAsset(ctx context.Context, command *cli.Command) error {
