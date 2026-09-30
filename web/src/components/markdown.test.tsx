@@ -63,3 +63,45 @@ it('reads a link inside bold as a link', () => {
   expect(link?.textContent).toBe('A Thai kitchen')
   expect(container.textContent).not.toContain('](')
 })
+
+it("links a page of the agent's memory to the Knowledge page, and the drawer is told it is leaving", () => {
+  const leaving = vi.fn()
+  const { container } = render(
+    <MemoryRouter>
+      <Markdown
+        text={'That is [Some Person](memory:people/some-person), fact [four](memory:projects/example-app#4).'}
+        onLeaving={leaving}
+      />
+    </MemoryRouter>,
+  )
+  const links = container.querySelectorAll('a')
+  expect(links).toHaveLength(2)
+  expect(links[0].getAttribute('href')).toBe('/settings/knowledge/people/some-person')
+  expect(links[0].textContent).toBe('Some Person')
+  expect(links[0].getAttribute('target')).toBeNull()
+  expect(links[1].getAttribute('href')).toBe('/settings/knowledge/projects/example-app')
+  links[0].click()
+  expect(leaving).toHaveBeenCalledTimes(1)
+})
+
+it('draws a memory link whose path is not a page as its words', () => {
+  for (const address of [
+    'memory:../server/about',
+    'memory:people//some-person',
+    'memory:People/Some-Person',
+    'memory:people/some-person?tab=tokens',
+    'memory:people/some-person#first',
+    'memory://example.net/people',
+    'memory:',
+    'mail:item1/../../settings',
+  ]) {
+    const { container, unmount } = render(
+      <MemoryRouter>
+        <Markdown text={`See [the page](${address}).`} />
+      </MemoryRouter>,
+    )
+    expect(container.querySelector('a'), address).toBeNull()
+    expect(container.textContent).toBe('See the page.')
+    unmount()
+  }
+})
