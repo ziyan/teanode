@@ -715,7 +715,13 @@ Models tab of the agent settings shows what it last said under the provider:
 the plan's name, and a bar for each window with what is left and when it
 resets. Nothing asks the plan between turns, so the numbers are as of its
 last answer, and none are shown until it has answered once since the server
-started.
+started. A window whose reset time has passed since is shown as the whole
+allowance, until the next answer says how much of the new one is used.
+
+The numbers are the instance's own: each instance keeps what the plan said
+in answer to its own turns, and does not share it. With more than one
+instance, the tab shows what the plan last told whichever instance served
+the page, which may be older than what it told another.
 
 **`email`** — Email is the destination address when kind is email.
 
