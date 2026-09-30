@@ -199,11 +199,121 @@ func TestAnIdeaIsOfferedWhileItFitsAndKeepsWhatBecameOfIt(t *testing.T) {
 		if err := worker.refreshIdeas(t.Context(), tx, run.Agent, run.Owner, true); err != nil {
 			t.Fatal(err)
 		}
-		if expired, _ := tx.GetAgentIdea(run.Agent.ID, bread.ID); expired.IdeaStatus != models.IdeaExpired {
-			t.Fatalf("expired once they bake: %+v", expired)
+		if expired, _ := tx.GetAgentIdea(run.Agent.ID, bread.ID); expired.IdeaStatus != models.IdeaExpired || expired.ExpiredReason != models.IdeaAlreadyUsed {
+			t.Fatalf("expired once they bake, saying so: %+v", expired)
 		}
-		if _, err := worker.SetIdeaStatus(tx, run.Agent, bread.ID, models.IdeaOpen); err == nil || !strings.Contains(err.Error(), "no longer offered") {
-			t.Fatalf("an expired catalog idea is not opened only to expire again: %v", err)
+	})
+}
+
+// An idea that expires says why, and why decides whether the person can
+// bring it back: not while a tool it needs is missing, and yes when they
+// already do it, after which the used check leaves it alone. A personal
+// idea past its date comes back with no date.
+func TestAnExpiredIdeaSaysWhyAndComesBackByIt(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	provider := scriptedProvider([]string{saidByModel("ok")})
+	defer provider.Close()
+	worker, run := digestSplitWorld(t, database, provider.URL)
+	ideaCatalogForTest(t)
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		refresh := func() {
+			t.Helper()
+			if err := worker.refreshIdeas(t.Context(), tx, run.Agent, run.Owner, true); err != nil {
+				t.Fatal(err)
+			}
+		}
+		get := func(ideaId string) *models.AgentIdea {
+			t.Helper()
+			idea, err := tx.GetAgentIdea(run.Agent.ID, ideaId)
+			if err != nil || idea == nil {
+				t.Fatalf("idea %s: %v", ideaId, err)
+			}
+			return idea
+		}
+		ideas, err := worker.ListIdeas(t.Context(), tx, run.Agent, run.Owner, []models.AgentIdeaStatus{models.IdeaOpen}, nil, "")
+		if err != nil || len(ideas) != 1 || ideas[0].IdeaKey != "bread" {
+			t.Fatalf("bread is on offer: %+v %v", ideas, err)
+		}
+		bread := ideas[0]
+
+		// The oven goes away.
+		ideaCatalog[0].NeededToolNames = []string{"oven"}
+		refresh()
+		if expired := get(bread.ID); expired.IdeaStatus != models.IdeaExpired || expired.ExpiredReason != models.IdeaMissingTool {
+			t.Fatalf("expired for the missing tool: %+v", expired)
+		}
+		if _, err := worker.SetIdeaStatus(tx, run.Agent, bread.ID, models.IdeaOpen); err == nil || !strings.Contains(err.Error(), "not connected") {
+			t.Fatalf("an idea missing a tool is not restored only to expire again: %v", err)
+		}
+
+		// The oven is back, but they bake already: still not on offer, now
+		// for the other reason.
+		ideaCatalog[0].NeededToolNames = nil
+		ideaUsedChecks["baking"] = func(db.Transaction, *models.Agent, *models.User) (bool, error) { return true, nil }
+		refresh()
+		if expired := get(bread.ID); expired.IdeaStatus != models.IdeaExpired || expired.ExpiredReason != models.IdeaAlreadyUsed {
+			t.Fatalf("says why it is not offered now: %+v", expired)
+		}
+
+		restored, err := worker.SetIdeaStatus(tx, run.Agent, bread.ID, models.IdeaOpen)
+		if err != nil || restored.IdeaStatus != models.IdeaOpen || restored.ExpiredReason != "" || !restored.IsRestoredByPerson || restored.ClosedAt != nil {
+			t.Fatalf("one they already do is restored: %+v %v", restored, err)
+		}
+		refresh()
+		if kept := get(bread.ID); kept.IdeaStatus != models.IdeaOpen {
+			t.Fatalf("the used check does not expire it again: %+v", kept)
+		}
+
+		// A missing tool still expires a restored idea, and its return
+		// brings it back.
+		ideaCatalog[0].NeededToolNames = []string{"oven"}
+		refresh()
+		if expired := get(bread.ID); expired.IdeaStatus != models.IdeaExpired || expired.ExpiredReason != models.IdeaMissingTool {
+			t.Fatalf("a restored idea still needs its tools: %+v", expired)
+		}
+		ideaCatalog[0].NeededToolNames = nil
+		refresh()
+		if back := get(bread.ID); back.IdeaStatus != models.IdeaOpen || back.ExpiredReason != "" {
+			t.Fatalf("back on offer with the tool, the reason cleared: %+v", back)
+		}
+
+		// An idea that expired before reasons were kept is given its reason.
+		kite, err := tx.UpsertAgentIdea(ideaCatalog[2].idea(run.Agent.ID, 1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.UpdateAgentIdea(run.Agent.ID, kite.ID, func(changing *models.AgentIdea) error {
+			changing.IdeaStatus = models.IdeaExpired
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		refresh()
+		if expired := get(kite.ID); expired.ExpiredReason != models.IdeaAlreadyUsed {
+			t.Fatalf("an old expired idea says why: %+v", expired)
+		}
+
+		// A personal idea past its date.
+		yesterday := time.Now().Add(-24 * time.Hour)
+		picnic, err := tx.UpsertAgentIdea(&models.AgentIdea{
+			AgentID: run.Agent.ID, IdeaKey: "personal_picnic", IdeaKind: models.IdeaPersonal, IdeaCategory: "fun",
+			Emoji: "🏞️", Headline: "I'll plan the picnic.", ExpiresAt: &yesterday,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		refresh()
+		if expired := get(picnic.ID); expired.IdeaStatus != models.IdeaExpired || expired.ExpiredReason != models.IdeaPastDate {
+			t.Fatalf("expired when its date passed: %+v", expired)
+		}
+		restored, err = worker.SetIdeaStatus(tx, run.Agent, picnic.ID, models.IdeaOpen)
+		if err != nil || restored.IdeaStatus != models.IdeaOpen || restored.ExpiredReason != "" || restored.ExpiresAt != nil {
+			t.Fatalf("back with no date: %+v %v", restored, err)
+		}
+		refresh()
+		if kept := get(picnic.ID); kept.IdeaStatus != models.IdeaOpen {
+			t.Fatalf("stays open: %+v", kept)
 		}
 	})
 }

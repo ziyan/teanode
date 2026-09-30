@@ -1236,10 +1236,13 @@ td.shrink {
 /* A static panel: an outline and a background. No shadow — that is reserved
    for things that float, so a shadow always means the same thing. */
 .card {
+  /* The side padding, named so that a rule inside the card that should run
+     from border to border can reach out by exactly this much. */
+  --card-padding-inline: var(--space-4);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-3);
-  padding: var(--space-4);
+  padding: var(--space-4) var(--card-padding-inline);
   margin-bottom: var(--space-4);
 }
 
@@ -2885,13 +2888,14 @@ body,
      page's own margin instead of adding a second one inside it. */
   .card,
   .settings-section.card {
+    --card-padding-inline: var(--space-3);
     margin-left: calc(var(--space-3) * -1);
     margin-right: calc(var(--space-3) * -1);
     border-left: none;
     border-right: none;
     border-radius: 0;
-    padding-left: var(--space-3);
-    padding-right: var(--space-3);
+    padding-left: var(--card-padding-inline);
+    padding-right: var(--card-padding-inline);
   }
 
   /* A row inside one of those is already inside the page's margin, so it
@@ -8410,6 +8414,19 @@ a.button.agent-artifact-action {
   border-top: 1px solid var(--border);
 }
 
+/* Inside a card, a part's rule runs from the card's border to its border, as
+   the card's own edges do, rather than stopping at the padding: a line that
+   stops short reads as underlining the text above it. The padding comes back
+   inside, so nothing in the part moves. The same for the heavier rule between
+   two mailboxes of the sources card. */
+.card .settings-subform,
+.card .agent-source + .agent-source {
+  margin-left: calc(var(--card-padding-inline) * -1);
+  margin-right: calc(var(--card-padding-inline) * -1);
+  padding-left: var(--card-padding-inline);
+  padding-right: var(--card-padding-inline);
+}
+
 .settings-subform h4,
 .settings-subform h3 {
   margin: 0 0 var(--space-1);
@@ -9732,6 +9749,7 @@ main.content:has(> .knowledge-frame) {
    not need a container to say where it starts; a heading says that, and a
    hairline says where the last one ended. */
 .knowledge-pane .settings-section.card {
+  --card-padding-inline: 0;
   border: 0;
   border-radius: 0;
   background: none;
