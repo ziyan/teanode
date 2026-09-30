@@ -224,19 +224,56 @@ func (self *graph) NetWorth(ctx context.Context, arguments NetWorthArguments) (*
 	return view, nil
 }
 
-func (self *graph) Assets(ctx context.Context) ([]*models.Asset, error) {
+// AssetsArguments narrow the caller's assets. Every field is optional; a
+// brokerage's positions are an asset each, so the whole list can run to
+// hundreds.
+type AssetsArguments struct {
+	AssetKind string `json:"assetKind" graphapi:"nullable"`
+
+	// Text is matched within the asset's name, case-insensitively.
+	Text string `json:"text" graphapi:"nullable"`
+
+	// FinanceAccountID keeps the assets one finance account values: its
+	// own and its holdings.
+	FinanceAccountID string `json:"financeAccountId" graphapi:"nullable"`
+
+	// IsHolding keeps only the holdings when true and leaves them out when
+	// false; unset keeps both.
+	IsHolding *bool `json:"isHolding" graphapi:"nullable"`
+}
+
+func (self *graph) Assets(ctx context.Context, arguments AssetsArguments) ([]*models.Asset, error) {
 	_, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
+	assetKind := models.AssetKind(strings.TrimSpace(arguments.AssetKind))
+	if assetKind != "" && !assetKind.IsValid() {
+		return nil, fmt.Errorf("%w: %q is not a kind of asset", api.ErrInvalidArguments, assetKind)
+	}
+	text := strings.ToLower(strings.TrimSpace(arguments.Text))
+	financeAccountId := strings.TrimSpace(arguments.FinanceAccountID)
 	assets, err := self.transaction(ctx).ListAssets(found.ID)
 	if err != nil {
 		return nil, err
 	}
-	if assets == nil {
-		assets = []*models.Asset{}
+	narrowed := make([]*models.Asset, 0, len(assets))
+	for _, asset := range assets {
+		if assetKind != "" && asset.AssetKind != assetKind {
+			continue
+		}
+		if text != "" && !strings.Contains(strings.ToLower(asset.AssetName), text) {
+			continue
+		}
+		if financeAccountId != "" && asset.FinanceAccountID != financeAccountId {
+			continue
+		}
+		if arguments.IsHolding != nil && (asset.FinanceSecurityID != "") != *arguments.IsHolding {
+			continue
+		}
+		narrowed = append(narrowed, asset)
 	}
-	return assets, nil
+	return narrowed, nil
 }
 
 // ownAsset is one of the caller's assets, or not found.

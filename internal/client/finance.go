@@ -464,7 +464,9 @@ const (
   }
 }`
 
-	DocumentAssets = `query { Assets ` + assetFields + ` }`
+	DocumentAssets = `query ($assetKind: String, $text: String, $financeAccountId: String, $isHolding: Boolean) {
+  Assets(assetKind: $assetKind, text: $text, financeAccountId: $financeAccountId, isHolding: $isHolding) ` + assetFields + `
+}`
 
 	DocumentAssetHistory = `query ($assetId: String!) { AssetHistory(assetId: $assetId) { asset ` + assetFields + ` assetValuations ` + assetValuationFields + ` } }`
 

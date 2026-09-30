@@ -71,7 +71,7 @@ type FinanceQuery interface {
 
 	// The caller's assets, open ones first, each with the valuation that
 	// counts today.
-	Assets(ctx context.Context) ([]*models.Asset, error)
+	Assets(ctx context.Context, arguments AssetsArguments) ([]*models.Asset, error)
 
 	// One asset and its valuations, newest day first.
 	AssetHistory(ctx context.Context, arguments AssetArguments) (*AssetHistoryView, error)

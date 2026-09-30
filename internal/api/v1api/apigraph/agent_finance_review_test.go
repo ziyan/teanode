@@ -95,7 +95,7 @@ func TestCreateAssetWithItsFirstValue(test *testing.T) {
 				test.Errorf("%+v answered %v", refused, err)
 			}
 		}
-		assets, err := resolver.Assets(ctx)
+		assets, err := resolver.Assets(ctx, AssetsArguments{})
 		if err != nil || len(assets) != 1 {
 			test.Errorf("a refused call left an asset behind: %+v %v", assets, err)
 		}

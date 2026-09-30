@@ -94,8 +94,11 @@ var operations = map[string]*financeOperation{
 			return "Show totals in " + text(call, "currency_code")
 		},
 	},
-	"net_worth":     {graphqlOperation: "NetWorth", risk: tools.RiskRead, isMonthShorthand: true, arguments: append([]string{"currency_code"}, rangeArguments...)},
-	"assets":        {graphqlOperation: "Assets", risk: tools.RiskRead, isUntrusted: true},
+	"net_worth": {graphqlOperation: "NetWorth", risk: tools.RiskRead, isMonthShorthand: true, arguments: append([]string{"currency_code"}, rangeArguments...)},
+	"assets": {
+		graphqlOperation: "Assets", risk: tools.RiskRead, isUntrusted: true,
+		arguments: []string{"asset_kind", "text", "finance_account_id", "is_holding"},
+	},
 	"asset_history": {graphqlOperation: "AssetHistory", risk: tools.RiskRead, arguments: []string{"asset_id"}, required: []string{"asset_id"}, isUntrusted: true},
 	"create_asset": {
 		graphqlOperation: "CreateAsset", risk: tools.RiskWrite, isUntrusted: true,
@@ -489,6 +492,7 @@ const description = "The person's money: their finance sources (logins at banks,
 	"Dates are 2026-09-01, months 2026-09; amounts are decimals, money out negative. " +
 	"A holding in an investment account is an asset with a financeSecurity, and its valuations carry heldQuantity, unitPrice and costBasis; the account's own asset holds its cash. " +
 	"`trades` lists buys, sells and securities moved in or out, which are never spending or income; dividends, interest, fees, deposits and withdrawals are finance transactions. " +
+	"`assets` leaves the holdings out unless is_holding is true or finance_account_id is given, since each position is an asset and there can be hundreds; narrow it with asset_kind or text (words in the name). " +
 	"`transactions`, `trades`, `spending_summary`, `net_worth` and `cash_flow` take `month` as shorthand for that whole month; without a range they cover all of time (net_worth the last thirty days, cash_flow twelve months). " +
 	"Totals come per currency and converted into the reporting currency (`reporting_currency` says which), or into `currency_code` where given, each amount at its own day's exchange rate, naming any currency left out for want of a rate; never add different currencies yourself.\n" +
 	"Linking: `providers` says what the server offers. `link_plaid` gives an address for the person to open in their browser, signed in to the dashboard; `repair` gives the address that signs a finance source in again when `sources` says isSignInRequired. " +
@@ -510,12 +514,13 @@ func init() {
 				Parameters: tools.Object(map[string]any{
 					"operation":                   tools.EnumProperty("what to do", operationNames()...),
 					"source_id":                   tools.StringProperty("a finance source, by the id sources gives"),
-					"finance_account_id":          tools.StringProperty("a finance account, by the id accounts gives"),
+					"finance_account_id":          tools.StringProperty("a finance account, by the id accounts gives; for assets, what it values: its own asset and its holdings"),
+					"is_holding":                  tools.BooleanProperty("for assets: true lists only the holdings of investment accounts (one asset per position); left out, assets leaves the holdings out unless finance_account_id is given"),
 					"finance_transaction_id":      tools.StringProperty("a finance transaction, by the id transactions gives"),
 					"finance_security_id":         tools.StringProperty("for trades: a security, by the financeSecurityId an asset or a trade gives"),
 					"from":                        tools.StringProperty("for transactions, trades, spending_summary and net_worth: the first day, 2026-09-01"),
 					"to":                          tools.StringProperty("for transactions, trades, spending_summary and net_worth: the last day, 2026-09-30"),
-					"text":                        tools.StringProperty("for transactions: words within the description or merchant"),
+					"text":                        tools.StringProperty("for transactions: words within the description or merchant; for assets: words within the asset's name"),
 					"minimum_amount":              tools.StringProperty("the least signed amount; money out is negative"),
 					"maximum_amount":              tools.StringProperty("the greatest signed amount"),
 					"provider_category":           tools.StringProperty("for transactions: the provider's category"),
@@ -531,7 +536,7 @@ func init() {
 					"rate_on":                     tools.StringProperty("for exchange_rate and convert_currency: the day of the exchange rate; today when left out"),
 					"asset_id":                    tools.StringProperty("an asset, by the id assets gives"),
 					"asset_name":                  tools.StringProperty("what the person calls the asset"),
-					"asset_kind":                  tools.EnumProperty("what the asset is; the last four are owed", "cash", "investment", "retirement", "property", "vehicle", "other_asset", "credit_card", "loan", "mortgage", "other_liability"),
+					"asset_kind":                  tools.EnumProperty("what the asset is; the last four are owed. For assets, only this kind; empty is every kind", "", "cash", "investment", "retirement", "property", "vehicle", "other_asset", "credit_card", "loan", "mortgage", "other_liability"),
 					"valuation_source":            tools.EnumProperty("for create_asset and update_asset, where its values come from (agent_reading when create_asset is given a value); for record_valuation, agent_reading (read from a connected server, the default) or agent_estimate", "manual", "agent_reading", "agent_estimate"),
 					"closed_on":                   tools.StringProperty("the day an asset was sold or paid off, or a savings target closed"),
 					"should_reopen":               tools.BooleanProperty("open the asset or savings target again instead of closing it"),
@@ -678,6 +683,11 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			"For Plaid, only a link made with this server's Plaid keys can be brought in."), nil
 	}
 	dropUnreadArguments(operation, asked)
+	if name == "assets" {
+		if _, isAsked := asked["is_holding"]; !isAsked && text(asked, "finance_account_id") == "" {
+			asked["is_holding"] = false
+		}
+	}
 	if err := checkArguments(name, operation, asked); err != nil {
 		return nil, err
 	}

@@ -422,7 +422,7 @@ func TestFinanceDataIsTheCallersOwn(test *testing.T) {
 		if err != nil || len(summary.SpendingSummaryRows) != 0 {
 			test.Errorf("FinanceSpendingSummary %v %v", summary, err)
 		}
-		assets, err := resolver.Assets(ctx)
+		assets, err := resolver.Assets(ctx, AssetsArguments{})
 		if err != nil || len(assets) != 0 {
 			test.Errorf("Assets %v %v", assets, err)
 		}
@@ -544,7 +544,7 @@ func TestRecordValuationKeepsToItsSources(test *testing.T) {
 		if _, err := resolver.CreateAsset(ctx, CreateAssetArguments{AssetName: "synced", AssetKind: "cash", CurrencyCode: "USD", ValuationSource: "finance_sync"}); !errors.Is(err, api.ErrInvalidArguments) {
 			test.Errorf("a finance_sync asset was made by hand: %v", err)
 		}
-		assets, err := resolver.Assets(ctx)
+		assets, err := resolver.Assets(ctx, AssetsArguments{})
 		if err != nil {
 			test.Fatal(err)
 		}
@@ -716,7 +716,7 @@ func TestFinanceNotOfferedStillReadsWhatIsStored(test *testing.T) {
 		if _, err := fixture.resolver.DeleteAgentKnowledgeSource(ctx, DeleteAgentKnowledgeSourceArguments{SourceID: source.ID}); err != nil {
 			test.Fatalf("DeleteAgentKnowledgeSource: %s", err)
 		}
-		assets, err := fixture.resolver.Assets(ctx)
+		assets, err := fixture.resolver.Assets(ctx, AssetsArguments{})
 		if err != nil || len(assets) != 1 || assets[0].ValuationSource != models.ValuationSourceManual || assets[0].FinanceAccountID != "" {
 			test.Errorf("the finance account's asset is %+v %v", assets, err)
 		}
