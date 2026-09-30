@@ -17,44 +17,21 @@ import { dirname, join } from 'node:path'
 const here = dirname(fileURLToPath(import.meta.url))
 const catalogDirectory = join(here, '..', 'src', 'i18n')
 
-// Same in every language on purpose: a product name, a protocol name, a dash.
-// Values that are the same in every language because they are not words: a
-// product name, a literal URL, the name of a program.
-const SAME_ON_PURPOSE = new Set([
-  'app.name',
-  'common.none',
-  'domains.dns',
-  // Protocol names, which is what the two web listeners are called in every
-  // language and in the configuration file beside them.
-  'serverSettings.listenHttp',
-  'serverSettings.listenHttps',
-  'domain.kindWebhook',
-  'integrations.route53',
-  'integrations.endpointPlaceholder',
-  'server.supervision.systemd',
-  // Header names and DMARC's own vocabulary. They appear in mail and in DNS
-  // records with these spellings, so translating them would stop somebody
-  // matching what is on screen against what is in the record.
-  'mailDetail.messageId',
-  'mailDetail.html',
-  'mailDetail.alignmentRelaxed',
-  'mailDetail.alignmentStrict',
-  // An example address, which is an address rather than a sentence.
-  'profile.emailPlaceholder',
-  // A protocol's name, and the name of the tab that configures it.
-  'integrations.tabDns',
-  // The name of the format a template is written in, and the two header
-  // names a message is addressed with. Written this way in every client.
-  'editor.html',
-  'compose.carbonCopy',
-  'compose.blindCarbonCopy',
-  // How far the lightbox has zoomed in: a number and a percent sign, which
-  // all three of these languages write the same way. It is a key rather than
-  // a literal so that a language that does not can still be given one.
-  'lightbox.scale',
-])
+// The keys that read the same in every language on purpose, with the reason
+// for each, are kept in the dashboard's source so that the catalogue test
+// reads the same list and a key removed from the catalogues breaks the build.
+// Read by text, like the catalogues: one quoted key per line.
+const SAME_ON_PURPOSE = new Set(
+  [...readFileSync(join(catalogDirectory, 'sameInEveryLanguage.ts'), 'utf8').matchAll(/^\s*'([\w.:-]+)',$/gm)].map(
+    (match) => match[1],
+  ),
+)
 
 // entries pulls "key: value" pairs out of a catalogue.
+//
+// Keys may carry a colon or a hyphen: a permission's key is its name, such
+// as access.permission.mail:audit-all, and a pattern without them skipped
+// those keys without a word.
 //
 // Values may be single or double quoted — the formatter switches to double
 // quotes for a string containing an apostrophe — and may be split across lines
@@ -63,7 +40,7 @@ const SAME_ON_PURPOSE = new Set([
 function entries(source) {
   const found = new Map()
   const quoted = String.raw`'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"`
-  const pattern = new RegExp(String.raw`^\s*'([\w.]+)':\s*((?:(?:${quoted})\s*\+?\s*)+),?\s*$`, 'gms')
+  const pattern = new RegExp(String.raw`^\s*'([\w.:-]+)':\s*((?:(?:${quoted})\s*\+?\s*)+),?\s*$`, 'gms')
 
   for (const match of source.matchAll(pattern)) {
     const pieces = [...match[2].matchAll(new RegExp(quoted, 'g'))].map((piece) =>
@@ -79,6 +56,11 @@ function entries(source) {
 
 function placeholders(text) {
   return [...(text.match(/\{\w+\}/g) ?? [])].sort().join(',')
+}
+
+if (SAME_ON_PURPOSE.size === 0) {
+  console.error('check-catalogs: read no keys from sameInEveryLanguage.ts; the parser is not working')
+  process.exit(1)
 }
 
 const english = entries(readFileSync(join(catalogDirectory, 'en.ts'), 'utf8'))

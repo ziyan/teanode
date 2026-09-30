@@ -177,8 +177,9 @@ export function CheckList<T extends { id: string }>({
 export function usePermissionLabel() {
   const { t } = useTranslation()
   return (key: string): string => {
-    const translation = `access.permission.${key}` as Key
-    const label = t(translation)
-    return label === translation ? key : label
+    // A permission this dashboard has no words for yet is shown by its key:
+    // t() gives undefined for a key the catalog lacks, not the key itself.
+    const label: string | undefined = t(`access.permission.${key}` as Key)
+    return label || key
   }
 }

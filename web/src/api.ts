@@ -3,15 +3,19 @@
 // screens needs, and a self-hosted server should not ship a megabyte of
 // dependency to display a list of messages.
 
-import { detectLanguage } from './i18n/i18n'
+import { detectLanguage, translateNow } from './i18n/i18n'
 
 export class APIError extends Error {
   readonly unauthenticated: boolean
+  // The HTTP status of an answer that was not one, so that a caller can tell
+  // a gateway's 502 from a refusal without reading the translated message.
+  readonly httpStatusCode: number | null
 
-  constructor(message: string, unauthenticated = false) {
+  constructor(message: string, unauthenticated = false, httpStatusCode: number | null = null) {
     super(message)
     this.name = 'APIError'
     this.unauthenticated = unauthenticated
+    this.httpStatusCode = httpStatusCode
   }
 }
 
@@ -118,10 +122,10 @@ export async function graphql<T>(
   const response = await send(query, variables, signal)
 
   if (response.status === 401) {
-    throw new APIError('not logged in', true)
+    throw new APIError(translateNow('api.notSignedIn'), true, response.status)
   }
   if (!response.ok) {
-    throw new APIError(`the server returned ${response.status}`)
+    throw new APIError(translateNow('api.serverReturned', { statusCode: response.status }), false, response.status)
   }
 
   const body = await response.json()
@@ -951,7 +955,7 @@ export function subscribe<T>(
           break
         case 'error':
           // The document itself was refused: no socket will change that.
-          end(new APIError(message.payload?.message ?? 'the subscription was refused'))
+          end(new APIError(message.payload?.message ?? translateNow('api.subscriptionRefused')))
           current.close()
           break
         case 'complete':

@@ -282,6 +282,7 @@ export function PageHeading() {
 // instead of sitting above it: there the name has to be there, because
 // nothing else on the screen says what you are looking at.
 export function Breadcrumb({ current }: { current?: boolean } = {}) {
+  const { t } = useTranslation()
   const full = useTrail()
 
   // Ancestors only, and every one of them a link. The page's own name is the
@@ -295,7 +296,7 @@ export function Breadcrumb({ current }: { current?: boolean } = {}) {
   }
 
   return (
-    <nav className="breadcrumb" aria-label="breadcrumb">
+    <nav className="breadcrumb" aria-label={t('breadcrumb.label')}>
       {trail.map((crumb, index) => (
         <span
           className={index === trail.length - 1 && current ? 'crumb current' : 'crumb'}

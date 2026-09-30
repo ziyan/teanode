@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.82.1] - 2026-09-30
+
+### Fixed
+
+- Permissions for agents, contacts and calendars have labels on the roles page, instead of blank rows. (#234)
+- Run kinds, reach kinds, audit badges, and the dashboard's own connection, upload and passkey errors are shown in Japanese and Chinese. (#234)
+
 ## [0.82.0] - 2026-09-29
 
 ### Added

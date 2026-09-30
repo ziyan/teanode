@@ -1,3 +1,5 @@
+import type { Key } from './i18n/i18n'
+
 // The kinds a run can be, for a filter over runs: a page holds one page of
 // runs, so the kinds present on it are not the kinds there are. Every model
 // call is a run of one of these kinds.
@@ -23,3 +25,11 @@ export const RUN_KINDS = [
   // A tool called, or a question asked, by a program over MCP.
   'mcp',
 ]
+
+// runKindLabel is a run's kind in the reader's words. A kind this dashboard
+// has no words for, one a newer server added, is shown as the server names
+// it: t() gives undefined for a key the catalog lacks.
+export function runKindLabel(t: (key: Key) => string, kind: string): string {
+  const label: string | undefined = t(`agent.runKinds.${kind}` as Key)
+  return label || kind
+}

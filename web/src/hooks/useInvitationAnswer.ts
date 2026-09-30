@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 
 import { graphql } from '../api'
+import { translateNow } from '../i18n/i18n'
 
 export type InvitationAnswer = 'ACCEPTED' | 'DECLINED' | 'TENTATIVE'
 interface PendingAnswer {
@@ -29,7 +30,7 @@ export function useInvitationAnswer(ownerId: string, itemId: string) {
     if (!encoded) return null
     const saved = JSON.parse(encoded) as PendingAnswer
     if (!saved.requestId || saved.itemId !== itemId || !['ACCEPTED', 'DECLINED', 'TENTATIVE'].includes(saved.answer)) {
-      throw new Error('The saved answer could not be read')
+      throw new Error(translateNow('invitation.pendingUnreadable'))
     }
     return saved
   }
@@ -54,7 +55,7 @@ export function useInvitationAnswer(ownerId: string, itemId: string) {
       let saved = readPending()
       const isRetry = saved !== null
       if (saved) setPending(saved)
-      if (saved && saved.answer !== answer) throw new Error('Confirm the pending answer before choosing another')
+      if (saved && saved.answer !== answer) throw new Error(translateNow('invitation.pendingFirst'))
       if (!saved) {
         saved = {
           itemId,
