@@ -84,7 +84,11 @@ One name per thing, as in the plans this builds on. Added here:
   when there are holdings); a holding's quantity and price in the assets
   table, and its security, history columns and trades on its page.
 - [ ] Milestone 4: deploy, turn investments on, relink the brokerage, and
-  check it in production.
+  check it in production (completed: deployed with migration 0137 applied,
+  investments turned on in the operator's Plaid products, and a link token
+  issued with investments as an optional product without the fallback;
+  remaining: the owner deletes the brokerage's finance source and links it
+  again, then the holdings, trades and net worth are checked).
 
 ## Surprises & Discoveries
 
