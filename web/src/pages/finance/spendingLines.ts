@@ -6,7 +6,7 @@ import { amountOf } from './financeApi'
 // came in under an income category is not spending at all, and money in
 // with no spending category is not taken off anything.
 
-export type SpendingGroupBy = 'spendingCategory' | 'merchant' | 'financeAccount' | 'providerCategory'
+export type SpendingGroupBy = 'spendingCategory' | 'merchant' | 'financeAccount'
 
 // A group's money as the server summarizes it, both figures positive.
 export type SummaryAmounts = {

@@ -338,12 +338,11 @@ function BudgetStatusRow({ row, isPast }: { row: SpendingCategoryBudgetStatus; i
 
 // The ways a month's spending is grouped. By month is not one of them: the
 // section shows one month at a time, and the chart at its top is by month.
-const GROUP_BY: SpendingGroupBy[] = ['spendingCategory', 'merchant', 'financeAccount', 'providerCategory']
+const GROUP_BY: SpendingGroupBy[] = ['spendingCategory', 'merchant', 'financeAccount']
 
 // groupTransactionFilters is how a group's transactions are found on the
 // Transactions section, over the month's days: a spending category (or
-// none), a finance account, or a merchant's words. The provider category
-// is not a filter that section offers, so its groups link nowhere.
+// none), a finance account, or a merchant's words.
 function groupTransactionFilters(
   groupBy: SpendingGroupBy,
   groupKey: string,
@@ -426,21 +425,25 @@ function SpendingSummaryPanel({ month }: { month: string }) {
   const reportingTotal = summary?.reportingCurrencyCode ? spendingTotals(lines)[0] : undefined
   const currencyTotals = spendingTotals(currencyLines)
   const groupLabel = (value: SpendingGroupBy) => t(`finance.groupBy.${value}` as 'finance.groupBy.merchant')
-  // A spending category's name as the reader reads it; merchants, accounts
-  // and provider categories as they came.
+  // A spending category's name as the reader reads it; merchants and
+  // accounts as they came.
   const lineName = (label: string) =>
     !label ? t('finance.uncategorized') : groupBy === 'spendingCategory' ? categoryName(label) : label
-  // The ring is the table's own numbers, where they can be added up:
-  // grouped by category, in the reporting currency.
-  const slices =
-    groupBy === 'spendingCategory' && summary?.reportingCurrencyCode
-      ? foldIntoOther(
-          lines.map((line) => ({ key: line.key, label: lineName(line.label), amount: line.spendingAmount })),
-          RING_SLICE_COUNT,
-        ).map((slice) =>
-          slice.isOther ? { ...slice, label: t('finance.otherCategories', { count: slice.foldedCount }) } : slice,
-        )
-      : []
+  // The ring is the table's own numbers, where they can be added up: in
+  // the reporting currency, whichever way the month is grouped. What does
+  // not fit is one slice, named for what it folds.
+  const otherLabel = (count: number) =>
+    groupBy === 'merchant'
+      ? t('finance.otherMerchants', { count })
+      : groupBy === 'financeAccount'
+        ? t('finance.otherFinanceAccounts', { count })
+        : t('finance.otherCategories', { count })
+  const slices = summary?.reportingCurrencyCode
+    ? foldIntoOther(
+        lines.map((line) => ({ key: line.key, label: lineName(line.label), amount: line.spendingAmount })),
+        RING_SLICE_COUNT,
+      ).map((slice) => (slice.isOther ? { ...slice, label: otherLabel(slice.foldedCount) } : slice))
+    : []
   // The table is the ring's legend: each row carries its slice's swatch,
   // the rows folded into "Other" that slice's, and its share of the month.
   const sliceIndexes = new Map(slices.map((slice, index) => [slice.key, index]))
@@ -451,7 +454,7 @@ function SpendingSummaryPanel({ month }: { month: string }) {
     return otherIndex >= 0 ? { className: 'other', sliceKey: slices[otherIndex].key } : null
   }
   const percent = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 0 })
-  const isLongGrouping = groupBy === 'merchant' || groupBy === 'providerCategory'
+  const isLongGrouping = groupBy === 'merchant'
   const shownLines = isLongGrouping && !isShowingAll ? lines.slice(0, SHORT_GROUP_COUNT) : lines
 
   return (
