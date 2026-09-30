@@ -11,7 +11,7 @@ import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
 import { useQuery } from '../../components/useQuery'
-import { useTranslation } from '../../i18n/i18n'
+import { Key, useTranslation } from '../../i18n/i18n'
 import {
   ASSETS,
   ASSET_HISTORY,
@@ -53,6 +53,14 @@ import {
 // Estimates are allowed separately, and finance_sync belongs to the assets
 // finance sources make.
 const CHOSEN_VALUATION_SOURCES = ['manual', 'agent_estimate', 'agent_reading']
+
+// What each valuation source a person can choose means, said under the
+// choice for the one chosen.
+const VALUATION_SOURCE_HINTS: Record<string, Key> = {
+  manual: 'finance.valuationSourceHint.manual',
+  agent_estimate: 'finance.valuationSourceHint.agent_estimate',
+  agent_reading: 'finance.valuationSourceHint.agent_reading',
+}
 
 const ASSET_KINDS = [
   'cash',
@@ -298,8 +306,11 @@ function AssetDialog({
   const [value, setValue] = useState('')
   const [valuedOn, setValuedOn] = useState(() => personToday())
   const [estimateDescription, setEstimateDescription] = useState(asset?.estimateDescription ?? '')
-  const [isEstimateAllowed, setIsEstimateAllowed] = useState(asset?.isEstimateAllowed ?? false)
   const currency = currencyCode || reportingCurrencyCode || 'USD'
+  // Choosing estimates is the permission: asking again in a checkbox was
+  // the same question twice. The description is what the agent may search
+  // the web with, so an estimate needs one.
+  const isEstimatedByAgent = valuationSource === 'agent_estimate'
   const isFromSync = asset?.valuationSource === 'finance_sync'
   const valuationSources = CHOSEN_VALUATION_SOURCES.includes(valuationSource)
     ? CHOSEN_VALUATION_SOURCES
@@ -310,14 +321,18 @@ function AssetDialog({
       title={asset ? t('finance.editAsset') : t('finance.addAsset')}
       submitLabel={asset ? t('common.save') : t('finance.addAsset')}
       busy={busy}
-      canSubmit={assetName.trim() !== '' && (value.trim() === '' || isDecimal(value))}
+      canSubmit={
+        assetName.trim() !== '' &&
+        (value.trim() === '' || isDecimal(value)) &&
+        (!isEstimatedByAgent || estimateDescription.trim() !== '')
+      }
       onClose={onClose}
       onSubmit={() => {
         const shared = {
           assetName: assetName.trim(),
           assetKind,
-          estimateDescription: estimateDescription.trim(),
-          isEstimateAllowed,
+          estimateDescription: isEstimatedByAgent ? estimateDescription.trim() : (asset?.estimateDescription ?? ''),
+          isEstimateAllowed: isFromSync ? (asset?.isEstimateAllowed ?? false) : isEstimatedByAgent,
         }
         // What a finance source values keeps its currency and valuation
         // source; the server refuses a change to either.
@@ -354,64 +369,53 @@ function AssetDialog({
       </label>
       {!isFromSync ? (
         <>
-          <div className="row">
-            <label>
-              <span>{t('finance.currency')}</span>
-              <CurrencyPicker value={currency} label={t('finance.currency')} onChange={setCurrencyCode} />
-            </label>
-            <label>
-              <span>{t('finance.valuationSourceLabel')}</span>
-              <Select
-                block
-                value={valuationSource}
-                label={t('finance.valuationSourceLabel')}
-                options={valuationSources.map((source) => ({ value: source, label: words.valuationSource(source) }))}
-                onChange={setValuationSource}
-              />
-            </label>
-          </div>
-          <p className="muted field-hint">{t('finance.valuationSourceChoiceHint')}</p>
+          <label>
+            <span>{t('finance.currency')}</span>
+            <CurrencyPicker value={currency} label={t('finance.currency')} onChange={setCurrencyCode} />
+          </label>
+          <label>
+            <span>{t('finance.valuationSourceLabel')}</span>
+            <Select
+              block
+              value={valuationSource}
+              label={t('finance.valuationSourceLabel')}
+              options={valuationSources.map((source) => ({ value: source, label: words.valuationSource(source) }))}
+              onChange={setValuationSource}
+            />
+          </label>
+          {/* What the chosen one means, rather than all three at once. */}
+          {VALUATION_SOURCE_HINTS[valuationSource] ? (
+            <p className="muted field-hint">{t(VALUATION_SOURCE_HINTS[valuationSource])}</p>
+          ) : null}
+          {isEstimatedByAgent ? (
+            <>
+              <label>
+                <span>{t('finance.estimateDescription')}</span>
+                <textarea
+                  rows={3}
+                  value={estimateDescription}
+                  onChange={(event) => setEstimateDescription(event.target.value)}
+                />
+              </label>
+              <p className="muted field-hint">{t('finance.estimateHint')}</p>
+            </>
+          ) : null}
         </>
       ) : null}
       {!asset ? (
         <>
-          <div className="row">
-            <label>
-              <span>{t('finance.firstValue')}</span>
-              <input inputMode="decimal" value={value} onChange={(event) => setValue(event.target.value)} />
-            </label>
+          <label>
+            <span>{t('finance.firstValue')}</span>
+            <input inputMode="decimal" value={value} onChange={(event) => setValue(event.target.value)} />
+          </label>
+          <p className="muted field-hint">{t('finance.valueHint')}</p>
+          {/* The day belongs to a value; without one there is nothing to date. */}
+          {value.trim() !== '' ? (
             <label>
               <span>{t('finance.valuedOn')}</span>
-              <input
-                type="date"
-                value={valuedOn}
-                max={personToday()}
-                onChange={(event) => setValuedOn(event.target.value)}
-              />
+              <input type="date" value={valuedOn} max={personToday()} onChange={(event) => setValuedOn(event.target.value)} />
             </label>
-          </div>
-          <p className="muted field-hint">{t('finance.valueHint')}</p>
-        </>
-      ) : null}
-      {!isFromSync ? (
-        <>
-          <label>
-            <span>{t('finance.estimateDescription')}</span>
-            <textarea
-              rows={3}
-              value={estimateDescription}
-              onChange={(event) => setEstimateDescription(event.target.value)}
-            />
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={isEstimateAllowed}
-              onChange={(event) => setIsEstimateAllowed(event.target.checked)}
-            />
-            {t('finance.isEstimateAllowed')}
-          </label>
-          <p className="muted field-hint">{t('finance.estimateHint')}</p>
+          ) : null}
         </>
       ) : null}
     </FormDialog>
