@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.92.5] - 2026-09-30
+
+### Changed
+
+- Net worth groups assets by kind with a ring chart, and the Spending section's top chart shows income, spending and what was left each month. (#266)
+
 ## [0.92.4] - 2026-09-30
 
 ### Fixed
