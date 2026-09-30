@@ -94,7 +94,7 @@ something else, that name appears once, here, and nowhere else.
   without echo.
 - [ ] Milestone 3: the `finance` source kind, its reader, and the tables
   (completed: tables and database layer for all three plans, migrations
-  0131 to 0134; remaining: the source kind and its reader).
+  0132 to 0135; remaining: the source kind and its reader).
 - [ ] Milestone 4: exchange rates and the reporting currency (completed:
   the ECB client, the table, stored-rate lookups; remaining: the fetch
   policy and the API).
@@ -486,7 +486,8 @@ there under the name `credential`.
 **Tables.** Migrations live in `internal/db/migrations/`, `NNNN_name.sql`
 with a matching `NNNN_name.reverse.sql`. At the time of writing the latest
 on main is `0129`, and a pending change that moves the server secret out of
-the database takes `0130`, so this plan uses `0131` and `0132`; take the
+the database takes `0130` and a plan usage change takes `0131`, so this
+plan uses `0132` and `0133`; take the
 next free numbers when the work starts. Read `docs/coding/database-migrations.md` first. Each table has a
 public struct in `internal/models/` and a private gorm struct in
 `internal/db/database_<name>.go`, exposing an `<Name>Operation` interface
@@ -746,7 +747,7 @@ covers the new validation.
 
 ### Milestone 3: the `finance` source kind and the tables
 
-Migration `0131_agent_finance.sql` creates two tables.
+Migration `0132_agent_finance.sql` creates two tables.
 
     agent_finance_account
       id                  text primary key
@@ -830,7 +831,7 @@ does not call the provider.
 
 ### Milestone 4: exchange rates and the reporting currency
 
-Migration `0132_exchange_rate.sql` creates a server-wide table (rates are
+Migration `0133_exchange_rate.sql` creates a server-wide table (rates are
 public facts, not anyone's data) and adds a column to `agent`:
 
     exchange_rate

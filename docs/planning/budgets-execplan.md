@@ -291,7 +291,7 @@ exceptions to the parity tests.
 
 ### Milestone 1: spending categories and transfers
 
-Migration `0134_agent_budget.sql` (after the net worth plan's `0133`; take
+Migration `0135_agent_budget.sql` (after the net worth plan's `0134`; take
 the next free number when the work starts) creates:
 
     agent_spending_category

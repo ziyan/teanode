@@ -211,8 +211,8 @@ finance accounts plan cover these operations with no new exceptions.
 
 ### Milestone 1: tables and the net worth query
 
-Migration `0133_agent_net_worth.sql` (after the finance accounts plan's
-`0131` and `0132`; take the next free numbers when the work starts):
+Migration `0134_agent_net_worth.sql` (after the finance accounts plan's
+`0132` and `0133`):
 
     agent_asset
       id                   text primary key
