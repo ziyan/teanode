@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.83.2] - 2026-09-30
+
+### Changed
+
+- Alert settings and the list of recent alerts are on their own Alerts tab of the agent page. (#237)
+
 ## [0.83.1] - 2026-09-30
 
 ### Changed
