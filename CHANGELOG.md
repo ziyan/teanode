@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.93.0] - 2026-09-30
+
+### Added
+
+- `teanode agent memory plan` saves the retrieval plan a live turn would follow for each question; `recall`, `evaluate` and `answers` can replay it, and `recall --explain` shows each planned search. (#271)
+
+### Fixed
+
+- Answers graded from memory include the overview sections a turn would carry. (#271)
+
 ## [0.92.6] - 2026-09-30
 
 ### Fixed
