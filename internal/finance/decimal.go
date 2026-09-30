@@ -41,11 +41,11 @@ func parseDecimal(text string) (*big.Rat, error) {
 	if len(digits) > 64 {
 		return nil, errors.New("finance: not a decimal: too long")
 	}
-	value, isParsed := new(big.Rat).SetString(text)
+	decimalValue, isParsed := new(big.Rat).SetString(text)
 	if !isParsed {
 		return nil, errors.New("finance: not a decimal")
 	}
-	return value, nil
+	return decimalValue, nil
 }
 
 // parseJsonNumber reads a number out of a JSON document exactly, which a
@@ -71,18 +71,18 @@ func parseJsonNumber(number json.Number) (*big.Rat, error) {
 	if _, err := parseDecimal(mantissa); err != nil {
 		return nil, err
 	}
-	value, isParsed := new(big.Rat).SetString(text)
+	decimalValue, isParsed := new(big.Rat).SetString(text)
 	if !isParsed {
 		return nil, errors.New("finance: not a number")
 	}
-	return value, nil
+	return decimalValue, nil
 }
 
 // formatDecimal writes a value with a fixed number of places. big.Rat
 // rounds the last digit to nearest with halves away from zero, which is
 // the rounding people do by hand and the one a bank statement shows.
-func formatDecimal(value *big.Rat, places int) string {
-	return value.FloatString(places)
+func formatDecimal(decimalValue *big.Rat, places int) string {
+	return decimalValue.FloatString(places)
 }
 
 // ParseAmount reads an amount or a rate as parseDecimal does, for a caller
@@ -94,28 +94,28 @@ func ParseAmount(text string) (*big.Rat, error) {
 
 // FormatAmount writes a value as an amount, with AmountDecimalPlaces
 // places.
-func FormatAmount(value *big.Rat) string {
-	return formatDecimal(value, AmountDecimalPlaces)
+func FormatAmount(amountValue *big.Rat) string {
+	return formatDecimal(amountValue, AmountDecimalPlaces)
 }
 
 // CanonicalAmount writes an amount with exactly AmountDecimalPlaces places,
 // so "12.5" becomes "12.5000".
 func CanonicalAmount(amount string) (string, error) {
-	value, err := parseDecimal(amount)
+	amountValue, err := parseDecimal(amount)
 	if err != nil {
 		return "", err
 	}
-	return formatDecimal(value, AmountDecimalPlaces), nil
+	return formatDecimal(amountValue, AmountDecimalPlaces), nil
 }
 
 // negatedJsonAmount turns one of Plaid's amounts, where positive is money
 // leaving the account, into this program's, where negative is.
 func negatedJsonAmount(number json.Number) (string, error) {
-	value, err := parseJsonNumber(number)
+	amountValue, err := parseJsonNumber(number)
 	if err != nil {
 		return "", err
 	}
-	return formatDecimal(value.Neg(value), AmountDecimalPlaces), nil
+	return formatDecimal(amountValue.Neg(amountValue), AmountDecimalPlaces), nil
 }
 
 // canonicalJsonAmount is a JSON number written as an amount, unchanged in
@@ -124,11 +124,11 @@ func canonicalJsonAmount(number json.Number) (string, error) {
 	if number == "" {
 		return "", nil
 	}
-	value, err := parseJsonNumber(number)
+	amountValue, err := parseJsonNumber(number)
 	if err != nil {
 		return "", err
 	}
-	return formatDecimal(value, AmountDecimalPlaces), nil
+	return formatDecimal(amountValue, AmountDecimalPlaces), nil
 }
 
 func isAllDigits(text string) bool {

@@ -2,7 +2,10 @@ package db_test
 
 import (
 	"errors"
+	"fmt"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -375,6 +378,120 @@ func TestBudgetAlertKeyIsWrittenOnce(t *testing.T) {
 		}
 		if isFound, err := tx.HasAgentBudgetAlert(fixture.agentId, sentKey); err != nil || !isFound {
 			t.Errorf("a sent alert's subject key is found: %v %v", err, isFound)
+		}
+	})
+}
+
+// A transfer a spending rule marked is cleared when no rule matches it any
+// more. A transfer something else marked first is not the rule's to
+// clear, and a person's decision is never touched.
+func TestSpendingRuleClearsOnlyTheTransfersItMarked(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "spending-rule-transfer")
+	result := sampleFinanceSync()
+	result.Added = append(result.Added,
+		finance.Transaction{ProviderTransactionID: "autopay-rule", ProviderAccountID: "account-checking", PostedOn: "2026-09-11",
+			Amount: "-300", CurrencyCode: "USD", Description: "AUTOPAY TRAVEL CARD"},
+		finance.Transaction{ProviderTransactionID: "autopay-detected", ProviderAccountID: "account-checking", PostedOn: "2026-09-11",
+			Amount: "-120", CurrencyCode: "USD", Description: "AUTOPAY STORE CARD"},
+		finance.Transaction{ProviderTransactionID: "autopay-person", ProviderAccountID: "account-checking", PostedOn: "2026-09-11",
+			Amount: "-60", CurrencyCode: "USD", Description: "AUTOPAY GYM"},
+	)
+	applyFinanceSync(t, database, fixture, result, "2026-09-12")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
+		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["autopay-detected"].ID, true, models.TransferMarkedByDetection); err != nil {
+			t.Fatalf("MarkFinanceTransactionTransfer: %s", err)
+		}
+		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["autopay-person"].ID, false, models.TransferMarkedByPerson); err != nil {
+			t.Fatalf("MarkFinanceTransactionTransfer: %s", err)
+		}
+		rule, err := tx.CreateSpendingRule(&models.SpendingRule{AgentID: fixture.agentId, MatchText: "autopay", IsTransfer: true, RulePriority: 10})
+		if err != nil {
+			t.Fatalf("CreateSpendingRule: %s", err)
+		}
+		found = financeTransactionsByProviderId(t, tx, fixture.agentId)
+		if marked := found["autopay-rule"]; !marked.IsTransfer || marked.TransferMarkedBy != models.TransferMarkedBySpendingRule {
+			t.Errorf("the rule marks a transfer and says so: %+v", marked)
+		}
+		if detected := found["autopay-detected"]; !detected.IsTransfer || detected.TransferMarkedBy != models.TransferMarkedByDetection {
+			t.Errorf("the rule does not take over a transfer detection marked: %+v", detected)
+		}
+		if decided := found["autopay-person"]; decided.IsTransfer || decided.TransferMarkedBy != models.TransferMarkedByPerson {
+			t.Errorf("the rule does not override the person: %+v", decided)
+		}
+
+		if err := tx.DeleteSpendingRule(fixture.agentId, rule.ID); err != nil {
+			t.Fatalf("DeleteSpendingRule: %s", err)
+		}
+		found = financeTransactionsByProviderId(t, tx, fixture.agentId)
+		if cleared := found["autopay-rule"]; cleared.IsTransfer || cleared.TransferMarkedBy != "" {
+			t.Errorf("with the rule gone its transfer is cleared: %+v", cleared)
+		}
+		if detected := found["autopay-detected"]; !detected.IsTransfer || detected.TransferMarkedBy != models.TransferMarkedByDetection {
+			t.Errorf("a transfer detection marked outlives the rule: %+v", detected)
+		}
+		if decided := found["autopay-person"]; decided.IsTransfer || decided.TransferMarkedBy != models.TransferMarkedByPerson {
+			t.Errorf("the person's decision outlives the rule: %+v", decided)
+		}
+		if isCleared, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["autopay-detected"].ID, false, models.TransferMarkedBySpendingRule); err != nil || isCleared {
+			t.Errorf("nothing but what marked a transfer clears it: %v %v", err, isCleared)
+		}
+	})
+}
+
+// Two syncs of one person that find the same budget crossing at the same
+// time write one candidate between them.
+func TestBudgetAlertKeyIsWrittenOnceUnderConcurrentSyncs(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "budget-alert-concurrent")
+	budgetKey := "spending-category:example:2026-09:over"
+
+	firstWritten := make(chan struct{})
+	secondDone := make(chan error, 1)
+	var createdCount atomic.Int32
+	create := func(tx db.Transaction) error {
+		candidate, err := tx.CreateAgentAlertCandidate(&models.AgentAlertCandidate{AgentID: fixture.agentId, CandidateKind: models.AlertCandidateBudget,
+			AlertSignal: models.AlertSignalSoon, CandidateReason: "dining is over its budget", BudgetKey: budgetKey})
+		if err == nil && candidate != nil {
+			createdCount.Add(1)
+		}
+		return err
+	}
+	err := database.Transaction(func(tx db.Transaction) error {
+		isFound, err := tx.HasAgentBudgetAlert(fixture.agentId, budgetKey)
+		if err != nil || isFound {
+			return fmt.Errorf("nothing yet: %v %v", err, isFound)
+		}
+		if err := create(tx); err != nil {
+			return err
+		}
+		close(firstWritten)
+		// The second sync looked before this one commits, found nothing,
+		// and writes while this transaction is still open.
+		go func() {
+			secondDone <- database.Transaction(func(tx db.Transaction) error { return create(tx) })
+		}()
+		time.Sleep(200 * time.Millisecond)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("the first sync: %s", err)
+	}
+	<-firstWritten
+	if err := <-secondDone; err != nil {
+		t.Fatalf("the second sync must not fail on the crossing the first wrote: %s", err)
+	}
+	if createdCount.Load() != 1 {
+		t.Errorf("one candidate written between them, got %d", createdCount.Load())
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		candidates, err := tx.ListWaitingAgentAlertCandidates(fixture.agentId, 10)
+		if err != nil || len(candidates) != 1 {
+			t.Errorf("one waiting candidate: %v %d", err, len(candidates))
 		}
 	})
 }

@@ -198,10 +198,10 @@ func TestApplyFinanceSyncKeepsWhatThePersonChose(t *testing.T) {
 		if isSet, err := tx.SetTransactionCategorization(fixture.agentId, found["transaction-diner"].ID, dining.ID, models.CategorizedByCategorizeModel, &confidence); err != nil || !isSet {
 			t.Fatalf("the model categorizes: %v %v", isSet, err)
 		}
-		if isMarked, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["transaction-salary"].ID, true, true); err != nil || !isMarked {
+		if isMarked, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["transaction-salary"].ID, true, models.TransferMarkedByPerson); err != nil || !isMarked {
 			t.Fatalf("the person marks a transfer: %v %v", isMarked, err)
 		}
-		if isMarked, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["transaction-salary"].ID, false, false); err != nil || isMarked {
+		if isMarked, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["transaction-salary"].ID, false, models.TransferMarkedByDetection); err != nil || isMarked {
 			t.Fatalf("anything else must not unmark the person's transfer: %v %v", isMarked, err)
 		}
 	})
@@ -221,7 +221,7 @@ func TestApplyFinanceSyncKeepsWhatThePersonChose(t *testing.T) {
 		if grocer.CategorizedBy != models.CategorizedByPerson || grocer.SpendingCategoryID == "" || grocer.Description != "CORNER GROCER 0412 POSTED" {
 			t.Errorf("the person's spending category survives a modify: %+v", grocer)
 		}
-		if !salary.IsTransfer || !salary.IsTransferSetByPerson || salary.Amount != "2600.0000" {
+		if !salary.IsTransfer || salary.TransferMarkedBy != models.TransferMarkedByPerson || salary.Amount != "2600.0000" {
 			t.Errorf("the person's transfer survives a modify: %+v", salary)
 		}
 		if diner.SpendingCategoryID != "" || diner.CategorizedBy != "" || diner.CategorizationConfidence != "" {
@@ -300,7 +300,7 @@ func TestDetectFinanceTransfersPairsAccounts(t *testing.T) {
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
-		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["person-out"].ID, false, true); err != nil {
+		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["person-out"].ID, false, models.TransferMarkedByPerson); err != nil {
 			t.Fatalf("MarkFinanceTransactionTransfer: %s", err)
 		}
 		markedCount, err := tx.DetectFinanceTransfers(fixture.agentId, fixture.sourceId, "2026-09-01")
@@ -413,7 +413,7 @@ func TestFinanceSpendingSummaryLeavesOutTransfers(t *testing.T) {
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
-		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["to-card"].ID, true, true); err != nil {
+		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["to-card"].ID, true, models.TransferMarkedByPerson); err != nil {
 			t.Fatalf("MarkFinanceTransactionTransfer: %s", err)
 		}
 		summary, err := tx.FinanceSpendingSummary(fixture.agentId, &db.FinanceSpendingSummaryFilter{
@@ -498,7 +498,7 @@ func TestFinanceRowsAreTheirOwnersOnly(t *testing.T) {
 		if _, err := tx.SetTransactionCategorization(owner.agentId, transactionId, strangerCategory.ID, models.CategorizedByPerson, nil); !errors.Is(err, db.ErrNotFound) {
 			t.Errorf("another agent's spending category must not be assigned: %v", err)
 		}
-		if _, err := tx.MarkFinanceTransactionTransfer(stranger.agentId, transactionId, true, true); !errors.Is(err, db.ErrNotFound) {
+		if _, err := tx.MarkFinanceTransactionTransfer(stranger.agentId, transactionId, true, models.TransferMarkedByPerson); !errors.Is(err, db.ErrNotFound) {
 			t.Errorf("MarkFinanceTransactionTransfer across agents: %v", err)
 		}
 		if _, err := tx.ApplyFinanceSync(stranger.agentId, owner.sourceId, sampleFinanceSync(), "2026-09-12"); !errors.Is(err, db.ErrNotFound) {
@@ -570,6 +570,217 @@ func TestFinanceReportingCurrencyIsKeptOnTheAgent(t *testing.T) {
 			return nil
 		}); err == nil {
 			t.Error("a reporting currency that is not a code must be refused")
+		}
+	})
+}
+
+// What the person decided about a pending transaction follows it when it
+// posts: under Plaid, to the posted transaction that names it; under
+// SimpleFIN, which names nothing, to the posted transaction of the same
+// account and amount a few days later, equal charges taken in order; and
+// under either, to the same row when the provider keeps its id.
+func TestPersonDecisionsFollowAPendingTransactionThatPosts(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "finance-pending-decisions")
+	accounts := sampleFinanceSync().Accounts
+	pending := func(providerTransactionId, postedOn, amount, description string) finance.Transaction {
+		return finance.Transaction{ProviderTransactionID: providerTransactionId, ProviderAccountID: "account-checking", PostedOn: postedOn,
+			Amount: amount, CurrencyCode: "USD", Description: description, IsPending: true}
+	}
+	applyFinanceSync(t, database, fixture, &finance.SyncResult{Accounts: accounts, Added: []finance.Transaction{
+		pending("plaid-pending-book", "2026-09-10", "-30.00", "BOOKSHOP"),
+		pending("plaid-pending-move", "2026-09-10", "-250.00", "TO BROKERAGE"),
+		pending("simple-pending-first", "2026-09-10", "-20.00", "BAKERY"),
+		pending("simple-pending-second", "2026-09-11", "-20.00", "BAKERY"),
+		pending("same-id", "2026-09-11", "-9.00", "NEWSSTAND"),
+	}}, "2026-09-11")
+
+	var spendingCategoryIdByName map[string]string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.EnsureDefaultSpendingCategories(fixture.agentId); err != nil {
+			t.Fatalf("EnsureDefaultSpendingCategories: %s", err)
+		}
+		spendingCategoryIdByName = spendingCategoryIdsByName(t, tx, fixture.agentId)
+		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
+		for providerTransactionId, spendingCategoryName := range map[string]string{
+			"plaid-pending-book":    finance.SpendingCategoryShopping,
+			"simple-pending-first":  finance.SpendingCategoryGroceries,
+			"simple-pending-second": finance.SpendingCategoryDining,
+			"same-id":               finance.SpendingCategoryEntertainment,
+		} {
+			if _, err := tx.SetTransactionCategorization(fixture.agentId, found[providerTransactionId].ID, spendingCategoryIdByName[spendingCategoryName],
+				models.CategorizedByPerson, nil); err != nil {
+				t.Fatalf("SetTransactionCategorization: %s", err)
+			}
+		}
+		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["plaid-pending-move"].ID, true, models.TransferMarkedByPerson); err != nil {
+			t.Fatalf("MarkFinanceTransactionTransfer: %s", err)
+		}
+	})
+
+	// Plaid: the posted ones name the pending ones they replace, which are
+	// removed in the same sync.
+	plaidPosted := &finance.SyncResult{Accounts: accounts, Added: []finance.Transaction{
+		{ProviderTransactionID: "plaid-posted-book", ProviderAccountID: "account-checking", PostedOn: "2026-09-12", Amount: "-30.00",
+			CurrencyCode: "USD", Description: "BOOKSHOP", PendingProviderTransactionID: "plaid-pending-book"},
+		{ProviderTransactionID: "plaid-posted-move", ProviderAccountID: "account-checking", PostedOn: "2026-09-12", Amount: "-250.00",
+			CurrencyCode: "USD", Description: "TO BROKERAGE", PendingProviderTransactionID: "plaid-pending-move"},
+	}, RemovedProviderTransactionIDs: []string{"plaid-pending-book", "plaid-pending-move"}}
+	applied := applyFinanceSync(t, database, fixture, plaidPosted, "2026-09-12")
+	if len(applied.FinanceTransactionIDsToCategorize) != 0 {
+		t.Errorf("a posted transaction that took the person's decision is not categorized again: %v", applied.FinanceTransactionIDsToCategorize)
+	}
+
+	// SimpleFIN: the pending ones are not sent again; the posted ones
+	// arrive with new ids, and the one kept its id.
+	replacedFrom := time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC)
+	simplePosted := &finance.SyncResult{Accounts: accounts, PendingReplacedFrom: &replacedFrom, Added: []finance.Transaction{
+		{ProviderTransactionID: "simple-posted-first", ProviderAccountID: "account-checking", PostedOn: "2026-09-12", Amount: "-20.00",
+			CurrencyCode: "USD", Description: "BAKERY"},
+		{ProviderTransactionID: "simple-posted-second", ProviderAccountID: "account-checking", PostedOn: "2026-09-13", Amount: "-20.00",
+			CurrencyCode: "USD", Description: "BAKERY"},
+		{ProviderTransactionID: "simple-posted-unrelated", ProviderAccountID: "account-checking", PostedOn: "2026-09-13", Amount: "-30.00",
+			CurrencyCode: "USD", Description: "HARDWARE"},
+		{ProviderTransactionID: "plaid-posted-book", ProviderAccountID: "account-checking", PostedOn: "2026-09-12", Amount: "-30.00",
+			CurrencyCode: "USD", Description: "BOOKSHOP", PendingProviderTransactionID: "plaid-pending-book"},
+		{ProviderTransactionID: "plaid-posted-move", ProviderAccountID: "account-checking", PostedOn: "2026-09-12", Amount: "-250.00",
+			CurrencyCode: "USD", Description: "TO BROKERAGE", PendingProviderTransactionID: "plaid-pending-move"},
+		{ProviderTransactionID: "same-id", ProviderAccountID: "account-checking", PostedOn: "2026-09-12", Amount: "-9.00",
+			CurrencyCode: "USD", Description: "NEWSSTAND"},
+	}}
+	applied = applyFinanceSync(t, database, fixture, simplePosted, "2026-09-13")
+	if applied.ReplacedPendingTransactionCount != 2 {
+		t.Fatalf("the two pending bakery charges are replaced: %+v", applied)
+	}
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
+		for _, providerTransactionId := range []string{"plaid-pending-book", "plaid-pending-move", "simple-pending-first", "simple-pending-second"} {
+			if found[providerTransactionId] != nil {
+				t.Errorf("%s is gone once posted", providerTransactionId)
+			}
+		}
+		for providerTransactionId, spendingCategoryName := range map[string]string{
+			"plaid-posted-book":    finance.SpendingCategoryShopping,
+			"simple-posted-first":  finance.SpendingCategoryGroceries,
+			"simple-posted-second": finance.SpendingCategoryDining,
+			"same-id":              finance.SpendingCategoryEntertainment,
+		} {
+			posted := found[providerTransactionId]
+			if posted == nil || posted.CategorizedBy != models.CategorizedByPerson || posted.SpendingCategoryID != spendingCategoryIdByName[spendingCategoryName] {
+				t.Errorf("%s keeps the person's %s: %+v", providerTransactionId, spendingCategoryName, posted)
+			}
+		}
+		if move := found["plaid-posted-move"]; !move.IsTransfer || move.TransferMarkedBy != models.TransferMarkedByPerson {
+			t.Errorf("the person's transfer follows the posted transaction: %+v", move)
+		}
+		if unrelated := found["simple-posted-unrelated"]; unrelated.CategorizedBy != "" {
+			t.Errorf("a posted transaction no pending one matches takes nothing: %+v", unrelated)
+		}
+	})
+}
+
+// Pairing is one to one and closest first: a transfer to savings on
+// Monday pairs with its arrival on Monday, and a rent check of the same
+// amount on Tuesday stays spending. A finance transaction the person
+// categorized, or that is already a transfer, is not paired.
+func TestDetectFinanceTransfersPairsOneToOne(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "finance-transfer-one-to-one")
+	result := sampleFinanceSync()
+	result.Accounts = append(result.Accounts, finance.Account{ProviderAccountID: "account-savings", AccountName: "Rainy Day Savings",
+		AccountKind: finance.AccountKindDepository, CurrencyCode: "USD", CurrentBalance: "5000"})
+	result.Added = []finance.Transaction{
+		{ProviderTransactionID: "to-savings", ProviderAccountID: "account-checking", PostedOn: "2026-09-07", Amount: "-500", CurrencyCode: "USD", Description: "ONLINE TRANSFER"},
+		{ProviderTransactionID: "rent-check", ProviderAccountID: "account-checking", PostedOn: "2026-09-08", Amount: "-500", CurrencyCode: "USD", Description: "CHECK 1041"},
+		{ProviderTransactionID: "into-savings", ProviderAccountID: "account-savings", PostedOn: "2026-09-07", Amount: "500", CurrencyCode: "USD", Description: "ONLINE TRANSFER"},
+		{ProviderTransactionID: "person-spending", ProviderAccountID: "account-checking", PostedOn: "2026-09-09", Amount: "-80", CurrencyCode: "USD", Description: "CONCERT TICKETS"},
+		{ProviderTransactionID: "refund-in", ProviderAccountID: "account-card", PostedOn: "2026-09-09", Amount: "80", CurrencyCode: "USD", Description: "TICKET REFUND"},
+		{ProviderTransactionID: "already-out", ProviderAccountID: "account-checking", PostedOn: "2026-09-10", Amount: "-45", CurrencyCode: "USD", Description: "TO CARD"},
+		{ProviderTransactionID: "already-in", ProviderAccountID: "account-card", PostedOn: "2026-09-10", Amount: "45", CurrencyCode: "USD", Description: "FROM CHECKING"},
+		{ProviderTransactionID: "stray-in", ProviderAccountID: "account-savings", PostedOn: "2026-09-10", Amount: "45", CurrencyCode: "USD", Description: "INTEREST ADJUSTMENT"},
+	}
+	applyFinanceSync(t, database, fixture, result, "2026-09-12")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.EnsureDefaultSpendingCategories(fixture.agentId); err != nil {
+			t.Fatalf("EnsureDefaultSpendingCategories: %s", err)
+		}
+		byName := spendingCategoryIdsByName(t, tx, fixture.agentId)
+		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
+		if _, err := tx.SetTransactionCategorization(fixture.agentId, found["person-spending"].ID, byName[finance.SpendingCategoryEntertainment],
+			models.CategorizedByPerson, nil); err != nil {
+			t.Fatalf("SetTransactionCategorization: %s", err)
+		}
+		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["already-out"].ID, true, models.TransferMarkedBySpendingRule); err != nil {
+			t.Fatalf("MarkFinanceTransactionTransfer: %s", err)
+		}
+		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["already-in"].ID, true, models.TransferMarkedBySpendingRule); err != nil {
+			t.Fatalf("MarkFinanceTransactionTransfer: %s", err)
+		}
+		markedCount, err := tx.DetectFinanceTransfers(fixture.agentId, fixture.sourceId, "2026-09-01")
+		if err != nil {
+			t.Fatalf("DetectFinanceTransfers: %s", err)
+		}
+		if markedCount != 2 {
+			t.Errorf("only the savings transfer pairs, got %d marked", markedCount)
+		}
+		found = financeTransactionsByProviderId(t, tx, fixture.agentId)
+		for providerTransactionId, expectedMarkedBy := range map[string]models.TransferMarkedBy{
+			"to-savings": models.TransferMarkedByDetection, "into-savings": models.TransferMarkedByDetection,
+			"rent-check": "", "person-spending": "", "refund-in": "", "stray-in": "",
+			"already-out": models.TransferMarkedBySpendingRule, "already-in": models.TransferMarkedBySpendingRule,
+		} {
+			financeTransaction := found[providerTransactionId]
+			if financeTransaction.TransferMarkedBy != expectedMarkedBy || financeTransaction.IsTransfer != (expectedMarkedBy != "") {
+				t.Errorf("%s: transfer %v marked by %q, want %q", providerTransactionId, financeTransaction.IsTransfer, financeTransaction.TransferMarkedBy, expectedMarkedBy)
+			}
+		}
+	})
+}
+
+// What the categorize model was asked about and could not place is not
+// listed for it again, until what it is judged from changes; a change of
+// amount alone is not that.
+func TestCategorizeAttemptedIsListedAgainOnlyWhenChanged(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "finance-categorize-attempted")
+	applyFinanceSync(t, database, fixture, sampleFinanceSync(), "2026-09-12")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
+		markedCount, err := tx.MarkCategorizeAttempted(fixture.agentId, []string{found["transaction-grocer"].ID, found["transaction-diner"].ID})
+		if err != nil || markedCount != 2 {
+			t.Fatalf("MarkCategorizeAttempted: %v %d", err, markedCount)
+		}
+		uncategorized, err := tx.ListUncategorizedFinanceTransactions(fixture.agentId, 10)
+		if err != nil || len(uncategorized) != 1 || uncategorized[0].ID != found["transaction-salary"].ID {
+			t.Fatalf("only the one never asked about is listed: %v %+v", err, uncategorized)
+		}
+	})
+
+	changed := sampleFinanceSync()
+	changed.Added[0].MerchantName = "Corner Grocer Market"
+	changed.Added[2].Amount = "-19.40"
+	applied := applyFinanceSync(t, database, fixture, changed, "2026-09-13")
+	if applied.WrittenTransactionCount != 2 {
+		t.Fatalf("two changed: %+v", applied)
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
+		uncategorized, err := tx.ListUncategorizedFinanceTransactions(fixture.agentId, 10)
+		if err != nil {
+			t.Fatalf("ListUncategorizedFinanceTransactions: %s", err)
+		}
+		listed := map[string]bool{}
+		for _, financeTransaction := range uncategorized {
+			listed[financeTransaction.ID] = true
+		}
+		if !listed[found["transaction-grocer"].ID] || listed[found["transaction-diner"].ID] || len(listed) != 2 {
+			t.Errorf("the grocer's merchant changed and it is listed again; the diner's amount alone did not: %+v", uncategorized)
 		}
 	})
 }

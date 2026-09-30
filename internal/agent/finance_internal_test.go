@@ -15,6 +15,7 @@ import (
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/decide"
 	"github.com/ziyan/teanode/internal/finance"
+	"github.com/ziyan/teanode/internal/finance/rates"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/storage"
@@ -93,7 +94,7 @@ func newFinanceFixture(t *testing.T, providerURL string) *financeFixture {
 	})
 	provider := &fakeFinanceProvider{}
 	original := newFinanceProvider
-	newFinanceProvider = func(*config.Configuration, string) (finance.Provider, error) { return provider, nil }
+	newFinanceProvider = func(*config.Configuration, string, *time.Location) (finance.Provider, error) { return provider, nil }
 	t.Cleanup(func() { newFinanceProvider = original })
 
 	fixture := &financeFixture{database: database, configuration: configuration, worker: worker, provider: provider}
@@ -313,13 +314,20 @@ func TestFinanceSyncStopsWhileSignInIsRequired(t *testing.T) {
 }
 
 // A credential the provider refuses is not a sign-in: it cannot be
-// repaired, so the error says to link again and nothing is flagged.
+// repaired, so the error says to link again, it is flagged as refused
+// rather than as a sign-in, and the provider is not called again.
 func TestFinanceSyncSaysARefusedCredentialNeedsLinkingAgain(t *testing.T) {
 	fixture := newFinanceFixture(t, "")
 	fixture.provider.err = fmt.Errorf("finance: %w", finance.ErrCredentialRefused)
 	source := fixture.sync(t)
-	if source.IsFinanceSignInRequired() || source.LastError != financeCredentialRefusedError {
-		t.Fatalf("a refused credential says to link again and is not flagged: %+v %q", source.Cursor, source.LastError)
+	if source.IsFinanceSignInRequired() || !source.IsFinanceCredentialRefused() || source.LastError != financeCredentialRefusedError {
+		t.Fatalf("a refused credential says to link again and is flagged as refused: %+v %q", source.Cursor, source.LastError)
+	}
+	fixture.provider.err = nil
+	fixture.provider.result = &finance.SyncResult{Accounts: []finance.Account{inventedAccount()}}
+	source = fixture.sync(t)
+	if fixture.provider.syncCount != 1 || source.LastError != financeCredentialRefusedError || !source.IsFinanceCredentialRefused() {
+		t.Fatalf("a refused credential is not tried again: %d calls, %q", fixture.provider.syncCount, source.LastError)
 	}
 }
 
@@ -568,5 +576,197 @@ func TestBudgetCandidateFactsMatchTheBudgetMutes(t *testing.T) {
 	}
 	if key := alertSubjectKey("whatever the model called it", candidate); key != candidate.BudgetKey {
 		t.Fatalf("a budget alert's subject is its key: %q", key)
+	}
+}
+
+// queuedJobsOfKind is the jobs of a kind still waiting to run.
+func (self *financeFixture) queuedJobsOfKind(t *testing.T, kind models.AgentJobKind) []*models.AgentJob {
+	t.Helper()
+	var queued []*models.AgentJob
+	for _, job := range self.jobsOfKind(t, kind) {
+		if job.Status == models.AgentJobQueued {
+			queued = append(queued, job)
+		}
+	}
+	return queued
+}
+
+// A categorize run that places nothing marks what it was asked about, so
+// neither it nor the sync after it brings the job back for the same; a
+// finance transaction whose merchant then changes is asked about again. A
+// call the decision model failed is not an answer, and is asked again.
+func TestCategorizeRunThatPlacesNothingIsNotRepeated(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	fixture.spendingCategoryIdNamed(t, fixture.agent.ID, finance.SpendingCategoryGroceries)
+	fixture.applySync(t, &finance.SyncResult{
+		Accounts: []finance.Account{inventedAccount()},
+		Added: []finance.Transaction{
+			inventedTransaction("transaction-1", "2026-09-19", "-12.00", "MYSTERY CHARGE", "Mystery Charge", ""),
+			inventedTransaction("transaction-2", "2026-09-18", "-7.00", "UNREACHABLE CHARGE", "Unreachable Charge", ""),
+		},
+	})
+	original := categorizeModels
+	categorizeModels = func(*Agent, *config.Configuration) (llm.Decider, string) {
+		// Unsure about the mystery; the service is down for the other.
+		return &scriptedCategorizer{answerByMerchant: map[string]decide.Answer{
+			"Mystery Charge": {Choice: "not-a-spending-category", Confidence: 0.2},
+		}}, ""
+	}
+	t.Cleanup(func() { categorizeModels = original })
+
+	if err := fixture.worker.runCategorize(t.Context(), fixture.run()); err != nil {
+		t.Fatalf("a run that placed nothing does not bring itself back: %v", err)
+	}
+	uncategorized := func() []*models.FinanceTransaction {
+		var found []*models.FinanceTransaction
+		dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+			var err error
+			if found, err = tx.ListUncategorizedFinanceTransactions(fixture.agent.ID, 10); err != nil {
+				t.Fatalf("ListUncategorizedFinanceTransactions: %s", err)
+			}
+		})
+		return found
+	}
+	if waiting := uncategorized(); len(waiting) != 1 || waiting[0].Description != "UNREACHABLE CHARGE" {
+		t.Fatalf("the one the model answered is not asked again; the one it could not be asked about is: %+v", waiting)
+	}
+
+	// With nothing left but what the model could not be reached for
+	// resolved, a sync after it queues nothing.
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		if _, err := tx.MarkCategorizeAttempted(fixture.agent.ID, []string{uncategorized()[0].ID}); err != nil {
+			t.Fatalf("MarkCategorizeAttempted: %s", err)
+		}
+	})
+	afterSync := func() {
+		if err := fixture.worker.afterFinanceSync(t.Context(), fixture.run(), fixture.source, &db.FinanceSyncApplied{}, time.Now().UTC().Format(time.DateOnly)); err != nil {
+			t.Fatalf("afterFinanceSync: %s", err)
+		}
+	}
+	afterSync()
+	if queued := fixture.queuedJobsOfKind(t, models.AgentJobCategorize); len(queued) != 0 {
+		t.Fatalf("nothing the model has not already been asked about waits, so no job: %+v", queued)
+	}
+
+	changed := inventedTransaction("transaction-1", "2026-09-19", "-12.00", "MYSTERY CHARGE", "Mystery Charge Online", "")
+	fixture.applySync(t, &finance.SyncResult{Accounts: []finance.Account{inventedAccount()}, Added: []finance.Transaction{changed}})
+	if waiting := uncategorized(); len(waiting) != 1 || waiting[0].MerchantName != "Mystery Charge Online" {
+		t.Fatalf("a changed merchant is asked about again: %+v", waiting)
+	}
+	afterSync()
+	if queued := fixture.queuedJobsOfKind(t, models.AgentJobCategorize); len(queued) != 1 {
+		t.Fatalf("and a job is queued for it: %+v", queued)
+	}
+}
+
+// What a merchant charged two counted spending categories this month is
+// added together, not the one read last.
+func TestFixedChargesAddWhatAMerchantChargedThisMonth(t *testing.T) {
+	counted := map[string]bool{"category-parent": true, "category-child": true}
+	history := []*models.MerchantMonthSpending{}
+	for _, spendingMonth := range []string{"2026-06", "2026-07", "2026-08"} {
+		history = append(history, &models.MerchantMonthSpending{SpendingCategoryID: "category-parent", MerchantName: "Example Gym",
+			SpendingMonth: spendingMonth, CurrencyCode: "USD", SpendingAmount: "50.0000"})
+	}
+	recent := []*models.MerchantMonthSpending{
+		{SpendingCategoryID: "category-parent", MerchantName: "Example Gym", SpendingMonth: "2026-09", CurrencyCode: "USD", SpendingAmount: "30.0000"},
+		{SpendingCategoryID: "category-child", MerchantName: "Example Gym", SpendingMonth: "2026-09", CurrencyCode: "USD", SpendingAmount: "20.0000"},
+	}
+	charges, err := fixedCharges(rates.NewConverter(t.Context(), nil, nil), counted, history, recent, "2026-09", "USD", "2026-09-10")
+	if err != nil {
+		t.Fatalf("fixedCharges: %s", err)
+	}
+	if finance.FormatAmount(charges.seenAmount) != "50.0000" || charges.dueAmount.Sign() != 0 {
+		t.Fatalf("seen is both charges and nothing is still due: seen %s, due %s", finance.FormatAmount(charges.seenAmount), finance.FormatAmount(charges.dueAmount))
+	}
+}
+
+// Spending last month and a regular charge still due in a currency with
+// no exchange rate are reported, not dropped.
+func TestBudgetStatusReportsWhatItCouldNotConvert(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	groceriesId := fixture.spendingCategoryIdNamed(t, fixture.agent.ID, finance.SpendingCategoryGroceries)
+	charge := func(identifier, postedOn string) finance.Transaction {
+		transaction := inventedTransaction(identifier, postedOn, "-15.00", "EXAMPLE BOX", "Example Box", "")
+		transaction.CurrencyCode = "XTS"
+		return transaction
+	}
+	fixture.applySync(t, &finance.SyncResult{Accounts: []finance.Account{inventedAccount()}, Added: []finance.Transaction{
+		charge("box-march", "2026-03-05"), charge("box-april", "2026-04-05"), charge("box-may", "2026-05-05"),
+	}})
+	var status *models.BudgetStatus
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		page, err := tx.ListFinanceTransactions(fixture.agent.ID, &db.FinanceTransactionFilter{})
+		if err != nil {
+			t.Fatalf("ListFinanceTransactions: %s", err)
+		}
+		for _, financeTransaction := range page.FinanceTransactions {
+			if _, err := tx.SetTransactionCategorization(fixture.agent.ID, financeTransaction.ID, groceriesId, models.CategorizedByPerson, nil); err != nil {
+				t.Fatalf("SetTransactionCategorization: %s", err)
+			}
+		}
+		if _, err := tx.SetBudget(&models.Budget{AgentID: fixture.agent.ID, SpendingCategoryID: groceriesId, MonthlyAmount: "400", CurrencyCode: "USD", EffectiveFrom: "2026-03"}); err != nil {
+			t.Fatalf("SetBudget: %s", err)
+		}
+		if status, err = BudgetStatus(t.Context(), tx, nil, fixture.agent.ID, "2026-06", "2026-06-10"); err != nil {
+			t.Fatalf("BudgetStatus: %s", err)
+		}
+	})
+	if len(status.SpendingCategories) != 1 {
+		t.Fatalf("one spending category with a budget: %+v", status)
+	}
+	row := status.SpendingCategories[0]
+	if len(row.UnconvertedSpendingBySameDayLastMonth) != 1 || row.UnconvertedSpendingBySameDayLastMonth[0].CurrencyCode != "XTS" ||
+		row.UnconvertedSpendingBySameDayLastMonth[0].Amount != "15.0000" || row.SpendingBySameDayLastMonthAmount != "0.0000" {
+		t.Errorf("last month's spending with no rate is reported apart: %+v", row.UnconvertedSpendingBySameDayLastMonth)
+	}
+	if len(row.UnconvertedFixedChargesDue) != 1 || row.UnconvertedFixedChargesDue[0].Amount != "15.0000" || row.FixedChargesDueAmount != "0.0000" {
+		t.Errorf("a regular charge due with no rate is reported apart: %+v", row.UnconvertedFixedChargesDue)
+	}
+	if len(row.UnconvertedSpending) != 0 {
+		t.Errorf("nothing was spent this month: %+v", row.UnconvertedSpending)
+	}
+}
+
+// An asset value savings target counts what its assets are worth today:
+// not an asset sold before today, and not a valuation recorded for a day
+// still to come.
+func TestSavingsTargetProgressCountsWhatTheAssetsAreWorthToday(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	agentId := fixture.agent.ID
+	var progress *SavingsTargetProgress
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		fund, err := tx.CreateAsset(&models.Asset{AgentID: agentId, AssetName: "index fund", AssetKind: models.AssetKindInvestment, CurrencyCode: "USD"})
+		if err != nil {
+			t.Fatalf("CreateAsset: %s", err)
+		}
+		boat, err := tx.CreateAsset(&models.Asset{AgentID: agentId, AssetName: "boat", AssetKind: models.AssetKindVehicle, CurrencyCode: "USD"})
+		if err != nil {
+			t.Fatalf("CreateAsset: %s", err)
+		}
+		for _, valuation := range []*models.AssetValuation{
+			{AgentID: agentId, AssetID: fund.ID, ValuedOn: "2026-06-01", Value: "1000", ValuationSource: models.ValuationSourceManual},
+			{AgentID: agentId, AssetID: fund.ID, ValuedOn: "2026-07-01", Value: "5000", ValuationSource: models.ValuationSourceManual},
+			{AgentID: agentId, AssetID: boat.ID, ValuedOn: "2026-06-01", Value: "2000", ValuationSource: models.ValuationSourceManual},
+		} {
+			if _, err := tx.RecordValuation(valuation); err != nil {
+				t.Fatalf("RecordValuation: %s", err)
+			}
+		}
+		if _, err := tx.CloseAsset(agentId, boat.ID, "2026-06-05"); err != nil {
+			t.Fatalf("CloseAsset: %s", err)
+		}
+		savingsTarget, err := tx.CreateSavingsTarget(&models.SavingsTarget{AgentID: agentId, SavingsTargetName: "house deposit", TargetAmount: "10000",
+			CurrencyCode: "USD", TargetOn: "2027-06-01", TargetMeasure: models.TargetMeasureAssetValue, StartedOn: "2026-06-01",
+			AssetIDs: []string{fund.ID, boat.ID}})
+		if err != nil {
+			t.Fatalf("CreateSavingsTarget: %s", err)
+		}
+		if progress, err = SavingsTargetProgressOf(t.Context(), tx, nil, agentId, savingsTarget, "2026-06-10"); err != nil {
+			t.Fatalf("SavingsTargetProgressOf: %s", err)
+		}
+	})
+	if progress.SavedAmount != "1000.0000" || progress.RemainingAmount != "9000.0000" {
+		t.Fatalf("only the fund, at today's value: %+v", progress)
 	}
 }

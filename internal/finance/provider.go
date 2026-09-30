@@ -48,17 +48,21 @@ const (
 //
 // Balances are as the provider reports them. For Plaid a card's or loan's
 // balance is the amount owed, positive; SimpleFIN leaves the sign to the
-// institution, and most report what is owed as negative.
+// institution, and they report what is owed as negative.
+// IsOwedBalancePositive says which of the two the provider does, so the
+// amount owed on a liability can be told from a credit in the person's
+// favour, such as a refund left on a card.
 type Account struct {
-	ProviderAccountID string
-	AccountName       string
-	AccountMask       string // last digits, when the provider gives them
-	AccountKind       string // depository, credit, loan, investment, other
-	CurrencyCode      string
-	CurrentBalance    string // decimal, "" when unknown
-	AvailableBalance  string // decimal, "" when unknown
-	BalanceAt         time.Time
-	ProviderMetadata  json.RawMessage
+	ProviderAccountID     string
+	AccountName           string
+	AccountMask           string // last digits, when the provider gives them
+	AccountKind           string // depository, credit, loan, investment, other
+	CurrencyCode          string
+	CurrentBalance        string // decimal, "" when unknown
+	AvailableBalance      string // decimal, "" when unknown
+	IsOwedBalancePositive bool
+	BalanceAt             time.Time
+	ProviderMetadata      json.RawMessage
 }
 
 // Transaction is one finance transaction as a provider reported it.
@@ -107,10 +111,12 @@ type Provider interface {
 // calling the provider until the finance source is repaired.
 var ErrSignInRequired = errors.New("the institution needs the person to sign in again")
 
-// ErrCredentialRefused is a provider refusing the credential itself, which
-// for SimpleFIN means the person revoked access on the bridge's website or
-// the bridge ended it. Unlike a sign-in, it cannot be repaired: the person
-// links the institution again.
+// ErrCredentialRefused is a provider refusing the credential itself: for
+// SimpleFIN, the person revoked access on the bridge's website or the
+// bridge ended it; for Plaid, the link is gone or the person withdrew
+// their consent. Unlike a sign-in, it cannot be repaired: the person
+// deletes the finance source and links the institution again, and until
+// then the reader does not call the provider.
 var ErrCredentialRefused = errors.New("the provider refused the credential; access may have been revoked")
 
 // UserAgent is what every request this package makes says it is. The

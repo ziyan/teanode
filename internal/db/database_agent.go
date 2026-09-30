@@ -163,7 +163,7 @@ type agentModel struct {
 	AlertQuietEnd   string `gorm:"column:alert_quiet_end"`
 	AlertDailyMost  int    `gorm:"column:alert_daily_most"`
 
-	// The currency totals are shown in. See migration 0132.
+	// The currency totals are shown in. See migration 0133.
 	ReportingCurrencyCode string `gorm:"column:reporting_currency_code"`
 
 	// When the links were last faded. See migration 0084.

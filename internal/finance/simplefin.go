@@ -51,6 +51,10 @@ const (
 type SimpleFIN struct {
 	http *http.Client
 	now  func() time.Time
+
+	// location is the person's time zone, which a pending transaction's
+	// day is read in; UTC unless InLocation says otherwise.
+	location *time.Location
 }
 
 // NewSimpleFIN builds a client. It opens no connection.
@@ -60,7 +64,17 @@ func NewSimpleFIN() *SimpleFIN {
 	if transport, isTransport := client.Transport.(*http.Transport); isTransport {
 		transport.ResponseHeaderTimeout = simpleFinTimeout
 	}
-	return &SimpleFIN{http: client, now: time.Now}
+	return &SimpleFIN{http: client, now: time.Now, location: time.UTC}
+}
+
+// InLocation reads the days of pending transactions in the person's time
+// zone, and returns the client. A nil location is UTC.
+func (self *SimpleFIN) InLocation(location *time.Location) *SimpleFIN {
+	if location == nil {
+		location = time.UTC
+	}
+	self.location = location
+	return self
 }
 
 // Kind is ProviderKindSimpleFIN.
@@ -234,8 +248,8 @@ func (self *SimpleFIN) Sync(ctx context.Context, credential string, cursor strin
 		}
 	}
 
-	result := &SyncResult{NextCursor: cursor, PendingReplacedFrom: &start}
-	accumulated := newSimpleFinAccumulator()
+	syncResult := &SyncResult{NextCursor: cursor, PendingReplacedFrom: &start}
+	accumulated := newSimpleFinAccumulator(self.location)
 	for windowStart := start; windowStart.Before(now); windowStart = windowStart.Add(simpleFinWindowDuration) {
 		windowEnd := windowStart.Add(simpleFinWindowDuration)
 		query := url.Values{}
@@ -255,14 +269,14 @@ func (self *SimpleFIN) Sync(ctx context.Context, credential string, cursor strin
 		}
 	}
 
-	result.Accounts = accumulated.accounts
-	result.Added = accumulated.transactions
-	result.InstitutionName = accumulated.institutionName
-	result.ProviderWarnings = accumulated.warnings
+	syncResult.Accounts = accumulated.accounts
+	syncResult.Added = accumulated.transactions
+	syncResult.InstitutionName = accumulated.institutionName
+	syncResult.ProviderWarnings = accumulated.warnings
 	if accumulated.newestPostedSeconds > 0 {
-		result.NextCursor = strconv.FormatInt(accumulated.newestPostedSeconds, 10)
+		syncResult.NextCursor = strconv.FormatInt(accumulated.newestPostedSeconds, 10)
 	}
-	return result, nil
+	return syncResult, nil
 }
 
 func (self *SimpleFIN) fetchAccounts(ctx context.Context, address *url.URL, username, password string, query url.Values) (*simpleFinAccountSet, error) {
@@ -331,13 +345,18 @@ type simpleFinAccumulator struct {
 	warnings             []string
 	isWarningSeen        map[string]bool
 	newestPostedSeconds  int64
+	location             *time.Location
 }
 
-func newSimpleFinAccumulator() *simpleFinAccumulator {
+func newSimpleFinAccumulator(location *time.Location) *simpleFinAccumulator {
+	if location == nil {
+		location = time.UTC
+	}
 	return &simpleFinAccumulator{
 		accountIndexByID:     map[string]int{},
 		transactionIndexByID: map[string]int{},
 		isWarningSeen:        map[string]bool{},
+		location:             location,
 	}
 }
 
@@ -392,7 +411,7 @@ func (self *simpleFinAccumulator) add(accountSet *simpleFinAccountSet, now time.
 		}
 
 		for _, rawTransaction := range decoded.Transactions {
-			transaction, postedSeconds, err := simpleFinTransactionFrom(rawTransaction, decoded.ID, currencyCode, now)
+			transaction, postedSeconds, err := simpleFinTransactionFrom(rawTransaction, decoded.ID, currencyCode, now, self.location)
 			if err != nil {
 				// One unreadable transaction must not stop the finance
 				// source from syncing forever; it is reported and the
@@ -428,7 +447,7 @@ func (self *simpleFinAccumulator) balance(accountId, balanceFieldName, text stri
 	return strings.TrimSpace(text)
 }
 
-func simpleFinTransactionFrom(raw json.RawMessage, accountId, currencyCode string, now time.Time) (Transaction, int64, error) {
+func simpleFinTransactionFrom(raw json.RawMessage, accountId, currencyCode string, now time.Time, location *time.Location) (Transaction, int64, error) {
 	var decoded simpleFinTransaction
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		return Transaction{}, 0, fmt.Errorf("a SimpleFIN transaction in account %s was not readable", accountId)
@@ -461,16 +480,23 @@ func simpleFinTransactionFrom(raw json.RawMessage, accountId, currencyCode strin
 	if err != nil {
 		postedSeconds = 0
 	}
+	// A posted time is read as a UTC day: the bridge stands for a posting
+	// day with that day's midnight UTC, which in any zone west of
+	// Greenwich is the evening before.
+	//
 	// A pending transaction has no posted time yet (the protocol says 0).
 	// The table needs a day, so it is the day it happened, or failing
-	// that the day it was seen; it is replaced when it posts.
+	// that the day it was seen; it is replaced when it posts. Both are
+	// real moments rather than days, so they are read in the person's
+	// time zone: a card used late in the evening west of Greenwich is that
+	// day's spending, not the next day's.
 	switch {
 	case postedSeconds > 0:
 		transaction.PostedOn = time.Unix(postedSeconds, 0).UTC().Format(time.DateOnly)
 	case transaction.TransactedAt != nil:
-		transaction.PostedOn = transaction.TransactedAt.Format(time.DateOnly)
+		transaction.PostedOn = transaction.TransactedAt.In(location).Format(time.DateOnly)
 	default:
-		transaction.PostedOn = now.Format(time.DateOnly)
+		transaction.PostedOn = now.In(location).Format(time.DateOnly)
 	}
 	return transaction, postedSeconds, nil
 }

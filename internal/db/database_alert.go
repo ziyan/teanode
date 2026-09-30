@@ -14,7 +14,9 @@ import (
 // AlertOperation is what might be worth telling a person about unasked,
 // and what they were told.
 type AlertOperation interface {
-	// CreateAgentAlertCandidate adds a candidate, waiting.
+	// CreateAgentAlertCandidate adds a candidate, waiting. A budget
+	// candidate whose budget key the agent already has is not added, and
+	// answers nil with no error.
 	CreateAgentAlertCandidate(candidate *models.AgentAlertCandidate) (*models.AgentAlertCandidate, error)
 
 	// ListWaitingAgentAlertCandidates is the candidates neither told nor
@@ -139,8 +141,21 @@ func (self *transaction) CreateAgentAlertCandidate(candidate *models.AgentAlertC
 		CandidateKind: string(candidate.CandidateKind), AlertSignal: alertSignal, CandidateReason: candidate.CandidateReason,
 		BurstKey: candidate.BurstKey, BurstCount: candidate.BurstCount, BudgetKey: candidate.BudgetKey, CreatedAt: time.Now(),
 	}
-	if err := self.tx.Create(model).Error; err != nil {
-		return nil, err
+	if model.BudgetKey == "" {
+		if err := self.tx.Create(model).Error; err != nil {
+			return nil, err
+		}
+		return model.toModel(), nil
+	}
+	// A budget key is written once per agent, by a unique index: two syncs
+	// of one person that find the same crossing together both look before
+	// either writes, and the second one's write is dropped here.
+	created := self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(model)
+	if created.Error != nil {
+		return nil, created.Error
+	}
+	if created.RowsAffected == 0 {
+		return nil, nil
 	}
 	return model.toModel(), nil
 }

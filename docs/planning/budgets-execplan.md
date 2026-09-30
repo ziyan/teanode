@@ -335,7 +335,9 @@ and adds to `agent_finance_transaction`:
     categorized_by              text      person, spending_rule, provider_category_mapping, categorize_model
     categorization_confidence   numeric(5,4)   the decision model's confidence; empty otherwise
     is_transfer                 boolean not null default false
-    is_transfer_set_by_person   boolean not null default false
+    transfer_marked_by          text      '', person, spending_rule, provider_category_mapping, detection:
+                                          what marked it, so each clears only its own marks
+    categorize_attempted_at     timestamptz   the categorize model was asked and could not place it
 
 When a person links their first finance source, create the default
 spending categories: income, housing, utilities, groceries, dining,

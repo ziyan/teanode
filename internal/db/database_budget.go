@@ -65,9 +65,12 @@ type BudgetOperation interface {
 	// ApplySpendingRules applies the agent's spending rules to all of its
 	// finance transactions in one statement: each takes the first rule
 	// that matches by priority. A spending category the person chose is
-	// never touched, nor a transfer the person decided about; one a rule
-	// gave that no rule matches any more is cleared, to be categorized
-	// again. It answers how many finance transactions changed.
+	// never touched, nor a transfer the person decided about. A spending
+	// category a rule gave that no rule matches any more is cleared, to be
+	// categorized again, and so is a transfer a rule marked. A rule does
+	// not take over a transfer something else marked first, so deleting
+	// the rule leaves that one as it was. It answers how many finance
+	// transactions changed.
 	ApplySpendingRules(agentId string) (int, error)
 
 	// SetBudget keeps the monthly amount of a spending category from a
@@ -282,7 +285,7 @@ func (self *transaction) DeleteSpendingCategory(agentId, spendingCategoryId stri
 		// spending category that is gone, and the transaction would never
 		// be categorized again.
 		if err := tx.Exec(`UPDATE "agent_finance_transaction" SET "spending_category_id" = NULL, "categorized_by" = '',
-				"categorization_confidence" = NULL, "modified_at" = ?
+				"categorization_confidence" = NULL, "categorize_attempted_at" = NULL, "modified_at" = ?
 			WHERE "agent_id" = ? AND "spending_category_id" = ?`, time.Now(), agentId, spendingCategoryId).Error; err != nil {
 			return err
 		}
@@ -490,6 +493,8 @@ func (self *transaction) ApplySpendingRules(agentId string) (int, error) {
 			"categorized_by" = "decided"."categorized_by",
 			"categorization_confidence" = "decided"."categorization_confidence",
 			"is_transfer" = "decided"."is_transfer",
+			"transfer_marked_by" = "decided"."transfer_marked_by",
+			"categorize_attempted_at" = CASE WHEN "decided"."categorized_by" = 'spending_rule' THEN NULL ELSE "target"."categorize_attempted_at" END,
 			"modified_at" = @modified_at
 		FROM (
 			SELECT "candidate"."id",
@@ -504,9 +509,15 @@ func (self *transaction) ApplySpendingRules(agentId string) (int, error) {
 				CASE WHEN "candidate"."categorized_by" = 'person' THEN "candidate"."categorization_confidence"
 				     WHEN "matched"."spending_category_id" IS NOT NULL OR "candidate"."categorized_by" = 'spending_rule' THEN NULL
 				     ELSE "candidate"."categorization_confidence" END AS "categorization_confidence",
-				CASE WHEN "candidate"."is_transfer_set_by_person" THEN "candidate"."is_transfer"
+				CASE WHEN "candidate"."transfer_marked_by" = 'person' THEN "candidate"."is_transfer"
 				     WHEN "matched"."is_transfer" THEN true
-				     ELSE "candidate"."is_transfer" END AS "is_transfer"
+				     WHEN "candidate"."transfer_marked_by" = 'spending_rule' THEN false
+				     ELSE "candidate"."is_transfer" END AS "is_transfer",
+				CASE WHEN "candidate"."transfer_marked_by" = 'person' THEN "candidate"."transfer_marked_by"
+				     WHEN "matched"."is_transfer" AND NOT "candidate"."is_transfer" THEN 'spending_rule'
+				     WHEN "matched"."is_transfer" THEN "candidate"."transfer_marked_by"
+				     WHEN "candidate"."transfer_marked_by" = 'spending_rule' THEN ''
+				     ELSE "candidate"."transfer_marked_by" END AS "transfer_marked_by"
 			FROM "agent_finance_transaction" AS "candidate"
 			LEFT JOIN LATERAL (
 				SELECT "rule"."spending_category_id", "rule"."is_transfer"
@@ -523,8 +534,8 @@ func (self *transaction) ApplySpendingRules(agentId string) (int, error) {
 			WHERE "candidate"."agent_id" = @agent_id
 		) AS "decided"
 		WHERE "target"."id" = "decided"."id" AND "target"."agent_id" = @agent_id
-		  AND ("target"."spending_category_id", "target"."categorized_by", "target"."categorization_confidence", "target"."is_transfer")
-		      IS DISTINCT FROM ("decided"."spending_category_id", "decided"."categorized_by", "decided"."categorization_confidence", "decided"."is_transfer")`,
+		  AND ("target"."spending_category_id", "target"."categorized_by", "target"."categorization_confidence", "target"."is_transfer", "target"."transfer_marked_by")
+		      IS DISTINCT FROM ("decided"."spending_category_id", "decided"."categorized_by", "decided"."categorization_confidence", "decided"."is_transfer", "decided"."transfer_marked_by")`,
 		map[string]any{"agent_id": agentId, "modified_at": time.Now()})
 	if updated.Error != nil {
 		return 0, updated.Error

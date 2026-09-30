@@ -91,7 +91,7 @@ var categorizeModels = func(self *Agent, configuration *config.Configuration) (l
 // it.
 type categorizeItem struct {
 	financeTransactionId string
-	state                string
+	transactionLine      string
 }
 
 // runCategorize is the handler for a categorize job; its subject is the
@@ -132,7 +132,7 @@ func (self *Agent) runCategorize(ctx context.Context, run *Run) error {
 	for _, financeTransaction := range financeTransactions {
 		items = append(items, categorizeItem{
 			financeTransactionId: financeTransaction.ID,
-			state:                financeTransactionLine(financeTransaction, accountKindById[financeTransaction.FinanceAccountID]),
+			transactionLine:      financeTransactionLine(financeTransaction, accountKindById[financeTransaction.FinanceAccountID]),
 		})
 	}
 
@@ -142,18 +142,31 @@ func (self *Agent) runCategorize(ctx context.Context, run *Run) error {
 		// spending rule, or a model configured later.
 		return nil
 	}
+	isChatAsked := chatModelName != "" && self.canThink(configuration)
 	categorizedCount := 0
+	// What a model answered and did not place, which is not asked about
+	// again until it changes. A call that failed is not an answer: what it
+	// was about is asked again next time.
+	unplacedIds := []string{}
 	unsure := items
 	if decider != nil {
 		var decided []categorizeAnswer
-		decided, unsure = decideSpendingCategories(ctx, decider, items, choices)
-		written, err := self.writeCategorizations(ctx, run, decided)
+		var unanswered map[string]bool
+		decided, unsure, unanswered = decideSpendingCategories(ctx, decider, items, choices)
+		writtenIds, err := self.writeCategorizations(ctx, run, decided)
 		if err != nil {
 			return err
 		}
-		categorizedCount += written
+		categorizedCount += len(writtenIds)
+		if !isChatAsked {
+			for _, item := range unsure {
+				if !unanswered[item.financeTransactionId] {
+					unplacedIds = append(unplacedIds, item.financeTransactionId)
+				}
+			}
+		}
 	}
-	if len(unsure) > 0 && chatModelName != "" && self.canThink(configuration) {
+	if len(unsure) > 0 && isChatAsked {
 		for start := 0; start < len(unsure); start += categorizeBatchSize {
 			if ctx.Err() != nil {
 				break
@@ -164,17 +177,36 @@ func (self *Agent) runCategorize(ctx context.Context, run *Run) error {
 				log.Warningf("the categorize model could not categorize %d finance transaction(s) of agent %q: %s", len(batch), agentId, err)
 				continue
 			}
-			written, err := self.writeCategorizations(ctx, run, answers)
+			writtenIds, err := self.writeCategorizations(ctx, run, answers)
 			if err != nil {
 				return err
 			}
-			categorizedCount += written
+			categorizedCount += len(writtenIds)
+			isWritten := map[string]bool{}
+			for _, writtenId := range writtenIds {
+				isWritten[writtenId] = true
+			}
+			for _, item := range batch {
+				if !isWritten[item.financeTransactionId] {
+					unplacedIds = append(unplacedIds, item.financeTransactionId)
+				}
+			}
 		}
 	}
-	// Only when this run got somewhere: what the models could not place
-	// stays uncategorized and would be asked about again, forever, by a
-	// job that brought itself back.
-	if isMoreWaiting && categorizedCount > 0 {
+	markedCount := 0
+	if len(unplacedIds) > 0 {
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			markedCount, err = tx.MarkCategorizeAttempted(agentId, unplacedIds)
+			return err
+		}); err != nil {
+			return err
+		}
+	}
+	// Only when this run got somewhere, placing some or marking what it
+	// could not place so the next run reaches further back: a run that
+	// did neither would ask the same again, forever, by a job that brought
+	// itself back.
+	if isMoreWaiting && categorizedCount+markedCount > 0 {
 		return &Deferral{Until: time.Now().Add(categorizeAgain), Reason: "more finance transactions wait to be categorized"}
 	}
 	return nil
@@ -183,9 +215,9 @@ func (self *Agent) runCategorize(ctx context.Context, run *Run) error {
 // categorizeAnswer is a spending category for a finance transaction, and
 // the decision model's confidence when it gave it.
 type categorizeAnswer struct {
-	financeTransactionId string
-	spendingCategoryId   string
-	confidence           *float64
+	financeTransactionId     string
+	spendingCategoryId       string
+	categorizationConfidence *float64
 }
 
 // spendingCategoryChoices is the answers the categorize model chooses
@@ -240,21 +272,24 @@ func financeTransactionLine(financeTransaction *models.FinanceTransaction, accou
 // readableAmount is a stored amount with two places, "-42.17" for
 // "-42.1700": the places the columns keep are not a fact about the charge.
 func readableAmount(amount string) string {
-	value, err := finance.ParseAmount(amount)
+	amountValue, err := finance.ParseAmount(amount)
 	if err != nil {
 		return amount
 	}
-	return displayAmount(value)
+	return displayAmount(amountValue)
 }
 
 // decideSpendingCategories asks the decision model about each finance
 // transaction, a few at a time, and splits them into what it answered
 // sure enough and what goes to the chat model: an answer below the floor,
-// one off the list, and a call that failed.
-func decideSpendingCategories(ctx context.Context, decider llm.Decider, items []categorizeItem, choices map[string]string) ([]categorizeAnswer, []categorizeItem) {
+// one off the list, and a call that failed. The last are also named in
+// the map, since a call that failed is not the model failing to place
+// the finance transaction.
+func decideSpendingCategories(ctx context.Context, decider llm.Decider, items []categorizeItem, choices map[string]string) ([]categorizeAnswer, []categorizeItem, map[string]bool) {
 	type verdict struct {
-		answer   *categorizeAnswer
-		isUnsure bool
+		answer     *categorizeAnswer
+		isUnsure   bool
+		isAnswered bool
 	}
 	verdicts := make([]verdict, len(items))
 	gate := make(chan struct{}, decidersAtOnce)
@@ -269,7 +304,7 @@ func decideSpendingCategories(ctx context.Context, decider llm.Decider, items []
 			if ctx.Err() != nil {
 				return
 			}
-			answers, err := decider.Decide(ctx, item.state, map[string]decide.Question{
+			answers, err := decider.Decide(ctx, item.transactionLine, map[string]decide.Question{
 				categorizeQuestion: {
 					Instructions: "Which of the person's spending categories does this finance transaction belong to?",
 					Choices:      choices,
@@ -279,25 +314,30 @@ func decideSpendingCategories(ctx context.Context, decider llm.Decider, items []
 				log.Debugf("the decision model could not categorize finance transaction %q: %s", item.financeTransactionId, err)
 				return
 			}
+			verdicts[index].isAnswered = true
 			answer := answers[categorizeQuestion]
 			if _, isChoice := choices[answer.Choice]; !isChoice || answer.Confidence < categorizeFloor {
 				return
 			}
-			confidence := answer.Confidence
-			verdicts[index] = verdict{answer: &categorizeAnswer{financeTransactionId: item.financeTransactionId, spendingCategoryId: answer.Choice, confidence: &confidence}}
+			categorizationConfidence := answer.Confidence
+			verdicts[index] = verdict{answer: &categorizeAnswer{financeTransactionId: item.financeTransactionId, spendingCategoryId: answer.Choice, categorizationConfidence: &categorizationConfidence}, isAnswered: true}
 		}(index, item)
 	}
 	waiting.Wait()
 	var decided []categorizeAnswer
 	var unsure []categorizeItem
-	for index, each := range verdicts {
-		if each.isUnsure {
+	unanswered := map[string]bool{}
+	for index, itemVerdict := range verdicts {
+		if !itemVerdict.isAnswered {
+			unanswered[items[index].financeTransactionId] = true
+		}
+		if itemVerdict.isUnsure {
 			unsure = append(unsure, items[index])
 			continue
 		}
-		decided = append(decided, *each.answer)
+		decided = append(decided, *itemVerdict.answer)
 	}
-	return decided, unsure
+	return decided, unsure, unanswered
 }
 
 // categorizeChatAnswer is the structured answer the chat model is asked
@@ -323,7 +363,7 @@ func (self *Agent) askSpendingCategories(ctx context.Context, run *Run, modelNam
 	for index, item := range batch {
 		label := "t" + strconv.Itoa(index+1)
 		labelToTransactionId[label] = item.financeTransactionId
-		lines = append(lines, label+": "+item.state)
+		lines = append(lines, label+": "+item.transactionLine)
 	}
 	var choiceLines []string
 	for _, spendingCategory := range spendingCategories {
@@ -363,14 +403,15 @@ func (self *Agent) askSpendingCategories(ctx context.Context, run *Run, modelNam
 }
 
 // writeCategorizations writes the answers as the categorize model's, and
-// says how many were written. One the person or a spending rule got to
-// first is left as it is.
-func (self *Agent) writeCategorizations(ctx context.Context, run *Run, answers []categorizeAnswer) (int, error) {
+// says which finance transactions were written. One the person or a
+// spending rule got to first is left as it is.
+func (self *Agent) writeCategorizations(ctx context.Context, run *Run, answers []categorizeAnswer) ([]string, error) {
 	if len(answers) == 0 {
-		return 0, nil
+		return nil, nil
 	}
-	writtenCount := 0
+	var writtenIds []string
 	err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		writtenIds = nil
 		for _, answer := range answers {
 			current, err := tx.GetFinanceTransaction(run.Agent.ID, answer.financeTransactionId)
 			if err != nil {
@@ -379,20 +420,20 @@ func (self *Agent) writeCategorizations(ctx context.Context, run *Run, answers [
 			if current == nil || current.SpendingCategoryID != "" || current.IsTransfer {
 				continue
 			}
-			var confidence *string
-			if answer.confidence != nil {
-				text := new(big.Rat).SetFloat64(*answer.confidence).FloatString(4)
-				confidence = &text
+			var categorizationConfidence *string
+			if answer.categorizationConfidence != nil {
+				confidenceText := new(big.Rat).SetFloat64(*answer.categorizationConfidence).FloatString(4)
+				categorizationConfidence = &confidenceText
 			}
-			isApplied, err := tx.SetTransactionCategorization(run.Agent.ID, answer.financeTransactionId, answer.spendingCategoryId, models.CategorizedByCategorizeModel, confidence)
+			isApplied, err := tx.SetTransactionCategorization(run.Agent.ID, answer.financeTransactionId, answer.spendingCategoryId, models.CategorizedByCategorizeModel, categorizationConfidence)
 			if err != nil {
 				return err
 			}
 			if isApplied {
-				writtenCount++
+				writtenIds = append(writtenIds, answer.financeTransactionId)
 			}
 		}
 		return nil
 	})
-	return writtenCount, err
+	return writtenIds, err
 }

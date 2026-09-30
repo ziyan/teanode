@@ -305,6 +305,40 @@ func TestSimpleFINRefusedCredential(t *testing.T) {
 	}
 }
 
+// A posted transaction keeps the UTC day the bridge stood for; a pending
+// one, which has only a moment, takes that moment's day in the person's
+// time zone. A balance is not signed the way Plaid's is.
+func TestSimpleFINDaysAndBalanceSign(t *testing.T) {
+	// Half past three in the morning UTC on the 20th is still the 19th
+	// eight hours west of Greenwich.
+	earlyMorning := time.Date(2026, 9, 20, 3, 30, 0, 0, time.UTC).Unix()
+	postedMidnight := time.Date(2026, 9, 18, 0, 0, 0, 0, time.UTC).Unix()
+	testServer := newSimpleFINTestServer(t, func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = fmt.Fprint(writer, simpleFinAccountSetFor([]string{
+			fmt.Sprintf(`{"id":"transaction-pending","posted":0,"amount":"-3.50","description":"COFFEE EXAMPLE","pending":true,"transacted_at":%d}`, earlyMorning),
+			fmt.Sprintf(`{"id":"transaction-posted","posted":%d,"amount":"-8.00","description":"BAKERY EXAMPLE","transacted_at":%d}`, postedMidnight, earlyMorning),
+		}, ""))
+	})
+	simpleFin := newTestSimpleFin(testServer).InLocation(time.FixedZone("eight hours west", -8*60*60))
+	result, err := simpleFin.Sync(context.Background(), testServer.credential(), strconv.FormatInt(simpleFinTestNow.Unix(), 10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]Transaction{}
+	for _, transaction := range result.Added {
+		byID[transaction.ProviderTransactionID] = transaction
+	}
+	if pending := byID["transaction-pending"]; pending.PostedOn != "2026-09-19" {
+		t.Errorf("a pending transaction's day is its moment's in the person's zone: %q", pending.PostedOn)
+	}
+	if posted := byID["transaction-posted"]; posted.PostedOn != "2026-09-18" {
+		t.Errorf("a posted transaction keeps the UTC day of its posted time: %q", posted.PostedOn)
+	}
+	if len(result.Accounts) != 1 || result.Accounts[0].IsOwedBalancePositive {
+		t.Errorf("institutions behind SimpleFIN report what is owed as negative: %+v", result.Accounts)
+	}
+}
+
 func TestSimpleFINRefusesUnusableCredentials(t *testing.T) {
 	simpleFin := NewSimpleFIN()
 	for _, credential := range []string{

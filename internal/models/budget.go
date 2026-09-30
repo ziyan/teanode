@@ -224,8 +224,14 @@ type SpendingCategoryBudgetStatus struct {
 	BudgetPace      BudgetPace `json:"budgetPace"`
 
 	// UnconvertedSpending is spending left out because its currency has no
-	// exchange rate into the budget's.
-	UnconvertedSpending []*CurrencyAmount `json:"unconvertedSpending"`
+	// exchange rate into the budget's, and
+	// UnconvertedSpendingBySameDayLastMonth the same for last month's
+	// spending by the same day. UnconvertedFixedChargesDue is the regular
+	// charges still expected this month that were left out of
+	// FixedChargesDueAmount, and so of the projection, for the same reason.
+	UnconvertedSpending                   []*CurrencyAmount `json:"unconvertedSpending"`
+	UnconvertedSpendingBySameDayLastMonth []*CurrencyAmount `json:"unconvertedSpendingBySameDayLastMonth"`
+	UnconvertedFixedChargesDue            []*CurrencyAmount `json:"unconvertedFixedChargesDue"`
 }
 
 // CurrencyAmount is an amount in one currency, a decimal.

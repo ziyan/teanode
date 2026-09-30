@@ -44,26 +44,49 @@ var DefaultSpendingCategoryNames = []string{
 	SpendingCategoryOther,
 }
 
-// Plaid's personal finance categories that are money moving between a
-// person's own accounts, or to and from a lender, rather than spending or
-// income. Counting a card payment as spending would count every purchase
-// on the card twice.
+// Plaid's personal finance categories whose every detailed category is
+// money moving between a person's own accounts, rather than spending or
+// income, apart from the few singled out below. Money in from a loan is
+// here too: it is borrowed, not earned.
 var plaidTransferPrimaries = map[string]bool{
 	"TRANSFER_IN":        true,
 	"TRANSFER_OUT":       true,
-	"LOAN_PAYMENTS":      true,
 	"LOAN_DISBURSEMENTS": true,
 }
 
+// Plaid's detailed categories that are transfers although the rest of
+// their primary is not. A card payment is the person paying their own
+// card: counting it as spending would count every purchase on the card
+// twice. The other loan payments are not here, since only a slice of each
+// is principal moving to the person's own liability; the interest is
+// money gone, and the payment is spending unless the person says
+// otherwise.
+var plaidTransferDetailed = map[string]bool{
+	"LOAN_PAYMENTS_CREDIT_CARD_PAYMENT": true,
+}
+
+// Plaid's detailed categories of a transfer primary that are not
+// transfers and that nothing maps: a deposit of cash or a check may as
+// well be a paycheck as money from the person's own account elsewhere, so
+// it is left to a spending rule or the categorize model.
+var plaidUnmappedDetailed = map[string]bool{
+	"TRANSFER_IN_DEPOSIT": true,
+}
+
 // Plaid's detailed categories that answer differently from the rest of
-// their primary.
+// their primary. Cash taken out at a machine leaves the person's accounts
+// for good, as far as a budget can see, so it is spending in other rather
+// than a transfer.
 var plaidSpendingCategoryByDetailed = map[string]string{
 	"FOOD_AND_DRINK_GROCERIES":            SpendingCategoryGroceries,
 	"RENT_AND_UTILITIES_RENT":             SpendingCategoryHousing,
 	"GOVERNMENT_AND_NON_PROFIT_DONATIONS": SpendingCategoryGiftsAndDonations,
+	"LOAN_PAYMENTS_MORTGAGE_PAYMENT":      SpendingCategoryHousing,
+	"TRANSFER_OUT_WITHDRAWAL":             SpendingCategoryOther,
 }
 
 var plaidSpendingCategoryByPrimary = map[string]string{
+	"LOAN_PAYMENTS":       SpendingCategoryOther,
 	"INCOME":              SpendingCategoryIncome,
 	"BANK_FEES":           SpendingCategoryFees,
 	"ENTERTAINMENT":       SpendingCategoryEntertainment,
@@ -158,11 +181,14 @@ func MapProviderCategory(primary, detailed string) (spendingCategoryName string,
 		}
 	}
 
-	if plaidTransferPrimaries[primary] {
-		return "", true
-	}
 	if spendingCategory, isMapped := plaidSpendingCategoryByDetailed[detailed]; isMapped {
 		return spendingCategory, false
+	}
+	if plaidUnmappedDetailed[detailed] {
+		return "", false
+	}
+	if plaidTransferDetailed[detailed] || plaidTransferPrimaries[primary] {
+		return "", true
 	}
 	return plaidSpendingCategoryByPrimary[primary], false
 }

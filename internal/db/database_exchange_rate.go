@@ -25,20 +25,31 @@ type ExchangeRateOperation interface {
 	LatestExchangeRateDay(rateSource models.RateSource) (string, error)
 
 	// EuroRatesOn is, for each currency asked, what one euro bought on the
-	// latest day on or before the day given that the ECB published it. The
-	// euro is one, dated the day given. A currency with no rate is absent.
+	// latest day on or before the day given that the ECB published it, no
+	// more than ExchangeRateStaleDays before it. The euro is one, dated the
+	// day given. A currency with no rate that recent is absent.
 	EuroRatesOn(currencyCodes []string, on string) (map[string]*models.ExchangeRate, error)
 
 	// ExchangeRate is what one unit of one currency bought in the other on
 	// a day, from the latest published rates on or before it, with the day
 	// those are from (the older of the two currencies'). A currency with
-	// no rate is a *finance.ErrNoExchangeRate naming it.
+	// no rate within ExchangeRateStaleDays of the day is a
+	// *finance.ErrNoExchangeRate naming it.
 	ExchangeRate(fromCurrencyCode, toCurrencyCode, on string) (*models.CurrencyPairRate, error)
 }
 
 // exchangeRateBatchSize is how many rates go in one statement. The ECB's
 // full history is about two hundred thousand rows.
 const exchangeRateBatchSize = 1000
+
+// ExchangeRateStaleDays is how many days before the day asked the latest
+// rate may be and still be used. The longest the ECB goes without
+// publishing is the TARGET closing over Christmas and a weekend, four or
+// five days. A rate older than this means the fetch has been failing or
+// the ECB stopped publishing the currency, and an amount converted with
+// it would be wrong without anybody noticing, so it is reported
+// unconverted instead.
+const ExchangeRateStaleDays = 7
 
 type exchangeRateModel struct {
 	RateOn       string    `gorm:"column:rate_on;primaryKey"`
@@ -55,7 +66,7 @@ func (self *transaction) UpsertExchangeRates(exchangeRates []models.ExchangeRate
 		return 0, nil
 	}
 	now := time.Now()
-	rows := make([]exchangeRateModel, 0, len(exchangeRates))
+	exchangeRateRows := make([]exchangeRateModel, 0, len(exchangeRates))
 	for _, exchangeRate := range exchangeRates {
 		rateOn, err := parseDay(exchangeRate.RateOn)
 		if err != nil {
@@ -78,18 +89,18 @@ func (self *transaction) UpsertExchangeRates(exchangeRates []models.ExchangeRate
 		if err != nil {
 			return 0, fmt.Errorf("%w: the euro rate %q of %s is not a positive decimal", ErrInvalidArguments, exchangeRate.EuroRate, currencyCode)
 		}
-		rows = append(rows, exchangeRateModel{
+		exchangeRateRows = append(exchangeRateRows, exchangeRateModel{
 			RateOn: rateOn, CurrencyCode: currencyCode, EuroRate: euroRate, RateSource: string(rateSource), CreatedAt: now,
 		})
 	}
-	result := self.tx.Clauses(clause.OnConflict{
+	upserted := self.tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "rate_on"}, {Name: "currency_code"}, {Name: "rate_source"}},
 		DoUpdates: clause.AssignmentColumns([]string{"euro_rate"}),
-	}).CreateInBatches(rows, exchangeRateBatchSize)
-	if result.Error != nil {
-		return 0, result.Error
+	}).CreateInBatches(exchangeRateRows, exchangeRateBatchSize)
+	if upserted.Error != nil {
+		return 0, upserted.Error
 	}
-	return len(rows), nil
+	return len(exchangeRateRows), nil
 }
 
 func (self *transaction) LatestExchangeRateDay(rateSource models.RateSource) (string, error) {
@@ -134,7 +145,8 @@ func (self *transaction) EuroRatesOn(currencyCodes []string, on string) (map[str
 			"rate_source", "created_at"
 		FROM "exchange_rate"
 		WHERE "currency_code" = ANY(?::text[]) AND "rate_source" = ? AND "rate_on" <= ?::date
-		ORDER BY "currency_code", "rate_on" DESC`, pq.Array(asked), string(models.RateSourceECB), on).
+		  AND "rate_on" >= ?::date - CAST(? AS integer)
+		ORDER BY "currency_code", "rate_on" DESC`, pq.Array(asked), string(models.RateSourceECB), on, on, ExchangeRateStaleDays).
 		Scan(&found).Error; err != nil {
 		return nil, err
 	}

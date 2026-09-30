@@ -60,6 +60,19 @@ const (
 	plaidErrorCodeSyncMutation      = "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION"
 )
 
+// plaidCredentialRefusedCodes are Plaid's codes for a credential that no
+// sign-in can mend: the link was removed or never existed, the credential
+// is not one Plaid issued to this client, or the person withdrew their
+// consent at Plaid or at the institution. Asking again fails the same way
+// every time.
+var plaidCredentialRefusedCodes = map[string]bool{
+	"ITEM_NOT_FOUND":          true,
+	"INVALID_ACCESS_TOKEN":    true,
+	"ACCESS_NOT_GRANTED":      true,
+	"USER_PERMISSION_REVOKED": true,
+	"USER_ACCOUNT_REVOKED":    true,
+}
+
 // Plaid talks to Plaid's API for one operator's developer account.
 //
 // It is plain net/http with a struct per request and response rather than
@@ -252,7 +265,7 @@ type plaidAccount struct {
 // them up.
 func (self *Plaid) Sync(ctx context.Context, credential string, cursor string) (*SyncResult, error) {
 	for attempt := 1; ; attempt++ {
-		result, err := self.syncFrom(ctx, credential, cursor)
+		syncResult, err := self.syncFrom(ctx, credential, cursor)
 		var plaidError *PlaidError
 		if errors.As(err, &plaidError) && plaidError.ErrorCode == plaidErrorCodeSyncMutation && attempt < plaidSyncAttemptLimit {
 			// The pages read so far may describe a state that no longer
@@ -260,12 +273,12 @@ func (self *Plaid) Sync(ctx context.Context, credential string, cursor string) (
 			// again from the cursor the sync began with.
 			continue
 		}
-		return result, err
+		return syncResult, err
 	}
 }
 
 func (self *Plaid) syncFrom(ctx context.Context, credential string, startingCursor string) (*SyncResult, error) {
-	result := &SyncResult{NextCursor: startingCursor}
+	syncResult := &SyncResult{NextCursor: startingCursor}
 	transactionIndexByID := map[string]int{}
 	accountIndexByID := map[string]int{}
 	pageCursor := startingCursor
@@ -296,10 +309,10 @@ func (self *Plaid) syncFrom(ctx context.Context, credential string, startingCurs
 			// Every page carries the accounts; the last page's balances
 			// are the newest.
 			if index, isSeen := accountIndexByID[account.ProviderAccountID]; isSeen {
-				result.Accounts[index] = account
+				syncResult.Accounts[index] = account
 			} else {
-				accountIndexByID[account.ProviderAccountID] = len(result.Accounts)
-				result.Accounts = append(result.Accounts, account)
+				accountIndexByID[account.ProviderAccountID] = len(syncResult.Accounts)
+				syncResult.Accounts = append(syncResult.Accounts, account)
 			}
 		}
 		for _, raw := range append(page.Added, page.Modified...) {
@@ -310,20 +323,20 @@ func (self *Plaid) syncFrom(ctx context.Context, credential string, startingCurs
 			// A transaction modified on a later page than it was added on
 			// is kept once, as it was last described.
 			if index, isSeen := transactionIndexByID[transaction.ProviderTransactionID]; isSeen {
-				result.Added[index] = transaction
+				syncResult.Added[index] = transaction
 			} else {
-				transactionIndexByID[transaction.ProviderTransactionID] = len(result.Added)
-				result.Added = append(result.Added, transaction)
+				transactionIndexByID[transaction.ProviderTransactionID] = len(syncResult.Added)
+				syncResult.Added = append(syncResult.Added, transaction)
 			}
 		}
 		for _, removed := range page.Removed {
 			if removed.TransactionID != "" {
-				result.RemovedProviderTransactionIDs = append(result.RemovedProviderTransactionIDs, removed.TransactionID)
+				syncResult.RemovedProviderTransactionIDs = append(syncResult.RemovedProviderTransactionIDs, removed.TransactionID)
 			}
 		}
 
 		if page.NextCursor != "" {
-			result.NextCursor = page.NextCursor
+			syncResult.NextCursor = page.NextCursor
 		}
 		if !page.HasMore {
 			break
@@ -334,21 +347,21 @@ func (self *Plaid) syncFrom(ctx context.Context, credential string, startingCurs
 		pageCursor = page.NextCursor
 	}
 
-	fillTransactionCurrencies(result)
-	return result, nil
+	fillTransactionCurrencies(syncResult)
+	return syncResult, nil
 }
 
 // fillTransactionCurrencies gives a transaction without a currency its
 // account's. Plaid names one on nearly every transaction; the rare one
 // without would otherwise be an amount in nothing.
-func fillTransactionCurrencies(result *SyncResult) {
-	currencyByAccountID := make(map[string]string, len(result.Accounts))
-	for _, account := range result.Accounts {
+func fillTransactionCurrencies(syncResult *SyncResult) {
+	currencyByAccountID := make(map[string]string, len(syncResult.Accounts))
+	for _, account := range syncResult.Accounts {
 		currencyByAccountID[account.ProviderAccountID] = account.CurrencyCode
 	}
-	for index := range result.Added {
-		if result.Added[index].CurrencyCode == "" {
-			result.Added[index].CurrencyCode = currencyByAccountID[result.Added[index].ProviderAccountID]
+	for index := range syncResult.Added {
+		if syncResult.Added[index].CurrencyCode == "" {
+			syncResult.Added[index].CurrencyCode = currencyByAccountID[syncResult.Added[index].ProviderAccountID]
 		}
 	}
 }
@@ -420,7 +433,9 @@ func plaidAccountFrom(raw json.RawMessage) (Account, error) {
 		CurrencyCode:      firstNonEmpty(decoded.Balances.CurrencyCode, decoded.Balances.UnofficialCurrencyCode),
 		CurrentBalance:    currentBalance,
 		AvailableBalance:  availableBalance,
-		ProviderMetadata:  raw,
+		// Plaid reports a card's or a loan's balance as the amount owed.
+		IsOwedBalancePositive: true,
+		ProviderMetadata:      raw,
 	}
 	// Plaid names the moment only for some institutions; otherwise the
 	// balance is as of this sync, which is when Plaid last refreshed it
@@ -473,18 +488,22 @@ func (self *PlaidError) Error() string {
 	return text
 }
 
-// Unwrap makes a refused sign-in match ErrSignInRequired, so the reader
-// can ask errors.Is without knowing Plaid's codes.
+// Unwrap makes a refused sign-in match ErrSignInRequired, and a refused
+// credential ErrCredentialRefused, so the reader can ask errors.Is without
+// knowing Plaid's codes.
 func (self *PlaidError) Unwrap() error {
 	if self.ErrorCode == plaidErrorCodeItemLoginRequired {
 		return ErrSignInRequired
+	}
+	if plaidCredentialRefusedCodes[self.ErrorCode] {
+		return ErrCredentialRefused
 	}
 	return nil
 }
 
 // post sends one call with the operator's keys and decodes the answer into
-// result, which may be nil for a call whose answer says nothing useful.
-func (self *Plaid) post(ctx context.Context, path string, body map[string]any, result any) error {
+// answered, which may be nil for a call whose answer says nothing useful.
+func (self *Plaid) post(ctx context.Context, path string, body map[string]any, answered any) error {
 	sent := make(map[string]any, len(body)+2)
 	for key, value := range body {
 		sent[key] = value
@@ -535,10 +554,10 @@ func (self *Plaid) post(ctx context.Context, path string, body map[string]any, r
 			RequestID:    refused.RequestID,
 		}
 	}
-	if result == nil {
+	if answered == nil {
 		return nil
 	}
-	if err := json.Unmarshal(answer, result); err != nil {
+	if err := json.Unmarshal(answer, answered); err != nil {
 		return fmt.Errorf("finance: Plaid's answer to %s was not readable: %w", path, err)
 	}
 	return nil

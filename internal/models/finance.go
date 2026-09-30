@@ -17,12 +17,15 @@ const FinanceSourceCron = "0 */6 * * *"
 const FinanceCredentialSecretKey = "credential"
 
 // The keys of a finance source's cursor, which only its sync reads and
-// writes: the provider's own cursor, and whether the institution is
-// waiting for the person to sign in again, while which the sync does not
-// call the provider.
+// writes: the provider's own cursor; whether the institution is waiting
+// for the person to sign in again, while which the sync does not call the
+// provider; and whether the provider refused the credential itself, after
+// which the sync never calls the provider again, since only deleting the
+// finance source and linking the institution again mends it.
 const (
-	FinanceCursorProviderCursor   = "providerCursor"
-	FinanceCursorIsSignInRequired = "isSignInRequired"
+	FinanceCursorProviderCursor      = "providerCursor"
+	FinanceCursorIsSignInRequired    = "isSignInRequired"
+	FinanceCursorIsCredentialRefused = "isCredentialRefused"
 )
 
 // FinanceSourceSettings is what a finance source's Specification.Settings
@@ -51,6 +54,13 @@ func (self *AgentKnowledgeSource) FinanceSourceSettings() (FinanceSourceSettings
 func (self *AgentKnowledgeSource) IsFinanceSignInRequired() bool {
 	isRequired, _ := self.Cursor[FinanceCursorIsSignInRequired].(bool)
 	return isRequired
+}
+
+// IsFinanceCredentialRefused says the provider refused the finance
+// source's credential, so it is not synced again.
+func (self *AgentKnowledgeSource) IsFinanceCredentialRefused() bool {
+	isRefused, _ := self.Cursor[FinanceCursorIsCredentialRefused].(bool)
+	return isRefused
 }
 
 // FinanceAccountKind is what sort of account a finance account is, in the
@@ -154,13 +164,38 @@ type FinanceTransaction struct {
 	CategorizationConfidence string        `json:"categorizationConfidence,omitempty" graphapi:"nullable"`
 
 	// IsTransfer says it moved money between the person's own accounts,
-	// and so is neither spending nor income. IsTransferSetByPerson says
-	// the person decided that, either way, and nothing else may change it.
-	IsTransfer            bool `json:"isTransfer"`
-	IsTransferSetByPerson bool `json:"isTransferSetByPerson"`
+	// and so is neither spending nor income. TransferMarkedBy says what
+	// decided that: the person, either way, after which nothing else may
+	// change it; or what marked it a transfer, which clears its own mark
+	// when it no longer holds. Empty when nothing did.
+	IsTransfer       bool             `json:"isTransfer"`
+	TransferMarkedBy TransferMarkedBy `json:"transferMarkedBy,omitempty" graphapi:"nullable"`
 
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
+}
+
+// TransferMarkedBy is what decided whether a finance transaction is a
+// transfer.
+type TransferMarkedBy string
+
+// What may mark a transfer: the person (either way), a spending rule, the
+// provider category mapping, or transfer detection pairing money out of
+// one account with the same amount into another.
+const (
+	TransferMarkedByPerson                  TransferMarkedBy = "person"
+	TransferMarkedBySpendingRule            TransferMarkedBy = "spending_rule"
+	TransferMarkedByProviderCategoryMapping TransferMarkedBy = "provider_category_mapping"
+	TransferMarkedByDetection               TransferMarkedBy = "detection"
+)
+
+// IsValid says it is one of the four.
+func (self TransferMarkedBy) IsValid() bool {
+	switch self {
+	case TransferMarkedByPerson, TransferMarkedBySpendingRule, TransferMarkedByProviderCategoryMapping, TransferMarkedByDetection:
+		return true
+	}
+	return false
 }
 
 // FinanceSpendingSummaryGroupBy is what a spending summary groups by.

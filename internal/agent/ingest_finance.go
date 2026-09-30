@@ -39,16 +39,17 @@ const (
 )
 
 // newFinanceProvider builds the provider a finance source syncs through,
-// from the operator's current settings. A variable so a test can hand in
-// a provider that answers to order.
-var newFinanceProvider = func(configuration *config.Configuration, providerKind string) (finance.Provider, error) {
+// from the operator's current settings, reading days that are moments
+// rather than dates in the person's time zone (location, nil for UTC). A
+// variable so a test can hand in a provider that answers to order.
+var newFinanceProvider = func(configuration *config.Configuration, providerKind string, location *time.Location) (finance.Provider, error) {
 	settings := &configuration.Agent.Finance
 	switch providerKind {
 	case config.AgentFinanceProviderPlaid:
 		plaid := &settings.Plaid
 		return finance.NewPlaid(plaid.Environment, plaid.ClientID, plaid.Secret, plaid.ResolvedCountryCodes(), plaid.ResolvedProducts())
 	case config.AgentFinanceProviderSimpleFIN:
-		return finance.NewSimpleFIN(), nil
+		return finance.NewSimpleFIN().InLocation(location), nil
 	}
 	return nil, fmt.Errorf("there is no provider called %q", providerKind)
 }
@@ -88,12 +89,18 @@ func (self *Agent) runFinanceSync(ctx context.Context, run *Run, source *models.
 		}
 		return mark(failure)
 	}
+	if source.IsFinanceCredentialRefused() {
+		// The same credential is refused every time, and a provider may
+		// count each refused call; only a new link mends it, and a new
+		// link is a new finance source.
+		return mark(financeCredentialRefusedError)
+	}
 
 	credential, err := self.financeCredential(ctx, source)
 	if err != nil {
 		return mark(err.Error())
 	}
-	provider, err := newFinanceProvider(configuration, providerKind)
+	provider, err := newFinanceProvider(configuration, providerKind, Location(run.Owner))
 	if err != nil {
 		return mark(err.Error())
 	}
@@ -104,12 +111,13 @@ func (self *Agent) runFinanceSync(ctx context.Context, run *Run, source *models.
 		return err
 	}
 	providerCursor, _ := cursor[models.FinanceCursorProviderCursor].(string)
-	result, err := provider.Sync(ctx, credential, providerCursor)
+	syncResult, err := provider.Sync(ctx, credential, providerCursor)
 	switch {
 	case errors.Is(err, finance.ErrSignInRequired):
 		cursor[models.FinanceCursorIsSignInRequired] = true
 		return mark(financeSignInRequiredError)
 	case errors.Is(err, finance.ErrCredentialRefused):
+		cursor[models.FinanceCursorIsCredentialRefused] = true
 		return mark(financeCredentialRefusedError)
 	case err != nil:
 		return mark(err.Error())
@@ -119,7 +127,7 @@ func (self *Agent) runFinanceSync(ctx context.Context, run *Run, source *models.
 	// range, an institution that did not answer this time) are logged and
 	// not shown as the source's error: the sync worked, and a row that
 	// reads as failed after every sync teaches the person to ignore it.
-	for _, warning := range result.ProviderWarnings {
+	for _, warning := range syncResult.ProviderWarnings {
 		log.Infof("finance source %q: the provider warned: %s", source.ID, warning)
 	}
 
@@ -132,7 +140,7 @@ func (self *Agent) runFinanceSync(ctx context.Context, run *Run, source *models.
 		if err := lockIngestSource(tx, source); err != nil {
 			return err
 		}
-		applied, err = tx.ApplyFinanceSync(source.AgentID, source.ID, result, syncedOn)
+		applied, err = tx.ApplyFinanceSync(source.AgentID, source.ID, syncResult, syncedOn)
 		return err
 	}); err != nil {
 		if errors.Is(err, errIngestSourceChanged) {
@@ -140,7 +148,7 @@ func (self *Agent) runFinanceSync(ctx context.Context, run *Run, source *models.
 		}
 		return mark(err.Error())
 	}
-	cursor[models.FinanceCursorProviderCursor] = result.NextCursor
+	cursor[models.FinanceCursorProviderCursor] = syncResult.NextCursor
 	delete(cursor, models.FinanceCursorIsSignInRequired)
 	log.Debugf("finance source %q synced: %d finance transaction(s) written, %d removed, %d pending replaced",
 		source.ID, applied.WrittenTransactionCount, applied.RemovedTransactionCount, applied.ReplacedPendingTransactionCount)
@@ -243,12 +251,13 @@ func applyProviderCategoryMapping(tx db.Transaction, agentId string, financeTran
 		if err != nil {
 			return err
 		}
-		if financeTransaction == nil || financeTransaction.SpendingCategoryID != "" || financeTransaction.IsTransfer || financeTransaction.IsTransferSetByPerson {
+		if financeTransaction == nil || financeTransaction.SpendingCategoryID != "" || financeTransaction.IsTransfer ||
+			financeTransaction.TransferMarkedBy == models.TransferMarkedByPerson || financeTransaction.CategorizedBy == models.CategorizedByPerson {
 			continue
 		}
 		spendingCategoryName, isTransfer := finance.MapProviderCategory(financeTransaction.ProviderCategoryPrimary, financeTransaction.ProviderCategoryDetailed)
 		if isTransfer {
-			if _, err := tx.MarkFinanceTransactionTransfer(agentId, financeTransaction.ID, true, false); err != nil {
+			if _, err := tx.MarkFinanceTransactionTransfer(agentId, financeTransaction.ID, true, models.TransferMarkedByProviderCategoryMapping); err != nil {
 				return err
 			}
 			continue
@@ -318,7 +327,7 @@ func (self *Agent) removeFinanceSourceAtProvider(ctx context.Context, tx db.Tran
 		log.Warningf("cannot open the credential of finance source %q to end it at its provider: %s", source.ID, err)
 		return
 	}
-	provider, err := newFinanceProvider(self.settings.Configuration(), source.Specification.Type)
+	provider, err := newFinanceProvider(self.settings.Configuration(), source.Specification.Type, nil)
 	if err != nil {
 		log.Warningf("cannot end finance source %q at its provider: %s", source.ID, err)
 		return

@@ -45,7 +45,8 @@ CREATE TABLE "agent_asset_valuation" (
     "valued_on"        date                     NOT NULL,
 
     -- The size of the thing; is_liability on the asset gives the sign.
-    -- Negative only for an account that is overdrawn.
+    -- Negative only for an account that is overdrawn, or for a liability
+    -- in the person's favour, such as a card holding a refund.
     "value"            numeric(19,4)            NOT NULL,
     "currency_code"    text                     NOT NULL,
     "valuation_source" character varying(20)    NOT NULL,

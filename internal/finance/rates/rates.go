@@ -7,7 +7,6 @@ package rates
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -35,38 +34,54 @@ const (
 	// history again, so no gap is left between the two.
 	ninetyDayFileDays = 90
 
-	// fetchLockKey is the advisory lock one fetch holds for its
-	// transaction, so two servers sharing a database do not fetch the same
-	// file together. An arbitrary constant; "exchange" in ASCII.
+	// fetchLockKey is the advisory lock storing a fetch holds for its
+	// transaction, so two servers sharing a database that fetched the same
+	// file together do not both write it. An arbitrary constant;
+	// "exchange" in ASCII.
 	fetchLockKey int64 = 0x65786368616e6765
 
-	// fetchLockWait is how long a caller whose fetch another server is
-	// running waits for it before answering from what is stored.
-	fetchLockWait = 20 * time.Second
+	// fetchTimeout bounds the fetch of the latest day's file or the
+	// ninety-day one. Every caller is a request or a budget computation
+	// waiting on the answer, so an ECB that does not answer costs the one
+	// caller that fetches this long, and the callers behind it no longer.
+	fetchTimeout = 20 * time.Second
 
-	// fetchLockPoll is how often that caller looks again.
-	fetchLockPoll = 500 * time.Millisecond
+	// historyFetchTimeout bounds the fetch of the whole history, a few
+	// megabytes, which happens once for an empty store or one left months
+	// behind.
+	historyFetchTimeout = time.Minute
 )
-
-// errFetchElsewhere is another transaction holding the fetch lock.
-var errFetchElsewhere = errors.New("rates: another server is fetching the exchange rates")
 
 // Fetcher decides when the stored rates are too old and fetches newer
 // ones. One per process: it remembers when a fetch brought nothing new.
+//
+// The fetch itself holds neither the mutex nor a database transaction:
+// the mutex is held to decide whether to fetch and to record what came of
+// it, and the rates are stored in a transaction of their own once they
+// have arrived.
 type Fetcher struct {
 	database db.Database
 	source   *finance.ExchangeRateSource
 	now      func() time.Time
 
-	// mutex serializes this process's fetches, and guards
-	// fruitlessFetchAt.
+	// fetchTimeout and historyFetchTimeout bound one fetch; a test
+	// shortens them.
+	fetchTimeout        time.Duration
+	historyFetchTimeout time.Duration
+
+	// mutex guards fruitlessFetchAt and fetchInFlight, which is closed
+	// when the fetch this process is running ends, and nil when none is.
 	mutex            sync.Mutex
 	fruitlessFetchAt time.Time
+	fetchInFlight    chan struct{}
 }
 
 // New builds a fetcher over a database and an ECB source.
 func New(database db.Database, source *finance.ExchangeRateSource) *Fetcher {
-	return &Fetcher{database: database, source: source, now: time.Now}
+	return &Fetcher{
+		database: database, source: source, now: time.Now,
+		fetchTimeout: fetchTimeout, historyFetchTimeout: historyFetchTimeout,
+	}
 }
 
 var (
@@ -102,9 +117,13 @@ func LatestBusinessDay(day time.Time) time.Time {
 // EnsureRates fetches the ECB's rates when the newest stored day is older
 // than the latest business day on or before the day given (today, for a
 // day in the future). It answers nil without fetching when the store is
-// current, when another server is fetching, or within a quarter of an
-// hour of a fetch that brought nothing new; a failed fetch is an error,
-// and the caller may still answer from what is stored.
+// current, or within a quarter of an hour of a fetch that brought nothing
+// new or failed. While this process is already fetching, it waits for that
+// fetch at most as long as a fetch may take, and answers nil. A failed
+// fetch is an error, and the caller may still answer from what is stored.
+//
+// Call it outside any transaction of the caller's: it waits on the
+// network.
 func (self *Fetcher) EnsureRates(ctx context.Context, on string) error {
 	day, err := time.Parse(time.DateOnly, on)
 	if err != nil {
@@ -126,78 +145,97 @@ func (self *Fetcher) EnsureRates(ctx context.Context, on string) error {
 	}
 
 	self.mutex.Lock()
-	defer self.mutex.Unlock()
 	if !self.fruitlessFetchAt.IsZero() && now.Sub(self.fruitlessFetchAt) < fruitlessFetchPause {
+		self.mutex.Unlock()
 		return nil
 	}
-	waitUntil := now.Add(fetchLockWait)
-	for {
-		err = self.fetchUnderLock(ctx, needed, today)
-		if err != nil && !errors.Is(err, errFetchElsewhere) && ctx.Err() == nil {
-			// The ECB unreachable is paused on as well: every conversion
-			// asking again would only wait out the timeout each time.
-			self.fruitlessFetchAt = self.now().UTC()
-		}
-		if !errors.Is(err, errFetchElsewhere) {
-			return err
-		}
-		if self.now().After(waitUntil) {
-			log.Debugf("another server has been fetching the exchange rates for %s; answering from what is stored", fetchLockWait)
-			return nil
-		}
+	if inFlight := self.fetchInFlight; inFlight != nil {
+		self.mutex.Unlock()
+		waitTimer := time.NewTimer(self.fetchTimeout)
+		defer waitTimer.Stop()
 		select {
+		case <-inFlight:
+		case <-waitTimer.C:
+			log.Debugf("the exchange rate fetch this process is running has taken %s; answering from what is stored", self.fetchTimeout)
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(fetchLockPoll):
 		}
+		return nil
 	}
+	done := make(chan struct{})
+	self.fetchInFlight = done
+	self.mutex.Unlock()
+	defer func() {
+		self.mutex.Lock()
+		self.fetchInFlight = nil
+		close(done)
+		self.mutex.Unlock()
+	}()
+
+	err = self.fetch(ctx, latest, today)
+	if err != nil && ctx.Err() == nil {
+		// The ECB unreachable is paused on as well: every conversion
+		// asking again would only wait out the timeout each time.
+		self.mutex.Lock()
+		self.fruitlessFetchAt = self.now().UTC()
+		self.mutex.Unlock()
+	}
+	return err
 }
 
-// fetchUnderLock fetches, in one transaction holding the fetch lock. It
-// looks at the store again once it holds the lock: the server that held
-// it before may have fetched what is needed.
-func (self *Fetcher) fetchUnderLock(ctx context.Context, needed string, today time.Time) error {
-	return self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+// fetch fetches the file that fills the store from latest up to today,
+// holding nothing while it waits on the ECB, then stores what came in a
+// transaction of its own holding the fetch lock. Another server storing
+// at that moment is storing the same rates, so this one's are dropped.
+func (self *Fetcher) fetch(ctx context.Context, latest string, today time.Time) error {
+	span := spanToFetch(latest, today)
+	timeout := self.fetchTimeout
+	if span == finance.ExchangeRateSpanHistory {
+		timeout = self.historyFetchTimeout
+	}
+	fetchContext, cancel := context.WithTimeout(ctx, timeout)
+	fetched, err := self.source.FetchEuroRates(fetchContext, span)
+	cancel()
+	if err != nil {
+		return err
+	}
+	exchangeRates := make([]models.ExchangeRate, 0, len(fetched))
+	newest := ""
+	for _, rate := range fetched {
+		exchangeRates = append(exchangeRates, models.ExchangeRate{
+			RateOn: rate.RateOn, CurrencyCode: rate.CurrencyCode, EuroRate: rate.EuroRate, RateSource: models.RateSourceECB,
+		})
+		if rate.RateOn > newest {
+			newest = rate.RateOn
+		}
+	}
+	isStored := false
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		isLocked, err := tx.TryAdvisoryLock(fetchLockKey)
-		if err != nil {
+		if err != nil || !isLocked {
 			return err
-		}
-		if !isLocked {
-			return errFetchElsewhere
-		}
-		latest, err := tx.LatestExchangeRateDay(models.RateSourceECB)
-		if err != nil {
-			return err
-		}
-		if latest != "" && latest >= needed {
-			return nil
-		}
-		span := spanToFetch(latest, today)
-		fetched, err := self.source.FetchEuroRates(ctx, span)
-		if err != nil {
-			return err
-		}
-		exchangeRates := make([]models.ExchangeRate, 0, len(fetched))
-		newest := ""
-		for _, rate := range fetched {
-			exchangeRates = append(exchangeRates, models.ExchangeRate{
-				RateOn: rate.RateOn, CurrencyCode: rate.CurrencyCode, EuroRate: rate.EuroRate, RateSource: models.RateSourceECB,
-			})
-			if rate.RateOn > newest {
-				newest = rate.RateOn
-			}
 		}
 		if _, err := tx.UpsertExchangeRates(exchangeRates); err != nil {
 			return err
 		}
-		if newest <= latest {
-			self.fruitlessFetchAt = self.now().UTC()
-		} else {
-			self.fruitlessFetchAt = time.Time{}
-		}
-		log.Debugf("fetched the ECB's %s exchange rates: %d rates, the newest for %s", span, len(exchangeRates), newest)
+		isStored = true
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	if !isStored {
+		log.Debugf("another server was storing the exchange rates; this fetch of the ECB's %s rates is dropped", span)
+		return nil
+	}
+	self.mutex.Lock()
+	if newest <= latest {
+		self.fruitlessFetchAt = self.now().UTC()
+	} else {
+		self.fruitlessFetchAt = time.Time{}
+	}
+	self.mutex.Unlock()
+	log.Debugf("fetched the ECB's %s exchange rates: %d rates, the newest for %s", span, len(exchangeRates), newest)
+	return nil
 }
 
 // spanToFetch is which of the ECB's files fills the store up to today:
@@ -249,7 +287,10 @@ func (self *Fetcher) ExchangeRate(ctx context.Context, fromCurrencyCode, toCurre
 // rates through one transaction and remembering each it read. The store is
 // brought up to a day only the first time an amount of that day or later
 // needs converting between two different currencies, so a computation in
-// one currency never fetches.
+// one currency never fetches. Such a fetch waits on the network with the
+// caller's transaction open, for at most the fetch's bound; a caller that
+// must not do that ensures the rates first and converts with a nil
+// fetcher.
 type Converter struct {
 	ctx         context.Context
 	fetcher     *Fetcher

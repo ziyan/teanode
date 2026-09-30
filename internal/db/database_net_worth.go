@@ -332,16 +332,16 @@ func (self *transaction) RecordValuation(valuation *models.AssetValuation) (*mod
 		recorded.AgentID, recorded.AssetID, valuedOn, string(recorded.ValuationSource)).Limit(1).Find(&existing).Error; err != nil {
 		return nil, err
 	}
-	action := models.AuditActionCreate
+	auditAction := models.AuditActionCreate
 	recorded.ID = newID()
 	if len(existing) > 0 {
 		before = existing[0].toModel()
-		action = models.AuditActionUpdate
+		auditAction = models.AuditActionUpdate
 		recorded.ID = before.ID
 	}
 	// The audit row is written after the write, so it records the
 	// valuation as kept.
-	if err := self.applyMutation(models.AuditResourceAssetValuation, recorded.ID, action, before, &recorded, func(*gorm.DB) error {
+	if err := self.applyMutation(models.AuditResourceAssetValuation, recorded.ID, auditAction, before, &recorded, func(*gorm.DB) error {
 		written, err := self.upsertAssetValuation(&recorded, time.Now())
 		if err != nil {
 			return err
@@ -366,7 +366,7 @@ func (self *transaction) upsertAssetValuation(valuation *models.AssetValuation, 
 	if err != nil {
 		return nil, err
 	}
-	value, err := canonicalAmount("value", valuation.Value)
+	valuationValue, err := canonicalAmount("value", valuation.Value)
 	if err != nil {
 		return nil, err
 	}
@@ -399,7 +399,7 @@ func (self *transaction) upsertAssetValuation(valuation *models.AssetValuation, 
 			"valuation_note" = EXCLUDED."valuation_note", "evidence_urls" = EXCLUDED."evidence_urls",
 			"modified_at" = EXCLUDED."modified_at"
 		RETURNING *`,
-		valuationId, valuation.AgentID, valuation.AssetID, valuedOn, value, strings.TrimSpace(valuation.CurrencyCode),
+		valuationId, valuation.AgentID, valuation.AssetID, valuedOn, valuationValue, strings.TrimSpace(valuation.CurrencyCode),
 		string(valuation.ValuationSource), estimateLow, estimateHigh, valuation.ValuationNote, pq.Array(evidenceUrls), now, now).
 		Scan(&written).Error; err != nil {
 		return nil, err

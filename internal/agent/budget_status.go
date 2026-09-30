@@ -76,13 +76,13 @@ func BudgetStatus(ctx context.Context, tx db.Transaction, fetcher *rates.Fetcher
 	if asOf.Before(monthStart) {
 		asOf = monthStart
 	}
-	status := &models.BudgetStatus{
+	budgetStatus := &models.BudgetStatus{
 		Month: month, AsOf: asOf.Format(time.DateOnly), DayOfMonth: asOf.Day(), DaysInMonth: monthEnd.Day(),
 		SpendingCategories: []*models.SpendingCategoryBudgetStatus{},
 	}
 	budgets, err := tx.BudgetsForMonth(agentId, month)
 	if err != nil || len(budgets) == 0 {
-		return status, err
+		return budgetStatus, err
 	}
 	spendingCategories, err := tx.ListSpendingCategories(agentId)
 	if err != nil {
@@ -132,13 +132,13 @@ func BudgetStatus(ctx context.Context, tx db.Transaction, fetcher *rates.Fetcher
 		row := &models.SpendingCategoryBudgetStatus{
 			SpendingCategoryID: budget.SpendingCategoryID, SpendingCategoryName: nameById[budget.SpendingCategoryID],
 			BudgetAmount: finance.FormatAmount(budgetAmount), CurrencyCode: budget.CurrencyCode,
-			UnconvertedSpending: []*models.CurrencyAmount{},
 		}
 		unconverted := map[string]*big.Rat{}
+		unconvertedLastMonth := map[string]*big.Rat{}
 
-		spendingByDay := make([]*big.Rat, status.DayOfMonth)
+		spendingByDay := make([]*big.Rat, budgetStatus.DayOfMonth)
 		for _, day := range thisMonthDays {
-			if !counted[day.SpendingCategoryID] || day.SpentOn > status.AsOf {
+			if !counted[day.SpendingCategoryID] || day.SpentOn > budgetStatus.AsOf {
 				continue
 			}
 			spentOn, err := time.Parse(time.DateOnly, day.SpentOn)
@@ -161,7 +161,7 @@ func BudgetStatus(ctx context.Context, tx db.Transaction, fetcher *rates.Fetcher
 		}
 
 		lastMonthSpending := new(big.Rat)
-		lastMonthDayBound := min(status.DayOfMonth, previousMonthLastDay)
+		lastMonthDayBound := min(budgetStatus.DayOfMonth, previousMonthLastDay)
 		for _, day := range previousMonthDays {
 			spentOn, err := time.Parse(time.DateOnly, day.SpentOn)
 			if err != nil {
@@ -174,42 +174,57 @@ func BudgetStatus(ctx context.Context, tx db.Transaction, fetcher *rates.Fetcher
 			if err != nil {
 				return nil, err
 			}
-			if isConverted {
-				lastMonthSpending.Add(lastMonthSpending, amount)
+			if !isConverted {
+				addTo(unconvertedLastMonth, day.CurrencyCode, day.SpendingAmount)
+				continue
 			}
+			lastMonthSpending.Add(lastMonthSpending, amount)
 		}
 
-		fixedChargesDue, fixedChargesSeen, err := fixedCharges(converter, counted, merchantHistory, merchantRecent, month, budget.CurrencyCode, status.AsOf)
+		charges, err := fixedCharges(converter, counted, merchantHistory, merchantRecent, month, budget.CurrencyCode, budgetStatus.AsOf)
 		if err != nil {
 			return nil, err
 		}
 		projection := ProjectSpendingCategoryMonth(&SpendingCategoryMonthInput{
 			BudgetAmount: budgetAmount, SpendingByDay: spendingByDay,
-			FixedChargesDueAmount: fixedChargesDue, FixedChargesSeenAmount: fixedChargesSeen,
-			DayOfMonth: status.DayOfMonth, DaysInMonth: status.DaysInMonth,
+			FixedChargesDueAmount: charges.dueAmount, FixedChargesSeenAmount: charges.seenAmount,
+			DayOfMonth: budgetStatus.DayOfMonth, DaysInMonth: budgetStatus.DaysInMonth,
 		})
 		row.SpendingAmount = finance.FormatAmount(projection.SpendingAmount)
 		row.SpendingBySameDayLastMonthAmount = finance.FormatAmount(lastMonthSpending)
-		row.FixedChargesDueAmount = finance.FormatAmount(fixedChargesDue)
+		row.FixedChargesDueAmount = finance.FormatAmount(charges.dueAmount)
 		row.ProjectedAmount = finance.FormatAmount(projection.ProjectedAmount)
 		row.BudgetPace = projection.BudgetPace
-		for _, currencyCode := range sortedKeys(unconverted) {
-			row.UnconvertedSpending = append(row.UnconvertedSpending, &models.CurrencyAmount{CurrencyCode: currencyCode, Amount: finance.FormatAmount(unconverted[currencyCode])})
-		}
-		status.SpendingCategories = append(status.SpendingCategories, row)
+		row.UnconvertedSpending = currencyAmountsOf(unconverted)
+		row.UnconvertedSpendingBySameDayLastMonth = currencyAmountsOf(unconvertedLastMonth)
+		row.UnconvertedFixedChargesDue = currencyAmountsOf(charges.unconvertedDue)
+		budgetStatus.SpendingCategories = append(budgetStatus.SpendingCategories, row)
 	}
-	sort.SliceStable(status.SpendingCategories, func(left, right int) bool {
-		return status.SpendingCategories[left].SpendingCategoryName < status.SpendingCategories[right].SpendingCategoryName
+	sort.SliceStable(budgetStatus.SpendingCategories, func(left, right int) bool {
+		return budgetStatus.SpendingCategories[left].SpendingCategoryName < budgetStatus.SpendingCategories[right].SpendingCategoryName
 	})
-	return status, nil
+	return budgetStatus, nil
+}
+
+// fixedChargeAmounts is what fixedCharges finds, in the budget's currency:
+// what regular merchants are still expected to charge this month, what
+// they have charged already, and, per currency, what is still expected
+// in a currency with no exchange rate into the budget's. What they have
+// charged already in such a currency is spending, and is reported with
+// the rest of the month's unconverted spending.
+type fixedChargeAmounts struct {
+	dueAmount      *big.Rat
+	seenAmount     *big.Rat
+	unconvertedDue map[string]*big.Rat
 }
 
 // fixedCharges is what merchants that charged the counted spending
 // categories in each of the three full months before this one are
 // expected to charge again (their median, converted at asOf's rate) and
 // have not yet, and what those merchants have charged this month already.
-// A merchant is one merchant in one currency.
-func fixedCharges(converter *rates.Converter, counted map[string]bool, history, recent []*models.MerchantMonthSpending, month, currencyCode, asOf string) (*big.Rat, *big.Rat, error) {
+// A merchant is one merchant in one currency; what it charged several of
+// the counted spending categories is added together.
+func fixedCharges(converter *rates.Converter, counted map[string]bool, history, recent []*models.MerchantMonthSpending, month, currencyCode, asOf string) (*fixedChargeAmounts, error) {
 	type merchantKey struct {
 		merchantName string
 		currencyCode string
@@ -221,7 +236,7 @@ func fixedCharges(converter *rates.Converter, counted map[string]bool, history, 
 		}
 		amount, err := finance.ParseAmount(row.SpendingAmount)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		key := merchantKey{merchantName: strings.ToLower(strings.TrimSpace(row.MerchantName)), currencyCode: row.CurrencyCode}
 		if amountsByMerchant[key] == nil {
@@ -232,46 +247,64 @@ func fixedCharges(converter *rates.Converter, counted map[string]bool, history, 
 		}
 		amountsByMerchant[key][row.SpendingMonth].Add(amountsByMerchant[key][row.SpendingMonth], amount)
 	}
-	seenThisMonth := map[merchantKey]string{}
+	seenThisMonth := map[merchantKey]*big.Rat{}
 	for _, row := range recent {
 		if !counted[row.SpendingCategoryID] || row.SpendingMonth != month {
 			continue
 		}
+		amount, err := finance.ParseAmount(row.SpendingAmount)
+		if err != nil {
+			return nil, err
+		}
 		key := merchantKey{merchantName: strings.ToLower(strings.TrimSpace(row.MerchantName)), currencyCode: row.CurrencyCode}
-		seenThisMonth[key] = row.SpendingAmount
+		if seenThisMonth[key] == nil {
+			seenThisMonth[key] = new(big.Rat)
+		}
+		seenThisMonth[key].Add(seenThisMonth[key], amount)
 	}
-	due, seen := new(big.Rat), new(big.Rat)
+	charges := &fixedChargeAmounts{dueAmount: new(big.Rat), seenAmount: new(big.Rat), unconvertedDue: map[string]*big.Rat{}}
 	for key, byMonth := range amountsByMerchant {
-		monthly := make([]*big.Rat, 0, len(byMonth))
+		monthlyAmounts := make([]*big.Rat, 0, len(byMonth))
 		for _, amount := range byMonth {
 			if amount.Sign() > 0 {
-				monthly = append(monthly, amount)
+				monthlyAmounts = append(monthlyAmounts, amount)
 			}
 		}
-		if len(monthly) < fixedChargeMonths {
+		if len(monthlyAmounts) < fixedChargeMonths {
 			continue
 		}
 		if seenAmount, isSeen := seenThisMonth[key]; isSeen {
-			converted, isConverted, err := convertedAmount(converter, seenAmount, key.currencyCode, currencyCode, asOf)
+			converted, isConverted, err := convertedAmount(converter, finance.FormatAmount(seenAmount), key.currencyCode, currencyCode, asOf)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			if isConverted && converted.Sign() > 0 {
-				seen.Add(seen, converted)
+				charges.seenAmount.Add(charges.seenAmount, converted)
 			}
 			continue
 		}
-		sort.Slice(monthly, func(left, right int) bool { return monthly[left].Cmp(monthly[right]) < 0 })
-		median := monthly[len(monthly)/2]
-		converted, isConverted, err := convertedAmount(converter, median.FloatString(finance.AmountDecimalPlaces), key.currencyCode, currencyCode, asOf)
+		sort.Slice(monthlyAmounts, func(left, right int) bool { return monthlyAmounts[left].Cmp(monthlyAmounts[right]) < 0 })
+		medianAmount := monthlyAmounts[len(monthlyAmounts)/2]
+		converted, isConverted, err := convertedAmount(converter, finance.FormatAmount(medianAmount), key.currencyCode, currencyCode, asOf)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		if isConverted {
-			due.Add(due, converted)
+		if !isConverted {
+			addTo(charges.unconvertedDue, key.currencyCode, finance.FormatAmount(medianAmount))
+			continue
 		}
+		charges.dueAmount.Add(charges.dueAmount, converted)
 	}
-	return due, seen, nil
+	return charges, nil
+}
+
+// currencyAmountsOf is sums per currency as a list, by currency code.
+func currencyAmountsOf(sums map[string]*big.Rat) []*models.CurrencyAmount {
+	currencyAmounts := []*models.CurrencyAmount{}
+	for _, currencyCode := range sortedKeys(sums) {
+		currencyAmounts = append(currencyAmounts, &models.CurrencyAmount{CurrencyCode: currencyCode, Amount: finance.FormatAmount(sums[currencyCode])})
+	}
+	return currencyAmounts
 }
 
 // convertedAmount is an amount in another currency at a day's rate, and
@@ -285,24 +318,24 @@ func convertedAmount(converter *rates.Converter, amount, fromCurrencyCode, toCur
 	if err != nil {
 		return nil, false, err
 	}
-	value, err := finance.ParseAmount(converted)
-	return value, err == nil, err
+	convertedValue, err := finance.ParseAmount(converted)
+	return convertedValue, err == nil, err
 }
 
 func addTo(sums map[string]*big.Rat, currencyCode, amount string) {
-	value, err := finance.ParseAmount(amount)
+	amountValue, err := finance.ParseAmount(amount)
 	if err != nil {
 		return
 	}
 	if sums[currencyCode] == nil {
 		sums[currencyCode] = new(big.Rat)
 	}
-	sums[currencyCode].Add(sums[currencyCode], value)
+	sums[currencyCode].Add(sums[currencyCode], amountValue)
 }
 
 // displayAmount is an amount as a person reads it: two places.
-func displayAmount(value *big.Rat) string {
-	return value.FloatString(2)
+func displayAmount(amountValue *big.Rat) string {
+	return amountValue.FloatString(2)
 }
 
 // noteBudgetCandidates writes the budget alert candidates a sync gave rise
@@ -319,7 +352,10 @@ func (self *Agent) noteBudgetCandidates(ctx context.Context, run *Run, now time.
 	today := local.Format(time.DateOnly)
 	month := local.Format("2006-01")
 	agentId := run.Agent.ID
-	fetcher := self.exchangeRateFetcher()
+	// The rates are brought up to date before the transaction opens, and
+	// the computation inside it converts with what is stored: an ECB that
+	// does not answer must not hold the transaction open while it waits.
+	ensureRatesOutsideTransaction(ctx, run.Database(), self.exchangeRateFetcher(), agentId, today)
 	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		mutes, err := tx.ListAgentAlertMutes(agentId)
 		if err != nil {
@@ -328,12 +364,12 @@ func (self *Agent) noteBudgetCandidates(ctx context.Context, run *Run, now time.
 		if mutedBy(mutes, &alertFacts{kinds: []string{models.AlertKindBudget}}) != nil {
 			return nil
 		}
-		status, err := BudgetStatus(ctx, tx, fetcher, agentId, month, today)
+		budgetStatus, err := BudgetStatus(ctx, tx, nil, agentId, month, today)
 		if err != nil {
 			return err
 		}
 		isWritten := false
-		for _, row := range status.SpendingCategories {
+		for _, row := range budgetStatus.SpendingCategories {
 			crossing := budgetCrossingOf(row)
 			if crossing == "" || mutedBy(mutes, &alertFacts{spendingCategoryId: row.SpendingCategoryID}) != nil {
 				continue
@@ -349,19 +385,19 @@ func (self *Agent) noteBudgetCandidates(ctx context.Context, run *Run, now time.
 			}
 			if _, err := tx.CreateAgentAlertCandidate(&models.AgentAlertCandidate{
 				AgentID: agentId, CandidateKind: models.AlertCandidateBudget, AlertSignal: models.AlertSignalSoon,
-				CandidateReason: budgetCrossingReason(row, crossing, status),
+				CandidateReason: budgetCrossingReason(row, crossing, budgetStatus),
 				BudgetKey:       spendingCategoryBudgetKey(row.SpendingCategoryID, month, crossing),
 			}); err != nil {
 				return err
 			}
 			isWritten = true
 		}
-		behind, err := savingsTargetsBehind(tx, rates.NewConverter(ctx, fetcher, tx), agentId, local)
+		behind, err := savingsTargetsBehind(tx, rates.NewConverter(ctx, nil, tx), agentId, local)
 		if err != nil {
 			return err
 		}
-		for _, target := range behind {
-			budgetKey := "savings-target:" + target.savingsTarget.ID + ":" + month + ":" + savingsTargetCrossingBehind
+		for _, targetBehind := range behind {
+			budgetKey := "savings-target:" + targetBehind.savingsTarget.ID + ":" + month + ":" + savingsTargetCrossingBehind
 			isToldAlready, err := tx.HasAgentBudgetAlert(agentId, budgetKey)
 			if err != nil {
 				return err
@@ -371,7 +407,7 @@ func (self *Agent) noteBudgetCandidates(ctx context.Context, run *Run, now time.
 			}
 			if _, err := tx.CreateAgentAlertCandidate(&models.AgentAlertCandidate{
 				AgentID: agentId, CandidateKind: models.AlertCandidateBudget, AlertSignal: models.AlertSignalSoon,
-				CandidateReason: target.reason, BudgetKey: budgetKey,
+				CandidateReason: targetBehind.candidateReason, BudgetKey: budgetKey,
 			}); err != nil {
 				return err
 			}
@@ -384,6 +420,52 @@ func (self *Agent) noteBudgetCandidates(ctx context.Context, run *Run, now time.
 	})
 }
 
+// ensureRatesOutsideTransaction brings the stored exchange rates up to
+// today, outside any transaction, when the agent's finance accounts,
+// budgets and savings targets are in more than one currency; an agent
+// whose money is all in one never fetches. A fetch that fails is logged,
+// and the computation that follows converts with what is stored, leaving
+// what it cannot convert reported as unconverted.
+func ensureRatesOutsideTransaction(ctx context.Context, database db.Database, fetcher *rates.Fetcher, agentId, today string) {
+	if fetcher == nil {
+		return
+	}
+	isCurrencyCode := map[string]bool{}
+	if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
+		financeAccounts, err := tx.ListFinanceAccounts(agentId, "")
+		if err != nil {
+			return err
+		}
+		for _, financeAccount := range financeAccounts {
+			isCurrencyCode[financeAccount.CurrencyCode] = true
+		}
+		budgets, err := tx.ListBudgets(agentId)
+		if err != nil {
+			return err
+		}
+		for _, budget := range budgets {
+			isCurrencyCode[budget.CurrencyCode] = true
+		}
+		savingsTargets, err := tx.ListSavingsTargets(agentId)
+		if err != nil {
+			return err
+		}
+		for _, savingsTarget := range savingsTargets {
+			isCurrencyCode[savingsTarget.CurrencyCode] = true
+		}
+		return nil
+	}); err != nil {
+		log.Warningf("cannot tell which currencies agent %q uses to bring the exchange rates up to date: %s", agentId, err)
+		return
+	}
+	if len(isCurrencyCode) < 2 {
+		return
+	}
+	if err := fetcher.EnsureRates(ctx, today); err != nil {
+		log.Warningf("cannot bring the exchange rates up to %s, converting with what is stored: %s", today, err)
+	}
+}
+
 // budgetCrossingOf is the most severe crossing a spending category is
 // past this month, or empty.
 func budgetCrossingOf(row *models.SpendingCategoryBudgetStatus) string {
@@ -393,12 +475,12 @@ func budgetCrossingOf(row *models.SpendingCategoryBudgetStatus) string {
 	case models.BudgetPaceAtRisk:
 		return budgetCrossingAtRisk
 	}
-	budget, budgetErr := finance.ParseAmount(row.BudgetAmount)
-	spending, spendingErr := finance.ParseAmount(row.SpendingAmount)
-	if budgetErr != nil || spendingErr != nil || budget.Sign() <= 0 {
+	budgetAmount, budgetErr := finance.ParseAmount(row.BudgetAmount)
+	spendingAmount, spendingErr := finance.ParseAmount(row.SpendingAmount)
+	if budgetErr != nil || spendingErr != nil || budgetAmount.Sign() <= 0 {
 		return ""
 	}
-	if spending.Cmp(new(big.Rat).Mul(budget, budgetAlertShare)) >= 0 {
+	if spendingAmount.Cmp(new(big.Rat).Mul(budgetAmount, budgetAlertShare)) >= 0 {
 		return budgetCrossingEightyPercent
 	}
 	return ""
@@ -423,41 +505,43 @@ func spendingCategoryOfBudgetKey(budgetKey string) string {
 
 // budgetCrossingReason is the candidate's line: the numbers, which the
 // alert job words.
-func budgetCrossingReason(row *models.SpendingCategoryBudgetStatus, crossing string, status *models.BudgetStatus) string {
-	budget, _ := finance.ParseAmount(row.BudgetAmount)
-	spending, _ := finance.ParseAmount(row.SpendingAmount)
-	projected, _ := finance.ParseAmount(row.ProjectedAmount)
-	share := 0
-	if budget != nil && budget.Sign() > 0 && spending != nil {
-		percent, _ := new(big.Rat).Quo(new(big.Rat).Mul(spending, big.NewRat(100, 1)), budget).Float64()
-		share = int(percent)
+func budgetCrossingReason(row *models.SpendingCategoryBudgetStatus, crossing string, budgetStatus *models.BudgetStatus) string {
+	budgetAmount, _ := finance.ParseAmount(row.BudgetAmount)
+	spendingAmount, _ := finance.ParseAmount(row.SpendingAmount)
+	projectedAmount, _ := finance.ParseAmount(row.ProjectedAmount)
+	spentPercent := 0
+	if budgetAmount != nil && budgetAmount.Sign() > 0 && spendingAmount != nil {
+		spentPercentValue, _ := new(big.Rat).Quo(new(big.Rat).Mul(spendingAmount, big.NewRat(100, 1)), budgetAmount).Float64()
+		spentPercent = int(spentPercentValue)
 	}
-	what := ""
+	crossingDescription := ""
 	switch crossing {
 	case budgetCrossingOver:
-		what = "is over its monthly budget"
+		crossingDescription = "is over its monthly budget"
 	case budgetCrossingAtRisk:
-		what = "is heading past its monthly budget"
+		crossingDescription = "is heading past its monthly budget"
 	default:
-		what = "has used most of its monthly budget"
+		crossingDescription = "has used most of its monthly budget"
 	}
-	reason := fmt.Sprintf("Spending category %q %s: %s of %s %s spent (%d%%) by day %d of %d; the month is projected to end at %s %s.",
-		row.SpendingCategoryName, what, displayAmount(ratOrZero(spending)), displayAmount(ratOrZero(budget)), row.CurrencyCode, share,
-		status.DayOfMonth, status.DaysInMonth, displayAmount(ratOrZero(projected)), row.CurrencyCode)
-	if fixedDue, err := finance.ParseAmount(row.FixedChargesDueAmount); err == nil && fixedDue.Sign() > 0 {
-		reason += fmt.Sprintf(" That counts %s %s of regular charges still expected this month.", displayAmount(fixedDue), row.CurrencyCode)
+	candidateReason := fmt.Sprintf("Spending category %q %s: %s of %s %s spent (%d%%) by day %d of %d; the month is projected to end at %s %s.",
+		row.SpendingCategoryName, crossingDescription, displayAmount(ratOrZero(spendingAmount)), displayAmount(ratOrZero(budgetAmount)), row.CurrencyCode, spentPercent,
+		budgetStatus.DayOfMonth, budgetStatus.DaysInMonth, displayAmount(ratOrZero(projectedAmount)), row.CurrencyCode)
+	if fixedChargesDueAmount, err := finance.ParseAmount(row.FixedChargesDueAmount); err == nil && fixedChargesDueAmount.Sign() > 0 {
+		candidateReason += fmt.Sprintf(" That counts %s %s of regular charges still expected this month.", displayAmount(fixedChargesDueAmount), row.CurrencyCode)
 	}
-	if lastMonth, err := finance.ParseAmount(row.SpendingBySameDayLastMonthAmount); err == nil {
-		reason += fmt.Sprintf(" By the same day last month it was %s %s.", displayAmount(lastMonth), row.CurrencyCode)
+	if lastMonthSpendingAmount, err := finance.ParseAmount(row.SpendingBySameDayLastMonthAmount); err == nil {
+		candidateReason += fmt.Sprintf(" By the same day last month it was %s %s.", displayAmount(lastMonthSpendingAmount), row.CurrencyCode)
 	}
-	return reason
+	return candidateReason
 }
 
 // savingsTargetBehind is a savings target that fell behind, with the
-// candidate's line.
+// candidate's line and the currencies its cash flow left out for want of
+// an exchange rate into the target's.
 type savingsTargetBehind struct {
-	savingsTarget *models.SavingsTarget
-	reason        string
+	savingsTarget            *models.SavingsTarget
+	candidateReason          string
+	unconvertedCurrencyCodes []string
 }
 
 // savingsTargetsBehind is the open savings targets measured by cash flow
@@ -468,7 +552,9 @@ type savingsTargetBehind struct {
 // judged here: their valuations do not arrive with a sync.
 //
 // A month's cash flow is money in less money out, transfers left out,
-// per currency, converted at the rate of the month's last day.
+// per currency, converted at the rate of the month's last day. A currency
+// with no rate is left out and named in the line, since the target may
+// look behind only for what was left out.
 func savingsTargetsBehind(tx db.Transaction, converter *rates.Converter, agentId string, local time.Time) ([]*savingsTargetBehind, error) {
 	savingsTargets, err := tx.ListSavingsTargets(agentId)
 	if err != nil {
@@ -493,7 +579,7 @@ func savingsTargetsBehind(tx db.Transaction, converter *rates.Converter, agentId
 		if err != nil {
 			continue
 		}
-		cashFlowByMonth, _, err := savingsTargetCashFlowByMonth(tx, converter, agentId, savingsTarget, monthStart.AddDate(0, 0, -1))
+		cashFlowByMonth, unconvertedCurrencyCodes, err := savingsTargetCashFlowByMonth(tx, converter, agentId, savingsTarget, monthStart.AddDate(0, 0, -1))
 		if err != nil {
 			return nil, err
 		}
@@ -502,12 +588,16 @@ func savingsTargetsBehind(tx db.Transaction, converter *rates.Converter, agentId
 		if !isFirstShort || !isSecondShort {
 			continue
 		}
+		candidateReason := fmt.Sprintf("Savings target %q (%s %s by %s) is behind: %s saved %s %s against the %s %s it needed, and %s saved %s %s against %s %s.",
+			savingsTarget.SavingsTargetName, displayAmount(targetAmount), savingsTarget.CurrencyCode, savingsTarget.TargetOn,
+			firstMonth.Format("January"), displayAmount(firstSaved), savingsTarget.CurrencyCode, displayAmount(firstRequired), savingsTarget.CurrencyCode,
+			secondMonth.Format("January"), displayAmount(secondSaved), savingsTarget.CurrencyCode, displayAmount(secondRequired), savingsTarget.CurrencyCode)
+		if len(unconvertedCurrencyCodes) > 0 {
+			candidateReason += fmt.Sprintf(" Money in %s is left out: there is no exchange rate from it into %s.",
+				strings.Join(unconvertedCurrencyCodes, ", "), savingsTarget.CurrencyCode)
+		}
 		behind = append(behind, &savingsTargetBehind{
-			savingsTarget: savingsTarget,
-			reason: fmt.Sprintf("Savings target %q (%s %s by %s) is behind: %s saved %s %s against the %s %s it needed, and %s saved %s %s against %s %s.",
-				savingsTarget.SavingsTargetName, displayAmount(targetAmount), savingsTarget.CurrencyCode, savingsTarget.TargetOn,
-				firstMonth.Format("January"), displayAmount(firstSaved), savingsTarget.CurrencyCode, displayAmount(firstRequired), savingsTarget.CurrencyCode,
-				secondMonth.Format("January"), displayAmount(secondSaved), savingsTarget.CurrencyCode, displayAmount(secondRequired), savingsTarget.CurrencyCode),
+			savingsTarget: savingsTarget, candidateReason: candidateReason, unconvertedCurrencyCodes: unconvertedCurrencyCodes,
 		})
 	}
 	return behind, nil
@@ -541,8 +631,8 @@ func savingsTargetCashFlowByMonth(tx db.Transaction, converter *rates.Converter,
 		if inErr != nil || outErr != nil {
 			continue
 		}
-		net := new(big.Rat).Sub(moneyIn, moneyOut)
-		converted, isConverted, err := convertedAmount(converter, net.FloatString(finance.AmountDecimalPlaces), row.CurrencyCode, savingsTarget.CurrencyCode, rowMonth.AddDate(0, 1, -1).Format(time.DateOnly))
+		netCashFlowAmount := new(big.Rat).Sub(moneyIn, moneyOut)
+		converted, isConverted, err := convertedAmount(converter, finance.FormatAmount(netCashFlowAmount), row.CurrencyCode, savingsTarget.CurrencyCode, rowMonth.AddDate(0, 1, -1).Format(time.DateOnly))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -563,16 +653,16 @@ func savingsTargetCashFlowByMonth(tx db.Transaction, converter *rates.Converter,
 // the target day, that month included -- with what it saved and what it
 // needed.
 func savingsTargetMonthShortfall(cashFlowByMonth map[string]*big.Rat, targetAmount *big.Rat, targetOn, month time.Time) (bool, *big.Rat, *big.Rat) {
-	savedBefore := new(big.Rat)
+	savedBeforeAmount := new(big.Rat)
 	for key, cashFlow := range cashFlowByMonth {
 		if key < month.Format("2006-01") {
-			savedBefore.Add(savedBefore, cashFlow)
+			savedBeforeAmount.Add(savedBeforeAmount, cashFlow)
 		}
 	}
-	remaining := new(big.Rat).Sub(targetAmount, savedBefore)
-	required := new(big.Rat).Quo(remaining, big.NewRat(int64(max(monthsThrough(month, targetOn), 1)), 1))
-	saved := ratOrZero(cashFlowByMonth[month.Format("2006-01")])
-	return remaining.Sign() > 0 && saved.Cmp(required) < 0, saved, required
+	remainingAmount := new(big.Rat).Sub(targetAmount, savedBeforeAmount)
+	requiredAmount := new(big.Rat).Quo(remainingAmount, big.NewRat(int64(max(monthsThrough(month, targetOn), 1)), 1))
+	savedAmount := ratOrZero(cashFlowByMonth[month.Format("2006-01")])
+	return remainingAmount.Sign() > 0 && savedAmount.Cmp(requiredAmount) < 0, savedAmount, requiredAmount
 }
 
 // monthsThrough is how many months from one month to the month of a day,
@@ -608,6 +698,23 @@ type SavingsTargetProgress struct {
 	UnconvertedCurrencyCodes []string `json:"unconvertedCurrencyCodes"`
 }
 
+// assetValuationOn is the valuation of an asset that counts on a day: the
+// winning one of the latest day on or before it, or nil when there is none
+// yet. A valuation recorded ahead for a later day does not count today.
+func assetValuationOn(tx db.Transaction, agentId, assetId, day string) (*models.AssetValuation, error) {
+	valuations, err := tx.ListAssetValuations(agentId, assetId)
+	if err != nil {
+		return nil, err
+	}
+	// Newest day first, and within a day the winner first.
+	for _, valuation := range valuations {
+		if valuation.ValuedOn <= day {
+			return valuation, nil
+		}
+	}
+	return nil, nil
+}
+
 // SavingsTargetProgressOf is how one savings target stands as of today
 // ("2006-01-02", the person's local day), measured the way its alert is.
 // A nil fetcher converts with the rates already stored.
@@ -627,7 +734,7 @@ func SavingsTargetProgressOf(ctx context.Context, tx db.Transaction, fetcher *ra
 	converter := rates.NewConverter(ctx, fetcher, tx)
 	monthStart := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, time.UTC)
 	progress := &SavingsTargetProgress{UnconvertedCurrencyCodes: []string{}}
-	saved := new(big.Rat)
+	savedAmount := new(big.Rat)
 	switch savingsTarget.TargetMeasure {
 	case models.TargetMeasureAssetValue:
 		assets, err := tx.ListAssets(agentId)
@@ -636,28 +743,37 @@ func SavingsTargetProgressOf(ctx context.Context, tx db.Transaction, fetcher *ra
 		}
 		unconverted := map[string]bool{}
 		for _, asset := range assets {
-			if !slices.Contains(savingsTarget.AssetIDs, asset.ID) || asset.LatestValuation == nil {
+			// An asset sold before today no longer counts, as in net worth,
+			// which counts it through the day it was sold and not after.
+			if !slices.Contains(savingsTarget.AssetIDs, asset.ID) || (asset.ClosedOn != "" && asset.ClosedOn < today) {
 				continue
 			}
-			value, isConverted, err := convertedAmount(converter, asset.LatestValuation.Value, asset.LatestValuation.CurrencyCode, savingsTarget.CurrencyCode, today)
+			valuation, err := assetValuationOn(tx, agentId, asset.ID, today)
+			if err != nil {
+				return nil, err
+			}
+			if valuation == nil {
+				continue
+			}
+			assetValue, isConverted, err := convertedAmount(converter, valuation.Value, valuation.CurrencyCode, savingsTarget.CurrencyCode, today)
 			if err != nil {
 				return nil, err
 			}
 			if !isConverted {
-				unconverted[asset.LatestValuation.CurrencyCode] = true
+				unconverted[valuation.CurrencyCode] = true
 				continue
 			}
 			if asset.IsLiability {
-				value.Neg(value)
+				assetValue.Neg(assetValue)
 			}
-			saved.Add(saved, value)
+			savedAmount.Add(savedAmount, assetValue)
 		}
 		if savingsTarget.StartingAmount != "" {
 			startingAmount, err := finance.ParseAmount(savingsTarget.StartingAmount)
 			if err != nil {
 				return nil, err
 			}
-			saved.Sub(saved, startingAmount)
+			savedAmount.Sub(savedAmount, startingAmount)
 		}
 		progress.UnconvertedCurrencyCodes = append(progress.UnconvertedCurrencyCodes, sortedKeys(unconverted)...)
 	default:
@@ -666,7 +782,7 @@ func SavingsTargetProgressOf(ctx context.Context, tx db.Transaction, fetcher *ra
 			return nil, err
 		}
 		for _, cashFlow := range cashFlowByMonth {
-			saved.Add(saved, cashFlow)
+			savedAmount.Add(savedAmount, cashFlow)
 		}
 		progress.UnconvertedCurrencyCodes = append(progress.UnconvertedCurrencyCodes, unconverted...)
 		startedOn, startedOnErr := time.Parse(time.DateOnly, savingsTarget.StartedOn)
@@ -677,17 +793,17 @@ func SavingsTargetProgressOf(ctx context.Context, tx db.Transaction, fetcher *ra
 			progress.IsBehind = isFirstShort && isSecondShort
 		}
 	}
-	remaining := new(big.Rat).Sub(targetAmount, saved)
-	if remaining.Sign() < 0 {
-		remaining = new(big.Rat)
+	remainingAmount := new(big.Rat).Sub(targetAmount, savedAmount)
+	if remainingAmount.Sign() < 0 {
+		remainingAmount = new(big.Rat)
 	}
 	progress.MonthsLeftCount = max(monthsThrough(monthStart, targetOn), 0)
-	required := new(big.Rat).Set(remaining)
+	requiredMonthlyAmount := new(big.Rat).Set(remainingAmount)
 	if progress.MonthsLeftCount > 0 {
-		required.Quo(remaining, big.NewRat(int64(progress.MonthsLeftCount), 1))
+		requiredMonthlyAmount.Quo(remainingAmount, big.NewRat(int64(progress.MonthsLeftCount), 1))
 	}
-	progress.SavedAmount = finance.FormatAmount(saved)
-	progress.RemainingAmount = finance.FormatAmount(remaining)
-	progress.RequiredMonthlyAmount = finance.FormatAmount(required)
+	progress.SavedAmount = finance.FormatAmount(savedAmount)
+	progress.RemainingAmount = finance.FormatAmount(remainingAmount)
+	progress.RequiredMonthlyAmount = finance.FormatAmount(requiredMonthlyAmount)
 	return progress, nil
 }

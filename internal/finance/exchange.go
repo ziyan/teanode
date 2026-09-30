@@ -144,8 +144,8 @@ func parseEuroRates(document []byte) ([]EuroRate, error) {
 			if !isCurrencyCode(currencyCode) {
 				return nil, fmt.Errorf("finance: the ECB's rates on %s name a currency %q", day.RateOn, currencyCode)
 			}
-			value, err := parseDecimal(rate.EuroRate)
-			if err != nil || value.Sign() <= 0 {
+			euroRateValue, err := parseDecimal(rate.EuroRate)
+			if err != nil || euroRateValue.Sign() <= 0 {
 				return nil, fmt.Errorf("finance: the ECB's rate for %s on %s is not a positive number", currencyCode, day.RateOn)
 			}
 			rates = append(rates, EuroRate{

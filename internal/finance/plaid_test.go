@@ -123,6 +123,9 @@ func TestPlaidSyncPagesSignsAndKeepsMetadata(t *testing.T) {
 	if account.CurrentBalance != "1520.1000" || account.AvailableBalance != "1500.0000" || account.AccountKind != AccountKindDepository || account.AccountMask != "0001" {
 		t.Errorf("account %+v", account)
 	}
+	if !account.IsOwedBalancePositive {
+		t.Errorf("Plaid reports what is owed as positive, and the account must say so: %+v", account)
+	}
 	if !strings.Contains(string(account.ProviderMetadata), `"unknown_account_field":"kept"`) {
 		t.Errorf("account metadata lost an unknown field: %s", account.ProviderMetadata)
 	}
@@ -201,6 +204,35 @@ func TestPlaidSignInRequired(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "request-example") {
 		t.Errorf("error %q does not name the request", err)
+	}
+}
+
+// A link that is gone or a consent withdrawn is a refused credential, not
+// a sign-in to repair; any other refusal is neither.
+func TestPlaidCredentialRefused(t *testing.T) {
+	for errorCode, isRefused := range map[string]bool{
+		"ITEM_NOT_FOUND":          true,
+		"INVALID_ACCESS_TOKEN":    true,
+		"ACCESS_NOT_GRANTED":      true,
+		"USER_PERMISSION_REVOKED": true,
+		"USER_ACCOUNT_REVOKED":    true,
+		"INTERNAL_SERVER_ERROR":   false,
+		"ITEM_LOGIN_REQUIRED":     false,
+	} {
+		testServer := newPlaidTestServer(t, func(path string, body map[string]any) (int, string) {
+			return 400, `{"error_type":"ITEM_ERROR","error_code":"` + errorCode + `","error_message":"refused","request_id":"request-example"}`
+		})
+		plaid := newTestPlaid(t, testServer)
+		_, err := plaid.Sync(context.Background(), "access-example", "cursor-example")
+		if err == nil {
+			t.Fatalf("%s: want an error", errorCode)
+		}
+		if errors.Is(err, ErrCredentialRefused) != isRefused {
+			t.Errorf("%s: is a refused credential %v, want %v", errorCode, errors.Is(err, ErrCredentialRefused), isRefused)
+		}
+		if isRefused && errors.Is(err, ErrSignInRequired) {
+			t.Errorf("%s: a refused credential is not a sign-in to repair", errorCode)
+		}
 	}
 }
 

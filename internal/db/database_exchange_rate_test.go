@@ -76,6 +76,20 @@ func TestExchangeRateFallsBackToTheLatestPublishedDay(t *testing.T) {
 			t.Errorf("EuroRatesOn: %v %+v", err, rates)
 		}
 
+		// A week after its last rate the yen still converts, dated the day
+		// the rate is from; a day later that rate is too old to use, and
+		// the yen has none.
+		weekLater, err := tx.ExchangeRate("EUR", "JPY", "2026-09-11")
+		if err != nil || weekLater.RateOn != "2026-09-04" {
+			t.Errorf("a rate seven days old is used and dated: %v %+v", err, weekLater)
+		}
+		if _, err := tx.ExchangeRate("EUR", "JPY", "2026-09-12"); !errors.As(err, &noRate) || noRate.CurrencyCode != "JPY" {
+			t.Errorf("a rate more than seven days old is none: %v", err)
+		}
+		if stale, err := tx.EuroRatesOn([]string{"JPY", "USD"}, "2026-09-12"); err != nil || stale["JPY"] != nil || stale["USD"] == nil {
+			t.Errorf("EuroRatesOn leaves out a stale rate and keeps a recent one: %v %+v", err, stale)
+		}
+
 		if _, err := tx.UpsertExchangeRates([]models.ExchangeRate{{RateOn: "2026-09-08", CurrencyCode: "USD", EuroRate: "-1"}}); !errors.Is(err, db.ErrInvalidArguments) {
 			t.Errorf("a rate that is not positive must be refused: %v", err)
 		}

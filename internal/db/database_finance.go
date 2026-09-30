@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"gorm.io/gorm"
 
 	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/models"
@@ -34,7 +35,7 @@ type FinanceOperation interface {
 	// the first time, and records each finance account's balance as its
 	// asset's valuation for syncedOn, the person's local day ("2006-01-02").
 	// A transaction the provider sends again unchanged is not written.
-	ApplyFinanceSync(agentId, sourceId string, result *finance.SyncResult, syncedOn string) (*FinanceSyncApplied, error)
+	ApplyFinanceSync(agentId, sourceId string, syncResult *finance.SyncResult, syncedOn string) (*FinanceSyncApplied, error)
 
 	// GetFinanceTransaction is one finance transaction of the agent, or nil.
 	GetFinanceTransaction(agentId, financeTransactionId string) (*models.FinanceTransaction, error)
@@ -45,9 +46,21 @@ type FinanceOperation interface {
 
 	// ListUncategorizedFinanceTransactions is the agent's finance
 	// transactions with no spending category that the person has not
-	// decided about and that are not transfers: what the categorize model
-	// is asked about. Newest first.
+	// decided about, that are not transfers, and that the categorize
+	// model has not already been asked about and failed to place: what
+	// the categorize model is asked about. Newest first, since this
+	// month's spending is what a budget is judged by; a run that places
+	// nothing still marks what it was asked about, so older history gets
+	// its turn on the next.
 	ListUncategorizedFinanceTransactions(agentId string, limit int) ([]*models.FinanceTransaction, error)
+
+	// MarkCategorizeAttempted records that the categorize model was asked
+	// about these finance transactions and placed none of them, so they
+	// are not listed for it again until their merchant, description or
+	// provider category changes, or a spending category they had is taken
+	// away by what gave it. One that has a spending category by now is
+	// left alone. It answers how many it marked.
+	MarkCategorizeAttempted(agentId string, financeTransactionIds []string) (int, error)
 
 	// SetTransactionCategorization gives a finance transaction a spending
 	// category (empty for none), saying what gave it and, for the decision
@@ -55,23 +68,29 @@ type FinanceOperation interface {
 	// what the person chose unless the person is choosing again.
 	// ErrNotFound when the agent has no such finance transaction or no
 	// such spending category.
+	//
+	// The person clearing a spending category leaves the finance
+	// transaction uncategorized for good: it is their decision, so the
+	// categorize model is not asked about it again.
 	SetTransactionCategorization(agentId, financeTransactionId, spendingCategoryId string, categorizedBy models.CategorizedBy, categorizationConfidence *string) (bool, error)
 
 	// MarkFinanceTransactionTransfer marks a finance transaction as a
-	// transfer or not. When the person does it (isSetByPerson) nothing
-	// else may change it after; anything else is refused, answering
-	// false, on a finance transaction the person decided about.
-	MarkFinanceTransactionTransfer(agentId, financeTransactionId string, isTransfer, isSetByPerson bool) (bool, error)
+	// transfer or not, saying what decided it. The person decides either
+	// way, and nothing else may change it after. Anything else marks a
+	// transfer only where the person has not decided, and unmarks only a
+	// transfer it marked itself; otherwise it is refused, answering false.
+	MarkFinanceTransactionTransfer(agentId, financeTransactionId string, isTransfer bool, transferMarkedBy models.TransferMarkedBy) (bool, error)
 
 	// DetectFinanceTransfers marks as transfers the finance transactions
 	// posted on or after sinceDate in one finance source's accounts (every
 	// source's when sourceId is empty) whose provider category is a
-	// transfer or a loan payment, and every pair of the same absolute
-	// amount and currency, opposite signs, on two different finance
-	// accounts of the agent, posted within three days of each other. The
-	// person's decisions are left alone, and a finance transaction the
-	// person decided about pairs with nothing. It answers how many it
-	// marked.
+	// transfer, and pairs of the same absolute amount and currency,
+	// opposite signs, on two different finance accounts of the agent,
+	// posted within three days of each other, each finance transaction in
+	// at most one pair and each pair the closest in days for both of its
+	// sides. A finance transaction already a transfer, or whose spending
+	// category or transfer the person decided, is neither marked nor
+	// paired. It answers how many it marked.
 	DetectFinanceTransfers(agentId, sourceId, sinceDate string) (int, error)
 
 	// FinanceSpendingSummary is money out and money in per group per
@@ -180,6 +199,18 @@ type FinanceSpendingSummaryFilter struct {
 // after it leaves, and a weekend in between adds two more.
 const transferPairingDays = 3
 
+// transferPairingRounds bounds how many times one detection pairs again
+// what the rounds before left over. Each round takes only the pairs that
+// are both sides' closest, so a run of equal amounts close together needs
+// a few; more than this many is not worth guessing at.
+const transferPairingRounds = 5
+
+// pendingPostingDays is how far apart a pending transaction's day and the
+// day it posted under a new id may be for the person's decisions about it
+// to follow it: a card authorization commonly posts a day or two later,
+// and a weekend adds two more.
+const pendingPostingDays = 5
+
 type agentFinanceAccountModel struct {
 	ID                string     `gorm:"column:id;primaryKey"`
 	AgentID           string     `gorm:"column:agent_id"`
@@ -229,8 +260,9 @@ type agentFinanceTransactionModel struct {
 	SpendingCategoryID           *string    `gorm:"column:spending_category_id"`
 	CategorizedBy                string     `gorm:"column:categorized_by"`
 	CategorizationConfidence     *string    `gorm:"column:categorization_confidence"`
+	CategorizeAttemptedAt        *time.Time `gorm:"column:categorize_attempted_at"`
 	IsTransfer                   bool       `gorm:"column:is_transfer"`
-	IsTransferSetByPerson        bool       `gorm:"column:is_transfer_set_by_person"`
+	TransferMarkedBy             string     `gorm:"column:transfer_marked_by"`
 	CreatedAt                    time.Time  `gorm:"column:created_at"`
 	ModifiedAt                   time.Time  `gorm:"column:modified_at"`
 }
@@ -248,7 +280,7 @@ func (self *agentFinanceTransactionModel) toModel() *models.FinanceTransaction {
 		ProviderMetadata:   rawJSON(self.ProviderMetadata),
 		SpendingCategoryID: optionalString(self.SpendingCategoryID), CategorizedBy: models.CategorizedBy(self.CategorizedBy),
 		CategorizationConfidence: optionalString(self.CategorizationConfidence),
-		IsTransfer:               self.IsTransfer, IsTransferSetByPerson: self.IsTransferSetByPerson,
+		IsTransfer:               self.IsTransfer, TransferMarkedBy: models.TransferMarkedBy(self.TransferMarkedBy),
 		CreatedAt: self.CreatedAt.In(time.Local), ModifiedAt: self.ModifiedAt.In(time.Local),
 	}
 }
@@ -409,8 +441,8 @@ func (self *transaction) GetFinanceAccount(agentId, financeAccountId string) (*m
 
 // --- the sync ----------------------------------------------------------
 
-func (self *transaction) ApplyFinanceSync(agentId, sourceId string, result *finance.SyncResult, syncedOn string) (*FinanceSyncApplied, error) {
-	if agentId == "" || sourceId == "" || result == nil {
+func (self *transaction) ApplyFinanceSync(agentId, sourceId string, syncResult *finance.SyncResult, syncedOn string) (*FinanceSyncApplied, error) {
+	if agentId == "" || sourceId == "" || syncResult == nil {
 		return nil, fmt.Errorf("%w: a finance sync needs an agent, a finance source and a result", ErrInvalidArguments)
 	}
 	syncedOn, err := parseDay(syncedOn)
@@ -422,7 +454,7 @@ func (self *transaction) ApplyFinanceSync(agentId, sourceId string, result *fina
 	// source in the same transaction does not also keep half a sync.
 	err = self.TransactionContext(self.contextOrBackground(), func(nested Transaction) error {
 		var err error
-		applied, err = nested.(*transaction).applyFinanceSync(agentId, sourceId, result, syncedOn)
+		applied, err = nested.(*transaction).applyFinanceSync(agentId, sourceId, syncResult, syncedOn)
 		return err
 	})
 	if err != nil {
@@ -431,7 +463,7 @@ func (self *transaction) ApplyFinanceSync(agentId, sourceId string, result *fina
 	return applied, nil
 }
 
-func (self *transaction) applyFinanceSync(agentId, sourceId string, result *finance.SyncResult, syncedOn string) (*FinanceSyncApplied, error) {
+func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *finance.SyncResult, syncedOn string) (*FinanceSyncApplied, error) {
 	var isSourceFound bool
 	if err := self.tx.Raw(`SELECT EXISTS (SELECT 1 FROM "agent_source" WHERE "id" = ? AND "agent_id" = ?)`, sourceId, agentId).
 		Scan(&isSourceFound).Error; err != nil {
@@ -446,9 +478,9 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, result *fina
 	}
 	now := time.Now()
 
-	reportedAccountIds := make([]string, 0, len(result.Accounts))
+	reportedAccountIds := make([]string, 0, len(syncResult.Accounts))
 	reportedBalances := map[string]finance.Account{}
-	for _, account := range result.Accounts {
+	for _, account := range syncResult.Accounts {
 		financeAccountId, isInserted, err := self.upsertFinanceAccount(agentId, sourceId, account, now)
 		if err != nil {
 			return nil, err
@@ -478,7 +510,9 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, result *fina
 	}
 
 	addedProviderTransactionIdsByFinanceAccountId := map[string][]string{}
-	for _, added := range result.Added {
+	insertedPostedIdsByFinanceAccountId := map[string][]string{}
+	writtenIds := []string{}
+	for _, added := range syncResult.Added {
 		financeAccountId, isKnown := financeAccountIdByProviderAccountId[added.ProviderAccountID]
 		if !isKnown {
 			applied.SkippedTransactionCount++
@@ -489,32 +523,45 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, result *fina
 		if err != nil {
 			return nil, err
 		}
+		// Before the pending one is removed below: Plaid names it on the
+		// posted one it became, in the same sync that removes it.
+		if added.PendingProviderTransactionID != "" && added.PendingProviderTransactionID != added.ProviderTransactionID {
+			if err := self.carryPendingDecisions(agentId, sourceId, financeAccountId, added.ProviderTransactionID, added.PendingProviderTransactionID, now); err != nil {
+				return nil, err
+			}
+		}
 		if written == nil {
 			continue
 		}
 		applied.WrittenTransactionCount++
-		if written.CategorizedBy == "" && !written.IsTransfer {
-			applied.FinanceTransactionIDsToCategorize = append(applied.FinanceTransactionIDsToCategorize, written.ID)
+		writtenIds = append(writtenIds, written.ID)
+		// Inserted rather than changed: an insert writes both times as the
+		// same moment, an update only the modified one.
+		if !written.IsPending && written.CreatedAt.Equal(written.ModifiedAt) {
+			insertedPostedIdsByFinanceAccountId[financeAccountId] = append(insertedPostedIdsByFinanceAccountId[financeAccountId], written.ID)
 		}
 	}
 
-	if len(result.RemovedProviderTransactionIDs) > 0 {
+	if len(syncResult.RemovedProviderTransactionIDs) > 0 {
 		removed := self.tx.Exec(`DELETE FROM "agent_finance_transaction" WHERE "agent_id" = ?
 			AND "finance_account_id" IN (SELECT "id" FROM "agent_finance_account" WHERE "agent_id" = ? AND "source_id" = ?)
 			AND "provider_transaction_id" = ANY(?::text[])`,
-			agentId, agentId, sourceId, pq.Array(result.RemovedProviderTransactionIDs))
+			agentId, agentId, sourceId, pq.Array(syncResult.RemovedProviderTransactionIDs))
 		if removed.Error != nil {
 			return nil, removed.Error
 		}
 		applied.RemovedTransactionCount = int(removed.RowsAffected)
 	}
 
-	if result.PendingReplacedFrom != nil {
-		replacedFrom := result.PendingReplacedFrom.UTC().Format(time.DateOnly)
+	if syncResult.PendingReplacedFrom != nil {
+		replacedFrom := syncResult.PendingReplacedFrom.UTC().Format(time.DateOnly)
 		for _, financeAccountId := range reportedAccountIds {
 			kept := addedProviderTransactionIdsByFinanceAccountId[financeAccountId]
 			if kept == nil {
 				kept = []string{}
+			}
+			if err := self.carryReplacedPendingDecisions(agentId, financeAccountId, replacedFrom, kept, insertedPostedIdsByFinanceAccountId[financeAccountId], now); err != nil {
+				return nil, err
 			}
 			replaced := self.tx.Exec(`DELETE FROM "agent_finance_transaction" WHERE "agent_id" = ? AND "finance_account_id" = ?
 				AND "is_pending" AND "posted_on" >= ?::date AND "provider_transaction_id" <> ALL(?::text[])`,
@@ -536,7 +583,104 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, result *fina
 			applied.RecordedValuationCount++
 		}
 	}
+
+	// Read back rather than taken from the upsert: a decision carried
+	// from a pending transaction may have categorized or marked one since.
+	if len(writtenIds) > 0 {
+		var toCategorize []string
+		if err := self.tx.Raw(`SELECT "id" FROM "agent_finance_transaction"
+			WHERE "agent_id" = ? AND "id" = ANY(?::text[]) AND "categorized_by" = '' AND NOT "is_transfer"
+			ORDER BY "posted_on" DESC, "id" DESC`, agentId, pq.Array(writtenIds)).Scan(&toCategorize).Error; err != nil {
+			return nil, err
+		}
+		applied.FinanceTransactionIDsToCategorize = append(applied.FinanceTransactionIDsToCategorize, toCategorize...)
+	}
 	return applied, nil
+}
+
+// carriedDecisions is the SET list that gives the finance transaction
+// "posted" what the person decided about the pending one it became,
+// "pending": their spending category and their transfer mark, each only
+// where the person decided it and has not decided it again on the posted
+// one.
+const carriedDecisions = `
+	"spending_category_id" = CASE WHEN "pending"."categorized_by" = 'person' AND "posted"."categorized_by" <> 'person'
+		THEN "pending"."spending_category_id" ELSE "posted"."spending_category_id" END,
+	"categorization_confidence" = CASE WHEN "pending"."categorized_by" = 'person' AND "posted"."categorized_by" <> 'person'
+		THEN NULL ELSE "posted"."categorization_confidence" END,
+	"categorized_by" = CASE WHEN "pending"."categorized_by" = 'person' AND "posted"."categorized_by" <> 'person'
+		THEN 'person' ELSE "posted"."categorized_by" END,
+	"is_transfer" = CASE WHEN "pending"."transfer_marked_by" = 'person' AND "posted"."transfer_marked_by" <> 'person'
+		THEN "pending"."is_transfer" ELSE "posted"."is_transfer" END,
+	"transfer_marked_by" = CASE WHEN "pending"."transfer_marked_by" = 'person' AND "posted"."transfer_marked_by" <> 'person'
+		THEN 'person' ELSE "posted"."transfer_marked_by" END,
+	"modified_at" = @modified_at`
+
+// hasDecisionToCarry is true when the pending finance transaction holds a
+// decision of the person's the posted one does not have yet.
+const hasDecisionToCarry = `(("pending"."categorized_by" = 'person' AND "posted"."categorized_by" <> 'person')
+	OR ("pending"."transfer_marked_by" = 'person' AND "posted"."transfer_marked_by" <> 'person'))`
+
+// carryPendingDecisions gives a posted finance transaction what the person
+// decided about the pending one of the same finance source it names, which
+// the provider is about to remove: the spending category they chose and
+// the transfer they marked or unmarked would otherwise be lost as soon as
+// the charge posted.
+func (self *transaction) carryPendingDecisions(agentId, sourceId, financeAccountId, postedProviderTransactionId, pendingProviderTransactionId string, now time.Time) error {
+	return self.tx.Exec(`UPDATE "agent_finance_transaction" AS "posted" SET `+carriedDecisions+`
+		FROM "agent_finance_transaction" AS "pending"
+		WHERE "posted"."agent_id" = @agent_id AND "posted"."finance_account_id" = @finance_account_id
+		  AND "posted"."provider_transaction_id" = @posted_provider_transaction_id
+		  AND "pending"."agent_id" = @agent_id AND "pending"."id" <> "posted"."id"
+		  AND "pending"."provider_transaction_id" = @pending_provider_transaction_id
+		  AND "pending"."finance_account_id" IN (SELECT "id" FROM "agent_finance_account" WHERE "agent_id" = @agent_id AND "source_id" = @source_id)
+		  AND `+hasDecisionToCarry,
+		map[string]any{
+			"agent_id": agentId, "source_id": sourceId, "finance_account_id": financeAccountId, "modified_at": now,
+			"posted_provider_transaction_id": postedProviderTransactionId, "pending_provider_transaction_id": pendingProviderTransactionId,
+		}).Error
+}
+
+// carryReplacedPendingDecisions is carryPendingDecisions for a provider
+// that does not say which posted transaction a pending one became
+// (SimpleFIN): before the pending ones of a finance account that this sync
+// replaced are deleted, each the person decided about hands its decisions
+// to a posted one this sync inserted for the same account, with the same
+// amount and currency, posted within a few days of it. Charges post in
+// the order they were made, so among equal amounts the first pending one
+// goes to the first posted one, the second to the second, and so on; a
+// pair further apart than a few days is not taken.
+func (self *transaction) carryReplacedPendingDecisions(agentId, financeAccountId, replacedFrom string, keptProviderTransactionIds, insertedPostedIds []string, now time.Time) error {
+	if len(insertedPostedIds) == 0 {
+		return nil
+	}
+	return self.tx.Exec(`WITH "replaced" AS (
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY "amount", "currency_code" ORDER BY "posted_on", "id") AS "amount_rank"
+			FROM "agent_finance_transaction"
+			WHERE "agent_id" = @agent_id AND "finance_account_id" = @finance_account_id AND "is_pending"
+			  AND "posted_on" >= CAST(@replaced_from AS date) AND "provider_transaction_id" <> ALL(CAST(@kept AS text[]))
+			  AND ("categorized_by" = 'person' OR "transfer_marked_by" = 'person')
+		), "arrived" AS (
+			SELECT "id", "amount", "currency_code", "posted_on",
+				ROW_NUMBER() OVER (PARTITION BY "amount", "currency_code" ORDER BY "posted_on", "id") AS "amount_rank"
+			FROM "agent_finance_transaction"
+			WHERE "agent_id" = @agent_id AND "finance_account_id" = @finance_account_id AND NOT "is_pending"
+			  AND "id" = ANY(CAST(@inserted AS text[]))
+			  AND "categorized_by" <> 'person' AND "transfer_marked_by" <> 'person'
+		)
+		UPDATE "agent_finance_transaction" AS "posted" SET `+carriedDecisions+`
+		FROM "arrived" JOIN "replaced" AS "pending"
+		  ON "pending"."amount" = "arrived"."amount" AND "pending"."currency_code" = "arrived"."currency_code"
+		 AND "pending"."amount_rank" = "arrived"."amount_rank"
+		 AND "arrived"."posted_on" BETWEEN "pending"."posted_on" - CAST(@posting_days AS integer)
+		                               AND "pending"."posted_on" + CAST(@posting_days AS integer)
+		WHERE "posted"."id" = "arrived"."id" AND "posted"."agent_id" = @agent_id
+		  AND `+hasDecisionToCarry,
+		map[string]any{
+			"agent_id": agentId, "finance_account_id": financeAccountId, "replaced_from": replacedFrom,
+			"kept": pq.Array(keptProviderTransactionIds), "inserted": pq.Array(insertedPostedIds),
+			"posting_days": pendingPostingDays, "modified_at": now,
+		}).Error
 }
 
 // upsertFinanceAccount writes one finance account as the provider reported
@@ -619,21 +763,27 @@ func assetKindForFinanceAccount(accountKind models.FinanceAccountKind, providerM
 //
 // Providers disagree on the sign of what is owed: Plaid reports a card or
 // loan balance as a positive amount owed, SimpleFIN leaves it to the
-// institution and most report it negative. A valuation's value is the size
-// of the thing and the asset's is_liability gives the sign, so for a
-// liability the value is the balance without its sign, whichever way the
-// provider wrote it. Anything else keeps the balance as reported, which may
-// be negative: an overdrawn checking account is a negative asset, not a
-// liability.
-func financeValuationValue(currentBalance string, isLiability bool) (string, error) {
-	value, err := canonicalAmount("current balance", currentBalance)
+// institution and they report it negative; the account says which
+// (isOwedBalancePositive). A valuation's value is the size of the thing
+// and the asset's is_liability gives the sign, so for a liability the
+// value is the amount owed: positive for a debt, and negative for a
+// credit in the person's favour, such as a refund left on a paid-off
+// card, which then adds to net worth rather than subtracting. Anything
+// else keeps the balance as reported, which may be negative: an overdrawn
+// checking account is a negative asset, not a liability.
+func financeValuationValue(currentBalance string, isLiability, isOwedBalancePositive bool) (string, error) {
+	valuationValue, err := canonicalAmount("current balance", currentBalance)
 	if err != nil {
 		return "", err
 	}
-	if isLiability {
-		value = strings.TrimPrefix(value, "-")
+	if isLiability && !isOwedBalancePositive {
+		amountOwed, err := finance.ParseAmount(valuationValue)
+		if err != nil {
+			return "", err
+		}
+		valuationValue = finance.FormatAmount(amountOwed.Neg(amountOwed))
 	}
-	return value, nil
+	return valuationValue, nil
 }
 
 // createFinanceSyncAsset makes the asset a finance account seen for the
@@ -670,7 +820,7 @@ func (self *transaction) recordFinanceSyncValuation(agentId, financeAccountId st
 	if len(found) == 0 || found[0].ValuationSource != string(models.ValuationSourceFinanceSync) {
 		return false, nil
 	}
-	value, err := financeValuationValue(account.CurrentBalance, found[0].IsLiability)
+	value, err := financeValuationValue(account.CurrentBalance, found[0].IsLiability, account.IsOwedBalancePositive)
 	if err != nil {
 		return false, err
 	}
@@ -694,9 +844,12 @@ func (self *transaction) recordFinanceSyncValuation(agentId, financeAccountId st
 // The person's columns survive: a spending category the person chose, and
 // a transfer the person marked or unmarked. A spending category anything
 // else gave is dropped when what it was judged from (the merchant, the
-// description, the provider's category) changed, so it is judged again;
-// a transfer found by pairing is dropped when the amount changed, so the
-// pairing runs again.
+// description, the provider's category) changed, so it is judged again,
+// and so is a categorize model's earlier failure to place it. A transfer
+// found by pairing is dropped when the amount changed, so the pairing runs
+// again; one a spending rule or the provider category mapping marked is
+// dropped when the amount or what it was judged from changed, and the
+// rules and the mapping run again after the sync.
 func (self *transaction) upsertFinanceTransaction(agentId, financeAccountId string, added finance.Transaction, now time.Time) (*agentFinanceTransactionModel, error) {
 	if added.ProviderTransactionID == "" {
 		return nil, fmt.Errorf("%w: a finance transaction needs the provider's id", ErrInvalidArguments)
@@ -733,8 +886,12 @@ func (self *transaction) upsertFinanceTransaction(agentId, financeAccountId stri
 				THEN '' ELSE "existing"."categorized_by" END,
 			"categorization_confidence" = CASE WHEN "existing"."categorized_by" <> 'person' AND `+financeJudgedFromChanged+`
 				THEN NULL ELSE "existing"."categorization_confidence" END,
-			"is_transfer" = CASE WHEN NOT "existing"."is_transfer_set_by_person" AND "existing"."amount" <> EXCLUDED."amount"
-				THEN false ELSE "existing"."is_transfer" END
+			"categorize_attempted_at" = CASE WHEN `+financeJudgedFromChanged+`
+				THEN NULL ELSE "existing"."categorize_attempted_at" END,
+			"is_transfer" = CASE WHEN `+financeTransferNoLongerHolds+`
+				THEN false ELSE "existing"."is_transfer" END,
+			"transfer_marked_by" = CASE WHEN `+financeTransferNoLongerHolds+`
+				THEN '' ELSE "existing"."transfer_marked_by" END
 		WHERE ("existing"."posted_on", "existing"."transacted_at", "existing"."amount", "existing"."currency_code",
 				"existing"."description", "existing"."merchant_name", "existing"."provider_category_primary",
 				"existing"."provider_category_detailed", "existing"."is_pending", "existing"."pending_provider_transaction_id",
@@ -761,6 +918,14 @@ func (self *transaction) upsertFinanceTransaction(agentId, financeAccountId stri
 // category is judged from changed.
 const financeJudgedFromChanged = `("existing"."description", "existing"."merchant_name", "existing"."provider_category_primary", "existing"."provider_category_detailed")
 	IS DISTINCT FROM (EXCLUDED."description", EXCLUDED."merchant_name", EXCLUDED."provider_category_primary", EXCLUDED."provider_category_detailed")`
+
+// financeTransferNoLongerHolds is true inside the upsert when what marked
+// the finance transaction a transfer was judged from something that
+// changed: the amount, for a pair; the amount or the text and provider
+// category, for a spending rule or the mapping.
+const financeTransferNoLongerHolds = `(("existing"."transfer_marked_by" = 'detection' AND "existing"."amount" <> EXCLUDED."amount")
+	OR ("existing"."transfer_marked_by" IN ('spending_rule', 'provider_category_mapping')
+		AND ("existing"."amount" <> EXCLUDED."amount" OR ` + financeJudgedFromChanged + `)))`
 
 // --- reads -------------------------------------------------------------
 
@@ -877,7 +1042,8 @@ func (self *transaction) ListUncategorizedFinanceTransactions(agentId string, li
 		limit = FinanceTransactionLimitMost
 	}
 	var found []agentFinanceTransactionModel
-	if err := self.tx.Where(`"agent_id" = ? AND "spending_category_id" IS NULL AND "categorized_by" <> 'person' AND NOT "is_transfer"`, agentId).
+	if err := self.tx.Where(`"agent_id" = ? AND "spending_category_id" IS NULL AND "categorized_by" <> 'person' AND NOT "is_transfer"
+			AND "categorize_attempted_at" IS NULL`, agentId).
 		Order(`"posted_on" DESC, "id" DESC`).Limit(limit).Find(&found).Error; err != nil {
 		return nil, err
 	}
@@ -886,6 +1052,16 @@ func (self *transaction) ListUncategorizedFinanceTransactions(agentId string, li
 		transactions = append(transactions, found[index].toModel())
 	}
 	return transactions, nil
+}
+
+func (self *transaction) MarkCategorizeAttempted(agentId string, financeTransactionIds []string) (int, error) {
+	if len(financeTransactionIds) == 0 {
+		return 0, nil
+	}
+	marked := self.tx.Exec(`UPDATE "agent_finance_transaction" SET "categorize_attempted_at" = ?
+		WHERE "agent_id" = ? AND "id" = ANY(?::text[]) AND "spending_category_id" IS NULL`,
+		time.Now(), agentId, pq.Array(financeTransactionIds))
+	return int(marked.RowsAffected), marked.Error
 }
 
 // --- categorization and transfers --------------------------------------
@@ -912,10 +1088,15 @@ func (self *transaction) SetTransactionCategorization(agentId, financeTransactio
 			return false, ErrNotFound
 		}
 	}
+	// A spending category given clears the categorize model's earlier
+	// failure, so that if what gave it takes it away again (a spending
+	// rule deleted) the model is asked afresh.
 	updated := self.tx.Exec(`UPDATE "agent_finance_transaction" SET "spending_category_id" = ?, "categorized_by" = ?,
-			"categorization_confidence" = ?::numeric, "modified_at" = ?
+			"categorization_confidence" = ?::numeric, "modified_at" = ?,
+			"categorize_attempted_at" = CASE WHEN ? THEN NULL ELSE "categorize_attempted_at" END
 		WHERE "agent_id" = ? AND "id" = ? AND ("categorized_by" <> 'person' OR ? = 'person')`,
-		optionalID(spendingCategoryId), string(categorizedBy), confidence, time.Now(), agentId, financeTransactionId, string(categorizedBy))
+		optionalID(spendingCategoryId), string(categorizedBy), confidence, time.Now(), spendingCategoryId != "",
+		agentId, financeTransactionId, string(categorizedBy))
 	if updated.Error != nil {
 		return false, updated.Error
 	}
@@ -932,11 +1113,26 @@ func (self *transaction) SetTransactionCategorization(agentId, financeTransactio
 	return false, nil
 }
 
-func (self *transaction) MarkFinanceTransactionTransfer(agentId, financeTransactionId string, isTransfer, isSetByPerson bool) (bool, error) {
-	updated := self.tx.Exec(`UPDATE "agent_finance_transaction" SET "is_transfer" = ?,
-			"is_transfer_set_by_person" = "is_transfer_set_by_person" OR ?, "modified_at" = ?
-		WHERE "agent_id" = ? AND "id" = ? AND (NOT "is_transfer_set_by_person" OR ?)`,
-		isTransfer, isSetByPerson, time.Now(), agentId, financeTransactionId, isSetByPerson)
+func (self *transaction) MarkFinanceTransactionTransfer(agentId, financeTransactionId string, isTransfer bool, transferMarkedBy models.TransferMarkedBy) (bool, error) {
+	if !transferMarkedBy.IsValid() {
+		return false, fmt.Errorf("%w: %q is not what marks a transfer", ErrInvalidArguments, transferMarkedBy)
+	}
+	var updated *gorm.DB
+	switch {
+	case transferMarkedBy == models.TransferMarkedByPerson:
+		updated = self.tx.Exec(`UPDATE "agent_finance_transaction" SET "is_transfer" = ?, "transfer_marked_by" = 'person', "modified_at" = ?
+			WHERE "agent_id" = ? AND "id" = ?`, isTransfer, time.Now(), agentId, financeTransactionId)
+	case isTransfer:
+		// A transfer something else already marked keeps its origin, so
+		// that what marked it first is what may clear it.
+		updated = self.tx.Exec(`UPDATE "agent_finance_transaction" SET "is_transfer" = true, "transfer_marked_by" = ?, "modified_at" = ?
+			WHERE "agent_id" = ? AND "id" = ? AND NOT "is_transfer" AND "transfer_marked_by" <> 'person'`,
+			string(transferMarkedBy), time.Now(), agentId, financeTransactionId)
+	default:
+		updated = self.tx.Exec(`UPDATE "agent_finance_transaction" SET "is_transfer" = false, "transfer_marked_by" = '', "modified_at" = ?
+			WHERE "agent_id" = ? AND "id" = ? AND "transfer_marked_by" = ?`,
+			time.Now(), agentId, financeTransactionId, string(transferMarkedBy))
+	}
 	if updated.Error != nil {
 		return false, updated.Error
 	}
@@ -962,8 +1158,10 @@ func (self *transaction) DetectFinanceTransfers(agentId, sourceId, sinceDate str
 	scope := `SELECT "id" FROM "agent_finance_account" WHERE "agent_id" = @agent_id AND (@source_id = '' OR "source_id" = @source_id)`
 	arguments := map[string]any{"agent_id": agentId, "source_id": sourceId, "since_date": sinceDate, "modified_at": time.Now()}
 
-	// What the provider calls a transfer or a loan payment. The mapping is
-	// in Go, so the candidates are read and the matches written back.
+	// What the provider calls a transfer. The mapping is in Go, so the
+	// candidates are read and the matches written back. A finance
+	// transaction the person categorized is their decision that it is
+	// spending or income.
 	var candidates []struct {
 		ID                       string `gorm:"column:id"`
 		ProviderCategoryPrimary  string `gorm:"column:provider_category_primary"`
@@ -971,7 +1169,7 @@ func (self *transaction) DetectFinanceTransfers(agentId, sourceId, sinceDate str
 	}
 	if err := self.tx.Raw(`SELECT "id", "provider_category_primary", "provider_category_detailed" FROM "agent_finance_transaction"
 		WHERE "agent_id" = @agent_id AND "finance_account_id" IN (`+scope+`) AND "posted_on" >= CAST(@since_date AS date)
-		  AND NOT "is_transfer" AND NOT "is_transfer_set_by_person"
+		  AND NOT "is_transfer" AND "transfer_marked_by" <> 'person' AND "categorized_by" <> 'person'
 		  AND ("provider_category_primary" <> '' OR "provider_category_detailed" <> '')`, arguments).
 		Scan(&candidates).Error; err != nil {
 		return 0, err
@@ -985,8 +1183,9 @@ func (self *transaction) DetectFinanceTransfers(agentId, sourceId, sinceDate str
 	markedCount := 0
 	if len(providerTransferIds) > 0 {
 		arguments["transfer_ids"] = pq.Array(providerTransferIds)
-		marked := self.tx.Exec(`UPDATE "agent_finance_transaction" SET "is_transfer" = true, "modified_at" = @modified_at
-			WHERE "agent_id" = @agent_id AND "id" = ANY(CAST(@transfer_ids AS text[])) AND NOT "is_transfer_set_by_person"`, arguments)
+		marked := self.tx.Exec(`UPDATE "agent_finance_transaction" SET "is_transfer" = true, "transfer_marked_by" = 'provider_category_mapping',
+				"modified_at" = @modified_at
+			WHERE "agent_id" = @agent_id AND "id" = ANY(CAST(@transfer_ids AS text[])) AND NOT "is_transfer" AND "transfer_marked_by" <> 'person'`, arguments)
 		if marked.Error != nil {
 			return 0, marked.Error
 		}
@@ -997,26 +1196,47 @@ func (self *transaction) DetectFinanceTransfers(agentId, sourceId, sinceDate str
 	// within a few days. At least one side is in scope and recent; the
 	// other may be any of the agent's accounts, so a card payment pairs
 	// with its checking withdrawal however the two were linked.
+	//
+	// One to one: each side takes the other side closest in days, and a
+	// pair is marked only when each is the other's first choice. A 500
+	// moved to savings on Monday and a 500 rent check on Tuesday are two
+	// candidates for the one 500 that arrived in savings on Monday; the
+	// transfer is the closer, and the rent stays spending. What a round
+	// leaves over pairs in the next, once the pairs before it are marked.
 	arguments["pairing_days"] = transferPairingDays
-	paired := self.tx.Exec(`UPDATE "agent_finance_transaction" SET "is_transfer" = true, "modified_at" = @modified_at
-		WHERE "agent_id" = @agent_id AND NOT "is_transfer" AND NOT "is_transfer_set_by_person" AND "id" IN (
-			SELECT unnest(ARRAY["money_out"."id", "money_in"."id"])
-			FROM "agent_finance_transaction" AS "money_out"
-			JOIN "agent_finance_transaction" AS "money_in"
-			  ON "money_in"."agent_id" = "money_out"."agent_id"
-			 AND "money_in"."finance_account_id" <> "money_out"."finance_account_id"
-			 AND "money_in"."currency_code" = "money_out"."currency_code"
-			 AND "money_in"."amount" = -"money_out"."amount"
-			 AND "money_in"."posted_on" BETWEEN "money_out"."posted_on" - CAST(@pairing_days AS integer) AND "money_out"."posted_on" + CAST(@pairing_days AS integer)
-			WHERE "money_out"."agent_id" = @agent_id AND "money_out"."amount" < 0
-			  AND NOT "money_out"."is_transfer_set_by_person" AND NOT "money_in"."is_transfer_set_by_person"
-			  AND (("money_out"."posted_on" >= CAST(@since_date AS date) AND "money_out"."finance_account_id" IN (`+scope+`))
-			    OR ("money_in"."posted_on" >= CAST(@since_date AS date) AND "money_in"."finance_account_id" IN (`+scope+`)))
-		)`, arguments)
-	if paired.Error != nil {
-		return 0, paired.Error
+	for round := 0; round < transferPairingRounds; round++ {
+		paired := self.tx.Exec(`WITH "eligible" AS (
+				SELECT "id", "finance_account_id", "currency_code", "amount", "posted_on" FROM "agent_finance_transaction"
+				WHERE "agent_id" = @agent_id AND NOT "is_transfer" AND "transfer_marked_by" <> 'person' AND "categorized_by" <> 'person'
+			), "ranked" AS (
+				SELECT "money_out"."id" AS "money_out_id", "money_in"."id" AS "money_in_id",
+					ROW_NUMBER() OVER (PARTITION BY "money_out"."id"
+						ORDER BY abs("money_in"."posted_on" - "money_out"."posted_on"), "money_in"."posted_on", "money_in"."id") AS "money_out_choice",
+					ROW_NUMBER() OVER (PARTITION BY "money_in"."id"
+						ORDER BY abs("money_in"."posted_on" - "money_out"."posted_on"), "money_out"."posted_on", "money_out"."id") AS "money_in_choice"
+				FROM "eligible" AS "money_out"
+				JOIN "eligible" AS "money_in"
+				  ON "money_in"."finance_account_id" <> "money_out"."finance_account_id"
+				 AND "money_in"."currency_code" = "money_out"."currency_code"
+				 AND "money_in"."amount" = -"money_out"."amount"
+				 AND "money_in"."posted_on" BETWEEN "money_out"."posted_on" - CAST(@pairing_days AS integer) AND "money_out"."posted_on" + CAST(@pairing_days AS integer)
+				WHERE "money_out"."amount" < 0
+				  AND (("money_out"."posted_on" >= CAST(@since_date AS date) AND "money_out"."finance_account_id" IN (`+scope+`))
+				    OR ("money_in"."posted_on" >= CAST(@since_date AS date) AND "money_in"."finance_account_id" IN (`+scope+`)))
+			)
+			UPDATE "agent_finance_transaction" SET "is_transfer" = true, "transfer_marked_by" = 'detection', "modified_at" = @modified_at
+			WHERE "agent_id" = @agent_id AND NOT "is_transfer" AND "transfer_marked_by" <> 'person' AND "id" IN (
+				SELECT unnest(ARRAY["money_out_id", "money_in_id"]) FROM "ranked"
+				WHERE "money_out_choice" = 1 AND "money_in_choice" = 1
+			)`, arguments)
+		if paired.Error != nil {
+			return 0, paired.Error
+		}
+		markedCount += int(paired.RowsAffected)
+		if paired.RowsAffected == 0 {
+			break
+		}
 	}
-	markedCount += int(paired.RowsAffected)
 	return markedCount, nil
 }
 

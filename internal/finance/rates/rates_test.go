@@ -7,9 +7,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/finance"
 )
@@ -142,6 +144,62 @@ func TestExchangeRateFetchPolicy(t *testing.T) {
 	var noRate *finance.ErrNoExchangeRate
 	if _, err := fetcher.ExchangeRate(t.Context(), "USD", "XTS", "2026-09-16"); !errors.As(err, &noRate) || noRate.CurrencyCode != "XTS" {
 		t.Fatalf("a currency the ECB does not publish has no rate: %v", err)
+	}
+}
+
+// An ECB that does not answer costs the caller that fetches a bounded
+// wait, and holds neither the fetch lock nor a transaction while it waits;
+// a second caller meanwhile does not fetch again, waits no longer than the
+// first, and answers from what is stored.
+func TestExchangeRateFetchThatHangsIsBounded(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	t.Cleanup(closeDatabase)
+	requestArrived := make(chan struct{}, 4)
+	var requestCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requestCount.Add(1)
+		requestArrived <- struct{}{}
+		<-request.Context().Done()
+	}))
+	t.Cleanup(server.Close)
+	fetcher := New(database, finance.NewExchangeRateSourceAt(server.URL))
+	fetcher.fetchTimeout = 500 * time.Millisecond
+	fetcher.historyFetchTimeout = 500 * time.Millisecond
+
+	started := time.Now()
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- fetcher.EnsureRates(t.Context(), time.Now().UTC().Format(time.DateOnly)) }()
+	<-requestArrived
+
+	// While the fetch waits on the ECB, the fetch lock is free: nothing
+	// holds a transaction open across the network call.
+	if err := database.Transaction(func(tx db.Transaction) error {
+		isLocked, err := tx.TryAdvisoryLock(fetchLockKey)
+		if err != nil {
+			return err
+		}
+		if !isLocked {
+			return errors.New("the fetch lock is held while the ECB is being asked")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := fetcher.EnsureRates(t.Context(), time.Now().UTC().Format(time.DateOnly)); err != nil {
+		t.Fatalf("a caller behind a fetch in flight answers from what is stored: %s", err)
+	}
+	if err := <-firstDone; err == nil {
+		t.Fatal("a fetch the ECB never answered is an error")
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("the wait is bounded by the fetch timeout, took %s", elapsed)
+	}
+	if requestCount.Load() != 1 {
+		t.Fatalf("one fetch in flight at a time: %d requests", requestCount.Load())
+	}
+	if err := fetcher.EnsureRates(t.Context(), time.Now().UTC().Format(time.DateOnly)); err != nil || requestCount.Load() != 1 {
+		t.Fatalf("a failed fetch is not tried again within the pause: %v, %d requests", err, requestCount.Load())
 	}
 }
 

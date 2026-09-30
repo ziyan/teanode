@@ -13,7 +13,22 @@ func TestMapProviderCategory(t *testing.T) {
 		{"INCOME", "INCOME_WAGES", SpendingCategoryIncome, false},
 		{"TRANSFER_IN", "TRANSFER_IN_ACCOUNT_TRANSFER", "", true},
 		{"TRANSFER_OUT", "TRANSFER_OUT_SAVINGS", "", true},
+		{"TRANSFER_IN", "TRANSFER_IN_SAVINGS", "", true},
+		{"TRANSFER_OUT", "TRANSFER_OUT_ACCOUNT_TRANSFER", "", true},
+		{"TRANSFER_OUT", "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS", "", true},
+		{"TRANSFER_OUT", "", "", true},
+		// Money borrowed is not income.
+		{"LOAN_DISBURSEMENTS", "LOAN_DISBURSEMENTS_PERSONAL", "", true},
+		{"TRANSFER_IN", "TRANSFER_IN_CASH_ADVANCES_AND_LOANS", "", true},
+		// A card payment is the one loan payment that is a transfer.
 		{"LOAN_PAYMENTS", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", "", true},
+		{"LOAN_PAYMENTS", "LOAN_PAYMENTS_MORTGAGE_PAYMENT", SpendingCategoryHousing, false},
+		{"LOAN_PAYMENTS", "LOAN_PAYMENTS_CAR_PAYMENT", SpendingCategoryOther, false},
+		{"LOAN_PAYMENTS", "LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT", SpendingCategoryOther, false},
+		{"LOAN_PAYMENTS", "", SpendingCategoryOther, false},
+		// Cash from a machine is spent; a deposit may be a paycheck.
+		{"TRANSFER_OUT", "TRANSFER_OUT_WITHDRAWAL", SpendingCategoryOther, false},
+		{"TRANSFER_IN", "TRANSFER_IN_DEPOSIT", "", false},
 		{"BANK_FEES", "BANK_FEES_OVERDRAFT_FEES", SpendingCategoryFees, false},
 		{"ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES", SpendingCategoryEntertainment, false},
 		{"FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES", SpendingCategoryGroceries, false},
@@ -33,7 +48,9 @@ func TestMapProviderCategory(t *testing.T) {
 		{"FOOD_AND_DRINK", "", SpendingCategoryDining, false},
 		// A primary lost along the way is recovered from the detailed.
 		{"", "FOOD_AND_DRINK_GROCERIES", SpendingCategoryGroceries, false},
-		{"", "TRANSFER_OUT_WITHDRAWAL", "", true},
+		{"", "TRANSFER_OUT_SAVINGS", "", true},
+		{"", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", "", true},
+		{"", "LOAN_PAYMENTS_CAR_PAYMENT", SpendingCategoryOther, false},
 		{"", "TRAVEL_LODGING", SpendingCategoryTravel, false},
 		// Merchant category codes from SimpleFIN.
 		{"", "mcc:5411", SpendingCategoryGroceries, false},

@@ -15,19 +15,30 @@ CREATE TABLE "agent_spending_category" (
 CREATE UNIQUE INDEX "agent_spending_category_name" ON "agent_spending_category" ("agent_id", "spending_category_name");
 
 -- Each transaction's spending category, who gave it, and whether it is a
--- transfer between the person's own accounts. What the person chose
--- (categorized_by person, is_transfer_set_by_person) no sync, spending
--- rule or model overwrites.
+-- transfer between the person's own accounts and what marked it so. What
+-- the person chose (categorized_by person, transfer_marked_by person, the
+-- latter either way) no sync, spending rule or model overwrites; a mark
+-- anything else made is cleared by what made it when it no longer holds.
+-- categorize_attempted_at is when the categorize model was last asked
+-- about the transaction and could not place it: it is not asked again
+-- until the merchant, the description or the provider category changes.
 ALTER TABLE "agent_finance_transaction"
     ADD COLUMN "spending_category_id" character varying(32) REFERENCES "agent_spending_category" ("id") ON DELETE SET NULL,
     ADD COLUMN "categorized_by" character varying(40) NOT NULL DEFAULT '',
     ADD COLUMN "categorization_confidence" numeric(5,4),
+    ADD COLUMN "categorize_attempted_at" timestamp with time zone,
     ADD COLUMN "is_transfer" boolean NOT NULL DEFAULT false,
-    ADD COLUMN "is_transfer_set_by_person" boolean NOT NULL DEFAULT false,
+    ADD COLUMN "transfer_marked_by" character varying(40) NOT NULL DEFAULT '',
     ADD CONSTRAINT "agent_finance_transaction_categorized_by"
-        CHECK ("categorized_by" IN ('', 'person', 'spending_rule', 'provider_category_mapping', 'categorize_model'));
+        CHECK ("categorized_by" IN ('', 'person', 'spending_rule', 'provider_category_mapping', 'categorize_model')),
+    ADD CONSTRAINT "agent_finance_transaction_transfer_marked_by"
+        CHECK ("transfer_marked_by" IN ('', 'person', 'spending_rule', 'provider_category_mapping', 'detection')),
+    -- Only the person decides that something is not a transfer; anything
+    -- else that marks one says what it was.
+    ADD CONSTRAINT "agent_finance_transaction_transfer_origin"
+        CHECK ("is_transfer" = ("transfer_marked_by" NOT IN ('', 'person')) OR "transfer_marked_by" = 'person');
 CREATE INDEX "agent_finance_transaction_uncategorized" ON "agent_finance_transaction" ("agent_id", "posted_on" DESC)
-    WHERE "spending_category_id" IS NULL;
+    WHERE "spending_category_id" IS NULL AND "categorize_attempted_at" IS NULL;
 
 -- Assigns a spending category, or marks a transfer, to transactions that
 -- match: match_text against the merchant (or the description when there
@@ -96,6 +107,7 @@ CREATE TABLE "agent_savings_target_asset" (
 
 -- A budget or savings target crossing, written in code after a sync. Its
 -- key (spending-category:<id>:2026-09:at_risk) becomes the alert's subject
--- key, so the same crossing is told once.
+-- key, so the same crossing is told once. Unique, so two syncs of one
+-- person finishing together cannot both write it.
 ALTER TABLE "agent_alert_candidate" ADD COLUMN "budget_key" text NOT NULL DEFAULT '';
-CREATE INDEX "agent_alert_candidate_budget" ON "agent_alert_candidate" ("agent_id", "budget_key") WHERE "budget_key" <> '';
+CREATE UNIQUE INDEX "agent_alert_candidate_budget" ON "agent_alert_candidate" ("agent_id", "budget_key") WHERE "budget_key" <> '';
