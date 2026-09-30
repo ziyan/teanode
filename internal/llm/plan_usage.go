@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -29,6 +30,10 @@ type PlanUsage struct {
 
 // PlanWindow is one allowance.
 type PlanWindow struct {
+	// Name is which of the service's windows this is, such as "primary",
+	// which is how a later answer that leaves its length out finds it.
+	Name string
+
 	UsedPercent   int
 	WindowMinutes int
 
@@ -36,9 +41,15 @@ type PlanWindow struct {
 	ResetsAt time.Time
 }
 
+// hasReset says the window has started over since it was read, so what was
+// said of its use no longer holds.
+func (self PlanWindow) hasReset(now time.Time) bool {
+	return !self.ResetsAt.IsZero() && !self.ResetsAt.After(now)
+}
+
 // planUsageReporter is a provider that keeps what its plan said.
 type planUsageReporter interface {
-	planUsageNow() *PlanUsage
+	planUsageNow(now time.Time) *PlanUsage
 }
 
 // PlanUsage is what the named provider's plan last said of its allowance, or
@@ -55,37 +66,57 @@ func (self *Registry) PlanUsage(provider string) *PlanUsage {
 	if !isReporter {
 		return nil
 	}
-	return reporter.planUsageNow()
+	return reporter.planUsageNow(time.Now())
 }
 
-// planWindowOf reads one window from the headers, named by its prefix such as
-// "X-Codex-Primary". It is not reported when its length is not said.
-func planWindowOf(header http.Header, prefix string, now time.Time) (PlanWindow, bool) {
-	minutes, err := strconv.ParseFloat(strings.TrimSpace(header.Get(prefix+"-Window-Minutes")), 64)
-	if err != nil || minutes <= 0 {
-		return PlanWindow{}, false
+// planWindowOf is one window, named by its header prefix such as
+// "X-Codex-Primary", with what these headers say of it laid over what was
+// said before: its length, use and reset time each change only when the
+// headers say them. A use read before a reset that has since passed is not
+// kept. It is not reported while its length has never been said.
+func planWindowOf(header http.Header, prefix string, before PlanWindow, now time.Time) (PlanWindow, bool) {
+	window := before
+	window.Name = strings.ToLower(strings.TrimPrefix(prefix, "X-Codex-"))
+	if before.hasReset(now) {
+		window.UsedPercent, window.ResetsAt = 0, time.Time{}
 	}
-	window := PlanWindow{WindowMinutes: int(minutes)}
-	if used, isKnown := usedPercent(header, prefix+"-Used-Percent"); isKnown {
+	if minutes, isSaid := finiteHeader(header, prefix+"-Window-Minutes"); isSaid && minutes > 0 {
+		window.WindowMinutes = int(minutes)
+	}
+	if used, isSaid := usedPercent(header, prefix+"-Used-Percent"); isSaid {
 		window.UsedPercent = used
 	}
-	window.ResetsAt = resetTimeOf(header, prefix, now)
-	return window, true
+	if resetsAt, isSaid := resetTimeOf(header, prefix, now); isSaid {
+		window.ResetsAt = resetsAt
+	}
+	return window, window.WindowMinutes > 0
 }
 
 // resetTimeOf is when a window resets: the moment the service names, in Unix
-// seconds or as a timestamp, or else now plus the seconds it says remain.
-func resetTimeOf(header http.Header, prefix string, now time.Time) time.Time {
+// seconds or as a timestamp, or else now plus the seconds it says remain. It
+// is not said when neither header holds a usable value.
+func resetTimeOf(header http.Header, prefix string, now time.Time) (time.Time, bool) {
 	at := strings.TrimSpace(header.Get(prefix + "-Reset-At"))
 	if seconds, err := strconv.ParseInt(at, 10, 64); err == nil && seconds > 0 {
-		return time.Unix(seconds, 0)
+		return time.Unix(seconds, 0), true
 	}
 	if parsed, err := time.Parse(time.RFC3339, at); err == nil {
-		return parsed
+		return parsed, true
 	}
-	after, err := strconv.ParseFloat(strings.TrimSpace(header.Get(prefix+"-Reset-After-Seconds")), 64)
-	if err != nil || after <= 0 {
-		return time.Time{}
+	after, isSaid := finiteHeader(header, prefix+"-Reset-After-Seconds")
+	if !isSaid || after <= 0 {
+		return time.Time{}, false
 	}
-	return now.Add(time.Duration(after * float64(time.Second))).Round(time.Second)
+	return now.Add(time.Duration(after * float64(time.Second))).Round(time.Second), true
+}
+
+// finiteHeader reads a header holding a number. A value that is not one, or
+// is NaN or infinite, which ParseFloat accepts, is not said: turned into an
+// int it would be a nonsense percent or length.
+func finiteHeader(header http.Header, name string) (float64, bool) {
+	value, err := strconv.ParseFloat(strings.TrimSpace(header.Get(name)), 64)
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, false
+	}
+	return value, true
 }

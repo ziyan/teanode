@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -338,28 +337,27 @@ func (self *codex) notePlanUsage(header http.Header) {
 	}
 }
 
-// planUsageOf is what the headers say of the plan, keeping from what was said
-// before anything these headers leave out.
+// planUsageOf is what the headers say of the plan, laid over what was said
+// before: an answer that leaves out the plan's name or part of a window
+// changes only what it does say.
 func planUsageOf(header http.Header, previous *PlanUsage, now time.Time) *PlanUsage {
 	usage := &PlanUsage{PlanName: strings.TrimSpace(header.Get("X-Codex-Plan-Type")), ObservedAt: now}
 	if usage.PlanName == "" && previous != nil {
 		usage.PlanName = previous.PlanName
 	}
 	for _, prefix := range []string{"X-Codex-Primary", "X-Codex-Secondary"} {
-		window, isReported := planWindowOf(header, prefix, now)
-		if !isReported {
-			continue
-		}
-		// A window whose use this answer does not mention keeps what was
-		// said of it last, matched by its length.
-		if _, isKnown := usedPercent(header, prefix+"-Used-Percent"); !isKnown && previous != nil {
-			for _, before := range previous.Windows {
-				if before.WindowMinutes == window.WindowMinutes {
-					window.UsedPercent = before.UsedPercent
+		name := strings.ToLower(strings.TrimPrefix(prefix, "X-Codex-"))
+		var before PlanWindow
+		if previous != nil {
+			for _, candidate := range previous.Windows {
+				if candidate.Name == name {
+					before = candidate
 				}
 			}
 		}
-		usage.Windows = append(usage.Windows, window)
+		if window, isReported := planWindowOf(header, prefix, before, now); isReported {
+			usage.Windows = append(usage.Windows, window)
+		}
 	}
 	sort.SliceStable(usage.Windows, func(left, right int) bool {
 		return usage.Windows[left].WindowMinutes < usage.Windows[right].WindowMinutes
@@ -367,8 +365,11 @@ func planUsageOf(header http.Header, previous *PlanUsage, now time.Time) *PlanUs
 	return usage
 }
 
-// planUsageNow is what the plan last said, or nil before it has said anything.
-func (self *codex) planUsageNow() *PlanUsage {
+// planUsageNow is what the plan last said, or nil before it has said
+// anything. A window whose reset has passed since is given as unused: its
+// old use no longer holds, and its reset time is kept so the reader can see
+// that it has started over since the plan last answered.
+func (self *codex) planUsageNow(now time.Time) *PlanUsage {
 	self.planUsage.Lock()
 	defer self.planUsage.Unlock()
 	if self.planUsage.last == nil {
@@ -376,13 +377,18 @@ func (self *codex) planUsageNow() *PlanUsage {
 	}
 	copied := *self.planUsage.last
 	copied.Windows = append([]PlanWindow(nil), copied.Windows...)
+	for index := range copied.Windows {
+		if copied.Windows[index].hasReset(now) {
+			copied.Windows[index].UsedPercent = 0
+		}
+	}
 	return &copied
 }
 
 // usedPercent reads a used-percent header, which may carry a fraction.
 func usedPercent(header http.Header, name string) (int, bool) {
-	value, err := strconv.ParseFloat(strings.TrimSpace(header.Get(name)), 64)
-	if err != nil {
+	value, isSaid := finiteHeader(header, name)
+	if !isSaid {
 		return 0, false
 	}
 	return int(value), true
@@ -390,8 +396,8 @@ func usedPercent(header http.Header, name string) (int, bool) {
 
 // resetOf reads how long until a window resets, given in seconds.
 func resetOf(header http.Header, name string) string {
-	seconds, err := strconv.ParseFloat(strings.TrimSpace(header.Get(name)), 64)
-	if err != nil || seconds < 0 {
+	seconds, isSaid := finiteHeader(header, name)
+	if !isSaid || seconds < 0 {
 		return "a time not said"
 	}
 	return time.Duration(seconds * float64(time.Second)).Round(time.Minute).String()
@@ -399,8 +405,8 @@ func resetOf(header http.Header, name string) string {
 
 // windowOf reads how long a window is, given in minutes.
 func windowOf(header http.Header, name string) string {
-	minutes, err := strconv.ParseFloat(strings.TrimSpace(header.Get(name)), 64)
-	if err != nil || minutes <= 0 {
+	minutes, isSaid := finiteHeader(header, name)
+	if !isSaid || minutes <= 0 {
 		return "unsaid"
 	}
 	return time.Duration(minutes * float64(time.Minute)).String()
