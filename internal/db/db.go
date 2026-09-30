@@ -164,6 +164,7 @@ type Transaction interface {
 	ReplyOperation
 	EmbeddingOperation
 	VectorOperation
+	PlanUsageOperation
 	GraphOperation
 	KnowledgeOperation
 	DreamOperation

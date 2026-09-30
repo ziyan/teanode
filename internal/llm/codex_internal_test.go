@@ -343,6 +343,49 @@ func TestThePlanSaysHowMuchOfItIsUsed(test *testing.T) {
 	}
 }
 
+// A reading is handed on to be kept when it moves, not on every answer, and
+// one kept from before a restart is shown until the plan answers again.
+func TestThePlanReadingOutlivesARestart(test *testing.T) {
+	header := http.Header{}
+	header.Set("X-Codex-Plan-Type", "pro")
+	header.Set("X-Codex-Primary-Used-Percent", "40")
+	header.Set("X-Codex-Primary-Window-Minutes", "300")
+	var kept []*PlanUsage
+	before := &codex{}
+	before.onPlanUsage(func(usage *PlanUsage) { kept = append(kept, usage) })
+	before.notePlanUsage(header)
+	before.notePlanUsage(header)
+	if len(kept) != 1 {
+		test.Fatalf("an unchanged reading was kept %d times", len(kept))
+	}
+	written, err := json.Marshal(kept[0])
+	if err != nil {
+		test.Fatal(err)
+	}
+
+	var read PlanUsage
+	if err := json.Unmarshal(written, &read); err != nil {
+		test.Fatal(err)
+	}
+	after := &codex{}
+	if after.planUsageNow(time.Now()) != nil {
+		test.Fatal("a provider that has heard nothing has a reading")
+	}
+	after.restorePlanUsage(&read)
+	restored := after.planUsageNow(time.Now())
+	if restored == nil || restored.PlanName != "pro" || len(restored.Windows) != 1 || restored.Windows[0].UsedPercent != 40 {
+		test.Fatalf("the kept reading came back as %+v", restored)
+	}
+
+	// Once the plan answers, a reading kept from before does not replace it.
+	header.Set("X-Codex-Primary-Used-Percent", "45")
+	after.notePlanUsage(header)
+	after.restorePlanUsage(&read)
+	if now := after.planUsageNow(time.Now()); now.Windows[0].UsedPercent != 45 {
+		test.Errorf("an old reading replaced a new one: %d%%", now.Windows[0].UsedPercent)
+	}
+}
+
 // A plan that will not go without reasoning is asked for the least it
 // takes, once refused and from then on.
 func TestAPlanThatMustReasonIsAskedForLittle(test *testing.T) {
