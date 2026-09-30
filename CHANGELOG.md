@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.85.2] - 2026-09-30
+
+### Fixed
+
+- The models tab keeps showing a subscription plan's last usage after the server restarts, instead of nothing until the plan next answers. (#243)
+
+## [0.85.1] - 2026-09-30
+
+### Fixed
+
+- A typesafe provider could not be added from the settings page, and the decide model could not be set there. (#241)
+
 ## [0.85.0] - 2026-09-30
 
 ### Added

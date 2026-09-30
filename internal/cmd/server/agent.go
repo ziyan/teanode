@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/ziyan/teanode/internal/api"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/ziyan/teanode/internal/channel/discord"
 	"github.com/ziyan/teanode/internal/channel/telegram"
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/scheduling"
@@ -48,6 +50,7 @@ func (self *server) openAgentWorker(configuration *config.Configuration) error {
 	}
 	self.agentRegistry = registry
 	self.keepSignIns(registry)
+	self.keepPlanUsage(registry)
 	self.agentWorker = agent.New(&agent.Settings{
 		Database:      self.database,
 		Storage:       self.storage,
@@ -97,6 +100,39 @@ func (self *server) keepSignIns(registry *llm.Registry) {
 			}
 		}
 	}))
+}
+
+// keepPlanUsage writes down what each plan says of its allowance, and hands
+// back what was written before the restart, so the dashboard shows the last
+// reading rather than nothing until the plan next answers.
+func (self *server) keepPlanUsage(registry *llm.Registry) {
+	var readings map[string][]byte
+	err := self.database.Transaction(func(tx db.Transaction) (err error) {
+		readings, err = tx.ListAgentPlanUsages()
+		return err
+	})
+	if err != nil {
+		log.Warningf("could not read the plans' last usage; each shows nothing until it next answers: %s", err)
+	}
+	for provider, written := range readings {
+		var usage llm.PlanUsage
+		if err := json.Unmarshal(written, &usage); err != nil {
+			log.Warningf("the %s provider's last plan usage could not be read: %s", provider, err)
+			continue
+		}
+		registry.RestorePlanUsage(provider, &usage)
+	}
+	registry.KeepPlanUsage(func(provider string, usage *llm.PlanUsage) {
+		written, err := json.Marshal(usage)
+		if err == nil {
+			err = self.database.Transaction(func(tx db.Transaction) error {
+				return tx.PutAgentPlanUsage(provider, usage.ObservedAt, written)
+			})
+		}
+		if err != nil {
+			log.Warningf("the %s provider's plan usage could not be kept; a restart will show none until it next answers: %s", provider, err)
+		}
+	})
 }
 
 // agentService is the worker as the API sees it: nil when agents are off,

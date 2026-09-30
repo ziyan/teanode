@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,28 +18,28 @@ import (
 type PlanUsage struct {
 	// PlanName is the plan the account is on, as the service names it;
 	// empty when it did not say.
-	PlanName string
+	PlanName string `json:"planName,omitempty"`
 
 	// Windows are the allowances, each spent over a window of its own
 	// length, shortest first. A window the service does not report is left
 	// out rather than shown as unused.
-	Windows []PlanWindow
+	Windows []PlanWindow `json:"windows"`
 
 	// ObservedAt is when the service said it.
-	ObservedAt time.Time
+	ObservedAt time.Time `json:"observedAt"`
 }
 
 // PlanWindow is one allowance.
 type PlanWindow struct {
 	// Name is which of the service's windows this is, such as "primary",
 	// which is how a later answer that leaves its length out finds it.
-	Name string
+	Name string `json:"name"`
 
-	UsedPercent   int
-	WindowMinutes int
+	UsedPercent   int `json:"usedPercent"`
+	WindowMinutes int `json:"windowMinutes"`
 
 	// ResetsAt is when the window starts over; zero when not said.
-	ResetsAt time.Time
+	ResetsAt time.Time `json:"resetsAt"`
 }
 
 // hasReset says the window has started over since it was read, so what was
@@ -47,9 +48,59 @@ func (self PlanWindow) hasReset(now time.Time) bool {
 	return !self.ResetsAt.IsZero() && !self.ResetsAt.After(now)
 }
 
+// planUsageKeepInterval is how often a reading that has not moved is
+// handed on to be kept anyway, so that a restart reads back one of about
+// the right age rather than the first of a long quiet run.
+const planUsageKeepInterval = 5 * time.Minute
+
 // planUsageReporter is a provider that keeps what its plan said.
 type planUsageReporter interface {
 	planUsageNow(now time.Time) *PlanUsage
+
+	// restorePlanUsage takes a reading kept from before a restart, unless
+	// the plan has said something since.
+	restorePlanUsage(usage *PlanUsage)
+
+	// onPlanUsage is handed each reading worth keeping.
+	onPlanUsage(keep func(usage *PlanUsage))
+}
+
+// KeepPlanUsage has every provider with a plan hand each reading worth
+// keeping, by the provider's name, so that whoever holds the database can
+// write it down. It is called on a goroutine of its own: a reading arrives
+// with an answer, which must not wait on a write.
+func (self *Registry) KeepPlanUsage(keep func(provider string, usage *PlanUsage)) {
+	var serialized sync.Mutex
+	for name, entry := range self.providers {
+		reporter, isReporter := entry.service.(planUsageReporter)
+		if !isReporter {
+			continue
+		}
+		name := name
+		reporter.onPlanUsage(func(usage *PlanUsage) {
+			go func() {
+				serialized.Lock()
+				defer serialized.Unlock()
+				keep(name, usage)
+			}()
+		})
+	}
+}
+
+// RestorePlanUsage hands the named provider a reading kept from before a
+// restart. A provider without a plan, or one that has answered since,
+// ignores it.
+func (self *Registry) RestorePlanUsage(provider string, usage *PlanUsage) {
+	if self == nil || usage == nil {
+		return
+	}
+	entry := self.providers[provider]
+	if entry == nil {
+		return
+	}
+	if reporter, isReporter := entry.service.(planUsageReporter); isReporter {
+		reporter.restorePlanUsage(usage)
+	}
 }
 
 // PlanUsage is what the named provider's plan last said of its allowance, or
