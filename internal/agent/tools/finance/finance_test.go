@@ -412,8 +412,8 @@ func TestFinanceToolTradesAreUntrusted(test *testing.T) {
 	if !strings.Contains(operations.documents[0], "FinanceTrades(") {
 		test.Errorf("sent %s", operations.documents[0])
 	}
-	if _, err := call(test, operations, `{"operation":"trades","text":"fund"}`); err == nil || !strings.Contains(err.Error(), "does not take text") {
-		test.Errorf("trades took text: %v", err)
+	if _, err := call(test, operations, `{"operation":"trades","account_id":"account-one"}`); err == nil || !strings.Contains(err.Error(), "finance_account_id instead of account_id") {
+		test.Errorf("trades took account_id for finance_account_id: %v", err)
 	}
 }
 
