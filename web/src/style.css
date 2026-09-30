@@ -12176,6 +12176,20 @@ button.idea-history-title {
   flex: 0 1 24rem;
 }
 
+/* The ring and owned, owed and net worth beside it, read together; the
+   totals stand alone when there is no ring. */
+.finance-worth-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-6);
+  margin-bottom: var(--space-4);
+}
+
+.finance-worth-summary > .spending-ring {
+  margin-bottom: 0;
+}
+
 /* Owned, owed and net worth beside the ring, read together. */
 .finance-worth-line {
   display: grid;

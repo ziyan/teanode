@@ -53,7 +53,7 @@ import {
   useFinanceWords,
   useReportingCurrency,
 } from './financeCommon'
-import { AssetFilters, assetFiltersFromSearch, groupAssets, writeAssetFilters } from './assetFilters'
+import { AssetFilters, assetFiltersFromSearch, assetGroupRows, groupAssets, writeAssetFilters } from './assetFilters'
 import { RING_SLICE_COUNT, SpendingRing, foldIntoOther, ringSliceClass } from './spendingRing'
 
 // The valuation sources a person gives an asset they add or change: their
@@ -218,7 +218,29 @@ function AssetsPanel({
   const filters = useMemo(() => assetFiltersFromSearch(search), [search])
   const setFilters = (change: (previous: AssetFilters) => AssetFilters) =>
     setSearch((previous) => writeAssetFilters(previous, change(assetFiltersFromSearch(previous))), { replace: true })
-  const { reportingCurrencyCode } = useReportingCurrency()
+  // The words are the box's own while they are typed, and go into the
+  // address (trimmed) once typing pauses: read back from the address, a
+  // space typed at the end was trimmed away before the next letter came.
+  const [typed, setTyped] = useState(filters.text)
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const text = typed.trim()
+      setSearch(
+        (previous) =>
+          assetFiltersFromSearch(previous).text === text
+            ? previous
+            : writeAssetFilters(previous, { ...assetFiltersFromSearch(previous), text }),
+        { replace: true },
+      )
+    }, 400)
+    return () => window.clearTimeout(timer)
+  }, [typed, setSearch])
+  // Words that arrive by the address, from Back or a link, are put in the
+  // box; words being typed are not overwritten by the address catching up.
+  useEffect(() => {
+    setTyped((previous) => (previous.trim() === filters.text ? previous : filters.text))
+  }, [filters.text])
+  const { reportingCurrencyCode, isLoaded: isReportingCurrencyLoaded } = useReportingCurrency()
   const accounts = useQuery(() => graphql<{ FinanceAccounts: FinanceAccount[] }>(FINANCE_ACCOUNTS), [], {
     refresh: false,
   })
@@ -247,7 +269,11 @@ function AssetsPanel({
         ),
       )
       answers.forEach((answer, index) => {
-        if (answer.status === 'fulfilled') found[foreignCurrencyCodes[index]] = amountOf(answer.value.ConvertCurrency.convertedAmount)
+        // The rate itself: one unit converted comes back rounded to four
+        // places, which is a percent or more off for the yen and nothing at
+        // all for a currency worth less than a hundredth of a cent.
+        const rate = answer.status === 'fulfilled' ? amountOf(answer.value.ConvertCurrency.rate) : 0
+        if (rate > 0) found[foreignCurrencyCodes[index]] = rate
       })
       return found
     },
@@ -258,9 +284,18 @@ function AssetsPanel({
     () => groupAssets(all, filters, reportingCurrencyCode, rates.data ?? {}),
     [all, filters, reportingCurrencyCode, rates.data],
   )
+  // The ring and the owned, owed and net worth beside it are always the
+  // whole picture; words searched for narrow only the table under them.
+  const whole = useMemo(
+    () => groupAssets(all, { ...filters, text: '' }, reportingCurrencyCode, rates.data ?? {}),
+    [all, filters, reportingCurrencyCode, rates.data],
+  )
+  // Until the rates have come, an asset in another currency would be left
+  // out of every total and named as unconverted, so neither is shown yet.
+  const isRatesReady = isReportingCurrencyLoaded && rates.data !== null && !rates.loading
   const currency = reportingCurrencyCode || 'USD'
   const slices = foldIntoOther(
-    grouping.groups
+    whole.groups
       .filter((group) => !group.isLiability)
       .map((group) => ({ key: group.assetKind, label: words.assetKind(group.assetKind), amount: group.totalAmount })),
     RING_SLICE_COUNT,
@@ -291,14 +326,7 @@ function AssetsPanel({
       <div className="row finance-filters">
         <label className="finance-asset-search">
           <span>{t('finance.searchAssets')}</span>
-          <input
-            type="search"
-            value={filters.text}
-            onChange={(event) => {
-              const text = event.target.value
-              setFilters((previous) => ({ ...previous, text }))
-            }}
-          />
+          <input type="search" value={typed} onChange={(event) => setTyped(event.target.value)} />
         </label>
       </div>
       {all.some((asset) => asset.closedOn) ? (
@@ -352,32 +380,24 @@ function AssetsPanel({
     )
   }
 
-  // A kind's assets, its holdings under a line naming their account.
-  const groupRows = (list: Asset[]) => {
-    const rows: React.ReactNode[] = []
-    let accountShown: string | null = null
-    for (const asset of list) {
-      if (isHolding(asset) && asset.financeAccountId !== accountShown) {
-        accountShown = asset.financeAccountId ?? ''
-        const holdingCount = list.filter(
-          (candidate) => isHolding(candidate) && candidate.financeAccountId === asset.financeAccountId,
-        ).length
-        rows.push(
-          <tr key={`account-${accountShown}`} className="finance-asset-account">
-            <td colSpan={5} className="muted">
-              {plural(
-                holdingCount,
-                { one: 'finance.holdingsInOne', other: 'finance.holdingsInOther' },
-                { account: accountName(asset.financeAccountId) || t('finance.deletedFinanceAccount') },
-              )}
-            </td>
-          </tr>,
-        )
-      }
-      rows.push(assetRow(asset))
-    }
-    return rows
-  }
+  // A kind's assets, each run of an account's holdings under a line naming
+  // the account (see assetGroupRows).
+  const groupRows = (assetKind: string, list: Asset[]) =>
+    assetGroupRows(assetKind, list).map((row) =>
+      row.rowKind === 'asset' ? (
+        assetRow(row.asset)
+      ) : (
+        <tr key={row.rowKey} className="finance-asset-account">
+          <td colSpan={5} className="muted">
+            {plural(
+              row.holdingCount,
+              { one: 'finance.holdingsInOne', other: 'finance.holdingsInOther' },
+              { account: accountName(row.financeAccountId) || t('finance.deletedFinanceAccount') },
+            )}
+          </td>
+        </tr>
+      ),
+    )
 
   return (
     <SettingsSection
@@ -393,30 +413,37 @@ function AssetsPanel({
       <ErrorMessage error={assets.error} />
       {assets.loading && !assets.data ? <Loading /> : null}
       {assets.data && all.length === 0 ? <SettingsEmpty>{t('finance.noAssets')}</SettingsEmpty> : null}
-      {slices.length > 0 ? (
-        <SpendingRing
-          slices={slices}
-          currency={currency}
-          label={t('finance.assetsRingLabel')}
-          totalLabel={t('finance.owned')}
-          // The same owned total as the line beside it: a kind worth less
-          // than nothing has no slice but still counts.
-          totalAmount={grouping.ownedAmount}
-          highlightedKey={highlightedKey}
-        >
+      {all.length > 0 && !isRatesReady ? <Loading /> : null}
+      {all.length > 0 && isRatesReady ? (
+        // Beside the ring rather than inside it, so the totals stay when
+        // there is no ring to draw: only debts, or nothing worth more than
+        // nothing.
+        <div className="finance-worth-summary">
+          {slices.length > 0 ? (
+            <SpendingRing
+              slices={slices}
+              currency={currency}
+              label={t('finance.assetsRingLabel')}
+              totalLabel={t('finance.owned')}
+              // The same owned total as the line beside it: a kind worth
+              // less than nothing has no slice but still counts.
+              totalAmount={whole.ownedAmount}
+              highlightedKey={highlightedKey}
+            />
+          ) : null}
           <dl className="finance-worth-line">
             <dt>{t('finance.owned')}</dt>
-            <dd>{formatMoney(grouping.ownedAmount, currency)}</dd>
+            <dd>{formatMoney(whole.ownedAmount, currency)}</dd>
             <dt>{t('finance.owed')}</dt>
-            <dd>{formatMoney(-grouping.owedAmount, currency)}</dd>
+            <dd>{formatMoney(-whole.owedAmount, currency)}</dd>
             <dt>{t('finance.netWorthLabel')}</dt>
             <dd>
-              <strong>{formatMoney(grouping.ownedAmount - grouping.owedAmount, currency)}</strong>
+              <strong>{formatMoney(whole.ownedAmount - whole.owedAmount, currency)}</strong>
             </dd>
           </dl>
-        </SpendingRing>
+        </div>
       ) : null}
-      <UnconvertedNote currencyCodes={grouping.unconvertedCurrencyCodes} />
+      {isRatesReady ? <UnconvertedNote currencyCodes={whole.unconvertedCurrencyCodes} /> : null}
       {all.length > 0 ? (
         <>
           {/* On a phone the filters fold into one line that says which
@@ -466,8 +493,8 @@ function AssetsPanel({
                     const shown = isSearching ? group.matchingAssets : group.assets
                     // A kind worth less than nothing has no share: no "-0%".
                     const share =
-                      !group.isLiability && grouping.ownedAmount > 0 && group.totalAmount > 0
-                        ? group.totalAmount / grouping.ownedAmount
+                      isRatesReady && !group.isLiability && whole.ownedAmount > 0 && group.totalAmount > 0
+                        ? group.totalAmount / whole.ownedAmount
                         : null
                     const name = words.assetKind(group.assetKind)
                     return [
@@ -502,9 +529,13 @@ function AssetsPanel({
                           </button>
                         </td>
                         <td className="numeric">
-                          <strong>
-                            {formatMoney(group.isLiability ? -group.totalAmount : group.totalAmount, currency)}
-                          </strong>
+                          {isRatesReady ? (
+                            <strong>
+                              {formatMoney(group.isLiability ? -group.totalAmount : group.totalAmount, currency)}
+                            </strong>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
                           {share !== null ? (
                             <span className="muted finance-share">
                               {share > 0 && share < 0.005 ? `<${percent.format(0.01)}` : percent.format(share)}
@@ -515,7 +546,7 @@ function AssetsPanel({
                         <td />
                         <td className="optional" />
                       </tr>,
-                      ...(isOpen ? groupRows(shown) : []),
+                      ...(isOpen ? groupRows(group.assetKind, shown) : []),
                     ]
                   })}
                 </tbody>

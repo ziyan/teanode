@@ -3,6 +3,7 @@ import { expect, it } from 'vitest'
 import {
   NO_ASSET_FILTERS,
   assetFiltersFromSearch,
+  assetGroupRows,
   groupAssets,
   orderWithinGroup,
   reportingValue,
@@ -94,6 +95,39 @@ it('keeps only the kinds the words match', () => {
   expect(ids(grouping.groups[0].matchingAssets)).toEqual(['shares', 'fund'])
   expect(grouping.groups[0].totalAmount).toBe(4100)
   expect(grouping.matchingCount).toBe(2)
+})
+
+// With closed assets shown an account's holdings are two runs, open then
+// closed: two lines, two keys, each counting its own run.
+it('names each run of an account\'s holdings once, with its own count and key', () => {
+  const holding = (id: string, financeAccountId: string, closedOn?: string) =>
+    asset(id, 10, {
+      assetKind: 'investment',
+      financeSecurityId: `security-${id}`,
+      financeAccountId,
+      closedOn: closedOn ?? null,
+    })
+  const grouping = groupAssets(
+    [
+      asset('brokerage', 5, { assetKind: 'investment', financeAccountId: 'account-a' }),
+      holding('one', 'account-a'),
+      holding('two', 'account-a'),
+      holding('three', 'account-b'),
+      holding('four', 'account-a', '2029-01-01'),
+    ],
+    { ...NO_ASSET_FILTERS, isClosedShown: true },
+    'USD',
+    {},
+  )
+  const rows = assetGroupRows('investment', grouping.groups[0].assets)
+  const lines = rows.flatMap((row) => (row.rowKind === 'account' ? [[row.rowKey, row.holdingCount]] : []))
+  expect(lines).toEqual([
+    ['account-investment-account-a-open', 2],
+    ['account-investment-account-b-open', 1],
+    ['account-investment-account-a-closed', 1],
+  ])
+  expect(new Set(lines.map((line) => line[0])).size).toBe(lines.length)
+  expect(rows.filter((row) => row.rowKind === 'asset')).toHaveLength(5)
 })
 
 it('reads and writes the filters in the address without touching the rest of it', () => {

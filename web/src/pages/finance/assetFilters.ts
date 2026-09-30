@@ -162,3 +162,40 @@ export function groupAssets(
   }
   return { groups, ownedAmount, owedAmount, unconvertedCurrencyCodes: [...unconverted].sort(), matchingCount }
 }
+
+// A row of an opened kind: an asset, or the line naming the finance
+// account the holdings under it are held in.
+export type AssetGroupRow =
+  | { rowKind: 'asset'; asset: Asset }
+  | { rowKind: 'account'; rowKey: string; financeAccountId: string; holdingCount: number }
+
+// assetGroupRows is an opened kind's rows: each run of one finance
+// account's holdings under a line naming the account and counting that
+// run. Closed assets come after open ones, so an account with both has two
+// runs; each line is keyed by the kind, the account and whether its run is
+// open or closed, so the two never share a key, and each counts its own.
+export function assetGroupRows(assetKind: string, assets: Asset[]): AssetGroupRow[] {
+  const rows: AssetGroupRow[] = []
+  const runOf = (asset: Asset) =>
+    `account-${assetKind}-${asset.financeAccountId ?? ''}-${asset.closedOn ? 'closed' : 'open'}`
+  let runKey: string | null = null
+  assets.forEach((asset, index) => {
+    if (!isHolding(asset)) {
+      runKey = null
+      rows.push({ rowKind: 'asset', asset })
+      return
+    }
+    const key = runOf(asset)
+    if (key !== runKey) {
+      runKey = key
+      let holdingCount = 0
+      for (const following of assets.slice(index)) {
+        if (!isHolding(following) || runOf(following) !== key) break
+        holdingCount++
+      }
+      rows.push({ rowKind: 'account', rowKey: key, financeAccountId: asset.financeAccountId ?? '', holdingCount })
+    }
+    rows.push({ rowKind: 'asset', asset })
+  })
+  return rows
+}
