@@ -221,10 +221,17 @@ const (
 	// pages and facts it rests on. Nobody said it; the night worked it out
 	// from what the notes say, so only the night writes one.
 	FactReflection AgentFactKind = "reflection"
+
+	// FactLesson is what worked, or what to avoid, when doing a piece of
+	// work, read from a conversation in which a command showed it worked:
+	// when it applies, the approach, what failed, how it was verified. Only
+	// the pass that reads conversations for lessons writes one, and only
+	// with that command's result as its evidence.
+	FactLesson AgentFactKind = "lesson"
 )
 
 // AgentFactKinds is every kind.
-var AgentFactKinds = []AgentFactKind{FactPlain, FactPreference, FactDecision, FactEvent, FactHowTo, FactReflection}
+var AgentFactKinds = []AgentFactKind{FactPlain, FactPreference, FactDecision, FactEvent, FactHowTo, FactReflection, FactLesson}
 
 // AgentFactKindsFiled is the kinds a conversation, a tool or a person
 // files: every kind but a reflection.
@@ -248,11 +255,13 @@ func (self AgentFactKind) FromThePerson() bool {
 	return self == FactPreference || self == FactDecision
 }
 
-// FromTheNight says whether a kind is only ever written by the night's
-// own reasoning. A model filing a conversation that calls its sentence a
-// reflection is filing a fact, and it is filed as one.
-func (self AgentFactKind) FromTheNight() bool {
-	return self == FactReflection
+// FromItsOwnReasoning says whether a kind is only ever written by the
+// agent's own passes over what it knows: the dreams' reflections, and the
+// lessons read from verified work. A model filing a conversation that
+// calls its sentence a reflection or a lesson is filing a fact, and it is
+// filed as one.
+func (self AgentFactKind) FromItsOwnReasoning() bool {
+	return self == FactReflection || self == FactLesson
 }
 
 // EvidenceKind is where a fact came from.

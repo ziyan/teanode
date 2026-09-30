@@ -21,7 +21,7 @@ func (self *Agent) prepareRememberedFacts(ctx context.Context, run *Run, answer 
 			continue
 		}
 		kind := models.AgentFactKind(strings.ToLower(strings.TrimSpace(wanted.Kind)))
-		if !models.IsAgentFactKind(kind) || kind.FromTheNight() {
+		if !models.IsAgentFactKind(kind) || kind.FromItsOwnReasoning() {
 			kind = models.FactPlain
 		}
 		// A preference or a decision may only come from the person's own

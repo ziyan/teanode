@@ -22,6 +22,11 @@ When you are unsure between two, choose the deeper one: a careful answer to a qu
 
 The reason is shown to {{.PersonName}} under their message, after "Looking into this carefully:". Write it as a few words about what will be looked into, in {{.Language}} unless their message is plainly written in another language, without naming or describing them: "why the nightly backup stopped finishing", not "They want to know why their backup stopped".
 
+Then say how the memory should be searched, when the depth is `look` or `dig`:
+
+- `searches`: at most two short searches, each for one thing the message needs found, in the words the notes would use, when the message refers to things indirectly ("the boy", "that trip", "the thing we changed last week") or needs two different things found to answer it. Otherwise leave it empty: the message itself is searched either way.
+- `isBroad`: true when the message asks about a whole area rather than one thing in it, such as an assessment of a project, its strengths and weaknesses, or how all of its parts fit together.
+
 Answer with this JSON object and nothing else:
 
-{"depth": "answer", "reason": "a few words"}
+{"depth": "answer", "reason": "a few words", "searches": [], "isBroad": false}

@@ -53,6 +53,13 @@ type AgentGraphQuery interface {
 	// Needs agent:use.
 	RecallAgentMemory(ctx context.Context, arguments RecallAgentMemoryArguments) (*RecallAgentMemoryResult, error)
 
+	// How a page's overview stands: of the pages under it, the members of
+	// a theme and the pages linked to it, how many its prompt shows of how
+	// many there are, and whether what it is written from has changed
+	// since it was written. Counted by code; no model is asked. Needs
+	// agent:use.
+	AgentOverviewState(ctx context.Context, arguments AgentGraphPageArguments) (*AgentOverviewStateView, error)
+
 	// Answer a broad question about a whole area of the graph -- a theme,
 	// a page and what is under it, or everything when scopePath is left
 	// out -- by asking each overview in it for its part of the answer and
@@ -265,6 +272,10 @@ type SearchAgentGraphArguments struct {
 // would have typed it.
 type RecallAgentMemoryArguments struct {
 	Question string `json:"question"`
+
+	// IsExplained asks for the explanation as well: what each search
+	// found, and why each page and fact was carried or left out.
+	IsExplained *bool `json:"isExplained" graphapi:"nullable"`
 }
 
 // SurveyAgentMemoryArguments are the question a survey answers and
@@ -523,6 +534,9 @@ type AgentGraphSearchResult struct {
 // RecallAgentMemoryResult is what a turn would have been carried.
 type RecallAgentMemoryResult struct {
 	Pages []*RecalledAgentPage `json:"pages"`
+
+	// Explanation is why, when it was asked for.
+	Explanation *agent.RecallExplanation `json:"explanation" graphapi:"nullable"`
 }
 
 // RecalledAgentPage is one page of that, with the facts recall would have
@@ -531,8 +545,34 @@ type RecalledAgentPage struct {
 	Path string `json:"path"`
 	// Summary is the page's opening as recall carried it, or empty where
 	// it carried none.
-	Summary string               `json:"summary" graphapi:"nullable"`
-	Facts   []*RecalledAgentFact `json:"facts"`
+	Summary string `json:"summary" graphapi:"nullable"`
+	// Overview is the section of the page's overview recall carried, its
+	// heading included, or empty where it carried none.
+	Overview string               `json:"overview" graphapi:"nullable"`
+	Facts    []*RecalledAgentFact `json:"facts"`
+}
+
+// AgentOverviewStateView is how a page's overview stands; see
+// agent.OverviewState.
+type AgentOverviewStateView struct {
+	Path              string     `json:"path"`
+	OverviewWrittenAt *time.Time `json:"overviewWrittenAt" graphapi:"nullable"`
+
+	// IsOverviewStale says what the overview is written from has changed
+	// since, or a rewrite was asked for: the next dream writes it again.
+	IsOverviewStale bool `json:"isOverviewStale"`
+
+	// Of the pages under it, the members of a theme and the pages linked
+	// to it: how many there are, how many its prompt shows, and how many
+	// of those shown had no overview of their own.
+	ChildCount                 int `json:"childCount"`
+	ChildShownCount            int `json:"childShownCount"`
+	ChildWithoutOverviewCount  int `json:"childWithoutOverviewCount"`
+	MemberCount                int `json:"memberCount"`
+	MemberShownCount           int `json:"memberShownCount"`
+	MemberWithoutOverviewCount int `json:"memberWithoutOverviewCount"`
+	LinkCount                  int `json:"linkCount"`
+	LinkShownCount             int `json:"linkShownCount"`
 }
 
 // AgentSurveyView is what a survey answered.
@@ -549,6 +589,14 @@ type AgentSurveyView struct {
 	// RunIDs is every run the survey made: one a page and the one that
 	// combined them, each a transcript the person can open.
 	RunIDs []string `json:"runIds"`
+
+	// EligiblePageCount is how many pages in scope had an overview to
+	// ask, OverLimitPageCount how many of those were left out over the
+	// survey's limit, and WithoutOverviewPageCount how many pages in
+	// scope had no overview yet and were not asked.
+	EligiblePageCount        int `json:"eligiblePageCount"`
+	OverLimitPageCount       int `json:"overLimitPageCount"`
+	WithoutOverviewPageCount int `json:"withoutOverviewPageCount"`
 }
 
 // RecalledAgentFact is a fact as the page cites it: its number and what
@@ -1076,7 +1124,13 @@ func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentM
 	if question == "" {
 		return &RecallAgentMemoryResult{Pages: []*RecalledAgentPage{}}, nil
 	}
-	recalled, err := worker.RecallForQuestion(ctx, found, principal.User, question)
+	var recalled []*agent.RecalledPage
+	var explanation *agent.RecallExplanation
+	if arguments.IsExplained != nil && *arguments.IsExplained {
+		recalled, explanation, err = worker.ExplainRecall(ctx, found, principal.User, question)
+	} else {
+		recalled, err = worker.RecallForQuestion(ctx, found, principal.User, question)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1087,9 +1141,9 @@ func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentM
 	if current.ID != found.ID {
 		return nil, agent.ErrUnavailable
 	}
-	result := &RecallAgentMemoryResult{Pages: make([]*RecalledAgentPage, 0, len(recalled))}
+	result := &RecallAgentMemoryResult{Pages: make([]*RecalledAgentPage, 0, len(recalled)), Explanation: explanation}
 	for _, page := range recalled {
-		carried := &RecalledAgentPage{Path: page.Path, Summary: page.Summary, Facts: make([]*RecalledAgentFact, 0, len(page.Facts))}
+		carried := &RecalledAgentPage{Path: page.Path, Summary: page.Summary, Overview: page.Overview, Facts: make([]*RecalledAgentFact, 0, len(page.Facts))}
 		for _, fact := range page.Facts {
 			carried.Facts = append(carried.Facts, &RecalledAgentFact{Number: fact.Number, Text: fact.Text})
 		}
@@ -1135,6 +1189,8 @@ func (self *graph) SurveyAgentMemory(ctx context.Context, arguments SurveyAgentM
 	return &AgentSurveyView{
 		Report: surveyed.Report, CoveredPaths: nonNil(surveyed.CoveredPaths),
 		FailedPaths: nonNil(surveyed.FailedPaths), RunIDs: nonNil(surveyed.RunIDs),
+		EligiblePageCount: surveyed.EligiblePageCount, OverLimitPageCount: surveyed.OverLimitPageCount,
+		WithoutOverviewPageCount: surveyed.WithoutOverviewPageCount,
 	}, nil
 }
 
@@ -1614,6 +1670,34 @@ func (self *graph) SaveAgentNode(ctx context.Context, arguments SaveAgentNodeArg
 	return tx.PutAgentNode(node)
 }
 
+func (self *graph) AgentOverviewState(ctx context.Context, arguments AgentGraphPageArguments) (*AgentOverviewStateView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	path := models.NormalizePath(arguments.Path)
+	if path == "" {
+		return nil, fmt.Errorf("which page?")
+	}
+	tx := self.transaction(ctx)
+	node, err := tx.GetAgentNode(found.ID, path)
+	if err != nil {
+		return nil, err
+	}
+	if node == nil {
+		return nil, fmt.Errorf("there is no page at %q", path)
+	}
+	state, err := agent.OverviewStateOf(tx, found.ID, node)
+	if err != nil {
+		return nil, err
+	}
+	coverage := state.Coverage
+	return &AgentOverviewStateView{Path: node.Path, OverviewWrittenAt: node.OverviewWrittenAt, IsOverviewStale: state.IsStale,
+		ChildCount: coverage.ChildCount, ChildShownCount: coverage.ChildShownCount, ChildWithoutOverviewCount: coverage.ChildWithoutOverviewCount,
+		MemberCount: coverage.MemberCount, MemberShownCount: coverage.MemberShownCount, MemberWithoutOverviewCount: coverage.MemberWithoutOverviewCount,
+		LinkCount: coverage.LinkCount, LinkShownCount: coverage.LinkShownCount}, nil
+}
+
 func (self *graph) RewriteAgentOverview(ctx context.Context, arguments RewriteAgentOverviewArguments) (bool, error) {
 	_, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
@@ -1693,7 +1777,7 @@ func (self *graph) SaveAgentFact(ctx context.Context, arguments SaveAgentFactArg
 	// A reflection is the night's reading of a theme, citing what it rests
 	// on, and superseded by the next one; written from here it would be a
 	// claim dressed as that reading, and the next night would fold it away.
-	if kind.FromTheNight() {
+	if kind.FromItsOwnReasoning() {
 		return nil, fmt.Errorf("%w: a %s is written by the night, not saved by hand; save it as a fact", api.ErrInvalidArguments, kind)
 	}
 	var happened *time.Time

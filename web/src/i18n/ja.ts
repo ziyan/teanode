@@ -3169,6 +3169,7 @@ export const ja: Catalog = {
   'knowledge.reflectionsHint': 'エージェントが夢を見ている間に、このページがまとめるページ全体を通して気づいたこと。それぞれ根拠となるページと事実を挙げています。新しい振り返りが前のものに置き換わります。',
   'knowledge.citing': '根拠',
   'knowledge.factKind.reflection': '振り返り',
+  'knowledge.factKind.lesson': '教訓',
   'knowledge.reflectionKind.pattern': 'パターン',
   'knowledge.reflectionKind.tension': '緊張',
   'knowledge.reflectionKind.trend': '傾向',
