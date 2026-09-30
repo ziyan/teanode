@@ -250,13 +250,11 @@ func TestAScheduleTheAgentWroteIsNotThePersonSpeaking(t *testing.T) {
 	}
 }
 
-// Speaking the debugging protocol on the person's own tab asks first.
-//
-// That tab is their browser, signed in as them, and the protocol is
-// everything the extension has not thought to refuse. The other actions on a
-// tab are bounded by what they say they are -- click this, read that -- and
-// this one is not.
-func TestDrivingTheirOwnBrowserDirectlyAsksFirst(t *testing.T) {
+// Speaking the debugging protocol on the person's own tab is a write like
+// clicking in it: it does not stop for a card on its own, and a person who
+// wants to be asked puts the browser under "ask me first". Reading what the
+// protocol reported is a read.
+func TestDrivingTheirOwnBrowserDirectlyIsAWrite(t *testing.T) {
 	t.Parallel()
 
 	tool := FullCatalog().Get("browser")
@@ -264,23 +262,21 @@ func TestDrivingTheirOwnBrowserDirectlyAsksFirst(t *testing.T) {
 		t.Skip("the browser tool is not built into this catalog")
 	}
 	onTab := []byte(`{"action":"cdp","target":"tab","method":"Page.setDownloadBehavior"}`)
-	if got := tool.RiskFor(onTab); got != RiskDestructive {
-		t.Fatalf("the protocol on their own tab asks first: %q", got)
+	if got := tool.RiskFor(onTab); got != RiskWrite {
+		t.Fatalf("the protocol on their own tab: %q", got)
 	}
-	if !NeedsConfirmation(tool, onTab, nil, nil) {
-		t.Fatal("and asking means a card")
+	if NeedsConfirmation(tool, onTab, nil, nil) {
+		t.Fatal("and it does not ask on its own")
 	}
-	// A step list carrying one is the same.
 	steps := []byte(`{"action":"steps","target":"tab","steps":[{"action":"snapshot"},{"action":"cdp","method":"Runtime.evaluate"}]}`)
-	if got := tool.RiskFor(steps); got != RiskDestructive {
+	if got := tool.RiskFor(steps); got != RiskWrite {
 		t.Fatalf("a step list carrying one: %q", got)
 	}
-	// Reading the page, and the same call in the headless browser, are not.
+	if got := tool.RiskFor([]byte(`{"action":"cdp_events","target":"tab"}`)); got != RiskRead {
+		t.Fatalf("reading what it reported: %q", got)
+	}
 	if got := tool.RiskFor([]byte(`{"action":"snapshot","target":"tab"}`)); got != RiskRead {
 		t.Fatalf("reading their tab: %q", got)
-	}
-	if got := tool.RiskFor([]byte(`{"action":"cdp","method":"Runtime.evaluate"}`)); got == RiskDestructive {
-		t.Fatalf("the headless browser is nobody's session: %q", got)
 	}
 }
 
