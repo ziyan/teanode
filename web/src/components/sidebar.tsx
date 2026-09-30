@@ -24,8 +24,10 @@ import {
   UserIcon,
   SparkIcon,
   GridIcon,
+  WalletIcon,
 } from './icons'
 import { Logo } from './logo'
+import { useAgentFinancePresence } from '../pages/finance/financePresence'
 import { matchSettingsSurface, surfacesByCategory } from '../pages/settings/nav'
 import { useFreshness } from './freshness'
 import { Permissions as ApiPermissions } from '../api'
@@ -39,7 +41,7 @@ import { Tooltip } from './tooltip'
 // permission is what a row needs, when it needs one: a domain permission held
 // over at least one domain, or a server permission. A row nothing gates is
 // for everyone who is signed in.
-type Item = { label: Key; to: string; icon: React.ReactNode; anyOf?: string[] }
+type Item = { label: Key; to: string; icon: React.ReactNode; anyOf?: string[]; shownWhen?: 'finance' }
 type Group = { label?: Key; items: Item[] }
 
 // One icon per settings surface that appears in the rail. Here rather than in
@@ -54,6 +56,7 @@ const ACCOUNT_ICONS: Record<string, React.ReactNode> = {
   preference: <UserIcon />,
   agent: <SparkIcon />,
   knowledge: <GridIcon />,
+  finance: <WalletIcon />,
   password: <KeyIcon />,
   passkeys: <ShieldIcon />,
   tokens: <TerminalIcon />,
@@ -70,6 +73,7 @@ const ACCOUNT_GROUP: Group = {
     label: surface.label,
     to: surface.path,
     icon: ACCOUNT_ICONS[surface.segment],
+    shownWhen: surface.shownWhen,
   })),
 }
 
@@ -200,9 +204,13 @@ export function Sidebar({
   // server anyway; hiding it is the courtesy of not offering a door that
   // does not open. A group with no rows left is not drawn at all.
   const session = useSession()
+  // Finance is a row only for somebody who has finance, asked only while
+  // the account's rows are the ones shown.
+  const finance = useAgentFinancePresence(inAccount)
   const permitted = (item: Item) =>
-    !item.anyOf ||
-    item.anyOf.some((key) => hasPermission(session.permissions, key) || hasAnywhere(session.permissions, key))
+    (item.shownWhen !== 'finance' || finance.isShown === true) &&
+    (!item.anyOf ||
+      item.anyOf.some((key) => hasPermission(session.permissions, key) || hasAnywhere(session.permissions, key)))
   const groups = (inAccount ? [ACCOUNT_GROUP] : inMailbox ? [] : GROUPS)
     .map((group) => ({ ...group, items: group.items.filter(permitted) }))
     .filter((group) => group.items.length > 0)

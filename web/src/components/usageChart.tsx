@@ -1,6 +1,18 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { formatMoney } from './common'
+import {
+  CHART_AXIS_WIDTH,
+  CHART_BOTTOM,
+  CHART_HEIGHT,
+  CHART_TOP,
+  compact,
+  dayLabel,
+  daysBetween,
+  niceCeiling,
+  roundedTop,
+  useWidth,
+} from './seriesChart'
 import { useTranslation } from '../i18n/i18n'
 
 // The usage above its table: what the agents spent, drawn. By day it is a
@@ -30,10 +42,10 @@ type Metric = 'tokens' | 'cost' | 'calls'
 type Part = 'input' | 'cached' | 'output'
 const PARTS: Part[] = ['input', 'cached', 'output']
 
-const HEIGHT = 220
-const AXIS_WIDTH = 52
-const TOP = 12
-const BOTTOM = 24
+const HEIGHT = CHART_HEIGHT
+const AXIS_WIDTH = CHART_AXIS_WIDTH
+const TOP = CHART_TOP
+const BOTTOM = CHART_BOTTOM
 const RANKED = 8
 
 function partsOf(row: UsageChartRow | undefined): Record<Part, number> {
@@ -51,66 +63,6 @@ function measure(row: UsageChartRow | undefined, metric: Metric): number {
   if (metric === 'calls') return row.totals.calls
   const parts = partsOf(row)
   return parts.input + parts.cached + parts.output
-}
-
-// niceCeiling is the top of the scale: the largest value rounded up to 1, 2
-// or 5 of its power of ten, so the gridlines fall on round numbers.
-function niceCeiling(value: number): number {
-  if (value <= 0) return 1
-  const power = 10 ** Math.floor(Math.log10(value))
-  for (const step of [1, 2, 5, 10]) {
-    if (value <= step * power) return step * power
-  }
-  return 10 * power
-}
-
-// daysBetween is every day from the first to the last, as the keys the
-// usage is grouped by, so a day nothing was spent on is a gap and not
-// missing from the axis.
-function daysBetween(first: string, last: string): string[] {
-  const days: string[] = []
-  const start = new Date(first + 'T00:00:00')
-  const end = new Date(last + 'T00:00:00')
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return days
-  for (let day = start; day <= end && days.length < 400; day = new Date(day.getTime() + 86_400_000)) {
-    const month = String(day.getMonth() + 1).padStart(2, '0')
-    const date = String(day.getDate()).padStart(2, '0')
-    days.push(`${day.getFullYear()}-${month}-${date}`)
-  }
-  return days
-}
-
-function dayLabel(key: string): string {
-  const day = new Date(key + 'T00:00:00')
-  if (Number.isNaN(day.getTime())) return key
-  return day.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}
-
-// useWidth is the width the chart has, followed as the page is resized. Read
-// at once as well as observed: an observer reports only when the page is
-// painted, and a page opened in a tab nobody is looking at would otherwise
-// draw nothing until it was.
-function useWidth(): [React.RefObject<HTMLDivElement | null>, number] {
-  const element = useRef<HTMLDivElement | null>(null)
-  const [width, setWidth] = useState(0)
-  useLayoutEffect(() => {
-    if (!element.current) return
-    setWidth(Math.floor(element.current.getBoundingClientRect().width))
-    const observer = new ResizeObserver((entries) => setWidth(Math.floor(entries[0].contentRect.width)))
-    observer.observe(element.current)
-    return () => observer.disconnect()
-  }, [])
-  return [element, width]
-}
-
-// compact is a count in a few characters, to the billions: the tokens of a
-// month of reading run past a thousand million.
-function compact(value: number): string {
-  const size = Math.abs(value)
-  if (size >= 1e9) return `${(value / 1e9).toFixed(size >= 1e10 ? 0 : 1)}B`
-  if (size >= 1e6) return `${(value / 1e6).toFixed(size >= 1e7 ? 0 : 1)}M`
-  if (size >= 1e3) return `${(value / 1e3).toFixed(size >= 1e4 ? 0 : 1)}k`
-  return String(Math.round(value))
 }
 
 export function UsageChart({
@@ -326,20 +278,6 @@ function DailyColumns({
       })}
     </svg>
   )
-}
-
-// roundedTop is a column with its top corners rounded and its foot square,
-// so a stack reads as one column rather than a pile of pills.
-function roundedTop(x: number, y: number, width: number, height: number, radius: number): string {
-  return [
-    `M${x},${y + height}`,
-    `V${y + radius}`,
-    `Q${x},${y} ${x + radius},${y}`,
-    `H${x + width - radius}`,
-    `Q${x + width},${y} ${x + width},${y + radius}`,
-    `V${y + height}`,
-    'Z',
-  ].join(' ')
 }
 
 function RankedBars({

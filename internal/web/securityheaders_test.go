@@ -50,6 +50,44 @@ func TestSecurityPolicyAllowsLoopbackOnlyForTheCommandLinePage(t *testing.T) {
 	}
 }
 
+// The page that opens Plaid's linking window is the only one that may load
+// Plaid's script, frame Plaid's page and talk to Plaid's API. No other page
+// names Plaid at all, and that page keeps everything else in the policy.
+func TestSecurityPolicyAllowsPlaidOnlyForTheFinanceLinkPage(t *testing.T) {
+	t.Parallel()
+
+	handler := web.MakeSecurityHeadersMiddleware([]string{"'sha256-abc'"}, nil)(
+		http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			response.WriteHeader(http.StatusOK)
+		}))
+
+	policyFor := func(path string) string {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		return recorder.Header().Get("Content-Security-Policy")
+	}
+
+	for _, path := range []string{"/", "/agent", "/finance/link/", "/finance", "/finance/accounts", web.CommandLinePagePath, web.DrawerPagePath} {
+		if policy := policyFor(path); strings.Contains(policy, "plaid") {
+			t.Errorf("%s names Plaid: %q", path, policy)
+		}
+	}
+
+	policy := policyFor(web.FinanceLinkPagePath)
+	for _, directive := range []string{
+		"script-src 'self' https://cdn.plaid.com/link/v2/stable/link-initialize.js 'sha256-abc'",
+		"frame-src 'self' https://cdn.plaid.com;",
+		"connect-src 'self' https://production.plaid.com https://sandbox.plaid.com;",
+		"frame-ancestors 'none'",
+		"object-src 'none'",
+		"form-action 'self'",
+	} {
+		if !strings.Contains(policy, directive) {
+			t.Errorf("the finance link page lacks %q: %q", directive, policy)
+		}
+	}
+}
+
 // A browser that reached the server over TLS is told to keep to it, so a
 // hostname typed later does not go to the plain listener first. The header
 // is meaningless on a plain response and is not sent there.

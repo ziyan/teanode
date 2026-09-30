@@ -1715,3 +1715,91 @@ prohibited, so evidence in `internal/db`, `internal/mx`, `internal/agent`,
 or built from overlaid unit tests. Seven further surfaces were discovered
 during hunting and recorded as deferred rather than assigned, because this was
 a bounded pass over coarsened units and not an exhaustive one.
+
+# Sixth pass — finance sources, net worth and budgets
+
+- Date: 2026-09-30
+- Reviewed at: branch `bank-accounts`, before it merged
+- Scope: what the finance feature adds: provider clients for Plaid and
+  SimpleFIN, the credential each finance source keeps, the ECB exchange rate
+  fetch, the finance tables, the `finance` tool, the `teanode finance`
+  command group, the Finance tab and the `/finance/link` page. How it works
+  is in `docs/subsystems/finance.md`.
+
+## Summary
+
+Four findings, all fixed before the feature merged. None let one person reach
+another's data or a secret leave the server; the worst let the agent grant
+itself a permission that belongs to the person.
+
+## Findings
+
+### SEC-86 — The agent could allow web estimates for an asset (Medium, fixed)
+
+The tool's `update_asset` passed `is_estimate_allowed` through, behind a
+confirmation that said only "change an asset". Allowing an estimate sends the
+asset's description, often a home address, to a search provider and to web
+pages, which is the person's choice. Text in a transaction description could
+have asked for it. The tool no longer takes that argument or the description
+it searches with; only the dashboard and the command line set them.
+
+### SEC-87 — The command line's finance source commands acted on any source (Medium, fixed)
+
+`teanode finance sync`, `disable-source`, `enable-source` and `delete-source`
+passed any source id to the generic source operations, so a pasted id of a
+files or mail source was deleted under a prompt that called it a finance
+source. They now look the id up among the person's finance sources first, as
+the tool always did.
+
+### SEC-88 — A refused categorization still wrote (Low, fixed)
+
+`CategorizeTransaction` recorded the person's choice before checking the
+option to make a spending rule, and a refusal that was not a database error
+left that write committed, marking the transaction as decided by the person
+with no category. Everything is checked before the first write now.
+
+### SEC-89 — A Plaid link could outlive a failed commit (Low, fixed)
+
+The credential was removed at Plaid only when the resolver itself failed; a
+failure at commit left a billed link at Plaid with no source to delete it
+from. The source and its credential are now written in a transaction of their
+own inside the resolver, and the link is removed when that fails.
+
+## Controls verified this time
+
+- **Per-person isolation.** Every finance resolver begins with
+  `requireAgentPerson`, and every row is read and written by agent and id;
+  references to a spending category, finance account or asset are checked
+  against the same agent, and transfer pairing joins on the agent.
+- **Credentials.** The Plaid secret is a sealed setting that no read returns.
+  A finance source's credential is a sealed source secret, opened only in
+  memory to call the provider; neither it nor the SimpleFIN URL's userinfo
+  reaches a log line, an error or a model. With the server secret kept in a
+  file, a database dump opens neither.
+- **Outbound requests.** A SimpleFIN setup token decodes to a URL the person
+  chose, so the claim and every fetch go through `safefetch`, which refuses
+  anything but public addresses over https. Plaid's and the ECB's hosts are
+  constants.
+- **The security policy.** Only `/finance/link` may load Plaid's script, frame
+  Plaid's page and reach Plaid's API; every other page's policy is unchanged,
+  and a test says so.
+- **Credentials brought in.** A credential of a connection made elsewhere
+  (`ImportFinanceCredential`) is taken only from a file, standard input or a
+  prompt without echo on the command line, or a password field in the
+  dashboard; the command line refuses one given as an argument, and the tool
+  refuses it in conversation. It is proved against the provider before
+  anything is made, never repeated in an answer or an error (tests check),
+  and a SimpleFIN URL passes safefetch's checks (https, no private address)
+  before it is fetched.
+- **What reaches a model.** The tool returns normalized fields, never provider
+  metadata; text written by providers and merchants is marked untrusted; a
+  SimpleFIN setup token is refused in conversation; the categorize model is
+  sent a merchant, description, amount, currency, account kind and provider
+  category and nothing else.
+
+## What this pass did not do
+
+No fuzzing and no penetration test. Plaid was exercised through tests with a
+fake server and a manual link outside the server, not yet end to end through
+the server; SimpleFIN against its public demo and a real bridge connection;
+the ECB against its live files.

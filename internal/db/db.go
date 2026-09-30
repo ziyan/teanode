@@ -180,6 +180,10 @@ type Transaction interface {
 	IdeaOperation
 	BackgroundWorkOperation
 	AlertOperation
+	FinanceOperation
+	ExchangeRateOperation
+	NetWorthOperation
+	BudgetOperation
 
 	DomainUsageOperation
 	AliasUsageOperation

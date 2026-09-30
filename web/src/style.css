@@ -11621,3 +11621,192 @@ button.idea-history-title {
 .plan-usage-observed {
   font-size: var(--text-label);
 }
+
+/* --- the agent's Finance tab ---------------------------------------------- */
+
+/* On a phone the sections are one full-width list in place of the tab row,
+   standing off the first panel as the tabs do. */
+.finance-section-select {
+  margin-bottom: var(--space-4);
+}
+
+/* The line that says where the other half of finance is: the setup on the
+   agent page, the data on the Finance page. Above the panels, spaced as a
+   panel is from the next. */
+.finance-pointer {
+  margin: 0 0 var(--space-4);
+}
+
+/* An amount column in the shared table reads down by its decimal places,
+   as the plain numbers tables do. */
+.table-surface .numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Amounts and dates in the finance tables stay on one line; the table
+   scrolls sideways inside its panel on a phone rather than wrapping a
+   balance over two lines. */
+.finance-table td,
+.finance-table th {
+  white-space: nowrap;
+}
+
+.finance-table td.wrap {
+  white-space: normal;
+  min-width: 12rem;
+}
+
+.finance-table tfoot th {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom: none;
+}
+
+/* The filters above a finance table: dates, an account and words, folding
+   two to a line and then one on a phone. */
+.finance-filters {
+  margin-bottom: var(--space-3);
+}
+
+.finance-filters > label {
+  min-width: 150px;
+}
+
+.finance-month input {
+  min-width: 10rem;
+}
+
+.finance-description {
+  display: inline-block;
+  max-width: 28rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+/* The spending category chosen in the row, and who chose it when it was
+   not the person: a spending rule, the provider category, the model. */
+.finance-category-cell {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 11rem;
+}
+
+.finance-categorized-by {
+  font-size: var(--text-label);
+}
+
+/* A second line under a cell's figure: a holding's quantity and the price
+   of one under its value. */
+.finance-cell-detail {
+  display: block;
+  font-size: var(--text-label);
+}
+
+/* A bar per spending category against its budget, and one per savings
+   target: the name and its pace, the numbers at the end of the line, the
+   bar under them, what is projected under that. */
+.finance-budget-bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.finance-budget-row,
+.finance-target {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.finance-budget-row-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.finance-budget-row-said {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-budget-row-detail {
+  font-size: var(--text-label);
+}
+
+/* The bar a meter is drawn with carries a mark where the month is heading. */
+.agent-budget-bar {
+  position: relative;
+}
+
+.agent-budget-bar-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text);
+}
+
+.finance-evidence {
+  display: block;
+}
+
+.finance-asset-choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.finance-asset-choices legend {
+  margin-bottom: var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.finance-converted strong {
+  font-size: var(--text-title);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The finance charts' lines and the zero line a scale below it crosses,
+   in the usage chart's colours. */
+.series-chart-zero {
+  stroke: var(--muted);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.series-chart-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.series-chart-line.output,
+.series-chart-point.output {
+  stroke: var(--usage-output);
+}
+
+.series-chart-line.input,
+.series-chart-point.input {
+  stroke: var(--usage-input);
+}
+
+.series-chart-line.cached,
+.series-chart-point.cached {
+  stroke: color-mix(in srgb, var(--muted) 70%, var(--surface));
+}
+
+.series-chart-point {
+  fill: var(--surface);
+  stroke-width: 2;
+}

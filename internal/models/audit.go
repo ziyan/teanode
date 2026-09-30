@@ -101,6 +101,12 @@ const (
 	AuditResourceAgent              AuditResourceType = "agent"       // a person's agent, and its sources
 	AuditResourceAddressBook        AuditResourceType = "addressbook" // the book, not the contacts in it
 	AuditResourceCalendar           AuditResourceType = "calendar"    // the calendar, not the events in it
+	AuditResourceAsset              AuditResourceType = "asset"
+	AuditResourceAssetValuation     AuditResourceType = "asset_valuation" // manual valuations only
+	AuditResourceSpendingCategory   AuditResourceType = "spending_category"
+	AuditResourceSpendingRule       AuditResourceType = "spending_rule"
+	AuditResourceBudget             AuditResourceType = "budget"
+	AuditResourceSavingsTarget      AuditResourceType = "savings_target" // and the assets it measures
 )
 
 // AuditRedactor is implemented by a model that carries a secret, so the secret

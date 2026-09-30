@@ -46,7 +46,8 @@ func NewSettingsCommand() *cli.Command {
 					"  teanode settings set antispam enabled=true host=127.0.0.1 port=783\n" +
 					"  teanode settings set relay enabled=true host=smtp.example.org port=587 security=starttls username=me password=-\n" +
 					"  teanode settings set s3 enabled=false\n\n" +
-					"A value of \"-\" is read from the terminal without echoing, for a secret.",
+					"A value of \"-\" is read from the terminal without echoing, for a secret,\n" +
+					"and so is a \"-\" inside a JSON value given with :=.",
 				Flags:  []cli.Flag{JSONFlag()},
 				Action: runSettingsSet,
 			},
@@ -196,6 +197,10 @@ func runSettingsSet(ctx context.Context, command *cli.Command) error {
 			if err := json.Unmarshal([]byte(value), &decoded); err != nil {
 				return fmt.Errorf("the value of %s is not valid JSON: %w", key, err)
 			}
+			decoded, err = readSecretsIn(decoded, key, ReadSecret)
+			if err != nil {
+				return err
+			}
 			values[key] = decoded
 			continue
 		}
@@ -221,6 +226,47 @@ func runSettingsSet(ctx context.Context, command *cli.Command) error {
 	}
 	fmt.Printf("changed %s; 'teanode server status' says whether a restart is needed for it to take effect\n", section)
 	return nil
+}
+
+// readSecretsIn replaces every string "-" inside a JSON value with what is
+// read from the terminal, prompting with the path to it. A section with a
+// secret one level down -- finance:='{"plaid":{"secret":"-"}}' -- would
+// otherwise store the dash itself as the secret, and put the real one on the
+// command line to avoid it.
+func readSecretsIn(value any, path string, read func(prompt string) (string, error)) (any, error) {
+	switch typed := value.(type) {
+	case string:
+		if typed != "-" {
+			return typed, nil
+		}
+		return read(path + ": ")
+	case map[string]any:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		// A map has no order of its own; sorted, the prompts come in the
+		// same order every time.
+		sort.Strings(keys)
+		for _, key := range keys {
+			replaced, err := readSecretsIn(typed[key], path+"."+key, read)
+			if err != nil {
+				return nil, err
+			}
+			typed[key] = replaced
+		}
+		return typed, nil
+	case []any:
+		for index, entry := range typed {
+			replaced, err := readSecretsIn(entry, fmt.Sprintf("%s[%d]", path, index), read)
+			if err != nil {
+				return nil, err
+			}
+			typed[index] = replaced
+		}
+		return typed, nil
+	}
+	return value, nil
 }
 
 func runSettingsDescribe(ctx context.Context, command *cli.Command) error {

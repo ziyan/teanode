@@ -646,6 +646,14 @@ func (self *graph) forgetAgent(ctx context.Context, tx db.Transaction, found *mo
 	if err := agent.ForgetAttachments(ctx, tx, self.storage, found.ID); err != nil {
 		return err
 	}
+	// Each finance source is ended at its provider, best effort, before
+	// the rows go: otherwise the operator keeps paying for links nobody
+	// can reach any more.
+	if worker := self.agentWorker(); worker != nil {
+		if err := worker.BeforeDeletingAgent(ctx, tx, found.ID); err != nil {
+			return err
+		}
+	}
 	return tx.DeleteAgent(found.ID)
 }
 

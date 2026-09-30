@@ -19,6 +19,7 @@ it('shows only the parts of the dashboard the agent may take the person to', () 
   expect(shownPath('/settings/knowledge/people/some-person')).toBe('/settings/knowledge/people/some-person')
   expect(shownPath('/mailbox/starred/item42/')).toBe('/mailbox/starred/item42')
   expect(shownPath('/settings/agent')).toBe('/settings/agent')
+  expect(shownPath('/finance/budgets')).toBe('/finance/budgets')
   for (const path of [
     '',
     '/',
@@ -27,6 +28,9 @@ it('shows only the parts of the dashboard the agent may take the person to', () 
     'javascript:alert(1)',
     '/server/about',
     '/settingsx',
+    '/finance-link',
+    '/finance/link',
+    '/finance/link/',
     '/settings/../server',
     '/mailbox?search=x',
     '/settings/agent/a b',

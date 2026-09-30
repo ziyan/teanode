@@ -142,7 +142,12 @@ var ideaUsedChecks = map[string]usedCheck{
 	},
 	"knowledge_source": func(tx db.Transaction, agent *models.Agent, owner *models.User) (bool, error) {
 		sources, err := tx.ListAgentSources(agent.ID)
-		return len(sources) > 0, err
+		for _, source := range sources {
+			if source.Kind.IsDocumentKind() {
+				return true, err
+			}
+		}
+		return false, err
 	},
 	"goal": func(tx db.Transaction, agent *models.Agent, owner *models.User) (bool, error) {
 		conversations, err := tx.ListAgentConversations(agent.ID, []models.AgentConversationKind{models.AgentConversationMain, models.AgentConversationNamed}, &db.Options{Limit: 200})

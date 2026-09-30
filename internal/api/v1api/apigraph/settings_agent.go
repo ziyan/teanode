@@ -76,6 +76,7 @@ type AgentSettings struct {
 	Tools        *AgentToolsSettings         `json:"tools"`
 	Browser      *AgentBrowserSettings       `json:"browser"`
 	MCPServers   []*AgentMCPServerSettings   `json:"mcpServers"`
+	Finance      *AgentFinanceSettings       `json:"finance"`
 	Works        []string                    `json:"works"`
 	Families     []string                    `json:"families"`
 	Kinds        []string                    `json:"kinds"`
@@ -151,6 +152,9 @@ type AgentModelsSettings struct {
 	// advance, which is the one that writes nothing.
 	Decide              string `json:"decide"`
 	EmbeddingDimensions int    `json:"embeddingDimensions"`
+	// Categorize is the model that assigns spending categories to finance
+	// transactions, a decision model or a chat model.
+	Categorize string `json:"categorize"`
 }
 
 // AgentFeaturesSettings is what the deployment offers, resolved.
@@ -218,6 +222,22 @@ type AgentSkillSecretSettings struct {
 type AgentSearchSettings struct {
 	Kind      string `json:"kind"`
 	HasAPIKey bool   `json:"hasApiKey"`
+}
+
+// AgentFinanceSettings is the finance section, without the Plaid secret.
+type AgentFinanceSettings struct {
+	OfferedProviders []string            `json:"offeredProviders"`
+	Plaid            *AgentPlaidSettings `json:"plaid"`
+}
+
+// AgentPlaidSettings is the operator's Plaid account, with whether the
+// secret is set in place of the secret.
+type AgentPlaidSettings struct {
+	Environment  string   `json:"environment"`
+	ClientID     string   `json:"clientId"`
+	HasSecret    bool     `json:"hasSecret"`
+	CountryCodes []string `json:"countryCodes"`
+	Products     []string `json:"products"`
 }
 
 // AgentToolsSettings is the operator's policy over the catalog.
@@ -297,6 +317,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			Scan:                agent.Models.Scan,
 			Synthesize:          agent.Models.Synthesize,
 			Decide:              agent.Models.Decide,
+			Categorize:          agent.Models.Categorize,
 			EmbeddingDimensions: agent.Models.EmbeddingDimensions,
 		},
 		Features: &AgentFeaturesSettings{
@@ -356,8 +377,18 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			MaxContexts:           agent.Browser.MaxContexts,
 		},
 		MCPServers: []*AgentMCPServerSettings{},
-		Families:   config.AgentToolFamilies,
-		Kinds:      config.AgentProviderKinds,
+		Finance: &AgentFinanceSettings{
+			OfferedProviders: nonNil(agent.Finance.OfferedProviders),
+			Plaid: &AgentPlaidSettings{
+				Environment:  agent.Finance.Plaid.Environment,
+				ClientID:     agent.Finance.Plaid.ClientID,
+				HasSecret:    agent.Finance.Plaid.Secret != "",
+				CountryCodes: nonNil(agent.Finance.Plaid.CountryCodes),
+				Products:     nonNil(agent.Finance.Plaid.Products),
+			},
+		},
+		Families: config.AgentToolFamilies,
+		Kinds:    config.AgentProviderKinds,
 	}
 	for _, work := range config.AgentWorks {
 		settings.Works = append(settings.Works, string(work))
@@ -449,6 +480,7 @@ type AgentParameters struct {
 	Tools        *AgentToolsParameters          `json:"tools"`
 	Browser      *AgentBrowserParameters        `json:"browser"`
 	MCPServers   *[]*AgentMCPServerParameters   `json:"mcpServers"`
+	Finance      *AgentFinanceParameters        `json:"finance"`
 }
 
 // AgentSkillSecretParameters is one value a skill asks the operator for.
@@ -508,6 +540,9 @@ type AgentModelsParameters struct {
 	// the API or the dashboard at all.
 	Decide              *string `json:"decide"`
 	EmbeddingDimensions *int    `json:"embeddingDimensions"`
+	// Categorize is the model that assigns spending categories to finance
+	// transactions: a decision model or a chat model.
+	Categorize *string `json:"categorize"`
 }
 
 // AgentFeaturesParameters switch what the deployment offers.
@@ -562,6 +597,23 @@ type AgentRetentionParameters struct {
 type AgentSearchParameters struct {
 	Kind   *string `json:"kind"`
 	APIKey *string `json:"apiKey"`
+}
+
+// AgentFinanceParameters change which providers people may link through,
+// and the operator's keys for them.
+type AgentFinanceParameters struct {
+	OfferedProviders *[]string             `json:"offeredProviders"`
+	Plaid            *AgentPlaidParameters `json:"plaid"`
+}
+
+// AgentPlaidParameters change the operator's Plaid account. A secret left
+// out or redacted keeps the one stored; an empty one clears it.
+type AgentPlaidParameters struct {
+	Environment  *string   `json:"environment"`
+	ClientID     *string   `json:"clientId"`
+	Secret       *string   `json:"secret"`
+	CountryCodes *[]string `json:"countryCodes"`
+	Products     *[]string `json:"products"`
 }
 
 // AgentToolsParameters change the tool policy.
@@ -719,6 +771,7 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		applyString(&models.Scan, parameters.Models.Scan)
 		applyString(&models.Synthesize, parameters.Models.Synthesize)
 		applyString(&models.Decide, parameters.Models.Decide)
+		applyString(&models.Categorize, parameters.Models.Categorize)
 		applyInt(&models.EmbeddingDimensions, parameters.Models.EmbeddingDimensions)
 		applyString(&models.Triage, parameters.Models.Triage)
 		applyString(&models.Research, parameters.Models.Research)
@@ -801,6 +854,23 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		if parameters.Search.APIKey != nil && strings.TrimSpace(*parameters.Search.APIKey) == "" {
 			// An explicitly empty key clears it, as the other secrets do.
 			agent.Search.APIKey = ""
+		}
+	}
+	if parameters.Finance != nil {
+		finance := &agent.Finance
+		applyStrings(&finance.OfferedProviders, parameters.Finance.OfferedProviders)
+		if plaid := parameters.Finance.Plaid; plaid != nil {
+			applyString(&finance.Plaid.Environment, plaid.Environment)
+			applyString(&finance.Plaid.ClientID, plaid.ClientID)
+			applySecret(&finance.Plaid.Secret, plaid.Secret)
+			if plaid.CountryCodes != nil {
+				// Written in capitals whatever was typed, as the currency is.
+				applyStrings(&finance.Plaid.CountryCodes, plaid.CountryCodes)
+				for index, code := range finance.Plaid.CountryCodes {
+					finance.Plaid.CountryCodes[index] = strings.ToUpper(code)
+				}
+			}
+			applyStrings(&finance.Plaid.Products, plaid.Products)
 		}
 	}
 	if parameters.Tools != nil {

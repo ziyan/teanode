@@ -192,6 +192,7 @@ func MakeSecurityHeadersMiddleware(inlineScriptHashes []string, trustedProxies f
 	policy := securityPolicy(inlineScriptHashes, "connect-src 'self'")
 	commandLinePolicy := securityPolicy(inlineScriptHashes, "connect-src 'self' "+CommandLineConnectSources)
 	drawerPolicy := strings.Replace(policy, "frame-ancestors 'none'", "frame-ancestors *", 1)
+	financeLinkPolicy := financeLinkSecurityPolicy(inlineScriptHashes)
 
 	return func(handler http.Handler) http.Handler {
 		return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -200,6 +201,8 @@ func MakeSecurityHeadersMiddleware(inlineScriptHashes []string, trustedProxies f
 				response.Header().Set("Content-Security-Policy", commandLinePolicy)
 			case DrawerPagePath:
 				response.Header().Set("Content-Security-Policy", drawerPolicy)
+			case FinanceLinkPagePath:
+				response.Header().Set("Content-Security-Policy", financeLinkPolicy)
 			default:
 				response.Header().Set("Content-Security-Policy", policy)
 			}
@@ -245,6 +248,36 @@ const CommandLinePagePath = "/cli"
 // of the same site would get the cookie; a server that serves other
 // people's pages on a sibling host should keep that in mind.
 const DrawerPagePath = "/drawer"
+
+// FinanceLinkPagePath is the dashboard page that opens Plaid's linking
+// window, which a person uses to sign in to their institution. It is the
+// only page that may load a script, frame a page and connect anywhere other
+// than this server, and only to Plaid: the window is Plaid's script, which
+// frames Plaid's page and talks to Plaid's API. Every other page keeps the
+// policy that keeps a message from reaching anything outside this server.
+// The policy comes with the document, so the page has to be loaded at this
+// path, never reached by moving within the dashboard. The command line and
+// the finance tool hold the same path (internal/client.FinanceLinkPagePath).
+const FinanceLinkPagePath = "/finance/link"
+
+// financeLinkScriptSource, financeLinkFrameSource and
+// financeLinkConnectSources are what Plaid documents its linking window as
+// needing. Both of Plaid's environments are allowed, because which one the
+// operator uses is a setting that can change without a restart, and this
+// policy is built once.
+const (
+	financeLinkScriptSource   = "https://cdn.plaid.com/link/v2/stable/link-initialize.js"
+	financeLinkFrameSource    = "https://cdn.plaid.com"
+	financeLinkConnectSources = "https://production.plaid.com https://sandbox.plaid.com"
+)
+
+// financeLinkSecurityPolicy is the dashboard's policy with Plaid's script,
+// frame and API added and nothing else changed.
+func financeLinkSecurityPolicy(inlineScriptHashes []string) string {
+	policy := securityPolicy(inlineScriptHashes, "connect-src 'self' "+financeLinkConnectSources)
+	policy = strings.Replace(policy, "script-src 'self'", "script-src 'self' "+financeLinkScriptSource, 1)
+	return strings.Replace(policy, "frame-src 'self'", "frame-src 'self' "+financeLinkFrameSource, 1)
+}
 
 // CommandLineConnectSources is what that page may connect to besides this
 // server: the client's listener, which is on the reader's own machine and so

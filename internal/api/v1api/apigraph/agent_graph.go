@@ -1976,10 +1976,28 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 			return nil, fmt.Errorf("there is no source %q", arguments.SourceID)
 		}
 		source = existing
+		// A finance source was made by its link and is described by it:
+		// what the person may change here is its name, its schedule and
+		// whether it is on. Anything else would leave a source whose
+		// credential no longer matches what it says it reads.
+		if source.Kind.IsMadeByLinking() {
+			for name, given := range map[string]bool{
+				"kind": arguments.Kind != "", "computer": arguments.Computer != "", "path": arguments.Path != "",
+				"format": arguments.Format != "", "rootPath": arguments.RootPath != "", "mailboxId": arguments.MailboxID != "",
+				"type": arguments.Type != "", "settings": len(arguments.Settings) > 0,
+				"maxAttachmentBytes": arguments.MaxAttachmentBytes != nil, "readEveryCheckout": arguments.ReadEveryCheckout != nil,
+				"commitsPerPass": arguments.CommitsPerPass != nil, "ownCommitsAtLeast": arguments.OwnCommitsAtLeast != nil,
+			} {
+				if given {
+					return nil, fmt.Errorf("%w: a %s source changes only its name, schedule and whether it is on, not %s", api.ErrInvalidArguments, source.Kind, name)
+				}
+			}
+		}
 	} else {
 		source.Kind = models.AgentKnowledgeKind(strings.TrimSpace(arguments.Kind))
 		source.Specification.Format = models.FormatFiles
 	}
+	isExistingLinkedSource := arguments.SourceID != "" && source.Kind.IsMadeByLinking()
 	// A source of a type is described by its settings alone: a path or a
 	// format set beside them would disagree with them, and the next save
 	// of the settings would put the old path back and sweep what was
@@ -2080,15 +2098,45 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 		now := time.Now()
 		source.NextRunAt = &now
 	}
+	// A finance source needs the credential its provider hands over at the
+	// end of a link, so it is made only by linking: a row without one would
+	// be a source that can never sync. Nor may another source become one.
+	if source.Kind.IsMadeByLinking() && !isExistingLinkedSource {
+		return nil, fmt.Errorf("%w: a %s source is made by linking an institution, from the Finance tab of the agent page, teanode finance link-plaid or link-simplefin, or the finance tool", api.ErrInvalidArguments, source.Kind)
+	}
 	return tx.PutAgentSource(source)
 }
 
 func (self *graph) DeleteAgentKnowledgeSource(ctx context.Context, arguments DeleteAgentKnowledgeSourceArguments) (bool, error) {
-	_, found, err := self.requireAgentPerson(ctx)
+	principal, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return false, err
 	}
-	return true, self.writing(ctx).DeleteAgentSource(found.ID, arguments.SourceID)
+	tx := self.writing(ctx)
+	source, err := tx.LockAgentSource(found.ID, arguments.SourceID)
+	if err != nil {
+		return false, err
+	}
+	if source == nil {
+		return false, api.ErrNotFound
+	}
+	// A finance source is ended at its provider first, best effort, so the
+	// operator stops paying for a link nobody can reach, and its assets
+	// keep their history as manual ones, closed on the day before, so net
+	// worth stops counting an account nothing values any more from today:
+	// an institution linked again today, through either provider, then
+	// counts each account once on the day of the move.
+	closedOn := personYesterday(principal)
+	if worker := self.agentWorker(); worker != nil {
+		if err := worker.BeforeDeletingSource(ctx, tx, source, closedOn); err != nil {
+			return false, err
+		}
+	} else if source.Kind == models.SourceFinance {
+		if _, err := tx.DetachAssetsOfSource(found.ID, source.ID, closedOn); err != nil {
+			return false, err
+		}
+	}
+	return true, tx.DeleteAgentSource(found.ID, source.ID)
 }
 
 func (self *graph) SyncAgentKnowledgeSource(ctx context.Context, arguments DeleteAgentKnowledgeSourceArguments) (bool, error) {

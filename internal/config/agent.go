@@ -5,6 +5,7 @@ import (
 	"net"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -102,6 +103,10 @@ type Agent struct {
 	// MCP declares servers speaking the Model Context Protocol whose tools
 	// join the catalog.
 	MCP AgentMCP `yaml:"mcp"`
+
+	// Finance is which providers people may link institutions through,
+	// and the operator's keys for those that need them.
+	Finance AgentFinance `yaml:"finance,omitempty"`
 }
 
 // AgentProviderKindOpenAI and the others are the values AgentProvider.Kind
@@ -113,8 +118,9 @@ const (
 	AgentProviderKindGemini    = "gemini"
 
 	// AgentProviderKindTypeSafe decides between answers it is given and
-	// writes nothing. It is assigned to Models.Decide and to nothing
-	// else: assigning it to work that writes is refused below.
+	// writes nothing. It is assigned to Models.Decide or Models.Categorize
+	// and to nothing else: assigning it to work that writes is refused
+	// below.
 	AgentProviderKindTypeSafe = "typesafe"
 
 	// AgentProviderKindCodex is OpenAI reached with a person's sign-in
@@ -332,6 +338,12 @@ type AgentModels struct {
 	// the list.
 	Decide string `yaml:"decide,omitempty"`
 
+	// Categorize is the model that assigns spending categories to finance
+	// transactions: a decision model (a typesafe provider's) or a chat
+	// model, the one field that may name either. Empty falls back to
+	// Decide, then Scan, then Fast.
+	Categorize string `yaml:"categorize,omitempty"`
+
 	// EmbeddingDimensions is the width to ask the embedding model for,
 	// where it takes such a request. Zero is the model's own width.
 	//
@@ -430,6 +442,19 @@ func (self *AgentModels) ForWork(work AgentWork) string {
 		return self.Fast
 	}
 	return self.Default
+}
+
+// CategorizeModel is the model name that assigns spending categories:
+// Categorize, else Decide, else what the scan resolves to. It may name a
+// decision model or a chat model, so a caller asks the registry which.
+func (self *AgentModels) CategorizeModel() string {
+	if self.Categorize != "" {
+		return self.Categorize
+	}
+	if self.Decide != "" {
+		return self.Decide
+	}
+	return self.ForWork(AgentWorkScan)
 }
 
 // SplitModelName splits "provider:model" at the first colon. The model part
@@ -587,6 +612,107 @@ type AgentSearch struct {
 	APIKey string `yaml:"apiKey,omitempty" secret:"true"`
 }
 
+// AgentFinanceProviderPlaid and AgentFinanceProviderSimpleFIN are the
+// providers a person may link an institution through.
+const (
+	AgentFinanceProviderPlaid     = "plaid"
+	AgentFinanceProviderSimpleFIN = "simplefin"
+)
+
+// AgentFinanceProviders is every provider, in the order the settings page
+// offers them.
+var AgentFinanceProviders = []string{AgentFinanceProviderPlaid, AgentFinanceProviderSimpleFIN}
+
+// AgentPlaidEnvironmentSandbox and AgentPlaidEnvironmentProduction are the
+// Plaid environments: fake institutions for trying it out, and real ones.
+const (
+	AgentPlaidEnvironmentSandbox    = "sandbox"
+	AgentPlaidEnvironmentProduction = "production"
+)
+
+// AgentPlaidProductTransactions and the others are the Plaid products a
+// finance source may be linked with. Transactions is what every finance
+// source needs; the other two add investment and loan balances, and Plaid
+// charges for each per finance source on paid plans.
+const (
+	AgentPlaidProductTransactions = "transactions"
+	AgentPlaidProductInvestments  = "investments"
+	AgentPlaidProductLiabilities  = "liabilities"
+)
+
+// AgentPlaidProducts is every product, in the order the settings page
+// offers them.
+var AgentPlaidProducts = []string{AgentPlaidProductTransactions, AgentPlaidProductInvestments, AgentPlaidProductLiabilities}
+
+// AgentFinance is which providers people may link institutions through,
+// and the operator's keys for those that need them. The operator holds the
+// provider keys and the person holds each finance source; see
+// docs/decisions/20260929-the-operator-holds-the-provider-keys-the-person-holds-the-finance-source.md.
+type AgentFinance struct {
+	// OfferedProviders lists the providers a person may link through:
+	// "plaid", "simplefin". Empty offers none.
+	OfferedProviders []string `yaml:"offeredProviders,omitempty"`
+
+	// Plaid is the operator's Plaid developer account.
+	Plaid AgentPlaid `yaml:"plaid,omitempty"`
+}
+
+// Offers reports whether people may link through a provider: it is listed,
+// and, for Plaid, the operator's keys are set. A listed Plaid without keys
+// is valid configuration and is not offered.
+func (self *AgentFinance) Offers(provider string) bool {
+	if !slices.Contains(self.OfferedProviders, provider) {
+		return false
+	}
+	if provider == AgentFinanceProviderPlaid {
+		return self.Plaid.HasKeys()
+	}
+	return true
+}
+
+// AgentPlaid is the operator's Plaid developer account.
+type AgentPlaid struct {
+	// Environment is "sandbox" or "production". Required once the keys are
+	// set, because keys work in the environment they were issued for and
+	// a wrong guess would come back only when somebody links.
+	Environment string `yaml:"environment,omitempty"`
+
+	// ClientID and Secret are the developer account's keys, both set or
+	// both empty.
+	ClientID string `yaml:"clientId,omitempty"`
+	Secret   string `yaml:"secret,omitempty" secret:"true"`
+
+	// CountryCodes are the countries whose institutions Plaid Link offers,
+	// as two-letter codes in capitals. Empty is ["US"].
+	CountryCodes []string `yaml:"countryCodes,omitempty"`
+
+	// Products are what a finance source is linked with: "transactions",
+	// and optionally "investments" and "liabilities". Empty is
+	// ["transactions"].
+	Products []string `yaml:"products,omitempty"`
+}
+
+// HasKeys reports whether the client id and secret are both set.
+func (self *AgentPlaid) HasKeys() bool {
+	return self.ClientID != "" && self.Secret != ""
+}
+
+// ResolvedCountryCodes is CountryCodes, or ["US"] when it is empty.
+func (self *AgentPlaid) ResolvedCountryCodes() []string {
+	if len(self.CountryCodes) == 0 {
+		return []string{"US"}
+	}
+	return self.CountryCodes
+}
+
+// ResolvedProducts is Products, or ["transactions"] when it is empty.
+func (self *AgentPlaid) ResolvedProducts() []string {
+	if len(self.Products) == 0 {
+		return []string{AgentPlaidProductTransactions}
+	}
+	return self.Products
+}
+
 // AgentTools is the operator's policy over the catalog: families or tools
 // never offered, and write tools raised to need confirmation. Risk classes
 // are the floor; this can only make the agent more cautious.
@@ -608,7 +734,7 @@ type AgentSkillSecret struct {
 // stay that list: two of the names here once said "access" and "mcp", which
 // name nothing, so a policy that switched off connected servers switched off
 // nothing and said so to nobody.
-var AgentToolFamilies = []string{"mailbox", "domains", "audit", "people", "server", "account", "general", "servers", "browser", "computer", "skills"}
+var AgentToolFamilies = []string{"mailbox", "domains", "audit", "people", "server", "account", "general", "servers", "browser", "computer", "skills", "finance"}
 
 // AgentBrowser is a headless browser reached over the DevTools protocol.
 type AgentBrowser struct {
@@ -1040,18 +1166,24 @@ func (self *Configuration) validateAgent(validator *validator) {
 		// A decider writes nothing and a writer cannot say how sure it is,
 		// so neither stands in for the other. Caught here rather than at
 		// the moment of use, where it would be a run that failed for a
-		// reason nobody could see from the configuration.
+		// reason nobody could see from the configuration. Categorizing is
+		// the one work either can do: it picks from a list of categories,
+		// which a decider answers directly and a writer answers in words.
+		if field == "agent.models.categorize" {
+			return
+		}
 		decides := field == "agent.models.decide"
 		if decider := deciders[providerName]; decider != decides {
 			if decides {
 				validator.add(field, "%q names a provider that writes; a decision needs a typesafe provider", value)
 			} else {
-				validator.add(field, "%q names a provider that only decides; this work writes", value)
+				validator.add(field, "%q names a provider that only decides; this work writes, and only agent.models.decide and agent.models.categorize may name a typesafe provider", value)
 			}
 		}
 	}
 	checkModel("agent.models.default", agent.Models.Default)
 	checkModel("agent.models.decide", agent.Models.Decide)
+	checkModel("agent.models.categorize", agent.Models.Categorize)
 	checkModel("agent.models.fast", agent.Models.Fast)
 	checkModel("agent.models.embedding", agent.Models.Embedding)
 	checkModel("agent.models.triage", agent.Models.Triage)
@@ -1120,6 +1252,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 	default:
 		validator.add("agent.search.kind", `must be "brave", or empty for no web search`)
 	}
+	validateAgentFinance(&agent.Finance, validator)
 	if agent.Browser.Enabled && agent.Browser.CDPEndpoint == "" {
 		validator.add("agent.browser.cdpEndpoint", "required when the browser is enabled: host:port of the DevTools debugger, for example chrome:9222")
 	}
@@ -1195,6 +1328,58 @@ func (self *Configuration) validateAgent(validator *validator) {
 				validator.add(fmt.Sprintf("agent.tools.%s[%d]", list.name, index), "%q is neither a family (%s) nor a tool name", value, strings.Join(AgentToolFamilies, ", "))
 			}
 		}
+	}
+}
+
+// countryCode is a two-letter country code as Plaid takes it: in capitals.
+var countryCode = regexp.MustCompile(`^[A-Z]{2}$`)
+
+// validateAgentFinance reports what is wrong with the finance section. A
+// value that cannot be used is reported whether or not its provider is
+// offered yet, so offering the provider later cannot turn an old mistake
+// into a link that fails.
+func validateAgentFinance(finance *AgentFinance, validator *validator) {
+	offered := map[string]bool{}
+	for index, provider := range finance.OfferedProviders {
+		field := fmt.Sprintf("agent.finance.offeredProviders[%d]", index)
+		switch {
+		case !slices.Contains(AgentFinanceProviders, provider):
+			validator.add(field, "%q is not a provider; the providers are %s", provider, strings.Join(AgentFinanceProviders, ", "))
+		case offered[provider]:
+			validator.add(field, "%q is listed twice", provider)
+		}
+		offered[provider] = true
+	}
+	plaid := &finance.Plaid
+	switch plaid.Environment {
+	case "", AgentPlaidEnvironmentSandbox, AgentPlaidEnvironmentProduction:
+	default:
+		validator.add("agent.finance.plaid.environment", `must be "sandbox" or "production"`)
+	}
+	if (plaid.ClientID == "") != (plaid.Secret == "") {
+		validator.add("agent.finance.plaid.clientId", "the client id and the secret are both set or both empty")
+	}
+	if plaid.HasKeys() && plaid.Environment == "" {
+		validator.add("agent.finance.plaid.environment", `required with the keys: "sandbox" or "production", whichever the keys were issued for`)
+	}
+	for index, code := range plaid.CountryCodes {
+		if !countryCode.MatchString(code) {
+			validator.add(fmt.Sprintf("agent.finance.plaid.countryCodes[%d]", index), "%q is not a two-letter country code in capitals, for example US or CA", code)
+		}
+	}
+	products := map[string]bool{}
+	for index, product := range plaid.Products {
+		field := fmt.Sprintf("agent.finance.plaid.products[%d]", index)
+		switch {
+		case !slices.Contains(AgentPlaidProducts, product):
+			validator.add(field, "%q is not a product; the products are %s", product, strings.Join(AgentPlaidProducts, ", "))
+		case products[product]:
+			validator.add(field, "%q is listed twice", product)
+		}
+		products[product] = true
+	}
+	if len(plaid.Products) > 0 && !products[AgentPlaidProductTransactions] {
+		validator.add("agent.finance.plaid.products", "must include transactions, which every finance source is read with")
 	}
 }
 

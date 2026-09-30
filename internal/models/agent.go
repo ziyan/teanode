@@ -118,6 +118,11 @@ type Agent struct {
 	AlertQuietStart string `json:"alertQuietStart,omitempty" graphapi:"nullable"`
 	AlertQuietEnd   string `json:"alertQuietEnd,omitempty" graphapi:"nullable"`
 	AlertDailyMost  int    `json:"alertDailyMost"`
+
+	// ReportingCurrencyCode is the one currency the person wants totals
+	// shown in, an ISO 4217 code. Empty means the currency of their first
+	// finance account.
+	ReportingCurrencyCode string `json:"reportingCurrencyCode,omitempty" graphapi:"nullable"`
 }
 
 // The bounds alerts keep when the person has not said: a night from ten
@@ -266,6 +271,9 @@ func (self *Agent) Validate() error {
 	}
 	if self.AlertDailyMost < 0 || self.AlertDailyMost > 50 {
 		errors.add("alertDailyMost", "must be between 0 and 50")
+	}
+	if self.ReportingCurrencyCode != "" && !IsCurrencyCode(self.ReportingCurrencyCode) {
+		errors.add("reportingCurrencyCode", "%q is not a currency code like USD", self.ReportingCurrencyCode)
 	}
 	return errors.ErrOrNil()
 }
@@ -574,6 +582,12 @@ const (
 	// the queue's rule of one open job per agent, kind and subject is what
 	// gathers candidates arriving together into one decision.
 	AgentJobAlert AgentJobKind = "alert"
+
+	// AgentJobCategorize gives spending categories, with the categorize
+	// model, to the finance transactions a sync left uncategorized. Its
+	// subject is the agent, so syncs of several finance sources close
+	// together queue one.
+	AgentJobCategorize AgentJobKind = "categorize"
 )
 
 // AgentJobStatus is where a job is.

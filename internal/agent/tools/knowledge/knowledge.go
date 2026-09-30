@@ -40,7 +40,11 @@ func init() {
 	tools.Register(func() []*tools.Tool {
 		kinds := make([]string, 0, len(models.AgentKnowledgeKinds))
 		for _, kind := range models.AgentKnowledgeKinds {
-			kinds = append(kinds, string(kind))
+			// A finance source is linked through the finance tool, never
+			// added here.
+			if !kind.IsMadeByLinking() {
+				kinds = append(kinds, string(kind))
+			}
 		}
 		return []*tools.Tool{
 			{
@@ -304,7 +308,14 @@ func sourcesAction(ctx context.Context, run tools.Run) (*tools.Result, error) {
 	// How far the night has got, first: "is it done reading yet" is the
 	// question this list is most often asked for.
 	builder.WriteString("Reading: " + progress.Describe() + "\n")
+	financeSourceCount := 0
 	for _, source := range sources {
+		// Finance sources file rows, not documents: the finance tool
+		// lists them.
+		if !source.Kind.IsDocumentKind() {
+			financeSourceCount++
+			continue
+		}
 		builder.WriteString(source.Name + " (" + string(source.Kind) + ") — " + source.Describe())
 		fmt.Fprintf(&builder, "\n  %d documents, %d passages", source.DocumentCount, source.ChunkCount)
 		if source.RefusedCount > 0 {
@@ -328,6 +339,9 @@ func sourcesAction(ctx context.Context, run tools.Run) (*tools.Result, error) {
 		}
 		builder.WriteString("\n")
 	}
+	if financeSourceCount > 0 {
+		fmt.Fprintf(&builder, "(and %d finance source(s), which hold accounts and transactions rather than documents: the finance tool lists them)\n", financeSourceCount)
+	}
 	return tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), nil
 }
 
@@ -342,6 +356,9 @@ func addAction(ctx context.Context, run tools.Run, arguments *knowledgeArguments
 	}
 	if !models.IsAgentKnowledgeKind(kind) {
 		return nil, fmt.Errorf("%q is not a kind of source", arguments.Kind)
+	}
+	if kind.IsMadeByLinking() {
+		return nil, fmt.Errorf("a %s source is linked with the finance tool, not added here", kind)
 	}
 	name := strings.TrimSpace(arguments.Name)
 	if name == "" {
@@ -852,6 +869,11 @@ func sourceNamed(ctx context.Context, run tools.Run, name string) (*models.Agent
 	}
 	if source == nil {
 		return nil, fmt.Errorf("there is no source called %q", name)
+	}
+	// Syncing, switching and deleting a finance source are the finance
+	// tool's, which ends it at its provider before deleting it.
+	if !source.Kind.IsDocumentKind() {
+		return nil, fmt.Errorf("%q is a %s source; use the finance tool for it", name, source.Kind)
 	}
 	return source, nil
 }

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -63,12 +64,7 @@ func ReadPassword(fromStdin bool) (string, error) {
 func ReadSecret(prompt string) (string, error) {
 	descriptor := int(os.Stdin.Fd())
 	if !term.IsTerminal(descriptor) {
-		reader := bufio.NewReader(os.Stdin)
-		line, err := reader.ReadString('\n')
-		if err != nil && line == "" {
-			return "", fmt.Errorf("cannot read from standard input: %w", err)
-		}
-		return strings.TrimSpace(line), nil
+		return readPipedSecret(os.Stdin)
 	}
 
 	fmt.Fprint(os.Stderr, prompt)
@@ -78,4 +74,16 @@ func ReadSecret(prompt string) (string, error) {
 		return "", fmt.Errorf("cannot read from the terminal: %w", err)
 	}
 	return strings.TrimSpace(string(secret)), nil
+}
+
+// readPipedSecret reads one secret, a line, from input that is not a
+// terminal. Every read of one input shares a buffered reader (readerOf):
+// a reader made for each secret took all of piped input on the first, and
+// the second secret met the end of it.
+func readPipedSecret(input io.Reader) (string, error) {
+	line, err := readerOf(input).ReadString('\n')
+	if err != nil && line == "" {
+		return "", fmt.Errorf("cannot read from standard input: %w", err)
+	}
+	return strings.TrimSpace(line), nil
 }

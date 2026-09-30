@@ -129,6 +129,17 @@ func (self *Agent) thinkAboutFreely(ctx context.Context, run *Run, title, prompt
 // its own, which readOnly says may only read, and readOnlyTools holds to
 // reading by name when the rest of the turn may act.
 func (self *Agent) thinking(ctx context.Context, run *Run, title, prompt string, pictures []llm.ContentPart, allow map[string]bool, rounds int, kind models.AgentJobKind, work config.AgentWork, readOnly bool, readOnlyTools map[string]bool) (*thought, error) {
+	return self.thinkingOn(ctx, run, title, prompt, pictures, allow, rounds, kind, work, "", readOnly, readOnlyTools)
+}
+
+// oneShotOn is oneShot on a model named by the caller rather than chosen
+// by a kind of work.
+func (self *Agent) oneShotOn(ctx context.Context, run *Run, title, prompt string, kind models.AgentJobKind, modelName string) (*thought, error) {
+	return self.thinkingOn(ctx, run, title, prompt, nil, noTools, 1, kind, "", modelName, true, nil)
+}
+
+// thinkingOn is thinking, on the model named when one is.
+func (self *Agent) thinkingOn(ctx context.Context, run *Run, title, prompt string, pictures []llm.ContentPart, allow map[string]bool, rounds int, kind models.AgentJobKind, work config.AgentWork, modelName string, readOnly bool, readOnlyTools map[string]bool) (*thought, error) {
 	if self.operations == nil {
 		return nil, fmt.Errorf("no way to act as the person")
 	}
@@ -161,7 +172,7 @@ func (self *Agent) thinking(ctx context.Context, run *Run, title, prompt string,
 	turn, err := self.Ask(&AskSettings{
 		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
 		Message: prompt, Surface: string(kind), ReadOnly: readOnly, ReadOnlyTools: readOnlyTools, Short: true,
-		Allow: allow, Headless: true, MaxRounds: rounds, UsageKind: string(kind), Work: work,
+		Allow: allow, Headless: true, MaxRounds: rounds, UsageKind: string(kind), Work: work, Model: modelName,
 		Pictures:       pictures,
 		ReadThenAnswer: true, ResultCharacters: thinkResultCharacters,
 	})

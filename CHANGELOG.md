@@ -6,6 +6,44 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.88.0] - 2026-09-30
+
+### Added
+
+- Investment accounts linked through Plaid: each holding is an asset with its quantity, price and cost basis, trades are listed per holding and with `teanode finance trades`, and dividends and fees count as income and spending. Turn on the investments product in the Plaid settings, then link the brokerage again. (#249)
+
+## [0.87.4] - 2026-09-30
+
+### Fixed
+
+- The agent can use the finance tool with models that send every argument on every call. (#252)
+
+## [0.87.3] - 2026-09-30
+
+### Fixed
+
+- Moving an institution to another provider no longer counts its accounts twice in net worth on the day of the move. (#251)
+
+## [0.87.2] - 2026-09-30
+
+### Changed
+
+- Plaid's linking page is now at `/finance/link`. A link to the old `/finance-link` address, from a command started before the upgrade, no longer opens it; run the command again. (#247)
+
+## [0.87.1] - 2026-09-30
+
+### Fixed
+
+- A transfer between your accounts is no longer counted as spending after its pending side posts. (#245)
+- Deleting a finance source closes its assets on that day, and linking the institution again picks their history back up instead of counting each account twice. (#245)
+- SimpleFIN reads the full history of an account added to a connection later, and catches up an institution that failed for a while. (#245)
+
+## [0.87.0] - 2026-09-30
+
+### Added
+
+- Link your bank, card, brokerage and loan accounts through Plaid (with the operator's keys) or SimpleFIN, and track transactions, spending categories, monthly budgets, savings targets and net worth, converted into your reporting currency, on the agent page's Finance tab, with `teanode finance`, or by asking your agent. (#242)
+
 ## [0.86.0] - 2026-09-30
 
 ### Added

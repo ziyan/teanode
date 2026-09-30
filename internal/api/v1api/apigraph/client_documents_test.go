@@ -129,6 +129,14 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"StopAgentBackgroundWork": client.DocumentStopAgentBackgroundWork,
 		// Every settings section, the agent's model slots among them.
 		"GetSettings": client.DocumentGetSettings,
+		// What syncing, switching and deleting a finance source send.
+		"SyncAgentKnowledgeSource":   client.DocumentSyncAgentKnowledgeSource,
+		"DeleteAgentKnowledgeSource": client.DocumentDeleteAgentKnowledgeSource,
+	}
+	// The finance area, one document per operation, which teanode finance
+	// and the finance tool both send.
+	for name, document := range client.FinanceDocuments {
+		documents[name] = document
 	}
 
 	for name, document := range documents {

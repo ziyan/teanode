@@ -73,6 +73,10 @@ export type Column<Row> = {
   // subjects and error messages, which are sentences.
   truncate?: boolean
 
+  // Right-aligned in a tabular face, header and cells alike, so amounts
+  // read down the column by their decimal places.
+  numeric?: boolean
+
   // The value the filters and the sort see. Kept apart from render so a cell
   // can show a tag or a link while still being filtered as text.
   value?: (row: Row) => string | undefined
@@ -389,7 +393,10 @@ export function DataTable<Row>({
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={column.optional ? 'optional' : undefined}
+                  className={
+                    [column.optional ? 'optional' : '', column.numeric ? 'numeric' : ''].filter(Boolean).join(' ') ||
+                    undefined
+                  }
                   style={column.width ? { width: column.width } : undefined}
                   aria-sort={
                     order?.key === column.key
@@ -484,7 +491,11 @@ export function DataTable<Row>({
                   {columns.map((column) => (
                     <td
                       key={column.key}
-                      className={[column.optional ? 'optional' : '', column.truncate ? 'truncate' : '']
+                      className={[
+                        column.optional ? 'optional' : '',
+                        column.truncate ? 'truncate' : '',
+                        column.numeric ? 'numeric' : '',
+                      ]
                         .filter(Boolean)
                         .join(' ')}
                     >

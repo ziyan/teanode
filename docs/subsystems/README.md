@@ -26,6 +26,7 @@ change with it.
 | `contacts.md` | The address book, CardDAV, and what a phone may do to a card |
 | `calendar.md` | The calendar, CalDAV, free-busy, and invitations by mail |
 | `notes.md` | Notes from a phone's Notes app, kept in the mailbox over IMAP |
+| `finance.md` | Linked institutions, transactions, exchange rates, net worth, budgets and savings targets |
 
 Two conventions hold throughout. *Rules* are the mailbox's rules and nothing
 else. The words for the agent's own text are fixed in `AGENTS.md`: the

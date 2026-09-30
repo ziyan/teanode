@@ -214,6 +214,17 @@ func readClientOperations(t *testing.T) []clientOperation {
 				// Execute(ctx, query, variables, result): the document is second.
 				where := fileSet.Position(call.Pos())
 				text, ok := fold(call.Args[1], locals, 0)
+				// A document looked up in a package-level map of constants,
+				// as the finance operations are, is every value of that map.
+				if tabled, isTable := tableDocuments(call.Args[1], locals, values, fold); !ok && isTable {
+					for _, text := range tabled {
+						operations = append(operations, clientOperation{
+							where: fmt.Sprintf("%s:%d", filepath.Base(where.Filename), where.Line),
+							text:  text,
+						})
+					}
+					return true
+				}
 				if !ok {
 					t.Errorf("%s:%d: cannot read the document passed to Execute; "+
 						"build it from string constants so this test can check it",
@@ -237,4 +248,40 @@ func readClientOperations(t *testing.T) []clientOperation {
 	}
 	sort.Slice(operations, func(one, two int) bool { return operations[one].where < operations[two].where })
 	return operations
+}
+
+// tableDocuments reads a document argument that is a local taken from a
+// package-level map of constants, table[key], as every value of the map:
+// each is a document the call may send. False when the argument is not
+// such a lookup, or a value cannot be read.
+func tableDocuments(argument ast.Expr, locals, values map[string]ast.Expr, fold func(ast.Expr, map[string]ast.Expr, int) (string, bool)) ([]string, bool) {
+	name, ok := argument.(*ast.Ident)
+	if !ok {
+		return nil, false
+	}
+	lookup, ok := locals[name.Name].(*ast.IndexExpr)
+	if !ok {
+		return nil, false
+	}
+	table, ok := lookup.X.(*ast.Ident)
+	if !ok {
+		return nil, false
+	}
+	literal, ok := values[table.Name].(*ast.CompositeLit)
+	if !ok || len(literal.Elts) == 0 {
+		return nil, false
+	}
+	var documents []string
+	for _, element := range literal.Elts {
+		entry, ok := element.(*ast.KeyValueExpr)
+		if !ok {
+			return nil, false
+		}
+		text, ok := fold(entry.Value, nil, 0)
+		if !ok {
+			return nil, false
+		}
+		documents = append(documents, text)
+	}
+	return documents, true
 }
