@@ -69,7 +69,7 @@ func TestRecallCarriesAnOverviewsFirstSectionAndAThemesReflections(t *testing.T)
 		}
 		// The words hit one reflection, the last.
 		hit := facts[len(facts)-1]
-		if blocks, err = turn.chooseRecalled(tx, []*models.AgentNode{page, theme}, []*models.AgentFact{hit}); err != nil {
+		if blocks, err = turn.chooseRecalled(tx, []*models.AgentNode{page, theme}, []*models.AgentFact{hit}, nil); err != nil {
 			t.Fatalf("chooseRecalled: %s", err)
 		}
 	})
@@ -88,21 +88,37 @@ func TestRecallCarriesAnOverviewsFirstSectionAndAThemesReflections(t *testing.T)
 	}
 }
 
-// An overview's first section is what comes before its second heading,
-// cut to length.
-func TestTheFirstSectionOfAnOverview(t *testing.T) {
+// Recall carries the section of an overview the question's meaning
+// matched; else the one sharing most of its words; else the first. A
+// match whose section has since been rewritten is not taken, and an
+// overview with no headings is one section.
+func TestTheSectionOfAnOverviewRecallCarries(t *testing.T) {
+	shed := &models.AgentNode{ID: "shed", Overview: "## What it is\n\nA shed.\n\n## Its parts\n\nA door and a window.\n\n## How it relates\n\nThe orchard stores its ladders here."}
+	sections := overviewSectionsOf(shed)
+	if len(sections) != 3 || sections[1].Heading != "Its parts" || sections[1].Text != "A door and a window." {
+		t.Fatalf("the sections are %+v", sections)
+	}
+	stale := overviewSectionId(shed.ID, 3, "How it relates", "Something it used to say.")
 	for _, expected := range []struct {
-		overview, section string
-		characters        int
+		name, matched, question, section string
+		characters                       int
 	}{
-		{"", "", 100},
-		{"## What it is\n\nA shed.\n\n## Its parts\n\nA door.", "## What it is\n\nA shed.", 100},
-		{"A shed with no heading.", "A shed with no heading.", 100},
-		{"## What it is\n\nA very long shed.", "## What it is\n\nA very…", 21},
+		{"nothingMatches", "", "is it painted?", "## What it is\n\nA shed.", 100},
+		{"matchedByMeaning", sections[2].ID, "what is it for?", "## How it relates\n\nThe orchard stores its ladders here.", 100},
+		{"matchedByWords", "", "is there a door or a window?", "## Its parts\n\nA door and a window.", 100},
+		{"aRewrittenSectionIsNotTaken", stale, "is it painted?", "## What it is\n\nA shed.", 100},
+		{"cut", sections[2].ID, "", "## How it relates\n\nThe orchard st…", 33},
 	} {
-		if got := firstOverviewSection(expected.overview, expected.characters); got != expected.section {
-			t.Errorf("the first section of %q is %q, not %q", expected.overview, got, expected.section)
+		if got := overviewSectionFor(shed, expected.matched, expected.question, expected.characters); got != expected.section {
+			t.Errorf("%s: carried %q, not %q", expected.name, got, expected.section)
 		}
+	}
+	plain := &models.AgentNode{ID: "plain", Overview: "A shed with no heading."}
+	if got := overviewSectionFor(plain, "", "", 100); got != "A shed with no heading." {
+		t.Errorf("an overview with no headings carried %q", got)
+	}
+	if got := overviewSectionFor(&models.AgentNode{ID: "empty"}, "", "", 100); got != "" {
+		t.Errorf("a page with no overview carried %q", got)
 	}
 }
 

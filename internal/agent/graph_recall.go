@@ -57,8 +57,8 @@ func (self *AskRun) recallForTurn(ctx context.Context) {
 		words += "\n" + reference.Subject
 	}
 
-	nodes, facts := self.searchGraph(ctx, words, recallCandidates)
-	self.writeRecalled(ctx, nodes, facts)
+	nodes, facts, sections := self.searchGraph(ctx, words, recallCandidates)
+	self.writeRecalled(ctx, nodes, facts, sections)
 	self.recallFromKnowledge(ctx, words)
 }
 
@@ -124,8 +124,12 @@ func (self *AskRun) recallFromKnowledge(ctx context.Context, words string) {
 	}
 }
 
-// searchGraph is the fused search the turn and the tool both use.
-func (self *AskRun) searchGraph(ctx context.Context, words string, limit int) ([]*models.AgentNode, []*models.AgentFact) {
+// searchGraph is the fused search the turn and the tool both use. Besides
+// the pages and facts it says which overview section of a page the
+// question's meaning matched best, by page id: a page found by that
+// section is ranked as one found by meaning, and recall carries that
+// section of it.
+func (self *AskRun) searchGraph(ctx context.Context, words string, limit int) ([]*models.AgentNode, []*models.AgentFact, map[string]string) {
 	agentId := self.settings.Agent.ID
 
 	var wordNodes []*models.AgentNode
@@ -141,12 +145,59 @@ func (self *AskRun) searchGraph(ctx context.Context, words string, limit int) ([
 	// waiting. Rehearsal is the caller that cannot do this; see
 	// canAnswerFromMemory. The question is embedded once a turn and put
 	// to both stores.
-	meaningNodes, meaningFacts, err := self.agent.nearestInGraphTo(ctx, self.settings.Agent.ID, self.meaningOfQuestion(ctx, "recall", words), limit)
+	question := self.meaningOfQuestion(ctx, "recall", words)
+	meaningNodes, meaningFacts, err := self.agent.nearestInGraphTo(ctx, self.settings.Agent.ID, question, limit)
 	if err != nil {
 		log.Warningf("cannot rank the graph of %q by meaning: %s", self.settings.Owner.Username, err)
 	}
+	sectionNodes, sections := self.pagesOfNearestSections(ctx, question, limit)
 
-	return fuseNodes(limit, meaningNodes, wordNodes), fuseFacts(limit, meaningFacts, wordFacts)
+	return fuseNodes(limit, meaningNodes, wordNodes, sectionNodes), fuseFacts(limit, meaningFacts, wordFacts), sections
+}
+
+// pagesOfNearestSections is the pages whose overview sections are nearest
+// the question, best first, and the best section of each by page id.
+func (self *AskRun) pagesOfNearestSections(ctx context.Context, question *meaning, limit int) ([]*models.AgentNode, map[string]string) {
+	sections := map[string]string{}
+	if question == nil {
+		return nil, sections
+	}
+	agentId := self.settings.Agent.ID
+	sectionIds, err := self.agent.nearestOverviewSectionsTo(ctx, agentId, question, limit)
+	if err != nil {
+		log.Warningf("cannot rank the overview sections of %q by meaning: %s", self.settings.Owner.Username, err)
+		return nil, sections
+	}
+	var order []string
+	for _, sectionId := range sectionIds {
+		nodeId := nodeOfOverviewSection(sectionId)
+		if _, seen := sections[nodeId]; seen {
+			continue
+		}
+		sections[nodeId] = sectionId
+		order = append(order, nodeId)
+	}
+	var nodes []*models.AgentNode
+	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		found, err := tx.GetAgentNodes(agentId, order)
+		if err != nil {
+			return err
+		}
+		byId := make(map[string]*models.AgentNode, len(found))
+		for _, node := range found {
+			byId[node.ID] = node
+		}
+		for _, nodeId := range order {
+			if node := byId[nodeId]; node != nil && !node.Dormant {
+				nodes = append(nodes, node)
+			}
+		}
+		return nil
+	}); err != nil {
+		log.Warningf("cannot read the pages of the nearest overview sections: %s", err)
+		return nil, sections
+	}
+	return nodes, sections
 }
 
 // SearchGraphByMeaning is what the memory tool's search adds to its own
@@ -180,8 +231,8 @@ type recalledBlock struct {
 	// Summary is the page's opening as Text carries it, if it does.
 	Summary string
 
-	// Overview is the first section of the page's overview as Text
-	// carries it, if it does.
+	// Overview is the section of the page's overview Text carries, if it
+	// carries one.
 	Overview string
 
 	// Facts are the facts the block carried, in the order it carried
@@ -212,7 +263,7 @@ func stillStands(fact *models.AgentFact) bool {
 //
 // Which facts a page gives up is decided by the question and not by age;
 // see factsToShow for what that cost before.
-func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode, facts []*models.AgentFact) ([]*recalledBlock, error) {
+func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode, facts []*models.AgentFact, sections map[string]string) ([]*recalledBlock, error) {
 	agentId := self.settings.Agent.ID
 	paths, err := pathsOfFacts(tx, agentId, facts)
 	if err != nil {
@@ -303,12 +354,12 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 			}
 			factLines += "\n  #" + strconv.Itoa(fact.Number) + " " + line
 		}
-		// The overview's first section, which says what the thing is
-		// and how it works in a paragraph: what a broad question needs
-		// and no single fact says. Only where the page still fits with
-		// it; a page that does not is carried without it before it is
-		// passed over.
-		overview := firstOverviewSection(node.Overview, recallOverviewLength)
+		// A section of the overview, which says in a paragraph what no
+		// single fact says: the one the question matched, else the first,
+		// which says what the thing is and how it works. Only where the
+		// page still fits with it; a page that does not is carried
+		// without it before it is passed over.
+		overview := overviewSectionFor(node, sections[node.ID], self.settings.Message, recallOverviewLength)
 		cost := 0
 		if overview != "" {
 			cost = llm.EstimateTokens(text + "\n  " + overview + factLines)
@@ -465,28 +516,11 @@ func reflectionsToShow(considered, hit []*models.AgentFact) []*models.AgentFact 
 	return chosen
 }
 
-// firstOverviewSection is an overview's first section, its heading
-// included, cut to so many characters; empty for a page with none.
-func firstOverviewSection(overview string, characters int) string {
-	overview = strings.TrimSpace(overview)
-	if overview == "" {
-		return ""
-	}
-	if index := strings.Index(overview[1:], "\n## "); index >= 0 {
-		overview = overview[:index+1]
-	}
-	section := strings.TrimSpace(overview)
-	if cut := cutRunes(section, characters); cut != section {
-		section = strings.TrimSpace(cut) + "…"
-	}
-	return section
-}
-
 // writeRecalled expands what was found into the overlay the next round
 // sees, and marks what it carried as used.
-func (self *AskRun) writeRecalled(ctx context.Context, nodes []*models.AgentNode, facts []*models.AgentFact) {
+func (self *AskRun) writeRecalled(ctx context.Context, nodes []*models.AgentNode, facts []*models.AgentFact, sections map[string]string) {
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		blocks, err := self.chooseRecalled(tx, nodes, facts)
+		blocks, err := self.chooseRecalled(tx, nodes, facts, sections)
 		if err != nil {
 			return err
 		}
@@ -519,8 +553,8 @@ type RecalledPage struct {
 	// where it carried none: a page the prompt's index already names.
 	Summary string
 
-	// Overview is the first section of the page's overview as the
-	// overlay carried it, or empty where it carried none.
+	// Overview is the section of the page's overview the overlay
+	// carried, or empty where it carried none.
 	Overview string
 
 	Facts []*models.AgentFact
@@ -564,10 +598,10 @@ func (self *Agent) RecallForQuestion(ctx context.Context, found *models.Agent, o
 	// It costs what the index costs, which is a read of the top pages, and
 	// it is the price of the number meaning what it says.
 	_ = run.carryIndex(ctx, indexTokens)
-	nodes, facts := run.searchGraph(ctx, words, recallCandidates)
+	nodes, facts, sections := run.searchGraph(ctx, words, recallCandidates)
 	var blocks []*recalledBlock
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		blocks, err = run.chooseRecalled(tx, nodes, facts)
+		blocks, err = run.chooseRecalled(tx, nodes, facts, sections)
 		return err
 	}); err != nil {
 		return nil, err

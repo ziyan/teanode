@@ -156,7 +156,7 @@ func TestAPageOverTheBudgetIsPassedOver(t *testing.T) {
 	big := world.page(t, "projects/big-one", "Big One", opening, long, long)
 	small := world.page(t, "projects/small-one", "Small One", "A short one.", "Ships on Fridays.")
 
-	world.run.writeRecalled(context.Background(), []*models.AgentNode{first, big, small}, nil)
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{first, big, small}, nil, nil)
 
 	carried := world.overlay()
 	if !strings.Contains(carried, "projects/first-one") {
@@ -207,7 +207,7 @@ func TestTheOverlayCarriesEveryBlockThatWasMarkedAsUsed(t *testing.T) {
 		loose = append(loose, facts[0])
 	}
 
-	world.run.writeRecalled(context.Background(), nodes, loose)
+	world.run.writeRecalled(context.Background(), nodes, loose, nil)
 
 	carried := world.overlay()
 	// The first page the search offered is the one the turn most wants,
@@ -272,7 +272,7 @@ func TestAnIndexedPageStillGetsItsFacts(t *testing.T) {
 	// As carryIndex leaves it: the prompt already carries this page's line.
 	world.run.promptMemories[node.ID] = true
 
-	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, nil)
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, nil, nil)
 
 	carried := world.overlay()
 	if !strings.Contains(carried, "Runs on the Frankfurt cluster.") {
@@ -313,7 +313,7 @@ func TestAnExpandedPageShowsTheFactsTheQuestionHit(t *testing.T) {
 	// reach it.
 	hit := facts[9]
 
-	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, []*models.AgentFact{hit})
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, []*models.AgentFact{hit}, nil)
 
 	carried := world.overlay()
 	if !strings.Contains(carried, hit.Text) {
@@ -367,7 +367,7 @@ func TestAnExpandedPageShowsItsFactsInNumberOrder(t *testing.T) {
 	// enough; the page's first lines are not added to them.
 	hits := []*models.AgentFact{facts[9], facts[6]}
 
-	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, hits)
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, hits, nil)
 
 	carried := world.overlay()
 	shown := numbersShown(carried)
@@ -387,7 +387,7 @@ func TestAPageTheSearchDidNotHitShowsItsFirstFacts(t *testing.T) {
 	}
 	node := world.page(t, "projects/portal", "Portal", "The customer-facing portal.", written...)
 
-	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, nil)
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, nil, nil)
 
 	carried := world.overlay()
 	shown := numbersShown(carried)
@@ -433,7 +433,7 @@ func TestWhatThePageNoLongerSaysIsNotCarried(t *testing.T) {
 
 	// The search found it anyway, which is what its vector still being
 	// there means, and offered it as the page's best match.
-	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, []*models.AgentFact{struck})
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, []*models.AgentFact{struck}, nil)
 
 	carried := world.overlay()
 	if strings.Contains(carried, "Ships on Fridays.") {
@@ -477,7 +477,7 @@ func TestAMatchedFactIsCarriedPastPagesThatWouldSpendItAll(t *testing.T) {
 		"The API is served on a separate port because port 80 is taken.")
 	matched := world.factsOf(t, answer)
 
-	world.run.writeRecalled(context.Background(), months, matched)
+	world.run.writeRecalled(context.Background(), months, matched, nil)
 
 	carried := world.overlay()
 	if !strings.Contains(carried, "a separate port") {
@@ -506,7 +506,7 @@ func TestALongFactDoesNotEndTheFactsBehindIt(t *testing.T) {
 		"The API is served on a separate port because port 80 is taken.")
 	loose = append(loose, world.factsOf(t, answer)...)
 
-	world.run.writeRecalled(context.Background(), nil, loose)
+	world.run.writeRecalled(context.Background(), nil, loose, nil)
 
 	carried := world.overlay()
 	if !strings.Contains(carried, "a separate port") {
@@ -579,7 +579,7 @@ func TestLooseFactsGoInTogetherAndUnhitPagesAreBounded(t *testing.T) {
 		hits = append(hits, facts[len(facts)-1])
 	}
 
-	world.run.writeRecalled(context.Background(), unhit, append([]*models.AgentFact{boatFact}, hits...))
+	world.run.writeRecalled(context.Background(), unhit, append([]*models.AgentFact{boatFact}, hits...), nil)
 
 	carried := world.overlay()
 	if !strings.Contains(carried, "things/boat") {

@@ -165,6 +165,7 @@ type Transaction interface {
 	EmbeddingOperation
 	VectorOperation
 	PlanUsageOperation
+	OverviewSectionOperation
 	GraphOperation
 	KnowledgeOperation
 	DreamOperation
