@@ -126,6 +126,15 @@ const (
 	AgentProviderKindCodex = "openai-codex"
 )
 
+// AgentProviderKinds is every kind a provider may be, in the order the
+// settings page offers them: the one list the validation below and the
+// dashboard's "add a provider" read, so neither can offer what the other
+// refuses.
+var AgentProviderKinds = []string{
+	AgentProviderKindOpenAI, AgentProviderKindAnthropic, AgentProviderKindGemini,
+	AgentProviderKindTypeSafe, AgentProviderKindCodex,
+}
+
 // AgentProvider is one model service.
 type AgentProvider struct {
 	// Name is what "provider:model" refers to. Any label; stable, because

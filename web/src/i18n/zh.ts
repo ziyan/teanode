@@ -3086,6 +3086,8 @@ export const zh: Catalog = {
   'agent.dreamThemesUpdated': '更新了 {count} 个主题',
   'agent.dreamReflectionsWritten': '写了 {count} 条反思',
   'agentSettings.work.synthesize': '跨页面的判断：概述、反思、调查的各个页面',
+  'agentSettings.work.decide': '在已知答案中做决定',
+  'agentSettings.modelDecideOff': '无：改由语言模型来决定',
   'agentSettings.modelInheritResearch': '与研究相同（未设置研究时用默认模型）',
   'agent.alerts': '主动通知',
   'agent.alertsHint': '代理会阅读收到的邮件，当邮件里有你现在就该知道的事时，不等你问就告诉你：关于家人的通知、有人在尝试登录你的账户、今天到期的事。它会写在主对话和你关联的聊天应用里。',

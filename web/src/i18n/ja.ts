@@ -3177,6 +3177,8 @@ export const ja: Catalog = {
   'agent.dreamThemesUpdated': 'テーマ {count} 件更新',
   'agent.dreamReflectionsWritten': '振り返り {count} 件',
   'agentSettings.work.synthesize': 'ページをまたぐ判断：概要、振り返り、調査の各ページ',
+  'agentSettings.work.decide': '既知の選択肢から決める',
+  'agentSettings.modelDecideOff': 'なし：代わりに言語モデルが決めます',
   'agentSettings.modelInheritResearch': 'リサーチと同じ（リサーチ未設定なら既定）',
   'agent.alerts': 'お知らせ',
   'agent.alertsHint': 'エージェントは届いたメールを読み、今知っておくべきことがあれば頼まれなくても伝えます。家族に関する連絡、アカウントへの不審なアクセス、今日が期限のものなどです。メインの会話と、連携したチャットアプリに書きます。',
