@@ -1129,6 +1129,7 @@ export const en = {
   'agentDrawer.submit': 'Submit',
   'agentDrawer.chattingInstead': 'Chatting about it instead',
   'agentDrawer.questionGone': 'That card was already answered, or is no longer waiting.',
+  'agentDrawer.conversationDeleted': 'That conversation was deleted.',
   'agentDrawer.close': 'Close',
   'agentDrawer.main': 'Main chat',
   'agentDrawer.untitled': 'Untitled',

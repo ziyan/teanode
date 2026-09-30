@@ -1123,6 +1123,7 @@ export const ja: Catalog = {
   'agentDrawer.submit': '送信',
   'agentDrawer.chattingInstead': 'チャットで話すことにしました',
   'agentDrawer.questionGone': 'このカードはすでに回答済みか、もう待っていません。',
+  'agentDrawer.conversationDeleted': 'その会話は削除されています。',
   'agentDrawer.close': '閉じる',
   'agentDrawer.main': 'メインチャット',
   'agentDrawer.untitled': '無題',

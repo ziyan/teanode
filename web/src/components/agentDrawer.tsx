@@ -11,6 +11,7 @@ import {
   agentViewing,
   announceMailChanged,
   graphql,
+  isNotFound,
   sendToAgentConversation,
   subscribe,
   authorization,
@@ -3235,7 +3236,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     try {
       await readConversation(id, true)
     } catch (caught) {
-      toast.failed(caught instanceof Error ? caught.message : String(caught))
+      // A link kept somewhere else -- an idea's history, a goal, a run --
+      // can outlive the conversation it names.
+      if (isNotFound(caught)) toast.failed(t('agentDrawer.conversationDeleted'))
+      else toast.failed(caught instanceof Error ? caught.message : String(caught))
     }
   }
 

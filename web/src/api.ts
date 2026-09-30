@@ -1051,6 +1051,12 @@ export function sendToAgentConversation(conversationId: string, message: string)
   return detail.handled
 }
 
+// isNotFound says whether a call failed because what it named is not there
+// any more, such as a conversation deleted since the page was drawn.
+export function isNotFound(caught: unknown): boolean {
+  return caught instanceof APIError && /\b(api|db): not found\b/.test(caught.message)
+}
+
 // The agent changed mail — filed, flagged, drafted, sent, a rule or a
 // folder made — and the pages showing mail read again. Announced by the
 // drawer after such a tool answers; listened for by the mailbox.

@@ -1087,6 +1087,7 @@ export const zh: Catalog = {
   'agentDrawer.submit': '提交',
   'agentDrawer.chattingInstead': '改为聊一聊',
   'agentDrawer.questionGone': '这张卡片已被回答，或已不再等待。',
+  'agentDrawer.conversationDeleted': '该对话已被删除。',
   'agentDrawer.close': '关闭',
   'agentDrawer.main': '主聊天',
   'agentDrawer.untitled': '未命名',

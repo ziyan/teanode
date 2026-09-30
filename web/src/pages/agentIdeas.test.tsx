@@ -81,3 +81,21 @@ it('starts an idea and sends its opening request in the conversation it made', a
   })
   expect(open).not.toHaveBeenCalled()
 })
+
+it('opens the conversation of an idea in the history only when it has one', async () => {
+  execute.mockResolvedValue(
+    listing([
+      idea('kept', {
+        ideaStatus: 'done',
+        startedConversationId: 'kept-conversation',
+        closedAt: '2030-01-02T00:00:00Z',
+      }),
+      idea('orphan', { ideaStatus: 'done', startedConversationId: '', closedAt: '2030-01-03T00:00:00Z' }),
+    ]),
+  )
+  drawIdeas()
+  fireEvent.click(await screen.findByRole('button', { name: /^🪴 Plan the watering kept$/ }))
+  expect(open).toHaveBeenCalledWith('kept-conversation')
+  expect(screen.queryByRole('button', { name: /^🪴 Plan the watering orphan$/ })).toBeNull()
+  expect(screen.getByText(/Plan the watering orphan/)).toBeTruthy()
+})
