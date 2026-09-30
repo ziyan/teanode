@@ -254,6 +254,15 @@ func mergeSaidTwice(tx db.Transaction, agentId string, facts []*models.AgentFact
 		if wording.ID != keep.ID && addsInformation(wording.Text, keep.Text) && !atLeastAsWellEvidenced(wording, keep) {
 			continue
 		}
+		// Nor is a pair one statement when the other words, which go,
+		// say something the kept words do not: a name or a number would
+		// leave the page with them. A model once paired "job state is
+		// kept in one store" with "moving it to another was proposed and
+		// rejected", kept the first, and the rejection, still true, stood
+		// behind a sentence that never said it.
+		if addsInformation(otherNow.Text, wording.Text) {
+			continue
+		}
 		if _, err := tx.UpdateAgentFact(agentId, gone.ID, func(fact *models.AgentFact) error {
 			fact.SupersededBy = keep.ID
 			return nil
