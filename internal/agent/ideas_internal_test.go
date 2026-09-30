@@ -202,6 +202,9 @@ func TestAnIdeaIsOfferedWhileItFitsAndKeepsWhatBecameOfIt(t *testing.T) {
 		if expired, _ := tx.GetAgentIdea(run.Agent.ID, bread.ID); expired.IdeaStatus != models.IdeaExpired {
 			t.Fatalf("expired once they bake: %+v", expired)
 		}
+		if _, err := worker.SetIdeaStatus(tx, run.Agent, bread.ID, models.IdeaOpen); err == nil || !strings.Contains(err.Error(), "no longer offered") {
+			t.Fatalf("an expired catalog idea is not opened only to expire again: %v", err)
+		}
 	})
 }
 

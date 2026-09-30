@@ -86,24 +86,36 @@ export function IdeasTab() {
         ideas={history}
         busy={busy}
         onMarkDone={(idea) => void act(() => setIdeaStatus(idea, 'done'), t('ideas.markedDone'))}
-        onBringBack={(idea) => void act(() => setIdeaStatus(idea, 'open'), t('ideas.broughtBack'))}
+        onRestore={(idea) => {
+          // A catalog idea expires when the agent stops offering it: a tool
+          // it needs went away, or the person already does it. The server
+          // refuses to open one, which would only expire again, and it
+          // comes back on its own when that changes. A personal idea
+          // restored past its date comes back with no date at all.
+          if (idea.ideaKind === 'catalog' && idea.ideaStatus === 'expired') {
+            toast.failed(t('ideas.cannotRestore'))
+            return
+          }
+          void act(() => setIdeaStatus(idea, 'open'), t('ideas.restored'))
+        }}
       />
     </>
   )
 }
 
 // IdeaHistory is every idea that is no longer only on offer: taken up,
-// finished, dismissed or gone stale, the latest first.
+// finished, dismissed or gone stale, the latest first. Any of them can be
+// restored to the open ideas, to be taken up afresh.
 function IdeaHistory({
   ideas,
   busy,
   onMarkDone,
-  onBringBack,
+  onRestore,
 }: {
   ideas: Idea[]
   busy: boolean
   onMarkDone: (idea: Idea) => void
-  onBringBack: (idea: Idea) => void
+  onRestore: (idea: Idea) => void
 }) {
   const { t, plural } = useTranslation()
   const when = (idea: Idea) => idea.closedAt ?? idea.startedAt ?? idea.createdAt
@@ -151,31 +163,33 @@ function IdeaHistory({
     {
       key: 'actions',
       header: '',
-      width: '3rem',
-      render: (idea) =>
-        idea.ideaStatus === 'started' ? (
+      width: '5rem',
+      render: (idea) => (
+        <div className="row-actions">
+          {idea.ideaStatus === 'started' ? (
+            <button
+              type="button"
+              className="icon-action"
+              disabled={busy}
+              title={t('ideas.markDone')}
+              aria-label={`${idea.headline}: ${t('ideas.markDone')}`}
+              onClick={() => onMarkDone(idea)}
+            >
+              <CheckIcon size={16} />
+            </button>
+          ) : null}
           <button
             type="button"
             className="icon-action"
             disabled={busy}
-            title={t('ideas.markDone')}
-            aria-label={`${idea.headline}: ${t('ideas.markDone')}`}
-            onClick={() => onMarkDone(idea)}
-          >
-            <CheckIcon size={16} />
-          </button>
-        ) : idea.ideaStatus === 'dismissed' || idea.ideaStatus === 'expired' ? (
-          <button
-            type="button"
-            className="icon-action"
-            disabled={busy}
-            title={t('ideas.bringBack')}
-            aria-label={`${idea.headline}: ${t('ideas.bringBack')}`}
-            onClick={() => onBringBack(idea)}
+            title={t('ideas.restore')}
+            aria-label={`${idea.headline}: ${t('ideas.restore')}`}
+            onClick={() => onRestore(idea)}
           >
             <RestartIcon size={16} />
           </button>
-        ) : null,
+        </div>
+      ),
     },
   ]
   return (

@@ -99,3 +99,60 @@ it('opens the conversation of an idea in the history only when it has one', asyn
   expect(screen.queryByRole('button', { name: /^🪴 Plan the watering orphan$/ })).toBeNull()
   expect(screen.getByText(/Plan the watering orphan/)).toBeTruthy()
 })
+
+it('restores an idea from the history to the open ones, with a toast', async () => {
+  let ideaStatus: Idea['ideaStatus'] = 'dismissed'
+  execute.mockImplementation(async (document: string) => {
+    if (document.includes('SetAgentIdeaStatus')) {
+      ideaStatus = 'open'
+      return { SetAgentIdeaStatus: { id: 'kept', ideaStatus } }
+    }
+    return listing([idea('kept', { ideaStatus, closedAt: '2030-01-02T00:00:00Z' })])
+  })
+  drawIdeas()
+  fireEvent.click(await screen.findByRole('button', { name: 'Plan the watering kept: ideas.restore' }))
+  await waitFor(() => expect(notices.done).toHaveBeenCalledWith('ideas.restored'))
+  expect(execute).toHaveBeenCalledWith(expect.stringContaining('SetAgentIdeaStatus'), {
+    ideaId: 'kept',
+    ideaStatus: 'open',
+  })
+  expect(await screen.findByRole('button', { name: /Plan the watering kept\s*Tell/ })).toBeTruthy()
+})
+
+it('restores a started idea too, beside marking it done', async () => {
+  execute.mockResolvedValue(
+    listing([idea('kept', { ideaStatus: 'started', startedConversationId: 'kept-conversation' })]),
+  )
+  drawIdeas()
+  expect(await screen.findByRole('button', { name: 'Plan the watering kept: ideas.markDone' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Plan the watering kept: ideas.restore' })).toBeTruthy()
+})
+
+it('says why the server refused to restore an idea', async () => {
+  execute.mockImplementation(async (document: string) => {
+    if (document.includes('SetAgentIdeaStatus')) throw new Error('the idea is gone')
+    return listing([idea('kept', { ideaStatus: 'dismissed' })])
+  })
+  drawIdeas()
+  fireEvent.click(await screen.findByRole('button', { name: 'Plan the watering kept: ideas.restore' }))
+  await waitFor(() => expect(notices.failure).toHaveBeenCalledWith(expect.any(Error), 'ideas.failed'))
+  expect(notices.done).not.toHaveBeenCalled()
+})
+
+it('says why an expired catalog idea cannot come back, without asking the server', async () => {
+  execute.mockResolvedValue(listing([idea('kept', { ideaStatus: 'expired' })]))
+  drawIdeas()
+  fireEvent.click(await screen.findByRole('button', { name: 'Plan the watering kept: ideas.restore' }))
+  expect(notices.failed).toHaveBeenCalledWith('ideas.cannotRestore')
+  expect(execute).not.toHaveBeenCalledWith(expect.stringContaining('SetAgentIdeaStatus'), expect.anything())
+})
+
+it('restores an expired personal idea', async () => {
+  execute.mockImplementation(async (document: string) => {
+    if (document.includes('SetAgentIdeaStatus')) return { SetAgentIdeaStatus: { id: 'kept', ideaStatus: 'open' } }
+    return listing([idea('kept', { ideaKind: 'personal', ideaStatus: 'expired' })])
+  })
+  drawIdeas()
+  fireEvent.click(await screen.findByRole('button', { name: 'Plan the watering kept: ideas.restore' }))
+  await waitFor(() => expect(notices.done).toHaveBeenCalledWith('ideas.restored'))
+})
