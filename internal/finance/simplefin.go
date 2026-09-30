@@ -257,8 +257,17 @@ type simpleFinTransaction struct {
 }
 
 // Sync reads the accounts and the transactions of the window the cursor
-// implies. The cursor is the Unix time, in seconds, of the newest posted
-// transaction seen so far, or empty before the first sync.
+// implies. The cursor holds, for each account, the Unix time in seconds up
+// to which its transactions have been read: the newest posted one, or the
+// time of a sync that returned none and warned of nothing. It is empty
+// before the first sync; a single number is the cursor of an older release,
+// which kept one time for the whole connection.
+//
+// The window starts at the account furthest behind, less an overlap for
+// transactions that post late. An institution that fails for a while
+// keeps its account's time, so the next sync reaches back over the gap,
+// and an account seen for the first time is read from as far back as the
+// bridge keeps.
 //
 // SimpleFIN does not report removals. A pending transaction that posts,
 // or is dropped, may come back under a different id or not at all, so a
@@ -274,13 +283,19 @@ func (self *SimpleFIN) Sync(ctx context.Context, credential string, cursor strin
 	}
 	now := self.now().UTC()
 	earliest := now.Add(-simpleFinHistoryDuration)
+	readUntil, isEveryAccountKnown, err := parseSimpleFinCursor(cursor)
+	if err != nil {
+		return nil, err
+	}
 	start := earliest
-	if cursor != "" {
-		newestPostedSeconds, err := strconv.ParseInt(cursor, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("finance: the SimpleFIN cursor %q is not a time", cursor)
+	if len(readUntil) > 0 {
+		furthestBehind := int64(0)
+		for _, seconds := range readUntil {
+			if furthestBehind == 0 || seconds < furthestBehind {
+				furthestBehind = seconds
+			}
 		}
-		start = time.Unix(newestPostedSeconds, 0).UTC().Add(-simpleFinOverlapDuration)
+		start = time.Unix(furthestBehind, 0).UTC().Add(-simpleFinOverlapDuration)
 		// A finance source switched off for months reaches back only as
 		// far as the bridge keeps.
 		if start.Before(earliest) {
@@ -291,35 +306,108 @@ func (self *SimpleFIN) Sync(ctx context.Context, credential string, cursor strin
 		}
 	}
 
-	syncResult := &SyncResult{NextCursor: cursor, PendingReplacedFrom: &start}
 	accumulated := newSimpleFinAccumulator(self.location)
-	for windowStart := start; windowStart.Before(now); windowStart = windowStart.Add(simpleFinWindowDuration) {
+	if err := self.readWindows(ctx, address, username, password, accumulated, start, now); err != nil {
+		return nil, err
+	}
+	// An account the cursor does not know joined the connection since the
+	// last sync: its history before the window is read too.
+	if !isEveryAccountKnown && start.After(earliest) {
+		for _, account := range accumulated.accounts {
+			if _, isKnown := readUntil[account.ProviderAccountID]; !isKnown {
+				if err := self.readWindows(ctx, address, username, password, accumulated, earliest, start); err != nil {
+					return nil, err
+				}
+				start = earliest
+				break
+			}
+		}
+	}
+
+	syncResult := &SyncResult{NextCursor: cursor, PendingReplacedFrom: &start}
+	syncResult.Accounts = accumulated.accounts
+	syncResult.Added = accumulated.transactions
+	syncResult.InstitutionName = accumulated.institutionName
+	syncResult.ProviderWarnings = accumulated.warnings
+
+	// Each account's time moves to its newest posted transaction. One with
+	// none new moves to now only when the bridge warned of nothing: a
+	// warning may be about that account's institution, whose silence is
+	// then not a quiet month.
+	nextReadUntil := map[string]int64{}
+	for accountId, seconds := range readUntil {
+		nextReadUntil[accountId] = seconds
+	}
+	for _, account := range accumulated.accounts {
+		accountId := account.ProviderAccountID
+		newest := accumulated.newestPostedSecondsByAccount[accountId]
+		if len(accumulated.warnings) == 0 && now.Unix() > newest {
+			newest = now.Unix()
+		}
+		if isEveryAccountKnown {
+			// An older release's single time stands for every account.
+			if legacy, isSet := readUntil[""]; isSet && legacy > nextReadUntil[accountId] {
+				nextReadUntil[accountId] = legacy
+			}
+		}
+		if newest > nextReadUntil[accountId] {
+			nextReadUntil[accountId] = newest
+		}
+	}
+	delete(nextReadUntil, "")
+	if len(nextReadUntil) > 0 {
+		encoded, err := json.Marshal(nextReadUntil)
+		if err != nil {
+			return nil, err
+		}
+		syncResult.NextCursor = string(encoded)
+	}
+	return syncResult, nil
+}
+
+// readWindows reads every window from start to end into the accumulator.
+// The newest window, the one ending now, is left open, so a transaction
+// posted while the request is in flight is not cut off.
+func (self *SimpleFIN) readWindows(ctx context.Context, address *url.URL, username, password string, accumulated *simpleFinAccumulator, start, end time.Time) error {
+	now := self.now().UTC()
+	for windowStart := start; windowStart.Before(end); windowStart = windowStart.Add(simpleFinWindowDuration) {
 		windowEnd := windowStart.Add(simpleFinWindowDuration)
+		if windowEnd.After(end) {
+			windowEnd = end
+		}
 		query := url.Values{}
 		query.Set("start-date", strconv.FormatInt(windowStart.Unix(), 10))
 		query.Set("pending", "1")
-		// The newest window is left open, so a transaction posted while
-		// the request is in flight is not cut off.
 		if windowEnd.Before(now) {
 			query.Set("end-date", strconv.FormatInt(windowEnd.Unix(), 10))
 		}
 		accountSet, err := self.fetchAccounts(ctx, address, username, password, query)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if err := accumulated.add(accountSet, now); err != nil {
-			return nil, err
+			return err
 		}
 	}
+	return nil
+}
 
-	syncResult.Accounts = accumulated.accounts
-	syncResult.Added = accumulated.transactions
-	syncResult.InstitutionName = accumulated.institutionName
-	syncResult.ProviderWarnings = accumulated.warnings
-	if accumulated.newestPostedSeconds > 0 {
-		syncResult.NextCursor = strconv.FormatInt(accumulated.newestPostedSeconds, 10)
+// parseSimpleFinCursor reads a cursor into each account's time. An older
+// release's cursor, one number for the connection, comes back under the
+// empty account id and says every account the connection has is known.
+func parseSimpleFinCursor(cursor string) (map[string]int64, bool, error) {
+	cursor = strings.TrimSpace(cursor)
+	if cursor == "" {
+		return map[string]int64{}, false, nil
 	}
-	return syncResult, nil
+	if seconds, err := strconv.ParseInt(cursor, 10, 64); err == nil {
+		return map[string]int64{"": seconds}, true, nil
+	}
+	readUntil := map[string]int64{}
+	if err := json.Unmarshal([]byte(cursor), &readUntil); err != nil {
+		return nil, false, fmt.Errorf("finance: the SimpleFIN cursor is not readable")
+	}
+	return readUntil, false, nil
 }
 
 func (self *SimpleFIN) fetchAccounts(ctx context.Context, address *url.URL, username, password string, query url.Values) (*simpleFinAccountSet, error) {
@@ -387,8 +475,11 @@ type simpleFinAccumulator struct {
 	institutionName      string
 	warnings             []string
 	isWarningSeen        map[string]bool
-	newestPostedSeconds  int64
 	location             *time.Location
+
+	// newestPostedSecondsByAccount is each account's newest posted
+	// transaction, by provider account id.
+	newestPostedSecondsByAccount map[string]int64
 }
 
 func newSimpleFinAccumulator(location *time.Location) *simpleFinAccumulator {
@@ -400,6 +491,8 @@ func newSimpleFinAccumulator(location *time.Location) *simpleFinAccumulator {
 		transactionIndexByID: map[string]int{},
 		isWarningSeen:        map[string]bool{},
 		location:             location,
+
+		newestPostedSecondsByAccount: map[string]int64{},
 	}
 }
 
@@ -462,8 +555,8 @@ func (self *simpleFinAccumulator) add(accountSet *simpleFinAccountSet, now time.
 				self.warn(err.Error())
 				continue
 			}
-			if !transaction.IsPending && postedSeconds > self.newestPostedSeconds {
-				self.newestPostedSeconds = postedSeconds
+			if !transaction.IsPending && postedSeconds > self.newestPostedSecondsByAccount[decoded.ID] {
+				self.newestPostedSecondsByAccount[decoded.ID] = postedSeconds
 			}
 			key := transaction.ProviderAccountID + "\x00" + transaction.ProviderTransactionID
 			if index, isSeen := self.transactionIndexByID[key]; isSeen {
