@@ -950,8 +950,19 @@ func (self *AskRun) turn() error {
 		}
 	}
 	// The finance tool goes on a server that offers no provider, unless
-	// the person already holds finance data to read.
+	// the person already holds finance data to read. For a person who does
+	// hold some, it is in the round from the start, as the computer's tools
+	// are while one is attached: left behind tool_search, a question about
+	// their spending was answered from memory, which knows nothing of it,
+	// as often as the model thought to search for the tool.
 	self.offered = self.agent.withoutFinanceTools(ctx, configuration, settings.Agent.ID, self.offered)
+	if self.agent.hasFinanceData(ctx, settings.Agent.ID) {
+		for _, tool := range self.offered {
+			if tool.Family == FamilyFinance {
+				self.loaded[tool.Name] = true
+			}
+		}
+	}
 	// A tool that moves the dashboard goes wherever the turn is not read
 	// in it: a chat app, a terminal, a mail, a run with nobody present.
 	// There the agent gives a link instead.

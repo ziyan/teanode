@@ -438,6 +438,29 @@ func TestFinanceToolMonthIsShorthandForARange(test *testing.T) {
 	}
 }
 
+// A spending category may be named, in any case, as on the command line;
+// the call carries its id. A name that is none of the person's goes on as
+// given, for the API to refuse.
+func TestFinanceToolTakesASpendingCategoryByName(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"SpendingCategories": `[{"id":"category-groceries","spendingCategoryName":"groceries"}]`,
+		"SetBudget":          `{"id":"budget-one"}`,
+	}}
+	if _, err := call(test, operations, `{"operation":"set_budget","spending_category_id":"Groceries","monthly_amount":"500","currency_code":"USD"}`); err != nil {
+		test.Fatal(err)
+	}
+	if sent := operations.variables[len(operations.variables)-1]; sent["spendingCategoryId"] != "category-groceries" {
+		test.Errorf("sent %v", sent)
+	}
+	if _, err := call(test, operations, `{"operation":"set_budget","spending_category_id":"an invented name","monthly_amount":"5","currency_code":"USD"}`); err != nil {
+		test.Fatal(err)
+	}
+	if sent := operations.variables[len(operations.variables)-1]; sent["spendingCategoryId"] != "an invented name" {
+		test.Errorf("an unknown name was changed: %v", sent)
+	}
+}
+
 // The agent cannot allow itself to estimate an asset from the web.
 func TestFinanceToolLeavesEstimatesToThePerson(test *testing.T) {
 	test.Parallel()

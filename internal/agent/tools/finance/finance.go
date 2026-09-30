@@ -453,7 +453,7 @@ func init() {
 					"minimum_amount":              tools.StringProperty("the least signed amount; money out is negative"),
 					"maximum_amount":              tools.StringProperty("the greatest signed amount"),
 					"provider_category":           tools.StringProperty("for transactions: the provider's category"),
-					"spending_category_id":        tools.StringProperty("a spending category, by the id spending_categories gives; for categorize_transaction empty takes it away"),
+					"spending_category_id":        tools.StringProperty("a spending category, by its name or by the id spending_categories gives; for categorize_transaction empty takes it away"),
 					"is_uncategorized":            tools.BooleanProperty("for transactions: only the ones with no spending category that are not transfers"),
 					"limit":                       tools.IntegerProperty("for transactions: how many, at most 200"),
 					"after":                       tools.StringProperty("for transactions: the nextCursor of the page before"),
@@ -477,7 +477,7 @@ func init() {
 					"evidence_urls":               tools.ArrayProperty("for an estimate: the pages it rests on", tools.StringProperty("a web address")),
 					"valuation_id":                tools.StringProperty("a valuation, by the id asset_history gives"),
 					"spending_category_name":      tools.StringProperty("a spending category's name"),
-					"parent_spending_category_id": tools.StringProperty("the parent spending category's id; empty makes it top-level"),
+					"parent_spending_category_id": tools.StringProperty("the parent spending category, by its name or id; empty makes it top-level"),
 					"is_income":                   tools.BooleanProperty("money in the spending category is income"),
 					"is_hidden":                   tools.BooleanProperty("leave the spending category out of lists and charts"),
 					"spending_rule_id":            tools.StringProperty("a spending rule, by the id spending_rules gives"),
@@ -614,6 +614,15 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	for _, key := range operation.required {
 		if value, isGiven := asked[key]; !isGiven || value == nil || value == "" {
 			return nil, fmt.Errorf("%s needs %s", name, key)
+		}
+	}
+	// A spending category may be named rather than given by id, as on the
+	// command line. A name that is none of the person's is passed on as
+	// given, for the API to refuse as it refuses an unknown id.
+	lookup := newPreviewLookup(ctx)
+	for _, key := range []string{"spending_category_id", "parent_spending_category_id"} {
+		if spendingCategory := lookup.spendingCategoryFor(text(asked, key)); spendingCategory != nil {
+			asked[key] = spendingCategory.ID
 		}
 	}
 	executor := current.Operations()

@@ -3,6 +3,7 @@ package finance
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/client"
@@ -57,14 +58,31 @@ func (self *previewLookup) read(operation string, variables map[string]any, resu
 }
 
 func (self *previewLookup) spendingCategoryName(spendingCategoryId string) string {
-	if self.read("SpendingCategories", nil, &self.spendingCategories) {
-		for _, spendingCategory := range self.spendingCategories {
-			if spendingCategory.ID == spendingCategoryId {
-				return tools.Named(spendingCategory.SpendingCategoryName, "")
-			}
-		}
+	if spendingCategory := self.spendingCategoryFor(spendingCategoryId); spendingCategory != nil {
+		return tools.Named(spendingCategory.SpendingCategoryName, "")
 	}
 	return "a spending category"
+}
+
+// spendingCategoryFor is the person's spending category given by its id or
+// by its name, in any case. The command line takes either, and a model
+// that asked by name was refused and had to list the spending categories
+// first to learn the id.
+func (self *previewLookup) spendingCategoryFor(idOrName string) *client.SpendingCategory {
+	if idOrName == "" || !self.read("SpendingCategories", nil, &self.spendingCategories) {
+		return nil
+	}
+	for _, spendingCategory := range self.spendingCategories {
+		if spendingCategory.ID == idOrName {
+			return spendingCategory
+		}
+	}
+	for _, spendingCategory := range self.spendingCategories {
+		if strings.EqualFold(strings.TrimSpace(spendingCategory.SpendingCategoryName), strings.TrimSpace(idOrName)) {
+			return spendingCategory
+		}
+	}
+	return nil
 }
 
 func (self *previewLookup) assetName(assetId string) string {
