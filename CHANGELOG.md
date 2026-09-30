@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.88.0] - 2026-09-30
+
+### Added
+
+- Investment accounts linked through Plaid: each holding is an asset with its quantity, price and cost basis, trades are listed per holding and with `teanode finance trades`, and dividends and fees count as income and spending. Turn on the investments product in the Plaid settings, then link the brokerage again. (#249)
+
 ## [0.87.4] - 2026-09-30
 
 ### Fixed
