@@ -21,6 +21,7 @@ import { uploadFiles } from '../upload'
 import { suggestedRepliesOf, withoutPartialMarker } from '../suggestions'
 import { useAgentConversation } from '../hooks/useAgentConversation'
 import { useAgentPresence } from '../hooks/useAgentPresence'
+import { useFitToContent } from '../hooks/useFitToContent'
 import { budgetNearness, formatClock, formatCount, formatMoney, formatTime } from './common'
 import { useResolvedTheme } from './theme'
 import { Tooltip } from './tooltip'
@@ -2187,6 +2188,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const input = useRef<HTMLTextAreaElement>(null)
   const draftLoadedFor = useRef('')
   const filePicker = useRef<HTMLInputElement>(null)
+  useFitToContent(input, draft, open)
 
   // Whether there is an agent to talk to at all. Asked once; the button
   // stays hidden otherwise, which is most servers.
@@ -3053,7 +3055,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       remember(draftKey(conversationId), '')
       setPending([])
       setReferences([])
-      if (input.current) input.current.style.height = 'auto'
     }
     // Saying something is meaning to see it: wherever the transcript was
     // being read, it goes back to its end for the turn that follows.
@@ -4156,13 +4157,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               value={draft}
               placeholder={uploading ? t('agentDrawer.uploading') : askPlaceholder}
               aria-label={askPlaceholder}
-              onChange={(event) => {
-                setDraft(event.target.value)
-                // One line until there is more; then as tall as the words,
-                // up to the cap the stylesheet sets.
-                event.target.style.height = 'auto'
-                event.target.style.height = `${Math.max(36, event.target.scrollHeight)}px`
-              }}
+              onChange={(event) => setDraft(event.target.value)}
               onPaste={(event) => {
                 const files = Array.from(event.clipboardData.files ?? [])
                 if (files.length > 0) {
