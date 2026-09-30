@@ -242,3 +242,48 @@ func TestTheMigrationClearsLinksToDeletedConversations(t *testing.T) {
 		}
 	})
 }
+
+// Why an idea expired belongs to it only while it is expired: whatever
+// takes it out of expired leaves no reason behind to be shown beside a
+// status it no longer explains.
+func TestAnIdeaKeepsWhyItExpiredOnlyWhileExpired(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "alice"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		agent, err := tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		kept, err := tx.UpsertAgentIdea(&models.AgentIdea{
+			AgentID: agent.ID, IdeaKey: "kite", IdeaKind: models.IdeaCatalog, IdeaCategory: "fun", Emoji: "🎲",
+			Headline: "I'll find a windy day.",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		expired, err := tx.UpdateAgentIdea(agent.ID, kept.ID, func(idea *models.AgentIdea) error {
+			idea.IdeaStatus, idea.ExpiredReason, idea.IsRestoredByPerson = models.IdeaExpired, models.IdeaAlreadyUsed, true
+			return nil
+		})
+		if err != nil || expired.ExpiredReason != models.IdeaAlreadyUsed || !expired.IsRestoredByPerson {
+			t.Fatalf("expired, saying why: %+v %v", expired, err)
+		}
+		if _, err := tx.UpdateAgentIdea(agent.ID, kept.ID, func(idea *models.AgentIdea) error {
+			idea.ExpiredReason = "bored"
+			return nil
+		}); err == nil {
+			t.Fatal("a reason that is not one of the three is refused")
+		}
+		dismissed, err := tx.UpdateAgentIdea(agent.ID, kept.ID, func(idea *models.AgentIdea) error {
+			idea.IdeaStatus = models.IdeaDismissed
+			return nil
+		})
+		if err != nil || dismissed.ExpiredReason != "" || !dismissed.IsRestoredByPerson {
+			t.Fatalf("dismissed, the reason gone and the restore kept: %+v %v", dismissed, err)
+		}
+	})
+}

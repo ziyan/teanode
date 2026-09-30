@@ -21,9 +21,11 @@ var (
 
 // telegramMarkdown is text written in common Markdown as Telegram shows
 // it: bold with one star, a heading as a bold line, a star bullet as a
-// dot, and a cited message as its subject. Code is left exactly as it is.
+// dot, and a link in the dashboard's own schemes still here as its words
+// (the agent's answers had theirs made whole before). Code is left exactly
+// as it is.
 func telegramMarkdown(text string) string {
-	text = models.UnlinkMailCitations(text)
+	text = models.UnlinkDashboardLinks(text)
 	var builder strings.Builder
 	for index, part := range strings.Split(text, "```") {
 		if index > 0 {

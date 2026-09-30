@@ -197,6 +197,7 @@ const (
 	EventQuestion     EventKind = "question"     // the agent asked something
 	EventNote         EventKind = "note"         // compaction and the like
 	EventTitled       EventKind = "titled"       // the conversation was given a title: Text
+	EventNavigate     EventKind = "navigate"     // the dashboard is to show a page of itself: Text is its path
 	EventDone         EventKind = "done"
 	EventError        EventKind = "error"
 )
@@ -939,6 +940,18 @@ func (self *AskRun) turn() error {
 				self.loaded[tool.Name] = true
 			}
 		}
+	}
+	// A tool that moves the dashboard goes wherever the turn is not read
+	// in it: a chat app, a terminal, a mail, a run with nobody present.
+	// There the agent gives a link instead.
+	if !surfaceOf(settings.Surface).canShowPages {
+		withoutDashboard := self.offered[:0:0]
+		for _, tool := range self.offered {
+			if !tool.DashboardOnly {
+				withoutDashboard = append(withoutDashboard, tool)
+			}
+		}
+		self.offered = withoutDashboard
 	}
 	if settings.ReadOnly || settings.Allow != nil {
 		kept := self.offered[:0:0]

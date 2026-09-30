@@ -37,10 +37,22 @@ func TestSurfaces(t *testing.T) {
 			t.Errorf("%q: suggested replies %v", testCase.name, found.hasSuggestedReplies)
 		}
 	}
-	// A chat app cannot draw a table and has no link to open a message.
+	// A chat app cannot draw a table, and its links to a message or a page
+	// open in the dashboard.
 	for _, name := range []string{"telegram", "discord"} {
-		if overlay := surfaceOf(name).overlay; !strings.Contains(overlay, "no tables") || !strings.Contains(overlay, "subject alone") {
+		if overlay := surfaceOf(name).overlay; !strings.Contains(overlay, "no tables") || !strings.Contains(overlay, "opens in the dashboard") {
 			t.Errorf("%s: %q", name, overlay)
+		}
+	}
+	// Only the dashboard's own drawer can be moved to a page of it.
+	for _, name := range []string{"drawer", "phone"} {
+		if !surfaceOf(name).canShowPages {
+			t.Errorf("%s cannot show a page", name)
+		}
+	}
+	for _, name := range []string{"extension", "telegram", "discord", "cli", "api", "mail", "mcp", "schedule", backgroundSurface, speakFirstSurfacePrefix + "morning", ""} {
+		if surfaceOf(name).canShowPages {
+			t.Errorf("%q can show a page", name)
 		}
 	}
 }

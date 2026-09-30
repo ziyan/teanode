@@ -281,19 +281,14 @@ func connect(ctx context.Context, name, credential string) (*serverView, error) 
 
 // beginOAuth asks for the address the person opens. The address the code
 // comes back to is the dashboard's own, built the way a shared file's link
-// is: the name passkeys are bound to when the operator set one, the
-// server's own name otherwise.
+// is (config.DashboardBase).
 func beginOAuth(ctx context.Context, name string) (string, error) {
 	run := tools.MustRun(ctx)
-	configuration := run.Configuration()
-	host := strings.TrimSpace(configuration.Passkey.RelyingPartyID)
-	if host == "" {
-		host = strings.TrimSpace(configuration.Server.Name)
-	}
-	if host == "" {
+	base := run.Configuration().DashboardBase()
+	if base == "" {
 		return "", fmt.Errorf("this server has no name to bring the authorization back to; the person can connect it on the Agent page instead")
 	}
-	redirect := "https://" + host + "/agent?connect=" + name
+	redirect := base + "/agent?connect=" + name
 	var answer struct {
 		BeginAgentServerOAuth string `json:"BeginAgentServerOAuth"`
 	}

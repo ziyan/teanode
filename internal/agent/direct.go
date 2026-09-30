@@ -142,7 +142,7 @@ func (self *directRun) MeaningSearch(ctx context.Context, mailboxId, query strin
 // It is built the way a turn's catalog is built -- what their permissions
 // allow, less what the operator switched off, plus the tools of the
 // servers they have connected and the skills the operator installed --
-// with two left out.
+// with a few left out.
 //
 // ask_user goes because there is nobody at this end to answer it; see Ask
 // above. tool_search goes because it exists to keep a long catalog out of
@@ -165,6 +165,10 @@ func (self *Agent) DirectTools(ctx context.Context, person *models.Agent, operat
 	for _, tool := range offered {
 		switch tool.Name {
 		case "ask_user", "tool_search":
+			continue
+		}
+		// Nor a tool that moves the dashboard: the caller is not in it.
+		if tool.DashboardOnly {
 			continue
 		}
 		kept = append(kept, tool)

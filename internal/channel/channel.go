@@ -714,7 +714,8 @@ func (self *chatState) turn(ctx context.Context, channel *models.AgentChannel, i
 func (self *chatState) follow(ctx context.Context, run *agent.AskRun, chat Chat, incoming *Incoming) {
 	events, unsubscribe := run.Subscribe()
 	defer unsubscribe()
-	live := &preview{chat: chat, replyTo: incoming.MessageID}
+	dashboard := self.manager.settings.Configuration().DashboardBase()
+	live := &preview{chat: chat, replyTo: incoming.MessageID, dashboard: dashboard}
 	typing := time.NewTicker(typingEvery)
 	defer typing.Stop()
 	var artifacts []string
@@ -737,7 +738,7 @@ func (self *chatState) follow(ctx context.Context, run *agent.AskRun, chat Chat,
 			case agent.EventMessage:
 				answered = true
 				live.finish(ctx, models.StripSuggestedReplies(event.Text))
-				live = &preview{chat: chat}
+				live = &preview{chat: chat, dashboard: dashboard}
 			case agent.EventToolCall:
 				live.reset(ctx)
 				_ = chat.Typing(ctx)
@@ -848,20 +849,14 @@ func (self *chatState) sendArtifacts(ctx context.Context, chat Chat, ids []strin
 }
 
 // artifactLink is the address a chat app opens an artifact at, or ""
-// when the server cannot sign one. The host is the dashboard's: the
-// name passkeys are bound to when the operator set one, the server's
-// own name otherwise.
+// when the server cannot sign one. The host is the dashboard's.
 func (self *Manager) artifactLink(attachmentId string) string {
-	configuration := self.settings.Configuration()
-	host := strings.TrimSpace(configuration.Passkey.RelyingPartyID)
-	if host == "" {
-		host = strings.TrimSpace(configuration.Server.Name)
-	}
+	base := self.settings.Configuration().DashboardBase()
 	share := self.settings.Worker.ShareAttachment(attachmentId, time.Now().Add(agent.ShareFor))
-	if host == "" || share == "" {
+	if base == "" || share == "" {
 		return ""
 	}
-	return "https://" + host + "/api/v1/agent/attachments/" + attachmentId + "?share=" + share
+	return base + "/api/v1/agent/attachments/" + attachmentId + "?share=" + share
 }
 
 // attachments takes the files on a message into the turn.
@@ -897,8 +892,12 @@ func (self *chatState) attachments(ctx context.Context, found *models.Agent, inc
 // preview is the message the streamed answer is edited into, then
 // replaced by the whole answer.
 type preview struct {
-	chat      Chat
-	replyTo   string
+	chat    Chat
+	replyTo string
+	// dashboard is the dashboard's address, which the agent's links to
+	// its pages (models.LinkDashboardLinks) are made whole from before the
+	// answer is cut to the app's limit; empty leaves them as their words.
+	dashboard string
 	messageId string
 	text      string
 	lastEdit  time.Time
@@ -914,7 +913,7 @@ func (self *preview) update(ctx context.Context, delta string) {
 }
 
 func (self *preview) flush(ctx context.Context) {
-	text := strings.TrimSpace(self.text)
+	text := models.LinkDashboardLinks(strings.TrimSpace(self.text), self.dashboard)
 	if text == "" || text == self.shown {
 		return
 	}
@@ -958,6 +957,7 @@ func (self *preview) finish(ctx context.Context, whole string) {
 		self.messageId, self.text, self.shown = "", "", ""
 		return
 	}
+	whole = models.LinkDashboardLinks(whole, self.dashboard)
 	limit := self.chat.Limit()
 	first := whole
 	rest := ""

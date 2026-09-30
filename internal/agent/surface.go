@@ -20,6 +20,12 @@ type surface struct {
 	// replies as buttons; anywhere else they are taken off
 	// (models.StripSuggestedReplies).
 	hasSuggestedReplies bool
+
+	// canShowPages says the turn is read in the dashboard's own drawer,
+	// which open_page can move to a page of the dashboard. The drawer
+	// framed into another site by the extension cannot: the page around
+	// it is not the dashboard.
+	canShowPages bool
 }
 
 // dashboardOverlay is how to write for the dashboard, which renders
@@ -34,13 +40,14 @@ const picturesLine = "A picture shows in the answer when written as ![what it sh
 var surfaces = map[string]surface{
 	// The drawer says "phone" on a narrow screen and "extension" in the
 	// browser extension.
-	"drawer":    {situationLine: talkingThrough("drawer"), overlay: dashboardOverlay, hasSuggestedReplies: true},
+	"drawer":    {situationLine: talkingThrough("drawer"), overlay: dashboardOverlay, hasSuggestedReplies: true, canShowPages: true},
 	"extension": {situationLine: talkingThrough("extension"), overlay: dashboardOverlay, hasSuggestedReplies: true},
 	"page":      {situationLine: talkingThrough("page"), overlay: dashboardOverlay, hasSuggestedReplies: true},
 	"phone": {
 		situationLine:       talkingThrough("phone"),
 		overlay:             "<surface>\nA phone: keep it short, no tables. " + picturesLine + "\n</surface>",
 		hasSuggestedReplies: true,
+		canShowPages:        true,
 	},
 	"cli": {
 		situationLine: talkingThrough("cli"),
@@ -56,14 +63,15 @@ var surfaces = map[string]surface{
 	},
 	// A chat app is sent through its own Markdown: Telegram's older one,
 	// which the bot converts to, and Discord's, which is the common one. A
-	// cited message shows there as its subject alone.
+	// mail: or memory: link is made an address of the dashboard there, or
+	// its words alone when the server has no name.
 	"telegram": {
 		situationLine: "You are talking through Telegram.",
-		overlay:       "<surface>\nTelegram on a phone: short, plain paragraphs, no tables, no headings; a list is one item per line. Bold, italics, `code` and web links show. A message you cite shows as its subject alone, with no link to open, so say enough to find it. Something you make (a page, a chart) reaches them as a file.\n</surface>",
+		overlay:       "<surface>\nTelegram on a phone: short, plain paragraphs, no tables, no headings; a list is one item per line. Bold, italics, `code` and web links show. A mail: or memory: link opens in the dashboard, so name what it is as well. Something you make (a page, a chart) reaches them as a file.\n</surface>",
 	},
 	"discord": {
 		situationLine: "You are talking through Discord.",
-		overlay:       "<surface>\nDiscord: short paragraphs, no tables; a list is one item per line. Bold, italics, `code`, code blocks and web links show. A message you cite shows as its subject alone, with no link to open, so say enough to find it. Something you make (a page, a chart) reaches them as a file.\n</surface>",
+		overlay:       "<surface>\nDiscord: short paragraphs, no tables; a list is one item per line. Bold, italics, `code`, code blocks and web links show. A mail: or memory: link opens in the dashboard, so name what it is as well. Something you make (a page, a chart) reaches them as a file.\n</surface>",
 	},
 	"mcp": {
 		situationLine: "You are answering a program that reached you through the Model Context Protocol, for the person.",

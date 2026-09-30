@@ -6,6 +6,28 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.84.0] - 2026-09-30
+
+### Added
+
+- The agent links a page of its memory it names in an answer, and the link opens that page on the Knowledge page. (#238)
+- In the dashboard's drawer, the agent can take you to a page of the dashboard when you ask to be shown one. (#238)
+
+### Changed
+
+- In Telegram and Discord, a message or memory page the agent links opens in the dashboard instead of showing as plain words. (#238)
+
+## [0.83.3] - 2026-09-30
+
+### Changed
+
+- An expired idea in the Ideas history, `agent idea list` and the agent's idea tool says why it expired: its date passed, it needs a tool that is not connected, or you already do it. (#240)
+- An idea that expired because you already do it can be restored, and stays until you dismiss it. (#240)
+
+### Fixed
+
+- The divider above a section inside a settings card now reaches the card's edges instead of stopping short. (#240)
+
 ## [0.83.2] - 2026-09-30
 
 ### Changed
