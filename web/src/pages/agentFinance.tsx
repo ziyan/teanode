@@ -37,16 +37,26 @@ export const FINANCE_SECTIONS: TabItem[] = [
 // without the finance operations answers with an error, and then there is
 // no tab.
 export function useFinancePresence(isAgentOn: boolean): { isShown: boolean | null; hasSources: boolean } {
-  const { data, error, loading } = useQuery(
-    () =>
+  const { data, error } = useQuery(
+    async () =>
       isAgentOn
-        ? graphql<{ FinanceProviders: FinanceProvider[]; FinanceSources: { id: string }[] }>(FINANCE_PRESENCE)
-        : Promise.resolve({ FinanceProviders: [], FinanceSources: [] }),
+        ? {
+            ...(await graphql<{ FinanceProviders: FinanceProvider[]; FinanceSources: { id: string }[] }>(
+              FINANCE_PRESENCE,
+            )),
+            isAskedForAgent: true,
+          }
+        : { FinanceProviders: [], FinanceSources: [], isAskedForAgent: false },
     [isAgentOn],
     { refresh: false },
   )
-  if (error) return { isShown: false, hasSources: false }
-  if (loading && !data) return { isShown: null, hasSources: false }
+  // Undecided until the question has been answered for the agent that is
+  // on. The query's data outlives a change of its inputs, and on the render
+  // after the agent loaded it still held the empty answer given while the
+  // agent was loading, with nothing marked as loading yet; read as "no
+  // finance", it sent a link to the Finance tab to the first tab.
+  if (error && isAgentOn) return { isShown: false, hasSources: false }
+  if (!isAgentOn || !data?.isAskedForAgent) return { isShown: null, hasSources: false }
   const hasSources = (data?.FinanceSources.length ?? 0) > 0
   return { isShown: (data?.FinanceProviders.length ?? 0) > 0 || hasSources, hasSources }
 }
