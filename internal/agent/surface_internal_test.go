@@ -44,6 +44,17 @@ func TestSurfaces(t *testing.T) {
 			t.Errorf("%s: %q", name, overlay)
 		}
 	}
+	// Only the dashboard's own drawer can be moved to a page of it.
+	for _, name := range []string{"drawer", "phone"} {
+		if !surfaceOf(name).canShowPages {
+			t.Errorf("%s cannot show a page", name)
+		}
+	}
+	for _, name := range []string{"extension", "telegram", "discord", "cli", "api", "mail", "mcp", "schedule", backgroundSurface, speakFirstSurfacePrefix + "morning", ""} {
+		if surfaceOf(name).canShowPages {
+			t.Errorf("%q can show a page", name)
+		}
+	}
 }
 
 // The prompt names a tool only where the round has it: said plainly when

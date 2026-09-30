@@ -97,6 +97,11 @@ type Tool struct {
 	// the operator marked read-only on a headless server.
 	Headless bool
 
+	// DashboardOnly says it is offered only where the person reads the
+	// turn in the dashboard (Showing): it moves the dashboard, and
+	// anywhere else there is none to move.
+	DashboardOnly bool
+
 	// Guidance is put in the prompt when the tool is in the request, so a
 	// person who cannot manage domains is not told how to.
 	Guidance string

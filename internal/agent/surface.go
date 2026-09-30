@@ -20,6 +20,12 @@ type surface struct {
 	// replies as buttons; anywhere else they are taken off
 	// (models.StripSuggestedReplies).
 	hasSuggestedReplies bool
+
+	// canShowPages says the turn is read in the dashboard's own drawer,
+	// which open_page can move to a page of the dashboard. The drawer
+	// framed into another site by the extension cannot: the page around
+	// it is not the dashboard.
+	canShowPages bool
 }
 
 // dashboardOverlay is how to write for the dashboard, which renders
@@ -34,13 +40,14 @@ const picturesLine = "A picture shows in the answer when written as ![what it sh
 var surfaces = map[string]surface{
 	// The drawer says "phone" on a narrow screen and "extension" in the
 	// browser extension.
-	"drawer":    {situationLine: talkingThrough("drawer"), overlay: dashboardOverlay, hasSuggestedReplies: true},
+	"drawer":    {situationLine: talkingThrough("drawer"), overlay: dashboardOverlay, hasSuggestedReplies: true, canShowPages: true},
 	"extension": {situationLine: talkingThrough("extension"), overlay: dashboardOverlay, hasSuggestedReplies: true},
 	"page":      {situationLine: talkingThrough("page"), overlay: dashboardOverlay, hasSuggestedReplies: true},
 	"phone": {
 		situationLine:       talkingThrough("phone"),
 		overlay:             "<surface>\nA phone: keep it short, no tables. " + picturesLine + "\n</surface>",
 		hasSuggestedReplies: true,
+		canShowPages:        true,
 	},
 	"cli": {
 		situationLine: talkingThrough("cli"),
