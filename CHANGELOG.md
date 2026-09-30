@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.87.1] - 2026-09-30
+
+### Fixed
+
+- A transfer between your accounts is no longer counted as spending after its pending side posts. (#245)
+- Deleting a finance source closes its assets on that day, and linking the institution again picks their history back up instead of counting each account twice. (#245)
+- SimpleFIN reads the full history of an account added to a connection later, and catches up an institution that failed for a while. (#245)
+
 ## [0.87.0] - 2026-09-30
 
 ### Added
