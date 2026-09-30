@@ -1203,11 +1203,21 @@ func (self *transaction) DetectFinanceTransfers(agentId, sourceId, sinceDate str
 	// candidates for the one 500 that arrived in savings on Monday; the
 	// transfer is the closer, and the rent stays spending. What a round
 	// leaves over pairs in the next, once the pairs before it are marked.
+	//
+	// A side the provider category already called a transfer can still be
+	// paired, and pairing marks it as paired: a card payment out of
+	// checking is a transfer by its category, and the card's side of it,
+	// often from another provider with no category, is found only by
+	// pairing. Leaving the marked side out left that credit counted as a
+	// refund on the card, and a month's spending went below zero. A side
+	// already paired (marked by detection) or decided by the person is
+	// never taken again.
 	arguments["pairing_days"] = transferPairingDays
 	for round := 0; round < transferPairingRounds; round++ {
 		paired := self.tx.Exec(`WITH "eligible" AS (
 				SELECT "id", "finance_account_id", "currency_code", "amount", "posted_on" FROM "agent_finance_transaction"
-				WHERE "agent_id" = @agent_id AND NOT "is_transfer" AND "transfer_marked_by" <> 'person' AND "categorized_by" <> 'person'
+				WHERE "agent_id" = @agent_id AND "categorized_by" <> 'person'
+				  AND ((NOT "is_transfer" AND "transfer_marked_by" <> 'person') OR "transfer_marked_by" = 'provider_category_mapping')
 			), "ranked" AS (
 				SELECT "money_out"."id" AS "money_out_id", "money_in"."id" AS "money_in_id",
 					ROW_NUMBER() OVER (PARTITION BY "money_out"."id"
@@ -1225,7 +1235,9 @@ func (self *transaction) DetectFinanceTransfers(agentId, sourceId, sinceDate str
 				    OR ("money_in"."posted_on" >= CAST(@since_date AS date) AND "money_in"."finance_account_id" IN (`+scope+`)))
 			)
 			UPDATE "agent_finance_transaction" SET "is_transfer" = true, "transfer_marked_by" = 'detection', "modified_at" = @modified_at
-			WHERE "agent_id" = @agent_id AND NOT "is_transfer" AND "transfer_marked_by" <> 'person' AND "id" IN (
+			WHERE "agent_id" = @agent_id
+			  AND ((NOT "is_transfer" AND "transfer_marked_by" <> 'person') OR "transfer_marked_by" = 'provider_category_mapping')
+			  AND "id" IN (
 				SELECT unnest(ARRAY["money_out_id", "money_in_id"]) FROM "ranked"
 				WHERE "money_out_choice" = 1 AND "money_in_choice" = 1
 			)`, arguments)

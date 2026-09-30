@@ -19,13 +19,16 @@ const FinanceCredentialSecretKey = "credential"
 // The keys of a finance source's cursor, which only its sync reads and
 // writes: the provider's own cursor; whether the institution is waiting
 // for the person to sign in again, while which the sync does not call the
-// provider; and whether the provider refused the credential itself, after
+// provider; whether the provider refused the credential itself, after
 // which the sync never calls the provider again, since only deleting the
-// finance source and linking the institution again mends it.
+// finance source and linking the institution again mends it; and whether
+// transfers have been looked for across the source's whole history once,
+// after which each sync looks at the last week only.
 const (
-	FinanceCursorProviderCursor      = "providerCursor"
-	FinanceCursorIsSignInRequired    = "isSignInRequired"
-	FinanceCursorIsCredentialRefused = "isCredentialRefused"
+	FinanceCursorProviderCursor            = "providerCursor"
+	FinanceCursorIsSignInRequired          = "isSignInRequired"
+	FinanceCursorIsCredentialRefused       = "isCredentialRefused"
+	FinanceCursorIsTransferHistoryDetected = "isTransferHistoryDetected"
 )
 
 // FinanceSourceSettings is what a finance source's Specification.Settings

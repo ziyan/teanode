@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 
-import { axisWidthFor, chartScale } from './seriesChart'
+import { axisWidthFor, chartScale, isolatedIndexes } from './seriesChart'
 
 // A month of cash flow that went below zero: the scale reaches under the
 // lowest value, so the line is drawn whole, and zero is a gridline.
@@ -25,4 +25,13 @@ it('starts at zero when nothing is below it', () => {
 it('sizes the axis to its widest label', () => {
   expect(axisWidthFor(['$0', '$10k'])).toBeLessThan(axisWidthFor(['$0', '$1,250,000.00']))
   expect(axisWidthFor(['0'])).toBeGreaterThanOrEqual(28)
+})
+
+// A value alone, with nothing either side, is drawn as a dot: a line
+// through one point shows nothing.
+it('finds the values a line cannot show', () => {
+  expect(isolatedIndexes([5])).toEqual([0])
+  expect(isolatedIndexes([null, 5, null, 3, 4])).toEqual([1])
+  expect(isolatedIndexes([1, 2, 3])).toEqual([])
+  expect(isolatedIndexes([])).toEqual([])
 })

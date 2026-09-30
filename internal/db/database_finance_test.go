@@ -741,6 +741,43 @@ func TestDetectFinanceTransfersPairsOneToOne(t *testing.T) {
 	})
 }
 
+// A card payment out of checking is a transfer by its provider category,
+// and the card's credit for it, with no category, is found by pairing with
+// it: otherwise the credit counts as a refund on the card. The checking
+// side, once paired, is not taken by a second credit of the same amount.
+func TestDetectFinanceTransfersPairsWithAProviderMarkedSide(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "finance-transfer-provider-marked")
+	result := sampleFinanceSync()
+	result.Added = []finance.Transaction{
+		{ProviderTransactionID: "card-payment-out", ProviderAccountID: "account-checking", PostedOn: "2026-09-14", Amount: "-640", CurrencyCode: "USD",
+			Description: "CARD PAYMENT", ProviderCategoryPrimary: "LOAN_PAYMENTS", ProviderCategoryDetailed: "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"},
+		{ProviderTransactionID: "card-payment-in", ProviderAccountID: "account-card", PostedOn: "2026-09-16", Amount: "640", CurrencyCode: "USD", Description: "PAYMENT THANK YOU"},
+		{ProviderTransactionID: "second-credit", ProviderAccountID: "account-card", PostedOn: "2026-09-16", Amount: "640", CurrencyCode: "USD", Description: "MERCHANT CREDIT"},
+	}
+	applyFinanceSync(t, database, fixture, result, "2026-09-20")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.DetectFinanceTransfers(fixture.agentId, fixture.sourceId, "2026-09-01"); err != nil {
+			t.Fatalf("DetectFinanceTransfers: %s", err)
+		}
+		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
+		pairedCredits := 0
+		for _, providerTransactionId := range []string{"card-payment-in", "second-credit"} {
+			if found[providerTransactionId].IsTransfer {
+				pairedCredits++
+			}
+		}
+		if !found["card-payment-out"].IsTransfer || found["card-payment-out"].TransferMarkedBy != models.TransferMarkedByDetection {
+			t.Errorf("the payment out: transfer %v marked by %q, want paired", found["card-payment-out"].IsTransfer, found["card-payment-out"].TransferMarkedBy)
+		}
+		if pairedCredits != 1 {
+			t.Errorf("%d card credits paired with the one payment, want exactly 1", pairedCredits)
+		}
+	})
+}
+
 // What the categorize model was asked about and could not place is not
 // listed for it again, until what it is judged from changes; a change of
 // amount alone is not that.

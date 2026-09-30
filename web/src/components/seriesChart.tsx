@@ -345,6 +345,20 @@ function SeriesDrawing({
       {lines.map((one) => (
         <path key={one.id} className={`series-chart-line ${one.tone}`} d={linePath(one.values, slot, yOf, axisWidth)} />
       ))}
+      {/* A value with nothing either side of it is a line of one point,
+          which draws nothing: net worth on the first day of a finance
+          source was an empty chart. It gets a dot instead. */}
+      {lines.flatMap((one) =>
+        isolatedIndexes(one.values).map((index) => (
+          <circle
+            key={`${one.id}-${index}`}
+            className={`series-chart-point ${one.tone}`}
+            cx={axisWidth + index * slot + slot / 2}
+            cy={yOf(one.values[index] as number)}
+            r={3.5}
+          />
+        )),
+      )}
       {hovered !== null
         ? lines.map((one) => {
             const value = one.values[hovered]
@@ -361,6 +375,15 @@ function SeriesDrawing({
           })
         : null}
     </svg>
+  )
+}
+
+// isolatedIndexes are the values with no value beside them, which a line
+// cannot show.
+export function isolatedIndexes(values: (number | null | undefined)[]): number[] {
+  const isPresent = (index: number) => values[index] !== null && values[index] !== undefined
+  return values.flatMap((_, index) =>
+    isPresent(index) && !isPresent(index - 1) && !isPresent(index + 1) ? [index] : [],
   )
 }
 

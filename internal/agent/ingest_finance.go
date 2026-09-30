@@ -27,6 +27,10 @@ const (
 	// across a weekend.
 	financeTransferWindowDays = 7
 
+	// financeTransferHistoryStart is where the one pass over a finance
+	// source's whole history begins: before any provider keeps history.
+	financeTransferHistoryStart = "1990-01-01"
+
 	// financeRemoveTimeout bounds the provider call that ends a finance
 	// source when it is deleted. Best effort: a provider that does not
 	// answer must not keep the person from deleting.
@@ -153,11 +157,18 @@ func (self *Agent) runFinanceSync(ctx context.Context, run *Run, source *models.
 	log.Debugf("finance source %q synced: %d finance transaction(s) written, %d removed, %d pending replaced",
 		source.ID, applied.WrittenTransactionCount, applied.RemovedTransactionCount, applied.ReplacedPendingTransactionCount)
 
-	if err := self.afterFinanceSync(ctx, run, source, applied, syncedOn); err != nil {
+	// Transfers are looked for across the whole history once, on the first
+	// sync that follows through, and over the last week after that. A first
+	// sync brings months of history, and a week's window left every card
+	// payment older than that counted as a refund on the card.
+	isTransferHistoryDetected, _ := cursor[models.FinanceCursorIsTransferHistoryDetected].(bool)
+	if err := self.afterFinanceSync(ctx, run, source, applied, syncedOn, !isTransferHistoryDetected); err != nil {
 		// The rows are written and the cursor moves on: what follows a
 		// sync is repeated after the next one, so it is logged here rather
 		// than making the sync look failed.
 		log.Warningf("finance source %q synced, but what follows a sync failed: %s", source.ID, err)
+	} else {
+		cursor[models.FinanceCursorIsTransferHistoryDetected] = true
 	}
 	return mark("")
 }
@@ -191,20 +202,25 @@ func (self *Agent) financeCredential(ctx context.Context, source *models.AgentKn
 
 // afterFinanceSync is what follows a sync that wrote rows: the default
 // spending categories for an agent that has none, transfer detection over
-// the last week, the person's spending rules, the provider category
-// mapping for what is still uncategorized, a categorize job for what is
-// left, and budget alert candidates.
-func (self *Agent) afterFinanceSync(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, applied *db.FinanceSyncApplied, syncedOn string) error {
+// the last week (or the whole history when isWholeHistory), the person's
+// spending rules, the provider category mapping for what is still
+// uncategorized, a categorize job for what is left, and budget alert
+// candidates.
+func (self *Agent) afterFinanceSync(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, applied *db.FinanceSyncApplied, syncedOn string, isWholeHistory bool) error {
 	agentId := source.AgentID
 	today, err := time.Parse(time.DateOnly, syncedOn)
 	if err != nil {
 		return err
 	}
+	transferSinceDay := today.AddDate(0, 0, -financeTransferWindowDays).Format(time.DateOnly)
+	if isWholeHistory {
+		transferSinceDay = financeTransferHistoryStart
+	}
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		if _, err := tx.EnsureDefaultSpendingCategories(agentId); err != nil {
 			return err
 		}
-		if _, err := tx.DetectFinanceTransfers(agentId, source.ID, today.AddDate(0, 0, -financeTransferWindowDays).Format(time.DateOnly)); err != nil {
+		if _, err := tx.DetectFinanceTransfers(agentId, source.ID, transferSinceDay); err != nil {
 			return err
 		}
 		if _, err := tx.ApplySpendingRules(agentId); err != nil {
