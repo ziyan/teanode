@@ -112,6 +112,9 @@ const SessionsPage = lazyPage(async () => ({
 const CommandLinePage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/cli')).CommandLinePage,
 }))
+const FinanceLinkPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/financeLink')).FinanceLinkPage,
+}))
 
 export function App() {
   const { t } = useTranslation()
@@ -242,6 +245,20 @@ export function App() {
         {corner}
         <Suspense fallback={<Loading />}>
           <CommandLinePage username={session.username} />
+        </Suspense>
+      </div>
+    )
+  }
+
+  // Plaid's window, drawn the same way for the same reason: one thing to
+  // do, opened by the Finance tab in a window of its own. The server gives
+  // this path alone a policy that lets Plaid's script and frame in.
+  if (location.pathname === '/finance-link') {
+    return (
+      <div className="auth-page">
+        {corner}
+        <Suspense fallback={<Loading />}>
+          <FinanceLinkPage />
         </Suspense>
       </div>
     )
@@ -401,6 +418,9 @@ export function App() {
                       names no tab is answered by the page with the first. */}
                     <Route path="/settings/agent" element={<AgentPage />} />
                     <Route path="/settings/agent/:tab" element={<AgentPage />} />
+                    {/* A tab with sections of its own, Finance, names the
+                      section after the tab. */}
+                    <Route path="/settings/agent/:tab/:section" element={<AgentPage />} />
                     {/* Before the graph's own paths below: "explore" is the
                       drawing of the whole graph, not a folder in it, and the
                       splat route would read it as one. */}

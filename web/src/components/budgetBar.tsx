@@ -52,19 +52,44 @@ export function BudgetBar({ budget, zone }: { budget: Budget | null; zone: strin
         </span>
         <span className="muted">{t('agent.budgetResets', { at: formatClock(budget.resetsAt, zone) })}</span>
       </div>
-      <div
-        className="agent-budget-bar"
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(fraction * 100)}
-        aria-label={said}
-      >
+      <MeterBar fraction={fraction} tone={budgetNearness(fraction, 1)} label={said} />
+    </div>
+  )
+}
+
+// MeterBar is the bar itself: how much of something has gone, in the
+// colour the caller judged it, and where it is heading when the caller
+// knows (a spending category's projected month end against its budget).
+// The day's budget above and the Finance tab's budgets and savings
+// targets draw the same bar.
+export function MeterBar({
+  fraction,
+  tone,
+  label,
+  marker,
+}: {
+  fraction: number
+  tone: 'good' | 'warn' | 'bad'
+  label: string
+  marker?: number | null
+}) {
+  const shown = Math.max(0, Math.min(1, fraction))
+  return (
+    <div
+      className="agent-budget-bar"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(shown * 100)}
+      aria-label={label}
+    >
+      <span className={`agent-budget-bar-fill ${tone}`} style={{ width: `${Math.round(shown * 100)}%` }} />
+      {marker !== undefined && marker !== null ? (
         <span
-          className={`agent-budget-bar-fill ${budgetNearness(fraction, 1)}`}
-          style={{ width: `${Math.round(fraction * 100)}%` }}
+          className="agent-budget-bar-marker"
+          style={{ left: `${Math.round(Math.max(0, Math.min(1, marker)) * 100)}%` }}
         />
-      </div>
+      ) : null}
     </div>
   )
 }

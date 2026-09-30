@@ -26,6 +26,7 @@ import { AlertsCard } from '../components/agentAlerts'
 import { PencilIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tabs, TabItem } from '../components/tabs'
+import { FinanceTab, useFinancePresence } from './agentFinance'
 import { GoalsTab } from './agentGoals'
 import { IdeasTab } from './agentIdeas'
 import { MemoryCheckSection } from '../components/memoryCheck'
@@ -210,6 +211,13 @@ const AGENT_TABS: TabItem[] = [
   { id: 'activity', label: 'agent.tabActivity' },
 ]
 
+// The same tabs with Finance among them, beside Sources: the institutions
+// it reads are places it reads too, and the tab is there only when there is
+// something to link through or something linked already.
+const AGENT_TABS_WITH_FINANCE: TabItem[] = AGENT_TABS.flatMap((item) =>
+  item.id === 'sources' ? [item, { id: 'finance', label: 'agent.tabFinance' }] : [item],
+)
+
 export function AgentPage() {
   const { t } = useTranslation()
   const { data, error, loading, reload } = useAgent()
@@ -219,6 +227,7 @@ export function AgentPage() {
   const location = useLocation()
   const [busy, setBusy] = useState(false)
   const [forgetting, setForgetting] = useState(false)
+  const finance = useFinancePresence(!!data?.ReadAgent.agent)
   // The dream whose runs the activity table is narrowed to, if any. It is
   // held here rather than in the activity tab, so that the dream log's Runs
   // button can set it and then switch tabs without it going with the card.
@@ -291,13 +300,17 @@ export function AgentPage() {
   // named in the query and only Connections holds the card that finishes
   // it. The query is carried over either way: it is the code and the state
   // the server sent back, and dropping it lost the connection silently.
-  if (!AGENT_TABS.some((candidate) => candidate.id === tab)) {
+  const tabs = finance.isShown ? AGENT_TABS_WITH_FINANCE : AGENT_TABS
+  // A link to Finance waits for the answer to whether there is one, rather
+  // than being sent to the first tab while the question is in flight.
+  if (tab === 'finance' && finance.isShown === null) return <Loading />
+  if (!tabs.some((candidate) => candidate.id === tab)) {
     const landing = new URLSearchParams(location.search).has('connect') ? 'connections' : AGENT_TABS[0].id
     return <Navigate to={`/settings/agent/${landing}${location.search}`} replace />
   }
   return (
     <>
-      <Tabs items={AGENT_TABS} active={tab} onSelect={(id) => navigate(`/settings/agent/${id}`)} />
+      <Tabs items={tabs} active={tab} onSelect={(id) => navigate(`/settings/agent/${id}`)} />
       {tab === 'overview' ? (
         <>
           <div className="card">
@@ -426,6 +439,7 @@ export function AgentPage() {
       ) : null}
       {/* The places it reads: each a source of an installed type. */}
       {tab === 'sources' ? <KnowledgeSourcesCard /> : null}
+      {tab === 'finance' ? <FinanceTab hasSources={finance.hasSources} /> : null}
       {/* What it does at set times, of its own: the schedules and the
           morning brief, which are timetables rather than connections. */}
       {tab === 'schedules' ? (
@@ -2088,7 +2102,10 @@ function KnowledgeSourcesCard() {
   const computerNames = (attached.data?.ReadAgentComputers.computers ?? []).map((one) => one.name)
   const computerListId = useId()
 
-  const sources = data?.ListAgentKnowledgeSources ?? []
+  // Finance sources are listed, linked, synced and deleted on the Finance
+  // tab. This form would offer to change what they read, which only a new
+  // link can.
+  const sources = (data?.ListAgentKnowledgeSources ?? []).filter((source) => source.kind !== 'finance')
 
   const chooseSourceType = (name: string) => {
     setSourceTypeName(name)
