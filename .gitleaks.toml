@@ -42,4 +42,10 @@ regexes = [
   # time. Six characters of body each; the history keeps them, and they
   # never opened anything.
   '''-----BEGIN (OPENSSH )?PRIVATE KEY-----\\n(MIIkey|b3Blb)\\n-----END''',
+  # The finance API tests' invented Plaid secret, and their invented SimpleFIN
+  # setup token, which is "invented-setup-token" in base64. They stand in for
+  # a real provider's values so the tests can prove no answer repeats one;
+  # they open nothing anywhere.
+  '''^plaid-secret-invented-0001$''',
+  '''^aW52ZW50ZWQtc2V0dXAtdG9rZW4=$''',
 ]
