@@ -8,7 +8,7 @@
 
 A person tracking net worth needs to know what each thing they own or owe
 was worth over time, not only today. Some of those things a provider can
-read every day (bank accounts, cards, brokerage accounts, loans). Some only
+read every day (bank and brokerage accounts, cards, loans). Some only
 the person can value (a car, a private loan). Some the agent can estimate
 from the web (a house from its address, a car from its description). The
 values arrive at different rates, from different places, and are sometimes
@@ -22,7 +22,7 @@ moved.
 
 Every thing that counts is an asset, and a liability is an asset whose
 value subtracts. An asset's value is recorded as a valuation: one value,
-on one day, from one source (the bank sync, the person, an agent reading
+on one day, from one valuation source (a finance sync, the person, an agent reading
 through a connected server, or an agent estimate with its range and
 evidence). Net worth for any day is the sum, per currency, of each open
 asset's latest valuation on or before that day, where the person's own
@@ -34,7 +34,8 @@ schedules the person can see and stop. It estimates an asset only when
 the person turned that on for the asset, because an estimate sends the
 address or description to a search provider and to web pages.
 
-Nothing is converted between currencies.
+Each asset keeps its own currency. Net worth is reported per currency and,
+converted at each day's exchange rate, in the person's reporting currency.
 
 ## Consequences
 
@@ -51,5 +52,7 @@ the person who asks for them. The alternative, a mapping from one
 particular server's output to a number, would break whenever that server
 changed.
 
-A person with money in two currencies sees two totals until exchange
-rates are added.
+Converting at each day's rate makes a foreign account's value move with
+the rate, which is the truth but can surprise someone who expected only
+their balance to matter. A currency with no published rate is left out of
+the converted total, and the total says which.

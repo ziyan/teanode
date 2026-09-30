@@ -16,10 +16,11 @@ store is groceries to one and home goods to another.
 ## Decision
 
 A transaction's category is the person's, from their own list, which
-starts from a default set when they link their first bank. It is assigned
+starts from a default set when they link their first finance source. It is assigned
 in this order: the person's own choice, then the person's rules (a merchant
 or description match, optionally narrowed by account and amount), then the
-provider's category through a fixed mapping, then the agent, in batches,
+provider's category through a fixed mapping, then the categorize model the
+operator chose (a decision model such as Jev, or a chat model in batches),
 choosing only from the person's categories. The provider's category is kept
 beside it as a hint.
 
