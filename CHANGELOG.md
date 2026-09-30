@@ -6,6 +6,23 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.83.0] - 2026-09-30
+
+### Added
+
+- Every idea in the Ideas tab's history has a Restore button that puts it back among the open ideas. (#235)
+
+### Changed
+
+- Clicking an idea, or a goal area on the Goals tab, sends its first message right away instead of leaving it unsent in the reply box. (#235)
+
+### Fixed
+
+- Deleting a conversation an idea was started in puts the idea back among the open ones, including ideas whose conversation was deleted before this release. (#235)
+- Opening a conversation that was deleted says so instead of showing "api: not found". (#235)
+- The reply box grows to show a draft the page puts there, not only one being typed. (#235)
+- A message that fails to send stays in the reply box. (#235)
+
 ## [0.82.1] - 2026-09-30
 
 ### Fixed
