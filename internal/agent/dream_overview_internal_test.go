@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/computer"
 	"github.com/ziyan/teanode/internal/config"
@@ -239,4 +240,74 @@ func TestTheLinesAProfileKeepsAreReadBack(t *testing.T) {
 
 func computerComponent(directory, buildFile string) computer.RepositoryComponent {
 	return computer.RepositoryComponent{Path: directory, Name: "parser", Ecosystem: computer.EcosystemGo, File: buildFile}
+}
+
+// How an overview stands is counted by code: of the pages under it, how
+// many there are and how many its prompt shows, and how many of those have
+// no overview of their own; and whether what it is written from changed
+// since. The prompt says when it shows only the most important of them.
+func TestAnOverviewSaysWhatItCoversAndWhetherItIsCurrent(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	t.Cleanup(release)
+	_, run := digestSplitWorld(t, database, "http://127.0.0.1:1")
+	agentId := run.Agent.ID
+	written := "## What it is\n\nA row of trees."
+	var orchard *models.AgentNode
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		surveyPageFor(t, tx, agentId, "projects/orchard", written, 0.9)
+		for index := 0; index < overviewChildCount+4; index++ {
+			overview := written
+			if index%10 == 0 {
+				overview = ""
+			}
+			surveyPageFor(t, tx, agentId, fmt.Sprintf("projects/orchard/row-%02d", index), overview, float32(index)/100)
+		}
+		var err error
+		if orchard, err = tx.GetAgentNode(agentId, "projects/orchard"); err != nil {
+			t.Fatal(err)
+		}
+		inputsNow, err := tx.AgentNodeOverviewInputs(agentId, orchard.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.SetAgentNodeOverview(agentId, orchard.ID, written, nil, inputsNow, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		state, err := OverviewStateOf(tx, agentId, orchard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		coverage := state.Coverage
+		if state.IsStale || coverage.ChildCount != overviewChildCount+4 || coverage.ChildShownCount != overviewChildCount {
+			t.Fatalf("stale %v, %d of %d children", state.IsStale, coverage.ChildShownCount, coverage.ChildCount)
+		}
+		// Rows 00, 10, 20 and 30 have none; the most important thirty
+		// shown are rows 04 to 33, which hold rows 10, 20 and 30.
+		if coverage.ChildWithoutOverviewCount != 3 {
+			t.Errorf("%d shown children without an overview, want 3", coverage.ChildWithoutOverviewCount)
+		}
+		inputs, err := readOverviewInputs(tx, agentId, orchard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prompt, err := render("overview.txt", map[string]any{
+			"Path": orchard.Path, "Name": orchard.Name, "Kind": string(orchard.Kind), "Children": inputs.children, "Coverage": inputs.coverage,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := fmt.Sprintf("These are the %d most important of the\n%d pages under it", overviewChildCount, overviewChildCount+4); !strings.Contains(prompt, want) {
+			t.Errorf("the prompt does not say it shows the most important of them:\n%s", prompt)
+		}
+
+		if _, err := tx.AddAgentFact(&models.AgentFact{AgentID: agentId, NodeID: orchard.ID, Kind: models.FactPlain, Text: "The orchard was replanted."}); err != nil {
+			t.Fatal(err)
+		}
+		if state, err = OverviewStateOf(tx, agentId, orchard); err != nil || !state.IsStale {
+			t.Errorf("a new fact did not make the overview stale: %v", err)
+		}
+	})
 }

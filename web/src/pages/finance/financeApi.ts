@@ -181,6 +181,26 @@ export type AssetValuation = {
   estimateHigh?: string | null
   valuationNote?: string | null
   evidenceUrls: string[]
+  // A holding's quantity, the price of one and what the whole cost, as the
+  // provider reported them on the day; none on anything else.
+  heldQuantity?: string | null
+  unitPrice?: string | null
+  costBasis?: string | null
+}
+
+export type SecurityKind =
+  'cash' | 'cryptocurrency' | 'derivative' | 'equity' | 'etf' | 'fixed_income' | 'loan' | 'mutual_fund' | 'other'
+
+// FinanceSecurity is something an investment account can hold, as the
+// provider that reported it describes it.
+export type FinanceSecurity = {
+  id: string
+  tickerSymbol?: string | null
+  securityName: string
+  securityKind: SecurityKind | string
+  currencyCode?: string | null
+  closePrice?: string | null
+  closePriceOn?: string | null
 }
 
 export type Asset = {
@@ -190,6 +210,9 @@ export type Asset = {
   isLiability: boolean
   currencyCode: string
   financeAccountId?: string | null
+  // Set on a holding: an asset a finance account values for one security.
+  financeSecurityId?: string | null
+  financeSecurity?: FinanceSecurity | null
   valuationSource: string
   estimateDescription?: string | null
   isEstimateAllowed: boolean
@@ -198,6 +221,33 @@ export type Asset = {
 }
 
 export type AssetHistory = { asset: Asset; assetValuations: AssetValuation[] }
+
+export type TradeKind = 'buy' | 'sell' | 'cancel' | 'transfer'
+
+// FinanceTrade is one trade in an investment account. Its amount is the
+// cash the trade moved in the account: negative when cash left it, as it
+// does for a buy.
+export type FinanceTrade = {
+  id: string
+  financeAccountId: string
+  financeSecurityId?: string | null
+  financeSecurity?: FinanceSecurity | null
+  providerTradeId: string
+  tradedOn: string
+  tradeKind: TradeKind | string
+  tradeSubkind?: string | null
+  tradedQuantity?: string | null
+  unitPrice?: string | null
+  tradeAmount: string
+  feeAmount?: string | null
+  currencyCode: string
+  description: string
+}
+
+export type FinanceTradePage = {
+  financeTrades: FinanceTrade[]
+  nextCursor?: string | null
+}
 
 export type NetWorthPoint = { netWorthOn: string; netWorthAmount: string }
 
@@ -398,10 +448,12 @@ export const SET_BUDGET = `mutation ($spendingCategoryId: String!, $monthlyAmoun
 // --- net worth -------------------------------------------------------------
 
 const VALUATION_FIELDS = `id assetId valuedOn value currencyCode valuationSource estimateLow estimateHigh valuationNote
-  evidenceUrls`
+  evidenceUrls heldQuantity unitPrice costBasis`
 
-const ASSET_FIELDS = `id assetName assetKind isLiability currencyCode financeAccountId valuationSource
-  estimateDescription isEstimateAllowed closedOn`
+const SECURITY_FIELDS = `id tickerSymbol securityName securityKind currencyCode closePrice closePriceOn`
+
+const ASSET_FIELDS = `id assetName assetKind isLiability currencyCode financeAccountId financeSecurityId
+  financeSecurity { ${SECURITY_FIELDS} } valuationSource estimateDescription isEstimateAllowed closedOn`
 
 export const NET_WORTH = `query ($from: String, $to: String) {
   NetWorth(from: $from, to: $to) { from to reportingCurrencyCode unconvertedCurrencyCodes
@@ -442,6 +494,20 @@ export const RECORD_VALUATION = `mutation ($assetId: String!, $value: String!, $
 }`
 
 export const DELETE_VALUATION = `mutation ($valuationId: String!) { DeleteValuation(valuationId: $valuationId) }`
+
+// --- trades ----------------------------------------------------------------
+
+const TRADE_FIELDS = `id financeAccountId financeSecurityId financeSecurity { ${SECURITY_FIELDS} } providerTradeId tradedOn
+  tradeKind tradeSubkind tradedQuantity unitPrice tradeAmount feeAmount currencyCode description`
+
+export const FINANCE_TRADES = `query ($from: String, $to: String, $financeAccountId: String, $financeSecurityId: String,
+  $limit: Int, $after: String) {
+  FinanceTrades(from: $from, to: $to, financeAccountId: $financeAccountId, financeSecurityId: $financeSecurityId,
+    limit: $limit, after: $after) {
+    financeTrades { ${TRADE_FIELDS} }
+    nextCursor
+  }
+}`
 
 // --- savings targets -------------------------------------------------------
 
@@ -509,6 +575,26 @@ export function amountOf(decimal?: string | null): number {
 // provider did not report is not a balance of zero.
 export function hasAmount(decimal?: string | null): boolean {
   return decimal !== undefined && decimal !== null && decimal !== '' && Number.isFinite(Number(decimal))
+}
+
+// isHolding says an asset is a holding: one a finance account values for
+// one security, with a quantity and a price on each day.
+export function isHolding(asset: Pick<Asset, 'financeSecurityId'>): boolean {
+  return Boolean(asset.financeSecurityId)
+}
+
+// formatQuantity is a number of shares or units the way a person reads
+// one: grouped, and to four places, since the eight the server keeps are
+// noise on a share count. Under one unit, as a fraction of a coin often
+// is, it keeps all eight so the quantity does not read as zero. Nothing,
+// or something that is not a number, is a dash.
+export function formatQuantity(decimal?: string | null, locale?: string): string {
+  if (!hasAmount(decimal)) return '—'
+  const quantity = Number(decimal)
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: quantity !== 0 && Math.abs(quantity) < 1 ? 8 : 4,
+  }).format(quantity)
 }
 
 // isDecimal says what somebody typed is an amount the server will take.

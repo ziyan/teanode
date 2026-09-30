@@ -156,7 +156,7 @@ func TestAPageOverTheBudgetIsPassedOver(t *testing.T) {
 	big := world.page(t, "projects/big-one", "Big One", opening, long, long)
 	small := world.page(t, "projects/small-one", "Small One", "A short one.", "Ships on Fridays.")
 
-	world.run.writeRecalled(context.Background(), []*models.AgentNode{first, big, small}, nil)
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{first, big, small}, nil, nil)
 
 	carried := world.overlay()
 	if !strings.Contains(carried, "projects/first-one") {
@@ -207,7 +207,7 @@ func TestTheOverlayCarriesEveryBlockThatWasMarkedAsUsed(t *testing.T) {
 		loose = append(loose, facts[0])
 	}
 
-	world.run.writeRecalled(context.Background(), nodes, loose)
+	world.run.writeRecalled(context.Background(), nodes, loose, nil)
 
 	carried := world.overlay()
 	// The first page the search offered is the one the turn most wants,
@@ -272,7 +272,7 @@ func TestAnIndexedPageStillGetsItsFacts(t *testing.T) {
 	// As carryIndex leaves it: the prompt already carries this page's line.
 	world.run.promptMemories[node.ID] = true
 
-	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, nil)
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, nil, nil)
 
 	carried := world.overlay()
 	if !strings.Contains(carried, "Runs on the Frankfurt cluster.") {
@@ -313,7 +313,7 @@ func TestAnExpandedPageShowsTheFactsTheQuestionHit(t *testing.T) {
 	// reach it.
 	hit := facts[9]
 
-	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, []*models.AgentFact{hit})
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, []*models.AgentFact{hit}, nil)
 
 	carried := world.overlay()
 	if !strings.Contains(carried, hit.Text) {
@@ -367,7 +367,7 @@ func TestAnExpandedPageShowsItsFactsInNumberOrder(t *testing.T) {
 	// enough; the page's first lines are not added to them.
 	hits := []*models.AgentFact{facts[9], facts[6]}
 
-	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, hits)
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, hits, nil)
 
 	carried := world.overlay()
 	shown := numbersShown(carried)
@@ -387,7 +387,7 @@ func TestAPageTheSearchDidNotHitShowsItsFirstFacts(t *testing.T) {
 	}
 	node := world.page(t, "projects/portal", "Portal", "The customer-facing portal.", written...)
 
-	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, nil)
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, nil, nil)
 
 	carried := world.overlay()
 	shown := numbersShown(carried)
@@ -433,7 +433,7 @@ func TestWhatThePageNoLongerSaysIsNotCarried(t *testing.T) {
 
 	// The search found it anyway, which is what its vector still being
 	// there means, and offered it as the page's best match.
-	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, []*models.AgentFact{struck})
+	world.run.writeRecalled(context.Background(), []*models.AgentNode{node}, []*models.AgentFact{struck}, nil)
 
 	carried := world.overlay()
 	if strings.Contains(carried, "Ships on Fridays.") {
@@ -477,7 +477,7 @@ func TestAMatchedFactIsCarriedPastPagesThatWouldSpendItAll(t *testing.T) {
 		"The API is served on a separate port because port 80 is taken.")
 	matched := world.factsOf(t, answer)
 
-	world.run.writeRecalled(context.Background(), months, matched)
+	world.run.writeRecalled(context.Background(), months, matched, nil)
 
 	carried := world.overlay()
 	if !strings.Contains(carried, "a separate port") {
@@ -506,7 +506,7 @@ func TestALongFactDoesNotEndTheFactsBehindIt(t *testing.T) {
 		"The API is served on a separate port because port 80 is taken.")
 	loose = append(loose, world.factsOf(t, answer)...)
 
-	world.run.writeRecalled(context.Background(), nil, loose)
+	world.run.writeRecalled(context.Background(), nil, loose, nil)
 
 	carried := world.overlay()
 	if !strings.Contains(carried, "a separate port") {
@@ -579,7 +579,7 @@ func TestLooseFactsGoInTogetherAndUnhitPagesAreBounded(t *testing.T) {
 		hits = append(hits, facts[len(facts)-1])
 	}
 
-	world.run.writeRecalled(context.Background(), unhit, append([]*models.AgentFact{boatFact}, hits...))
+	world.run.writeRecalled(context.Background(), unhit, append([]*models.AgentFact{boatFact}, hits...), nil)
 
 	carried := world.overlay()
 	if !strings.Contains(carried, "things/boat") {
@@ -608,5 +608,97 @@ func TestLooseFactsGoInTogetherAndUnhitPagesAreBounded(t *testing.T) {
 		if marked := world.markedFacts(t, page); len(marked) != 1 || marked[0].ID != fact.ID {
 			t.Fatalf("the loose fact %q is marked as used: %v", fact.Text, marked)
 		}
+	}
+}
+
+// An explained recall says what each search found and why each page and
+// fact was carried: the page the question hit carried with the overview
+// section its words point at, and the fact the search found shown on it.
+func TestExplainingARecallSaysWhatItCarriedAndWhy(t *testing.T) {
+	world := newRecallWorld(t)
+	portal := world.page(t, "projects/portal", "Portal", "The customer-facing portal.",
+		"Runs on the Frankfurt cluster.")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if err := tx.SetAgentNodeOverview(world.agent.ID, portal.ID,
+			"## What it is\n\nThe customer-facing portal.\n\n## How it relates\n\nBilling reads the cluster's accounts.",
+			[]models.Evidence{}, "inputs", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	pages, explanation, err := world.run.agent.ExplainRecall(context.Background(),
+		world.agent, world.run.settings.Owner, "which cluster does the portal run on, and what does billing read?")
+	if err != nil {
+		t.Fatalf("ExplainRecall: %s", err)
+	}
+	if len(pages) == 0 || len(explanation.Searches) != 5 {
+		t.Fatalf("%d pages carried, %d searches explained", len(pages), len(explanation.Searches))
+	}
+	var explained *RecallPageExplanation
+	for _, page := range explanation.Pages {
+		if page.Path == "projects/portal" {
+			explained = page
+		}
+	}
+	if explained == nil {
+		t.Fatalf("the page the question hit is not explained: %+v", explanation.Pages)
+	}
+	if explained.RecallDecision != RecallDecisionCarried || explained.WordsRank == 0 || explained.FusedRank == 0 ||
+		explained.HitFactCount != 1 || explained.CarriedFactCount != 1 || explained.TokenCount == 0 {
+		t.Errorf("the page's explanation: %+v", explained)
+	}
+	if explained.OverviewSectionHeading != "How it relates" || explained.SectionChoice != RecallSectionMatchedByWords {
+		t.Errorf("the section carried: %q because %q", explained.OverviewSectionHeading, explained.SectionChoice)
+	}
+	isShownOnPage := false
+	for _, fact := range explanation.Facts {
+		if fact.Reference == "projects/portal#1" && fact.RecallDecision == RecallDecisionShownOnPage && fact.WordsRank > 0 {
+			isShownOnPage = true
+		}
+	}
+	if !isShownOnPage {
+		t.Errorf("the fact the search found is not explained as shown on its page: %+v", explanation.Facts)
+	}
+	if explanation.TokensSpent == 0 || explanation.TokensSpent > explanation.TokenBudget {
+		t.Errorf("spent %d of %d", explanation.TokensSpent, explanation.TokenBudget)
+	}
+
+	// Recall without the explanation carries the same.
+	plain, err := world.run.agent.RecallForQuestion(context.Background(),
+		world.agent, world.run.settings.Owner, "which cluster does the portal run on, and what does billing read?")
+	if err != nil || len(plain) != len(pages) {
+		t.Fatalf("recall without the explanation carried %d pages, with it %d: %v", len(plain), len(pages), err)
+	}
+}
+
+// A message that refers to something indirectly is searched by what the
+// depth judgement planned as well as by its own words, and the page most
+// strongly linked to the top page comes along one hop: the message alone
+// names nothing the graph holds.
+func TestRecallFollowsThePlannedSearchesAndOneHop(t *testing.T) {
+	world := newRecallWorld(t)
+	policy := world.page(t, "things/car-insurance", "Car insurance", "The policy on the family car.",
+		"The car insurance renews every March.")
+	holder := world.page(t, "people/sam-example", "Sam Example", "A named driver.",
+		"Sam drives on weekends.")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if err := tx.PutAgentEdge(&models.AgentEdge{AgentID: world.agent.ID, FromID: holder.ID, ToID: policy.ID,
+			Relation: models.EdgeAboutPlace, Weight: 1}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	world.run.settings.Message = "who else is on it?"
+
+	world.run.recallForTurn(context.Background())
+	if carried := world.overlay(); strings.Contains(carried, "renews every March") {
+		t.Fatalf("the message alone found the policy:\n%s", carried)
+	}
+
+	world.run.recalled = nil
+	world.run.plannedSearches = []string{"car insurance"}
+	world.run.recallForTurn(context.Background())
+	carried := world.overlay()
+	if !strings.Contains(carried, "renews every March") || !strings.Contains(carried, "people/sam-example") {
+		t.Fatalf("the planned search and the hop were not followed:\n%s", carried)
 	}
 }

@@ -129,6 +129,26 @@ type overviewInputs struct {
 	// pageIdByPath is every page the prompt names, which is every page an
 	// answer may cite.
 	pageIdByPath map[string]string
+
+	// coverage is how much of what the page could be written from the
+	// prompt shows.
+	coverage OverviewCoverage
+}
+
+// OverviewCoverage is how much of what a page's overview could be written
+// from its prompt shows: of the pages under it, the members of a theme and
+// the pages linked to it, how many there are and how many were shown, the
+// most important and strongest first; and how many of those shown had no
+// overview of their own, so were shown by their opening alone.
+type OverviewCoverage struct {
+	ChildCount                 int `json:"childCount"`
+	ChildShownCount            int `json:"childShownCount"`
+	ChildWithoutOverviewCount  int `json:"childWithoutOverviewCount"`
+	MemberCount                int `json:"memberCount"`
+	MemberShownCount           int `json:"memberShownCount"`
+	MemberWithoutOverviewCount int `json:"memberWithoutOverviewCount"`
+	LinkCount                  int `json:"linkCount"`
+	LinkShownCount             int `json:"linkShownCount"`
 }
 
 // writeOverview writes one page's overview, and says whether it did.
@@ -157,6 +177,7 @@ func (self *Agent) writeOverview(ctx context.Context, run *Run, page *models.Age
 		"Members":           inputs.members,
 		"Links":             inputs.links,
 		"Files":             files,
+		"Coverage":          inputs.coverage,
 	})
 	if err != nil {
 		return false
@@ -186,6 +207,31 @@ func (self *Agent) writeOverview(ctx context.Context, run *Run, page *models.Age
 		return false
 	}
 	return true
+}
+
+// OverviewState is how a page's overview stands: how much of what it
+// could be written from its prompt shows now, and whether that has changed
+// since it was written. Counted by code, from the graph as it is.
+type OverviewState struct {
+	Coverage OverviewCoverage
+
+	// IsStale says what the overview is written from has changed since it
+	// was written, or a rewrite was asked for; the next dream writes it
+	// again.
+	IsStale bool
+}
+
+// OverviewStateOf reads how a page's overview stands.
+func OverviewStateOf(tx db.Transaction, agentId string, page *models.AgentNode) (*OverviewState, error) {
+	inputs, err := readOverviewInputs(tx, agentId, page)
+	if err != nil {
+		return nil, err
+	}
+	isStale, err := tx.IsAgentNodeOverviewStale(agentId, page.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &OverviewState{Coverage: inputs.coverage, IsStale: isStale}, nil
 }
 
 // readOverviewInputs reads what a page's overview is written from.
@@ -224,12 +270,17 @@ func readOverviewInputs(tx db.Transaction, agentId string, page *models.AgentNod
 		}
 	}
 	sort.SliceStable(live, func(left, right int) bool { return live[left].Importance > live[right].Importance })
+	inputs.coverage.ChildCount = len(live)
 	if len(live) > overviewChildCount {
 		live = live[:overviewChildCount]
 	}
+	inputs.coverage.ChildShownCount = len(live)
 	for _, child := range live {
 		inputs.pageIdByPath[child.Path] = child.ID
 		inputs.children = append(inputs.children, overviewOfPage(child))
+		if strings.TrimSpace(child.Overview) == "" {
+			inputs.coverage.ChildWithoutOverviewCount++
+		}
 	}
 
 	allEdges, err := tx.ListAgentEdges(agentId, page.ID)
@@ -273,15 +324,18 @@ func readOverviewInputs(tx db.Transaction, agentId string, page *models.AgentNod
 			}
 			return live[left].Path < live[right].Path
 		})
+		inputs.coverage.MemberCount = len(live)
 		if len(live) > overviewChildCount {
 			live = live[:overviewChildCount]
 		}
+		inputs.coverage.MemberShownCount = len(live)
 		for _, member := range live {
 			inputs.pageIdByPath[member.Path] = member.ID
 			said := overviewOfPage(member)
 			// A member with no overview yet is shown by its opening and
 			// its most wanted facts, so the theme need not wait for it.
 			if strings.TrimSpace(member.Overview) == "" {
+				inputs.coverage.MemberWithoutOverviewCount++
 				facts, err := tx.ListAgentFactsLively(agentId, member.ID, overviewMemberFactCount+5)
 				if err != nil {
 					return nil, err
@@ -299,9 +353,11 @@ func readOverviewInputs(tx db.Transaction, agentId string, page *models.AgentNod
 		}
 	}
 	sort.SliceStable(edges, func(left, right int) bool { return edges[left].Weight > edges[right].Weight })
+	inputs.coverage.LinkCount = len(edges)
 	if len(edges) > overviewLinkCount {
 		edges = edges[:overviewLinkCount]
 	}
+	inputs.coverage.LinkShownCount = len(edges)
 	otherIds := make([]string, 0, len(edges))
 	for _, edge := range edges {
 		if edge.FromID == page.ID {

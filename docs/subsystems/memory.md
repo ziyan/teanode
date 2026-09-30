@@ -741,9 +741,54 @@ background unless told to wait, and the conversation is woken with the report;
 `teanode agent survey` starts one with the `StartAgentSurvey` mutation and
 asks for it with `GetAgentBackgroundWork` until it is done, so no request is
 held open for the minutes it takes; the `SurveyAgentMemory` query still runs
-one in its request. Its runs are of kind survey.
-Recall carries the start of a chosen page's overview and a theme's
-reflections, and every prompt's index opens with the top-level themes.
+one in its request. Its runs are of kind survey. A survey asks at most forty
+pages, the most important first; the report ends with what it covered, what
+failed, and, counted by the code, how many pages in scope it left out over
+that limit and how many it did not ask because they have no overview yet, so
+an answer drawn from a selection does not read as one about everything.
+
+**What an overview covers.** An overview's prompt shows at most thirty of a
+page's children, of a theme's members and of its links, the most important
+and strongest first, and says so when there are more, so the overview does
+not describe the most important as the whole. `teanode agent memory overview`
+(the `AgentOverviewState` query) says how many of each there are and how
+many the prompt shows, how many of those shown had no overview of their own,
+and whether what the overview is written from has changed since it was
+written.
+
+**Recall.** Recall carries a chosen page's overview section and a theme's
+reflections, and every prompt's index opens with the top-level themes. Each
+overview section has a vector of its own, so a page is found by the section
+that answers the question, and the section carried is the one that matched,
+else the one sharing most of the question's words, else the first.
+`teanode agent memory recall --explain` says what each search found and
+why each page and fact was carried or left out.
+
+**Lessons from verified work.** After the pass that files what a
+conversation taught, the same stretch is read again with the commands run in
+it, each numbered with what it printed and its exit code, for what the work
+taught: when it applies, what worked, what to avoid, how it was verified. The
+code keeps a lesson only when a command it names ended with exit code 0, so
+what the assistant said about its work is never enough, and a stretch in which
+no command succeeded is not read at all. A lesson is a fact of kind `lesson`
+under `lessons/<topic>`, with the command as its evidence; one nearly the
+same in meaning as a lesson already filed is not filed again. A turn is shown
+the two lessons nearest its words, apart from the rest of recall; they are in
+the prompt only, so a turn that repeats one without running anything cannot
+file it again. The Claude Code and Codex sources keep only what was said, not
+the commands, so lessons come from the agent's own conversations.
+
+**The retrieval plan.** The same fast call that judges how deep a typed
+message deserves also says how to search for it: at most two focused
+searches for a message that refers to things indirectly or needs two things
+found, and whether it asks about a whole area. Recall fuses the planned
+searches with the message's own, follows the strongest links of the top page
+they found one hop, and for a question about a whole area counts the pages
+whose overview sections it matched twice and says a survey reads all of it.
+No model call is added, and the overlay's budget is the same. A survey whose
+scope holds more pages than it asks takes the ten most important whatever the
+question, then the pages whose own vector or overview sections are nearest
+the question, then the most important of the rest.
 
 **Which model does what.** The overviews, the reflections (the weekly one
 too) and each page's run of a survey are judgments, a few calls a night,

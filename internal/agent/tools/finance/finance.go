@@ -1,7 +1,7 @@
 // Package finance is the person's money as the agent reads and keeps it for
 // them: their finance sources (logins at banks, card issuers, brokerages and
-// lenders, linked through a provider), finance accounts and transactions,
-// exchange rates, net worth, spending categories and rules, budgets and
+// lenders, linked through a provider), finance accounts, transactions and
+// trades, exchange rates, net worth, spending categories and rules, budgets and
 // savings targets. Every operation calls the operation of the same name the
 // dashboard's Finance page and teanode finance call, so the three agree;
 // the tool has no logic of its own beyond saying where a browser is needed.
@@ -19,9 +19,6 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/client"
 )
-
-// financeLinkPagePath is the dashboard page that opens Plaid Link.
-const financeLinkPagePath = "/finance-link"
 
 // financeOperation is one operation of the tool: the finance area's
 // operation it calls, what it costs, the arguments it passes on, and
@@ -74,6 +71,10 @@ var operations = map[string]*financeOperation{
 	"transactions": {
 		graphqlOperation: "FinanceTransactions", risk: tools.RiskRead, isUntrusted: true, isMonthShorthand: true,
 		arguments: append([]string{"finance_account_id", "text", "minimum_amount", "maximum_amount", "provider_category", "spending_category_id", "is_uncategorized", "limit", "after"}, rangeArguments...),
+	},
+	"trades": {
+		graphqlOperation: "FinanceTrades", risk: tools.RiskRead, isUntrusted: true, isMonthShorthand: true,
+		arguments: append([]string{"finance_account_id", "finance_security_id", "limit", "after"}, rangeArguments...),
 	},
 	"spending_summary": {
 		graphqlOperation: "FinanceSpendingSummary", risk: tools.RiskRead, isUntrusted: true, isMonthShorthand: true,
@@ -344,6 +345,67 @@ func acceptedArguments(operation *financeOperation) []string {
 	return accepted
 }
 
+// dropUnreadArguments takes out the arguments the operation does not read,
+// as if they had not been sent, except the two kinds checkArguments exists
+// to refuse. Some models fill in every argument of the tool on every call:
+// the ones they have nothing for as "", [], null, false or 0, an argument
+// with a fixed list of values as the list's first value, and sometimes a
+// guess (asset_kind vehicle for assets); refusing those refused every call
+// such a model made, and it retried until it gave up. What is still refused:
+// an argument named the way people misname one the operation does read
+// (to_currency_code for currency_code), which once turned a month's
+// spending into all of time, and a setting only the person may change, each
+// when sent with something in it. An argument the operation reads keeps
+// what was sent, since empty may mean something there (an empty spending
+// category takes one away, is_transfer false unmarks a transfer), except
+// null, which says nothing anywhere.
+func dropUnreadArguments(operation *financeOperation, asked map[string]any) {
+	isAccepted := map[string]bool{"operation": true}
+	for _, key := range acceptedArguments(operation) {
+		isAccepted[key] = true
+	}
+	isPersonOnly := map[string]bool{}
+	for _, key := range PersonOnlyAssetArguments {
+		isPersonOnly[key] = true
+	}
+	for key, value := range asked {
+		if value == nil {
+			delete(asked, key)
+			continue
+		}
+		if isAccepted[key] {
+			continue
+		}
+		if meant, isKnown := argumentInsteadOf[key]; (isKnown && isAccepted[meant]) || isPersonOnly[key] {
+			if !isEmptyArgument(value) {
+				continue
+			}
+		}
+		delete(asked, key)
+	}
+}
+
+// isEmptyArgument says an argument was sent with nothing in it.
+func isEmptyArgument(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(typed) == ""
+	case []any:
+		return len(typed) == 0
+	case []string:
+		return len(typed) == 0
+	case bool:
+		return !typed
+	case float64:
+		return typed == 0
+	case int:
+		return typed == 0
+	}
+	return false
+}
+
 // checkArguments refuses a call with an argument its operation does not
 // read, naming it and the ones the operation takes. An argument quietly
 // ignored gives an answer to a question that was not asked: a month's
@@ -422,10 +484,12 @@ func spreadMonth(name string, asked map[string]any) error {
 }
 
 const description = "The person's money: their finance sources (logins at banks, card issuers, brokerages and lenders, linked through a provider), " +
-	"finance accounts and transactions, exchange rates, net worth (assets and their valuations), spending categories and rules, budgets and savings targets. " +
+	"finance accounts and transactions, trades in investment accounts, exchange rates, net worth (assets and their valuations), spending categories and rules, budgets and savings targets. " +
 	"Pick one `operation` and give only the arguments it takes: an argument the operation does not read is refused with the list it does. Ids come from the listing operations. " +
 	"Dates are 2026-09-01, months 2026-09; amounts are decimals, money out negative. " +
-	"`transactions`, `spending_summary`, `net_worth` and `cash_flow` take `month` as shorthand for that whole month; without a range they cover all of time (net_worth the last thirty days, cash_flow twelve months). " +
+	"A holding in an investment account is an asset with a financeSecurity, and its valuations carry heldQuantity, unitPrice and costBasis; the account's own asset holds its cash. " +
+	"`trades` lists buys, sells and securities moved in or out, which are never spending or income; dividends, interest, fees, deposits and withdrawals are finance transactions. " +
+	"`transactions`, `trades`, `spending_summary`, `net_worth` and `cash_flow` take `month` as shorthand for that whole month; without a range they cover all of time (net_worth the last thirty days, cash_flow twelve months). " +
 	"Totals come per currency and converted into the reporting currency (`reporting_currency` says which), or into `currency_code` where given, each amount at its own day's exchange rate, naming any currency left out for want of a rate; never add different currencies yourself.\n" +
 	"Linking: `providers` says what the server offers. `link_plaid` gives an address for the person to open in their browser, signed in to the dashboard; `repair` gives the address that signs a finance source in again when `sources` says isSignInRequired. " +
 	"A SimpleFIN setup token, or the credential of an existing provider connection (a Plaid access token, a SimpleFIN access URL), is never taken in conversation: `link_simplefin` and `import_credential` say where to give it.`sync`, `disable_source`, `enable_source` and `delete_source` act on a finance source by source_id; a switched-off source is switched on with enable_source before it syncs.\n" +
@@ -448,16 +512,17 @@ func init() {
 					"source_id":                   tools.StringProperty("a finance source, by the id sources gives"),
 					"finance_account_id":          tools.StringProperty("a finance account, by the id accounts gives"),
 					"finance_transaction_id":      tools.StringProperty("a finance transaction, by the id transactions gives"),
-					"from":                        tools.StringProperty("for transactions, spending_summary and net_worth: the first day, 2026-09-01"),
-					"to":                          tools.StringProperty("for transactions, spending_summary and net_worth: the last day, 2026-09-30"),
+					"finance_security_id":         tools.StringProperty("for trades: a security, by the financeSecurityId an asset or a trade gives"),
+					"from":                        tools.StringProperty("for transactions, trades, spending_summary and net_worth: the first day, 2026-09-01"),
+					"to":                          tools.StringProperty("for transactions, trades, spending_summary and net_worth: the last day, 2026-09-30"),
 					"text":                        tools.StringProperty("for transactions: words within the description or merchant"),
 					"minimum_amount":              tools.StringProperty("the least signed amount; money out is negative"),
 					"maximum_amount":              tools.StringProperty("the greatest signed amount"),
 					"provider_category":           tools.StringProperty("for transactions: the provider's category"),
 					"spending_category_id":        tools.StringProperty("a spending category, by its name or by the id spending_categories gives; for categorize_transaction empty takes it away"),
 					"is_uncategorized":            tools.BooleanProperty("for transactions: only the ones with no spending category that are not transfers"),
-					"limit":                       tools.IntegerProperty("for transactions: how many, at most 200"),
-					"after":                       tools.StringProperty("for transactions: the nextCursor of the page before"),
+					"limit":                       tools.IntegerProperty("for transactions and trades: how many, at most 200"),
+					"after":                       tools.StringProperty("for transactions and trades: the nextCursor of the page before"),
 					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),
 					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, spending_summary, net_worth, spending_by_day and cash_flow: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in"),
 					"from_currency_code":          tools.StringProperty("for exchange_rate and convert_currency: the currency converted from"),
@@ -488,7 +553,7 @@ func init() {
 					"should_create_spending_rule": tools.BooleanProperty("for categorize_transaction: also add a spending rule for its merchant, only when the person said yes"),
 					"monthly_amount":              tools.StringProperty("for set_budget: the amount a month; 0 ends the budget"),
 					"effective_from":              tools.StringProperty("for set_budget: the month it starts, 2026-10; this month when left out"),
-					"month":                       tools.StringProperty("a month, 2026-09. For budget_status and spending_by_day: the month, this one when left out. For transactions, spending_summary, net_worth and cash_flow: shorthand for that whole month, instead of from and to"),
+					"month":                       tools.StringProperty("a month, 2026-09. For budget_status and spending_by_day: the month, this one when left out. For transactions, trades, spending_summary, net_worth and cash_flow: shorthand for that whole month, instead of from and to"),
 					"compare_month":               tools.StringProperty("for spending_by_day: the month to compare with; the one before when left out"),
 					"from_month":                  tools.StringProperty("for cash_flow: the first month"),
 					"to_month":                    tools.StringProperty("for cash_flow: the last month"),
@@ -612,6 +677,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			"or runs `teanode finance import-credential --provider plaid` (or `simplefin`), which reads it from a file or without echoing. " +
 			"For Plaid, only a link made with this server's Plaid keys can be brought in."), nil
 	}
+	dropUnreadArguments(operation, asked)
 	if err := checkArguments(name, operation, asked); err != nil {
 		return nil, err
 	}
@@ -727,9 +793,9 @@ func emptyHint(name string, answered any) string {
 
 // linkAddress is the dashboard's linking page for the person to open.
 func linkAddress(current tools.Run, sourceId, instruction string) *tools.Result {
-	address := financeLinkPagePath
+	address := client.FinanceLinkPagePath
 	if base := current.Configuration().DashboardBase(); base != "" {
-		address = base + financeLinkPagePath
+		address = base + client.FinanceLinkPagePath
 	}
 	if sourceId != "" {
 		address += "?source=" + sourceId
@@ -783,7 +849,7 @@ func sourceOperation(ctx context.Context, executor tools.Operations, name, sourc
 		if err := executor.Execute(ctx, client.DocumentDeleteAgentKnowledgeSource, map[string]any{"sourceId": sourceId}, nil); err != nil {
 			return nil, err
 		}
-		return noted("deleted "+source.Name+" and its transactions, and ended it at its provider; its assets keep their history as manual ones, closed today", "deleted "+source.Name), nil
+		return noted("deleted "+source.Name+" and its transactions, and ended it at its provider; its assets keep their history as manual ones and no longer count from today", "deleted "+source.Name), nil
 	}
 }
 

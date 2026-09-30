@@ -171,7 +171,7 @@ func (self *Agent) EnsureVectorIndexes(ctx context.Context) error {
 			widths[modelName] = dimensions
 		}
 	}
-	tables := []db.VectorTable{db.AgentNodeTable, db.AgentFactTable, db.AgentChunkTable, db.MailEmbeddingTable}
+	tables := []db.VectorTable{db.AgentNodeTable, db.AgentFactTable, db.AgentOverviewSectionTable, db.AgentChunkTable, db.MailEmbeddingTable}
 	for model, dimension := range widths {
 		for _, table := range tables {
 			if err := database.EnsureVectorIndex(table, model, dimension); err != nil {

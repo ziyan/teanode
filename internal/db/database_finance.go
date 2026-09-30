@@ -44,6 +44,10 @@ type FinanceOperation interface {
 	// transactions, newest first, narrowed by the filter.
 	ListFinanceTransactions(agentId string, filter *FinanceTransactionFilter) (*FinanceTransactionPage, error)
 
+	// ListFinanceTrades is a page of the agent's trades, newest first,
+	// narrowed by the filter, each with its security.
+	ListFinanceTrades(agentId string, filter *FinanceTradeFilter) (*FinanceTradePage, error)
+
 	// ListUncategorizedFinanceTransactions is the agent's finance
 	// transactions with no spending category that the person has not
 	// decided about, that are not transfers, and that the categorize
@@ -120,9 +124,15 @@ type FinanceSyncApplied struct {
 	// neither the result nor the store knows, which were not written.
 	SkippedTransactionCount int
 
-	// RecordedValuationCount is the finance accounts whose balance was
-	// recorded as their asset's valuation for the day.
+	// RecordedValuationCount is the finance accounts and holdings whose
+	// value was recorded as their asset's valuation for the day.
 	RecordedValuationCount int
+
+	// WrittenTradeCount is the trades inserted or changed; one sent again
+	// unchanged is not counted. SkippedTradeCount is those for a finance
+	// account neither the result nor the store knows.
+	WrittenTradeCount int
+	SkippedTradeCount int
 
 	// FinanceTransactionIDsToCategorize are the inserted or changed finance
 	// transactions left without a spending category that are not
@@ -464,14 +474,18 @@ func (self *transaction) ApplyFinanceSync(agentId, sourceId string, syncResult *
 }
 
 func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *finance.SyncResult, syncedOn string) (*FinanceSyncApplied, error) {
-	var isSourceFound bool
-	if err := self.tx.Raw(`SELECT EXISTS (SELECT 1 FROM "agent_source" WHERE "id" = ? AND "agent_id" = ?)`, sourceId, agentId).
-		Scan(&isSourceFound).Error; err != nil {
+	// The provider is the source's type; securities are kept per provider.
+	var foundSources []struct {
+		ProviderKind string `gorm:"column:provider_kind"`
+	}
+	if err := self.tx.Raw(`SELECT COALESCE("specification"->>'type', '') AS "provider_kind" FROM "agent_source" WHERE "id" = ? AND "agent_id" = ?`,
+		sourceId, agentId).Scan(&foundSources).Error; err != nil {
 		return nil, err
 	}
-	if !isSourceFound {
+	if len(foundSources) == 0 {
 		return nil, ErrNotFound
 	}
+	providerKind := foundSources[0].ProviderKind
 
 	applied := &FinanceSyncApplied{
 		InsertedFinanceAccountIDs: []string{}, CreatedAssetIDs: []string{}, FinanceTransactionIDsToCategorize: []string{},
@@ -507,6 +521,39 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *
 	financeAccountIdByProviderAccountId := make(map[string]string, len(knownAccounts))
 	for _, known := range knownAccounts {
 		financeAccountIdByProviderAccountId[known.ProviderAccountID] = known.ID
+	}
+
+	securityIdByProviderSecurityId, err := self.upsertFinanceSecurities(agentId, providerKind, syncResult.Securities, now)
+	if err != nil {
+		return nil, err
+	}
+	namedSecurityIds := make([]string, 0, len(syncResult.Holdings)+len(syncResult.Trades))
+	for _, holding := range syncResult.Holdings {
+		namedSecurityIds = append(namedSecurityIds, holding.ProviderSecurityID)
+	}
+	for _, trade := range syncResult.Trades {
+		namedSecurityIds = append(namedSecurityIds, trade.ProviderSecurityID)
+	}
+	if err := self.knownFinanceSecurityIds(agentId, providerKind, namedSecurityIds, securityIdByProviderSecurityId); err != nil {
+		return nil, err
+	}
+	for _, trade := range syncResult.Trades {
+		financeAccountId, isKnown := financeAccountIdByProviderAccountId[trade.ProviderAccountID]
+		if !isKnown {
+			applied.SkippedTradeCount++
+			continue
+		}
+		var securityId *string
+		if knownSecurityId, isSecurityKnown := securityIdByProviderSecurityId[trade.ProviderSecurityID]; isSecurityKnown {
+			securityId = &knownSecurityId
+		}
+		isWritten, err := self.upsertFinanceTrade(agentId, financeAccountId, securityId, trade, now)
+		if err != nil {
+			return nil, err
+		}
+		if isWritten {
+			applied.WrittenTradeCount++
+		}
 	}
 
 	addedProviderTransactionIdsByFinanceAccountId := map[string][]string{}
@@ -573,8 +620,21 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *
 		}
 	}
 
+	holdingsApplied, err := self.applyFinanceHoldings(agentId, syncResult, financeAccountIdByProviderAccountId, reportedBalances,
+		securityIdByProviderSecurityId, syncedOn, now, applied)
+	if err != nil {
+		return nil, err
+	}
 	for _, financeAccountId := range reportedAccountIds {
+		if holdingsApplied.isValuationSkipped[financeAccountId] {
+			continue
+		}
 		account := reportedBalances[financeAccountId]
+		// An account whose holdings were read is worth its cash; the
+		// holdings are valued on their own assets.
+		if cashAccount, isRead := holdingsApplied.accountByFinanceAccountId[financeAccountId]; isRead {
+			account = cashAccount
+		}
 		isRecorded, err := self.recordFinanceSyncValuation(agentId, financeAccountId, account, syncedOn, now)
 		if err != nil {
 			return nil, err
@@ -735,6 +795,16 @@ func (self *transaction) upsertFinanceAccount(agentId, sourceId string, account 
 	return upserted.ID, upserted.IsInserted, nil
 }
 
+// retirementAccountSubtypes are Plaid's subtypes of an investment account
+// that is saved for retirement, in the United States and Canada and the
+// United Kingdom, where it names them.
+var retirementAccountSubtypes = map[string]bool{
+	"401a": true, "401k": true, "403b": true, "457b": true, "ira": true, "keogh": true, "pension": true,
+	"profit sharing plan": true, "retirement": true, "roth": true, "roth 401k": true, "sarsep": true, "sep ira": true,
+	"simple ira": true, "thrift savings plan": true, "lif": true, "lira": true, "lrif": true, "lrsp": true, "prif": true,
+	"rlif": true, "rrif": true, "rrsp": true, "sipp": true,
+}
+
 // assetKindForFinanceAccount is the kind of the asset made for a finance
 // account. Plaid says a loan is a mortgage only in the account's subtype,
 // which is in its provider metadata.
@@ -743,6 +813,12 @@ func assetKindForFinanceAccount(accountKind models.FinanceAccountKind, providerM
 	case models.FinanceAccountKindDepository:
 		return models.AssetKindCash
 	case models.FinanceAccountKindInvestment:
+		var described struct {
+			Subtype string `json:"subtype"`
+		}
+		if json.Unmarshal(providerMetadata, &described) == nil && retirementAccountSubtypes[strings.ToLower(described.Subtype)] {
+			return models.AssetKindRetirement
+		}
 		return models.AssetKindInvestment
 	case models.FinanceAccountKindCredit:
 		return models.AssetKindCreditCard
@@ -808,7 +884,7 @@ func (self *transaction) createFinanceSyncAsset(agentId, financeAccountId string
 	// made by hand has.
 	var detachedIds []string
 	if err := self.tx.Raw(`SELECT "id" FROM "agent_asset" AS "asset"
-		WHERE "agent_id" = ? AND "finance_account_id" IS NULL AND "valuation_source" = ?
+		WHERE "agent_id" = ? AND "finance_account_id" IS NULL AND "finance_security_id" IS NULL AND "valuation_source" = ?
 		  AND "asset_name" = ? AND "asset_kind" = ? AND "is_liability" = ? AND "currency_code" = ?
 		  AND EXISTS (SELECT 1 FROM "agent_asset_valuation" WHERE "asset_id" = "asset"."id" AND "valuation_source" = ?)
 		LIMIT 2`, agentId, string(models.ValuationSourceManual), model.AssetName, model.AssetKind, model.IsLiability,
@@ -838,23 +914,23 @@ func (self *transaction) recordFinanceSyncValuation(agentId, financeAccountId st
 	if strings.TrimSpace(account.CurrentBalance) == "" {
 		return false, nil
 	}
-	var found []agentAssetModel
-	if err := self.tx.Where(`"agent_id" = ? AND "finance_account_id" = ?`, agentId, financeAccountId).Limit(1).Find(&found).Error; err != nil {
+	found, err := self.financeAccountOwnAsset(agentId, financeAccountId)
+	if err != nil {
 		return false, err
 	}
-	if len(found) == 0 || found[0].ValuationSource != string(models.ValuationSourceFinanceSync) {
+	if found == nil || found.ValuationSource != string(models.ValuationSourceFinanceSync) {
 		return false, nil
 	}
-	value, err := financeValuationValue(account.CurrentBalance, found[0].IsLiability, account.IsOwedBalancePositive)
+	value, err := financeValuationValue(account.CurrentBalance, found.IsLiability, account.IsOwedBalancePositive)
 	if err != nil {
 		return false, err
 	}
 	currencyCode := account.CurrencyCode
 	if currencyCode == "" {
-		currencyCode = found[0].CurrencyCode
+		currencyCode = found.CurrencyCode
 	}
 	if _, err := self.upsertAssetValuation(&models.AssetValuation{
-		AgentID: agentId, AssetID: found[0].ID, ValuedOn: syncedOn, Value: value, CurrencyCode: currencyCode,
+		AgentID: agentId, AssetID: found.ID, ValuedOn: syncedOn, Value: value, CurrencyCode: currencyCode,
 		ValuationSource: models.ValuationSourceFinanceSync,
 	}, now); err != nil {
 		return false, err

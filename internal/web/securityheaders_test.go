@@ -67,7 +67,7 @@ func TestSecurityPolicyAllowsPlaidOnlyForTheFinanceLinkPage(t *testing.T) {
 		return recorder.Header().Get("Content-Security-Policy")
 	}
 
-	for _, path := range []string{"/", "/agent", "/finance-link/", web.CommandLinePagePath, web.DrawerPagePath} {
+	for _, path := range []string{"/", "/agent", "/finance/link/", "/finance", "/finance/accounts", web.CommandLinePagePath, web.DrawerPagePath} {
 		if policy := policyFor(path); strings.Contains(policy, "plaid") {
 			t.Errorf("%s names Plaid: %q", path, policy)
 		}

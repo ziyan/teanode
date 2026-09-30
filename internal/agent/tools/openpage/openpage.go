@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -105,6 +106,11 @@ func PagePath(written string) (string, error) {
 		}
 	}
 	path := strings.TrimSuffix(written, "/")
+	// Plaid's page runs only when loaded on its own, under its own policy;
+	// shown within the dashboard it would be a page that cannot work.
+	if path == client.FinanceLinkPagePath {
+		return "", fmt.Errorf("%q is Plaid's linking page, which opens in a window of its own; link an institution from the finance tool or the Finance page instead", written)
+	}
 	for _, prefix := range pagePrefixes {
 		if path == prefix || strings.HasPrefix(path, prefix+"/") {
 			return path, nil

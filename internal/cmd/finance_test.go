@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode"
@@ -226,6 +230,74 @@ func TestFinanceGroupByHeader(test *testing.T) {
 	} {
 		if have := groupByHeader(groupBy); have != wanted {
 			test.Errorf("%s: %q, not %q", groupBy, have, wanted)
+		}
+	}
+}
+
+// trades sends its flags in the API's spelling, a month spread into its
+// first and last day, and says when nothing matches.
+func TestFinanceTradesSendsItsFlags(test *testing.T) {
+	test.Parallel()
+	var mutex sync.Mutex
+	var asked []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var document struct {
+			Query     string         `json:"query"`
+			Variables map[string]any `json:"variables"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&document); err != nil || !strings.Contains(document.Query, "FinanceTrades(") {
+			response.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		mutex.Lock()
+		asked = append(asked, document.Variables)
+		mutex.Unlock()
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"data":{"FinanceTrades":{"financeTrades":[],"nextCursor":null}}}`))
+	}))
+	test.Cleanup(server.Close)
+
+	printed, err := runFinanceAgainst(test, server, "trades", "--month", "2026-02", "--finance-account", "account-one",
+		"--finance-security", "security-one", "--limit", "20", "--after", "cursor-one")
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(printed, "no trades match") {
+		test.Errorf("printed %q", printed)
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
+	if len(asked) != 1 {
+		test.Fatalf("sent %v", asked)
+	}
+	sent := asked[0]
+	if sent["from"] != "2026-02-01" || sent["to"] != "2026-02-28" || sent["financeAccountId"] != "account-one" ||
+		sent["financeSecurityId"] != "security-one" || sent["limit"] != float64(20) || sent["after"] != "cursor-one" {
+		test.Errorf("sent %v", sent)
+	}
+}
+
+// A holding's quantity and price read without the zeros their columns pad
+// them with, a price keeping the places finer than a cent it has.
+func TestFinanceHoldingDecimals(test *testing.T) {
+	test.Parallel()
+	for amount, wanted := range map[string]string{
+		"3.00000000": "3", "0.12500000": "0.125", "120": "120", "-2.50000000": "-2.5", "": "", "not a number.0": "not a number.0",
+	} {
+		if have := decimal(amount); have != wanted {
+			test.Errorf("decimal %q: %q, not %q", amount, have, wanted)
+		}
+	}
+	for _, example := range []struct{ amount, currencyCode, wanted string }{
+		{"101.25000000", "USD", "101.25 USD"},
+		{"101.00000000", "USD", "101.00 USD"},
+		{"0.01234500", "USD", "0.012345 USD"},
+		{"1500.00000000", "JPY", "1500 JPY"},
+		{"12.50000000", "", "12.50"},
+		{"", "USD", ""},
+	} {
+		if have := unitPrice(example.amount, example.currencyCode); have != example.wanted {
+			test.Errorf("unitPrice %q %s: %q, not %q", example.amount, example.currencyCode, have, example.wanted)
 		}
 	}
 }
