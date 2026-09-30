@@ -627,11 +627,11 @@ func TestExplainingARecallSaysWhatItCarriedAndWhy(t *testing.T) {
 	})
 
 	pages, explanation, err := world.run.agent.ExplainRecall(context.Background(),
-		world.agent, world.run.settings.Owner, "which cluster does the portal run on, and what does billing read?")
+		world.agent, world.run.settings.Owner, "which cluster does the portal run on, and what does billing read?", nil)
 	if err != nil {
 		t.Fatalf("ExplainRecall: %s", err)
 	}
-	if len(pages) == 0 || len(explanation.Searches) != 5 {
+	if len(pages) == 0 || len(explanation.Searches) != 5 || explanation.RetrievalMode != RetrievalModeBasic || len(explanation.Queries) != 1 {
 		t.Fatalf("%d pages carried, %d searches explained", len(pages), len(explanation.Searches))
 	}
 	var explained *RecallPageExplanation
@@ -643,7 +643,7 @@ func TestExplainingARecallSaysWhatItCarriedAndWhy(t *testing.T) {
 	if explained == nil {
 		t.Fatalf("the page the question hit is not explained: %+v", explanation.Pages)
 	}
-	if explained.RecallDecision != RecallDecisionCarried || explained.WordsRank == 0 || explained.FusedRank == 0 ||
+	if explained.RecallDecision != RecallDecisionCarried || !hasRank(explained.Ranks, RecallQueryMessage, "pages by words") || explained.FusedRank == 0 ||
 		explained.HitFactCount != 1 || explained.CarriedFactCount != 1 || explained.TokenCount == 0 {
 		t.Errorf("the page's explanation: %+v", explained)
 	}
@@ -652,7 +652,7 @@ func TestExplainingARecallSaysWhatItCarriedAndWhy(t *testing.T) {
 	}
 	isShownOnPage := false
 	for _, fact := range explanation.Facts {
-		if fact.Reference == "projects/portal#1" && fact.RecallDecision == RecallDecisionShownOnPage && fact.WordsRank > 0 {
+		if fact.Reference == "projects/portal#1" && fact.RecallDecision == RecallDecisionShownOnPage && hasRank(fact.Ranks, RecallQueryMessage, "facts by words") {
 			isShownOnPage = true
 		}
 	}
@@ -695,10 +695,130 @@ func TestRecallFollowsThePlannedSearchesAndOneHop(t *testing.T) {
 	}
 
 	world.run.recalled = nil
-	world.run.plannedSearches = []string{"car insurance"}
+	world.run.plan = &RetrievalPlan{Searches: []string{"car insurance"}}
 	world.run.recallForTurn(context.Background())
 	carried := world.overlay()
 	if !strings.Contains(carried, "renews every March") || !strings.Contains(carried, "people/sam-example") {
 		t.Fatalf("the planned search and the hop were not followed:\n%s", carried)
+	}
+}
+
+// hasRank says a page or fact was found by that list of that query.
+func hasRank(ranks []*RecallRank, queryId, searchName string) bool {
+	for _, rank := range ranks {
+		if rank.QueryID == queryId && rank.SearchName == searchName && rank.Rank > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// planWorld is a graph for a message that names nothing it holds: a policy
+// found only by a planned search, a driver linked to it, and a page the
+// message's own words find.
+func planWorld(t *testing.T) *recallWorld {
+	t.Helper()
+	world := newRecallWorld(t)
+	policy := world.page(t, "things/car-insurance", "Car insurance", "The policy on the family car.",
+		"The car insurance renews every March.")
+	holder := world.page(t, "people/sam-example", "Sam Example", "A named driver.",
+		"Sam drives on weekends.")
+	world.page(t, "topics/who-else", "Who else", "", "Who else came to the picnic is not written down.")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if err := tx.PutAgentEdge(&models.AgentEdge{AgentID: world.agent.ID, FromID: holder.ID, ToID: policy.ID,
+			Relation: models.EdgeAboutPlace, Weight: 1}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	return world
+}
+
+// carriedOf is what an explanation says recall carried: each page with its
+// facts, section and tokens, and each loose fact, in order.
+func carriedOf(explanation *RecallExplanation) string {
+	var lines []string
+	for _, page := range explanation.Pages {
+		lines = append(lines, fmt.Sprintf("page %s %s %d %s %d", page.Path, page.RecallDecision, page.CarriedFactCount, page.OverviewSectionHeading, page.TokenCount))
+	}
+	for _, fact := range explanation.Facts {
+		lines = append(lines, "fact "+fact.Reference+" "+fact.RecallDecision)
+	}
+	lines = append(lines, fmt.Sprintf("spent %d broad %v", explanation.TokensSpent, explanation.IsBroadNoteCarried))
+	return strings.Join(lines, "\n")
+}
+
+// A live turn and a replay given the same plan, on the same graph, carry
+// the same pages, facts, sections and tokens: they run one retrieval, and
+// the replay asks no model for the plan and marks nothing as used.
+func TestALiveTurnAndItsReplayCarryTheSame(t *testing.T) {
+	for _, plan := range []*RetrievalPlan{nil, {Searches: []string{"car insurance"}}, {Searches: []string{"car insurance"}, IsBroad: true}} {
+		world := planWorld(t)
+		const message = "who else is on it?"
+		// The replay first: it marks nothing as used, and the turn does,
+		// which changes how recently used pages rank for whatever runs
+		// after it.
+		_, replay, err := world.run.agent.ExplainRecall(context.Background(), world.agent, world.run.settings.Owner, message, plan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		world.run.settings.Message = message
+		world.run.plan = plan
+		live := &RecallExplanation{}
+		world.run.explanation = live
+		_ = world.run.carryIndex(context.Background(), indexTokens)
+		world.run.recallForTurn(context.Background())
+		if carriedOf(live) != carriedOf(replay) {
+			t.Errorf("plan %+v: the turn carried\n%s\nand the replay\n%s", plan, carriedOf(live), carriedOf(replay))
+		}
+	}
+}
+
+// Each query is named in the explanation, and a page is attributed to the
+// query that found it: the policy to the planned search, the driver to the
+// hop from it, with the fused rank beside each. Basic recall has the
+// message's query alone. A broad question is told a survey reads the area.
+func TestTheExplanationNamesEachQueryOfThePlan(t *testing.T) {
+	world := planWorld(t)
+	_, basic, err := world.run.agent.ExplainRecall(context.Background(), world.agent, world.run.settings.Owner, "who else is on it?", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if basic.RetrievalMode != RetrievalModeBasic || len(basic.Queries) != 1 || basic.Queries[0].QueryKind != RecallQueryMessage {
+		t.Errorf("basic recall: %s %+v", basic.RetrievalMode, basic.Queries)
+	}
+
+	plan := &RetrievalPlan{Searches: []string{"car insurance"}, IsBroad: true}
+	_, planned, err := world.run.agent.ExplainRecall(context.Background(), world.agent, world.run.settings.Owner, "who else is on it?", plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kinds []string
+	for _, query := range planned.Queries {
+		kinds = append(kinds, query.QueryID+":"+query.QueryText)
+	}
+	if strings.Join(kinds, " | ") != "message:who else is on it? | planned-1:car insurance | hop:things/car-insurance | broad:who else is on it?" {
+		t.Errorf("the queries: %s", strings.Join(kinds, " | "))
+	}
+	if planned.RetrievalMode != RetrievalModePlanned || !planned.IsBroadNoteCarried {
+		t.Errorf("planned recall: %s, broad note %v", planned.RetrievalMode, planned.IsBroadNoteCarried)
+	}
+	pages := map[string]*RecallPageExplanation{}
+	for _, page := range planned.Pages {
+		if pages[page.Path] != nil {
+			t.Errorf("%s is explained twice", page.Path)
+		}
+		pages[page.Path] = page
+	}
+	policy, driver := pages["things/car-insurance"], pages["people/sam-example"]
+	if policy == nil || policy.FusedRank == 0 || !hasRank(policy.Ranks, "planned-1", "pages by words") || hasRank(policy.Ranks, RecallQueryMessage, "pages by words") {
+		t.Errorf("the policy: %+v", policy)
+	}
+	if driver == nil || driver.FusedRank == 0 || !hasRank(driver.Ranks, RecallQueryHop, "pages linked to things/car-insurance") {
+		t.Errorf("the driver: %+v", driver)
+	}
+	for _, fact := range planned.Facts {
+		if fact.Reference == "things/car-insurance#1" && !hasRank(fact.Ranks, "planned-1", "facts by words") {
+			t.Errorf("the policy's fact is not attributed to the planned search: %+v", fact)
+		}
 	}
 }

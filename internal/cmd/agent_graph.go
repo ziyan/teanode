@@ -146,6 +146,8 @@ func newAgentGraphCommands() []*cli.Command {
 			ArgsUsage: "<question>",
 			Flags: []cli.Flag{JSONFlag(),
 				&cli.BoolFlag{Name: "explain", Usage: "say why as well: what each search found, where each page and fact ranked in each, and what carried it or kept it out"},
+				&cli.StringSliceFlag{Name: "search", Usage: "follow a retrieval plan, as a live turn follows its depth judgement's: a focused search beside the question's own words; at most two. No model is asked for a plan"},
+				&cli.BoolFlag{Name: "broad", Usage: "follow a retrieval plan for a question about a whole area: pages whose overview sections it matched count twice"},
 			},
 			Action: runAgentGraphRecall,
 		},
@@ -153,8 +155,10 @@ func newAgentGraphCommands() []*cli.Command {
 			Name:      "evaluate",
 			Usage:     "replay a set of questions through recall and say which ones got the facts they needed",
 			ArgsUsage: "<file>",
-			Flags:     []cli.Flag{JSONFlag()},
-			Action:    runAgentGraphEvaluate,
+			Flags: []cli.Flag{JSONFlag(),
+				&cli.StringFlag{Name: "mode", Value: "basic", Usage: "basic: each question's own search alone; planned: follow the retrieval plan a question in the file carries, as a live turn follows its depth judgement's. No model is asked for a plan"},
+			},
+			Action: runAgentGraphEvaluate,
 		},
 		{
 			Name: "answers",
@@ -166,6 +170,17 @@ func newAgentGraphCommands() []*cli.Command {
 				&cli.BoolFlag{Name: "stored", Usage: "grade against the memory check's questions on the server instead of a file, as the weekly run does; see 'agent memory check runs'"},
 			},
 			Action: runAgentGraphAnswers,
+		},
+		{
+			Name: "plan",
+			Usage: "ask the depth judgement what retrieval plan a live turn would follow for each question, and write the questions back with it, " +
+				"for evaluate --mode planned and answers --from memory@planned; one call to the fast model a question, priced as a run of kind evaluate",
+			ArgsUsage: "<file>",
+			Flags: []cli.Flag{JSONFlag(),
+				&cli.BoolFlag{Name: "stored", Usage: "plan the memory check's confirmed and corrected questions on the server instead of a file's"},
+				&cli.StringFlag{Name: "output", Usage: "the question file to write; the plans are printed alone when it is not given"},
+			},
+			Action: runAgentGraphPlan,
 		},
 		{
 			Name:  "check",
@@ -1629,6 +1644,10 @@ type evaluationQuestion struct {
 	// OutdatedAnswer is what was true once, for a changed question.
 	ExpectedAnswer string `json:"expectedAnswer,omitempty"`
 	OutdatedAnswer string `json:"outdatedAnswer,omitempty"`
+
+	// Plan is the retrieval plan a live turn would follow for the
+	// question, replayed with --mode planned.
+	Plan *client.AgentRetrievalPlan `json:"plan,omitempty"`
 }
 
 // evaluationClaim is a fact the question needs recall to carry, or must
@@ -1672,6 +1691,12 @@ type evaluationTotal struct {
 
 // evaluationReport is the whole run, for --json.
 type evaluationReport struct {
+	// RetrievalMode is how recall ran: basic, the question's own search
+	// alone, or planned, following each question's plan where it has one;
+	// PlannedCount is how many questions did follow a plan.
+	RetrievalMode string `json:"retrievalMode"`
+	PlannedCount  int    `json:"plannedCount"`
+
 	Questions []*evaluationResult `json:"questions"`
 	Totals    []*evaluationTotal  `json:"totals"`
 	Hits      int                 `json:"hits"`
@@ -1939,10 +1964,11 @@ func runAgentGraphRecall(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	plan := retrievalPlanOf(command)
 	if command.Bool("explain") {
-		return explainAgentGraphRecall(ctx, command, connection, question)
+		return explainAgentGraphRecall(ctx, command, connection, question, plan)
 	}
-	recalled, err := client.RecallAgentMemory(ctx, connection, question)
+	recalled, err := client.RecallAgentMemory(ctx, connection, question, plan)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -1975,11 +2001,22 @@ func runAgentGraphRecall(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
+// retrievalPlanOf is the plan the --search and --broad flags describe, or
+// nil for basic recall.
+func retrievalPlanOf(command *cli.Command) *client.AgentRetrievalPlan {
+	searches := command.StringSlice("search")
+	if len(searches) == 0 && !command.Bool("broad") {
+		return nil
+	}
+	return &client.AgentRetrievalPlan{Searches: searches, IsBroad: command.Bool("broad")}
+}
+
 // explainAgentGraphRecall prints why recall carried what it did for a
-// question: each search's count, then every page and every fact the
-// searches found, with its rank in each search and what became of it.
-func explainAgentGraphRecall(ctx context.Context, command *cli.Command, connection *client.Client, question string) error {
-	recalled, err := client.ExplainAgentRecall(ctx, connection, question)
+// question: the mode and plan, each query and what its lists found, then
+// every page and every fact the queries found, with its fused rank, its
+// rank in each list, and what became of it.
+func explainAgentGraphRecall(ctx context.Context, command *cli.Command, connection *client.Client, question string, plan *client.AgentRetrievalPlan) error {
+	recalled, err := client.ExplainAgentRecall(ctx, connection, question, plan)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -1992,19 +2029,21 @@ func explainAgentGraphRecall(ctx context.Context, command *cli.Command, connecti
 	}
 	explanation := recalled.Explanation
 	writer := command.Writer
-	rankText := func(rank int) string {
-		if rank == 0 {
-			return "-"
+	_, _ = fmt.Fprintf(writer, "retrieval %s\n", explanation.RetrievalMode)
+	for _, query := range explanation.Queries {
+		_, _ = fmt.Fprintf(writer, "\n%s (%s): %s\n", query.QueryID, query.QueryKind, query.QueryText)
+		for _, search := range explanation.Searches {
+			if search.QueryID == query.QueryID {
+				_, _ = fmt.Fprintf(writer, "  %-50s %d\n", search.SearchName, search.FoundCount)
+			}
 		}
-		return strconv.Itoa(rank)
 	}
-	for _, search := range explanation.Searches {
-		_, _ = fmt.Fprintf(writer, "%-26s %d\n", search.SearchName, search.FoundCount)
+	if explanation.IsBroadNoteCarried {
+		_, _ = fmt.Fprintln(writer, "\nthe turn is told a survey reads the whole area")
 	}
-	_, _ = fmt.Fprintf(writer, "tokens spent %d of %d\n\npages (rank fused, by words, by meaning, by section)\n", explanation.TokensSpent, explanation.TokenBudget)
+	_, _ = fmt.Fprintf(writer, "\ntokens spent %d of %d\n\npages (fused rank, then where each list put it)\n", explanation.TokensSpent, explanation.TokenBudget)
 	for _, page := range explanation.Pages {
-		line := fmt.Sprintf("%3d %3s %3s %3s  %-18s %s", page.FusedRank, rankText(page.WordsRank), rankText(page.MeaningRank),
-			rankText(page.SectionRank), page.RecallDecision, page.Path)
+		line := fmt.Sprintf("%3s  %-18s %s  [%s]", rankText(page.FusedRank), page.RecallDecision, page.Path, ranksText(page.Ranks))
 		if page.RecallDecision == "carried" {
 			line += fmt.Sprintf("  (%d facts, %d tokens", page.CarriedFactCount, page.TokenCount)
 			if page.OverviewSectionHeading != "" {
@@ -2016,12 +2055,28 @@ func explainAgentGraphRecall(ctx context.Context, command *cli.Command, connecti
 		}
 		_, _ = fmt.Fprintln(writer, line)
 	}
-	_, _ = fmt.Fprintln(writer, "\nfacts (rank fused, by words, by meaning)")
+	_, _ = fmt.Fprintln(writer, "\nfacts (fused rank, then where each list put it)")
 	for _, fact := range explanation.Facts {
-		_, _ = fmt.Fprintf(writer, "%3d %3s %3s  %-18s %s\n", fact.FusedRank, rankText(fact.WordsRank), rankText(fact.MeaningRank),
-			fact.RecallDecision, fact.Reference)
+		_, _ = fmt.Fprintf(writer, "%3s  %-18s %s  [%s]\n", rankText(fact.FusedRank), fact.RecallDecision, fact.Reference, ranksText(fact.Ranks))
 	}
 	return nil
+}
+
+// rankText is a rank, or a dash for none.
+func rankText(rank int) string {
+	if rank == 0 {
+		return "-"
+	}
+	return strconv.Itoa(rank)
+}
+
+// ranksText is where each list put a page or fact, as "query list #rank".
+func ranksText(ranks []*client.AgentRecallRank) string {
+	parts := make([]string, 0, len(ranks))
+	for _, rank := range ranks {
+		parts = append(parts, fmt.Sprintf("%s %s #%d", rank.QueryID, strings.TrimPrefix(strings.TrimPrefix(rank.SearchName, "pages "), "facts "), rank.Rank))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func runAgentGraphEvaluate(ctx context.Context, command *cli.Command) error {
@@ -2036,11 +2091,22 @@ func runAgentGraphEvaluate(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	report := &evaluationReport{Questions: make([]*evaluationResult, 0, len(questions)), Asked: len(questions)}
+	mode := command.String("mode")
+	if mode != "basic" && mode != "planned" {
+		return fmt.Errorf("--mode is basic or planned, not %q", mode)
+	}
+	report := &evaluationReport{RetrievalMode: mode, Questions: make([]*evaluationResult, 0, len(questions)), Asked: len(questions)}
 	for _, question := range questions {
-		recalled, err := client.RecallAgentMemory(ctx, connection, question.Question)
+		var plan *client.AgentRetrievalPlan
+		if command.String("mode") == "planned" {
+			plan = question.Plan
+		}
+		recalled, err := client.RecallAgentMemory(ctx, connection, question.Question, plan)
 		if err != nil {
 			return describeError(command, err)
+		}
+		if recalled != nil && recalled.RetrievalMode == "planned" {
+			report.PlannedCount++
 		}
 		var carried []*client.AgentRecalledPage
 		if recalled != nil {
@@ -2083,6 +2149,7 @@ func runAgentGraphEvaluate(ctx context.Context, command *cli.Command) error {
 		_, _ = fmt.Fprintf(command.Writer, "%s: %d of %d\n", total.Kind, total.Hits, total.Asked)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "all: %d of %d\n", report.Hits, report.Asked)
+	_, _ = fmt.Fprintf(command.Writer, "retrieval %s (%d of %d questions followed a plan)\n", report.RetrievalMode, report.PlannedCount, report.Asked)
 	return missedQuestions(report)
 }
 
@@ -2147,14 +2214,14 @@ func runAgentGraphAnswers(ctx context.Context, command *cli.Command) error {
 	for _, source := range strings.Split(command.String("from"), ",") {
 		source = strings.TrimSpace(source)
 		switch source {
-		case "memory", "sources", "both":
+		case "memory", "sources", "both", "memory@planned", "both@planned":
 			sources = append(sources, source)
 		case "agent", "agent@low", "agent@medium", "agent@high",
 			"agent+research", "agent@low+research", "agent@medium+research", "agent@high+research":
 			sources = append(sources, source)
 		case "":
 		default:
-			return fmt.Errorf("--from %q: memory, sources, both, or the agent's own turn: agent, agent@low, agent@medium, agent@high", source)
+			return fmt.Errorf("--from %q: memory, sources, both, memory@planned or both@planned (following each question's plan; see agent memory plan), or the agent's own turn: agent, agent@low, agent@medium, agent@high", source)
 		}
 	}
 	connection, err := openClient(command)
@@ -2180,7 +2247,18 @@ func runAgentGraphAnswers(ctx context.Context, command *cli.Command) error {
 			continue
 		}
 		for _, source := range sources {
-			evaluated, err := client.EvaluateAgentAnswer(ctx, connection, question.Question, question.ExpectedAnswer, question.OutdatedAnswer, source)
+			// A question the judgement gave no plan is answered as basic
+			// recall would answer it: that is what a live turn does with it.
+			answerFrom := source
+			var plan *client.AgentRetrievalPlan
+			if strings.HasSuffix(source, "@planned") {
+				plan = question.Plan
+				if plan == nil || (len(plan.Searches) == 0 && !plan.IsBroad) {
+					answerFrom = strings.TrimSuffix(source, "@planned")
+					plan = nil
+				}
+			}
+			evaluated, err := client.EvaluateAgentAnswer(ctx, connection, question.Question, question.ExpectedAnswer, question.OutdatedAnswer, answerFrom, plan)
 			if err != nil {
 				return describeError(command, err)
 			}
@@ -2401,6 +2479,102 @@ func runKnowledgeSecretClear(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "forgot %s for %s\n", command.Args().Get(1), source.Name)
+	return nil
+}
+
+// plannedQuestion is one question's judged plan, as plan prints it.
+type plannedQuestion struct {
+	ID          string                     `json:"id"`
+	Depth       string                     `json:"depth"`
+	DepthReason string                     `json:"depthReason"`
+	Plan        *client.AgentRetrievalPlan `json:"plan,omitempty"`
+	Cost        float64                    `json:"cost"`
+	Currency    string                     `json:"currency"`
+}
+
+func runAgentGraphPlan(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	var questions []evaluationQuestion
+	if command.Bool("stored") {
+		stored, err := client.ListAgentEvaluationQuestions(ctx, connection, []string{"confirmed", "corrected"})
+		if err != nil {
+			return describeError(command, err)
+		}
+		for _, question := range stored {
+			kind := question.QuestionKind
+			if !knownQuestionKind(kind) {
+				kind = questionDirect
+			}
+			questions = append(questions, evaluationQuestion{
+				ID: question.ID, Question: question.QuestionText, Kind: kind,
+				ExpectedAnswer: question.ExpectedAnswer, OutdatedAnswer: question.OutdatedAnswer,
+			})
+		}
+		if len(questions) == 0 {
+			return fmt.Errorf("the memory check has no confirmed or corrected questions yet")
+		}
+	} else {
+		if command.Args().Len() < 1 {
+			return fmt.Errorf("which question set? teanode agent memory plan <file>, or --stored")
+		}
+		if questions, err = readQuestionSet(command.Args().First()); err != nil {
+			return err
+		}
+	}
+	planned := make([]*plannedQuestion, 0, len(questions))
+	var cost float64
+	var currency string
+	for index := range questions {
+		question := &questions[index]
+		judged, err := client.JudgeAgentRetrievalPlan(ctx, connection, question.Question)
+		if err != nil {
+			return describeError(command, err)
+		}
+		// A question the judgement gave no plan keeps none: a live turn
+		// answers it with the question's own search alone.
+		question.Plan = nil
+		if len(judged.PlannedSearches) > 0 || judged.IsBroad {
+			question.Plan = &client.AgentRetrievalPlan{Searches: judged.PlannedSearches, IsBroad: judged.IsBroad}
+		}
+		planned = append(planned, &plannedQuestion{
+			ID: question.ID, Depth: judged.Depth, DepthReason: judged.DepthReason, Plan: question.Plan,
+			Cost: judged.Cost, Currency: judged.Currency,
+		})
+		cost += judged.Cost
+		currency = judged.Currency
+		if !command.Bool("json") {
+			searches := "no plan"
+			if question.Plan != nil {
+				searches = strings.Join(question.Plan.Searches, "; ")
+				if question.Plan.IsBroad {
+					searches = strings.TrimPrefix(searches+"; broad", "; ")
+				}
+			}
+			_, _ = fmt.Fprintf(command.Writer, "%-14s %-7s %s\n", question.ID, judged.Depth, firstRunesOf(searches, 100))
+		}
+	}
+	if output := command.String("output"); output != "" {
+		content, err := json.MarshalIndent(questions, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(output, append(content, '\n'), 0o600); err != nil {
+			return err
+		}
+	}
+	if command.Bool("json") {
+		return PrintJSON(planned)
+	}
+	withPlan := 0
+	for _, question := range planned {
+		if question.Plan != nil {
+			withPlan++
+		}
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%d of %d questions have a plan; %.4f %s\n", withPlan, len(planned), cost, currency)
 	return nil
 }
 

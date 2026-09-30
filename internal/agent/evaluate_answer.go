@@ -76,7 +76,20 @@ type AnswerEvaluation struct {
 // person gave. Both calls are runs of kind evaluate, so they are listed
 // and priced like any other call and never touch the conversations or
 // the graph.
-func (self *Agent) EvaluateAnswer(ctx context.Context, found *models.Agent, owner *models.User, question, expectedAnswer, outdatedAnswer, answerFrom string) (*AnswerEvaluation, error) {
+//
+// memory@planned and both@planned recall following the plan given, as a
+// live turn follows its depth judgement's; no model is asked for one.
+func (self *Agent) EvaluateAnswer(ctx context.Context, found *models.Agent, owner *models.User, question, expectedAnswer, outdatedAnswer, answerFrom string, plan *RetrievalPlan) (*AnswerEvaluation, error) {
+	answerFrom, isPlanned := strings.CutSuffix(answerFrom, answerFromPlanned)
+	if isPlanned && (answerFrom == AnswerFromMemory || answerFrom == AnswerFromBoth) {
+		if plan.isEmpty() {
+			return nil, fmt.Errorf("a planned answer needs a retrieval plan: planned searches or a broad question")
+		}
+	} else if isPlanned {
+		return nil, fmt.Errorf("only memory and both answer from a retrieval plan")
+	} else {
+		plan = nil
+	}
 	question = strings.TrimSpace(question)
 	if question == "" || strings.TrimSpace(expectedAnswer) == "" {
 		return nil, fmt.Errorf("a question and its expected answer are both needed")
@@ -105,13 +118,19 @@ func (self *Agent) EvaluateAnswer(ctx context.Context, found *models.Agent, owne
 		for _, line := range self.selfPageLines(ctx, found, owner) {
 			memory = append(memory, models.PathSelf+": "+strings.TrimPrefix(line, "- "))
 		}
-		recalled, err := self.RecallForQuestion(ctx, found, owner, question)
+		recalled, err := self.RecallForQuestionPlanned(ctx, found, owner, question, plan)
 		if err != nil {
 			return nil, err
 		}
 		for _, page := range recalled {
 			if page.Summary != "" {
 				memory = append(memory, page.Path+": "+page.Summary)
+			}
+			// The overview section the turn would carry. Left out, the
+			// answer was graded against less than a turn is shown, and
+			// whether the overviews help could not be measured at all.
+			if page.Overview != "" {
+				memory = append(memory, page.Path+": "+strings.ReplaceAll(page.Overview, "\n", " "))
 			}
 			for _, fact := range page.Facts {
 				memory = append(memory, fmt.Sprintf("%s: %s", page.Path, fact.Line()))
@@ -237,6 +256,10 @@ func (self *Agent) costOfRuns(ctx context.Context, thoughts ...*thought) float64
 // agentEffortOf reads "agent", "agent@high" or "agent@high+research":
 // whether an answer is the agent's own turn, at what effort, and whether
 // it is given the research procedure.
+// answerFromPlanned is what memory or both end in to follow a retrieval
+// plan.
+const answerFromPlanned = "@planned"
+
 func agentEffortOf(answerFrom string) (string, bool, bool) {
 	answerFrom, research := strings.CutSuffix(answerFrom, "+research")
 	name, effort, _ := strings.Cut(answerFrom, "@")

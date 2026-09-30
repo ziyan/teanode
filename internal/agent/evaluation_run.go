@@ -160,7 +160,7 @@ answering:
 				break answering
 			}
 			answer := &models.AgentEvaluationAnswer{RunID: evaluation.ID, QuestionID: question.ID, AnswerFrom: answerFrom}
-			evaluated, err := self.EvaluateAnswer(ctx, run.Agent, run.Owner, question.QuestionText, question.ExpectedAnswer, question.OutdatedAnswer, answerFrom)
+			evaluated, err := self.EvaluateAnswer(ctx, run.Agent, run.Owner, question.QuestionText, question.ExpectedAnswer, question.OutdatedAnswer, answerFrom, nil)
 			if err != nil {
 				if ctx.Err() != nil {
 					return err

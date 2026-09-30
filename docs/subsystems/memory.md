@@ -785,7 +785,11 @@ found, and whether it asks about a whole area. Recall fuses the planned
 searches with the message's own, follows the strongest links of the top page
 they found one hop, and for a question about a whole area counts the pages
 whose overview sections it matched twice and says a survey reads all of it.
-No model call is added, and the overlay's budget is the same. A survey whose
+No model call is added, and the overlay's budget is the same. A turn and
+`agent memory recall` run the same code for the same plan, so a question
+and its plan replayed through the command carry what the turn carried,
+against the graph as it is now; `recall --explain` names each query of the
+plan and where each page ranked in it. A survey whose
 scope holds more pages than it asks takes the ten most important whatever the
 question, then the pages whose own vector or overview sections are nearest
 the question, then the most important of the rest.
