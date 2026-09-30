@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.84.0] - 2026-09-30
+
+### Added
+
+- The agent links a page of its memory it names in an answer, and the link opens that page on the Knowledge page. (#238)
+- In the dashboard's drawer, the agent can take you to a page of the dashboard when you ask to be shown one. (#238)
+
+### Changed
+
+- In Telegram and Discord, a message or memory page the agent links opens in the dashboard instead of showing as plain words. (#238)
+
 ## [0.83.3] - 2026-09-30
 
 ### Changed
