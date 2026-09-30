@@ -6,6 +6,24 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.87.4] - 2026-09-30
+
+### Fixed
+
+- The agent can use the finance tool with models that send every argument on every call. (#252)
+
+## [0.87.3] - 2026-09-30
+
+### Fixed
+
+- Moving an institution to another provider no longer counts its accounts twice in net worth on the day of the move. (#251)
+
+## [0.87.2] - 2026-09-30
+
+### Changed
+
+- Plaid's linking page is now at `/finance/link`. A link to the old `/finance-link` address, from a command started before the upgrade, no longer opens it; run the command again. (#247)
+
 ## [0.87.1] - 2026-09-30
 
 ### Fixed

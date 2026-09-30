@@ -49,7 +49,7 @@ tool and the dashboard.
 
 **Plaid** needs the operator's client id and secret (`agent.finance.plaid`,
 the secret sealed like every other provider key). A person links through
-Plaid's own window, which runs on the dashboard page `/finance-link`; that
+Plaid's own window, which runs on the dashboard page `/finance/link`; that
 page alone has a security policy that lets it load Plaid's script, frame
 Plaid's page and reach Plaid's API. The server exchanges the one-time token
 the window returns for the credential and keeps it as a secret of the new
@@ -108,12 +108,13 @@ what is still uncategorized, the categorize job queued for the rest, and
 budget alert candidates written.
 
 Deleting a finance source removes it at the provider first (best effort), keeps
-its assets' history by turning them into manual assets closed on the day of the
-delete, in the person's time zone, and then deletes the source, which removes
-its finance accounts and finance transactions. Closing them stops net worth
-carrying the last balance forward for an account nothing values any more. An
-asset the person had already closed keeps its day. Linking the institution
-again takes back and opens each asset whose account comes back under the same
+its assets' history by turning them into manual assets closed on the day before
+the delete, in the person's time zone, and then deletes the source, which
+removes its finance accounts and finance transactions. Closing them stops net
+worth carrying the last balance forward for an account nothing values any more,
+from the day of the delete: an institution moved to the other provider and
+linked again that day counts each account once. An asset the person had
+already closed keeps its day. Linking the institution again takes back and opens each asset whose account comes back under the same
 name, kind, side and currency, when exactly one detached asset matches; any
 other account starts a new asset, and none is counted twice. Deleting an agent
 removes its assets with everything else.
@@ -240,7 +241,7 @@ the setup.
 The **agent page's Finance tab** (`web/src/pages/agentFinance.tsx`,
 `/settings/agent/finance`) is the setup: the finance sources (link, repair,
 bring an existing connection in, sync, switch, delete) and the settings (the
-reporting currency and the converter), in one scroll. `/finance-link`, the
+reporting currency and the converter), in one scroll. `/finance/link`, the
 page Plaid's window runs on, comes back to it. The addresses the sections had
 under the tab before they moved (`/settings/agent/finance/spending` and the
 rest) open the tab and are not sent on to the Finance page.

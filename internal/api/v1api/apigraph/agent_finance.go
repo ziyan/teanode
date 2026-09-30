@@ -563,6 +563,11 @@ func personToday(principal *api.Principal) string {
 	return time.Now().In(agent.Location(principal.User)).Format(time.DateOnly)
 }
 
+// personYesterday is the day before personToday.
+func personYesterday(principal *api.Principal) string {
+	return time.Now().In(agent.Location(principal.User)).AddDate(0, 0, -1).Format(time.DateOnly)
+}
+
 // dayArgument is a day written 2006-01-02, or the fallback when empty.
 func dayArgument(name, value, fallback string) (string, error) {
 	value = strings.TrimSpace(value)
