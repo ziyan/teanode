@@ -332,3 +332,16 @@ func TestAPageTakesItsAliases(test *testing.T) {
 		test.Errorf("--alias is a list flag, so that it can be given more than once")
 	}
 }
+
+// What an overview covers is said from the counts, and a stale one says
+// the counts are of what it would be written from now.
+func TestAnOverviewSaysWhatItCovers(t *testing.T) {
+	current := describeOverviewState(&client.AgentOverviewState{ChildCount: 47, ChildShownCount: 30, ChildWithoutOverviewCount: 8, LinkCount: 12, LinkShownCount: 12})
+	if current != "Written from its facts and 30 of the 47 pages under it (8 of them by their opening alone, having no overview yet), all 12 links." {
+		t.Errorf("current: %q", current)
+	}
+	stale := describeOverviewState(&client.AgentOverviewState{IsOverviewStale: true})
+	if stale != "What it would be written from now: its facts. That has changed since it was written; the next dream writes it again." {
+		t.Errorf("stale: %q", stale)
+	}
+}

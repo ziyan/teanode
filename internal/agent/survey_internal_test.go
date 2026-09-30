@@ -385,3 +385,58 @@ func TestTheSurveyToolAnswersWithTheReport(t *testing.T) {
 		t.Errorf("a refused survey made %d calls", len(bodiesAfter)-len(bodiesBefore))
 	}
 }
+
+// A survey says what in its scope it did not ask: the pages over its limit,
+// the least important, and the pages with no overview yet, counted by the
+// code, so an answer from a selection does not read as one about everything.
+func TestASurveySaysWhatItLeftOut(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	t.Cleanup(release)
+	_, run := digestSplitWorld(t, database, "http://127.0.0.1:1")
+	agentId := run.Agent.ID
+	written := "## What it is\n\nA part of the orchard."
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		surveyPageFor(t, tx, agentId, "projects/orchard", written, 0.9)
+		for index := 0; index < surveyPageCount+5; index++ {
+			surveyPageFor(t, tx, agentId, fmt.Sprintf("projects/orchard/row-%02d", index), written, 0.5)
+		}
+		for index := 0; index < 3; index++ {
+			surveyPageFor(t, tx, agentId, fmt.Sprintf("projects/orchard/unwritten-%d", index), "", 0.5)
+		}
+	})
+	var scope *surveyScope
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if scope, err = resolveSurveyScope(tx, agentId, "projects/orchard"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if len(scope.pages) != surveyPageCount || scope.eligiblePageCount != surveyPageCount+6 ||
+		scope.overLimitPageCount != 6 || scope.withoutOverviewPageCount != 3 {
+		t.Fatalf("asked %d, eligible %d, over the limit %d, without an overview %d",
+			len(scope.pages), scope.eligiblePageCount, scope.overLimitPageCount, scope.withoutOverviewPageCount)
+	}
+
+	coveredPaths := make([]string, 0, len(scope.pages))
+	for _, page := range scope.pages {
+		coveredPaths = append(coveredPaths, page.page.Path)
+	}
+	coverage := surveyCoverage(&SurveyReport{CoveredPaths: coveredPaths[1:], FailedPaths: coveredPaths[:1],
+		EligiblePageCount: scope.eligiblePageCount, OverLimitPageCount: scope.overLimitPageCount,
+		WithoutOverviewPageCount: scope.withoutOverviewPageCount})
+	for _, said := range []string{
+		fmt.Sprintf("Asked %d of the %d pages in scope that have an overview.", surveyPageCount, surveyPageCount+6),
+		fmt.Sprintf("6 more were left out, the least important, over this survey's limit of %d pages.", surveyPageCount),
+		"3 pages in scope have no overview yet and were not asked.",
+		"Not covered, the run did not finish:",
+	} {
+		if !strings.Contains(coverage, said) {
+			t.Errorf("the coverage does not say %q:\n%s", said, coverage)
+		}
+	}
+
+	// A survey that asked everything in scope says nothing more.
+	if full := surveyCoverage(&SurveyReport{CoveredPaths: coveredPaths, EligiblePageCount: len(coveredPaths)}); strings.Contains(full, "Asked") {
+		t.Errorf("a complete survey spoke of what it left out:\n%s", full)
+	}
+}

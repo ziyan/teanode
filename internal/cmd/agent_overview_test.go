@@ -44,6 +44,10 @@ func overviewServer(test *testing.T) (*httptest.Server, func() []string) {
 				`"overview":"## What it is\n\nAn app that reads seed catalogues.","overviewWrittenAt":"2030-01-02T10:00:00Z"},` +
 				`"facts":[{"id":"f1","number":1,"kind":"fact","text":"Written in Go.","evidence":[],"audiences":[],"createdAt":"2030-01-01T10:00:00Z"}],` +
 				`"edges":[],"children":[],"contact":null}}}`))
+		case strings.Contains(document.Query, "AgentOverviewState"):
+			_, _ = response.Write([]byte(`{"data":{"AgentOverviewState":{"path":"projects/example-app","overviewWrittenAt":"2030-01-02T10:00:00Z",` +
+				`"isOverviewStale":false,"childCount":47,"childShownCount":30,"childWithoutOverviewCount":8,` +
+				`"memberCount":0,"memberShownCount":0,"memberWithoutOverviewCount":0,"linkCount":3,"linkShownCount":3}}}`))
 		case strings.Contains(document.Query, "ListAgentDreams"):
 			_, _ = response.Write([]byte(`{"data":{"ListAgentDreams":[{"id":"d1","startedAt":"2030-01-02T02:00:00Z","finishedAt":"2030-01-02T02:30:00Z",` +
 				`"rewritten":2,"overviewsWritten":7,"proposals":[]}]}}`))
@@ -96,6 +100,9 @@ func TestTheOverviewIsShownAndCanBeAskedForAgain(test *testing.T) {
 	alone := runAgainst(test, server, "memory", "overview", "projects/example-app")
 	if !strings.Contains(alone, "## What it is") || strings.Contains(alone, "Written in Go.") {
 		test.Errorf("the overview command shows the overview and nothing else:\n%s", alone)
+	}
+	if !strings.Contains(alone, "30 of the 47 pages under it") {
+		test.Errorf("the overview command says what the overview covers:\n%s", alone)
 	}
 
 	asked := runAgainst(test, server, "memory", "overview", "projects/example-app", "--rewrite")

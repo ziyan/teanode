@@ -557,15 +557,53 @@ func runAgentGraphOverview(ctx context.Context, command *cli.Command) error {
 	if page == nil || page.Node == nil {
 		return fmt.Errorf("there is no page at %s", path)
 	}
+	state, err := client.GetAgentOverviewState(ctx, connection, path)
+	if err != nil {
+		return describeError(command, err)
+	}
 	if command.Bool("json") {
-		return PrintJSON(map[string]any{"path": page.Node.Path, "overview": page.Node.Overview, "overviewWrittenAt": page.Node.OverviewWrittenAt})
+		return PrintJSON(map[string]any{"path": page.Node.Path, "overview": page.Node.Overview, "overviewWrittenAt": page.Node.OverviewWrittenAt,
+			"overviewState": state})
 	}
 	if strings.TrimSpace(page.Node.Overview) == "" {
 		_, _ = fmt.Fprintf(command.Writer, "%s has no overview yet: a dream writes one for a page with at least three facts or pages under it\n", page.Node.Path)
 		return nil
 	}
 	printOverview(command, page.Node)
+	if state != nil {
+		_, _ = fmt.Fprintf(command.Writer, "\n%s\n", describeOverviewState(state))
+	}
 	return nil
+}
+
+// describeOverviewState says in a line or two what an overview covers and
+// whether it is current, from the counts the server made.
+func describeOverviewState(state *client.AgentOverviewState) string {
+	var parts []string
+	shown := func(shownCount, count, withoutOverviewCount int, noun string) {
+		if count == 0 {
+			return
+		}
+		part := fmt.Sprintf("%d of the %d %s", shownCount, count, noun)
+		if shownCount == count {
+			part = fmt.Sprintf("all %d %s", count, noun)
+		}
+		if withoutOverviewCount > 0 {
+			part += fmt.Sprintf(" (%d of them by their opening alone, having no overview yet)", withoutOverviewCount)
+		}
+		parts = append(parts, part)
+	}
+	shown(state.ChildShownCount, state.ChildCount, state.ChildWithoutOverviewCount, "pages under it")
+	shown(state.MemberShownCount, state.MemberCount, state.MemberWithoutOverviewCount, "pages in the theme")
+	shown(state.LinkShownCount, state.LinkCount, 0, "links")
+	inputs := "its facts"
+	if len(parts) > 0 {
+		inputs += " and " + strings.Join(parts, ", ")
+	}
+	if state.IsOverviewStale {
+		return "What it would be written from now: " + inputs + ". That has changed since it was written; the next dream writes it again."
+	}
+	return "Written from " + inputs + "."
 }
 
 func runAgentGraphGet(ctx context.Context, command *cli.Command) error {

@@ -22,7 +22,7 @@ After this plan, recall finds and carries the section of an overview that answer
 - [x] (2026-09-30) The recall API returns the overview section it carried, and the recall evaluation counts a claim met by it. Deployed, so the baseline below is measured by the same code as the change.
 - [x] (2026-09-30) Baseline on a held-out set of 30 questions, each answered by one later section of an overview: recall carried what 6 needed; 21 reached the page.
 - [x] (2026-09-30) Milestone 1: overview sections as retrieval records, and recall carrying the matching section. Held-out set 6 to 15 of 30.
-- [ ] Milestone 2: coverage and freshness counted and shown for overviews and surveys.
+- [x] (2026-09-30) Milestone 2: a survey's report ends with the pages in scope it left out over its limit and those without an overview, and the survey view carries the counts; an overview's prompt says when it shows only the most important of a page's children, members or links; `teanode agent memory overview` and the `AgentOverviewState` query say how many of each there are and are shown, and whether the overview is stale. Nothing is stored: the counts are read from the graph as it is.
 - [ ] Milestone 3: a retrieval plan bounded by the effort already decided for the turn; question-aware survey selection.
 - [ ] Milestone 4: execution lessons as their own records, from verified outcomes only.
 - [x] (2026-09-30) Milestone 5: `teanode agent memory recall --explain`, and `isExplained` on the `RecallAgentMemory` query: each search's count, every page and fact found with its rank in each search and once fused, and what carried or excluded it; recorded only when asked.

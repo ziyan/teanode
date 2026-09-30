@@ -741,9 +741,28 @@ background unless told to wait, and the conversation is woken with the report;
 `teanode agent survey` starts one with the `StartAgentSurvey` mutation and
 asks for it with `GetAgentBackgroundWork` until it is done, so no request is
 held open for the minutes it takes; the `SurveyAgentMemory` query still runs
-one in its request. Its runs are of kind survey.
-Recall carries the start of a chosen page's overview and a theme's
-reflections, and every prompt's index opens with the top-level themes.
+one in its request. Its runs are of kind survey. A survey asks at most forty
+pages, the most important first; the report ends with what it covered, what
+failed, and, counted by the code, how many pages in scope it left out over
+that limit and how many it did not ask because they have no overview yet, so
+an answer drawn from a selection does not read as one about everything.
+
+**What an overview covers.** An overview's prompt shows at most thirty of a
+page's children, of a theme's members and of its links, the most important
+and strongest first, and says so when there are more, so the overview does
+not describe the most important as the whole. `teanode agent memory overview`
+(the `AgentOverviewState` query) says how many of each there are and how
+many the prompt shows, how many of those shown had no overview of their own,
+and whether what the overview is written from has changed since it was
+written.
+
+**Recall.** Recall carries a chosen page's overview section and a theme's
+reflections, and every prompt's index opens with the top-level themes. Each
+overview section has a vector of its own, so a page is found by the section
+that answers the question, and the section carried is the one that matched,
+else the one sharing most of the question's words, else the first.
+`teanode agent memory recall --explain` says what each search found and
+why each page and fact was carried or left out.
 
 **Which model does what.** The overviews, the reflections (the weekly one
 too) and each page's run of a survey are judgments, a few calls a night,

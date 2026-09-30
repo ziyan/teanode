@@ -349,6 +349,12 @@ const (
 			pages { path summary overview facts { number text } }
 		}
 	}`
+	DocumentAgentOverviewState = `query ($path: String!) {
+		AgentOverviewState(path: $path) {
+			path overviewWrittenAt isOverviewStale childCount childShownCount childWithoutOverviewCount
+			memberCount memberShownCount memberWithoutOverviewCount linkCount linkShownCount
+		}
+	}`
 	DocumentExplainAgentRecall = `query ($question: String!) {
 		RecallAgentMemory(question: $question, isExplained: true) {
 			pages { path summary overview facts { number text } }
@@ -453,6 +459,34 @@ func RecallAgentMemory(ctx context.Context, connection *Client, question string)
 		return nil, err
 	}
 	return result.RecallAgentMemory, nil
+}
+
+// AgentOverviewState is how a page's overview stands: how much of what it
+// could be written from its prompt shows, and whether that has changed
+// since it was written.
+type AgentOverviewState struct {
+	Path                       string     `json:"path"`
+	OverviewWrittenAt          *time.Time `json:"overviewWrittenAt"`
+	IsOverviewStale            bool       `json:"isOverviewStale"`
+	ChildCount                 int        `json:"childCount"`
+	ChildShownCount            int        `json:"childShownCount"`
+	ChildWithoutOverviewCount  int        `json:"childWithoutOverviewCount"`
+	MemberCount                int        `json:"memberCount"`
+	MemberShownCount           int        `json:"memberShownCount"`
+	MemberWithoutOverviewCount int        `json:"memberWithoutOverviewCount"`
+	LinkCount                  int        `json:"linkCount"`
+	LinkShownCount             int        `json:"linkShownCount"`
+}
+
+// GetAgentOverviewState reads how a page's overview stands.
+func GetAgentOverviewState(ctx context.Context, connection *Client, path string) (*AgentOverviewState, error) {
+	var result struct {
+		AgentOverviewState *AgentOverviewState `json:"AgentOverviewState"`
+	}
+	if err := connection.Execute(ctx, DocumentAgentOverviewState, map[string]any{"path": path}, &result); err != nil {
+		return nil, err
+	}
+	return result.AgentOverviewState, nil
 }
 
 // ExplainAgentRecall is RecallAgentMemory and why: what each search found,

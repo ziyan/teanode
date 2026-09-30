@@ -91,6 +91,14 @@ type SurveyReport struct {
 	CoveredPaths []string
 	FailedPaths  []string
 
+	// EligiblePageCount is how many pages in scope had an overview to ask;
+	// OverLimitPageCount how many of those were left out, the least
+	// important, over surveyPageCount; WithoutOverviewPageCount how many
+	// pages in scope had no overview yet and were not asked.
+	EligiblePageCount        int
+	OverLimitPageCount       int
+	WithoutOverviewPageCount int
+
 	// RunIDs is every run the survey made, each a transcript the person
 	// can open: one per page, and the one that combined them.
 	RunIDs []string
@@ -109,6 +117,20 @@ type surveyPage struct {
 type surveyScope struct {
 	pages       []*surveyPage
 	reflections []string
+
+	// eligiblePageCount, overLimitPageCount and withoutOverviewPageCount
+	// are the counts the report ends with; see SurveyReport.
+	eligiblePageCount        int
+	overLimitPageCount       int
+	withoutOverviewPageCount int
+}
+
+// withOverviews is the pages among these that have an overview to ask,
+// counting the live ones that have none.
+func (self *surveyScope) withOverviews(pages []*models.AgentNode) []*models.AgentNode {
+	written := withOverviews(pages)
+	self.withoutOverviewPageCount += len(livePages(pages)) - len(written)
+	return written
 }
 
 // surveyPart is what one page's run came back with.
@@ -155,7 +177,10 @@ func (self *Agent) Survey(ctx context.Context, agent *models.Agent, owner *model
 		return nil, err
 	}
 
-	report := &SurveyReport{}
+	report := &SurveyReport{
+		EligiblePageCount: scope.eligiblePageCount, OverLimitPageCount: scope.overLimitPageCount,
+		WithoutOverviewPageCount: scope.withoutOverviewPageCount,
+	}
 	var answers []string
 	for index, part := range parts {
 		path := scope.pages[index].page.Path
@@ -205,7 +230,7 @@ func (self *Agent) Survey(ctx context.Context, agent *models.Agent, owner *model
 			combined = "The parts could not be combined into one report, so here they are as each page answered.\n\n" + strings.Join(answers, "\n\n")
 		}
 	}
-	report.Report = strings.TrimSpace(combined) + "\n\n" + surveyCoverage(report.CoveredPaths, report.FailedPaths)
+	report.Report = strings.TrimSpace(combined) + "\n\n" + surveyCoverage(report)
 	return report, nil
 }
 
@@ -299,9 +324,12 @@ func (self *Agent) surveyPage(ctx context.Context, run *Run, surveyedPage *surve
 	return part
 }
 
-// surveyCoverage is the report's last lines: what it covered and what
-// failed, said by the code rather than left to the model.
-func surveyCoverage(coveredPaths, failedPaths []string) string {
+// surveyCoverage is the report's last lines: what it covered, what failed,
+// and what in scope it never asked, counted by the code rather than left to
+// the model, so an answer from a selection does not read as one about
+// everything.
+func surveyCoverage(report *SurveyReport) string {
+	coveredPaths, failedPaths := report.CoveredPaths, report.FailedPaths
 	quoted := func(paths []string) string {
 		quotedPaths := make([]string, 0, len(paths))
 		for _, path := range paths {
@@ -312,6 +340,17 @@ func surveyCoverage(coveredPaths, failedPaths []string) string {
 	coverage := "---\n\nCovered: " + quoted(coveredPaths) + "."
 	if len(failedPaths) > 0 {
 		coverage += "\n\nNot covered, the run did not finish: " + quoted(failedPaths) + "."
+	}
+	askedCount := len(coveredPaths) + len(failedPaths)
+	if report.OverLimitPageCount > 0 || report.WithoutOverviewPageCount > 0 {
+		coverage += fmt.Sprintf("\n\nAsked %d of the %d pages in scope that have an overview.", askedCount, report.EligiblePageCount)
+		if report.OverLimitPageCount > 0 {
+			coverage += fmt.Sprintf(" %d more were left out, the least important, over this survey's limit of %d pages.",
+				report.OverLimitPageCount, surveyPageCount)
+		}
+		if report.WithoutOverviewPageCount > 0 {
+			coverage += fmt.Sprintf(" %d pages in scope have no overview yet and were not asked.", report.WithoutOverviewPageCount)
+		}
 	}
 	return coverage
 }
@@ -342,24 +381,26 @@ func resolveSurveyScope(tx db.Transaction, agentId, scopePath string) (*surveySc
 	var pages []*models.AgentNode
 	reflectionsPath := models.PathReflections
 	if scopePath = models.NormalizePath(scopePath); scopePath == "" {
-		top, err := tx.ListAgentTopThemes(agentId, surveyPageCount)
+		top, err := tx.ListAgentTopThemes(agentId, themeListed)
 		if err != nil {
 			return nil, err
 		}
-		pages = withOverviews(top)
+		pages = scope.withOverviews(top)
 		if len(pages) == 0 {
 			themes, err := tx.ListAgentNodesUnder(agentId, models.PathThemes, themeListed)
 			if err != nil {
 				return nil, err
 			}
-			for _, theme := range withOverviews(themes) {
+			// Counted again from this list, which holds the top ones.
+			scope.withoutOverviewPageCount = 0
+			for _, theme := range scope.withOverviews(themes) {
 				if models.IsThemePath(theme.Path) {
 					pages = append(pages, theme)
 				}
 			}
 		}
 		if len(pages) == 0 {
-			written, err := tx.ListAgentNodesWithOverviews(agentId, surveyPageCount)
+			written, err := tx.ListAgentNodesWithOverviews(agentId, themeListed)
 			if err != nil {
 				return nil, err
 			}
@@ -381,7 +422,7 @@ func resolveSurveyScope(tx db.Transaction, agentId, scopePath string) (*surveySc
 		if !models.IsThemePath(scopePage.Path) && strings.TrimSpace(scopePage.Overview) != "" {
 			pages = append(pages, scopePage)
 		}
-		pages = append(pages, withOverviews(held)...)
+		pages = append(pages, scope.withOverviews(held)...)
 		if !models.IsThemePath(scopePage.Path) {
 			// A page's own children are the tree's view of it; the themes
 			// found under it are the links' view, and on a large page
@@ -403,7 +444,9 @@ func resolveSurveyScope(tx db.Transaction, agentId, scopePath string) (*surveySc
 		}
 		return pages[left].Path < pages[right].Path
 	})
+	scope.eligiblePageCount = len(pages)
 	if len(pages) > surveyPageCount {
+		scope.overLimitPageCount = len(pages) - surveyPageCount
 		pages = pages[:surveyPageCount]
 	}
 	for _, page := range pages {

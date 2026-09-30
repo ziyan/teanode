@@ -42,6 +42,10 @@ type OverviewOperation interface {
 	// now, which is what an overview written from them is marked with.
 	AgentNodeOverviewInputs(agentId, nodeId string) (string, error)
 
+	// IsAgentNodeOverviewStale says whether a page's inputs have changed
+	// since its overview was written, or a rewrite was asked for.
+	IsAgentNodeOverviewStale(agentId, nodeId string) (bool, error)
+
 	// SetAgentNodeOverview writes a page's overview, what it cites, and
 	// the hash of what it was written from. Nothing else of the page is
 	// touched, and it is not a change to the page's words: the opening,
@@ -170,6 +174,18 @@ func (self *transaction) AgentNodeOverviewInputs(agentId, nodeId string) (string
 		return "", err
 	}
 	return overviewInputs, nil
+}
+
+// IsAgentNodeOverviewStale says whether what a page's overview is written
+// from has changed since it was written, or a rewrite was asked for: the
+// next dream writes it again.
+func (self *transaction) IsAgentNodeOverviewStale(agentId, nodeId string) (bool, error) {
+	var isStale bool
+	if err := self.tx.Raw(`SELECT `+overviewInputsExpression+` <> n."overview_inputs" FROM "agent_node" n WHERE n."agent_id" = ? AND n."id" = ?`,
+		agentId, nodeId).Scan(&isStale).Error; err != nil {
+		return false, err
+	}
+	return isStale, nil
 }
 
 func (self *transaction) SetAgentNodeOverview(agentId, nodeId, overview string, evidence []models.Evidence, overviewInputs string, writtenAt time.Time) error {
