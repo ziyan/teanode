@@ -140,7 +140,29 @@ func runConfigImport(ctx context.Context, command *cli.Command) error {
 	}
 	stored.Database = config.Database{}
 
-	if _, err := config.Replace(database, stored); err != nil {
+	// With the secret kept in a file, the file's secret carries across
+	// instead: written there when there is no file yet, and a file holding
+	// a different one refused, since one of the two sealed something.
+	secretFile, err := bootstrapped.ReadSecretFile()
+	if err != nil {
+		return err
+	}
+	if secretFile != nil {
+		imported := stored.Secret()
+		switch {
+		case len(imported) == 0:
+		case secretFile.Secret == nil:
+			if err := config.WriteSecretFile(secretFile.Path, imported); err != nil {
+				return err
+			}
+			secretFile.Secret = imported
+			fmt.Printf("wrote the server secret to %s; back it up apart from the database\n", secretFile.Path)
+		case string(secretFile.Secret) != string(imported):
+			return fmt.Errorf("the server secret file %s holds a different secret from the one being imported", secretFile.Path)
+		}
+	}
+
+	if _, err := config.Replace(database, stored, secretFile); err != nil {
 		return err
 	}
 

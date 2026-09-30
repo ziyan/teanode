@@ -30,11 +30,17 @@ func OpenLocalStore() (config.Store, func(), error) {
 		return nil, nil, err
 	}
 
+	secretFile, err := bootstrapped.ReadSecretFile()
+	if err != nil {
+		closeDatabase()
+		return nil, nil, err
+	}
+
 	// Deliberately not migrating. A command line tool that silently changes
 	// the schema of a database a server is running against is a way to be
 	// surprised; "teanode run" and "teanode config init" do it, at a moment
 	// when the operator is expecting a deployment.
-	store, err := config.OpenStore(database, bootstrapped.Database)
+	store, err := config.OpenStore(database, bootstrapped.Database, secretFile)
 	if err != nil {
 		closeDatabase()
 		return nil, nil, fmt.Errorf("cannot read the configuration from the database: %w", err)

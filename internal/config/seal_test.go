@@ -17,7 +17,7 @@ func TestAgentSecretsAreSealedInRows(t *testing.T) {
 	configuration.Agent.Search.APIKey = "brave-1"
 	configuration.Agent.MCP.Servers = []AgentMCPServer{{Name: "tracker", URL: "https://tracker.example", Env: []AgentMCPEnvironment{{Name: "TOKEN", Value: "t-1"}}}}
 
-	rows, err := ToRows(configuration, 1)
+	rows, err := ToRows(configuration, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestAgentSecretsAreSealedInRows(t *testing.T) {
 		t.Fatal("ToRows must not seal the configuration it was given")
 	}
 
-	read, err := FromRows(rows)
+	read, err := FromRows(rows, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestAgentSecretsAreSealedInRows(t *testing.T) {
 
 	// Written before sealing: a plain value reads as itself.
 	rows.Settings[settingAgent] = "providers:\n  - name: openai\n    kind: openai\n    apiKey: sk-plain\n"
-	read, err = FromRows(rows)
+	read, err = FromRows(rows, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestAgentSecretsAreSealedInRows(t *testing.T) {
 
 	// No server secret: stored as given, and said so by the value itself.
 	configuration.Server.Secret = ""
-	rows, err = ToRows(configuration, 2)
+	rows, err = ToRows(configuration, 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,5 +62,43 @@ func TestAgentSecretsAreSealedInRows(t *testing.T) {
 	}
 	if secretbox.Sealed("sk-live-1") {
 		t.Fatal("a plain key must not look sealed")
+	}
+}
+
+// The other sections' secrets are sealed too, under a box of their own, and
+// the server secret is left for the file or the row to hold as it is.
+func TestSettingsSecretsAreSealedInRows(t *testing.T) {
+	configuration := Default()
+	configuration.Server.Secret = strings.Repeat("s", 32)
+	configuration.Session.Key = "session-key-1"
+	configuration.TLS.ACME.AccountKey = "account-key-1"
+
+	rows, err := ToRows(configuration, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, stored := range rows.Settings {
+		for _, plain := range []string{"session-key-1", "account-key-1"} {
+			if strings.Contains(stored, plain) {
+				t.Fatalf("the %s row holds %q in the clear:\n%s", key, plain, stored)
+			}
+		}
+	}
+	read, err := FromRows(rows, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.Session.Key != "session-key-1" || read.TLS.ACME.AccountKey != "account-key-1" || read.Server.Secret != configuration.Server.Secret {
+		t.Fatalf("the secrets did not come back: %q %q", read.Session.Key, read.TLS.ACME.AccountKey)
+	}
+
+	// Stored before these sections were sealed: a plain value reads as itself.
+	rows.Settings[settingSession] = "key: session-plain\n"
+	read, err = FromRows(rows, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.Session.Key != "session-plain" {
+		t.Fatalf("a plain session key should read as itself, got %q", read.Session.Key)
 	}
 }

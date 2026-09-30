@@ -143,7 +143,11 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, strin
 	}
 	defer closeDatabase()
 
-	seeded, err := config.Initialize(database, bootstrapped.SeedConfiguration)
+	secretFile, err := bootstrapped.ReadSecretFile()
+	if err != nil {
+		return "", "", err
+	}
+	seeded, err := config.Initialize(database, bootstrapped.SeedConfiguration, secretFile)
 	if err != nil {
 		return "", "", err
 	}
@@ -153,7 +157,7 @@ func serveUntilStopped(ctx context.Context, command *cli.Command) (string, strin
 		}
 	}
 
-	store, err := config.OpenStore(database, bootstrapped.Database)
+	store, err := config.OpenStore(database, bootstrapped.Database, secretFile)
 	if err != nil {
 		return "", "", err
 	}

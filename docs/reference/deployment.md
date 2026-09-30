@@ -211,11 +211,18 @@ an upgrade were a thing you did on a day you chose.
 ## What to back up
 
 **PostgreSQL, and nothing else matters as much.** It holds the configuration,
-the DKIM signing keys, the server secret from which every SMTP password is
-derived, and the mail. Losing it means republishing DNS records and reissuing
+the DKIM signing keys, the mail, and, unless it is kept in a file, the server
+secret from which every SMTP password is derived and with which every stored
+key is sealed. Losing it means republishing DNS records and reissuing
 credentials.
 
     docker compose exec postgres pg_dump -U teanode teanode | gzip > teanode-$(date +%F).sql.gz
+
+**The server secret file, when there is one, and apart from the database.**
+A dump of a database whose secret is kept in a file holds only ciphertext and
+hashes, which is the point; the file is what opens them. Keep a copy of it
+somewhere the database backups are not, and do not lose it: without it no
+sealed key opens and every SMTP password has to be reissued.
 
 A configuration-only backup, readable and reviewable, without the mail:
 
@@ -229,6 +236,30 @@ record. Treat it as a private key.
 `./data/teanode` holds the certificates, the keys, and the spool where one is
 configured. Certificates are reissued automatically, so it is worth backing up
 but not urgent.
+
+## Keeping the server secret out of the database
+
+Every key the server stores (the domains' DKIM keys, the agent's provider
+keys, the session key, the certificate keys) is sealed with the server
+secret, and every SMTP password is derived from it. A server keeps that
+secret in its own database unless told otherwise, so anybody holding a copy
+of the database holds the means to open everything in it.
+
+Started with `--secret-file` naming a file, or with `TEANODE_SECRET_FILE` in
+the environment, the server reads the secret from that file and the database
+keeps only a check that tells the right file from a wrong one. A copy of the
+database then opens nothing.
+
+Name a file that survives the container being recreated and is not in the
+database's volume; the mounted data directory is both:
+
+    TEANODE_SECRET_FILE=/var/lib/teanode/secret/server.secret
+
+A new server writes a new secret there on its first start. Back the file up
+apart from the database: without it nothing sealed opens and every SMTP
+password is lost. A file holding a different secret, or a database sealed
+with a file that has since gone, is refused rather than given a new secret.
+Every instance sharing the database needs the same file.
 
 ## More than one instance
 

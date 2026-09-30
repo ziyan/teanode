@@ -66,6 +66,12 @@ type Bootstrap struct {
 	// it cannot upgrade itself.
 	UpgradeDirectory string
 
+	// SecretFile is where the server secret is kept when it is kept out of
+	// the database: --secret-file, or TEANODE_SECRET_FILE. Empty keeps it
+	// in the database, as every server did before. Here because the
+	// secret opens what the database holds, so it cannot come from there.
+	SecretFile string
+
 	// Seed is applied to the defaults when the database holds no
 	// configuration yet, and ignored on every later start. See Seeded.
 	//
@@ -103,7 +109,34 @@ func Load() (*Bootstrap, error) {
 	if err := self.loadUpgradeDirectory(); err != nil {
 		return nil, err
 	}
+	self.loadSecretFile()
 	return self, nil
+}
+
+// secretFileFlag is --secret-file, which wins over the environment.
+var secretFileFlag string
+
+// SetSecretFile is how the command line's --secret-file reaches every
+// command that reads the environment through Load.
+func SetSecretFile(path string) {
+	secretFileFlag = strings.TrimSpace(path)
+}
+
+// loadSecretFile works out where the server secret is kept.
+func (self *Bootstrap) loadSecretFile() {
+	if secretFileFlag != "" {
+		self.SecretFile = secretFileFlag
+		return
+	}
+	if value, ok := lookup("SECRET_FILE"); ok {
+		self.SecretFile = value
+	}
+}
+
+// ReadSecretFile reads the server secret from where it is kept, or nil when
+// it is kept in the database.
+func (self *Bootstrap) ReadSecretFile() (*config.SecretFile, error) {
+	return config.ReadSecretFile(self.SecretFile)
 }
 
 // loadUpgradeDirectory works out where a staged binary goes.

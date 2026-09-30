@@ -4,6 +4,7 @@
 - Date: 2026-08-24
 - Deciders: the-owner
 - Supersedes: [20260818-configuration-in-yaml.md](20260818-configuration-in-yaml.md)
+- Amended by: [20260929-the-server-secret-can-be-kept-out-of-the-database.md](20260929-the-server-secret-can-be-kept-out-of-the-database.md)
 
 ## Context
 
