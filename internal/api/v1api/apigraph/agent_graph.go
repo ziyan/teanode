@@ -1777,7 +1777,7 @@ func (self *graph) SaveAgentFact(ctx context.Context, arguments SaveAgentFactArg
 	// A reflection is the night's reading of a theme, citing what it rests
 	// on, and superseded by the next one; written from here it would be a
 	// claim dressed as that reading, and the next night would fold it away.
-	if kind.FromTheNight() {
+	if kind.FromItsOwnReasoning() {
 		return nil, fmt.Errorf("%w: a %s is written by the night, not saved by hand; save it as a fact", api.ErrInvalidArguments, kind)
 	}
 	var happened *time.Time

@@ -24,7 +24,7 @@ After this plan, recall finds and carries the section of an overview that answer
 - [x] (2026-09-30) Milestone 1: overview sections as retrieval records, and recall carrying the matching section. Held-out set 6 to 15 of 30.
 - [x] (2026-09-30) Milestone 2: a survey's report ends with the pages in scope it left out over its limit and those without an overview, and the survey view carries the counts; an overview's prompt says when it shows only the most important of a page's children, members or links; `teanode agent memory overview` and the `AgentOverviewState` query say how many of each there are and are shown, and whether the overview is stale. Nothing is stored: the counts are read from the graph as it is.
 - [x] (2026-09-30) Milestone 3: the depth judgement also returns up to two focused searches and whether the message is about a whole area; recall fuses the planned searches, follows one hop from their top page, and weights section-matched pages for a broad question; a survey over its limit chooses the ten most important, then the nearest the question. No model call added.
-- [ ] Milestone 4: execution lessons as their own records, from verified outcomes only.
+- [x] (2026-09-30) Milestone 4: facts of kind `lesson` under `lessons/<topic>`, read after the conversation pass from the same window with its commands; kept only when a command they name ended with exit code 0; not filed again when nearly the same in meaning as one filed; a turn is shown the two nearest. Only the agent's own conversations: the coding-agent sources keep no commands.
 - [x] (2026-09-30) Milestone 5: `teanode agent memory recall --explain`, and `isExplained` on the `RecallAgentMemory` query: each search's count, every page and fact found with its rank in each search and once fused, and what carried or excluded it; recorded only when asked.
 - [ ] Rerun the stored question set and the held-out set after each milestone that changes recall.
 
@@ -44,6 +44,10 @@ After this plan, recall finds and carries the section of an overview that answer
 
 - Decision: a page found by a section is fused as one more ranked list, beside pages by meaning and by words; the section recall carries is the matched one, else the one sharing most of the question's words, else the first.
   Rationale: reciprocal-rank fusion needs no tuning, and a page found by words alone still gets the section its words point at, at no model cost.
+  Date/Author: 2026-09-30, agent.
+
+- Decision: lessons come from the agent's own conversations, verified by exit codes, and not from the Claude Code and Codex sources.
+  Rationale: those sources keep only what was said, deliberately (see the coding agent sources plan), so every success in them is the assistant's own claim; the agent's own shell results carry an exit code the code can check.
   Date/Author: 2026-09-30, agent.
 
 - Decision: measure the held-out set by recall alone (did recall carry the words) as well as by graded answers.

@@ -3077,6 +3077,7 @@ export const zh: Catalog = {
   'knowledge.reflectionsHint': '助手在做梦时，从这一页所归纳的各页中注意到的事。每条都列出所依据的页面和事实；新的反思会取代上一次的。',
   'knowledge.citing': '依据',
   'knowledge.factKind.reflection': '反思',
+  'knowledge.factKind.lesson': '经验',
   'knowledge.reflectionKind.pattern': '规律',
   'knowledge.reflectionKind.tension': '矛盾',
   'knowledge.reflectionKind.trend': '趋势',

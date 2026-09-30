@@ -218,7 +218,34 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 	if filed.Filed > 0 {
 		log.Debugf("filed %d fact(s) from conversation %s", filed.Filed, conversation.ID)
 	}
+	// The same window again, with the commands run in it, for what the work
+	// taught. Its own failure is logged and leaves what was filed above,
+	// and the mark, as they are: a lesson missed is not worth reading the
+	// window twice for.
+	if lessonCount, err := self.readLessons(ctx, run, conversation, windowOf(messages, unread[0], read)); err != nil {
+		log.Warningf("cannot read lessons from conversation %s: %s", conversation.ID, err)
+	} else if lessonCount > 0 {
+		log.Debugf("filed %d lesson(s) from conversation %s", lessonCount, conversation.ID)
+	}
 	return deferTheBacklog(backlog)
+}
+
+// windowOf is every message from first to last, tool calls and results
+// included, which the filing above left out.
+func windowOf(messages []*models.AgentMessage, first, last *models.AgentMessage) []*models.AgentMessage {
+	start, end := -1, -1
+	for index, message := range messages {
+		if message.ID == first.ID {
+			start = index
+		}
+		if message.ID == last.ID {
+			end = index
+		}
+	}
+	if start < 0 || end < start {
+		return nil
+	}
+	return messages[start : end+1]
 }
 
 // deferTheBacklog puts the job straight back into the queue when there is

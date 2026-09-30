@@ -3208,6 +3208,7 @@ export const en = {
   'knowledge.reflectionsHint': 'What your agent noticed across the pages this one groups, while dreaming. Each cites the pages and facts it rests on; a later reflection replaces the last.',
   'knowledge.citing': 'Citing',
   'knowledge.factKind.reflection': 'Reflection',
+  'knowledge.factKind.lesson': 'Lesson',
   'knowledge.reflectionKind.pattern': 'Pattern',
   'knowledge.reflectionKind.tension': 'Tension',
   'knowledge.reflectionKind.trend': 'Trend',

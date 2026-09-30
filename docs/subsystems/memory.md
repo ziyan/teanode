@@ -764,6 +764,20 @@ else the one sharing most of the question's words, else the first.
 `teanode agent memory recall --explain` says what each search found and
 why each page and fact was carried or left out.
 
+**Lessons from verified work.** After the pass that files what a
+conversation taught, the same stretch is read again with the commands run in
+it, each numbered with what it printed and its exit code, for what the work
+taught: when it applies, what worked, what to avoid, how it was verified. The
+code keeps a lesson only when a command it names ended with exit code 0, so
+what the assistant said about its work is never enough, and a stretch in which
+no command succeeded is not read at all. A lesson is a fact of kind `lesson`
+under `lessons/<topic>`, with the command as its evidence; one nearly the
+same in meaning as a lesson already filed is not filed again. A turn is shown
+the two lessons nearest its words, apart from the rest of recall; they are in
+the prompt only, so a turn that repeats one without running anything cannot
+file it again. The Claude Code and Codex sources keep only what was said, not
+the commands, so lessons come from the agent's own conversations.
+
 **The retrieval plan.** The same fast call that judges how deep a typed
 message deserves also says how to search for it: at most two focused
 searches for a message that refers to things indirectly or needs two things

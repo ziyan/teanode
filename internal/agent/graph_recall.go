@@ -60,6 +60,7 @@ func (self *AskRun) recallForTurn(ctx context.Context) {
 	nodes, facts, sections := self.searchGraph(ctx, words, recallCandidates)
 	nodes, facts, sections = self.followRetrievalPlan(ctx, nodes, facts, sections)
 	self.writeRecalled(ctx, nodes, facts, sections)
+	self.recallLessons(ctx, words)
 	self.recallFromKnowledge(ctx, words)
 }
 
