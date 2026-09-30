@@ -156,9 +156,15 @@ export function FinanceSourcesSection() {
                       </span>
                     ))}
                 <br />
+                {/* A new source syncs on its own within the minute; saying so
+                    keeps anybody from reaching for Sync to start it. The
+                    list reads itself again in the background, so this line
+                    turns into the last sync's time when it is done. */}
                 {source.lastRunAt
                   ? t('finance.lastSync', { time: formatTime(source.lastRunAt) })
-                  : t('finance.neverSynced')}
+                  : source.isEnabled
+                    ? t('finance.firstSyncUnderWay')
+                    : t('finance.neverSynced')}
                 {source.lastError ? (
                   <>
                     <br />

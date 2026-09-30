@@ -3172,6 +3172,7 @@ export const zh: Catalog = {
   'finance.noAccountsYet': '还没有财务账户；第一次同步后会出现。',
   'finance.lastSync': '上次同步 {time}',
   'finance.neverSynced': '尚未同步',
+  'finance.firstSyncUnderWay': '正在进行首次同步，无需手动操作',
   'finance.signInAgain': '重新登录',
   'finance.syncNow': '立即同步',
   'finance.syncing': '正在同步。新交易一两分钟后出现。',
