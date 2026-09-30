@@ -6,6 +6,15 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.89.0] - 2026-09-30
+
+### Added
+
+- Your agent keeps lessons from work it did by running commands, only when a command showed the approach worked, and recalls them the next time similar work comes up. (#248)
+- Your agent recalls the part of a page's overview that answers the question, not only its opening section. (#248)
+- `teanode agent memory recall --explain` shows why a question was given the memories it got, and what was left out. (#248)
+- A survey's report and `teanode agent memory overview` say how much they covered and what they left out. (#248)
+
 ## [0.88.0] - 2026-09-30
 
 ### Added
