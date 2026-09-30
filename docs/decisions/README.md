@@ -116,3 +116,14 @@ agent tells the person, unasked, what their mail says they should know now:
 candidates from the sorting and from a count of bursts, one decision with
 their memory in hand, bounds kept in code rather than in the prompt, and a
 mute that is a row rather than a memory.
+
+`20260929-the-operator-holds-the-provider-keys-the-person-holds-the-bank-link.md`
+says who holds what when a person links a bank: the operator holds the Plaid
+keys, sealed in the agent settings, and chooses which providers are offered;
+the person links each bank themselves and holds its credential, sealed per
+connection. It also says why SimpleFIN is offered beside Plaid, and what
+deleting an agent owes the provider.
+`20260929-bank-transactions-are-rows-not-documents.md` says why the
+transactions go into tables of their own and are read through a tool that
+adds them up, rather than into memory. The plan that acts on both is
+`docs/planning/bank-accounts-execplan.md`.
