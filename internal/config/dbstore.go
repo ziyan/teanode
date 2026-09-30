@@ -62,13 +62,32 @@ func (self *Configuration) sections() map[string]any {
 	}
 }
 
-// FromRows builds a configuration from what the database holds.
+// FromRows builds a configuration from what the database holds, with the
+// server secret from the file when one was named.
 //
 // Defaults first, then the stored values on top, so a setting added in a new
 // release has its default on a database written by an older one rather than
 // its zero value — which for a timeout or a port is not a default, it is a
 // server that does not work.
-func FromRows(rows *db.ConfigurationRows) (*Configuration, error) {
+func FromRows(rows *db.ConfigurationRows, secretFile *SecretFile) (*Configuration, error) {
+	configuration, err := decodeRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := applySecretFile(configuration, secretFile); err != nil {
+		return nil, err
+	}
+	// The secrets were sealed with the server secret, which the server
+	// section or the file has just supplied.
+	if err := openSecrets(configuration); err != nil {
+		return nil, err
+	}
+	return configuration, nil
+}
+
+// decodeRows is the stored sections on the defaults, as written: nothing
+// opened, and the server secret only if the database still holds it.
+func decodeRows(rows *db.ConfigurationRows) (*Configuration, error) {
 	configuration := Default()
 	for key, target := range configuration.sections() {
 		stored, ok := rows.Settings[key]
@@ -79,24 +98,24 @@ func FromRows(rows *db.ConfigurationRows) (*Configuration, error) {
 			return nil, fmt.Errorf("config: cannot read the %q settings: %w", key, err)
 		}
 	}
-	// The agent's secrets were sealed with the server secret, which the
-	// server section has just supplied.
-	if err := openAgentSecrets(configuration); err != nil {
-		return nil, err
-	}
 	return configuration, nil
 }
 
-// ToRows turns a configuration into rows.
-func ToRows(self *Configuration, version int64) (*db.ConfigurationRows, error) {
+// ToRows turns a configuration into rows. With a secret file the server
+// secret is left out of them, and only its check is written.
+func ToRows(self *Configuration, version int64, secretFile *SecretFile) (*db.ConfigurationRows, error) {
 	// Sealed on a copy: the configuration in hand stays readable, and only
 	// what is written holds ciphertext.
 	sealed, err := clone(self)
 	if err != nil {
 		return nil, err
 	}
-	if err := sealAgentSecrets(sealed); err != nil {
+	if err := sealSecrets(sealed); err != nil {
 		return nil, err
+	}
+	sealed.Server.SecretCheck = secretCheckOf(sealed.Secret())
+	if secretFile != nil {
+		sealed.Server.Secret = ""
 	}
 	rows := &db.ConfigurationRows{Version: version, Settings: map[string]string{}}
 	for key, value := range sealed.sections() {
@@ -130,6 +149,10 @@ type dbStore struct {
 	// handed out.
 	connection Database
 
+	// secretFile holds the server secret when it is kept out of the
+	// database; nil while it is kept in it.
+	secretFile *SecretFile
+
 	mutex   sync.RWMutex
 	current *Configuration
 	version int64
@@ -145,17 +168,48 @@ type dbStore struct {
 // OpenStore reads the settings from the database and keeps them up to date.
 //
 // The connection is what this process used to get here, and is reported as
-// part of every configuration the store hands out.
-func OpenStore(database db.Database, connection Database) (Store, error) {
+// part of every configuration the store hands out. The secret file, when
+// there is one, is where the server secret is kept instead of the database;
+// a database that still holds it has it removed once the file is shown to
+// hold the same secret.
+func OpenStore(database db.Database, connection Database, secretFile *SecretFile) (Store, error) {
 	self := &dbStore{
 		database:    database,
 		connection:  connection,
+		secretFile:  secretFile,
 		subscribers: map[int]func(*Configuration){},
 		stop:        make(chan struct{}),
 		done:        make(chan struct{}),
 	}
+	var isSecretStillStored bool
+	if secretFile != nil {
+		rows, err := database.LoadConfiguration()
+		if err != nil {
+			return nil, err
+		}
+		stored, err := decodeRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		if err := prepareSecretFile(stored, secretFile); err != nil {
+			return nil, err
+		}
+		isSecretStillStored = isSecretStored(stored)
+	}
 	if err := self.Reload(); err != nil {
 		return nil, err
+	}
+	if isSecretStillStored {
+		// Rewritten with nothing changed: the rows are written without the
+		// secret now, and with the check that ties them to the file.
+		if err := self.Update(func(*Configuration) error { return nil }); err != nil {
+			return nil, fmt.Errorf("config: cannot remove the server secret from the database: %w", err)
+		}
+		log.Noticef("removed the server secret from the database; it is read from %s from now on, "+
+			"and a backup of the database no longer opens what is sealed in it", secretFile.Path)
+	} else if secretFile == nil && isSecretStored(self.Current()) {
+		log.Warningf("the server secret is kept in the database, so a copy of the database opens everything sealed in it; " +
+			"see docs/reference/deployment.md for keeping it in a file")
 	}
 	go self.watch()
 	return self, nil
@@ -193,7 +247,7 @@ func (self *dbStore) Reload() error {
 	if err != nil {
 		return err
 	}
-	configuration, err := FromRows(rows)
+	configuration, err := FromRows(rows, self.secretFile)
 	if err != nil {
 		return err
 	}
@@ -252,7 +306,7 @@ func (self *dbStore) Update(mutate func(*Configuration) error) error {
 			return err
 		}
 
-		rows, err := ToRows(changed, version)
+		rows, err := ToRows(changed, version, self.secretFile)
 		if err != nil {
 			return err
 		}
@@ -345,28 +399,28 @@ func (self *dbStore) subscriberList() []func(*Configuration) {
 
 // LoadStored reads the stored settings without judging them, for the callers
 // that need to know what is there rather than to run on it.
-func LoadStored(database db.Database) (*Configuration, error) {
+func LoadStored(database db.Database, secretFile *SecretFile) (*Configuration, error) {
 	rows, err := database.LoadConfiguration()
 	if err != nil {
 		return nil, err
 	}
-	return FromRows(rows)
+	return FromRows(rows, secretFile)
 }
 
 // Replace writes whole settings over whatever is stored, and reports what
 // was there before. The one operation that replaces rather than changes, so
 // it has nothing to reload and nobody to notify. The caller is expected to
 // have validated what it is storing.
-func Replace(database db.Database, configuration *Configuration) (*Configuration, error) {
+func Replace(database db.Database, configuration *Configuration, secretFile *SecretFile) (*Configuration, error) {
 	rows, err := database.LoadConfiguration()
 	if err != nil {
 		return nil, err
 	}
-	existing, err := FromRows(rows)
+	existing, err := FromRows(rows, secretFile)
 	if err != nil {
 		return nil, err
 	}
-	replacement, err := ToRows(configuration, rows.Version)
+	replacement, err := ToRows(configuration, rows.Version, secretFile)
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +439,7 @@ func Replace(database db.Database, configuration *Configuration) (*Configuration
 // resolves itself: the write carries version zero, the stored version is
 // still zero only for the one that gets there first, and the other is told
 // the configuration changed and reports that it did not seed.
-func Initialize(database db.Database, describe func() (*Configuration, error)) (bool, error) {
+func Initialize(database db.Database, describe func() (*Configuration, error), secretFile *SecretFile) (bool, error) {
 	version, err := database.ConfigurationVersion()
 	if err != nil {
 		return false, err
@@ -397,7 +451,7 @@ func Initialize(database db.Database, describe func() (*Configuration, error)) (
 	if err != nil {
 		return false, err
 	}
-	rows, err := ToRows(seed, 0)
+	rows, err := ToRows(seed, 0, secretFile)
 	if err != nil {
 		return false, err
 	}

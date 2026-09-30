@@ -213,6 +213,12 @@ type Server struct {
 	// mail already in flight, so when moving a server to a new machine this
 	// has to come with it.
 	Secret string `yaml:"secret" secret:"true"`
+
+	// SecretCheck is derived from the secret and written in its place when
+	// the secret is kept in a file (--secret-file), so that an instance
+	// given the wrong file refuses to start. It opens nothing. Written by
+	// the server; never set by hand.
+	SecretCheck string `yaml:"secretCheck,omitempty"`
 }
 
 // SSO configures signing in through identity providers. OpenID Connect

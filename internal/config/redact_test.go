@@ -11,6 +11,9 @@ import (
 var notSecret = map[string]bool{
 	// A lexical token budget for GraphQL parsing, not an authentication token.
 	"GraphQL.MaximumTokenCount": true,
+	// Derived from the server secret by a one-way function, to tell the
+	// right secret file from a wrong one; it opens nothing.
+	"Server.SecretCheck": true,
 	// Paths to secrets, not the secrets themselves. Showing where a key is
 	// kept is how an operator finds it.
 	"TLS.PrivateKeyFile":               true,

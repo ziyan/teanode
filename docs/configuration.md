@@ -238,6 +238,15 @@ CRITICAL.
 passwords derived from SMTP credential keys. Generated on first run.  Changing
 it invalidates every SMTP password and orphans bounces for mail already in
 flight, so when moving a server to a new machine this has to come with it.
+Everything sealed in the database is sealed with it too. Started with
+`--secret-file` (or `TEANODE_SECRET_FILE`), the server reads it from that file
+instead and the database does not hold it; see "Keeping the server secret out
+of the database" in `docs/reference/deployment.md`.
+
+**`secretCheck`** — SecretCheck is derived from the secret and written in its
+place when the secret is kept in a file, so that an instance given the wrong
+file refuses to start. It opens nothing. Written by the server; never set by
+hand.
 
 **`mailServers`** — MailServers are the hosts to publish in every domain's MX
 records, in order of preference. Optional; when empty the MX record names this

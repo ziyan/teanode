@@ -283,14 +283,18 @@ func runConfigInit(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 
-	seeded, err := config.Initialize(database, bootstrapped.SeedConfiguration)
+	secretFile, err := bootstrapped.ReadSecretFile()
+	if err != nil {
+		return err
+	}
+	seeded, err := config.Initialize(database, bootstrapped.SeedConfiguration, secretFile)
 	if err != nil {
 		return err
 	}
 	if !seeded {
 		fmt.Printf("this database is already configured; nothing was changed\n")
 
-		store, err := config.OpenStore(database, bootstrapped.Database)
+		store, err := config.OpenStore(database, bootstrapped.Database, secretFile)
 		if err != nil {
 			return err
 		}

@@ -385,6 +385,11 @@ parsed `Address` is used, so the display name cannot smuggle anything either.
 - SMTP credentials: derived by HMAC-SHA256 from the server secret, so the
   configuration holds no password to steal — but the secret is equivalent to
   all of them.
+- Stored keys: every secret setting (provider keys, the session key, the
+  certificate and ACME keys, storage keys, an identity provider's client
+  secret) and every domain's DKIM key is sealed with a box derived from the
+  server secret. Kept in a file (`--secret-file`), the secret is not in the
+  database, and a dump of it is ciphertext and hashes.
 - The GraphQL layer redacts anything tagged `secret:"true"`, which covers the
   server secret, AWS credentials, token hashes and password hashes.
 
@@ -408,7 +413,10 @@ stripped.
 
 - **The server secret is a single point of total failure for submission.**
   Every SMTP credential derives from it. There is no rotation path that does
-  not invalidate every credential at once.
+  not invalidate every credential at once. It no longer has to travel with
+  the database: started with `--secret-file`, the server reads it from a file
+  and the database keeps only a check, so a copy of the database opens none
+  of the keys sealed in it.
 - **An administrator can reach the internal network** through webhook aliases
   and forwarding targets. Single-tenant software; the administrator is
   trusted.
