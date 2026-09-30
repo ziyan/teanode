@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.87.4] - 2026-09-30
+
+### Fixed
+
+- The agent can use the finance tool with models that send every argument on every call. (#252)
+
 ## [0.87.3] - 2026-09-30
 
 ### Fixed
