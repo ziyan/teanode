@@ -38,7 +38,7 @@ const settingsSelection = `{
 		enabled instructions currency effort allowPrivateAddresses skipCertificateCheck
 		providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
 		skillSecrets { skill key hasValue }
-		models { default fast embedding triage research summarize reply ask schedule compact choices scan synthesize decide embeddingDimensions }
+		models { default fast embedding triage research summarize reply ask schedule compact choices scan synthesize decide categorize embeddingDimensions }
 		features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
 		limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency embeddingTokensPerDay dreamShare ingestChunksPerRun }
 		retention { runs corrections }
@@ -46,6 +46,7 @@ const settingsSelection = `{
 		tools { disabled confirm }
 		browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
 		mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl headless readOnly disabled timeout enabled }
+		finance { offeredProviders plaid { environment clientId hasSecret countryCodes products } }
 		works families kinds
 	}
 }`
