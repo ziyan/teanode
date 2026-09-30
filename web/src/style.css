@@ -11700,6 +11700,13 @@ button.idea-history-title {
   font-size: var(--text-label);
 }
 
+/* A second line under a cell's figure: a holding's quantity and the price
+   of one under its value. */
+.finance-cell-detail {
+  display: block;
+  font-size: var(--text-label);
+}
+
 /* A bar per spending category against its budget, and one per savings
    target: the name and its pace, the numbers at the end of the line, the
    bar under them, what is projected under that. */

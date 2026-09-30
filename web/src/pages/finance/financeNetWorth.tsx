@@ -1,12 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Field, Loading, Tag, formatMoney } from '../../components/common'
+import { Column, DataTable } from '../../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SeriesChart, dayLabel } from '../../components/seriesChart'
 import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
+import { useToast } from '../../components/toast'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
 import {
@@ -19,6 +21,9 @@ import {
   CREATE_ASSET,
   DELETE_ASSET,
   DELETE_VALUATION,
+  FINANCE_TRADES,
+  FinanceTrade,
+  FinanceTradePage,
   NET_WORTH,
   NetWorth,
   RECORD_VALUATION,
@@ -26,7 +31,10 @@ import {
   amountOf,
   daysBefore,
   formatDay,
+  formatQuantity,
+  hasAmount,
   isDecimal,
+  isHolding,
   personToday,
 } from './financeApi'
 import {
@@ -43,7 +51,7 @@ import {
 // own values, or values their agent reads (from a connected server, say).
 // Estimates are allowed separately, and finance_sync belongs to the assets
 // finance sources make.
-const CHOSEN_VALUATION_SOURCES = ['manual', 'agent_reading']
+const CHOSEN_VALUATION_SOURCES = ['manual', 'agent_estimate', 'agent_reading']
 
 const ASSET_KINDS = [
   'cash',
@@ -57,6 +65,9 @@ const ASSET_KINDS = [
   'mortgage',
   'other_liability',
 ]
+
+// How many trades one read brings, and one Load more adds.
+const TRADE_PAGE_SIZE = 100
 
 // How far back the chart reaches, in days; zero is from the first
 // valuation there is.
@@ -200,10 +211,13 @@ function AssetsPanel({
             <thead>
               <tr>
                 <th>{t('finance.assetName')}</th>
-                <th>{t('finance.assetKindLabel')}</th>
+                {/* Context rather than the answer: dropped on a phone, so
+                    the name, the value and its day fit before the table
+                    has to scroll. */}
+                <th className="optional">{t('finance.assetKindLabel')}</th>
                 <th className="numeric">{t('finance.latestValue')}</th>
                 <th>{t('finance.valuedOn')}</th>
-                <th>{t('finance.valuationSourceLabel')}</th>
+                <th className="optional">{t('finance.valuationSourceLabel')}</th>
               </tr>
             </thead>
             <tbody>
@@ -223,19 +237,24 @@ function AssetsPanel({
                         </>
                       ) : null}
                     </td>
-                    <td>{words.assetKind(asset.assetKind)}</td>
+                    <td className="optional">{words.assetKind(asset.assetKind)}</td>
                     <td className="numeric">
                       {valuation ? (
-                        <Money
-                          amount={asset.isLiability ? -amountOf(valuation.value) : amountOf(valuation.value)}
-                          currency={valuation.currencyCode}
-                        />
+                        <>
+                          <Money
+                            amount={asset.isLiability ? -amountOf(valuation.value) : amountOf(valuation.value)}
+                            currency={valuation.currencyCode}
+                          />
+                          <HoldingLine valuation={valuation} />
+                        </>
                       ) : (
                         <span className="muted">—</span>
                       )}
                     </td>
                     <td className="muted">{valuation ? formatDay(valuation.valuedOn) : '—'}</td>
-                    <td>{words.valuationSource(valuation?.valuationSource ?? asset.valuationSource)}</td>
+                    <td className="optional">
+                      {words.valuationSource(valuation?.valuationSource ?? asset.valuationSource)}
+                    </td>
                   </tr>
                 )
               })}
@@ -447,6 +466,8 @@ function AssetPage({
   }
 
   const isFromSync = asset.valuationSource === 'finance_sync'
+  const isAssetHolding = isHolding(asset)
+  const security = asset.financeSecurity
   const valuations = history.data?.AssetHistory.assetValuations ?? []
 
   return (
@@ -494,6 +515,21 @@ function AssetPage({
         </div>
         <table className="detail">
           <tbody>
+            {/* A holding is one security: what it is comes first. */}
+            <Field label={t('finance.security')}>
+              {security ? [security.tickerSymbol, security.securityName].filter(Boolean).join(' · ') : undefined}
+            </Field>
+            <Field label={t('finance.securityKindLabel')}>
+              {security ? words.securityKind(security.securityKind) : undefined}
+            </Field>
+            <Field label={t('finance.closePrice')}>
+              {security && hasAmount(security.closePrice)
+                ? t('finance.closePriceOn', {
+                    price: formatMoney(amountOf(security.closePrice), security.currencyCode || asset.currencyCode),
+                    day: formatDay(security.closePriceOn),
+                  })
+                : undefined}
+            </Field>
             <Field label={t('finance.assetKindLabel')}>{words.assetKind(asset.assetKind)}</Field>
             <Field label={t('finance.currency')}>{asset.currencyCode}</Field>
             <Field label={t('finance.valuationSourceLabel')}>{words.valuationSource(asset.valuationSource)}</Field>
@@ -502,6 +538,7 @@ function AssetPage({
                 <>
                   <Money amount={asset.latestValuation.value} currency={asset.latestValuation.currencyCode} />{' '}
                   <span className="muted">{formatDay(asset.latestValuation.valuedOn)}</span>
+                  <HoldingLine valuation={asset.latestValuation} />
                 </>
               ) : undefined}
             </Field>
@@ -524,8 +561,16 @@ function AssetPage({
                 <tr>
                   <th>{t('finance.valuedOn')}</th>
                   <th className="numeric">{t('finance.value')}</th>
+                  {isAssetHolding ? (
+                    <>
+                      <th className="numeric">{t('finance.heldQuantity')}</th>
+                      <th className="numeric">{t('finance.unitPrice')}</th>
+                      <th className="numeric">{t('finance.costBasis')}</th>
+                    </>
+                  ) : null}
                   <th>{t('finance.valuationSourceLabel')}</th>
-                  <th className="numeric">{t('finance.estimateRange')}</th>
+                  {/* A holding is valued by its syncs and never estimated. */}
+                  {!isAssetHolding ? <th className="numeric">{t('finance.estimateRange')}</th> : null}
                   <th>{t('finance.valuationNote')}</th>
                   <th />
                 </tr>
@@ -537,17 +582,30 @@ function AssetPage({
                     <td className="numeric">
                       <Money amount={valuation.value} currency={valuation.currencyCode} />
                     </td>
+                    {isAssetHolding ? (
+                      <>
+                        <td className="numeric">{formatQuantity(valuation.heldQuantity)}</td>
+                        <td className="numeric">
+                          <Money amount={valuation.unitPrice} currency={valuation.currencyCode} />
+                        </td>
+                        <td className="numeric">
+                          <Money amount={valuation.costBasis} currency={valuation.currencyCode} />
+                        </td>
+                      </>
+                    ) : null}
                     <td>{words.valuationSource(valuation.valuationSource)}</td>
-                    <td className="numeric">
-                      {valuation.estimateLow && valuation.estimateHigh ? (
-                        `${formatMoney(amountOf(valuation.estimateLow), valuation.currencyCode)} – ${formatMoney(
-                          amountOf(valuation.estimateHigh),
-                          valuation.currencyCode,
-                        )}`
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
+                    {!isAssetHolding ? (
+                      <td className="numeric">
+                        {valuation.estimateLow && valuation.estimateHigh ? (
+                          `${formatMoney(amountOf(valuation.estimateLow), valuation.currencyCode)} – ${formatMoney(
+                            amountOf(valuation.estimateHigh),
+                            valuation.currencyCode,
+                          )}`
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                    ) : null}
                     <td className="wrap">
                       {valuation.valuationNote || ''}
                       {valuation.evidenceUrls.map((address) => (
@@ -575,6 +633,9 @@ function AssetPage({
           </div>
         ) : null}
       </SettingsSection>
+      {isAssetHolding && asset.financeAccountId && asset.financeSecurityId ? (
+        <HoldingTrades financeAccountId={asset.financeAccountId} financeSecurityId={asset.financeSecurityId} />
+      ) : null}
       {editing ? <AssetDialog asset={asset} onClose={() => setEditing(false)} onSaved={reloadBoth} /> : null}
       {recording ? (
         <FormDialog
@@ -675,6 +736,156 @@ function AssetPage({
         />
       ) : null}
     </>
+  )
+}
+
+// HoldingLine is a holding's quantity and the price of one under its
+// value, "12.1235 at $150.50"; nothing for anything that is not a holding.
+function HoldingLine({ valuation }: { valuation: AssetValuation }) {
+  const { t } = useTranslation()
+  if (!hasAmount(valuation.heldQuantity)) return null
+  const quantity = formatQuantity(valuation.heldQuantity)
+  return (
+    <span className="muted finance-cell-detail">
+      {hasAmount(valuation.unitPrice)
+        ? t('finance.holdingLine', {
+            quantity,
+            price: formatMoney(amountOf(valuation.unitPrice), valuation.currencyCode),
+          })
+        : quantity}
+    </span>
+  )
+}
+
+// HoldingTrades is a holding's trades, newest first: every buy, sell,
+// cancel and transfer of its security in its finance account, read a page
+// at a time from where the last page ended, as the finance transactions
+// are.
+function HoldingTrades({
+  financeAccountId,
+  financeSecurityId,
+}: {
+  financeAccountId: string
+  financeSecurityId: string
+}) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const words = useFinanceWords()
+  const variables = { financeAccountId, financeSecurityId, limit: TRADE_PAGE_SIZE }
+  const filterKey = JSON.stringify(variables)
+  const first = useQuery(() => graphql<{ FinanceTrades: FinanceTradePage }>(FINANCE_TRADES, variables), [filterKey], {
+    refresh: false,
+  })
+  // The pages read after the first, and where the next one starts.
+  const [more, setMore] = useState<{ rows: FinanceTrade[]; after: string | null; isLoaded: boolean }>({
+    rows: [],
+    after: null,
+    isLoaded: false,
+  })
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  useEffect(() => {
+    setMore({ rows: [], after: null, isLoaded: false })
+  }, [filterKey])
+
+  const firstPage = first.data?.FinanceTrades
+  const after = more.isLoaded ? more.after : (firstPage?.nextCursor ?? null)
+  const rows = useMemo(() => [...(firstPage?.financeTrades ?? []), ...more.rows], [firstPage, more.rows])
+
+  const loadMore = async () => {
+    if (!after) return
+    setIsLoadingMore(true)
+    try {
+      const answer = await graphql<{ FinanceTrades: FinanceTradePage }>(FINANCE_TRADES, { ...variables, after })
+      setMore((previous) => ({
+        rows: [...previous.rows, ...answer.FinanceTrades.financeTrades],
+        after: answer.FinanceTrades.nextCursor ?? null,
+        isLoaded: true,
+      }))
+    } catch (caught) {
+      toast.failure(caught, t('finance.failed'))
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }
+
+  const columns: Column<FinanceTrade>[] = [
+    {
+      key: 'tradedOn',
+      header: t('finance.tradedOn'),
+      value: (row) => row.tradedOn,
+      render: (row) => formatDay(row.tradedOn),
+      sort: (left, right) => left.tradedOn.localeCompare(right.tradedOn),
+    },
+    {
+      key: 'tradeKind',
+      header: t('finance.tradeKindLabel'),
+      value: (row) => words.tradeKind(row.tradeKind),
+    },
+    {
+      key: 'tradedQuantity',
+      header: t('finance.tradedQuantity'),
+      numeric: true,
+      value: (row) => row.tradedQuantity ?? '',
+      render: (row) => formatQuantity(row.tradedQuantity),
+      sort: (left, right) => amountOf(left.tradedQuantity) - amountOf(right.tradedQuantity),
+    },
+    {
+      key: 'unitPrice',
+      header: t('finance.unitPrice'),
+      numeric: true,
+      value: (row) => row.unitPrice ?? '',
+      render: (row) => <Money amount={row.unitPrice} currency={row.currencyCode} />,
+      sort: (left, right) => amountOf(left.unitPrice) - amountOf(right.unitPrice),
+    },
+    {
+      key: 'tradeAmount',
+      header: t('finance.amount'),
+      numeric: true,
+      value: (row) => row.tradeAmount,
+      render: (row) => <Money amount={row.tradeAmount} currency={row.currencyCode} />,
+      sort: (left, right) => amountOf(left.tradeAmount) - amountOf(right.tradeAmount),
+    },
+    {
+      key: 'feeAmount',
+      header: t('finance.feeAmount'),
+      numeric: true,
+      value: (row) => row.feeAmount ?? '',
+      render: (row) => <Money amount={row.feeAmount} currency={row.currencyCode} />,
+      sort: (left, right) => amountOf(left.feeAmount) - amountOf(right.feeAmount),
+    },
+    // The institution's own words for the trade: context, so dropped on a
+    // phone.
+    {
+      key: 'description',
+      header: t('finance.tradeDescription'),
+      optional: true,
+      truncate: true,
+      value: (row) => row.description,
+    },
+  ]
+
+  return (
+    <SettingsSection card title={t('finance.tradesTitle')} description={t('finance.tradesHint')}>
+      <ErrorMessage error={first.error} />
+      {first.loading && !first.data ? <Loading /> : null}
+      {first.data ? (
+        <DataTable
+          columns={columns}
+          rows={rows}
+          rowKey={(row) => row.id}
+          loading={first.loading}
+          emptyMessage={t('finance.noTrades')}
+          countLabel={(count) => t('finance.transactionsLoaded', { count: String(count) })}
+        />
+      ) : null}
+      {after ? (
+        <div className="page-actions page-actions-end">
+          <button type="button" disabled={isLoadingMore} onClick={() => void loadMore()}>
+            {t('finance.loadMore')}
+          </button>
+        </div>
+      ) : null}
+    </SettingsSection>
   )
 }
 

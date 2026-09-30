@@ -10,8 +10,9 @@ the command line is `teanode finance`.
 
 The designs and the reasons for them are in
 `docs/planning/finance-accounts-execplan.md`,
-`docs/planning/net-worth-execplan.md` and `docs/planning/budgets-execplan.md`,
-and in the decision records they cite. This document says how it works now.
+`docs/planning/net-worth-execplan.md`, `docs/planning/budgets-execplan.md` and
+`docs/planning/finance-investments-execplan.md`, and in the decision records
+they cite. This document says how it works now.
 
 ## Names
 
@@ -33,6 +34,10 @@ tool and the dashboard.
   **liability** (an asset whose value subtracts), **valuation** (one value of
   one asset on one day) and **valuation source** (`finance_sync`,
   `agent_reading`, `manual`, `agent_estimate`).
+- **finance security** (something an investment account can hold: a share,
+  a fund, a bond, a coin), **holding** (an asset that is one security in one
+  finance account) and **trade** (a buy, a sell, a cancelled trade or a
+  security moved in or out).
 - **spending rule**, **budget**, **budget pace** (`under`, `on_track`,
   `at_risk`, `over`), **savings target**, **reporting currency**,
   **exchange rate**, **categorize model**.
@@ -44,7 +49,7 @@ tool and the dashboard.
 
 **Plaid** needs the operator's client id and secret (`agent.finance.plaid`,
 the secret sealed like every other provider key). A person links through
-Plaid's own window, which runs on the dashboard page `/finance-link`; that
+Plaid's own window, which runs on the dashboard page `/finance/link`; that
 page alone has a security policy that lets it load Plaid's script, frame
 Plaid's page and reach Plaid's API. The server exchanges the one-time token
 the window returns for the credential and keeps it as a secret of the new
@@ -91,6 +96,13 @@ document passes: `runIngest` hands it to `runFinanceSync`
 (`internal/agent/ingest_finance.go`) before anything about documents or the
 knowledge feature switch.
 
+A new finance source is due at once, so its first sync starts within a
+minute of the link. A provider can say it is still gathering the history (Plaid
+does, in `transactions_update_status`, for a while after a link); the source
+then syncs again in five minutes rather than at its next scheduled time, for
+its first day at most, and the one pass over the whole history for transfers
+waits until the history is complete.
+
 A sync opens the credential, asks the provider for what changed, and writes it
 in one database transaction (`ApplyFinanceSync` in
 `internal/db/database_finance.go`): finance accounts upserted, finance
@@ -103,12 +115,13 @@ what is still uncategorized, the categorize job queued for the rest, and
 budget alert candidates written.
 
 Deleting a finance source removes it at the provider first (best effort), keeps
-its assets' history by turning them into manual assets closed on the day of the
-delete, in the person's time zone, and then deletes the source, which removes
-its finance accounts and finance transactions. Closing them stops net worth
-carrying the last balance forward for an account nothing values any more. An
-asset the person had already closed keeps its day. Linking the institution
-again takes back and opens each asset whose account comes back under the same
+its assets' history by turning them into manual assets closed on the day before
+the delete, in the person's time zone, and then deletes the source, which
+removes its finance accounts and finance transactions. Closing them stops net
+worth carrying the last balance forward for an account nothing values any more,
+from the day of the delete: an institution moved to the other provider and
+linked again that day counts each account once. An asset the person had
+already closed keeps its day. Linking the institution again takes back and opens each asset whose account comes back under the same
 name, kind, side and currency, when exactly one detached asset matches; any
 other account starts a new asset, and none is counted twice. Deleting an agent
 removes its assets with everything else.
@@ -142,7 +155,47 @@ so the sync stores its absolute value.
 Accounts reachable only through a connected server are read by the agent on a
 daily schedule the person creates, which records the value with the `finance`
 tool. Houses and cars are estimated from the web only where the person allowed
-it for that asset, on a schedule, with a range and the pages used.
+it for that asset, with a range and the pages used. Setting an asset to
+`agent_estimate` with estimates allowed makes the schedule "Estimate asset
+values" (the first of each month, the person's own words, delivered to the
+drawer) when there is none, and runs it at once, so the asset has a value the
+same day. The schedule is found by name, like the daily brief's: renamed, it is
+the person's, and a new one is made beside it; switched off, it stays off
+and nothing is estimated until the person switches it on again. Its prompt searches with each asset's estimate description
+and nothing else.
+
+## Investments
+
+A Plaid link asks for transactions, and for investments as an optional
+product when the operator turns it on (`agent.finance.plaid.products`).
+Plaid adds it where the institution and the accounts the person chose have
+it, so one link can hold both a checking account and a brokerage account. A
+sync reads holdings and investment transactions only for a finance source
+whose link has the product (Plaid's `/item/get` says), since reading them for
+one without it would start billing for it. A link made before investments
+were turned on gets them by being linked again.
+
+Holdings are assets: one per security per finance account, valued at every
+sync with the day's quantity, unit price and cost basis on the valuation
+(`heldQuantity`, `unitPrice`, `costBasis`), and linked to its security
+(`financeSecurityId`, with ticker symbol, name and kind). The finance
+account's own asset holds only its cash, valued at the account's balance less
+its holdings, because Plaid's balance of an investment account already counts
+the holdings. Plaid's cash holdings are that cash, not assets of their own. A
+holding no longer reported is valued at zero and closed on that day. When the
+holdings cannot be read on a sync, nothing is recorded that day for that
+finance source's investment accounts, and the earlier values carry forward.
+So net worth, savings targets measured by assets, and each position's history
+come from the same valuations as any other asset.
+
+A trade swaps cash for a security inside one account, so it is its own row
+in `agent_finance_trade` (`FinanceTrades`, `teanode finance trades`, the
+tool's `trades`), never a finance transaction: it is not spending or income,
+and it takes no part in budgets, cash flow, spending rules or transfer
+matching. The cash that does come and go in an investment account (dividends,
+interest, fees, deposits and withdrawals) is a finance transaction like any
+other, with Plaid's categories, and goes through the same spending
+categories and transfer detection.
 
 ## Spending categories, budgets and savings targets
 
@@ -208,7 +261,7 @@ the setup.
 The **agent page's Finance tab** (`web/src/pages/agentFinance.tsx`,
 `/settings/agent/finance`) is the setup: the finance sources (link, repair,
 bring an existing connection in, sync, switch, delete) and the settings (the
-reporting currency and the converter), in one scroll. `/finance-link`, the
+reporting currency and the converter), in one scroll. `/finance/link`, the
 page Plaid's window runs on, comes back to it. The addresses the sections had
 under the tab before they moved (`/settings/agent/finance/spending` and the
 rest) open the tab and are not sent on to the Finance page.

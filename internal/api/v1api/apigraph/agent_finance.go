@@ -48,6 +48,11 @@ type FinanceQuery interface {
 	// A page of the caller's finance transactions, newest first.
 	FinanceTransactions(ctx context.Context, arguments FinanceTransactionsArguments) (*FinanceTransactionPageView, error)
 
+	// A page of the caller's trades, newest first, each with its security:
+	// buys, sells, cancelled trades and securities moved in or out of an
+	// investment account. Never spending or income.
+	FinanceTrades(ctx context.Context, arguments FinanceTradesArguments) (*FinanceTradePageView, error)
+
 	// Money out and money in per group, per currency and in the reporting
 	// currency, transfers left out.
 	FinanceSpendingSummary(ctx context.Context, arguments FinanceSpendingSummaryArguments) (*FinanceSpendingSummaryView, error)
@@ -275,6 +280,13 @@ type FinanceTransactionPageView struct {
 	NextCursor          string                       `json:"nextCursor,omitempty" graphapi:"nullable"`
 }
 
+// FinanceTradePageView is one page of trades and the cursor for the next,
+// empty on the last.
+type FinanceTradePageView struct {
+	FinanceTrades []*models.FinanceTrade `json:"financeTrades"`
+	NextCursor    string                 `json:"nextCursor,omitempty" graphapi:"nullable"`
+}
+
 // FinanceSpendingSummaryView is a spending summary: per group and
 // currency, per currency, and converted into the reporting currency.
 type FinanceSpendingSummaryView struct {
@@ -366,6 +378,22 @@ type FinanceTransactionsArguments struct {
 	// IsUncategorized keeps only finance transactions with no spending
 	// category that are not transfers.
 	IsUncategorized *bool `json:"isUncategorized" graphapi:"nullable"`
+
+	// Limit is at most 200; zero is 50. After is the nextCursor of the
+	// page before.
+	Limit *int   `json:"limit" graphapi:"nullable"`
+	After string `json:"after" graphapi:"nullable"`
+}
+
+// FinanceTradesArguments narrow a page of trades. Every field is
+// optional.
+type FinanceTradesArguments struct {
+	// From and To bound the traded day, both included, "2006-01-02".
+	From string `json:"from" graphapi:"nullable"`
+	To   string `json:"to" graphapi:"nullable"`
+
+	FinanceAccountID  string `json:"financeAccountId" graphapi:"nullable"`
+	FinanceSecurityID string `json:"financeSecurityId" graphapi:"nullable"`
 
 	// Limit is at most 200; zero is 50. After is the nextCursor of the
 	// page before.
@@ -533,6 +561,11 @@ func financeError(err error) error {
 // personToday is the caller's local day, "2006-01-02".
 func personToday(principal *api.Principal) string {
 	return time.Now().In(agent.Location(principal.User)).Format(time.DateOnly)
+}
+
+// personYesterday is the day before personToday.
+func personYesterday(principal *api.Principal) string {
+	return time.Now().In(agent.Location(principal.User)).AddDate(0, 0, -1).Format(time.DateOnly)
 }
 
 // dayArgument is a day written 2006-01-02, or the fallback when empty.
@@ -1297,6 +1330,38 @@ func (self *graph) FinanceTransactions(ctx context.Context, arguments FinanceTra
 		transactions = []*models.FinanceTransaction{}
 	}
 	return &FinanceTransactionPageView{FinanceTransactions: transactions, NextCursor: page.NextCursor}, nil
+}
+
+func (self *graph) FinanceTrades(ctx context.Context, arguments FinanceTradesArguments) (*FinanceTradePageView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	filter := &db.FinanceTradeFilter{
+		FinanceAccountID: strings.TrimSpace(arguments.FinanceAccountID), FinanceSecurityID: strings.TrimSpace(arguments.FinanceSecurityID),
+		After: strings.TrimSpace(arguments.After),
+	}
+	if filter.From, err = dayArgument("from", arguments.From, ""); err != nil {
+		return nil, err
+	}
+	if filter.To, err = dayArgument("to", arguments.To, ""); err != nil {
+		return nil, err
+	}
+	if arguments.Limit != nil {
+		if *arguments.Limit < 0 {
+			return nil, fmt.Errorf("%w: limit cannot be negative", api.ErrInvalidArguments)
+		}
+		filter.Limit = *arguments.Limit
+	}
+	page, err := self.transaction(ctx).ListFinanceTrades(found.ID, filter)
+	if err != nil {
+		return nil, financeError(err)
+	}
+	trades := page.FinanceTrades
+	if trades == nil {
+		trades = []*models.FinanceTrade{}
+	}
+	return &FinanceTradePageView{FinanceTrades: trades, NextCursor: page.NextCursor}, nil
 }
 
 // financeTransactionGroupKey is the key a finance transaction is summed

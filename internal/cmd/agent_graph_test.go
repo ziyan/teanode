@@ -122,6 +122,22 @@ func TestGradingAQuestionSet(t *testing.T) {
 			carried: carriedFor(portal),
 			failed:  `did not carry people/alice-chen saying "platform"`,
 		},
+		// What the page's overview section says is carried as much as a
+		// fact is: a turn is shown the paragraph.
+		"inTheOverviewSection": {
+			question: evaluationQuestion{ID: "o1", Kind: questionParaphrase, Question: "what depends on the portal?",
+				Expects: []evaluationClaim{{Path: "projects/portal", Words: []string{"billing"}}}},
+			carried: carriedFor(&client.AgentRecalledPage{Path: "projects/portal",
+				Overview: "## How it relates\n\nThe billing service reads its accounts.", Facts: []*client.AgentRecalledFact{}}),
+			hit: true,
+		},
+		"notInTheOverviewSection": {
+			question: evaluationQuestion{ID: "o2", Kind: questionParaphrase, Question: "what depends on the portal?",
+				Expects: []evaluationClaim{{Path: "projects/portal", Words: []string{"billing"}}}},
+			carried: carriedFor(&client.AgentRecalledPage{Path: "projects/portal",
+				Overview: "## What it is\n\nThe customer portal.", Facts: []*client.AgentRecalledFact{}}),
+			failed: `did not carry projects/portal saying "billing"`,
+		},
 		// A claim with no words is about the page: nothing from it at all
 		// is what an abstain question asks for.
 		"abstain": {
@@ -314,5 +330,18 @@ func TestAPageTakesItsAliases(test *testing.T) {
 	// person gives them one at a time.
 	if _, repeatable := alias.(*cli.StringSliceFlag); !repeatable {
 		test.Errorf("--alias is a list flag, so that it can be given more than once")
+	}
+}
+
+// What an overview covers is said from the counts, and a stale one says
+// the counts are of what it would be written from now.
+func TestAnOverviewSaysWhatItCovers(t *testing.T) {
+	current := describeOverviewState(&client.AgentOverviewState{ChildCount: 47, ChildShownCount: 30, ChildWithoutOverviewCount: 8, LinkCount: 12, LinkShownCount: 12})
+	if current != "Written from its facts and 30 of the 47 pages under it (8 of them by their opening alone, having no overview yet), all 12 links." {
+		t.Errorf("current: %q", current)
+	}
+	stale := describeOverviewState(&client.AgentOverviewState{IsOverviewStale: true})
+	if stale != "What it would be written from now: its facts. That has changed since it was written; the next dream writes it again." {
+		t.Errorf("stale: %q", stale)
 	}
 }

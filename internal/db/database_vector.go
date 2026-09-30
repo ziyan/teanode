@@ -54,6 +54,10 @@ var (
 	AgentNodeTable     = VectorTable{Table: "agent_node_vector", IDColumn: "node_id", ScopeColumn: "agent_id", OrderColumn: "created_at", Candidates: 2000}
 	AgentFactTable     = VectorTable{Table: "agent_fact_vector", IDColumn: "fact_id", ScopeColumn: "agent_id", OrderColumn: "created_at", Candidates: 3000}
 	AgentChunkTable    = VectorTable{Table: "agent_chunk_vector", IDColumn: "chunk_id", ScopeColumn: "agent_id", OrderColumn: "created_at", Candidates: 4000}
+
+	// AgentOverviewSectionTable holds a vector for each section of a
+	// page's overview; see migration 0136.
+	AgentOverviewSectionTable = VectorTable{Table: "agent_overview_section_vector", IDColumn: "section_id", ScopeColumn: "agent_id", OrderColumn: "created_at", Candidates: 3000}
 )
 
 // Scored is one row and how near it was, best first. The score is cosine

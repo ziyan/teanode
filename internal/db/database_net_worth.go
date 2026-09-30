@@ -89,6 +89,7 @@ type agentAssetModel struct {
 	IsLiability         bool       `gorm:"column:is_liability"`
 	CurrencyCode        string     `gorm:"column:currency_code"`
 	FinanceAccountID    *string    `gorm:"column:finance_account_id"`
+	FinanceSecurityID   *string    `gorm:"column:finance_security_id"`
 	ValuationSource     string     `gorm:"column:valuation_source"`
 	EstimateDescription string     `gorm:"column:estimate_description"`
 	IsEstimateAllowed   bool       `gorm:"column:is_estimate_allowed"`
@@ -103,7 +104,7 @@ func (self *agentAssetModel) toModel() *models.Asset {
 	return &models.Asset{
 		ID: self.ID, AgentID: self.AgentID, AssetName: self.AssetName, AssetKind: models.AssetKind(self.AssetKind),
 		IsLiability: self.IsLiability, CurrencyCode: self.CurrencyCode, FinanceAccountID: optionalString(self.FinanceAccountID),
-		ValuationSource: models.ValuationSource(self.ValuationSource), EstimateDescription: self.EstimateDescription,
+		FinanceSecurityID: optionalString(self.FinanceSecurityID), ValuationSource: models.ValuationSource(self.ValuationSource), EstimateDescription: self.EstimateDescription,
 		IsEstimateAllowed: self.IsEstimateAllowed, ClosedOn: formatOptionalDay(self.ClosedOn),
 		CreatedAt: self.CreatedAt.In(time.Local), ModifiedAt: self.ModifiedAt.In(time.Local),
 	}
@@ -121,6 +122,9 @@ type agentAssetValuationModel struct {
 	EstimateHigh    *string        `gorm:"column:estimate_high"`
 	ValuationNote   string         `gorm:"column:valuation_note"`
 	EvidenceURLs    pq.StringArray `gorm:"column:evidence_urls;type:text[]"`
+	HeldQuantity    *string        `gorm:"column:held_quantity"`
+	UnitPrice       *string        `gorm:"column:unit_price"`
+	CostBasis       *string        `gorm:"column:cost_basis"`
 	CreatedAt       time.Time      `gorm:"column:created_at"`
 	ModifiedAt      time.Time      `gorm:"column:modified_at"`
 }
@@ -137,6 +141,7 @@ func (self *agentAssetValuationModel) toModel() *models.AssetValuation {
 		Value: self.Value, CurrencyCode: self.CurrencyCode, ValuationSource: models.ValuationSource(self.ValuationSource),
 		EstimateLow: optionalString(self.EstimateLow), EstimateHigh: optionalString(self.EstimateHigh),
 		ValuationNote: self.ValuationNote, EvidenceURLs: evidenceUrls,
+		HeldQuantity: optionalString(self.HeldQuantity), UnitPrice: optionalString(self.UnitPrice), CostBasis: optionalString(self.CostBasis),
 		CreatedAt: self.CreatedAt.In(time.Local), ModifiedAt: self.ModifiedAt.In(time.Local),
 	}
 }
@@ -171,7 +176,8 @@ func assetToModel(asset *models.Asset) *agentAssetModel {
 	model := &agentAssetModel{
 		ID: asset.ID, AgentID: asset.AgentID, AssetName: asset.AssetName, AssetKind: string(asset.AssetKind),
 		IsLiability: asset.IsLiability, CurrencyCode: asset.CurrencyCode, FinanceAccountID: optionalID(asset.FinanceAccountID),
-		ValuationSource: string(asset.ValuationSource), EstimateDescription: asset.EstimateDescription,
+		FinanceSecurityID: optionalID(asset.FinanceSecurityID),
+		ValuationSource:   string(asset.ValuationSource), EstimateDescription: asset.EstimateDescription,
 		IsEstimateAllowed: asset.IsEstimateAllowed, CreatedAt: asset.CreatedAt, ModifiedAt: asset.ModifiedAt,
 	}
 	if asset.ClosedOn != "" {
@@ -215,7 +221,11 @@ func (self *transaction) GetAsset(agentId, assetId string) (*models.Asset, error
 	if len(found) == 0 {
 		return nil, nil
 	}
-	return found[0].toModel(), nil
+	asset := found[0].toModel()
+	if err := self.attachFinanceSecurities(agentId, []*models.Asset{asset}); err != nil {
+		return nil, err
+	}
+	return asset, nil
 }
 
 func (self *transaction) UpdateAsset(agentId, assetId string, modify func(*models.Asset) error) (*models.Asset, error) {
@@ -233,6 +243,7 @@ func (self *transaction) UpdateAsset(agentId, assetId string, modify func(*model
 		return nil, err
 	}
 	after.ID, after.AgentID, after.FinanceAccountID, after.CreatedAt = before.ID, before.AgentID, before.FinanceAccountID, before.CreatedAt
+	after.FinanceSecurityID, after.FinanceSecurity = before.FinanceSecurityID, before.FinanceSecurity
 	after.LatestValuation = nil
 	if err := self.validateAsset(&after); err != nil {
 		return nil, err
@@ -298,6 +309,9 @@ func (self *transaction) ListAssets(agentId string) ([]*models.Asset, error) {
 		asset := found[index].toModel()
 		asset.LatestValuation = latestByAssetId[asset.ID]
 		assets = append(assets, asset)
+	}
+	if err := self.attachFinanceSecurities(agentId, assets); err != nil {
+		return nil, err
 	}
 	return assets, nil
 }
@@ -380,6 +394,18 @@ func (self *transaction) upsertAssetValuation(valuation *models.AssetValuation, 
 	if err != nil {
 		return nil, err
 	}
+	costBasis, err := canonicalOptionalAmount("cost basis", valuation.CostBasis)
+	if err != nil {
+		return nil, err
+	}
+	heldQuantity, err := canonicalOptionalQuantity("held quantity", valuation.HeldQuantity)
+	if err != nil {
+		return nil, err
+	}
+	unitPrice, err := canonicalOptionalQuantity("unit price", valuation.UnitPrice)
+	if err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(valuation.CurrencyCode) == "" {
 		return nil, fmt.Errorf("%w: a valuation needs a currency", ErrInvalidArguments)
 	}
@@ -393,16 +419,19 @@ func (self *transaction) upsertAssetValuation(valuation *models.AssetValuation, 
 	}
 	var written []agentAssetValuationModel
 	if err := self.tx.Raw(`INSERT INTO "agent_asset_valuation" ("id", "agent_id", "asset_id", "valued_on", "value", "currency_code",
-			"valuation_source", "estimate_low", "estimate_high", "valuation_note", "evidence_urls", "created_at", "modified_at")
-		VALUES (?, ?, ?, ?::date, ?::numeric, ?, ?, ?::numeric, ?::numeric, ?, ?::text[], ?, ?)
+			"valuation_source", "estimate_low", "estimate_high", "valuation_note", "evidence_urls",
+			"held_quantity", "unit_price", "cost_basis", "created_at", "modified_at")
+		VALUES (?, ?, ?, ?::date, ?::numeric, ?, ?, ?::numeric, ?::numeric, ?, ?::text[], ?::numeric, ?::numeric, ?::numeric, ?, ?)
 		ON CONFLICT ("asset_id", "valued_on", "valuation_source") DO UPDATE SET
 			"value" = EXCLUDED."value", "currency_code" = EXCLUDED."currency_code",
 			"estimate_low" = EXCLUDED."estimate_low", "estimate_high" = EXCLUDED."estimate_high",
 			"valuation_note" = EXCLUDED."valuation_note", "evidence_urls" = EXCLUDED."evidence_urls",
+			"held_quantity" = EXCLUDED."held_quantity", "unit_price" = EXCLUDED."unit_price", "cost_basis" = EXCLUDED."cost_basis",
 			"modified_at" = EXCLUDED."modified_at"
 		RETURNING *`,
 		valuationId, valuation.AgentID, valuation.AssetID, valuedOn, valuationValue, strings.TrimSpace(valuation.CurrencyCode),
-		string(valuation.ValuationSource), estimateLow, estimateHigh, valuation.ValuationNote, pq.Array(evidenceUrls), now, now).
+		string(valuation.ValuationSource), estimateLow, estimateHigh, valuation.ValuationNote, pq.Array(evidenceUrls),
+		heldQuantity, unitPrice, costBasis, now, now).
 		Scan(&written).Error; err != nil {
 		return nil, err
 	}

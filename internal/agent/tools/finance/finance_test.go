@@ -219,7 +219,7 @@ func TestFinanceRiskPerOperation(test *testing.T) {
 	test.Parallel()
 	tool := financeTool(test)
 	reads := map[string]bool{
-		"providers": true, "sources": true, "accounts": true, "transactions": true, "spending_summary": true,
+		"providers": true, "sources": true, "accounts": true, "transactions": true, "trades": true, "spending_summary": true,
 		"exchange_rate": true, "convert_currency": true, "net_worth": true, "assets": true, "asset_history": true,
 		"spending_categories": true, "spending_rules": true, "budgets": true, "budget_status": true,
 		"spending_by_day": true, "cash_flow": true, "savings_targets": true,
@@ -340,11 +340,11 @@ func TestFinanceToolRefusesACredential(test *testing.T) {
 func TestFinanceToolGivesTheLinkingPage(test *testing.T) {
 	test.Parallel()
 	result, err := call(test, &fakeOperations{}, `{"operation":"link_plaid"}`)
-	if err != nil || !strings.Contains(result.Content, "https://mail.example.com/finance-link") {
+	if err != nil || !strings.Contains(result.Content, "https://mail.example.com/finance/link") {
 		test.Fatalf("%v %v", result, err)
 	}
 	result, err = call(test, &fakeOperations{}, `{"operation":"repair","source_id":"source-one"}`)
-	if err != nil || !strings.Contains(result.Content, "/finance-link?source=source-one") {
+	if err != nil || !strings.Contains(result.Content, "/finance/link?source=source-one") {
 		test.Fatalf("%v %v", result, err)
 	}
 }
@@ -386,6 +386,34 @@ func TestFinanceToolTransactionsAreUntrusted(test *testing.T) {
 	sent := operations.variables[0]
 	if sent["financeAccountId"] != "account-one" || sent["limit"] != 20 || sent["isUncategorized"] != true {
 		test.Errorf("sent %v", sent)
+	}
+}
+
+// Trades carry what the institution wrote, and come back marked
+// untrusted, with the arguments passed on in the API's spelling and a month
+// spread into its first and last day.
+func TestFinanceToolTradesAreUntrusted(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"FinanceTrades": `{"financeTrades":[{"id":"trade-one","tradeKind":"buy","tradedQuantity":"3","unitPrice":"101.25","tradeAmount":"-303.75","currencyCode":"USD","description":"BOUGHT INVENTED FUND"}],"nextCursor":""}`,
+	}}
+	result, err := call(test, operations, `{"operation":"trades","finance_account_id":"account-one","finance_security_id":"security-one","limit":20,"month":"2026-02"}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !result.Untrusted || !strings.Contains(result.Content, "BOUGHT INVENTED FUND") {
+		test.Errorf("%+v", result)
+	}
+	sent := operations.variables[0]
+	if sent["financeAccountId"] != "account-one" || sent["financeSecurityId"] != "security-one" || sent["limit"] != 20 ||
+		sent["from"] != "2026-02-01" || sent["to"] != "2026-02-28" || sent["month"] != nil {
+		test.Errorf("sent %v", sent)
+	}
+	if !strings.Contains(operations.documents[0], "FinanceTrades(") {
+		test.Errorf("sent %s", operations.documents[0])
+	}
+	if _, err := call(test, operations, `{"operation":"trades","account_id":"account-one"}`); err == nil || !strings.Contains(err.Error(), "finance_account_id instead of account_id") {
+		test.Errorf("trades took account_id for finance_account_id: %v", err)
 	}
 }
 
@@ -440,8 +468,40 @@ func TestFinanceToolRefusesArgumentsItDoesNotRead(test *testing.T) {
 	if _, err := call(test, operations, `{"operation":"spending_summary","month":"2026-08","from":"2026-08-03"}`); err == nil {
 		test.Error("a month and a range were both taken")
 	}
-	if _, err := call(test, operations, `{"operation":"assets","asset_id":"asset-one"}`); err == nil || !strings.Contains(err.Error(), "no other arguments") {
-		test.Errorf("assets took an asset_id: %v", err)
+	if _, err := call(test, operations, `{"operation":"spending_summary","month":"2026-08","to_currency_code":""}`); err != nil {
+		test.Errorf("an empty to_currency_code was refused: %v", err)
+	}
+	if _, err := call(test, operations, `{"operation":"create_asset","asset_name":"the car","asset_kind":"vehicle","currency_code":"USD","is_estimate_allowed":true}`); err == nil ||
+		!strings.Contains(err.Error(), "the person's to set") {
+		test.Errorf("create_asset took is_estimate_allowed from the agent: %v", err)
+	}
+}
+
+// A model that fills in every argument on every call: the ones it has
+// nothing for empty, an argument with a fixed list of values as its first
+// value, and a guess. assets is answered rather than refused; a misnamed
+// argument with something in it is still refused. An argument the
+// operation reads keeps an empty value, which may mean something.
+func TestFinanceToolIgnoresArgumentsItDoesNotRead(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"Assets":                `[]`,
+		"CategorizeTransaction": `{"id":"transaction-one"}`,
+	}}
+	if _, err := call(test, operations, `{"operation":"assets","after":"","asset_id":"","asset_ids":[],"asset_kind":"vehicle","estimate_low":null,
+		"group_by":"spendingCategory","target_measure":"cash_flow","valuation_source":"agent_estimate",
+		"is_transfer":false,"is_uncategorized":false,"limit":0,"month":""}`); err != nil {
+		test.Fatalf("assets refused arguments it does not read: %v", err)
+	}
+	if _, err := call(test, operations, `{"operation":"assets","asset_kind":"vehicle","to_currency_code":"EUR"}`); err != nil {
+		test.Errorf("assets refused a to_currency_code, which it does not read under any name: %v", err)
+	}
+	if _, err := call(test, operations, `{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"",
+		"asset_id":"","is_hidden":false}`); err != nil {
+		test.Fatalf("categorize_transaction refused arguments sent empty: %v", err)
+	}
+	if sent := operations.variables[len(operations.variables)-1]; sent["spendingCategoryId"] != "" {
+		test.Errorf("an empty spending category, which takes one away, was not sent: %v", sent)
 	}
 }
 

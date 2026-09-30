@@ -352,11 +352,14 @@ func (self *graph) CreateAsset(ctx context.Context, arguments CreateAssetArgumen
 	if err != nil {
 		return nil, financeError(err)
 	}
+	if isEstimatedByAgent(created) {
+		self.startAssetEstimates(ctx, self.writing(ctx), principal, found)
+	}
 	return created, nil
 }
 
 func (self *graph) UpdateAsset(ctx context.Context, arguments UpdateAssetArguments) (*models.Asset, error) {
-	_, found, err := self.requireAgentPerson(ctx)
+	principal, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +378,11 @@ func (self *graph) UpdateAsset(ctx context.Context, arguments UpdateAssetArgumen
 			return nil, err
 		}
 	}
+	// Whether the agent estimated it before this change, so allowing it
+	// starts the estimates once and a rename does not.
+	wasEstimatedByAgent := false
 	updated, err := self.writing(ctx).UpdateAsset(found.ID, strings.TrimSpace(arguments.AssetID), func(asset *models.Asset) error {
+		wasEstimatedByAgent = isEstimatedByAgent(asset)
 		// A finance account's asset is valued by its syncs, in the
 		// account's currency.
 		isFromSync := asset.FinanceAccountID != "" && asset.ValuationSource == models.ValuationSourceFinanceSync
@@ -408,6 +415,9 @@ func (self *graph) UpdateAsset(ctx context.Context, arguments UpdateAssetArgumen
 		}
 		return nil
 	})
+	if err == nil && !wasEstimatedByAgent && isEstimatedByAgent(updated) {
+		self.startAssetEstimates(ctx, self.writing(ctx), principal, found)
+	}
 	return updated, financeError(err)
 }
 

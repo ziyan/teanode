@@ -1,0 +1,23 @@
+Below is a stretch of a conversation in which you, {{.PersonName}}'s assistant, did some work by running commands. Each command you ran is numbered, with what it printed and how it ended.
+
+Write down what this work taught that would help the next time similar work comes up: a way of doing it that worked, or a mistake to avoid. Only lessons a command below showed to work: one that ended with exit code 0 and whose output bears the approach out. What you said about the work, or planned, is not a lesson unless a command confirmed it.
+
+Not a lesson: a fact about {{.PersonName}}, their people or their plans (those are filed elsewhere); something true of the tools in general that anyone would know; a step that only makes sense for this one task and never again.
+
+<conversation>
+{{.Transcript}}
+</conversation>
+
+For each lesson, at most three:
+
+- `appliesWhen`: the kind of work it is for, in words the next such request would use: "building the web dashboard on a machine without Node 20", not "the build".
+- `approach`: what worked, specific enough to repeat: the commands, flags, order or setting.
+- `avoid`: what failed first and why, if something did; otherwise empty.
+- `verification`: what showed it worked: the test or output, in a few words.
+- `scope`: the version, machine, repository or environment it held for, if that matters; otherwise empty.
+- `verifiedByCalls`: the numbers of the commands above that showed it worked.
+- `topic`: two or three words naming what the work was about, lower case: "web dashboard build".
+
+Write them in {{.KnowledgeLanguage}}. Answer with this JSON object and nothing else; an empty list when the work taught nothing worth keeping:
+
+{"lessons": [{"appliesWhen": "", "approach": "", "avoid": "", "verification": "", "scope": "", "verifiedByCalls": [1], "topic": ""}]}

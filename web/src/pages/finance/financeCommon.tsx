@@ -201,5 +201,7 @@ export function useFinanceWords() {
     budgetPace: (value?: string | null) => word('finance.budgetPace', value),
     categorizedBy: (value?: string | null) => word('finance.categorizedBy', value),
     targetMeasure: (value?: string | null) => word('finance.targetMeasure', value),
+    securityKind: (value?: string | null) => word('finance.securityKind', value),
+    tradeKind: (value?: string | null) => word('finance.tradeKind', value),
   }
 }
