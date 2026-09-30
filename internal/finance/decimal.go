@@ -113,6 +113,16 @@ func CanonicalAmount(amount string) (string, error) {
 	return formatDecimal(amountValue, AmountDecimalPlaces), nil
 }
 
+// CanonicalQuantity writes a quantity or a unit price with exactly
+// QuantityDecimalPlaces places.
+func CanonicalQuantity(quantity string) (string, error) {
+	quantityValue, err := parseDecimal(quantity)
+	if err != nil {
+		return "", err
+	}
+	return formatDecimal(quantityValue, QuantityDecimalPlaces), nil
+}
+
 // negatedJsonAmount turns one of Plaid's amounts, where positive is money
 // leaving the account, into this program's, where negative is.
 func negatedJsonAmount(number json.Number) (string, error) {

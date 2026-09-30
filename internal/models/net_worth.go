@@ -77,6 +77,13 @@ type Asset struct {
 	// empty for anything else.
 	FinanceAccountID string `json:"financeAccountId,omitempty" graphapi:"nullable"`
 
+	// FinanceSecurityID is the security a holding holds: an asset valued
+	// by a finance account for one security, rather than the account's own
+	// asset, which then holds only its cash. FinanceSecurity is the
+	// security itself when the asset was read with it.
+	FinanceSecurityID string           `json:"financeSecurityId,omitempty" graphapi:"nullable"`
+	FinanceSecurity   *FinanceSecurity `json:"financeSecurity,omitempty" graphapi:"nullable"`
+
 	ValuationSource ValuationSource `json:"valuationSource"`
 
 	// EstimateDescription is what the person allowed the agent to search
@@ -116,6 +123,12 @@ type AssetValuation struct {
 	EstimateHigh  string   `json:"estimateHigh,omitempty" graphapi:"nullable"`
 	ValuationNote string   `json:"valuationNote,omitempty" graphapi:"nullable"`
 	EvidenceURLs  []string `json:"evidenceUrls"`
+
+	// A holding's size on the day, the price of one unit, and what was
+	// paid for it, as decimals; empty for anything else.
+	HeldQuantity string `json:"heldQuantity,omitempty" graphapi:"nullable"`
+	UnitPrice    string `json:"unitPrice,omitempty" graphapi:"nullable"`
+	CostBasis    string `json:"costBasis,omitempty" graphapi:"nullable"`
 
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
