@@ -153,7 +153,16 @@ func NewFinanceCommand() *cli.Command {
 			{Name: "reporting-currency", Usage: "the currency totals are shown in, and whether you chose it", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceReportingCurrency},
 			{Name: "set-reporting-currency", Usage: "the one currency totals are shown in", ArgsUsage: "<currency>", Flags: []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "clear", Usage: "go back to the currency of your first finance account"}}, Action: runFinanceSetReportingCurrency},
 			{Name: "net-worth", Usage: "your net worth per day", Flags: append(rangeFlags(), JSONFlag(), currencyFlag()), Action: runFinanceNetWorth},
-			{Name: "assets", Usage: "what you own and owe, with each one's latest value", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceAssets},
+			{
+				Name: "assets", Usage: "what you own and owe, with each one's latest value", Action: runFinanceAssets,
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "kind", Usage: "only this kind: cash, investment, retirement, property, vehicle, other_asset, credit_card, loan, mortgage or other_liability"},
+					&cli.StringFlag{Name: "text", Usage: "only those whose name holds these words"},
+					&cli.StringFlag{Name: "finance-account", Usage: "only what this finance account values, by id: its own asset and its holdings"},
+					&cli.BoolFlag{Name: "is-holding", Usage: "only the holdings of investment accounts; --is-holding=false leaves them out"},
+					JSONFlag(),
+				},
+			},
 			{Name: "asset-history", Usage: "an asset's values, newest first", ArgsUsage: "<asset-id>", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceAssetHistory},
 			{
 				Name: "create-asset", Usage: "add something you own or owe, with its first value if you give one", ArgsUsage: "<name>",
@@ -1186,8 +1195,17 @@ func runFinanceNetWorth(ctx context.Context, command *cli.Command) error {
 }
 
 func runFinanceAssets(ctx context.Context, command *cli.Command) error {
+	variables := map[string]any{}
+	for flag, variable := range map[string]string{"kind": "assetKind", "text": "text", "finance-account": "financeAccountId"} {
+		if value := strings.TrimSpace(command.String(flag)); value != "" {
+			variables[variable] = value
+		}
+	}
+	if command.IsSet("is-holding") {
+		variables["isHolding"] = command.Bool("is-holding")
+	}
 	var assets []*client.Asset
-	if err := financeCall(ctx, command, operationOf(command), nil, &assets); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &assets); err != nil {
 		return err
 	}
 	if command.Bool("json") {
