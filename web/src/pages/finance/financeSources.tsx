@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
+import { FINANCE_LINK_PATH } from '../../components/dashboardPath'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { KeyIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../../components/icons'
 import { Select } from '../../components/select'
@@ -22,10 +23,6 @@ import {
   SYNC_SOURCE,
 } from './financeApi'
 import { Money, accountLabel, useAct, useFinanceWords } from './financeCommon'
-
-// Where Plaid's window runs: a page of its own, because its security policy
-// lets Plaid's script and frame in and the dashboard's does not.
-export const FINANCE_LINK_PATH = '/finance-link'
 
 // openFinanceLink opens Plaid's page in a window of its own, to link a new
 // institution or, with a finance source, to sign in to it again. A window

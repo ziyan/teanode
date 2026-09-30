@@ -20,9 +20,6 @@ import (
 	"github.com/ziyan/teanode/internal/client"
 )
 
-// financeLinkPagePath is the dashboard page that opens Plaid Link.
-const financeLinkPagePath = "/finance-link"
-
 // financeOperation is one operation of the tool: the finance area's
 // operation it calls, what it costs, the arguments it passes on, and
 // whether its answer carries text outsiders wrote.
@@ -789,9 +786,9 @@ func emptyHint(name string, answered any) string {
 
 // linkAddress is the dashboard's linking page for the person to open.
 func linkAddress(current tools.Run, sourceId, instruction string) *tools.Result {
-	address := financeLinkPagePath
+	address := client.FinanceLinkPagePath
 	if base := current.Configuration().DashboardBase(); base != "" {
-		address = base + financeLinkPagePath
+		address = base + client.FinanceLinkPagePath
 	}
 	if sourceId != "" {
 		address += "?source=" + sourceId
@@ -845,7 +842,7 @@ func sourceOperation(ctx context.Context, executor tools.Operations, name, sourc
 		if err := executor.Execute(ctx, client.DocumentDeleteAgentKnowledgeSource, map[string]any{"sourceId": sourceId}, nil); err != nil {
 			return nil, err
 		}
-		return noted("deleted "+source.Name+" and its transactions, and ended it at its provider; its assets keep their history as manual ones, closed today", "deleted "+source.Name), nil
+		return noted("deleted "+source.Name+" and its transactions, and ended it at its provider; its assets keep their history as manual ones and no longer count from today", "deleted "+source.Name), nil
 	}
 }
 

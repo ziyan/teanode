@@ -24,10 +24,6 @@ import (
 // with a leading Finance dropped), calling the same operation the
 // dashboard's Finance page and the agent's finance tool call.
 
-// financeLinkPagePath is the dashboard page that opens Plaid Link, the one
-// page whose security policy lets Plaid's window in.
-const financeLinkPagePath = "/finance-link"
-
 // financeWaitPoll is how often link-plaid and repair look for the result
 // of what the person does in the browser.
 const financeWaitPoll = 3 * time.Second
@@ -489,7 +485,7 @@ func financeLinkAddress(command *cli.Command, sourceId string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	address := strings.TrimSuffix(connection.URL(), "/") + financeLinkPagePath
+	address := strings.TrimSuffix(connection.URL(), "/") + client.FinanceLinkPagePath
 	if sourceId != "" {
 		address += "?source=" + sourceId
 	}

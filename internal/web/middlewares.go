@@ -255,7 +255,10 @@ const DrawerPagePath = "/drawer"
 // than this server, and only to Plaid: the window is Plaid's script, which
 // frames Plaid's page and talks to Plaid's API. Every other page keeps the
 // policy that keeps a message from reaching anything outside this server.
-const FinanceLinkPagePath = "/finance-link"
+// The policy comes with the document, so the page has to be loaded at this
+// path, never reached by moving within the dashboard. The command line and
+// the finance tool hold the same path (internal/client.FinanceLinkPagePath).
+const FinanceLinkPagePath = "/finance/link"
 
 // financeLinkScriptSource, financeLinkFrameSource and
 // financeLinkConnectSources are what Plaid documents its linking window as

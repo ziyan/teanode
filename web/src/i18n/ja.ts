@@ -3270,7 +3270,7 @@ export const ja: Catalog = {
   'finance.turnedOff': '金融ソースをオフにしました。取得済みの内容は残り、同期は止まります。',
   'finance.turnedOn': '金融ソースをオンにしました。',
   'finance.deleteSource': '金融ソースを削除',
-  'finance.deleteSourceBody': '{name} の同期が止まり、その金融口座とそこから届いたすべての金融取引が削除されます。その資産は履歴ごと純資産に残り、今日の日付で終了するため、以降は純資産に数えられません。',
+  'finance.deleteSourceBody': '{name} の同期が止まり、その金融口座とそこから届いたすべての金融取引が削除されます。その資産は履歴ごと純資産に残り、今日から純資産に数えられなくなります。',
   'finance.deletePlaidLimit': 'Plaid のプランによっては、これまでに連携した金融機関の数が上限に数えられ、この金融ソースを削除してもその枠は戻りません。サインインの問題なら、代わりに「もう一度サインイン」を使ってください。',
   'finance.deleteSimpleFINRevoke': 'SimpleFIN Bridge のウェブサイトでこのアプリを削除すれば、与えたアクセスもそこで終わります。',
   'finance.sourceDeleted': '金融ソースを削除しました。',

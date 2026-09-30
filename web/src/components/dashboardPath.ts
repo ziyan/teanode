@@ -31,6 +31,13 @@ export function mailPath(itemId: string): string | null {
   return /^[A-Za-z0-9]+$/.test(itemId) ? `/mailbox/starred/${itemId}` : null
 }
 
+// FINANCE_LINK_PATH is the page Plaid's window runs on. The server gives
+// this path alone a policy that lets Plaid in, and a policy comes with the
+// document, so the page is only ever loaded at it (in a window of its own),
+// never reached by moving within the dashboard. The server, the command line
+// and the finance tool hold the same path.
+export const FINANCE_LINK_PATH = '/finance/link'
+
 // The parts of the dashboard the agent may take the person to: their own
 // pages, never an operator's (internal/agent/tools/openpage holds the same
 // list).
@@ -46,6 +53,7 @@ export function shownPath(written: string): string | null {
   for (const segment of segments) {
     if (segment === '' || segment === '.' || segment === '..' || !/^[\p{L}\p{N}\-._~]+$/u.test(segment)) return null
   }
+  if (path === FINANCE_LINK_PATH) return null
   return SHOWN_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`)) ? path : null
 }
 
