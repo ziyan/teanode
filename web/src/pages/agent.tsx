@@ -437,9 +437,7 @@ export function AgentPage() {
       {tab === 'ideas' ? <IdeasTab /> : null}
       {tab === 'alerts' ? (
         <>
-          <div className="card">
-            <AlertSettings agent={agent} busy={busy} onSave={update} />
-          </div>
+          <AlertSettings agent={agent} busy={busy} onSave={update} />
           {agent.enabled && !agent.operatorDisabledAt ? <AlertsCard /> : null}
         </>
       ) : null}
@@ -504,9 +502,7 @@ function AlertSettings({ agent, busy, onSave }: SaveProps) {
     void onSave({ alertDailyMost: most }, t('agent.saved'))
   }
   return (
-    <div>
-      <h3>{t('agent.alerts')}</h3>
-      <p className="muted">{t('agent.alertsHint')}</p>
+    <SettingsSection card title={t('agent.alerts')} description={t('agent.alertsHint')}>
       <label className="checkbox">
         <input
           type="checkbox"
@@ -556,7 +552,7 @@ function AlertSettings({ agent, busy, onSave }: SaveProps) {
         </div>
       </div>
       <p className="muted field-hint">{t('agent.alertQuietHint')}</p>
-    </div>
+    </SettingsSection>
   )
 }
 
