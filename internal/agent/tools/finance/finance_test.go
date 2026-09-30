@@ -440,28 +440,33 @@ func TestFinanceToolRefusesArgumentsItDoesNotRead(test *testing.T) {
 	if _, err := call(test, operations, `{"operation":"spending_summary","month":"2026-08","from":"2026-08-03"}`); err == nil {
 		test.Error("a month and a range were both taken")
 	}
-	if _, err := call(test, operations, `{"operation":"assets","asset_id":"asset-one"}`); err == nil || !strings.Contains(err.Error(), "no other arguments") {
-		test.Errorf("assets took an asset_id: %v", err)
+	if _, err := call(test, operations, `{"operation":"spending_summary","month":"2026-08","to_currency_code":""}`); err != nil {
+		test.Errorf("an empty to_currency_code was refused: %v", err)
+	}
+	if _, err := call(test, operations, `{"operation":"create_asset","asset_name":"the car","asset_kind":"vehicle","currency_code":"USD","is_estimate_allowed":true}`); err == nil ||
+		!strings.Contains(err.Error(), "the person's to set") {
+		test.Errorf("create_asset took is_estimate_allowed from the agent: %v", err)
 	}
 }
 
-// A model that fills in every argument on every call, the ones it has
-// nothing for empty: assets is answered rather than refused, and an
-// argument sent with something in it is still refused. An argument the
+// A model that fills in every argument on every call: the ones it has
+// nothing for empty, an argument with a fixed list of values as its first
+// value, and a guess. assets is answered rather than refused; a misnamed
+// argument with something in it is still refused. An argument the
 // operation reads keeps an empty value, which may mean something.
-func TestFinanceToolIgnoresArgumentsSentEmpty(test *testing.T) {
+func TestFinanceToolIgnoresArgumentsItDoesNotRead(test *testing.T) {
 	test.Parallel()
 	operations := &fakeOperations{answers: map[string]string{
 		"Assets":                `[]`,
 		"CategorizeTransaction": `{"id":"transaction-one"}`,
 	}}
 	if _, err := call(test, operations, `{"operation":"assets","after":"","asset_id":"","asset_ids":[],"asset_kind":"vehicle","estimate_low":null,
-		"is_transfer":false,"is_uncategorized":false,"limit":0,"month":""}`); err == nil || !strings.Contains(err.Error(), "does not take asset_kind") {
-		test.Errorf("assets took an asset_kind with something in it, or refused the empty ones: %v", err)
-	}
-	if _, err := call(test, operations, `{"operation":"assets","after":"","asset_id":"","asset_ids":[],"asset_kind":"","estimate_low":null,
+		"group_by":"spendingCategory","target_measure":"cash_flow","valuation_source":"agent_estimate",
 		"is_transfer":false,"is_uncategorized":false,"limit":0,"month":""}`); err != nil {
-		test.Fatalf("assets refused arguments sent empty: %v", err)
+		test.Fatalf("assets refused arguments it does not read: %v", err)
+	}
+	if _, err := call(test, operations, `{"operation":"assets","asset_kind":"vehicle","to_currency_code":"EUR"}`); err != nil {
+		test.Errorf("assets refused a to_currency_code, which it does not read under any name: %v", err)
 	}
 	if _, err := call(test, operations, `{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"",
 		"asset_id":"","is_hidden":false}`); err != nil {
