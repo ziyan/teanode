@@ -1,0 +1,497 @@
+{
+  "name": "changing project",
+  "description": "An invented project over six weeks, in which the person takes part: a storage decision, a rejected proposal, a version migration that breaks a verified procedure and brings a new one, and a report that stays unresolved. Repeated dreams with nothing new at the end.",
+  "steps": [
+    {
+      "id": "initial-choice",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "decision-001",
+          "kind": "note",
+          "at": "2031-03-02T10:00:00Z",
+          "author": "build lead",
+          "title": "Quillmoss storage decision",
+          "text": "Decision for the Quillmoss project: we store job state in Burrowdb, pinned to Burrowdb 4.2. Reason: it is the only store our deploy tooling already supports, and the team knows it. This is decided, not a proposal."
+        },
+        {
+          "id": "runbook-001",
+          "kind": "note",
+          "at": "2031-03-04T15:30:00Z",
+          "author": "ops engineer",
+          "title": "Quillmoss schema upgrade runbook (Burrowdb 4)",
+          "text": "Schema upgrade procedure for Quillmoss on Burrowdb 4.2: run `quillmoss migrate --online` against the live store, then restart the workers one at a time. Verified on the staging cluster on 2031-03-04: the upgrade finished, and the post-upgrade check suite passed 40 of 40 checks."
+        }
+      ]
+    },
+    {
+      "id": "dream-1",
+      "stepKind": "dream",
+      "dreamCount": 1
+    },
+    {
+      "id": "checkpoint-1",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "store-1",
+          "question": "Which database does Quillmoss store its job state in, and which version?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "Burrowdb",
+                "4.2"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Burrowdb, pinned to version 4.2."
+        },
+        {
+          "id": "upgrade-1",
+          "question": "How do we upgrade the Quillmoss schema?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "migrate",
+                "online"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Run quillmoss migrate --online against the live store, then restart the workers one at a time; verified on staging with 40 of 40 checks passing."
+        },
+        {
+          "id": "unknown-1",
+          "question": "What is the Quillmoss disaster recovery target?",
+          "kind": "abstain",
+          "expects": [],
+          "forbids": [],
+          "expectedAnswer": "not known"
+        }
+      ]
+    },
+    {
+      "id": "rejected-proposal",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "chat-101",
+          "kind": "chat",
+          "at": "2031-03-10T09:12:00Z",
+          "author": "ops engineer",
+          "channel": "quillmoss-dev",
+          "thread": "ferrox-idea",
+          "text": "Idea: should Quillmoss move its job state from Burrowdb to Ferrox? Ferrox has built-in replication. Just a thought, nothing decided."
+        },
+        {
+          "id": "chat-102",
+          "kind": "chat",
+          "at": "2031-03-10T09:20:00Z",
+          "author": "build lead",
+          "channel": "quillmoss-dev",
+          "thread": "ferrox-idea",
+          "text": "Maybe. Let's look at it next week before anyone changes anything."
+        },
+        {
+          "id": "chat-102b",
+          "kind": "chat",
+          "at": "2031-03-10T09:31:00Z",
+          "author": "@you",
+          "channel": "quillmoss-dev",
+          "thread": "ferrox-idea",
+          "text": "Agreed, nobody changes the store until we have looked at Ferrox properly."
+        },
+        {
+          "id": "chat-103",
+          "kind": "chat",
+          "at": "2031-03-17T14:05:00Z",
+          "author": "build lead",
+          "channel": "quillmoss-dev",
+          "thread": "ferrox-idea",
+          "text": "Follow-up on Ferrox: we looked at it and we are not moving to Ferrox. Our deploy tooling does not support it and replication is not a need we have. Quillmoss stays on Burrowdb. Proposal rejected."
+        }
+      ]
+    },
+    {
+      "id": "dream-2",
+      "stepKind": "dream",
+      "dreamCount": 1
+    },
+    {
+      "id": "checkpoint-2",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "store-2",
+          "question": "Which database does Quillmoss store its job state in?",
+          "kind": "changed",
+          "expects": [
+            {
+              "words": [
+                "Burrowdb"
+              ]
+            }
+          ],
+          "forbids": [
+            {
+              "words": [
+                "moved",
+                "Ferrox"
+              ]
+            }
+          ],
+          "expectedAnswer": "Burrowdb. Moving to Ferrox was proposed on 2031-03-10 and rejected on 2031-03-17.",
+          "outdatedClaims": [
+            {
+              "words": [
+                "move",
+                "Ferrox"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ferrox-2",
+          "question": "Did Quillmoss adopt Ferrox?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "Ferrox",
+                "rejected"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "No. Ferrox was proposed and then rejected: the deploy tooling does not support it and replication is not needed."
+        }
+      ]
+    },
+    {
+      "id": "version-migration",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "decision-002",
+          "kind": "note",
+          "at": "2031-04-01T11:00:00Z",
+          "author": "build lead",
+          "title": "Quillmoss moves to Burrowdb 5",
+          "text": "Decision: Quillmoss moves from Burrowdb 4.2 to Burrowdb 5.1, effective 2031-04-07. Reason: Burrowdb 4 reaches end of support in May 2031. After 2031-04-07 no Quillmoss environment runs Burrowdb 4."
+        },
+        {
+          "id": "chat-201",
+          "kind": "chat",
+          "at": "2031-04-09T08:40:00Z",
+          "author": "ops engineer",
+          "channel": "quillmoss-dev",
+          "thread": "upgrade-on-5",
+          "text": "Tried the usual schema upgrade on staging after the move to Burrowdb 5.1: `quillmoss migrate --online` hangs at the lock step and never finishes. Burrowdb 5 no longer allows online schema changes while writers are connected. Do not use the online upgrade on Burrowdb 5."
+        },
+        {
+          "id": "chat-201b",
+          "kind": "chat",
+          "at": "2031-04-09T09:05:00Z",
+          "author": "@you",
+          "channel": "quillmoss-dev",
+          "thread": "upgrade-on-5",
+          "text": "Thanks. Hold all schema upgrades until we have a procedure that works on Burrowdb 5."
+        },
+        {
+          "id": "chat-202",
+          "kind": "chat",
+          "at": "2031-04-09T10:15:00Z",
+          "author": "ops engineer",
+          "channel": "quillmoss-dev",
+          "thread": "upgrade-on-5",
+          "text": "Unrelated: `quillmoss status` exits 0 on staging, the CLI works."
+        },
+        {
+          "id": "chat-203",
+          "kind": "chat",
+          "at": "2031-04-09T13:50:00Z",
+          "author": "ops engineer",
+          "channel": "quillmoss-dev",
+          "thread": "upgrade-on-5",
+          "text": "New procedure for Burrowdb 5: drain the workers with `quillmoss drain`, run `quillmoss migrate --offline`, then start the workers again. Verified on staging on 2031-04-09: the upgrade finished and the post-upgrade check suite passed 40 of 40 checks."
+        }
+      ]
+    },
+    {
+      "id": "dream-3",
+      "stepKind": "dream",
+      "dreamCount": 1
+    },
+    {
+      "id": "checkpoint-3",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "store-3",
+          "question": "Which Burrowdb version does Quillmoss run now?",
+          "kind": "changed",
+          "expects": [
+            {
+              "words": [
+                "Burrowdb",
+                "5.1"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Burrowdb 5.1, since 2031-04-07; before that it was 4.2.",
+          "outdatedAnswer": "Burrowdb 4.2.",
+          "outdatedClaims": [
+            {
+              "words": [
+                "pinned to Burrowdb 4.2"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "why-3",
+          "question": "Why did Quillmoss move to Burrowdb 5?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "end of support"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Because Burrowdb 4 reaches end of support in May 2031."
+        },
+        {
+          "id": "upgrade-3",
+          "question": "How do we upgrade the Quillmoss schema now?",
+          "kind": "changed",
+          "expects": [
+            {
+              "words": [
+                "offline"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "On Burrowdb 5: drain the workers with quillmoss drain, run quillmoss migrate --offline, then start the workers again; verified on staging with 40 of 40 checks. The online upgrade hangs on Burrowdb 5 and must not be used.",
+          "outdatedAnswer": "quillmoss migrate --online, then restart the workers one at a time.",
+          "outdatedClaims": [
+            {
+              "words": [
+                "migrate --online"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "avoid-3",
+          "question": "What should we avoid when upgrading the Quillmoss schema on Burrowdb 5?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "online",
+                "hang"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "The online upgrade, quillmoss migrate --online: it hangs at the lock step because Burrowdb 5 does not allow online schema changes while writers are connected."
+        },
+        {
+          "id": "status-3",
+          "question": "Does quillmoss status exiting 0 show that the schema upgrade on Burrowdb 5 works?",
+          "kind": "direct",
+          "expects": [],
+          "forbids": [],
+          "expectedAnswer": "No. It only shows the CLI runs; the upgrade was shown to work by the offline procedure's 40 of 40 passing checks."
+        },
+        {
+          "id": "was-3",
+          "question": "Which Burrowdb version did Quillmoss run in early March 2031?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "4.2"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Burrowdb 4.2."
+        }
+      ]
+    },
+    {
+      "id": "conflicting-report",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "chat-301",
+          "kind": "chat",
+          "at": "2031-04-14T07:55:00Z",
+          "author": "support engineer",
+          "channel": "quillmoss-dev",
+          "thread": "export",
+          "text": "The Quillmoss daily export might be failing since the Burrowdb 5 move, two customers said their files were empty. Not confirmed yet."
+        },
+        {
+          "id": "chat-301b",
+          "kind": "chat",
+          "at": "2031-04-14T09:10:00Z",
+          "author": "@you",
+          "channel": "quillmoss-dev",
+          "thread": "export",
+          "text": "Can someone check yesterday's export files before we tell the customers anything?"
+        },
+        {
+          "id": "chat-302",
+          "kind": "chat",
+          "at": "2031-04-14T16:30:00Z",
+          "author": "ops engineer",
+          "channel": "quillmoss-dev",
+          "thread": "export",
+          "text": "Checked one of the exports from yesterday: it had rows. Can't tell yet whether the empty files are real. Still open."
+        }
+      ]
+    },
+    {
+      "id": "dream-4",
+      "stepKind": "dream",
+      "dreamCount": 1
+    },
+    {
+      "id": "checkpoint-4",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "export-4",
+          "question": "Is the Quillmoss daily export broken since the move to Burrowdb 5?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "export"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Unresolved: empty files were reported by two customers but not confirmed, and one export checked had rows."
+        },
+        {
+          "id": "store-4",
+          "question": "Which database and version does Quillmoss use for job state?",
+          "kind": "changed",
+          "expects": [
+            {
+              "words": [
+                "Burrowdb",
+                "5.1"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Burrowdb 5.1.",
+          "outdatedAnswer": "Burrowdb 4.2.",
+          "outdatedClaims": [
+            {
+              "words": [
+                "pinned to Burrowdb 4.2"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dreams-without-news",
+      "stepKind": "dream",
+      "dreamCount": 2
+    },
+    {
+      "id": "checkpoint-5",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "store-5",
+          "question": "Which database and version does Quillmoss use for job state?",
+          "kind": "changed",
+          "expects": [
+            {
+              "words": [
+                "Burrowdb",
+                "5.1"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Burrowdb 5.1.",
+          "outdatedAnswer": "Burrowdb 4.2.",
+          "outdatedClaims": [
+            {
+              "words": [
+                "pinned to Burrowdb 4.2"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "upgrade-5",
+          "question": "How do we upgrade the Quillmoss schema now?",
+          "kind": "changed",
+          "expects": [
+            {
+              "words": [
+                "offline"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Drain the workers, run quillmoss migrate --offline, start the workers again; the online upgrade hangs on Burrowdb 5.",
+          "outdatedAnswer": "quillmoss migrate --online, then restart the workers one at a time.",
+          "outdatedClaims": [
+            {
+              "words": [
+                "migrate --online"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ferrox-5",
+          "question": "Did Quillmoss adopt Ferrox?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "Ferrox",
+                "rejected"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "No, it was proposed and rejected."
+        },
+        {
+          "id": "export-5",
+          "question": "Is the Quillmoss daily export broken?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "export"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Unresolved: reported by two customers, not confirmed, and one export checked had rows."
+        }
+      ]
+    }
+  ]
+}

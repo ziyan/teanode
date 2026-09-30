@@ -51,6 +51,7 @@ func main() {
 			server.NewTLSCommand(),
 			server.NewUserCommand(),
 			server.NewPasswordCommand(),
+			server.NewEvaluateCommand(),
 			cmd.NewVersionCommand("teanode-server"),
 		},
 	}

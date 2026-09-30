@@ -24,6 +24,7 @@ with the same side effects. See
 | `teanode-server tls self-signed` | a certificate for local development |
 | `teanode-server user list\|add\|password\|remove\|reset\|rescue` | recover the accounts without going through the server |
 | `teanode-server password` | hash a password for an exported configuration |
+| `teanode-server evaluate scenario <file>` | feed a memory scenario through filing and dreams in a database of its own, and grade its questions at each checkpoint; see `docs/evaluation/scenarios/` |
 
 These read the environment the server reads (`TEANODE_DATABASE_URL` and the
 rest), so they run where the server runs: in its container, or with its env
