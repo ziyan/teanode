@@ -3554,7 +3554,7 @@ export const en = {
   'finance.reportingCurrencyTitle': 'Reporting currency',
   'finance.reportingCurrencyHint': 'The one currency totals, charts and net worth are shown in. Amounts in other currencies are converted at the exchange rate of their own day.',
   'finance.reportingCurrency': 'Reporting currency',
-  'finance.valuationSourceChoiceHint': 'Entered by you: you add its values. Read by your agent: your agent records them, for example every day from a connected server.',
+  'finance.valuationSourceChoiceHint': 'Entered by you: you add its values. Estimated by your agent: once you allow estimates, your agent estimates it from the web now and on the first of each month, searching only with the description below. Read by your agent: your agent records them, for example every day from a connected server.',
   'finance.reopen': 'Open again',
   'finance.assetReopened': 'Asset opened again.',
   'finance.savingsTargetReopened': 'Savings target opened again.',

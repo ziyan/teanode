@@ -43,7 +43,7 @@ import {
 // own values, or values their agent reads (from a connected server, say).
 // Estimates are allowed separately, and finance_sync belongs to the assets
 // finance sources make.
-const CHOSEN_VALUATION_SOURCES = ['manual', 'agent_reading']
+const CHOSEN_VALUATION_SOURCES = ['manual', 'agent_estimate', 'agent_reading']
 
 const ASSET_KINDS = [
   'cash',
