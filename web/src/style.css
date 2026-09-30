@@ -11837,7 +11837,8 @@ button.idea-history-title {
    dark page gets them lifted with the rest; neighbours alternate between
    the leaf, the amber and the text colour so no two side by side match. */
 .spending-ring,
-.finance-summary-table {
+.finance-summary-table,
+.finance-assets-table {
   --ring-tone-0: var(--leaf);
   --ring-tone-1: var(--warn);
   --ring-tone-2: color-mix(in srgb, var(--text) 62%, var(--surface));
@@ -12104,6 +12105,114 @@ button.idea-history-title {
 .finance-transactions-table tbody tr:focus-visible {
   outline: 2px solid var(--text);
   outline-offset: -2px;
+}
+
+/* The assets a group a kind: the kind's line opens it, and its assets sit
+   indented under it, a finance account's holdings under a line naming the
+   account. Every row is one line, a long name cut with an ellipsis (its
+   title has the whole of it) so the value beside it stays in sight. */
+.finance-asset-group {
+  cursor: pointer;
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+
+.finance-asset-group > td {
+  vertical-align: middle;
+}
+
+.finance-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.finance-group-toggle:hover {
+  background: none;
+}
+
+.finance-group-toggle .spending-ring-swatch {
+  margin-right: 0;
+}
+
+.finance-group-count {
+  font-weight: 400;
+  font-size: var(--text-label);
+}
+
+/* Pointing right while closed, down while open. */
+.finance-group-chevron {
+  width: 6px;
+  height: 6px;
+  margin: 0 2px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+}
+
+.finance-group-chevron.open {
+  transform: rotate(45deg);
+}
+
+.finance-asset-row > td:first-child,
+.finance-asset-account > td {
+  padding-left: 2.25rem;
+}
+
+.finance-asset-account > td {
+  padding-top: 10px;
+  padding-bottom: 4px;
+  font-size: var(--text-label);
+}
+
+.finance-filters > .finance-asset-search {
+  flex: 0 1 24rem;
+}
+
+/* Owned, owed and net worth beside the ring, read together. */
+.finance-worth-line {
+  display: grid;
+  grid-template-columns: max-content auto;
+  gap: 4px var(--space-4);
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-worth-line dt {
+  color: var(--muted);
+}
+
+.finance-worth-line dd {
+  margin: 0;
+  text-align: right;
+}
+
+.finance-asset-name {
+  display: inline-block;
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+@media (max-width: 600px) {
+  /* The kind's button keeps a thumb's height; the cell pads none around it. */
+  .finance-asset-group > td {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .finance-asset-name {
+    max-width: calc(100vw - 15rem);
+  }
 }
 
 /* Everything about one transaction: its fields, then the provider's whole

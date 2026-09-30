@@ -106,6 +106,7 @@ export function SpendingRing({
   totalLabel,
   highlightedKey,
   totalAmount,
+  children,
 }: {
   slices: RingSlice[]
   currency: string
@@ -118,6 +119,9 @@ export function SpendingRing({
   // month's spending, which counts a category whose refunds outweighed its
   // purchases, where no slice can.
   totalAmount?: number
+  // What reads beside the ring: the Net worth section's owned, owed and
+  // net worth.
+  children?: React.ReactNode
 }) {
   const total = slices.reduce((sum, slice) => sum + slice.amount, 0)
   if (total <= 0) return null
@@ -159,6 +163,7 @@ export function SpendingRing({
           {totalLabel}
         </text>
       </svg>
+      {children}
     </div>
   )
 }

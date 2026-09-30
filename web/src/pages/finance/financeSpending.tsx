@@ -64,9 +64,10 @@ export function FinanceSpendingSection() {
   )
 }
 
-// A bar a month for the twelve months to this one, the chosen month
-// standing out, and under it that month's income, spending and what was
-// left. A month further back than the chart reaches, chosen in the month
+// Cash flow for the twelve months to this one: income and spending side by
+// side a month, what was left (income less spending, below zero in a month
+// that spent more than came in) as a line through them, the chosen month
+// standing out, and under it that month's three figures. A month further back than the chart reaches, chosen in the month
 // field, moves the chart to the twelve months ending there.
 function SpendingByMonthPanel({
   month,
@@ -92,7 +93,9 @@ function SpendingByMonthPanel({
   // Spending as the server counts it, refunds taken off: a month whose
   // refunds outweigh what was spent is below zero, not spent.
   const spentOf = (amount?: string) => amountOf(amount)
-  const hasSpending = months.some((candidate) => amountOf(candidate.spendingAmount) !== 0)
+  const hasSpending = months.some(
+    (candidate) => amountOf(candidate.spendingAmount) !== 0 || amountOf(candidate.incomeAmount) !== 0,
+  )
   // On the headline's line rather than in the panel's heading: there it
   // sat alone at the right of an empty band above the chart on a phone.
   const monthPicker = (
@@ -107,7 +110,7 @@ function SpendingByMonthPanel({
     </label>
   )
   return (
-    <SettingsSection card title={t('finance.spendingByMonthTitle')} description={t('finance.spendingByMonthHint')}>
+    <SettingsSection card title={t('finance.cashFlowByMonthTitle')} description={t('finance.cashFlowByMonthHint')}>
       <ErrorMessage error={error} />
       {loading && !data ? <Loading /> : null}
       {flow && !hasSpending ? (
@@ -118,7 +121,7 @@ function SpendingByMonthPanel({
       ) : null}
       {hasSpending ? (
         <SeriesChart
-          label={t('finance.spendingByMonthTitle')}
+          label={t('finance.cashFlowByMonthTitle')}
           keys={months.map((candidate) => candidate.cashFlowMonth)}
           keyLabel={(key) => monthLabel(key)}
           format={(value) => formatMoney(value, currency)}
@@ -131,11 +134,25 @@ function SpendingByMonthPanel({
           }
           series={[
             {
-              id: 'spending',
-              label: t('finance.spending'),
+              id: 'income',
+              label: t('finance.income'),
               tone: 'output',
               shape: 'column',
+              values: months.map((candidate) => amountOf(candidate.incomeAmount)),
+            },
+            {
+              id: 'spending',
+              label: t('finance.spending'),
+              tone: 'cached',
+              shape: 'column',
               values: months.map((candidate) => spentOf(candidate.spendingAmount)),
+            },
+            {
+              id: 'left',
+              label: t('finance.leftOver'),
+              tone: 'input',
+              shape: 'line',
+              values: months.map((candidate) => amountOf(candidate.netAmount)),
             },
           ]}
           selectedKey={month}
