@@ -13,6 +13,7 @@ import { useToast } from '../../components/toast'
 import { ToolPolicyAccordion } from '../../components/toolPolicy'
 import { Tooltip } from '../../components/tooltip'
 import { ProviderSignIn } from './providerSignIn'
+import { PlanUsage, PlanUsageBars } from '../../components/planUsage'
 import { useTranslation } from '../../i18n/i18n'
 import { UPDATE, useSaver } from './integrations'
 
@@ -44,6 +45,9 @@ export type AgentProvider = {
   modelPricing: { model: string; input: number; output: number; cacheRead: number; cacheWrite: number }[]
   pricingOutput: number
   pricingCacheRead: number
+  // What a provider that runs on a plan last said of its allowance; null
+  // for one paid by the token, and until the plan has answered once.
+  planUsage?: PlanUsage | null
 }
 
 export type AgentMCPServer = {
@@ -144,7 +148,7 @@ export type Agent = {
 
 export const AGENT_SELECTION = `agent {
   enabled instructions allowPrivateAddresses skipCertificateCheck
-  providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
+  providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
   models { default fast embedding triage research summarize reply ask schedule compact scan synthesize decide embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
   limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay }
@@ -423,6 +427,11 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
       }
 }
 
+// capitalized is a name a service writes in lower case, as a heading would.
+function capitalized(name: string): string {
+  return name.charAt(0).toUpperCase() + name.slice(1)
+}
+
 // providerValues is a stored provider as the API takes it back: the key
 // blank, which keeps the one stored.
 function providerValues(provider: AgentProvider) {
@@ -535,10 +544,18 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
             badge={
               <>
                 <Tag value={provider.kind} />
+                {provider.planUsage?.planName ? (
+                  <Tag value={t('agentSettings.planName', { name: capitalized(provider.planUsage.planName) })} />
+                ) : null}
                 {!provider.enabled && <Tag value={t('agentSettings.disabled')} />}
               </>
             }
-            subtitle={detail.join(' · ')}
+            subtitle={
+              <>
+                {detail.join(' · ')}
+                {provider.planUsage ? <PlanUsageBars usage={provider.planUsage} /> : null}
+              </>
+            }
             actions={
               <>
                 <button
