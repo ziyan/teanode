@@ -182,8 +182,8 @@ func TestSimpleFINFirstSyncReadsTwoWindows(t *testing.T) {
 		}
 	}
 
-	if result.NextCursor != strconv.FormatInt(newer, 10) {
-		t.Errorf("cursor %q, want the newest posted time %d", result.NextCursor, newer)
+	if want := `{"account-1":` + strconv.FormatInt(newer, 10) + `}`; result.NextCursor != want {
+		t.Errorf("cursor %q, want the newest posted time %s", result.NextCursor, want)
 	}
 	if result.InstitutionName != "Example Credit Union" {
 		t.Errorf("institution %q", result.InstitutionName)
@@ -255,11 +255,63 @@ func TestSimpleFINIncrementalSync(t *testing.T) {
 	if result.PendingReplacedFrom == nil || !result.PendingReplacedFrom.Equal(wantStart) {
 		t.Errorf("pending replaced from %v, want %v", result.PendingReplacedFrom, wantStart)
 	}
-	if result.NextCursor != cursor {
-		t.Errorf("cursor %q, want the old one kept when nothing posted", result.NextCursor)
+	if want := `{"account-1":` + cursor + `}`; result.NextCursor != want {
+		t.Errorf("cursor %q, want the old time kept when nothing posted and the bridge warned, %s", result.NextCursor, want)
 	}
 	if len(result.ProviderWarnings) != 1 || result.ProviderWarnings[0] != "gen.auth: the institution needs attention" {
 		t.Errorf("warnings %v", result.ProviderWarnings)
+	}
+}
+
+// The window starts at the account furthest behind, so an institution that
+// failed for a while is read over its gap, and an account quiet through a
+// sync that warned of nothing is read up to now.
+func TestSimpleFINWindowStartsAtTheAccountFurthestBehind(t *testing.T) {
+	testServer := newSimpleFINTestServer(t, func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = fmt.Fprint(writer, simpleFinAccountSetFor(nil, ""))
+	})
+	simpleFin := newTestSimpleFin(testServer)
+	behind := simpleFinTestNow.Add(-30 * 24 * time.Hour)
+	current := simpleFinTestNow.Add(-2 * 24 * time.Hour)
+	cursor := `{"account-1":` + strconv.FormatInt(behind.Unix(), 10) + `,"account-2":` + strconv.FormatInt(current.Unix(), 10) + `}`
+	result, err := simpleFin.Sync(context.Background(), testServer.credential(), cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantStart := behind.Add(-14 * 24 * time.Hour)
+	if got := testServer.requests[0].URL.Query().Get("start-date"); got != strconv.FormatInt(wantStart.Unix(), 10) {
+		t.Errorf("the window started at %s, want %d", got, wantStart.Unix())
+	}
+	want := `{"account-1":` + strconv.FormatInt(simpleFinTestNow.Unix(), 10) + `,"account-2":` + strconv.FormatInt(current.Unix(), 10) + `}`
+	if result.NextCursor != want {
+		t.Errorf("cursor %q, want %s", result.NextCursor, want)
+	}
+}
+
+// An account the cursor does not know is read from as far back as the
+// bridge keeps, not from the other accounts' window.
+func TestSimpleFINReadsTheHistoryOfANewAccount(t *testing.T) {
+	testServer := newSimpleFINTestServer(t, func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = fmt.Fprint(writer, simpleFinAccountSetFor(nil, ""))
+	})
+	simpleFin := newTestSimpleFin(testServer)
+	cursor := `{"account-2":` + strconv.FormatInt(simpleFinTestNow.Add(-2*24*time.Hour).Unix(), 10) + `}`
+	result, err := simpleFin.Sync(context.Background(), testServer.credential(), cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	earliest := simpleFinTestNow.Add(-90 * 24 * time.Hour)
+	isEarliestAsked := false
+	for _, request := range testServer.requests {
+		if request.URL.Query().Get("start-date") == strconv.FormatInt(earliest.Unix(), 10) {
+			isEarliestAsked = true
+		}
+	}
+	if !isEarliestAsked {
+		t.Errorf("the new account's history was not read; %d requests", len(testServer.requests))
+	}
+	if result.PendingReplacedFrom == nil || !result.PendingReplacedFrom.Equal(earliest) {
+		t.Errorf("pending replaced from %v, want %v", result.PendingReplacedFrom, earliest)
 	}
 }
 
