@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.91.0] - 2026-09-30
+
+### Added
+
+- Allowing the agent to estimate an asset (a car, a house) estimates it right away and again on the first of each month, through a schedule you can see, edit or switch off. (#254)
+
 ## [0.90.0] - 2026-09-30
 
 ### Added
