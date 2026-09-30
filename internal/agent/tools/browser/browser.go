@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
@@ -69,18 +68,16 @@ func init() {
 						for _, step := range call.Steps {
 							var inner browserArguments
 							_ = json.Unmarshal(step, &inner)
-							if browserOnTheirOwnBrowser(&inner, &call) {
-								return tools.RiskDestructive
-							}
 							if browserWritingActions[inner.Action] {
 								risk = tools.RiskWrite
 							}
 						}
 						return risk
 					}
-					if browserOnTheirOwnBrowser(&call, &call) {
-						return tools.RiskDestructive
-					}
+					// The debugging protocol on the person's own tab is a write
+					// like clicking in it, not a thing that always stops to ask:
+					// the person said not to be asked about it, and one who wants
+					// to be can put the browser under "ask me first".
 					if browserWritingActions[call.Action] {
 						return tools.RiskWrite
 					}
@@ -91,27 +88,6 @@ func init() {
 			},
 		}
 	})
-}
-
-// browserOnTheirOwnBrowser is a call that speaks the debugging protocol
-// directly on the person's attached tab.
-//
-// Asked about first, because that tab is their browser, signed in as them,
-// and the protocol is everything the extension has not thought to refuse.
-// The refusals it does enforce are a list of what is allowed now rather than
-// a list of what is not -- but a list is a list, and what gets past it is
-// done as the person with their sessions. The other actions on a tab are
-// bounded by what they say they are; this one is not, so it is the one that
-// stops and asks.
-func browserOnTheirOwnBrowser(call, outer *browserArguments) bool {
-	if call.Action != "cdp" && call.Action != "cdp_stop" && call.Action != "cdp_events" {
-		return false
-	}
-	target := strings.TrimSpace(strings.ToLower(call.Target))
-	if target == "" {
-		target = strings.TrimSpace(strings.ToLower(outer.Target))
-	}
-	return target == "tab"
 }
 
 // browsingOf is the run's browser side, for a run that has one.
