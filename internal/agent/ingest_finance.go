@@ -27,6 +27,14 @@ const (
 	// across a weekend.
 	financeTransferWindowDays = 7
 
+	// While a finance source's provider is still gathering its history, as
+	// Plaid is for a while after a link, it syncs again this soon rather
+	// than at its next scheduled time, which is hours away; for this long
+	// after it was linked at most, so a provider that never says it is done
+	// does not keep a source syncing every few minutes.
+	financeCatchUpEvery  = 5 * time.Minute
+	financeCatchUpWindow = 24 * time.Hour
+
 	// financeTransferHistoryStart is where the one pass over a finance
 	// source's whole history begins: before any provider keeps history.
 	financeTransferHistoryStart = "1990-01-01"
@@ -161,14 +169,21 @@ func (self *Agent) runFinanceSync(ctx context.Context, run *Run, source *models.
 	// sync that follows through, and over the last week after that. A first
 	// sync brings months of history, and a week's window left every card
 	// payment older than that counted as a refund on the card.
+	// While the history is still arriving, the whole-history pass is not
+	// counted as done: the months still to come need it too.
 	isTransferHistoryDetected, _ := cursor[models.FinanceCursorIsTransferHistoryDetected].(bool)
 	if err := self.afterFinanceSync(ctx, run, source, applied, syncedOn, !isTransferHistoryDetected); err != nil {
 		// The rows are written and the cursor moves on: what follows a
 		// sync is repeated after the next one, so it is logged here rather
 		// than making the sync look failed.
 		log.Warningf("finance source %q synced, but what follows a sync failed: %s", source.ID, err)
-	} else {
+	} else if !syncResult.IsHistoryIncomplete {
 		cursor[models.FinanceCursorIsTransferHistoryDetected] = true
+	}
+	if syncResult.IsHistoryIncomplete && time.Since(source.CreatedAt) < financeCatchUpWindow {
+		if soon := time.Now().Add(financeCatchUpEvery); nextRun.IsZero() || soon.Before(nextRun) {
+			nextRun = soon
+		}
 	}
 	return mark("")
 }

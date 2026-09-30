@@ -3262,6 +3262,7 @@ export const ja: Catalog = {
   'finance.noAccountsYet': 'まだ金融口座はありません。最初の同期のあとに表示されます。',
   'finance.lastSync': '最終同期 {time}',
   'finance.neverSynced': 'まだ同期していません',
+  'finance.firstSyncUnderWay': '初回の同期を実行中です。操作は不要です',
   'finance.signInAgain': 'もう一度サインイン',
   'finance.syncNow': '今すぐ同期',
   'finance.syncing': '同期しています。新しい取引は 1〜2 分で表示されます。',

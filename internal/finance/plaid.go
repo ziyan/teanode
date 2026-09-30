@@ -240,6 +240,20 @@ type plaidSyncPage struct {
 	Accounts   []json.RawMessage `json:"accounts"`
 	NextCursor string            `json:"next_cursor"`
 	HasMore    bool              `json:"has_more"`
+
+	// TransactionsUpdateStatus is how far Plaid has got gathering the
+	// finance source's history: NOT_READY and INITIAL_UPDATE_COMPLETE
+	// for a while after a link, then HISTORICAL_UPDATE_COMPLETE. Empty
+	// from a Plaid that does not say.
+	TransactionsUpdateStatus string `json:"transactions_update_status"`
+}
+
+// plaidHistoryCompleteStatuses are the update statuses that mean nothing
+// more of the history is on its way, or that Plaid does not know.
+var plaidHistoryCompleteStatuses = map[string]bool{
+	"":                                   true,
+	"HISTORICAL_UPDATE_COMPLETE":         true,
+	"TRANSACTIONS_UPDATE_STATUS_UNKNOWN": true,
 }
 
 type plaidRemoved struct {
@@ -363,6 +377,7 @@ func (self *Plaid) syncFrom(ctx context.Context, credential string, startingCurs
 			syncResult.NextCursor = page.NextCursor
 		}
 		if !page.HasMore {
+			syncResult.IsHistoryIncomplete = !plaidHistoryCompleteStatuses[page.TransactionsUpdateStatus]
 			break
 		}
 		if page.NextCursor == "" || page.NextCursor == pageCursor {

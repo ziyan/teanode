@@ -3302,6 +3302,7 @@ export const en = {
   'finance.noAccountsYet': 'No finance accounts yet; they appear after the first sync.',
   'finance.lastSync': 'Last synced {time}',
   'finance.neverSynced': 'Not synced yet',
+  'finance.firstSyncUnderWay': 'First sync under way, nothing to press',
   'finance.signInAgain': 'Sign in again',
   'finance.syncNow': 'Sync now',
   'finance.syncing': 'Syncing. New transactions appear in a minute or two.',

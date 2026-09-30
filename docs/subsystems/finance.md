@@ -91,6 +91,13 @@ document passes: `runIngest` hands it to `runFinanceSync`
 (`internal/agent/ingest_finance.go`) before anything about documents or the
 knowledge feature switch.
 
+A new finance source is due at once, so its first sync starts within a
+minute of the link. A provider can say it is still gathering the history (Plaid
+does, in `transactions_update_status`, for a while after a link); the source
+then syncs again in five minutes rather than at its next scheduled time, for
+its first day at most, and the one pass over the whole history for transfers
+waits until the history is complete.
+
 A sync opens the credential, asks the provider for what changed, and writes it
 in one database transaction (`ApplyFinanceSync` in
 `internal/db/database_finance.go`): finance accounts upserted, finance
