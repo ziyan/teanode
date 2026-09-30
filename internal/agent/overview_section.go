@@ -114,7 +114,10 @@ func overviewSectionFor(node *models.AgentNode, matchedSectionId, question strin
 		}
 	}
 	if !isMatched {
-		words := questionWords(question)
+		// The page's own name is in every section, and mostly in the
+		// first: the words that choose a section are the rest.
+		named := questionWords(node.Name + " " + node.Path + " " + strings.Join(node.Aliases, " "))
+		words := withoutWords(questionWords(question), named)
 		best := 0
 		for _, section := range sections {
 			if shared := sharedWordCount(words, section.Heading+" "+section.Text); shared > best {
@@ -159,6 +162,21 @@ func questionWords(question string) []string {
 		words = append(words, word)
 	}
 	return words
+}
+
+// withoutWords is the words that are not among the others.
+func withoutWords(words, others []string) []string {
+	isOther := make(map[string]bool, len(others))
+	for _, other := range others {
+		isOther[other] = true
+	}
+	kept := make([]string, 0, len(words))
+	for _, word := range words {
+		if !isOther[word] {
+			kept = append(kept, word)
+		}
+	}
+	return kept
 }
 
 // sharedWordCount is how many of the words the text holds.

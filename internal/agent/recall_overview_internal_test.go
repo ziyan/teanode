@@ -113,6 +113,12 @@ func TestTheSectionOfAnOverviewRecallCarries(t *testing.T) {
 			t.Errorf("%s: carried %q, not %q", expected.name, got, expected.section)
 		}
 	}
+	// The page's own name says nothing about which section: it is in the
+	// first, and the other word the question asks by points elsewhere.
+	named := &models.AgentNode{ID: "named", Name: "Garden shed", Overview: "## What it is\n\nThe garden shed by the gate.\n\n## What stands out\n\nIts records are sparse."}
+	if got := overviewSectionFor(named, "", "what is notable in the garden shed records?", 100); got != "## What stands out\n\nIts records are sparse." {
+		t.Errorf("the page's name chose the section: %q", got)
+	}
 	plain := &models.AgentNode{ID: "plain", Overview: "A shed with no heading."}
 	if got := overviewSectionFor(plain, "", "", 100); got != "A shed with no heading." {
 		t.Errorf("an overview with no headings carried %q", got)
