@@ -3215,7 +3215,7 @@ export const en = {
   'agent.alertDailyMost': 'At most a day',
   'agent.alertQuietHint': 'In your quiet hours only what cannot wait is said; the rest waits for the morning. The same time at both ends means no quiet hours.',
   'agent.mailboxAlerts': 'Tell me about what arrives here that I should know now',
-  'alerts.title': 'Alerts',
+  'alerts.title': 'Recent alerts',
   'alerts.hint': 'What your agent told you unasked, newest first, with the messages each was about. Mute one to stop hearing about things like it.',
   'alerts.none': 'Your agent has not told you anything unasked yet.',
   'alerts.urgent': 'Could not wait',

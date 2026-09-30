@@ -3084,7 +3084,7 @@ export const zh: Catalog = {
   'agent.alertDailyMost': '每天最多',
   'agent.alertQuietHint': '安静时段只说等不了的事，其余的等到早上再说。开始和结束相同表示没有安静时段。',
   'agent.mailboxAlerts': '这里收到的、我现在就该知道的事告诉我',
-  'alerts.title': '主动通知',
+  'alerts.title': '最近的主动通知',
   'alerts.hint': '代理不等你问就告诉你的事，最新的在前，附上每条涉及的邮件。静音一条，就不再听到类似的事。',
   'alerts.none': '代理还没有主动告诉你任何事。',
   'alerts.urgent': '等不了',

@@ -3175,7 +3175,7 @@ export const ja: Catalog = {
   'agent.alertDailyMost': '1 日の上限',
   'agent.alertQuietHint': '静かな時間帯には待てないことだけを伝え、それ以外は朝まで待ちます。開始と終了が同じなら静かな時間帯はありません。',
   'agent.mailboxAlerts': 'ここに届いた、今知っておくべきことを伝える',
-  'alerts.title': 'お知らせ',
+  'alerts.title': '最近のお知らせ',
   'alerts.hint': 'エージェントが頼まれずに伝えたこと。新しい順で、それぞれ元になったメール付きです。ミュートすると、同じようなことは伝えなくなります。',
   'alerts.none': 'エージェントはまだ頼まれずに何も伝えていません。',
   'alerts.urgent': '待てなかったもの',

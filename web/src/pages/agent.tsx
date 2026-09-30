@@ -504,7 +504,7 @@ function AlertSettings({ agent, busy, onSave }: SaveProps) {
     void onSave({ alertDailyMost: most }, t('agent.saved'))
   }
   return (
-    <div className="settings-subform">
+    <div>
       <h3>{t('agent.alerts')}</h3>
       <p className="muted">{t('agent.alertsHint')}</p>
       <label className="checkbox">
