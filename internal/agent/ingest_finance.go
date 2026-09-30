@@ -173,13 +173,20 @@ func (self *Agent) runFinanceSync(ctx context.Context, run *Run, source *models.
 	// While the history is still arriving, the whole-history pass is not
 	// counted as done: the months still to come need it too.
 	isTransferHistoryDetected, _ := cursor[models.FinanceCursorIsTransferHistoryDetected].(bool)
-	if err := self.afterFinanceSync(ctx, run, source, applied, syncedOn, !isTransferHistoryDetected); err != nil {
+	// A mapping newer than the one the transactions were last judged by
+	// judges again what the older one categorized.
+	mappingVersion, _ := cursor[models.FinanceCursorProviderCategoryMappingVersion].(float64)
+	isRemappingDue := int(mappingVersion) < finance.ProviderCategoryMappingVersion
+	if err := self.afterFinanceSync(ctx, run, source, applied, syncedOn, !isTransferHistoryDetected, isRemappingDue); err != nil {
 		// The rows are written and the cursor moves on: what follows a
 		// sync is repeated after the next one, so it is logged here rather
 		// than making the sync look failed.
 		log.Warningf("finance source %q synced, but what follows a sync failed: %s", source.ID, err)
-	} else if !syncResult.IsHistoryIncomplete {
-		cursor[models.FinanceCursorIsTransferHistoryDetected] = true
+	} else {
+		if !syncResult.IsHistoryIncomplete {
+			cursor[models.FinanceCursorIsTransferHistoryDetected] = true
+		}
+		cursor[models.FinanceCursorProviderCategoryMappingVersion] = float64(finance.ProviderCategoryMappingVersion)
 	}
 	if syncResult.IsHistoryIncomplete && time.Since(source.CreatedAt) < financeCatchUpWindow {
 		if soon := time.Now().Add(financeCatchUpEvery); nextRun.IsZero() || soon.Before(nextRun) {
@@ -222,7 +229,7 @@ func (self *Agent) financeCredential(ctx context.Context, source *models.AgentKn
 // spending rules, the provider category mapping for what is still
 // uncategorized, a categorize job for what is left, and budget alert
 // candidates.
-func (self *Agent) afterFinanceSync(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, applied *db.FinanceSyncApplied, syncedOn string, isWholeHistory bool) error {
+func (self *Agent) afterFinanceSync(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, applied *db.FinanceSyncApplied, syncedOn string, isWholeHistory, isRemappingDue bool) error {
 	agentId := source.AgentID
 	today, err := time.Parse(time.DateOnly, syncedOn)
 	if err != nil {
@@ -244,6 +251,11 @@ func (self *Agent) afterFinanceSync(ctx context.Context, run *Run, source *model
 		}
 		if err := applyProviderCategoryMapping(tx, agentId, applied.FinanceTransactionIDsToCategorize); err != nil {
 			return err
+		}
+		if isRemappingDue {
+			if err := remapProviderCategories(tx, agentId); err != nil {
+				return err
+			}
 		}
 		uncategorized, err := tx.ListUncategorizedFinanceTransactions(agentId, 1)
 		if err != nil {
@@ -303,6 +315,47 @@ func applyProviderCategoryMapping(tx db.Transaction, agentId string, financeTran
 		}
 	}
 	return nil
+}
+
+// remapProviderCategories judges again, by the current provider category
+// mapping, every finance transaction the mapping categorized, and moves
+// each whose mapped spending category changed: what an earlier mapping put
+// in other, a later one may have a category for. What the person, a
+// spending rule or the categorize model decided is not touched, and
+// neither is a transfer.
+func remapProviderCategories(tx db.Transaction, agentId string) error {
+	spendingCategories, err := tx.ListSpendingCategories(agentId)
+	if err != nil {
+		return err
+	}
+	spendingCategoryIdByName := map[string]string{}
+	for _, spendingCategory := range spendingCategories {
+		spendingCategoryIdByName[strings.ToLower(strings.TrimSpace(spendingCategory.SpendingCategoryName))] = spendingCategory.ID
+	}
+	after := ""
+	for {
+		page, err := tx.ListFinanceTransactions(agentId, &db.FinanceTransactionFilter{Limit: db.FinanceTransactionLimitMost, After: after})
+		if err != nil {
+			return err
+		}
+		for _, financeTransaction := range page.FinanceTransactions {
+			if financeTransaction.CategorizedBy != models.CategorizedByProviderCategoryMapping || financeTransaction.IsTransfer {
+				continue
+			}
+			spendingCategoryName, isTransfer := finance.MapProviderCategory(financeTransaction.ProviderCategoryPrimary, financeTransaction.ProviderCategoryDetailed)
+			spendingCategoryId := spendingCategoryIdByName[spendingCategoryName]
+			if isTransfer || spendingCategoryId == "" || spendingCategoryId == financeTransaction.SpendingCategoryID {
+				continue
+			}
+			if _, err := tx.SetTransactionCategorization(agentId, financeTransaction.ID, spendingCategoryId, models.CategorizedByProviderCategoryMapping, nil); err != nil {
+				return err
+			}
+		}
+		if page.NextCursor == "" {
+			return nil
+		}
+		after = page.NextCursor
+	}
 }
 
 // BeforeDeletingSource is what deleting a finance source does first, in
