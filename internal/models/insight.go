@@ -553,13 +553,3 @@ var suggestedRepliesPattern = regexp.MustCompile(`\n?<!--suggestions:(?:\[[^\]]*
 func StripSuggestedReplies(text string) string {
 	return strings.TrimRight(suggestedRepliesPattern.ReplaceAllString(text, ""), " \n")
 }
-
-// mailCitationPattern is a message or conversation cited as a link to the
-// dashboard's own scheme: [subject](mail:ITEM_ID).
-var mailCitationPattern = regexp.MustCompile(`\[([^\]\n]+)\]\(mail:[^)\s]+\)`)
-
-// UnlinkMailCitations leaves a cited message as its subject, for a chat
-// app, where a mail: link opens nothing and shows as its raw address.
-func UnlinkMailCitations(text string) string {
-	return mailCitationPattern.ReplaceAllString(text, "$1")
-}

@@ -56,14 +56,15 @@ var surfaces = map[string]surface{
 	},
 	// A chat app is sent through its own Markdown: Telegram's older one,
 	// which the bot converts to, and Discord's, which is the common one. A
-	// cited message shows there as its subject alone.
+	// mail: or memory: link is made an address of the dashboard there, or
+	// its words alone when the server has no name.
 	"telegram": {
 		situationLine: "You are talking through Telegram.",
-		overlay:       "<surface>\nTelegram on a phone: short, plain paragraphs, no tables, no headings; a list is one item per line. Bold, italics, `code` and web links show. A message you cite shows as its subject alone, with no link to open, so say enough to find it. Something you make (a page, a chart) reaches them as a file.\n</surface>",
+		overlay:       "<surface>\nTelegram on a phone: short, plain paragraphs, no tables, no headings; a list is one item per line. Bold, italics, `code` and web links show. A mail: or memory: link opens in the dashboard, so name what it is as well. Something you make (a page, a chart) reaches them as a file.\n</surface>",
 	},
 	"discord": {
 		situationLine: "You are talking through Discord.",
-		overlay:       "<surface>\nDiscord: short paragraphs, no tables; a list is one item per line. Bold, italics, `code`, code blocks and web links show. A message you cite shows as its subject alone, with no link to open, so say enough to find it. Something you make (a page, a chart) reaches them as a file.\n</surface>",
+		overlay:       "<surface>\nDiscord: short paragraphs, no tables; a list is one item per line. Bold, italics, `code`, code blocks and web links show. A mail: or memory: link opens in the dashboard, so name what it is as well. Something you make (a page, a chart) reaches them as a file.\n</surface>",
 	},
 	"mcp": {
 		situationLine: "You are answering a program that reached you through the Model Context Protocol, for the person.",
