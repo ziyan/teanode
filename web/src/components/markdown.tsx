@@ -59,10 +59,13 @@ function DashboardLink({ path, children }: { path: string; children: React.React
 // PATH#N for one fact of a page.
 function dashboardPathOf(address: string): string | null {
   const mail = /^mail:(.*)$/.exec(address)
-  if (mail) return mailPath(mail[1])
   const memory = /^memory:(.*)$/.exec(address)
-  if (memory) return memoryPath(memory[1])
-  return null
+  const path = mail ? mailPath(mail[1]) : memory ? memoryPath(memory[1]) : null
+  // Each segment escaped as well as checked: the checks above already allow
+  // only the characters a path of the graph or an item id is made of, so
+  // this changes nothing a valid link says, and it is the escaping that
+  // keeps a link's text from ever being read as markup where it lands.
+  return path === null ? null : path.split('/').map(encodeURIComponent).join('/')
 }
 
 // PictureSource is where whoever draws this markdown has a picture fetched
