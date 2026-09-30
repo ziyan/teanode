@@ -445,6 +445,33 @@ func TestFinanceToolRefusesArgumentsItDoesNotRead(test *testing.T) {
 	}
 }
 
+// A model that fills in every argument on every call, the ones it has
+// nothing for empty: assets is answered rather than refused, and an
+// argument sent with something in it is still refused. An argument the
+// operation reads keeps an empty value, which may mean something.
+func TestFinanceToolIgnoresArgumentsSentEmpty(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"Assets":                `[]`,
+		"CategorizeTransaction": `{"id":"transaction-one"}`,
+	}}
+	if _, err := call(test, operations, `{"operation":"assets","after":"","asset_id":"","asset_ids":[],"asset_kind":"vehicle","estimate_low":null,
+		"is_transfer":false,"is_uncategorized":false,"limit":0,"month":""}`); err == nil || !strings.Contains(err.Error(), "does not take asset_kind") {
+		test.Errorf("assets took an asset_kind with something in it, or refused the empty ones: %v", err)
+	}
+	if _, err := call(test, operations, `{"operation":"assets","after":"","asset_id":"","asset_ids":[],"asset_kind":"","estimate_low":null,
+		"is_transfer":false,"is_uncategorized":false,"limit":0,"month":""}`); err != nil {
+		test.Fatalf("assets refused arguments sent empty: %v", err)
+	}
+	if _, err := call(test, operations, `{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"",
+		"asset_id":"","is_hidden":false}`); err != nil {
+		test.Fatalf("categorize_transaction refused arguments sent empty: %v", err)
+	}
+	if sent := operations.variables[len(operations.variables)-1]; sent["spendingCategoryId"] != "" {
+		test.Errorf("an empty spending category, which takes one away, was not sent: %v", sent)
+	}
+}
+
 // A month is a whole month for transactions too, and both ends of the
 // range for cash_flow.
 func TestFinanceToolMonthIsShorthandForARange(test *testing.T) {

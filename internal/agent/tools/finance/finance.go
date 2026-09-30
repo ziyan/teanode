@@ -344,6 +344,48 @@ func acceptedArguments(operation *financeOperation) []string {
 	return accepted
 }
 
+// dropEmptyArguments takes out an argument the operation does not read
+// when it was sent empty, as if it had not been sent. Some models fill in
+// every argument of the tool on every call, the ones they have nothing for
+// as "", [], null, false or 0, and refusing those refused every call such a
+// model made. An argument the operation reads keeps what was sent, since
+// empty may mean something there (an empty spending category takes one
+// away, is_transfer false unmarks a transfer), except null, which says
+// nothing anywhere.
+func dropEmptyArguments(operation *financeOperation, asked map[string]any) {
+	isAccepted := map[string]bool{"operation": true}
+	for _, key := range acceptedArguments(operation) {
+		isAccepted[key] = true
+	}
+	for key, value := range asked {
+		if value == nil {
+			delete(asked, key)
+			continue
+		}
+		if isAccepted[key] {
+			continue
+		}
+		isEmpty := false
+		switch typed := value.(type) {
+		case string:
+			isEmpty = strings.TrimSpace(typed) == ""
+		case []any:
+			isEmpty = len(typed) == 0
+		case []string:
+			isEmpty = len(typed) == 0
+		case bool:
+			isEmpty = !typed
+		case float64:
+			isEmpty = typed == 0
+		case int:
+			isEmpty = typed == 0
+		}
+		if isEmpty {
+			delete(asked, key)
+		}
+	}
+}
+
 // checkArguments refuses a call with an argument its operation does not
 // read, naming it and the ones the operation takes. An argument quietly
 // ignored gives an answer to a question that was not asked: a month's
@@ -612,6 +654,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			"or runs `teanode finance import-credential --provider plaid` (or `simplefin`), which reads it from a file or without echoing. " +
 			"For Plaid, only a link made with this server's Plaid keys can be brought in."), nil
 	}
+	dropEmptyArguments(operation, asked)
 	if err := checkArguments(name, operation, asked); err != nil {
 		return nil, err
 	}
