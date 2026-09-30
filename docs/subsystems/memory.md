@@ -764,6 +764,18 @@ else the one sharing most of the question's words, else the first.
 `teanode agent memory recall --explain` says what each search found and
 why each page and fact was carried or left out.
 
+**The retrieval plan.** The same fast call that judges how deep a typed
+message deserves also says how to search for it: at most two focused
+searches for a message that refers to things indirectly or needs two things
+found, and whether it asks about a whole area. Recall fuses the planned
+searches with the message's own, follows the strongest links of the top page
+they found one hop, and for a question about a whole area counts the pages
+whose overview sections it matched twice and says a survey reads all of it.
+No model call is added, and the overlay's budget is the same. A survey whose
+scope holds more pages than it asks takes the ten most important whatever the
+question, then the pages whose own vector or overview sections are nearest
+the question, then the most important of the rest.
+
 **Which model does what.** The overviews, the reflections (the weekly one
 too) and each page's run of a survey are judgments, a few calls a night,
 and run on `agent.models.synthesize`, which falls back to `research` and

@@ -1,6 +1,9 @@
 package agent
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // The judgement is read as the model gave it; anything it cannot read, or
 // a depth it does not know, is no judgement and leaves the turn as it was.
@@ -12,12 +15,12 @@ func TestTheDepthJudgementIsReadOrLeftAlone(t *testing.T) {
 		`{"depth": "maximum"}`:                                                   depthAnswer,
 		`not an object`:                                                          depthAnswer,
 	} {
-		if depth, _ := readDepth(text); depth != want {
-			t.Errorf("%s: %s, want %s", text, depth, want)
+		if judgement := readDepth(text); judgement.depth != want {
+			t.Errorf("%s: %s, want %s", text, judgement.depth, want)
 		}
 	}
-	if depth, reason := readDepth(`{"depth": "dig", "reason": "a problem to diagnose"}`); depth != depthDig || reason != "a problem to diagnose" {
-		t.Errorf("the reason is kept to be shown: %q %q", depth, reason)
+	if judgement := readDepth(`{"depth": "dig", "reason": "a problem to diagnose"}`); judgement.depth != depthDig || judgement.reason != "a problem to diagnose" {
+		t.Errorf("the reason is kept to be shown: %q %q", judgement.depth, judgement.reason)
 	}
 	if effort, research := deepenedTurn(depthAnswer); effort != "" || research {
 		t.Errorf("an answer is given at once: %q %v", effort, research)
@@ -27,6 +30,22 @@ func TestTheDepthJudgementIsReadOrLeftAlone(t *testing.T) {
 	}
 	if effort, research := deepenedTurn(depthDig); effort == "" || !research {
 		t.Errorf("a question to dig into is researched and thought about: %q %v", effort, research)
+	}
+}
+
+// How recall should search is read with the depth: at most two searches,
+// each short and said once, and whether the message is about a whole area.
+func TestTheRetrievalPlanIsReadAndBounded(t *testing.T) {
+	judgement := readDepth(`{"depth": "look", "reason": "when the son was born", "searches": ["son born", "Son Born", "", "` +
+		strings.Repeat("a", 200) + `", "birth certificate", "third search"], "isBroad": false}`)
+	if strings.Join(judgement.searches, "|") != "son born|birth certificate" || judgement.isBroad {
+		t.Errorf("searches %q, broad %v", judgement.searches, judgement.isBroad)
+	}
+	if broad := readDepth(`{"depth": "dig", "reason": "an assessment of the product", "searches": [], "isBroad": true}`); !broad.isBroad || len(broad.searches) != 0 {
+		t.Errorf("a broad question: %+v", broad)
+	}
+	if older := readDepth(`{"depth": "dig", "reason": "no plan given"}`); older.isBroad || len(older.searches) != 0 {
+		t.Errorf("a judgement with no plan plans nothing: %+v", older)
 	}
 }
 

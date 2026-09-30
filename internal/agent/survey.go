@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -99,6 +101,10 @@ type SurveyReport struct {
 	OverLimitPageCount       int
 	WithoutOverviewPageCount int
 
+	// IsChosenByRelevance says the pages asked were chosen by how near
+	// they are to the question as well as by importance.
+	IsChosenByRelevance bool
+
 	// RunIDs is every run the survey made, each a transcript the person
 	// can open: one per page, and the one that combined them.
 	RunIDs []string
@@ -123,6 +129,11 @@ type surveyScope struct {
 	eligiblePageCount        int
 	overLimitPageCount       int
 	withoutOverviewPageCount int
+
+	// isChosenByRelevance says the pages asked, from more than the limit,
+	// were the ones nearest the question and the most important, rather
+	// than the most important alone.
+	isChosenByRelevance bool
 }
 
 // withOverviews is the pages among these that have an overview to ask,
@@ -158,9 +169,14 @@ func (self *Agent) Survey(ctx context.Context, agent *models.Agent, owner *model
 	ctx, cancel := context.WithTimeout(ctx, surveyLongest)
 	defer cancel()
 
+	// The question's meaning, worked out before the transaction: when the
+	// scope holds more pages than a survey asks, it chooses the ones
+	// nearest the question. Nil without an embedder, and the most
+	// important are asked as before.
+	questionMeaning := self.meaningOf(ctx, agent.ID, "survey", question)
 	var scope *surveyScope
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		scope, err = resolveSurveyScope(tx, agent.ID, scopePath)
+		scope, err = resolveSurveyScope(tx, agent.ID, scopePath, questionMeaning)
 		return err
 	}); err != nil {
 		return nil, err
@@ -179,7 +195,7 @@ func (self *Agent) Survey(ctx context.Context, agent *models.Agent, owner *model
 
 	report := &SurveyReport{
 		EligiblePageCount: scope.eligiblePageCount, OverLimitPageCount: scope.overLimitPageCount,
-		WithoutOverviewPageCount: scope.withoutOverviewPageCount,
+		WithoutOverviewPageCount: scope.withoutOverviewPageCount, IsChosenByRelevance: scope.isChosenByRelevance,
 	}
 	var answers []string
 	for index, part := range parts {
@@ -345,14 +361,93 @@ func surveyCoverage(report *SurveyReport) string {
 	if report.OverLimitPageCount > 0 || report.WithoutOverviewPageCount > 0 {
 		coverage += fmt.Sprintf("\n\nAsked %d of the %d pages in scope that have an overview.", askedCount, report.EligiblePageCount)
 		if report.OverLimitPageCount > 0 {
-			coverage += fmt.Sprintf(" %d more were left out, the least important, over this survey's limit of %d pages.",
-				report.OverLimitPageCount, surveyPageCount)
+			leftOut := "the least important"
+			if report.IsChosenByRelevance {
+				leftOut = "the farthest from the question and least important"
+			}
+			coverage += fmt.Sprintf(" %d more were left out, %s, over this survey's limit of %d pages.",
+				report.OverLimitPageCount, leftOut, surveyPageCount)
 		}
 		if report.WithoutOverviewPageCount > 0 {
 			coverage += fmt.Sprintf(" %d pages in scope have no overview yet and were not asked.", report.WithoutOverviewPageCount)
 		}
 	}
 	return coverage
+}
+
+// surveyImportantPageCount is how many of the pages a survey asks, from a
+// scope holding more than it asks, are the most important whatever the
+// question: a question about the whole area still hears from the parts that
+// matter most, and one about a corner of it hears mostly from that corner.
+const surveyImportantPageCount = 10
+
+// surveyRelevance is how near the question each page is: the best of its
+// own vector and its overview sections', by page id. Empty without a
+// question to compare with.
+func surveyRelevance(tx db.Transaction, agentId string, pages []*models.AgentNode, question *meaning) (map[string]float64, error) {
+	relevance := map[string]float64{}
+	if question == nil || len(pages) == 0 {
+		return relevance, nil
+	}
+	ids := make([]string, 0, len(pages))
+	for _, page := range pages {
+		ids = append(ids, page.ID)
+	}
+	for _, table := range []db.VectorTable{db.AgentNodeTable, db.AgentOverviewSectionTable} {
+		scores, err := tx.Nearest(table, agentId, question.ModelName, question.Vector, len(pages)*overviewSectionCount, db.VectorQuery{
+			Where: []string{`"node_id" = ANY(?)`}, Arguments: []any{pq.Array(ids)},
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, scored := range scores {
+			nodeId := scored.ID
+			if table.Table == db.AgentOverviewSectionTable.Table {
+				nodeId = nodeOfOverviewSection(scored.ID)
+			}
+			if scored.Score > relevance[nodeId] {
+				relevance[nodeId] = scored.Score
+			}
+		}
+	}
+	return relevance, nil
+}
+
+// chooseSurveyPages is the pages a survey asks from more than it asks:
+// the most important few whatever the question, then the ones nearest the
+// question, then the most important of the rest. The pages come most
+// important first; without relevance the most important are asked.
+func chooseSurveyPages(pages []*models.AgentNode, relevance map[string]float64, limit, importantCount int) []*models.AgentNode {
+	if len(pages) <= limit {
+		return pages
+	}
+	if len(relevance) == 0 {
+		return pages[:limit]
+	}
+	chosen := make([]*models.AgentNode, 0, limit)
+	isChosen := map[string]bool{}
+	take := func(page *models.AgentNode) {
+		if len(chosen) < limit && !isChosen[page.ID] {
+			isChosen[page.ID] = true
+			chosen = append(chosen, page)
+		}
+	}
+	for _, page := range pages[:min(importantCount, limit)] {
+		take(page)
+	}
+	byRelevance := append([]*models.AgentNode(nil), pages...)
+	sort.SliceStable(byRelevance, func(left, right int) bool {
+		return relevance[byRelevance[left].ID] > relevance[byRelevance[right].ID]
+	})
+	for _, page := range byRelevance {
+		if relevance[page.ID] > 0 {
+			take(page)
+		}
+	}
+	for _, page := range pages {
+		take(page)
+	}
+	return chosen
 }
 
 // errNoSuchScope is a scope that names no page.
@@ -376,7 +471,7 @@ var errNoSuchScope = errors.New("there is no page at that path to survey")
 // A scope with nothing in it that has an overview is the scope page
 // alone, which still has its opening and its facts. At most
 // surveyPageCount pages, the most important first.
-func resolveSurveyScope(tx db.Transaction, agentId, scopePath string) (*surveyScope, error) {
+func resolveSurveyScope(tx db.Transaction, agentId, scopePath string, question *meaning) (*surveyScope, error) {
 	scope := &surveyScope{}
 	var pages []*models.AgentNode
 	reflectionsPath := models.PathReflections
@@ -447,7 +542,12 @@ func resolveSurveyScope(tx db.Transaction, agentId, scopePath string) (*surveySc
 	scope.eligiblePageCount = len(pages)
 	if len(pages) > surveyPageCount {
 		scope.overLimitPageCount = len(pages) - surveyPageCount
-		pages = pages[:surveyPageCount]
+		relevance, err := surveyRelevance(tx, agentId, pages, question)
+		if err != nil {
+			return nil, err
+		}
+		scope.isChosenByRelevance = len(relevance) > 0
+		pages = chooseSurveyPages(pages, relevance, surveyPageCount, surveyImportantPageCount)
 	}
 	for _, page := range pages {
 		surveyedPage, err := readSurveyPage(tx, agentId, page)

@@ -104,7 +104,7 @@ func TestTheSurveyScopeFollowsTheThemesAndThePages(t *testing.T) {
 		var scope *surveyScope
 		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 			var err error
-			if scope, err = resolveSurveyScope(tx, agentId, scopePath); err != nil {
+			if scope, err = resolveSurveyScope(tx, agentId, scopePath, nil); err != nil {
 				t.Fatalf("resolveSurveyScope %q: %s", scopePath, err)
 			}
 		})
@@ -146,7 +146,7 @@ func TestTheSurveyScopeFollowsTheThemesAndThePages(t *testing.T) {
 	}
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		if _, err := resolveSurveyScope(tx, agentId, "projects/nowhere"); !errors.Is(err, errNoSuchScope) {
+		if _, err := resolveSurveyScope(tx, agentId, "projects/nowhere", nil); !errors.Is(err, errNoSuchScope) {
 			t.Errorf("a scope that names no page: %v", err)
 		}
 	})
@@ -163,7 +163,7 @@ func TestTheSurveyScopeFollowsTheThemesAndThePages(t *testing.T) {
 		}
 		surveyPageFor(t, tx, other.ID, "topics/kites", written, 0.4)
 		surveyPageFor(t, tx, other.ID, "topics/string", "", 0.9)
-		scope, err := resolveSurveyScope(tx, other.ID, "")
+		scope, err := resolveSurveyScope(tx, other.ID, "", nil)
 		if err != nil {
 			t.Fatalf("resolveSurveyScope: %s", err)
 		}
@@ -407,7 +407,7 @@ func TestASurveySaysWhatItLeftOut(t *testing.T) {
 	var scope *surveyScope
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		var err error
-		if scope, err = resolveSurveyScope(tx, agentId, "projects/orchard"); err != nil {
+		if scope, err = resolveSurveyScope(tx, agentId, "projects/orchard", nil); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -438,5 +438,33 @@ func TestASurveySaysWhatItLeftOut(t *testing.T) {
 	// A survey that asked everything in scope says nothing more.
 	if full := surveyCoverage(&SurveyReport{CoveredPaths: coveredPaths, EligiblePageCount: len(coveredPaths)}); strings.Contains(full, "Asked") {
 		t.Errorf("a complete survey spoke of what it left out:\n%s", full)
+	}
+}
+
+// From more pages than it asks, a survey takes the most important few
+// whatever the question, then the ones nearest the question, then the most
+// important of the rest; without a question to compare with, the most
+// important alone.
+func TestASurveyChoosesThePagesNearestTheQuestion(t *testing.T) {
+	var pages []*models.AgentNode
+	for index := 0; index < 8; index++ {
+		pages = append(pages, &models.AgentNode{ID: fmt.Sprintf("page-%d", index)})
+	}
+	idsOf := func(chosen []*models.AgentNode) string {
+		var ids []string
+		for _, page := range chosen {
+			ids = append(ids, page.ID)
+		}
+		return strings.Join(ids, " ")
+	}
+	relevance := map[string]float64{"page-6": 0.9, "page-7": 0.8, "page-0": 0.95}
+	if got := idsOf(chooseSurveyPages(pages, relevance, 5, 2)); got != "page-0 page-1 page-6 page-7 page-2" {
+		t.Errorf("chose %s", got)
+	}
+	if got := idsOf(chooseSurveyPages(pages, nil, 5, 2)); got != "page-0 page-1 page-2 page-3 page-4" {
+		t.Errorf("without a question it chose %s", got)
+	}
+	if got := idsOf(chooseSurveyPages(pages[:3], relevance, 5, 2)); got != "page-0 page-1 page-2" {
+		t.Errorf("under the limit it chose %s", got)
 	}
 }

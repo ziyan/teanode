@@ -58,8 +58,107 @@ func (self *AskRun) recallForTurn(ctx context.Context) {
 	}
 
 	nodes, facts, sections := self.searchGraph(ctx, words, recallCandidates)
+	nodes, facts, sections = self.followRetrievalPlan(ctx, nodes, facts, sections)
 	self.writeRecalled(ctx, nodes, facts, sections)
 	self.recallFromKnowledge(ctx, words)
+}
+
+// recallLinkedPages is how many pages linked to the top page one hop
+// brings in, the strongest links first.
+const recallLinkedPages = 5
+
+// followRetrievalPlan applies what the depth judgement said of how to
+// search for this message, at no cost beyond the searches themselves: no
+// model is asked anything here, and the overlay's budget is the same.
+//
+// A message that refers to things indirectly, or needs two things found,
+// gets the focused searches the judgement planned, fused with the
+// message's own, and the pages most strongly linked to the top page those
+// searches found, one hop along the graph: "who shares the car insurance" reaches the policy
+// and, from it, the people on it. A message about a whole area has the
+// pages whose overview sections it matched counted twice, since those are
+// what describe an area, and is told that a survey reads all of it. A
+// message the judgement said nothing about is searched as before.
+func (self *AskRun) followRetrievalPlan(ctx context.Context, nodes []*models.AgentNode, facts []*models.AgentFact, sections map[string]string) ([]*models.AgentNode, []*models.AgentFact, map[string]string) {
+	if len(self.plannedSearches) == 0 && !self.isBroadQuestion {
+		return nodes, facts, sections
+	}
+	nodeLists := [][]*models.AgentNode{nodes}
+	factLists := [][]*models.AgentFact{facts}
+	// The hop starts from what the planned searches found first: the
+	// message's own words are the vague ones, and their top page may be
+	// anything.
+	var hopFrom *models.AgentNode
+	for _, search := range self.plannedSearches {
+		plannedNodes, plannedFacts, plannedSections := self.searchGraph(ctx, search, recallCandidates)
+		if hopFrom == nil && len(plannedNodes) > 0 {
+			hopFrom = plannedNodes[0]
+		}
+		nodeLists = append(nodeLists, plannedNodes)
+		factLists = append(factLists, plannedFacts)
+		for nodeId, sectionId := range plannedSections {
+			if _, isMatched := sections[nodeId]; !isMatched {
+				sections[nodeId] = sectionId
+			}
+		}
+	}
+	if hopFrom != nil {
+		nodeLists = append(nodeLists, self.linkedPages(ctx, hopFrom))
+	}
+	if self.isBroadQuestion {
+		var described []*models.AgentNode
+		for _, node := range nodes {
+			if _, isMatched := sections[node.ID]; isMatched {
+				described = append(described, node)
+			}
+		}
+		nodeLists = append(nodeLists, described)
+		self.Recall("This message asks about a whole area, and what is recalled here is a few pages of it. " +
+			"The survey tool asks every overview in the area for its part of the answer and combines them.")
+	}
+	return fuseNodes(recallCandidates, nodeLists...), fuseFacts(recallCandidates, factLists...), sections
+}
+
+// linkedPages is the pages most strongly linked to a page, strongest
+// first, that are not dormant.
+func (self *AskRun) linkedPages(ctx context.Context, page *models.AgentNode) []*models.AgentNode {
+	agentId := self.settings.Agent.ID
+	var linked []*models.AgentNode
+	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		edges, err := tx.ListAgentEdges(agentId, page.ID)
+		if err != nil {
+			return err
+		}
+		sort.SliceStable(edges, func(left, right int) bool { return edges[left].Weight > edges[right].Weight })
+		var otherIds []string
+		for _, edge := range edges {
+			if len(otherIds) >= recallLinkedPages {
+				break
+			}
+			otherId := edge.ToID
+			if otherId == page.ID {
+				otherId = edge.FromID
+			}
+			otherIds = append(otherIds, otherId)
+		}
+		found, err := tx.GetAgentNodes(agentId, otherIds)
+		if err != nil {
+			return err
+		}
+		byId := make(map[string]*models.AgentNode, len(found))
+		for _, node := range found {
+			byId[node.ID] = node
+		}
+		for _, otherId := range otherIds {
+			if node := byId[otherId]; node != nil && !node.Dormant {
+				linked = append(linked, node)
+			}
+		}
+		return nil
+	}); err != nil {
+		log.Debugf("cannot follow the links of %q: %s", page.Path, err)
+	}
+	return linked
 }
 
 // recallFromKnowledge puts the two or three passages of the person's own

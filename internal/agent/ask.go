@@ -234,6 +234,11 @@ type AskRun struct {
 	// (see ExplainRecall); nil on a turn.
 	explanation *RecallExplanation
 
+	// plannedSearches and isBroadQuestion are how the depth judgement
+	// said recall should search for this message; see followRetrievalPlan.
+	plannedSearches []string
+	isBroadQuestion bool
+
 	// hasDepthNote says this message was judged worth looking into
 	// carefully, and depthReason why, written under the message once it is
 	// stored; see chooseDepth.

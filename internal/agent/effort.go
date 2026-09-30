@@ -71,8 +71,12 @@ func (self *AskRun) chooseDepth() {
 		settings.Effort, settings.Research = setting, true
 		return
 	}
-	depth, reason := self.judgeDepth()
+	judgement := self.judgeDepth()
+	depth, reason := judgement.depth, judgement.reason
 	settings.Effort, settings.Research = deepenedTurn(depth)
+	if depth != depthAnswer {
+		self.plannedSearches, self.isBroadQuestion = judgement.searches, judgement.isBroad
+	}
 	log.Infof("the agent of %q judged a message worth %s: %s", settings.Owner.Username, depth, reason)
 	if depth != depthDig {
 		return
@@ -84,10 +88,27 @@ func (self *AskRun) chooseDepth() {
 	self.hasDepthNote, self.depthReason = true, reason
 }
 
+// depthJudgement is what the fast model said of a message: how deep it
+// deserves, why, and how recall should search for it (see
+// followRetrievalPlan).
+type depthJudgement struct {
+	depth, reason string
+
+	// searches is at most two focused searches beside the message's own
+	// words, and isBroad says the message asks about a whole area.
+	searches []string
+	isBroad  bool
+}
+
+// plannedSearchCount is how many searches beside the message's own words a
+// judgement may plan.
+const plannedSearchCount = 2
+
 // judgeDepth asks the fast model how deep the message deserves, from the
-// message and the conversation before it. A judgement that fails leaves
-// the turn as it would have been without one.
-func (self *AskRun) judgeDepth() (string, string) {
+// message and the conversation before it, and how recall should search for
+// it. A judgement that fails leaves the turn as it would have been without
+// one.
+func (self *AskRun) judgeDepth() depthJudgement {
 	settings := self.settings
 	var recent []string
 	_ = self.agent.settings.Database.TransactionContext(self.ctx, func(tx db.Transaction) error {
@@ -127,11 +148,11 @@ func (self *AskRun) judgeDepth() (string, string) {
 		"Language":   languageName(Language(settings.Agent, settings.Owner)),
 	})
 	if err != nil {
-		return depthAnswer, ""
+		return depthJudgement{depth: depthAnswer}
 	}
 	provider, model, err := self.agent.settings.Registry.ForWork(config.AgentWorkTriage)
 	if err != nil {
-		return depthAnswer, ""
+		return depthJudgement{depth: depthAnswer}
 	}
 	ctx, cancel := context.WithTimeout(self.ctx, 15*time.Second)
 	defer cancel()
@@ -143,30 +164,45 @@ func (self *AskRun) judgeDepth() (string, string) {
 	})
 	if err != nil {
 		log.Infof("could not judge how deep to look: %s", err)
-		return depthAnswer, ""
+		return depthJudgement{depth: depthAnswer}
 	}
 	self.countJudgement(self.agent.settings.Registry.Configuration().Models.ForWork(config.AgentWorkTriage), response.Usage)
-	depth, reason := readDepth(response.Message.Content)
-	if reason == "" {
+	judgement := readDepth(response.Message.Content)
+	if judgement.reason == "" {
 		log.Infof("could not read how deep to look from %q", cutRunes(response.Message.Content, 200))
 	}
-	return depth, reason
+	return judgement
 }
 
 // readDepth reads the judgement; anything it cannot read is no judgement.
-func readDepth(text string) (string, string) {
+// A search planned is kept only where it is short and says something the
+// message does not already say word for word.
+func readDepth(text string) depthJudgement {
 	judged := readModelAnswer[struct {
-		Depth  string `json:"depth"`
-		Reason string `json:"reason"`
+		Depth    string   `json:"depth"`
+		Reason   string   `json:"reason"`
+		Searches []string `json:"searches"`
+		IsBroad  bool     `json:"isBroad"`
 	}](text, "depth")
 	if !judged.IsValid {
-		return depthAnswer, ""
+		return depthJudgement{depth: depthAnswer}
 	}
 	switch depth := strings.ToLower(strings.TrimSpace(judged.Value.Depth)); depth {
 	case depthAnswer, depthLook, depthDig:
-		return depth, strings.TrimSpace(judged.Value.Reason)
+		judgement := depthJudgement{depth: depth, reason: strings.TrimSpace(judged.Value.Reason), isBroad: judged.Value.IsBroad}
+		seen := map[string]bool{}
+		for _, search := range judged.Value.Searches {
+			search = strings.TrimSpace(search)
+			key := strings.ToLower(search)
+			if search == "" || len([]rune(search)) > 120 || seen[key] || len(judgement.searches) >= plannedSearchCount {
+				continue
+			}
+			seen[key] = true
+			judgement.searches = append(judgement.searches, search)
+		}
+		return judgement
 	}
-	return depthAnswer, ""
+	return depthJudgement{depth: depthAnswer}
 }
 
 // sayDepth writes the judgement under the message it was about, and says

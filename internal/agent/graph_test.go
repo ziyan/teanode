@@ -670,3 +670,35 @@ func TestExplainingARecallSaysWhatItCarriedAndWhy(t *testing.T) {
 		t.Fatalf("recall without the explanation carried %d pages, with it %d: %v", len(plain), len(pages), err)
 	}
 }
+
+// A message that refers to something indirectly is searched by what the
+// depth judgement planned as well as by its own words, and the page most
+// strongly linked to the top page comes along one hop: the message alone
+// names nothing the graph holds.
+func TestRecallFollowsThePlannedSearchesAndOneHop(t *testing.T) {
+	world := newRecallWorld(t)
+	policy := world.page(t, "things/car-insurance", "Car insurance", "The policy on the family car.",
+		"The car insurance renews every March.")
+	holder := world.page(t, "people/sam-example", "Sam Example", "A named driver.",
+		"Sam drives on weekends.")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if err := tx.PutAgentEdge(&models.AgentEdge{AgentID: world.agent.ID, FromID: holder.ID, ToID: policy.ID,
+			Relation: models.EdgeAboutPlace, Weight: 1}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	world.run.settings.Message = "who else is on it?"
+
+	world.run.recallForTurn(context.Background())
+	if carried := world.overlay(); strings.Contains(carried, "renews every March") {
+		t.Fatalf("the message alone found the policy:\n%s", carried)
+	}
+
+	world.run.recalled = nil
+	world.run.plannedSearches = []string{"car insurance"}
+	world.run.recallForTurn(context.Background())
+	carried := world.overlay()
+	if !strings.Contains(carried, "renews every March") || !strings.Contains(carried, "people/sam-example") {
+		t.Fatalf("the planned search and the hop were not followed:\n%s", carried)
+	}
+}
