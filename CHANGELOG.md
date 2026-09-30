@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.83.1] - 2026-09-30
+
+### Changed
+
+- The agent no longer asks before each DevTools protocol call on your attached browser tab; put the browser under Ask me first to be asked. (#236)
+
 ## [0.83.0] - 2026-09-30
 
 ### Added
