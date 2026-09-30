@@ -46,6 +46,10 @@ func (self *Agent) FoldByWordsIntoWhatThePageSays(tx db.Transaction, written *mo
 	return self.foldIntoWhatThePageSays(tx, written, node, nil)
 }
 
+// foldPageFacts is how many of a page's facts are read for the same words
+// said again.
+const foldPageFacts = 200
+
 // foldIntoWhatThePageSays is the same with the fact's meaning already
 // worked out, for a caller that did it before opening its transaction.
 func (self *Agent) foldIntoWhatThePageSays(tx db.Transaction, written *models.AgentFact, node *models.AgentNode, sense *meaning) (*models.AgentFact, error) {
@@ -324,10 +328,30 @@ func (self *Agent) twinsOf(tx db.Transaction, fact *models.AgentFact, node *mode
 	if err != nil {
 		return nil
 	}
+	ordered := orderFacts(candidates, idsOf(scores))
+	// The same words on the same page first, found by reading the page
+	// rather than by the index. The index is approximate: among lines at
+	// the same distance, as the same words are, it may hand back one and
+	// not the other, and a third saying of one of them would then miss
+	// its own day and be filed as new.
+	if stated, err := tx.ListAgentFacts(fact.AgentID, fact.NodeID, false, foldPageFacts); err == nil {
+		isOrdered := make(map[string]bool, len(ordered))
+		for _, candidate := range ordered {
+			isOrdered[candidate.ID] = true
+		}
+		var sameWords []*models.AgentFact
+		for _, candidate := range stated {
+			if candidate.ID != fact.ID && !isOrdered[candidate.ID] && candidate.SupersededBy == "" &&
+				strings.EqualFold(strings.TrimSpace(candidate.Text), strings.TrimSpace(fact.Text)) {
+				sameWords = append(sameWords, candidate)
+			}
+		}
+		ordered = append(sameWords, ordered...)
+	}
 	var twins []*models.AgentFact
 	// The page's own name is not evidence either way; see sharesAName.
 	itsOwn := append([]string{current.Name}, current.Aliases...)
-	for _, candidate := range orderFacts(candidates, idsOf(scores)) {
+	for _, candidate := range ordered {
 		if !sharesAName(fact.Text, candidate.Text, itsOwn...) {
 			continue
 		}
