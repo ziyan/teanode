@@ -100,6 +100,7 @@ export type Agent = {
     compact: string
     scan: string
     synthesize: string
+    decide: string
     embeddingDimensions: number
     choices: string[]
   }
@@ -144,7 +145,7 @@ export type Agent = {
 export const AGENT_SELECTION = `agent {
   enabled instructions allowPrivateAddresses skipCertificateCheck
   providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
-  models { default fast embedding triage research summarize reply ask schedule compact scan synthesize embeddingDimensions choices }
+  models { default fast embedding triage research summarize reply ask schedule compact scan synthesize decide embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
   limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay }
   retention { runs corrections }
@@ -629,6 +630,7 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
                         'compact',
                         'scan',
                         'synthesize',
+                        'decide',
                       ] as const
                     ).map((field) => [field, rename(models[field])]),
                   ),
@@ -915,7 +917,16 @@ function ModelsForm({ settings, onSaved, known }: Props & { known: string[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(settings.models)])
 
-  const choosable = known.filter((name) => !models.choices.includes(name))
+  // A deciding provider (kind typesafe) answers only the decide slot, and
+  // the server refuses it anywhere else, so its models are offered there
+  // and nowhere else.
+  const deciders = settings.providers
+    .filter((provider) => provider.kind === 'typesafe')
+    .map((provider) => provider.name)
+  const isDecider = (name: string) => deciders.includes(name.split(':')[0])
+  const knownForWork = known.filter((name) => !isDecider(name))
+  const knownForDeciding = known.filter(isDecider)
+  const choosable = knownForWork.filter((name) => !models.choices.includes(name))
 
   return (
     <form
@@ -932,7 +943,7 @@ function ModelsForm({ settings, onSaved, known }: Props & { known: string[] }) {
           <ModelPicker
             key={field}
             value={models[field]}
-            known={known}
+            known={knownForWork}
             label={t(`agentSettings.model.${field}`)}
             placeholder={t('agentSettings.modelNone')}
             onChange={(value) => setModels({ ...models, [field]: value })}
@@ -949,7 +960,7 @@ function ModelsForm({ settings, onSaved, known }: Props & { known: string[] }) {
               <ModelPicker
                 key={field}
                 value={models[field]}
-                known={known}
+                known={knownForWork}
                 label={t(`agentSettings.work.${field}`)}
                 placeholder={t(
                   field === 'synthesize' ? 'agentSettings.modelInheritResearch' : 'agentSettings.modelInherit',
@@ -957,6 +968,13 @@ function ModelsForm({ settings, onSaved, known }: Props & { known: string[] }) {
                 onChange={(value) => setModels({ ...models, [field]: value })}
               />
             ))}
+            <ModelPicker
+              value={models.decide}
+              known={knownForDeciding}
+              label={t('agentSettings.work.decide')}
+              placeholder={t('agentSettings.modelDecideOff')}
+              onChange={(value) => setModels({ ...models, decide: value })}
+            />
             <label>
               <span>{t('agentSettings.modelChoices')}</span>
               {models.choices.length > 0 ? (

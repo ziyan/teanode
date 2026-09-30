@@ -352,7 +352,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 		},
 		MCPServers: []*AgentMCPServerSettings{},
 		Families:   config.AgentToolFamilies,
-		Kinds:      []string{config.AgentProviderKindOpenAI, config.AgentProviderKindAnthropic, config.AgentProviderKindGemini, config.AgentProviderKindCodex},
+		Kinds:      config.AgentProviderKinds,
 	}
 	for _, work := range config.AgentWorks {
 		settings.Works = append(settings.Works, string(work))

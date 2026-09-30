@@ -3204,6 +3204,8 @@ export const en = {
   'agent.dreamThemesUpdated': '{count} themes updated',
   'agent.dreamReflectionsWritten': '{count} reflections written',
   'agentSettings.work.synthesize': 'Judgment across pages: overviews, reflections, a survey’s pages',
+  'agentSettings.work.decide': 'Deciding between known answers',
+  'agentSettings.modelDecideOff': 'None: a language model decides instead',
   'agentSettings.modelInheritResearch': 'Same as research (the default when research is not set)',
   'agent.alerts': 'Alerts',
   'agent.alertsHint': 'Your agent reads what arrives and tells you, unasked, when your mail shows something you should know now: a notice about your family, someone trying your account, a deadline today. It writes in the main conversation and in the chat app you linked.',
