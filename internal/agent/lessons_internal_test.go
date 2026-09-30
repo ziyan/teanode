@@ -75,3 +75,45 @@ func TestALessonIsKeptOnlyWhenACommandBearsItOut(t *testing.T) {
 		t.Errorf("the lesson says %q", lesson.Text)
 	}
 }
+
+// A result as the transcript keeps it: fenced as data from outside, and cut
+// mid-JSON when long. The exit code is read either way, and the terminal's
+// exit_code as well as the shell's exitCode.
+func TestACommandResultIsReadAsItIsStored(t *testing.T) {
+	long := strings.Repeat("compiling a module\n", 3000)
+	cut := untrustedOpen + "\n" + `{"exitCode":0,"stdout":"` + long[:20000] + "\n[cut here: the result goes on]\n" + untrustedClose
+	for name, expected := range map[string]struct {
+		content                   string
+		exitCode                  int
+		hasExitCode, isBackground bool
+	}{
+		"fenced":        {untrustedOpen + "\n" + `{"exitCode":2,"stderr":"no such file"}` + "\n" + untrustedClose, 2, true, false},
+		"cut":           {cut, 0, true, false},
+		"terminal":      {untrustedOpen + "\n" + `{"exit_code":0,"screen":"$ make\nok"}` + "\n" + untrustedClose, 0, true, false},
+		"background":    {untrustedOpen + "\n" + `{"backgroundId":"b1","stdout":"listening"}` + "\n" + untrustedClose, 0, false, true},
+		"not a command": {untrustedOpen + "\n" + `{"pages":[]}` + "\n" + untrustedClose, 0, false, false},
+		"plain text":    {"the page was saved", 0, false, false},
+	} {
+		exitCode, hasExitCode, isBackground, _ := readCommandResult(expected.content)
+		if exitCode != expected.exitCode || hasExitCode != expected.hasExitCode || isBackground != expected.isBackground {
+			t.Errorf("%s: exit code %d (%v), background %v", name, exitCode, hasExitCode, isBackground)
+		}
+	}
+}
+
+// The lesson window starts just after the previous mark, and runs through
+// the results answering the calls of the last message read.
+func TestTheLessonWindowCoversTheCommandsAtItsEnds(t *testing.T) {
+	messages := lessonWindow()
+	window := lessonWindowOf(messages, "m1", messages[5])
+	if len(window) != 6 || window[0].ID != "m2" || window[len(window)-1].ID != "m7" {
+		var ids []string
+		for _, message := range window {
+			ids = append(ids, message.ID)
+		}
+		t.Errorf("the window is %v, want m2 through m7", ids)
+	}
+	if whole := lessonWindowOf(messages, "", messages[len(messages)-1]); len(whole) != len(messages) {
+		t.Errorf("with no mark the window is %d messages, want all %d", len(whole), len(messages))
+	}
+}

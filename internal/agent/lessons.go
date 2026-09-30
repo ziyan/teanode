@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +39,11 @@ const (
 	// output, where failures and summaries are.
 	lessonCallArgumentLength = 400
 	lessonCallOutputLength   = 800
+
+	// lessonTranscriptLength bounds what the lessons pass is shown of a
+	// window: a long stretch of work keeps its latest commands, where the
+	// approach that worked is.
+	lessonTranscriptLength = 40000
 
 	// lessonFieldLength bounds each part of a lesson.
 	lessonFieldLength = 400
@@ -89,32 +96,77 @@ func lessonCallsOf(messages []*models.AgentMessage) ([]*lessonCall, map[string]*
 		if !isKnown {
 			continue
 		}
-		var result map[string]any
-		if json.Unmarshal([]byte(message.Content), &result) != nil {
-			continue
-		}
-		exitCode, hasExitCode := result["exitCode"].(float64)
-		_, isBackground := result["backgroundId"]
+		exitCode, hasExitCode, isBackground, output := readCommandResult(message.Content)
 		if !hasExitCode && !isBackground {
 			continue
-		}
-		output := ""
-		for _, key := range []string{"stdout", "output", "stderr"} {
-			if text, isText := result[key].(string); isText && strings.TrimSpace(text) != "" {
-				output += strings.TrimSpace(text) + "\n"
-			}
 		}
 		if runes := []rune(strings.TrimSpace(output)); len(runes) > lessonCallOutputLength {
 			output = "…" + string(runes[len(runes)-lessonCallOutputLength:])
 		}
 		found := &lessonCall{
 			Number: len(calls) + 1, ToolName: call.Name, Arguments: cutRunes(call.Arguments, lessonCallArgumentLength),
-			ExitCode: int(exitCode), IsFinished: hasExitCode && !isBackground, Output: strings.TrimSpace(output),
+			ExitCode: exitCode, IsFinished: hasExitCode && !isBackground, Output: strings.TrimSpace(output),
 		}
 		calls = append(calls, found)
 		byToolCallId[message.ToolCallID] = found
 	}
 	return calls, byToolCallId
+}
+
+// lastRunes is the end of a text, so many characters of it, marked as cut
+// where it was.
+func lastRunes(text string, count int) string {
+	runes := []rune(text)
+	if len(runes) <= count {
+		return text
+	}
+	return "[the work before this is left out]\n" + string(runes[len(runes)-count:])
+}
+
+// exitCodePattern finds a command's exit code in a result too long to have
+// been kept whole: the answer is cut to size, which leaves JSON that does not
+// parse, and the code comes before the output it printed.
+var exitCodePattern = regexp.MustCompile(`"(?:exitCode|exit_code)"\s*:\s*(-?\d+)`)
+
+// readCommandResult reads how a command ended from a tool result as the
+// transcript keeps it: fenced as data from outside, and cut when it was
+// long. The shell says exitCode and the terminal exit_code; a command still
+// running says backgroundId instead. The output is what it printed, or the
+// result's text when it could not be read as JSON.
+func readCommandResult(content string) (exitCode int, hasExitCode, isBackground bool, output string) {
+	content = strings.TrimSpace(content)
+	if strings.HasPrefix(content, untrustedOpen) {
+		content = strings.TrimPrefix(content, untrustedOpen)
+		if index := strings.LastIndex(content, untrustedClose); index >= 0 {
+			content = content[:index]
+		}
+		content = strings.TrimSpace(content)
+	}
+	var result map[string]any
+	if json.Unmarshal([]byte(content), &result) == nil {
+		for _, key := range []string{"exitCode", "exit_code"} {
+			if code, isNumber := result[key].(float64); isNumber {
+				exitCode, hasExitCode = int(code), true
+			}
+		}
+		_, isBackground = result["backgroundId"]
+		for _, key := range []string{"stdout", "output", "screen", "stderr"} {
+			if text, isText := result[key].(string); isText && strings.TrimSpace(text) != "" {
+				output += strings.TrimSpace(text) + "\n"
+			}
+		}
+		return exitCode, hasExitCode, isBackground, output
+	}
+	if !strings.HasPrefix(content, "{") {
+		return 0, false, false, ""
+	}
+	if found := exitCodePattern.FindStringSubmatch(content); found != nil {
+		if code, err := strconv.Atoi(found[1]); err == nil {
+			exitCode, hasExitCode = code, true
+		}
+	}
+	isBackground = strings.Contains(content, `"backgroundId"`)
+	return exitCode, hasExitCode, isBackground, content
 }
 
 // lessonTranscript is the window as the lessons pass reads it: what was
@@ -234,7 +286,7 @@ func (self *Agent) readLessons(ctx context.Context, run *Run, conversation *mode
 	prompt, err := render("lessons.txt", map[string]any{
 		"PersonName":        personName(run.Owner),
 		"KnowledgeLanguage": languageName(KnowledgeLanguage(run.Agent, run.Owner)),
-		"Transcript":        lessonTranscript(window, byToolCallId),
+		"Transcript":        lastRunes(lessonTranscript(window, byToolCallId), lessonTranscriptLength),
 	})
 	if err != nil {
 		return 0, err
@@ -250,8 +302,10 @@ func (self *Agent) readLessons(ctx context.Context, run *Run, conversation *mode
 	lessons := verifyLessons(answer.Value, calls, conversation.ID)
 
 	filed := 0
+	var accepted []*meaning
 	for _, lesson := range lessons {
-		if self.isLessonKnown(ctx, run.Agent.ID, lesson.Text) {
+		lessonMeaning, isKnown := self.isLessonKnown(ctx, run.Agent.ID, lesson.Text, accepted)
+		if isKnown {
 			continue
 		}
 		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
@@ -269,26 +323,41 @@ func (self *Agent) readLessons(ctx context.Context, run *Run, conversation *mode
 				}
 			}
 			now := time.Now()
-			_, err = tx.AddAgentFact(&models.AgentFact{
+			fact, err := tx.AddAgentFact(&models.AgentFact{
 				AgentID: run.Agent.ID, NodeID: page.ID, Kind: models.FactLesson, Text: lesson.Text,
 				HappenedAt: &now, Confidence: 0.8, Inferred: true, Evidence: lesson.Evidence,
 				Audiences: []models.AgentAudience{models.AudienceAsk},
 			})
-			return err
+			if err != nil {
+				return err
+			}
+			// Its vector now, from the meaning already worked out, so the
+			// next conversation's check sees it without waiting for a dream.
+			if lessonMeaning != nil {
+				return tx.PutAgentFactVector(run.Agent.ID, fact.ID, lessonMeaning.ModelName, lessonMeaning.Vector)
+			}
+			return nil
 		}); err != nil {
 			return filed, err
 		}
+		accepted = append(accepted, lessonMeaning)
 		filed++
 	}
 	return filed, nil
 }
 
 // isLessonKnown says whether a lesson nearly the same in meaning is already
-// filed, so that the same work done twice keeps one lesson.
-func (self *Agent) isLessonKnown(ctx context.Context, agentId, text string) bool {
+// filed, or was accepted earlier in this pass, so that the same work done
+// twice keeps one lesson; and gives the lesson's meaning, to store with it.
+func (self *Agent) isLessonKnown(ctx context.Context, agentId, text string, accepted []*meaning) (*meaning, bool) {
 	question := self.meaningOf(ctx, agentId, "remember", text)
 	if question == nil {
-		return false
+		return nil, false
+	}
+	for _, other := range accepted {
+		if other != nil && other.ModelName == question.ModelName && cosineOf(other.Vector, question.Vector) >= lessonDuplicateScore {
+			return question, true
+		}
 	}
 	var scores []db.Scored
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
@@ -299,9 +368,26 @@ func (self *Agent) isLessonKnown(ctx context.Context, agentId, text string) bool
 		})
 		return err
 	}); err != nil {
-		return false
+		return question, false
 	}
-	return len(scores) > 0
+	return question, len(scores) > 0
+}
+
+// cosineOf is how alike two vectors are, one for the same direction.
+func cosineOf(first, second []float32) float64 {
+	if len(first) != len(second) || len(first) == 0 {
+		return 0
+	}
+	var dot, firstNorm, secondNorm float64
+	for index := range first {
+		dot += float64(first[index]) * float64(second[index])
+		firstNorm += float64(first[index]) * float64(first[index])
+		secondNorm += float64(second[index]) * float64(second[index])
+	}
+	if firstNorm == 0 || secondNorm == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(firstNorm) * math.Sqrt(secondNorm))
 }
 
 // recallLessons puts the lessons nearest the turn's words in front of the

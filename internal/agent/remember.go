@@ -222,7 +222,7 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 	// taught. Its own failure is logged and leaves what was filed above,
 	// and the mark, as they are: a lesson missed is not worth reading the
 	// window twice for.
-	if lessonCount, err := self.readLessons(ctx, run, conversation, windowOf(messages, unread[0], read)); err != nil {
+	if lessonCount, err := self.readLessons(ctx, run, conversation, lessonWindowOf(messages, conversation.RememberedThrough, read)); err != nil {
 		log.Warningf("cannot read lessons from conversation %s: %s", conversation.ID, err)
 	} else if lessonCount > 0 {
 		log.Debugf("filed %d lesson(s) from conversation %s", lessonCount, conversation.ID)
@@ -230,20 +230,27 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 	return deferTheBacklog(backlog)
 }
 
-// windowOf is every message from first to last, tool calls and results
-// included, which the filing above left out.
-func windowOf(messages []*models.AgentMessage, first, last *models.AgentMessage) []*models.AgentMessage {
-	start, end := -1, -1
+// lessonWindowOf is every message the filing above covered, tool calls
+// and results included, which the filing left out: from just after the
+// previous mark, not from the first message worth filing, so commands run
+// before it in the window are read; and through the results answering the
+// calls of the last message read, which come after it and the next window
+// would start past.
+func lessonWindowOf(messages []*models.AgentMessage, previousMark string, last *models.AgentMessage) []*models.AgentMessage {
+	start, end := 0, -1
 	for index, message := range messages {
-		if message.ID == first.ID {
-			start = index
+		if previousMark != "" && message.ID == previousMark {
+			start = index + 1
 		}
 		if message.ID == last.ID {
 			end = index
 		}
 	}
-	if start < 0 || end < start {
+	if end < start {
 		return nil
+	}
+	for end+1 < len(messages) && messages[end+1].Role == string(llm.RoleTool) {
+		end++
 	}
 	return messages[start : end+1]
 }

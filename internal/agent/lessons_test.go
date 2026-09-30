@@ -18,9 +18,9 @@ func workDone(t *testing.T, world *rememberWorld, secondExitCode string) {
 		for _, message := range []*models.AgentMessage{
 			{Role: string(llm.RoleUser), Content: "please build the dashboard"},
 			{Role: string(llm.RoleAssistant), ToolCalls: []models.AgentToolCall{{ID: "c1", Name: "shell", Arguments: `{"command":"npm run build"}`}}},
-			{Role: string(llm.RoleTool), ToolCallID: "c1", Name: "shell", Content: `{"exitCode":1,"stderr":"engine node 20 required"}`},
+			{Role: string(llm.RoleTool), ToolCallID: "c1", Name: "shell", Content: "<untrusted-data>\n" + `{"exitCode":1,"stderr":"engine node 20 required"}` + "\n</untrusted-data>"},
 			{Role: string(llm.RoleAssistant), ToolCalls: []models.AgentToolCall{{ID: "c2", Name: "shell", Arguments: `{"command":"nvm use 20 && npm run build"}`}}},
-			{Role: string(llm.RoleTool), ToolCallID: "c2", Name: "shell", Content: `{"exitCode":` + secondExitCode + `,"stdout":"built in 12s"}`},
+			{Role: string(llm.RoleTool), ToolCallID: "c2", Name: "shell", Content: "<untrusted-data>\n" + `{"exitCode":` + secondExitCode + `,"stdout":"built in 12s"}` + "\n</untrusted-data>"},
 			{Role: string(llm.RoleAssistant), Content: "It builds with Node 20."},
 		} {
 			message.ConversationID = world.conversation.ID
@@ -32,18 +32,21 @@ func workDone(t *testing.T, world *rememberWorld, secondExitCode string) {
 }
 
 // lessonAnswering answers the lessons pass with one lesson citing the
-// second command, and the filing with nothing.
+// second command, said twice, and the filing with nothing.
 func lessonAnswering(prompt string) string {
 	if strings.Contains(prompt, "Write down what this work taught") {
-		return `{"lessons": [{"appliesWhen": "building the web dashboard", "approach": "switch to Node 20 with nvm before npm run build",
-			"avoid": "the default Node", "verification": "the build finished", "scope": "", "verifiedByCalls": [2], "topic": "dashboard build"}]}`
+		lesson := `{"appliesWhen": "building the web dashboard", "approach": "switch to Node 20 with nvm before npm run build",
+			"avoid": "the default Node", "verification": "the build finished", "scope": "", "verifiedByCalls": [2], "topic": "dashboard build"}`
+		return `{"lessons": [` + lesson + `, ` + lesson + `]}`
 	}
 	return `{"facts":[]}`
 }
 
 // A conversation in which a command showed an approach worked files a
-// lesson under lessons/, with the command as its evidence; the conversation
-// pass reads it with its commands and how each ended.
+// lesson under lessons/, with the command as its evidence and a vector of
+// its own, once though the model said it twice; the conversation pass reads
+// it with its commands and how each ended, from results kept as they are in
+// a transcript.
 func TestWorkThatACommandVerifiedTeachesALesson(t *testing.T) {
 	world := newRememberWorldThatEmbeds(t, lessonAnswering)
 	workDone(t, world, "0")
@@ -66,6 +69,9 @@ func TestWorkThatACommandVerifiedTeachesALesson(t *testing.T) {
 		if lesson.Kind != models.FactLesson || !strings.HasPrefix(lesson.Text, "When building the web dashboard: switch to Node 20") ||
 			len(lesson.Evidence) != 1 || lesson.Evidence[0].ID != world.conversation.ID || !strings.Contains(lesson.Evidence[0].Quote, "exit code 0") {
 			t.Errorf("the lesson: %+v", lesson)
+		}
+		if count := dbtest.QueryString(t, world.database, `SELECT count(*)::text FROM agent_fact_vector WHERE fact_id = '`+lesson.ID+`'`); count != "1" {
+			t.Errorf("the lesson has %s vectors, want its own", count)
 		}
 	})
 }
