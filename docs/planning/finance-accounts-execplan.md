@@ -92,17 +92,21 @@ something else, that name appears once, here, and nowhere else.
 - [x] (2026-09-30) Milestone 2: operator settings, the categorize model, and
   the Plaid products setting; nested `-` secrets on the command line read
   without echo.
-- [ ] Milestone 3: the `finance` source kind, its reader, and the tables
-  (completed: tables and database layer for all three plans, migrations
-  0132 to 0135; remaining: the source kind and its reader).
-- [ ] Milestone 4: exchange rates and the reporting currency (completed:
-  the ECB client, the table, stored-rate lookups; remaining: the fetch
-  policy and the API).
-- [ ] Milestone 5: linking and deleting from the dashboard, the command line
+- [x] (2026-09-30) Milestone 3: the `finance` source kind, its reader, and the
+  tables for all three plans, migrations 0132 to 0135.
+- [x] (2026-09-30) Milestone 4: exchange rates and the reporting currency: the
+  ECB client, the table, the fetch policy and the API.
+- [x] (2026-09-30) Code review of the whole branch by two reviewers; 33
+  findings fixed (see the review decisions above).
+- [x] (2026-09-30) Tested on a dev server and in a desktop and phone visual
+  audit; deployed to the owner's server.
+- [ ] Plaid end to end through the server: needs the sandbox secret, or the
+  operator offering Plaid on the deployed server and linking there.
+- [x] (2026-09-30) Milestone 5: linking and deleting from the dashboard, the command line
   and the tool.
-- [ ] Milestone 6: the read operations on the `finance` tool and the
+- [x] (2026-09-30) Milestone 6: the read operations on the `finance` tool and the
   command line.
-- [ ] Milestone 7: documentation, security review entry, release notes.
+- [x] (2026-09-30) Milestone 7: documentation, security review entry, release notes.
 
 ## Surprises & Discoveries
 
@@ -372,7 +376,29 @@ something else, that name appears once, here, and nowhere else.
 
 ## Outcomes & Retrospective
 
-Nothing built yet.
+Built on 2026-09-30, on one branch with the net worth and budgets plans.
+A person links an institution through Plaid or SimpleFIN from the Finance
+tab, `teanode finance link-plaid` or `link-simplefin`; the finance source
+syncs every six hours outside the document passes; accounts and
+transactions land in their own tables with the provider's whole object;
+totals convert at each amount's own day's ECB rate into the reporting
+currency; every operation is reachable from the dashboard, the command
+line and the `finance` tool under one naming rule, checked by parity tests.
+
+Tested against PostgreSQL throughout, on a dev server with the SimpleFIN
+demo (linked from the command line and the dashboard, synced, categorized,
+converted, asked about through the agent), in a desktop and phone visual
+audit, by two code reviews whose 33 findings were fixed, and deployed to
+the owner's server, where migrations 0132 to 0135 applied and the live
+policy names Plaid only on `/finance-link`.
+
+What remains: Plaid end to end through the server (tested against a fake
+server and by a manual link outside it; a sandbox run needs the sandbox
+secret), and offering finance on the deployed server, which is the
+operator's decision. Lessons: the model misses a tool that waits behind
+tool_search, so a person with finance data has it loaded; an argument an
+operation silently ignores gives a confident wrong answer, so the tool
+refuses what it does not read.
 
 ## Context and Orientation
 

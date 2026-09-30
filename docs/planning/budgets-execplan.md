@@ -85,16 +85,16 @@ The finance accounts plan's names list applies. Added here:
   categorization runs on the categorize model, which may be Jev or a chat
   model; budgets and totals across currencies; parity across dashboard,
   command line and tool.
-- [ ] Milestone 1: spending categories, the columns on finance transactions,
+- [x] (2026-09-30) Milestone 1: spending categories, the columns on finance transactions,
   transfer recognition.
-- [ ] Milestone 2: spending rules and the provider category mapping.
-- [ ] Milestone 3: categorization by the categorize model.
-- [ ] Milestone 4: budgets and the spending queries.
-- [ ] Milestone 5: savings targets.
-- [ ] Milestone 6: the dashboard, command line and tool operations, and the
+- [x] (2026-09-30) Milestone 2: spending rules and the provider category mapping.
+- [x] (2026-09-30) Milestone 3: categorization by the categorize model.
+- [x] (2026-09-30) Milestone 4: budgets and the spending queries.
+- [x] (2026-09-30) Milestone 5: savings targets.
+- [x] (2026-09-30) Milestone 6: the dashboard, command line and tool operations, and the
   monthly review.
-- [ ] Milestone 7: alerts through the existing alert path.
-- [ ] Milestone 8: documentation.
+- [x] (2026-09-30) Milestone 7: alerts through the existing alert path.
+- [x] (2026-09-30) Milestone 8: documentation.
 
 ## Surprises & Discoveries
 
@@ -226,7 +226,16 @@ The finance accounts plan's names list applies. Added here:
 
 ## Outcomes & Retrospective
 
-Nothing built yet.
+Built on 2026-09-30 with the finance accounts plan. Spending categories,
+spending rules, the provider category mapping (Plaid categories and
+merchant category codes), the categorize model (Jev by decision with a
+chat model for the unsure, or a chat model in batches), transfer
+detection, budgets with pace and projection, savings targets, budget
+alerts through the existing alert path, and the Spending and Budgets
+sections. Review changed the transfer rules (loan payments are spending,
+pairing is one-to-one), carried a person's choices from a pending
+transaction to the posted one, and stopped the categorize job asking
+about what it could not place.
 
 ## Context and Orientation
 

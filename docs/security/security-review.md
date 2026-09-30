@@ -1791,6 +1791,7 @@ own inside the resolver, and the link is removed when that fails.
 
 ## What this pass did not do
 
-No fuzzing and no penetration test. Plaid was exercised against its sandbox
-and through tests with a fake server; SimpleFIN against its public demo and a
-real bridge connection; the ECB against its live files.
+No fuzzing and no penetration test. Plaid was exercised through tests with a
+fake server and a manual link outside the server, not yet end to end through
+the server; SimpleFIN against its public demo and a real bridge connection;
+the ECB against its live files.

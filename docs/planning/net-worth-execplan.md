@@ -67,15 +67,15 @@ applies here too. Added here:
 - [x] (2026-09-29) Revised: "bank" renamed "finance"; one name per thing
   (`valuation_method` merged into `valuation_source`); totals converted to
   the reporting currency; parity across dashboard, command line and tool.
-- [ ] Milestone 1: the two tables, the database layer and the net worth
+- [x] (2026-09-30) Milestone 1: the two tables, the database layer and the net worth
   query.
-- [ ] Milestone 2: finance sync valuations, including investment and loan
+- [x] (2026-09-30) Milestone 2: finance sync valuations, including investment and loan
   accounts.
-- [ ] Milestone 3: assets and manual valuations in the dashboard, the command
+- [x] (2026-09-30) Milestone 3: assets and manual valuations in the dashboard, the command
   line and the tool.
-- [ ] Milestone 4: agent readings through connected servers.
-- [ ] Milestone 5: agent estimates for houses and cars.
-- [ ] Milestone 6: the net worth chart and documentation.
+- [x] (2026-09-30) Milestone 4: agent readings through connected servers.
+- [x] (2026-09-30) Milestone 5: agent estimates for houses and cars.
+- [x] (2026-09-30) Milestone 6: the net worth chart and documentation.
 
 ## Surprises & Discoveries
 
@@ -145,7 +145,14 @@ applies here too. Added here:
 
 ## Outcomes & Retrospective
 
-Nothing built yet.
+Built on 2026-09-30 with the finance accounts plan. Finance sync
+valuations, manual assets and values, readings and estimates through the
+`finance` tool (estimates only where the person allowed them, which only
+the person can set), the net worth series with carry-forward and
+precedence, per-day conversion into the reporting currency, and the chart
+and assets table on the Finance tab. Review changed two things: a
+liability's value keeps the provider's sign convention so a card in credit
+adds to net worth, and savings targets measured by assets skip sold ones.
 
 ## Context and Orientation
 
