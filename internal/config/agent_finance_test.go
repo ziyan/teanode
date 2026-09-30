@@ -172,7 +172,7 @@ func TestThePlaidSecretIsSealedAndRedacted(t *testing.T) {
 		t.Errorf("the client id was redacted: %q", redacted.Agent.Finance.Plaid.ClientID)
 	}
 
-	rows, err := ToRows(configuration, 1)
+	rows, err := ToRows(configuration, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestThePlaidSecretIsSealedAndRedacted(t *testing.T) {
 	if !strings.Contains(stored, "client-one") {
 		t.Fatalf("the rows lost the client id:\n%s", stored)
 	}
-	read, err := FromRows(rows)
+	read, err := FromRows(rows, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
