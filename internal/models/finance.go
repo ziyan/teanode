@@ -1,0 +1,157 @@
+package models
+
+import (
+	"encoding/json"
+	"time"
+)
+
+// FinanceAccountKind is what sort of account a finance account is, in the
+// providers' shared vocabulary.
+type FinanceAccountKind string
+
+// The five kinds. Plaid's vocabulary, the richer of the two providers';
+// SimpleFIN has none and its accounts are mostly "other".
+const (
+	FinanceAccountKindDepository FinanceAccountKind = "depository"
+	FinanceAccountKindCredit     FinanceAccountKind = "credit"
+	FinanceAccountKindLoan       FinanceAccountKind = "loan"
+	FinanceAccountKindInvestment FinanceAccountKind = "investment"
+	FinanceAccountKindOther      FinanceAccountKind = "other"
+)
+
+// IsValid says the kind is one of the five.
+func (self FinanceAccountKind) IsValid() bool {
+	switch self {
+	case FinanceAccountKindDepository, FinanceAccountKindCredit, FinanceAccountKindLoan,
+		FinanceAccountKindInvestment, FinanceAccountKindOther:
+		return true
+	}
+	return false
+}
+
+// FinanceAccount is one account a finance source reports: checking,
+// savings, a card, a brokerage account, a loan.
+type FinanceAccount struct {
+	ID       string `json:"id"`
+	AgentID  string `json:"agentId"`
+	SourceID string `json:"sourceId"`
+
+	// ProviderAccountID is the provider's id for it, unique within its
+	// finance source.
+	ProviderAccountID string `json:"providerAccountId"`
+
+	AccountName  string             `json:"accountName"`
+	AccountMask  string             `json:"accountMask,omitempty" graphapi:"nullable"`
+	AccountKind  FinanceAccountKind `json:"accountKind"`
+	CurrencyCode string             `json:"currencyCode"`
+
+	// CurrentBalance and AvailableBalance are decimals as the provider
+	// reports them, empty when it does not say. For a card or a loan the
+	// sign is the provider's: Plaid reports what is owed as positive,
+	// most institutions behind SimpleFIN as negative.
+	CurrentBalance   string     `json:"currentBalance,omitempty" graphapi:"nullable"`
+	AvailableBalance string     `json:"availableBalance,omitempty" graphapi:"nullable"`
+	BalanceAt        *time.Time `json:"balanceAt,omitempty" graphapi:"nullable"`
+
+	// ProviderMetadata is the provider's whole object for the account, as
+	// it arrived.
+	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty" graphapi:"nullable"`
+
+	CreatedAt  time.Time `json:"createdAt"`
+	ModifiedAt time.Time `json:"modifiedAt"`
+}
+
+// FinanceTransaction is one transaction on a finance account.
+type FinanceTransaction struct {
+	ID               string `json:"id"`
+	AgentID          string `json:"agentId"`
+	FinanceAccountID string `json:"financeAccountId"`
+
+	// ProviderTransactionID is the provider's id for it, unique within its
+	// finance account.
+	ProviderTransactionID string `json:"providerTransactionId"`
+
+	// PostedOn is the day it posted, "2006-01-02".
+	PostedOn     string     `json:"postedOn"`
+	TransactedAt *time.Time `json:"transactedAt,omitempty" graphapi:"nullable"`
+
+	// Amount is a decimal; negative is money leaving the account.
+	Amount       string `json:"amount"`
+	CurrencyCode string `json:"currencyCode"`
+
+	// Description and MerchantName are written by outsiders: whoever
+	// charged the account, and the provider's cleaning of it.
+	Description  string `json:"description"`
+	MerchantName string `json:"merchantName,omitempty" graphapi:"nullable"`
+
+	// The category the provider assigned: Plaid's primary and detailed
+	// categories, or for SimpleFIN the merchant category code as
+	// "mcc:5411" in the detailed one.
+	ProviderCategoryPrimary  string `json:"providerCategoryPrimary,omitempty" graphapi:"nullable"`
+	ProviderCategoryDetailed string `json:"providerCategoryDetailed,omitempty" graphapi:"nullable"`
+
+	IsPending                    bool   `json:"isPending"`
+	PendingProviderTransactionID string `json:"pendingProviderTransactionId,omitempty" graphapi:"nullable"`
+
+	// ProviderMetadata is the provider's whole object for the transaction,
+	// as it arrived.
+	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty" graphapi:"nullable"`
+
+	// SpendingCategoryID is the person's spending category for it, empty
+	// while uncategorized, and CategorizedBy what gave it.
+	// CategorizationConfidence is the decision model's confidence, a
+	// decimal between 0 and 1, empty for anything else.
+	SpendingCategoryID       string        `json:"spendingCategoryId,omitempty" graphapi:"nullable"`
+	CategorizedBy            CategorizedBy `json:"categorizedBy,omitempty" graphapi:"nullable"`
+	CategorizationConfidence string        `json:"categorizationConfidence,omitempty" graphapi:"nullable"`
+
+	// IsTransfer says it moved money between the person's own accounts,
+	// and so is neither spending nor income. IsTransferSetByPerson says
+	// the person decided that, either way, and nothing else may change it.
+	IsTransfer            bool `json:"isTransfer"`
+	IsTransferSetByPerson bool `json:"isTransferSetByPerson"`
+
+	CreatedAt  time.Time `json:"createdAt"`
+	ModifiedAt time.Time `json:"modifiedAt"`
+}
+
+// FinanceSpendingSummaryGroupBy is what a spending summary groups by.
+type FinanceSpendingSummaryGroupBy string
+
+// The ways a spending summary groups: by the provider's category, by the
+// person's spending category, by merchant (the description when there is
+// no merchant), by month, or by finance account.
+const (
+	FinanceSpendingSummaryGroupByProviderCategory FinanceSpendingSummaryGroupBy = "providerCategory"
+	FinanceSpendingSummaryGroupBySpendingCategory FinanceSpendingSummaryGroupBy = "spendingCategory"
+	FinanceSpendingSummaryGroupByMerchant         FinanceSpendingSummaryGroupBy = "merchant"
+	FinanceSpendingSummaryGroupByMonth            FinanceSpendingSummaryGroupBy = "month"
+	FinanceSpendingSummaryGroupByFinanceAccount   FinanceSpendingSummaryGroupBy = "financeAccount"
+)
+
+// IsValid says the grouping is one of the five.
+func (self FinanceSpendingSummaryGroupBy) IsValid() bool {
+	switch self {
+	case FinanceSpendingSummaryGroupByProviderCategory, FinanceSpendingSummaryGroupBySpendingCategory,
+		FinanceSpendingSummaryGroupByMerchant, FinanceSpendingSummaryGroupByMonth, FinanceSpendingSummaryGroupByFinanceAccount:
+		return true
+	}
+	return false
+}
+
+// FinanceSpendingSummaryRow is one group's money out and money in, in one
+// currency, transfers left out. Both are positive decimals.
+type FinanceSpendingSummaryRow struct {
+	// GroupKey is what the rows were grouped by: the provider category,
+	// the spending category's id, the merchant, the month as "2006-01" or
+	// the finance account's id. Empty for transactions with none.
+	// GroupLabel is the name to show for an id: the spending category's or
+	// the finance account's name; for the others it is the key.
+	GroupKey   string `json:"groupKey"`
+	GroupLabel string `json:"groupLabel"`
+
+	CurrencyCode            string `json:"currencyCode"`
+	MoneyOut                string `json:"moneyOut"`
+	MoneyIn                 string `json:"moneyIn"`
+	FinanceTransactionCount int    `json:"financeTransactionCount"`
+}

@@ -163,6 +163,9 @@ type agentModel struct {
 	AlertQuietEnd   string `gorm:"column:alert_quiet_end"`
 	AlertDailyMost  int    `gorm:"column:alert_daily_most"`
 
+	// The currency totals are shown in. See migration 0132.
+	ReportingCurrencyCode string `gorm:"column:reporting_currency_code"`
+
 	// When the links were last faded. See migration 0084.
 	DecayedAt *time.Time `gorm:"column:decayed_at"`
 }
@@ -239,6 +242,7 @@ func agentFromModel(model *agentModel) (*models.Agent, error) {
 		AlertQuietStart:        model.AlertQuietStart,
 		AlertQuietEnd:          model.AlertQuietEnd,
 		AlertDailyMost:         model.AlertDailyMost,
+		ReportingCurrencyCode:  model.ReportingCurrencyCode,
 	}
 	if model.DreamedAt != nil {
 		at := model.DreamedAt.In(time.Local)
@@ -302,6 +306,7 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		AlertQuietStart:        agent.AlertQuietStart,
 		AlertQuietEnd:          agent.AlertQuietEnd,
 		AlertDailyMost:         agent.AlertDailyMost,
+		ReportingCurrencyCode:  agent.ReportingCurrencyCode,
 	}
 	var err error
 	if model.Voice, err = encodeJSON(agent.Voice); err != nil {
@@ -481,6 +486,7 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 			"alert_quiet_start":       model.AlertQuietStart,
 			"alert_quiet_end":         model.AlertQuietEnd,
 			"alert_daily_most":        model.AlertDailyMost,
+			"reporting_currency_code": model.ReportingCurrencyCode,
 			"decayed_at":              model.DecayedAt,
 		}).Error
 	}); err != nil {

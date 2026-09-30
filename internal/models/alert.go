@@ -13,12 +13,14 @@ const (
 // AlertCandidateKind is what made something a candidate for an alert.
 type AlertCandidateKind string
 
-// The two kinds: one message the sorting judged worth telling, and a
-// burst of messages alike that a count noticed, which no single message's
-// sorting can see.
+// The kinds: one message the sorting judged worth telling, a burst of
+// messages alike that a count noticed, which no single message's sorting
+// can see, and a budget or savings target crossing that code computed
+// after a sync.
 const (
 	AlertCandidateMessage AlertCandidateKind = "message"
 	AlertCandidateBurst   AlertCandidateKind = "burst"
+	AlertCandidateBudget  AlertCandidateKind = "budget"
 )
 
 // AgentAlertCandidate is something that might be worth telling the person
@@ -43,6 +45,11 @@ type AgentAlertCandidate struct {
 	// digits taken out; BurstCount how many messages it counted.
 	BurstKey   string `json:"burstKey,omitempty"`
 	BurstCount int    `json:"burstCount,omitempty"`
+
+	// BudgetKey names a budget crossing, such as
+	// "spending-category:<id>:2026-09:at_risk", and becomes the subject
+	// key of the alert that tells it, so the same crossing is told once.
+	BudgetKey string `json:"budgetKey,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`
 

@@ -87,6 +87,12 @@ type AlertOperation interface {
 	// DeleteAgentAlertMute removes one mute of the agent, saying whether
 	// there was one.
 	DeleteAgentAlertMute(agentId, muteId string) (bool, error)
+
+	// HasAgentBudgetAlert says a budget crossing with this key was already
+	// written as a candidate, whatever became of it, or told as an alert
+	// under it as its subject key: the code that finds crossings after
+	// every sync writes each one once.
+	HasAgentBudgetAlert(agentId, budgetKey string) (bool, error)
 }
 
 type agentAlertCandidateModel struct {
@@ -99,6 +105,7 @@ type agentAlertCandidateModel struct {
 	CandidateReason string     `gorm:"column:candidate_reason"`
 	BurstKey        string     `gorm:"column:burst_key"`
 	BurstCount      int        `gorm:"column:burst_count"`
+	BudgetKey       string     `gorm:"column:budget_key"`
 	CreatedAt       time.Time  `gorm:"column:created_at"`
 	AlertID         string     `gorm:"column:alert_id"`
 	DroppedAt       *time.Time `gorm:"column:dropped_at"`
@@ -111,7 +118,7 @@ func (self *agentAlertCandidateModel) toModel() *models.AgentAlertCandidate {
 	return &models.AgentAlertCandidate{
 		ID: self.ID, AgentID: self.AgentID, MailboxID: self.MailboxID, MailID: self.MailID,
 		CandidateKind: models.AlertCandidateKind(self.CandidateKind), AlertSignal: self.AlertSignal, CandidateReason: self.CandidateReason,
-		BurstKey: self.BurstKey, BurstCount: self.BurstCount, CreatedAt: self.CreatedAt.In(time.Local),
+		BurstKey: self.BurstKey, BurstCount: self.BurstCount, BudgetKey: self.BudgetKey, CreatedAt: self.CreatedAt.In(time.Local),
 		AlertID: self.AlertID, DroppedAt: self.DroppedAt, DropReason: self.DropReason,
 	}
 }
@@ -120,6 +127,9 @@ func (self *transaction) CreateAgentAlertCandidate(candidate *models.AgentAlertC
 	if candidate.AgentID == "" || candidate.CandidateKind == "" {
 		return nil, fmt.Errorf("db: an alert candidate needs an agent and a kind")
 	}
+	if candidate.CandidateKind == models.AlertCandidateBudget && candidate.BudgetKey == "" {
+		return nil, fmt.Errorf("db: a budget alert candidate needs a budget key")
+	}
 	alertSignal := candidate.AlertSignal
 	if alertSignal == "" {
 		alertSignal = models.AlertSignalNone
@@ -127,7 +137,7 @@ func (self *transaction) CreateAgentAlertCandidate(candidate *models.AgentAlertC
 	model := &agentAlertCandidateModel{
 		ID: newID(), AgentID: candidate.AgentID, MailboxID: candidate.MailboxID, MailID: candidate.MailID,
 		CandidateKind: string(candidate.CandidateKind), AlertSignal: alertSignal, CandidateReason: candidate.CandidateReason,
-		BurstKey: candidate.BurstKey, BurstCount: candidate.BurstCount, CreatedAt: time.Now(),
+		BurstKey: candidate.BurstKey, BurstCount: candidate.BurstCount, BudgetKey: candidate.BudgetKey, CreatedAt: time.Now(),
 	}
 	if err := self.tx.Create(model).Error; err != nil {
 		return nil, err
@@ -434,4 +444,15 @@ func (self *transaction) ListAgentAlertMutes(agentId string) ([]*models.AgentAle
 func (self *transaction) DeleteAgentAlertMute(agentId, muteId string) (bool, error) {
 	result := self.tx.Where("\"agent_id\" = ? AND \"id\" = ?", agentId, muteId).Delete(&agentAlertMuteModel{})
 	return result.RowsAffected > 0, result.Error
+}
+
+func (self *transaction) HasAgentBudgetAlert(agentId, budgetKey string) (bool, error) {
+	if agentId == "" || budgetKey == "" {
+		return false, fmt.Errorf("db: a budget alert lookup needs an agent and a key")
+	}
+	var isFound bool
+	err := self.tx.Raw(`SELECT EXISTS (SELECT 1 FROM "agent_alert_candidate" WHERE "agent_id" = ? AND "budget_key" = ?)
+		OR EXISTS (SELECT 1 FROM "agent_alert" WHERE "agent_id" = ? AND "subject_key" = ?)`, agentId, budgetKey, agentId, budgetKey).
+		Scan(&isFound).Error
+	return isFound, err
 }
