@@ -408,7 +408,10 @@ stripped.
 
 - **The server secret is a single point of total failure for submission.**
   Every SMTP credential derives from it. There is no rotation path that does
-  not invalidate every credential at once.
+  not invalidate every credential at once. It no longer has to travel with
+  the database: started with `--secret-file`, the server reads it from a file
+  and the database keeps only a check, so a copy of the database opens none
+  of the keys sealed in it. Dumps taken before the move still hold it.
 - **An administrator can reach the internal network** through webhook aliases
   and forwarding targets. Single-tenant software; the administrator is
   trusted.

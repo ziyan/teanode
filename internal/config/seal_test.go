@@ -17,7 +17,7 @@ func TestAgentSecretsAreSealedInRows(t *testing.T) {
 	configuration.Agent.Search.APIKey = "brave-1"
 	configuration.Agent.MCP.Servers = []AgentMCPServer{{Name: "tracker", URL: "https://tracker.example", Env: []AgentMCPEnvironment{{Name: "TOKEN", Value: "t-1"}}}}
 
-	rows, err := ToRows(configuration, 1)
+	rows, err := ToRows(configuration, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestAgentSecretsAreSealedInRows(t *testing.T) {
 		t.Fatal("ToRows must not seal the configuration it was given")
 	}
 
-	read, err := FromRows(rows)
+	read, err := FromRows(rows, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestAgentSecretsAreSealedInRows(t *testing.T) {
 
 	// Written before sealing: a plain value reads as itself.
 	rows.Settings[settingAgent] = "providers:\n  - name: openai\n    kind: openai\n    apiKey: sk-plain\n"
-	read, err = FromRows(rows)
+	read, err = FromRows(rows, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestAgentSecretsAreSealedInRows(t *testing.T) {
 
 	// No server secret: stored as given, and said so by the value itself.
 	configuration.Server.Secret = ""
-	rows, err = ToRows(configuration, 2)
+	rows, err = ToRows(configuration, 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,3 +64,4 @@ func TestAgentSecretsAreSealedInRows(t *testing.T) {
 		t.Fatal("a plain key must not look sealed")
 	}
 }
+

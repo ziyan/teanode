@@ -211,11 +211,18 @@ an upgrade were a thing you did on a day you chose.
 ## What to back up
 
 **PostgreSQL, and nothing else matters as much.** It holds the configuration,
-the DKIM signing keys, the server secret from which every SMTP password is
-derived, and the mail. Losing it means republishing DNS records and reissuing
+the DKIM signing keys, the mail, and, unless it is kept in a file, the server
+secret from which every SMTP password is derived and with which every stored
+key is sealed. Losing it means republishing DNS records and reissuing
 credentials.
 
     docker compose exec postgres pg_dump -U teanode teanode | gzip > teanode-$(date +%F).sql.gz
+
+**The server secret file, when there is one, and apart from the database.**
+A dump of a database whose secret is kept in a file holds only ciphertext and
+hashes, which is the point; the file is what opens them. Keep a copy of it
+somewhere the database backups are not, and do not lose it: without it no
+sealed key opens and every SMTP password has to be reissued.
 
 A configuration-only backup, readable and reviewable, without the mail:
 
@@ -229,6 +236,52 @@ record. Treat it as a private key.
 `./data/teanode` holds the certificates, the keys, and the spool where one is
 configured. Certificates are reissued automatically, so it is worth backing up
 but not urgent.
+
+## Keeping the server secret out of the database
+
+The domains' DKIM keys, the agent's provider keys and every source's and
+skill's secrets are sealed with the server secret, and every SMTP password is derived from it. A server keeps that
+secret in its own database unless told otherwise, so anybody holding a copy
+of the database holds the means to open everything in it.
+
+Started with `--secret-file` naming a file, or with `TEANODE_SECRET_FILE` in
+the environment, the server reads the secret from that file and the database
+keeps only a check that tells the right file from a wrong one. A copy of the
+database then opens nothing.
+
+To move an existing server's secret into a file:
+
+1. Write it out, somewhere that survives the container being recreated and
+   is not the database's volume. The mounted data directory is both:
+
+       docker compose exec teanode /usr/local/bin/teanode-server \
+         config export-secret --output /var/lib/teanode/secret/server.secret
+
+   The file is created readable only by its owner and never over an existing
+   one.
+
+2. Name it in `.env`:
+
+       TEANODE_SECRET_FILE=/var/lib/teanode/secret/server.secret
+
+3. Restart. The first start that finds the same secret in the file and in the
+   database removes it from the database and says so. A file holding a
+   different secret is refused: the server will not start rather than seal
+   anything with the wrong key. Every instance sharing the database needs the
+   same file.
+
+4. Back the file up apart from the database. Dumps taken before the move
+   still hold the secret; delete or rewrite them if they are kept anywhere a
+   dump of today would not be.
+
+A new server started with `--secret-file` naming a file that does not exist
+yet writes a new secret there. One whose database was sealed with a file that
+has since gone refuses to start: restore the file from its backup.
+
+Going back to a release without this is refused by the database migration
+that came with it, because that release would read no secret, generate a new
+one, and lose everything sealed with the old. Restore the backup taken before
+the move instead.
 
 ## More than one instance
 

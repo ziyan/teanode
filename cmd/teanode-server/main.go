@@ -14,6 +14,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/ziyan/teanode/internal/bootstrap"
 	"github.com/ziyan/teanode/internal/cmd"
 	"github.com/ziyan/teanode/internal/cmd/server"
 	"github.com/ziyan/teanode/internal/version"
@@ -32,9 +33,16 @@ func main() {
 				Usage:   "log level (DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL); overrides server.logLevel",
 				Sources: cli.EnvVars("TEANODE_LOG_LEVEL"),
 			},
+			&cli.StringFlag{
+				Name: "secret-file",
+				Usage: "keep the server secret in this file rather than in the database, so that a copy " +
+					"of the database does not open what is sealed in it",
+				Sources: cli.EnvVars("TEANODE_SECRET_FILE"),
+			},
 		},
 		Before: func(ctx context.Context, command *cli.Command) (context.Context, error) {
 			cmd.SetupLogging(command.String("log-level"))
+			bootstrap.SetSecretFile(command.String("secret-file"))
 			return ctx, nil
 		},
 		Commands: []*cli.Command{

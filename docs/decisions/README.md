@@ -111,6 +111,11 @@ place, with what they answered kept in the model's order and one card at a
 time. It amends the background command decision's line about the loop
 running them in order.
 
+`20260929-the-server-secret-can-be-kept-out-of-the-database.md` says why
+the server secret can be read from a file named at start, what the database
+keeps in its place, and how an existing server moves it there. It amends
+the decision that put configuration in the database.
+
 `20260929-the-agent-tells-the-person-what-their-mail-says.md` says why the
 agent tells the person, unasked, what their mail says they should know now:
 candidates from the sorting and from a count of bursts, one decision with

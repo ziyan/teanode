@@ -35,6 +35,7 @@ func NewConfigCommand() *cli.Command {
 			newConfigShowCommand(),
 			newConfigImportCommand(),
 			newConfigExportCommand(),
+			newConfigExportSecretCommand(),
 			newConfigRulesCommand(),
 		},
 	}
@@ -283,14 +284,18 @@ func runConfigInit(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 
-	seeded, err := config.Initialize(database, bootstrapped.SeedConfiguration)
+	secretFile, err := bootstrapped.ReadSecretFile()
+	if err != nil {
+		return err
+	}
+	seeded, err := config.Initialize(database, bootstrapped.SeedConfiguration, secretFile)
 	if err != nil {
 		return err
 	}
 	if !seeded {
 		fmt.Printf("this database is already configured; nothing was changed\n")
 
-		store, err := config.OpenStore(database, bootstrapped.Database)
+		store, err := config.OpenStore(database, bootstrapped.Database, secretFile)
 		if err != nil {
 			return err
 		}
@@ -374,6 +379,52 @@ func newConfigShowCommand() *cli.Command {
 				return err
 			}
 			return encoder.Close()
+		},
+	}
+}
+
+func newConfigExportSecretCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "export-secret",
+		Usage: "write the server secret the database holds to a file, to keep it there instead",
+		Description: "The first step of keeping the server secret out of the database. It\n" +
+			"writes the secret the database holds to a new file, readable only by its\n" +
+			"owner. Start the server with --secret-file (or TEANODE_SECRET_FILE) naming\n" +
+			"that file, and the first start removes the secret from the database.\n\n" +
+			"After that, a copy of the database no longer opens anything sealed in it,\n" +
+			"and the file is what has to be backed up, apart from the database: without\n" +
+			"it, nothing sealed opens and every SMTP password is lost. Put it somewhere\n" +
+			"that survives the container being recreated.",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:     "output",
+				Aliases:  []string{"o"},
+				Usage:    "the file to write; it must not exist yet",
+				Required: true,
+			},
+		},
+		Action: func(ctx context.Context, command *cli.Command) error {
+			database, closeDatabase, err := cmd.OpenLocalDatabase()
+			if err != nil {
+				return err
+			}
+			defer closeDatabase()
+			secret, err := config.LoadStoredSecret(database)
+			if err != nil {
+				return err
+			}
+			if len(secret) == 0 {
+				return fmt.Errorf("the database holds no server secret; it is kept in a file already, or has not been generated yet")
+			}
+			output := command.String("output")
+			if err := config.WriteSecretFile(output, secret); err != nil {
+				return err
+			}
+			fmt.Printf("wrote the server secret to %s\n\n", output)
+			fmt.Printf("Start the server with --secret-file %s (or TEANODE_SECRET_FILE) and\n", output)
+			fmt.Printf("it removes the secret from the database. Back the file up apart from the\n")
+			fmt.Printf("database: nothing sealed in the database opens without it.\n")
+			return nil
 		},
 	}
 }

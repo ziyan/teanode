@@ -21,6 +21,7 @@ with the same side effects. See
 | `teanode-server config show\|validate` | inspect and check the stored configuration |
 | `teanode-server config rules import\|show` | the built-in spam filter's pattern rules: import a set, or show what is stored |
 | `teanode-server config import\|export` | load a `teanode.yaml` into the database, or write one out |
+| `teanode-server config export-secret --output FILE` | write the server secret the database holds to a new file, the first step of keeping it there instead; then start with `--secret-file FILE` (or `TEANODE_SECRET_FILE`), which removes it from the database. See "Keeping the server secret out of the database" in `deployment.md` |
 | `teanode-server tls self-signed` | a certificate for local development |
 | `teanode-server user list\|add\|password\|remove\|reset\|rescue` | recover the accounts without going through the server |
 | `teanode-server password` | hash a password for an exported configuration |
