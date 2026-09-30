@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.87.0] - 2026-09-30
+
+### Added
+
+- Link your bank, card, brokerage and loan accounts through Plaid (with the operator's keys) or SimpleFIN, and track transactions, spending categories, monthly budgets, savings targets and net worth, converted into your reporting currency, on the agent page's Finance tab, with `teanode finance`, or by asking your agent. (#242)
+
 ## [0.86.0] - 2026-09-30
 
 ### Added
