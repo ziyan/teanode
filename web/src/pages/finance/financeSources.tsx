@@ -317,7 +317,6 @@ export function FinanceSourcesSection() {
           <p>
             <button
               type="button"
-              className="link"
               aria-expanded={isImporting}
               onClick={() => setIsImporting((previous) => !previous)}
             >
