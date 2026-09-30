@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.92.0] - 2026-09-30
+
+### Added
+
+- Clicking a transaction shows its whole record, the provider's metadata included. (#259)
+
+### Changed
+
+- The Spending section's ring chart shows spending by merchant and by account too; the provider category grouping is gone. (#259)
+
 ## [0.91.2] - 2026-09-30
 
 ### Fixed
