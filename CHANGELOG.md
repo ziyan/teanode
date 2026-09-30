@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.90.0] - 2026-09-30
+
+### Added
+
+- Built-in spending categories for education, kids, business services, taxes and loans; transactions already filed under other by the provider's category move to them on the next sync. (#258)
+
 ## [0.89.1] - 2026-09-30
 
 ### Fixed
