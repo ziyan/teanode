@@ -119,6 +119,8 @@ export function DataTable<Row>({
   rows,
   rowKey,
   rowLink,
+  onRowOpen,
+  rowOpenLabel,
   loading,
   emptyMessage,
   initialFilters,
@@ -139,6 +141,13 @@ export function DataTable<Row>({
   // The cell that holds the link keeps it, so the keyboard and the middle
   // button still work; this only widens the target for the pointer.
   rowLink?: (row: Row) => string | undefined
+
+  // What a row opens in place when it has no page to go to: its details
+  // in a dialog. The row is then a target of its own, for the pointer and
+  // for the keyboard (Tab to it, Enter), and rowOpenLabel names it for a
+  // screen reader. The controls inside the row keep their clicks.
+  onRowOpen?: (row: Row) => void
+  rowOpenLabel?: (row: Row) => string
 
   loading?: boolean
   emptyMessage: string
@@ -444,21 +453,41 @@ export function DataTable<Row>({
           <tbody>
             {visible.map((row) => {
               const href = rowLink?.(row)
+              const isOpenable = !href && onRowOpen !== undefined
               return (
                 <tr
                   key={rowKey(row)}
-                  className={href ? 'linked' : undefined}
+                  className={href || isOpenable ? 'linked' : undefined}
+                  tabIndex={isOpenable ? 0 : undefined}
+                  aria-label={isOpenable ? rowOpenLabel?.(row) : undefined}
+                  onKeyDown={
+                    isOpenable
+                      ? (event) => {
+                          if (event.key === 'Enter' && event.target === event.currentTarget) {
+                            event.preventDefault()
+                            onRowOpen(row)
+                          }
+                        }
+                      : undefined
+                  }
                   onClick={
-                    href
+                    href || isOpenable
                       ? (event) => {
                           // A click that landed on something of its own — the
                           // subject link, a button, a text selection someone is
-                          // dragging out — belongs to that thing, not the row.
+                          // dragging out, an option of a list a control in the
+                          // row opened — belongs to that thing, not the row.
                           if (
                             event.defaultPrevented ||
-                            (event.target as HTMLElement).closest('a, button, input, select, textarea, label') ||
+                            (event.target as HTMLElement).closest(
+                              'a, button, input, select, textarea, label, [role="option"], .select-list',
+                            ) ||
                             window.getSelection()?.toString()
                           ) {
+                            return
+                          }
+                          if (!href) {
+                            onRowOpen?.(row)
                             return
                           }
                           if (event.metaKey || event.ctrlKey) {

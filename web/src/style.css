@@ -11696,10 +11696,6 @@ button.idea-history-title {
   min-width: 11rem;
 }
 
-.finance-categorized-by {
-  font-size: var(--text-label);
-}
-
 /* A second line under a cell's figure: a holding's quantity and the price
    of one under its value. */
 .finance-cell-detail {
@@ -12092,23 +12088,88 @@ button.idea-history-title {
   font-size: var(--text-label);
 }
 
+/* A transaction is a line, not a card: a compact spending category control
+   and little padding around it. The row opens the transaction's details,
+   so it shows where the keyboard is. */
+.finance-transactions-table .table-surface td {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.finance-transactions-table .select {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.finance-transactions-table tbody tr:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+
+/* Everything about one transaction: its fields, then the provider's whole
+   record of it as text, in a block that scrolls inside the dialog. */
+@media (min-width: 641px) {
+  .dialog:has(.finance-transaction-details) {
+    max-width: min(640px, calc(100vw - 32px));
+  }
+}
+
+.finance-transaction-details .properties {
+  margin-bottom: var(--space-4);
+}
+
+.finance-transaction-details .properties dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.finance-detail-note {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--text-label);
+}
+
+.finance-metadata-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.finance-metadata {
+  max-width: 100%;
+  max-height: 18rem;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--field);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+/* Where its two scrollbars meet, the block's own background rather than
+   the browser's white square, which showed in dark mode. */
+.finance-metadata::-webkit-scrollbar-corner {
+  background: var(--field);
+}
+
 @media (max-width: 600px) {
   /* Room left beside the swatch, the amount and its share. */
   .finance-group-name {
     max-width: calc(100vw - 14rem);
   }
 
-  /* A transaction is a line, not a card: the controls in it are as tall as
-     a thumb needs, and the cell pads nothing more around them. Who chose
-     the category is the cell's title here rather than a line under it, and
-     a long description takes two lines rather than running off the edge. */
-  .table-surface tr:has(.finance-category-cell) > td {
+  /* On a phone the controls keep the height a thumb needs, so the cells
+     pad less still, and a long description takes two lines rather than
+     running off the edge. */
+  .finance-transactions-table .table-surface td {
     padding-top: 4px;
     padding-bottom: 4px;
-  }
-
-  .finance-categorized-by {
-    display: none;
   }
 
   .finance-description {

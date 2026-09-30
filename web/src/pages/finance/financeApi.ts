@@ -45,16 +45,27 @@ export type FinanceSource = {
 export type FinanceTransaction = {
   id: string
   financeAccountId: string
+  providerTransactionId: string
   postedOn: string
+  transactedAt?: string | null
   amount: string
   currencyCode: string
   description: string
   merchantName?: string | null
   providerCategoryPrimary?: string | null
+  providerCategoryDetailed?: string | null
   isPending: boolean
+  pendingProviderTransactionId?: string | null
+  // The provider's whole object for the transaction, as it arrived: text
+  // from outside, to be shown and never interpreted.
+  providerMetadata?: unknown
   spendingCategoryId?: string | null
   categorizedBy?: string | null
+  categorizationConfidence?: string | null
   isTransfer: boolean
+  transferMarkedBy?: string | null
+  createdAt: string
+  modifiedAt: string
 }
 
 export type FinanceTransactionPage = {
@@ -338,8 +349,13 @@ export const SWITCH_SOURCE = `mutation ($sourceId: String, $enabled: Boolean) {
 
 export const FINANCE_ACCOUNTS = `query { FinanceAccounts { ${ACCOUNT_FIELDS} } }`
 
-const TRANSACTION_FIELDS = `id financeAccountId postedOn amount currencyCode description merchantName
-  providerCategoryPrimary isPending spendingCategoryId categorizedBy isTransfer`
+// Everything about a finance transaction, the provider's own object too:
+// the details dialog shows it all, and there is no query for one
+// transaction to fetch it with when the dialog opens.
+const TRANSACTION_FIELDS = `id financeAccountId providerTransactionId postedOn transactedAt amount currencyCode
+  description merchantName providerCategoryPrimary providerCategoryDetailed isPending pendingProviderTransactionId
+  providerMetadata spendingCategoryId categorizedBy categorizationConfidence isTransfer transferMarkedBy
+  createdAt modifiedAt`
 
 export const FINANCE_TRANSACTIONS = `query ($from: String, $to: String, $financeAccountId: String, $text: String,
   $spendingCategoryId: String, $isUncategorized: Boolean, $limit: Int, $after: String) {
