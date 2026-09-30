@@ -70,6 +70,30 @@ export function reportingValue(
   return amountOf(valuation.value) * rate
 }
 
+// ExchangeRates is an answer of rates to the reporting currency, with what
+// it was asked for: which reporting currency, and which currencies (those
+// it has no rate for included, since asking is what settles that).
+export type ExchangeRates = {
+  reportingCurrencyCode: string
+  currencyCodes: string[]
+  rates: Record<string, number>
+}
+
+// areRatesFor says an answer of rates is the one for the reporting
+// currency and the currencies the assets are held in now. An answer for
+// the list before a reload brought a new currency, or for no reporting
+// currency before it was read, would leave assets out of the totals and
+// name their currency as unconverted, so it is not used.
+export function areRatesFor(
+  answer: ExchangeRates | null | undefined,
+  reportingCurrencyCode: string,
+  currencyCodes: string[],
+): answer is ExchangeRates {
+  if (!answer || answer.reportingCurrencyCode !== reportingCurrencyCode) return false
+  const asked = new Set(answer.currencyCodes)
+  return currencyCodes.every((code) => asked.has(code))
+}
+
 export type AssetGroup = {
   assetKind: string
   isLiability: boolean

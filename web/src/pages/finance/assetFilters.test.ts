@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 
 import {
   NO_ASSET_FILTERS,
+  areRatesFor,
   assetFiltersFromSearch,
   assetGroupRows,
   groupAssets,
@@ -128,6 +129,18 @@ it('names each run of an account\'s holdings once, with its own count and key', 
   ])
   expect(new Set(lines.map((line) => line[0])).size).toBe(lines.length)
   expect(rows.filter((row) => row.rowKind === 'asset')).toHaveLength(5)
+})
+
+// An answer from before the reporting currency was read, or before a
+// reload brought a new currency, is not the one to add up with.
+it('uses rates only when they were asked for this reporting currency and these currencies', () => {
+  const answer = { reportingCurrencyCode: 'USD', currencyCodes: ['EUR', 'JPY'], rates: { EUR: 1.1 } }
+  expect(areRatesFor(answer, 'USD', ['EUR', 'JPY'])).toBe(true)
+  expect(areRatesFor(answer, 'USD', ['EUR'])).toBe(true)
+  expect(areRatesFor(answer, 'USD', ['EUR', 'GBP'])).toBe(false)
+  expect(areRatesFor(answer, 'EUR', ['JPY'])).toBe(false)
+  expect(areRatesFor({ reportingCurrencyCode: '', currencyCodes: [], rates: {} }, 'USD', [])).toBe(false)
+  expect(areRatesFor(null, 'USD', [])).toBe(false)
 })
 
 it('reads and writes the filters in the address without touching the rest of it', () => {
