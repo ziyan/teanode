@@ -127,3 +127,13 @@ deleting an agent owes the provider.
 transactions go into tables of their own and are read through a tool that
 adds them up, rather than into memory. The plan that acts on both is
 `docs/planning/bank-accounts-execplan.md`.
+
+`20260929-net-worth-is-a-history-of-valuations.md` says how net worth is
+kept: a valuation per asset per day per source, summed on demand, with the
+person's own entry beating a provider's and a provider's beating an
+estimate, and why the agent estimates a house or a car only where the
+person allowed it. Its plan is `docs/planning/net-worth-execplan.md`.
+`20260929-spending-categories-are-the-persons.md` says whose categories a
+budget is built on: the person's, assigned by their own choice, then their
+rules, then the provider, then the agent, and never overwritten once the
+person chose. Its plan is `docs/planning/budgets-execplan.md`.

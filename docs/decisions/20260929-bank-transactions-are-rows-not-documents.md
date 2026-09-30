@@ -37,14 +37,19 @@ grows without bound.
 ## Consequences
 
 A second storage path beside memory, with its own migration, database
-layer, sync job and tool. Recall does not find transactions: a person who
+layer, source reader and tool. The schedule, the retries and the
+credential are the agent source's, as for every other source. Recall does not find transactions: a person who
 asks the agent about a purchase gets an answer only if the agent thinks to
 call the tool, so the tool's description has to make that obvious.
 
-The provider's own fields beyond the normalized ones are not kept. If a
-later feature needs one, it is a migration and a fresh sync, which the
-providers allow.
+Every row also keeps the provider's whole object as it arrived, as
+`jsonb`. Providers send more than the columns hold, some of it only
+discovered in use, and SimpleFIN keeps only about 90 days of history, so
+a field not kept at sync time cannot be fetched again later. A later
+feature that needs one reads it from what is stored. The cost is
+storage (a transaction's object is a few hundred bytes to a kilobyte) and one more
+place where data the person did not look at is kept on their behalf.
 
-Totals are only as right as the categories the provider assigns. Plaid
-categorizes; SimpleFIN does not, so its transactions have no category until
-something assigns one.
+Totals by category are only as right as the categories. Plaid assigns
+its own; SimpleFIN assigns none. Whose categories count is decided in
+`20260929-spending-categories-are-the-persons.md`.

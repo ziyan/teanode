@@ -21,7 +21,7 @@ from the operator. Then any person whose agent is on opens their agent page,
 chooses **Link a bank**, and either signs in to their bank in Plaid's window
 or pastes a SimpleFIN setup token. From then on the server fetches that
 bank's accounts, balances and transactions a few times a day into tables of
-their own, and the person's agent has a read-only `bank` tool that lists
+their own, and the person's agent has a `finance` tool that lists
 accounts, searches transactions and totals spending. Unlinking removes the
 connection at the provider and deletes every row it brought in.
 
@@ -29,12 +29,14 @@ How to see it working, once the milestones below are done: in a development
 server, configure Plaid with sandbox keys, link the sandbox bank as a person
 with the sandbox credentials `user_good` / `pass_good`, wait for the first
 sync, and ask the agent "what did I spend in the last 30 days, by category".
-The answer comes from the `bank` tool and matches
+The answer comes from the `finance` tool and matches
 `teanode api call BankTransactions` for the same range.
 
 Two words recur and are defined here. A **provider** is the outside service
 that talks to banks for us: Plaid, or SimpleFIN. A **connection** is one
-person's link to one login at one bank through one provider. A connection
+person's link to one login at one bank through one provider. In the code a
+connection is an agent source of the new kind `bank` (sources are defined
+under Context and Orientation). A connection
 holds one or more **accounts** (checking, savings, a card), and each account
 has **transactions**.
 
@@ -45,14 +47,20 @@ has **transactions**.
 - [x] (2026-09-29) Surveyed the code this touches: operator secrets, person
   secrets, migrations, tools, jobs, routes, dashboard, CSP, CLI.
 - [x] (2026-09-29) Wrote this plan and the decision records it depends on.
+- [x] (2026-09-29) Revised it to reuse agent sources for connections
+  (schedule, cursor, sealed secrets, sync now, delete) instead of a
+  connection table and job of its own, and to name the tool `finance`.
 - [ ] Milestone 1: provider clients and a prototype against Plaid sandbox and
-  the SimpleFIN demo token; answer the open questions under Surprises.
+  the SimpleFIN demo token (completed: SimpleFIN limits, fields and user
+  agent probed against a real bridge connection; remaining: pending id
+  stability, Plaid Link's CSP origins, the Go clients and their tests).
 - [ ] Milestone 2: operator settings for both providers (config, GraphQL,
   dashboard form, CLI).
-- [ ] Milestone 3: tables, database layer and the sync job.
+- [ ] Milestone 3: the `bank` source kind, its reader, and the account and
+  transaction tables.
 - [ ] Milestone 4: linking and unlinking from the dashboard, including the
   Plaid Link page and its narrow CSP.
-- [ ] Milestone 5: the `bank` agent tool and the read queries behind it.
+- [ ] Milestone 5: the `finance` agent tool and the read queries behind it.
 - [ ] Milestone 6: documentation, security review entry, release notes.
 
 ## Surprises & Discoveries
@@ -60,17 +68,51 @@ has **transactions**.
 Questions the research could not settle. Milestone 1 answers them, and each
 answer goes here with its evidence.
 
-- Observation: SimpleFIN's protocol document states no limit on how far back
-  `start-date` may reach, nor on how often `/accounts` may be called. The
-  public bridge is known to refresh from banks about once a day. Whether it
-  refuses wide date ranges, or rate limits, is unknown.
-  Evidence: to be filled by the Milestone 1 prototype.
+- Observation: the SimpleFIN Bridge caps one request at 90 days and warns
+  above 45. A wider range is not refused: the bridge answers 200, keeps the
+  most recent 90 days of the range, and says so in the account set's
+  `errors` list ("Requested date range exceeds limit of 90 days and was
+  capped", and above 45 days "exceeds recommended range of 45 days. In the
+  future, this may be capped"). History reaches back only about 90 days
+  before the connection was made: a window 180 to 91 days back held one
+  transaction at its very start, and a window two years back held none.
+  So the first sync fetches two 45-day windows and stops, and `errors`
+  entries are warnings to log, not failures.
+  Evidence: prototype requests against a real bridge connection,
+  2026-09-29 (one account, 82 transactions in 30 days, 3 pending).
+
+- Observation: the bridge answers 403 Forbidden to a request with Python's
+  default `User-Agent`, including the one-time claim, and the refused claim
+  does not use up the setup token; the same request with an explicit
+  `User-Agent` succeeds. The Go client must set its own `User-Agent` (for
+  example `teanode/<version>`) on the claim and on every fetch.
+  Evidence: claim refused with 403, then accepted with a `User-Agent`
+  header, 2026-09-29.
+
+- Observation: the bridge returns fields the protocol document does not
+  list. Accounts carry `holdings` (investment positions, which the net
+  worth plan can use). Transactions carry `payee` (a cleaned merchant name,
+  mapped to `MerchantName`), `memo`, and `mcc` (the card network's
+  merchant category code, a four-digit number that is a free category
+  hint; the budgets plan's provider mapping can use it for SimpleFIN,
+  which otherwise has no categories). The error list is named `errors`,
+  a list of strings, not `errlist` as the protocol document describes;
+  accept both.
+  Evidence: key lists printed by the prototype, 2026-09-29.
+
+- Observation: a real Plaid connection asked for 730 days of history
+  returned about 21 months, and Plaid reported the historical load
+  complete. Banks give Plaid what they have; 730 is a ceiling, not a
+  promise.
+  Evidence: a manual Plaid Trial link, 2026-09-29.
 
 - Observation: whether a SimpleFIN transaction keeps its `id` when it moves
   from pending to posted is not stated. The sync design below does not rely
   on it (it replaces pending rows inside a window), but the answer decides
   whether the agent can say "this pending charge posted".
-  Evidence: to be filled.
+  Evidence: a raw 30-day response with three pending transactions was
+  kept privately on 2026-09-29; fetch the same window again once they
+  have posted and compare ids.
 
 - Observation: the exact origins Plaid Link needs in a Content Security
   Policy (script, frame, connect) must be read from Plaid's current
@@ -88,6 +130,42 @@ answer goes here with its evidence.
 
 ## Decision Log
 
+- Decision: every account and transaction keeps the provider's whole
+  object, as it arrived, in a `provider_metadata` column (`jsonb`), beside
+  the normalized columns.
+  Rationale: providers send more than this plan maps, and some of it is
+  only discovered in use (the SimpleFIN Bridge sends `payee`, `memo`,
+  `mcc` and `holdings`, none in its protocol document). SimpleFIN keeps
+  only about 90 days, so what is not kept at sync time is gone. Keeping
+  the whole object rather than only the unmapped fields means a mapping
+  mistake can be repaired from stored data, and a later feature can use
+  a field nobody mapped, both without a fresh sync. The maintainer asked
+  for it. The `finance` tool returns the normalized fields only, so the
+  raw objects are not sent to a model wholesale; the person can read them
+  through the API.
+  Date/Author: 2026-09-29, the maintainer and the coding agent.
+
+- Decision: a bank connection is an agent source of a new kind, `bank`,
+  not a table and a job of its own.
+  Rationale: a source already has everything a connection needs: a
+  cron line and next run time, a cursor the reader owns, the last error,
+  an on and off switch, per-source secrets sealed with the server secret
+  and an API that never returns them, a sync now operation, deletion,
+  and a place on the agent page. `docs/decisions/20260910-agents-belong-to-people.md`
+  already says a person grants their agent sources one at a time and
+  that revoking one stops its processing. The maintainer asked that the
+  plans reuse what TeaNode has rather than invent a parallel concept. The
+  cost is that a `bank` source files rows rather than documents, so the
+  reader returns no documents and the source shows account and
+  transaction counts where others show documents.
+  Date/Author: 2026-09-29, the maintainer and the coding agent.
+
+- Decision: one agent tool, `finance`, created here and extended by the
+  net worth and budgets plans, rather than a tool per plan.
+  Rationale: the model sees one description of what it can learn about
+  money, and the operations share filters (dates, accounts, currency).
+  Date/Author: 2026-09-29.
+
 - Decision: support two providers from the start, Plaid and SimpleFIN,
   behind one Go interface; neither is special in the tables or the tool.
   Rationale: they cover the same banks from opposite ends. Plaid needs an
@@ -101,7 +179,8 @@ answer goes here with its evidence.
   holds each bank connection. The Plaid secret is a field of `config.Agent`
   tagged `secret:"true"`, sealed like the web search API key. Each
   connection's credential (a Plaid access token, or a SimpleFIN access URL)
-  is sealed per row with its own label.
+  is a secret of its source, stored and sealed like any other source
+  secret.
   Rationale: a self-hosted install cannot ship a shared Plaid key in the
   binary, and one would cover every install. The operator is the only party
   who can sign Plaid's terms. The bank login, the consent and the data are
@@ -267,10 +346,14 @@ settings.
 `Agent.SealSecret` and opened with `Agent.OpenSecret` in
 `internal/agent/tools_mcp.go`. The closest model for a credential that is
 refreshed and written back is `personToken` in the same file, which opens a
-connected server's OAuth tokens, refreshes them, and seals them again. This
-plan adds its own seal label (below) rather than reusing that one, so a
-bank credential can never be opened by code that expects a connected
-server's token.
+connected server's OAuth tokens, refreshes them, and seals them again.
+Secrets that belong to one source are rows of `agent_source_secret`
+(migration `0104`, `internal/db/database_source_secret.go`), keyed by
+source and name, sealed the same way, and set and cleared through
+`SetAgentKnowledgeSourceSecret` and `ClearAgentKnowledgeSourceSecret`
+(`internal/api/v1api/apigraph/agent_source_secret.go`), whose read side
+reports only whether a secret is set. A bank connection keeps its
+credential there under the name `credential`.
 
 **Tables.** Migrations live in `internal/db/migrations/`, named
 `NNNN_name.sql` with a matching `NNNN_name.reverse.sql`, and are embedded
@@ -286,6 +369,19 @@ foreign key, and every query takes the agent id and filters on it. The
 security review (`docs/security/security-review.md`, item SEC-13) asks that
 code load a row and check it against its own owner, never against a scope
 found some other way.
+
+**Sources.** An agent source is a row of `agent_source`, the model
+`models.AgentKnowledgeSource` in `internal/models/knowledge.go`: a `Kind`
+(today `computer`, `archive`, `skill`, `web`, `sent`), a name, a
+`Specification` (a JSON object whose `Type` and `Settings` fields hold
+what the kind needs), `Enabled`, a `Cron` line, `NextRunAt`, `LastRunAt`,
+`LastError`, and a `Cursor` map that only the reader for that kind reads
+and writes. The agent page lists a person's sources with their state, and
+the GraphQL operations `SyncAgentKnowledgeSource` (run it now) and
+`DeleteAgentKnowledgeSource` (`internal/api/v1api/apigraph/agent_graph.go`)
+act on one. Reading one page of a source is `readOnePass` in
+`internal/agent/ingest.go`, which switches on the kind and returns an
+error for kinds it cannot read yet.
 
 **Jobs.** A background tick (`tickAt` in `internal/agent/agent.go`) calls
 `queueIngestion` (`internal/agent/ingest.go`), which asks
@@ -363,6 +459,7 @@ already normalized, and the interface:
         CurrentBalance    string // decimal, "" when unknown
         AvailableBalance  string
         BalanceAt         time.Time
+        ProviderMetadata  json.RawMessage // the provider's account object, whole
     }
 
     type Transaction struct {
@@ -378,6 +475,7 @@ already normalized, and the interface:
         CategoryDetailed             string
         IsPending                    bool
         PendingProviderTransactionID string
+        ProviderMetadata             json.RawMessage // the provider's transaction object, whole
     }
 
     // SyncResult is one sync's worth of change. Removed lists provider
@@ -411,7 +509,9 @@ its dependencies. The client takes an environment (`sandbox` or
 `CreateLinkToken(ctx, personReference string, accessTokenForUpdate string)
 (string, error)` and `ExchangePublicToken(ctx, publicToken string)
 (accessToken, itemId string, err error)`. `Sync` pages `/transactions/sync`
-until `has_more` is false, negates every amount, maps Plaid's error code
+until `has_more` is false, negates every amount, keeps each account and transaction object's raw
+JSON as `ProviderMetadata` (decode the page into `[]json.RawMessage`
+first, then into the typed struct), maps Plaid's error code
 `ITEM_LOGIN_REQUIRED` to `ErrLoginRequired`, and, if Plaid answers
 `TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION`, restarts from the cursor it
 began with, as Plaid's documentation says to.
@@ -421,20 +521,27 @@ setupToken string) (accessURL string, err error)` decodes the token, checks
 the URL with `safefetch.ParseTarget`, and posts to it with
 `safefetch.Client()`. `Sync` takes the access URL as the credential and the
 cursor as the Unix time of the newest posted transaction seen so far. On the
-first sync (empty cursor) it walks backward from now in 60-day windows until
-two windows in a row come back empty or two years are covered. After that it
-asks for `start-date` fourteen days before the cursor with `pending=1`, and
+first sync (empty cursor) it fetches the last 90 days as two 45-day
+windows, which is all the history the bridge keeps (see Surprises &
+Discoveries). After that it asks for `start-date` fourteen days before the
+cursor with `pending=1`, and
 sets `ReplacedWindow` to that start, so pending transactions that vanished
 are deleted and ones whose ids changed on posting are not left behind as
 duplicates. `Remove` does nothing at the provider (SimpleFIN has no revoke
 call); the dashboard tells the person they can also revoke the app on the
-bridge's website. Errors in the account set's `errors` list are returned as
-text to show the person.
+bridge's website. Entries in the account set's `errors` list (or `errlist`)
+are warnings: they are logged and shown on the source, and do not fail the
+sync. Every request, including the claim, sends an explicit `User-Agent`.
+`payee` becomes `MerchantName`, and `mcc` is kept as the category hint
+`CategoryDetailed` (prefixed `mcc:`) so the budgets plan can map it. The
+raw account and transaction objects become `ProviderMetadata`, as for
+Plaid, so `memo`, `holdings` and anything the bridge adds later are kept.
 
 Prototype, then keep the tests: write `internal/banking/plaid_test.go` and
 `simplefin_test.go` with `httptest` servers that return recorded response
 shapes (invented values, never real ones), covering paging, the sign flip,
-pending-to-posted, `ErrLoginRequired`, and the SimpleFIN window walk. Then,
+pending-to-posted, `ErrLoginRequired`, the SimpleFIN windows, and that a
+field the client does not know survives into `ProviderMetadata`. Then,
 by hand and outside the test suite, run a throwaway `main` in the
 scratchpad against Plaid sandbox (with sandbox keys and the sandbox
 institution `ins_109508`, whose test login is `user_good` / `pass_good`,
@@ -489,107 +596,122 @@ in `internal/config` asserts `AgentPlaid.Secret` is reported by
 
 ### Milestone 3: tables, database layer and sync
 
-Migration `internal/db/migrations/0130_agent_bank.sql` creates three tables.
+Migration `internal/db/migrations/0130_agent_bank.sql` creates two tables.
+There is no connection table: a connection is an `agent_source` row of kind
+`bank`.
 
-`agent_bank_connection`: `id` (text primary key, the same id style as
-`agent_alert`), `agent_id` (references `agent`, on delete cascade),
-`provider_kind` (text), `institution_id` and `institution_name` (text),
-`sealed_credential` (text, never selected into a GraphQL type),
-`sync_cursor` (text), `connection_state` (text: `active`,
-`login_required`, `failing`), `last_error_message` (text),
-`last_synced_at`, `next_sync_at`, `created_at`, `updated_at`
-(timestamptz). Index on `(next_sync_at)` for the due query and on
-`(agent_id)`.
-
-`agent_bank_account`: `id`, `agent_id` (cascade), `connection_id`
-(references the connection, cascade), `provider_account_id`,
-`account_name`, `account_mask`, `account_kind`, `currency_code`,
-`current_balance` and `available_balance` (`numeric(19,4)`, nullable),
-`balance_at`, timestamps. Unique on `(connection_id, provider_account_id)`.
+`agent_bank_account`: `id`, `agent_id` (references `agent`, on delete
+cascade), `source_id` (references `agent_source`, on delete cascade),
+`provider_account_id`, `account_name`, `account_mask`, `account_kind`,
+`currency_code`, `current_balance` and `available_balance`
+(`numeric(19,4)`, nullable), `balance_at`, `provider_metadata` (`jsonb`,
+not null, default `'{}'`), timestamps. Unique on
+`(source_id, provider_account_id)`.
 
 `agent_bank_transaction`: `id`, `agent_id` (cascade), `account_id`
 (references the account, cascade), `provider_transaction_id`, `posted_on`
 (date), `transacted_at` (timestamptz, nullable), `amount`
 (`numeric(19,4)`), `currency_code`, `description`, `merchant_name`,
 `category_primary`, `category_detailed`, `is_pending` (boolean),
-`pending_provider_transaction_id`, timestamps. Unique on `(account_id,
+`pending_provider_transaction_id`, `provider_metadata` (`jsonb`, not
+null, default `'{}'`), timestamps. Unique on `(account_id,
 provider_transaction_id)`; index on `(agent_id, posted_on desc)`.
 
-`agent_id` is repeated on accounts and transactions, although it could be
-reached through the connection, so every read can filter on the owner
-directly, as SEC-13 asks. The reverse migration drops the three tables.
+`provider_metadata` holds the provider's object exactly as it arrived
+(for Plaid, the transaction or account object from `/transactions/sync`;
+for SimpleFIN, the transaction, or the account without its
+`transactions` list). Each provider client fills it from the raw JSON it
+decoded, so fields the client does not know are kept too. A modified
+transaction replaces it with the newer object. Nothing reads it in this
+plan except the API, which returns it to the person who owns the row.
 
-Add `internal/models/bank.go` with `BankConnection`, `BankAccount`,
-`BankTransaction` and the state constants, and `internal/db/database_bank.go`
-with `BankOperation`: create and delete a connection, get one by id for an
-agent, list an agent's connections, `ListDueBankConnections(now, limit)`
-with `FOR UPDATE SKIP LOCKED`, `ApplyBankSync(connectionId, result)` which in
-one transaction upserts accounts, upserts added transactions, deletes
-removed ones, deletes pending rows in the replaced window that were not
-added, stores the cursor and sets the next sync time, and the read queries
-Milestone 5 needs. Every function that takes a row id also takes the agent
-id and filters on both. Create, delete and state changes write audit rows
-that name the provider and institution and never the credential.
+`agent_id` is repeated on both, although it could be reached through the
+source, so every read filters on the owner directly, as SEC-13 asks.
+Deleting the source removes the accounts and, through them, the
+transactions. The reverse migration drops the two tables.
 
-Add a seal label in `internal/agent/tools_mcp.go`, beside the existing one:
+Add `SourceBank AgentKnowledgeKind = "bank"` in
+`internal/models/knowledge.go`. A `bank` source's `Specification.Type` is
+the provider kind (`plaid` or `simplefin`) and its `Settings` hold
+`institutionId` and `institutionName`. Its default `Cron` is every six
+hours. Its cursor holds `providerCursor` (Plaid's sync cursor, or
+SimpleFIN's newest posted time) and `isLoginRequired`.
 
-    const bankCredentialSealLabel = "teanode agent: bank credentials"
+Add `internal/models/bank.go` with `BankAccount` and `BankTransaction`, and
+`internal/db/database_bank.go` with `BankOperation`: list an agent's
+accounts, `ApplyBankSync(agentId, sourceId, result)` which in one database
+transaction upserts accounts, upserts added transactions, deletes removed
+ones, and deletes pending rows in the replaced window that were not added,
+and the read queries Milestone 5 needs. Every function takes the agent id
+and filters on it.
 
-with `SealBankCredential` and `OpenBankCredential` methods on `Agent`.
+Add a case to `readOnePass` in `internal/agent/ingest.go`:
 
-Add the job kind `AgentJobBankSync` in `internal/models/agent.go`, a
-five-minute timeout in `job_policy.go`, and `queueBankSyncs` beside
-`queueIngestion`, called from the same tick. The handler
-`runBankSync` in a new `internal/agent/bank.go` loads the connection for its
-agent, opens the credential, builds the provider from the current operator
-settings (if the provider is no longer offered, or Plaid's keys are gone, it
-marks the connection `failing` with a message saying so and does not
-retry), calls `Sync`, and applies the result. `ErrLoginRequired` sets
-`login_required` and stops polling that connection until it is repaired.
-Other errors keep the retry ladder. The next sync is six hours after a
-success.
+    case models.SourceBank:
+        return self.readBankSource(ctx, run, source, cursor)
 
-Acceptance: with a connection row created by hand in a test (its credential
-sealed with a sandbox access token from the prototype, or a fake provider
-injected in unit tests), the job fills accounts and transactions; running it
-twice adds nothing new; a fake result that removes a transaction deletes
-its row; a pending row outside the replaced window survives. Database tests
-run with `make test` (needs Docker) or, for this package alone, against a
-standing test database as `docs/reference/local-development.md` describes.
+`readBankSource`, in a new `internal/agent/ingest_bank.go`, opens the
+source's `credential` secret, builds the provider from the current operator
+settings (if the provider is no longer offered, or Plaid's keys are gone,
+it returns an error saying so, which becomes the source's `LastError`),
+calls `Sync` with `providerCursor`, calls `ApplyBankSync`, and returns the
+new cursor. On `ErrLoginRequired` it sets `isLoginRequired` in the cursor,
+returns an error the dashboard shows as "sign in again", and while the flag
+is set it returns at once without calling the provider, so a broken login
+is not retried every six hours. Everything else about scheduling,
+retrying, locking and showing the error is what sources already do.
+
+First, read `runIngest` and `readOnePass` end to end and confirm a reader
+that files no documents is handled: counts of zero, no embedding work, and
+no pass left "more". Record what you find under Surprises & Discoveries; if
+some step assumes documents, skip it for `bank` sources with a check on the
+kind, in the one place it happens.
+
+Acceptance: with a `bank` source created in a test and a fake provider
+injected, running the ingest job fills accounts and transactions; running
+it twice adds nothing; a fake result that removes a transaction deletes its
+row; a pending row outside the replaced window survives; a login error sets
+the flag and a second run does not call the provider. Database tests run
+with `make test` (needs Docker) or, for one package, against a standing test
+database as `docs/reference/local-development.md` describes.
 
 ### Milestone 4: linking and unlinking
 
 GraphQL, in a new `internal/api/v1api/apigraph/agent_bank.go` with a
 `BankQuery` and `BankMutation` interface added to `schema.go`. Every
 resolver starts with `requireAgentPerson` and uses only the caller's agent.
+What sources already do is not repeated here: syncing now is
+`SyncAgentKnowledgeSource`, turning a connection off is the source's
+`Enabled`, and the list of connections is the agent's sources of kind
+`bank`.
 
 - `BankProviders` returns which providers are offered and usable.
-- `CreateBankLinkToken(connectionId optional)` creates a Plaid link token.
-  With a connection id it opens that connection's credential and creates an
+- `CreateBankLinkToken(sourceId optional)` creates a Plaid link token.
+  With a source id it opens that source's credential and creates an
   update-mode token for repairing a sign-in. The person reference sent to
   Plaid is the agent id, which is opaque outside this server.
 - `CompleteBankLink(publicToken, institutionId, institutionName)`
-  exchanges the public token, seals the access token, creates the
-  connection with `next_sync_at` now, and returns it. If creating the row
-  fails after the exchange succeeded, it calls `/item/remove` with the new
-  access token before returning the error, so no connection is left at
-  Plaid that this server cannot see.
-- `CompleteBankRepair(connectionId)` sets a `login_required` connection back
-  to `active` and due now.
-- `LinkSimpleFIN(setupToken)` claims the token, seals the access URL and
-  creates the connection. The token is single use, so on a failure after the
-  claim the error says to create a new token.
-- `UnlinkBank(connectionId)` calls the provider's `Remove` (best effort,
-  logged), then deletes the connection; the cascade removes its accounts and
-  transactions.
-- `BankConnections` lists the caller's connections with state, institution,
-  accounts and last sync, never the credential.
+  exchanges the public token, creates the `bank` source with its settings
+  and the default cron, stores the access token as its `credential` secret
+  through the same database call `SetAgentKnowledgeSourceSecret` uses, and
+  makes it due now. If creating the source fails after the exchange
+  succeeded, it calls `/item/remove` with the new access token before
+  returning the error, so no connection is left at Plaid that this server
+  cannot see.
+- `CompleteBankRepair(sourceId)` clears `isLoginRequired` and makes the
+  source due now.
+- `LinkSimpleFIN(setupToken)` claims the token and creates the source the
+  same way with the access URL as its credential. The token is single use,
+  so on a failure after the claim the error says to create a new token.
 
-Deleting an agent must also remove its Plaid Items, or the operator keeps
-paying for them. In the agent deletion path (the resolver that ends up in
-`DeleteAgent` in `internal/db/database_agent.go`), before the delete, list
-the agent's connections and call `Remove` on each, logging failures and
-carrying on.
+Unlinking is `DeleteAgentKnowledgeSource`. For a `bank` source, the resolver
+first opens the credential and calls the provider's `Remove` (best effort,
+logged), then deletes as it does for every source; the cascade removes the
+accounts and transactions. Deleting an agent must do the same for each of
+its `bank` sources, or the operator keeps paying for Plaid Items nobody can
+reach: in the agent deletion path (the resolver that ends in `DeleteAgent`
+in `internal/db/database_agent.go`), before the delete, list the agent's
+`bank` sources and call `Remove` on each, logging failures and carrying on.
 
 The Plaid page. Add `BankLinkPagePath = "/bank-link"` in
 `internal/web/middlewares.go` with its own policy: the strict policy plus
@@ -597,26 +719,26 @@ Plaid's origins in `script-src`, `frame-src` and `connect-src`, exactly the
 list Milestone 1 confirmed and no wildcard beyond what Plaid documents. Add
 a small dashboard route for it in `web/src/app.tsx` that asks
 `CreateBankLinkToken`, loads Link, and on success calls
-`CompleteBankLink`, then closes itself or links back to the agent page. On
-the agent page (`web/src/pages/agent.tsx`), add a **Bank accounts** section:
-the list from `BankConnections` with each connection's state and last
-sync, **Link a bank** (opens `/bank-link` in a new window for Plaid, or
-shows a text field for a SimpleFIN setup token, or offers both when both
-are offered), **Sign in again** on a `login_required` connection, and
-**Unlink**, whose confirmation says the transactions will be deleted and,
-for Plaid, that some Plaid plans count a removed bank against their limit.
-Errors and successes are toasts, as elsewhere on that page. Strings go in
-all three catalogs.
+`CompleteBankLink`, then closes itself or links back to the agent page.
+
+On the agent page (`web/src/pages/agent.tsx`), `bank` sources appear in the
+existing list of sources, with their institution, accounts, last sync and
+error, and the existing controls (sync now, off, delete). Add only what is
+new: **Link a bank** (opens `/bank-link` in a new window for Plaid, or
+shows a text field for a SimpleFIN setup token, or offers both), **Sign in
+again** on a source whose cursor says a login is required, and wording on
+delete that says the transactions will be deleted and, for Plaid, that some
+Plaid plans count a removed bank against their limit. Errors and successes
+are toasts, as elsewhere on that page. Strings go in all three catalogs.
 
 Acceptance: in sandbox, link the sandbox bank from the dashboard and see it
-listed as active with its accounts after the first sync; open the browser
+among the sources, with its accounts after the first sync; open the browser
 console on `/bank-link` and see no policy refusals, and on any other
 dashboard page see the unchanged strict header (`curl -sI` both paths);
-paste the SimpleFIN demo token and see its accounts; unlink both and see
-the rows gone (`teanode api call BankConnections` returns none). Use
-Plaid's sandbox call `/sandbox/item/reset_login` on a linked Item to see
-the connection turn `login_required` on the next sync, then repair it with
-**Sign in again**.
+paste the SimpleFIN demo token and see its accounts; delete both and see
+the rows gone. Use Plaid's sandbox call `/sandbox/item/reset_login` on a
+linked Item to see the source ask for a sign-in on the next sync, then
+repair it with **Sign in again**.
 
 ### Milestone 5: the agent tool
 
@@ -632,17 +754,19 @@ Add read queries to `BankQuery`, each scoped to the caller's agent:
   `category`, `merchant`, `month` or `account`, per currency; amounts in
   different currencies are never added together.
 
-Add `internal/agent/tools/bank/bank.go`, a tool named `bank` in a `bank`
-family, risk `RiskRead`, with an `operation` parameter (`accounts`,
+Add `internal/agent/tools/finance/finance.go`, a tool named `finance` in
+a `finance` family, risk `RiskRead`, with an `operation` parameter (`accounts`,
 `transactions`, `summary`) and the filters above, calling those queries
-through `run.Operations()` with documents in `internal/client/bank.go`.
+through `run.Operations()` with documents in `internal/client/finance.go`.
+The net worth and budgets plans add operations to this same tool.
 Results set `Untrusted`, because merchant names and descriptions are
 written by outsiders and may contain text aimed at the model. The tool
 appears only when at least one provider is offered and the person has at
-least one connection. Register it in `internal/agent/tools/all/all.go`.
+least one `bank` source. Register it in `internal/agent/tools/all/all.go`.
 
 Acceptance: with the sandbox bank linked, ask the agent "what did I spend in
-the last 30 days by category"; the tool call appears in the conversation,
+the last 30 days by category"; the `finance` call appears in the
+conversation,
 and the totals match `teanode api call BankSpendingSummary` with the same
 range. A unit test in the tool package checks the parameters are passed
 through and `Untrusted` is set. An API test checks that one person cannot
@@ -650,11 +774,16 @@ read another person's connection, account or transaction by id.
 
 ### Milestone 6: documentation
 
-Write `docs/subsystems/banking.md` (providers, the tables, the sync, the
-tool, what is sealed with which label). Add an entry to
+Write `docs/subsystems/banking.md` (providers, the `bank` source kind and
+its reader, the tables, the tool, where each credential is kept), and add
+the `bank` kind to `docs/subsystems/memory.md` where it lists source kinds. Add an entry to
 `docs/security/security-review.md`: the two credentials and their seal
 labels, the fact that the server secret sits in the same database (so a full
-database dump opens them), the CSP exception scoped to one page, SimpleFIN
+database dump opens them), that a bank credential is an ordinary source secret,
+that `provider_metadata` holds whatever the provider sent (which can
+include merchant addresses and payment reference numbers) and is
+returned only to its owner and never passed to a model wholesale,
+the CSP exception scoped to one page, SimpleFIN
 URLs going through `safefetch`, and the tool's untrusted results. Add the
 settings to `docs/configuration.md`, the operations to
 `docs/reference/command-line.md` if it lists areas, and the new page to
@@ -685,26 +814,28 @@ keys and SimpleFIN offered:
 2. A person with the agent turned on links the sandbox bank and the
    SimpleFIN demo, sees both connections active with accounts, and sees
    transactions appear after the first sync.
-3. Syncing again adds nothing; a Plaid sandbox login reset turns the
-   connection to `login_required`, and **Sign in again** repairs the same
-   connection.
-4. The agent answers a spending question with the `bank` tool, and its
+3. Syncing again adds nothing; a Plaid sandbox login reset makes the
+   source ask for a sign-in, and **Sign in again** repairs the same
+   source rather than creating a new one.
+4. The agent answers a spending question with the `finance` tool, and its
    totals match the API.
-5. A second person cannot see or unlink the first person's connections
-   through any API call.
-6. Unlinking deletes the connection, its accounts and transactions, and the
+5. A second person cannot see, sync or delete the first person's `bank`
+   sources, accounts or transactions through any API call.
+6. Deleting the source deletes its accounts and transactions, and the
    Plaid Item is removed (the sandbox `/item/get` for its access token
    answers `ITEM_NOT_FOUND`).
 7. Every page other than `/bank-link` sends the unchanged security policy.
 
 ## Idempotence and Recovery
 
-The migration is additive and its reverse drops only the three new tables.
+The migration is additive and its reverse drops only the two new tables.
 Syncs are idempotent: transactions are upserted by provider id, and a
-repeated Plaid page from the same cursor produces the same rows. A job that
-dies halfway leaves the old cursor in place, because the cursor is written
-in the same database transaction as the rows. If a Plaid token exchange
-succeeds and the row is not written, the Item is removed at once (Milestone
+repeated Plaid page from the same cursor produces the same rows. The source's cursor
+is saved by the ingest machinery after the reader returns, so a job that
+dies between writing rows and saving the cursor replays from the old
+cursor next time, which is harmless because every write is an upsert or a
+delete of something already gone. If a Plaid token exchange
+succeeds and the source is not created, the Item is removed at once (Milestone
 4). A SimpleFIN token claimed but not stored cannot be recovered; the person
 makes a new one, which is free.
 
@@ -726,7 +857,15 @@ No new third-party Go modules. `internal/banking` depends only on the
 standard library and `internal/util/safefetch`. The interface
 `banking.Provider` and the constructors `banking.NewPlaid(environment,
 clientId, secret string, countryCodes []string)` and `banking.NewSimpleFIN()`
-must exist after Milestone 1; `db.BankOperation` after Milestone 3;
-`BankQuery`, `BankMutation` and the `bank` tool after Milestones 4 and 5.
-On the dashboard, Plaid Link is loaded from Plaid's CDN at run time on the
-`/bank-link` page only; no npm package is added.
+must exist after Milestone 1; `models.SourceBank`, `readBankSource` and
+`db.BankOperation` after Milestone 3; `BankQuery`, `BankMutation` and the
+`finance` tool after Milestones 4 and 5. On the dashboard, Plaid Link is
+loaded from Plaid's CDN at run time on the `/bank-link` page only; no npm
+package is added.
+
+Revision note, 2026-09-29: connections became agent sources of kind `bank`,
+reusing the source's schedule, cursor, error, switch, sealed secrets, sync
+now and deletion, after the maintainer asked that the plans reuse existing
+concepts. The connection table, its job kind, its due query and its own
+seal label were removed from the plan. The tool was renamed `finance`,
+shared with the net worth and budgets plans.

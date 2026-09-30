@@ -29,12 +29,13 @@ like the other provider keys, and never returned by any read.
 
 The person holds every bank connection. They link it themselves, from their
 own agent page, through Plaid's window or with their own SimpleFIN token.
-The resulting credential (a Plaid access token, or a SimpleFIN access URL)
-is sealed per connection under its own label,
-`teanode agent: bank credentials`, and belongs to their agent: unlinking
-it, or deleting the agent, removes the connection at the provider and
-deletes everything it brought in. The operator sees neither the credential
-nor the transactions.
+A connection is one of their agent's sources, of the kind `bank`, so it is
+granted, scheduled, synced, switched off and deleted the way every source
+is. Its credential (a Plaid access token, or a SimpleFIN access URL) is a
+secret of that source, sealed like every other source secret. Deleting the
+source, or the agent, removes the connection at the provider and deletes
+everything it brought in. The operator sees neither the credential nor the
+transactions.
 
 ## Consequences
 
