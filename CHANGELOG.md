@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.86.0] - 2026-09-30
+
+### Added
+
+- `teanode-server --secret-file` keeps the server secret in a file instead of the database. (#244)
+
+### Security
+
+- Every secret setting is sealed in the database, and with the server secret in a file a database dump opens none of them. (#244)
+
 ## [0.85.2] - 2026-09-30
 
 ### Fixed
