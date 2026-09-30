@@ -136,6 +136,11 @@ export type ChartSeries = {
 // below zero only when a value does, so money that went out of a total
 // draws under its line. The axis is labelled with axisFormat, a shorter
 // form of format where one reads better at the side of a chart.
+//
+// Given onSelectKey, each key's slot is also a button: clicked, or reached
+// with Tab and moved along with the arrow keys, it chooses that key, and
+// selectedKey is drawn as the chosen one. The slot is one tab stop, not one
+// per key, so a year of months does not put twelve stops in the way.
 export function SeriesChart({
   keys,
   keyLabel,
@@ -145,6 +150,8 @@ export function SeriesChart({
   headline,
   caption,
   label,
+  selectedKey,
+  onSelectKey,
 }: {
   keys: string[]
   keyLabel: (key: string) => string
@@ -155,6 +162,8 @@ export function SeriesChart({
   caption?: React.ReactNode
   // What the chart is, for a screen reader, ahead of its values.
   label: string
+  selectedKey?: string | null
+  onSelectKey?: (key: string) => void
 }) {
   const [hovered, setHovered] = useState<number | null>(null)
   const [holder, width] = useWidth()
@@ -190,6 +199,8 @@ export function SeriesChart({
             hovered={hovered}
             onHover={setHovered}
             label={label}
+            selectedKey={selectedKey ?? null}
+            onSelectKey={onSelectKey}
           />
         ) : null}
         {hovered !== null && keys[hovered] !== undefined && width > 0 ? (
@@ -235,6 +246,8 @@ function SeriesDrawing({
   hovered,
   onHover,
   label,
+  selectedKey,
+  onSelectKey,
 }: {
   keys: string[]
   keyLabel: (key: string) => string
@@ -247,7 +260,10 @@ function SeriesDrawing({
   hovered: number | null
   onHover: (index: number | null) => void
   label: string
+  selectedKey: string | null
+  onSelectKey?: (key: string) => void
 }) {
+  const slotButtons = useRef<(SVGRectElement | null)[]>([])
   const { ceiling, floor } = scale
   const plotWidth = Math.max(40, width - axisWidth)
   const plotHeight = CHART_HEIGHT - CHART_TOP - CHART_BOTTOM
@@ -271,23 +287,55 @@ function SeriesDrawing({
     onHover(index >= 0 && index < keys.length ? index : null)
   }
 
-  const said = keys
-    .map(
-      (key, index) =>
-        `${keyLabel(key)}: ${series
-          .map((one) => `${one.label} ${one.values[index] === null ? '—' : format(one.values[index] ?? 0)}`)
-          .join(', ')}`,
-    )
-    .join('; ')
+  const slotSaid = (key: string, index: number) =>
+    `${keyLabel(key)}: ${series
+      .map((one) => `${one.label} ${one.values[index] === null ? '—' : format(one.values[index] ?? 0)}`)
+      .join(', ')}`
+  const said = keys.map(slotSaid).join('; ')
+  const selectedIndex = selectedKey === null ? -1 : keys.indexOf(selectedKey)
+  const isSelectable = onSelectKey !== undefined
+  // The one slot Tab lands on: the chosen one, or the latest when none is.
+  const focusIndex = selectedIndex >= 0 ? selectedIndex : keys.length - 1
+
+  const chooseAt = (index: number) => {
+    if (!onSelectKey || index < 0 || index >= keys.length) return
+    onSelectKey(keys[index])
+    slotButtons.current[index]?.focus()
+  }
+  const onSlotKey = (event: React.KeyboardEvent<SVGRectElement>, index: number) => {
+    const moves: Record<string, number> = {
+      ArrowLeft: index - 1,
+      ArrowDown: index - 1,
+      ArrowRight: index + 1,
+      ArrowUp: index + 1,
+      Home: 0,
+      End: keys.length - 1,
+      Enter: index,
+      ' ': index,
+    }
+    if (!(event.key in moves)) return
+    event.preventDefault()
+    chooseAt(Math.max(0, Math.min(keys.length - 1, moves[event.key])))
+  }
 
   return (
     <svg
       viewBox={`0 0 ${width} ${CHART_HEIGHT}`}
-      role="img"
-      aria-label={`${label}. ${said}`}
+      role={isSelectable ? 'group' : 'img'}
+      aria-label={isSelectable ? label : `${label}. ${said}`}
       onPointerMove={(event) => pointAt(event.clientX, event.currentTarget)}
       onPointerLeave={() => onHover(null)}
     >
+      {selectedIndex >= 0 ? (
+        <rect
+          className="series-chart-selected-band"
+          x={axisWidth + selectedIndex * slot}
+          y={CHART_TOP}
+          width={slot}
+          height={plotHeight}
+          rx={4}
+        />
+      ) : null}
       {grid.map((value) => {
         const y = yOf(value)
         return (
@@ -308,7 +356,12 @@ function SeriesDrawing({
       {floor < 0 ? <line className="series-chart-zero" x1={axisWidth} x2={width} y1={zero} y2={zero} /> : null}
       {keys.map((key, index) => {
         const groupX = axisWidth + index * slot + (slot - groupWidth) / 2
-        const isDimmed = hovered !== null && hovered !== index
+        // With a key chosen, the others step back, as they do for the one
+        // under the pointer, and the chosen one stays forward either way.
+        const isDimmed =
+          selectedIndex >= 0
+            ? index !== selectedIndex && index !== hovered
+            : hovered !== null && hovered !== index
         return (
           <g key={key} className={isDimmed ? 'usage-chart-dim' : ''}>
             {columns.map((one, position) => {
@@ -331,7 +384,7 @@ function SeriesDrawing({
             })}
             {index % labelEvery === 0 ? (
               <text
-                className="usage-chart-axis"
+                className={index === selectedIndex ? 'usage-chart-axis series-chart-axis-selected' : 'usage-chart-axis'}
                 x={groupX + groupWidth / 2}
                 y={CHART_HEIGHT - 6}
                 textAnchor={index + labelEvery >= keys.length ? 'end' : 'middle'}
@@ -373,6 +426,29 @@ function SeriesDrawing({
               />
             )
           })
+        : null}
+      {/* Last, so they are on top: a slot as tall as the chart, clear, to
+          press or to reach from the keyboard. */}
+      {isSelectable
+        ? keys.map((key, index) => (
+            <rect
+              key={key}
+              ref={(element) => {
+                slotButtons.current[index] = element
+              }}
+              className="series-chart-slot"
+              x={axisWidth + index * slot}
+              y={0}
+              width={slot}
+              height={CHART_HEIGHT}
+              role="button"
+              tabIndex={index === focusIndex ? 0 : -1}
+              aria-pressed={index === selectedIndex}
+              aria-label={slotSaid(key, index)}
+              onClick={() => chooseAt(index)}
+              onKeyDown={(event) => onSlotKey(event, index)}
+            />
+          ))
         : null}
     </svg>
   )

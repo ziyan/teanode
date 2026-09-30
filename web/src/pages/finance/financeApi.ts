@@ -292,9 +292,9 @@ const TRANSACTION_FIELDS = `id financeAccountId postedOn amount currencyCode des
   providerCategoryPrimary isPending spendingCategoryId categorizedBy isTransfer`
 
 export const FINANCE_TRANSACTIONS = `query ($from: String, $to: String, $financeAccountId: String, $text: String,
-  $isUncategorized: Boolean, $limit: Int, $after: String) {
+  $spendingCategoryId: String, $isUncategorized: Boolean, $limit: Int, $after: String) {
   FinanceTransactions(from: $from, to: $to, financeAccountId: $financeAccountId, text: $text,
-    isUncategorized: $isUncategorized, limit: $limit, after: $after) {
+    spendingCategoryId: $spendingCategoryId, isUncategorized: $isUncategorized, limit: $limit, after: $after) {
     financeTransactions { ${TRANSACTION_FIELDS} }
     nextCursor
   }

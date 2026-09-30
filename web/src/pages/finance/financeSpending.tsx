@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatMoney } from '../../components/common'
@@ -27,39 +28,129 @@ import {
   personToday,
 } from './financeApi'
 import { Money, UnconvertedNote, compactMoney, useFinanceWords } from './financeCommon'
+import { TransactionFilters, monthRange, spendingMonthFromSearch, transactionsPath } from './financeFilters'
+import { RING_SLICE_COUNT, SpendingRing, foldIntoOther } from './spendingRing'
 
-// The Spending section: what went where over a range, this month's spending
-// day by day against last month's, each spending category against its
-// budget, and twelve months of income against spending. All of it converted
-// into the reporting currency where there is an exchange rate, with what
-// could not be converted named rather than quietly left out.
+// The Spending section: a year of spending a bar a month, and under it the
+// month chosen there: its spending day by day against the month before,
+// each spending category against its budget, and what went where, each
+// group opening its transactions. All of it converted into the reporting
+// currency where there is an exchange rate, with what could not be
+// converted named rather than quietly left out. The month is in the
+// address, so coming Back from a category's transactions lands on it.
 export function FinanceSpendingSection() {
-  const { t } = useTranslation()
-  const [month, setMonth] = useState(() => personMonth())
+  const [search, setSearch] = useSearchParams()
+  const currentMonth = personMonth()
+  const month = spendingMonthFromSearch(search, currentMonth)
+  const selectMonth = (chosen: string) =>
+    setSearch(chosen === currentMonth ? {} : { month: chosen }, { replace: true })
   return (
     <>
-      <SettingsSection
-        card
-        title={t('finance.spendingTitle')}
-        description={t('finance.spendingHint')}
-        action={
-          <label className="shrink finance-month">
-            <span>{t('finance.month')}</span>
-            <input
-              type="month"
-              value={month}
-              max={personMonth()}
-              onChange={(event) => event.target.value && setMonth(event.target.value)}
-            />
-          </label>
-        }
-      >
-        <SpendingByDayChart month={month} />
-      </SettingsSection>
+      <SpendingByMonthPanel month={month} currentMonth={currentMonth} onSelectMonth={selectMonth} />
+      <SpendingByDayPanel month={month} />
       <BudgetStatusPanel month={month} />
-      <SpendingSummaryPanel />
-      <CashFlowPanel />
+      <SpendingSummaryPanel month={month} />
     </>
+  )
+}
+
+// A bar a month for the twelve months to this one, the chosen month
+// standing out, and under it that month's income, spending and what was
+// left. A month further back than the chart reaches, chosen in the month
+// field, moves the chart to the twelve months ending there.
+function SpendingByMonthPanel({
+  month,
+  currentMonth,
+  onSelectMonth,
+}: {
+  month: string
+  currentMonth: string
+  onSelectMonth: (month: string) => void
+}) {
+  const { t } = useTranslation()
+  const toMonth = month >= monthBefore(currentMonth, 11) ? currentMonth : month
+  const fromMonth = monthBefore(toMonth, 11)
+  const { data, error, loading } = useQuery(
+    () => graphql<{ CashFlow: CashFlow }>(CASH_FLOW, { fromMonth, toMonth }),
+    [fromMonth, toMonth],
+    { refresh: false },
+  )
+  const flow = data?.CashFlow
+  const months = flow?.cashFlowMonths ?? []
+  const currency = flow?.reportingCurrencyCode || 'USD'
+  const chosen = months.find((candidate) => candidate.cashFlowMonth === month)
+  const spentOf = (amount?: string) => Math.abs(amountOf(amount))
+  const hasSpending = months.some((candidate) => amountOf(candidate.spendingAmount) !== 0)
+  return (
+    <SettingsSection
+      card
+      title={t('finance.spendingByMonthTitle')}
+      description={t('finance.spendingByMonthHint')}
+      action={
+        <label className="shrink finance-month">
+          <span>{t('finance.month')}</span>
+          <input
+            type="month"
+            value={month}
+            max={currentMonth}
+            onChange={(event) => event.target.value && onSelectMonth(event.target.value)}
+          />
+        </label>
+      }
+    >
+      <ErrorMessage error={error} />
+      {loading && !data ? <Loading /> : null}
+      {flow && !hasSpending ? <SettingsEmpty>{t('finance.noCashFlow')}</SettingsEmpty> : null}
+      {hasSpending ? (
+        <SeriesChart
+          label={t('finance.spendingByMonthTitle')}
+          keys={months.map((candidate) => candidate.cashFlowMonth)}
+          keyLabel={(key) => monthLabel(key)}
+          format={(value) => formatMoney(value, currency)}
+          axisFormat={(value) => compactMoney(value, currency)}
+          headline={formatMoney(spentOf(chosen?.spendingAmount), currency)}
+          caption={
+            month === currentMonth
+              ? t('finance.spentSoFar')
+              : t('finance.spentInMonth', { month: monthLabel(month, 'long') })
+          }
+          series={[
+            {
+              id: 'spending',
+              label: t('finance.spending'),
+              tone: 'output',
+              shape: 'column',
+              values: months.map((candidate) => spentOf(candidate.spendingAmount)),
+            },
+          ]}
+          selectedKey={month}
+          onSelectKey={onSelectMonth}
+        />
+      ) : null}
+      {chosen ? (
+        <p className="muted finance-month-flow">
+          <span>
+            {t('finance.income')} <strong>{formatMoney(amountOf(chosen.incomeAmount), currency)}</strong>
+          </span>
+          <span>
+            {t('finance.spending')} <strong>{formatMoney(spentOf(chosen.spendingAmount), currency)}</strong>
+          </span>
+          <span>
+            {t('finance.leftOver')} <strong>{formatMoney(amountOf(chosen.netAmount), currency)}</strong>
+          </span>
+        </p>
+      ) : null}
+      <UnconvertedNote currencyCodes={flow?.unconvertedCurrencyCodes} />
+    </SettingsSection>
+  )
+}
+
+function SpendingByDayPanel({ month }: { month: string }) {
+  const { t } = useTranslation()
+  return (
+    <SettingsSection card title={t('finance.spendingTitle')} description={t('finance.spendingHint')}>
+      <SpendingByDayChart month={month} />
+    </SettingsSection>
   )
 }
 
@@ -216,22 +307,40 @@ function BudgetStatusRow({ row }: { row: SpendingCategoryBudgetStatus }) {
   )
 }
 
-type GroupBy = 'spendingCategory' | 'merchant' | 'month' | 'financeAccount' | 'providerCategory'
-const GROUP_BY: GroupBy[] = ['spendingCategory', 'merchant', 'month', 'financeAccount', 'providerCategory']
+// The ways a month's spending is grouped. By month is not one of them: the
+// section shows one month at a time, and the chart at its top is by month.
+type GroupBy = 'spendingCategory' | 'merchant' | 'financeAccount' | 'providerCategory'
+const GROUP_BY: GroupBy[] = ['spendingCategory', 'merchant', 'financeAccount', 'providerCategory']
 
-function SpendingSummaryPanel() {
+// groupTransactionFilters is how a group's transactions are found on the
+// Transactions section, over the month's days: a spending category (or
+// none), a finance account, or a merchant's words. The provider category
+// is not a filter that section offers, so its groups link nowhere.
+function groupTransactionFilters(
+  groupBy: GroupBy,
+  groupKey: string,
+  range: { from: string; to: string },
+): Partial<TransactionFilters> | null {
+  if (groupBy === 'spendingCategory') {
+    return groupKey ? { ...range, spendingCategoryId: groupKey } : { ...range, isUncategorized: true }
+  }
+  if (groupBy === 'financeAccount') return groupKey ? { ...range, financeAccountId: groupKey } : null
+  if (groupBy === 'merchant') return groupKey ? { ...range, text: groupKey } : null
+  return null
+}
+
+function SpendingSummaryPanel({ month }: { month: string }) {
   const { t } = useTranslation()
   const [groupBy, setGroupBy] = useState<GroupBy>('spendingCategory')
-  const [from, setFrom] = useState(() => `${personMonth()}-01`)
-  const [to, setTo] = useState(() => personToday())
+  const range = monthRange(month, personToday())
   const { data, error, loading } = useQuery(
     () =>
       graphql<{ FinanceSpendingSummary: SpendingSummary }>(SPENDING_SUMMARY, {
-        from: from || undefined,
-        to: to || undefined,
+        from: range.from,
+        to: range.to,
         groupBy,
       }),
-    [from, to, groupBy],
+    [range.from, range.to, groupBy],
     { refresh: false },
   )
   const summary = data?.FinanceSpendingSummary
@@ -247,6 +356,7 @@ function SpendingSummaryPanel() {
     const converted = summary.reportingCurrencyCode
       ? summary.convertedSpendingSummaryRows.map((row) => ({
           key: row.groupKey,
+          groupKey: row.groupKey,
           label: row.groupLabel || row.groupKey,
           currencyCode: summary.reportingCurrencyCode ?? '',
           moneyOut: row.moneyOut,
@@ -255,6 +365,7 @@ function SpendingSummaryPanel() {
         }))
       : summary.spendingSummaryRows.map((row) => ({
           key: `${row.groupKey}:${row.currencyCode}`,
+          groupKey: row.groupKey,
           label: row.groupLabel || row.groupKey,
           currencyCode: row.currencyCode,
           moneyOut: row.moneyOut,
@@ -265,19 +376,26 @@ function SpendingSummaryPanel() {
   }, [summary])
   const groupLabel = (value: GroupBy) => t(`finance.groupBy.${value}` as 'finance.groupBy.merchant')
   const totals = summary?.currencyTotals ?? []
+  const lineName = (label: string) => label || t('finance.uncategorized')
+  // The ring is money out by spending category, so only where it can be
+  // added up: grouped by category, in the reporting currency.
+  const slices =
+    groupBy === 'spendingCategory' && summary?.reportingCurrencyCode
+      ? foldIntoOther(
+          lines.map((line) => ({ key: line.key, label: lineName(line.label), amount: amountOf(line.moneyOut) })),
+          RING_SLICE_COUNT,
+        ).map((slice) =>
+          slice.isOther ? { ...slice, label: t('finance.otherCategories', { count: slice.foldedCount }) } : slice,
+        )
+      : []
 
   return (
-    <SettingsSection card title={t('finance.summaryTitle')} description={t('finance.summaryHint')}>
-      <div className="row finance-filters">
-        <label>
-          <span>{t('finance.from')}</span>
-          <input type="date" value={from} max={to || undefined} onChange={(event) => setFrom(event.target.value)} />
-        </label>
-        <label>
-          <span>{t('finance.to')}</span>
-          <input type="date" value={to} min={from || undefined} onChange={(event) => setTo(event.target.value)} />
-        </label>
-        <label>
+    <SettingsSection
+      card
+      title={t('finance.summaryTitle')}
+      description={t('finance.summaryHint', { month: monthLabel(month, 'long') })}
+      action={
+        <label className="shrink finance-group-by">
           <span>{t('finance.groupByLabel')}</span>
           <Select
             block
@@ -287,10 +405,19 @@ function SpendingSummaryPanel() {
             onChange={(value) => setGroupBy(value as GroupBy)}
           />
         </label>
-      </div>
+      }
+    >
       <ErrorMessage error={error} />
       {loading && !data ? <Loading /> : null}
       {summary && lines.length === 0 ? <SettingsEmpty>{t('finance.noSpending')}</SettingsEmpty> : null}
+      {slices.length > 0 && summary?.reportingCurrencyCode ? (
+        <SpendingRing
+          slices={slices}
+          currency={summary.reportingCurrencyCode}
+          label={t('finance.ringLabel', { month: monthLabel(month, 'long') })}
+          totalLabel={t('finance.moneyOut')}
+        />
+      ) : null}
       {lines.length > 0 ? (
         <div className="table-wrap">
           <table className="numbers-table finance-table">
@@ -298,23 +425,39 @@ function SpendingSummaryPanel() {
               <tr>
                 <th>{groupLabel(groupBy)}</th>
                 <th className="numeric">{t('finance.moneyOut')}</th>
-                <th className="numeric">{t('finance.moneyIn')}</th>
-                <th className="numeric">{t('finance.transactionCount')}</th>
+                <th className="numeric optional">{t('finance.moneyIn')}</th>
+                <th className="numeric optional">{t('finance.transactionCount')}</th>
               </tr>
             </thead>
             <tbody>
-              {lines.map((line) => (
-                <tr key={line.key}>
-                  <td>{line.label || t('finance.uncategorized')}</td>
-                  <td className="numeric">
-                    <Money amount={line.moneyOut} currency={line.currencyCode} />
-                  </td>
-                  <td className="numeric">
-                    <Money amount={line.moneyIn} currency={line.currencyCode} />
-                  </td>
-                  <td className="numeric">{line.count}</td>
-                </tr>
-              ))}
+              {lines.map((line) => {
+                const filters = groupTransactionFilters(groupBy, line.groupKey, range)
+                const name = lineName(line.label)
+                return (
+                  <tr key={line.key}>
+                    <td>
+                      {filters ? (
+                        <Link
+                          className="finance-group-link"
+                          to={transactionsPath(filters)}
+                          title={t('finance.openTransactions', { name })}
+                        >
+                          {name}
+                        </Link>
+                      ) : (
+                        name
+                      )}
+                    </td>
+                    <td className="numeric">
+                      <Money amount={line.moneyOut} currency={line.currencyCode} />
+                    </td>
+                    <td className="numeric optional">
+                      <Money amount={line.moneyIn} currency={line.currencyCode} />
+                    </td>
+                    <td className="numeric optional">{line.count}</td>
+                  </tr>
+                )
+              })}
             </tbody>
             <tfoot>
               {summary?.reportingCurrencyCode ? (
@@ -323,10 +466,10 @@ function SpendingSummaryPanel() {
                   <th className="numeric">
                     <Money amount={summary.convertedMoneyOut} currency={summary.reportingCurrencyCode} />
                   </th>
-                  <th className="numeric">
+                  <th className="numeric optional">
                     <Money amount={summary.convertedMoneyIn} currency={summary.reportingCurrencyCode} />
                   </th>
-                  <th />
+                  <th className="optional" />
                 </tr>
               ) : null}
               {/* Each currency as it was spent, where there was more than
@@ -338,10 +481,10 @@ function SpendingSummaryPanel() {
                       <th className="numeric">
                         <Money amount={total.moneyOut} currency={total.currencyCode} />
                       </th>
-                      <th className="numeric">
+                      <th className="numeric optional">
                         <Money amount={total.moneyIn} currency={total.currencyCode} />
                       </th>
-                      <th className="numeric">{total.financeTransactionCount}</th>
+                      <th className="numeric optional">{total.financeTransactionCount}</th>
                     </tr>
                   ))
                 : null}
@@ -350,65 +493,6 @@ function SpendingSummaryPanel() {
         </div>
       ) : null}
       <UnconvertedNote currencyCodes={summary?.unconvertedCurrencyCodes} />
-    </SettingsSection>
-  )
-}
-
-// Twelve months of income against spending, the months as columns side by
-// side and what was left over as a line through them.
-function CashFlowPanel() {
-  const { t } = useTranslation()
-  const [range] = useState(() => {
-    const now = personMonth()
-    return { fromMonth: monthBefore(now, 11), toMonth: now }
-  })
-  const { data, error, loading } = useQuery(() => graphql<{ CashFlow: CashFlow }>(CASH_FLOW, range), [], {
-    refresh: false,
-  })
-  const flow = data?.CashFlow
-  const months = flow?.cashFlowMonths ?? []
-  const currency = flow?.reportingCurrencyCode || 'USD'
-  const net = months.reduce((total, month) => total + amountOf(month.netAmount), 0)
-  return (
-    <SettingsSection card title={t('finance.cashFlowTitle')} description={t('finance.cashFlowHint')}>
-      <ErrorMessage error={error} />
-      {loading && !data ? <Loading /> : null}
-      {flow && months.length === 0 ? <SettingsEmpty>{t('finance.noCashFlow')}</SettingsEmpty> : null}
-      {months.length > 0 ? (
-        <SeriesChart
-          label={t('finance.cashFlowTitle')}
-          keys={months.map((month) => month.cashFlowMonth)}
-          keyLabel={(key) => monthLabel(key)}
-          format={(value) => formatMoney(value, currency)}
-          axisFormat={(value) => compactMoney(value, currency)}
-          headline={formatMoney(net, currency)}
-          caption={t('finance.cashFlowNet')}
-          series={[
-            {
-              id: 'income',
-              label: t('finance.income'),
-              tone: 'output',
-              shape: 'column',
-              values: months.map((month) => amountOf(month.incomeAmount)),
-            },
-            {
-              id: 'spending',
-              label: t('finance.spending'),
-              tone: 'cached',
-              shape: 'column',
-              values: months.map((month) => Math.abs(amountOf(month.spendingAmount))),
-            },
-            {
-              id: 'net',
-              label: t('finance.leftOver'),
-              tone: 'input',
-              shape: 'line',
-              values: months.map((month) => amountOf(month.netAmount)),
-            },
-          ]}
-        />
-      ) : null}
-      <UnconvertedNote currencyCodes={flow?.unconvertedCurrencyCodes} />
     </SettingsSection>
   )
 }

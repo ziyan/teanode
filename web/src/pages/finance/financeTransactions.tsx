@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
@@ -22,15 +23,17 @@ import {
   formatDay,
 } from './financeApi'
 import { Money, accountLabel, spendingCategoryOptions, useFinanceWords } from './financeCommon'
+import { TransactionFilters, searchFromTransactionFilters, transactionFiltersFromSearch } from './financeFilters'
 
 // How many finance transactions one read brings, and one Load more adds.
 const PAGE_SIZE = 100
 
-type Filters = { from: string; to: string; financeAccountId: string; text: string; isUncategorized: boolean }
-
 // The finance transactions, newest first, narrowed on the server by dates,
-// a finance account, words and whether a spending category is missing, and
-// read a page at a time from where the last page ended. Each one's spending
+// a finance account, a spending category, words and whether a spending
+// category is missing, and read a page at a time from where the last page
+// ended. The filters are the address's, so the Spending section can link
+// to a category's month and a narrowed list can be shared; changing one
+// here rewrites the address in place rather than adding a step to Back. Each one's spending
 // category is changed where it is, with the offer to do the same for every
 // transaction from that merchant, and each can be marked a transfer, which
 // takes it out of spending and income.
@@ -38,24 +41,38 @@ export function FinanceTransactionsSection() {
   const { t } = useTranslation()
   const toast = useToast()
   const words = useFinanceWords()
-  const [filters, setFilters] = useState<Filters>({
-    from: '',
-    to: '',
-    financeAccountId: '',
-    text: '',
-    isUncategorized: false,
-  })
+  const [search, setSearch] = useSearchParams()
+  const filters = useMemo(() => transactionFiltersFromSearch(search), [search])
+  const setFilters = (change: (previous: TransactionFilters) => TransactionFilters) =>
+    setSearch(
+      (previous) => {
+        const next = searchFromTransactionFilters(change(transactionFiltersFromSearch(previous)))
+        // An address already saying this is left alone, so the first
+        // pause in typing does not rewrite it with the same filters.
+        return next.toString() === searchFromTransactionFilters(transactionFiltersFromSearch(previous)).toString()
+          ? previous
+          : next
+      },
+      { replace: true },
+    )
   // The words are sent once typing pauses, not on every key.
-  const [typed, setTyped] = useState('')
+  const [typed, setTyped] = useState(filters.text)
   useEffect(() => {
     const timer = window.setTimeout(() => setFilters((previous) => ({ ...previous, text: typed.trim() })), 400)
     return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typed])
+  // Words that arrive by the address, from Back or a link, are put in the
+  // box; words being typed are not overwritten by the address catching up.
+  useEffect(() => {
+    setTyped((previous) => (previous.trim() === filters.text ? previous : filters.text))
+  }, [filters.text])
 
   const variables = {
     from: filters.from || undefined,
     to: filters.to || undefined,
     financeAccountId: filters.financeAccountId || undefined,
+    spendingCategoryId: filters.spendingCategoryId || undefined,
     text: filters.text || undefined,
     isUncategorized: filters.isUncategorized || undefined,
     limit: PAGE_SIZE,
@@ -287,6 +304,27 @@ export function FinanceTransactionsSection() {
           />
         </label>
         <label>
+          <span>{t('finance.spendingCategory')}</span>
+          <Select
+            block
+            value={filters.spendingCategoryId}
+            label={t('finance.spendingCategory')}
+            options={[
+              { value: '', label: t('finance.allSpendingCategories') },
+              ...spendingCategoryOptions(categoryList, filters.spendingCategoryId),
+            ]}
+            // A spending category and "only those without one" cannot both
+            // hold, so choosing one lets go of the other.
+            onChange={(value) =>
+              setFilters((previous) => ({
+                ...previous,
+                spendingCategoryId: value,
+                isUncategorized: value ? false : previous.isUncategorized,
+              }))
+            }
+          />
+        </label>
+        <label>
           <span>{t('finance.searchText')}</span>
           <input type="search" value={typed} onChange={(event) => setTyped(event.target.value)} />
         </label>
@@ -295,7 +333,13 @@ export function FinanceTransactionsSection() {
         <input
           type="checkbox"
           checked={filters.isUncategorized}
-          onChange={(event) => setFilters((previous) => ({ ...previous, isUncategorized: event.target.checked }))}
+          onChange={(event) =>
+            setFilters((previous) => ({
+              ...previous,
+              isUncategorized: event.target.checked,
+              spendingCategoryId: event.target.checked ? '' : previous.spendingCategoryId,
+            }))
+          }
         />
         {t('finance.onlyUncategorized')}
       </label>

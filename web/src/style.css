@@ -1636,9 +1636,13 @@ input[type='radio'] {
    Turning the native appearance off puts them back under the same rules as
    every other field: the width they are given, the padding and border above,
    and their text against the left edge rather than centred in the middle of
-   the box. Tapping one still opens the system picker. */
+   the box. Tapping one still opens the system picker.
+
+   A month field is the same native control and sizes itself the same way,
+   so it is on the list too. */
 input[type='time'],
 input[type='date'],
+input[type='month'],
 input[type='datetime-local'] {
   appearance: none;
   -webkit-appearance: none;
@@ -11624,12 +11628,6 @@ button.idea-history-title {
 
 /* --- the agent's Finance tab ---------------------------------------------- */
 
-/* On a phone the sections are one full-width list in place of the tab row,
-   standing off the first panel as the tabs do. */
-.finance-section-select {
-  margin-bottom: var(--space-4);
-}
-
 /* The line that says where the other half of finance is: the setup on the
    agent page, the data on the Finance page. Above the panels, spaced as a
    panel is from the next. */
@@ -11671,10 +11669,6 @@ button.idea-history-title {
 
 .finance-filters > label {
   min-width: 150px;
-}
-
-.finance-month input {
-  min-width: 10rem;
 }
 
 .finance-description {
@@ -11803,3 +11797,210 @@ button.idea-history-title {
   fill: var(--surface);
   stroke-width: 2;
 }
+
+/* A chart whose keys can be chosen: each slot is a clear button over the
+   columns, the chosen slot sits on a band, and its label is the one in
+   the text's own colour. */
+.series-chart-slot {
+  fill: transparent;
+  cursor: pointer;
+  outline: none;
+}
+
+.series-chart-slot:focus-visible {
+  stroke: var(--text);
+  stroke-width: 2;
+}
+
+.series-chart-selected-band {
+  fill: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.series-chart-axis-selected {
+  fill: var(--text);
+  font-weight: 650;
+}
+
+/* Where a month's money went: a ring beside its legend, the legend under
+   it on a phone. The slices' colours are mixed from the page's own, so a
+   dark page gets them lifted with the rest; neighbours alternate between
+   the leaf, the amber and the text colour so no two side by side match. */
+.spending-ring {
+  --ring-tone-0: var(--leaf);
+  --ring-tone-1: var(--warn);
+  --ring-tone-2: color-mix(in srgb, var(--text) 62%, var(--surface));
+  --ring-tone-3: color-mix(in srgb, var(--leaf) 50%, var(--surface));
+  --ring-tone-4: color-mix(in srgb, var(--warn) 50%, var(--surface));
+  --ring-tone-5: color-mix(in srgb, var(--text) 35%, var(--surface));
+  --ring-tone-6: color-mix(in srgb, var(--leaf) 60%, var(--text));
+  --ring-tone-7: color-mix(in srgb, var(--warn) 60%, var(--text));
+  --ring-other: color-mix(in srgb, var(--muted) 40%, var(--surface));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-6);
+  margin-bottom: var(--space-4);
+}
+
+.spending-ring-drawing {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 200px;
+  height: auto;
+}
+
+.spending-ring-slice {
+  stroke: var(--surface);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.spending-ring-total {
+  fill: var(--text);
+  font-size: 17px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.spending-ring-caption {
+  fill: var(--muted);
+  font-size: 12px;
+}
+
+.spending-ring-legend {
+  flex: 1 1 14rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  font-size: var(--text-label);
+}
+
+.spending-ring-legend li {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto 3rem;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.spending-ring-name {
+  overflow-wrap: anywhere;
+}
+
+.spending-ring-amount,
+.spending-ring-percent {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.spending-ring-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  align-self: center;
+}
+
+.spending-ring-slice.tone-0 {
+  fill: var(--ring-tone-0);
+}
+
+.spending-ring-slice.tone-1 {
+  fill: var(--ring-tone-1);
+}
+
+.spending-ring-slice.tone-2 {
+  fill: var(--ring-tone-2);
+}
+
+.spending-ring-slice.tone-3 {
+  fill: var(--ring-tone-3);
+}
+
+.spending-ring-slice.tone-4 {
+  fill: var(--ring-tone-4);
+}
+
+.spending-ring-slice.tone-5 {
+  fill: var(--ring-tone-5);
+}
+
+.spending-ring-slice.tone-6 {
+  fill: var(--ring-tone-6);
+}
+
+.spending-ring-slice.tone-7 {
+  fill: var(--ring-tone-7);
+}
+
+.spending-ring-slice.other {
+  fill: var(--ring-other);
+}
+
+.spending-ring-swatch.tone-0 {
+  background: var(--ring-tone-0);
+}
+
+.spending-ring-swatch.tone-1 {
+  background: var(--ring-tone-1);
+}
+
+.spending-ring-swatch.tone-2 {
+  background: var(--ring-tone-2);
+}
+
+.spending-ring-swatch.tone-3 {
+  background: var(--ring-tone-3);
+}
+
+.spending-ring-swatch.tone-4 {
+  background: var(--ring-tone-4);
+}
+
+.spending-ring-swatch.tone-5 {
+  background: var(--ring-tone-5);
+}
+
+.spending-ring-swatch.tone-6 {
+  background: var(--ring-tone-6);
+}
+
+.spending-ring-swatch.tone-7 {
+  background: var(--ring-tone-7);
+}
+
+.spending-ring-swatch.other {
+  background: var(--ring-other);
+}
+
+
+/* The line under the months chart: the chosen month's income, spending and
+   what was left, folding onto more lines on a phone. */
+.finance-month-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-month-flow strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* A group in the spending table that opens its transactions: the row's
+   name, as a link, and as long as it needs to be. */
+.finance-group-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+
+.finance-group-link:hover {
+  text-decoration-color: currentColor;
+}
+

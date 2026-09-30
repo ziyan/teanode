@@ -1,8 +1,6 @@
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { Loading } from '../components/common'
-import { Select } from '../components/select'
-import { useIsDesktop } from '../components/sidebar'
 import { TabItem, Tabs } from '../components/tabs'
 import { useTranslation } from '../i18n/i18n'
 import { FinanceAccountsSection } from './finance/financeAccounts'
@@ -40,7 +38,6 @@ export function FinancePage() {
   const navigate = useNavigate()
   const location = useLocation()
   const { t } = useTranslation()
-  const isDesktop = useIsDesktop()
   const presence = useAgentFinancePresence()
   // The sections' default days and months are the person's, in the zone
   // their agent keeps, so the zone is read before any section is drawn.
@@ -65,24 +62,12 @@ export function FinancePage() {
   }
   if (!isZoneRead) return <Loading />
   const openSection = (id: string) => navigate(`/finance/${id}`)
-  // On a phone six tabs are a row that scrolls sideways, and a section out
-  // of sight is a section nobody finds. There the sections are one list to
-  // choose from, the width of the page.
+  // The same tabs at every width, as the other pages of tabs have: on a
+  // phone the strip scrolls sideways inside itself and brings the section
+  // being shown into view, and the page stays the width of the screen.
   return (
     <>
-      {isDesktop ? (
-        <Tabs items={FINANCE_SECTIONS} active={section} onSelect={openSection} />
-      ) : (
-        <Select
-          block
-          className="finance-section-select"
-          value={section ?? ''}
-          label={t('finance.sectionLabel')}
-          searchable={false}
-          options={FINANCE_SECTIONS.map((candidate) => ({ value: candidate.id, label: t(candidate.label) }))}
-          onChange={openSection}
-        />
-      )}
+      <Tabs items={FINANCE_SECTIONS} active={section} onSelect={openSection} />
       {!presence.hasSources ? (
         <p className="muted finance-pointer">
           {t('finance.nothingLinkedPointer')} <Link to={FINANCE_SETUP_PATH}>{t('finance.openFinanceSetup')}</Link>
