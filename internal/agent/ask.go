@@ -230,6 +230,10 @@ func (self *AskRun) sayNote(kind models.AgentNoteKind, detail string) {
 
 // AskRun is one turn in flight.
 type AskRun struct {
+	// explanation records why recall carried what it did, when asked for
+	// (see ExplainRecall); nil on a turn.
+	explanation *RecallExplanation
+
 	// hasDepthNote says this message was judged worth looking into
 	// carefully, and depthReason why, written under the message once it is
 	// stored; see chooseDepth.

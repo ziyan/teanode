@@ -21,11 +21,11 @@ After this plan, recall finds and carries the section of an overview that answer
 - [x] (2026-09-30) Verified the gaps in code at v0.86.0: `nodeText` embeds name, summary and aliases only; `chooseRecalled` attaches the first section; overview inputs cap children and links at thirty; `resolveSurveyScope` takes no question and keeps the forty most important pages; reflection validation checks that citations were shown, not that they support the claim.
 - [x] (2026-09-30) The recall API returns the overview section it carried, and the recall evaluation counts a claim met by it. Deployed, so the baseline below is measured by the same code as the change.
 - [x] (2026-09-30) Baseline on a held-out set of 30 questions, each answered by one later section of an overview: recall carried what 6 needed; 21 reached the page.
-- [ ] Milestone 1: overview sections as retrieval records, and recall carrying the matching section.
+- [x] (2026-09-30) Milestone 1: overview sections as retrieval records, and recall carrying the matching section. Held-out set 6 to 15 of 30.
 - [ ] Milestone 2: coverage and freshness counted and shown for overviews and surveys.
 - [ ] Milestone 3: a retrieval plan bounded by the effort already decided for the turn; question-aware survey selection.
 - [ ] Milestone 4: execution lessons as their own records, from verified outcomes only.
-- [ ] Milestone 5: an explanation of a recall: what was searched, found, chosen and excluded.
+- [x] (2026-09-30) Milestone 5: `teanode agent memory recall --explain`, and `isExplained` on the `RecallAgentMemory` query: each search's count, every page and fact found with its rank in each search and once fused, and what carried or excluded it; recorded only when asked.
 - [ ] Rerun the stored question set and the held-out set after each milestone that changes recall.
 
 ## Surprises & Discoveries
@@ -52,7 +52,7 @@ After this plan, recall finds and carries the section of an overview that answer
 
 ## Outcomes & Retrospective
 
-(To be written as milestones complete.)
+Milestone 1, on 2026-09-30. The held-out set of 30 questions carried what 6 needed before the change and 15 after, and none that carried before stopped. The stored question set, graded by a model from memory alone, scored 50.8% with section vectors and 53.1% with them moved aside, on the same graph within the hour: one or two questions apart, inside the noise of a single run. Both were below the 62.5% of three days earlier, which is the graph and the grading over those days, not this change.
 
 ## Context and Orientation
 

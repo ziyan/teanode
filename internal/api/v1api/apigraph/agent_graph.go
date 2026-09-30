@@ -265,6 +265,10 @@ type SearchAgentGraphArguments struct {
 // would have typed it.
 type RecallAgentMemoryArguments struct {
 	Question string `json:"question"`
+
+	// IsExplained asks for the explanation as well: what each search
+	// found, and why each page and fact was carried or left out.
+	IsExplained *bool `json:"isExplained" graphapi:"nullable"`
 }
 
 // SurveyAgentMemoryArguments are the question a survey answers and
@@ -523,6 +527,9 @@ type AgentGraphSearchResult struct {
 // RecallAgentMemoryResult is what a turn would have been carried.
 type RecallAgentMemoryResult struct {
 	Pages []*RecalledAgentPage `json:"pages"`
+
+	// Explanation is why, when it was asked for.
+	Explanation *agent.RecallExplanation `json:"explanation" graphapi:"nullable"`
 }
 
 // RecalledAgentPage is one page of that, with the facts recall would have
@@ -1079,7 +1086,13 @@ func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentM
 	if question == "" {
 		return &RecallAgentMemoryResult{Pages: []*RecalledAgentPage{}}, nil
 	}
-	recalled, err := worker.RecallForQuestion(ctx, found, principal.User, question)
+	var recalled []*agent.RecalledPage
+	var explanation *agent.RecallExplanation
+	if arguments.IsExplained != nil && *arguments.IsExplained {
+		recalled, explanation, err = worker.ExplainRecall(ctx, found, principal.User, question)
+	} else {
+		recalled, err = worker.RecallForQuestion(ctx, found, principal.User, question)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1090,7 +1103,7 @@ func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentM
 	if current.ID != found.ID {
 		return nil, agent.ErrUnavailable
 	}
-	result := &RecallAgentMemoryResult{Pages: make([]*RecalledAgentPage, 0, len(recalled))}
+	result := &RecallAgentMemoryResult{Pages: make([]*RecalledAgentPage, 0, len(recalled)), Explanation: explanation}
 	for _, page := range recalled {
 		carried := &RecalledAgentPage{Path: page.Path, Summary: page.Summary, Overview: page.Overview, Facts: make([]*RecalledAgentFact, 0, len(page.Facts))}
 		for _, fact := range page.Facts {

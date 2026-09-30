@@ -610,3 +610,63 @@ func TestLooseFactsGoInTogetherAndUnhitPagesAreBounded(t *testing.T) {
 		}
 	}
 }
+
+// An explained recall says what each search found and why each page and
+// fact was carried: the page the question hit carried with the overview
+// section its words point at, and the fact the search found shown on it.
+func TestExplainingARecallSaysWhatItCarriedAndWhy(t *testing.T) {
+	world := newRecallWorld(t)
+	portal := world.page(t, "projects/portal", "Portal", "The customer-facing portal.",
+		"Runs on the Frankfurt cluster.")
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if err := tx.SetAgentNodeOverview(world.agent.ID, portal.ID,
+			"## What it is\n\nThe customer-facing portal.\n\n## How it relates\n\nBilling reads the cluster's accounts.",
+			[]models.Evidence{}, "inputs", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	pages, explanation, err := world.run.agent.ExplainRecall(context.Background(),
+		world.agent, world.run.settings.Owner, "which cluster does the portal run on, and what does billing read?")
+	if err != nil {
+		t.Fatalf("ExplainRecall: %s", err)
+	}
+	if len(pages) == 0 || len(explanation.Searches) != 5 {
+		t.Fatalf("%d pages carried, %d searches explained", len(pages), len(explanation.Searches))
+	}
+	var explained *RecallPageExplanation
+	for _, page := range explanation.Pages {
+		if page.Path == "projects/portal" {
+			explained = page
+		}
+	}
+	if explained == nil {
+		t.Fatalf("the page the question hit is not explained: %+v", explanation.Pages)
+	}
+	if explained.RecallDecision != RecallDecisionCarried || explained.WordsRank == 0 || explained.FusedRank == 0 ||
+		explained.HitFactCount != 1 || explained.CarriedFactCount != 1 || explained.TokenCount == 0 {
+		t.Errorf("the page's explanation: %+v", explained)
+	}
+	if explained.OverviewSectionHeading != "How it relates" || explained.SectionChoice != RecallSectionMatchedByWords {
+		t.Errorf("the section carried: %q because %q", explained.OverviewSectionHeading, explained.SectionChoice)
+	}
+	isShownOnPage := false
+	for _, fact := range explanation.Facts {
+		if fact.Reference == "projects/portal#1" && fact.RecallDecision == RecallDecisionShownOnPage && fact.WordsRank > 0 {
+			isShownOnPage = true
+		}
+	}
+	if !isShownOnPage {
+		t.Errorf("the fact the search found is not explained as shown on its page: %+v", explanation.Facts)
+	}
+	if explanation.TokensSpent == 0 || explanation.TokensSpent > explanation.TokenBudget {
+		t.Errorf("spent %d of %d", explanation.TokensSpent, explanation.TokenBudget)
+	}
+
+	// Recall without the explanation carries the same.
+	plain, err := world.run.agent.RecallForQuestion(context.Background(),
+		world.agent, world.run.settings.Owner, "which cluster does the portal run on, and what does billing read?")
+	if err != nil || len(plain) != len(pages) {
+		t.Fatalf("recall without the explanation carried %d pages, with it %d: %v", len(plain), len(pages), err)
+	}
+}

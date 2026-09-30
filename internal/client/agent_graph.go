@@ -88,6 +88,50 @@ type AgentGraphSearch struct {
 // front of the model.
 type AgentRecall struct {
 	Pages []*AgentRecalledPage `json:"pages"`
+
+	// Explanation is why, when it was asked for.
+	Explanation *AgentRecallExplanation `json:"explanation,omitempty"`
+}
+
+// AgentRecallExplanation is how one question's recall went: what each
+// search found, and why each page and fact was carried or left out.
+type AgentRecallExplanation struct {
+	Searches []*AgentRecallSearch `json:"searches"`
+	Pages    []*AgentRecallPage   `json:"pages"`
+	Facts    []*AgentRecallFact   `json:"facts"`
+
+	TokenBudget int `json:"tokenBudget"`
+	TokensSpent int `json:"tokensSpent"`
+}
+
+// AgentRecallSearch is one search and how many it found.
+type AgentRecallSearch struct {
+	SearchName string `json:"searchName"`
+	FoundCount int    `json:"foundCount"`
+}
+
+// AgentRecallPage is one page the searches found and what became of it.
+type AgentRecallPage struct {
+	Path                   string `json:"path"`
+	FusedRank              int    `json:"fusedRank"`
+	WordsRank              int    `json:"wordsRank"`
+	MeaningRank            int    `json:"meaningRank"`
+	SectionRank            int    `json:"sectionRank"`
+	HitFactCount           int    `json:"hitFactCount"`
+	RecallDecision         string `json:"recallDecision"`
+	OverviewSectionHeading string `json:"overviewSectionHeading"`
+	SectionChoice          string `json:"sectionChoice"`
+	CarriedFactCount       int    `json:"carriedFactCount"`
+	TokenCount             int    `json:"tokenCount"`
+}
+
+// AgentRecallFact is one fact the searches found and what became of it.
+type AgentRecallFact struct {
+	Reference      string `json:"reference"`
+	FusedRank      int    `json:"fusedRank"`
+	WordsRank      int    `json:"wordsRank"`
+	MeaningRank    int    `json:"meaningRank"`
+	RecallDecision string `json:"recallDecision"`
 }
 
 // AgentRecalledPage is one of those pages.
@@ -305,6 +349,17 @@ const (
 			pages { path summary overview facts { number text } }
 		}
 	}`
+	DocumentExplainAgentRecall = `query ($question: String!) {
+		RecallAgentMemory(question: $question, isExplained: true) {
+			pages { path summary overview facts { number text } }
+			explanation {
+				searches { searchName foundCount }
+				pages { path fusedRank wordsRank meaningRank sectionRank hitFactCount recallDecision overviewSectionHeading sectionChoice carriedFactCount tokenCount }
+				facts { reference fusedRank wordsRank meaningRank recallDecision }
+				tokenBudget tokensSpent
+			}
+		}
+	}`
 	DocumentListAgentLearned = `query ($days: Int, $first: Int) {
 		ListAgentLearned(days: $days, first: $first) { fact ` + factFields + ` path name }
 	}`
@@ -395,6 +450,18 @@ func RecallAgentMemory(ctx context.Context, connection *Client, question string)
 		RecallAgentMemory *AgentRecall `json:"RecallAgentMemory"`
 	}
 	if err := connection.Execute(ctx, DocumentRecallAgentMemory, map[string]any{"question": question}, &result); err != nil {
+		return nil, err
+	}
+	return result.RecallAgentMemory, nil
+}
+
+// ExplainAgentRecall is RecallAgentMemory and why: what each search found,
+// and why each page and fact was carried or left out.
+func ExplainAgentRecall(ctx context.Context, connection *Client, question string) (*AgentRecall, error) {
+	var result struct {
+		RecallAgentMemory *AgentRecall `json:"RecallAgentMemory"`
+	}
+	if err := connection.Execute(ctx, DocumentExplainAgentRecall, map[string]any{"question": question}, &result); err != nil {
 		return nil, err
 	}
 	return result.RecallAgentMemory, nil

@@ -144,8 +144,10 @@ func newAgentGraphCommands() []*cli.Command {
 			Name:      "recall",
 			Usage:     "what a question would carry into a turn: the pages recall would expand and the facts on each. Nothing is said to a model, and nothing is marked as used",
 			ArgsUsage: "<question>",
-			Flags:     []cli.Flag{JSONFlag()},
-			Action:    runAgentGraphRecall,
+			Flags: []cli.Flag{JSONFlag(),
+				&cli.BoolFlag{Name: "explain", Usage: "say why as well: what each search found, where each page and fact ranked in each, and what carried it or kept it out"},
+			},
+			Action: runAgentGraphRecall,
 		},
 		{
 			Name:      "evaluate",
@@ -1899,6 +1901,9 @@ func runAgentGraphRecall(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	if command.Bool("explain") {
+		return explainAgentGraphRecall(ctx, command, connection, question)
+	}
 	recalled, err := client.RecallAgentMemory(ctx, connection, question)
 	if err != nil {
 		return describeError(command, err)
@@ -1928,6 +1933,55 @@ func runAgentGraphRecall(ctx context.Context, command *cli.Command) error {
 			}
 			_, _ = fmt.Fprintf(command.Writer, "#%d %s\n", fact.Number, fact.Text)
 		}
+	}
+	return nil
+}
+
+// explainAgentGraphRecall prints why recall carried what it did for a
+// question: each search's count, then every page and every fact the
+// searches found, with its rank in each search and what became of it.
+func explainAgentGraphRecall(ctx context.Context, command *cli.Command, connection *client.Client, question string) error {
+	recalled, err := client.ExplainAgentRecall(ctx, connection, question)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(recalled)
+	}
+	if recalled == nil || recalled.Explanation == nil {
+		_, _ = fmt.Fprintln(command.Writer, "that question carries nothing from the graph")
+		return nil
+	}
+	explanation := recalled.Explanation
+	writer := command.Writer
+	rankText := func(rank int) string {
+		if rank == 0 {
+			return "-"
+		}
+		return strconv.Itoa(rank)
+	}
+	for _, search := range explanation.Searches {
+		_, _ = fmt.Fprintf(writer, "%-26s %d\n", search.SearchName, search.FoundCount)
+	}
+	_, _ = fmt.Fprintf(writer, "tokens spent %d of %d\n\npages (rank fused, by words, by meaning, by section)\n", explanation.TokensSpent, explanation.TokenBudget)
+	for _, page := range explanation.Pages {
+		line := fmt.Sprintf("%3d %3s %3s %3s  %-18s %s", page.FusedRank, rankText(page.WordsRank), rankText(page.MeaningRank),
+			rankText(page.SectionRank), page.RecallDecision, page.Path)
+		if page.RecallDecision == "carried" {
+			line += fmt.Sprintf("  (%d facts, %d tokens", page.CarriedFactCount, page.TokenCount)
+			if page.OverviewSectionHeading != "" {
+				line += ", section \"" + page.OverviewSectionHeading + "\" " + page.SectionChoice
+			} else if page.SectionChoice != "none" {
+				line += ", section " + page.SectionChoice
+			}
+			line += ")"
+		}
+		_, _ = fmt.Fprintln(writer, line)
+	}
+	_, _ = fmt.Fprintln(writer, "\nfacts (rank fused, by words, by meaning)")
+	for _, fact := range explanation.Facts {
+		_, _ = fmt.Fprintf(writer, "%3d %3s %3s  %-18s %s\n", fact.FusedRank, rankText(fact.WordsRank), rankText(fact.MeaningRank),
+			fact.RecallDecision, fact.Reference)
 	}
 	return nil
 }

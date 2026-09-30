@@ -152,7 +152,17 @@ func (self *AskRun) searchGraph(ctx context.Context, words string, limit int) ([
 	}
 	sectionNodes, sections := self.pagesOfNearestSections(ctx, question, limit)
 
-	return fuseNodes(limit, meaningNodes, wordNodes, sectionNodes), fuseFacts(limit, meaningFacts, wordFacts), sections
+	nodes, facts := fuseNodes(limit, meaningNodes, wordNodes, sectionNodes), fuseFacts(limit, meaningFacts, wordFacts)
+	if explanation := self.explanation; explanation != nil {
+		explanation.explainSearch("pages by words", len(wordNodes))
+		explanation.explainSearch("pages by meaning", len(meaningNodes))
+		explanation.explainSearch("pages by overview section", len(sectionNodes))
+		explanation.explainSearch("facts by words", len(wordFacts))
+		explanation.explainSearch("facts by meaning", len(meaningFacts))
+		explanation.explainPages(nodes, wordNodes, meaningNodes, sectionNodes)
+		explanation.factsByWords, explanation.factsByMeaning = wordFacts, meaningFacts
+	}
+	return nodes, facts, sections
 }
 
 // pagesOfNearestSections is the pages whose overview sections are nearest
@@ -269,6 +279,11 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 	if err != nil {
 		return nil, err
 	}
+	explanation := self.explanation
+	if explanation != nil {
+		explanation.explainFacts(facts, explanation.factsByWords, explanation.factsByMeaning, paths)
+		explanation.TokenBudget = recallTokens
+	}
 	// Which of the search's facts sit on which page, in the order the
 	// search put them. That order is the ranking, and nothing here ranks
 	// it again.
@@ -309,11 +324,21 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 		if pages >= recallPages || len(blocks) >= pageBlocks {
 			break
 		}
+		explained := explanation.page(node.ID)
+		if explained != nil {
+			explained.HitFactCount = len(hitOnPage[node.ID])
+		}
 		if expanded[node.ID] {
+			if explained != nil {
+				explained.RecallDecision = RecallDecisionAlreadyExpanded
+			}
 			continue
 		}
 		isHit := len(hitOnPage[node.ID]) > 0
 		if !isHit && unhitPages >= recallPagesUnhit {
+			if explained != nil {
+				explained.RecallDecision = RecallDecisionUnhitPageLimit
+			}
 			continue
 		}
 		considered, err := tx.ListAgentFacts(agentId, node.ID, false, pageFactsConsidered)
@@ -359,12 +384,12 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 		// which says what the thing is and how it works. Only where the
 		// page still fits with it; a page that does not is carried
 		// without it before it is passed over.
-		overview := overviewSectionFor(node, sections[node.ID], self.settings.Message, recallOverviewLength)
+		overview, sectionChoice := chooseOverviewSection(node, sections[node.ID], self.settings.Message, recallOverviewLength)
 		cost := 0
 		if overview != "" {
 			cost = llm.EstimateTokens(text + "\n  " + overview + factLines)
 			if spent+cost > pageTokens {
-				overview = ""
+				overview, sectionChoice = "", RecallSectionLeftOutForBudget
 			}
 		}
 		if overview != "" {
@@ -374,6 +399,9 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 			cost = llm.EstimateTokens(text)
 		}
 		if spent+cost > pageTokens {
+			if explained != nil {
+				explained.RecallDecision = RecallDecisionTokenBudget
+			}
 			// A smaller page further down may still fit, so this one
 			// is passed over rather than ending the loop -- but once
 			// what is left could not hold a page at all there is no
@@ -384,6 +412,16 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 			continue
 		}
 		spent += cost
+		if explained != nil {
+			explained.RecallDecision = RecallDecisionCarried
+			explained.SectionChoice = sectionChoice
+			if overview != "" {
+				heading, _, _ := strings.Cut(strings.TrimPrefix(overview, "## "), "\n")
+				explained.OverviewSectionHeading = heading
+			}
+			explained.CarriedFactCount = len(pageFactsFound)
+			explained.TokenCount = cost
+		}
 		blocks = append(blocks, &recalledBlock{NodeID: node.ID, Path: node.Path, Text: text, Summary: summary, Overview: overview, Facts: pageFactsFound})
 		for _, fact := range pageFactsFound {
 			shown[fact.ID] = true
@@ -404,12 +442,19 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 		if len(loose.Facts) >= recallFacts || len(blocks) >= recallGraphBlocks {
 			break
 		}
+		explainedFact := explanation.fact(fact.Reference(paths[fact.NodeID]))
 		if shown[fact.ID] || !stillStands(fact) {
+			if explainedFact != nil && !stillStands(fact) {
+				explainedFact.RecallDecision = RecallDecisionRetired
+			}
 			continue
 		}
 		line := fact.Reference(paths[fact.NodeID]) + " " + fact.Line()
 		cost := llm.EstimateTokens(line)
 		if spent+cost > recallTokens {
+			if explainedFact != nil {
+				explainedFact.RecallDecision = RecallDecisionTokenBudget
+			}
 			// Passed over, not the end of the loop, for the reason the
 			// pages above are: one long sentence ended the whole of
 			// this and took every shorter fact behind it with it, and
@@ -418,6 +463,9 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 			continue
 		}
 		spent += cost
+		if explainedFact != nil {
+			explainedFact.RecallDecision = RecallDecisionCarried
+		}
 		looseLines = append(looseLines, line)
 		loose.Facts = append(loose.Facts, fact)
 		loose.FactPaths[fact.ID] = paths[fact.NodeID]
@@ -425,6 +473,16 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 	if len(loose.Facts) > 0 {
 		loose.Text = strings.Join(looseLines, "\n")
 		blocks = append(blocks, loose)
+	}
+	if explanation != nil {
+		explanation.TokensSpent = spent
+		// A fact carried in its page's block, whether or not the loose
+		// facts reached it.
+		for _, fact := range facts {
+			if explained := explanation.fact(fact.Reference(paths[fact.NodeID])); explained != nil && shown[fact.ID] {
+				explained.RecallDecision = RecallDecisionShownOnPage
+			}
+		}
 	}
 	return blocks, nil
 }
@@ -571,6 +629,12 @@ type RecalledPage struct {
 // changed importance and decay as it ran would be measuring its own last
 // pass.
 func (self *Agent) RecallForQuestion(ctx context.Context, found *models.Agent, owner *models.User, question string) ([]*RecalledPage, error) {
+	return self.recallForQuestion(ctx, found, owner, question, nil)
+}
+
+// recallForQuestion is RecallForQuestion, recording why into the
+// explanation where one is given.
+func (self *Agent) recallForQuestion(ctx context.Context, found *models.Agent, owner *models.User, question string, explanation *RecallExplanation) ([]*RecalledPage, error) {
 	if self == nil || found == nil || owner == nil {
 		return nil, ErrUnavailable
 	}
@@ -582,6 +646,7 @@ func (self *Agent) RecallForQuestion(ctx context.Context, found *models.Agent, o
 		agent:          self,
 		settings:       &AskSettings{Agent: found, Owner: owner, Message: words},
 		promptMemories: map[string]bool{},
+		explanation:    explanation,
 	}
 	run.ctx = ctx
 	// The index a turn would have carried, built and thrown away.

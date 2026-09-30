@@ -103,9 +103,16 @@ func overviewSectionText(node *models.AgentNode, section overviewSection) string
 // so many characters, its heading included; empty for a page with no
 // overview.
 func overviewSectionFor(node *models.AgentNode, matchedSectionId, question string, characters int) string {
+	rendered, _ := chooseOverviewSection(node, matchedSectionId, question, characters)
+	return rendered
+}
+
+// chooseOverviewSection is overviewSectionFor and why that section: one
+// of the RecallSection values.
+func chooseOverviewSection(node *models.AgentNode, matchedSectionId, question string, characters int) (string, string) {
 	sections := overviewSectionsOf(node)
 	if len(sections) == 0 {
-		return ""
+		return "", RecallSectionNone
 	}
 	// By words: the section sharing most of the question's words other
 	// than the page's own name, which is in every section and mostly in
@@ -118,7 +125,10 @@ func overviewSectionFor(node *models.AgentNode, matchedSectionId, question strin
 			byWords, best = section, shared
 		}
 	}
-	chosen := byWords
+	chosen, sectionChoice := byWords, RecallSectionFirst
+	if best > 0 && byWords.Number != 1 {
+		sectionChoice = RecallSectionMatchedByWords
+	}
 	for _, section := range sections {
 		if matchedSectionId == "" || section.ID != matchedSectionId {
 			continue
@@ -127,8 +137,10 @@ func overviewSectionFor(node *models.AgentNode, matchedSectionId, question strin
 		// question's other words point at a later one: a section's
 		// vector carries the page's name, so a question naming the page
 		// is drawn to the section that names it most.
-		if section.Number != 1 || best == 0 {
-			chosen = section
+		if section.Number != 1 || best == 0 || byWords.Number == 1 {
+			chosen, sectionChoice = section, RecallSectionMatchedByMeaning
+		} else {
+			sectionChoice = RecallSectionFirstGaveWay
 		}
 		break
 	}
@@ -139,7 +151,7 @@ func overviewSectionFor(node *models.AgentNode, matchedSectionId, question strin
 	if cut := cutRunes(rendered, characters); cut != rendered {
 		rendered = strings.TrimSpace(cut) + "…"
 	}
-	return rendered
+	return rendered, sectionChoice
 }
 
 // questionStopWords are words a question uses that say nothing about which
