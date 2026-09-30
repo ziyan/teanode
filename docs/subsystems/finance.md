@@ -44,7 +44,7 @@ tool and the dashboard.
 
 **Plaid** needs the operator's client id and secret (`agent.finance.plaid`,
 the secret sealed like every other provider key). A person links through
-Plaid's own window, which runs on the dashboard page `/finance-link`; that
+Plaid's own window, which runs on the dashboard page `/finance/link`; that
 page alone has a security policy that lets it load Plaid's script, frame
 Plaid's page and reach Plaid's API. The server exchanges the one-time token
 the window returns for the credential and keeps it as a secret of the new
@@ -203,7 +203,7 @@ the setup.
 The **agent page's Finance tab** (`web/src/pages/agentFinance.tsx`,
 `/settings/agent/finance`) is the setup: the finance sources (link, repair,
 bring an existing connection in, sync, switch, delete) and the settings (the
-reporting currency and the converter), in one scroll. `/finance-link`, the
+reporting currency and the converter), in one scroll. `/finance/link`, the
 page Plaid's window runs on, comes back to it. The addresses the sections had
 under the tab before they moved (`/settings/agent/finance/spending` and the
 rest) open the tab and are not sent on to the Finance page.

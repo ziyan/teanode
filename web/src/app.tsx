@@ -9,6 +9,7 @@ import { MailboxPage } from './pages/mailbox'
 import { SetupAccountPage } from './pages/setupAccount'
 import { SETTINGS_LANDING } from './pages/settings/nav'
 import { Loading } from './components/common'
+import { FINANCE_LINK_PATH } from './components/dashboardPath'
 import { lazyPage } from './lazyPage'
 import { ThemeToggle } from './components/theme'
 import { LanguagePicker, useTranslation } from './i18n/i18n'
@@ -258,7 +259,7 @@ export function App() {
   // Plaid's window, drawn the same way for the same reason: one thing to
   // do, opened by the Finance tab in a window of its own. The server gives
   // this path alone a policy that lets Plaid's script and frame in.
-  if (location.pathname === '/finance-link') {
+  if (location.pathname === FINANCE_LINK_PATH) {
     return (
       <div className="auth-page">
         {corner}
