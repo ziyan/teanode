@@ -399,6 +399,9 @@ function AssetsPanel({
           currency={currency}
           label={t('finance.assetsRingLabel')}
           totalLabel={t('finance.owned')}
+          // The same owned total as the line beside it: a kind worth less
+          // than nothing has no slice but still counts.
+          totalAmount={grouping.ownedAmount}
           highlightedKey={highlightedKey}
         >
           <dl className="finance-worth-line">
@@ -461,8 +464,11 @@ function AssetsPanel({
                     const sliceKey = index !== undefined ? group.assetKind : otherIndex >= 0 ? 'other' : null
                     const isOpen = isExpanded(group.assetKind)
                     const shown = isSearching ? group.matchingAssets : group.assets
+                    // A kind worth less than nothing has no share: no "-0%".
                     const share =
-                      !group.isLiability && grouping.ownedAmount > 0 ? group.totalAmount / grouping.ownedAmount : null
+                      !group.isLiability && grouping.ownedAmount > 0 && group.totalAmount > 0
+                        ? group.totalAmount / grouping.ownedAmount
+                        : null
                     const name = words.assetKind(group.assetKind)
                     return [
                       // The whole row opens the kind; the button in it is
