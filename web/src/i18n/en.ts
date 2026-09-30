@@ -3377,7 +3377,7 @@ export const en = {
   'finance.providerMetadata': 'From the provider',
   'finance.providerMetadataHint': 'The provider\'s whole record of this transaction, as it arrived.',
   'finance.noProviderMetadata': 'The provider sent nothing more about this transaction.',
-  'finance.providerMetadataCopied': 'Copied the provider\'s record.',
+  'finance.copyProviderMetadata': "Copy the provider's record",
   'finance.transferMarkedBy.person': 'by you',
   'finance.transferMarkedBy.spending_rule': 'by a spending rule',
   'finance.transferMarkedBy.provider_category_mapping': 'from the provider category',

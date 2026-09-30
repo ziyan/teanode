@@ -3337,7 +3337,7 @@ export const ja: Catalog = {
   'finance.providerMetadata': 'プロバイダーからの情報',
   'finance.providerMetadataHint': 'この取引についてプロバイダーが送ってきた記録全体です（受け取ったまま）。',
   'finance.noProviderMetadata': 'この取引について、プロバイダーからほかの情報はありません。',
-  'finance.providerMetadataCopied': 'プロバイダーの記録をコピーしました。',
+  'finance.copyProviderMetadata': 'プロバイダーの記録をコピー',
   'finance.transferMarkedBy.person': 'あなたが指定',
   'finance.transferMarkedBy.spending_rule': '支出ルールによる',
   'finance.transferMarkedBy.provider_category_mapping': 'プロバイダーのカテゴリによる',

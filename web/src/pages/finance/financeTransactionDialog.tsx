@@ -1,9 +1,8 @@
 import { useEffect } from 'react'
 
-import { formatMoney, formatTime } from '../../components/common'
+import { CopyIconButton, formatMoney, formatTime } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
 import { Select } from '../../components/select'
-import { useToast } from '../../components/toast'
 import { useTranslation } from '../../i18n/i18n'
 import { FinanceAccount, FinanceTransaction, amountOf, formatDay, hasAmount } from './financeApi'
 import { accountLabel, useFinanceWords } from './financeCommon'
@@ -43,7 +42,6 @@ export function FinanceTransactionDialog({
   onClose: () => void
 }) {
   const { t } = useTranslation()
-  const toast = useToast()
   const words = useFinanceWords()
   const metadata = providerMetadataText(financeTransaction.providerMetadata)
   // Into the dialog when it opens, so the keyboard that opened it from its
@@ -67,17 +65,6 @@ export function FinanceTransactionDialog({
   ]
     .filter(Boolean)
     .join(' · ')
-
-  const copyMetadata = () => {
-    if (!navigator.clipboard) {
-      toast.failed(t('common.copyFailed'))
-      return
-    }
-    navigator.clipboard.writeText(metadata).then(
-      () => toast.done(t('finance.providerMetadataCopied')),
-      () => toast.failed(t('common.copyFailed')),
-    )
-  }
 
   // One row of the list, left out when there is nothing to say.
   const property = (label: string, value: React.ReactNode, className?: string) =>
@@ -142,9 +129,7 @@ export function FinanceTransactionDialog({
           <div className="finance-metadata-head">
             <strong>{t('finance.providerMetadata')}</strong>
             {metadata ? (
-              <button type="button" className="link" onClick={copyMetadata}>
-                {t('common.copy')}
-              </button>
+              <CopyIconButton value={metadata} label={t('finance.copyProviderMetadata')} />
             ) : null}
           </div>
           <p className="muted field-hint">

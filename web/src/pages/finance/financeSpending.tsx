@@ -581,7 +581,7 @@ function SpendingSummaryPanel({ month }: { month: string }) {
       {/* The total above is the whole month's either way. */}
       {isLongGrouping && lines.length > SHORT_GROUP_COUNT ? (
         <div className="page-actions page-actions-end">
-          <button type="button" className="link" onClick={() => setIsShowingAll((previous) => !previous)}>
+          <button type="button" onClick={() => setIsShowingAll((previous) => !previous)}>
             {isShowingAll
               ? t('finance.showTopGroups', { count: SHORT_GROUP_COUNT })
               : t('finance.showAllGroups', { count: lines.length })}

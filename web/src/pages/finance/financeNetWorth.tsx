@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Field, Loading, Tag, formatMoney } from '../../components/common'
+import { ArrowLeftIcon } from '../../components/icons'
 import { Column, DataTable } from '../../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SeriesChart, dayLabel } from '../../components/seriesChart'
@@ -450,7 +451,10 @@ function AssetPage({
 
   const back = (
     <div className="page-actions">
-      <button type="button" className="link" onClick={onBack}>
+      {/* A button with the way back drawn on it, not a text link: the
+          dashboard keeps text buttons for a row's one action. */}
+      <button type="button" className="with-icon" onClick={onBack}>
+        <ArrowLeftIcon size={16} />
         {t('finance.backToNetWorth')}
       </button>
     </div>

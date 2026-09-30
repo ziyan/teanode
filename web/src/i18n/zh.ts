@@ -3246,7 +3246,7 @@ export const zh: Catalog = {
   'finance.providerMetadata': '来自服务商',
   'finance.providerMetadataHint': '服务商对这笔交易的完整记录，保持收到时的原样。',
   'finance.noProviderMetadata': '服务商没有提供这笔交易的更多信息。',
-  'finance.providerMetadataCopied': '已复制服务商的记录。',
+  'finance.copyProviderMetadata': '复制提供方的记录',
   'finance.transferMarkedBy.person': '由你标记',
   'finance.transferMarkedBy.spending_rule': '由支出规则标记',
   'finance.transferMarkedBy.provider_category_mapping': '根据服务商类别',
