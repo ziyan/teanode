@@ -1,6 +1,7 @@
 package db
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -308,10 +309,21 @@ func (self *transaction) applyFinanceHoldings(agentId string, syncResult *financ
 		if err != nil {
 			return nil, err
 		}
+		// The person's choice about the account stands for what is in it:
+		// an account whose asset they deleted, or value by hand, gets no
+		// holdings, which would count again what they said, or bring back
+		// what they took out of net worth.
+		if accountAsset == nil || accountAsset.ValuationSource != string(models.ValuationSourceFinanceSync) {
+			continue
+		}
+		// A balance the provider did not report stays unknown: the cash is
+		// the balance less the holdings only where there is a balance.
+		isBalanceKnown := strings.TrimSpace(account.CurrentBalance) != ""
 		cashValue, err := finance.ParseAmount(firstNonEmptyText(account.CurrentBalance, "0"))
 		if err != nil {
 			return nil, fmt.Errorf("%w: the balance of %s is not a number", ErrInvalidArguments, account.ProviderAccountID)
 		}
+		isCashUnknown := false
 		heldSecurityIds := []string{}
 		for _, holding := range holdingsByFinanceAccountId[financeAccountId] {
 			securityId, isKnown := securityIdByProviderSecurityId[holding.ProviderSecurityID]
@@ -327,15 +339,36 @@ func (self *transaction) applyFinanceHoldings(agentId string, syncResult *financ
 			if isCreated {
 				applied.CreatedAssetIDs = append(applied.CreatedAssetIDs, assetId)
 			}
-			// The account's balance holds every holding in the account's
-			// currency; one in another currency cannot be taken off it
-			// without a rate, and is left in.
-			if currencyCode == account.CurrencyCode || account.CurrencyCode == "" {
+			// The account's balance holds every holding, in the account's
+			// currency: one in another is converted at the day's rate
+			// before it is taken off. Without a rate the cash is not known
+			// for the day, and the account is not valued rather than
+			// counting the holding twice.
+			if isBalanceKnown {
 				holdingValue, err := finance.ParseAmount(holding.HoldingValue)
 				if err != nil {
 					return nil, fmt.Errorf("%w: a holding's value is not a number", ErrInvalidArguments)
 				}
-				cashValue.Sub(cashValue, holdingValue)
+				if currencyCode != account.CurrencyCode && account.CurrencyCode != "" {
+					pairRate, err := self.ExchangeRate(currencyCode, account.CurrencyCode, syncedOn)
+					var noRate *finance.ErrNoExchangeRate
+					switch {
+					case errors.As(err, &noRate):
+						isCashUnknown = true
+						holdingValue = nil
+					case err != nil:
+						return nil, err
+					default:
+						rate, err := finance.ParseAmount(pairRate.Rate)
+						if err != nil {
+							return nil, err
+						}
+						holdingValue.Mul(holdingValue, rate)
+					}
+				}
+				if holdingValue != nil {
+					cashValue.Sub(cashValue, holdingValue)
+				}
 			}
 			if valuationSource != string(models.ValuationSourceFinanceSync) {
 				continue
@@ -372,8 +405,14 @@ func (self *transaction) applyFinanceHoldings(agentId string, syncResult *financ
 			}
 		}
 
+		if isCashUnknown {
+			holdingsApplied.isValuationSkipped[financeAccountId] = true
+			continue
+		}
 		cashAccount := account
-		cashAccount.CurrentBalance = finance.FormatAmount(cashValue)
+		if isBalanceKnown {
+			cashAccount.CurrentBalance = finance.FormatAmount(cashValue)
+		}
 		holdingsApplied.accountByFinanceAccountId[financeAccountId] = cashAccount
 	}
 	return holdingsApplied, nil
@@ -416,26 +455,6 @@ func (self *transaction) holdingAsset(agentId, financeAccountId, securityId stri
 		return found[0].ID, found[0].ValuationSource, false, nil
 	}
 
-	// The same holding linked again, after its finance source was deleted:
-	// the asset the old link made was kept, closed, with the security.
-	var detachedIds []string
-	if err := self.tx.Raw(`SELECT "id" FROM "agent_asset" AS "asset"
-		WHERE "agent_id" = ? AND "finance_account_id" IS NULL AND "finance_security_id" = ? AND "valuation_source" = ?
-		  AND EXISTS (SELECT 1 FROM "agent_asset_valuation" WHERE "asset_id" = "asset"."id" AND "valuation_source" = ?)
-		LIMIT 2`, agentId, securityId, string(models.ValuationSourceManual), string(models.ValuationSourceFinanceSync)).
-		Scan(&detachedIds).Error; err != nil {
-		return "", "", false, err
-	}
-	if len(detachedIds) == 1 {
-		if err := self.tx.Model(&agentAssetModel{}).Where(`"agent_id" = ? AND "id" = ?`, agentId, detachedIds[0]).Updates(map[string]any{
-			"finance_account_id": financeAccountId, "valuation_source": string(models.ValuationSourceFinanceSync), "closed_on": nil,
-			"modified_at": now,
-		}).Error; err != nil {
-			return "", "", false, err
-		}
-		return detachedIds[0], string(models.ValuationSourceFinanceSync), false, nil
-	}
-
 	var security agentFinanceSecurityModel
 	if err := self.tx.Where(`"agent_id" = ? AND "id" = ?`, agentId, securityId).First(&security).Error; err != nil {
 		return "", "", false, err
@@ -453,6 +472,29 @@ func (self *transaction) holdingAsset(agentId, financeAccountId, securityId stri
 	if accountName != "" {
 		assetName += " (" + accountName + ")"
 	}
+	// The same holding linked again, after its finance source was deleted:
+	// the asset the old link made was kept, closed, with the security. It
+	// is the same holding only when it is named for the same account as
+	// well: another brokerage holding the same fund is another holding.
+	var detachedIds []string
+	if err := self.tx.Raw(`SELECT "id" FROM "agent_asset" AS "asset"
+		WHERE "agent_id" = ? AND "finance_account_id" IS NULL AND "finance_security_id" = ? AND "valuation_source" = ?
+		  AND "asset_name" = ?
+		  AND EXISTS (SELECT 1 FROM "agent_asset_valuation" WHERE "asset_id" = "asset"."id" AND "valuation_source" = ?)
+		LIMIT 2`, agentId, securityId, string(models.ValuationSourceManual), assetName, string(models.ValuationSourceFinanceSync)).
+		Scan(&detachedIds).Error; err != nil {
+		return "", "", false, err
+	}
+	if len(detachedIds) == 1 {
+		if err := self.tx.Model(&agentAssetModel{}).Where(`"agent_id" = ? AND "id" = ?`, agentId, detachedIds[0]).Updates(map[string]any{
+			"finance_account_id": financeAccountId, "valuation_source": string(models.ValuationSourceFinanceSync), "closed_on": nil,
+			"modified_at": now,
+		}).Error; err != nil {
+			return "", "", false, err
+		}
+		return detachedIds[0], string(models.ValuationSourceFinanceSync), false, nil
+	}
+
 	model := &agentAssetModel{
 		ID: newID(), AgentID: agentId, AssetName: assetName, AssetKind: string(assetKind), IsLiability: false,
 		CurrencyCode: currencyCode, FinanceAccountID: &financeAccountId, FinanceSecurityID: &securityId,

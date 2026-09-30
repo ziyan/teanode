@@ -258,3 +258,115 @@ func TestFinanceRetirementAccountHoldingsAreRetirement(t *testing.T) {
 		}
 	})
 }
+
+// An account the person values by hand, or whose asset they deleted, gets
+// no holdings: they would count again what the person said it is worth, or
+// bring back what they took out of net worth.
+func TestFinanceHoldingsRespectTheAccountTheyAreIn(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "finance-holdings-by-hand")
+	applyFinanceSync(t, database, fixture, brokerageSync("2150.25", nil), "2026-09-12")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		account := assetsByName(t, tx, fixture.agentId)["Individual"]
+		if _, err := tx.UpdateAsset(fixture.agentId, account.ID, func(asset *models.Asset) error {
+			asset.ValuationSource = models.ValuationSourceManual
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	applyFinanceSync(t, database, fixture, brokerageSync("2150.25", fundHolding("12", "1824.58")), "2026-09-13")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if holding := assetsByName(t, tx, fixture.agentId)["EXIF (Individual)"]; holding != nil {
+			t.Errorf("a holding was made in an account valued by hand: %+v", holding)
+		}
+	})
+}
+
+// A holding in another currency than its account's is converted at the
+// day's rate before it is taken off the cash; without a rate the account is
+// not valued for the day rather than counting the holding twice.
+func TestFinanceHoldingInAnotherCurrency(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "finance-holdings-currency")
+	foreign := fundHolding("10", "1000")
+	foreign[0].CurrencyCode = "CAD"
+
+	applyFinanceSync(t, database, fixture, brokerageSync("2000", foreign), "2026-09-12")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if account := assetsByName(t, tx, fixture.agentId)["Individual"]; account.LatestValuation != nil {
+			t.Errorf("without a rate the account was valued: %+v", account.LatestValuation)
+		}
+		if _, err := tx.UpsertExchangeRates([]models.ExchangeRate{
+			{RateOn: "2026-09-13", CurrencyCode: "USD", EuroRate: "1.0000000000", RateSource: models.RateSourceECB},
+			{RateOn: "2026-09-13", CurrencyCode: "CAD", EuroRate: "1.2500000000", RateSource: models.RateSourceECB},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	applyFinanceSync(t, database, fixture, brokerageSync("2000", foreign), "2026-09-13")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		account := assetsByName(t, tx, fixture.agentId)["Individual"]
+		// 1000 CAD at 0.8 USD a dollar is 800 USD off the 2000.
+		if account.LatestValuation == nil || account.LatestValuation.Value != "1200.0000" {
+			t.Errorf("the cash after a converted holding: %+v", account.LatestValuation)
+		}
+	})
+}
+
+// A holding a deleted source left behind is taken back only by the same
+// account: another brokerage holding the same fund starts its own.
+func TestFinanceHoldingNotTakenBackByAnotherAccount(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "finance-holding-other-account")
+	applyFinanceSync(t, database, fixture, brokerageSync("2150.25", fundHolding("12", "1824.58")), "2026-09-12")
+	var other financeFixture
+	var holdingId string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		holdingId = assetsByName(t, tx, fixture.agentId)["EXIF (Individual)"].ID
+		if _, err := tx.DetachAssetsOfSource(fixture.agentId, fixture.sourceId, "2026-09-12"); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.DeleteAgentSource(fixture.agentId, fixture.sourceId); err != nil {
+			t.Fatal(err)
+		}
+		source, err := tx.PutAgentSource(&models.AgentKnowledgeSource{
+			AgentID: fixture.agentId, Kind: models.SourceWeb, Name: "another brokerage",
+			Specification: models.AgentKnowledgeSpecification{Start: "https://example.com/"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		other = financeFixture{agentId: fixture.agentId, sourceId: source.ID}
+	})
+	otherBrokerage := brokerageSync("900", fundHolding("5", "752.50"))
+	otherBrokerage.Accounts[0].AccountName = "Joint"
+	applyFinanceSync(t, database, other, otherBrokerage, "2026-09-14")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		assets := assetsByName(t, tx, fixture.agentId)
+		kept, started := assets["EXIF (Individual)"], assets["EXIF (Joint)"]
+		if kept == nil || kept.ID != holdingId || kept.ClosedOn == "" || kept.FinanceAccountID != "" {
+			t.Errorf("the old brokerage's holding was taken: %+v", kept)
+		}
+		if started == nil || started.ID == holdingId {
+			t.Errorf("the other brokerage did not start its own holding: %+v", started)
+		}
+	})
+}
+
+// A balance the provider did not report stays unknown: the account's cash
+// is not the holdings taken off nothing.
+func TestFinanceHoldingsWithNoBalanceLeaveTheCashUnknown(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "finance-holdings-no-balance")
+	applyFinanceSync(t, database, fixture, brokerageSync("", fundHolding("12", "1824.58")), "2026-09-12")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if account := assetsByName(t, tx, fixture.agentId)["Individual"]; account.LatestValuation != nil {
+			t.Errorf("an unknown balance was valued: %+v", account.LatestValuation)
+		}
+	})
+}
