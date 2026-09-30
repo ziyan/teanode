@@ -821,3 +821,38 @@ func TestCategorizeAttemptedIsListedAgainOnlyWhenChanged(t *testing.T) {
 		}
 	})
 }
+
+// A pending side is not paired: it is replaced by a new row when it posts,
+// and the posted row would find its partner already marked and be counted
+// as spending. The pair is made once both have posted.
+func TestDetectFinanceTransfersWaitsForPendingToPost(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "finance-transfer-pending")
+	result := sampleFinanceSync()
+	result.Added = []finance.Transaction{
+		{ProviderTransactionID: "payment-pending", ProviderAccountID: "account-checking", PostedOn: "2026-09-10", Amount: "-500", CurrencyCode: "USD", Description: "CARD PAYMENT", IsPending: true},
+		{ProviderTransactionID: "payment-in", ProviderAccountID: "account-card", PostedOn: "2026-09-10", Amount: "500", CurrencyCode: "USD", Description: "PAYMENT THANK YOU"},
+	}
+	applyFinanceSync(t, database, fixture, result, "2026-09-10")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if markedCount, err := tx.DetectFinanceTransfers(fixture.agentId, fixture.sourceId, "2026-09-01"); err != nil || markedCount != 0 {
+			t.Fatalf("a pending side was paired: %v %d", err, markedCount)
+		}
+	})
+
+	posted := sampleFinanceSync()
+	posted.Added = []finance.Transaction{
+		{ProviderTransactionID: "payment-posted", ProviderAccountID: "account-checking", PostedOn: "2026-09-11", Amount: "-500", CurrencyCode: "USD", Description: "CARD PAYMENT"},
+	}
+	applyFinanceSync(t, database, fixture, posted, "2026-09-11")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if markedCount, err := tx.DetectFinanceTransfers(fixture.agentId, fixture.sourceId, "2026-09-01"); err != nil || markedCount != 2 {
+			t.Fatalf("the posted pair: %v %d", err, markedCount)
+		}
+		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
+		if !found["payment-posted"].IsTransfer || !found["payment-in"].IsTransfer || found["payment-pending"].IsTransfer {
+			t.Errorf("posted %v, in %v, pending %v", found["payment-posted"].IsTransfer, found["payment-in"].IsTransfer, found["payment-pending"].IsTransfer)
+		}
+	})
+}
