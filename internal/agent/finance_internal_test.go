@@ -639,7 +639,7 @@ func TestCategorizeRunThatPlacesNothingIsNotRepeated(t *testing.T) {
 		}
 	})
 	afterSync := func() {
-		if err := fixture.worker.afterFinanceSync(t.Context(), fixture.run(), fixture.source, &db.FinanceSyncApplied{}, time.Now().UTC().Format(time.DateOnly), false); err != nil {
+		if err := fixture.worker.afterFinanceSync(t.Context(), fixture.run(), fixture.source, &db.FinanceSyncApplied{}, time.Now().UTC().Format(time.DateOnly), false, false); err != nil {
 			t.Fatalf("afterFinanceSync: %s", err)
 		}
 	}

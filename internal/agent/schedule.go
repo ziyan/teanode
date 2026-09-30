@@ -337,6 +337,23 @@ func (self *Agent) deliverSchedule(ctx context.Context, run *Run, schedule *mode
 	return self.mailToPerson(ctx, run, subject, body)
 }
 
+// AssetEstimatePrompt is the standing instruction of the schedule that
+// estimates the person's assets from the web, as the person's own words,
+// because the person is who allowed the estimates. It names only the
+// estimate description as what may be searched with: that is what the
+// person agreed to send to a search provider for each asset. An ordinary
+// schedule row, like the brief's, which the person can rewrite or stop.
+func AssetEstimatePrompt() string {
+	return strings.Join([]string{
+		"Estimate what each of my assets that allows estimates is worth today.",
+		"",
+		"Use the finance tool's assets operation and take the assets whose valuationSource is agent_estimate and whose isEstimateAllowed is true, skipping any whose latest agent_estimate valuation is less than 25 days old. " +
+			"For each, search the web with its estimateDescription and nothing else about me, then record one valuation with the finance tool's record_valuation: valuation_source agent_estimate, today's date, estimate_low and estimate_high, a short valuation_note on what the estimate rests on, and evidence_urls for the pages you used.",
+		"",
+		"Reply with one line per asset: its name and the value you recorded, or why you left it. If no asset needed an estimate, say so in one line.",
+	}, "\n")
+}
+
 // BriefPrompt is the daily brief's standing instruction, as the person's own
 // words, because the person is who turned it on.
 //

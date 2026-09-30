@@ -146,6 +146,19 @@ type SpendingCategoryDay struct {
 	SpendingAmount string `json:"spendingAmount"`
 }
 
+// CashFlowDay is one day's income and spending in one currency, as the
+// Spending section and cash flow count them: spending is money out less
+// refunds in spending categories that are not income, and money out with no
+// spending category; income is what income categories took in, and money in
+// with no spending category. Transfers are left out of both.
+type CashFlowDay struct {
+	// CashFlowOn is the day, "2006-01-02".
+	CashFlowOn     string `json:"cashFlowOn"`
+	CurrencyCode   string `json:"currencyCode"`
+	IncomeAmount   string `json:"incomeAmount"`
+	SpendingAmount string `json:"spendingAmount"`
+}
+
 // MerchantMonthSpending is what one merchant charged one spending category
 // in one month, in one currency: what the budget pace reads to expect a
 // fixed monthly charge before it lands.

@@ -6,6 +6,24 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.91.0] - 2026-09-30
+
+### Added
+
+- Allowing the agent to estimate an asset (a car, a house) estimates it right away and again on the first of each month, through a schedule you can see, edit or switch off. (#254)
+
+## [0.90.0] - 2026-09-30
+
+### Added
+
+- Built-in spending categories for education, kids, business services, taxes and loans; transactions already filed under other by the provider's category move to them on the next sync. (#258)
+
+## [0.89.1] - 2026-09-30
+
+### Fixed
+
+- A newly linked institution fills in its history within minutes on its own, without pressing Sync. (#255)
+
 ## [0.89.0] - 2026-09-30
 
 ### Added

@@ -96,6 +96,13 @@ document passes: `runIngest` hands it to `runFinanceSync`
 (`internal/agent/ingest_finance.go`) before anything about documents or the
 knowledge feature switch.
 
+A new finance source is due at once, so its first sync starts within a
+minute of the link. A provider can say it is still gathering the history (Plaid
+does, in `transactions_update_status`, for a while after a link); the source
+then syncs again in five minutes rather than at its next scheduled time, for
+its first day at most, and the one pass over the whole history for transfers
+waits until the history is complete.
+
 A sync opens the credential, asks the provider for what changed, and writes it
 in one database transaction (`ApplyFinanceSync` in
 `internal/db/database_finance.go`): finance accounts upserted, finance
@@ -148,7 +155,14 @@ so the sync stores its absolute value.
 Accounts reachable only through a connected server are read by the agent on a
 daily schedule the person creates, which records the value with the `finance`
 tool. Houses and cars are estimated from the web only where the person allowed
-it for that asset, on a schedule, with a range and the pages used.
+it for that asset, with a range and the pages used. Setting an asset to
+`agent_estimate` with estimates allowed makes the schedule "Estimate asset
+values" (the first of each month, the person's own words, delivered to the
+drawer) when there is none, and runs it at once, so the asset has a value the
+same day. The schedule is found by name, like the daily brief's: renamed, it is
+the person's, and a new one is made beside it; switched off, it stays off
+and nothing is estimated until the person switches it on again. Its prompt searches with each asset's estimate description
+and nothing else.
 
 ## Investments
 
@@ -198,6 +212,12 @@ metadata.
 
 Transfers between the person's own finance accounts, and card payments, are
 marked and count as neither spending nor income.
+
+Spending means one thing everywhere it is shown (budgets, the day-by-day
+chart, cash flow, the Spending section's month chart and summary): money out
+less money in for a spending category that is not income, so a refund lowers
+the spending it refunds, plus money out with no spending category. Income is
+what income categories took in, plus money in with no spending category.
 
 A budget is an amount per spending category per month, changed by adding a
 row effective from a month. `BudgetStatus` (`internal/agent/budget_status.go`)

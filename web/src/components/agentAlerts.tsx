@@ -8,6 +8,7 @@ import { SettingsEmpty, SettingsRow, SettingsSection } from './settingsList'
 import { useToast } from './toast'
 import { useQuery } from './useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
+import { useSpendingCategoryDisplayName } from '../pages/finance/spendingCategoryName'
 
 // The Alerts card on the agent's Overview: what the agent told the person
 // unasked, with a Mute for each, and below them what they muted, with an
@@ -66,6 +67,7 @@ export function muteTargets(alert: AgentAlert): MuteChoice[] {
 
 export function AlertsCard() {
   const { t } = useTranslation()
+  const categoryName = useSpendingCategoryDisplayName()
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const [muting, setMuting] = useState<AgentAlert | null>(null)
@@ -112,7 +114,7 @@ export function AlertsCard() {
   const targetLabel = (scope: MuteScope, target: string): string => {
     if (scope === 'spendingCategory') {
       const found = spendingCategories.data?.SpendingCategories.find((category) => category.id === target)
-      return found ? found.spendingCategoryName : t('alerts.deletedSpendingCategory')
+      return found ? categoryName(found.spendingCategoryName) : t('alerts.deletedSpendingCategory')
     }
     if (scope === 'kind' && target === 'budget') return t('alerts.kindBudget')
     return target

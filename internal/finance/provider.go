@@ -171,6 +171,11 @@ type SyncResult struct {
 	NextCursor                    string
 	InstitutionName               string
 	ProviderWarnings              []string
+
+	// IsHistoryIncomplete says the provider is still gathering the finance
+	// source's history, as it does for a while after a link, so another
+	// sync soon brings more than the next scheduled one would wait for.
+	IsHistoryIncomplete bool
 }
 
 // CredentialDescription is what a provider says about a credential a
