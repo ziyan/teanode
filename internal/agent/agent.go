@@ -172,7 +172,7 @@ func (self *Agent) Catalog() *Catalog {
 }
 
 // PlanUsage is what the named provider's plan last said of its allowance, or
-// nil for a provider paid by the token, or one not answered since the start.
+// nil for a provider paid by the token, or one whose plan has never answered.
 func (self *Agent) PlanUsage(provider string) *llm.PlanUsage {
 	return self.settings.Registry.PlanUsage(provider)
 }

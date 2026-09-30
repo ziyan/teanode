@@ -72,6 +72,11 @@ type codex struct {
 
 		// last is the whole of what was last said, for the dashboard.
 		last *PlanUsage
+
+		// keep is handed a reading worth writing down, and keptAt is
+		// when it last was.
+		keep   func(usage *PlanUsage)
+		keptAt time.Time
 	}
 
 	// isNoReasoningRefused is set once the plan has refused an effort of
@@ -326,8 +331,19 @@ func (self *codex) notePlanUsage(header http.Header) {
 	}
 	isChanged := !usage.isKnown || primary != usage.primaryPercent || secondary != usage.secondaryPercent
 	usage.primaryPercent, usage.secondaryPercent, usage.isKnown = primary, secondary, true
-	usage.last = planUsageOf(header, usage.last, time.Now())
+	now := time.Now()
+	usage.last = planUsageOf(header, usage.last, now)
+	keep := usage.keep
+	isWorthKeeping := keep != nil && (isChanged || now.Sub(usage.keptAt) >= planUsageKeepInterval)
+	var kept *PlanUsage
+	if isWorthKeeping {
+		usage.keptAt = now
+		kept = copyPlanUsage(usage.last)
+	}
 	usage.Unlock()
+	if isWorthKeeping {
+		keep(kept)
+	}
 	if isChanged {
 		log.Noticef("the %s plan has used %d%% of its %s window and %d%% of its %s one (they reset in %s and %s)",
 			config.AgentProviderKindCodex,
@@ -375,13 +391,37 @@ func (self *codex) planUsageNow(now time.Time) *PlanUsage {
 	if self.planUsage.last == nil {
 		return nil
 	}
-	copied := *self.planUsage.last
-	copied.Windows = append([]PlanWindow(nil), copied.Windows...)
+	copied := copyPlanUsage(self.planUsage.last)
 	for index := range copied.Windows {
 		if copied.Windows[index].hasReset(now) {
 			copied.Windows[index].UsedPercent = 0
 		}
 	}
+	return copied
+}
+
+// restorePlanUsage takes a reading kept from before a restart, unless the
+// plan has answered since. The log still says the first reading this run
+// hears, since it is not known to be unchanged.
+func (self *codex) restorePlanUsage(usage *PlanUsage) {
+	self.planUsage.Lock()
+	defer self.planUsage.Unlock()
+	if self.planUsage.last == nil {
+		self.planUsage.last = copyPlanUsage(usage)
+	}
+}
+
+// onPlanUsage sets who is handed each reading worth keeping.
+func (self *codex) onPlanUsage(keep func(usage *PlanUsage)) {
+	self.planUsage.Lock()
+	defer self.planUsage.Unlock()
+	self.planUsage.keep = keep
+}
+
+// copyPlanUsage is a reading that shares nothing with the one given.
+func copyPlanUsage(usage *PlanUsage) *PlanUsage {
+	copied := *usage
+	copied.Windows = append([]PlanWindow(nil), usage.Windows...)
 	return &copied
 }
 
