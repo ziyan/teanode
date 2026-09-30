@@ -21,7 +21,7 @@ type queryExecution struct {
 // that do, and so read in phases of their own rather than inside one
 // transaction held open while the model answers: recall for a question
 // embeds it, and a survey is minutes of runs.
-var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgentMemory": true}
+var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgentMemory": true, "JudgeAgentRetrievalPlan": true}
 
 // Queries materialize their results within each root resolver. Keeping the
 // transaction there lets model-backed resolvers use separate read phases.

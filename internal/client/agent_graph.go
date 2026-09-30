@@ -87,51 +87,77 @@ type AgentGraphSearch struct {
 // from the graph: the pages, each with the facts recall would have put in
 // front of the model.
 type AgentRecall struct {
-	Pages []*AgentRecalledPage `json:"pages"`
+	// RetrievalMode is basic, or planned when a plan was followed.
+	RetrievalMode string               `json:"retrievalMode"`
+	Pages         []*AgentRecalledPage `json:"pages"`
 
 	// Explanation is why, when it was asked for.
 	Explanation *AgentRecallExplanation `json:"explanation,omitempty"`
 }
 
-// AgentRecallExplanation is how one question's recall went: what each
-// search found, and why each page and fact was carried or left out.
+// AgentRetrievalPlan is a retrieval plan to follow: at most two focused
+// searches, and whether the question is about a whole area.
+type AgentRetrievalPlan struct {
+	Searches []string `json:"searches"`
+	IsBroad  bool     `json:"isBroad"`
+}
+
+// AgentRecallExplanation is how one question's recall went: each query,
+// what each of its lists found, and why each page and fact was carried or
+// left out.
 type AgentRecallExplanation struct {
-	Searches []*AgentRecallSearch `json:"searches"`
-	Pages    []*AgentRecallPage   `json:"pages"`
-	Facts    []*AgentRecallFact   `json:"facts"`
+	RetrievalMode      string               `json:"retrievalMode"`
+	Plan               *AgentRetrievalPlan  `json:"plan"`
+	Queries            []*AgentRecallQuery  `json:"queries"`
+	Searches           []*AgentRecallSearch `json:"searches"`
+	Pages              []*AgentRecallPage   `json:"pages"`
+	Facts              []*AgentRecallFact   `json:"facts"`
+	IsBroadNoteCarried bool                 `json:"isBroadNoteCarried"`
 
 	TokenBudget int `json:"tokenBudget"`
 	TokensSpent int `json:"tokensSpent"`
 }
 
-// AgentRecallSearch is one search and how many it found.
+// AgentRecallQuery is one query a retrieval ran.
+type AgentRecallQuery struct {
+	QueryID   string `json:"queryId"`
+	QueryKind string `json:"queryKind"`
+	QueryText string `json:"queryText"`
+}
+
+// AgentRecallSearch is one list a query produced, and how much it found.
 type AgentRecallSearch struct {
+	QueryID    string `json:"queryId"`
 	SearchName string `json:"searchName"`
 	FoundCount int    `json:"foundCount"`
 }
 
+// AgentRecallRank is where a page or fact stood in one list.
+type AgentRecallRank struct {
+	QueryID    string `json:"queryId"`
+	SearchName string `json:"searchName"`
+	Rank       int    `json:"rank"`
+}
+
 // AgentRecallPage is one page the searches found and what became of it.
 type AgentRecallPage struct {
-	Path                   string `json:"path"`
-	FusedRank              int    `json:"fusedRank"`
-	WordsRank              int    `json:"wordsRank"`
-	MeaningRank            int    `json:"meaningRank"`
-	SectionRank            int    `json:"sectionRank"`
-	HitFactCount           int    `json:"hitFactCount"`
-	RecallDecision         string `json:"recallDecision"`
-	OverviewSectionHeading string `json:"overviewSectionHeading"`
-	SectionChoice          string `json:"sectionChoice"`
-	CarriedFactCount       int    `json:"carriedFactCount"`
-	TokenCount             int    `json:"tokenCount"`
+	Path                   string             `json:"path"`
+	FusedRank              int                `json:"fusedRank"`
+	Ranks                  []*AgentRecallRank `json:"ranks"`
+	HitFactCount           int                `json:"hitFactCount"`
+	RecallDecision         string             `json:"recallDecision"`
+	OverviewSectionHeading string             `json:"overviewSectionHeading"`
+	SectionChoice          string             `json:"sectionChoice"`
+	CarriedFactCount       int                `json:"carriedFactCount"`
+	TokenCount             int                `json:"tokenCount"`
 }
 
 // AgentRecallFact is one fact the searches found and what became of it.
 type AgentRecallFact struct {
-	Reference      string `json:"reference"`
-	FusedRank      int    `json:"fusedRank"`
-	WordsRank      int    `json:"wordsRank"`
-	MeaningRank    int    `json:"meaningRank"`
-	RecallDecision string `json:"recallDecision"`
+	Reference      string             `json:"reference"`
+	FusedRank      int                `json:"fusedRank"`
+	Ranks          []*AgentRecallRank `json:"ranks"`
+	RecallDecision string             `json:"recallDecision"`
 }
 
 // AgentRecalledPage is one of those pages.
@@ -339,13 +365,14 @@ const (
 			facts { fact ` + factFields + ` path name }
 		}
 	}`
-	DocumentEvaluateAgentAnswer = `mutation ($question: String!, $expectedAnswer: String!, $outdatedAnswer: String, $answerFrom: String!) {
-		EvaluateAgentAnswer(question: $question, expectedAnswer: $expectedAnswer, outdatedAnswer: $outdatedAnswer, answerFrom: $answerFrom) {
+	DocumentEvaluateAgentAnswer = `mutation ($question: String!, $expectedAnswer: String!, $outdatedAnswer: String, $answerFrom: String!, $plannedSearches: [String!], $isBroad: Boolean) {
+		EvaluateAgentAnswer(question: $question, expectedAnswer: $expectedAnswer, outdatedAnswer: $outdatedAnswer, answerFrom: $answerFrom, plannedSearches: $plannedSearches, isBroad: $isBroad) {
 			answerText answerVerdict verdictReason factCount passageCount cost currency answerDurationMS
 		}
 	}`
-	DocumentRecallAgentMemory = `query ($question: String!) {
-		RecallAgentMemory(question: $question) {
+	DocumentRecallAgentMemory = `query ($question: String!, $plannedSearches: [String!], $isBroad: Boolean) {
+		RecallAgentMemory(question: $question, plannedSearches: $plannedSearches, isBroad: $isBroad) {
+			retrievalMode
 			pages { path summary overview facts { number text } }
 		}
 	}`
@@ -355,14 +382,20 @@ const (
 			memberCount memberShownCount memberWithoutOverviewCount linkCount linkShownCount
 		}
 	}`
-	DocumentExplainAgentRecall = `query ($question: String!) {
-		RecallAgentMemory(question: $question, isExplained: true) {
+	DocumentJudgeAgentRetrievalPlan = `query ($question: String!) {
+		JudgeAgentRetrievalPlan(question: $question) { depth depthReason plannedSearches isBroad cost currency }
+	}`
+	DocumentExplainAgentRecall = `query ($question: String!, $plannedSearches: [String!], $isBroad: Boolean) {
+		RecallAgentMemory(question: $question, isExplained: true, plannedSearches: $plannedSearches, isBroad: $isBroad) {
+			retrievalMode
 			pages { path summary overview facts { number text } }
 			explanation {
-				searches { searchName foundCount }
-				pages { path fusedRank wordsRank meaningRank sectionRank hitFactCount recallDecision overviewSectionHeading sectionChoice carriedFactCount tokenCount }
-				facts { reference fusedRank wordsRank meaningRank recallDecision }
-				tokenBudget tokensSpent
+				retrievalMode plan { searches isBroad }
+				queries { queryId queryKind queryText }
+				searches { queryId searchName foundCount }
+				pages { path fusedRank ranks { queryId searchName rank } hitFactCount recallDecision overviewSectionHeading sectionChoice carriedFactCount tokenCount }
+				facts { reference fusedRank ranks { queryId searchName rank } recallDecision }
+				isBroadNoteCarried tokenBudget tokensSpent
 			}
 		}
 	}`
@@ -451,11 +484,11 @@ func SearchAgentGraph(ctx context.Context, connection *Client, query string, fir
 
 // RecallAgentMemory is what a turn asking this question would have been
 // carried from the graph. It asks nothing of a model and changes nothing.
-func RecallAgentMemory(ctx context.Context, connection *Client, question string) (*AgentRecall, error) {
+func RecallAgentMemory(ctx context.Context, connection *Client, question string, plan *AgentRetrievalPlan) (*AgentRecall, error) {
 	var result struct {
 		RecallAgentMemory *AgentRecall `json:"RecallAgentMemory"`
 	}
-	if err := connection.Execute(ctx, DocumentRecallAgentMemory, map[string]any{"question": question}, &result); err != nil {
+	if err := connection.Execute(ctx, DocumentRecallAgentMemory, recallVariables(question, plan), &result); err != nil {
 		return nil, err
 	}
 	return result.RecallAgentMemory, nil
@@ -489,13 +522,51 @@ func GetAgentOverviewState(ctx context.Context, connection *Client, path string)
 	return result.AgentOverviewState, nil
 }
 
+// AgentJudgedPlan is what the depth judgement said of a question on its
+// own, and what the judgement cost.
+type AgentJudgedPlan struct {
+	Depth           string   `json:"depth"`
+	DepthReason     string   `json:"depthReason"`
+	PlannedSearches []string `json:"plannedSearches"`
+	IsBroad         bool     `json:"isBroad"`
+	Cost            float64  `json:"cost"`
+	Currency        string   `json:"currency"`
+}
+
+// JudgeAgentRetrievalPlan asks the depth judgement what plan a live turn
+// would follow for a question: one call to the fast model.
+func JudgeAgentRetrievalPlan(ctx context.Context, connection *Client, question string) (*AgentJudgedPlan, error) {
+	var result struct {
+		JudgeAgentRetrievalPlan *AgentJudgedPlan `json:"JudgeAgentRetrievalPlan"`
+	}
+	if err := connection.Execute(ctx, DocumentJudgeAgentRetrievalPlan, map[string]any{"question": question}, &result); err != nil {
+		return nil, err
+	}
+	return result.JudgeAgentRetrievalPlan, nil
+}
+
+// recallVariables are a recall's question and, where one is given, the
+// retrieval plan to follow.
+func recallVariables(question string, plan *AgentRetrievalPlan) map[string]any {
+	variables := map[string]any{"question": question}
+	if plan != nil {
+		if len(plan.Searches) > 0 {
+			variables["plannedSearches"] = plan.Searches
+		}
+		if plan.IsBroad {
+			variables["isBroad"] = true
+		}
+	}
+	return variables
+}
+
 // ExplainAgentRecall is RecallAgentMemory and why: what each search found,
 // and why each page and fact was carried or left out.
-func ExplainAgentRecall(ctx context.Context, connection *Client, question string) (*AgentRecall, error) {
+func ExplainAgentRecall(ctx context.Context, connection *Client, question string, plan *AgentRetrievalPlan) (*AgentRecall, error) {
 	var result struct {
 		RecallAgentMemory *AgentRecall `json:"RecallAgentMemory"`
 	}
-	if err := connection.Execute(ctx, DocumentExplainAgentRecall, map[string]any{"question": question}, &result); err != nil {
+	if err := connection.Execute(ctx, DocumentExplainAgentRecall, recallVariables(question, plan), &result); err != nil {
 		return nil, err
 	}
 	return result.RecallAgentMemory, nil
@@ -516,13 +587,21 @@ type AgentAnswerEvaluation struct {
 
 // EvaluateAgentAnswer answers a question from memory, sources or both,
 // and grades the answer against the expected one.
-func EvaluateAgentAnswer(ctx context.Context, connection *Client, question, expectedAnswer, outdatedAnswer, answerFrom string) (*AgentAnswerEvaluation, error) {
+func EvaluateAgentAnswer(ctx context.Context, connection *Client, question, expectedAnswer, outdatedAnswer, answerFrom string, plan *AgentRetrievalPlan) (*AgentAnswerEvaluation, error) {
 	var result struct {
 		EvaluateAgentAnswer *AgentAnswerEvaluation `json:"EvaluateAgentAnswer"`
 	}
 	variables := map[string]any{"question": question, "expectedAnswer": expectedAnswer, "answerFrom": answerFrom}
 	if outdatedAnswer != "" {
 		variables["outdatedAnswer"] = outdatedAnswer
+	}
+	if plan != nil {
+		if len(plan.Searches) > 0 {
+			variables["plannedSearches"] = plan.Searches
+		}
+		if plan.IsBroad {
+			variables["isBroad"] = true
+		}
 	}
 	if err := connection.Execute(ctx, DocumentEvaluateAgentAnswer, variables, &result); err != nil {
 		return nil, err

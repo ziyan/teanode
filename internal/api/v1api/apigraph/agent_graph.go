@@ -53,6 +53,12 @@ type AgentGraphQuery interface {
 	// Needs agent:use.
 	RecallAgentMemory(ctx context.Context, arguments RecallAgentMemoryArguments) (*RecallAgentMemoryResult, error)
 
+	// What the depth judgement says of a question on its own: how deep it
+	// deserves and the retrieval plan a live turn would follow for it, for
+	// an evaluation to replay. One call to the fast model, priced as
+	// evaluate. Needs agent:use.
+	JudgeAgentRetrievalPlan(ctx context.Context, arguments JudgeAgentRetrievalPlanArguments) (*AgentJudgedPlanView, error)
+
 	// How a page's overview stands: of the pages under it, the members of
 	// a theme and the pages linked to it, how many its prompt shows of how
 	// many there are, and whether what it is written from has changed
@@ -276,6 +282,13 @@ type RecallAgentMemoryArguments struct {
 	// IsExplained asks for the explanation as well: what each search
 	// found, and why each page and fact was carried or left out.
 	IsExplained *bool `json:"isExplained" graphapi:"nullable"`
+
+	// PlannedSearches and IsBroad are a retrieval plan to follow, as a live
+	// turn follows its depth judgement's: at most two focused searches, and
+	// whether the question is about a whole area. Left out, recall is the
+	// basic one. No model is asked for a plan.
+	PlannedSearches []string `json:"plannedSearches" graphapi:"nullable"`
+	IsBroad         *bool    `json:"isBroad" graphapi:"nullable"`
 }
 
 // SurveyAgentMemoryArguments are the question a survey answers and
@@ -337,8 +350,14 @@ type EvaluateAgentAnswerArguments struct {
 	// something that changed; an answer giving it is stale.
 	OutdatedAnswer string `json:"outdatedAnswer" graphapi:"nullable"`
 	// AnswerFrom is memory, sources or both, or agent (agent@low,
-	// agent@medium, agent@high) for a turn of the agent itself.
+	// agent@medium, agent@high) for a turn of the agent itself; memory and
+	// both end in @planned to follow the retrieval plan given.
 	AnswerFrom string `json:"answerFrom"`
+
+	// PlannedSearches and IsBroad are the retrieval plan an @planned
+	// answer follows. No model is asked for one.
+	PlannedSearches []string `json:"plannedSearches" graphapi:"nullable"`
+	IsBroad         *bool    `json:"isBroad" graphapi:"nullable"`
 }
 
 // AgentAnswerEvaluation is one question answered and graded.
@@ -533,6 +552,9 @@ type AgentGraphSearchResult struct {
 
 // RecallAgentMemoryResult is what a turn would have been carried.
 type RecallAgentMemoryResult struct {
+	// RetrievalMode is basic, or planned when a plan was followed.
+	RetrievalMode string `json:"retrievalMode"`
+
 	Pages []*RecalledAgentPage `json:"pages"`
 
 	// Explanation is why, when it was asked for.
@@ -550,6 +572,21 @@ type RecalledAgentPage struct {
 	// heading included, or empty where it carried none.
 	Overview string               `json:"overview" graphapi:"nullable"`
 	Facts    []*RecalledAgentFact `json:"facts"`
+}
+
+// JudgeAgentRetrievalPlanArguments is the question to judge.
+type JudgeAgentRetrievalPlanArguments struct {
+	Question string `json:"question"`
+}
+
+// AgentJudgedPlanView is what the depth judgement said of a question.
+type AgentJudgedPlanView struct {
+	Depth           string   `json:"depth"`
+	DepthReason     string   `json:"depthReason"`
+	PlannedSearches []string `json:"plannedSearches"`
+	IsBroad         bool     `json:"isBroad"`
+	Cost            float64  `json:"cost"`
+	Currency        string   `json:"currency"`
 }
 
 // AgentOverviewStateView is how a page's overview stands; see
@@ -1124,12 +1161,25 @@ func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentM
 	if question == "" {
 		return &RecallAgentMemoryResult{Pages: []*RecalledAgentPage{}}, nil
 	}
+	var plan *agent.RetrievalPlan
+	isBroad := arguments.IsBroad != nil && *arguments.IsBroad
+	if len(arguments.PlannedSearches) > 0 || isBroad {
+		if len(arguments.PlannedSearches) > 2 {
+			return nil, fmt.Errorf("%w: a retrieval plan has at most two searches", api.ErrInvalidArguments)
+		}
+		plan = &agent.RetrievalPlan{IsBroad: isBroad}
+		for _, search := range arguments.PlannedSearches {
+			if search = strings.TrimSpace(search); search != "" {
+				plan.Searches = append(plan.Searches, search)
+			}
+		}
+	}
 	var recalled []*agent.RecalledPage
 	var explanation *agent.RecallExplanation
 	if arguments.IsExplained != nil && *arguments.IsExplained {
-		recalled, explanation, err = worker.ExplainRecall(ctx, found, principal.User, question)
+		recalled, explanation, err = worker.ExplainRecall(ctx, found, principal.User, question, plan)
 	} else {
-		recalled, err = worker.RecallForQuestion(ctx, found, principal.User, question)
+		recalled, err = worker.RecallForQuestionPlanned(ctx, found, principal.User, question, plan)
 	}
 	if err != nil {
 		return nil, err
@@ -1141,7 +1191,11 @@ func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentM
 	if current.ID != found.ID {
 		return nil, agent.ErrUnavailable
 	}
-	result := &RecallAgentMemoryResult{Pages: make([]*RecalledAgentPage, 0, len(recalled)), Explanation: explanation}
+	retrievalMode := agent.RetrievalModeBasic
+	if plan != nil && (len(plan.Searches) > 0 || plan.IsBroad) {
+		retrievalMode = agent.RetrievalModePlanned
+	}
+	result := &RecallAgentMemoryResult{RetrievalMode: retrievalMode, Pages: make([]*RecalledAgentPage, 0, len(recalled)), Explanation: explanation}
 	for _, page := range recalled {
 		carried := &RecalledAgentPage{Path: page.Path, Summary: page.Summary, Overview: page.Overview, Facts: make([]*RecalledAgentFact, 0, len(page.Facts))}
 		for _, fact := range page.Facts {
@@ -1668,6 +1722,33 @@ func (self *graph) SaveAgentNode(ctx context.Context, arguments SaveAgentNodeArg
 		node.Pinned = *arguments.Pinned
 	}
 	return tx.PutAgentNode(node)
+}
+
+// JudgeAgentRetrievalPlan is a model-backed query: it reads the person in a
+// short phase of its own, asks the model with no transaction open, and
+// reads the person again before answering, as recall does.
+func (self *graph) JudgeAgentRetrievalPlan(ctx context.Context, arguments JudgeAgentRetrievalPlanArguments) (*AgentJudgedPlanView, error) {
+	principal, found, err := self.requireRecallPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	judged, err := worker.JudgeRetrievalPlan(ctx, found, principal.User, arguments.Question)
+	if err != nil {
+		return nil, err
+	}
+	_, current, err := self.requireRecallPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if current.ID != found.ID {
+		return nil, agent.ErrUnavailable
+	}
+	return &AgentJudgedPlanView{Depth: judged.Depth, DepthReason: judged.Reason, PlannedSearches: nonNil(judged.Plan.Searches),
+		IsBroad: judged.Plan.IsBroad, Cost: judged.Cost, Currency: self.config.Current().Agent.Currency}, nil
 }
 
 func (self *graph) AgentOverviewState(ctx context.Context, arguments AgentGraphPageArguments) (*AgentOverviewStateView, error) {
@@ -2210,8 +2291,12 @@ func (self *graph) EvaluateAgentAnswer(ctx context.Context, arguments EvaluateAg
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
+	var plan *agent.RetrievalPlan
+	if len(arguments.PlannedSearches) > 0 || (arguments.IsBroad != nil && *arguments.IsBroad) {
+		plan = &agent.RetrievalPlan{Searches: arguments.PlannedSearches, IsBroad: arguments.IsBroad != nil && *arguments.IsBroad}
+	}
 	evaluation, err := worker.EvaluateAnswer(ctx, found, principal.User,
-		arguments.Question, arguments.ExpectedAnswer, arguments.OutdatedAnswer, strings.TrimSpace(arguments.AnswerFrom))
+		arguments.Question, arguments.ExpectedAnswer, arguments.OutdatedAnswer, strings.TrimSpace(arguments.AnswerFrom), plan)
 	if err != nil {
 		return nil, err
 	}

@@ -36,7 +36,7 @@ func TestAnAnswerIsGradedAgainstTheExpectedOne(t *testing.T) {
 			defer provider.Close()
 			worker, run := digestSplitWorld(t, database, provider.URL)
 			evaluation, err := worker.EvaluateAnswer(t.Context(), run.Agent, run.Owner,
-				"Where is Marigold moored?", "At the pier.", "At the marina.", AnswerFromMemory)
+				"Where is Marigold moored?", "At the pier.", "At the marina.", AnswerFromMemory, nil)
 			if err != nil {
 				t.Fatalf("EvaluateAnswer: %s", err)
 			}
@@ -61,7 +61,7 @@ func TestNotKnownIsAMissOrARightAbstain(t *testing.T) {
 		content, _ := json.Marshal("Not known.")
 		provider := scriptedProvider([]string{fmt.Sprintf(`{"choices":[{"delta":{"content":%s},"finish_reason":"stop"}]}`, content)})
 		worker, run := digestSplitWorld(t, database, provider.URL)
-		evaluation, err := worker.EvaluateAnswer(t.Context(), run.Agent, run.Owner, "Where is Marigold moored?", each.expected, "", AnswerFromMemory)
+		evaluation, err := worker.EvaluateAnswer(t.Context(), run.Agent, run.Owner, "Where is Marigold moored?", each.expected, "", AnswerFromMemory, nil)
 		provider.Close()
 		release()
 		if err != nil {
@@ -75,7 +75,7 @@ func TestNotKnownIsAMissOrARightAbstain(t *testing.T) {
 
 // What to answer from is checked before anything is asked.
 func TestAnAnswerFromNowhereIsRefused(t *testing.T) {
-	if _, err := (&Agent{}).EvaluateAnswer(t.Context(), &models.Agent{}, &models.User{}, "Where?", "Here.", "", "rumour"); err == nil || !strings.Contains(err.Error(), "memory, sources, both") {
+	if _, err := (&Agent{}).EvaluateAnswer(t.Context(), &models.Agent{}, &models.User{}, "Where?", "Here.", "", "rumour", nil); err == nil || !strings.Contains(err.Error(), "memory, sources, both") {
 		t.Fatalf("an unknown source was not refused: %v", err)
 	}
 }

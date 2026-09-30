@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -171,6 +172,72 @@ func TestRecallHTTPReleasesTransactionsAndRechecksAuthorization(test *testing.T)
 				test.Fatalf("requests=%d, transaction during model=%v, nested=%v", requestCount.Load(), hasOpenTransaction.Load(), tracked.hasNestedTransaction.Load())
 			}
 		})
+	}
+}
+
+// The judgement of a retrieval plan asks a model, so it reads in phases of
+// its own like recall; through the API, as the command line calls it, it
+// answers for the person the request names.
+func TestJudgeRetrievalPlanOverHTTP(test *testing.T) {
+	database, release := dbtest.AcquireDatabase(test)
+	defer release()
+	tracked := &queryTransactionDatabase{Database: database}
+	var owner *models.User
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		var err error
+		if owner, err = transaction.CreateUser(&models.User{Username: "fixture-owner"}); err != nil {
+			test.Fatal(err)
+		}
+		if _, err = transaction.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true}); err != nil {
+			test.Fatal(err)
+		}
+		role, err := transaction.CreateRole(&models.Role{Name: "Fixture role", Permissions: []models.Permission{models.PermissionAgentUse}})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.CreateGroup(&models.Group{Name: "Fixture group", UserIDs: []string{owner.ID}, RoleIDs: []string{role.ID}}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	var hasOpenTransaction atomic.Bool
+	provider := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if tracked.activeCount.Load() != 0 {
+			hasOpenTransaction.Store(true)
+		}
+		answer, _ := json.Marshal(`{"depth": "look", "reason": "it names an earlier choice", "searches": ["garden fence decision"], "isBroad": false}`)
+		_, _ = fmt.Fprintf(writer, `{"choices":[{"message":{"role":"assistant","content":%s},"finish_reason":"stop"}],"usage":{"prompt_tokens":50,"completion_tokens":10}}`, answer)
+	}))
+	defer provider.Close()
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	configuration.Agent.Providers = []config.AgentProvider{{Name: "fixture", Kind: "openai", BaseURL: provider.URL, APIKey: "fixture"}}
+	configuration.Agent.Models.Default = "fixture:writer"
+	configuration.Agent.Models.Fast = "fixture:fast"
+	registry, err := llm.Open(&configuration.Agent)
+	if err != nil {
+		test.Fatal(err)
+	}
+	worker := agent.New(&agent.Settings{Database: tracked, Registry: registry, Configuration: func() *config.Configuration { return configuration }})
+	component, err := New(tracked, config.NewMemoryStore(configuration), nil, nil, nil, nil, nil, nil, nil, &api.Settings{Agent: worker})
+	if err != nil {
+		test.Fatal(err)
+	}
+	encodedRequest, err := json.Marshal(graphRequest{Query: `query { JudgeAgentRetrievalPlan(question: "what did we decide about the garden fence?") { depth plannedSearches isBroad } }`})
+	if err != nil {
+		test.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, api.PathGraphQL, strings.NewReader(string(encodedRequest)))
+	request.Header.Set(api.AuthenticatedUsernameHeader, owner.Username)
+	response := httptest.NewRecorder()
+	component.(*graph).graphView(response, request)
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), `"errors"`) {
+		test.Fatalf("HTTP %d: %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "garden fence decision") {
+		test.Fatalf("no plan: %s", response.Body.String())
+	}
+	if hasOpenTransaction.Load() || tracked.hasNestedTransaction.Load() {
+		test.Fatal("a transaction was open while the model was asked")
 	}
 }
 

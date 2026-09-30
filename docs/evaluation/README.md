@@ -44,6 +44,7 @@ rather than at the top of the file.
 | `kind` | one of `direct`, `paraphrase`, `changed`, `multihop`, `abstain` |
 | `expects` | the facts recall has to carry for the question to be a hit |
 | `forbids` | the facts it must not carry |
+| `plan` | optional: the retrieval plan a live turn would follow, `{"searches": [...], "isBroad": false}`; see below |
 
 An entry of `expects` or `forbids` is a *claim*: a `path`, which is the
 page the fact sits on, and `words`, all of which must appear in one
@@ -93,6 +94,35 @@ To write one, ask the graph what it holds (`teanode agent memory get
 people/…`), pick the fact, then write the question the way you would have
 asked it rather than the way the fact is worded.
 
+## Replaying the plan a turn follows
+
+A live turn does not recall with the message's words alone. The fast call
+that judges how deep a message deserves also gives it a retrieval plan: up
+to two focused searches, and whether it asks about a whole area. By default
+`evaluate` and `answers` leave the plan out, so they measure the basic
+search. To measure what a turn really carries, judge the plans once and
+replay them:
+
+    teanode agent memory plan <file> --output planned.json
+    teanode agent memory evaluate planned.json --mode planned
+    teanode agent memory answers planned.json --from memory,memory@planned
+
+`plan` asks the depth judgement for each question, one call to the fast
+model a question, and writes the file back with each question's `plan`.
+A question the judgement gave no plan keeps none, and is recalled the way
+basic recall does it, which is what a turn does with it. `--stored` plans
+the memory check's questions instead of a file's. Judging once and saving
+the plan keeps the replay itself free and repeatable: the same file against
+the same graph carries the same facts.
+
+`recall --explain` prints every search a plan ran and where each page and
+fact ranked in it; `recall --search "<words>" --broad` follows a plan
+typed by hand.
+
+A replay runs against the graph as it is now. It is not a reconstruction
+of what a past turn saw: pages written, merged or used since then rank
+differently.
+
 ## Grading the answers
 
 Recall says whether the facts reached the model. Whether the answer came
@@ -107,6 +137,8 @@ conversation uses and no tools:
 - **sources** — from the passages the document search finds, as the
   search tool returns them.
 - **both** — from both, as a turn that searches has them.
+- **memory@planned**, **both@planned**: the same, with recall following
+  each question's `plan`, as a live turn follows its depth judgement's.
 
 The answer is then graded against the one the person gave, by the same
 model, as one of `correct`, `partial`, `not_known`, `stale` (it gave the
