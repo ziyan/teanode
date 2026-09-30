@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.85.2] - 2026-09-30
+
+### Fixed
+
+- The models tab keeps showing a subscription plan's last usage after the server restarts, instead of nothing until the plan next answers. (#243)
+
 ## [0.85.1] - 2026-09-30
 
 ### Fixed
