@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.92.3] - 2026-09-30
+
+### Changed
+
+- Adding an asset asks once whether your agent estimates it, and its hints sit under the fields they describe. (#262)
+
 ## [0.92.2] - 2026-09-30
 
 ### Fixed
