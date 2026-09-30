@@ -9,6 +9,7 @@ import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SeriesChart, dayLabel } from '../../components/seriesChart'
 import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
+import { useIsDesktop } from '../../components/sidebar'
 import { useToast } from '../../components/toast'
 import { useQuery } from '../../components/useQuery'
 import { Key, useTranslation } from '../../i18n/i18n'
@@ -19,10 +20,14 @@ import {
   AssetHistory,
   AssetValuation,
   CLOSE_ASSET,
+  CONVERT_CURRENCY,
   CREATE_ASSET,
+  CurrencyConversion,
   DELETE_ASSET,
   DELETE_VALUATION,
+  FINANCE_ACCOUNTS,
   FINANCE_TRADES,
+  FinanceAccount,
   FinanceTrade,
   FinanceTradePage,
   NET_WORTH,
@@ -41,12 +46,15 @@ import {
 import {
   CurrencyPicker,
   Money,
+  accountLabel,
   UnconvertedNote,
   compactMoney,
   useAct,
   useFinanceWords,
   useReportingCurrency,
 } from './financeCommon'
+import { AssetFilters, assetFiltersFromSearch, assetGroupRows, groupAssets, writeAssetFilters } from './assetFilters'
+import { RING_SLICE_COUNT, SpendingRing, foldIntoOther, ringSliceClass } from './spendingRing'
 
 // The valuation sources a person gives an asset they add or change: their
 // own values, or values their agent reads (from a connected server, say).
@@ -188,6 +196,13 @@ function NetWorthChart() {
   )
 }
 
+// The assets, a group a kind: what share of what is owned each kind is, as
+// a ring whose legend is the table under it, and what is owed beside it.
+// A kind is one line until it is opened, so a brokerage's hundred holdings
+// are one Investment line beside the house and the car; opened, its
+// holdings sit under their finance account. Words search every name and
+// open the kinds they match. Every row is one line: a holding's quantity
+// and price are a column of their own rather than a line under its value.
 function AssetsPanel({
   assets,
   linkTo,
@@ -195,11 +210,195 @@ function AssetsPanel({
   assets: { data: { Assets: Asset[] } | null; error: unknown; loading: boolean; reload: () => Promise<void> }
   linkTo: (id: string) => string
 }) {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const words = useFinanceWords()
-  const [isClosedShown, setIsClosedShown] = useState(false)
+  const isDesktop = useIsDesktop()
   const [adding, setAdding] = useState(false)
-  const list = (assets.data?.Assets ?? []).filter((asset) => isClosedShown || !asset.closedOn)
+  const [search, setSearch] = useSearchParams()
+  const filters = useMemo(() => assetFiltersFromSearch(search), [search])
+  const setFilters = (change: (previous: AssetFilters) => AssetFilters) =>
+    setSearch((previous) => writeAssetFilters(previous, change(assetFiltersFromSearch(previous))), { replace: true })
+  // The words are the box's own while they are typed, and go into the
+  // address (trimmed) once typing pauses: read back from the address, a
+  // space typed at the end was trimmed away before the next letter came.
+  const [typed, setTyped] = useState(filters.text)
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const text = typed.trim()
+      setSearch(
+        (previous) =>
+          assetFiltersFromSearch(previous).text === text
+            ? previous
+            : writeAssetFilters(previous, { ...assetFiltersFromSearch(previous), text }),
+        { replace: true },
+      )
+    }, 400)
+    return () => window.clearTimeout(timer)
+  }, [typed, setSearch])
+  // Words that arrive by the address, from Back or a link, are put in the
+  // box; words being typed are not overwritten by the address catching up.
+  useEffect(() => {
+    setTyped((previous) => (previous.trim() === filters.text ? previous : filters.text))
+  }, [filters.text])
+  const { reportingCurrencyCode, isLoaded: isReportingCurrencyLoaded } = useReportingCurrency()
+  const accounts = useQuery(() => graphql<{ FinanceAccounts: FinanceAccount[] }>(FINANCE_ACCOUNTS), [], {
+    refresh: false,
+  })
+  const all = useMemo(() => assets.data?.Assets ?? [], [assets.data])
+  // One rate a currency the assets are held in, to the reporting currency,
+  // so the kinds can be added up; a currency without one is named under
+  // the ring rather than added in.
+  const foreignCurrencyCodes = [
+    ...new Set(
+      all
+        .map((asset) => asset.latestValuation?.currencyCode ?? '')
+        .filter((code) => code && code !== reportingCurrencyCode),
+    ),
+  ].sort()
+  const rates = useQuery(
+    async () => {
+      const found: Record<string, number> = {}
+      if (!reportingCurrencyCode) return found
+      const answers = await Promise.allSettled(
+        foreignCurrencyCodes.map((fromCurrencyCode) =>
+          graphql<{ ConvertCurrency: CurrencyConversion }>(CONVERT_CURRENCY, {
+            amount: '1',
+            fromCurrencyCode,
+            toCurrencyCode: reportingCurrencyCode,
+          }),
+        ),
+      )
+      answers.forEach((answer, index) => {
+        // The rate itself: one unit converted comes back rounded to four
+        // places, which is a percent or more off for the yen and nothing at
+        // all for a currency worth less than a hundredth of a cent.
+        const rate = answer.status === 'fulfilled' ? amountOf(answer.value.ConvertCurrency.rate) : 0
+        if (rate > 0) found[foreignCurrencyCodes[index]] = rate
+      })
+      return found
+    },
+    [reportingCurrencyCode, foreignCurrencyCodes.join(',')],
+    { refresh: false },
+  )
+  const grouping = useMemo(
+    () => groupAssets(all, filters, reportingCurrencyCode, rates.data ?? {}),
+    [all, filters, reportingCurrencyCode, rates.data],
+  )
+  // The ring and the owned, owed and net worth beside it are always the
+  // whole picture; words searched for narrow only the table under them.
+  const whole = useMemo(
+    () => groupAssets(all, { ...filters, text: '' }, reportingCurrencyCode, rates.data ?? {}),
+    [all, filters, reportingCurrencyCode, rates.data],
+  )
+  // Until the rates have come, an asset in another currency would be left
+  // out of every total and named as unconverted, so neither is shown yet.
+  const isRatesReady = isReportingCurrencyLoaded && rates.data !== null && !rates.loading
+  const currency = reportingCurrencyCode || 'USD'
+  const slices = foldIntoOther(
+    whole.groups
+      .filter((group) => !group.isLiability)
+      .map((group) => ({ key: group.assetKind, label: words.assetKind(group.assetKind), amount: group.totalAmount })),
+    RING_SLICE_COUNT,
+  )
+  const sliceIndexes = new Map(slices.map((slice, index) => [slice.key, index]))
+  const percent = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 0 })
+  const [highlightedKey, setHighlightedKey] = useState<string | null>(null)
+  const accountName = (id?: string | null) => {
+    const account = (accounts.data?.FinanceAccounts ?? []).find((candidate) => candidate.id === id)
+    return account ? accountLabel(account) : ''
+  }
+  const isSearching = filters.text !== ''
+  const isExpanded = (assetKind: string) => isSearching || filters.expandedAssetKinds.includes(assetKind)
+  const toggle = (assetKind: string) =>
+    setFilters((previous) => ({
+      ...previous,
+      expandedAssetKinds: previous.expandedAssetKinds.includes(assetKind)
+        ? previous.expandedAssetKinds.filter((kind) => kind !== assetKind)
+        : [...previous.expandedAssetKinds, assetKind],
+    }))
+  const filterWords = [
+    filters.text ? t('finance.containingWords', { text: filters.text }) : '',
+    filters.isClosedShown ? t('finance.closedIncluded') : '',
+  ].filter(Boolean)
+
+  const filterControls = (
+    <>
+      <div className="row finance-filters">
+        <label className="finance-asset-search">
+          <span>{t('finance.searchAssets')}</span>
+          <input type="search" value={typed} onChange={(event) => setTyped(event.target.value)} />
+        </label>
+      </div>
+      {all.some((asset) => asset.closedOn) ? (
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={filters.isClosedShown}
+            onChange={(event) => {
+              const isClosedShown = event.target.checked
+              setFilters((previous) => ({ ...previous, isClosedShown }))
+            }}
+          />
+          {t('finance.showClosed')}
+        </label>
+      ) : null}
+    </>
+  )
+
+  // One row an asset: its name (a link to its page, one line, the whole
+  // name its title), its value, a holding's quantity and price, the day of
+  // the value and where it came from.
+  const assetRow = (asset: Asset) => {
+    const valuation = asset.latestValuation
+    return (
+      <tr key={asset.id} className="finance-asset-row">
+        <td>
+          <Link className="finance-asset-name" to={linkTo(asset.id)} title={asset.assetName}>
+            {asset.assetName}
+          </Link>
+          {asset.closedOn ? (
+            <>
+              {' '}
+              <Tag value={t('finance.closed')} />
+            </>
+          ) : null}
+        </td>
+        <td className="numeric">
+          {valuation ? (
+            <Money amount={signedValue(asset)} currency={valuation.currencyCode} />
+          ) : (
+            <span className="muted">—</span>
+          )}
+          {/* The room the kind's share takes on its line, so the values
+              line up down the column. */}
+          <span className="finance-share" aria-hidden="true" />
+        </td>
+        <td className="numeric optional muted">{valuation ? holdingText(valuation, t) : ''}</td>
+        <td className="muted">{valuation ? formatDay(valuation.valuedOn) : '—'}</td>
+        <td className="optional">{words.valuationSource(valuation?.valuationSource ?? asset.valuationSource)}</td>
+      </tr>
+    )
+  }
+
+  // A kind's assets, each run of an account's holdings under a line naming
+  // the account (see assetGroupRows).
+  const groupRows = (assetKind: string, list: Asset[]) =>
+    assetGroupRows(assetKind, list).map((row) =>
+      row.rowKind === 'asset' ? (
+        assetRow(row.asset)
+      ) : (
+        <tr key={row.rowKey} className="finance-asset-account">
+          <td colSpan={5} className="muted">
+            {plural(
+              row.holdingCount,
+              { one: 'finance.holdingsInOne', other: 'finance.holdingsInOther' },
+              { account: accountName(row.financeAccountId) || t('finance.deletedFinanceAccount') },
+            )}
+          </td>
+        </tr>
+      ),
+    )
+
   return (
     <SettingsSection
       card
@@ -213,73 +412,172 @@ function AssetsPanel({
     >
       <ErrorMessage error={assets.error} />
       {assets.loading && !assets.data ? <Loading /> : null}
-      {assets.data && list.length === 0 ? <SettingsEmpty>{t('finance.noAssets')}</SettingsEmpty> : null}
-      {list.length > 0 ? (
-        <div className="table-wrap">
-          <table className="numbers-table finance-table">
-            <thead>
-              <tr>
-                <th>{t('finance.assetName')}</th>
-                {/* Context rather than the answer: dropped on a phone, so
-                    the name, the value and its day fit before the table
-                    has to scroll. */}
-                <th className="optional">{t('finance.assetKindLabel')}</th>
-                <th className="numeric">{t('finance.latestValue')}</th>
-                <th>{t('finance.valuedOn')}</th>
-                <th className="optional">{t('finance.valuationSourceLabel')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((asset) => {
-                const valuation = asset.latestValuation
-                return (
-                  <tr key={asset.id}>
-                    <td>
-                      {/* A link, not a button: it goes to the asset's own
-                          page, and text in a cell sits on the same line as
-                          the cells beside it where a button did not. */}
-                      <Link to={linkTo(asset.id)}>{asset.assetName}</Link>
-                      {asset.closedOn ? (
-                        <>
-                          {' '}
-                          <Tag value={t('finance.closed')} />
-                        </>
-                      ) : null}
-                    </td>
-                    <td className="optional">{words.assetKind(asset.assetKind)}</td>
-                    <td className="numeric">
-                      {valuation ? (
-                        <>
-                          <Money
-                            amount={asset.isLiability ? -amountOf(valuation.value) : amountOf(valuation.value)}
-                            currency={valuation.currencyCode}
-                          />
-                          <HoldingLine valuation={valuation} />
-                        </>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                    <td className="muted">{valuation ? formatDay(valuation.valuedOn) : '—'}</td>
-                    <td className="optional">
-                      {words.valuationSource(valuation?.valuationSource ?? asset.valuationSource)}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+      {assets.data && all.length === 0 ? <SettingsEmpty>{t('finance.noAssets')}</SettingsEmpty> : null}
+      {all.length > 0 && !isRatesReady ? <Loading /> : null}
+      {all.length > 0 && isRatesReady ? (
+        // Beside the ring rather than inside it, so the totals stay when
+        // there is no ring to draw: only debts, or nothing worth more than
+        // nothing.
+        <div className="finance-worth-summary">
+          {slices.length > 0 ? (
+            <SpendingRing
+              slices={slices}
+              currency={currency}
+              label={t('finance.assetsRingLabel')}
+              totalLabel={t('finance.owned')}
+              // The same owned total as the line beside it: a kind worth
+              // less than nothing has no slice but still counts.
+              totalAmount={whole.ownedAmount}
+              highlightedKey={highlightedKey}
+            />
+          ) : null}
+          <dl className="finance-worth-line">
+            <dt>{t('finance.owned')}</dt>
+            <dd>{formatMoney(whole.ownedAmount, currency)}</dd>
+            <dt>{t('finance.owed')}</dt>
+            <dd>{formatMoney(-whole.owedAmount, currency)}</dd>
+            <dt>{t('finance.netWorthLabel')}</dt>
+            <dd>
+              <strong>{formatMoney(whole.ownedAmount - whole.owedAmount, currency)}</strong>
+            </dd>
+          </dl>
         </div>
       ) : null}
-      {(assets.data?.Assets ?? []).some((asset) => asset.closedOn) ? (
-        <label className="checkbox">
-          <input type="checkbox" checked={isClosedShown} onChange={(event) => setIsClosedShown(event.target.checked)} />
-          {t('finance.showClosed')}
-        </label>
+      {isRatesReady ? <UnconvertedNote currencyCodes={whole.unconvertedCurrencyCodes} /> : null}
+      {all.length > 0 ? (
+        <>
+          {/* On a phone the filters fold into one line that says which
+              hold, as the Transactions section's do. */}
+          {isDesktop ? (
+            filterControls
+          ) : (
+            <details className="finance-filter-disclosure">
+              <summary>
+                <strong>{t('finance.filtersLabel')}</strong>
+                <span className="muted">
+                  {filterWords.length > 0 ? filterWords.join(' · ') : t('finance.noAssetFilters')}
+                </span>
+              </summary>
+              {filterControls}
+            </details>
+          )}
+          <p className="muted finance-transaction-count">
+            {t('finance.assetsShown', { count: String(grouping.matchingCount), total: String(all.length) })}
+          </p>
+          {grouping.groups.length === 0 ? <SettingsEmpty>{t('finance.noAssetsMatch')}</SettingsEmpty> : null}
+          {grouping.groups.length > 0 ? (
+            <div className="table-wrap">
+              <table className="numbers-table finance-table finance-assets-table">
+                <thead>
+                  <tr>
+                    <th>{t('finance.assetName')}</th>
+                    <th className="numeric">{t('finance.latestValue')}</th>
+                    <th className="numeric optional">{t('finance.holdingLabel')}</th>
+                    <th>{t('finance.valuedOn')}</th>
+                    <th className="optional">{t('finance.valuationSourceLabel')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {grouping.groups.flatMap((group) => {
+                    const index = sliceIndexes.get(group.assetKind)
+                    const otherIndex = slices.findIndex((slice) => slice.isOther)
+                    const swatch = group.isLiability
+                      ? null
+                      : index !== undefined
+                        ? ringSliceClass(slices[index], index)
+                        : otherIndex >= 0
+                          ? 'other'
+                          : null
+                    const sliceKey = index !== undefined ? group.assetKind : otherIndex >= 0 ? 'other' : null
+                    const isOpen = isExpanded(group.assetKind)
+                    const shown = isSearching ? group.matchingAssets : group.assets
+                    // A kind worth less than nothing has no share: no "-0%".
+                    const share =
+                      isRatesReady && !group.isLiability && whole.ownedAmount > 0 && group.totalAmount > 0
+                        ? group.totalAmount / whole.ownedAmount
+                        : null
+                    const name = words.assetKind(group.assetKind)
+                    return [
+                      // The whole row opens the kind; the button in it is
+                      // what the keyboard and a screen reader reach.
+                      <tr
+                        key={`group-${group.assetKind}`}
+                        className="finance-asset-group"
+                        onClick={() => toggle(group.assetKind)}
+                        onPointerEnter={sliceKey ? () => setHighlightedKey(sliceKey) : undefined}
+                        onPointerLeave={sliceKey ? () => setHighlightedKey(null) : undefined}
+                      >
+                        <td>
+                          <button
+                            type="button"
+                            className="finance-group-toggle"
+                            aria-expanded={isOpen}
+                            onFocus={sliceKey ? () => setHighlightedKey(sliceKey) : undefined}
+                            onBlur={sliceKey ? () => setHighlightedKey(null) : undefined}
+                          >
+                            <span className={isOpen ? 'finance-group-chevron open' : 'finance-group-chevron'} />
+                            {swatch ? <i className={`spending-ring-swatch ${swatch}`} aria-hidden="true" /> : null}
+                            <span>{name}</span>
+                            <span className="muted finance-group-count">
+                              {isSearching && shown.length !== group.assets.length
+                                ? t('finance.assetCountOf', {
+                                    count: String(shown.length),
+                                    total: String(group.assets.length),
+                                  })
+                                : plural(group.assets.length, { one: 'finance.assetCountOne', other: 'finance.assetCountOther' })}
+                            </span>
+                          </button>
+                        </td>
+                        <td className="numeric">
+                          {isRatesReady ? (
+                            <strong>
+                              {formatMoney(group.isLiability ? -group.totalAmount : group.totalAmount, currency)}
+                            </strong>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                          {share !== null ? (
+                            <span className="muted finance-share">
+                              {share > 0 && share < 0.005 ? `<${percent.format(0.01)}` : percent.format(share)}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="optional" />
+                        <td />
+                        <td className="optional" />
+                      </tr>,
+                      ...(isOpen ? groupRows(group.assetKind, shown) : []),
+                    ]
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </>
       ) : null}
       {adding ? <AssetDialog onClose={() => setAdding(false)} onSaved={assets.reload} /> : null}
     </SettingsSection>
   )
+}
+
+// signedValue is an asset's latest value as it counts toward net worth: a
+// liability's value is what is owed, so it counts against it.
+function signedValue(asset: Asset): number {
+  const value = amountOf(asset.latestValuation?.value)
+  return asset.isLiability ? -value : value
+}
+
+// holdingText is a holding's quantity and the price of one, "12.1235 at
+// $150.50"; nothing for anything that is not a holding.
+function holdingText(valuation: AssetValuation, t: (key: Key, values?: Record<string, string>) => string): string {
+  if (!hasAmount(valuation.heldQuantity)) return ''
+  const quantity = formatQuantity(valuation.heldQuantity)
+  return hasAmount(valuation.unitPrice)
+    ? t('finance.holdingLine', {
+        quantity,
+        price: formatMoney(amountOf(valuation.unitPrice), valuation.currencyCode),
+      })
+    : quantity
 }
 
 // AssetDialog makes an asset, with its first value if there is one, in one
@@ -751,18 +1049,8 @@ function AssetPage({
 // value, "12.1235 at $150.50"; nothing for anything that is not a holding.
 function HoldingLine({ valuation }: { valuation: AssetValuation }) {
   const { t } = useTranslation()
-  if (!hasAmount(valuation.heldQuantity)) return null
-  const quantity = formatQuantity(valuation.heldQuantity)
-  return (
-    <span className="muted finance-cell-detail">
-      {hasAmount(valuation.unitPrice)
-        ? t('finance.holdingLine', {
-            quantity,
-            price: formatMoney(amountOf(valuation.unitPrice), valuation.currencyCode),
-          })
-        : quantity}
-    </span>
-  )
+  const said = holdingText(valuation, t)
+  return said ? <span className="muted finance-cell-detail">{said}</span> : null
 }
 
 // HoldingTrades is a holding's trades, newest first: every buy, sell,

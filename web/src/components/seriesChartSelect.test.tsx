@@ -80,3 +80,32 @@ it('is one tab stop that the arrow keys move along', () => {
   fireEvent.keyDown(slots[1], { key: 'Enter' })
   expect(onSelectKey).toHaveBeenLastCalledWith('2031-02')
 })
+
+// Cash flow: two columns a key side by side and a line that goes below
+// zero, still chosen by a slot.
+it('draws two columns a key and a line below zero, and still chooses a key', () => {
+  const onSelectKey = vi.fn()
+  const { container } = render(
+    <SeriesChart
+      label="Cash flow by month"
+      keys={keys}
+      keyLabel={(key) => key}
+      format={(value) => String(value)}
+      series={[
+        { id: 'income', label: 'Income', tone: 'output', shape: 'column', values: [500, 400, 300] },
+        { id: 'spending', label: 'Spending', tone: 'cached', shape: 'column', values: [300, 450, 350] },
+        { id: 'left', label: 'Left over', tone: 'input', shape: 'line', values: [200, -50, -50] },
+      ]}
+      selectedKey="2031-02"
+      onSelectKey={onSelectKey}
+    />,
+  )
+  expect(container.querySelectorAll('.usage-chart-column.output')).toHaveLength(3)
+  expect(container.querySelectorAll('.usage-chart-column.cached')).toHaveLength(3)
+  expect(container.querySelector('.series-chart-zero')).toBeTruthy()
+  expect(container.querySelector('.series-chart-line.input')?.getAttribute('d')).toMatch(/^M.* L.* L/)
+  const slots = screen.getAllByRole('button')
+  expect(slots[1].getAttribute('aria-label')).toBe('2031-02: Income 400, Spending 450, Left over -50')
+  fireEvent.click(slots[0])
+  expect(onSelectKey).toHaveBeenCalledWith('2031-01')
+})
