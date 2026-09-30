@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
-import { RUN_KINDS } from '../agentRuns'
+import { RUN_KINDS, runKindLabel } from '../agentRuns'
 import { graphql, openAgentConversation } from '../api'
 import { ErrorMessage, Loading, Tag, formatCount, formatMoney, formatTime } from '../components/common'
 import { UsageChart } from '../components/usageChart'
@@ -561,9 +561,9 @@ function RunsSection({ agents, job, onAll }: { agents: Summary[]; job: string | 
       header: t('agent.runKind'),
       width: '8rem',
       filter: 'select',
-      options: RUN_KINDS.map((kind) => ({ value: kind, label: kind })),
+      options: RUN_KINDS.map((kind) => ({ value: kind, label: runKindLabel(t, kind) })),
       value: (run) => run.jobKind,
-      render: (run) => <Tag value={run.jobKind} />,
+      render: (run) => <Tag value={runKindLabel(t, run.jobKind)} />,
     },
     { key: 'title', header: t('agent.runWhat'), filter: 'text', truncate: true, value: (run) => run.title },
     {

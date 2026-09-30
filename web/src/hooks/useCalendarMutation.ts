@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 
 import { graphql } from '../api'
+import { translateNow } from '../i18n/i18n'
 
 export interface CalendarMutation {
   operation: 'save' | 'delete'
@@ -39,7 +40,7 @@ export function useCalendarMutation(ownerId: string) {
     if (!encoded) return null
     const saved = JSON.parse(encoded) as PendingCalendarMutation
     if (!saved.requestId || !['save', 'delete'].includes(saved.operation) || !saved.variables?.calendarId) {
-      throw new Error('The saved calendar change could not be read')
+      throw new Error(translateNow('calendar.pendingUnreadable'))
     }
     return saved
   }
@@ -63,7 +64,7 @@ export function useCalendarMutation(ownerId: string) {
       let saved = readPending()
       if (saved && request) {
         setPending(saved)
-        throw new Error('Resolve the pending calendar change first')
+        throw new Error(translateNow('calendar.pendingFirst'))
       }
       const isRetry = saved !== null
       if (!saved) {

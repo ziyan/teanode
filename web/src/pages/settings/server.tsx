@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { graphql } from '../../api'
+import { APIError, graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
 import { SettingsSection } from '../../components/settingsList'
@@ -429,7 +429,10 @@ function isLostConnection(failure: unknown): boolean {
   // 503 rather than a connection that fails, and reading those as "the server
   // answered" left the page waiting the full fifteen minutes for an upgrade
   // that had already finished.
-  return /fetch|network/i.test(failure.message) || /the server returned 50[234]/.test(failure.message)
+  if (failure instanceof APIError && failure.httpStatusCode !== null) {
+    return [502, 503, 504].includes(failure.httpStatusCode)
+  }
+  return /fetch|network/i.test(failure.message)
 }
 
 // UpgradeCard says what is running, what is available, and either offers the

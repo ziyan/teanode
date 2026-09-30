@@ -1,4 +1,5 @@
 import { authorization } from './api'
+import { translateNow } from './i18n/i18n'
 // Uploading files with progress.
 //
 // fetch cannot report how much of a body has been sent, and XMLHttpRequest
@@ -69,11 +70,11 @@ export function uploadFiles(
           'error' in parsed &&
           typeof (parsed as { error: unknown }).error === 'string'
             ? (parsed as { error: string }).error
-            : request.statusText || `HTTP ${request.status}`
+            : translateNow('api.serverReturned', { statusCode: request.status })
         reject(new Error(message))
       }
     }
-    request.onerror = () => reject(new Error('The upload failed.'))
+    request.onerror = () => reject(new Error(translateNow('upload.failed')))
     request.onabort = () => reject(new DOMException('The upload was canceled.', 'AbortError'))
     request.open(method, url)
     request.setRequestHeader('Accept', 'application/json')

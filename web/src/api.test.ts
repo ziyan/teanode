@@ -56,7 +56,7 @@ describe('GraphQL transport retries', () => {
     const fetchRequest = vi.fn().mockResolvedValue(new Response(null, { status: 503 }))
     vi.stubGlobal('fetch', fetchRequest)
 
-    await expect(graphql('query { Session { authenticated } }')).rejects.toThrow('the server returned 503')
+    await expect(graphql('query { Session { authenticated } }')).rejects.toThrow('The server returned 503.')
     expect(fetchRequest).toHaveBeenCalledTimes(1)
   })
 })
