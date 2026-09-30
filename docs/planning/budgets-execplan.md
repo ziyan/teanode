@@ -107,6 +107,31 @@ The finance accounts plan's names list applies. Added here:
 
 ## Decision Log
 
+- Decision: only a card payment and a move between the person's own
+  accounts count as transfers by provider category. A mortgage payment is
+  housing, other loan payments are other, and a cash withdrawal is spending
+  in other; money in from a loan stays a transfer, since it is not income.
+  Rationale: the reason for leaving transfers out ("the purchases on the
+  card already were") holds for a card payment and for money moving between
+  one's own accounts, not for a mortgage, which is the largest housing cost
+  most people have. The first version treated every loan payment as a
+  transfer, and a mortgage never counted toward housing. Found in review,
+  2026-09-30.
+  Date/Author: 2026-09-30.
+
+- Decision: a transaction the categorize model considered and could not
+  place is marked as attempted and not asked about again until the
+  provider changes its merchant, description or provider category. Pairing
+  transfers is one-to-one and never touches a row the person decided about
+  or one already marked. A person's choices on a pending transaction carry
+  over to the posted one that replaces it.
+  Rationale: all three were found in review. Without the mark the job asked
+  the same newest transactions every sync and never reached older history;
+  without one-to-one pairing a rent check could pair with an earlier
+  transfer of the same amount and disappear from the budget; without the
+  carry-over a correction was lost when the charge posted.
+  Date/Author: 2026-09-30.
+
 - Decision: the spending category that counts is the person's, from their
   own list; the provider category is kept as a hint. Order: the person,
   then a spending rule, then the provider category mapping, then the

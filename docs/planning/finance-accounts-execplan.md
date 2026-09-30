@@ -182,6 +182,37 @@ something else, that name appears once, here, and nowhere else.
 
 ## Decision Log
 
+- Decision: each provider says how it signs the balance of an account that
+  is owed (Plaid: positive means owed; SimpleFIN: negative means owed), and
+  a liability's valuation is the amount owed with its sign, so a card in
+  credit after a refund is a negative liability and adds to net worth.
+  Rationale: the first version took the absolute value of every liability
+  balance, which turned a credit into a debt. Found in review, 2026-09-30.
+  Date/Author: 2026-09-30.
+
+- Decision: an exchange rate more than seven days older than the day asked
+  for counts as missing; the amount is reported unconverted rather than
+  converted at an old rate. Revoked Plaid credentials (item not found,
+  invalid access token, access not granted, permission revoked) are treated
+  like a revoked SimpleFIN credential: the finance source stops calling the
+  provider and says to delete it and link again.
+  Rationale: a currency the ECB stopped publishing, or a server whose fetch
+  has failed for weeks, would otherwise convert at a stale rate with nobody
+  told; and a revoked credential was retried every six hours forever.
+  Found in review, 2026-09-30.
+  Date/Author: 2026-09-30.
+
+- Decision: the agent cannot allow web estimates for an asset, nor change
+  what the estimate searches for; only the person can, in the dashboard or
+  on the command line. The finance tool's argument validation refuses
+  arguments an operation does not read and names the ones it accepts.
+  Rationale: allowing an estimate sends the description (often a home
+  address) to a search provider, which the net worth plan makes the
+  person's choice; review found the agent could set it itself behind a
+  confirmation that did not say so. Testing found the model passing a
+  `month` the spending summary ignored, and getting an all-time total.
+  Date/Author: 2026-09-30.
+
 - Decision: a finance source does not go through the document passes of
   the memory graph. `runIngest` branches to the finance sync right after
   it loads an enabled source, before the `knowledge` feature switch; the

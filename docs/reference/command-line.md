@@ -142,6 +142,7 @@ so one command serves a person and a script.
 | `report` | DMARC aggregate reports received about your domains |
 | `template` | a domain's message templates, with `render` |
 | `layout` | the frames templates are rendered inside |
+| `finance` | linked institutions, transactions, net worth, budgets and savings targets; see below |
 | `api` | everything else, straight from the schema |
 
 ### A mailbox from the shell
@@ -415,6 +416,31 @@ have made.
 Every command sends the shell's time zone and language with the request,
 the way the dashboard sends the browser's, so a person who lives in the
 terminal is placed as well as one who lives in the browser.
+
+### teanode finance
+
+The institutions you linked, their accounts and transactions, net worth,
+spending categories, budgets and savings targets: the same operations as the
+agent page's Finance tab and the agent's `finance` tool, and named after
+them (the tool's `spending_summary` is `teanode finance spending-summary`).
+Amounts are printed with their currency; `--json` keeps full precision.
+`docs/subsystems/finance.md` says how it works.
+
+| Command | What it does |
+| --- | --- |
+| `teanode finance providers` | which providers this server offers, and how to link through each |
+| `teanode finance link-plaid` | prints the address of the page that opens Plaid's window, for a browser, and waits until the new finance source appears; `--no-wait` returns at once |
+| `teanode finance link-simplefin [<setup-token> \| -]` | claims a setup token from the SimpleFIN Bridge; `-` or no argument reads it without echoing. A token can be claimed once |
+| `teanode finance repair <source-id>` | the Plaid page again, to sign in to the same finance source when the institution asks; waits until it syncs again |
+| `teanode finance sources\|sync\|disable-source\|enable-source\|delete-source` | your finance sources, one synced now, switched off or on, or deleted with everything it brought in (asks first); each refuses a source that is not a finance source |
+| `teanode finance accounts\|transactions\|spending-summary` | finance accounts with their balances; transactions with `--from`, `--to`, `--since 30d`, `--month 2026-09`, `--text`, `--finance-account`, `--is-uncategorized`, and `--after` for the next page; spending and income grouped by `--group-by spendingCategory\|merchant\|month\|financeAccount\|providerCategory` |
+| `teanode finance exchange-rate\|convert-currency\|reporting-currency\|set-reporting-currency` | the ECB rate between two currencies on a day (the latest earlier one on a weekend, and it says which), an amount converted, and the currency your totals are shown in; `set-reporting-currency --clear` goes back to the default |
+| `teanode finance net-worth\|assets\|asset-history\|create-asset\|update-asset\|close-asset\|delete-asset\|record-valuation\|delete-valuation` | net worth per day; everything you own or owe with its latest value; `create-asset "Car" --kind vehicle --currency USD --value 18000` adds one with a first value; `record-valuation <asset-id> 16500 --on 2026-09-30` records what it is worth; `--is-estimate-allowed` lets the agent estimate it from the web, which only you can allow |
+| `teanode finance spending-categories\|create-spending-category\|update-spending-category\|delete-spending-category` | your own list of what money goes on |
+| `teanode finance spending-rules\|create-spending-rule\|update-spending-rule\|delete-spending-rule` | rules that file transactions whose merchant or description contains some words; a new rule applies to earlier transactions too, except where you chose |
+| `teanode finance categorize-transaction\|mark-transfer` | change one transaction's spending category (`--make-spending-rule` files the merchant that way from now on), or mark money moving between your own accounts as a transfer |
+| `teanode finance budgets\|set-budget\|budget-status\|spending-by-day\|cash-flow` | monthly budgets per spending category; `budget-status` is this month against each budget, with where the month is heading and its pace (under, on track, at risk, over); spending day by day against last month; income and spending by month |
+| `teanode finance savings-targets\|create-savings-target\|update-savings-target\|close-savings-target` | amounts to save by a day, measured by money not spent or by what chosen assets are worth, with what they need a month from now on |
 
 ### teanode computer
 
