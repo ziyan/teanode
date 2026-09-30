@@ -783,7 +783,7 @@ func sourceOperation(ctx context.Context, executor tools.Operations, name, sourc
 		if err := executor.Execute(ctx, client.DocumentDeleteAgentKnowledgeSource, map[string]any{"sourceId": sourceId}, nil); err != nil {
 			return nil, err
 		}
-		return noted("deleted "+source.Name+" and its transactions, and ended it at its provider; its assets keep their history as manual ones, closed today", "deleted "+source.Name), nil
+		return noted("deleted "+source.Name+" and its transactions, and ended it at its provider; its assets keep their history as manual ones and no longer count from today", "deleted "+source.Name), nil
 	}
 }
 
