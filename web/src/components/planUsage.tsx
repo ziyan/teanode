@@ -1,4 +1,4 @@
-import { budgetNearness, formatClock } from './common'
+import { budgetNearness, formatClock, formatTime } from './common'
 import { useTranslation } from '../i18n/i18n'
 
 // PlanUsage is what a provider paid for by subscription last said of its
@@ -18,25 +18,32 @@ export interface PlanWindow {
 
 // PlanUsageBars draws each window as a bar of what is used, in the colour of
 // how near the end it is, with what is left and when it starts over beside
-// it. The numbers are from the plan's last answer, which the line under the
-// bars dates, since nothing asks the plan between turns.
-export function PlanUsageBars({ usage }: { usage: PlanUsage }) {
+// it. The numbers are from the plan's last answer to this server, which the
+// line under the bars dates, since nothing asks the plan between turns. A
+// window whose reset has passed since is drawn as the whole allowance, muted,
+// until the next answer says how much of the new one is used.
+export function PlanUsageBars({ usage, now = Date.now() }: { usage: PlanUsage; now?: number }) {
   const { t } = useTranslation()
   if (usage.windows.length === 0) return null
   return (
     <div className="plan-usage">
-      {usage.windows.map((window) => {
-        const used = Math.max(0, Math.min(100, window.usedPercent))
+      {usage.windows.map((window, index) => {
+        const hasReset = window.resetsAt ? new Date(window.resetsAt).getTime() <= now : false
+        const used = hasReset ? 0 : Math.max(0, Math.min(100, window.usedPercent))
         const said = t('agentSettings.planWindowLeft', {
           window: windowName(window.windowMinutes, t),
           left: String(100 - used),
         })
         return (
-          <div className="agent-budget" key={window.windowMinutes}>
+          <div className={hasReset ? 'agent-budget muted' : 'agent-budget'} key={index}>
             <div className="agent-budget-said">
               <span>{said}</span>
               {window.resetsAt ? (
-                <span className="muted">{t('agentSettings.planResets', { at: formatReset(window.resetsAt) })}</span>
+                <span className="muted">
+                  {t(hasReset ? 'agentSettings.planResetSince' : 'agentSettings.planResets', {
+                    at: formatReset(window.resetsAt),
+                  })}
+                </span>
               ) : null}
             </div>
             <div
@@ -53,10 +60,19 @@ export function PlanUsageBars({ usage }: { usage: PlanUsage }) {
         )
       })}
       <span className="muted plan-usage-observed">
-        {t('agentSettings.planObserved', { at: formatClock(usage.observedAt) })}
+        {t('agentSettings.planObserved', { at: formatObserved(usage.observedAt, now) })}
       </span>
     </div>
   )
+}
+
+// formatObserved is when the plan last answered: the time alone on the day
+// it is read, and the date with it on any other, since a reading from days
+// ago is not the allowance left now.
+function formatObserved(value: string, now: number): string {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toDateString() === new Date(now).toDateString() ? formatClock(value) : formatTime(value)
 }
 
 // windowName is a window by its length: the ones the plans use by name, any
