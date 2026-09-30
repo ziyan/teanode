@@ -11868,21 +11868,25 @@ button.idea-history-title {
 }
 
 .spending-ring-legend {
-  flex: 1 1 14rem;
+  /* Beside the ring and no wider than a name and its amount need, so the
+     amount is read with its name rather than across the card. */
+  flex: 0 1 auto;
+  max-width: 26rem;
   min-width: 0;
   margin: 0;
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 6px;
+  /* One grid for every row, so the names are as wide as the longest and
+     the amounts line up just after it. */
+  grid-template-columns: 10px minmax(0, max-content) auto auto;
+  align-items: baseline;
+  gap: 6px var(--space-2);
   font-size: var(--text-label);
 }
 
 .spending-ring-legend li {
-  display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto 3rem;
-  align-items: baseline;
-  gap: var(--space-2);
+  display: contents;
 }
 
 .spending-ring-name {
@@ -12002,5 +12006,112 @@ button.idea-history-title {
 
 .finance-group-link:hover {
   text-decoration-color: currentColor;
+}
+
+/* A group's name gives way to its amount: one line, cut with an ellipsis
+   (the whole name is its title), so a long merchant name never pushes the
+   amount out of sight on a phone. */
+.finance-group-name {
+  display: inline-block;
+  max-width: 28rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/* The month picker on the line of the headline it chooses. */
+.finance-month {
+  flex: 0 1 11rem;
+  min-width: 9rem;
+  margin: 0;
+}
+
+.finance-month-alone {
+  max-width: 14rem;
+  margin-bottom: var(--space-3);
+}
+
+/* On a phone the transactions' filters fold into one line that says which
+   hold, opened to change them. */
+.finance-filter-disclosure {
+  margin-bottom: var(--space-3);
+}
+
+.finance-filter-disclosure > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-2);
+  padding: var(--space-2) 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.finance-filter-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* The disclosure's own arrow, which a flex summary loses: pointing right
+   while closed, down while open. */
+.finance-filter-disclosure > summary::before {
+  content: '';
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  margin-right: 2px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+}
+
+.finance-filter-disclosure[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.finance-filter-disclosure > summary > .muted {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-label);
+}
+
+.finance-filter-disclosure[open] > summary {
+  margin-bottom: var(--space-2);
+}
+
+.finance-transaction-count {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-label);
+}
+
+@media (max-width: 600px) {
+  .finance-group-name {
+    max-width: calc(100vw - 11rem);
+  }
+
+  /* A transaction is a line, not a card: the controls in it are as tall as
+     a thumb needs, and the cell pads nothing more around them. Who chose
+     the category is the cell's title here rather than a line under it, and
+     a long description takes two lines rather than running off the edge. */
+  .table-surface tr:has(.finance-category-cell) > td {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  .finance-categorized-by {
+    display: none;
+  }
+
+  .finance-description {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    min-width: 9rem;
+    max-width: 14rem;
+    white-space: normal;
+    line-height: 1.35;
+  }
 }
 

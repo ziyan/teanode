@@ -160,6 +160,12 @@ metadata.
 Transfers between the person's own finance accounts, and card payments, are
 marked and count as neither spending nor income.
 
+Spending means one thing everywhere it is shown (budgets, the day-by-day
+chart, cash flow, the Spending section's month chart and summary): money out
+less money in for a spending category that is not income, so a refund lowers
+the spending it refunds, plus money out with no spending category. Income is
+what income categories took in, plus money in with no spending category.
+
 A budget is an amount per spending category per month, changed by adding a
 row effective from a month. `BudgetStatus` (`internal/agent/budget_status.go`)
 converts spending into the budget's currency, projects the month's end with

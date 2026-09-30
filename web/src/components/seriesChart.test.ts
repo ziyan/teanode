@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 
-import { axisWidthFor, chartScale, isolatedIndexes } from './seriesChart'
+import { axisWidthFor, chartScale, isolatedIndexes, labeledIndexes } from './seriesChart'
 
 // A month of cash flow that went below zero: the scale reaches under the
 // lowest value, so the line is drawn whole, and zero is a gridline.
@@ -34,4 +34,27 @@ it('finds the values a line cannot show', () => {
   expect(isolatedIndexes([null, 5, null, 3, 4])).toEqual([1])
   expect(isolatedIndexes([1, 2, 3])).toEqual([])
   expect(isolatedIndexes([])).toEqual([])
+})
+
+// A refund on the first day of a month dips a few dollars below a line that
+// climbs to thousands: no gridline below zero for that. A real negative
+// range still gets one.
+it('does not reach below zero for a negligible dip', () => {
+  const tiny = chartScale([-58, -58, 900, 4600])
+  expect(tiny.floor).toBe(0)
+  expect(tiny.grid[0]).toBe(0)
+  const real = chartScale([-400, 900, 4600])
+  expect(real.floor).toBeLessThan(0)
+  expect(real.grid).toContain(0)
+  expect(chartScale([-50, -20]).floor).toBeLessThanOrEqual(-50)
+})
+
+// Every third label fits; the chosen key is labelled whatever its place,
+// and the regular labels too close to it are left out.
+it('always labels the chosen key and clears its neighbours', () => {
+  expect([...labeledIndexes(12, 3, -1)].sort((left, right) => left - right)).toEqual([0, 3, 6, 9])
+  expect([...labeledIndexes(12, 3, 7)].sort((left, right) => left - right)).toEqual([0, 3, 7])
+  expect([...labeledIndexes(12, 3, 11)].sort((left, right) => left - right)).toEqual([0, 3, 6, 11])
+  expect([...labeledIndexes(12, 3, 6)].sort((left, right) => left - right)).toEqual([0, 3, 6, 9])
+  expect([...labeledIndexes(5, 1, 2)].sort((left, right) => left - right)).toEqual([0, 1, 2, 3, 4])
 })

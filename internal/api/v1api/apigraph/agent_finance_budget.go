@@ -737,11 +737,10 @@ func (self *graph) CashFlow(ctx context.Context, arguments CashFlowArguments) (*
 	if err != nil {
 		return nil, err
 	}
-	filter := &db.FinanceSpendingSummaryFilter{
-		From: fromStart.Format(time.DateOnly), To: toStart.AddDate(0, 1, -1).Format(time.DateOnly),
-		GroupBy: models.FinanceSpendingSummaryGroupByMonth,
-	}
-	rows, err := tx.FinanceSpendingSummary(found.ID, filter)
+	// Counted the way the day-by-day spending and budgets count it, so the
+	// month's spending agrees everywhere it is shown: a refund in a
+	// spending category lowers spending rather than counting as income.
+	days, err := tx.ListCashFlowDays(found.ID, fromStart.Format(time.DateOnly), toStart.AddDate(0, 1, -1).Format(time.DateOnly))
 	if err != nil {
 		return nil, financeError(err)
 	}
@@ -749,17 +748,60 @@ func (self *graph) CashFlow(ctx context.Context, arguments CashFlowArguments) (*
 		FromMonth: fromMonth, ToMonth: toMonth, CurrencyCashFlowMonths: []*CurrencyCashFlowMonthView{},
 		ReportingCurrencyCode: currencyCode, CashFlowMonths: []*CashFlowMonthView{}, UnconvertedCurrencyCodes: []string{},
 	}
-	for _, row := range rows {
-		income, err := finance.ParseAmount(row.MoneyIn)
+	type currencyMonth struct {
+		cashFlowMonth string
+		currencyCode  string
+	}
+	incomeByCurrencyMonth, spendingByCurrencyMonth := map[currencyMonth]*big.Rat{}, map[currencyMonth]*big.Rat{}
+	// Converted into the reporting currency per currency first, so a
+	// currency with a day that has no rate is left out whole, never in part.
+	convertedIncomeByCurrencyMonth, convertedSpendingByCurrencyMonth := map[currencyMonth]*big.Rat{}, map[currencyMonth]*big.Rat{}
+	isUnconverted := map[string]bool{}
+	converter := rates.NewConverter(ctx, self.exchangeRateFetcher(), tx)
+	for _, day := range days {
+		key := currencyMonth{cashFlowMonth: day.CashFlowOn[:len("2006-01")], currencyCode: day.CurrencyCode}
+		if incomeByCurrencyMonth[key], err = addAmount(incomeByCurrencyMonth[key], day.IncomeAmount); err != nil {
+			return nil, err
+		}
+		if spendingByCurrencyMonth[key], err = addAmount(spendingByCurrencyMonth[key], day.SpendingAmount); err != nil {
+			return nil, err
+		}
+		if currencyCode == "" || isUnconverted[day.CurrencyCode] {
+			continue
+		}
+		income, isIncomeConverted, err := convertOrSkip(converter, day.IncomeAmount, day.CurrencyCode, currencyCode, day.CashFlowOn)
 		if err != nil {
 			return nil, err
 		}
-		spending, err := finance.ParseAmount(row.MoneyOut)
+		spending, isSpendingConverted, err := convertOrSkip(converter, day.SpendingAmount, day.CurrencyCode, currencyCode, day.CashFlowOn)
 		if err != nil {
 			return nil, err
 		}
+		if !isIncomeConverted || !isSpendingConverted {
+			isUnconverted[day.CurrencyCode] = true
+			continue
+		}
+		if convertedIncomeByCurrencyMonth[key] == nil {
+			convertedIncomeByCurrencyMonth[key], convertedSpendingByCurrencyMonth[key] = new(big.Rat), new(big.Rat)
+		}
+		convertedIncomeByCurrencyMonth[key].Add(convertedIncomeByCurrencyMonth[key], income)
+		convertedSpendingByCurrencyMonth[key].Add(convertedSpendingByCurrencyMonth[key], spending)
+	}
+	incomeByMonth, spendingByMonth := map[string]*big.Rat{}, map[string]*big.Rat{}
+	for key, income := range convertedIncomeByCurrencyMonth {
+		if isUnconverted[key.currencyCode] {
+			continue
+		}
+		if incomeByMonth[key.cashFlowMonth] == nil {
+			incomeByMonth[key.cashFlowMonth], spendingByMonth[key.cashFlowMonth] = new(big.Rat), new(big.Rat)
+		}
+		incomeByMonth[key.cashFlowMonth].Add(incomeByMonth[key.cashFlowMonth], income)
+		spendingByMonth[key.cashFlowMonth].Add(spendingByMonth[key.cashFlowMonth], convertedSpendingByCurrencyMonth[key])
+	}
+	for key, income := range incomeByCurrencyMonth {
+		spending := spendingByCurrencyMonth[key]
 		view.CurrencyCashFlowMonths = append(view.CurrencyCashFlowMonths, &CurrencyCashFlowMonthView{
-			CashFlowMonth: row.GroupKey, CurrencyCode: row.CurrencyCode, IncomeAmount: finance.FormatAmount(income),
+			CashFlowMonth: key.cashFlowMonth, CurrencyCode: key.currencyCode, IncomeAmount: finance.FormatAmount(income),
 			SpendingAmount: finance.FormatAmount(spending), NetAmount: finance.FormatAmount(new(big.Rat).Sub(income, spending)),
 		})
 	}
@@ -773,25 +815,18 @@ func (self *graph) CashFlow(ctx context.Context, arguments CashFlowArguments) (*
 	if currencyCode == "" {
 		return view, nil
 	}
-	groups, err := convertSpendingGroups(tx, rates.NewConverter(ctx, self.exchangeRateFetcher(), tx), found.ID, filter, models.FinanceSpendingSummaryGroupByMonth, currencyCode, rows)
-	if err != nil {
-		return nil, financeError(err)
-	}
 	for month := fromStart; !month.After(toStart); month = month.AddDate(0, 1, 0) {
 		key := month.Format("2006-01")
-		income, spending := groups.moneyInByGroup[key], groups.moneyOutByGroup[key]
+		income, spending := incomeByMonth[key], spendingByMonth[key]
 		if income == nil {
-			income = new(big.Rat)
-		}
-		if spending == nil {
-			spending = new(big.Rat)
+			income, spending = new(big.Rat), new(big.Rat)
 		}
 		view.CashFlowMonths = append(view.CashFlowMonths, &CashFlowMonthView{
 			CashFlowMonth: key, IncomeAmount: finance.FormatAmount(income), SpendingAmount: finance.FormatAmount(spending),
 			NetAmount: finance.FormatAmount(new(big.Rat).Sub(income, spending)),
 		})
 	}
-	view.UnconvertedCurrencyCodes = sortedCurrencyCodes(groups.unconverted)
+	view.UnconvertedCurrencyCodes = sortedCurrencyCodes(isUnconverted)
 	return view, nil
 }
 

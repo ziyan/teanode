@@ -6,6 +6,7 @@ import { ErrorMessage, Loading, Tag } from '../../components/common'
 import { Column, DataTable } from '../../components/dataTable'
 import { Select } from '../../components/select'
 import { SettingsSection } from '../../components/settingsList'
+import { useIsDesktop } from '../../components/sidebar'
 import { useToast } from '../../components/toast'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
@@ -41,6 +42,7 @@ export function FinanceTransactionsSection() {
   const { t } = useTranslation()
   const toast = useToast()
   const words = useFinanceWords()
+  const isDesktop = useIsDesktop()
   const [search, setSearch] = useSearchParams()
   const filters = useMemo(() => transactionFiltersFromSearch(search), [search])
   const setFilters = (change: (previous: TransactionFilters) => TransactionFilters) =>
@@ -213,7 +215,10 @@ export function FinanceTransactionsSection() {
       header: t('finance.description'),
       value: (row) => [row.merchantName, row.description].filter(Boolean).join(' · '),
       render: (row) => (
-        <span className="finance-description">
+        <span
+          className="finance-description"
+          title={[row.merchantName, row.description].filter(Boolean).join(' · ')}
+        >
           {row.merchantName || row.description}
           {row.merchantName && row.description !== row.merchantName ? (
             <span className="muted"> · {row.description}</span>
@@ -230,6 +235,7 @@ export function FinanceTransactionsSection() {
     {
       key: 'financeAccount',
       header: t('finance.account'),
+      optional: true,
       value: (row) => {
         const account = accountList.find((candidate) => candidate.id === row.financeAccountId)
         return account ? accountLabel(account) : ''
@@ -239,7 +245,14 @@ export function FinanceTransactionsSection() {
       key: 'spendingCategory',
       header: t('finance.spendingCategory'),
       render: (row) => (
-        <span className="finance-category-cell">
+        <span
+          className="finance-category-cell"
+          title={
+            row.categorizedBy && row.categorizedBy !== 'person' && row.spendingCategoryId
+              ? words.categorizedBy(row.categorizedBy)
+              : undefined
+          }
+        >
           <Select
             value={row.spendingCategoryId ?? ''}
             label={t('finance.spendingCategory')}
@@ -269,8 +282,26 @@ export function FinanceTransactionsSection() {
     },
   ]
 
-  return (
-    <SettingsSection card title={t('finance.transactionsTitle')} description={t('finance.transactionsHint')}>
+  // The filters that hold, said in a line: what the closed filters say on
+  // a phone, where five fields would fill the first screen.
+  const account = accountList.find((candidate) => candidate.id === filters.financeAccountId)
+  const category = categoryList.find((candidate) => candidate.id === filters.spendingCategoryId)
+  const filterWords = [
+    filters.from && filters.to
+      ? t('finance.dayRange', { from: formatDay(filters.from), to: formatDay(filters.to) })
+      : filters.from
+        ? t('finance.fromDay', { day: formatDay(filters.from) })
+        : filters.to
+          ? t('finance.untilDay', { day: formatDay(filters.to) })
+          : '',
+    account ? accountLabel(account) : '',
+    category ? category.spendingCategoryName : '',
+    filters.isUncategorized ? t('finance.uncategorized') : '',
+    filters.text ? t('finance.containingWords', { text: filters.text }) : '',
+  ].filter(Boolean)
+
+  const filterControls = (
+    <>
       <div className="row finance-filters">
         <label>
           <span>{t('finance.from')}</span>
@@ -343,6 +374,28 @@ export function FinanceTransactionsSection() {
         />
         {t('finance.onlyUncategorized')}
       </label>
+    </>
+  )
+
+  return (
+    <SettingsSection card title={t('finance.transactionsTitle')} description={t('finance.transactionsHint')}>
+      {isDesktop ? (
+        filterControls
+      ) : (
+        <details className="finance-filter-disclosure">
+          <summary>
+            <strong>{t('finance.filtersLabel')}</strong>
+            <span className="muted">{filterWords.length > 0 ? filterWords.join(' · ') : t('finance.noFilters')}</span>
+          </summary>
+          {filterControls}
+        </details>
+      )}
+      {first.data ? (
+        <p className="muted finance-transaction-count">
+          {t('finance.transactionsLoaded', { count: String(rows.length) })}
+          {after ? ` · ${t('finance.moreToLoad')}` : ''}
+        </p>
+      ) : null}
       <ErrorMessage error={first.error} />
       {first.loading && !first.data ? <Loading /> : null}
       {first.data ? (

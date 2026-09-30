@@ -25,13 +25,23 @@ export function niceCeiling(value: number): number {
 // ChartScale is the range a chart is drawn over and its gridlines.
 export type ChartScale = { floor: number; ceiling: number; grid: number[] }
 
+// CHART_NEGLIGIBLE_DIP is how far below zero a chart can go, as a share of
+// its highest value, before the scale reaches down for it. A month whose
+// first day was a refund dips a few dollars under a line that climbs to
+// thousands; a whole gridline below zero for that spent a quarter of the
+// chart on an empty band.
+export const CHART_NEGLIGIBLE_DIP = 0.05
+
 // chartScale is a range in round steps, about four of them, from a step at
 // or below the lowest value to one at or above the highest. Zero is always
 // inside it and always on a gridline, so a line that goes below zero is
-// drawn whole and money in reads against money out.
+// drawn whole and money in reads against money out. A dip below zero that
+// is negligible beside the highest value does not add a step; it is drawn
+// at zero instead.
 export function chartScale(values: number[]): ChartScale {
   const highest = Math.max(0, ...values)
-  const lowest = Math.min(0, ...values)
+  const deepest = Math.min(0, ...values)
+  const lowest = -deepest < highest * CHART_NEGLIGIBLE_DIP ? 0 : deepest
   if (highest === lowest) return { floor: 0, ceiling: 1, grid: [0, 1] }
   const step = niceCeiling((highest - lowest) / 4)
   const below = Math.ceil(-lowest / step - 1e-9)
@@ -152,6 +162,7 @@ export function SeriesChart({
   label,
   selectedKey,
   onSelectKey,
+  headAction,
 }: {
   keys: string[]
   keyLabel: (key: string) => string
@@ -160,6 +171,9 @@ export function SeriesChart({
   axisFormat?: (value: number) => string
   headline?: React.ReactNode
   caption?: React.ReactNode
+  // Beside the headline, at its right: a control choosing what the chart
+  // shows, on the line it is about rather than in the panel's heading.
+  headAction?: React.ReactNode
   // What the chart is, for a screen reader, ahead of its values.
   label: string
   selectedKey?: string | null
@@ -177,12 +191,13 @@ export function SeriesChart({
 
   return (
     <div className="usage-chart">
-      {headline || caption ? (
+      {headline || caption || headAction ? (
         <div className="usage-chart-head">
           <div>
             {headline ? <div className="usage-chart-total">{headline}</div> : null}
             {caption ? <div className="muted usage-chart-caption">{caption}</div> : null}
           </div>
+          {headAction}
         </div>
       ) : null}
       <div className="usage-chart-plot" ref={holder}>
@@ -273,10 +288,15 @@ function SeriesDrawing({
   const groupWidth = Math.max(2, Math.min(28 * Math.max(1, columns.length), slot * 0.62))
   const columnWidth = groupWidth / Math.max(1, columns.length)
   const span = Math.max(1e-9, ceiling - floor)
-  const yOf = (value: number) => CHART_TOP + ((ceiling - value) / span) * plotHeight
+  // Held inside the scale, so a dip the scale chose not to reach for is
+  // drawn on the zero line rather than over the axis labels.
+  const yOf = (value: number) =>
+    CHART_TOP + ((ceiling - Math.max(floor, Math.min(ceiling, value))) / span) * plotHeight
   const zero = yOf(0)
   const labelEvery = Math.max(1, Math.ceil(keys.length / Math.max(2, Math.floor(plotWidth / 64))))
   const grid = scale.grid
+  const selectedIndex = selectedKey === null ? -1 : keys.indexOf(selectedKey)
+  const labeled = labeledIndexes(keys.length, labelEvery, selectedIndex)
 
   // The drawing is scaled to the width it is shown at, so a pointer is
   // turned back into the drawing's own units first.
@@ -292,7 +312,6 @@ function SeriesDrawing({
       .map((one) => `${one.label} ${one.values[index] === null ? '—' : format(one.values[index] ?? 0)}`)
       .join(', ')}`
   const said = keys.map(slotSaid).join('; ')
-  const selectedIndex = selectedKey === null ? -1 : keys.indexOf(selectedKey)
   const isSelectable = onSelectKey !== undefined
   // The one slot Tab lands on: the chosen one, or the latest when none is.
   const focusIndex = selectedIndex >= 0 ? selectedIndex : keys.length - 1
@@ -382,12 +401,16 @@ function SeriesDrawing({
                 />
               )
             })}
-            {index % labelEvery === 0 ? (
+            {labeled.has(index) ? (
               <text
                 className={index === selectedIndex ? 'usage-chart-axis series-chart-axis-selected' : 'usage-chart-axis'}
                 x={groupX + groupWidth / 2}
                 y={CHART_HEIGHT - 6}
-                textAnchor={index + labelEvery >= keys.length ? 'end' : 'middle'}
+                textAnchor={
+                  index === keys.length - 1 || (index % labelEvery === 0 && index + labelEvery >= keys.length)
+                    ? 'end'
+                    : 'middle'
+                }
               >
                 {keyLabel(key)}
               </text>
@@ -452,6 +475,19 @@ function SeriesDrawing({
         : null}
     </svg>
   )
+}
+
+// labeledIndexes are the keys whose label is drawn under the axis: every
+// labelEvery-th, as many as fit, and the chosen key always, since a chosen
+// month with no name under it reads as a bar picked at random. The regular
+// labels near enough to the chosen one to run into it step aside.
+export function labeledIndexes(count: number, labelEvery: number, selectedIndex: number): Set<number> {
+  const labeled = new Set<number>()
+  for (let index = 0; index < count; index += Math.max(1, labelEvery)) {
+    if (selectedIndex < 0 || Math.abs(index - selectedIndex) >= labelEvery) labeled.add(index)
+  }
+  if (selectedIndex >= 0 && selectedIndex < count) labeled.add(selectedIndex)
+  return labeled
 }
 
 // isolatedIndexes are the values with no value beside them, which a line

@@ -3,6 +3,7 @@ package db_test
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -272,6 +273,25 @@ func TestSpendingCategoryDaysAndMerchantMonths(t *testing.T) {
 			if bySpendingCategoryAndDay[key] != amount {
 				t.Errorf("%s: got %q, want %q (all: %v)", key, bySpendingCategoryAndDay[key], amount, bySpendingCategoryAndDay)
 			}
+		}
+
+		// Cash flow counts the month the same way: the refund lowers the
+		// groceries spending rather than counting as income, the payroll
+		// is income, and the transfer is neither.
+		cashFlowDays, err := tx.ListCashFlowDays(fixture.agentId, "2026-09-01", "2026-09-30")
+		if err != nil {
+			t.Fatalf("ListCashFlowDays: %s", err)
+		}
+		incomeTotal, spendingTotal := new(big.Rat), new(big.Rat)
+		for _, day := range cashFlowDays {
+			income, _ := finance.ParseAmount(day.IncomeAmount)
+			spending, _ := finance.ParseAmount(day.SpendingAmount)
+			incomeTotal.Add(incomeTotal, income)
+			spendingTotal.Add(spendingTotal, spending)
+		}
+		if finance.FormatAmount(incomeTotal) != "2500.0000" || finance.FormatAmount(spendingTotal) != "58.4000" {
+			t.Errorf("September's cash flow is income %s and spending %s, want 2500.0000 and 58.4000 (days %+v)",
+				finance.FormatAmount(incomeTotal), finance.FormatAmount(spendingTotal), cashFlowDays)
 		}
 
 		months, err := tx.ListMerchantMonthSpending(fixture.agentId, "2026-09")

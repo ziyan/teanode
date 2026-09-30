@@ -16,8 +16,10 @@ import {
   CASH_FLOW,
   CashFlow,
   SPENDING_BY_DAY,
+  SPENDING_CATEGORIES,
   SPENDING_SUMMARY,
   SpendingByDay,
+  SpendingCategory,
   SpendingCategoryBudgetStatus,
   SpendingDay,
   SpendingSummary,
@@ -28,7 +30,14 @@ import {
   personToday,
 } from './financeApi'
 import { Money, UnconvertedNote, compactMoney, useFinanceWords } from './financeCommon'
-import { TransactionFilters, monthRange, spendingMonthFromSearch, transactionsPath } from './financeFilters'
+import {
+  TransactionFilters,
+  lastDayOfMonth,
+  monthRange,
+  spendingMonthFromSearch,
+  transactionsPath,
+} from './financeFilters'
+import { SpendingGroupBy, SummaryAmounts, spendingLines, spendingTotals } from './spendingLines'
 import { RING_SLICE_COUNT, SpendingRing, foldIntoOther } from './spendingRing'
 
 // The Spending section: a year of spending a bar a month, and under it the
@@ -81,26 +90,29 @@ function SpendingByMonthPanel({
   const chosen = months.find((candidate) => candidate.cashFlowMonth === month)
   const spentOf = (amount?: string) => Math.abs(amountOf(amount))
   const hasSpending = months.some((candidate) => amountOf(candidate.spendingAmount) !== 0)
+  // On the headline's line rather than in the panel's heading: there it
+  // sat alone at the right of an empty band above the chart on a phone.
+  const monthPicker = (
+    <label className="finance-month">
+      <span>{t('finance.month')}</span>
+      <input
+        type="month"
+        value={month}
+        max={currentMonth}
+        onChange={(event) => event.target.value && onSelectMonth(event.target.value)}
+      />
+    </label>
+  )
   return (
-    <SettingsSection
-      card
-      title={t('finance.spendingByMonthTitle')}
-      description={t('finance.spendingByMonthHint')}
-      action={
-        <label className="shrink finance-month">
-          <span>{t('finance.month')}</span>
-          <input
-            type="month"
-            value={month}
-            max={currentMonth}
-            onChange={(event) => event.target.value && onSelectMonth(event.target.value)}
-          />
-        </label>
-      }
-    >
+    <SettingsSection card title={t('finance.spendingByMonthTitle')} description={t('finance.spendingByMonthHint')}>
       <ErrorMessage error={error} />
       {loading && !data ? <Loading /> : null}
-      {flow && !hasSpending ? <SettingsEmpty>{t('finance.noCashFlow')}</SettingsEmpty> : null}
+      {flow && !hasSpending ? (
+        <>
+          <div className="finance-month-alone">{monthPicker}</div>
+          <SettingsEmpty>{t('finance.noCashFlow')}</SettingsEmpty>
+        </>
+      ) : null}
       {hasSpending ? (
         <SeriesChart
           label={t('finance.spendingByMonthTitle')}
@@ -125,6 +137,7 @@ function SpendingByMonthPanel({
           ]}
           selectedKey={month}
           onSelectKey={onSelectMonth}
+          headAction={monthPicker}
         />
       ) : null}
       {chosen ? (
@@ -173,10 +186,11 @@ function SpendingByDayChart({ month }: { month: string }) {
   const compareDays = answer?.compareMonthDays ?? []
   const currency = answer?.reportingCurrencyCode || 'USD'
   const isCurrent = month === personMonth()
-  // A slot for every day either month has: the month so far (this month
-  // stops at today) and the whole of the one it is compared with, lined up
-  // by the day of the month.
-  const dayCount = Math.max(monthDays.length, compareDays.length)
+  // A slot for every day of the chosen month, whether or not it has come
+  // yet, lined up by the day of the month with the month before: the
+  // columns stop at today in the month in progress, and the line stops at
+  // the end of a shorter month before, or is cut at this month's last day.
+  const dayCount = Number(lastDayOfMonth(month).slice(8, 10))
   const keys = Array.from({ length: dayCount }, (_, index) => String(index + 1))
   const cumulative = (days: SpendingDay[], index: number): number | null =>
     days[index] ? amountOf(days[index].cumulativeSpendingAmount) : null
@@ -239,12 +253,19 @@ function BudgetStatusPanel({ month }: { month: string }) {
   )
   const status = data?.BudgetStatus
   const rows = status?.spendingCategories ?? []
+  // A month that is over has nowhere left to head: it is the whole month,
+  // with no projection and no fixed charges still to come.
+  const isPast = month < personMonth()
   return (
     <SettingsSection
       card
       title={t('finance.budgetStatusTitle')}
       description={
-        status ? t('finance.budgetStatusHint', { day: status.dayOfMonth, days: status.daysInMonth }) : undefined
+        status
+          ? isPast
+            ? t('finance.budgetStatusHintPast', { month: monthLabel(month, 'long') })
+            : t('finance.budgetStatusHint', { day: status.dayOfMonth, days: status.daysInMonth })
+          : undefined
       }
     >
       <ErrorMessage error={error} />
@@ -253,7 +274,7 @@ function BudgetStatusPanel({ month }: { month: string }) {
       {rows.length > 0 ? (
         <div className="finance-budget-bars">
           {rows.map((row) => (
-            <BudgetStatusRow key={row.spendingCategoryId} row={row} />
+            <BudgetStatusRow key={row.spendingCategoryId} row={row} isPast={isPast} />
           ))}
         </div>
       ) : null}
@@ -261,7 +282,7 @@ function BudgetStatusPanel({ month }: { month: string }) {
   )
 }
 
-function BudgetStatusRow({ row }: { row: SpendingCategoryBudgetStatus }) {
+function BudgetStatusRow({ row, isPast }: { row: SpendingCategoryBudgetStatus; isPast: boolean }) {
   const { t } = useTranslation()
   const words = useFinanceWords()
   const budget = amountOf(row.budgetAmount)
@@ -284,16 +305,20 @@ function BudgetStatusRow({ row }: { row: SpendingCategoryBudgetStatus }) {
         fraction={budget > 0 ? spent / budget : 0}
         tone={tone}
         label={said}
-        marker={budget > 0 ? projected / budget : null}
+        marker={budget > 0 && !isPast ? projected / budget : null}
       />
-      <div className="muted finance-budget-row-detail">
-        {t('finance.projected', { amount: formatMoney(projected, row.currencyCode) })}
-        {' · '}
-        {t('finance.sameDayLastMonth', {
-          amount: formatMoney(amountOf(row.spendingBySameDayLastMonthAmount), row.currencyCode),
-        })}
-        {fixedDue > 0 ? ` · ${t('finance.fixedChargesDue', { amount: formatMoney(fixedDue, row.currencyCode) })}` : ''}
-      </div>
+      {isPast ? null : (
+        <div className="muted finance-budget-row-detail">
+          {t('finance.projected', { amount: formatMoney(projected, row.currencyCode) })}
+          {' · '}
+          {t('finance.sameDayLastMonth', {
+            amount: formatMoney(amountOf(row.spendingBySameDayLastMonthAmount), row.currencyCode),
+          })}
+          {fixedDue > 0
+            ? ` · ${t('finance.fixedChargesDue', { amount: formatMoney(fixedDue, row.currencyCode) })}`
+            : ''}
+        </div>
+      )}
       {row.unconvertedSpending.length > 0 ? (
         <p className="muted field-hint">
           {t('finance.unconvertedSpending', {
@@ -309,15 +334,14 @@ function BudgetStatusRow({ row }: { row: SpendingCategoryBudgetStatus }) {
 
 // The ways a month's spending is grouped. By month is not one of them: the
 // section shows one month at a time, and the chart at its top is by month.
-type GroupBy = 'spendingCategory' | 'merchant' | 'financeAccount' | 'providerCategory'
-const GROUP_BY: GroupBy[] = ['spendingCategory', 'merchant', 'financeAccount', 'providerCategory']
+const GROUP_BY: SpendingGroupBy[] = ['spendingCategory', 'merchant', 'financeAccount', 'providerCategory']
 
 // groupTransactionFilters is how a group's transactions are found on the
 // Transactions section, over the month's days: a spending category (or
 // none), a finance account, or a merchant's words. The provider category
 // is not a filter that section offers, so its groups link nowhere.
 function groupTransactionFilters(
-  groupBy: GroupBy,
+  groupBy: SpendingGroupBy,
   groupKey: string,
   range: { from: string; to: string },
 ): Partial<TransactionFilters> | null {
@@ -329,9 +353,12 @@ function groupTransactionFilters(
   return null
 }
 
+// What went where in the month, counted as the chart above counts it (see
+// spendingLines), so the table's total is the month's headline: one amount
+// a group, what it spent, and how many transactions it holds.
 function SpendingSummaryPanel({ month }: { month: string }) {
   const { t } = useTranslation()
-  const [groupBy, setGroupBy] = useState<GroupBy>('spendingCategory')
+  const [groupBy, setGroupBy] = useState<SpendingGroupBy>('spendingCategory')
   const range = monthRange(month, personToday())
   const { data, error, loading } = useQuery(
     () =>
@@ -343,46 +370,51 @@ function SpendingSummaryPanel({ month }: { month: string }) {
     [range.from, range.to, groupBy],
     { refresh: false },
   )
-  const summary = data?.FinanceSpendingSummary
-  // One line a group. In the reporting currency where there is one, with
-  // how many transactions each group counted across its currencies; where
-  // there is none, a line a group and currency, never added together.
+  // Which spending categories are income, whose money in is not a refund.
+  const categories = useQuery(() => graphql<{ SpendingCategories: SpendingCategory[] }>(SPENDING_CATEGORIES), [], {
+    refresh: false,
+  })
+  const summary = categories.data ? data?.FinanceSpendingSummary : undefined
+  const incomeSpendingCategoryIds = useMemo(
+    () =>
+      new Set(
+        (categories.data?.SpendingCategories ?? [])
+          .filter((category) => category.isIncome)
+          .map((category) => category.id),
+      ),
+    [categories.data],
+  )
+  // Each currency as it was spent, and, where there is a reporting
+  // currency, the same groups converted into it with the transactions each
+  // counted across its currencies.
+  const currencyLines = useMemo(
+    () => (summary ? spendingLines(summary.spendingSummaryRows, groupBy, incomeSpendingCategoryIds) : []),
+    [summary, groupBy, incomeSpendingCategoryIds],
+  )
   const lines = useMemo(() => {
     if (!summary) return []
+    if (!summary.reportingCurrencyCode) return currencyLines
     const counts = new Map<string, number>()
     for (const row of summary.spendingSummaryRows) {
       counts.set(row.groupKey, (counts.get(row.groupKey) ?? 0) + row.financeTransactionCount)
     }
-    const converted = summary.reportingCurrencyCode
-      ? summary.convertedSpendingSummaryRows.map((row) => ({
-          key: row.groupKey,
-          groupKey: row.groupKey,
-          label: row.groupLabel || row.groupKey,
-          currencyCode: summary.reportingCurrencyCode ?? '',
-          moneyOut: row.moneyOut,
-          moneyIn: row.moneyIn,
-          count: counts.get(row.groupKey) ?? 0,
-        }))
-      : summary.spendingSummaryRows.map((row) => ({
-          key: `${row.groupKey}:${row.currencyCode}`,
-          groupKey: row.groupKey,
-          label: row.groupLabel || row.groupKey,
-          currencyCode: row.currencyCode,
-          moneyOut: row.moneyOut,
-          moneyIn: row.moneyIn,
-          count: row.financeTransactionCount,
-        }))
-    return converted.sort((left, right) => amountOf(right.moneyOut) - amountOf(left.moneyOut))
-  }, [summary])
-  const groupLabel = (value: GroupBy) => t(`finance.groupBy.${value}` as 'finance.groupBy.merchant')
-  const totals = summary?.currencyTotals ?? []
+    const converted: SummaryAmounts[] = summary.convertedSpendingSummaryRows.map((row) => ({
+      ...row,
+      currencyCode: summary.reportingCurrencyCode ?? '',
+      financeTransactionCount: counts.get(row.groupKey) ?? 0,
+    }))
+    return spendingLines(converted, groupBy, incomeSpendingCategoryIds)
+  }, [summary, currencyLines, groupBy, incomeSpendingCategoryIds])
+  const reportingTotal = summary?.reportingCurrencyCode ? spendingTotals(lines)[0] : undefined
+  const currencyTotals = spendingTotals(currencyLines)
+  const groupLabel = (value: SpendingGroupBy) => t(`finance.groupBy.${value}` as 'finance.groupBy.merchant')
   const lineName = (label: string) => label || t('finance.uncategorized')
-  // The ring is money out by spending category, so only where it can be
-  // added up: grouped by category, in the reporting currency.
+  // The ring is the table's own numbers, where they can be added up:
+  // grouped by category, in the reporting currency.
   const slices =
     groupBy === 'spendingCategory' && summary?.reportingCurrencyCode
       ? foldIntoOther(
-          lines.map((line) => ({ key: line.key, label: lineName(line.label), amount: amountOf(line.moneyOut) })),
+          lines.map((line) => ({ key: line.key, label: lineName(line.label), amount: line.spendingAmount })),
           RING_SLICE_COUNT,
         ).map((slice) =>
           slice.isOther ? { ...slice, label: t('finance.otherCategories', { count: slice.foldedCount }) } : slice,
@@ -402,30 +434,29 @@ function SpendingSummaryPanel({ month }: { month: string }) {
             value={groupBy}
             label={t('finance.groupByLabel')}
             options={GROUP_BY.map((value) => ({ value, label: groupLabel(value) }))}
-            onChange={(value) => setGroupBy(value as GroupBy)}
+            onChange={(value) => setGroupBy(value as SpendingGroupBy)}
           />
         </label>
       }
     >
-      <ErrorMessage error={error} />
-      {loading && !data ? <Loading /> : null}
+      <ErrorMessage error={error || categories.error} />
+      {(loading && !data) || (categories.loading && !categories.data) ? <Loading /> : null}
       {summary && lines.length === 0 ? <SettingsEmpty>{t('finance.noSpending')}</SettingsEmpty> : null}
       {slices.length > 0 && summary?.reportingCurrencyCode ? (
         <SpendingRing
           slices={slices}
           currency={summary.reportingCurrencyCode}
           label={t('finance.ringLabel', { month: monthLabel(month, 'long') })}
-          totalLabel={t('finance.moneyOut')}
+          totalLabel={t('finance.spending')}
         />
       ) : null}
       {lines.length > 0 ? (
         <div className="table-wrap">
-          <table className="numbers-table finance-table">
+          <table className="numbers-table finance-table finance-summary-table">
             <thead>
               <tr>
                 <th>{groupLabel(groupBy)}</th>
-                <th className="numeric">{t('finance.moneyOut')}</th>
-                <th className="numeric optional">{t('finance.moneyIn')}</th>
+                <th className="numeric">{t('finance.spending')}</th>
                 <th className="numeric optional">{t('finance.transactionCount')}</th>
               </tr>
             </thead>
@@ -435,54 +466,50 @@ function SpendingSummaryPanel({ month }: { month: string }) {
                 const name = lineName(line.label)
                 return (
                   <tr key={line.key}>
-                    <td>
+                    {/* The name gives way, with an ellipsis and the whole
+                        of it on hover, so the amount stays in sight on a
+                        phone however long a merchant's name is. */}
+                    <td className="finance-group-cell">
                       {filters ? (
                         <Link
-                          className="finance-group-link"
+                          className="finance-group-name finance-group-link"
                           to={transactionsPath(filters)}
                           title={t('finance.openTransactions', { name })}
                         >
                           {name}
                         </Link>
                       ) : (
-                        name
+                        <span className="finance-group-name" title={name}>
+                          {name}
+                        </span>
                       )}
                     </td>
                     <td className="numeric">
-                      <Money amount={line.moneyOut} currency={line.currencyCode} />
+                      <Money amount={line.spendingAmount} currency={line.currencyCode} />
                     </td>
-                    <td className="numeric optional">
-                      <Money amount={line.moneyIn} currency={line.currencyCode} />
-                    </td>
-                    <td className="numeric optional">{line.count}</td>
+                    <td className="numeric optional">{line.financeTransactionCount}</td>
                   </tr>
                 )
               })}
             </tbody>
             <tfoot>
-              {summary?.reportingCurrencyCode ? (
+              {reportingTotal ? (
                 <tr>
-                  <th>{t('finance.totalIn', { currency: summary.reportingCurrencyCode })}</th>
+                  <th>{t('finance.totalIn', { currency: reportingTotal.currencyCode })}</th>
                   <th className="numeric">
-                    <Money amount={summary.convertedMoneyOut} currency={summary.reportingCurrencyCode} />
+                    <Money amount={reportingTotal.spendingAmount} currency={reportingTotal.currencyCode} />
                   </th>
-                  <th className="numeric optional">
-                    <Money amount={summary.convertedMoneyIn} currency={summary.reportingCurrencyCode} />
-                  </th>
-                  <th className="optional" />
+                  <th className="numeric optional">{reportingTotal.financeTransactionCount}</th>
                 </tr>
               ) : null}
               {/* Each currency as it was spent, where there was more than
                   one or no reporting currency to add them up in. */}
-              {totals.length > 1 || !summary?.reportingCurrencyCode
-                ? totals.map((total) => (
+              {currencyTotals.length > 1 || !reportingTotal
+                ? currencyTotals.map((total) => (
                     <tr key={total.currencyCode}>
                       <th>{t('finance.totalIn', { currency: total.currencyCode })}</th>
                       <th className="numeric">
-                        <Money amount={total.moneyOut} currency={total.currencyCode} />
-                      </th>
-                      <th className="numeric optional">
-                        <Money amount={total.moneyIn} currency={total.currencyCode} />
+                        <Money amount={total.spendingAmount} currency={total.currencyCode} />
                       </th>
                       <th className="numeric optional">{total.financeTransactionCount}</th>
                     </tr>
