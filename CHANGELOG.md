@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.87.2] - 2026-09-30
+
+### Changed
+
+- Plaid's linking page is now at `/finance/link`. A link to the old `/finance-link` address, from a command started before the upgrade, no longer opens it; run the command again. (#247)
+
 ## [0.87.1] - 2026-09-30
 
 ### Fixed
