@@ -228,8 +228,9 @@ func TestNetWorthKeepsHistoryWhenAFinanceSourceIsDeleted(t *testing.T) {
 }
 
 // Linking an institution again after its source was deleted takes back the
-// assets the old link made, rather than counting each account twice; an
-// asset the person made by hand under the same name is not taken.
+// assets the old link made, which the delete closed, and opens them again,
+// rather than starting a second asset for each account; an asset the person
+// made by hand under the same name is not taken.
 func TestRelinkingTakesBackTheDetachedAssets(t *testing.T) {
 	database, releaseDatabase := dbtest.AcquireDatabase(t)
 	defer releaseDatabase()
@@ -238,7 +239,7 @@ func TestRelinkingTakesBackTheDetachedAssets(t *testing.T) {
 
 	var relinked financeFixture
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		if _, err := tx.DetachAssetsOfSource(fixture.agentId, fixture.sourceId); err != nil {
+		if _, err := tx.DetachAssetsOfSource(fixture.agentId, fixture.sourceId, "2026-09-12"); err != nil {
 			t.Fatalf("DetachAssetsOfSource: %s", err)
 		}
 		if err := tx.DeleteAgentSource(fixture.agentId, fixture.sourceId); err != nil {
@@ -269,8 +270,8 @@ func TestRelinkingTakesBackTheDetachedAssets(t *testing.T) {
 			switch asset.ValuationSource {
 			case models.ValuationSourceFinanceSync:
 				syncedCount++
-				if asset.FinanceAccountID == "" {
-					t.Errorf("a synced asset with no account: %+v", asset)
+				if asset.FinanceAccountID == "" || asset.ClosedOn != "" {
+					t.Errorf("a taken back asset is linked and open again: %+v", asset)
 				}
 			case models.ValuationSourceManual:
 				manualCount++
