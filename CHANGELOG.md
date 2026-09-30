@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.89.1] - 2026-09-30
+
+### Fixed
+
+- A newly linked institution fills in its history within minutes on its own, without pressing Sync. (#255)
+
 ## [0.89.0] - 2026-09-30
 
 ### Added
