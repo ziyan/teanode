@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { framedDrawer } from '../api'
 
 import { CodeBlock } from './codeBlock'
+import { mailPath, memoryPath } from './dashboardPath'
 
 // The part of Markdown a changelog and an agent's answer are written in.
 //
@@ -42,14 +43,26 @@ function webAddress(written: string): string {
 // the page it went to behind it.
 const Leaving = createContext<() => void>(() => {})
 
-// MailLink is a message the agent cited, opened where it is.
-function MailLink({ itemId, children }: { itemId: string; children: React.ReactNode }) {
+// DashboardLink is a page of the dashboard the agent linked -- a message
+// it cited, a page of its memory -- opened where it is.
+function DashboardLink({ path, children }: { path: string; children: React.ReactNode }) {
   const leaving = useContext(Leaving)
   return (
-    <Link to={`/mailbox/starred/${encodeURIComponent(itemId)}`} onClick={leaving}>
+    <Link to={path} onClick={leaving}>
       {children}
     </Link>
   )
+}
+
+// dashboardPathOf is where a link in the agent's own schemes goes, or null
+// for one that is not: [subject](mail:ITEM_ID) and [name](memory:PATH),
+// PATH#N for one fact of a page.
+function dashboardPathOf(address: string): string | null {
+  const mail = /^mail:(.*)$/.exec(address)
+  if (mail) return mailPath(mail[1])
+  const memory = /^memory:(.*)$/.exec(address)
+  if (memory) return memoryPath(memory[1])
+  return null
 }
 
 // PictureSource is where whoever draws this markdown has a picture fetched
@@ -132,28 +145,22 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
       if (beforeItalic) nodes.push(beforeItalic)
       nodes.push(<em key={key}>{inline(italic, key)}</em>)
     } else {
-      // Only http and https. A link in a release note is a link somebody
+      // Only http and https, and the dashboard's own pages the agent links
+      // as mail: and memory:. A link in a release note is a link somebody
       // else wrote, and javascript: is a scheme nothing here should follow.
       const href = webAddress(linkAddress)
-      const mail = /^mail:([A-Za-z0-9]+)$/.exec(linkAddress)
+      const dashboardPath = dashboardPathOf(linkAddress)
       nodes.push(
-        mail && framedDrawer ? (
+        dashboardPath && framedDrawer ? (
           // Framed into another site, the drawer sends the person to the
           // dashboard itself: nothing of it but the drawer is drawn here.
-          <a
-            key={key}
-            href={`${window.location.origin}/mailbox/starred/${encodeURIComponent(mail[1])}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          <a key={key} href={`${window.location.origin}${dashboardPath}`} target="_blank" rel="noopener noreferrer">
             {linkText}
           </a>
-        ) : mail ? (
-          // The agent cites a message as mail:ITEM_ID; Starred opens any
-          // item by id whichever folder it is in.
-          <MailLink key={key} itemId={mail[1]}>
+        ) : dashboardPath ? (
+          <DashboardLink key={key} path={dashboardPath}>
             {linkText}
-          </MailLink>
+          </DashboardLink>
         ) : href ? (
           <a key={key} href={href} target="_blank" rel="noopener noreferrer nofollow">
             {linkText}
