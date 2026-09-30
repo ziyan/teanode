@@ -6,6 +6,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/db/migrations"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -111,6 +112,133 @@ func TestAnIdeaKeepsItsStatusAndFinishesWithItsGoal(t *testing.T) {
 		listed, err := tx.ListAgentIdeas(agent.ID, []models.AgentIdeaStatus{models.IdeaDone}, []models.AgentIdeaKind{models.IdeaCatalog})
 		if err != nil || len(listed) != 1 || listed[0].ShownAt == nil {
 			t.Fatalf("listed by status and kind, shown: %+v %v", listed, err)
+		}
+	})
+}
+
+// Deleting the conversation an idea was started in puts the idea back on
+// offer, since nothing carries it out any more; one already done stays
+// done and only loses the link to a conversation that is gone.
+func TestDeletingItsConversationPutsAStartedIdeaBackOnOffer(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "alice"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		agent, err := tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		conversation, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: agent.ID, Kind: models.AgentConversationNamed, LastAt: time.Now()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now()
+		startIn := func(ideaKey string, status models.AgentIdeaStatus) *models.AgentIdea {
+			kept, err := tx.UpsertAgentIdea(&models.AgentIdea{
+				AgentID: agent.ID, IdeaKey: ideaKey, IdeaKind: models.IdeaCatalog, IdeaCategory: "home", Emoji: "🏠",
+				Headline: "Tell me the plants. I'll plan the watering.",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			started, err := tx.UpdateAgentIdea(agent.ID, kept.ID, func(idea *models.AgentIdea) error {
+				idea.IdeaStatus, idea.StartedAt, idea.StartedConversationID = status, &now, conversation.ID
+				if status == models.IdeaDone {
+					idea.ClosedAt = &now
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return started
+		}
+		started := startIn("watering", models.IdeaStarted)
+		done := startIn("pruning", models.IdeaDone)
+
+		if err := tx.DeleteAgentConversation(conversation.ID); err != nil {
+			t.Fatal(err)
+		}
+		reopened, _ := tx.GetAgentIdea(agent.ID, started.ID)
+		if reopened.IdeaStatus != models.IdeaOpen || reopened.StartedConversationID != "" || reopened.StartedAt != nil {
+			t.Fatalf("on offer again, with no conversation: %+v", reopened)
+		}
+		listed, err := tx.ListAgentIdeas(agent.ID, []models.AgentIdeaStatus{models.IdeaOpen}, nil)
+		if err != nil || len(listed) != 1 || listed[0].ID != started.ID {
+			t.Fatalf("listed among the open ideas: %+v %v", listed, err)
+		}
+		finished, _ := tx.GetAgentIdea(agent.ID, done.ID)
+		if finished.IdeaStatus != models.IdeaDone || finished.StartedConversationID != "" || finished.ClosedAt == nil {
+			t.Fatalf("still done, without the link: %+v", finished)
+		}
+	})
+}
+
+// Ideas whose conversation was deleted before deleting one cleared the link
+// are put right by a migration, by the same rule: started goes back on
+// offer, done stays done, and a link to a conversation that is still there
+// is left alone.
+func TestTheMigrationClearsLinksToDeletedConversations(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	var agentId, startedId, doneId, livingId string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "alice"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		agent, err := tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		agentId = agent.ID
+		living, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: agent.ID, Kind: models.AgentConversationNamed, LastAt: time.Now()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now()
+		keep := func(ideaKey string, status models.AgentIdeaStatus, conversationId string) string {
+			kept, err := tx.UpsertAgentIdea(&models.AgentIdea{
+				AgentID: agent.ID, IdeaKey: ideaKey, IdeaKind: models.IdeaCatalog, IdeaCategory: "home", Emoji: "🏠",
+				Headline: "Tell me the plants. I'll plan the watering.",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tx.UpdateAgentIdea(agent.ID, kept.ID, func(idea *models.AgentIdea) error {
+				idea.IdeaStatus, idea.StartedAt, idea.StartedConversationID = status, &now, conversationId
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			return kept.ID
+		}
+		startedId = keep("watering", models.IdeaStarted, "gone-conversation")
+		doneId = keep("pruning", models.IdeaDone, "gone-conversation")
+		livingId = keep("repotting", models.IdeaStarted, living.ID)
+	})
+	isFound := false
+	for _, migration := range migrations.Migrations() {
+		if migration.ID == "0128_agent_idea_deleted_conversation" {
+			dbtest.Exec(t, database, migration.SQL)
+			isFound = true
+		}
+	}
+	if !isFound {
+		t.Fatal("the migration is missing")
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if reopened, _ := tx.GetAgentIdea(agentId, startedId); reopened.IdeaStatus != models.IdeaOpen || reopened.StartedConversationID != "" {
+			t.Fatalf("on offer again: %+v", reopened)
+		}
+		if finished, _ := tx.GetAgentIdea(agentId, doneId); finished.IdeaStatus != models.IdeaDone || finished.StartedConversationID != "" {
+			t.Fatalf("still done, without the link: %+v", finished)
+		}
+		if living, _ := tx.GetAgentIdea(agentId, livingId); living.IdeaStatus != models.IdeaStarted || living.StartedConversationID == "" {
+			t.Fatalf("a living conversation keeps its idea: %+v", living)
 		}
 	})
 }

@@ -449,6 +449,14 @@ func (self *Agent) SetIdeaStatus(tx db.Transaction, agent *models.Agent, ideaId 
 	}
 	now := time.Now()
 	return tx.UpdateAgentIdea(agent.ID, ideaId, func(changing *models.AgentIdea) error {
+		// A catalog idea expires when it stops being something the agent
+		// offers: a tool it needs went away, or the person already does
+		// it. Opened again, it would expire at the next reading of the
+		// catalog, so it is refused with the reason; it comes back on its
+		// own when that changes.
+		if status == models.IdeaOpen && changing.IdeaKind == models.IdeaCatalog && changing.IdeaStatus == models.IdeaExpired {
+			return fmt.Errorf("%w: this idea is no longer offered, because a tool it needs is gone or it is already taken care of; it comes back on its own when that changes", db.ErrInvalidArguments)
+		}
 		changing.IdeaStatus = status
 		if status == models.IdeaOpen {
 			// Open again: taken up afresh, nothing of the last attempt kept.

@@ -11,7 +11,8 @@ import {
   agentViewing,
   announceMailChanged,
   graphql,
-  openAgentConversation,
+  isNotFound,
+  sendToAgentConversation,
   subscribe,
   authorization,
   framedDrawer,
@@ -21,6 +22,7 @@ import { uploadFiles } from '../upload'
 import { suggestedRepliesOf, withoutPartialMarker } from '../suggestions'
 import { useAgentConversation } from '../hooks/useAgentConversation'
 import { useAgentPresence } from '../hooks/useAgentPresence'
+import { useFitToContent } from '../hooks/useFitToContent'
 import { budgetNearness, formatClock, formatCount, formatMoney, formatTime } from './common'
 import { useResolvedTheme } from './theme'
 import { Tooltip } from './tooltip'
@@ -2186,7 +2188,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const movedAt = useRef(0)
   const input = useRef<HTMLTextAreaElement>(null)
   const draftLoadedFor = useRef('')
+  // The conversation whose draft is sent as soon as it is open and its
+  // draft read back: an idea or a goal started from a page, or from the
+  // suggestions here.
+  const sendWhenOpen = useRef('')
   const filePicker = useRef<HTMLInputElement>(null)
+  useFitToContent(input, draft, open)
 
   // Whether there is an agent to talk to at all. Asked once; the button
   // stays hidden otherwise, which is most servers.
@@ -2483,10 +2490,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   }, [available, open])
 
   // Another page asking for a conversation to be opened here: a run's
-  // transcript from the agent page, or an idea started, whose request is
-  // written in as the conversation's draft so that it is in the box when
-  // the conversation is drawn, and nothing is sent until the person sends
-  // it.
+  // transcript from the agent page, or an idea or a goal started, whose
+  // first message is written in as the conversation's draft so that it is
+  // in the box when the conversation is drawn, and sent from there when
+  // asked, by the same send the button uses.
   useEffect(() => {
     const listener = (event: Event) => {
       const detail = (event as CustomEvent<AgentOpenDetail>).detail
@@ -2496,6 +2503,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         remember(draftKey(detail.conversationId), detail.draft)
         draftLoadedFor.current = ''
       }
+      sendWhenOpen.current = detail.draft && detail.shouldSendDraft ? detail.conversationId : ''
       setOpen(true)
       remember(OPEN_KEY, '1')
       void switchTo(detail.conversationId)
@@ -3053,7 +3061,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       remember(draftKey(conversationId), '')
       setPending([])
       setReferences([])
-      if (input.current) input.current.style.height = 'auto'
     }
     // Saying something is meaning to see it: wherever the transcript was
     // being read, it goes back to its end for the turn that follows.
@@ -3122,8 +3129,34 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       follow(response.AskAgent.runId)
     } catch (caught) {
       toast.failed(caught instanceof Error ? caught.message : String(caught))
+      // What was not sent goes back in the box, so nothing is lost and a
+      // second press tries again; the line that said it was sent goes.
+      if (!isSuggested && conversationRef.current === sendingConversationId) {
+        setLines((previous) => previous.filter((line) => line.key !== key))
+        setDraft((current) => (current.trim() === '' ? message : current))
+        setPending((current) => [...files, ...current])
+        setReferences((current) => [...pointed, ...current])
+      }
     }
   }
+
+  // A draft asked to be sent is sent once its conversation is the one open
+  // and its draft has been read back into the box: the same send as the
+  // button, so the turn streams in and a failure keeps the words.
+  useEffect(() => {
+    const waiting = sendWhenOpen.current
+    if (!waiting || isReadingConversation) return
+    if (conversationId !== waiting) {
+      // The read failed, or the person went elsewhere first: the draft
+      // stays kept with its conversation, unsent.
+      sendWhenOpen.current = ''
+      return
+    }
+    if (draftLoadedFor.current !== waiting || draft.trim() === '') return
+    sendWhenOpen.current = ''
+    void send()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, draft, isReadingConversation])
 
   const resolve = async (line: Extract<Line, { kind: 'confirmation' }>, approve: boolean) => {
     try {
@@ -3203,7 +3236,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     try {
       await readConversation(id, true)
     } catch (caught) {
-      toast.failed(caught instanceof Error ? caught.message : String(caught))
+      // A link kept somewhere else -- an idea's history, a goal, a run --
+      // can outlive the conversation it names.
+      if (isNotFound(caught)) toast.failed(t('agentDrawer.conversationDeleted'))
+      else toast.failed(caught instanceof Error ? caught.message : String(caught))
     }
   }
 
@@ -3967,14 +4003,14 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   <IdeaSuggestions
                     key={conversationId}
                     conversationId={conversationId}
-                    onDraft={(startedIn, openingRequest) => {
+                    onStarted={(startedIn, openingRequest) => {
                       if (startedIn !== conversationId) {
-                        openAgentConversation(startedIn, openingRequest)
+                        sendToAgentConversation(startedIn, openingRequest)
                         return
                       }
-                      setDraft(openingRequest)
                       remember(draftKey(startedIn), openingRequest)
-                      input.current?.focus()
+                      sendWhenOpen.current = startedIn
+                      setDraft(openingRequest)
                     }}
                   />
                 ) : null}
@@ -4156,13 +4192,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               value={draft}
               placeholder={uploading ? t('agentDrawer.uploading') : askPlaceholder}
               aria-label={askPlaceholder}
-              onChange={(event) => {
-                setDraft(event.target.value)
-                // One line until there is more; then as tall as the words,
-                // up to the cap the stylesheet sets.
-                event.target.style.height = 'auto'
-                event.target.style.height = `${Math.max(36, event.target.scrollHeight)}px`
-              }}
+              onChange={(event) => setDraft(event.target.value)}
               onPaste={(event) => {
                 const files = Array.from(event.clipboardData.files ?? [])
                 if (files.length > 0) {

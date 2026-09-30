@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { graphql } from './api'
+import { APIError, graphql, isNotFound } from './api'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -58,5 +58,14 @@ describe('GraphQL transport retries', () => {
 
     await expect(graphql('query { Session { authenticated } }')).rejects.toThrow('The server returned 503.')
     expect(fetchRequest).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('isNotFound', () => {
+  it('knows a thing deleted since the page was drawn from any other failure', () => {
+    expect(isNotFound(new APIError('api: not found'))).toBe(true)
+    expect(isNotFound(new APIError('db: not found: conversation'))).toBe(true)
+    expect(isNotFound(new APIError('api: permission denied'))).toBe(false)
+    expect(isNotFound(new Error('api: not found'))).toBe(false)
   })
 })

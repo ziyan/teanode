@@ -859,6 +859,24 @@ func (self *transaction) MarkAgentConversationRemembered(conversationId, message
 }
 
 func (self *transaction) DeleteAgentConversation(conversationId string) error {
+	// An idea started in the conversation would otherwise stay started,
+	// pointing at nothing, and never be offered again: it goes back on
+	// offer. One done or dismissed keeps what became of it and loses only
+	// the link. Here rather than at each caller, so that none can forget.
+	if conversationId == "" {
+		return fmt.Errorf("db: deleting a conversation needs the conversation")
+	}
+	now := time.Now()
+	if err := self.tx.Model(&agentIdeaModel{}).
+		Where(`"started_conversation_id" = ? AND "idea_status" = ?`, conversationId, string(models.IdeaStarted)).
+		Updates(map[string]any{"idea_status": string(models.IdeaOpen), "started_conversation_id": "", "started_at": nil, "closed_at": nil, "modified_at": now}).Error; err != nil {
+		return err
+	}
+	if err := self.tx.Model(&agentIdeaModel{}).
+		Where(`"started_conversation_id" = ?`, conversationId).
+		Updates(map[string]any{"started_conversation_id": "", "modified_at": now}).Error; err != nil {
+		return err
+	}
 	return self.tx.Where("\"id\" = ?", conversationId).Delete(&agentConversationModel{}).Error
 }
 
