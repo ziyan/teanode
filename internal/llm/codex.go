@@ -70,6 +70,9 @@ type codex struct {
 		secondaryPercent int
 		isKnown          bool
 		hasSaidHeaders   bool
+
+		// last is the whole of what was last said, for the dashboard.
+		last *PlanUsage
 	}
 
 	// isNoReasoningRefused is set once the plan has refused an effort of
@@ -324,6 +327,7 @@ func (self *codex) notePlanUsage(header http.Header) {
 	}
 	isChanged := !usage.isKnown || primary != usage.primaryPercent || secondary != usage.secondaryPercent
 	usage.primaryPercent, usage.secondaryPercent, usage.isKnown = primary, secondary, true
+	usage.last = planUsageOf(header, usage.last, time.Now())
 	usage.Unlock()
 	if isChanged {
 		log.Noticef("the %s plan has used %d%% of its %s window and %d%% of its %s one (they reset in %s and %s)",
@@ -332,6 +336,47 @@ func (self *codex) notePlanUsage(header http.Header) {
 			secondary, windowOf(header, "X-Codex-Secondary-Window-Minutes"),
 			resetOf(header, "X-Codex-Primary-Reset-After-Seconds"), resetOf(header, "X-Codex-Secondary-Reset-After-Seconds"))
 	}
+}
+
+// planUsageOf is what the headers say of the plan, keeping from what was said
+// before anything these headers leave out.
+func planUsageOf(header http.Header, previous *PlanUsage, now time.Time) *PlanUsage {
+	usage := &PlanUsage{PlanName: strings.TrimSpace(header.Get("X-Codex-Plan-Type")), ObservedAt: now}
+	if usage.PlanName == "" && previous != nil {
+		usage.PlanName = previous.PlanName
+	}
+	for _, prefix := range []string{"X-Codex-Primary", "X-Codex-Secondary"} {
+		window, isReported := planWindowOf(header, prefix, now)
+		if !isReported {
+			continue
+		}
+		// A window whose use this answer does not mention keeps what was
+		// said of it last, matched by its length.
+		if _, isKnown := usedPercent(header, prefix+"-Used-Percent"); !isKnown && previous != nil {
+			for _, before := range previous.Windows {
+				if before.WindowMinutes == window.WindowMinutes {
+					window.UsedPercent = before.UsedPercent
+				}
+			}
+		}
+		usage.Windows = append(usage.Windows, window)
+	}
+	sort.SliceStable(usage.Windows, func(left, right int) bool {
+		return usage.Windows[left].WindowMinutes < usage.Windows[right].WindowMinutes
+	})
+	return usage
+}
+
+// planUsageNow is what the plan last said, or nil before it has said anything.
+func (self *codex) planUsageNow() *PlanUsage {
+	self.planUsage.Lock()
+	defer self.planUsage.Unlock()
+	if self.planUsage.last == nil {
+		return nil
+	}
+	copied := *self.planUsage.last
+	copied.Windows = append([]PlanWindow(nil), copied.Windows...)
+	return &copied
 }
 
 // usedPercent reads a used-percent header, which may carry a fraction.

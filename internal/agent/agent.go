@@ -171,6 +171,12 @@ func (self *Agent) Catalog() *Catalog {
 	return self.catalog
 }
 
+// PlanUsage is what the named provider's plan last said of its allowance, or
+// nil for a provider paid by the token, or one not answered since the start.
+func (self *Agent) PlanUsage(provider string) *llm.PlanUsage {
+	return self.settings.Registry.PlanUsage(provider)
+}
+
 // Handler runs one kind of job. It returns nil when the job is done, a
 // Deferral to wait for a budget, or an error to retry.
 type Handler func(ctx context.Context, run *Run) error

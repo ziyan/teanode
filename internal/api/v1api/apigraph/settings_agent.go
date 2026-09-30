@@ -98,6 +98,11 @@ type AgentProviderSettings struct {
 	PricingOutput     float64  `json:"pricingOutput"`
 	PricingCacheRead  float64  `json:"pricingCacheRead"`
 	PricingCacheWrite float64  `json:"pricingCacheWrite"`
+
+	// PlanUsage is what a provider paid for by subscription last said of
+	// its allowance; absent for one paid by the token, and until the plan
+	// has answered once since the server started.
+	PlanUsage *AgentPlanUsageSettings `json:"planUsage" graphapi:"nullable"`
 	// ModelPricing prices particular models of this provider, in order:
 	// the first entry that matches a model is the one used.
 	ModelPricing []*AgentModelPricingSettings `json:"modelPricing"`
@@ -990,6 +995,52 @@ func toolCatalog() []*AgentToolView {
 		})
 	}
 	return views
+}
+
+// AgentPlanUsageSettings is how much of a plan's allowance is left.
+type AgentPlanUsageSettings struct {
+	// PlanName is the plan the account is on, as the service names it.
+	PlanName string `json:"planName"`
+
+	// Windows are the allowances, shortest first.
+	Windows []*AgentPlanWindowSettings `json:"windows"`
+
+	// ObservedAt is when the service last said it.
+	ObservedAt time.Time `json:"observedAt"`
+}
+
+// AgentPlanWindowSettings is one allowance, spent over a window of its own.
+type AgentPlanWindowSettings struct {
+	UsedPercent   int `json:"usedPercent"`
+	WindowMinutes int `json:"windowMinutes"`
+
+	// ResetsAt is when the window starts over; absent when not said.
+	ResetsAt *time.Time `json:"resetsAt" graphapi:"nullable"`
+}
+
+// withPlanUsage adds to each provider paid for by subscription how much of
+// its allowance its plan last said was used.
+func (self *graph) withPlanUsage(settings *AgentSettings) {
+	worker := self.agentWorker()
+	if worker == nil || settings == nil {
+		return
+	}
+	for _, provider := range settings.Providers {
+		usage := worker.PlanUsage(provider.Name)
+		if usage == nil {
+			continue
+		}
+		view := &AgentPlanUsageSettings{PlanName: usage.PlanName, Windows: []*AgentPlanWindowSettings{}, ObservedAt: usage.ObservedAt}
+		for _, window := range usage.Windows {
+			windowView := &AgentPlanWindowSettings{UsedPercent: window.UsedPercent, WindowMinutes: window.WindowMinutes}
+			if !window.ResetsAt.IsZero() {
+				resetsAt := window.ResetsAt
+				windowView.ResetsAt = &resetsAt
+			}
+			view.Windows = append(view.Windows, windowView)
+		}
+		provider.PlanUsage = view
+	}
 }
 
 // withSkillTools adds what the installed skills declare to the catalog the
