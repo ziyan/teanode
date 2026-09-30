@@ -21,7 +21,7 @@ import (
 
 // Finance: the person's finance sources, finance accounts and finance
 // transactions, exchange rates, net worth, spending categories and rules,
-// budgets and savings targets. The dashboard's Finance tab, the command
+// budgets and savings targets. The dashboard's Finance page, the command
 // line's teanode finance and the agent's finance tool all call these, so
 // the three say the same numbers; none of them has logic of its own. Every
 // resolver starts with requireAgentPerson and reads and writes the caller's

@@ -186,6 +186,19 @@ something else, that name appears once, here, and nowhere else.
 
 ## Decision Log
 
+- Decision: Finance is a page of its own in the sidebar, like Knowledge;
+  its setup stays on the agent page. The Finance page (`/finance/<section>`,
+  an item in the account's rail after Knowledge) holds Spending,
+  Transactions, Accounts, Budgets, Net worth and Savings targets; the agent
+  page's Finance tab (`/settings/agent/finance`) keeps the finance sources
+  and the settings, stacked, with no sections of its own. The old section
+  addresses under the tab are not redirected to the page, at the owner's
+  word; they open the tab.
+  Rationale: the owner's. On a phone the agent page's row of tabs with the
+  Finance sections under it was two stacked tab rows, and data a person
+  reads often does not belong inside settings.
+  Date/Author: 2026-09-30.
+
 - Decision: a person can bring a provider connection made elsewhere in as
   a finance source (`ImportFinanceCredential`): a Plaid credential of a
   link made with the same client id the operator configured, or a
@@ -633,23 +646,28 @@ keep their names (`SyncAgentKnowledgeSource`, `DeleteAgentKnowledgeSource`),
 and the tool and subcommand names for them are `sync`, `disable_source`,
 `enable_source` and `delete_source`.
 
-    what                          GraphQL                        dashboard (Finance tab)    subcommand / tool operation
-    which providers are offered   FinanceProviders               Link an institution        providers
-    link through Plaid            (two calls, see below)         Link an institution        link-plaid / link_plaid (1)
-    link through SimpleFIN        LinkSimpleFIN                  Link an institution        link-simplefin / none (2)
-    bring a connection in         ImportFinanceCredential        Link an institution        import-credential / none (3)
-    repair a sign-in              (two calls, see below)         Sign in again              repair (1)
-    list finance sources          FinanceSources                 sources list               sources
-    sync now                      SyncAgentKnowledgeSource       Sync now                   sync
-    switch a source off or on     the existing source update     source switch              disable-source, enable-source / disable_source, enable_source
-    delete a finance source       DeleteAgentKnowledgeSource     Delete                     delete-source / delete_source
-    finance accounts              FinanceAccounts                Accounts                   accounts
-    finance transactions          FinanceTransactions            Transactions               transactions
-    spending summary              FinanceSpendingSummary         Spending summary           spending-summary / spending_summary
-    exchange rate                 ExchangeRate                   in converted totals        exchange-rate / exchange_rate
-    convert an amount             ConvertCurrency                in converted totals        convert-currency / convert_currency
-    which reporting currency      ReportingCurrency              Finance settings           reporting-currency / reporting_currency
-    reporting currency            SetReportingCurrency           Finance settings           set-reporting-currency / set_reporting_currency
+    what                          GraphQL                        dashboard                    subcommand / tool operation
+    which providers are offered   FinanceProviders               tab: Link an institution     providers
+    link through Plaid            (two calls, see below)         tab: Link an institution     link-plaid / link_plaid (1)
+    link through SimpleFIN        LinkSimpleFIN                  tab: Link an institution     link-simplefin / none (2)
+    bring a connection in         ImportFinanceCredential        tab: Link an institution     import-credential / none (3)
+    repair a sign-in              (two calls, see below)         tab: Sign in again           repair (1)
+    list finance sources          FinanceSources                 tab: sources list            sources
+    sync now                      SyncAgentKnowledgeSource       tab: Sync now                sync
+    switch a source off or on     the existing source update     tab: source switch           disable-source, enable-source / disable_source, enable_source
+    delete a finance source       DeleteAgentKnowledgeSource     tab: Delete                  delete-source / delete_source
+    finance accounts              FinanceAccounts                page: Accounts               accounts
+    finance transactions          FinanceTransactions            page: Transactions           transactions
+    spending summary              FinanceSpendingSummary         page: Spending summary       spending-summary / spending_summary
+    exchange rate                 ExchangeRate                   page: in converted totals    exchange-rate / exchange_rate
+    convert an amount             ConvertCurrency                tab: Convert an amount       convert-currency / convert_currency
+    which reporting currency      ReportingCurrency              tab: Finance settings        reporting-currency / reporting_currency
+    reporting currency            SetReportingCurrency           tab: Finance settings        set-reporting-currency / set_reporting_currency
+
+In the dashboard column, tab is the agent page's Finance tab
+(`/settings/agent/finance`), which holds the setup, and page is the
+Finance page (`/finance/<section>`), which holds what the institutions
+report.
 
 (1) Plaid Link needs a browser. The command line prints the address of
 `/finance-link` for this person and waits until the new finance source

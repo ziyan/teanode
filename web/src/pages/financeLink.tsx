@@ -141,7 +141,7 @@ export function FinanceLinkPage() {
       window.close()
       return
     }
-    window.location.assign('/settings/agent/finance/sources')
+    window.location.assign('/settings/agent/finance')
   }
 
   return (

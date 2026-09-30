@@ -292,7 +292,7 @@ a limit, colored by `budgetNearness` from `web/src/components/common`).
 
 ## Parity
 
-    what                           GraphQL                   dashboard (Finance tab)   subcommand / tool operation
+    what                           GraphQL                   dashboard (Finance page)  subcommand / tool operation
     spending categories            SpendingCategories        Spending categories       spending-categories / spending_categories
     add one                        CreateSpendingCategory    Spending categories       create-spending-category / create_spending_category
     change one                     UpdateSpendingCategory    Spending categories       update-spending-category / update_spending_category

@@ -421,7 +421,8 @@ terminal is placed as well as one who lives in the browser.
 
 The institutions you linked, their accounts and transactions, net worth,
 spending categories, budgets and savings targets: the same operations as the
-agent page's Finance tab and the agent's `finance` tool, and named after
+dashboard's Finance page (and its setup on the agent page's Finance tab) and
+the agent's `finance` tool, and named after
 them (the tool's `spending_summary` is `teanode finance spending-summary`).
 Amounts are printed with their currency; `--json` keeps full precision.
 `docs/subsystems/finance.md` says how it works.

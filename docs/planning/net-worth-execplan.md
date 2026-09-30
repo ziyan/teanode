@@ -194,7 +194,7 @@ across a range and ranked bars, without a charting package.
 
 ## Parity
 
-    what                        GraphQL            dashboard (Finance tab)     subcommand / tool operation
+    what                        GraphQL            dashboard (Finance page)    subcommand / tool operation
     net worth over time         NetWorth           Net worth chart             net-worth / net_worth
     list assets                 Assets             Assets                      assets
     one asset's history         AssetHistory       asset page                  asset-history / asset_history

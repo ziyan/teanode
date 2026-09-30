@@ -26,7 +26,8 @@ import { AlertsCard } from '../components/agentAlerts'
 import { PencilIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tabs, TabItem } from '../components/tabs'
-import { FinanceTab, useFinancePresence } from './agentFinance'
+import { FinanceTab } from './agentFinance'
+import { useFinancePresence } from './finance/financePresence'
 import { GoalsTab } from './agentGoals'
 import { IdeasTab } from './agentIdeas'
 import { MemoryCheckSection } from '../components/memoryCheck'
@@ -213,7 +214,8 @@ const AGENT_TABS: TabItem[] = [
 
 // The same tabs with Finance among them, beside Sources: the institutions
 // it reads are places it reads too, and the tab is there only when there is
-// something to link through or something linked already.
+// something to link through or something linked already. It holds only the
+// setup; what the institutions report is on the Finance page.
 const AGENT_TABS_WITH_FINANCE: TabItem[] = AGENT_TABS.flatMap((item) =>
   item.id === 'sources' ? [item, { id: 'finance', label: 'agent.tabFinance' }] : [item],
 )
@@ -439,7 +441,7 @@ export function AgentPage() {
       ) : null}
       {/* The places it reads: each a source of an installed type. */}
       {tab === 'sources' ? <KnowledgeSourcesCard /> : null}
-      {tab === 'finance' ? <FinanceTab hasSources={finance.hasSources} /> : null}
+      {tab === 'finance' ? <FinanceTab /> : null}
       {/* What it does at set times, of its own: the schedules and the
           morning brief, which are timetables rather than connections. */}
       {tab === 'schedules' ? (

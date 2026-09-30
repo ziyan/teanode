@@ -5,7 +5,8 @@ a brokerage, a lender), and the server keeps their accounts, transactions and
 balances in tables of its own. On top of those rows sit net worth over time,
 the person's spending categories, budgets and savings targets. The agent reads
 and changes all of it through one tool, `finance`; the dashboard shows it on
-the agent page's Finance tab; the command line is `teanode finance`.
+the Finance page, `/finance`, and sets it up on the agent page's Finance tab;
+the command line is `teanode finance`.
 
 The designs and the reasons for them are in
 `docs/planning/finance-accounts-execplan.md`,
@@ -56,8 +57,8 @@ same finance source rather than linking a new one (a Plaid Trial counts every
 link against ten, for good).
 
 **SimpleFIN** needs nothing from the operator. The person makes a setup token
-on the SimpleFIN Bridge and pastes it into the dashboard or `teanode finance
-link-simplefin`; the server claims it once for the credential, a URL with its
+on the SimpleFIN Bridge and pastes it on the agent page's Finance tab or into
+`teanode finance link-simplefin`; the server claims it once for the credential, a URL with its
 own basic credentials. The bridge caps a request at 90 days and keeps about 90
 days of history, so a first sync reads two 45-day windows and later syncs read
 from fourteen days before the newest posted transaction, replacing pending
@@ -180,3 +181,22 @@ address). Two are deliberately missing from the tool: a SimpleFIN setup token
 and a credential brought in are refused in conversation, because they would
 stay in the transcript and go to the model provider; `link_simplefin` and
 `import_credential` only say where to give them.
+
+## In the dashboard
+
+Two places, split by how often a person goes there. The **Finance page**
+(`web/src/pages/financePage.tsx`, `/finance/<section>`) is an item in the
+account's rail after Knowledge, shown when the person's agent is on and a
+provider is offered or a finance source exists. Its sections are Spending,
+Transactions, Accounts, Budgets, Net worth and Savings targets: a row of tabs
+on a wide screen, one full-width list to choose from on a phone. `/finance`
+alone opens Spending; with nothing linked yet the page says so and links to
+the setup.
+
+The **agent page's Finance tab** (`web/src/pages/agentFinance.tsx`,
+`/settings/agent/finance`) is the setup: the finance sources (link, repair,
+bring an existing connection in, sync, switch, delete) and the settings (the
+reporting currency and the converter), in one scroll. `/finance-link`, the
+page Plaid's window runs on, comes back to it. The addresses the sections had
+under the tab before they moved (`/settings/agent/finance/spending` and the
+rest) open the tab and are not sent on to the Finance page.

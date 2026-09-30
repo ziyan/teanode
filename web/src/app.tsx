@@ -88,6 +88,11 @@ const AgentPage = lazyPage(async () => ({
 const KnowledgePage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/knowledge')).KnowledgePage,
 }))
+// The Finance page's sections are charts and tables nobody without finance
+// opens, so they are a file of their own.
+const FinancePage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "finance" */ './pages/financePage')).FinancePage,
+}))
 const KnowledgeExplorePage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/knowledgeExplore')).KnowledgeExplorePage,
 }))
@@ -418,14 +423,20 @@ export function App() {
                       names no tab is answered by the page with the first. */}
                     <Route path="/settings/agent" element={<AgentPage />} />
                     <Route path="/settings/agent/:tab" element={<AgentPage />} />
-                    {/* A tab with sections of its own, Finance, names the
-                      section after the tab. */}
+                    {/* A path under a tab is that tab: Finance had sections of
+                      its own here before they became the Finance page, and
+                      their old addresses show the tab rather than nothing. */}
                     <Route path="/settings/agent/:tab/:section" element={<AgentPage />} />
                     {/* Before the graph's own paths below: "explore" is the
                       drawing of the whole graph, not a folder in it, and the
                       splat route would read it as one. */}
                     <Route path="/settings/knowledge/explore" element={<KnowledgeExplorePage />} />
                     <Route path="/settings/knowledge/*" element={<KnowledgePage />} />
+                    {/* What the linked institutions report, a page of its own
+                      in the account's rail after Knowledge; linking them is
+                      the agent page's Finance tab. */}
+                    <Route path="/finance" element={<FinancePage />} />
+                    <Route path="/finance/:section" element={<FinancePage />} />
                     <Route path="/settings/password" element={<ChangePasswordPage username={session.username} />} />
                     <Route path="/settings/passkeys" element={<PasskeysPage />} />
                     <Route path="/settings/tokens" element={<TokensPage />} />

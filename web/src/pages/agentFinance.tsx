@@ -1,114 +1,31 @@
-import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 
-import { graphql } from '../api'
 import { Loading } from '../components/common'
-import { Select } from '../components/select'
-import { useIsDesktop } from '../components/sidebar'
-import { TabItem, Tabs } from '../components/tabs'
-import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
-import { FINANCE_PRESENCE, FinanceProvider, PERSON_ZONE, PersonZoneAnswer, setPersonZone } from './finance/financeApi'
-import { FinanceAccountsSection } from './finance/financeAccounts'
-import { FinanceBudgetsSection } from './finance/financeBudgets'
-import { FinanceNetWorthSection } from './finance/financeNetWorth'
-import { FinanceSavingsTargetsSection } from './finance/financeSavingsTargets'
+import { usePersonZone } from './finance/financeCommon'
 import { FinanceSettingsSection } from './finance/financeSettings'
 import { FinanceSourcesSection } from './finance/financeSources'
-import { FinanceSpendingSection } from './finance/financeSpending'
-import { FinanceTransactionsSection } from './finance/financeTransactions'
 
-// The Finance tab: the institutions a person linked and everything built on
-// what they report, in the same operations the command line's teanode
-// finance and the agent's finance tool call. Its sections are tabs of
-// their own, each a place in the address, because a person opens it to
-// answer one question -- what did I spend, what am I worth, am I on
-// budget -- and eight panels in one scroll made them hunt for it.
-export const FINANCE_SECTIONS: TabItem[] = [
-  { id: 'spending', label: 'finance.tabSpending' },
-  { id: 'transactions', label: 'finance.tabTransactions' },
-  { id: 'accounts', label: 'finance.tabAccounts' },
-  { id: 'budgets', label: 'finance.tabBudgets' },
-  { id: 'net-worth', label: 'finance.tabNetWorth' },
-  { id: 'savings-targets', label: 'finance.tabSavingsTargets' },
-  { id: 'sources', label: 'finance.tabSources' },
-  { id: 'settings', label: 'finance.tabSettings' },
-]
-
-// useFinancePresence says whether the Finance tab is shown: when the
-// operator offers a provider to link through, or when the person already
-// has finance sources, which stay theirs to see and delete after a
-// provider stops being offered. Null while it is being asked. A server
-// without the finance operations answers with an error, and then there is
-// no tab.
-export function useFinancePresence(isAgentOn: boolean): { isShown: boolean | null; hasSources: boolean } {
-  const { data, error } = useQuery(
-    async () =>
-      isAgentOn
-        ? {
-            ...(await graphql<{ FinanceProviders: FinanceProvider[]; FinanceSources: { id: string }[] }>(
-              FINANCE_PRESENCE,
-            )),
-            isAskedForAgent: true,
-          }
-        : { FinanceProviders: [], FinanceSources: [], isAskedForAgent: false },
-    [isAgentOn],
-    { refresh: false },
-  )
-  // Undecided until the question has been answered for the agent that is
-  // on. The query's data outlives a change of its inputs, and on the render
-  // after the agent loaded it still held the empty answer given while the
-  // agent was loading, with nothing marked as loading yet; read as "no
-  // finance", it sent a link to the Finance tab to the first tab.
-  if (error && isAgentOn) return { isShown: false, hasSources: false }
-  if (!isAgentOn || !data?.isAskedForAgent) return { isShown: null, hasSources: false }
-  const hasSources = (data?.FinanceSources.length ?? 0) > 0
-  return { isShown: (data?.FinanceProviders.length ?? 0) > 0 || hasSources, hasSources }
-}
-
-export function FinanceTab({ hasSources }: { hasSources: boolean }) {
-  const { section } = useParams()
-  const navigate = useNavigate()
-  const location = useLocation()
+// The agent page's Finance tab: how finance is set up, not what it says.
+// The institutions a person linked, with linking, repairing, importing,
+// syncing, switching and deleting them, then the reporting currency and the
+// converter, stacked. What they report is read on the Finance page, a place
+// of its own in the rail: a person reads their spending often and sets up a
+// bank once, and the two rows of tabs this tab used to stack were one too
+// many on a phone.
+export function FinanceTab() {
   const { t } = useTranslation()
-  const isDesktop = useIsDesktop()
-  // The sections' default days and months are the person's, in the zone
-  // their agent keeps, so the zone is read before any section is drawn. A
-  // failure to read it leaves the browser's zone rather than no tab.
-  const zone = useQuery(() => graphql<PersonZoneAnswer>(PERSON_ZONE), [], { refresh: false })
-  // Nothing linked yet, the only useful section is where linking happens.
-  if (!FINANCE_SECTIONS.some((candidate) => candidate.id === section)) {
-    const landing = hasSources ? FINANCE_SECTIONS[0].id : 'sources'
-    return <Navigate to={`/settings/agent/finance/${landing}${location.search}`} replace />
-  }
-  if (!zone.data && !zone.error) return <Loading />
-  setPersonZone(zone.data?.ReadAgent?.timezone ?? '')
-  const openSection = (id: string) => navigate(`/settings/agent/finance/${id}`)
-  // On a phone the agent page's own tabs are already a row that scrolls
-  // sideways, and eight sections under it made a second one. There the
-  // sections are one list to choose from, the width of the page.
+  // The converter's default day is the person's, in the zone their agent
+  // keeps, so the zone is read before the panels are drawn.
+  const isZoneRead = usePersonZone()
+  if (!isZoneRead) return <Loading />
   return (
     <>
-      {isDesktop ? (
-        <Tabs items={FINANCE_SECTIONS} active={section} onSelect={openSection} />
-      ) : (
-        <Select
-          block
-          className="finance-section-select"
-          value={section ?? ''}
-          label={t('finance.sectionLabel')}
-          searchable={false}
-          options={FINANCE_SECTIONS.map((candidate) => ({ value: candidate.id, label: t(candidate.label) }))}
-          onChange={openSection}
-        />
-      )}
-      {section === 'sources' ? <FinanceSourcesSection /> : null}
-      {section === 'accounts' ? <FinanceAccountsSection /> : null}
-      {section === 'transactions' ? <FinanceTransactionsSection /> : null}
-      {section === 'spending' ? <FinanceSpendingSection /> : null}
-      {section === 'budgets' ? <FinanceBudgetsSection /> : null}
-      {section === 'net-worth' ? <FinanceNetWorthSection /> : null}
-      {section === 'savings-targets' ? <FinanceSavingsTargetsSection /> : null}
-      {section === 'settings' ? <FinanceSettingsSection /> : null}
+      <p className="muted finance-pointer">
+        {t('finance.setupPointer')} <Link to="/finance">{t('finance.openFinancePage')}</Link>
+      </p>
+      <FinanceSourcesSection />
+      <FinanceSettingsSection />
     </>
   )
 }

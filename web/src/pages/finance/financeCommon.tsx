@@ -10,16 +10,31 @@ import { useQuery } from '../../components/useQuery'
 import {
   CURRENCY_CODES,
   FinanceAccount,
+  PERSON_ZONE,
+  PersonZoneAnswer,
   REPORTING_CURRENCY,
   ReportingCurrencyAnswer,
   SpendingCategory,
   amountOf,
   hasAmount,
+  setPersonZone,
 } from './financeApi'
 
-// What the Finance tab's sections share: running a change and saying how
+// What the Finance page's sections share: running a change and saying how
 // it went, an amount in its currency, and the pickers several sections ask
 // the same question with.
+
+// usePersonZone reads the zone the person's agent keeps and sets it for the
+// sections' default days and months, and says when that is done. The
+// Finance page and the agent page's Finance tab wait for it before drawing
+// a section. A failure to read it leaves the browser's zone rather than no
+// page.
+export function usePersonZone(): boolean {
+  const zone = useQuery(() => graphql<PersonZoneAnswer>(PERSON_ZONE), [], { refresh: false })
+  if (!zone.data && !zone.error) return false
+  setPersonZone(zone.data?.ReadAgent?.timezone ?? '')
+  return true
+}
 
 // useAct runs a change, says it worked or why it did not in a toast, and
 // then reads the section again. Busy while it runs, so a second press

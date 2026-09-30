@@ -3,7 +3,7 @@
 // lenders, linked through a provider), finance accounts and transactions,
 // exchange rates, net worth, spending categories and rules, budgets and
 // savings targets. Every operation calls the operation of the same name the
-// dashboard's Finance tab and teanode finance call, so the three agree;
+// dashboard's Finance page and teanode finance call, so the three agree;
 // the tool has no logic of its own beyond saying where a browser is needed.
 package finance
 
@@ -365,7 +365,7 @@ func checkArguments(name string, operation *financeOperation, asked map[string]a
 		}
 		for _, personOnly := range PersonOnlyAssetArguments {
 			if key == personOnly {
-				instead = append(instead, key+" is the person's to set, on the Finance tab or with teanode finance update-asset")
+				instead = append(instead, key+" is the person's to set, on the dashboard's Finance page or with teanode finance update-asset")
 			}
 		}
 	}
@@ -434,7 +434,7 @@ const description = "The person's money: their finance sources (logins at banks,
 	"- A savings plan: `cash_flow` for what they save a month now, `savings_targets` for what a target needs a month, `budget_status` and `spending_summary` for which spending categories could close the gap, with numbers.\n" +
 	"- After the person corrects a transaction's spending category with `categorize_transaction`, offer a spending rule for that merchant (`should_create_spending_rule`), which applies to past transactions too, never over their own choices.\n" +
 	"- Tracking an account reachable only through a connected server: `create_asset` with valuation_source agent_reading if there is none (a value read now can go in the same call), then a daily schedule whose prompt calls that server's tool for the account's total and records it with `record_valuation` (valuation_source agent_reading). Never over an asset valued by finance_sync.\n" +
-	"- Estimating a house or a car: only for an asset with isEstimateAllowed, which only the person sets (on the Finance tab or with teanode finance update-asset). Search the web for its estimateDescription, read two to four pages that give a value or comparable sales, and `record_valuation` with valuation_source agent_estimate, estimate_low, estimate_high, the middle as value, the pages as evidence_urls and a valuation_note saying what it rests on. Where estimates are not allowed, say so and say where the person can allow them.\n" +
+	"- Estimating a house or a car: only for an asset with isEstimateAllowed, which only the person sets (on the dashboard's Finance page or with teanode finance update-asset). Search the web for its estimateDescription, read two to four pages that give a value or comparable sales, and `record_valuation` with valuation_source agent_estimate, estimate_low, estimate_high, the middle as value, the pages as evidence_urls and a valuation_note saying what it rests on. Where estimates are not allowed, say so and say where the person can allow them.\n" +
 	"- Converting currencies: `convert_currency` or `exchange_rate`, with from_currency_code, to_currency_code and rate_on for another day; the answer names the published day the rate is from."
 
 func init() {
@@ -501,7 +501,7 @@ func init() {
 					"started_on":                  tools.StringProperty("the day the savings target starts; today when left out"),
 					"asset_ids":                   tools.ArrayProperty("for asset_value: the assets it measures", tools.StringProperty("an asset id")),
 				}, "operation"),
-				Guidance: "finance: for anything about the person's accounts, spending, budgets, savings, net worth or exchange rates, use this and quote its numbers; never add amounts in different currencies yourself. A SimpleFIN setup token or a provider credential pasted in conversation is not used: point to the dashboard's Finance tab, teanode finance link-simplefin or teanode finance import-credential.",
+				Guidance: "finance: for anything about the person's accounts, spending, budgets, savings, net worth or exchange rates, use this and quote its numbers; never add amounts in different currencies yourself. A SimpleFIN setup token or a provider credential pasted in conversation is not used: point to the Finance tab of their agent page in the dashboard, teanode finance link-simplefin or teanode finance import-credential.",
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
 					var call struct {
 						Operation string `json:"operation"`
@@ -700,7 +700,7 @@ func agentValuationSource(name, valuationSource string, variables map[string]any
 		variables["valuationSource"] = "agent_reading"
 	case "agent_reading", "agent_estimate":
 	default:
-		return fmt.Errorf("%s with a value from here is agent_reading or agent_estimate; a value the person gives is theirs to record on the Finance tab or with teanode finance record-valuation", name)
+		return fmt.Errorf("%s with a value from here is agent_reading or agent_estimate; a value the person gives is theirs to record on the dashboard's Finance page or with teanode finance record-valuation", name)
 	}
 	return nil
 }
@@ -716,7 +716,7 @@ func emptyHint(name string, answered any) string {
 	case "providers":
 		return "this server offers no provider to link an institution through; the operator turns them on in the agent settings"
 	case "sources", "accounts":
-		return "nothing is linked yet: providers says what the server offers, link_plaid gives the address to link through Plaid, and a SimpleFIN setup token goes on the dashboard's Finance tab or teanode finance link-simplefin"
+		return "nothing is linked yet: providers says what the server offers, link_plaid gives the address to link through Plaid, and a SimpleFIN setup token goes on the Finance tab of their agent page in the dashboard or teanode finance link-simplefin"
 	case "assets":
 		return "no assets yet; create_asset adds one, and linking a finance source adds one per finance account"
 	case "budgets":

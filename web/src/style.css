@@ -11630,6 +11630,13 @@ button.idea-history-title {
   margin-bottom: var(--space-4);
 }
 
+/* The line that says where the other half of finance is: the setup on the
+   agent page, the data on the Finance page. Above the panels, spaced as a
+   panel is from the next. */
+.finance-pointer {
+  margin: 0 0 var(--space-4);
+}
+
 /* An amount column in the shared table reads down by its decimal places,
    as the plain numbers tables do. */
 .table-surface .numeric {

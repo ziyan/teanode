@@ -22,7 +22,7 @@ import (
 // savings targets. One subcommand per operation of the finance area, named
 // by the rule the parity test checks (the operation's name in kebab case,
 // with a leading Finance dropped), calling the same operation the
-// dashboard's Finance tab and the agent's finance tool call.
+// dashboard's Finance page and the agent's finance tool call.
 
 // financeLinkPagePath is the dashboard page that opens Plaid Link, the one
 // page whose security policy lets Plaid's window in.

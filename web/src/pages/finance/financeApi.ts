@@ -1,4 +1,5 @@
-// The Finance tab's questions to the server, and the shapes of the answers.
+// The questions the Finance page and the agent page's Finance tab ask the
+// server, and the shapes of the answers.
 // Every one is an operation of FinanceQuery or FinanceMutation, the same
 // ones the command line's teanode finance and the agent's finance tool
 // call, so the three show the same numbers. Amounts arrive as decimal
@@ -257,8 +258,6 @@ export const FINANCE_SOURCES = `query {
 // Whether the tab is shown: something to link through, or something
 // linked already (a provider the operator stopped offering still leaves
 // the person's finance sources to look at and delete).
-export const FINANCE_PRESENCE = `query { FinanceProviders { providerKind } FinanceSources { id } }`
-
 export const LINK_SIMPLEFIN = `mutation ($setupToken: String!) { LinkSimpleFIN(setupToken: $setupToken) { id } }`
 
 // Bring in a provider connection made elsewhere: a Plaid access token of a
@@ -482,7 +481,7 @@ export const REPORTING_CURRENCY = `query { ReportingCurrency { reportingCurrency
 
 export type ReportingCurrencyAnswer = { ReportingCurrency: { reportingCurrencyCode: string; isChosen: boolean } }
 
-// The person's own time zone, from their agent: a month on the Finance tab
+// The person's own time zone, from their agent: a month on the Finance page
 // is the person's month, whatever zone the browser is in.
 export const PERSON_ZONE = `query { ReadAgent { timezone } }`
 
@@ -517,8 +516,8 @@ export function isDecimal(typed: string): boolean {
   return /^-?\d+(\.\d{1,4})?$/.test(typed.trim())
 }
 
-// The zone the Finance tab's days and months are in: the person's own,
-// which their agent keeps, set by the tab once it has read it. Empty until
+// The zone the Finance page's days and months are in: the person's own,
+// which their agent keeps, set by the page once it has read it. Empty until
 // then, which is the browser's zone. The server answers "this month" in the
 // person's zone too, so a default range drawn in the browser's would be a
 // different month for somebody travelling.
