@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.92.6] - 2026-09-30
+
+### Fixed
+
+- Net worth totals no longer flash without foreign-currency assets, and a failure to load the reporting currency is shown instead of loading forever. (#272)
+
 ## [0.92.5] - 2026-09-30
 
 ### Changed
