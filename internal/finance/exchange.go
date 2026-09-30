@@ -67,8 +67,14 @@ type ExchangeRateSource struct {
 
 // NewExchangeRateSource builds a source. It opens no connection.
 func NewExchangeRateSource() *ExchangeRateSource {
+	return NewExchangeRateSourceAt(exchangeRateBaseUrl)
+}
+
+// NewExchangeRateSourceAt builds a source that fetches the ECB's files
+// from another address, for a test that serves them itself.
+func NewExchangeRateSourceAt(baseUrl string) *ExchangeRateSource {
 	return &ExchangeRateSource{
-		baseUrl: exchangeRateBaseUrl,
+		baseUrl: baseUrl,
 		http:    &http.Client{Timeout: exchangeRateTimeout},
 	}
 }

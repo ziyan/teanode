@@ -38,10 +38,31 @@ const (
 	// SourceSent is the person's own sent mail, which is what makes the
 	// agent able to write as they do.
 	SourceSent AgentKnowledgeKind = "sent"
+
+	// SourceFinance is one login at one financial institution, reached
+	// through a provider. It files rows of finance accounts and finance
+	// transactions rather than documents, so nothing in the memory graph
+	// reads it; Specification.Type is the provider kind and
+	// Specification.Settings holds FinanceSourceSettings.
+	SourceFinance AgentKnowledgeKind = "finance"
 )
 
 // AgentKnowledgeKinds is every kind.
-var AgentKnowledgeKinds = []AgentKnowledgeKind{SourceComputer, SourceArchive, SourceSkill, SourceWeb, SourceSent}
+var AgentKnowledgeKinds = []AgentKnowledgeKind{SourceComputer, SourceArchive, SourceSkill, SourceWeb, SourceSent, SourceFinance}
+
+// IsMadeByLinking says a source of this kind is made only by the
+// operations that link it, never by the generic source creation: a finance
+// source needs a credential the provider hands over at the end of a link,
+// and a row without one would be a source that can never sync.
+func (self AgentKnowledgeKind) IsMadeByLinking() bool {
+	return self == SourceFinance
+}
+
+// IsDocumentKind says a source of this kind files documents into the
+// memory graph, which is every kind but finance.
+func (self AgentKnowledgeKind) IsDocumentKind() bool {
+	return self != SourceFinance
+}
 
 // IsAgentKnowledgeKind says whether a word names a kind.
 func IsAgentKnowledgeKind(kind AgentKnowledgeKind) bool {
@@ -264,6 +285,10 @@ func (self *AgentKnowledgeSource) Validate() error {
 		if strings.TrimSpace(self.Specification.MailboxID) == "" {
 			errors.add("specification.mailboxId", "required: which mailbox")
 		}
+	case SourceFinance:
+		if strings.TrimSpace(self.Specification.Type) == "" {
+			errors.add("specification.type", "required: which provider")
+		}
 	}
 	// A format the daemon cannot read used to be found only by the daemon,
 	// hours later, as a scan that failed on a word nobody could see any
@@ -307,6 +332,12 @@ func (self *AgentKnowledgeSource) Describe() string {
 		return self.Specification.Start
 	case SourceSent:
 		return "their own sent mail"
+	case SourceFinance:
+		settings, _ := self.FinanceSourceSettings()
+		if settings.InstitutionName != "" {
+			return settings.InstitutionName + " through " + self.Specification.Type
+		}
+		return "an institution through " + self.Specification.Type
 	}
 	return string(self.Kind)
 }

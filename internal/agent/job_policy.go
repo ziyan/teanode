@@ -31,6 +31,8 @@ func jobTimeout(jobKind models.AgentJobKind) time.Duration {
 		// A memory check is a conversation held in one turn, a question
 		// card at a time, each waited on for as long as a confirmation.
 		return speakFirstLongest
+	case models.AgentJobCategorize:
+		return categorizeLongest
 	default:
 		return 10 * time.Minute
 	}

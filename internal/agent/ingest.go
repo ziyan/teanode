@@ -121,15 +121,33 @@ func (self *Agent) queueIngestion(ctx context.Context, now time.Time) {
 		return
 	}
 	configuration := self.settings.Configuration()
-	if !FeatureAllowed(configuration, "knowledge") {
-		return
-	}
 	self.lastIngest = now
 
+	// Finance sources are listed on their own: they do not wait on the
+	// knowledge feature, and a backlog of document sources with more to
+	// read, which the listing puts first, must not keep a sync from
+	// starting.
 	var due []*models.AgentKnowledgeSource
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		due, err = tx.ListDueAgentSources(now, 20)
-		return err
+		if FeatureAllowed(configuration, "knowledge") {
+			if due, err = tx.ListDueAgentSources(now, 20); err != nil {
+				return err
+			}
+		}
+		financeSources, err := tx.ListDueAgentSourcesOfKinds(now, []models.AgentKnowledgeKind{models.SourceFinance}, 20)
+		if err != nil {
+			return err
+		}
+		for _, source := range financeSources {
+			isListed := false
+			for _, listed := range due {
+				isListed = isListed || listed.ID == source.ID
+			}
+			if !isListed {
+				due = append(due, source)
+			}
+		}
+		return nil
 	}); err != nil {
 		log.Warningf("cannot list the sources that are due: %s", err)
 		return
@@ -153,9 +171,6 @@ func (self *Agent) queueIngestion(ctx context.Context, now time.Time) {
 // runIngest is the handler for an ingest job; its subject is the source.
 func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 	configuration := run.Configuration()
-	if !FeatureAllowed(configuration, "knowledge") {
-		return nil
-	}
 	var source *models.AgentKnowledgeSource
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		source, err = tx.GetAgentSource(run.Agent.ID, run.Job.SubjectID)
@@ -164,6 +179,14 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 		return err
 	}
 	if source == nil || !source.Enabled {
+		return nil
+	}
+	// A finance source is synced, not read: no passes, no sweep, nothing
+	// to embed, and no wait on the knowledge feature (ingest_finance.go).
+	if source.Kind == models.SourceFinance {
+		return self.runFinanceSync(ctx, run, source)
+	}
+	if !FeatureAllowed(configuration, "knowledge") {
 		return nil
 	}
 

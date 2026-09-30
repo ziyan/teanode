@@ -2,8 +2,56 @@ package models
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
+
+// FinanceSourceCron is how often a finance source syncs unless the person
+// sets another schedule: four times a day. Institutions post a day's
+// transactions in one or two batches, and a provider may charge per call,
+// so more often buys nothing.
+const FinanceSourceCron = "0 */6 * * *"
+
+// FinanceCredentialSecretKey is the source secret a finance source keeps
+// its credential under.
+const FinanceCredentialSecretKey = "credential"
+
+// The keys of a finance source's cursor, which only its sync reads and
+// writes: the provider's own cursor, and whether the institution is
+// waiting for the person to sign in again, while which the sync does not
+// call the provider.
+const (
+	FinanceCursorProviderCursor   = "providerCursor"
+	FinanceCursorIsSignInRequired = "isSignInRequired"
+)
+
+// FinanceSourceSettings is what a finance source's Specification.Settings
+// holds: the institution it reaches and the provider's reference for the
+// link (Plaid's item id; empty for SimpleFIN).
+type FinanceSourceSettings struct {
+	InstitutionID     string `json:"institutionId,omitempty"`
+	InstitutionName   string `json:"institutionName,omitempty"`
+	ProviderReference string `json:"providerReference,omitempty"`
+}
+
+// FinanceSourceSettings reads a finance source's settings. Empty settings
+// read as empty values, not as an error.
+func (self *AgentKnowledgeSource) FinanceSourceSettings() (FinanceSourceSettings, error) {
+	var settings FinanceSourceSettings
+	trimmed := strings.TrimSpace(string(self.Specification.Settings))
+	if trimmed == "" || trimmed == "null" {
+		return settings, nil
+	}
+	err := json.Unmarshal([]byte(trimmed), &settings)
+	return settings, err
+}
+
+// IsFinanceSignInRequired says the finance source is waiting for the
+// person to sign in to the institution again.
+func (self *AgentKnowledgeSource) IsFinanceSignInRequired() bool {
+	isRequired, _ := self.Cursor[FinanceCursorIsSignInRequired].(bool)
+	return isRequired
+}
 
 // FinanceAccountKind is what sort of account a finance account is, in the
 // providers' shared vocabulary.

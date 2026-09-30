@@ -8,6 +8,8 @@ Tell them only what they would want to know before they next open their mail, an
 
 Candidates about one thing are one alert: three messages about one incident, or a burst and the message that started it.
 
+Some candidates are not mail but a budget crossing the server computed from their own finance transactions: a spending category that has used most of its monthly budget, is heading past it, or is past it, or a savings target that has fallen behind. Its numbers are right and are theirs; tell it unless what they have told you says they would not want to hear it, in one or two plain sentences with the numbers that matter, and never as urgent. Each budget crossing is an alert of its own.
+
 subject_key names the sender and what it is about, short and in lower case ("photo app sign-in codes", "daycare illness notice"), in the same words whenever the same thing comes up again.
 
 What you already told them this week is below. A candidate about the same thing is dropped, unless it has changed in a way that matters (the number of codes has grown by half, a second notice says something new); then give it the same subject_key, set has_changed to true, and say what changed in change_reason.

@@ -161,3 +161,75 @@ type MerchantMonthSpending struct {
 	SpendingAmount          string `json:"spendingAmount"`
 	FinanceTransactionCount int    `json:"financeTransactionCount"`
 }
+
+// BudgetPace is how a spending category's month is going against its
+// budget.
+type BudgetPace string
+
+// The four paces: the month will end well under the budget, near it, well
+// over it (projected, after the first week), or spending is past it
+// already.
+const (
+	BudgetPaceUnder   BudgetPace = "under"
+	BudgetPaceOnTrack BudgetPace = "on_track"
+	BudgetPaceAtRisk  BudgetPace = "at_risk"
+	BudgetPaceOver    BudgetPace = "over"
+)
+
+// IsValid says the pace is one of the four.
+func (self BudgetPace) IsValid() bool {
+	switch self {
+	case BudgetPaceUnder, BudgetPaceOnTrack, BudgetPaceAtRisk, BudgetPaceOver:
+		return true
+	}
+	return false
+}
+
+// BudgetStatus is every spending category with a budget in one month,
+// against that budget, as of one day.
+type BudgetStatus struct {
+	// Month is "2006-01"; AsOf the day it is computed for, "2006-01-02",
+	// which is the last day of a past month.
+	Month       string `json:"month"`
+	AsOf        string `json:"asOf"`
+	DayOfMonth  int    `json:"dayOfMonth"`
+	DaysInMonth int    `json:"daysInMonth"`
+
+	SpendingCategories []*SpendingCategoryBudgetStatus `json:"spendingCategories"`
+}
+
+// SpendingCategoryBudgetStatus is one spending category against its
+// budget. Every amount is a decimal in CurrencyCode, the budget's:
+// spending in another currency is converted at the rate of the day it
+// posted.
+type SpendingCategoryBudgetStatus struct {
+	SpendingCategoryID   string `json:"spendingCategoryId"`
+	SpendingCategoryName string `json:"spendingCategoryName"`
+
+	BudgetAmount string `json:"budgetAmount"`
+	CurrencyCode string `json:"currencyCode"`
+
+	// SpendingAmount is the month's spending so far, and
+	// SpendingBySameDayLastMonthAmount last month's by the same day.
+	SpendingAmount                   string `json:"spendingAmount"`
+	SpendingBySameDayLastMonthAmount string `json:"spendingBySameDayLastMonthAmount"`
+
+	// FixedChargesDueAmount is what merchants that charged this spending
+	// category in each of the last three full months are expected to
+	// charge again this month and have not yet.
+	FixedChargesDueAmount string `json:"fixedChargesDueAmount"`
+
+	// ProjectedAmount is where the month is expected to end.
+	ProjectedAmount string     `json:"projectedAmount"`
+	BudgetPace      BudgetPace `json:"budgetPace"`
+
+	// UnconvertedSpending is spending left out because its currency has no
+	// exchange rate into the budget's.
+	UnconvertedSpending []*CurrencyAmount `json:"unconvertedSpending"`
+}
+
+// CurrencyAmount is an amount in one currency, a decimal.
+type CurrencyAmount struct {
+	CurrencyCode string `json:"currencyCode"`
+	Amount       string `json:"amount"`
+}

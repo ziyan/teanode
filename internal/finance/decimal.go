@@ -85,6 +85,19 @@ func formatDecimal(value *big.Rat, places int) string {
 	return value.FloatString(places)
 }
 
+// ParseAmount reads an amount or a rate as parseDecimal does, for a caller
+// that does arithmetic on amounts (the budget pace) and must not do it in
+// floating point.
+func ParseAmount(text string) (*big.Rat, error) {
+	return parseDecimal(text)
+}
+
+// FormatAmount writes a value as an amount, with AmountDecimalPlaces
+// places.
+func FormatAmount(value *big.Rat) string {
+	return formatDecimal(value, AmountDecimalPlaces)
+}
+
 // CanonicalAmount writes an amount with exactly AmountDecimalPlaces places,
 // so "12.5" becomes "12.5000".
 func CanonicalAmount(amount string) (string, error) {

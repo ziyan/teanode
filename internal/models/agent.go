@@ -582,6 +582,12 @@ const (
 	// the queue's rule of one open job per agent, kind and subject is what
 	// gathers candidates arriving together into one decision.
 	AgentJobAlert AgentJobKind = "alert"
+
+	// AgentJobCategorize gives spending categories, with the categorize
+	// model, to the finance transactions a sync left uncategorized. Its
+	// subject is the agent, so syncs of several finance sources close
+	// together queue one.
+	AgentJobCategorize AgentJobKind = "categorize"
 )
 
 // AgentJobStatus is where a job is.

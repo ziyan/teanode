@@ -123,6 +123,12 @@ type AskSettings struct {
 	// what a turn somebody typed gets.
 	Work config.AgentWork
 
+	// Model, when set, is the model this headless turn runs on, by its
+	// "provider:model" name, and wins over Work: for work whose model is
+	// a setting of its own that no kind of work names, such as the chat
+	// model the categorize model falls back to.
+	Model string
+
 	// ReadThenAnswer is a run that looks things up and then answers once:
 	// a dream reading a batch, an ingest describing a checkout. Its
 	// history is never compacted, because a compaction note would stand
@@ -787,6 +793,8 @@ func (self *AskRun) turn() error {
 	}
 	modelName := registry.Configuration().Models.ForWork(config.AgentWorkAsk)
 	switch {
+	case settings.Model != "":
+		modelName = settings.Model
 	case settings.Work != "":
 		modelName = registry.Configuration().Models.ForWork(settings.Work)
 	case settings.Agent.AskModel != "":
@@ -1245,6 +1253,9 @@ func historyLimit(contextLength int) int {
 }
 
 func (self *AskRun) chooseModel(configuration *config.Configuration, registry *llm.Registry) (llm.Provider, string, error) {
+	if self.settings.Model != "" {
+		return registry.ForModel(self.settings.Model)
+	}
 	if self.settings.Work != "" {
 		return registry.ForWork(self.settings.Work)
 	}

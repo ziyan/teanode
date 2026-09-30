@@ -43,6 +43,12 @@ type KnowledgeOperation interface {
 	// which said last time that it had more to do.
 	ListDueAgentSources(now time.Time, limit int) ([]*models.AgentKnowledgeSource, error)
 
+	// ListDueAgentSourcesOfKinds is ListDueAgentSources narrowed to some
+	// kinds: finance sources are queued whether or not the knowledge
+	// feature is on, and are not crowded out by document sources with a
+	// backlog.
+	ListDueAgentSourcesOfKinds(now time.Time, kinds []models.AgentKnowledgeKind, limit int) ([]*models.AgentKnowledgeSource, error)
+
 	// MarkAgentSourceRun records what a pass did and when the next is due.
 	MarkAgentSourceRun(sourceId string, cursor map[string]any, counts SourceCounts, more bool, lastError string, nextRun *time.Time) error
 
@@ -431,6 +437,23 @@ func (self *transaction) ListDueAgentSources(now time.Time, limit int) ([]*model
 	}
 	return self.sourcesFrom(self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 		Where(`"enabled" AND ("more" OR ("next_run_at" IS NOT NULL AND "next_run_at" <= ?))`, now).
+		Order(`"more" DESC, "next_run_at" ASC NULLS LAST`).Limit(limit))
+}
+
+// ListDueAgentSourcesOfKinds is ListDueAgentSources narrowed to some kinds.
+func (self *transaction) ListDueAgentSourcesOfKinds(now time.Time, kinds []models.AgentKnowledgeKind, limit int) ([]*models.AgentKnowledgeSource, error) {
+	if len(kinds) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	names := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		names = append(names, string(kind))
+	}
+	return self.sourcesFrom(self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		Where(`"enabled" AND "kind" IN ? AND ("more" OR ("next_run_at" IS NOT NULL AND "next_run_at" <= ?))`, names, now).
 		Order(`"more" DESC, "next_run_at" ASC NULLS LAST`).Limit(limit))
 }
 
