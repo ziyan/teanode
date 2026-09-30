@@ -142,7 +142,7 @@ so one command serves a person and a script.
 | `report` | DMARC aggregate reports received about your domains |
 | `template` | a domain's message templates, with `render` |
 | `layout` | the frames templates are rendered inside |
-| `finance` | linked institutions, transactions, net worth, budgets and savings targets; see below |
+| `finance` | linked institutions, transactions, trades, net worth, budgets and savings targets; see below |
 | `api` | everything else, straight from the schema |
 
 ### A mailbox from the shell
@@ -436,8 +436,9 @@ Amounts are printed with their currency; `--json` keeps full precision.
 | `teanode finance repair <source-id>` | the Plaid page again, to sign in to the same finance source when the institution asks; waits until it syncs again |
 | `teanode finance sources\|sync\|disable-source\|enable-source\|delete-source` | your finance sources, one synced now, switched off or on, or deleted with everything it brought in (asks first); each refuses a source that is not a finance source |
 | `teanode finance accounts\|transactions\|spending-summary` | finance accounts with their balances; transactions with `--from`, `--to`, `--since 30d`, `--month 2026-09`, `--text`, `--finance-account`, `--is-uncategorized`, and `--after` for the next page; spending and income grouped by `--group-by spendingCategory\|merchant\|month\|financeAccount\|providerCategory` |
+| `teanode finance trades` | buys, sells and securities moved in or out of investment accounts, newest first, with the security, quantity, unit price, amount and fee; `--from`, `--to`, `--since`, `--month`, `--finance-account`, `--finance-security`, and `--after` for the next page. Trades are never spending; dividends, interest and fees are transactions |
 | `teanode finance exchange-rate\|convert-currency\|reporting-currency\|set-reporting-currency` | the ECB rate between two currencies on a day (the latest earlier one on a weekend, and it says which), an amount converted, and the currency your totals are shown in; `set-reporting-currency --clear` goes back to the default |
-| `teanode finance net-worth\|assets\|asset-history\|create-asset\|update-asset\|close-asset\|delete-asset\|record-valuation\|delete-valuation` | net worth per day; everything you own or owe with its latest value; `create-asset "Car" --kind vehicle --currency USD --value 18000` adds one with a first value; `record-valuation <asset-id> 16500 --on 2026-09-30` records what it is worth; `--is-estimate-allowed` lets the agent estimate it from the web, which only you can allow |
+| `teanode finance net-worth\|assets\|asset-history\|create-asset\|update-asset\|close-asset\|delete-asset\|record-valuation\|delete-valuation` | net worth per day; everything you own or owe with its latest value, and for a holding its security, quantity, unit price and cost basis (in `asset-history` per day too); `create-asset "Car" --kind vehicle --currency USD --value 18000` adds one with a first value; `record-valuation <asset-id> 16500 --on 2026-09-30` records what it is worth; `--is-estimate-allowed` lets the agent estimate it from the web, which only you can allow |
 | `teanode finance spending-categories\|create-spending-category\|update-spending-category\|delete-spending-category` | your own list of what money goes on |
 | `teanode finance spending-rules\|create-spending-rule\|update-spending-rule\|delete-spending-rule` | rules that file transactions whose merchant or description contains some words; a new rule applies to earlier transactions too, except where you chose |
 | `teanode finance categorize-transaction\|mark-transfer` | change one transaction's spending category (`--create-spending-rule` files the merchant that way from now on), or mark money moving between your own accounts as a transfer |

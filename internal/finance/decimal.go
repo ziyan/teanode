@@ -14,6 +14,11 @@ import (
 // also means two syncs of an unchanged transaction compare equal as text.
 const AmountDecimalPlaces = 4
 
+// QuantityDecimalPlaces is how many places a quantity or a unit price this
+// package writes has, matching the numeric(24,8) the tables hold them as:
+// fractional shares and coins go to eight places.
+const QuantityDecimalPlaces = 8
+
 // RateDecimalPlaces is how many places an exchange rate this package writes
 // has, matching the numeric(20,10) the exchange rate table holds. The ECB
 // publishes at most six significant digits, so ten places loses nothing
@@ -108,6 +113,16 @@ func CanonicalAmount(amount string) (string, error) {
 	return formatDecimal(amountValue, AmountDecimalPlaces), nil
 }
 
+// CanonicalQuantity writes a quantity or a unit price with exactly
+// QuantityDecimalPlaces places.
+func CanonicalQuantity(quantity string) (string, error) {
+	quantityValue, err := parseDecimal(quantity)
+	if err != nil {
+		return "", err
+	}
+	return formatDecimal(quantityValue, QuantityDecimalPlaces), nil
+}
+
 // negatedJsonAmount turns one of Plaid's amounts, where positive is money
 // leaving the account, into this program's, where negative is.
 func negatedJsonAmount(number json.Number) (string, error) {
@@ -129,6 +144,19 @@ func canonicalJsonAmount(number json.Number) (string, error) {
 		return "", err
 	}
 	return formatDecimal(amountValue, AmountDecimalPlaces), nil
+}
+
+// canonicalJsonQuantity is a JSON number written as a quantity or a unit
+// price, or empty when the provider sent none.
+func canonicalJsonQuantity(number json.Number) (string, error) {
+	if number == "" {
+		return "", nil
+	}
+	quantityValue, err := parseJsonNumber(number)
+	if err != nil {
+		return "", err
+	}
+	return formatDecimal(quantityValue, QuantityDecimalPlaces), nil
 }
 
 func isAllDigits(text string) bool {
