@@ -239,8 +239,9 @@ but not urgent.
 
 ## Keeping the server secret out of the database
 
-The domains' DKIM keys, the agent's provider keys and every source's and
-skill's secrets are sealed with the server secret, and every SMTP password is derived from it. A server keeps that
+Every key the server stores (the domains' DKIM keys, the agent's provider
+keys, the session key, the certificate keys) is sealed with the server
+secret, and every SMTP password is derived from it. A server keeps that
 secret in its own database unless told otherwise, so anybody holding a copy
 of the database holds the means to open everything in it.
 

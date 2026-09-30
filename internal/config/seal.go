@@ -7,67 +7,106 @@ import (
 	"github.com/ziyan/teanode/internal/util/secretbox"
 )
 
-// The agent section's secrets — provider keys, the search key, what a
-// connected server is reached with — are sealed before they are stored and
-// opened when they are read, with the server secret and the same box the
-// domain table's keys use. A database dump then holds ciphertext where it
-// would have held keys that spend money.
+// Every secret in the settings -- provider keys, the session key, the TLS
+// and ACME keys, the storage keys, an identity provider's client secret --
+// is sealed before it is stored and opened when it is read, with the server
+// secret and the same box the domain table's keys use. A database dump then
+// holds ciphertext where it would have held keys, and once the server secret
+// is kept in a file (--secret-file), nothing in the dump opens.
 //
-// The server secret itself cannot be sealed with itself, and the other
-// sections predate this and are left as they were.
+// The server secret itself cannot be sealed with itself: it is stored as it
+// is, or kept out of the database altogether.
 
-// agentSecretLabel binds the box to this use; a value sealed for the
-// domain table does not open here, nor the other way round.
+// agentSecretLabel binds the agent section's box to its use; a value sealed
+// for the domain table does not open here, nor the other way round. The
+// agent section was sealed first, under its own label, and keeps it.
 const agentSecretLabel = "teanode configuration: agent secrets"
 
-// agentSecretBox is the box for the configuration's secret, or nil when
-// there is no secret to derive one from.
-func agentSecretBox(configuration *Configuration) (*secretbox.Box, error) {
+// settingsSecretLabel is the box for every other section's secrets.
+const settingsSecretLabel = "teanode configuration: settings secrets"
+
+// secretBoxes are the boxes for the configuration's secrets, by section, or
+// nil when there is no server secret to derive them from.
+func secretBoxes(configuration *Configuration) (map[string]*secretbox.Box, error) {
 	secret := configuration.Secret()
 	if len(secret) == 0 {
 		return nil, nil
 	}
-	return secretbox.New(secret, agentSecretLabel)
+	agentBox, err := secretbox.New(secret, agentSecretLabel)
+	if err != nil {
+		return nil, err
+	}
+	settingsBox, err := secretbox.New(secret, settingsSecretLabel)
+	if err != nil {
+		return nil, err
+	}
+	boxes := map[string]*secretbox.Box{}
+	for key := range configuration.sections() {
+		switch key {
+		case settingServer:
+			// Only the server secret, which cannot seal itself.
+		case settingAgent:
+			boxes[key] = agentBox
+		default:
+			boxes[key] = settingsBox
+		}
+	}
+	return boxes, nil
 }
 
-// sealAgentSecrets seals every secret in the agent section that is not
-// sealed already. Without a server secret the values stay as they are.
-func sealAgentSecrets(configuration *Configuration) error {
-	box, err := agentSecretBox(configuration)
-	if err != nil {
+// sealSecrets seals every secret in the settings that is not sealed
+// already. Without a server secret the values stay as they are.
+func sealSecrets(configuration *Configuration) error {
+	boxes, err := secretBoxes(configuration)
+	if err != nil || boxes == nil {
 		return err
 	}
-	if box == nil {
-		return nil
-	}
-	return mapSecrets(reflect.ValueOf(&configuration.Agent), func(value string) (string, error) {
-		if value == "" || secretbox.Sealed(value) {
-			return value, nil
-		}
-		return box.Seal([]byte(value))
-	})
-}
-
-// openAgentSecrets opens every sealed secret in the agent section. A value
-// that was never sealed — written before this existed — passes through.
-func openAgentSecrets(configuration *Configuration) error {
-	box, err := agentSecretBox(configuration)
-	if err != nil {
-		return err
-	}
-	return mapSecrets(reflect.ValueOf(&configuration.Agent), func(value string) (string, error) {
-		if !secretbox.Sealed(value) {
-			return value, nil
-		}
+	for key, section := range configuration.sections() {
+		box := boxes[key]
 		if box == nil {
-			return "", fmt.Errorf("config: an agent secret is sealed but the server has no secret to open it with")
+			continue
 		}
-		opened, err := box.Open(value)
-		if err != nil {
-			return "", fmt.Errorf("config: cannot open an agent secret: %w", err)
+		if err := mapSecrets(reflect.ValueOf(section), func(value string) (string, error) {
+			if value == "" || secretbox.Sealed(value) {
+				return value, nil
+			}
+			return box.Seal([]byte(value))
+		}); err != nil {
+			return err
 		}
-		return string(opened), nil
-	})
+	}
+	return nil
+}
+
+// openSecrets opens every sealed secret in the settings. A value that was
+// never sealed -- written before its section was -- passes through.
+func openSecrets(configuration *Configuration) error {
+	boxes, err := secretBoxes(configuration)
+	if err != nil {
+		return err
+	}
+	for key, section := range configuration.sections() {
+		if key == settingServer {
+			continue
+		}
+		box := boxes[key]
+		if err := mapSecrets(reflect.ValueOf(section), func(value string) (string, error) {
+			if !secretbox.Sealed(value) {
+				return value, nil
+			}
+			if box == nil {
+				return "", fmt.Errorf("config: a %s secret is sealed but the server has no secret to open it with", key)
+			}
+			opened, err := box.Open(value)
+			if err != nil {
+				return "", fmt.Errorf("config: cannot open a %s secret: %w", key, err)
+			}
+			return string(opened), nil
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // mapSecrets walks a value the way Redact does and rewrites every string

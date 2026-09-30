@@ -33,6 +33,9 @@ the secret, which tells the right file from a wrong one and opens nothing.
   existing secret is moved with `config export-secret`, an explicit step,
   because a file written by the server to a path that does not survive the
   container would take the only copy with it.
+- Every other secret setting (the session key, the certificate and ACME
+  keys, storage keys, an identity provider's client secret) is now sealed as
+  the agent's were, so a dump opens nothing at all.
 - A migration marks the release. Older releases refuse a database they do not
   recognize, and its reverse refuses to run while the secret is in a file,
   because an older release would read no secret, generate one, and lose

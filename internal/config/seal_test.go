@@ -65,3 +65,40 @@ func TestAgentSecretsAreSealedInRows(t *testing.T) {
 	}
 }
 
+// The other sections' secrets are sealed too, under a box of their own, and
+// the server secret is left for the file or the row to hold as it is.
+func TestSettingsSecretsAreSealedInRows(t *testing.T) {
+	configuration := Default()
+	configuration.Server.Secret = strings.Repeat("s", 32)
+	configuration.Session.Key = "session-key-1"
+	configuration.TLS.ACME.AccountKey = "account-key-1"
+
+	rows, err := ToRows(configuration, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, stored := range rows.Settings {
+		for _, plain := range []string{"session-key-1", "account-key-1"} {
+			if strings.Contains(stored, plain) {
+				t.Fatalf("the %s row holds %q in the clear:\n%s", key, plain, stored)
+			}
+		}
+	}
+	read, err := FromRows(rows, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.Session.Key != "session-key-1" || read.TLS.ACME.AccountKey != "account-key-1" || read.Server.Secret != configuration.Server.Secret {
+		t.Fatalf("the secrets did not come back: %q %q", read.Session.Key, read.TLS.ACME.AccountKey)
+	}
+
+	// Stored before these sections were sealed: a plain value reads as itself.
+	rows.Settings[settingSession] = "key: session-plain\n"
+	read, err = FromRows(rows, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.Session.Key != "session-plain" {
+		t.Fatalf("a plain session key should read as itself, got %q", read.Session.Key)
+	}
+}

@@ -113,8 +113,9 @@ running them in order.
 
 `20260929-the-server-secret-can-be-kept-out-of-the-database.md` says why
 the server secret can be read from a file named at start, what the database
-keeps in its place, and how an existing server moves it there. It amends
-the decision that put configuration in the database.
+keeps in its place, how an existing server moves it there, and why every
+secret setting is now sealed with it. It amends the decision that put
+configuration in the database.
 
 `20260929-the-agent-tells-the-person-what-their-mail-says.md` says why the
 agent tells the person, unasked, what their mail says they should know now:

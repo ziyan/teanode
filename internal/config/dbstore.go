@@ -77,9 +77,9 @@ func FromRows(rows *db.ConfigurationRows, secretFile *SecretFile) (*Configuratio
 	if err := applySecretFile(configuration, secretFile); err != nil {
 		return nil, err
 	}
-	// The agent's secrets were sealed with the server secret, which the
-	// server section or the file has just supplied.
-	if err := openAgentSecrets(configuration); err != nil {
+	// The secrets were sealed with the server secret, which the server
+	// section or the file has just supplied.
+	if err := openSecrets(configuration); err != nil {
 		return nil, err
 	}
 	return configuration, nil
@@ -110,7 +110,7 @@ func ToRows(self *Configuration, version int64, secretFile *SecretFile) (*db.Con
 	if err != nil {
 		return nil, err
 	}
-	if err := sealAgentSecrets(sealed); err != nil {
+	if err := sealSecrets(sealed); err != nil {
 		return nil, err
 	}
 	sealed.Server.SecretCheck = secretCheckOf(sealed.Secret())
