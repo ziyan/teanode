@@ -120,6 +120,13 @@ type FinanceMutation interface {
 	// be claimed once.
 	LinkSimpleFIN(ctx context.Context, arguments LinkSimpleFINArguments) (*FinanceSourceView, error)
 
+	// Bring a provider connection made elsewhere in as a finance source,
+	// due to sync now, instead of linking the institution again: a Plaid
+	// credential made with this server's Plaid keys, or a SimpleFIN
+	// credential already claimed from a setup token. The provider is asked
+	// first, so a credential it does not accept makes nothing.
+	ImportFinanceCredential(ctx context.Context, arguments ImportFinanceCredentialArguments) (*FinanceSourceView, error)
+
 	// Set the one currency totals are shown in; empty goes back to the
 	// currency of the first finance account.
 	SetReportingCurrency(ctx context.Context, arguments SetReportingCurrencyArguments) (string, error)
@@ -429,6 +436,16 @@ type LinkSimpleFINArguments struct {
 	SetupToken string `json:"setupToken"`
 }
 
+// ImportFinanceCredentialArguments carry a credential the person brings
+// from elsewhere: for Plaid its access token, for SimpleFIN its access
+// URL. An institution name given here names the finance source; without
+// one the provider is asked.
+type ImportFinanceCredentialArguments struct {
+	ProviderKind    string `json:"providerKind"`
+	Credential      string `json:"credential"`
+	InstitutionName string `json:"institutionName" graphapi:"nullable"`
+}
+
 // --- the switch, errors, and small readers ------------------------------
 
 // errFinanceNotOffered is what the finance area answers on a server whose
@@ -453,6 +470,27 @@ func (self *graph) requireFinanceOffered() error {
 		return errFinanceNotOffered
 	}
 	return nil
+}
+
+// financeProviderNames is what each provider is called in what people
+// read.
+var financeProviderNames = map[string]string{
+	config.AgentFinanceProviderPlaid:     "Plaid",
+	config.AgentFinanceProviderSimpleFIN: "SimpleFIN",
+}
+
+// requireFinanceProviderOffered refuses linking through a provider the
+// operator does not offer, saying whether it is finance as a whole that
+// is not offered.
+func (self *graph) requireFinanceProviderOffered(providerKind string) error {
+	configuration := self.config.Current()
+	if configuration.Agent.Finance.Offers(providerKind) {
+		return nil
+	}
+	if !isFinanceOffered(configuration) {
+		return errFinanceNotOffered
+	}
+	return fmt.Errorf("%w: this server does not offer %s", api.ErrInvalidArguments, financeProviderNames[providerKind])
 }
 
 // financeRatesFetcher is the fetcher totals convert with. A variable so a
@@ -637,6 +675,7 @@ type financeLinker interface {
 	CreateLinkToken(ctx context.Context, personReference string, credentialForRepair string) (string, error)
 	ExchangePublicToken(ctx context.Context, publicToken string) (credential, providerReference string, err error)
 	InstitutionName(ctx context.Context, institutionId string) (string, error)
+	DescribeCredential(ctx context.Context, credential string) (*finance.CredentialDescription, error)
 	Remove(ctx context.Context, credential string) error
 }
 
@@ -652,6 +691,7 @@ var newFinanceLinker = func(configuration *config.Configuration) (financeLinker,
 // financeClaimer is what linking through SimpleFIN needs of its client.
 type financeClaimer interface {
 	Claim(ctx context.Context, setupToken string) (string, error)
+	DescribeCredential(ctx context.Context, credential string) (*finance.CredentialDescription, error)
 	Remove(ctx context.Context, credential string) error
 }
 
@@ -714,13 +754,10 @@ func (self *graph) CreateFinanceLinkToken(ctx context.Context, arguments CreateF
 	if err != nil {
 		return nil, err
 	}
-	configuration := self.config.Current()
-	if !configuration.Agent.Finance.Offers(config.AgentFinanceProviderPlaid) {
-		if !isFinanceOffered(configuration) {
-			return nil, errFinanceNotOffered
-		}
-		return nil, fmt.Errorf("%w: this server does not offer Plaid", api.ErrInvalidArguments)
+	if err := self.requireFinanceProviderOffered(config.AgentFinanceProviderPlaid); err != nil {
+		return nil, err
 	}
+	configuration := self.config.Current()
 	credentialForRepair := ""
 	sourceId := strings.TrimSpace(arguments.SourceID)
 	if sourceId != "" {
@@ -758,13 +795,10 @@ func (self *graph) CompleteFinanceLink(ctx context.Context, arguments CompleteFi
 	if err != nil {
 		return nil, err
 	}
-	configuration := self.config.Current()
-	if !configuration.Agent.Finance.Offers(config.AgentFinanceProviderPlaid) {
-		if !isFinanceOffered(configuration) {
-			return nil, errFinanceNotOffered
-		}
-		return nil, fmt.Errorf("%w: this server does not offer Plaid", api.ErrInvalidArguments)
+	if err := self.requireFinanceProviderOffered(config.AgentFinanceProviderPlaid); err != nil {
+		return nil, err
 	}
+	configuration := self.config.Current()
 	publicToken := strings.TrimSpace(arguments.PublicToken)
 	if publicToken == "" {
 		return nil, fmt.Errorf("%w: the public token Plaid Link handed over is needed", api.ErrInvalidArguments)
@@ -796,6 +830,11 @@ func (self *graph) CompleteFinanceLink(ctx context.Context, arguments CompleteFi
 	source, err := self.createFinanceSourceCommitted(ctx, worker, found, config.AgentFinanceProviderPlaid, models.FinanceSourceSettings{
 		InstitutionID: institutionId, InstitutionName: institutionName, ProviderReference: providerReference,
 	}, credential)
+	if errors.Is(err, errFinanceSourceExists) {
+		// The link is one the person already has here, which ending it
+		// would break.
+		return nil, err
+	}
 	if err != nil {
 		// Ended at Plaid at once: a finance source nobody can reach still
 		// costs the operator, and on some plans uses up a slot for good.
@@ -816,12 +855,8 @@ func (self *graph) LinkSimpleFIN(ctx context.Context, arguments LinkSimpleFINArg
 	if err != nil {
 		return nil, err
 	}
-	configuration := self.config.Current()
-	if !configuration.Agent.Finance.Offers(config.AgentFinanceProviderSimpleFIN) {
-		if !isFinanceOffered(configuration) {
-			return nil, errFinanceNotOffered
-		}
-		return nil, fmt.Errorf("%w: this server does not offer SimpleFIN", api.ErrInvalidArguments)
+	if err := self.requireFinanceProviderOffered(config.AgentFinanceProviderSimpleFIN); err != nil {
+		return nil, err
 	}
 	setupToken := strings.TrimSpace(arguments.SetupToken)
 	if setupToken == "" {
@@ -847,6 +882,85 @@ func (self *graph) LinkSimpleFIN(ctx context.Context, arguments LinkSimpleFINArg
 	return financeSourceView(self.transaction(ctx), found, source)
 }
 
+func (self *graph) ImportFinanceCredential(ctx context.Context, arguments ImportFinanceCredentialArguments) (*FinanceSourceView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	providerKind := strings.ToLower(strings.TrimSpace(arguments.ProviderKind))
+	if _, isProvider := financeProviderNames[providerKind]; !isProvider {
+		return nil, fmt.Errorf("%w: providerKind is %s or %s", api.ErrInvalidArguments, config.AgentFinanceProviderPlaid, config.AgentFinanceProviderSimpleFIN)
+	}
+	if err := self.requireFinanceProviderOffered(providerKind); err != nil {
+		return nil, err
+	}
+	credential := strings.TrimSpace(arguments.Credential)
+	if credential == "" {
+		return nil, fmt.Errorf("%w: the credential is needed: for Plaid its access token, for SimpleFIN its access URL", api.ErrInvalidArguments)
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	institutionName := strings.TrimSpace(arguments.InstitutionName)
+	settings := models.FinanceSourceSettings{}
+	switch providerKind {
+	case config.AgentFinanceProviderPlaid:
+		linker, err := newFinanceLinker(self.config.Current())
+		if err != nil {
+			return nil, err
+		}
+		description, err := linker.DescribeCredential(ctx, credential)
+		if err != nil {
+			return nil, credentialRefusal(providerKind, credential, err)
+		}
+		if institutionName == "" && description.InstitutionID != "" {
+			if named, err := linker.InstitutionName(ctx, description.InstitutionID); err == nil {
+				institutionName = strings.TrimSpace(named)
+			}
+		}
+		settings = models.FinanceSourceSettings{
+			InstitutionID: description.InstitutionID, InstitutionName: institutionName, ProviderReference: description.ProviderReference,
+		}
+	case config.AgentFinanceProviderSimpleFIN:
+		// The address is the person's to choose, so it has to be one
+		// safefetch would connect to, over https, before anything is sent.
+		if err := finance.CheckSimpleFINCredential(credential); err != nil {
+			return nil, credentialRefusal(providerKind, credential, err)
+		}
+		description, err := newFinanceClaimer().DescribeCredential(ctx, credential)
+		if err != nil {
+			return nil, credentialRefusal(providerKind, credential, err)
+		}
+		if institutionName == "" {
+			institutionName = description.InstitutionName
+		}
+		settings = models.FinanceSourceSettings{InstitutionName: institutionName}
+	}
+	source, err := self.createFinanceSourceCommitted(ctx, worker, found, providerKind, settings, credential)
+	if err != nil {
+		// Unlike a link made here, nothing is ended at the provider: the
+		// connection was the person's before it came here, and stays so.
+		return nil, err
+	}
+	return financeSourceView(self.transaction(ctx), found, source)
+}
+
+// credentialRefusal is a provider's refusal of a credential brought from
+// elsewhere, in words the person can act on. The credential never appears
+// in it, even where a provider's own message would have repeated it.
+func credentialRefusal(providerKind, credential string, err error) error {
+	providerName := financeProviderNames[providerKind]
+	if errors.Is(err, finance.ErrCredentialRefused) {
+		if providerKind == config.AgentFinanceProviderPlaid {
+			return fmt.Errorf("%w: Plaid does not accept this credential: it was removed, is mistyped, or was made with a Plaid client id other than this server's", api.ErrInvalidArguments)
+		}
+		return fmt.Errorf("%w: %s refused this credential: it may have been revoked", api.ErrInvalidArguments, providerName)
+	}
+	reason := strings.ReplaceAll(err.Error(), credential, "the credential")
+	return fmt.Errorf("%w: %s did not accept this credential: %s", api.ErrInvalidArguments, providerName, reason)
+}
+
 // createFinanceSourceCommitted makes the finance source in a transaction
 // of its own, committed before it returns. The request's transaction
 // commits only after the resolver has answered, and a commit that failed
@@ -867,12 +981,29 @@ func (self *graph) createFinanceSourceCommitted(ctx context.Context, worker *age
 	return source, nil
 }
 
+// errFinanceSourceExists refuses a second finance source for a link the
+// person already has here: two would sync the same accounts twice.
+var errFinanceSourceExists = fmt.Errorf("%w: this connection is already one of your finance sources", api.ErrInvalidArguments)
+
 // createFinanceSource makes a finance source for a credential a provider
-// just handed over: the source row, due to sync now on the default
-// schedule, the credential sealed beside it through the same call
-// SetAgentKnowledgeSourceSecret makes, and the default spending
-// categories for a person who has none yet.
+// handed over or the person brought: the source row, due to sync now on
+// the default schedule, the credential sealed beside it through the same
+// call SetAgentKnowledgeSourceSecret makes, and the default spending
+// categories for a person who has none yet. A provider reference one of
+// the person's finance sources already holds is refused.
 func (self *graph) createFinanceSource(tx db.Transaction, worker *agent.Agent, found *models.Agent, providerKind string, settings models.FinanceSourceSettings, credential string) (*models.AgentKnowledgeSource, error) {
+	if settings.ProviderReference != "" {
+		existingSources, err := financeSourcesOf(tx, found.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, existingSource := range existingSources {
+			existingSettings, _ := existingSource.FinanceSourceSettings()
+			if existingSource.Specification.Type == providerKind && existingSettings.ProviderReference == settings.ProviderReference {
+				return nil, fmt.Errorf("%w (%s)", errFinanceSourceExists, existingSource.Name)
+			}
+		}
+	}
 	sealed, err := worker.SealSecret(credential)
 	if err != nil {
 		return nil, err
@@ -883,7 +1014,7 @@ func (self *graph) createFinanceSource(tx db.Transaction, worker *agent.Agent, f
 	}
 	name := settings.InstitutionName
 	if name == "" {
-		name = map[string]string{config.AgentFinanceProviderPlaid: "Plaid", config.AgentFinanceProviderSimpleFIN: "SimpleFIN"}[providerKind]
+		name = financeProviderNames[providerKind]
 	}
 	now := time.Now()
 	source := &models.AgentKnowledgeSource{

@@ -374,3 +374,65 @@ func TestSimpleFINAccountKind(t *testing.T) {
 		}
 	}
 }
+
+// A credential claimed elsewhere is proved by one balances-only read, and
+// the institution is named only when every account names the same one.
+func TestSimpleFINDescribeCredential(t *testing.T) {
+	answer := `{"errors":[],"accounts":[
+		{"id":"account-1","name":"Everyday Checking","currency":"USD","balance":"10.00","org":{"name":"Example Credit Union"}},
+		{"id":"account-2","name":"Rainy Day Savings","currency":"USD","balance":"20.00","org":{"name":"Example Credit Union"}}]}`
+	testServer := newSimpleFINTestServer(t, func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = fmt.Fprint(writer, answer)
+	})
+	description, err := newTestSimpleFin(testServer).DescribeCredential(context.Background(), testServer.credential())
+	if err != nil || description.InstitutionName != "Example Credit Union" || description.ProviderReference != "" {
+		t.Fatalf("description %+v %v", description, err)
+	}
+	if len(testServer.requests) != 1 {
+		t.Fatalf("%d requests, want one", len(testServer.requests))
+	}
+	request := testServer.requests[0]
+	if request.URL.Path != "/simplefin/accounts" || request.URL.Query().Get("balances-only") != "1" || request.URL.Query().Get("start-date") != "" {
+		t.Errorf("asked for %s", request.URL)
+	}
+
+	answer = `{"accounts":[
+		{"id":"account-1","name":"Everyday Checking","currency":"USD","balance":"10.00","org":{"name":"Example Credit Union"}},
+		{"id":"account-3","name":"Travel Card","currency":"USD","balance":"-5.00","org":{"name":"Example Card Issuer"}}]}`
+	description, err = newTestSimpleFin(testServer).DescribeCredential(context.Background(), testServer.credential())
+	if err != nil || description.InstitutionName != "" {
+		t.Errorf("two institutions were named as one: %+v %v", description, err)
+	}
+
+	refusingServer := newSimpleFINTestServer(t, func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusForbidden)
+	})
+	_, err = newTestSimpleFin(refusingServer).DescribeCredential(context.Background(), refusingServer.credential())
+	if !errors.Is(err, ErrCredentialRefused) || strings.Contains(err.Error(), "password-example") {
+		t.Errorf("a revoked credential answered %v", err)
+	}
+}
+
+// Only an https address with a user name and a password is a credential.
+func TestCheckSimpleFINCredential(t *testing.T) {
+	if err := CheckSimpleFINCredential("https://user-example:password-example@bridge.example.com/simplefin"); err != nil {
+		t.Errorf("a well formed credential was refused: %v", err)
+	}
+	for _, credential := range []string{
+		"",
+		"access-sandbox-example",
+		"https://bridge.example.com/simplefin",
+		"https://user-example@bridge.example.com/simplefin",
+		"http://user-example:password-example@bridge.example.com/simplefin",
+		"ftp://user-example:password-example@bridge.example.com/simplefin",
+	} {
+		err := CheckSimpleFINCredential(credential)
+		if err == nil {
+			t.Errorf("credential %q was accepted", credential)
+			continue
+		}
+		if strings.Contains(err.Error(), "password-example") {
+			t.Errorf("the refusal of %q repeats the password: %s", credential, err)
+		}
+	}
+}

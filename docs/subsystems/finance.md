@@ -65,6 +65,17 @@ rows in that window. The bridge refuses a request without a `User-Agent`. A
 403 means the credential was revoked; the finance source says to delete it and
 link again.
 
+**Bringing a connection in.** Instead of linking again, a person can hand
+over the credential of a connection made elsewhere (`ImportFinanceCredential`,
+"Bring an existing connection" in the dashboard's linking dialog, `teanode
+finance import-credential`): a Plaid credential of a link made with the
+operator's client id, which saves a Plaid Trial slot, or a SimpleFIN
+credential already claimed. The provider is asked first (Plaid's
+`/item/get`; one balances-only read of SimpleFIN, whose address must pass
+safefetch's checks), a provider reference the person already has is
+refused, and the finance source is made the way a link makes one. A failure
+never ends the connection at the provider, since it was the person's before.
+
 Every finance account and finance transaction keeps the provider's whole
 object, as it arrived, in `provider_metadata`. The columns are what the code
 reads; the metadata is there so a field nobody mapped, or a mapping mistake,
@@ -165,6 +176,7 @@ and the subcommand the same name in kebab-case; parity tests in
 `internal/cmd/finance_test.go` and the tool's package check it. Two operations
 span two GraphQL calls (`link_plaid` and `repair`, which need Plaid's window
 in a browser; the command line and the tool hand the person the page's
-address). One is deliberately missing from the tool: a SimpleFIN setup token
-is refused in conversation, because it would stay in the transcript and go to
-the model provider.
+address). Two are deliberately missing from the tool: a SimpleFIN setup token
+and a credential brought in are refused in conversation, because they would
+stay in the transcript and go to the model provider; `link_simplefin` and
+`import_credential` only say where to give them.

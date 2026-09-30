@@ -96,6 +96,16 @@ type SyncResult struct {
 	ProviderWarnings              []string
 }
 
+// CredentialDescription is what a provider says about a credential a
+// person brings from elsewhere, asked before a finance source is made for
+// it: the answer proves the credential works, and says what to call it.
+type CredentialDescription struct {
+	// ProviderReference is Plaid's id for the link; empty for SimpleFIN.
+	ProviderReference string
+	InstitutionID     string
+	InstitutionName   string
+}
+
 // Provider is what the agent's reader needs of a provider once a finance
 // source exists. Linking differs too much between the two to share an
 // interface: Plaid's goes through a browser widget and a token exchange,

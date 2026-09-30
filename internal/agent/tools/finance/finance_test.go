@@ -33,17 +33,20 @@ func operationRule(operation string) string {
 // The tool operations that stand for more than one call, act on a source
 // through the operations every source has, or answer with where to go.
 var spanningOperations = map[string][]string{
-	"link_plaid":     {"CreateFinanceLinkToken", "CompleteFinanceLink"},
-	"repair":         {"CreateFinanceLinkToken", "CompleteFinanceRepair"},
-	"link_simplefin": {},
-	"sync":           {},
-	"disable_source": {},
-	"enable_source":  {},
-	"delete_source":  {},
+	"link_plaid":        {"CreateFinanceLinkToken", "CompleteFinanceLink"},
+	"repair":            {"CreateFinanceLinkToken", "CompleteFinanceRepair"},
+	"link_simplefin":    {},
+	"import_credential": {},
+	"sync":              {},
+	"disable_source":    {},
+	"enable_source":     {},
+	"delete_source":     {},
 }
 
-// The one deliberate gap: a setup token is never taken in conversation.
-const gapOperation = "LinkSimpleFIN"
+// The deliberate gaps: a setup token and a provider credential are never
+// taken in conversation, so the tool operations named for these only say
+// where to give them.
+var gapOperations = map[string]bool{"LinkSimpleFIN": true, "ImportFinanceCredential": true}
 
 func financeTool(test *testing.T) *tools.Tool {
 	test.Helper()
@@ -104,8 +107,8 @@ func TestFinanceParityWithTheTool(test *testing.T) {
 			test.Errorf("the schema offers %s, which the tool does not run", name)
 			continue
 		}
-		if called == gapOperation {
-			test.Errorf("%s calls %s; a setup token must never be taken in conversation", name, gapOperation)
+		if gapOperations[called] {
+			test.Errorf("%s calls %s; a setup token or a credential must never be taken in conversation", name, called)
 		}
 		if _, isSpanning := spanningOperations[name]; isSpanning {
 			if called != "" {
@@ -123,7 +126,7 @@ func TestFinanceParityWithTheTool(test *testing.T) {
 		covered[called] = true
 	}
 	for _, operation := range operations {
-		if operation != gapOperation && !covered[operation] {
+		if !gapOperations[operation] && !covered[operation] {
 			test.Errorf("%s has no tool operation %s", operation, operationRule(operation))
 		}
 	}
@@ -220,7 +223,7 @@ func TestFinanceRiskPerOperation(test *testing.T) {
 		"exchange_rate": true, "convert_currency": true, "net_worth": true, "assets": true, "asset_history": true,
 		"spending_categories": true, "spending_rules": true, "budgets": true, "budget_status": true,
 		"spending_by_day": true, "cash_flow": true, "savings_targets": true,
-		"link_plaid": true, "repair": true, "link_simplefin": true, "reporting_currency": true,
+		"link_plaid": true, "repair": true, "link_simplefin": true, "import_credential": true, "reporting_currency": true,
 	}
 	for name := range toolOperations(test, tool) {
 		wanted := tools.RiskWrite
@@ -301,6 +304,35 @@ func TestFinanceToolRefusesASetupToken(test *testing.T) {
 	}
 	if strings.Contains(result.Content, "aW52ZW50ZWQ=") {
 		test.Errorf("the token came back: %s", result.Content)
+	}
+}
+
+// A provider credential is never sent anywhere from a conversation either:
+// import_credential says where to bring the connection in and calls
+// nothing, whatever came with it.
+func TestFinanceToolRefusesACredential(test *testing.T) {
+	test.Parallel()
+	for _, arguments := range []string{
+		`{"operation":"import_credential"}`,
+		`{"operation":"import_credential","provider_kind":"plaid","credential":"access-sandbox-invented-0010"}`,
+		`{"operation":"import_credential","credential":"https://person:invented-password@bridge.example.net/simplefin"}`,
+	} {
+		operations := &fakeOperations{}
+		result, err := call(test, operations, arguments)
+		if err != nil {
+			test.Fatalf("%s: %s", arguments, err)
+		}
+		if len(operations.documents) != 0 {
+			test.Errorf("import_credential sent %d documents", len(operations.documents))
+		}
+		if !strings.Contains(result.Content, "teanode finance import-credential") || !strings.Contains(result.Content, "Finance tab") {
+			test.Errorf("it does not say where to bring the connection in: %s", result.Content)
+		}
+		for _, secret := range []string{"access-sandbox-invented-0010", "invented-password", "bridge.example.net"} {
+			if strings.Contains(result.Content, secret) {
+				test.Errorf("the credential came back: %s", result.Content)
+			}
+		}
 	}
 }
 

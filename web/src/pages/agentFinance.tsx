@@ -2,8 +2,11 @@ import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { graphql } from '../api'
 import { Loading } from '../components/common'
+import { Select } from '../components/select'
+import { useIsDesktop } from '../components/sidebar'
 import { TabItem, Tabs } from '../components/tabs'
 import { useQuery } from '../components/useQuery'
+import { useTranslation } from '../i18n/i18n'
 import { FINANCE_PRESENCE, FinanceProvider, PERSON_ZONE, PersonZoneAnswer, setPersonZone } from './finance/financeApi'
 import { FinanceAccountsSection } from './finance/financeAccounts'
 import { FinanceBudgetsSection } from './finance/financeBudgets'
@@ -66,6 +69,8 @@ export function FinanceTab({ hasSources }: { hasSources: boolean }) {
   const { section } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const { t } = useTranslation()
+  const isDesktop = useIsDesktop()
   // The sections' default days and months are the person's, in the zone
   // their agent keeps, so the zone is read before any section is drawn. A
   // failure to read it leaves the browser's zone rather than no tab.
@@ -77,9 +82,25 @@ export function FinanceTab({ hasSources }: { hasSources: boolean }) {
   }
   if (!zone.data && !zone.error) return <Loading />
   setPersonZone(zone.data?.ReadAgent?.timezone ?? '')
+  const openSection = (id: string) => navigate(`/settings/agent/finance/${id}`)
+  // On a phone the agent page's own tabs are already a row that scrolls
+  // sideways, and eight sections under it made a second one. There the
+  // sections are one list to choose from, the width of the page.
   return (
     <>
-      <Tabs items={FINANCE_SECTIONS} active={section} onSelect={(id) => navigate(`/settings/agent/finance/${id}`)} />
+      {isDesktop ? (
+        <Tabs items={FINANCE_SECTIONS} active={section} onSelect={openSection} />
+      ) : (
+        <Select
+          block
+          className="finance-section-select"
+          value={section ?? ''}
+          label={t('finance.sectionLabel')}
+          searchable={false}
+          options={FINANCE_SECTIONS.map((candidate) => ({ value: candidate.id, label: t(candidate.label) }))}
+          onChange={openSection}
+        />
+      )}
       {section === 'sources' ? <FinanceSourcesSection /> : null}
       {section === 'accounts' ? <FinanceAccountsSection /> : null}
       {section === 'transactions' ? <FinanceTransactionsSection /> : null}

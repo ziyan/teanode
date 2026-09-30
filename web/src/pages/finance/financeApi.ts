@@ -261,6 +261,13 @@ export const FINANCE_PRESENCE = `query { FinanceProviders { providerKind } Finan
 
 export const LINK_SIMPLEFIN = `mutation ($setupToken: String!) { LinkSimpleFIN(setupToken: $setupToken) { id } }`
 
+// Bring in a provider connection made elsewhere: a Plaid access token of a
+// link made with this server's Plaid keys, or a SimpleFIN access URL
+// already claimed.
+export const IMPORT_FINANCE_CREDENTIAL = `mutation ($providerKind: String!, $credential: String!, $institutionName: String) {
+  ImportFinanceCredential(providerKind: $providerKind, credential: $credential, institutionName: $institutionName) { id }
+}`
+
 export const CREATE_FINANCE_LINK_TOKEN = `mutation ($sourceId: String) {
   CreateFinanceLinkToken(sourceId: $sourceId) { linkToken sourceId }
 }`

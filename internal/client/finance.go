@@ -460,6 +460,10 @@ const (
 
 	DocumentLinkSimpleFIN = `mutation ($setupToken: String!) { LinkSimpleFIN(setupToken: $setupToken) ` + financeSourceFields + ` }`
 
+	DocumentImportFinanceCredential = `mutation ($providerKind: String!, $credential: String!, $institutionName: String) {
+  ImportFinanceCredential(providerKind: $providerKind, credential: $credential, institutionName: $institutionName) ` + financeSourceFields + `
+}`
+
 	DocumentSetReportingCurrency = `mutation ($currencyCode: String!) { SetReportingCurrency(currencyCode: $currencyCode) }`
 
 	DocumentCreateAsset = `mutation ($assetName: String!, $assetKind: String!, $currencyCode: String!, $valuationSource: String, $estimateDescription: String, $isEstimateAllowed: Boolean, $value: String, $valuedOn: String) {
@@ -542,7 +546,8 @@ var FinanceDocuments = map[string]string{
 	"ReportingCurrency":      DocumentReportingCurrency,
 	"CreateFinanceLinkToken": DocumentCreateFinanceLinkToken, "CompleteFinanceLink": DocumentCompleteFinanceLink,
 	"CompleteFinanceRepair": DocumentCompleteFinanceRepair, "LinkSimpleFIN": DocumentLinkSimpleFIN,
-	"SetReportingCurrency": DocumentSetReportingCurrency, "CreateAsset": DocumentCreateAsset,
+	"ImportFinanceCredential": DocumentImportFinanceCredential, "SetReportingCurrency": DocumentSetReportingCurrency,
+	"CreateAsset": DocumentCreateAsset,
 	"UpdateAsset": DocumentUpdateAsset, "CloseAsset": DocumentCloseAsset, "DeleteAsset": DocumentDeleteAsset,
 	"RecordValuation": DocumentRecordValuation, "DeleteValuation": DocumentDeleteValuation,
 	"CreateSpendingCategory": DocumentCreateSpendingCategory, "UpdateSpendingCategory": DocumentUpdateSpendingCategory,

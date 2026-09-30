@@ -35,10 +35,13 @@ var financeSubcommandsSpanningOperations = map[string][]string{
 	"link-plaid":     {"CreateFinanceLinkToken", "CompleteFinanceLink"},
 	"repair":         {"CreateFinanceLinkToken", "CompleteFinanceRepair"},
 	"link-simplefin": {"LinkSimpleFIN"},
-	"sync":           {},
-	"disable-source": {},
-	"enable-source":  {},
-	"delete-source":  {},
+	// ImportFinanceCredential by the rule is import-finance-credential; the
+	// word finance says nothing inside teanode finance.
+	"import-credential": {"ImportFinanceCredential"},
+	"sync":              {},
+	"disable-source":    {},
+	"enable-source":     {},
+	"delete-source":     {},
 }
 
 // Every operation of the finance area has a teanode finance subcommand

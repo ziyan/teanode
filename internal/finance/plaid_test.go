@@ -388,3 +388,32 @@ func TestPlaidAccountKind(t *testing.T) {
 		}
 	}
 }
+
+// A credential made elsewhere is described by /item/get: Plaid's id for
+// the link and the institution. One Plaid does not know is refused.
+func TestPlaidDescribeCredential(t *testing.T) {
+	testServer := newPlaidTestServer(t, func(path string, body map[string]any) (int, string) {
+		if path != "/item/get" {
+			return 404, `{}`
+		}
+		if body["access_token"] != "access-sandbox-example" {
+			return 400, `{"error_type":"INVALID_INPUT","error_code":"INVALID_ACCESS_TOKEN","error_message":"provided access token is in an invalid format"}`
+		}
+		return 200, `{"item":{"item_id":"item-example","institution_id":"institution-example"},"request_id":"request-example"}`
+	})
+	plaid := newTestPlaid(t, testServer)
+
+	description, err := plaid.DescribeCredential(context.Background(), "access-sandbox-example")
+	if err != nil || description.ProviderReference != "item-example" || description.InstitutionID != "institution-example" {
+		t.Fatalf("description %+v %v", description, err)
+	}
+	if testServer.requestBodies[0]["client_id"] != "client-example" {
+		t.Errorf("the operator's keys were not sent: %v", testServer.requestBodies[0])
+	}
+	if _, err := plaid.DescribeCredential(context.Background(), "access-sandbox-unknown"); !errors.Is(err, ErrCredentialRefused) {
+		t.Errorf("an unknown credential answered %v", err)
+	}
+	if _, err := plaid.DescribeCredential(context.Background(), " "); err == nil {
+		t.Error("an empty credential was described")
+	}
+}

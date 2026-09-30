@@ -15,6 +15,7 @@ import {
   FINANCE_SOURCES,
   FinanceProvider,
   FinanceSource,
+  IMPORT_FINANCE_CREDENTIAL,
   LINK_SIMPLEFIN,
   ProviderKind,
   SWITCH_SOURCE,
@@ -49,6 +50,11 @@ export function FinanceSourcesSection() {
   const [linking, setLinking] = useState(false)
   const [providerKind, setProviderKind] = useState<ProviderKind>('plaid')
   const [setupToken, setSetupToken] = useState('')
+  // Bringing in a connection made elsewhere rather than linking a new one:
+  // secondary, and closed until asked for, since most people link.
+  const [isImporting, setIsImporting] = useState(false)
+  const [credential, setCredential] = useState('')
+  const [importInstitutionName, setImportInstitutionName] = useState('')
   const [deleting, setDeleting] = useState<FinanceSource | null>(null)
 
   // The window Plaid runs in, watched so the list is read again the moment
@@ -84,7 +90,27 @@ export function FinanceSourcesSection() {
       (providerList.find((provider) => provider.isBrowserRequired) ?? providerList[0])?.providerKind ?? 'plaid',
     )
     setSetupToken('')
+    setIsImporting(false)
+    setCredential('')
+    setImportInstitutionName('')
     setLinking(true)
+  }
+
+  const importCredential = () => {
+    void act(
+      () =>
+        graphql(IMPORT_FINANCE_CREDENTIAL, {
+          providerKind,
+          credential: credential.trim(),
+          institutionName: importInstitutionName.trim() || null,
+        }),
+      t('finance.imported'),
+    ).then((isDone) => {
+      if (isDone) {
+        setCredential('')
+        setLinking(false)
+      }
+    })
   }
 
   const linkThroughPlaid = (sourceId?: string) => {
@@ -205,11 +231,17 @@ export function FinanceSourcesSection() {
       {linking ? (
         <FormDialog
           title={t('finance.link')}
-          submitLabel={isBrowserRequired ? t('finance.openPlaid') : t('finance.linkSubmit')}
+          submitLabel={
+            isImporting ? t('finance.importSubmit') : isBrowserRequired ? t('finance.openPlaid') : t('finance.linkSubmit')
+          }
           busy={busy}
-          canSubmit={isBrowserRequired || setupToken.trim() !== ''}
+          canSubmit={isImporting ? credential.trim() !== '' : isBrowserRequired || setupToken.trim() !== ''}
           onClose={() => setLinking(false)}
           onSubmit={() => {
+            if (isImporting) {
+              importCredential()
+              return
+            }
             if (isBrowserRequired) {
               linkThroughPlaid()
               setLinking(false)
@@ -238,7 +270,31 @@ export function FinanceSourcesSection() {
               />
             </label>
           ) : null}
-          {isBrowserRequired ? (
+          {isImporting ? (
+            <>
+              <label>
+                <span>{t('finance.credential')}</span>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={credential}
+                  onChange={(event) => setCredential(event.target.value)}
+                />
+              </label>
+              <p className="muted field-hint">
+                {providerKind === 'plaid' ? t('finance.credentialHintPlaid') : t('finance.credentialHintSimpleFIN')}
+              </p>
+              <label>
+                <span>{t('finance.importInstitutionName')}</span>
+                <input
+                  value={importInstitutionName}
+                  placeholder={t('finance.importInstitutionNamePlaceholder')}
+                  onChange={(event) => setImportInstitutionName(event.target.value)}
+                />
+              </label>
+            </>
+          ) : isBrowserRequired ? (
             <p className="muted">{t('finance.plaidHint')}</p>
           ) : (
             <>
@@ -255,6 +311,16 @@ export function FinanceSourcesSection() {
               <p className="muted field-hint">{t('finance.setupTokenHint')}</p>
             </>
           )}
+          <p>
+            <button
+              type="button"
+              className="link"
+              aria-expanded={isImporting}
+              onClick={() => setIsImporting((previous) => !previous)}
+            >
+              {isImporting ? t('finance.linkNewInstead') : t('finance.bringExisting')}
+            </button>
+          </p>
         </FormDialog>
       ) : null}
       {deleting ? (

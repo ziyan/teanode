@@ -1783,6 +1783,14 @@ own inside the resolver, and the link is removed when that fails.
 - **The security policy.** Only `/finance-link` may load Plaid's script, frame
   Plaid's page and reach Plaid's API; every other page's policy is unchanged,
   and a test says so.
+- **Credentials brought in.** A credential of a connection made elsewhere
+  (`ImportFinanceCredential`) is taken only from a file, standard input or a
+  prompt without echo on the command line, or a password field in the
+  dashboard; the command line refuses one given as an argument, and the tool
+  refuses it in conversation. It is proved against the provider before
+  anything is made, never repeated in an answer or an error (tests check),
+  and a SimpleFIN URL passes safefetch's checks (https, no private address)
+  before it is fetched.
 - **What reaches a model.** The tool returns normalized fields, never provider
   metadata; text written by providers and merchants is marked untrusted; a
   SimpleFIN setup token is refused in conversation; the categorize model is

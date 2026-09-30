@@ -186,6 +186,27 @@ something else, that name appears once, here, and nowhere else.
 
 ## Decision Log
 
+- Decision: a person can bring a provider connection made elsewhere in as
+  a finance source (`ImportFinanceCredential`): a Plaid credential of a
+  link made with the same client id the operator configured, or a
+  SimpleFIN credential already claimed from a setup token. The provider
+  is asked before anything is made (Plaid's `/item/get`, which gives the
+  provider reference, then the institution's name; one balances-only
+  read of SimpleFIN's accounts, after the address passes safefetch's
+  checks), and a provider reference one of the person's finance sources
+  already holds is refused. The finance source is made by the same code
+  as a link. A failure never ends the connection at the provider, unlike
+  a link made here. The `finance` tool's `import_credential` only says
+  where to do it.
+  Rationale: a Plaid Trial counts every link against ten, for good, so
+  moving a connection that already exists by linking it again spends a
+  slot that never comes back. The connection was the person's before it
+  came here, so ending it at Plaid because something here failed would
+  break whatever else uses it. A credential pasted into a conversation
+  stays in the transcript and goes to the model provider, the same reason
+  a setup token is refused there.
+  Date/Author: 2026-09-30.
+
 - Decision: each provider says how it signs the balance of an account that
   is owed (Plaid: positive means owed; SimpleFIN: negative means owed), and
   a liability's valuation is the amount owed with its sign, so a card in
@@ -616,6 +637,7 @@ and the tool and subcommand names for them are `sync`, `disable_source`,
     which providers are offered   FinanceProviders               Link an institution        providers
     link through Plaid            (two calls, see below)         Link an institution        link-plaid / link_plaid (1)
     link through SimpleFIN        LinkSimpleFIN                  Link an institution        link-simplefin / none (2)
+    bring a connection in         ImportFinanceCredential        Link an institution        import-credential / none (3)
     repair a sign-in              (two calls, see below)         Sign in again              repair (1)
     list finance sources          FinanceSources                 sources list               sources
     sync now                      SyncAgentKnowledgeSource       Sync now                   sync
@@ -637,13 +659,23 @@ to open. Both then see the same result as the dashboard.
 (2) A setup token is never accepted through the tool (see the Decision
 Log); the tool answers with where to paste it.
 
+(3) A credential is never accepted through the tool either; its
+`import_credential` answers with where to bring the connection in (the
+dashboard's "Bring an existing connection", or the subcommand, which reads
+the credential from a file or without echoing). By the naming rule the
+subcommand would be `import-finance-credential`; the word finance says
+nothing inside `teanode finance`, so the parity tests list it with the
+operations named for what the person does.
+
 Delete is risk `destructive` and sync, switch and reporting currency are
 `write`; everything else is `read`. A parity test in
 `internal/cmd/finance_test.go` lists the operations in `FinanceQuery` and
 `FinanceMutation` by reflection and fails if one has no subcommand of the
 name the rule gives, and a matching test in the tool package fails if one
 has no tool operation of that name. Both know the two operations that span
-two calls and the one gap (SimpleFIN in the tool), and nothing else.
+two calls, `import-credential` named outside the rule, and the two gaps in
+the tool (the SimpleFIN setup token and the credential brought in), and
+nothing else.
 
 ## Plan of Work
 

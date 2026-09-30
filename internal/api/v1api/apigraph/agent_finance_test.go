@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -25,6 +26,12 @@ const (
 	inventedSimpleFinPassword = "bridge-password-invented-0002"
 	inventedPlaidCredential   = "access-sandbox-invented-0003"
 	inventedSimpleFinAddress  = "https://person:" + inventedSimpleFinPassword + "@bridge.example.net/simplefin"
+
+	// Plaid credentials a person brings from elsewhere: one Plaid knows,
+	// one it does not, and one asked about while Plaid cannot be reached.
+	importedPlaidCredential    = "access-sandbox-invented-0005"
+	unknownPlaidCredential     = "access-sandbox-invented-0006"
+	unreachablePlaidCredential = "access-sandbox-invented-0007"
 )
 
 // fakeLinker is Plaid, answering to order and remembering what it ended.
@@ -43,6 +50,20 @@ func (self *fakeLinker) ExchangePublicToken(_ context.Context, publicToken strin
 
 func (self *fakeLinker) InstitutionName(_ context.Context, institutionId string) (string, error) {
 	return "Invented Savings Bank", nil
+}
+
+// DescribeCredential knows the credentials it handed out and the one a
+// person brings from elsewhere; any other is refused the way Plaid refuses
+// one, with a message that repeats it, and one stands for Plaid being
+// unreachable, with a message that repeats it too.
+func (self *fakeLinker) DescribeCredential(_ context.Context, credential string) (*finance.CredentialDescription, error) {
+	switch credential {
+	case inventedPlaidCredential, importedPlaidCredential:
+		return &finance.CredentialDescription{ProviderReference: "item-invented-imported", InstitutionID: "institution-invented"}, nil
+	case unreachablePlaidCredential:
+		return nil, errors.New("finance: cannot reach Plaid while describing " + credential)
+	}
+	return nil, &finance.PlaidError{StatusCode: 400, ErrorCode: "INVALID_ACCESS_TOKEN", ErrorMessage: "the access token " + credential + " is not valid"}
 }
 
 func (self *fakeLinker) Remove(_ context.Context, credential string) error {
@@ -66,6 +87,15 @@ func (fakeClaimer) Claim(_ context.Context, setupToken string) (string, error) {
 		return "", errors.New("the token was claimed already")
 	}
 	return inventedSimpleFinAddress, nil
+}
+
+// DescribeCredential knows the credential it hands out; the bridge refuses
+// any other as revoked.
+func (fakeClaimer) DescribeCredential(_ context.Context, credential string) (*finance.CredentialDescription, error) {
+	if credential != inventedSimpleFinAddress {
+		return nil, fmt.Errorf("finance: SimpleFIN answered 403: %w", finance.ErrCredentialRefused)
+	}
+	return &finance.CredentialDescription{InstitutionName: "Invented Credit Union"}, nil
 }
 
 func (fakeClaimer) Remove(context.Context, string) error { return nil }
@@ -183,7 +213,10 @@ func assertNoSecret(test *testing.T, name string, answered any) {
 	if err != nil {
 		test.Fatalf("%s: %s", name, err)
 	}
-	for _, secret := range []string{inventedPlaidSecret, inventedSimpleFinPassword, inventedPlaidCredential, "bridge.example.net"} {
+	for _, secret := range []string{
+		inventedPlaidSecret, inventedSimpleFinPassword, inventedPlaidCredential, "bridge.example.net",
+		importedPlaidCredential, unknownPlaidCredential, unreachablePlaidCredential,
+	} {
 		if strings.Contains(string(encoded), secret) {
 			test.Errorf("%s answered a secret: %s", name, encoded)
 		}

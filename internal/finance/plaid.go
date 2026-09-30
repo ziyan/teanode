@@ -190,6 +190,30 @@ func (self *Plaid) Remove(ctx context.Context, credential string) error {
 	return self.post(ctx, "/item/remove", map[string]any{"access_token": credential}, nil)
 }
 
+// DescribeCredential asks Plaid about a credential made elsewhere with
+// this operator's keys: Plaid's id for the link, and the institution it
+// reaches. A credential Plaid does not know, or issued to another client
+// id, answers an error matching ErrCredentialRefused. The institution's
+// name is InstitutionName's to find.
+func (self *Plaid) DescribeCredential(ctx context.Context, credential string) (*CredentialDescription, error) {
+	if strings.TrimSpace(credential) == "" {
+		return nil, errors.New("finance: no credential to describe")
+	}
+	var answered struct {
+		Item struct {
+			ItemID        string `json:"item_id"`
+			InstitutionID string `json:"institution_id"`
+		} `json:"item"`
+	}
+	if err := self.post(ctx, "/item/get", map[string]any{"access_token": credential}, &answered); err != nil {
+		return nil, err
+	}
+	if answered.Item.ItemID == "" {
+		return nil, errors.New("finance: Plaid described the credential without an id for its link")
+	}
+	return &CredentialDescription{ProviderReference: answered.Item.ItemID, InstitutionID: answered.Item.InstitutionID}, nil
+}
+
 // InstitutionName asks Plaid what an institution is called. Link's
 // metadata already names it, so this is for a finance source whose name
 // was lost or never recorded.

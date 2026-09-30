@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"sort"
@@ -95,6 +96,21 @@ func NewFinanceCommand() *cli.Command {
 				Description: "The setup token is read without echoing when it is not given or is -, or from standard\n" +
 					"input when that is not a terminal. A token on the command line stays in the shell's history.",
 				Flags: []cli.Flag{JSONFlag()}, Action: runFinanceLinkSimpleFin,
+			},
+			{
+				Name: "import-credential", Usage: "bring a provider connection made elsewhere in as a finance source, instead of linking again",
+				ArgsUsage: "[- | <file>]",
+				Description: "For Plaid the credential is the access token of a link made with this server's Plaid keys, which\n" +
+					"saves spending a Plaid slot on linking again; for SimpleFIN it is an access URL already claimed from\n" +
+					"a setup token. It is read from the file given, from standard input with - or when that is not a\n" +
+					"terminal, or at a prompt without echoing. It is never taken on the command line, where it would\n" +
+					"stay in the shell's history.",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "provider", Usage: "plaid or simplefin"},
+					&cli.StringFlag{Name: "institution-name", Usage: "what to call the finance source; the provider is asked when left out"},
+				},
+				Action: runFinanceImportCredential,
 			},
 			{Name: "repair", Usage: "sign in to a finance source's institution again: prints the address to open, then waits", ArgsUsage: "<source-id>", Flags: waitFlags(), Action: runFinanceRepair},
 			{Name: "sources", Usage: "your finance sources, their state and their accounts", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceSources},
@@ -240,8 +256,8 @@ const financeOperationKey = "operation"
 // calls. The subcommand's action calls the one named here (operationOf),
 // so the parity test that checks these names checks what runs.
 var financeSubcommandOperations = map[string]string{
-	"providers": "FinanceProviders", "link-simplefin": "LinkSimpleFIN", "sources": "FinanceSources",
-	"accounts": "FinanceAccounts", "transactions": "FinanceTransactions", "spending-summary": "FinanceSpendingSummary",
+	"providers": "FinanceProviders", "link-simplefin": "LinkSimpleFIN", "import-credential": "ImportFinanceCredential",
+	"sources": "FinanceSources", "accounts": "FinanceAccounts", "transactions": "FinanceTransactions", "spending-summary": "FinanceSpendingSummary",
 	"exchange-rate": "ExchangeRate", "convert-currency": "ConvertCurrency", "reporting-currency": "ReportingCurrency",
 	"set-reporting-currency": "SetReportingCurrency", "net-worth": "NetWorth", "assets": "Assets",
 	"asset-history": "AssetHistory", "create-asset": "CreateAsset", "update-asset": "UpdateAsset",
@@ -597,6 +613,79 @@ func runFinanceLinkSimpleFin(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(linked)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s: linked through SimpleFIN; its first sync starts within the minute\n", linked.ID)
+	return nil
+}
+
+// financeCredentialFileByteLimit is the most read from a credential file:
+// a credential is a line, and a file far larger is the wrong file.
+const financeCredentialFileByteLimit = 64 << 10
+
+// looksLikeCredential says an argument has the shape of a Plaid credential
+// or a SimpleFIN one rather than of a file name.
+func looksLikeCredential(argument string) bool {
+	lowered := strings.ToLower(argument)
+	return strings.HasPrefix(lowered, "access-") || strings.Contains(lowered, "://") || strings.Contains(lowered, "@")
+}
+
+// readFinanceCredential reads the credential import-credential brings in:
+// from the file the argument names, or from standard input or a prompt
+// without echoing when there is no argument or it is -. An argument that
+// is itself a credential is refused, and a file that cannot be read is
+// reported without repeating the argument, which may be a credential of
+// a shape looksLikeCredential does not know.
+func readFinanceCredential(command *cli.Command) (string, error) {
+	if command.Args().Len() > 1 {
+		return "", usage("give at most one argument: - or the file holding the credential")
+	}
+	argument := strings.TrimSpace(command.Args().First())
+	if argument == "" || argument == "-" {
+		return ReadSecret("credential: ")
+	}
+	if looksLikeCredential(argument) {
+		return "", usage("the credential is not taken on the command line, where it would stay in the shell's history; " +
+			"give a file holding it, or - to paste it without echoing")
+	}
+	file, err := os.Open(argument)
+	if err != nil {
+		return "", usage("the argument is neither - nor a file that can be read; give a file holding the credential, or - to paste it without echoing")
+	}
+	defer func() { _ = file.Close() }()
+	content, err := io.ReadAll(io.LimitReader(file, financeCredentialFileByteLimit+1))
+	if err != nil {
+		return "", fmt.Errorf("cannot read the credential file: %w", err)
+	}
+	if len(content) > financeCredentialFileByteLimit {
+		return "", usage("the credential file is far larger than a credential; give the file holding only the credential")
+	}
+	return strings.TrimSpace(string(content)), nil
+}
+
+func runFinanceImportCredential(ctx context.Context, command *cli.Command) error {
+	providerKind := strings.ToLower(strings.TrimSpace(command.String("provider")))
+	if providerKind != "plaid" && providerKind != "simplefin" {
+		return usage("give --provider plaid or --provider simplefin")
+	}
+	credential, err := readFinanceCredential(command)
+	if err != nil {
+		return err
+	}
+	if credential == "" {
+		return usage("give the credential: for Plaid its access token, for SimpleFIN its access URL")
+	}
+	variables := map[string]any{"providerKind": providerKind, "credential": credential}
+	setString(command, variables, "institution-name", "institutionName")
+	var imported *client.FinanceSource
+	if err := financeCall(ctx, command, operationOf(command), variables, &imported); err != nil {
+		return err
+	}
+	if command.Bool("json") {
+		return PrintJSON(imported)
+	}
+	name := imported.InstitutionName
+	if name == "" {
+		name = imported.Name
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s: %s, brought in through %s; its first sync starts within the minute\n", imported.ID, name, imported.ProviderKind)
 	return nil
 }
 

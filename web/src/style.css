@@ -11624,6 +11624,12 @@ button.idea-history-title {
 
 /* --- the agent's Finance tab ---------------------------------------------- */
 
+/* On a phone the sections are one full-width list in place of the tab row,
+   standing off the first panel as the tabs do. */
+.finance-section-select {
+  margin-bottom: var(--space-4);
+}
+
 /* An amount column in the shared table reads down by its decimal places,
    as the plain numbers tables do. */
 .table-surface .numeric {

@@ -269,9 +269,10 @@ var operations = map[string]*financeOperation{
 
 	// The ones that stand for more than one call, act on a source, or
 	// answer with where to go.
-	"link_plaid":     {risk: tools.RiskRead},
-	"repair":         {risk: tools.RiskRead, arguments: []string{"source_id"}, required: []string{"source_id"}},
-	"link_simplefin": {risk: tools.RiskRead},
+	"link_plaid":        {risk: tools.RiskRead},
+	"repair":            {risk: tools.RiskRead, arguments: []string{"source_id"}, required: []string{"source_id"}},
+	"link_simplefin":    {risk: tools.RiskRead},
+	"import_credential": {risk: tools.RiskRead},
 	"sync": {
 		risk: tools.RiskWrite, arguments: []string{"source_id"}, required: []string{"source_id"},
 		preview: func(lookup *previewLookup, call map[string]any) string {
@@ -427,7 +428,7 @@ const description = "The person's money: their finance sources (logins at banks,
 	"`transactions`, `spending_summary`, `net_worth` and `cash_flow` take `month` as shorthand for that whole month; without a range they cover all of time (net_worth the last thirty days, cash_flow twelve months). " +
 	"Totals come per currency and converted into the reporting currency (`reporting_currency` says which), or into `currency_code` where given, each amount at its own day's exchange rate, naming any currency left out for want of a rate; never add different currencies yourself.\n" +
 	"Linking: `providers` says what the server offers. `link_plaid` gives an address for the person to open in their browser, signed in to the dashboard; `repair` gives the address that signs a finance source in again when `sources` says isSignInRequired. " +
-	"A SimpleFIN setup token is never taken in conversation: `link_simplefin` says where to paste it. `sync`, `disable_source`, `enable_source` and `delete_source` act on a finance source by source_id; a switched-off source is switched on with enable_source before it syncs.\n" +
+	"A SimpleFIN setup token, or the credential of an existing provider connection (a Plaid access token, a SimpleFIN access URL), is never taken in conversation: `link_simplefin` and `import_credential` say where to give it.`sync`, `disable_source`, `enable_source` and `delete_source` act on a finance source by source_id; a switched-off source is switched on with enable_source before it syncs.\n" +
 	"Recipes, followed the same way every time:\n" +
 	"- Proposing budgets: `spending_summary` grouped by spendingCategory for each of the last three full months (month 2026-06, then 2026-07, then 2026-08); propose the median of each, rounded, as a list; `set_budget` only what the person accepts. Once they set their first budget, offer a monthly review schedule on the first of the month.\n" +
 	"- A savings plan: `cash_flow` for what they save a month now, `savings_targets` for what a target needs a month, `budget_status` and `spending_summary` for which spending categories could close the gap, with numbers.\n" +
@@ -500,7 +501,7 @@ func init() {
 					"started_on":                  tools.StringProperty("the day the savings target starts; today when left out"),
 					"asset_ids":                   tools.ArrayProperty("for asset_value: the assets it measures", tools.StringProperty("an asset id")),
 				}, "operation"),
-				Guidance: "finance: for anything about the person's accounts, spending, budgets, savings, net worth or exchange rates, use this and quote its numbers; never add amounts in different currencies yourself. A SimpleFIN setup token pasted in conversation is not used: point to the dashboard's Finance tab or teanode finance link-simplefin.",
+				Guidance: "finance: for anything about the person's accounts, spending, budgets, savings, net worth or exchange rates, use this and quote its numbers; never add amounts in different currencies yourself. A SimpleFIN setup token or a provider credential pasted in conversation is not used: point to the dashboard's Finance tab, teanode finance link-simplefin or teanode finance import-credential.",
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
 					var call struct {
 						Operation string `json:"operation"`
@@ -602,6 +603,14 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return tools.TextResult("A SimpleFIN setup token is never taken in a conversation: it would stay in the transcript and go to the model provider. " +
 			"The person pastes it on the Finance tab of their agent page in the dashboard, or runs `teanode finance link-simplefin`, which reads it without echoing. " +
 			"They make the token on the SimpleFIN Bridge's website."), nil
+	}
+	if name == "import_credential" {
+		// Likewise for the credential of a connection made elsewhere,
+		// which opens the person's accounts for as long as it lives.
+		return tools.TextResult("A provider credential (a Plaid access token or a SimpleFIN access URL) is never taken in a conversation: it would stay in the transcript and go to the model provider. " +
+			"To bring an existing connection in instead of linking again, the person uses Bring an existing connection in the Link an institution dialog on the Finance tab of their agent page, " +
+			"or runs `teanode finance import-credential --provider plaid` (or `simplefin`), which reads it from a file or without echoing. " +
+			"For Plaid, only a link made with this server's Plaid keys can be brought in."), nil
 	}
 	if err := checkArguments(name, operation, asked); err != nil {
 		return nil, err

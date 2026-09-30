@@ -178,6 +178,49 @@ func splitCredential(credential string) (address *url.URL, username, password st
 	return address, username, password, nil
 }
 
+// CheckSimpleFINCredential says whether a credential claimed elsewhere
+// has the shape of one: an https address with a user name and a password,
+// naming a host safefetch would connect to. It sends nothing.
+func CheckSimpleFINCredential(credential string) error {
+	_, _, _, err := splitCredential(credential)
+	return err
+}
+
+// DescribeCredential proves a credential claimed elsewhere works by
+// reading the accounts once, balances only, and names the institution
+// when every account names the same one. One credential can reach every
+// institution the person connected on the bridge, and naming the finance
+// source after the first of several would name all its accounts wrongly.
+func (self *SimpleFIN) DescribeCredential(ctx context.Context, credential string) (*CredentialDescription, error) {
+	address, username, password, err := splitCredential(credential)
+	if err != nil {
+		return nil, err
+	}
+	query := url.Values{}
+	query.Set("balances-only", "1")
+	accountSet, err := self.fetchAccounts(ctx, address, username, password, query)
+	if err != nil {
+		return nil, err
+	}
+	institutionNames := map[string]bool{}
+	for _, rawAccount := range accountSet.Accounts {
+		var decoded simpleFinAccount
+		if err := json.Unmarshal(rawAccount, &decoded); err != nil {
+			return nil, fmt.Errorf("finance: a SimpleFIN account was not readable: %w", err)
+		}
+		if institutionName := strings.TrimSpace(decoded.Organization.Name); institutionName != "" {
+			institutionNames[institutionName] = true
+		}
+	}
+	description := &CredentialDescription{}
+	if len(institutionNames) == 1 {
+		for institutionName := range institutionNames {
+			description.InstitutionName = institutionName
+		}
+	}
+	return description, nil
+}
+
 // simpleFinAccountSet is the answer to GET /accounts. The protocol names
 // the warning list errlist, a list of objects; the bridge sends errors, a
 // list of strings. Both are read.
