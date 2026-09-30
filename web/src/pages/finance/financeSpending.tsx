@@ -89,7 +89,9 @@ function SpendingByMonthPanel({
   const months = flow?.cashFlowMonths ?? []
   const currency = flow?.reportingCurrencyCode || 'USD'
   const chosen = months.find((candidate) => candidate.cashFlowMonth === month)
-  const spentOf = (amount?: string) => Math.abs(amountOf(amount))
+  // Spending as the server counts it, refunds taken off: a month whose
+  // refunds outweigh what was spent is below zero, not spent.
+  const spentOf = (amount?: string) => amountOf(amount)
   const hasSpending = months.some((candidate) => amountOf(candidate.spendingAmount) !== 0)
   // On the headline's line rather than in the panel's heading: there it
   // sat alone at the right of an empty band above the chart on a phone.
@@ -371,16 +373,21 @@ function SpendingSummaryPanel({ month }: { month: string }) {
   const [highlightedKey, setHighlightedKey] = useState<string | null>(null)
   useEffect(() => setIsShowingAll(false), [groupBy, month])
   const range = monthRange(month, personToday())
-  const { data, error, loading } = useQuery(
+  // Each answer says what it was asked for: useQuery keeps the last answer
+  // while the next is on its way, and last month's rows under this month's
+  // range, or category ids read as merchants, would be wrong for a moment.
+  const asked = `${range.from}|${range.to}|${groupBy}`
+  const { data: answered, error, loading } = useQuery(
     () =>
       graphql<{ FinanceSpendingSummary: SpendingSummary }>(SPENDING_SUMMARY, {
         from: range.from,
         to: range.to,
         groupBy,
-      }),
+      }).then((answer) => ({ ...answer, asked })),
     [range.from, range.to, groupBy],
     { refresh: false },
   )
+  const data = answered?.asked === asked ? answered : undefined
   // Which spending categories are income, whose money in is not a refund.
   const categories = useQuery(() => graphql<{ SpendingCategories: SpendingCategory[] }>(SPENDING_CATEGORIES), [], {
     refresh: false,
@@ -466,7 +473,7 @@ function SpendingSummaryPanel({ month }: { month: string }) {
       }
     >
       <ErrorMessage error={error || categories.error} />
-      {(loading && !data) || (categories.loading && !categories.data) ? <Loading /> : null}
+      {((loading || answered) && !data) || (categories.loading && !categories.data) ? <Loading /> : null}
       {summary && lines.length === 0 ? <SettingsEmpty>{t('finance.noSpending')}</SettingsEmpty> : null}
       {slices.length > 0 && summary?.reportingCurrencyCode ? (
         <SpendingRing
