@@ -292,15 +292,16 @@ func applyProviderCategoryMapping(tx db.Transaction, agentId string, financeTran
 // BeforeDeletingSource is what deleting a finance source does first, in
 // the deleting transaction: it ends the finance source at its provider,
 // best effort, so the operator stops paying for a link nobody can reach,
-// and turns the assets its finance accounts valued into manual ones so
-// their history outlives the source. Any other kind of source needs
-// nothing. The API calls it before DeleteAgentSource.
-func (self *Agent) BeforeDeletingSource(ctx context.Context, tx db.Transaction, source *models.AgentKnowledgeSource) error {
+// and turns the assets its finance accounts valued into manual ones closed
+// on closedOn, so their history outlives the source and net worth stops
+// counting them. Any other kind of source needs nothing. The API calls it
+// before DeleteAgentSource.
+func (self *Agent) BeforeDeletingSource(ctx context.Context, tx db.Transaction, source *models.AgentKnowledgeSource, closedOn string) error {
 	if source == nil || source.Kind != models.SourceFinance {
 		return nil
 	}
 	self.removeFinanceSourceAtProvider(ctx, tx, source)
-	_, err := tx.DetachAssetsOfSource(source.AgentID, source.ID)
+	_, err := tx.DetachAssetsOfSource(source.AgentID, source.ID, closedOn)
 	return err
 }
 

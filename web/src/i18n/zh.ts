@@ -3179,7 +3179,7 @@ export const zh: Catalog = {
   'finance.turnedOff': '已关闭财务来源。已有的内容保留，不再同步。',
   'finance.turnedOn': '已开启财务来源。',
   'finance.deleteSource': '删除财务来源',
-  'finance.deleteSourceBody': '{name} 将停止同步，它的财务账户以及来自它的所有财务交易都会被删除。对应的资产会连同历史保留在净资产中，作为你自己录入的估值。',
+  'finance.deleteSourceBody': '{name} 将停止同步，它的财务账户以及来自它的所有财务交易都会被删除。对应的资产会连同历史保留在净资产中，并在今天结清，从此不再计入净资产。',
   'finance.deletePlaidLimit': '有些 Plaid 方案会把关联过的每家金融机构都计入上限，删除这个财务来源也不会退回名额。如果是登录出了问题，请改用"重新登录"。',
   'finance.deleteSimpleFINRevoke': '你也可以在 SimpleFIN Bridge 网站上移除这个应用，让它获得的访问权限在那边也一并结束。',
   'finance.sourceDeleted': '已删除财务来源。',

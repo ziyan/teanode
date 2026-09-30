@@ -520,7 +520,7 @@ func TestFinanceRowsAreTheirOwnersOnly(t *testing.T) {
 		if valuations, err := tx.ListAssetValuations(stranger.agentId, assets[0].ID); err != nil || len(valuations) != 0 {
 			t.Errorf("ListAssetValuations across agents: %v %d", err, len(valuations))
 		}
-		if detached, err := tx.DetachAssetsOfSource(stranger.agentId, owner.sourceId); err != nil || detached != 0 {
+		if detached, err := tx.DetachAssetsOfSource(stranger.agentId, owner.sourceId, "2026-09-12"); err != nil || detached != 0 {
 			t.Errorf("DetachAssetsOfSource across agents: %v %d", err, detached)
 		}
 		if err := tx.DeleteSpendingCategory(stranger.agentId, category.ID); !errors.Is(err, db.ErrNotFound) {
@@ -818,6 +818,41 @@ func TestCategorizeAttemptedIsListedAgainOnlyWhenChanged(t *testing.T) {
 		}
 		if !listed[found["transaction-grocer"].ID] || listed[found["transaction-diner"].ID] || len(listed) != 2 {
 			t.Errorf("the grocer's merchant changed and it is listed again; the diner's amount alone did not: %+v", uncategorized)
+		}
+	})
+}
+
+// A pending side is not paired: it is replaced by a new row when it posts,
+// and the posted row would find its partner already marked and be counted
+// as spending. The pair is made once both have posted.
+func TestDetectFinanceTransfersWaitsForPendingToPost(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "finance-transfer-pending")
+	result := sampleFinanceSync()
+	result.Added = []finance.Transaction{
+		{ProviderTransactionID: "payment-pending", ProviderAccountID: "account-checking", PostedOn: "2026-09-10", Amount: "-500", CurrencyCode: "USD", Description: "CARD PAYMENT", IsPending: true},
+		{ProviderTransactionID: "payment-in", ProviderAccountID: "account-card", PostedOn: "2026-09-10", Amount: "500", CurrencyCode: "USD", Description: "PAYMENT THANK YOU"},
+	}
+	applyFinanceSync(t, database, fixture, result, "2026-09-10")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if markedCount, err := tx.DetectFinanceTransfers(fixture.agentId, fixture.sourceId, "2026-09-01"); err != nil || markedCount != 0 {
+			t.Fatalf("a pending side was paired: %v %d", err, markedCount)
+		}
+	})
+
+	posted := sampleFinanceSync()
+	posted.Added = []finance.Transaction{
+		{ProviderTransactionID: "payment-posted", ProviderAccountID: "account-checking", PostedOn: "2026-09-11", Amount: "-500", CurrencyCode: "USD", Description: "CARD PAYMENT"},
+	}
+	applyFinanceSync(t, database, fixture, posted, "2026-09-11")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if markedCount, err := tx.DetectFinanceTransfers(fixture.agentId, fixture.sourceId, "2026-09-01"); err != nil || markedCount != 2 {
+			t.Fatalf("the posted pair: %v %d", err, markedCount)
+		}
+		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
+		if !found["payment-posted"].IsTransfer || !found["payment-in"].IsTransfer || found["payment-pending"].IsTransfer {
+			t.Errorf("posted %v, in %v, pending %v", found["payment-posted"].IsTransfer, found["payment-in"].IsTransfer, found["payment-pending"].IsTransfer)
 		}
 	})
 }

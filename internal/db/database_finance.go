@@ -799,6 +799,31 @@ func (self *transaction) createFinanceSyncAsset(agentId, financeAccountId string
 		IsLiability: assetKind.IsLiability(), CurrencyCode: account.CurrencyCode, FinanceAccountID: &financeAccountId,
 		ValuationSource: string(models.ValuationSourceFinanceSync), CreatedAt: now, ModifiedAt: now,
 	}
+	// The same account linked again, after its source was deleted: the
+	// asset the old link made was kept, closed on the day of the delete,
+	// and taking it back keeps the account's history on one asset instead
+	// of starting a second one. It is taken back, and opened again, when
+	// exactly one detached asset has this name, kind, side and currency
+	// and has valuations the sync recorded, which no asset the person
+	// made by hand has.
+	var detachedIds []string
+	if err := self.tx.Raw(`SELECT "id" FROM "agent_asset" AS "asset"
+		WHERE "agent_id" = ? AND "finance_account_id" IS NULL AND "valuation_source" = ?
+		  AND "asset_name" = ? AND "asset_kind" = ? AND "is_liability" = ? AND "currency_code" = ?
+		  AND EXISTS (SELECT 1 FROM "agent_asset_valuation" WHERE "asset_id" = "asset"."id" AND "valuation_source" = ?)
+		LIMIT 2`, agentId, string(models.ValuationSourceManual), model.AssetName, model.AssetKind, model.IsLiability,
+		model.CurrencyCode, string(models.ValuationSourceFinanceSync)).Scan(&detachedIds).Error; err != nil {
+		return "", err
+	}
+	if len(detachedIds) == 1 {
+		if err := self.tx.Model(&agentAssetModel{}).Where(`"agent_id" = ? AND "id" = ?`, agentId, detachedIds[0]).Updates(map[string]any{
+			"finance_account_id": financeAccountId, "valuation_source": string(models.ValuationSourceFinanceSync), "closed_on": nil,
+			"modified_at": now,
+		}).Error; err != nil {
+			return "", err
+		}
+		return detachedIds[0], nil
+	}
 	if err := self.tx.Create(model).Error; err != nil {
 		return "", err
 	}
@@ -1197,6 +1222,11 @@ func (self *transaction) DetectFinanceTransfers(agentId, sourceId, sinceDate str
 	// other may be any of the agent's accounts, so a card payment pairs
 	// with its checking withdrawal however the two were linked.
 	//
+	// Posted money only. A pending transaction is replaced by a new row
+	// when it posts, and the mark does not travel with it: a pending side
+	// paired now would leave its partner marked and the posted side, which
+	// then has nothing left to pair with, counted as spending.
+	//
 	// One to one: each side takes the other side closest in days, and a
 	// pair is marked only when each is the other's first choice. A 500
 	// moved to savings on Monday and a 500 rent check on Tuesday are two
@@ -1216,7 +1246,7 @@ func (self *transaction) DetectFinanceTransfers(agentId, sourceId, sinceDate str
 	for round := 0; round < transferPairingRounds; round++ {
 		paired := self.tx.Exec(`WITH "eligible" AS (
 				SELECT "id", "finance_account_id", "currency_code", "amount", "posted_on" FROM "agent_finance_transaction"
-				WHERE "agent_id" = @agent_id AND "categorized_by" <> 'person'
+				WHERE "agent_id" = @agent_id AND "categorized_by" <> 'person' AND NOT "is_pending"
 				  AND ((NOT "is_transfer" AND "transfer_marked_by" <> 'person') OR "transfer_marked_by" = 'provider_category_mapping')
 			), "ranked" AS (
 				SELECT "money_out"."id" AS "money_out_id", "money_in"."id" AS "money_in_id",
