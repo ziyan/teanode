@@ -20,9 +20,6 @@ import (
 	"github.com/ziyan/teanode/internal/client"
 )
 
-// financeLinkPagePath is the dashboard page that opens Plaid Link.
-const financeLinkPagePath = "/finance-link"
-
 // financeOperation is one operation of the tool: the finance area's
 // operation it calls, what it costs, the arguments it passes on, and
 // whether its answer carries text outsiders wrote.
@@ -727,9 +724,9 @@ func emptyHint(name string, answered any) string {
 
 // linkAddress is the dashboard's linking page for the person to open.
 func linkAddress(current tools.Run, sourceId, instruction string) *tools.Result {
-	address := financeLinkPagePath
+	address := client.FinanceLinkPagePath
 	if base := current.Configuration().DashboardBase(); base != "" {
-		address = base + financeLinkPagePath
+		address = base + client.FinanceLinkPagePath
 	}
 	if sourceId != "" {
 		address += "?source=" + sourceId

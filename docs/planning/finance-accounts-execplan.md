@@ -391,13 +391,21 @@ something else, that name appears once, here, and nowhere else.
   negates Plaid's amounts once, at the edge.
   Date/Author: 2026-09-29.
 
-- Decision: Plaid Link runs on a page of its own, `/finance-link`, with a
+- Decision: Plaid Link runs on a page of its own, `/finance/link`, with a
   Content Security Policy that adds only Plaid's origins; the rest of the
   dashboard keeps its policy.
   Rationale: the dashboard renders untrusted mail and its strict policy is
   a defense for that. The command line page and the drawer already set
   their own policies by path.
   Date/Author: 2026-09-29.
+
+- Decision: the page moved from `/finance-link` to `/finance/link`, under
+  the Finance page it belongs to, and still opens in a window of its own.
+  The dashboard and the `open_page` tool refuse to move to it within the
+  dashboard, where it would be drawn under the dashboard's policy.
+  Rationale: a path that follows the site's structure; the policy only
+  needs the page to be loaded at a path the server knows, whatever it is.
+  Date/Author: 2026-09-30.
 
 - Decision: a SimpleFIN setup token is accepted only in the dashboard and
   on the command line (read without echo), never through the `finance`
@@ -424,7 +432,7 @@ demo (linked from the command line and the dashboard, synced, categorized,
 converted, asked about through the agent), in a desktop and phone visual
 audit, by two code reviews whose 33 findings were fixed, and deployed to
 the owner's server, where migrations 0132 to 0135 applied and the live
-policy names Plaid only on `/finance-link`.
+policy names Plaid only on `/finance/link`.
 
 What remains: Plaid end to end through the server (tested against a fake
 server and by a manual link outside it; a sandbox run needs the sandbox
@@ -670,7 +678,7 @@ Finance page (`/finance/<section>`), which holds what the institutions
 report.
 
 (1) Plaid Link needs a browser. The command line prints the address of
-`/finance-link` for this person and waits until the new finance source
+`/finance/link` for this person and waits until the new finance source
 appears (or `--no-wait`); the tool answers with that address for the person
 to open. Both then see the same result as the dashboard.
 
@@ -1011,7 +1019,7 @@ starts with `requireAgentPerson`.
   `internal/db/database_agent.go`), or the operator keeps paying for Plaid
   finance sources nobody can reach.
 
-The Plaid page: `FinanceLinkPagePath = "/finance-link"` in
+The Plaid page: `FinanceLinkPagePath = "/finance/link"` in
 `internal/web/middlewares.go` with the strict policy plus exactly the Plaid
 origins Milestone 1 confirmed, and a small route in `web/src/app.tsx` that
 asks `CreateFinanceLinkToken`, opens Link, calls `CompleteFinanceLink`,
@@ -1020,7 +1028,7 @@ and links back to the agent page.
 On the agent page (`web/src/pages/agent.tsx`), `finance` sources appear in
 the existing list of sources with their institution, finance accounts,
 last sync and error, and the existing controls. Add **Link an
-institution** (opens `/finance-link` for Plaid, a field for a SimpleFIN
+institution** (opens `/finance/link` for Plaid, a field for a SimpleFIN
 setup token, or both), **Sign in again**, and delete wording that says the
 finance transactions will be deleted and that some Plaid plans count a
 deleted finance source against their limit. Errors and successes are
@@ -1035,7 +1043,7 @@ echo), `repair`, `sources`, `sync`, `disable-source`, `enable-source` and
 Acceptance: in sandbox, link Plaid's sandbox institution from the dashboard
 and from `teanode finance link-plaid`, and see each among the sources with
 finance accounts after the first sync; the browser console on
-`/finance-link` shows no policy refusals and `curl -sI` on another page
+`/finance/link` shows no policy refusals and `curl -sI` on another page
 shows the unchanged policy; `teanode finance link-simplefin` with the demo
 token works; asking the agent to link SimpleFIN gets the answer to use the
 dashboard or command line; `/sandbox/item/reset_login` makes a source ask
@@ -1124,7 +1132,7 @@ SimpleFIN offered:
    sources, finance accounts or finance transactions through any API call.
 7. Deleting a finance source deletes its rows and, for Plaid, removes it at
    Plaid (`/item/get` answers `ITEM_NOT_FOUND`).
-8. Every page other than `/finance-link` sends the unchanged security
+8. Every page other than `/finance/link` sends the unchanged security
    policy.
 9. The parity tests pass.
 
@@ -1162,7 +1170,7 @@ Milestone 3: `models.SourceFinance`, `readFinanceSource`,
 `db.FinanceOperation`. Milestone 4: `db.ExchangeRateOperation`,
 `finance.ErrNoExchangeRate`. Milestones 5 and 6: `FinanceQuery`,
 `FinanceMutation`, the `finance` tool, the `teanode finance` command group.
-Plaid Link is loaded from Plaid's CDN at run time on `/finance-link` only.
+Plaid Link is loaded from Plaid's CDN at run time on `/finance/link` only.
 
 Revision notes, 2026-09-29: finance sources became agent sources, reusing the
 source's schedule, cursor, error, switch, sealed secrets, sync and
