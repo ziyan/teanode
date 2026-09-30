@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 // Where in the dashboard the agent may send somebody, checked here as well
@@ -62,19 +62,47 @@ interface ShowPageEvent {
 // phone the drawer covers the page, so it is put away, as a link out of it
 // does). Each event moves the dashboard once: the events of a turn in flight
 // are replayed when the drawer opens or its socket comes back, and a replay
-// must not take the person back to a page they have since left. A tab in
-// the background is not where the person is looking, so it stays put.
+// must not take the person back to a page they have since left.
+//
+// A tab in the background is not where the person is looking, so it does
+// not move then; but they may have asked here and looked away while the
+// agent answered, so the page is kept and shown when they come back to the
+// tab, if they come back within showPageWaitMS. Later than that, what they
+// are doing now matters more than what they asked a while ago.
+const showPageWaitMS = 2 * 60 * 1000
+
 export function useShowPage(leaving: () => void): (event: ShowPageEvent) => void {
   const navigate = useNavigate()
   const shown = useRef(new Set<string>())
+  const waiting = useRef<{ path: string; askedAt: number } | null>(null)
+  const leavingRef = useRef(leaving)
+  leavingRef.current = leaving
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const onVisible = () => {
+      const pending = waiting.current
+      if (document.visibilityState !== 'visible' || !pending) return
+      waiting.current = null
+      if (Date.now() - pending.askedAt > showPageWaitMS) return
+      navigate(pending.path)
+      leavingRef.current()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [navigate])
+
   return (event) => {
     if (event.kind !== 'navigate') return
     const key = `${event.runId}-${event.sequence}`
     if (shown.current.has(key)) return
     shown.current.add(key)
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
     const path = shownPath(event.text ?? '')
     if (!path) return
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      waiting.current = { path, askedAt: Date.now() }
+      return
+    }
     navigate(path)
     leaving()
   }

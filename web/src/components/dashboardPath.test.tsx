@@ -75,3 +75,40 @@ it('moves the dashboard on a navigate event once, and puts the drawer away as a 
   expect(getByTestId('where').textContent).toBe('/mailbox')
   expect(leaving).toHaveBeenCalledTimes(2)
 })
+
+function setVisibility(visibility: 'visible' | 'hidden') {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility })
+  document.dispatchEvent(new Event('visibilitychange'))
+}
+
+it('waits in a hidden tab and moves when the person comes back soon enough', () => {
+  vi.useFakeTimers()
+  try {
+    const leaving = vi.fn()
+    const { getByTestId } = render(
+      <MemoryRouter initialEntries={['/mailbox']}>
+        <Drawer leaving={leaving} />
+        <Routes>
+          <Route path="*" element={<Where />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    setVisibility('hidden')
+    act(() => handle({ kind: 'navigate', runId: 'run2', sequence: 1, text: '/settings/knowledge/people/some-person' }))
+    expect(getByTestId('where').textContent).toBe('/mailbox')
+    act(() => setVisibility('visible'))
+    expect(getByTestId('where').textContent).toBe('/settings/knowledge/people/some-person')
+    expect(leaving).toHaveBeenCalledTimes(1)
+
+    // Back after too long, the page they are on stays.
+    act(() => handle({ kind: 'navigate', runId: 'run2', sequence: 2, text: '/mailbox' }))
+    setVisibility('hidden')
+    act(() => handle({ kind: 'navigate', runId: 'run2', sequence: 3, text: '/settings/agent/alerts' }))
+    vi.advanceTimersByTime(3 * 60 * 1000)
+    act(() => setVisibility('visible'))
+    expect(getByTestId('where').textContent).toBe('/mailbox')
+  } finally {
+    setVisibility('visible')
+    vi.useRealTimers()
+  }
+})
