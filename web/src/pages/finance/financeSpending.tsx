@@ -399,7 +399,7 @@ function CashFlowPanel() {
             },
             {
               id: 'net',
-              label: t('finance.net'),
+              label: t('finance.leftOver'),
               tone: 'input',
               shape: 'line',
               values: months.map((month) => amountOf(month.netAmount)),

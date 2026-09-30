@@ -3352,7 +3352,7 @@ export const ja: Catalog = {
   'finance.noCashFlow': '直近 12 か月に収入も支出もありません。',
   'finance.income': '収入',
   'finance.spending': '支出',
-  'finance.net': '残り',
+  'finance.leftOver': '残り',
   'finance.budgetsTitle': '予算',
   'finance.budgetsHint': '支出カテゴリごとの毎月の金額。変更は選んだ月から有効になり、それより前の月は元の予算のままです。',
   'finance.setBudget': '予算を設定',

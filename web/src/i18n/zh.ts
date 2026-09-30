@@ -3261,7 +3261,7 @@ export const zh: Catalog = {
   'finance.noCashFlow': '最近十二个月没有收入或支出。',
   'finance.income': '收入',
   'finance.spending': '支出',
-  'finance.net': '结余',
+  'finance.leftOver': '结余',
   'finance.budgetsTitle': '预算',
   'finance.budgetsHint': '每个支出类别每月的金额。修改从你选择的月份起生效，之前的月份保留原来的预算。',
   'finance.setBudget': '设置预算',

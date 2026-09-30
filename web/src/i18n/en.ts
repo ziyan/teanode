@@ -3392,7 +3392,7 @@ export const en = {
   'finance.noCashFlow': 'No income or spending in the last twelve months.',
   'finance.income': 'Income',
   'finance.spending': 'Spending',
-  'finance.net': 'Left over',
+  'finance.leftOver': 'Left over',
   'finance.budgetsTitle': 'Budgets',
   'finance.budgetsHint': 'A monthly amount for each spending category. A change takes effect from the month you choose; earlier months keep the budget they had.',
   'finance.setBudget': 'Set a budget',
