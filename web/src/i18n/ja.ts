@@ -3545,7 +3545,7 @@ export const ja: Catalog = {
   'finance.reportingCurrencyTitle': '集計通貨',
   'finance.reportingCurrencyHint': '合計、グラフ、純資産を表示する 1 つの通貨。ほかの通貨の金額は、それぞれの日の為替レートで換算します。',
   'finance.reportingCurrency': '集計通貨',
-  'finance.valuationSourceChoiceHint': 'ご自身で入力：価値はご自身で追加します。エージェントが読み取り：エージェントが記録します（例：接続済みサーバーから毎日）。',
+  'finance.valuationSourceChoiceHint': 'ご自身で入力：価値はご自身で追加します。エージェントが推定：推定を許可すると、エージェントがすぐに、その後は毎月1日にウェブから推定します。検索には下の説明だけを使います。エージェントが読み取り：エージェントが記録します（例：接続済みサーバーから毎日）。',
   'finance.reopen': '再開する',
   'finance.assetReopened': '資産を再開しました。',
   'finance.savingsTargetReopened': '貯蓄目標を再開しました。',

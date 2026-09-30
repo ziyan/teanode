@@ -3454,7 +3454,7 @@ export const zh: Catalog = {
   'finance.reportingCurrencyTitle': '汇总货币',
   'finance.reportingCurrencyHint': '合计、图表和净资产使用的那一种货币。其他货币的金额按各自那天的汇率换算。',
   'finance.reportingCurrency': '汇总货币',
-  'finance.valuationSourceChoiceHint': '由你输入：价值由你添加。由代理读取：由代理记录，例如每天从已连接的服务器读取。',
+  'finance.valuationSourceChoiceHint': '由你输入：价值由你添加。由代理估算：你允许估算后，代理会立即并在每月一日根据网络信息估算，搜索时只使用下面的描述。由代理读取：由代理记录，例如每天从已连接的服务器读取。',
   'finance.reopen': '重新打开',
   'finance.assetReopened': '资产已重新打开。',
   'finance.savingsTargetReopened': '储蓄目标已重新打开。',
