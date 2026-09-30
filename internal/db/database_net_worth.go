@@ -60,10 +60,12 @@ type NetWorthOperation interface {
 	NetWorthSeries(agentId, from, to string) ([]*models.NetWorthPoint, error)
 
 	// DetachAssetsOfSource turns the assets valued by one finance source's
-	// finance accounts into manual assets, before the source is deleted:
-	// their history stays, and the finance account link is cleared by the
-	// delete. It answers how many it turned.
-	DetachAssetsOfSource(agentId, sourceId string) (int, error)
+	// finance accounts into manual assets closed on closedOn, "2006-01-02",
+	// before the source is deleted: their history stays, they stop counting
+	// toward net worth after that day, and the finance account link is
+	// cleared by the delete. An asset already closed keeps its day. It
+	// answers how many it turned.
+	DetachAssetsOfSource(agentId, sourceId, closedOn string) (int, error)
 }
 
 // netWorthSeriesDaysMost is the longest series one call builds: ten years
@@ -493,7 +495,7 @@ func (self *transaction) NetWorthSeries(agentId, from, to string) ([]*models.Net
 	return points, nil
 }
 
-func (self *transaction) DetachAssetsOfSource(agentId, sourceId string) (int, error) {
+func (self *transaction) DetachAssetsOfSource(agentId, sourceId, closedOn string) (int, error) {
 	var found []agentAssetModel
 	if err := self.tx.Where(`"agent_id" = ? AND "valuation_source" = ? AND "finance_account_id" IN
 			(SELECT "id" FROM "agent_finance_account" WHERE "agent_id" = ? AND "source_id" = ?)`,
@@ -503,6 +505,9 @@ func (self *transaction) DetachAssetsOfSource(agentId, sourceId string) (int, er
 	for index := range found {
 		if _, err := self.UpdateAsset(agentId, found[index].ID, func(asset *models.Asset) error {
 			asset.ValuationSource = models.ValuationSourceManual
+			if asset.ClosedOn == "" {
+				asset.ClosedOn = closedOn
+			}
 			return nil
 		}); err != nil {
 			return 0, err

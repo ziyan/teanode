@@ -520,7 +520,7 @@ func TestFinanceRowsAreTheirOwnersOnly(t *testing.T) {
 		if valuations, err := tx.ListAssetValuations(stranger.agentId, assets[0].ID); err != nil || len(valuations) != 0 {
 			t.Errorf("ListAssetValuations across agents: %v %d", err, len(valuations))
 		}
-		if detached, err := tx.DetachAssetsOfSource(stranger.agentId, owner.sourceId); err != nil || detached != 0 {
+		if detached, err := tx.DetachAssetsOfSource(stranger.agentId, owner.sourceId, "2026-09-12"); err != nil || detached != 0 {
 			t.Errorf("DetachAssetsOfSource across agents: %v %d", err, detached)
 		}
 		if err := tx.DeleteSpendingCategory(stranger.agentId, category.ID); !errors.Is(err, db.ErrNotFound) {

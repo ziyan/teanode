@@ -169,7 +169,9 @@ func TestNetWorthSeriesSumsTheWinningValuations(t *testing.T) {
 }
 
 // Deleting a finance source keeps its assets and their history, turned
-// manual, and the finance account link goes with the source.
+// manual and closed on the day of the delete, so net worth stops counting
+// them after it; an asset already closed keeps its day, and the finance
+// account link goes with the source.
 func TestNetWorthKeepsHistoryWhenAFinanceSourceIsDeleted(t *testing.T) {
 	database, releaseDatabase := dbtest.AcquireDatabase(t)
 	defer releaseDatabase()
@@ -177,14 +179,22 @@ func TestNetWorthKeepsHistoryWhenAFinanceSourceIsDeleted(t *testing.T) {
 	applyFinanceSync(t, database, fixture, sampleFinanceSync(), "2026-09-12")
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		detachedCount, err := tx.DetachAssetsOfSource(fixture.agentId, fixture.sourceId)
+		assets, err := tx.ListAssets(fixture.agentId)
+		if err != nil || len(assets) != 2 {
+			t.Fatalf("ListAssets: %v %d", err, len(assets))
+		}
+		closedByHand := assets[0]
+		if _, err := tx.CloseAsset(fixture.agentId, closedByHand.ID, "2026-09-12"); err != nil {
+			t.Fatalf("CloseAsset: %s", err)
+		}
+		detachedCount, err := tx.DetachAssetsOfSource(fixture.agentId, fixture.sourceId, "2026-09-14")
 		if err != nil || detachedCount != 2 {
 			t.Fatalf("DetachAssetsOfSource: %v %d", err, detachedCount)
 		}
 		if err := tx.DeleteAgentSource(fixture.agentId, fixture.sourceId); err != nil {
 			t.Fatalf("DeleteAgentSource: %s", err)
 		}
-		assets, err := tx.ListAssets(fixture.agentId)
+		assets, err = tx.ListAssets(fixture.agentId)
 		if err != nil || len(assets) != 2 {
 			t.Fatalf("the assets outlive the source: %v %d", err, len(assets))
 		}
@@ -192,9 +202,83 @@ func TestNetWorthKeepsHistoryWhenAFinanceSourceIsDeleted(t *testing.T) {
 			if asset.ValuationSource != models.ValuationSourceManual || asset.FinanceAccountID != "" || asset.LatestValuation == nil {
 				t.Errorf("a detached asset is manual, unlinked, with its history: %+v", asset)
 			}
+			expectedClosedOn := "2026-09-14"
+			if asset.ID == closedByHand.ID {
+				expectedClosedOn = "2026-09-12"
+			}
+			if asset.ClosedOn != expectedClosedOn {
+				t.Errorf("%s closes on %s, got %q", asset.AssetName, expectedClosedOn, asset.ClosedOn)
+			}
+		}
+		points, err := tx.NetWorthSeries(fixture.agentId, "2026-09-12", "2026-09-16")
+		if err != nil {
+			t.Fatalf("NetWorthSeries: %s", err)
+		}
+		countedDays := map[string]bool{}
+		for _, point := range points {
+			countedDays[point.NetWorthOn] = true
+		}
+		if !countedDays["2026-09-14"] || countedDays["2026-09-15"] || countedDays["2026-09-16"] {
+			t.Errorf("net worth counts the assets through the day of the delete and not after: %v", countedDays)
 		}
 		if page, err := tx.ListFinanceTransactions(fixture.agentId, nil); err != nil || len(page.FinanceTransactions) != 0 {
 			t.Errorf("the source's transactions go with it: %v", err)
+		}
+	})
+}
+
+// Linking an institution again after its source was deleted takes back the
+// assets the old link made, which the delete closed, and opens them again,
+// rather than starting a second asset for each account; an asset the person
+// made by hand under the same name is not taken.
+func TestRelinkingTakesBackTheDetachedAssets(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "net-worth-relink")
+	applyFinanceSync(t, database, fixture, sampleFinanceSync(), "2026-09-12")
+
+	var relinked financeFixture
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.DetachAssetsOfSource(fixture.agentId, fixture.sourceId, "2026-09-12"); err != nil {
+			t.Fatalf("DetachAssetsOfSource: %s", err)
+		}
+		if err := tx.DeleteAgentSource(fixture.agentId, fixture.sourceId); err != nil {
+			t.Fatalf("DeleteAgentSource: %s", err)
+		}
+		if _, err := tx.CreateAsset(&models.Asset{AgentID: fixture.agentId, AssetName: "Everyday Checking", AssetKind: models.AssetKindCash,
+			CurrencyCode: "USD", ValuationSource: models.ValuationSourceManual}); err != nil {
+			t.Fatalf("CreateAsset: %s", err)
+		}
+		source, err := tx.PutAgentSource(&models.AgentKnowledgeSource{
+			AgentID: fixture.agentId, Kind: models.SourceWeb, Name: "institution again",
+			Specification: models.AgentKnowledgeSpecification{Start: "https://example.com/"},
+		})
+		if err != nil {
+			t.Fatalf("PutAgentSource: %s", err)
+		}
+		relinked = financeFixture{agentId: fixture.agentId, sourceId: source.ID}
+	})
+	applyFinanceSync(t, database, relinked, sampleFinanceSync(), "2026-09-13")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		assets, err := tx.ListAssets(fixture.agentId)
+		if err != nil {
+			t.Fatal(err)
+		}
+		syncedCount, manualCount := 0, 0
+		for _, asset := range assets {
+			switch asset.ValuationSource {
+			case models.ValuationSourceFinanceSync:
+				syncedCount++
+				if asset.FinanceAccountID == "" || asset.ClosedOn != "" {
+					t.Errorf("a taken back asset is linked and open again: %+v", asset)
+				}
+			case models.ValuationSourceManual:
+				manualCount++
+			}
+		}
+		if len(assets) != 3 || syncedCount != 2 || manualCount != 1 {
+			t.Errorf("%d assets, %d synced and %d by hand; want the two taken back and the one made by hand", len(assets), syncedCount, manualCount)
 		}
 	})
 }

@@ -347,10 +347,10 @@ func TestFinanceSyncRefusesAProviderNoLongerOffered(t *testing.T) {
 func TestBeforeDeletingSourceEndsAFinanceSourceAtItsProvider(t *testing.T) {
 	fixture := newFinanceFixture(t, "")
 	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
-		if err := fixture.worker.BeforeDeletingSource(t.Context(), tx, fixture.source); err != nil {
+		if err := fixture.worker.BeforeDeletingSource(t.Context(), tx, fixture.source, "2026-09-12"); err != nil {
 			t.Fatalf("BeforeDeletingSource: %s", err)
 		}
-		if err := fixture.worker.BeforeDeletingSource(t.Context(), tx, &models.AgentKnowledgeSource{Kind: models.SourceComputer}); err != nil {
+		if err := fixture.worker.BeforeDeletingSource(t.Context(), tx, &models.AgentKnowledgeSource{Kind: models.SourceComputer}, "2026-09-12"); err != nil {
 			t.Fatalf("BeforeDeletingSource: %s", err)
 		}
 		if err := fixture.worker.BeforeDeletingAgent(t.Context(), tx, fixture.agent.ID); err != nil {

@@ -2024,7 +2024,7 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 }
 
 func (self *graph) DeleteAgentKnowledgeSource(ctx context.Context, arguments DeleteAgentKnowledgeSourceArguments) (bool, error) {
-	_, found, err := self.requireAgentPerson(ctx)
+	principal, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -2038,13 +2038,15 @@ func (self *graph) DeleteAgentKnowledgeSource(ctx context.Context, arguments Del
 	}
 	// A finance source is ended at its provider first, best effort, so the
 	// operator stops paying for a link nobody can reach, and its assets
-	// keep their history as manual ones.
+	// keep their history as manual ones, closed today so net worth stops
+	// counting an account nothing values any more.
+	closedOn := personToday(principal)
 	if worker := self.agentWorker(); worker != nil {
-		if err := worker.BeforeDeletingSource(ctx, tx, source); err != nil {
+		if err := worker.BeforeDeletingSource(ctx, tx, source, closedOn); err != nil {
 			return false, err
 		}
 	} else if source.Kind == models.SourceFinance {
-		if _, err := tx.DetachAssetsOfSource(found.ID, source.ID); err != nil {
+		if _, err := tx.DetachAssetsOfSource(found.ID, source.ID, closedOn); err != nil {
 			return false, err
 		}
 	}

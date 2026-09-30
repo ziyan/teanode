@@ -3310,7 +3310,7 @@ export const en = {
   'finance.turnedOff': 'Finance source turned off. It keeps what it has and stops syncing.',
   'finance.turnedOn': 'Finance source turned on.',
   'finance.deleteSource': 'Delete finance source',
-  'finance.deleteSourceBody': '{name} stops syncing, and its finance accounts and every finance transaction from it are deleted. Their assets stay under Net worth as values you entered, with their history.',
+  'finance.deleteSourceBody': '{name} stops syncing, and its finance accounts and every finance transaction from it are deleted. Their assets stay under Net worth with their history, closed today, so net worth stops counting them.',
   'finance.deletePlaidLimit': 'Some Plaid plans count every institution ever linked against a limit, and deleting this finance source does not give its place back. To fix a sign-in, use Sign in again instead.',
   'finance.deleteSimpleFINRevoke': 'You can also remove this app on the SimpleFIN Bridge website, so the access it was given ends there too.',
   'finance.sourceDeleted': 'Finance source deleted.',
