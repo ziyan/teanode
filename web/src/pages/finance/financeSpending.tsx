@@ -493,8 +493,10 @@ function SpendingSummaryPanel({ month }: { month: string }) {
                 const filters = groupTransactionFilters(groupBy, line.groupKey, range)
                 const name = lineName(line.label)
                 const slice = slices.length > 0 ? sliceOf(line.key) : null
+                // A group whose refunds outweigh its spending has no share
+                // of the month: no "-0%".
                 const fraction =
-                  slice && reportingTotal && reportingTotal.spendingAmount > 0
+                  slice && reportingTotal && reportingTotal.spendingAmount > 0 && line.spendingAmount > 0
                     ? line.spendingAmount / reportingTotal.spendingAmount
                     : null
                 // A sliver is "<1%" rather than a "0%" that reads as nothing.
