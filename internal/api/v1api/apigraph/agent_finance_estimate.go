@@ -33,9 +33,10 @@ func isEstimatedByAgent(asset *models.Asset) bool {
 // it makes the monthly schedule that estimates every such asset when there
 // is none, and runs that schedule now, so the new asset has a value today
 // rather than on the first of next month. A schedule the person switched
-// off is run this once and left off. Nothing here fails the change to the
-// asset: a schedule that cannot be made or run is logged, and the person
-// can still ask the agent or add a schedule themselves.
+// off stays off and is not run: they said to stop estimating, and a job for
+// a switched-off schedule would do nothing anyway. Nothing here fails the
+// change to the asset: a schedule that cannot be made or run is logged, and
+// the person can still ask the agent or add a schedule themselves.
 func (self *graph) startAssetEstimates(ctx context.Context, tx db.Transaction, principal *api.Principal, found *models.Agent) {
 	if !agent.FeatureAllowed(self.config.Current(), "schedules") {
 		return
@@ -73,7 +74,7 @@ func (self *graph) startAssetEstimates(ctx context.Context, tx db.Transaction, p
 		}
 	}
 	worker := self.agentWorker()
-	if worker == nil {
+	if worker == nil || !estimates.Enabled {
 		return
 	}
 	if _, err := worker.Enqueue(tx, models.AgentJobSchedule, found.ID, "", estimates.ID); err != nil {

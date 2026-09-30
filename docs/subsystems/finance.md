@@ -147,8 +147,8 @@ it for that asset, with a range and the pages used. Setting an asset to
 values" (the first of each month, the person's own words, delivered to the
 drawer) when there is none, and runs it at once, so the asset has a value the
 same day. The schedule is found by name, like the daily brief's: renamed, it is
-the person's, and a new one is made beside it; switched off, it is run that
-once and left off. Its prompt searches with each asset's estimate description
+the person's, and a new one is made beside it; switched off, it stays off
+and nothing is estimated until the person switches it on again. Its prompt searches with each asset's estimate description
 and nothing else.
 
 ## Spending categories, budgets and savings targets

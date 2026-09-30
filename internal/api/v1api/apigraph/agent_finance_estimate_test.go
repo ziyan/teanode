@@ -91,3 +91,47 @@ func (self *financeFixture) assetNamed(test *testing.T, tx db.Transaction, asset
 	test.Fatalf("no asset named %q", assetName)
 	return ""
 }
+
+// A schedule the person switched off stays off: allowing another estimate
+// neither switches it on nor queues it, since they said to stop.
+func TestASwitchedOffEstimateScheduleStaysOff(test *testing.T) {
+	fixture := newFinanceFixture(test, true)
+	isAllowed := true
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		if _, err := fixture.resolver.CreateAsset(ctx, CreateAssetArguments{AssetName: "the car", AssetKind: "vehicle", CurrencyCode: "USD",
+			ValuationSource: "agent_estimate", EstimateDescription: "a small hatchback", IsEstimateAllowed: &isAllowed}); err != nil {
+			test.Fatal(err)
+		}
+		schedules := estimateSchedules(test, tx, fixture.ownerAgent.ID)
+		if len(schedules) != 1 {
+			test.Fatalf("the estimate schedule is %+v", schedules)
+		}
+		if _, err := tx.UpdateAgentSchedule(schedules[0].ID, func(schedule *models.AgentSchedule) error {
+			schedule.Enabled = false
+			return nil
+		}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	queued := func(tx db.Transaction) int64 {
+		count, err := tx.CountAgentJobs(&db.AgentJobFilter{AgentID: fixture.ownerAgent.ID, Kinds: []models.AgentJobKind{models.AgentJobSchedule}})
+		if err != nil {
+			test.Fatal(err)
+		}
+		return count
+	}
+	var before int64
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		before = queued(tx)
+		if _, err := fixture.resolver.CreateAsset(ctx, CreateAssetArguments{AssetName: "the boat", AssetKind: "vehicle", CurrencyCode: "USD",
+			ValuationSource: "agent_estimate", EstimateDescription: "a small sailing boat", IsEstimateAllowed: &isAllowed}); err != nil {
+			test.Fatal(err)
+		}
+		if schedules := estimateSchedules(test, tx, fixture.ownerAgent.ID); len(schedules) != 1 || schedules[0].Enabled {
+			test.Errorf("the switched-off schedule was changed: %+v", schedules)
+		}
+		if after := queued(tx); after != before {
+			test.Errorf("a switched-off schedule was queued: %d jobs, %d before", after, before)
+		}
+	})
+}
