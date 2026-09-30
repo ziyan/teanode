@@ -37,6 +37,7 @@ func NewFinanceCommand() *cli.Command {
 			&cli.StringFlag{Name: "from", Usage: "the first day, as 2026-09-01"},
 			&cli.StringFlag{Name: "to", Usage: "the last day, as 2026-09-30; today by default"},
 			&cli.StringFlag{Name: "since", Usage: "instead of --from: a span back from today, as 30d, 12w, 6m or 1y"},
+			&cli.StringFlag{Name: "month", Usage: "instead of --from and --to: one whole month, as 2026-09"},
 		}
 	}
 	currencyFlag := func() cli.Flag {
@@ -297,10 +298,18 @@ func setBool(command *cli.Command, variables map[string]any, flag, key string) {
 	}
 }
 
-// rangeOf reads --from, --to and --since into days, "2006-01-02".
+// rangeOf reads --from, --to, --since and --month into days, "2006-01-02".
+// A month is the shorthand the finance tool takes too, so a range asked
+// for either way means the same days.
 func rangeOf(command *cli.Command) (string, string, error) {
 	from, to := strings.TrimSpace(command.String("from")), strings.TrimSpace(command.String("to"))
 	since := strings.TrimSpace(command.String("since"))
+	if month := strings.TrimSpace(command.String("month")); month != "" {
+		if from != "" || to != "" || since != "" {
+			return "", "", usage("give --month, or --from, --to and --since, not both")
+		}
+		return monthDays(month)
+	}
 	if since == "" {
 		return from, to, nil
 	}
@@ -312,6 +321,15 @@ func rangeOf(command *cli.Command) (string, string, error) {
 		return "", "", err
 	}
 	return day, to, nil
+}
+
+// monthDays is the first and last day of a month given as "2006-01".
+func monthDays(month string) (string, string, error) {
+	firstDay, err := time.Parse("2006-01", month)
+	if err != nil {
+		return "", "", usage(fmt.Sprintf("--month %q is not a month; give it as 2026-09", month))
+	}
+	return firstDay.Format(time.DateOnly), firstDay.AddDate(0, 1, -1).Format(time.DateOnly), nil
 }
 
 // dayBack is the day a span such as 30d, 12w, 6m or 1y reaches back from

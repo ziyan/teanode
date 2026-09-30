@@ -171,6 +171,27 @@ func TestFinanceDayBack(test *testing.T) {
 	}
 }
 
+// A month is its first and last day, February's last day included, and
+// anything that is not a month is refused with the form it takes.
+func TestFinanceMonthDays(test *testing.T) {
+	test.Parallel()
+	for month, wanted := range map[string][2]string{
+		"2026-09": {"2026-09-01", "2026-09-30"},
+		"2028-02": {"2028-02-01", "2028-02-29"},
+		"2026-12": {"2026-12-01", "2026-12-31"},
+	} {
+		firstDay, lastDay, err := monthDays(month)
+		if err != nil || firstDay != wanted[0] || lastDay != wanted[1] {
+			test.Errorf("%s: %s to %s %v, not %s to %s", month, firstDay, lastDay, err, wanted[0], wanted[1])
+		}
+	}
+	for _, refused := range []string{"", "2026-13", "2026-09-01", "September"} {
+		if _, _, err := monthDays(refused); err == nil || !strings.Contains(err.Error(), "2026-09") {
+			test.Errorf("%q was taken as a month, or refused without the form: %v", refused, err)
+		}
+	}
+}
+
 // Amounts read as money: the places the currency is written with, halves
 // away from zero, none for the yen.
 func TestFinanceMoney(test *testing.T) {
