@@ -198,3 +198,58 @@ func TestNetWorthKeepsHistoryWhenAFinanceSourceIsDeleted(t *testing.T) {
 		}
 	})
 }
+
+// Linking an institution again after its source was deleted takes back the
+// assets the old link made, rather than counting each account twice; an
+// asset the person made by hand under the same name is not taken.
+func TestRelinkingTakesBackTheDetachedAssets(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "net-worth-relink")
+	applyFinanceSync(t, database, fixture, sampleFinanceSync(), "2026-09-12")
+
+	var relinked financeFixture
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.DetachAssetsOfSource(fixture.agentId, fixture.sourceId); err != nil {
+			t.Fatalf("DetachAssetsOfSource: %s", err)
+		}
+		if err := tx.DeleteAgentSource(fixture.agentId, fixture.sourceId); err != nil {
+			t.Fatalf("DeleteAgentSource: %s", err)
+		}
+		if _, err := tx.CreateAsset(&models.Asset{AgentID: fixture.agentId, AssetName: "Everyday Checking", AssetKind: models.AssetKindCash,
+			CurrencyCode: "USD", ValuationSource: models.ValuationSourceManual}); err != nil {
+			t.Fatalf("CreateAsset: %s", err)
+		}
+		source, err := tx.PutAgentSource(&models.AgentKnowledgeSource{
+			AgentID: fixture.agentId, Kind: models.SourceWeb, Name: "institution again",
+			Specification: models.AgentKnowledgeSpecification{Start: "https://example.com/"},
+		})
+		if err != nil {
+			t.Fatalf("PutAgentSource: %s", err)
+		}
+		relinked = financeFixture{agentId: fixture.agentId, sourceId: source.ID}
+	})
+	applyFinanceSync(t, database, relinked, sampleFinanceSync(), "2026-09-13")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		assets, err := tx.ListAssets(fixture.agentId)
+		if err != nil {
+			t.Fatal(err)
+		}
+		syncedCount, manualCount := 0, 0
+		for _, asset := range assets {
+			switch asset.ValuationSource {
+			case models.ValuationSourceFinanceSync:
+				syncedCount++
+				if asset.FinanceAccountID == "" {
+					t.Errorf("a synced asset with no account: %+v", asset)
+				}
+			case models.ValuationSourceManual:
+				manualCount++
+			}
+		}
+		if len(assets) != 3 || syncedCount != 2 || manualCount != 1 {
+			t.Errorf("%d assets, %d synced and %d by hand; want the two taken back and the one made by hand", len(assets), syncedCount, manualCount)
+		}
+	})
+}

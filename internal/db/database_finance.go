@@ -799,6 +799,29 @@ func (self *transaction) createFinanceSyncAsset(agentId, financeAccountId string
 		IsLiability: assetKind.IsLiability(), CurrencyCode: account.CurrencyCode, FinanceAccountID: &financeAccountId,
 		ValuationSource: string(models.ValuationSourceFinanceSync), CreatedAt: now, ModifiedAt: now,
 	}
+	// The same account linked again, after its source was deleted: the
+	// asset the old link made was kept, valued by hand from then on, and
+	// a new one beside it would count the account twice in net worth. It
+	// is taken back when exactly one open, detached asset has this name,
+	// kind, side and currency and has valuations the sync recorded, which
+	// no asset the person made by hand has.
+	var detachedIds []string
+	if err := self.tx.Raw(`SELECT "id" FROM "agent_asset" AS "asset"
+		WHERE "agent_id" = ? AND "finance_account_id" IS NULL AND "valuation_source" = ? AND "closed_on" IS NULL
+		  AND "asset_name" = ? AND "asset_kind" = ? AND "is_liability" = ? AND "currency_code" = ?
+		  AND EXISTS (SELECT 1 FROM "agent_asset_valuation" WHERE "asset_id" = "asset"."id" AND "valuation_source" = ?)
+		LIMIT 2`, agentId, string(models.ValuationSourceManual), model.AssetName, model.AssetKind, model.IsLiability,
+		model.CurrencyCode, string(models.ValuationSourceFinanceSync)).Scan(&detachedIds).Error; err != nil {
+		return "", err
+	}
+	if len(detachedIds) == 1 {
+		if err := self.tx.Model(&agentAssetModel{}).Where(`"agent_id" = ? AND "id" = ?`, agentId, detachedIds[0]).Updates(map[string]any{
+			"finance_account_id": financeAccountId, "valuation_source": string(models.ValuationSourceFinanceSync), "modified_at": now,
+		}).Error; err != nil {
+			return "", err
+		}
+		return detachedIds[0], nil
+	}
 	if err := self.tx.Create(model).Error; err != nil {
 		return "", err
 	}
