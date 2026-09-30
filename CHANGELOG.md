@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.91.2] - 2026-09-30
+
+### Fixed
+
+- A fact said again in the same words is recognised as the same statement every time, rather than now and then being filed a second time. (#257)
+
 ## [0.91.1] - 2026-09-30
 
 ### Changed
