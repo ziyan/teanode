@@ -710,6 +710,13 @@ plan lists for the account, asked each time the model list is read: every
 other name is refused outright. It has no embeddings,
 so `models.embedding` still needs a keyed provider or a local one.
 
+The plan says how much of its allowance is used on every answer, and the
+Models tab of the agent settings shows what it last said under the provider:
+the plan's name, and a bar for each window with what is left and when it
+resets. Nothing asks the plan between turns, so the numbers are as of its
+last answer, and none are shown until it has answered once since the server
+started.
+
 **`email`** — Email is the destination address when kind is email.
 
 **`webhook`** — Webhook is the destination URL when kind is webhook.

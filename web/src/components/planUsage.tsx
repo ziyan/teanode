@@ -1,0 +1,84 @@
+import { budgetNearness, formatClock } from './common'
+import { useTranslation } from '../i18n/i18n'
+
+// PlanUsage is what a provider paid for by subscription last said of its
+// allowance, as the server reports it: the plan's name, and each window the
+// allowance is spent over, shortest first.
+export interface PlanUsage {
+  planName: string
+  observedAt: string
+  windows: PlanWindow[]
+}
+
+export interface PlanWindow {
+  usedPercent: number
+  windowMinutes: number
+  resetsAt?: string | null
+}
+
+// PlanUsageBars draws each window as a bar of what is used, in the colour of
+// how near the end it is, with what is left and when it starts over beside
+// it. The numbers are from the plan's last answer, which the line under the
+// bars dates, since nothing asks the plan between turns.
+export function PlanUsageBars({ usage }: { usage: PlanUsage }) {
+  const { t } = useTranslation()
+  if (usage.windows.length === 0) return null
+  return (
+    <div className="plan-usage">
+      {usage.windows.map((window) => {
+        const used = Math.max(0, Math.min(100, window.usedPercent))
+        const said = t('agentSettings.planWindowLeft', {
+          window: windowName(window.windowMinutes, t),
+          left: String(100 - used),
+        })
+        return (
+          <div className="agent-budget" key={window.windowMinutes}>
+            <div className="agent-budget-said">
+              <span>{said}</span>
+              {window.resetsAt ? (
+                <span className="muted">{t('agentSettings.planResets', { at: formatReset(window.resetsAt) })}</span>
+              ) : null}
+            </div>
+            <div
+              className="agent-budget-bar"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={used}
+              aria-label={said}
+            >
+              <span className={`agent-budget-bar-fill ${budgetNearness(used, 100)}`} style={{ width: `${used}%` }} />
+            </div>
+          </div>
+        )
+      })}
+      <span className="muted plan-usage-observed">
+        {t('agentSettings.planObserved', { at: formatClock(usage.observedAt) })}
+      </span>
+    </div>
+  )
+}
+
+// windowName is a window by its length: the ones the plans use by name, any
+// other by its hours or days.
+function windowName(minutes: number, t: ReturnType<typeof useTranslation>['t']): string {
+  if (minutes === 7 * 24 * 60) return t('agentSettings.planWindowWeek')
+  if (minutes === 24 * 60) return t('agentSettings.planWindowDay')
+  if (minutes % (24 * 60) === 0) return t('agentSettings.planWindowDays', { count: String(minutes / (24 * 60)) })
+  return t('agentSettings.planWindowHours', { count: String(Math.round((minutes / 60) * 10) / 10) })
+}
+
+// formatReset is the moment a window starts over: a weekday and a time, with
+// the zone, since a weekly reset is days away and the reader needs the day.
+function formatReset(value: string): string {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  })
+}

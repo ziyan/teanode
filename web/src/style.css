@@ -11589,3 +11589,17 @@ button.idea-history-title {
 .alert-settings input[type='time'] {
   min-width: 7rem;
 }
+
+/* A plan's allowance under its provider: one bar per window, then when the
+   plan last said so. */
+.plan-usage {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+}
+.plan-usage .agent-budget {
+  margin: 4px 0;
+}
+.plan-usage-observed {
+  font-size: 12px;
+}
