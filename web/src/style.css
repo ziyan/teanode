@@ -2334,6 +2334,14 @@ pre.message-text {
     overflow-x: auto;
     white-space: nowrap;
   }
+  /* A table in a .table-wrap already has a wrapper that scrolls, so it can
+     stay a table: as a block it shrank to its content, and a table of two
+     narrow columns sat in the left half of its card. */
+  .table-wrap > table {
+    display: table;
+    width: 100%;
+    overflow-x: visible;
+  }
   /* Subject lines and error messages are the exception: they are the content,
      and there is no pointer here to hover over a truncated one, so they wrap
      instead. */
