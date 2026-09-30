@@ -4,7 +4,7 @@
 -- section rather than the first.
 --
 -- section_id is the page, the section's place in the overview and a hash
--- of the section's words, so a section the night rewrote is a new row and
+-- of the section's words, so a section a dream rewrote is a new row and
 -- a vector of the old words can never be taken for the new ones; the
 -- embedding pass removes rows whose section is gone.
 CREATE TABLE "agent_overview_section_vector" (

@@ -296,9 +296,9 @@ const (
 	guessedPattern = `\m(suggests?|suggesting|likely|indicates?|indicating|probably|presumably|must have|seems? to)\M`
 )
 
-// dreamOverviewSections is how many overview sections a night embeds at
+// dreamOverviewSections is how many overview sections a dream embeds at
 // most: a graph whose every overview was rewritten is caught up in a few
-// nights rather than one long call.
+// dreams rather than one long call.
 const dreamOverviewSections = 1000
 
 // dreamEmbed gives vectors to what has none.

@@ -4,9 +4,9 @@ This ExecPlan is a living document. The sections Progress, Surprises & Discoveri
 
 ## Purpose / Big Picture
 
-The night now writes an overview for most pages: several sections under fixed headings (what the thing is, what has been happening, how it relates, its parts, what stands out), themes over clusters of pages, and reflections over themes. A survey answers a question about a whole area by asking each page for its part.
+The dream now writes an overview for most pages: several sections under fixed headings (what the thing is, what has been happening, how it relates, its parts, what stands out), themes over clusters of pages, and reflections over themes. A survey answers a question about a whole area by asking each page for its part.
 
-Three gaps remain between what the night writes and what an answer is given.
+Three gaps remain between what the dreams write and what an answer is given.
 
 First, the overview is not searchable. A page's vector is its name, summary and aliases, and recall always attaches the overview's first section. A question about how a thing relates to others, or what has been happening to it, reaches the page (when it does) and is shown the paragraph that says what the thing is.
 
@@ -56,7 +56,7 @@ Milestone 1, on 2026-09-30. The held-out set of 30 questions carried what 6 need
 
 ## Context and Orientation
 
-A *page* is a row of `agent_node`; its `overview` is markdown written nightly by `internal/agent/dream_overview.go`, sections under `## ` headings, with `overview_inputs` a hash of what it was written from. A page's vector is in `agent_node_vector`, a fact's in `agent_fact_vector`, written by `EmbedGraph` in `internal/agent/graph_indexing.go`, called nightly from `dreamEmbed` in `internal/agent/dream.go`.
+A *page* is a row of `agent_node`; its `overview` is markdown written by each dream through `internal/agent/dream_overview.go`, sections under `## ` headings, with `overview_inputs` a hash of what it was written from. A page's vector is in `agent_node_vector`, a fact's in `agent_fact_vector`, written by `EmbedGraph` in `internal/agent/graph_indexing.go`, called by each dream from `dreamEmbed` in `internal/agent/dream.go`.
 
 Recall is `internal/agent/graph_recall.go`: `searchGraph` fuses four searches (pages and facts, by words and by meaning) by reciprocal rank (`fuseNodes`, `fuseFacts` in `graph_ranking.go`); `chooseRecalled` expands the top pages under a token budget. `RecallForQuestion` runs the same two steps without a turn, and `teanode agent memory recall` and `evaluate` call it through the `RecallAgentMemory` query.
 

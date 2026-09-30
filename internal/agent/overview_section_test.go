@@ -10,7 +10,7 @@ import (
 )
 
 // Every section of an overview is embedded once; a second pass has nothing
-// to do; a section the night rewrote is embedded again and its old vector
+// to do; a section a dream rewrote is embedded again and its old vector
 // removed, and the sections that did not change are left as they were.
 func TestOverviewSectionsAreEmbeddedOnceAndFollowRewrites(test *testing.T) {
 	world := newRememberWorldThatEmbeds(test, func(string) string { return "" })
