@@ -14,11 +14,12 @@ The same harness carries the experiments that hang off the evaluation program: l
 
 - [x] (2026-09-30) Planned retrieval can be replayed (#264, PR #271): an evaluation can say whether it measured basic recall or the plan a live turn would follow.
 - [x] (2026-09-30) Milestone 1, harness: `teanode-server evaluate scenario`, the changing-project scenario, and a test against the fake model server.
-- [ ] Milestone 1, first report: runs of the changing-project scenario with a working embedding model (the first two ran without one; see Surprises).
+- [x] (2026-09-30) Milestone 1, first report: the changing-project scenario with a working embedding model; one defect fixed (PR #274).
+- [x] (2026-09-30) Harness: `conversation` steps (the agent's own work, remembered with its lessons), a `survey` source, and the lessons each question is shown; graded answers from memory now include the lessons a turn is shown.
 - [ ] Milestone 2: knowledge-correctness and evidence-preservation scenarios (#265), with answers traced to the documents that support them.
-- [ ] Milestone 3: late corrections and knowledge time (#268), existing behavior first.
-- [ ] Milestone 4: a standing question answered by recall, by a survey each time, and (only if the first two show a gap worth closing) by a maintained answer (#267).
-- [ ] Milestone 5: execution lessons over repeated update cycles (#269), existing lessons first.
+- [ ] Milestone 3: late corrections and knowledge time (#268), existing behavior first. First run done; see Outcomes.
+- [ ] Milestone 4: a standing question answered by recall, by a survey each time, and (only if the first two show a gap worth closing) by a maintained answer (#267). First run of the first two done; see Outcomes.
+- [ ] Milestone 5: execution lessons over repeated update cycles (#269), existing lessons first. First run done; see Outcomes.
 - [ ] Milestone 6: LongMemEval-S, a pilot of 50 questions, then a cost estimate for the full set before running it (#270).
 
 ## Surprises & Discoveries
@@ -58,7 +59,14 @@ The same harness carries the experiments that hang off the evaluation program: l
 
 ## Outcomes & Retrospective
 
-(Filled in as milestones finish.)
+First runs with a working embedding model, 2026-09-30, one run each (so a single verdict is not a finding), on the small model for reading and the larger one for answers.
+
+- Changing project: a model paired "job state is kept in one store" with "moving it to another was proposed and rejected" as one statement said twice, and the dream's merge put the rejection behind the storage fact; every later question about it missed from memory. Fixed in PR #274: a pair is not merged when the words that go name something the kept words do not. Separately, the reading call took the migration note and a chat thread together and filed facts from the thread only, so the migration was never a fact and memory answered "version 5" without "5.1" (partial). That is the reading model's miss, and the scenario keeps measuring it.
+- Late corrections: current state and a date's valid state were answered right after the correction, from memory and the sources alike. What was known on a date was answered wrong from memory both times it was asked: the graph keeps what is true now and when it was true, not when it was learned, so "what did we believe on May 11" gets today's answer. The sources answered one of the two right, from the posts' dates. An unconfirmed report was answered with a conclusion (invented) from every source. And the first note, the person's own, gave no fact at the first dream, so the first question missed from memory.
+- Execution playbook: lessons were filed from the agent's own conversations, scoped by version ("Wrenfold 2: nvm use 20", later "Wrenfold 3: Node 22"); the command that succeeded without proving the claim filed no lesson; the one-time exception was kept through two dreams with nothing new. Memory answered every question right after the first checkpoint, where the unverified claim was partial. No gap for the regenerated or incrementally edited playbook of #269 to close on this history.
+- Project risks: a survey each time answered right five of five; recall four of five, partial once just after a risk was resolved. A survey cost about 0.04 to 0.10 dollars and 8 to 13 seconds on eleven pages, recall about 0.012 dollars and 2 seconds; a survey's cost grows with the pages it reads. Not yet a gap that pays for a maintained answer; a larger history is the next test.
+
+Costs: the checkpoint costs in the first reports counted each answer twice (fixed); the playbook run cost 0.49 dollars and the risks run 0.80.
 
 ## Context and Orientation
 

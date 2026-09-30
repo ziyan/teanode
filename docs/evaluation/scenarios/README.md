@@ -31,9 +31,12 @@ price costs nothing to it.
 
 `--from` is what each question is answered from and graded against, as
 `teanode agent memory answers` does it; `memory@planned` asks the depth
-judgement for the plan a live turn would follow and replays it. Empty asks
-recall alone, which costs nothing. `--budget` stops the run between steps
-once it has spent that many dollars.
+judgement for the plan a live turn would follow and replays it, and
+`survey` answers with a survey of the whole graph, a model call a page.
+Answers from memory are given what a turn is given: the self page,
+recall's pages with their overview sections, and the lessons nearest the
+question. Empty asks recall alone, which costs nothing. `--budget` stops
+the run between steps once it has spent that many dollars.
 
 The output directory gets `report.json`, `report.md`, the records as the
 reader saw them, and the stored files.
@@ -59,11 +62,17 @@ reader saw them, and the stored files.
 }
 ```
 
-A step is one of three kinds:
+A step is one of four kinds:
 
 - `records`: lines in the records shape (`id`, `kind`, `at`, `author`,
   `title`, `text`, and `channel` and `thread` for `chat`). `at` becomes the
   document's date, the time a dream reads. `author` `@you` is the person.
+- `conversation`: `messages` of a conversation of the agent's own
+  (`role`; `content`; `toolCalls` of `id`, `toolName`, `arguments`;
+  `toolCallId` and `toolName` on a `tool` message, whose content is the
+  tool's result as the tool returned it). It is stored as a turn stores
+  one and remembered as a finished conversation is: what it learned, and
+  the lessons its commands bore out. A shell result names its `exitCode`.
 - `dream`: `dreamCount` dreams, one after another. More than one with
   nothing new filed shows what repeated maintenance does on its own.
 - `checkpoint`: questions in the question set's shape. A claim with no
@@ -83,6 +92,7 @@ For each step, the time, the cost and the size of the graph. For each
 question at a checkpoint:
 
 - whether recall carried every expected claim and no forbidden one;
+- the lessons a turn asking the question is shown;
 - each answer's grade, from each source asked for;
 - for each expected and each outdated claim, the layers that say it and
   how many times: a current fact, a superseded or dormant one, a page's
@@ -102,6 +112,15 @@ what a scenario measures.
 - `changing-project.json`: a storage decision, a rejected proposal, a
   version migration that breaks a verified procedure and brings a new one,
   an unrelated command that succeeds, and a report left unresolved.
+- `execution-playbook.json`: the agent's own work, with commands: a build
+  that needs a newer runtime, a deploy exception seen once, a command
+  that succeeds without proving what is claimed, and a later version that
+  retires the first procedure.
+- `project-risks.json`: one standing question asked after each event:
+  confirmed risks, an unmeasured concern, an unrelated update, a risk
+  resolved, a concern that becomes a risk, and a corrected date. Run it
+  with `survey` among the sources to compare a survey each time with
+  recall.
 - `late-corrections.json`: a change reported five days late, its date
   corrected two days later, a rejected proposal and an unconfirmed report;
   questions about what is current, what was true on a date, and what was

@@ -43,7 +43,8 @@ func TestAScenarioFilesDreamsAndReports(t *testing.T) {
 				prompt = message.Content
 			}
 		}
-		answer := "{}"
+		// An empty list of facts is an answer every reading call can read.
+		answer := `{"facts": []}`
 		switch {
 		case strings.Contains(prompt, "Grade"):
 			answer = `{"verdict": "correct", "reason": "it names the store"}`
@@ -82,6 +83,12 @@ func TestAScenarioFilesDreamsAndReports(t *testing.T) {
 				{"id": "d1", "kind": "note", "at": "2031-03-02T10:00:00Z", "author": "build lead", "title": "Storage",
 				 "text": "Job state is kept in Burrowdb, pinned to version 4.2."}
 			]},
+			{"id": "upgrade", "stepKind": "conversation", "messages": [
+				{"role": "user", "content": "please upgrade the schema"},
+				{"role": "assistant", "toolCalls": [{"id": "c1", "toolName": "shell", "arguments": "{\"command\":\"tool migrate --offline\"}"}]},
+				{"role": "tool", "toolCallId": "c1", "toolName": "shell", "content": "{\"exitCode\":0,\"stdout\":\"done\"}"},
+				{"role": "assistant", "content": "The offline upgrade finished."}
+			]},
 			{"id": "dream", "stepKind": "dream"},
 			{"id": "check", "stepKind": "checkpoint", "questions": [
 				{"id": "store", "question": "Where is the job state kept?", "kind": "direct",
@@ -105,7 +112,7 @@ func TestAScenarioFilesDreamsAndReports(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunScenario: %s", err)
 	}
-	if len(report.Steps) != 3 {
+	if len(report.Steps) != 4 {
 		t.Fatalf("steps reported: %d", len(report.Steps))
 	}
 	if filed := report.Steps[0].FiledCount; filed != 1 {
@@ -117,7 +124,15 @@ func TestAScenarioFilesDreamsAndReports(t *testing.T) {
 	if dreams := dbtest.QueryString(t, database, `SELECT count(*)::text FROM "agent_dream" WHERE "finished_at" IS NOT NULL`); dreams != "1" {
 		t.Fatalf("finished dreams: %s", dreams)
 	}
-	questions := report.Steps[2].Questions
+	// The conversation is stored as a turn stores one, its tool result
+	// fenced, and remembered.
+	if fenced := dbtest.QueryString(t, database, `SELECT count(*)::text FROM "agent_message" WHERE "role" = 'tool' AND "content" LIKE '<untrusted-data>%'`); fenced != "1" {
+		t.Fatalf("fenced tool results: %s", fenced)
+	}
+	if remembered := dbtest.QueryString(t, database, `SELECT count(*)::text FROM "agent_job" WHERE "kind" = 'remember' AND "status" = 'done'`); remembered != "1" {
+		t.Fatalf("finished remembering: %s", remembered)
+	}
+	questions := report.Steps[3].Questions
 	if len(questions) != 1 {
 		t.Fatalf("questions reported: %d", len(questions))
 	}

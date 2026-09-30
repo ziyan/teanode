@@ -29,10 +29,16 @@ import (
 
 // The kinds of step.
 const (
-	ScenarioStepRecords    = "records"
-	ScenarioStepDream      = "dream"
-	ScenarioStepCheckpoint = "checkpoint"
+	ScenarioStepRecords      = "records"
+	ScenarioStepDream        = "dream"
+	ScenarioStepCheckpoint   = "checkpoint"
+	ScenarioStepConversation = "conversation"
 )
+
+// ScenarioAnswerFromSurvey answers a question with a survey of the whole
+// graph, the way a question about a whole area is answered when asked
+// for: a model call a page, then one to combine them.
+const ScenarioAnswerFromSurvey = "survey"
 
 // Scenario is the file.
 type Scenario struct {
@@ -56,6 +62,29 @@ type ScenarioStep struct {
 	DreamCount int `json:"dreamCount,omitempty"`
 
 	Questions []*ScenarioQuestion `json:"questions,omitempty"`
+
+	// Messages are a conversation of the agent's own, filed as one and
+	// remembered the way a finished conversation is: what it learned,
+	// and the lessons its commands bore out.
+	Messages []*ScenarioMessage `json:"messages,omitempty"`
+}
+
+// ScenarioMessage is one message of a conversation. A tool message's
+// content is the tool's result as the tool returned it; it is fenced as
+// a turn fences it before it is stored.
+type ScenarioMessage struct {
+	Role       string              `json:"role"`
+	Content    string              `json:"content,omitempty"`
+	ToolCalls  []*ScenarioToolCall `json:"toolCalls,omitempty"`
+	ToolCallID string              `json:"toolCallId,omitempty"`
+	ToolName   string              `json:"toolName,omitempty"`
+}
+
+// ScenarioToolCall is a call an assistant message makes.
+type ScenarioToolCall struct {
+	ID        string `json:"id"`
+	ToolName  string `json:"toolName"`
+	Arguments string `json:"arguments"`
 }
 
 // ScenarioQuestion is a question of the evaluation question set's shape.
@@ -117,8 +146,12 @@ func ReadScenario(path string) (*Scenario, error) {
 					return nil, fmt.Errorf("step %s: every question needs an id, the question and the expected answer", step.ID)
 				}
 			}
+		case ScenarioStepConversation:
+			if len(step.Messages) == 0 {
+				return nil, fmt.Errorf("step %s has no messages", step.ID)
+			}
 		default:
-			return nil, fmt.Errorf("step %s is of kind %q; records, dream or checkpoint", step.ID, step.StepKind)
+			return nil, fmt.Errorf("step %s is of kind %q; records, conversation, dream or checkpoint", step.ID, step.StepKind)
 		}
 	}
 	return &scenario, nil
@@ -191,6 +224,9 @@ type ScenarioQuestionReport struct {
 	RecallFailure string `json:"recallFailure,omitempty"`
 
 	Answers []*ScenarioAnswerReport `json:"answers,omitempty"`
+
+	// ShownLessons are the lessons a turn asking the question is shown.
+	ShownLessons []string `json:"shownLessons,omitempty"`
 
 	// ExpectedLayers and OutdatedLayers say, for each claim, in which
 	// layer of the graph it is said and how many times: whether an
@@ -307,7 +343,6 @@ func RunScenario(ctx context.Context, settings *ScenarioSettings) (*ScenarioRepo
 		_, _ = fmt.Fprintf(progress, "step %d of %d: %s (%s)\n", index+1, len(settings.Scenario.Steps), step.ID, step.StepKind)
 		started := time.Now()
 		stepReport := &ScenarioStepReport{ID: step.ID, StepKind: step.StepKind}
-		var answerCost float64
 		switch step.StepKind {
 		case ScenarioStepRecords:
 			stepReport.FiledCount, err = worker.fileScenarioRecords(ctx, settings, index, step, owner, found, source)
@@ -315,8 +350,10 @@ func RunScenario(ctx context.Context, settings *ScenarioSettings) (*ScenarioRepo
 			for count := 0; count < step.DreamCount && err == nil; count++ {
 				err = worker.dreamScenario(ctx, settings.Database, found.ID)
 			}
+		case ScenarioStepConversation:
+			err = worker.rememberScenarioConversation(ctx, settings.Database, step, found)
 		case ScenarioStepCheckpoint:
-			stepReport.Questions, answerCost, err = worker.askScenario(ctx, settings, step, owner, found)
+			stepReport.Questions, err = worker.askScenario(ctx, settings, step, owner, found)
 		}
 		if err != nil {
 			return report, fmt.Errorf("step %s: %w", step.ID, err)
@@ -326,10 +363,9 @@ func RunScenario(ctx context.Context, settings *ScenarioSettings) (*ScenarioRepo
 		if err != nil {
 			return report, err
 		}
-		// Answers and their grades are runs of their own and priced by
-		// EvaluateAnswer; the rest is read from the messages the runs
-		// wrote.
-		stepReport.Cost = after - spent + answerCost
+		// Every call a run makes, the answers and their grades included,
+		// writes its usage on a message, so the difference is the step's.
+		stepReport.Cost = after - spent
 		report.TotalCost += stepReport.Cost
 		if stepReport.GraphCounts, err = scenarioGraphCounts(ctx, settings.Database, found.ID); err != nil {
 			return report, err
@@ -410,10 +446,17 @@ func (self *Agent) dreamScenario(ctx context.Context, database db.Database, agen
 		return err
 	}
 	self.Wait()
+	return scenarioJobFinished(ctx, database, agentId, models.AgentJobDream, "dream")
+}
+
+// scenarioJobFinished says why the run's last job of a kind did not
+// finish: one that failed is queued again or dead, and a scenario that
+// carried on past it would measure the step that did not happen.
+func scenarioJobFinished(ctx context.Context, database db.Database, agentId string, kind models.AgentJobKind, name string) error {
 	var failed []*models.AgentJob
 	if err := database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		failed, err = tx.ListAgentJobs(&db.AgentJobFilter{
-			AgentID: agentId, Kinds: []models.AgentJobKind{models.AgentJobDream},
+			AgentID: agentId, Kinds: []models.AgentJobKind{kind},
 			Statuses: []models.AgentJobStatus{models.AgentJobDead, models.AgentJobQueued},
 		}, &db.Options{Limit: 5})
 		return err
@@ -421,19 +464,18 @@ func (self *Agent) dreamScenario(ctx context.Context, database db.Database, agen
 		return err
 	}
 	for _, job := range failed {
-		return fmt.Errorf("the dream did not finish (%s): %s", job.Status, job.Error)
+		return fmt.Errorf("the %s did not finish (%s): %s", name, job.Status, job.Error)
 	}
 	return nil
 }
 
 // askScenario asks a checkpoint's questions.
-func (self *Agent) askScenario(ctx context.Context, settings *ScenarioSettings, step *ScenarioStep, owner *models.User, found *models.Agent) ([]*ScenarioQuestionReport, float64, error) {
+func (self *Agent) askScenario(ctx context.Context, settings *ScenarioSettings, step *ScenarioStep, owner *models.User, found *models.Agent) ([]*ScenarioQuestionReport, error) {
 	var reports []*ScenarioQuestionReport
-	var cost float64
 	for _, question := range step.Questions {
 		carried, err := self.RecallForQuestion(ctx, found, owner, question.Question)
 		if err != nil {
-			return nil, cost, err
+			return nil, err
 		}
 		questionReport := &ScenarioQuestionReport{ID: question.ID, IsRecallHit: true}
 		for _, claim := range question.Expects {
@@ -453,10 +495,10 @@ func (self *Agent) askScenario(ctx context.Context, settings *ScenarioSettings, 
 			}
 		}
 		if questionReport.ExpectedLayers, err = scenarioLayers(ctx, settings.Database, found.ID, question.Expects); err != nil {
-			return nil, cost, err
+			return nil, err
 		}
 		if questionReport.OutdatedLayers, err = scenarioLayers(ctx, settings.Database, found.ID, question.OutdatedClaims); err != nil {
-			return nil, cost, err
+			return nil, err
 		}
 		for _, answerFrom := range settings.AnswerSources {
 			answerReport := &ScenarioAnswerReport{AnswerFrom: answerFrom}
@@ -464,9 +506,8 @@ func (self *Agent) askScenario(ctx context.Context, settings *ScenarioSettings, 
 			if strings.HasSuffix(answerFrom, answerFromPlanned) {
 				judged, err := self.JudgeRetrievalPlan(ctx, found, owner, question.Question)
 				if err != nil {
-					return nil, cost, err
+					return nil, err
 				}
-				cost += judged.Cost
 				plan = judged.Plan
 				if plan == nil || plan.isEmpty() {
 					// No plan is what a live turn does with a question
@@ -477,21 +518,70 @@ func (self *Agent) askScenario(ctx context.Context, settings *ScenarioSettings, 
 					answerReport.PlannedSearches = plan.Searches
 				}
 			}
-			evaluation, err := self.EvaluateAnswer(ctx, found, owner, question.Question, question.ExpectedAnswer, question.OutdatedAnswer, answerFrom, plan)
+			var evaluation *AnswerEvaluation
+			if answerFrom == ScenarioAnswerFromSurvey {
+				evaluation, err = self.surveyScenario(ctx, found, owner, question)
+			} else {
+				evaluation, err = self.EvaluateAnswer(ctx, found, owner, question.Question, question.ExpectedAnswer, question.OutdatedAnswer, answerFrom, plan)
+			}
 			if err != nil {
-				return nil, cost, err
+				return nil, err
 			}
 			answerReport.AnswerVerdict = evaluation.AnswerVerdict
 			answerReport.VerdictReason = evaluation.VerdictReason
 			answerReport.AnswerText = evaluation.AnswerText
 			answerReport.Cost = evaluation.Cost
 			answerReport.AnswerDurationMS = evaluation.AnswerDurationMS
-			cost += evaluation.Cost
 			questionReport.Answers = append(questionReport.Answers, answerReport)
 		}
+		questionReport.ShownLessons = self.LessonsForQuestion(ctx, found, owner, question.Question)
 		reports = append(reports, questionReport)
 	}
-	return reports, cost, nil
+	return reports, nil
+}
+
+// surveyScenario answers a question with a survey of the whole graph and
+// grades the survey's report as the answer.
+func (self *Agent) surveyScenario(ctx context.Context, found *models.Agent, owner *models.User, question *ScenarioQuestion) (*AnswerEvaluation, error) {
+	started := time.Now()
+	surveyed, err := self.Survey(ctx, found, owner, question.Question, "")
+	if err != nil {
+		return nil, err
+	}
+	evaluation := &AnswerEvaluation{AnswerText: strings.TrimSpace(surveyed.Report), AnswerDurationMS: time.Since(started).Milliseconds()}
+	return self.gradeAnswer(ctx, found, owner, evaluation, question.Question, question.ExpectedAnswer, question.OutdatedAnswer, nil)
+}
+
+// rememberScenarioConversation files a conversation of the agent's own
+// and runs the remembering a finished conversation gets.
+func (self *Agent) rememberScenarioConversation(ctx context.Context, database db.Database, step *ScenarioStep, found *models.Agent) error {
+	if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
+		conversation, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: found.ID, Kind: models.AgentConversationNamed, Title: step.ID})
+		if err != nil {
+			return err
+		}
+		for _, message := range step.Messages {
+			stored := &models.AgentMessage{ConversationID: conversation.ID, Role: message.Role, Content: message.Content, ToolCallID: message.ToolCallID, Name: message.ToolName}
+			if message.Role == "tool" {
+				stored.Content = fenced(message.Content)
+			}
+			for _, call := range message.ToolCalls {
+				stored.ToolCalls = append(stored.ToolCalls, models.AgentToolCall{ID: call.ID, Name: call.ToolName, Arguments: call.Arguments})
+			}
+			if _, err := tx.AppendAgentMessage(stored); err != nil {
+				return err
+			}
+		}
+		_, err = self.Enqueue(tx, models.AgentJobRemember, found.ID, "", conversation.ID)
+		return err
+	}); err != nil {
+		return err
+	}
+	if err := self.TickAt(ctx, time.Now()); err != nil {
+		return err
+	}
+	self.Wait()
+	return scenarioJobFinished(ctx, database, found.ID, models.AgentJobRemember, "remembering")
 }
 
 // scenarioCarries is whether recall carried a claim: every word in one

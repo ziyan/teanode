@@ -1,0 +1,387 @@
+{
+  "name": "execution playbook",
+  "description": "The agent's own work on an invented docs site: a build that needs a newer runtime, a deploy exception seen once, a command that succeeds without proving what is claimed, and a later version that retires the first procedure. Repeated dreams with nothing new.",
+  "steps": [
+    {
+      "id": "build-on-node-20",
+      "stepKind": "conversation",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Please build the Wrenfold docs site."
+        },
+        {
+          "role": "assistant",
+          "toolCalls": [
+            {
+              "id": "c1",
+              "toolName": "shell",
+              "arguments": "{\"command\": \"wrenfold build\"}"
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "toolCallId": "c1",
+          "toolName": "shell",
+          "content": "{\"exitCode\": 1, \"stderr\": \"error: wrenfold 2 requires Node 20 or newer (found 18.19.0)\"}"
+        },
+        {
+          "role": "assistant",
+          "toolCalls": [
+            {
+              "id": "c2",
+              "toolName": "shell",
+              "arguments": "{\"command\": \"nvm use 20 && wrenfold build\"}"
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "toolCallId": "c2",
+          "toolName": "shell",
+          "content": "{\"exitCode\": 0, \"stdout\": \"Built 214 pages in 9.2s\"}"
+        },
+        {
+          "role": "assistant",
+          "content": "Built. Wrenfold 2 needs Node 20: with Node 18 it refuses to start, and after nvm use 20 the build finished with 214 pages."
+        }
+      ]
+    },
+    {
+      "id": "staging-exception",
+      "stepKind": "conversation",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Deploy the docs site to staging and check the new version is live."
+        },
+        {
+          "role": "assistant",
+          "toolCalls": [
+            {
+              "id": "c3",
+              "toolName": "shell",
+              "arguments": "{\"command\": \"wrenfold deploy --target staging\"}"
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "toolCallId": "c3",
+          "toolName": "shell",
+          "content": "{\"exitCode\": 0, \"stdout\": \"Uploaded 214 files to staging\"}"
+        },
+        {
+          "role": "assistant",
+          "toolCalls": [
+            {
+              "id": "c4",
+              "toolName": "shell",
+              "arguments": "{\"command\": \"curl -s https://staging.docs.example/version.txt\"}"
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "toolCallId": "c4",
+          "toolName": "shell",
+          "content": "{\"exitCode\": 0, \"stdout\": \"2.3.0\"}"
+        },
+        {
+          "role": "assistant",
+          "content": "The upload worked but staging still serves 2.3.0: the staging cache kept the old index."
+        },
+        {
+          "role": "assistant",
+          "toolCalls": [
+            {
+              "id": "c5",
+              "toolName": "shell",
+              "arguments": "{\"command\": \"wrenfold deploy --target staging --no-cache\"}"
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "toolCallId": "c5",
+          "toolName": "shell",
+          "content": "{\"exitCode\": 0, \"stdout\": \"Uploaded 214 files to staging, cache purged\"}"
+        },
+        {
+          "role": "assistant",
+          "toolCalls": [
+            {
+              "id": "c6",
+              "toolName": "shell",
+              "arguments": "{\"command\": \"curl -s https://staging.docs.example/version.txt\"}"
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "toolCallId": "c6",
+          "toolName": "shell",
+          "content": "{\"exitCode\": 0, \"stdout\": \"2.4.0\"}"
+        },
+        {
+          "role": "assistant",
+          "content": "Staging now serves 2.4.0. Deploying to staging needs --no-cache, otherwise the old version stays live."
+        }
+      ]
+    },
+    {
+      "id": "unverified-claim",
+      "stepKind": "conversation",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Is the production deploy working too?"
+        },
+        {
+          "role": "assistant",
+          "toolCalls": [
+            {
+              "id": "c7",
+              "toolName": "shell",
+              "arguments": "{\"command\": \"wrenfold --version\"}"
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "toolCallId": "c7",
+          "toolName": "shell",
+          "content": "{\"exitCode\": 0, \"stdout\": \"wrenfold 2.4.0\"}"
+        },
+        {
+          "role": "assistant",
+          "content": "The Wrenfold command runs fine, so the production deploy should work."
+        },
+        {
+          "role": "user",
+          "content": "Ok, we'll check production another day."
+        },
+        {
+          "role": "assistant",
+          "content": "Understood, production has not been checked yet."
+        }
+      ]
+    },
+    {
+      "id": "dream-1",
+      "stepKind": "dream"
+    },
+    {
+      "id": "checkpoint-1",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "build-1",
+          "question": "How do I build the Wrenfold docs site?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "Node 20"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Use Node 20 (nvm use 20), then run wrenfold build; Wrenfold 2 refuses to start on Node 18."
+        },
+        {
+          "id": "staging-1",
+          "question": "Anything to watch out for when deploying the docs site to staging?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "--no-cache"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Pass --no-cache (wrenfold deploy --target staging --no-cache); without it staging keeps serving the old version, checked through version.txt."
+        },
+        {
+          "id": "production-1",
+          "question": "Has the production deploy of the docs site been shown to work?",
+          "kind": "direct",
+          "expects": [],
+          "forbids": [],
+          "expectedAnswer": "No. Only wrenfold --version was run, which shows the command works, not that a production deploy does; production has not been checked."
+        },
+        {
+          "id": "node-18-1",
+          "question": "If I try to build the docs site on a machine with only Node 18, what happens?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "Node 20"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "The build refuses to start: Wrenfold 2 needs Node 20 or newer."
+        }
+      ]
+    },
+    {
+      "id": "upgrade-to-3",
+      "stepKind": "conversation",
+      "messages": [
+        {
+          "role": "user",
+          "content": "We moved to Wrenfold 3. Build the docs site again please."
+        },
+        {
+          "role": "assistant",
+          "toolCalls": [
+            {
+              "id": "c8",
+              "toolName": "shell",
+              "arguments": "{\"command\": \"nvm use 20 && wrenfold build\"}"
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "toolCallId": "c8",
+          "toolName": "shell",
+          "content": "{\"exitCode\": 1, \"stderr\": \"error: wrenfold 3 requires Node 22 or newer (found 20.11.1)\"}"
+        },
+        {
+          "role": "assistant",
+          "toolCalls": [
+            {
+              "id": "c9",
+              "toolName": "shell",
+              "arguments": "{\"command\": \"nvm use 22 && wrenfold build\"}"
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "toolCallId": "c9",
+          "toolName": "shell",
+          "content": "{\"exitCode\": 0, \"stdout\": \"Built 221 pages in 7.8s\"}"
+        },
+        {
+          "role": "assistant",
+          "content": "Built with Wrenfold 3 on Node 22. Node 20 no longer works since Wrenfold 3."
+        }
+      ]
+    },
+    {
+      "id": "dream-2",
+      "stepKind": "dream"
+    },
+    {
+      "id": "checkpoint-2",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "build-2",
+          "question": "How do I build the Wrenfold docs site now?",
+          "kind": "changed",
+          "expects": [
+            {
+              "words": [
+                "Node 22"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Use Node 22 (nvm use 22), then wrenfold build; since Wrenfold 3, Node 20 no longer works.",
+          "outdatedAnswer": "Use Node 20.",
+          "outdatedClaims": [
+            {
+              "words": [
+                "nvm use 20"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "staging-2",
+          "question": "Anything to watch out for when deploying the docs site to staging?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "--no-cache"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Pass --no-cache, otherwise staging keeps serving the old version."
+        },
+        {
+          "id": "production-2",
+          "question": "Has the production deploy of the docs site been shown to work?",
+          "kind": "direct",
+          "expects": [],
+          "forbids": [],
+          "expectedAnswer": "No, production has not been checked."
+        }
+      ]
+    },
+    {
+      "id": "dreams-without-news",
+      "stepKind": "dream",
+      "dreamCount": 2
+    },
+    {
+      "id": "checkpoint-3",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "build-3",
+          "question": "How do I build the Wrenfold docs site now?",
+          "kind": "changed",
+          "expects": [
+            {
+              "words": [
+                "Node 22"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Use Node 22, then wrenfold build.",
+          "outdatedAnswer": "Use Node 20.",
+          "outdatedClaims": [
+            {
+              "words": [
+                "nvm use 20"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "staging-3",
+          "question": "Anything to watch out for when deploying the docs site to staging?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "--no-cache"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Pass --no-cache."
+        },
+        {
+          "id": "production-3",
+          "question": "Has the production deploy of the docs site been shown to work?",
+          "kind": "direct",
+          "expects": [],
+          "forbids": [],
+          "expectedAnswer": "No, production has not been checked."
+        }
+      ]
+    }
+  ]
+}

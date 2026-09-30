@@ -394,9 +394,21 @@ func cosineOf(first, second []float32) float64 {
 // model, apart from the rest of recall and under a budget of their own:
 // what worked the last time this kind of work came up.
 func (self *AskRun) recallLessons(ctx context.Context, words string) {
+	if lines := self.lessonLines(ctx, words); len(lines) > 0 {
+		self.Recall(lessonsHeading + "\n" + strings.Join(lines, "\n"))
+	}
+}
+
+// lessonsHeading is what the lessons a turn is shown are introduced with.
+const lessonsHeading = "Lessons from earlier work, each borne out by a command that worked:"
+
+// lessonLines are the lessons a turn with these words is shown, one line
+// each, within their budget: the same for a turn and for an evaluation
+// that answers as a turn would.
+func (self *AskRun) lessonLines(ctx context.Context, words string) []string {
 	question := self.meaningOfQuestion(ctx, "recall", words)
 	if question == nil {
-		return
+		return nil
 	}
 	agentId := self.settings.Agent.ID
 	var lines []string
@@ -428,9 +440,14 @@ func (self *AskRun) recallLessons(ctx context.Context, words string) {
 		return nil
 	}); err != nil {
 		log.Debugf("cannot recall lessons: %s", err)
-		return
+		return nil
 	}
-	if len(lines) > 0 {
-		self.Recall("Lessons from earlier work, each borne out by a command that worked:\n" + strings.Join(lines, "\n"))
-	}
+	return lines
+}
+
+// LessonsForQuestion is the lessons a turn asking this would be shown.
+func (self *Agent) LessonsForQuestion(ctx context.Context, found *models.Agent, owner *models.User, question string) []string {
+	run := &AskRun{agent: self, settings: &AskSettings{Agent: found, Owner: owner, Message: question}, promptMemories: map[string]bool{}}
+	run.ctx = ctx
+	return run.lessonLines(ctx, question)
 }
