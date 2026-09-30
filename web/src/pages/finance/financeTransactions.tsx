@@ -23,7 +23,14 @@ import {
   amountOf,
   formatDay,
 } from './financeApi'
-import { Money, accountLabel, spendingCategoryOptions, useFinanceWords } from './financeCommon'
+import {
+  Money,
+  accountLabel,
+  spendingCategoryLabel,
+  spendingCategoryOptions,
+  useFinanceWords,
+} from './financeCommon'
+import { useSpendingCategoryDisplayName } from './spendingCategoryName'
 import { TransactionFilters, searchFromTransactionFilters, transactionFiltersFromSearch } from './financeFilters'
 
 // How many finance transactions one read brings, and one Load more adds.
@@ -43,6 +50,7 @@ export function FinanceTransactionsSection() {
   const toast = useToast()
   const words = useFinanceWords()
   const isDesktop = useIsDesktop()
+  const categoryName = useSpendingCategoryDisplayName()
   const [search, setSearch] = useSearchParams()
   const filters = useMemo(() => transactionFiltersFromSearch(search), [search])
   const setFilters = (change: (previous: TransactionFilters) => TransactionFilters) =>
@@ -258,7 +266,7 @@ export function FinanceTransactionsSection() {
             label={t('finance.spendingCategory')}
             options={[
               { value: '', label: t('finance.uncategorized') },
-              ...spendingCategoryOptions(categoryList, row.spendingCategoryId),
+              ...spendingCategoryOptions(categoryList, categoryName, row.spendingCategoryId),
             ]}
             onChange={(value) => void categorize(row, value)}
           />
@@ -295,7 +303,7 @@ export function FinanceTransactionsSection() {
           ? t('finance.untilDay', { day: formatDay(filters.to) })
           : '',
     account ? accountLabel(account) : '',
-    category ? category.spendingCategoryName : '',
+    category ? spendingCategoryLabel(category, categoryList, categoryName) : '',
     filters.isUncategorized ? t('finance.uncategorized') : '',
     filters.text ? t('finance.containingWords', { text: filters.text }) : '',
   ].filter(Boolean)
@@ -342,7 +350,7 @@ export function FinanceTransactionsSection() {
             label={t('finance.spendingCategory')}
             options={[
               { value: '', label: t('finance.allSpendingCategories') },
-              ...spendingCategoryOptions(categoryList, filters.spendingCategoryId),
+              ...spendingCategoryOptions(categoryList, categoryName, filters.spendingCategoryId),
             ]}
             // A spending category and "only those without one" cannot both
             // hold, so choosing one lets go of the other.

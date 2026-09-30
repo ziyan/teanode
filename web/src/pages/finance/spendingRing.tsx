@@ -88,17 +88,24 @@ const RING_SIZE = 200
 const RING_OUTER = 96
 const RING_INNER = 62
 
-function sliceClass(slice: RingSlice, index: number): string {
+// ringSliceClass is the colour a slice is drawn in, as a class, for the
+// slice and for the swatch that names it elsewhere: the table under the
+// ring is its legend.
+export function ringSliceClass(slice: RingSlice, index: number): string {
   return slice.isOther ? 'other' : `tone-${index % RING_SLICE_COUNT}`
 }
 
-// SpendingRing draws the slices with a legend beside them (under them on a
-// phone), the total in the middle.
+// SpendingRing draws the slices, the total in the middle. It has no legend
+// of its own: the table under it names each slice with its swatch, and a
+// legend beside it said everything the table did a second time. The slice
+// of the row under the pointer or the keyboard can be picked out.
 export function SpendingRing({
   slices,
   currency,
   label,
   totalLabel,
+  highlightedKey,
+  totalAmount,
 }: {
   slices: RingSlice[]
   currency: string
@@ -106,6 +113,11 @@ export function SpendingRing({
   label: string
   // The word under the total in the middle.
   totalLabel: string
+  highlightedKey?: string | null
+  // The figure in the middle, where it is not the slices added up: the
+  // month's spending, which counts a category whose refunds outweighed its
+  // purchases, where no slice can.
+  totalAmount?: number
 }) {
   const total = slices.reduce((sum, slice) => sum + slice.amount, 0)
   if (total <= 0) return null
@@ -128,25 +140,25 @@ export function SpendingRing({
         aria-label={`${label}. ${said}`}
       >
         {drawn.map(({ slice, index, path }) => (
-          <path key={slice.key} className={`spending-ring-slice ${sliceClass(slice, index)}`} d={path} />
+          <path
+            key={slice.key}
+            className={[
+              'spending-ring-slice',
+              ringSliceClass(slice, index),
+              highlightedKey && highlightedKey !== slice.key ? 'dimmed' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            d={path}
+          />
         ))}
         <text className="spending-ring-total" x={RING_SIZE / 2} y={RING_SIZE / 2 - 2} textAnchor="middle">
-          {formatMoney(total, currency)}
+          {formatMoney(totalAmount ?? total, currency)}
         </text>
         <text className="spending-ring-caption" x={RING_SIZE / 2} y={RING_SIZE / 2 + 18} textAnchor="middle">
           {totalLabel}
         </text>
       </svg>
-      <ul className="spending-ring-legend" aria-hidden="true">
-        {slices.map((slice, index) => (
-          <li key={slice.key}>
-            <i className={`spending-ring-swatch ${sliceClass(slice, index)}`} />
-            <span className="spending-ring-name">{slice.label}</span>
-            <span className="spending-ring-amount">{formatMoney(slice.amount, currency)}</span>
-            <span className="muted spending-ring-percent">{percent.format(slice.amount / total)}</span>
-          </li>
-        ))}
-      </ul>
     </div>
   )
 }

@@ -38,6 +38,7 @@ import {
   useAct,
   useReportingCurrency,
 } from './financeCommon'
+import { useSpendingCategoryDisplayName } from './spendingCategoryName'
 
 // The Budgets section: a monthly budget per spending category, the
 // person's own list of spending categories, and the spending rules that
@@ -64,6 +65,7 @@ export function FinanceBudgetsSection() {
 
 function BudgetsPanel({ categories }: { categories: SpendingCategory[] }) {
   const { t } = useTranslation()
+  const categoryName = useSpendingCategoryDisplayName()
   const budgets = useQuery(() => graphql<{ Budgets: Budget[] }>(BUDGETS), [], { refresh: false })
   const { reportingCurrencyCode } = useReportingCurrency()
   const { busy, act } = useAct(budgets.reload)
@@ -98,11 +100,11 @@ function BudgetsPanel({ categories }: { categories: SpendingCategory[] }) {
 
   const nameOf = (id: string) => {
     const category = categories.find((candidate) => candidate.id === id)
-    return category ? spendingCategoryLabel(category, categories) : t('finance.deletedSpendingCategory')
+    return category ? spendingCategoryLabel(category, categories, categoryName) : t('finance.deletedSpendingCategory')
   }
 
   const open = (budget?: Budget) => {
-    setSpendingCategoryId(budget?.spendingCategoryId ?? spendingCategoryOptions(categories)[0]?.value ?? '')
+    setSpendingCategoryId(budget?.spendingCategoryId ?? spendingCategoryOptions(categories, categoryName)[0]?.value ?? '')
     setMonthlyAmount(budget ? String(amountOf(budget.monthlyAmount)) : '')
     setCurrencyCode(budget?.currencyCode ?? reportingCurrencyCode)
     setEffectiveFrom(personMonth())
@@ -189,7 +191,7 @@ function BudgetsPanel({ categories }: { categories: SpendingCategory[] }) {
               value={spendingCategoryId}
               label={t('finance.spendingCategory')}
               disabled={editing.spendingCategoryId !== ''}
-              options={spendingCategoryOptions(categories, spendingCategoryId)}
+              options={spendingCategoryOptions(categories, categoryName, spendingCategoryId)}
               onChange={setSpendingCategoryId}
             />
           </label>
@@ -230,6 +232,7 @@ function SpendingCategoriesPanel({
   reload: () => Promise<void>
 }) {
   const { t } = useTranslation()
+  const categoryName = useSpendingCategoryDisplayName()
   const { busy, act, run } = useAct(reload)
   const [editing, setEditing] = useState<SpendingCategory | 'new' | null>(null)
   const [deleting, setDeleting] = useState<SpendingCategory | null>(null)
@@ -253,7 +256,7 @@ function SpendingCategoriesPanel({
     (category) => !category.parentSpendingCategoryId && (editing === 'new' || category.id !== editing?.id),
   )
   const sorted = [...categories].sort((left, right) =>
-    spendingCategoryLabel(left, categories).localeCompare(spendingCategoryLabel(right, categories)),
+    spendingCategoryLabel(left, categories, categoryName).localeCompare(spendingCategoryLabel(right, categories, categoryName)),
   )
 
   return (
@@ -273,7 +276,7 @@ function SpendingCategoriesPanel({
       {sorted.map((category) => (
         <SettingsRow
           key={category.id}
-          title={spendingCategoryLabel(category, categories)}
+          title={spendingCategoryLabel(category, categories, categoryName)}
           badge={
             <>
               {category.isIncome ? <Tag value={t('finance.income')} tone="good" /> : null}
@@ -286,7 +289,7 @@ function SpendingCategoriesPanel({
                 <button
                   type="button"
                   className="icon-action"
-                  aria-label={`${category.spendingCategoryName}: ${t('common.edit')}`}
+                  aria-label={`${categoryName(category.spendingCategoryName)}: ${t('common.edit')}`}
                   onClick={() => open(category)}
                 >
                   <PencilIcon size={16} />
@@ -296,7 +299,7 @@ function SpendingCategoriesPanel({
                 <button
                   type="button"
                   className="icon-action danger"
-                  aria-label={`${category.spendingCategoryName}: ${t('common.delete')}`}
+                  aria-label={`${categoryName(category.spendingCategoryName)}: ${t('common.delete')}`}
                   onClick={() => setDeleting(category)}
                 >
                   <TrashIcon size={16} />
@@ -343,7 +346,7 @@ function SpendingCategoriesPanel({
               label={t('finance.parentSpendingCategory')}
               options={[
                 { value: '', label: t('finance.noParent') },
-                ...parentChoices.map((category) => ({ value: category.id, label: category.spendingCategoryName })),
+                ...parentChoices.map((category) => ({ value: category.id, label: categoryName(category.spendingCategoryName) })),
               ]}
               onChange={setParentId}
             />
@@ -361,7 +364,7 @@ function SpendingCategoriesPanel({
       {deleting ? (
         <ConfirmDialog
           title={t('finance.deleteSpendingCategory')}
-          body={t('finance.deleteSpendingCategoryBody', { name: deleting.spendingCategoryName })}
+          body={t('finance.deleteSpendingCategoryBody', { name: categoryName(deleting.spendingCategoryName) })}
           confirmLabel={t('common.delete')}
           busy={busy}
           onClose={() => setDeleting(null)}
@@ -380,6 +383,7 @@ function SpendingCategoriesPanel({
 
 function SpendingRulesPanel({ categories }: { categories: SpendingCategory[] }) {
   const { t } = useTranslation()
+  const categoryName = useSpendingCategoryDisplayName()
   const rules = useQuery(() => graphql<{ SpendingRules: SpendingRule[] }>(SPENDING_RULES), [], { refresh: false })
   const accounts = useQuery(() => graphql<{ FinanceAccounts: FinanceAccount[] }>(FINANCE_ACCOUNTS), [], {
     refresh: false,
@@ -404,7 +408,7 @@ function SpendingRulesPanel({ categories }: { categories: SpendingCategory[] }) 
     setFinanceAccountId(existing?.financeAccountId ?? '')
     setMinimumAmount(existing?.minimumAmount ?? '')
     setMaximumAmount(existing?.maximumAmount ?? '')
-    setSpendingCategoryId(existing?.spendingCategoryId ?? spendingCategoryOptions(categories)[0]?.value ?? '')
+    setSpendingCategoryId(existing?.spendingCategoryId ?? spendingCategoryOptions(categories, categoryName)[0]?.value ?? '')
     setIsTransfer(existing?.isTransfer ?? false)
     setRulePriority(existing ? String(existing.rulePriority) : '')
     setEditing(rule)
@@ -416,7 +420,7 @@ function SpendingRulesPanel({ categories }: { categories: SpendingCategory[] }) 
       const category = categories.find((candidate) => candidate.id === rule.spendingCategoryId)
       parts.push(
         t('finance.ruleFiles', {
-          name: category ? spendingCategoryLabel(category, categories) : t('finance.deletedSpendingCategory'),
+          name: category ? spendingCategoryLabel(category, categories, categoryName) : t('finance.deletedSpendingCategory'),
         }),
       )
     }
@@ -530,7 +534,7 @@ function SpendingRulesPanel({ categories }: { categories: SpendingCategory[] }) 
               options={[
                 // A rule that marks transfers need not file them anywhere.
                 ...(isTransfer ? [{ value: '', label: t('finance.uncategorized') }] : []),
-                ...spendingCategoryOptions(categories, spendingCategoryId),
+                ...spendingCategoryOptions(categories, categoryName, spendingCategoryId),
               ]}
               onChange={setSpendingCategoryId}
             />

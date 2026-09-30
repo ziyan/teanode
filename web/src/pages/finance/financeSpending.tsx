@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
@@ -38,7 +38,8 @@ import {
   transactionsPath,
 } from './financeFilters'
 import { SpendingGroupBy, SummaryAmounts, spendingLines, spendingTotals } from './spendingLines'
-import { RING_SLICE_COUNT, SpendingRing, foldIntoOther } from './spendingRing'
+import { useSpendingCategoryDisplayName } from './spendingCategoryName'
+import { RING_SLICE_COUNT, SpendingRing, foldIntoOther, ringSliceClass } from './spendingRing'
 
 // The Spending section: a year of spending a bar a month, and under it the
 // month chosen there: its spending day by day against the month before,
@@ -285,6 +286,7 @@ function BudgetStatusPanel({ month }: { month: string }) {
 function BudgetStatusRow({ row, isPast }: { row: SpendingCategoryBudgetStatus; isPast: boolean }) {
   const { t } = useTranslation()
   const words = useFinanceWords()
+  const categoryName = useSpendingCategoryDisplayName()
   const budget = amountOf(row.budgetAmount)
   const spent = amountOf(row.spendingAmount)
   const projected = amountOf(row.projectedAmount)
@@ -297,7 +299,7 @@ function BudgetStatusRow({ row, isPast }: { row: SpendingCategoryBudgetStatus; i
   return (
     <div className="finance-budget-row">
       <div className="finance-budget-row-head">
-        <strong>{row.spendingCategoryName}</strong>
+        <strong>{categoryName(row.spendingCategoryName)}</strong>
         <Tag value={words.budgetPace(row.budgetPace)} tone={tone} />
         <span className="finance-budget-row-said">{said}</span>
       </div>
@@ -356,9 +358,18 @@ function groupTransactionFilters(
 // What went where in the month, counted as the chart above counts it (see
 // spendingLines), so the table's total is the month's headline: one amount
 // a group, what it spent, and how many transactions it holds.
+// How many groups a long grouping shows before "Show all": a month has
+// dozens of merchants, and the few at the top are what the table is read
+// for.
+const SHORT_GROUP_COUNT = 20
+
 function SpendingSummaryPanel({ month }: { month: string }) {
   const { t } = useTranslation()
+  const categoryName = useSpendingCategoryDisplayName()
   const [groupBy, setGroupBy] = useState<SpendingGroupBy>('spendingCategory')
+  const [isShowingAll, setIsShowingAll] = useState(false)
+  const [highlightedKey, setHighlightedKey] = useState<string | null>(null)
+  useEffect(() => setIsShowingAll(false), [groupBy, month])
   const range = monthRange(month, personToday())
   const { data, error, loading } = useQuery(
     () =>
@@ -408,7 +419,10 @@ function SpendingSummaryPanel({ month }: { month: string }) {
   const reportingTotal = summary?.reportingCurrencyCode ? spendingTotals(lines)[0] : undefined
   const currencyTotals = spendingTotals(currencyLines)
   const groupLabel = (value: SpendingGroupBy) => t(`finance.groupBy.${value}` as 'finance.groupBy.merchant')
-  const lineName = (label: string) => label || t('finance.uncategorized')
+  // A spending category's name as the reader reads it; merchants, accounts
+  // and provider categories as they came.
+  const lineName = (label: string) =>
+    !label ? t('finance.uncategorized') : groupBy === 'spendingCategory' ? categoryName(label) : label
   // The ring is the table's own numbers, where they can be added up:
   // grouped by category, in the reporting currency.
   const slices =
@@ -420,6 +434,18 @@ function SpendingSummaryPanel({ month }: { month: string }) {
           slice.isOther ? { ...slice, label: t('finance.otherCategories', { count: slice.foldedCount }) } : slice,
         )
       : []
+  // The table is the ring's legend: each row carries its slice's swatch,
+  // the rows folded into "Other" that slice's, and its share of the month.
+  const sliceIndexes = new Map(slices.map((slice, index) => [slice.key, index]))
+  const otherIndex = slices.findIndex((slice) => slice.isOther)
+  const sliceOf = (key: string): { className: string; sliceKey: string } | null => {
+    const index = sliceIndexes.get(key)
+    if (index !== undefined) return { className: ringSliceClass(slices[index], index), sliceKey: key }
+    return otherIndex >= 0 ? { className: 'other', sliceKey: slices[otherIndex].key } : null
+  }
+  const percent = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 0 })
+  const isLongGrouping = groupBy === 'merchant' || groupBy === 'providerCategory'
+  const shownLines = isLongGrouping && !isShowingAll ? lines.slice(0, SHORT_GROUP_COUNT) : lines
 
   return (
     <SettingsSection
@@ -448,6 +474,8 @@ function SpendingSummaryPanel({ month }: { month: string }) {
           currency={summary.reportingCurrencyCode}
           label={t('finance.ringLabel', { month: monthLabel(month, 'long') })}
           totalLabel={t('finance.spending')}
+          totalAmount={reportingTotal?.spendingAmount}
+          highlightedKey={highlightedKey}
         />
       ) : null}
       {lines.length > 0 ? (
@@ -461,20 +489,38 @@ function SpendingSummaryPanel({ month }: { month: string }) {
               </tr>
             </thead>
             <tbody>
-              {lines.map((line) => {
+              {shownLines.map((line) => {
                 const filters = groupTransactionFilters(groupBy, line.groupKey, range)
                 const name = lineName(line.label)
+                const slice = slices.length > 0 ? sliceOf(line.key) : null
+                const fraction =
+                  slice && reportingTotal && reportingTotal.spendingAmount > 0
+                    ? line.spendingAmount / reportingTotal.spendingAmount
+                    : null
+                // A sliver is "<1%" rather than a "0%" that reads as nothing.
+                const share =
+                  fraction === null
+                    ? null
+                    : fraction > 0 && fraction < 0.005
+                      ? `<${percent.format(0.01)}`
+                      : percent.format(fraction)
+                const highlight = slice
+                  ? { onPointerEnter: () => setHighlightedKey(slice.sliceKey), onPointerLeave: () => setHighlightedKey(null) }
+                  : {}
                 return (
-                  <tr key={line.key}>
+                  <tr key={line.key} {...highlight}>
                     {/* The name gives way, with an ellipsis and the whole
                         of it on hover, so the amount stays in sight on a
                         phone however long a merchant's name is. */}
                     <td className="finance-group-cell">
+                      {slice ? <i className={`spending-ring-swatch ${slice.className}`} aria-hidden="true" /> : null}
                       {filters ? (
                         <Link
                           className="finance-group-name finance-group-link"
                           to={transactionsPath(filters)}
                           title={t('finance.openTransactions', { name })}
+                          onFocus={slice ? () => setHighlightedKey(slice.sliceKey) : undefined}
+                          onBlur={slice ? () => setHighlightedKey(null) : undefined}
                         >
                           {name}
                         </Link>
@@ -486,6 +532,7 @@ function SpendingSummaryPanel({ month }: { month: string }) {
                     </td>
                     <td className="numeric">
                       <Money amount={line.spendingAmount} currency={line.currencyCode} />
+                      {share ? <span className="muted finance-share">{share}</span> : null}
                     </td>
                     <td className="numeric optional">{line.financeTransactionCount}</td>
                   </tr>
@@ -517,6 +564,16 @@ function SpendingSummaryPanel({ month }: { month: string }) {
                 : null}
             </tfoot>
           </table>
+        </div>
+      ) : null}
+      {/* The total above is the whole month's either way. */}
+      {isLongGrouping && lines.length > SHORT_GROUP_COUNT ? (
+        <div className="page-actions page-actions-end">
+          <button type="button" className="link" onClick={() => setIsShowingAll((previous) => !previous)}>
+            {isShowingAll
+              ? t('finance.showTopGroups', { count: SHORT_GROUP_COUNT })
+              : t('finance.showAllGroups', { count: lines.length })}
+          </button>
         </div>
       ) : null}
       <UnconvertedNote currencyCodes={summary?.unconvertedCurrencyCodes} />

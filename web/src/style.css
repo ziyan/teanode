@@ -11829,11 +11829,12 @@ button.idea-history-title {
   font-weight: 650;
 }
 
-/* Where a month's money went: a ring beside its legend, the legend under
-   it on a phone. The slices' colours are mixed from the page's own, so a
+/* Where a month's money went: a ring, whose legend is the table under it.
+   The slices' colours are mixed from the page's own, so a
    dark page gets them lifted with the rest; neighbours alternate between
    the leaf, the amber and the text colour so no two side by side match. */
-.spending-ring {
+.spending-ring,
+.finance-summary-table {
   --ring-tone-0: var(--leaf);
   --ring-tone-1: var(--warn);
   --ring-tone-2: color-mix(in srgb, var(--text) 62%, var(--surface));
@@ -11843,6 +11844,9 @@ button.idea-history-title {
   --ring-tone-6: color-mix(in srgb, var(--leaf) 60%, var(--text));
   --ring-tone-7: color-mix(in srgb, var(--warn) 60%, var(--text));
   --ring-other: color-mix(in srgb, var(--muted) 40%, var(--surface));
+}
+
+.spending-ring {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -11875,44 +11879,32 @@ button.idea-history-title {
   font-size: 12px;
 }
 
-.spending-ring-legend {
-  /* Beside the ring and no wider than a name and its amount need, so the
-     amount is read with its name rather than across the card. */
-  flex: 0 1 auto;
-  max-width: 26rem;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  /* One grid for every row, so the names are as wide as the longest and
-     the amounts line up just after it. */
-  grid-template-columns: 10px minmax(0, max-content) auto auto;
-  align-items: baseline;
-  gap: 6px var(--space-2);
-  font-size: var(--text-label);
-}
-
-.spending-ring-legend li {
-  display: contents;
-}
-
-.spending-ring-name {
-  overflow-wrap: anywhere;
-}
-
-.spending-ring-amount,
-.spending-ring-percent {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
+/* The swatch that names a slice, in the table under the ring. */
 .spending-ring-swatch {
+  display: inline-block;
   width: 10px;
   height: 10px;
+  margin-right: var(--space-2);
   border-radius: 3px;
-  align-self: center;
+  vertical-align: middle;
+}
+
+/* The slice of the row under the pointer stands out by the others
+   stepping back. */
+.spending-ring-slice {
+  transition: opacity 120ms ease;
+}
+
+.spending-ring-slice.dimmed {
+  opacity: 0.3;
+}
+
+/* A group's share of the month, small beside its amount. */
+.finance-share {
+  display: inline-block;
+  min-width: 2.75rem;
+  margin-left: var(--space-1);
+  font-size: var(--text-label);
 }
 
 .spending-ring-slice.tone-0 {
@@ -12094,8 +12086,9 @@ button.idea-history-title {
 }
 
 @media (max-width: 600px) {
+  /* Room left beside the swatch, the amount and its share. */
   .finance-group-name {
-    max-width: calc(100vw - 11rem);
+    max-width: calc(100vw - 14rem);
   }
 
   /* A transaction is a line, not a card: the controls in it are as tall as
