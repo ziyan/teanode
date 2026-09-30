@@ -11601,5 +11601,5 @@ button.idea-history-title {
   margin: 4px 0;
 }
 .plan-usage-observed {
-  font-size: 12px;
+  font-size: var(--text-label);
 }

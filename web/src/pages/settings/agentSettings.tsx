@@ -426,13 +426,13 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
       }
 }
 
-// providerValues is a stored provider as the API takes it back: the key
-// blank, which keeps the one stored.
 // capitalized is a name a service writes in lower case, as a heading would.
 function capitalized(name: string): string {
   return name.charAt(0).toUpperCase() + name.slice(1)
 }
 
+// providerValues is a stored provider as the API takes it back: the key
+// blank, which keeps the one stored.
 function providerValues(provider: AgentProvider) {
   return {
     name: provider.name,
