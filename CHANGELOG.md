@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.91.1] - 2026-09-30
+
+### Changed
+
+- The Finance page's Spending section follows a month picked from a twelve-month chart, shows categories as a ring chart, and links each category to its transactions. (#253)
+
 ## [0.91.0] - 2026-09-30
 
 ### Added
