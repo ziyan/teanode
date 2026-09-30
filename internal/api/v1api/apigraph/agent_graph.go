@@ -1724,8 +1724,11 @@ func (self *graph) SaveAgentNode(ctx context.Context, arguments SaveAgentNodeArg
 	return tx.PutAgentNode(node)
 }
 
+// JudgeAgentRetrievalPlan is a model-backed query: it reads the person in a
+// short phase of its own, asks the model with no transaction open, and
+// reads the person again before answering, as recall does.
 func (self *graph) JudgeAgentRetrievalPlan(ctx context.Context, arguments JudgeAgentRetrievalPlanArguments) (*AgentJudgedPlanView, error) {
-	principal, found, err := self.requireAgentPerson(ctx)
+	principal, found, err := self.requireRecallPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1736,6 +1739,13 @@ func (self *graph) JudgeAgentRetrievalPlan(ctx context.Context, arguments JudgeA
 	judged, err := worker.JudgeRetrievalPlan(ctx, found, principal.User, arguments.Question)
 	if err != nil {
 		return nil, err
+	}
+	_, current, err := self.requireRecallPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if current.ID != found.ID {
+		return nil, agent.ErrUnavailable
 	}
 	return &AgentJudgedPlanView{Depth: judged.Depth, DepthReason: judged.Reason, PlannedSearches: nonNil(judged.Plan.Searches),
 		IsBroad: judged.Plan.IsBroad, Cost: judged.Cost, Currency: self.config.Current().Agent.Currency}, nil
