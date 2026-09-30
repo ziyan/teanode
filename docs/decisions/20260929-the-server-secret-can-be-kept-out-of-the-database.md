@@ -29,10 +29,9 @@ the secret, which tells the right file from a wrong one and opens nothing.
   is refused: the server does not start rather than seal with the wrong key.
 - A database with a check and no secret is refused without the file, rather
   than given a new secret.
-- A missing file is written only for a server with no secret anywhere. An
-  existing secret is moved with `config export-secret`, an explicit step,
-  because a file written by the server to a path that does not survive the
-  container would take the only copy with it.
+- A missing file is written only for a server with no secret anywhere. There
+  is no command to move an existing server's secret: no deployment needed
+  one, and the one server that did was moved by hand.
 - Every other secret setting (the session key, the certificate and ACME
   keys, storage keys, an identity provider's client secret) is now sealed as
   the agent's were, so a dump opens nothing at all.
@@ -52,6 +51,6 @@ password, as losing the database did before.
 
 Every instance sharing a database needs the same file.
 
-Dumps taken before the move still hold the secret. Moving it protects the
-dumps taken after; the older ones have to be deleted or rewritten. Rotating
-the secret itself remains impossible without reissuing every SMTP password.
+Dumps taken while the secret was in the database still hold it, so they
+have to be deleted. Rotating the secret itself remains impossible without
+reissuing every SMTP password.

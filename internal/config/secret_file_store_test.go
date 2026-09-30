@@ -52,10 +52,6 @@ func TestOpeningWithASecretFileMovesTheSecretOut(t *testing.T) {
 			t.Fatalf("the %s row still holds the secret", key)
 		}
 	}
-	if stored, err := config.LoadStoredSecret(database); err != nil || len(stored) != 0 {
-		t.Fatalf("the database still reads as holding a secret: %v", err)
-	}
-
 	if _, err := config.OpenStore(database, seed.Database, nil); err == nil {
 		t.Fatal("a database whose secret is in a file was opened without it")
 	}

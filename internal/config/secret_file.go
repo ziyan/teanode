@@ -134,17 +134,14 @@ func applySecretFile(configuration *Configuration, secretFile *SecretFile) error
 
 // prepareSecretFile makes sure the named file exists before the store opens,
 // for a new server: one with no secret anywhere gets a new secret written to
-// the file. A server whose secret is still in the database is told to move it
-// with "teanode-server config export-secret", rather than having it written
-// out here: a file written to a path that does not survive the container
-// would take the only copy with it once the database's copy was removed.
+// the file. One that has a secret already, in the database or behind a
+// check, is refused rather than given a new one.
 func prepareSecretFile(stored *Configuration, secretFile *SecretFile) error {
 	if secretFile == nil || secretFile.Secret != nil {
 		return nil
 	}
 	if isSecretStored(stored) {
-		return fmt.Errorf("config: the server secret file %s does not exist, and the secret is still in the database; "+
-			"write it there first with: teanode-server config export-secret --output %s", secretFile.Path, secretFile.Path)
+		return fmt.Errorf("config: the server secret file %s does not exist, and the database holds a secret already", secretFile.Path)
 	}
 	if strings.TrimSpace(stored.Server.SecretCheck) != "" {
 		return fmt.Errorf("config: the server secret file %s does not exist, and this database was sealed with the secret it held; "+

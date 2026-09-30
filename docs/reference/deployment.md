@@ -250,39 +250,16 @@ the environment, the server reads the secret from that file and the database
 keeps only a check that tells the right file from a wrong one. A copy of the
 database then opens nothing.
 
-To move an existing server's secret into a file:
+Name a file that survives the container being recreated and is not in the
+database's volume; the mounted data directory is both:
 
-1. Write it out, somewhere that survives the container being recreated and
-   is not the database's volume. The mounted data directory is both:
+    TEANODE_SECRET_FILE=/var/lib/teanode/secret/server.secret
 
-       docker compose exec teanode /usr/local/bin/teanode-server \
-         config export-secret --output /var/lib/teanode/secret/server.secret
-
-   The file is created readable only by its owner and never over an existing
-   one.
-
-2. Name it in `.env`:
-
-       TEANODE_SECRET_FILE=/var/lib/teanode/secret/server.secret
-
-3. Restart. The first start that finds the same secret in the file and in the
-   database removes it from the database and says so. A file holding a
-   different secret is refused: the server will not start rather than seal
-   anything with the wrong key. Every instance sharing the database needs the
-   same file.
-
-4. Back the file up apart from the database. Dumps taken before the move
-   still hold the secret; delete or rewrite them if they are kept anywhere a
-   dump of today would not be.
-
-A new server started with `--secret-file` naming a file that does not exist
-yet writes a new secret there. One whose database was sealed with a file that
-has since gone refuses to start: restore the file from its backup.
-
-Going back to a release without this is refused by the database migration
-that came with it, because that release would read no secret, generate a new
-one, and lose everything sealed with the old. Restore the backup taken before
-the move instead.
+A new server writes a new secret there on its first start. Back the file up
+apart from the database: without it nothing sealed opens and every SMTP
+password is lost. A file holding a different secret, or a database sealed
+with a file that has since gone, is refused rather than given a new secret.
+Every instance sharing the database needs the same file.
 
 ## More than one instance
 

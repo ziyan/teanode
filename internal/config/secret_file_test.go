@@ -85,7 +85,7 @@ func TestAStoredSecretMustMatchTheFile(t *testing.T) {
 
 // A missing file is filled only for a server with no secret anywhere; one
 // whose secret is still stored, or was sealed with a file now gone, is
-// refused with what to do.
+// refused.
 func TestAMissingSecretFileIsWrittenOnlyForANewServer(t *testing.T) {
 	fresh := secretFileFor(t, "")
 	if err := prepareSecretFile(Default(), fresh); err != nil {
@@ -101,8 +101,8 @@ func TestAMissingSecretFileIsWrittenOnlyForANewServer(t *testing.T) {
 
 	stored := Default()
 	stored.Server.Secret = strings.Repeat("j", 40)
-	if err := prepareSecretFile(stored, secretFileFor(t, "")); err == nil || !strings.Contains(err.Error(), "export-secret") {
-		t.Fatalf("a stored secret was not sent to export-secret: %v", err)
+	if err := prepareSecretFile(stored, secretFileFor(t, "")); err == nil || !strings.Contains(err.Error(), "holds a secret already") {
+		t.Fatalf("a stored secret was replaced by a new one: %v", err)
 	}
 
 	sealed := Default()

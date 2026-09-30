@@ -407,20 +407,6 @@ func LoadStored(database db.Database, secretFile *SecretFile) (*Configuration, e
 	return FromRows(rows, secretFile)
 }
 
-// LoadStoredSecret is the server secret the database itself holds, for
-// moving it into a file; empty when it holds none.
-func LoadStoredSecret(database db.Database) ([]byte, error) {
-	rows, err := database.LoadConfiguration()
-	if err != nil {
-		return nil, err
-	}
-	stored, err := decodeRows(rows)
-	if err != nil {
-		return nil, err
-	}
-	return stored.Secret(), nil
-}
-
 // Replace writes whole settings over whatever is stored, and reports what
 // was there before. The one operation that replaces rather than changes, so
 // it has nothing to reload and nobody to notify. The caller is expected to
