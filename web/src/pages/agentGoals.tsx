@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { graphql, openAgentConversation } from '../api'
+import { graphql, openAgentConversation, sendToAgentConversation } from '../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../components/common'
 import { IdeaList, LIST_IDEAS } from '../components/ideaRow'
 import { SettingsEmpty, SettingsSection } from '../components/settingsList'
@@ -90,7 +90,8 @@ export function GoalsTab() {
 
   // Setting a goal is a conversation, not a form: the agent asks what the
   // person is after and proposes a goal they can check off, and sets it
-  // once they agree. The first line is drafted for them to send.
+  // once they agree. The first line is sent for them, so the click is the
+  // start of that conversation and not an empty one left behind.
   async function startGoal(category: string) {
     setBusy(true)
     try {
@@ -98,7 +99,10 @@ export function GoalsTab() {
       const started = await graphql<{ StartAgentConversation: { id: string } }>(START, {
         title: t('goals.newTitle', { area }),
       })
-      openAgentConversation(started.StartAgentConversation.id, t('goals.draft', { area: area.toLowerCase() }))
+      sendToAgentConversation(
+        started.StartAgentConversation.id,
+        t('goals.openingRequest', { area: area.toLowerCase() }),
+      )
     } catch (caught) {
       toast.failure(caught, t('goals.failed'))
     } finally {
