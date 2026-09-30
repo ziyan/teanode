@@ -83,9 +83,25 @@ func runAgentIdeaList(ctx context.Context, command *cli.Command) error {
 	}
 	rows := make([][]string, 0, len(ideas))
 	for _, idea := range ideas {
-		rows = append(rows, []string{idea.ID, idea.IdeaStatus, idea.IdeaKind, idea.IdeaCategory, strings.TrimSpace(idea.Emoji + " " + idea.Headline), idea.SuggestionReason})
+		rows = append(rows, []string{idea.ID, ideaStatusText(idea), idea.IdeaKind, idea.IdeaCategory, strings.TrimSpace(idea.Emoji + " " + idea.Headline), idea.SuggestionReason})
 	}
 	return printTable([]string{"id", "status", "kind", "category", "idea", "why"}, rows)
+}
+
+// ideaExpiredReasonWords are why an idea expired, in a few words for a
+// column.
+var ideaExpiredReasonWords = map[string]string{
+	"past_date":    "date passed",
+	"missing_tool": "tool missing",
+	"already_used": "already used",
+}
+
+// ideaStatusText is what became of an idea, and for an expired one why.
+func ideaStatusText(idea *client.AgentIdea) string {
+	if words, ok := ideaExpiredReasonWords[idea.ExpiredReason]; ok && idea.IdeaStatus == "expired" {
+		return idea.IdeaStatus + ": " + words
+	}
+	return idea.IdeaStatus
 }
 
 func runAgentIdeaPropose(ctx context.Context, command *cli.Command) error {

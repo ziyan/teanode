@@ -22,6 +22,7 @@ type AgentIdea struct {
 	Evidence              []AgentIdeaEvidence `json:"evidence"`
 	SuggestionReason      string              `json:"suggestionReason"`
 	IdeaStatus            string              `json:"ideaStatus"`
+	ExpiredReason         string              `json:"expiredReason"`
 	StartedConversationID string              `json:"startedConversationId"`
 	CreatedAt             time.Time           `json:"createdAt"`
 	ShownAt               *time.Time          `json:"shownAt"`
@@ -59,7 +60,7 @@ type StartedAgentIdea struct {
 }
 
 const agentIdeaFields = `{ id ideaKey ideaKind ideaCategory emoji headline body openingRequest neededToolNames
-  evidence { evidenceKind evidenceId evidenceSummary } suggestionReason ideaStatus startedConversationId
+  evidence { evidenceKind evidenceId evidenceSummary } suggestionReason ideaStatus expiredReason startedConversationId
   createdAt shownAt startedAt closedAt expiresAt }`
 
 const (
