@@ -341,6 +341,67 @@ func acceptedArguments(operation *financeOperation) []string {
 	return accepted
 }
 
+// dropUnreadArguments takes out the arguments the operation does not read,
+// as if they had not been sent, except the two kinds checkArguments exists
+// to refuse. Some models fill in every argument of the tool on every call:
+// the ones they have nothing for as "", [], null, false or 0, an argument
+// with a fixed list of values as the list's first value, and sometimes a
+// guess (asset_kind vehicle for assets); refusing those refused every call
+// such a model made, and it retried until it gave up. What is still refused:
+// an argument named the way people misname one the operation does read
+// (to_currency_code for currency_code), which once turned a month's
+// spending into all of time, and a setting only the person may change, each
+// when sent with something in it. An argument the operation reads keeps
+// what was sent, since empty may mean something there (an empty spending
+// category takes one away, is_transfer false unmarks a transfer), except
+// null, which says nothing anywhere.
+func dropUnreadArguments(operation *financeOperation, asked map[string]any) {
+	isAccepted := map[string]bool{"operation": true}
+	for _, key := range acceptedArguments(operation) {
+		isAccepted[key] = true
+	}
+	isPersonOnly := map[string]bool{}
+	for _, key := range PersonOnlyAssetArguments {
+		isPersonOnly[key] = true
+	}
+	for key, value := range asked {
+		if value == nil {
+			delete(asked, key)
+			continue
+		}
+		if isAccepted[key] {
+			continue
+		}
+		if meant, isKnown := argumentInsteadOf[key]; (isKnown && isAccepted[meant]) || isPersonOnly[key] {
+			if !isEmptyArgument(value) {
+				continue
+			}
+		}
+		delete(asked, key)
+	}
+}
+
+// isEmptyArgument says an argument was sent with nothing in it.
+func isEmptyArgument(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(typed) == ""
+	case []any:
+		return len(typed) == 0
+	case []string:
+		return len(typed) == 0
+	case bool:
+		return !typed
+	case float64:
+		return typed == 0
+	case int:
+		return typed == 0
+	}
+	return false
+}
+
 // checkArguments refuses a call with an argument its operation does not
 // read, naming it and the ones the operation takes. An argument quietly
 // ignored gives an answer to a question that was not asked: a month's
@@ -609,6 +670,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			"or runs `teanode finance import-credential --provider plaid` (or `simplefin`), which reads it from a file or without echoing. " +
 			"For Plaid, only a link made with this server's Plaid keys can be brought in."), nil
 	}
+	dropUnreadArguments(operation, asked)
 	if err := checkArguments(name, operation, asked); err != nil {
 		return nil, err
 	}
