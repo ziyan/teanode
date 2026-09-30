@@ -15,6 +15,11 @@ type SignOptions struct {
 	Selector   string
 	Identifier string
 	Signer     crypto.Signer
+
+	// SignedAt is the time the signature says it was made (its t= tag);
+	// zero means now. A signature names the second it was made, so two made
+	// a moment apart differ only if a second passed between them.
+	SignedAt time.Time
 }
 
 func Sign(headers []string, body []byte, options *SignOptions) ([]string, error) {
@@ -52,6 +57,10 @@ func Sign(headers []string, body []byte, options *SignOptions) ([]string, error)
 	if identifier == "" {
 		identifier = fmt.Sprintf("@%s", options.Domain)
 	}
+	signedAt := options.SignedAt
+	if signedAt.IsZero() {
+		signedAt = time.Now()
+	}
 	dkimSignatureHeader := mailparse.UnsplitHeader(dkimSignatureHeaderKey, mailparse.UnparseParameters(map[string]string{
 		"a":  "rsa-sha256",
 		"c":  "relaxed/relaxed",
@@ -61,7 +70,7 @@ func Sign(headers []string, body []byte, options *SignOptions) ([]string, error)
 		"s":  options.Selector,
 		"i":  identifier,
 		"h":  mailparse.UnparseTagList(headerKeys),
-		"t":  mailparse.UnparseTime(time.Now()),
+		"t":  mailparse.UnparseTime(signedAt),
 		"bh": bodyHash,
 		"b":  "",
 	}, nil, []string{"b"}))
