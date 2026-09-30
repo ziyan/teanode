@@ -222,8 +222,8 @@ burst of an alert about one, the sender of an alert about a message, not
 the subject key the model chose, which the next alert may word
 differently. A target named without a scope is read as an address, a
 domain, or else a subject. The same operations serve every door: the
-Overview tab's Alerts card and the switches beside speaking first, the
-Mail tab's switch per mailbox, `teanode agent alert` and `agent settings
+agent page's Alerts tab (the switch, quiet hours and daily most, then what
+was said and what is muted), the Mail tab's switch per mailbox, `teanode agent alert` and `agent settings
 set`, and `agent_profile`'s `no_alerts`, `alerts_on`, `mute_alert` and
 `unmute_alert`, which the agent calls when the person answers an alert with
 "stop telling me about these".

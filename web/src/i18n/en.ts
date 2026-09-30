@@ -938,6 +938,7 @@ export const en = {
   'agent.tabOverview': 'Overview',
   'agent.tabIdeas': 'Ideas',
   'agent.tabGoals': 'Goals',
+  'agent.tabAlerts': 'Alerts',
   'agent.tabMail': 'Mail and calendars',
   'agent.tabSources': 'Sources',
   'agent.tabMemory': 'Memory',

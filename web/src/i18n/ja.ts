@@ -933,6 +933,7 @@ export const ja: Catalog = {
   'agent.tabOverview': '概要',
   'agent.tabIdeas': 'アイデア',
   'agent.tabGoals': '目標',
+  'agent.tabAlerts': 'お知らせ',
   'agent.tabMail': 'メールとカレンダー',
   'agent.tabSources': 'ソース',
   'agent.tabMemory': '記憶',
