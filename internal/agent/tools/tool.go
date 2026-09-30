@@ -67,6 +67,7 @@ const (
 	FamilyBrowser  Family = "browser"
 	FamilyComputer Family = "computer"
 	FamilySkills   Family = "skills"
+	FamilyFinance  Family = "finance"
 )
 
 // Tool is one entry of the catalog.

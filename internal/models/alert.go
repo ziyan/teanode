@@ -13,12 +13,14 @@ const (
 // AlertCandidateKind is what made something a candidate for an alert.
 type AlertCandidateKind string
 
-// The two kinds: one message the sorting judged worth telling, and a
-// burst of messages alike that a count noticed, which no single message's
-// sorting can see.
+// The kinds: one message the sorting judged worth telling, a burst of
+// messages alike that a count noticed, which no single message's sorting
+// can see, and a budget or savings target crossing that code computed
+// after a sync.
 const (
 	AlertCandidateMessage AlertCandidateKind = "message"
 	AlertCandidateBurst   AlertCandidateKind = "burst"
+	AlertCandidateBudget  AlertCandidateKind = "budget"
 )
 
 // AgentAlertCandidate is something that might be worth telling the person
@@ -43,6 +45,11 @@ type AgentAlertCandidate struct {
 	// digits taken out; BurstCount how many messages it counted.
 	BurstKey   string `json:"burstKey,omitempty"`
 	BurstCount int    `json:"burstCount,omitempty"`
+
+	// BudgetKey names a budget crossing, such as
+	// "spending-category:<id>:2026-09:at_risk", and becomes the subject
+	// key of the alert that tells it, so the same crossing is told once.
+	BudgetKey string `json:"budgetKey,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`
 
@@ -93,21 +100,23 @@ type AgentAlert struct {
 // AlertMuteScope is what a mute is matched against.
 type AlertMuteScope string
 
-// The four things the person can say not to be told about: one sender's
+// The things the person can say not to be told about: one sender's
 // address, everybody at a domain, one subject (an alert's subject key, or
-// a burst's), or a kind of alert (a burst, or a category of the sorting,
-// such as notification or receipt).
+// a burst's), a kind of alert (a burst, a budget, or a category of the
+// sorting, such as notification or receipt), or the budget alerts of one
+// spending category, by its id.
 const (
-	AlertMuteSender     AlertMuteScope = "sender"
-	AlertMuteDomain     AlertMuteScope = "domain"
-	AlertMuteSubjectKey AlertMuteScope = "subjectKey"
-	AlertMuteKind       AlertMuteScope = "kind"
+	AlertMuteSender           AlertMuteScope = "sender"
+	AlertMuteDomain           AlertMuteScope = "domain"
+	AlertMuteSubjectKey       AlertMuteScope = "subjectKey"
+	AlertMuteKind             AlertMuteScope = "kind"
+	AlertMuteSpendingCategory AlertMuteScope = "spendingCategory"
 )
 
-// IsValid says the scope is one of the four.
+// IsValid says the scope is one of the five.
 func (self AlertMuteScope) IsValid() bool {
 	switch self {
-	case AlertMuteSender, AlertMuteDomain, AlertMuteSubjectKey, AlertMuteKind:
+	case AlertMuteSender, AlertMuteDomain, AlertMuteSubjectKey, AlertMuteKind, AlertMuteSpendingCategory:
 		return true
 	}
 	return false
@@ -116,6 +125,10 @@ func (self AlertMuteScope) IsValid() bool {
 // AlertKindBurst is the kind a mute names to silence every burst, whatever
 // it is of.
 const AlertKindBurst = "burst"
+
+// AlertKindBudget is the kind a mute names to silence every budget and
+// savings target alert.
+const AlertKindBudget = "budget"
 
 // AgentAlertMute is the person's "don't tell me about these": a candidate
 // or an alert that matches it is dropped, saying it was muted.

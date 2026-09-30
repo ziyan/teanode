@@ -21,6 +21,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/finance/rates"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
@@ -77,6 +78,11 @@ type Agent struct {
 	// a restart asks again, which is the retry.
 	describedHeads sync.Map
 	worker         periodic.Periodic
+
+	// exchangeRates converts the amounts budgets are measured in: the
+	// process's shared fetcher unless a test hands in one over a fake
+	// central bank (exchangeRateFetcher).
+	exchangeRates *rates.Fetcher
 
 	handlersMutex sync.RWMutex
 	handlers      map[models.AgentJobKind]Handler
@@ -247,6 +253,7 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobEvaluate, self.runEvaluation)
 	self.Register(models.AgentJobBackground, self.runBackgroundWork)
 	self.Register(models.AgentJobAlert, self.runAlert)
+	self.Register(models.AgentJobCategorize, self.runCategorize)
 	self.catalog = FullCatalog()
 	return self
 }

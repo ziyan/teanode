@@ -18,6 +18,7 @@ import (
 	_ "github.com/ziyan/teanode/internal/agent/tools/conversation"
 	_ "github.com/ziyan/teanode/internal/agent/tools/datetime"
 	_ "github.com/ziyan/teanode/internal/agent/tools/domain"
+	_ "github.com/ziyan/teanode/internal/agent/tools/finance"
 	_ "github.com/ziyan/teanode/internal/agent/tools/folder"
 	_ "github.com/ziyan/teanode/internal/agent/tools/goal"
 	_ "github.com/ziyan/teanode/internal/agent/tools/idea"

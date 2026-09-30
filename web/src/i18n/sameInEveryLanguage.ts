@@ -38,4 +38,8 @@ export const SAME_IN_EVERY_LANGUAGE: ReadonlySet<Key> = new Set<Key>([
   // all three of these languages write the same way. It is a key rather than
   // a literal so that a language that does not can still be given one.
   'lightbox.scale',
+  // The providers' own names, which is what they are called on their
+  // websites and in the operator's settings in every language.
+  'finance.provider.plaid',
+  'finance.provider.simplefin',
 ])

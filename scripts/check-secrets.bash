@@ -98,6 +98,16 @@ readonly ALLOWED_HOSTS=(
   chatgpt.com
   auth.openai.com
 
+  # The bank data provider an operator can offer, for the same reason: its API
+  # and the script its linking window loads from are addresses of a public
+  # service that the code and the finance accounts plan have to name.
+  .plaid.com
+
+  # Where the exchange rates for converting between currencies come from: the
+  # European Central Bank's public reference rates, which the code fetches and
+  # the finance accounts plan names.
+  www.ecb.europa.eu
+
   # The services the published skills call. They are in the fixtures under
   # internal/skills/testdata, which are the registry's own files kept
   # verbatim so that a change to what it publishes shows up as a test

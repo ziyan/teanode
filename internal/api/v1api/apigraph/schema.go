@@ -54,6 +54,7 @@ type Query interface {
 	AgentComputerQuery
 	AgentBackgroundQuery
 	AgentBackgroundWorkQuery
+	FinanceQuery
 	ServerQuery
 	UpgradeQuery
 	CredentialQuery
@@ -107,6 +108,7 @@ type Mutation interface {
 	AgentChannelMutation
 	AgentBackgroundMutation
 	AgentBackgroundWorkMutation
+	FinanceMutation
 	ServerMutation
 	UpgradeMutation
 	CredentialMutation

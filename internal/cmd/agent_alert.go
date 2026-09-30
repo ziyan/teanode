@@ -28,19 +28,22 @@ func newAgentAlertCommand() *cli.Command {
 			},
 			{
 				Name:      "mute",
-				Usage:     "stop being told about something: an alert's subject, sender, domain or kind, or one you name",
+				Usage:     "stop being told about something: an alert's subject, sender, domain, kind or spending category, or one you name",
 				ArgsUsage: "[<alert-id>]",
 				Description: "With an alert id, what is muted is taken from the alert: the burst it was about,\n" +
 					"or the sender of a single message, or with --scope its subject, senders, their\n" +
 					"domains or its kind. Without one, give --target; its scope is read from it (an\n" +
-					"address, a domain, else a subject) unless --scope says.\n\n" +
+					"address, a domain, else a subject) unless --scope says. Budget alerts are muted\n" +
+					"all at once with --scope kind --target budget, or for one spending category with\n" +
+					"--scope spendingCategory and its id (teanode finance spending-categories).\n\n" +
 					"  teanode agent alert mute 0f3c9a --scope domain\n" +
 					"  teanode agent alert mute --scope sender --target alerts@shop.example.com\n" +
-					"  teanode agent alert mute --scope kind --target burst",
+					"  teanode agent alert mute --scope kind --target burst\n" +
+					"  teanode agent alert mute --scope spendingCategory --target <spending-category-id>",
 				Flags: []cli.Flag{
 					JSONFlag(),
-					&cli.StringFlag{Name: "scope", Usage: "sender, domain, subjectKey or kind; by default what the alert was about, or what the target reads as"},
-					&cli.StringFlag{Name: "target", Usage: "the address, domain, subject key or kind (burst, or a category such as notification)"},
+					&cli.StringFlag{Name: "scope", Usage: "sender, domain, subjectKey, kind or spendingCategory; by default what the alert was about, or what the target reads as"},
+					&cli.StringFlag{Name: "target", Usage: "the address, domain, subject key, kind (burst, budget, or a category such as notification) or spending category id"},
 				},
 				Action: runAgentAlertMute,
 			},

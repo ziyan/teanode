@@ -32,6 +32,10 @@ export type SettingsSurface = {
   label: Key
   description: Key
   category: SettingsCategory
+  // Shown in the rail only when the person has what it is about: 'finance'
+  // is there when their agent is on and a provider is offered or something
+  // is linked already.
+  shownWhen?: 'finance'
 }
 
 export const SETTINGS_CATEGORIES: { id: SettingsCategory; label: Key }[] = [
@@ -75,6 +79,18 @@ export const SETTINGS_SURFACES: SettingsSurface[] = [
     label: 'knowledge.title',
     description: 'settings.knowledge.description',
     category: 'account',
+  },
+  // What the institutions a person linked report: spending, budgets, net
+  // worth. Beside Knowledge and for the same reason, a place somebody reads
+  // rather than a setting, and not under /settings for it. Linking them and
+  // the reporting currency are setup, and stay on the agent page.
+  {
+    segment: 'finance',
+    path: '/finance',
+    label: 'finance.title',
+    description: 'settings.finance.description',
+    category: 'account',
+    shownWhen: 'finance',
   },
   {
     segment: 'password',

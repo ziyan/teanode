@@ -34,7 +34,7 @@ export function mailPath(itemId: string): string | null {
 // The parts of the dashboard the agent may take the person to: their own
 // pages, never an operator's (internal/agent/tools/openpage holds the same
 // list).
-const SHOWN_PREFIXES = ['/settings/knowledge', '/mailbox', '/settings/agent', '/settings']
+const SHOWN_PREFIXES = ['/settings/knowledge', '/mailbox', '/settings/agent', '/settings', '/finance']
 
 // shownPath is a path the agent asked the dashboard to show, or null: under
 // one of the prefixes above, in segments of letters, digits and -._~, so no

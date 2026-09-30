@@ -144,6 +144,11 @@ func renderAlertCandidate(labeled *labeledCandidate) string {
 	header := ""
 	var inside []string
 	switch candidate.CandidateKind {
+	case models.AlertCandidateBudget:
+		// Not mail: numbers the server computed from the person's own
+		// finance transactions, and the spending category's name is the
+		// person's own. Nothing a stranger wrote, so nothing to fence.
+		return fmt.Sprintf("Candidate %s: a budget crossing the server computed after a sync of their finance accounts, not a message.\nWhat the numbers say: %s", labeled.label, candidate.CandidateReason)
 	case models.AlertCandidateBurst:
 		header = fmt.Sprintf("Candidate %s: a burst of %d messages alike in %d hours, counted by the server. The latest of them:", labeled.label, candidate.BurstCount, int(burstWindow.Hours()))
 		inside = append(inside, "What the count saw: "+candidate.CandidateReason)
@@ -164,7 +169,10 @@ func renderAlertCandidate(labeled *labeledCandidate) string {
 // runAlert is the handler for an alert job.
 func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 	configuration := run.Configuration()
-	if !isAlertingAllowed(configuration, run.Agent, nil) {
+	// Budget candidates do not come from the sorting, so the switch that
+	// stops this job is the person's, not the triage feature's; a mail
+	// candidate is still held to the feature by its mailbox's check below.
+	if !run.Agent.Active() || !run.Agent.IsAlertsEnabled {
 		return nil
 	}
 	if !self.canThink(configuration) {
@@ -211,6 +219,9 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 		mailIds := make([]string, 0, len(waiting))
 		mailIdsByMailbox := map[string][]string{}
 		for _, candidate := range waiting {
+			if candidate.CandidateKind == models.AlertCandidateBudget {
+				continue
+			}
 			isAllowed, isKnown := isAllowedByMailbox[candidate.MailboxID]
 			if !isKnown {
 				mailbox, err := tx.GetMailbox(candidate.MailboxID)
@@ -258,6 +269,15 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 	var mutedIds []string
 	var staleIds []string
 	for _, candidate := range waiting {
+		if candidate.CandidateKind == models.AlertCandidateBudget {
+			facts := candidateFacts(candidate, "", "")
+			if mutedBy(mutes, facts) != nil {
+				mutedIds = append(mutedIds, candidate.ID)
+				continue
+			}
+			labeled = append(labeled, &labeledCandidate{label: fmt.Sprintf("c%d", len(labeled)+1), candidate: candidate, facts: facts})
+			continue
+		}
 		mail := mailsById[candidate.MailID]
 		if mail == nil {
 			if !slices.Contains(gone, candidate.ID) {
@@ -694,6 +714,12 @@ func isPhoneNumber(found string) bool {
 // alertSubjectKey is the model's key in one form, or, when it gave none,
 // one made from what the first candidate is about.
 func alertSubjectKey(subjectKey string, candidate *models.AgentAlertCandidate) string {
+	// A budget crossing's key is its subject whatever the model called
+	// it: it is what keeps the same crossing from being written, and
+	// told, a second time.
+	if candidate.CandidateKind == models.AlertCandidateBudget && candidate.BudgetKey != "" {
+		return candidate.BudgetKey
+	}
 	subjectKey = normalizedSubjectKey(subjectKey)
 	if subjectKey == "" {
 		if candidate.BurstKey != "" {

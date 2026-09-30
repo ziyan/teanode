@@ -241,6 +241,14 @@ func (self *Registry) Deciding() (Decider, string, error) {
 	if name == "" {
 		return nil, "", fmt.Errorf("llm: no decision model is configured")
 	}
+	return self.DecidingFor(name)
+}
+
+// DecidingFor is the decider behind an explicit "provider:model", or an
+// error when that provider cannot decide: for a setting that may name a
+// decision model or a chat model, such as the categorize model, and asks
+// which.
+func (self *Registry) DecidingFor(name string) (Decider, string, error) {
 	entry, model, err := self.resolve(name)
 	if err != nil {
 		return nil, "", err

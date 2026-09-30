@@ -63,11 +63,18 @@ type alertFacts struct {
 	mailCategory  string
 	subjectKeys   []string
 	kinds         []string
+
+	// spendingCategoryId is the spending category a budget candidate is
+	// about, empty for anything else.
+	spendingCategoryId string
 }
 
 // candidateFacts are the facts of a candidate about a message from the
 // address given, which the sorting filed under the category given.
 func candidateFacts(candidate *models.AgentAlertCandidate, from, category string) *alertFacts {
+	if candidate.CandidateKind == models.AlertCandidateBudget {
+		return budgetCandidateFacts(candidate)
+	}
 	facts := &alertFacts{senderAddress: alertSenderAddress(from), burstKey: candidate.BurstKey}
 	if candidate.BurstKey != "" {
 		facts.subjectKeys = append(facts.subjectKeys, candidate.BurstKey)
@@ -80,6 +87,16 @@ func candidateFacts(candidate *models.AgentAlertCandidate, from, category string
 		facts.kinds = append(facts.kinds, category)
 	}
 	return facts
+}
+
+// budgetCandidateFacts are the facts of a budget candidate: its key, the
+// kind every budget alert shares, and the spending category it is about.
+func budgetCandidateFacts(candidate *models.AgentAlertCandidate) *alertFacts {
+	return &alertFacts{
+		subjectKeys:        []string{candidate.BudgetKey},
+		kinds:              []string{models.AlertKindBudget},
+		spendingCategoryId: spendingCategoryOfBudgetKey(candidate.BudgetKey),
+	}
 }
 
 // coveredTerms is what an alert was about in the terms a mute names.
@@ -171,6 +188,10 @@ func mutedBy(mutes []*models.AgentAlertMute, facts *alertFacts) *models.AgentAle
 					return mute
 				}
 			}
+		case models.AlertMuteSpendingCategory:
+			if facts.spendingCategoryId != "" && strings.EqualFold(facts.spendingCategoryId, mute.MuteTarget) {
+				return mute
+			}
 		}
 	}
 	return nil
@@ -202,7 +223,7 @@ func normalizedSubjectKey(subjectKey string) string {
 // alerts keep them, a kind as a word.
 func NormalizeAlertMute(muteScope models.AlertMuteScope, muteTarget string) (string, error) {
 	if !muteScope.IsValid() {
-		return "", fmt.Errorf("%q is not sender, domain, subjectKey or kind", muteScope)
+		return "", fmt.Errorf("%q is not sender, domain, subjectKey, kind or spendingCategory", muteScope)
 	}
 	muteTarget = strings.TrimSpace(muteTarget)
 	switch muteScope {
@@ -224,7 +245,14 @@ func NormalizeAlertMute(muteScope models.AlertMuteScope, muteTarget string) (str
 	case models.AlertMuteKind:
 		muteTarget = strings.ToLower(muteTarget)
 		if strings.ContainsAny(muteTarget, " @") {
-			return "", fmt.Errorf("%q is not a kind: burst, or a category such as notification", muteTarget)
+			return "", fmt.Errorf("%q is not a kind: burst, budget, or a category such as notification", muteTarget)
+		}
+	case models.AlertMuteSpendingCategory:
+		// A spending category's id, as the budget alerts name it, in lower
+		// case like every other target; it is matched without case.
+		muteTarget = strings.ToLower(muteTarget)
+		if strings.ContainsAny(muteTarget, " @:") {
+			return "", fmt.Errorf("%q is not a spending category's id", muteTarget)
 		}
 	}
 	if muteTarget == "" {
@@ -353,9 +381,9 @@ func alertMuteChoices(alert *models.AgentAlert, terms *coveredTerms) []*AlertMut
 			choices = append(choices, &AlertMuteChoice{MuteScope: muteScope, MuteTarget: strings.Join(targets, ", ")})
 		}
 	}
-	defaultScope := defaultAlertMuteScope(terms)
+	defaultScope := defaultAlertMuteScopeOf(alert, terms)
 	add(defaultScope, muteTargetsOf(alert, terms, defaultScope))
-	for _, muteScope := range []models.AlertMuteScope{models.AlertMuteSubjectKey, models.AlertMuteSender, models.AlertMuteDomain, models.AlertMuteKind} {
+	for _, muteScope := range []models.AlertMuteScope{models.AlertMuteSubjectKey, models.AlertMuteSender, models.AlertMuteDomain, models.AlertMuteKind, models.AlertMuteSpendingCategory} {
 		if muteScope != defaultScope {
 			add(muteScope, muteTargetsOf(alert, terms, muteScope))
 		}
@@ -363,11 +391,19 @@ func alertMuteChoices(alert *models.AgentAlert, terms *coveredTerms) []*AlertMut
 	return choices
 }
 
-// defaultAlertMuteScope is what "don't tell me about these" mutes of an
+// defaultAlertMuteScopeOf is what "don't tell me about these" mutes of an
 // alert when the person does not say: its bursts when it was about any,
 // else its senders. Never the model's subject key alone, which the next
-// alert about the same thing may word differently.
-func defaultAlertMuteScope(terms *coveredTerms) models.AlertMuteScope {
+// alert about the same thing may word differently. A budget alert about a
+// spending category mutes that spending category, and one about a savings
+// target every budget alert, since nothing narrower names it.
+func defaultAlertMuteScopeOf(alert *models.AgentAlert, terms *coveredTerms) models.AlertMuteScope {
+	if isBudgetAlert(alert) {
+		if spendingCategoryOfBudgetKey(alert.SubjectKey) != "" {
+			return models.AlertMuteSpendingCategory
+		}
+		return models.AlertMuteKind
+	}
 	if len(terms.burstKeys) == 0 && len(terms.senderAddresses) > 0 {
 		return models.AlertMuteSender
 	}
@@ -378,6 +414,19 @@ func defaultAlertMuteScope(terms *coveredTerms) models.AlertMuteScope {
 // about bursts is their burst keys, which the next candidate of the same
 // burst carries; of one about messages, the model's subject key.
 func muteTargetsOf(alert *models.AgentAlert, terms *coveredTerms, muteScope models.AlertMuteScope) []string {
+	if isBudgetAlert(alert) {
+		switch muteScope {
+		case models.AlertMuteSubjectKey:
+			return []string{alert.SubjectKey}
+		case models.AlertMuteKind:
+			return []string{models.AlertKindBudget}
+		case models.AlertMuteSpendingCategory:
+			if spendingCategoryId := spendingCategoryOfBudgetKey(alert.SubjectKey); spendingCategoryId != "" {
+				return []string{spendingCategoryId}
+			}
+		}
+		return nil
+	}
 	switch muteScope {
 	case models.AlertMuteSubjectKey:
 		if len(terms.burstKeys) > 0 {
@@ -397,6 +446,12 @@ func muteTargetsOf(alert *models.AgentAlert, terms *coveredTerms, muteScope mode
 		return terms.mailCategories
 	}
 	return nil
+}
+
+// isBudgetAlert says an alert told a budget or savings target crossing,
+// whose subject key is the crossing's budget key.
+func isBudgetAlert(alert *models.AgentAlert) bool {
+	return alert != nil && (strings.HasPrefix(alert.SubjectKey, "spending-category:") || strings.HasPrefix(alert.SubjectKey, "savings-target:"))
 }
 
 // inferAlertMuteScope is the scope of a target named without one: an
@@ -448,10 +503,10 @@ func MuteAlert(tx db.Transaction, agent *models.Agent, alertId string, muteScope
 			return nil, err
 		}
 		if muteScope == "" {
-			muteScope = defaultAlertMuteScope(terms)
+			muteScope = defaultAlertMuteScopeOf(alert, terms)
 		}
 		if !muteScope.IsValid() {
-			return nil, fmt.Errorf("%q is not sender, domain, subjectKey or kind", muteScope)
+			return nil, fmt.Errorf("%q is not sender, domain, subjectKey, kind or spendingCategory", muteScope)
 		}
 		if targets = muteTargetsOf(alert, terms, muteScope); len(targets) == 0 {
 			return nil, fmt.Errorf("the alert says nothing to mute by %s; the messages it was about may be gone, so mute it by another scope", muteScope)

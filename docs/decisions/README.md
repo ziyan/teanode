@@ -121,3 +121,27 @@ agent tells the person, unasked, what their mail says they should know now:
 candidates from the sorting and from a count of bursts, one decision with
 their memory in hand, bounds kept in code rather than in the prompt, and a
 mute that is a row rather than a memory.
+
+`20260929-the-operator-holds-the-provider-keys-the-person-holds-the-finance-source.md`
+says who holds what when a person links a financial institution: the
+operator holds the Plaid keys, sealed in the agent settings, and chooses
+which providers are offered; the person links each institution as a finance
+source, an agent source of the kind `finance`, whose credential is a sealed
+source secret. It also says why SimpleFIN is offered beside Plaid, and what
+deleting an agent owes the provider.
+`20260929-finance-transactions-are-rows-not-documents.md` says why finance
+transactions go into tables of their own and are read through a tool that
+adds them up, rather than into memory. The plan that acts on both is
+`docs/planning/finance-accounts-execplan.md`.
+
+`20260929-net-worth-is-a-history-of-valuations.md` says how net worth is
+kept: a valuation per asset per day per valuation source, summed on demand
+and converted at each day's exchange rate, with the person's own entry
+beating a provider's and a provider's beating an estimate, and why the agent
+estimates a house or a car only where the person allowed it. Its plan is
+`docs/planning/net-worth-execplan.md`.
+`20260929-spending-categories-are-the-persons.md` says whose categories a
+budget is built on: the person's, assigned by their own choice, then their
+spending rules, then the provider, then the categorize model, and never
+overwritten once the person chose. Its plan is
+`docs/planning/budgets-execplan.md`.
