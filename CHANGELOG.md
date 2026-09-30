@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.87.3] - 2026-09-30
+
+### Fixed
+
+- Moving an institution to another provider no longer counts its accounts twice in net worth on the day of the move. (#251)
+
 ## [0.87.2] - 2026-09-30
 
 ### Changed
