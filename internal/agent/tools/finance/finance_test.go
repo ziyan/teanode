@@ -340,11 +340,11 @@ func TestFinanceToolRefusesACredential(test *testing.T) {
 func TestFinanceToolGivesTheLinkingPage(test *testing.T) {
 	test.Parallel()
 	result, err := call(test, &fakeOperations{}, `{"operation":"link_plaid"}`)
-	if err != nil || !strings.Contains(result.Content, "https://mail.example.com/finance-link") {
+	if err != nil || !strings.Contains(result.Content, "https://mail.example.com/finance/link") {
 		test.Fatalf("%v %v", result, err)
 	}
 	result, err = call(test, &fakeOperations{}, `{"operation":"repair","source_id":"source-one"}`)
-	if err != nil || !strings.Contains(result.Content, "/finance-link?source=source-one") {
+	if err != nil || !strings.Contains(result.Content, "/finance/link?source=source-one") {
 		test.Fatalf("%v %v", result, err)
 	}
 }

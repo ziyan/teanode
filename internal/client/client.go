@@ -68,6 +68,12 @@ type Options struct {
 	ReadOnly bool
 }
 
+// FinanceLinkPagePath is the dashboard page that opens Plaid Link, the one
+// page whose security policy lets Plaid's window in. The command line and the
+// agent's finance tool print it for the person to open; the server holds the
+// same path (internal/web.FinanceLinkPagePath).
+const FinanceLinkPagePath = "/finance/link"
+
 // NormalizeURL is how a server is named everywhere the client remembers one:
 // trimmed, without a trailing slash, and https unless a scheme was given.
 func NormalizeURL(url string) string {
