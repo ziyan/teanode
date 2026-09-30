@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
@@ -53,7 +53,15 @@ import {
   useFinanceWords,
   useReportingCurrency,
 } from './financeCommon'
-import { AssetFilters, assetFiltersFromSearch, assetGroupRows, groupAssets, writeAssetFilters } from './assetFilters'
+import {
+  AssetFilters,
+  ExchangeRates,
+  areRatesFor,
+  assetFiltersFromSearch,
+  assetGroupRows,
+  groupAssets,
+  writeAssetFilters,
+} from './assetFilters'
 import { RING_SLICE_COUNT, SpendingRing, foldIntoOther, ringSliceClass } from './spendingRing'
 
 // The valuation sources a person gives an asset they add or change: their
@@ -222,25 +230,33 @@ function AssetsPanel({
   // address (trimmed) once typing pauses: read back from the address, a
   // space typed at the end was trimmed away before the next letter came.
   const [typed, setTyped] = useState(filters.text)
+  // The latest address writer and words in it, read when the pause ends:
+  // the writer changes with every change of address, and depending on it
+  // re-armed the pause, and wrote the same address again, at every kind
+  // opened or closed.
+  const latest = useRef({ setSearch, text: filters.text })
+  latest.current = { setSearch, text: filters.text }
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const text = typed.trim()
-      setSearch(
-        (previous) =>
-          assetFiltersFromSearch(previous).text === text
-            ? previous
-            : writeAssetFilters(previous, { ...assetFiltersFromSearch(previous), text }),
+      if (text === latest.current.text) return
+      latest.current.setSearch(
+        (previous) => writeAssetFilters(previous, { ...assetFiltersFromSearch(previous), text }),
         { replace: true },
       )
     }, 400)
     return () => window.clearTimeout(timer)
-  }, [typed, setSearch])
+  }, [typed])
   // Words that arrive by the address, from Back or a link, are put in the
   // box; words being typed are not overwritten by the address catching up.
   useEffect(() => {
     setTyped((previous) => (previous.trim() === filters.text ? previous : filters.text))
   }, [filters.text])
-  const { reportingCurrencyCode, isLoaded: isReportingCurrencyLoaded } = useReportingCurrency()
+  const {
+    reportingCurrencyCode,
+    isLoaded: isReportingCurrencyLoaded,
+    error: reportingCurrencyError,
+  } = useReportingCurrency()
   const accounts = useQuery(() => graphql<{ FinanceAccounts: FinanceAccount[] }>(FINANCE_ACCOUNTS), [], {
     refresh: false,
   })
@@ -256,9 +272,10 @@ function AssetsPanel({
     ),
   ].sort()
   const rates = useQuery(
-    async () => {
+    async (): Promise<ExchangeRates> => {
       const found: Record<string, number> = {}
-      if (!reportingCurrencyCode) return found
+      const asked = { reportingCurrencyCode, currencyCodes: foreignCurrencyCodes, rates: found }
+      if (!reportingCurrencyCode) return asked
       const answers = await Promise.allSettled(
         foreignCurrencyCodes.map((fromCurrencyCode) =>
           graphql<{ ConvertCurrency: CurrencyConversion }>(CONVERT_CURRENCY, {
@@ -275,24 +292,30 @@ function AssetsPanel({
         const rate = answer.status === 'fulfilled' ? amountOf(answer.value.ConvertCurrency.rate) : 0
         if (rate > 0) found[foreignCurrencyCodes[index]] = rate
       })
-      return found
+      return asked
     },
     [reportingCurrencyCode, foreignCurrencyCodes.join(',')],
     { refresh: false },
   )
   const grouping = useMemo(
-    () => groupAssets(all, filters, reportingCurrencyCode, rates.data ?? {}),
+    () => groupAssets(all, filters, reportingCurrencyCode, rates.data?.rates ?? {}),
     [all, filters, reportingCurrencyCode, rates.data],
   )
   // The ring and the owned, owed and net worth beside it are always the
   // whole picture; words searched for narrow only the table under them.
   const whole = useMemo(
-    () => groupAssets(all, { ...filters, text: '' }, reportingCurrencyCode, rates.data ?? {}),
+    () => groupAssets(all, { ...filters, text: '' }, reportingCurrencyCode, rates.data?.rates ?? {}),
     [all, filters, reportingCurrencyCode, rates.data],
   )
-  // Until the rates have come, an asset in another currency would be left
-  // out of every total and named as unconverted, so neither is shown yet.
-  const isRatesReady = isReportingCurrencyLoaded && rates.data !== null && !rates.loading
+  // Until the rates for this reporting currency and these currencies have
+  // come, an asset in another currency would be left out of every total and
+  // named as unconverted, so neither is shown yet. The answer says what it
+  // was asked for: for one render after the reporting currency arrives, or
+  // a reload brings a new currency, the answer held is still the last one.
+  const isRatesReady =
+    isReportingCurrencyLoaded &&
+    !rates.loading &&
+    areRatesFor(rates.data, reportingCurrencyCode, foreignCurrencyCodes)
   const currency = reportingCurrencyCode || 'USD'
   const slices = foldIntoOther(
     whole.groups
@@ -413,7 +436,12 @@ function AssetsPanel({
       <ErrorMessage error={assets.error} />
       {assets.loading && !assets.data ? <Loading /> : null}
       {assets.data && all.length === 0 ? <SettingsEmpty>{t('finance.noAssets')}</SettingsEmpty> : null}
-      {all.length > 0 && !isRatesReady ? <Loading /> : null}
+      {/* A reporting currency that could not be read is said (in a toast,
+          as every failure is) rather than waited for: there are no totals
+          without it, and the table still lists every asset in its own
+          currency. */}
+      <ErrorMessage error={reportingCurrencyError} />
+      {all.length > 0 && !isRatesReady && !reportingCurrencyError ? <Loading /> : null}
       {all.length > 0 && isRatesReady ? (
         // Beside the ring rather than inside it, so the totals stay when
         // there is no ring to draw: only debts, or nothing worth more than
@@ -481,14 +509,19 @@ function AssetsPanel({
                   {grouping.groups.flatMap((group) => {
                     const index = sliceIndexes.get(group.assetKind)
                     const otherIndex = slices.findIndex((slice) => slice.isOther)
-                    const swatch = group.isLiability
-                      ? null
-                      : index !== undefined
+                    // A kind worth something that was folded into the
+                    // "other" slice takes that slice; a kind worth nothing
+                    // or less, or owed, has no slice at all.
+                    const isFolded =
+                      !group.isLiability && index === undefined && group.totalAmount > 0 && otherIndex >= 0
+                    const swatch =
+                      !group.isLiability && index !== undefined
                         ? ringSliceClass(slices[index], index)
-                        : otherIndex >= 0
+                        : isFolded
                           ? 'other'
                           : null
-                    const sliceKey = index !== undefined ? group.assetKind : otherIndex >= 0 ? 'other' : null
+                    const sliceKey =
+                      !group.isLiability && index !== undefined ? group.assetKind : isFolded ? 'other' : null
                     const isOpen = isExpanded(group.assetKind)
                     const shown = isSearching ? group.matchingAssets : group.assets
                     // A kind worth less than nothing has no share: no "-0%".
