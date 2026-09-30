@@ -103,9 +103,13 @@ what is still uncategorized, the categorize job queued for the rest, and
 budget alert candidates written.
 
 Deleting a finance source removes it at the provider first (best effort), keeps
-its assets' history by turning them into manual assets, and then deletes the
-source, which removes its finance accounts and finance transactions. Deleting
-an agent does the same for each of its finance sources.
+its assets' history by turning them into manual assets closed on the day of the
+delete, in the person's time zone, and then deletes the source, which removes
+its finance accounts and finance transactions. Closing them stops net worth
+carrying the last balance forward for an account nothing values any more, and
+linking the institution again, through either provider, starts new assets from
+that day without counting any account twice. An asset the person had already
+closed keeps its day. Deleting an agent removes its assets with everything else.
 
 ## Currencies
 

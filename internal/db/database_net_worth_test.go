@@ -169,7 +169,9 @@ func TestNetWorthSeriesSumsTheWinningValuations(t *testing.T) {
 }
 
 // Deleting a finance source keeps its assets and their history, turned
-// manual, and the finance account link goes with the source.
+// manual and closed on the day of the delete, so net worth stops counting
+// them after it; an asset already closed keeps its day, and the finance
+// account link goes with the source.
 func TestNetWorthKeepsHistoryWhenAFinanceSourceIsDeleted(t *testing.T) {
 	database, releaseDatabase := dbtest.AcquireDatabase(t)
 	defer releaseDatabase()
@@ -177,14 +179,22 @@ func TestNetWorthKeepsHistoryWhenAFinanceSourceIsDeleted(t *testing.T) {
 	applyFinanceSync(t, database, fixture, sampleFinanceSync(), "2026-09-12")
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		detachedCount, err := tx.DetachAssetsOfSource(fixture.agentId, fixture.sourceId)
+		assets, err := tx.ListAssets(fixture.agentId)
+		if err != nil || len(assets) != 2 {
+			t.Fatalf("ListAssets: %v %d", err, len(assets))
+		}
+		closedByHand := assets[0]
+		if _, err := tx.CloseAsset(fixture.agentId, closedByHand.ID, "2026-09-12"); err != nil {
+			t.Fatalf("CloseAsset: %s", err)
+		}
+		detachedCount, err := tx.DetachAssetsOfSource(fixture.agentId, fixture.sourceId, "2026-09-14")
 		if err != nil || detachedCount != 2 {
 			t.Fatalf("DetachAssetsOfSource: %v %d", err, detachedCount)
 		}
 		if err := tx.DeleteAgentSource(fixture.agentId, fixture.sourceId); err != nil {
 			t.Fatalf("DeleteAgentSource: %s", err)
 		}
-		assets, err := tx.ListAssets(fixture.agentId)
+		assets, err = tx.ListAssets(fixture.agentId)
 		if err != nil || len(assets) != 2 {
 			t.Fatalf("the assets outlive the source: %v %d", err, len(assets))
 		}
@@ -192,6 +202,24 @@ func TestNetWorthKeepsHistoryWhenAFinanceSourceIsDeleted(t *testing.T) {
 			if asset.ValuationSource != models.ValuationSourceManual || asset.FinanceAccountID != "" || asset.LatestValuation == nil {
 				t.Errorf("a detached asset is manual, unlinked, with its history: %+v", asset)
 			}
+			expectedClosedOn := "2026-09-14"
+			if asset.ID == closedByHand.ID {
+				expectedClosedOn = "2026-09-12"
+			}
+			if asset.ClosedOn != expectedClosedOn {
+				t.Errorf("%s closes on %s, got %q", asset.AssetName, expectedClosedOn, asset.ClosedOn)
+			}
+		}
+		points, err := tx.NetWorthSeries(fixture.agentId, "2026-09-12", "2026-09-16")
+		if err != nil {
+			t.Fatalf("NetWorthSeries: %s", err)
+		}
+		countedDays := map[string]bool{}
+		for _, point := range points {
+			countedDays[point.NetWorthOn] = true
+		}
+		if !countedDays["2026-09-14"] || countedDays["2026-09-15"] || countedDays["2026-09-16"] {
+			t.Errorf("net worth counts the assets through the day of the delete and not after: %v", countedDays)
 		}
 		if page, err := tx.ListFinanceTransactions(fixture.agentId, nil); err != nil || len(page.FinanceTransactions) != 0 {
 			t.Errorf("the source's transactions go with it: %v", err)
