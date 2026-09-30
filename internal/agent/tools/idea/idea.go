@@ -21,7 +21,7 @@ func init() {
 			{
 				Name: "idea", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
 				Description: "Your list of ideas for the person: offers of work you can do for them, and what became of each. " +
-					"`list` shows the open ones, or those in the statuses given. " +
+					"`list` shows the open ones, or those in the statuses given; an expired one has an expiredReason: past_date, missing_tool (it cannot be reopened until the tool is connected) or already_used (they already do it, and may still reopen it). " +
 					"`propose` keeps one you found in their own mail, memory or conversations, with the evidence you looked up; it is refused when it needs a tool you lack, does not say where it asks first, or has no evidence. " +
 					"`start` records that this conversation carries one out, when they take it up here. " +
 					"`done`, `dismiss` and `reopen` are for when they say it is finished, that they do not want it, or want it back.",

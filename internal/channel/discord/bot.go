@@ -113,13 +113,14 @@ type chat struct {
 }
 
 func (self *chat) Send(ctx context.Context, text, replyTo string) (string, error) {
-	// Discord reads common Markdown; only a cited message, whose mail:
-	// link opens nothing there, is left as its subject.
-	return self.client.Send(ctx, self.channelId, models.UnlinkMailCitations(text), replyTo)
+	// Discord reads common Markdown. A link in the dashboard's own schemes
+	// still here -- the agent's answers had theirs made whole before -- is
+	// left as its words, since it opens nothing in Discord.
+	return self.client.Send(ctx, self.channelId, models.UnlinkDashboardLinks(text), replyTo)
 }
 
 func (self *chat) Edit(ctx context.Context, messageId, text string) error {
-	return self.client.Edit(ctx, self.channelId, messageId, models.UnlinkMailCitations(text))
+	return self.client.Edit(ctx, self.channelId, messageId, models.UnlinkDashboardLinks(text))
 }
 
 func (self *chat) Delete(ctx context.Context, messageId string) error {

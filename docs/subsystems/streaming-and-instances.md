@@ -22,6 +22,7 @@ per-run sequence and a time.
 | `confirmation` | a card is waiting: tool, arguments, risk, preview |
 | `question` | `ask_user` is waiting: the question and any choices |
 | `note` | queued, stopped, compacted, titled, out of rounds |
+| `navigate` | `open_page` asks the dashboard to show a page of itself: the path |
 | `error` | the turn failed |
 | `done` | always last |
 

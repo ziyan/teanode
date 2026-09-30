@@ -264,3 +264,20 @@ func portOf(address string) string {
 	}
 	return address
 }
+
+// DashboardBase is where the dashboard is opened from outside it -- a chat
+// app, a link in an answer, an address an authorization comes back to: the
+// scheme and the host, with no trailing slash, or "" when this server has no
+// name to give. The host is the name passkeys are bound to when the operator
+// set one, since that is the name the dashboard is signed in to, and the
+// server's own name otherwise.
+func (self *Configuration) DashboardBase() string {
+	host := strings.TrimSpace(self.Passkey.RelyingPartyID)
+	if host == "" {
+		host = strings.TrimSpace(self.Server.Name)
+	}
+	if host == "" {
+		return ""
+	}
+	return "https://" + host
+}

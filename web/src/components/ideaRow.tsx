@@ -15,6 +15,10 @@ import { useQuery } from './useQuery'
 
 export type IdeaStatus = 'open' | 'started' | 'done' | 'dismissed' | 'expired'
 
+// Why an expired idea is not on offer; empty in any other status, and for
+// one that expired before the server kept a reason.
+export type IdeaExpiredReason = '' | 'past_date' | 'missing_tool' | 'already_used'
+
 export interface IdeaEvidence {
   evidenceKind: 'message' | 'page' | 'conversation'
   evidenceId: string
@@ -32,6 +36,7 @@ export interface Idea {
   suggestionReason: string
   evidence: IdeaEvidence[]
   ideaStatus: IdeaStatus
+  expiredReason: IdeaExpiredReason
   startedConversationId: string
   createdAt: string
   shownAt: string | null
@@ -50,7 +55,7 @@ export const LIST_IDEAS = `
       ideas {
         id ideaKind ideaCategory emoji headline body openingRequest suggestionReason
         evidence { evidenceKind evidenceId evidenceSummary }
-        ideaStatus startedConversationId createdAt shownAt startedAt closedAt
+        ideaStatus expiredReason startedConversationId createdAt shownAt startedAt closedAt
       }
       ideaCategories { ideaCategory emojis }
     }

@@ -27,6 +27,7 @@ import { budgetNearness, formatClock, formatCount, formatMoney, formatTime } fro
 import { useResolvedTheme } from './theme'
 import { Tooltip } from './tooltip'
 import { Markdown } from './markdown'
+import { useShowPage } from './dashboardPath'
 import { IdeaSuggestions } from './ideaRow'
 import { RelativeTime } from './relativeTime'
 import {
@@ -347,6 +348,7 @@ interface RunEvent {
     | 'question'
     | 'note'
     | 'titled'
+    | 'navigate'
     | 'done'
     | 'error'
   runId: string
@@ -2802,6 +2804,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // person has moved to another one.
   const shownConversationId = useRef(conversationId)
   shownConversationId.current = conversationId
+  // open_page moves the dashboard to a page of it. Framed into another
+  // site the drawer has no dashboard around it to move, and the tool is not
+  // offered there.
+  const showPage = useShowPage(() => leaving())
   const applyEvent = (event: RunEvent) => {
     // What an event does beyond the transcript happens here, once: the
     // updater below may run twice under StrictMode.
@@ -2810,6 +2816,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // head and the list take the title as soon as it is written.
     if (event.kind === 'titled') {
       void loadConversations()
+      return
+    }
+    if (event.kind === 'navigate') {
+      if (!standalone) showPage(event)
       return
     }
     //

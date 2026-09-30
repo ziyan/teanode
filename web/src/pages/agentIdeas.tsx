@@ -20,6 +20,14 @@ type ClosedStatus = 'started' | 'done' | 'dismissed' | 'expired'
 
 const HISTORY_STATUSES: ClosedStatus[] = ['started', 'done', 'dismissed', 'expired']
 
+// ideaStatusKey is the words for what became of an idea in the history: for
+// an expired one, why, when the server says; "out of date" for one that
+// expired before it kept a reason.
+export function ideaStatusKey(idea: Pick<Idea, 'ideaStatus' | 'expiredReason'>): Key {
+  if (idea.ideaStatus === 'expired' && idea.expiredReason) return `ideas.expiredReason.${idea.expiredReason}` as Key
+  return `ideas.status.${idea.ideaStatus}` as Key
+}
+
 export function IdeasTab() {
   const { t, language } = useTranslation()
   const toast = useToast()
@@ -87,13 +95,16 @@ export function IdeasTab() {
         busy={busy}
         onMarkDone={(idea) => void act(() => setIdeaStatus(idea, 'done'), t('ideas.markedDone'))}
         onRestore={(idea) => {
-          // A catalog idea expires when the agent stops offering it: a tool
-          // it needs went away, or the person already does it. The server
-          // refuses to open one, which would only expire again, and it
-          // comes back on its own when that changes. A personal idea
-          // restored past its date comes back with no date at all.
-          if (idea.ideaKind === 'catalog' && idea.ideaStatus === 'expired') {
-            toast.failed(t('ideas.cannotRestore'))
+          // A catalog idea expires when the agent stops offering it. One
+          // that needs a tool the person has not connected would only
+          // expire again, so the server refuses it, and it comes back on
+          // its own with the tool. One they already do can come back, and
+          // stays. A personal idea restored past its date comes back with
+          // no date at all.
+          if (idea.ideaKind === 'catalog' && idea.ideaStatus === 'expired' && idea.expiredReason !== 'already_used') {
+            toast.failed(
+              t(idea.expiredReason === 'missing_tool' ? 'ideas.cannotRestoreMissingTool' : 'ideas.cannotRestore'),
+            )
             return
           }
           void act(() => setIdeaStatus(idea, 'open'), t('ideas.restored'))
@@ -147,11 +158,11 @@ function IdeaHistory({
     {
       key: 'ideaStatus',
       header: t('ideas.status'),
-      width: '8rem',
+      width: '15rem',
       filter: 'select',
       options: HISTORY_STATUSES.map((status) => ({ value: status, label: t(`ideas.status.${status}` as Key) })),
       value: (idea) => idea.ideaStatus,
-      render: (idea) => <Tag value={t(`ideas.status.${idea.ideaStatus}` as Key)} tone={tone(idea)} />,
+      render: (idea) => <Tag value={t(ideaStatusKey(idea))} tone={tone(idea)} />,
     },
     {
       key: 'when',
