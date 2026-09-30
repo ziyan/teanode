@@ -85,13 +85,19 @@ something else, that name appears once, here, and nowhere else.
   conversion and reporting currency added; parity across dashboard,
   command line and tool made a requirement; the categorize model setting
   added, which may name a decision model such as Jev or a chat model.
-- [ ] Milestone 1: provider clients and a prototype (completed: SimpleFIN
-  limits, fields and user agent probed against a real finance source;
-  remaining: pending id stability, Plaid Link's CSP origins, the Go clients
-  and their tests).
-- [ ] Milestone 2: operator settings, including the categorize model.
-- [ ] Milestone 3: the `finance` source kind, its reader, and the tables.
-- [ ] Milestone 4: exchange rates and the reporting currency.
+- [x] (2026-09-30) Milestone 1: provider clients (`internal/finance`) with
+  tests; Plaid Link's policy origins read from Plaid's documentation.
+  Remaining: SimpleFIN pending id stability, compared once the saved
+  pending transactions post.
+- [x] (2026-09-30) Milestone 2: operator settings, the categorize model, and
+  the Plaid products setting; nested `-` secrets on the command line read
+  without echo.
+- [ ] Milestone 3: the `finance` source kind, its reader, and the tables
+  (completed: tables and database layer for all three plans, migrations
+  0131 to 0134; remaining: the source kind and its reader).
+- [ ] Milestone 4: exchange rates and the reporting currency (completed:
+  the ECB client, the table, stored-rate lookups; remaining: the fetch
+  policy and the API).
 - [ ] Milestone 5: linking and deleting from the dashboard, the command line
   and the tool.
 - [ ] Milestone 6: the read operations on the `finance` tool and the
@@ -143,11 +149,29 @@ something else, that name appears once, here, and nowhere else.
   privately on 2026-09-29; fetch the same window again once they have
   posted and compare ids.
 
-- Observation: the exact origins Plaid Link needs in a Content Security
-  Policy (script, frame, connect) must be read from Plaid's current
-  documentation and confirmed by loading Link under the new policy and
-  watching the browser console for refusals.
-  Evidence: to be filled.
+- Observation: Plaid documents its linking window as needing
+  `https://cdn.plaid.com/link/v2/stable/link-initialize.js` as a script,
+  `https://cdn.plaid.com` as a frame, the API host of the environment
+  (`https://production.plaid.com` or `https://sandbox.plaid.com`) to
+  connect to, and inline styles, which the dashboard's policy already
+  allows. Plaid also lists `script-src 'unsafe-inline'`; the page loads the
+  script by URL and does not add it. Both API hosts are allowed because the
+  environment is a setting that can change without a restart.
+  Evidence: Plaid's Link web documentation, 2026-09-29; the browser check
+  on the deployed page is recorded under Outcomes.
+
+- Observation: Plaid reports a card or loan balance as a positive amount
+  owed; SimpleFIN leaves the sign to the institution, and most report it
+  negative. A liability's valuation is therefore the absolute balance, and
+  any other asset keeps its sign (an overdrawn checking account is a
+  negative asset).
+  Evidence: the provider clients' tests and the database layer's sign rule.
+
+- Observation: SimpleFIN answers 403 when a credential was revoked, which
+  signing in again cannot repair. The client returns
+  `finance.ErrCredentialRefused`, distinct from `ErrSignInRequired`, and the
+  finance source says to delete it and link again.
+  Evidence: `internal/finance/simplefin_test.go`.
 
 - Observation: a Plaid Trial plan (free, US and Canada, teams created on or
   after 2026-04-15) allows ten production finance sources for the life of
@@ -157,6 +181,35 @@ something else, that name appears once, here, and nowhere else.
   Evidence: Plaid's billing documentation, read 2026-09-29.
 
 ## Decision Log
+
+- Decision: a finance source does not go through the document passes of
+  the memory graph. `runIngest` branches to the finance sync right after
+  it loads an enabled source, before the `knowledge` feature switch; the
+  sync uses the source row's schedule, cursor, error and `markSource`, and
+  no sweeps, chunks or embeddings.
+  Rationale: passes, sweeps of unseen documents and embedding are all
+  about documents, which a finance source never files, and whether an
+  operator offers memory has nothing to do with whether people may track
+  their spending.
+  Date/Author: 2026-09-29.
+
+- Decision: the tables follow the repository's column conventions rather
+  than the plan's sketches: 32-character ids, `created_at` and
+  `modified_at`, optional text as `NOT NULL DEFAULT ''`, and CHECK
+  constraints on the closed vocabularies. Plaid amounts are stored in a
+  canonical form with four decimal places, rounded half away from zero;
+  SimpleFIN amounts are kept as sent after checking they are decimals.
+  Rationale: every neighbouring migration does it this way, and the audit
+  comparison already ignores `modifiedAt`.
+  Date/Author: 2026-09-29.
+
+- Decision: on a provider modification, a spending category that was not
+  set by the person is cleared only when the description, merchant or
+  provider category changed, a transfer mark not set by the person only
+  when the amount changed, and an unchanged row is not written at all.
+  Rationale: rewriting identical rows every sync costs writes and would
+  throw away categorizations for no reason.
+  Date/Author: 2026-09-29.
 
 - Decision: the word is "finance", not "bank": the source kind `finance`,
   the tables `agent_finance_account` and `agent_finance_transaction`, the
