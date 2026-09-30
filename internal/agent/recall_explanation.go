@@ -42,6 +42,10 @@ const (
 
 	// RecallDecisionFactLimit: the loose facts were full.
 	RecallDecisionFactLimit = "fact_limit"
+
+	// RecallDecisionOutranked: a query found it, but fusing every query's
+	// lists left it out of the candidates.
+	RecallDecisionOutranked = "outranked"
 )
 
 // Which section of a page's overview recall carried, and why.
@@ -61,34 +65,92 @@ const (
 	RecallSectionLeftOutForBudget = "left_out_for_budget"
 )
 
+// RetrievalPlan is how a turn's graph retrieval searches beyond the
+// message's own words: the focused searches the depth judgement planned,
+// and whether the message asks about a whole area. A live turn gets it from
+// the judgement; a replay is given it, so that it asks no model anything.
+type RetrievalPlan struct {
+	Searches []string `json:"searches"`
+	IsBroad  bool     `json:"isBroad"`
+}
+
+// isEmpty says the plan changes nothing: retrieval is the basic one.
+func (self *RetrievalPlan) isEmpty() bool {
+	return self == nil || (len(self.Searches) == 0 && !self.IsBroad)
+}
+
+// The retrieval modes an explanation or an evaluation names: basic is the
+// message's own search alone, planned follows a retrieval plan.
+const (
+	RetrievalModeBasic   = "basic"
+	RetrievalModePlanned = "planned"
+)
+
+// What each query of a retrieval is.
+const (
+	RecallQueryMessage = "message" // the message's own words
+	RecallQueryPlanned = "planned" // a focused search the plan named
+	RecallQueryHop     = "hop"     // the pages linked to the top page the planned searches found
+	RecallQueryBroad   = "broad"   // the pages whose overview sections a broad question matched, counted again
+)
+
 // RecallExplanation is how one question's recall went.
 type RecallExplanation struct {
-	// Searches is each search's count of what it found, in the order they
-	// ran.
+	// RetrievalMode is basic or planned, and Plan the plan followed, if
+	// any.
+	RetrievalMode string         `json:"retrievalMode"`
+	Plan          *RetrievalPlan `json:"plan" graphapi:"nullable"`
+
+	// Queries is each query the retrieval ran, in order: the message
+	// first, then the planned searches, the hop and the broad weighting.
+	Queries []*RecallQuery `json:"queries"`
+
+	// Searches is each list a query produced and how much it found.
 	Searches []*RecallSearch `json:"searches"`
 
-	// Pages is every page any search found, in the order recall considered
-	// them: fused rank first.
+	// Pages is every page any query found: the ones fused into the
+	// candidates first, by fused rank, then the ones fusion left out.
 	Pages []*RecallPageExplanation `json:"pages"`
 
-	// Facts is every fact the searches found, fused, and what became of it.
+	// Facts is every fact any query found, in the same order.
 	Facts []*RecallFactExplanation `json:"facts"`
+
+	// IsBroadNoteCarried says the turn was told a survey reads the whole
+	// area, as a broad question is.
+	IsBroadNoteCarried bool `json:"isBroadNoteCarried"`
 
 	// TokenBudget is what the overlay may spend on the graph, and
 	// TokensSpent what it did.
 	TokenBudget int `json:"tokenBudget"`
 	TokensSpent int `json:"tokensSpent"`
 
-	// factsByWords and factsByMeaning are what the two fact searches
-	// found, kept until the facts' pages are read.
-	factsByWords, factsByMeaning []*models.AgentFact
+	// factLists and fusedFacts are the facts' lists and their fusion,
+	// kept until the facts' pages are read.
+	factLists  []rankedFactList
+	fusedFacts []*models.AgentFact
 }
 
-// RecallSearch is one search: pages or facts, by words, by meaning, or by
-// overview section, and how many it found.
+// RecallQuery is one query a retrieval ran.
+type RecallQuery struct {
+	QueryID   string `json:"queryId"`
+	QueryKind string `json:"queryKind"`
+
+	// QueryText is the words searched, or for the hop the page followed.
+	QueryText string `json:"queryText"`
+}
+
+// RecallSearch is one list a query produced, and how much it found.
 type RecallSearch struct {
+	QueryID    string `json:"queryId"`
 	SearchName string `json:"searchName"`
 	FoundCount int    `json:"foundCount"`
+}
+
+// RecallRank is where a page or fact stood in one list.
+type RecallRank struct {
+	QueryID    string `json:"queryId"`
+	SearchName string `json:"searchName"`
+	Rank       int    `json:"rank"`
 }
 
 // RecallPageExplanation is one page and what became of it.
@@ -96,13 +158,11 @@ type RecallPageExplanation struct {
 	Path   string `json:"path"`
 	NodeID string `json:"nodeId"`
 
-	// FusedRank is the page's place once the searches were fused, from
-	// one. WordsRank, MeaningRank and SectionRank are its place in each
-	// search, zero where that search did not find it.
-	FusedRank   int `json:"fusedRank"`
-	WordsRank   int `json:"wordsRank"`
-	MeaningRank int `json:"meaningRank"`
-	SectionRank int `json:"sectionRank"`
+	// FusedRank is the page's place among the candidates once every
+	// query's lists were fused, from one; zero where fusion left it out.
+	// Ranks is its place in each list that found it.
+	FusedRank int           `json:"fusedRank"`
+	Ranks     []*RecallRank `json:"ranks"`
 
 	// HitFactCount is how many of the facts the searches found are on it.
 	HitFactCount int `json:"hitFactCount"`
@@ -126,67 +186,106 @@ type RecallFactExplanation struct {
 	// Reference is the fact as a page cites it, path#number.
 	Reference string `json:"reference"`
 
-	// WordsRank and MeaningRank are its place in each search, zero where
-	// that search did not find it; FusedRank its place once fused.
-	FusedRank   int `json:"fusedRank"`
-	WordsRank   int `json:"wordsRank"`
-	MeaningRank int `json:"meaningRank"`
+	FusedRank int           `json:"fusedRank"`
+	Ranks     []*RecallRank `json:"ranks"`
 
 	RecallDecision string `json:"recallDecision"`
 }
 
-// explainSearch records one search's count.
-func (self *RecallExplanation) explainSearch(searchName string, foundCount int) {
-	if self == nil {
-		return
-	}
-	self.Searches = append(self.Searches, &RecallSearch{SearchName: searchName, FoundCount: foundCount})
+// rankedPageList and rankedFactList are one list a query produced.
+type rankedPageList struct {
+	queryId, searchName string
+	nodes               []*models.AgentNode
 }
 
-// explainPages records the pages each search found and the fused order.
-func (self *RecallExplanation) explainPages(fused, byWords, byMeaning, bySection []*models.AgentNode) {
+type rankedFactList struct {
+	queryId, searchName string
+	facts               []*models.AgentFact
+}
+
+// explainQuery records a query and the lists it produced.
+func (self *RecallExplanation) explainQuery(query *RecallQuery, pageLists []rankedPageList, factLists []rankedFactList) {
 	if self == nil {
 		return
 	}
-	rankOf := func(nodes []*models.AgentNode) map[string]int {
-		ranks := make(map[string]int, len(nodes))
-		for index, node := range nodes {
-			if _, seen := ranks[node.ID]; !seen {
-				ranks[node.ID] = index + 1
-			}
-		}
-		return ranks
+	self.Queries = append(self.Queries, query)
+	for _, list := range pageLists {
+		self.Searches = append(self.Searches, &RecallSearch{QueryID: list.queryId, SearchName: list.searchName, FoundCount: len(list.nodes)})
 	}
-	wordsRanks, meaningRanks, sectionRanks := rankOf(byWords), rankOf(byMeaning), rankOf(bySection)
+	for _, list := range factLists {
+		self.Searches = append(self.Searches, &RecallSearch{QueryID: list.queryId, SearchName: list.searchName, FoundCount: len(list.facts)})
+	}
+	self.factLists = append(self.factLists, factLists...)
+}
+
+// explainPages records every page the lists found: the fused ones first,
+// by fused rank, then the rest, each with its place in every list.
+func (self *RecallExplanation) explainPages(fused []*models.AgentNode, lists []rankedPageList) {
+	if self == nil {
+		return
+	}
+	explained := map[string]*RecallPageExplanation{}
+	add := func(node *models.AgentNode, fusedRank int) {
+		if explained[node.ID] != nil {
+			return
+		}
+		decision := RecallDecisionPageLimit
+		if fusedRank == 0 {
+			decision = RecallDecisionOutranked
+		}
+		page := &RecallPageExplanation{Path: node.Path, NodeID: node.ID, FusedRank: fusedRank, Ranks: []*RecallRank{},
+			RecallDecision: decision, SectionChoice: RecallSectionNone}
+		explained[node.ID] = page
+		self.Pages = append(self.Pages, page)
+	}
 	for index, node := range fused {
-		self.Pages = append(self.Pages, &RecallPageExplanation{
-			Path: node.Path, NodeID: node.ID, FusedRank: index + 1,
-			WordsRank: wordsRanks[node.ID], MeaningRank: meaningRanks[node.ID], SectionRank: sectionRanks[node.ID],
-			RecallDecision: RecallDecisionPageLimit, SectionChoice: RecallSectionNone,
-		})
+		add(node, index+1)
+	}
+	for _, list := range lists {
+		for _, node := range list.nodes {
+			add(node, 0)
+		}
+	}
+	for _, list := range lists {
+		for index, node := range list.nodes {
+			page := explained[node.ID]
+			page.Ranks = append(page.Ranks, &RecallRank{QueryID: list.queryId, SearchName: list.searchName, Rank: index + 1})
+		}
 	}
 }
 
-// explainFacts records the facts each search found and the fused order.
-func (self *RecallExplanation) explainFacts(fused, byWords, byMeaning []*models.AgentFact, paths map[string]string) {
+// explainFacts records every fact the lists found, once the facts' pages
+// are known: the fused ones first, then the rest.
+func (self *RecallExplanation) explainFacts(paths map[string]string) {
 	if self == nil {
 		return
 	}
-	rankOf := func(facts []*models.AgentFact) map[string]int {
-		ranks := make(map[string]int, len(facts))
-		for index, fact := range facts {
-			if _, seen := ranks[fact.ID]; !seen {
-				ranks[fact.ID] = index + 1
-			}
+	explained := map[string]*RecallFactExplanation{}
+	add := func(fact *models.AgentFact, fusedRank int) {
+		if explained[fact.ID] != nil {
+			return
 		}
-		return ranks
+		decision := RecallDecisionFactLimit
+		if fusedRank == 0 {
+			decision = RecallDecisionOutranked
+		}
+		explainedFact := &RecallFactExplanation{Reference: fact.Reference(paths[fact.NodeID]), FusedRank: fusedRank,
+			Ranks: []*RecallRank{}, RecallDecision: decision}
+		explained[fact.ID] = explainedFact
+		self.Facts = append(self.Facts, explainedFact)
 	}
-	wordsRanks, meaningRanks := rankOf(byWords), rankOf(byMeaning)
-	for index, fact := range fused {
-		self.Facts = append(self.Facts, &RecallFactExplanation{
-			Reference: fact.Reference(paths[fact.NodeID]), FusedRank: index + 1,
-			WordsRank: wordsRanks[fact.ID], MeaningRank: meaningRanks[fact.ID], RecallDecision: RecallDecisionFactLimit,
-		})
+	for index, fact := range self.fusedFacts {
+		add(fact, index+1)
+	}
+	for _, list := range self.factLists {
+		for _, fact := range list.facts {
+			add(fact, 0)
+		}
+	}
+	for _, list := range self.factLists {
+		for index, fact := range list.facts {
+			explained[fact.ID].Ranks = append(explained[fact.ID].Ranks, &RecallRank{QueryID: list.queryId, SearchName: list.searchName, Rank: index + 1})
+		}
 	}
 }
 
@@ -218,10 +317,16 @@ func (self *RecallExplanation) fact(reference string) *RecallFactExplanation {
 
 // ExplainRecall answers what recall would carry for a question, as
 // RecallForQuestion does, and why: the explanation of every page and fact
-// the searches found. Nothing is marked as used.
-func (self *Agent) ExplainRecall(ctx context.Context, found *models.Agent, owner *models.User, question string) ([]*RecalledPage, *RecallExplanation, error) {
-	explanation := &RecallExplanation{Searches: []*RecallSearch{}, Pages: []*RecallPageExplanation{}, Facts: []*RecallFactExplanation{}}
-	pages, err := self.recallForQuestion(ctx, found, owner, question, explanation)
+// the searches found. A plan given is followed as a live turn follows the
+// depth judgement's, without asking any model for one; nil is basic
+// recall. Nothing is marked as used.
+func (self *Agent) ExplainRecall(ctx context.Context, found *models.Agent, owner *models.User, question string, plan *RetrievalPlan) ([]*RecalledPage, *RecallExplanation, error) {
+	explanation := &RecallExplanation{RetrievalMode: RetrievalModeBasic, Queries: []*RecallQuery{}, Searches: []*RecallSearch{},
+		Pages: []*RecallPageExplanation{}, Facts: []*RecallFactExplanation{}}
+	if !plan.isEmpty() {
+		explanation.RetrievalMode, explanation.Plan = RetrievalModePlanned, plan
+	}
+	pages, err := self.recallForQuestion(ctx, found, owner, question, plan, explanation)
 	if err != nil {
 		return nil, nil, err
 	}

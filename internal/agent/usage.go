@@ -52,7 +52,13 @@ func RecordUsageIn(tx db.Transaction, agentId, mailboxId, model, kind string, us
 // judgements that shaped it. They run on another model than the turn, so
 // the cost is worked out here, at that model's price.
 func (self *AskRun) countJudgement(model string, usage llm.Usage) {
-	RecordUsage(self.agent.settings.Database, self.settings.Agent.ID, "", model, "ask", usage)
+	// A judgement of a question on its own, with no conversation, is an
+	// evaluation's (see JudgeRetrievalPlan), and priced as one.
+	kind := "ask"
+	if self.settings.Conversation == nil {
+		kind = "evaluate"
+	}
+	RecordUsage(self.agent.settings.Database, self.settings.Agent.ID, "", model, kind, usage)
 	cost := self.agent.settings.Configuration().Agent.CostOf(model, usage.PromptTokens, usage.CompletionTokens, usage.CacheReadTokens, usage.CacheWriteTokens)
 	self.mutex.Lock()
 	defer self.mutex.Unlock()

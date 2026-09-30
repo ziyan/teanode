@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -75,7 +76,7 @@ func (self *AskRun) chooseDepth() {
 	depth, reason := judgement.depth, judgement.reason
 	settings.Effort, settings.Research = deepenedTurn(depth)
 	if depth != depthAnswer {
-		self.plannedSearches, self.isBroadQuestion = judgement.searches, judgement.isBroad
+		self.plan = &RetrievalPlan{Searches: judgement.searches, IsBroad: judgement.isBroad}
 	}
 	log.Infof("the agent of %q judged a message worth %s: %s", settings.Owner.Username, depth, reason)
 	if depth != depthDig {
@@ -112,6 +113,11 @@ func (self *AskRun) judgeDepth() depthJudgement {
 	settings := self.settings
 	var recent []string
 	_ = self.agent.settings.Database.TransactionContext(self.ctx, func(tx db.Transaction) error {
+		// A question judged on its own, for an evaluation, has no
+		// conversation before it.
+		if settings.Conversation == nil {
+			return nil
+		}
 		stored, err := tx.ListAgentMessages(settings.Conversation.ID, nil)
 		if err != nil {
 			return err
@@ -217,4 +223,39 @@ func (self *AskRun) sayDepth(tx db.Transaction) error {
 	}
 	self.sayNote(models.NoteDepth, self.depthReason)
 	return nil
+}
+
+// JudgedPlan is what the depth judgement said of a question judged on its
+// own: how deep it deserves, why, and the retrieval plan a live turn would
+// follow for it.
+type JudgedPlan struct {
+	Depth  string
+	Reason string
+	Plan   *RetrievalPlan
+
+	// Cost is what the judgement cost, in the configured currency.
+	Cost float64
+}
+
+// JudgeRetrievalPlan asks the depth judgement about a question on its own,
+// as a turn's first message, for an evaluation to replay the plan a live
+// turn would follow. It is one call to the fast model, made only when
+// asked for and priced like any other; a replay given the plan asks
+// nothing.
+func (self *Agent) JudgeRetrievalPlan(ctx context.Context, found *models.Agent, owner *models.User, question string) (*JudgedPlan, error) {
+	if self == nil || found == nil || owner == nil {
+		return nil, ErrUnavailable
+	}
+	question = strings.TrimSpace(question)
+	if question == "" {
+		return nil, fmt.Errorf("a question is needed")
+	}
+	run := &AskRun{agent: self, settings: &AskSettings{Agent: found, Owner: owner, Message: question}, promptMemories: map[string]bool{}}
+	run.ctx = ctx
+	judgement := run.judgeDepth()
+	judged := &JudgedPlan{Depth: judgement.depth, Reason: judgement.reason, Plan: &RetrievalPlan{Searches: []string{}}, Cost: run.judgementUsage.Cost}
+	if judgement.depth != depthAnswer {
+		judged.Plan = &RetrievalPlan{Searches: append([]string{}, judgement.searches...), IsBroad: judgement.isBroad}
+	}
+	return judged, nil
 }

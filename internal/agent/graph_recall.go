@@ -57,8 +57,7 @@ func (self *AskRun) recallForTurn(ctx context.Context) {
 		words += "\n" + reference.Subject
 	}
 
-	nodes, facts, sections := self.searchGraph(ctx, words, recallCandidates)
-	nodes, facts, sections = self.followRetrievalPlan(ctx, nodes, facts, sections)
+	nodes, facts, sections := self.retrieveFromGraph(ctx, words, self.plan)
 	self.writeRecalled(ctx, nodes, facts, sections)
 	self.recallLessons(ctx, words)
 	self.recallFromKnowledge(ctx, words)
@@ -68,57 +67,95 @@ func (self *AskRun) recallForTurn(ctx context.Context) {
 // brings in, the strongest links first.
 const recallLinkedPages = 5
 
-// followRetrievalPlan applies what the depth judgement said of how to
-// search for this message, at no cost beyond the searches themselves: no
-// model is asked anything here, and the overlay's budget is the same.
+// retrieveFromGraph is the graph's part of recall, the one a live turn and
+// a replay both run: the message's own search, and then what the retrieval
+// plan adds, at no cost beyond the searches themselves. No model is asked
+// anything here and the overlay's budget is the same; a nil or empty plan
+// is basic recall, the message's search alone.
 //
 // A message that refers to things indirectly, or needs two things found,
-// gets the focused searches the judgement planned, fused with the
-// message's own, and the pages most strongly linked to the top page those
-// searches found, one hop along the graph: "who shares the car insurance" reaches the policy
-// and, from it, the people on it. A message about a whole area has the
-// pages whose overview sections it matched counted twice, since those are
-// what describe an area, and is told that a survey reads all of it. A
-// message the judgement said nothing about is searched as before.
-func (self *AskRun) followRetrievalPlan(ctx context.Context, nodes []*models.AgentNode, facts []*models.AgentFact, sections map[string]string) ([]*models.AgentNode, []*models.AgentFact, map[string]string) {
-	if len(self.plannedSearches) == 0 && !self.isBroadQuestion {
-		return nodes, facts, sections
+// gets the focused searches the plan names, fused with the message's own,
+// and the pages most strongly linked to the top page those searches found,
+// one hop along the graph: "who shares the car insurance" reaches the
+// policy and, from it, the people on it. A message about a whole area has
+// the pages whose overview sections it matched counted twice, since those
+// are what describe an area, and is told that a survey reads all of it.
+//
+// Where the run records an explanation, every query and every list it
+// produced is recorded here, once, after the fusion: what each query found,
+// where each page and fact stood in each list, and where the fusion put it.
+func (self *AskRun) retrieveFromGraph(ctx context.Context, words string, plan *RetrievalPlan) ([]*models.AgentNode, []*models.AgentFact, map[string]string) {
+	explanation := self.explanation
+	message := self.searchGraph(ctx, words, recallCandidates)
+	pageLists, factLists := message.lists(RecallQueryMessage)
+	explanation.explainQuery(&RecallQuery{QueryID: RecallQueryMessage, QueryKind: RecallQueryMessage, QueryText: words}, pageLists, factLists)
+	if plan.isEmpty() {
+		explanation.explainPages(message.nodes, pageLists)
+		if explanation != nil {
+			explanation.fusedFacts = message.facts
+		}
+		return message.nodes, message.facts, message.sections
 	}
-	nodeLists := [][]*models.AgentNode{nodes}
-	factLists := [][]*models.AgentFact{facts}
+
+	sections := message.sections
+	nodeLists := [][]*models.AgentNode{message.nodes}
+	factFusion := [][]*models.AgentFact{message.facts}
+	allPageLists := append([]rankedPageList{}, pageLists...)
 	// The hop starts from what the planned searches found first: the
 	// message's own words are the vague ones, and their top page may be
 	// anything.
 	var hopFrom *models.AgentNode
-	for _, search := range self.plannedSearches {
-		plannedNodes, plannedFacts, plannedSections := self.searchGraph(ctx, search, recallCandidates)
-		if hopFrom == nil && len(plannedNodes) > 0 {
-			hopFrom = plannedNodes[0]
+	for index, search := range plan.Searches {
+		queryId := RecallQueryPlanned + "-" + strconv.Itoa(index+1)
+		planned := self.searchGraph(ctx, search, recallCandidates)
+		if hopFrom == nil && len(planned.nodes) > 0 {
+			hopFrom = planned.nodes[0]
 		}
-		nodeLists = append(nodeLists, plannedNodes)
-		factLists = append(factLists, plannedFacts)
-		for nodeId, sectionId := range plannedSections {
+		nodeLists = append(nodeLists, planned.nodes)
+		factFusion = append(factFusion, planned.facts)
+		for nodeId, sectionId := range planned.sections {
 			if _, isMatched := sections[nodeId]; !isMatched {
 				sections[nodeId] = sectionId
 			}
 		}
+		plannedPageLists, plannedFactLists := planned.lists(queryId)
+		allPageLists = append(allPageLists, plannedPageLists...)
+		explanation.explainQuery(&RecallQuery{QueryID: queryId, QueryKind: RecallQueryPlanned, QueryText: search}, plannedPageLists, plannedFactLists)
 	}
 	if hopFrom != nil {
-		nodeLists = append(nodeLists, self.linkedPages(ctx, hopFrom))
+		linked := self.linkedPages(ctx, hopFrom)
+		nodeLists = append(nodeLists, linked)
+		hopList := []rankedPageList{{queryId: RecallQueryHop, searchName: "pages linked to " + hopFrom.Path, nodes: linked}}
+		allPageLists = append(allPageLists, hopList...)
+		explanation.explainQuery(&RecallQuery{QueryID: RecallQueryHop, QueryKind: RecallQueryHop, QueryText: hopFrom.Path}, hopList, nil)
 	}
-	if self.isBroadQuestion {
+	if plan.IsBroad {
 		var described []*models.AgentNode
-		for _, node := range nodes {
+		for _, node := range message.nodes {
 			if _, isMatched := sections[node.ID]; isMatched {
 				described = append(described, node)
 			}
 		}
 		nodeLists = append(nodeLists, described)
-		self.Recall("This message asks about a whole area, and what is recalled here is a few pages of it. " +
-			"The survey tool asks every overview in the area for its part of the answer and combines them.")
+		broadList := []rankedPageList{{queryId: RecallQueryBroad, searchName: "pages described by a matched overview section", nodes: described}}
+		allPageLists = append(allPageLists, broadList...)
+		explanation.explainQuery(&RecallQuery{QueryID: RecallQueryBroad, QueryKind: RecallQueryBroad, QueryText: words}, broadList, nil)
+		self.Recall(broadAreaNote)
+		if explanation != nil {
+			explanation.IsBroadNoteCarried = true
+		}
 	}
-	return fuseNodes(recallCandidates, nodeLists...), fuseFacts(recallCandidates, factLists...), sections
+	nodes, facts := fuseNodes(recallCandidates, nodeLists...), fuseFacts(recallCandidates, factFusion...)
+	explanation.explainPages(nodes, allPageLists)
+	if explanation != nil {
+		explanation.fusedFacts = facts
+	}
+	return nodes, facts, sections
 }
+
+// broadAreaNote is what a turn is told of a question about a whole area.
+const broadAreaNote = "This message asks about a whole area, and what is recalled here is a few pages of it. " +
+	"The survey tool asks every overview in the area for its part of the answer and combines them."
 
 // linkedPages is the pages most strongly linked to a page, strongest
 // first, that are not dormant.
@@ -224,18 +261,40 @@ func (self *AskRun) recallFromKnowledge(ctx context.Context, words string) {
 	}
 }
 
-// searchGraph is the fused search the turn and the tool both use. Besides
-// the pages and facts it says which overview section of a page the
-// question's meaning matched best, by page id: a page found by that
-// section is ranked as one found by meaning, and recall carries that
-// section of it.
-func (self *AskRun) searchGraph(ctx context.Context, words string, limit int) ([]*models.AgentNode, []*models.AgentFact, map[string]string) {
+// graphSearch is what one search of the graph found: the pages and facts
+// fused, the overview section each page matched best by page id, and the
+// lists they were fused from.
+type graphSearch struct {
+	nodes    []*models.AgentNode
+	facts    []*models.AgentFact
+	sections map[string]string
+
+	wordNodes, meaningNodes, sectionNodes []*models.AgentNode
+	wordFacts, meaningFacts               []*models.AgentFact
+}
+
+// lists is the search's lists as an explanation records them.
+func (self *graphSearch) lists(queryId string) ([]rankedPageList, []rankedFactList) {
+	return []rankedPageList{
+			{queryId: queryId, searchName: "pages by words", nodes: self.wordNodes},
+			{queryId: queryId, searchName: "pages by meaning", nodes: self.meaningNodes},
+			{queryId: queryId, searchName: "pages by overview section", nodes: self.sectionNodes},
+		}, []rankedFactList{
+			{queryId: queryId, searchName: "facts by words", facts: self.wordFacts},
+			{queryId: queryId, searchName: "facts by meaning", facts: self.meaningFacts},
+		}
+}
+
+// searchGraph is one fused search of the graph by some words. Besides the
+// pages and facts it says which overview section of a page the words'
+// meaning matched best, by page id: a page found by that section is ranked
+// as one found by meaning, and recall carries that section of it.
+func (self *AskRun) searchGraph(ctx context.Context, words string, limit int) *graphSearch {
 	agentId := self.settings.Agent.ID
 
-	var wordNodes []*models.AgentNode
-	var wordFacts []*models.AgentFact
+	found := &graphSearch{}
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		wordNodes, wordFacts, err = tx.SearchAgentGraph(agentId, words, limit)
+		found.wordNodes, found.wordFacts, err = tx.SearchAgentGraph(agentId, words, limit)
 		return err
 	}); err != nil {
 		log.Warningf("cannot search the graph of %q: %s", self.settings.Owner.Username, err)
@@ -246,23 +305,15 @@ func (self *AskRun) searchGraph(ctx context.Context, words string, limit int) ([
 	// canAnswerFromMemory. The question is embedded once a turn and put
 	// to both stores.
 	question := self.meaningOfQuestion(ctx, "recall", words)
-	meaningNodes, meaningFacts, err := self.agent.nearestInGraphTo(ctx, self.settings.Agent.ID, question, limit)
+	var err error
+	found.meaningNodes, found.meaningFacts, err = self.agent.nearestInGraphTo(ctx, self.settings.Agent.ID, question, limit)
 	if err != nil {
 		log.Warningf("cannot rank the graph of %q by meaning: %s", self.settings.Owner.Username, err)
 	}
-	sectionNodes, sections := self.pagesOfNearestSections(ctx, question, limit)
-
-	nodes, facts := fuseNodes(limit, meaningNodes, wordNodes, sectionNodes), fuseFacts(limit, meaningFacts, wordFacts)
-	if explanation := self.explanation; explanation != nil {
-		explanation.explainSearch("pages by words", len(wordNodes))
-		explanation.explainSearch("pages by meaning", len(meaningNodes))
-		explanation.explainSearch("pages by overview section", len(sectionNodes))
-		explanation.explainSearch("facts by words", len(wordFacts))
-		explanation.explainSearch("facts by meaning", len(meaningFacts))
-		explanation.explainPages(nodes, wordNodes, meaningNodes, sectionNodes)
-		explanation.factsByWords, explanation.factsByMeaning = wordFacts, meaningFacts
-	}
-	return nodes, facts, sections
+	found.sectionNodes, found.sections = self.pagesOfNearestSections(ctx, question, limit)
+	found.nodes = fuseNodes(limit, found.meaningNodes, found.wordNodes, found.sectionNodes)
+	found.facts = fuseFacts(limit, found.meaningFacts, found.wordFacts)
+	return found
 }
 
 // pagesOfNearestSections is the pages whose overview sections are nearest
@@ -381,7 +432,7 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 	}
 	explanation := self.explanation
 	if explanation != nil {
-		explanation.explainFacts(facts, explanation.factsByWords, explanation.factsByMeaning, paths)
+		explanation.explainFacts(paths)
 		explanation.TokenBudget = recallTokens
 	}
 	// Which of the search's facts sit on which page, in the order the
@@ -729,12 +780,19 @@ type RecalledPage struct {
 // changed importance and decay as it ran would be measuring its own last
 // pass.
 func (self *Agent) RecallForQuestion(ctx context.Context, found *models.Agent, owner *models.User, question string) ([]*RecalledPage, error) {
-	return self.recallForQuestion(ctx, found, owner, question, nil)
+	return self.recallForQuestion(ctx, found, owner, question, nil, nil)
+}
+
+// RecallForQuestionPlanned is RecallForQuestion following a retrieval plan,
+// as a live turn follows its depth judgement's, without asking any model
+// for one.
+func (self *Agent) RecallForQuestionPlanned(ctx context.Context, found *models.Agent, owner *models.User, question string, plan *RetrievalPlan) ([]*RecalledPage, error) {
+	return self.recallForQuestion(ctx, found, owner, question, plan, nil)
 }
 
 // recallForQuestion is RecallForQuestion, recording why into the
 // explanation where one is given.
-func (self *Agent) recallForQuestion(ctx context.Context, found *models.Agent, owner *models.User, question string, explanation *RecallExplanation) ([]*RecalledPage, error) {
+func (self *Agent) recallForQuestion(ctx context.Context, found *models.Agent, owner *models.User, question string, plan *RetrievalPlan, explanation *RecallExplanation) ([]*RecalledPage, error) {
 	if self == nil || found == nil || owner == nil {
 		return nil, ErrUnavailable
 	}
@@ -763,7 +821,7 @@ func (self *Agent) recallForQuestion(ctx context.Context, found *models.Agent, o
 	// It costs what the index costs, which is a read of the top pages, and
 	// it is the price of the number meaning what it says.
 	_ = run.carryIndex(ctx, indexTokens)
-	nodes, facts, sections := run.searchGraph(ctx, words, recallCandidates)
+	nodes, facts, sections := run.retrieveFromGraph(ctx, words, plan)
 	var blocks []*recalledBlock
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		blocks, err = run.chooseRecalled(tx, nodes, facts, sections)
