@@ -90,6 +90,45 @@ type FinanceTransactionPage struct {
 	NextCursor          string                `json:"nextCursor,omitempty"`
 }
 
+// FinanceSecurity is something an investment account can hold, as the
+// provider that reported it describes it.
+type FinanceSecurity struct {
+	ID           string `json:"id"`
+	TickerSymbol string `json:"tickerSymbol,omitempty"`
+	SecurityName string `json:"securityName"`
+	SecurityKind string `json:"securityKind"`
+	CurrencyCode string `json:"currencyCode,omitempty"`
+	ClosePrice   string `json:"closePrice,omitempty"`
+	ClosePriceOn string `json:"closePriceOn,omitempty"`
+}
+
+// FinanceTrade is one trade in an investment account: a buy, a sell, a
+// cancelled trade or a security moved in or out. Description is written by
+// the institution.
+type FinanceTrade struct {
+	ID                string           `json:"id"`
+	FinanceAccountID  string           `json:"financeAccountId"`
+	FinanceSecurityID string           `json:"financeSecurityId,omitempty"`
+	FinanceSecurity   *FinanceSecurity `json:"financeSecurity,omitempty"`
+	ProviderTradeID   string           `json:"providerTradeId"`
+	TradedOn          string           `json:"tradedOn"`
+	TradeKind         string           `json:"tradeKind"`
+	TradeSubkind      string           `json:"tradeSubkind,omitempty"`
+	TradedQuantity    string           `json:"tradedQuantity,omitempty"`
+	UnitPrice         string           `json:"unitPrice,omitempty"`
+	TradeAmount       string           `json:"tradeAmount"`
+	FeeAmount         string           `json:"feeAmount,omitempty"`
+	CurrencyCode      string           `json:"currencyCode"`
+	Description       string           `json:"description"`
+}
+
+// FinanceTradePage is one page of trades and the cursor for the next,
+// empty on the last.
+type FinanceTradePage struct {
+	FinanceTrades []*FinanceTrade `json:"financeTrades"`
+	NextCursor    string          `json:"nextCursor,omitempty"`
+}
+
 // FinanceSpendingSummaryRow is one group's money out and money in, in one
 // currency.
 type FinanceSpendingSummaryRow struct {
@@ -187,21 +226,26 @@ type AssetValuation struct {
 	EstimateHigh    string   `json:"estimateHigh,omitempty"`
 	ValuationNote   string   `json:"valuationNote,omitempty"`
 	EvidenceURLs    []string `json:"evidenceUrls"`
+	HeldQuantity    string   `json:"heldQuantity,omitempty"`
+	UnitPrice       string   `json:"unitPrice,omitempty"`
+	CostBasis       string   `json:"costBasis,omitempty"`
 }
 
 // Asset is anything that counts toward net worth, what is owed included.
 type Asset struct {
-	ID                  string          `json:"id"`
-	AssetName           string          `json:"assetName"`
-	AssetKind           string          `json:"assetKind"`
-	IsLiability         bool            `json:"isLiability"`
-	CurrencyCode        string          `json:"currencyCode"`
-	FinanceAccountID    string          `json:"financeAccountId,omitempty"`
-	ValuationSource     string          `json:"valuationSource"`
-	EstimateDescription string          `json:"estimateDescription,omitempty"`
-	IsEstimateAllowed   bool            `json:"isEstimateAllowed"`
-	ClosedOn            string          `json:"closedOn,omitempty"`
-	LatestValuation     *AssetValuation `json:"latestValuation,omitempty"`
+	ID                  string           `json:"id"`
+	AssetName           string           `json:"assetName"`
+	AssetKind           string           `json:"assetKind"`
+	IsLiability         bool             `json:"isLiability"`
+	CurrencyCode        string           `json:"currencyCode"`
+	FinanceAccountID    string           `json:"financeAccountId,omitempty"`
+	FinanceSecurityID   string           `json:"financeSecurityId,omitempty"`
+	FinanceSecurity     *FinanceSecurity `json:"financeSecurity,omitempty"`
+	ValuationSource     string           `json:"valuationSource"`
+	EstimateDescription string           `json:"estimateDescription,omitempty"`
+	IsEstimateAllowed   bool             `json:"isEstimateAllowed"`
+	ClosedOn            string           `json:"closedOn,omitempty"`
+	LatestValuation     *AssetValuation  `json:"latestValuation,omitempty"`
 }
 
 // AssetHistory is one asset and its valuations, newest day first.
@@ -357,9 +401,13 @@ const (
 
 	currencyPairRateFields = `{ fromCurrencyCode toCurrencyCode rate rateOn rateSource }`
 
-	assetValuationFields = `{ id assetId valuedOn value currencyCode valuationSource estimateLow estimateHigh valuationNote evidenceUrls }`
+	assetValuationFields = `{ id assetId valuedOn value currencyCode valuationSource estimateLow estimateHigh valuationNote evidenceUrls heldQuantity unitPrice costBasis }`
 
-	assetFields = `{ id assetName assetKind isLiability currencyCode financeAccountId valuationSource estimateDescription isEstimateAllowed closedOn latestValuation ` + assetValuationFields + ` }`
+	financeSecurityFields = `{ id tickerSymbol securityName securityKind currencyCode closePrice closePriceOn }`
+
+	assetFields = `{ id assetName assetKind isLiability currencyCode financeAccountId financeSecurityId financeSecurity ` + financeSecurityFields + ` valuationSource estimateDescription isEstimateAllowed closedOn latestValuation ` + assetValuationFields + ` }`
+
+	financeTradeFields = `{ id financeAccountId financeSecurityId financeSecurity ` + financeSecurityFields + ` providerTradeId tradedOn tradeKind tradeSubkind tradedQuantity unitPrice tradeAmount feeAmount currencyCode description }`
 
 	spendingCategoryFields = `{ id spendingCategoryName parentSpendingCategoryId isIncome isHidden }`
 
@@ -381,6 +429,12 @@ const (
 	DocumentFinanceTransactions = `query ($from: String, $to: String, $financeAccountId: String, $text: String, $minimumAmount: String, $maximumAmount: String, $providerCategory: String, $spendingCategoryId: String, $isUncategorized: Boolean, $limit: Int, $after: String) {
   FinanceTransactions(from: $from, to: $to, financeAccountId: $financeAccountId, text: $text, minimumAmount: $minimumAmount, maximumAmount: $maximumAmount, providerCategory: $providerCategory, spendingCategoryId: $spendingCategoryId, isUncategorized: $isUncategorized, limit: $limit, after: $after) {
     financeTransactions ` + financeTransactionFields + ` nextCursor
+  }
+}`
+
+	DocumentFinanceTrades = `query ($from: String, $to: String, $financeAccountId: String, $financeSecurityId: String, $limit: Int, $after: String) {
+  FinanceTrades(from: $from, to: $to, financeAccountId: $financeAccountId, financeSecurityId: $financeSecurityId, limit: $limit, after: $after) {
+    financeTrades ` + financeTradeFields + ` nextCursor
   }
 }`
 
@@ -538,6 +592,7 @@ const (
 var FinanceDocuments = map[string]string{
 	"FinanceProviders": DocumentFinanceProviders, "FinanceSources": DocumentFinanceSources,
 	"FinanceAccounts": DocumentFinanceAccounts, "FinanceTransactions": DocumentFinanceTransactions,
+	"FinanceTrades":          DocumentFinanceTrades,
 	"FinanceSpendingSummary": DocumentFinanceSpendingSummary, "ExchangeRate": DocumentExchangeRate,
 	"ConvertCurrency": DocumentConvertCurrency, "NetWorth": DocumentNetWorth, "Assets": DocumentAssets,
 	"AssetHistory": DocumentAssetHistory, "SpendingCategories": DocumentSpendingCategories,

@@ -719,7 +719,7 @@ func noteAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 	if kind == "" {
 		kind = models.FactPlain
 	}
-	if !models.IsAgentFactKind(kind) || kind.FromTheNight() {
+	if !models.IsAgentFactKind(kind) || kind.FromItsOwnReasoning() {
 		return nil, fmt.Errorf("%q is not a kind of fact; use one of %s", arguments.FactKind, joinKinds())
 	}
 	happened, err := whenItWasTrue(run, arguments.Happened)
@@ -781,7 +781,7 @@ func editFactAction(ctx context.Context, run tools.Run, arguments *memoryArgumen
 	// decision made in June into an undated fact every time a word in
 	// it was fixed.
 	kind := models.AgentFactKind(strings.ToLower(strings.TrimSpace(arguments.FactKind)))
-	if kind != "" && (!models.IsAgentFactKind(kind) || kind.FromTheNight()) {
+	if kind != "" && (!models.IsAgentFactKind(kind) || kind.FromItsOwnReasoning()) {
 		return nil, fmt.Errorf("%q is not a kind of fact; use one of %s", arguments.FactKind, joinKinds())
 	}
 	var happened *time.Time

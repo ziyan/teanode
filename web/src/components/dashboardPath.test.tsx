@@ -29,6 +29,8 @@ it('shows only the parts of the dashboard the agent may take the person to', () 
     '/server/about',
     '/settingsx',
     '/finance-link',
+    '/finance/link',
+    '/finance/link/',
     '/settings/../server',
     '/mailbox?search=x',
     '/settings/agent/a b',

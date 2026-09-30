@@ -20,10 +20,21 @@ const (
 	SpendingCategoryHealth            = "health"
 	SpendingCategoryEntertainment     = "entertainment"
 	SpendingCategorySubscriptions     = "subscriptions"
+	SpendingCategoryEducation         = "education"
+	SpendingCategoryChildren          = "children"
+	SpendingCategoryBusinessServices  = "business services"
+	SpendingCategoryTaxes             = "taxes"
+	SpendingCategoryLoans             = "loans"
 	SpendingCategoryFees              = "fees"
 	SpendingCategoryGiftsAndDonations = "gifts and donations"
 	SpendingCategoryOther             = "other"
 )
+
+// ProviderCategoryMappingVersion names the mapping below. Raised whenever
+// the mapping changes, so a sync judges again the finance transactions the
+// earlier mapping categorized: version 2 added education, children,
+// business services, taxes and loans, which version 1 put in other.
+const ProviderCategoryMappingVersion = 2
 
 // DefaultSpendingCategoryNames are the default spending categories, in the
 // order a person sees them.
@@ -39,6 +50,11 @@ var DefaultSpendingCategoryNames = []string{
 	SpendingCategoryHealth,
 	SpendingCategoryEntertainment,
 	SpendingCategorySubscriptions,
+	SpendingCategoryEducation,
+	SpendingCategoryChildren,
+	SpendingCategoryBusinessServices,
+	SpendingCategoryTaxes,
+	SpendingCategoryLoans,
 	SpendingCategoryFees,
 	SpendingCategoryGiftsAndDonations,
 	SpendingCategoryOther,
@@ -78,15 +94,24 @@ var plaidUnmappedDetailed = map[string]bool{
 // for good, as far as a budget can see, so it is spending in other rather
 // than a transfer.
 var plaidSpendingCategoryByDetailed = map[string]string{
-	"FOOD_AND_DRINK_GROCERIES":            SpendingCategoryGroceries,
-	"RENT_AND_UTILITIES_RENT":             SpendingCategoryHousing,
-	"GOVERNMENT_AND_NON_PROFIT_DONATIONS": SpendingCategoryGiftsAndDonations,
-	"LOAN_PAYMENTS_MORTGAGE_PAYMENT":      SpendingCategoryHousing,
-	"TRANSFER_OUT_WITHDRAWAL":             SpendingCategoryOther,
+	"FOOD_AND_DRINK_GROCERIES":                           SpendingCategoryGroceries,
+	"RENT_AND_UTILITIES_RENT":                            SpendingCategoryHousing,
+	"GOVERNMENT_AND_NON_PROFIT_DONATIONS":                SpendingCategoryGiftsAndDonations,
+	"GOVERNMENT_AND_NON_PROFIT_TAX_PAYMENT":              SpendingCategoryTaxes,
+	"LOAN_PAYMENTS_MORTGAGE_PAYMENT":                     SpendingCategoryHousing,
+	"TRANSFER_OUT_WITHDRAWAL":                            SpendingCategoryOther,
+	"GENERAL_SERVICES_EDUCATION":                         SpendingCategoryEducation,
+	"GENERAL_SERVICES_CHILDCARE":                         SpendingCategoryChildren,
+	"GENERAL_SERVICES_ACCOUNTING_AND_FINANCIAL_PLANNING": SpendingCategoryBusinessServices,
+	"GENERAL_SERVICES_CONSULTING_AND_LEGAL":              SpendingCategoryBusinessServices,
+	"GENERAL_SERVICES_POSTAGE_AND_SHIPPING":              SpendingCategoryBusinessServices,
+	"GENERAL_SERVICES_STORAGE":                           SpendingCategoryBusinessServices,
 }
 
 var plaidSpendingCategoryByPrimary = map[string]string{
-	"LOAN_PAYMENTS":       SpendingCategoryOther,
+	// Car, student and personal loans; a mortgage is housing and a card
+	// payment a transfer, both singled out above.
+	"LOAN_PAYMENTS":       SpendingCategoryLoans,
 	"INCOME":              SpendingCategoryIncome,
 	"BANK_FEES":           SpendingCategoryFees,
 	"ENTERTAINMENT":       SpendingCategoryEntertainment,
@@ -116,25 +141,39 @@ type merchantCodeRange struct {
 // they settle unambiguously. Checked in order, so a single code listed
 // before a range it falls in wins.
 var merchantCodeRanges = []merchantCodeRange{
-	{5411, 5411, SpendingCategoryGroceries}, // grocery stores, supermarkets
-	{5422, 5422, SpendingCategoryGroceries}, // meat provisioners
-	{5441, 5441, SpendingCategoryGroceries}, // candy and confectionery
-	{5451, 5451, SpendingCategoryGroceries}, // dairy
-	{5462, 5462, SpendingCategoryGroceries}, // bakeries
-	{5499, 5499, SpendingCategoryGroceries}, // convenience and specialty food
-	{5812, 5814, SpendingCategoryDining},    // restaurants, bars, fast food
-	{3000, 3999, SpendingCategoryTravel},    // airlines, car rental, lodging by brand
-	{4511, 4511, SpendingCategoryTravel},    // airlines
-	{7011, 7011, SpendingCategoryTravel},    // lodging
-	{4722, 4722, SpendingCategoryTravel},    // travel agencies
-	{4111, 4111, SpendingCategoryTransport}, // commuter transport
-	{4121, 4121, SpendingCategoryTransport}, // taxis and ride hailing
-	{4131, 4131, SpendingCategoryTransport}, // bus lines
-	{4789, 4789, SpendingCategoryTransport}, // tolls, other transportation
-	{5541, 5542, SpendingCategoryTransport}, // fuel
-	{4900, 4900, SpendingCategoryUtilities}, // electric, gas, water
-	{5912, 5912, SpendingCategoryHealth},    // pharmacies
-	{8011, 8099, SpendingCategoryHealth},    // doctors, dentists, hospitals
+	{9311, 9311, SpendingCategoryTaxes},            // tax payments
+	{5641, 5641, SpendingCategoryChildren},         // children's and infants' wear
+	{8351, 8351, SpendingCategoryChildren},         // child care services
+	{8211, 8211, SpendingCategoryEducation},        // schools
+	{8220, 8220, SpendingCategoryEducation},        // colleges and universities
+	{8241, 8299, SpendingCategoryEducation},        // correspondence, trade and other schools
+	{7311, 7311, SpendingCategoryBusinessServices}, // advertising
+	{7333, 7339, SpendingCategoryBusinessServices}, // printing, copying, secretarial
+	{7361, 7361, SpendingCategoryBusinessServices}, // employment agencies
+	{7392, 7392, SpendingCategoryBusinessServices}, // consulting and public relations
+	{7399, 7399, SpendingCategoryBusinessServices}, // business services
+	{8111, 8111, SpendingCategoryBusinessServices}, // legal services
+	{8931, 8931, SpendingCategoryBusinessServices}, // accounting and bookkeeping
+	{4215, 4215, SpendingCategoryBusinessServices}, // courier services
+	{5411, 5411, SpendingCategoryGroceries},        // grocery stores, supermarkets
+	{5422, 5422, SpendingCategoryGroceries},        // meat provisioners
+	{5441, 5441, SpendingCategoryGroceries},        // candy and confectionery
+	{5451, 5451, SpendingCategoryGroceries},        // dairy
+	{5462, 5462, SpendingCategoryGroceries},        // bakeries
+	{5499, 5499, SpendingCategoryGroceries},        // convenience and specialty food
+	{5812, 5814, SpendingCategoryDining},           // restaurants, bars, fast food
+	{3000, 3999, SpendingCategoryTravel},           // airlines, car rental, lodging by brand
+	{4511, 4511, SpendingCategoryTravel},           // airlines
+	{7011, 7011, SpendingCategoryTravel},           // lodging
+	{4722, 4722, SpendingCategoryTravel},           // travel agencies
+	{4111, 4111, SpendingCategoryTransport},        // commuter transport
+	{4121, 4121, SpendingCategoryTransport},        // taxis and ride hailing
+	{4131, 4131, SpendingCategoryTransport},        // bus lines
+	{4789, 4789, SpendingCategoryTransport},        // tolls, other transportation
+	{5541, 5542, SpendingCategoryTransport},        // fuel
+	{4900, 4900, SpendingCategoryUtilities},        // electric, gas, water
+	{5912, 5912, SpendingCategoryHealth},           // pharmacies
+	{8011, 8099, SpendingCategoryHealth},           // doctors, dentists, hospitals
 	{4899, 4899, SpendingCategorySubscriptions},
 	{5815, 5818, SpendingCategorySubscriptions}, // digital goods and media
 	{7832, 7832, SpendingCategoryEntertainment}, // cinemas

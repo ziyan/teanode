@@ -21,14 +21,17 @@ const FinanceCredentialSecretKey = "credential"
 // for the person to sign in again, while which the sync does not call the
 // provider; whether the provider refused the credential itself, after
 // which the sync never calls the provider again, since only deleting the
-// finance source and linking the institution again mends it; and whether
+// finance source and linking the institution again mends it; whether
 // transfers have been looked for across the source's whole history once,
-// after which each sync looks at the last week only.
+// after which each sync looks at the last week only; and the version of the
+// provider category mapping the agent's transactions were last judged by
+// (finance.ProviderCategoryMappingVersion).
 const (
-	FinanceCursorProviderCursor            = "providerCursor"
-	FinanceCursorIsSignInRequired          = "isSignInRequired"
-	FinanceCursorIsCredentialRefused       = "isCredentialRefused"
-	FinanceCursorIsTransferHistoryDetected = "isTransferHistoryDetected"
+	FinanceCursorProviderCursor                 = "providerCursor"
+	FinanceCursorIsSignInRequired               = "isSignInRequired"
+	FinanceCursorIsCredentialRefused            = "isCredentialRefused"
+	FinanceCursorIsTransferHistoryDetected      = "isTransferHistoryDetected"
+	FinanceCursorProviderCategoryMappingVersion = "providerCategoryMappingVersion"
 )
 
 // FinanceSourceSettings is what a finance source's Specification.Settings

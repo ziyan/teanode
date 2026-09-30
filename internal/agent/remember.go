@@ -218,7 +218,41 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 	if filed.Filed > 0 {
 		log.Debugf("filed %d fact(s) from conversation %s", filed.Filed, conversation.ID)
 	}
+	// The same window again, with the commands run in it, for what the work
+	// taught. Its own failure is logged and leaves what was filed above,
+	// and the mark, as they are: a lesson missed is not worth reading the
+	// window twice for.
+	if lessonCount, err := self.readLessons(ctx, run, conversation, lessonWindowOf(messages, conversation.RememberedThrough, read)); err != nil {
+		log.Warningf("cannot read lessons from conversation %s: %s", conversation.ID, err)
+	} else if lessonCount > 0 {
+		log.Debugf("filed %d lesson(s) from conversation %s", lessonCount, conversation.ID)
+	}
 	return deferTheBacklog(backlog)
+}
+
+// lessonWindowOf is every message the filing above covered, tool calls
+// and results included, which the filing left out: from just after the
+// previous mark, not from the first message worth filing, so commands run
+// before it in the window are read; and through the results answering the
+// calls of the last message read, which come after it and the next window
+// would start past.
+func lessonWindowOf(messages []*models.AgentMessage, previousMark string, last *models.AgentMessage) []*models.AgentMessage {
+	start, end := 0, -1
+	for index, message := range messages {
+		if previousMark != "" && message.ID == previousMark {
+			start = index + 1
+		}
+		if message.ID == last.ID {
+			end = index
+		}
+	}
+	if end < start {
+		return nil
+	}
+	for end+1 < len(messages) && messages[end+1].Role == string(llm.RoleTool) {
+		end++
+	}
+	return messages[start : end+1]
 }
 
 // deferTheBacklog puts the job straight back into the queue when there is

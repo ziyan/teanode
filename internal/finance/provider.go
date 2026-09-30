@@ -82,18 +82,100 @@ type Transaction struct {
 	ProviderMetadata             json.RawMessage
 }
 
+// Security kinds: what a security is, in Plaid's vocabulary written with
+// underscores. Anything unexpected is SecurityKindOther.
+const (
+	SecurityKindCash           = "cash"
+	SecurityKindCryptocurrency = "cryptocurrency"
+	SecurityKindDerivative     = "derivative"
+	SecurityKindEquity         = "equity"
+	SecurityKindETF            = "etf"
+	SecurityKindFixedIncome    = "fixed_income"
+	SecurityKindLoan           = "loan"
+	SecurityKindMutualFund     = "mutual_fund"
+	SecurityKindOther          = "other"
+)
+
+// Trade kinds: a buy or a sell, a trade the institution cancelled, and a
+// security moved into or out of the account (from another brokerage, or a
+// split or merger that changes what is held).
+const (
+	TradeKindBuy      = "buy"
+	TradeKindSell     = "sell"
+	TradeKindCancel   = "cancel"
+	TradeKindTransfer = "transfer"
+)
+
+// Security is something an investment account can hold, as the provider
+// describes it.
+type Security struct {
+	ProviderSecurityID string
+	TickerSymbol       string
+	SecurityName       string
+	SecurityKind       string
+	CurrencyCode       string
+	ClosePrice         string // decimal, "" when unknown
+	ClosePriceOn       string // "2006-01-02", "" when unknown
+	ProviderMetadata   json.RawMessage
+}
+
+// Holding is one security held in one finance account on the day of the
+// sync.
+type Holding struct {
+	ProviderAccountID  string
+	ProviderSecurityID string
+	HeldQuantity       string // decimal
+	UnitPrice          string // decimal, "" when unknown
+	HoldingValue       string // decimal: what the holding was worth
+	CostBasis          string // decimal, "" when unknown
+	CurrencyCode       string
+	ProviderMetadata   json.RawMessage
+}
+
+// Trade is one trade in an investment account: cash swapped for a security
+// or back, inside the account. It is not a finance transaction.
+type Trade struct {
+	ProviderTradeID    string
+	ProviderAccountID  string
+	ProviderSecurityID string // "" when the provider names none
+	TradedOn           string // "2006-01-02"
+	TradeKind          string // buy, sell, cancel, transfer
+	TradeSubkind       string // the provider's finer word, as it wrote it
+	TradedQuantity     string // decimal, "" when unknown
+	UnitPrice          string // decimal, "" when unknown
+	TradeAmount        string // decimal, negative is cash leaving the account
+	FeeAmount          string // decimal, "" when unknown
+	CurrencyCode       string
+	Description        string
+	ProviderMetadata   json.RawMessage
+}
+
 // SyncResult is one sync's worth of change. RemovedProviderTransactionIDs
 // are deleted. PendingReplacedFrom, when set, means every stored pending
 // transaction of these accounts posted on or after it that is not in
 // Added is gone (SimpleFIN's way of reporting removal).
+//
+// Holdings are complete for each account in HoldingsReadAccountIDs: a
+// security of one of those accounts that is not among them is no longer
+// held. An investment account not in HoldingsReadAccountIDs had its
+// holdings unread this time, so nothing about them is known.
 type SyncResult struct {
 	Accounts                      []Account
 	Added                         []Transaction // upserted by provider transaction id
 	RemovedProviderTransactionIDs []string
 	PendingReplacedFrom           *time.Time
+	Securities                    []Security
+	Holdings                      []Holding
+	HoldingsReadAccountIDs        []string
+	Trades                        []Trade // upserted by provider trade id
 	NextCursor                    string
 	InstitutionName               string
 	ProviderWarnings              []string
+
+	// IsHistoryIncomplete says the provider is still gathering the finance
+	// source's history, as it does for a while after a link, so another
+	// sync soon brings more than the next scheduled one would wait for.
+	IsHistoryIncomplete bool
 }
 
 // CredentialDescription is what a provider says about a credential a

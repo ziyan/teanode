@@ -710,7 +710,8 @@ func TestFinanceNotOfferedStillReadsWhatIsStored(test *testing.T) {
 		}
 	})
 
-	// Deleting the finance source keeps its account's asset, as a manual one.
+	// Deleting the finance source keeps its account's asset, as a manual one
+	// closed on the day before, so it no longer counts from today.
 	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
 		if _, err := fixture.resolver.DeleteAgentKnowledgeSource(ctx, DeleteAgentKnowledgeSourceArguments{SourceID: source.ID}); err != nil {
 			test.Fatalf("DeleteAgentKnowledgeSource: %s", err)
@@ -718,6 +719,10 @@ func TestFinanceNotOfferedStillReadsWhatIsStored(test *testing.T) {
 		assets, err := fixture.resolver.Assets(ctx)
 		if err != nil || len(assets) != 1 || assets[0].ValuationSource != models.ValuationSourceManual || assets[0].FinanceAccountID != "" {
 			test.Errorf("the finance account's asset is %+v %v", assets, err)
+		}
+		yesterday := time.Now().In(agentpackage.Location(fixture.owner)).AddDate(0, 0, -1).Format(time.DateOnly)
+		if len(assets) == 1 && assets[0].ClosedOn != yesterday {
+			test.Errorf("the finance account's asset closed on %q, want the day before the delete, %s", assets[0].ClosedOn, yesterday)
 		}
 		accounts, err := fixture.resolver.FinanceAccounts(ctx, FinanceAccountsArguments{})
 		if err != nil || len(accounts) != 0 {

@@ -23,9 +23,16 @@ func TestMapProviderCategory(t *testing.T) {
 		// A card payment is the one loan payment that is a transfer.
 		{"LOAN_PAYMENTS", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", "", true},
 		{"LOAN_PAYMENTS", "LOAN_PAYMENTS_MORTGAGE_PAYMENT", SpendingCategoryHousing, false},
-		{"LOAN_PAYMENTS", "LOAN_PAYMENTS_CAR_PAYMENT", SpendingCategoryOther, false},
-		{"LOAN_PAYMENTS", "LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT", SpendingCategoryOther, false},
-		{"LOAN_PAYMENTS", "", SpendingCategoryOther, false},
+		{"LOAN_PAYMENTS", "LOAN_PAYMENTS_CAR_PAYMENT", SpendingCategoryLoans, false},
+		{"LOAN_PAYMENTS", "LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT", SpendingCategoryLoans, false},
+		{"LOAN_PAYMENTS", "", SpendingCategoryLoans, false},
+		{"GENERAL_SERVICES", "GENERAL_SERVICES_EDUCATION", SpendingCategoryEducation, false},
+		{"GENERAL_SERVICES", "GENERAL_SERVICES_CHILDCARE", SpendingCategoryChildren, false},
+		{"GENERAL_SERVICES", "GENERAL_SERVICES_CONSULTING_AND_LEGAL", SpendingCategoryBusinessServices, false},
+		{"", "mcc:8351", SpendingCategoryChildren, false},
+		{"", "mcc:8220", SpendingCategoryEducation, false},
+		{"", "mcc:9311", SpendingCategoryTaxes, false},
+		{"", "mcc:8931", SpendingCategoryBusinessServices, false},
 		// Cash from a machine is spent; a deposit may be a paycheck.
 		{"TRANSFER_OUT", "TRANSFER_OUT_WITHDRAWAL", SpendingCategoryOther, false},
 		{"TRANSFER_IN", "TRANSFER_IN_DEPOSIT", "", false},
@@ -40,7 +47,7 @@ func TestMapProviderCategory(t *testing.T) {
 		{"PERSONAL_CARE", "PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS", SpendingCategoryHealth, false},
 		{"GENERAL_SERVICES", "GENERAL_SERVICES_INSURANCE", SpendingCategoryOther, false},
 		{"GOVERNMENT_AND_NON_PROFIT", "GOVERNMENT_AND_NON_PROFIT_DONATIONS", SpendingCategoryGiftsAndDonations, false},
-		{"GOVERNMENT_AND_NON_PROFIT", "GOVERNMENT_AND_NON_PROFIT_TAX_PAYMENT", SpendingCategoryOther, false},
+		{"GOVERNMENT_AND_NON_PROFIT", "GOVERNMENT_AND_NON_PROFIT_TAX_PAYMENT", SpendingCategoryTaxes, false},
 		{"TRANSPORTATION", "TRANSPORTATION_GAS", SpendingCategoryTransport, false},
 		{"TRAVEL", "TRAVEL_FLIGHTS", SpendingCategoryTravel, false},
 		{"RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT", SpendingCategoryHousing, false},
@@ -50,7 +57,7 @@ func TestMapProviderCategory(t *testing.T) {
 		{"", "FOOD_AND_DRINK_GROCERIES", SpendingCategoryGroceries, false},
 		{"", "TRANSFER_OUT_SAVINGS", "", true},
 		{"", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", "", true},
-		{"", "LOAN_PAYMENTS_CAR_PAYMENT", SpendingCategoryOther, false},
+		{"", "LOAN_PAYMENTS_CAR_PAYMENT", SpendingCategoryLoans, false},
 		{"", "TRAVEL_LODGING", SpendingCategoryTravel, false},
 		// Merchant category codes from SimpleFIN.
 		{"", "mcc:5411", SpendingCategoryGroceries, false},
@@ -96,8 +103,8 @@ func TestMappedCategoriesAreDefaults(t *testing.T) {
 	for _, name := range DefaultSpendingCategoryNames {
 		isDefault[name] = true
 	}
-	if len(isDefault) != 14 {
-		t.Errorf("%d default spending categories, want 14", len(isDefault))
+	if len(isDefault) != 19 {
+		t.Errorf("%d default spending categories, want 19", len(isDefault))
 	}
 	for _, name := range plaidSpendingCategoryByPrimary {
 		if !isDefault[name] {

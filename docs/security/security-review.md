@@ -1723,7 +1723,7 @@ a bounded pass over coarsened units and not an exhaustive one.
 - Scope: what the finance feature adds: provider clients for Plaid and
   SimpleFIN, the credential each finance source keeps, the ECB exchange rate
   fetch, the finance tables, the `finance` tool, the `teanode finance`
-  command group, the Finance tab and the `/finance-link` page. How it works
+  command group, the Finance tab and the `/finance/link` page. How it works
   is in `docs/subsystems/finance.md`.
 
 ## Summary
@@ -1780,7 +1780,7 @@ own inside the resolver, and the link is removed when that fails.
   chose, so the claim and every fetch go through `safefetch`, which refuses
   anything but public addresses over https. Plaid's and the ECB's hosts are
   constants.
-- **The security policy.** Only `/finance-link` may load Plaid's script, frame
+- **The security policy.** Only `/finance/link` may load Plaid's script, frame
   Plaid's page and reach Plaid's API; every other page's policy is unchanged,
   and a test says so.
 - **Credentials brought in.** A credential of a connection made elsewhere

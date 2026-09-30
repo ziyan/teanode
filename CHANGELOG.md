@@ -6,6 +6,45 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.89.1] - 2026-09-30
+
+### Fixed
+
+- A newly linked institution fills in its history within minutes on its own, without pressing Sync. (#255)
+
+## [0.89.0] - 2026-09-30
+
+### Added
+
+- Your agent keeps lessons from work it did by running commands, only when a command showed the approach worked, and recalls them the next time similar work comes up. (#248)
+- Your agent recalls the part of a page's overview that answers the question, not only its opening section. (#248)
+- `teanode agent memory recall --explain` shows why a question was given the memories it got, and what was left out. (#248)
+- A survey's report and `teanode agent memory overview` say how much they covered and what they left out. (#248)
+
+## [0.88.0] - 2026-09-30
+
+### Added
+
+- Investment accounts linked through Plaid: each holding is an asset with its quantity, price and cost basis, trades are listed per holding and with `teanode finance trades`, and dividends and fees count as income and spending. Turn on the investments product in the Plaid settings, then link the brokerage again. (#249)
+
+## [0.87.4] - 2026-09-30
+
+### Fixed
+
+- The agent can use the finance tool with models that send every argument on every call. (#252)
+
+## [0.87.3] - 2026-09-30
+
+### Fixed
+
+- Moving an institution to another provider no longer counts its accounts twice in net worth on the day of the move. (#251)
+
+## [0.87.2] - 2026-09-30
+
+### Changed
+
+- Plaid's linking page is now at `/finance/link`. A link to the old `/finance-link` address, from a command started before the upgrade, no longer opens it; run the command again. (#247)
+
 ## [0.87.1] - 2026-09-30
 
 ### Fixed

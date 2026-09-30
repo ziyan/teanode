@@ -144,8 +144,10 @@ func newAgentGraphCommands() []*cli.Command {
 			Name:      "recall",
 			Usage:     "what a question would carry into a turn: the pages recall would expand and the facts on each. Nothing is said to a model, and nothing is marked as used",
 			ArgsUsage: "<question>",
-			Flags:     []cli.Flag{JSONFlag()},
-			Action:    runAgentGraphRecall,
+			Flags: []cli.Flag{JSONFlag(),
+				&cli.BoolFlag{Name: "explain", Usage: "say why as well: what each search found, where each page and fact ranked in each, and what carried it or kept it out"},
+			},
+			Action: runAgentGraphRecall,
 		},
 		{
 			Name:      "evaluate",
@@ -555,15 +557,53 @@ func runAgentGraphOverview(ctx context.Context, command *cli.Command) error {
 	if page == nil || page.Node == nil {
 		return fmt.Errorf("there is no page at %s", path)
 	}
+	state, err := client.GetAgentOverviewState(ctx, connection, path)
+	if err != nil {
+		return describeError(command, err)
+	}
 	if command.Bool("json") {
-		return PrintJSON(map[string]any{"path": page.Node.Path, "overview": page.Node.Overview, "overviewWrittenAt": page.Node.OverviewWrittenAt})
+		return PrintJSON(map[string]any{"path": page.Node.Path, "overview": page.Node.Overview, "overviewWrittenAt": page.Node.OverviewWrittenAt,
+			"overviewState": state})
 	}
 	if strings.TrimSpace(page.Node.Overview) == "" {
 		_, _ = fmt.Fprintf(command.Writer, "%s has no overview yet: a dream writes one for a page with at least three facts or pages under it\n", page.Node.Path)
 		return nil
 	}
 	printOverview(command, page.Node)
+	if state != nil {
+		_, _ = fmt.Fprintf(command.Writer, "\n%s\n", describeOverviewState(state))
+	}
 	return nil
+}
+
+// describeOverviewState says in a line or two what an overview covers and
+// whether it is current, from the counts the server made.
+func describeOverviewState(state *client.AgentOverviewState) string {
+	var parts []string
+	shown := func(shownCount, count, withoutOverviewCount int, noun string) {
+		if count == 0 {
+			return
+		}
+		part := fmt.Sprintf("%d of the %d %s", shownCount, count, noun)
+		if shownCount == count {
+			part = fmt.Sprintf("all %d %s", count, noun)
+		}
+		if withoutOverviewCount > 0 {
+			part += fmt.Sprintf(" (%d of them by their opening alone, having no overview yet)", withoutOverviewCount)
+		}
+		parts = append(parts, part)
+	}
+	shown(state.ChildShownCount, state.ChildCount, state.ChildWithoutOverviewCount, "pages under it")
+	shown(state.MemberShownCount, state.MemberCount, state.MemberWithoutOverviewCount, "pages in the theme")
+	shown(state.LinkShownCount, state.LinkCount, 0, "links")
+	inputs := "its facts"
+	if len(parts) > 0 {
+		inputs += " and " + strings.Join(parts, ", ")
+	}
+	if state.IsOverviewStale {
+		return "What it would be written from now: " + inputs + ". That has changed since it was written; the next dream writes it again."
+	}
+	return "Written from " + inputs + "."
 }
 
 func runAgentGraphGet(ctx context.Context, command *cli.Command) error {
@@ -1665,7 +1705,10 @@ func gradeRecall(question evaluationQuestion, carried []*client.AgentRecalledPag
 }
 
 // carriesClaim says whether the carried pages hold a fact on the claim's
-// page containing every one of its words, compared without case.
+// page containing every one of its words, compared without case, or carry
+// them in the page's opening or its overview section: what a turn is
+// shown is what counts, and an overview's paragraph is shown as much as a
+// fact's sentence.
 func carriesClaim(carried []*client.AgentRecalledPage, claim evaluationClaim) bool {
 	path := strings.TrimSpace(claim.Path)
 	for _, page := range carried {
@@ -1679,6 +1722,9 @@ func carriesClaim(carried []*client.AgentRecalledPage, claim evaluationClaim) bo
 			if factSays(fact.Text, claim.Words) {
 				return true
 			}
+		}
+		if len(claim.Words) > 0 && (factSays(page.Summary, claim.Words) || factSays(page.Overview, claim.Words)) {
+			return true
 		}
 	}
 	return false
@@ -1893,6 +1939,9 @@ func runAgentGraphRecall(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	if command.Bool("explain") {
+		return explainAgentGraphRecall(ctx, command, connection, question)
+	}
 	recalled, err := client.RecallAgentMemory(ctx, connection, question)
 	if err != nil {
 		return describeError(command, err)
@@ -1922,6 +1971,55 @@ func runAgentGraphRecall(ctx context.Context, command *cli.Command) error {
 			}
 			_, _ = fmt.Fprintf(command.Writer, "#%d %s\n", fact.Number, fact.Text)
 		}
+	}
+	return nil
+}
+
+// explainAgentGraphRecall prints why recall carried what it did for a
+// question: each search's count, then every page and every fact the
+// searches found, with its rank in each search and what became of it.
+func explainAgentGraphRecall(ctx context.Context, command *cli.Command, connection *client.Client, question string) error {
+	recalled, err := client.ExplainAgentRecall(ctx, connection, question)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(recalled)
+	}
+	if recalled == nil || recalled.Explanation == nil {
+		_, _ = fmt.Fprintln(command.Writer, "that question carries nothing from the graph")
+		return nil
+	}
+	explanation := recalled.Explanation
+	writer := command.Writer
+	rankText := func(rank int) string {
+		if rank == 0 {
+			return "-"
+		}
+		return strconv.Itoa(rank)
+	}
+	for _, search := range explanation.Searches {
+		_, _ = fmt.Fprintf(writer, "%-26s %d\n", search.SearchName, search.FoundCount)
+	}
+	_, _ = fmt.Fprintf(writer, "tokens spent %d of %d\n\npages (rank fused, by words, by meaning, by section)\n", explanation.TokensSpent, explanation.TokenBudget)
+	for _, page := range explanation.Pages {
+		line := fmt.Sprintf("%3d %3s %3s %3s  %-18s %s", page.FusedRank, rankText(page.WordsRank), rankText(page.MeaningRank),
+			rankText(page.SectionRank), page.RecallDecision, page.Path)
+		if page.RecallDecision == "carried" {
+			line += fmt.Sprintf("  (%d facts, %d tokens", page.CarriedFactCount, page.TokenCount)
+			if page.OverviewSectionHeading != "" {
+				line += ", section \"" + page.OverviewSectionHeading + "\" " + page.SectionChoice
+			} else if page.SectionChoice != "none" {
+				line += ", section " + page.SectionChoice
+			}
+			line += ")"
+		}
+		_, _ = fmt.Fprintln(writer, line)
+	}
+	_, _ = fmt.Fprintln(writer, "\nfacts (rank fused, by words, by meaning)")
+	for _, fact := range explanation.Facts {
+		_, _ = fmt.Fprintf(writer, "%3d %3s %3s  %-18s %s\n", fact.FusedRank, rankText(fact.WordsRank), rankText(fact.MeaningRank),
+			fact.RecallDecision, fact.Reference)
 	}
 	return nil
 }

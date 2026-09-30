@@ -296,6 +296,11 @@ const (
 	guessedPattern = `\m(suggests?|suggesting|likely|indicates?|indicating|probably|presumably|must have|seems? to)\M`
 )
 
+// dreamOverviewSections is how many overview sections a dream embeds at
+// most: a graph whose every overview was rewritten is caught up in a few
+// dreams rather than one long call.
+const dreamOverviewSections = 1000
+
 // dreamEmbed gives vectors to what has none.
 func (self *Agent) dreamEmbed(ctx context.Context, run *Run, record *models.AgentDream) {
 	written, err := self.EmbedGraph(ctx, run.Agent, 200)
@@ -303,6 +308,11 @@ func (self *Agent) dreamEmbed(ctx context.Context, run *Run, record *models.Agen
 		log.Debugf("cannot embed the graph: %s", err)
 	}
 	record.Embedded += written
+	sections, err := self.EmbedOverviewSections(ctx, run.Agent, dreamOverviewSections)
+	if err != nil {
+		log.Debugf("cannot embed the overview sections: %s", err)
+	}
+	record.Embedded += sections
 	chunks, _, err := self.embedChunks(ctx, run.Agent, dreamEmbed)
 	if err != nil {
 		log.Debugf("cannot embed what was indexed: %s", err)
