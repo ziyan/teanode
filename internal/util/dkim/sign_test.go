@@ -3,6 +3,7 @@ package dkim_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/util/dkim"
 	"github.com/ziyan/teanode/internal/util/testmail"
@@ -41,9 +42,13 @@ func TestSignIsDeterministicForTheSameInput(t *testing.T) {
 	t.Parallel()
 
 	// RSA PKCS#1 v1.5 signatures are deterministic, so signing the same
-	// message twice with the same key has to produce the same bytes. If this
-	// ever fails, something is including a timestamp or random value in what
-	// is signed, and every signature would then be unreproducible.
+	// message twice with the same key at the same time has to produce the
+	// same bytes. If this ever fails, something is including a random value
+	// in what is signed, and every signature would then be unreproducible.
+	//
+	// The time is fixed: the signature names the second it was made, so two
+	// signatures made either side of a second's turn differed, and the test
+	// failed now and then for a reason that was not a fault.
 	message := testmail.Build(&testmail.Options{})
 	key := testmail.Key(t)
 	options := &dkim.SignOptions{
@@ -51,6 +56,7 @@ func TestSignIsDeterministicForTheSameInput(t *testing.T) {
 		Selector:   "selector1",
 		Identifier: "@example.net",
 		Signer:     key,
+		SignedAt:   time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC),
 	}
 
 	first, err := dkim.Sign(message.Headers, message.Body, options)
