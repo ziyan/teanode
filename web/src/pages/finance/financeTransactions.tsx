@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
@@ -30,6 +30,7 @@ import {
   spendingCategoryOptions,
   useFinanceWords,
 } from './financeCommon'
+import { FinanceTransactionDialog } from './financeTransactionDialog'
 import { useSpendingCategoryDisplayName } from './spendingCategoryName'
 import { TransactionFilters, searchFromTransactionFilters, transactionFiltersFromSearch } from './financeFilters'
 
@@ -111,6 +112,19 @@ export function FinanceTransactionsSection() {
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   // What changed on a row since it was read, laid over it.
   const [changed, setChanged] = useState<Record<string, Partial<FinanceTransaction>>>({})
+  // The transaction whose details are open, by id, so a change made in the
+  // dialog shows there as it does in its row; and what had the focus when
+  // it opened, to give it back when it closes.
+  const [detailedId, setDetailedId] = useState<string | null>(null)
+  const openedFrom = useRef<HTMLElement | null>(null)
+  const openDetails = (row: FinanceTransaction) => {
+    openedFrom.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setDetailedId(row.id)
+  }
+  const closeDetails = () => {
+    setDetailedId(null)
+    openedFrom.current?.focus()
+  }
   useEffect(() => {
     setMore({ rows: [], after: null, isLoaded: false })
     setChanged({})
@@ -126,6 +140,7 @@ export function FinanceTransactionsSection() {
     [firstPage, more.rows, changed],
   )
   const accountList = accounts.data?.FinanceAccounts ?? []
+  const detailed = detailedId ? rows.find((row) => row.id === detailedId) : undefined
   const categoryList = categories.data?.SpendingCategories ?? []
 
   const loadMore = async () => {
@@ -252,6 +267,9 @@ export function FinanceTransactionsSection() {
     {
       key: 'spendingCategory',
       header: t('finance.spendingCategory'),
+      // Who chose the category is the cell's title and a line in the
+      // details, not a line under the control: stacked there it made every
+      // row twice the height of its text.
       render: (row) => (
         <span
           className="finance-category-cell"
@@ -270,9 +288,6 @@ export function FinanceTransactionsSection() {
             ]}
             onChange={(value) => void categorize(row, value)}
           />
-          {row.categorizedBy && row.categorizedBy !== 'person' && row.spendingCategoryId ? (
-            <span className="muted finance-categorized-by">{words.categorizedBy(row.categorizedBy)}</span>
-          ) : null}
         </span>
       ),
     },
@@ -407,13 +422,26 @@ export function FinanceTransactionsSection() {
       <ErrorMessage error={first.error} />
       {first.loading && !first.data ? <Loading /> : null}
       {first.data ? (
-        <DataTable
-          columns={columns}
-          rows={rows}
-          rowKey={(row) => row.id}
-          loading={first.loading}
-          emptyMessage={t('finance.noTransactions')}
-          countLabel={(count) => t('finance.transactionsLoaded', { count: String(count) })}
+        <div className="finance-transactions-table">
+          <DataTable
+            columns={columns}
+            rows={rows}
+            rowKey={(row) => row.id}
+            loading={first.loading}
+            emptyMessage={t('finance.noTransactions')}
+            countLabel={(count) => t('finance.transactionsLoaded', { count: String(count) })}
+            onRowOpen={openDetails}
+            rowOpenLabel={(row) => t('finance.transactionDetailsOf', { name: row.merchantName || row.description })}
+          />
+        </div>
+      ) : null}
+      {detailed ? (
+        <FinanceTransactionDialog
+          financeTransaction={detailed}
+          financeAccount={accountList.find((candidate) => candidate.id === detailed.financeAccountId)}
+          categoryOptions={spendingCategoryOptions(categoryList, categoryName, detailed.spendingCategoryId)}
+          onCategorize={(value) => void categorize(detailed, value)}
+          onClose={closeDetails}
         />
       ) : null}
       {after ? (

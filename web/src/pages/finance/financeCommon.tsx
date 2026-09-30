@@ -200,6 +200,7 @@ export function useFinanceWords() {
     valuationSource: (value?: string | null) => word('finance.valuationSource', value),
     budgetPace: (value?: string | null) => word('finance.budgetPace', value),
     categorizedBy: (value?: string | null) => word('finance.categorizedBy', value),
+    transferMarkedBy: (value?: string | null) => word('finance.transferMarkedBy', value),
     targetMeasure: (value?: string | null) => word('finance.targetMeasure', value),
     securityKind: (value?: string | null) => word('finance.securityKind', value),
     tradeKind: (value?: string | null) => word('finance.tradeKind', value),
