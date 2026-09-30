@@ -119,6 +119,16 @@ func TestTheSectionOfAnOverviewRecallCarries(t *testing.T) {
 	if got := overviewSectionFor(named, "", "what is notable in the garden shed records?", 100); got != "## What stands out\n\nIts records are sparse." {
 		t.Errorf("the page's name chose the section: %q", got)
 	}
+	// A meaning match on the first section, drawn there by the page's
+	// name, gives way to the later section the question's words point at;
+	// a meaning match on a later section stands.
+	namedSections := overviewSectionsOf(named)
+	if got := overviewSectionFor(named, namedSections[0].ID, "what is notable in the garden shed records?", 100); got != "## What stands out\n\nIts records are sparse." {
+		t.Errorf("a match on the first section held against the question's words: %q", got)
+	}
+	if got := overviewSectionFor(shed, sections[2].ID, "is there a door or a window?", 100); got != "## How it relates\n\nThe orchard stores its ladders here." {
+		t.Errorf("a match on a later section gave way: %q", got)
+	}
 	plain := &models.AgentNode{ID: "plain", Overview: "A shed with no heading."}
 	if got := overviewSectionFor(plain, "", "", 100); got != "A shed with no heading." {
 		t.Errorf("an overview with no headings carried %q", got)

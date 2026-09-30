@@ -96,8 +96,10 @@ func overviewSectionText(node *models.AgentNode, section overviewSection) string
 
 // overviewSectionFor is the section of a page's overview recall carries
 // for a question: the one the question's meaning matched, where that
-// section is still the page's; else the one sharing the most of the
-// question's words; else the first, which says what the thing is. Cut to
+// section is still the page's (a match on the first section gives way to
+// a later one the question's other words point at); else the one sharing
+// the most of the question's words; else the first, which says what the
+// thing is. Cut to
 // so many characters, its heading included; empty for a page with no
 // overview.
 func overviewSectionFor(node *models.AgentNode, matchedSectionId, question string, characters int) string {
@@ -105,25 +107,30 @@ func overviewSectionFor(node *models.AgentNode, matchedSectionId, question strin
 	if len(sections) == 0 {
 		return ""
 	}
-	chosen := sections[0]
-	isMatched := false
+	// By words: the section sharing most of the question's words other
+	// than the page's own name, which is in every section and mostly in
+	// the first.
+	named := questionWords(node.Name + " " + node.Path + " " + strings.Join(node.Aliases, " "))
+	words := withoutWords(questionWords(question), named)
+	byWords, best := sections[0], 0
 	for _, section := range sections {
-		if matchedSectionId != "" && section.ID == matchedSectionId {
-			chosen, isMatched = section, true
-			break
+		if shared := sharedWordCount(words, section.Heading+" "+section.Text); shared > best {
+			byWords, best = section, shared
 		}
 	}
-	if !isMatched {
-		// The page's own name is in every section, and mostly in the
-		// first: the words that choose a section are the rest.
-		named := questionWords(node.Name + " " + node.Path + " " + strings.Join(node.Aliases, " "))
-		words := withoutWords(questionWords(question), named)
-		best := 0
-		for _, section := range sections {
-			if shared := sharedWordCount(words, section.Heading+" "+section.Text); shared > best {
-				chosen, best = section, shared
-			}
+	chosen := byWords
+	for _, section := range sections {
+		if matchedSectionId == "" || section.ID != matchedSectionId {
+			continue
 		}
+		// The meaning match, unless it is the first section and the
+		// question's other words point at a later one: a section's
+		// vector carries the page's name, so a question naming the page
+		// is drawn to the section that names it most.
+		if section.Number != 1 || best == 0 {
+			chosen = section
+		}
+		break
 	}
 	rendered := chosen.Text
 	if chosen.Heading != "" {
