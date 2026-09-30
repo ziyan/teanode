@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.85.0] - 2026-09-30
+
+### Added
+
+- The Models tab of the agent settings shows a ChatGPT plan's name, how much of each allowance window is left, and when it resets. (#239)
+
 ## [0.84.0] - 2026-09-30
 
 ### Added
