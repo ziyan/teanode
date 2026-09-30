@@ -13,10 +13,12 @@ import (
 )
 
 // plaidTestServer answers Plaid calls from a function per path and records
-// every request body it was sent.
+// every request body it was sent. A test that does not answer /item/get
+// gets a finance source linked with transactions only.
 type plaidTestServer struct {
 	server        *httptest.Server
 	mutex         sync.Mutex
+	requestPaths  []string
 	requestBodies []map[string]any
 	userAgents    []string
 }
@@ -31,10 +33,14 @@ func newPlaidTestServer(t *testing.T, answer func(path string, body map[string]a
 			t.Errorf("request to %s was not JSON: %v", request.URL.Path, err)
 		}
 		testServer.mutex.Lock()
+		testServer.requestPaths = append(testServer.requestPaths, request.URL.Path)
 		testServer.requestBodies = append(testServer.requestBodies, body)
 		testServer.userAgents = append(testServer.userAgents, request.Header.Get("User-Agent"))
 		testServer.mutex.Unlock()
 		statusCode, answerText := answer(request.URL.Path, body)
+		if statusCode == http.StatusNotFound && request.URL.Path == "/item/get" {
+			statusCode, answerText = http.StatusOK, `{"item":{"item_id":"item-example","products":["transactions"]}}`
+		}
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(statusCode)
 		_, _ = writer.Write([]byte(answerText))
@@ -142,6 +148,9 @@ func TestPlaidSyncPagesSignsAndKeepsMetadata(t *testing.T) {
 	}
 
 	for index, body := range testServer.requestBodies {
+		if testServer.requestPaths[index] != "/transactions/sync" {
+			continue
+		}
 		if body["client_id"] != "client-example" || body["secret"] != "secret-example" || body["access_token"] != "access-example" {
 			t.Errorf("request %d did not carry the keys and credential: %v", index, body)
 		}
@@ -242,6 +251,9 @@ func TestPlaidSyncRestartsAfterMutationDuringPagination(t *testing.T) {
 	testServer := newPlaidTestServer(t, func(path string, body map[string]any) (int, string) {
 		mutex.Lock()
 		defer mutex.Unlock()
+		if path != "/transactions/sync" {
+			return 404, `{}`
+		}
 		switch body["cursor"] {
 		case "cursor-start":
 			return 200, `{"added":[{"transaction_id":"transaction-1","account_id":"account-1","amount":5,"iso_currency_code":"USD","date":"2026-08-01","name":"FIRST"}],
@@ -267,8 +279,10 @@ func TestPlaidSyncRestartsAfterMutationDuringPagination(t *testing.T) {
 	}
 	// start, middle (refused), start again, middle.
 	var cursors []any
-	for _, body := range testServer.requestBodies {
-		cursors = append(cursors, body["cursor"])
+	for index, body := range testServer.requestBodies {
+		if testServer.requestPaths[index] == "/transactions/sync" {
+			cursors = append(cursors, body["cursor"])
+		}
 	}
 	if len(cursors) != 4 || cursors[2] != "cursor-start" {
 		t.Errorf("cursors asked %v, want a restart from cursor-start", cursors)
