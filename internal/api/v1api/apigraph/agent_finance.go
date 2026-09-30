@@ -94,6 +94,11 @@ type FinanceQuery interface {
 	// The caller's savings targets, open ones first, each with its
 	// progress.
 	SavingsTargets(ctx context.Context) ([]*SavingsTargetView, error)
+
+	// The currency totals are shown in, and whether the person chose it or
+	// it falls back to the currency of their first finance account, else
+	// of their first asset.
+	ReportingCurrency(ctx context.Context) (*ReportingCurrencyView, error)
 }
 
 // FinanceMutation links institutions and changes the person's finance
@@ -297,6 +302,18 @@ type FinanceConvertedSummaryRow struct {
 	GroupLabel string `json:"groupLabel"`
 	MoneyOut   string `json:"moneyOut"`
 	MoneyIn    string `json:"moneyIn"`
+}
+
+// ReportingCurrencyView is the currency totals are shown in.
+type ReportingCurrencyView struct {
+	// ReportingCurrencyCode is empty only when the person chose none and
+	// has no finance account and no asset to fall back to; nothing is
+	// converted then.
+	ReportingCurrencyCode string `json:"reportingCurrencyCode"`
+
+	// IsChosen says the person chose it (SetReportingCurrency), rather
+	// than it being the fallback.
+	IsChosen bool `json:"isChosen"`
 }
 
 // CurrencyConversionView is an amount converted, with the rate and the
@@ -766,25 +783,19 @@ func (self *graph) CompleteFinanceLink(ctx context.Context, arguments CompleteFi
 	if err != nil {
 		return nil, err
 	}
-	view, err := func() (*FinanceSourceView, error) {
-		institutionId := strings.TrimSpace(arguments.InstitutionID)
-		institutionName := strings.TrimSpace(arguments.InstitutionName)
-		if institutionName == "" && institutionId != "" {
-			// A name is what the person recognizes the source by; without
-			// one the source is named for the provider, and the sync does
-			// not rename it.
-			if named, err := linker.InstitutionName(ctx, institutionId); err == nil {
-				institutionName = named
-			}
+	institutionId := strings.TrimSpace(arguments.InstitutionID)
+	institutionName := strings.TrimSpace(arguments.InstitutionName)
+	if institutionName == "" && institutionId != "" {
+		// A name is what the person recognizes the source by; without
+		// one the source is named for the provider, and the sync does
+		// not rename it.
+		if named, err := linker.InstitutionName(ctx, institutionId); err == nil {
+			institutionName = named
 		}
-		source, err := self.createFinanceSource(self.writing(ctx), worker, found, config.AgentFinanceProviderPlaid, models.FinanceSourceSettings{
-			InstitutionID: institutionId, InstitutionName: institutionName, ProviderReference: providerReference,
-		}, credential)
-		if err != nil {
-			return nil, err
-		}
-		return financeSourceView(self.transaction(ctx), found, source)
-	}()
+	}
+	source, err := self.createFinanceSourceCommitted(ctx, worker, found, config.AgentFinanceProviderPlaid, models.FinanceSourceSettings{
+		InstitutionID: institutionId, InstitutionName: institutionName, ProviderReference: providerReference,
+	}, credential)
 	if err != nil {
 		// Ended at Plaid at once: a finance source nobody can reach still
 		// costs the operator, and on some plans uses up a slot for good.
@@ -795,7 +806,9 @@ func (self *graph) CompleteFinanceLink(ctx context.Context, arguments CompleteFi
 		}
 		return nil, err
 	}
-	return view, nil
+	// The finance source is committed and kept from here on, whatever
+	// reading it back says.
+	return financeSourceView(self.transaction(ctx), found, source)
 }
 
 func (self *graph) LinkSimpleFIN(ctx context.Context, arguments LinkSimpleFINArguments) (*FinanceSourceView, error) {
@@ -823,7 +836,7 @@ func (self *graph) LinkSimpleFIN(ctx context.Context, arguments LinkSimpleFINArg
 	if err != nil {
 		return nil, fmt.Errorf("%w: the SimpleFIN Bridge did not accept the setup token: %s", api.ErrInvalidArguments, err)
 	}
-	source, err := self.createFinanceSource(self.writing(ctx), worker, found, config.AgentFinanceProviderSimpleFIN, models.FinanceSourceSettings{}, credential)
+	source, err := self.createFinanceSourceCommitted(ctx, worker, found, config.AgentFinanceProviderSimpleFIN, models.FinanceSourceSettings{}, credential)
 	if err != nil {
 		removeContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), financeRemoveTimeout)
 		defer cancel()
@@ -832,6 +845,26 @@ func (self *graph) LinkSimpleFIN(ctx context.Context, arguments LinkSimpleFINArg
 		return nil, fmt.Errorf("the finance source could not be made, and the setup token is used up; make a new one on the SimpleFIN Bridge: %w", err)
 	}
 	return financeSourceView(self.transaction(ctx), found, source)
+}
+
+// createFinanceSourceCommitted makes the finance source in a transaction
+// of its own, committed before it returns. The request's transaction
+// commits only after the resolver has answered, and a commit that failed
+// then would leave the link open at the provider with nothing here to end
+// it; committed here, a failure is an error the caller sees while it can
+// still end the link.
+func (self *graph) createFinanceSourceCommitted(ctx context.Context, worker *agent.Agent, found *models.Agent, providerKind string, settings models.FinanceSourceSettings, credential string) (*models.AgentKnowledgeSource, error) {
+	var source *models.AgentKnowledgeSource
+	err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		tx.AsActor(models.ActorPerson)
+		var err error
+		source, err = self.createFinanceSource(tx, worker, found, providerKind, settings, credential)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return source, nil
 }
 
 // createFinanceSource makes a finance source for a credential a provider
@@ -884,8 +917,13 @@ func (self *graph) CompleteFinanceRepair(ctx context.Context, arguments FinanceS
 	if err != nil {
 		return nil, err
 	}
+	// Only the sign-in flag is cleared: the last error stays until the
+	// next sync says how it went, so a repair that did not take is not
+	// reported as fixed. A credential the provider revoked is not cleared
+	// either, since signing in again does not bring back a credential
+	// that no longer exists; that finance source is deleted and linked
+	// again.
 	delete(source.Cursor, models.FinanceCursorIsSignInRequired)
-	source.LastError = ""
 	now := time.Now()
 	source.NextRunAt = &now
 	saved, err := tx.PutAgentSource(source)
@@ -893,6 +931,18 @@ func (self *graph) CompleteFinanceRepair(ctx context.Context, arguments FinanceS
 		return nil, financeError(err)
 	}
 	return financeSourceView(tx, found, saved)
+}
+
+func (self *graph) ReportingCurrency(ctx context.Context) (*ReportingCurrencyView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	currencyCode, err := reportingCurrency(self.transaction(ctx), found, "")
+	if err != nil {
+		return nil, err
+	}
+	return &ReportingCurrencyView{ReportingCurrencyCode: currencyCode, IsChosen: found.ReportingCurrencyCode != ""}, nil
 }
 
 func (self *graph) SetReportingCurrency(ctx context.Context, arguments SetReportingCurrencyArguments) (string, error) {
@@ -934,8 +984,20 @@ func financeSourceView(tx db.Transaction, found *models.Agent, source *models.Ag
 	if err != nil {
 		return nil, err
 	}
+	institutionNames := map[string]bool{}
 	for _, account := range accounts {
-		view.FinanceAccounts = append(view.FinanceAccounts, financeAccountView(account, source))
+		accountView := financeAccountView(account, source)
+		view.FinanceAccounts = append(view.FinanceAccounts, accountView)
+		if accountView.InstitutionName != "" {
+			institutionNames[accountView.InstitutionName] = true
+		}
+	}
+	// A SimpleFIN finance source can reach several institutions, each
+	// account naming its own; the source has one name when they agree.
+	if view.InstitutionName == "" && len(institutionNames) == 1 {
+		for institutionName := range institutionNames {
+			view.InstitutionName = institutionName
+		}
 	}
 	return view, nil
 }
@@ -949,13 +1011,35 @@ func financeAccountView(account *models.FinanceAccount, source *models.AgentKnow
 		AvailableBalance: account.AvailableBalance, BalanceAt: account.BalanceAt, ProviderMetadata: account.ProviderMetadata,
 		CreatedAt: account.CreatedAt, ModifiedAt: account.ModifiedAt,
 	}
+	view.InstitutionName = accountInstitutionName(account.ProviderMetadata)
 	if source != nil {
 		settings, _ := source.FinanceSourceSettings()
-		view.InstitutionName = settings.InstitutionName
+		if settings.InstitutionName != "" {
+			view.InstitutionName = settings.InstitutionName
+		}
 		view.ProviderKind = source.Specification.Type
 		view.IsSignInRequired = source.IsFinanceSignInRequired()
 	}
 	return view
+}
+
+// accountInstitutionName is the institution a finance account's provider
+// metadata names: SimpleFIN gives each account its institution ("org"),
+// since one of its finance sources can reach several, and the finance
+// source itself keeps none.
+func accountInstitutionName(providerMetadata json.RawMessage) string {
+	if len(providerMetadata) == 0 {
+		return ""
+	}
+	var metadata struct {
+		Organization struct {
+			Name string `json:"name"`
+		} `json:"org"`
+	}
+	if json.Unmarshal(providerMetadata, &metadata) != nil {
+		return ""
+	}
+	return strings.TrimSpace(metadata.Organization.Name)
 }
 
 // financeSourcesOf is the agent's finance sources by id.

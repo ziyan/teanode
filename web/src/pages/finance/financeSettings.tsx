@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { graphql } from '../../api'
-import { Loading, SaveRow, formatMoney } from '../../components/common'
+import { Loading, formatMoney } from '../../components/common'
 import { SettingsSection } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
 import { useTranslation } from '../../i18n/i18n'
@@ -12,7 +12,7 @@ import {
   amountOf,
   formatDay,
   isDecimal,
-  isoDay,
+  personToday,
 } from './financeApi'
 import { CurrencyPicker, useReportingCurrency } from './financeCommon'
 
@@ -21,25 +21,23 @@ import { CurrencyPicker, useReportingCurrency } from './financeCommon'
 // on the Spending section can be checked by hand.
 export function FinanceSettingsSection() {
   const { t } = useTranslation()
+  const toast = useToast()
   const settings = useReportingCurrency()
-  const stored = settings.reportingCurrencyCode
+  const shown = settings.reportingCurrencyCode
+  // What the picker holds: the person's choice, or the currency totals
+  // fall back to, which saving then makes their choice.
   const [currencyCode, setCurrencyCode] = useState('')
   const [busy, setBusy] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [problem, setProblem] = useState<unknown>(null)
-  useEffect(() => setCurrencyCode(stored), [stored])
+  useEffect(() => setCurrencyCode(shown), [shown])
 
-  const save = async (event: React.FormEvent) => {
-    event.preventDefault()
+  const saveCurrency = async (chosen: string) => {
     setBusy(true)
-    setSaved(false)
-    setProblem(null)
     try {
-      await graphql(SET_REPORTING_CURRENCY, { currencyCode })
+      await graphql(SET_REPORTING_CURRENCY, { currencyCode: chosen })
       await settings.reload()
-      setSaved(true)
+      toast.done(chosen ? t('finance.reportingCurrencySaved', { currency: chosen }) : t('finance.reportingCurrencyCleared'))
     } catch (caught) {
-      setProblem(caught)
+      toast.failure(caught, t('finance.failed'))
     } finally {
       setBusy(false)
     }
@@ -55,30 +53,43 @@ export function FinanceSettingsSection() {
         {!settings.isLoaded ? (
           <Loading />
         ) : (
-          <form onSubmit={(event) => void save(event)}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              void saveCurrency(currencyCode)
+            }}
+          >
+            <p className="muted">
+              {!shown
+                ? t('finance.reportingCurrencyNone')
+                : settings.isChosen
+                  ? t('finance.reportingCurrencyChosen', { currency: shown })
+                  : t('finance.reportingCurrencyFallback', { currency: shown })}
+            </p>
             <div className="form-narrow">
               <label>
                 <span>{t('finance.reportingCurrency')}</span>
-                <CurrencyPicker
-                  value={currencyCode}
-                  label={t('finance.reportingCurrency')}
-                  onChange={(value) => {
-                    setSaved(false)
-                    setCurrencyCode(value)
-                  }}
-                />
+                <CurrencyPicker value={currencyCode} label={t('finance.reportingCurrency')} onChange={setCurrencyCode} />
               </label>
             </div>
-            <SaveRow
-              busy={busy}
-              saved={saved}
-              problem={problem}
-              canSave={/^[A-Z]{3}$/.test(currencyCode) && currencyCode !== stored}
-            />
+            <div className="page-actions page-actions-end">
+              {settings.isChosen ? (
+                <button type="button" disabled={busy} onClick={() => void saveCurrency('')}>
+                  {t('finance.clearReportingCurrency')}
+                </button>
+              ) : null}
+              <button
+                type="submit"
+                className="primary"
+                disabled={busy || !/^[A-Z]{3}$/.test(currencyCode) || (settings.isChosen && currencyCode === shown)}
+              >
+                {t('common.save')}
+              </button>
+            </div>
           </form>
         )}
       </SettingsSection>
-      <ConverterPanel reportingCurrencyCode={stored} />
+      <ConverterPanel reportingCurrencyCode={shown} />
     </>
   )
 }
@@ -89,7 +100,7 @@ function ConverterPanel({ reportingCurrencyCode }: { reportingCurrencyCode: stri
   const [amount, setAmount] = useState('100')
   const [fromCurrencyCode, setFromCurrencyCode] = useState('EUR')
   const [toCurrencyCode, setToCurrencyCode] = useState('')
-  const [rateOn, setRateOn] = useState(() => isoDay(new Date()))
+  const [rateOn, setRateOn] = useState(() => personToday())
   const [busy, setBusy] = useState(false)
   const [converted, setConverted] = useState<CurrencyConversion | null>(null)
   const target = toCurrencyCode || reportingCurrencyCode || 'USD'
@@ -134,7 +145,7 @@ function ConverterPanel({ reportingCurrencyCode }: { reportingCurrencyCode: stri
             <input
               type="date"
               value={rateOn}
-              max={isoDay(new Date())}
+              max={personToday()}
               onChange={(event) => setRateOn(event.target.value)}
             />
           </label>

@@ -21,12 +21,12 @@ import {
   SpendingDay,
   SpendingSummary,
   amountOf,
-  isoDay,
-  isoMonth,
+  monthBefore,
   monthLabel,
-  monthsBefore,
+  personMonth,
+  personToday,
 } from './financeApi'
-import { Money, UnconvertedNote, useFinanceWords } from './financeCommon'
+import { Money, UnconvertedNote, compactMoney, useFinanceWords } from './financeCommon'
 
 // The Spending section: what went where over a range, this month's spending
 // day by day against last month's, each spending category against its
@@ -35,7 +35,7 @@ import { Money, UnconvertedNote, useFinanceWords } from './financeCommon'
 // could not be converted named rather than quietly left out.
 export function FinanceSpendingSection() {
   const { t } = useTranslation()
-  const [month, setMonth] = useState(() => isoMonth(new Date()))
+  const [month, setMonth] = useState(() => personMonth())
   return (
     <>
       <SettingsSection
@@ -48,7 +48,7 @@ export function FinanceSpendingSection() {
             <input
               type="month"
               value={month}
-              max={isoMonth(new Date())}
+              max={personMonth()}
               onChange={(event) => event.target.value && setMonth(event.target.value)}
             />
           </label>
@@ -64,8 +64,7 @@ export function FinanceSpendingSection() {
 }
 
 function previousMonth(month: string): string {
-  const [year, number] = month.split('-').map(Number)
-  return isoMonth(new Date(year, number - 2, 1))
+  return monthBefore(month, 1)
 }
 
 // This month against last, cumulative: the columns are this month so far,
@@ -82,7 +81,7 @@ function SpendingByDayChart({ month }: { month: string }) {
   const monthDays = answer?.monthDays ?? []
   const compareDays = answer?.compareMonthDays ?? []
   const currency = answer?.reportingCurrencyCode || 'USD'
-  const isCurrent = month === isoMonth(new Date())
+  const isCurrent = month === personMonth()
   // A slot for every day either month has: the month so far (this month
   // stops at today) and the whole of the one it is compared with, lined up
   // by the day of the month.
@@ -104,6 +103,7 @@ function SpendingByDayChart({ month }: { month: string }) {
           keys={keys}
           keyLabel={(key) => key}
           format={(value) => formatMoney(value, currency)}
+          axisFormat={(value) => compactMoney(value, currency)}
           headline={formatMoney(spent, currency)}
           caption={
             isCurrent ? t('finance.spentSoFar') : t('finance.spentInMonth', { month: monthLabel(month, 'long') })
@@ -222,8 +222,8 @@ const GROUP_BY: GroupBy[] = ['spendingCategory', 'merchant', 'month', 'financeAc
 function SpendingSummaryPanel() {
   const { t } = useTranslation()
   const [groupBy, setGroupBy] = useState<GroupBy>('spendingCategory')
-  const [from, setFrom] = useState(() => isoDay(monthsBefore(new Date(), 0)))
-  const [to, setTo] = useState(() => isoDay(new Date()))
+  const [from, setFrom] = useState(() => `${personMonth()}-01`)
+  const [to, setTo] = useState(() => personToday())
   const { data, error, loading } = useQuery(
     () =>
       graphql<{ FinanceSpendingSummary: SpendingSummary }>(SPENDING_SUMMARY, {
@@ -359,8 +359,8 @@ function SpendingSummaryPanel() {
 function CashFlowPanel() {
   const { t } = useTranslation()
   const [range] = useState(() => {
-    const now = new Date()
-    return { fromMonth: isoMonth(monthsBefore(now, 11)), toMonth: isoMonth(now) }
+    const now = personMonth()
+    return { fromMonth: monthBefore(now, 11), toMonth: now }
   })
   const { data, error, loading } = useQuery(() => graphql<{ CashFlow: CashFlow }>(CASH_FLOW, range), [], {
     refresh: false,
@@ -380,6 +380,7 @@ function CashFlowPanel() {
           keys={months.map((month) => month.cashFlowMonth)}
           keyLabel={(key) => monthLabel(key)}
           format={(value) => formatMoney(value, currency)}
+          axisFormat={(value) => compactMoney(value, currency)}
           headline={formatMoney(net, currency)}
           caption={t('finance.cashFlowNet')}
           series={[

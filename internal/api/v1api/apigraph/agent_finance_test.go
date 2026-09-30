@@ -434,7 +434,7 @@ func TestFinanceDataIsTheCallersOwn(test *testing.T) {
 			test.Errorf("the savings targets are %v %v", targets, err)
 		}
 		transaction, err := tx.GetFinanceTransaction(fixture.ownerAgent.ID, transactions[0].ID)
-		if err != nil || transaction.IsTransferSetByPerson || transaction.CategorizedBy == models.CategorizedByPerson {
+		if err != nil || transaction.TransferMarkedBy == models.TransferMarkedByPerson || transaction.CategorizedBy == models.CategorizedByPerson {
 			test.Errorf("the transaction is %+v %v", transaction, err)
 		}
 		sources, err := resolver.FinanceSources(ctx)

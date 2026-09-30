@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Field, Loading, Tag, formatMoney } from '../../components/common'
@@ -24,11 +24,26 @@ import {
   RECORD_VALUATION,
   UPDATE_ASSET,
   amountOf,
+  daysBefore,
   formatDay,
   isDecimal,
-  isoDay,
+  personToday,
 } from './financeApi'
-import { CurrencyPicker, Money, UnconvertedNote, useAct, useFinanceWords, useReportingCurrency } from './financeCommon'
+import {
+  CurrencyPicker,
+  Money,
+  UnconvertedNote,
+  compactMoney,
+  useAct,
+  useFinanceWords,
+  useReportingCurrency,
+} from './financeCommon'
+
+// The valuation sources a person gives an asset they add or change: their
+// own values, or values their agent reads (from a connected server, say).
+// Estimates are allowed separately, and finance_sync belongs to the assets
+// finance sources make.
+const CHOSEN_VALUATION_SOURCES = ['manual', 'agent_reading']
 
 const ASSET_KINDS = [
   'cash',
@@ -67,23 +82,24 @@ export function FinanceNetWorthSection() {
     refresh: false,
   })
   const chosen = assets.data?.Assets.find((asset) => asset.id === assetId) ?? null
-  const choose = (id: string | null) => {
+  // The address of an asset's page: this one, naming the asset.
+  const addressOf = (id: string | null) => {
     const written = new URLSearchParams(parameters)
     if (id) {
       written.set('asset', id)
     } else {
       written.delete('asset')
     }
-    setParameters(written)
+    return written
   }
   if (assetId) {
     if (assets.loading && !assets.data) return <Loading />
-    return <AssetPage asset={chosen} onBack={() => choose(null)} onChanged={assets.reload} />
+    return <AssetPage asset={chosen} onBack={() => setParameters(addressOf(null))} onChanged={assets.reload} />
   }
   return (
     <>
       <NetWorthChart />
-      <AssetsPanel assets={assets} onChoose={choose} />
+      <AssetsPanel assets={assets} linkTo={(id) => `?${addressOf(id).toString()}`} />
     </>
   )
 }
@@ -92,9 +108,10 @@ function NetWorthChart() {
   const { t } = useTranslation()
   const [range, setRange] = useState('90')
   const days = RANGES.find((candidate) => candidate.id === range)?.days ?? 90
-  const from = days > 0 ? isoDay(new Date(Date.now() - days * 86_400_000)) : undefined
+  const today = personToday()
+  const from = days > 0 ? daysBefore(today, days) : undefined
   const { data, error, loading } = useQuery(
-    () => graphql<{ NetWorth: NetWorth }>(NET_WORTH, { from, to: isoDay(new Date()) }),
+    () => graphql<{ NetWorth: NetWorth }>(NET_WORTH, { from, to: today }),
     [range],
     { refresh: false },
   )
@@ -132,6 +149,7 @@ function NetWorthChart() {
           keys={points.map((point) => point.netWorthOn)}
           keyLabel={dayLabel}
           format={(value) => formatMoney(value, currency)}
+          axisFormat={(value) => compactMoney(value, currency)}
           headline={formatMoney(amountOf(latest?.netWorthAmount), currency)}
           caption={latest ? t('finance.netWorthOn', { day: formatDay(latest.netWorthOn) }) : undefined}
           series={[
@@ -152,10 +170,10 @@ function NetWorthChart() {
 
 function AssetsPanel({
   assets,
-  onChoose,
+  linkTo,
 }: {
   assets: { data: { Assets: Asset[] } | null; error: unknown; loading: boolean; reload: () => Promise<void> }
-  onChoose: (id: string) => void
+  linkTo: (id: string) => string
 }) {
   const { t } = useTranslation()
   const words = useFinanceWords()
@@ -194,9 +212,10 @@ function AssetsPanel({
                 return (
                   <tr key={asset.id}>
                     <td>
-                      <button type="button" className="link" onClick={() => onChoose(asset.id)}>
-                        {asset.assetName}
-                      </button>
+                      {/* A link, not a button: it goes to the asset's own
+                          page, and text in a cell sits on the same line as
+                          the cells beside it where a button did not. */}
+                      <Link to={linkTo(asset.id)}>{asset.assetName}</Link>
                       {asset.closedOn ? (
                         <>
                           {' '}
@@ -235,9 +254,10 @@ function AssetsPanel({
   )
 }
 
-// AssetDialog makes an asset, with its first value if there is one, or
-// changes one. What an asset is valued in cannot change after it exists:
-// its history is in that currency.
+// AssetDialog makes an asset, with its first value if there is one, in one
+// operation, or changes one. An asset a finance source made is valued by
+// its syncs, in its account's currency, so neither can be changed on it;
+// on any other the currency can, since each value keeps its own.
 function AssetDialog({
   asset,
   onClose,
@@ -254,12 +274,16 @@ function AssetDialog({
   const [assetName, setAssetName] = useState(asset?.assetName ?? '')
   const [assetKind, setAssetKind] = useState(asset?.assetKind ?? 'vehicle')
   const [currencyCode, setCurrencyCode] = useState(asset?.currencyCode ?? '')
+  const [valuationSource, setValuationSource] = useState(asset?.valuationSource ?? 'manual')
   const [value, setValue] = useState('')
-  const [valuedOn, setValuedOn] = useState(() => isoDay(new Date()))
+  const [valuedOn, setValuedOn] = useState(() => personToday())
   const [estimateDescription, setEstimateDescription] = useState(asset?.estimateDescription ?? '')
   const [isEstimateAllowed, setIsEstimateAllowed] = useState(asset?.isEstimateAllowed ?? false)
   const currency = currencyCode || reportingCurrencyCode || 'USD'
   const isFromSync = asset?.valuationSource === 'finance_sync'
+  const valuationSources = CHOSEN_VALUATION_SOURCES.includes(valuationSource)
+    ? CHOSEN_VALUATION_SOURCES
+    : [valuationSource, ...CHOSEN_VALUATION_SOURCES]
 
   return (
     <FormDialog
@@ -275,11 +299,19 @@ function AssetDialog({
           estimateDescription: estimateDescription.trim(),
           isEstimateAllowed,
         }
+        // What a finance source values keeps its currency and valuation
+        // source; the server refuses a change to either.
+        const chosen = isFromSync ? {} : { currencyCode: currency, valuationSource }
         void act(
           () =>
             asset
-              ? graphql(UPDATE_ASSET, { ...shared, assetId: asset.id })
-              : createWithValue({ ...shared, currencyCode: currency }, value.trim(), valuedOn),
+              ? graphql(UPDATE_ASSET, { ...shared, ...chosen, assetId: asset.id })
+              : graphql(CREATE_ASSET, {
+                  ...shared,
+                  ...chosen,
+                  value: value.trim() || undefined,
+                  valuedOn: value.trim() ? valuedOn : undefined,
+                }),
           asset ? t('finance.assetSaved') : t('finance.assetAdded'),
         ).then((isDone) => {
           if (isDone) onClose()
@@ -300,12 +332,29 @@ function AssetDialog({
           onChange={setAssetKind}
         />
       </label>
+      {!isFromSync ? (
+        <>
+          <div className="row">
+            <label>
+              <span>{t('finance.currency')}</span>
+              <CurrencyPicker value={currency} label={t('finance.currency')} onChange={setCurrencyCode} />
+            </label>
+            <label>
+              <span>{t('finance.valuationSourceLabel')}</span>
+              <Select
+                block
+                value={valuationSource}
+                label={t('finance.valuationSourceLabel')}
+                options={valuationSources.map((source) => ({ value: source, label: words.valuationSource(source) }))}
+                onChange={setValuationSource}
+              />
+            </label>
+          </div>
+          <p className="muted field-hint">{t('finance.valuationSourceChoiceHint')}</p>
+        </>
+      ) : null}
       {!asset ? (
         <>
-          <label>
-            <span>{t('finance.currency')}</span>
-            <CurrencyPicker value={currency} label={t('finance.currency')} onChange={setCurrencyCode} />
-          </label>
           <div className="row">
             <label>
               <span>{t('finance.firstValue')}</span>
@@ -316,7 +365,7 @@ function AssetDialog({
               <input
                 type="date"
                 value={valuedOn}
-                max={isoDay(new Date())}
+                max={personToday()}
                 onChange={(event) => setValuedOn(event.target.value)}
               />
             </label>
@@ -376,9 +425,9 @@ function AssetPage({
   const [deleting, setDeleting] = useState(false)
   const [deletingValuation, setDeletingValuation] = useState<AssetValuation | null>(null)
   const [value, setValue] = useState('')
-  const [valuedOn, setValuedOn] = useState(() => isoDay(new Date()))
+  const [valuedOn, setValuedOn] = useState(() => personToday())
   const [valuationNote, setValuationNote] = useState('')
-  const [closedOn, setClosedOn] = useState(() => isoDay(new Date()))
+  const [closedOn, setClosedOn] = useState(() => personToday())
 
   const back = (
     <div className="page-actions">
@@ -415,7 +464,7 @@ function AssetPage({
               className="primary"
               onClick={() => {
                 setValue('')
-                setValuedOn(isoDay(new Date()))
+                setValuedOn(personToday())
                 setValuationNote('')
                 setRecording(true)
               }}
@@ -430,7 +479,15 @@ function AssetPage({
             <button type="button" onClick={() => setClosing(true)}>
               {t('finance.closeAsset')}
             </button>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void run(CLOSE_ASSET, { assetId: asset.id, shouldReopen: true }, t('finance.assetReopened'))}
+            >
+              {t('finance.reopen')}
+            </button>
+          )}
           <button type="button" className="danger" onClick={() => setDeleting(true)}>
             {t('common.delete')}
           </button>
@@ -551,7 +608,7 @@ function AssetPage({
               <input
                 type="date"
                 value={valuedOn}
-                max={isoDay(new Date())}
+                max={personToday()}
                 onChange={(event) => setValuedOn(event.target.value)}
               />
             </label>
@@ -619,16 +676,6 @@ function AssetPage({
       ) : null}
     </>
   )
-}
-
-// createWithValue makes an asset and, when a value was given, records it
-// as its first valuation: two operations, the same two the command line's
-// create-asset and record-valuation are.
-async function createWithValue(asset: Record<string, unknown>, value: string, valuedOn: string): Promise<void> {
-  const created = await graphql<{ CreateAsset: { id: string } }>(CREATE_ASSET, asset)
-  if (value) {
-    await graphql(RECORD_VALUATION, { assetId: created.CreateAsset.id, value, valuedOn })
-  }
 }
 
 function hostOf(address: string): string {

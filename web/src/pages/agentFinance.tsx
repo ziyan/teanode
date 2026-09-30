@@ -1,9 +1,10 @@
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { graphql } from '../api'
+import { Loading } from '../components/common'
 import { TabItem, Tabs } from '../components/tabs'
 import { useQuery } from '../components/useQuery'
-import { FINANCE_PRESENCE, FinanceProvider } from './finance/financeApi'
+import { FINANCE_PRESENCE, FinanceProvider, PERSON_ZONE, PersonZoneAnswer, setPersonZone } from './finance/financeApi'
 import { FinanceAccountsSection } from './finance/financeAccounts'
 import { FinanceBudgetsSection } from './finance/financeBudgets'
 import { FinanceNetWorthSection } from './finance/financeNetWorth'
@@ -65,11 +66,17 @@ export function FinanceTab({ hasSources }: { hasSources: boolean }) {
   const { section } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  // The sections' default days and months are the person's, in the zone
+  // their agent keeps, so the zone is read before any section is drawn. A
+  // failure to read it leaves the browser's zone rather than no tab.
+  const zone = useQuery(() => graphql<PersonZoneAnswer>(PERSON_ZONE), [], { refresh: false })
   // Nothing linked yet, the only useful section is where linking happens.
   if (!FINANCE_SECTIONS.some((candidate) => candidate.id === section)) {
     const landing = hasSources ? FINANCE_SECTIONS[0].id : 'sources'
     return <Navigate to={`/settings/agent/finance/${landing}${location.search}`} replace />
   }
+  if (!zone.data && !zone.error) return <Loading />
+  setPersonZone(zone.data?.ReadAgent?.timezone ?? '')
   return (
     <>
       <Tabs items={FINANCE_SECTIONS} active={section} onSelect={(id) => navigate(`/settings/agent/finance/${id}`)} />

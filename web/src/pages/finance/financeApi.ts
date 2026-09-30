@@ -408,19 +408,26 @@ export const ASSET_HISTORY = `query ($assetId: String!) {
   AssetHistory(assetId: $assetId) { asset { ${ASSET_FIELDS} } assetValuations { ${VALUATION_FIELDS} } }
 }`
 
+// An asset is made with its first value, when one is given, in the same
+// operation: the value is recorded with the asset's valuation source.
 export const CREATE_ASSET = `mutation ($assetName: String!, $assetKind: String!, $currencyCode: String!,
-  $estimateDescription: String, $isEstimateAllowed: Boolean) {
+  $valuationSource: String, $estimateDescription: String, $isEstimateAllowed: Boolean, $value: String,
+  $valuedOn: String) {
   CreateAsset(assetName: $assetName, assetKind: $assetKind, currencyCode: $currencyCode,
-    estimateDescription: $estimateDescription, isEstimateAllowed: $isEstimateAllowed) { id }
+    valuationSource: $valuationSource, estimateDescription: $estimateDescription,
+    isEstimateAllowed: $isEstimateAllowed, value: $value, valuedOn: $valuedOn) { id }
 }`
 
-export const UPDATE_ASSET = `mutation ($assetId: String!, $assetName: String, $assetKind: String,
-  $estimateDescription: String, $isEstimateAllowed: Boolean) {
-  UpdateAsset(assetId: $assetId, assetName: $assetName, assetKind: $assetKind,
-    estimateDescription: $estimateDescription, isEstimateAllowed: $isEstimateAllowed) { id }
+export const UPDATE_ASSET = `mutation ($assetId: String!, $assetName: String, $assetKind: String, $currencyCode: String,
+  $valuationSource: String, $estimateDescription: String, $isEstimateAllowed: Boolean) {
+  UpdateAsset(assetId: $assetId, assetName: $assetName, assetKind: $assetKind, currencyCode: $currencyCode,
+    valuationSource: $valuationSource, estimateDescription: $estimateDescription,
+    isEstimateAllowed: $isEstimateAllowed) { id }
 }`
 
-export const CLOSE_ASSET = `mutation ($assetId: String!, $closedOn: String) { CloseAsset(assetId: $assetId, closedOn: $closedOn) { id } }`
+export const CLOSE_ASSET = `mutation ($assetId: String!, $closedOn: String, $shouldReopen: Boolean) {
+  CloseAsset(assetId: $assetId, closedOn: $closedOn, shouldReopen: $shouldReopen) { id }
+}`
 
 export const DELETE_ASSET = `mutation ($assetId: String!) { DeleteAsset(assetId: $assetId) }`
 
@@ -455,18 +462,26 @@ export const UPDATE_SAVINGS_TARGET = `mutation ($savingsTargetId: String!, $savi
     savingsTarget { id } }
 }`
 
-export const CLOSE_SAVINGS_TARGET = `mutation ($savingsTargetId: String!) {
-  CloseSavingsTarget(savingsTargetId: $savingsTargetId) { savingsTarget { id } }
+export const CLOSE_SAVINGS_TARGET = `mutation ($savingsTargetId: String!, $shouldReopen: Boolean) {
+  CloseSavingsTarget(savingsTargetId: $savingsTargetId, shouldReopen: $shouldReopen) { savingsTarget { id } }
 }`
 
 // --- settings --------------------------------------------------------------
 
-// The reporting currency is the agent's own setting; empty means the
-// currency of the first finance account.
-export const REPORTING_CURRENCY = `query { ReadAgent { agent { reportingCurrencyCode } } }`
+// The currency totals are shown in: the person's choice, or when they made
+// none the currency of their first finance account, else of their first
+// asset. Empty only when there is nothing to take one from.
+export const REPORTING_CURRENCY = `query { ReportingCurrency { reportingCurrencyCode isChosen } }`
 
-export type ReportingCurrencyAnswer = { ReadAgent: { agent: { reportingCurrencyCode?: string | null } | null } }
+export type ReportingCurrencyAnswer = { ReportingCurrency: { reportingCurrencyCode: string; isChosen: boolean } }
 
+// The person's own time zone, from their agent: a month on the Finance tab
+// is the person's month, whatever zone the browser is in.
+export const PERSON_ZONE = `query { ReadAgent { timezone } }`
+
+export type PersonZoneAnswer = { ReadAgent: { timezone?: string | null } | null }
+
+// An empty currency code clears the choice.
 export const SET_REPORTING_CURRENCY = `mutation ($currencyCode: String!) { SetReportingCurrency(currencyCode: $currencyCode) }`
 
 export const CONVERT_CURRENCY = `query ($amount: String!, $fromCurrencyCode: String!, $toCurrencyCode: String!, $rateOn: String) {
@@ -495,8 +510,19 @@ export function isDecimal(typed: string): boolean {
   return /^-?\d+(\.\d{1,4})?$/.test(typed.trim())
 }
 
-// The day and the month as the server writes them, in the reader's own
-// calendar: a month is the reader's month, not the server's.
+// The zone the Finance tab's days and months are in: the person's own,
+// which their agent keeps, set by the tab once it has read it. Empty until
+// then, which is the browser's zone. The server answers "this month" in the
+// person's zone too, so a default range drawn in the browser's would be a
+// different month for somebody travelling.
+let personZone = ''
+
+export function setPersonZone(zone: string) {
+  personZone = zone
+}
+
+// isoDay is a calendar date as the server writes it, from its parts as
+// they stand; for calendar arithmetic, not for "now".
 export function isoDay(day: Date): string {
   const month = String(day.getMonth() + 1).padStart(2, '0')
   const date = String(day.getDate()).padStart(2, '0')
@@ -507,8 +533,39 @@ export function isoMonth(day: Date): string {
   return isoDay(day).slice(0, 7)
 }
 
-export function monthsBefore(day: Date, count: number): Date {
-  return new Date(day.getFullYear(), day.getMonth() - count, 1)
+// personToday is today in the person's zone, 2006-01-02.
+export function personToday(): string {
+  if (personZone) {
+    try {
+      // The Canadian English form is the one written year first.
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: personZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date())
+    } catch {
+      // A zone the browser does not know: the browser's own.
+    }
+  }
+  return isoDay(new Date())
+}
+
+// personMonth is this month in the person's zone, 2006-01.
+export function personMonth(): string {
+  return personToday().slice(0, 7)
+}
+
+// daysBefore is the day a number of days before another, both 2006-01-02.
+export function daysBefore(day: string, count: number): string {
+  const [year, month, date] = day.split('-').map(Number)
+  return isoDay(new Date(year, month - 1, date - count))
+}
+
+// monthBefore is the month a number of months before another, 2006-01.
+export function monthBefore(month: string, count: number): string {
+  const [year, number] = month.split('-').map(Number)
+  return isoMonth(new Date(year, number - 1 - count, 1))
 }
 
 export function monthLabel(month: string, style: 'short' | 'long' = 'short'): string {

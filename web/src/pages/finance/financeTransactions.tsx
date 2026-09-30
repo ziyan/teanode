@@ -181,6 +181,16 @@ export function FinanceTransactionsSection() {
       render: (row) => formatDay(row.postedOn),
       sort: (left, right) => left.postedOn.localeCompare(right.postedOn),
     },
+    // Second, beside the day: on a phone the table scrolls sideways, and
+    // the amount is what a row is read for.
+    {
+      key: 'amount',
+      header: t('finance.amount'),
+      numeric: true,
+      value: (row) => row.amount,
+      render: (row) => <Money amount={row.amount} currency={row.currencyCode} />,
+      sort: (left, right) => amountOf(left.amount) - amountOf(right.amount),
+    },
     {
       key: 'description',
       header: t('finance.description'),
@@ -239,14 +249,6 @@ export function FinanceTransactionsSection() {
           onChange={(event) => void markTransfer(row, event.target.checked)}
         />
       ),
-    },
-    {
-      key: 'amount',
-      header: t('finance.amount'),
-      numeric: true,
-      value: (row) => row.amount,
-      render: (row) => <Money amount={row.amount} currency={row.currencyCode} />,
-      sort: (left, right) => amountOf(left.amount) - amountOf(right.amount),
     },
   ]
 

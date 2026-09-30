@@ -205,7 +205,12 @@ Create, change, close and record are risk `write`; the two deletes are
 `destructive`; the rest `read`. `record_valuation` from the tool sets the
 valuation source to `agent_reading` or `agent_estimate`, and from the
 dashboard and the command line to `manual`. The parity tests from the
-finance accounts plan cover these operations with no new exceptions.
+finance accounts plan cover these operations with one deliberate
+exception: `create_asset` and `update_asset` do not take
+`is_estimate_allowed` or `estimate_description`, so only the person, in
+the dashboard or with `teanode finance`, can let the agent send an
+asset's description to a search provider (the tool parity test lists the
+two).
 
 ## Plan of Work
 

@@ -9,7 +9,7 @@ import (
 	"unicode"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
-	_ "github.com/ziyan/teanode/internal/agent/tools/finance"
+	"github.com/ziyan/teanode/internal/agent/tools/finance"
 	"github.com/ziyan/teanode/internal/api/v1api/apigraph"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/models"
@@ -74,8 +74,9 @@ func apiOperations() []string {
 	return operations
 }
 
-// Every operation of the finance area has a tool operation named by the
-// rule, or is one of the two that span calls, or is the one gap; and the
+// Every operation of the finance area is called by the tool operation its
+// name gives by the rule, or is one of those that span calls, or is the
+// one gap; each tool operation calls the operation its name says; and the
 // tool has no operation the API does not back.
 func TestFinanceParityWithTheTool(test *testing.T) {
 	test.Parallel()
@@ -89,31 +90,124 @@ func TestFinanceParityWithTheTool(test *testing.T) {
 			covered[operation] = true
 		}
 	}
-	byRule := map[string]bool{}
 	operations := apiOperations()
 	if len(operations) == 0 {
 		test.Fatal("the finance area has no operations to check")
 	}
+	isOperation := map[string]bool{}
 	for _, operation := range operations {
-		byRule[operationRule(operation)] = true
-		if operation == gapOperation {
-			if names[operationRule(operation)] {
-				test.Errorf("%s is reachable from the tool; a setup token must never be taken in conversation", operation)
+		isOperation[operation] = true
+	}
+	for name := range names {
+		called, isKnown := finance.GraphqlOperationOf(name)
+		if !isKnown {
+			test.Errorf("the schema offers %s, which the tool does not run", name)
+			continue
+		}
+		if called == gapOperation {
+			test.Errorf("%s calls %s; a setup token must never be taken in conversation", name, gapOperation)
+		}
+		if _, isSpanning := spanningOperations[name]; isSpanning {
+			if called != "" {
+				test.Errorf("%s stands for more than one call but calls %s", name, called)
 			}
 			continue
 		}
-		if covered[operation] {
+		if !isOperation[called] {
+			test.Errorf("the tool's %s calls %q, which is not an operation of the finance area", name, called)
 			continue
 		}
-		if !names[operationRule(operation)] {
+		if operationRule(called) != name {
+			test.Errorf("the tool's %s calls %s, whose name by the rule is %s", name, called, operationRule(called))
+		}
+		covered[called] = true
+	}
+	for _, operation := range operations {
+		if operation != gapOperation && !covered[operation] {
 			test.Errorf("%s has no tool operation %s", operation, operationRule(operation))
 		}
 	}
-	for name := range names {
-		if _, isSpanning := spanningOperations[name]; !isSpanning && !byRule[name] {
-			test.Errorf("the tool's %s has no operation in the finance area behind it", name)
+}
+
+// Each tool operation takes the arguments of the operation it calls, in
+// snake case, and nothing else but month, its shorthand for a range. The
+// one deliberate exception: whether an asset may be estimated from the
+// web, and what the estimate searches for, are the person's to set in the
+// dashboard or with teanode finance, never the agent's.
+func TestFinanceToolArgumentsMatchTheAPI(test *testing.T) {
+	test.Parallel()
+	personOnly := map[string]bool{}
+	for _, argument := range finance.PersonOnlyAssetArguments {
+		personOnly[argument] = true
+	}
+	arguments := apiArguments()
+	for name := range toolOperations(test, financeTool(test)) {
+		called, _ := finance.GraphqlOperationOf(name)
+		if called == "" {
+			continue
+		}
+		wanted, isKnown := arguments[called]
+		if !isKnown {
+			test.Errorf("no arguments known for %s", called)
+			continue
+		}
+		accepted := map[string]bool{}
+		for _, argument := range finance.AcceptedArgumentsOf(name) {
+			accepted[argument] = true
+			if argument != "month" && !wanted[argument] {
+				test.Errorf("the tool's %s takes %s, which %s does not", name, argument, called)
+			}
+		}
+		for argument := range wanted {
+			isException := personOnly[argument] && (called == "CreateAsset" || called == "UpdateAsset")
+			if isException && accepted[argument] {
+				test.Errorf("the tool's %s takes %s, which only the person may set", name, argument)
+			}
+			if !isException && !accepted[argument] {
+				test.Errorf("the tool's %s does not take %s, which %s does", name, argument, called)
+			}
 		}
 	}
+	properties := financeTool(test).Parameters["properties"].(map[string]any)
+	for argument := range personOnly {
+		if _, isOffered := properties[argument]; isOffered {
+			test.Errorf("the schema offers %s", argument)
+		}
+	}
+}
+
+// apiArguments is each finance operation's arguments in snake case.
+func apiArguments() map[string]map[string]bool {
+	arguments := map[string]map[string]bool{}
+	for _, interfaceType := range []reflect.Type{reflect.TypeFor[apigraph.FinanceQuery](), reflect.TypeFor[apigraph.FinanceMutation]()} {
+		for index := 0; index < interfaceType.NumMethod(); index++ {
+			method := interfaceType.Method(index)
+			names := map[string]bool{}
+			if method.Type.NumIn() > 1 {
+				structType := method.Type.In(1)
+				for field := 0; field < structType.NumField(); field++ {
+					key := strings.Split(structType.Field(field).Tag.Get("json"), ",")[0]
+					names[snakeCase(key)] = true
+				}
+			}
+			arguments[method.Name] = names
+		}
+	}
+	return arguments
+}
+
+// snakeCase is an argument's name as the tool spells it: financeAccountId
+// is finance_account_id.
+func snakeCase(camel string) string {
+	var builder strings.Builder
+	for _, letter := range camel {
+		if unicode.IsUpper(letter) {
+			builder.WriteRune('_')
+			letter = unicode.ToLower(letter)
+		}
+		builder.WriteRune(letter)
+	}
+	return builder.String()
 }
 
 // Reads are read, deletes destructive, and the rest write. The operations
@@ -126,7 +220,7 @@ func TestFinanceRiskPerOperation(test *testing.T) {
 		"exchange_rate": true, "convert_currency": true, "net_worth": true, "assets": true, "asset_history": true,
 		"spending_categories": true, "spending_rules": true, "budgets": true, "budget_status": true,
 		"spending_by_day": true, "cash_flow": true, "savings_targets": true,
-		"link_plaid": true, "repair": true, "link_simplefin": true,
+		"link_plaid": true, "repair": true, "link_simplefin": true, "reporting_currency": true,
 	}
 	for name := range toolOperations(test, tool) {
 		wanted := tools.RiskWrite
@@ -281,5 +375,161 @@ func TestFinanceToolActsOnFinanceSourcesOnly(test *testing.T) {
 	}
 	if !strings.Contains(operations.documents[len(operations.documents)-1], "DeleteAgentKnowledgeSource") {
 		test.Error("the delete was not sent")
+	}
+}
+
+// The call that once came back as an all-time total in the wrong
+// currency: a month and a currency under names spending_summary does not
+// read. It is refused, naming what it does not take, what it does, and
+// the argument meant; the retry with month and currency_code sends the
+// month's days and the currency.
+func TestFinanceToolRefusesArgumentsItDoesNotRead(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{"FinanceSpendingSummary": `{"groupBy":"spendingCategory"}`}}
+	_, err := call(test, operations, `{"operation":"spending_summary","month":"2026-08","to_currency_code":"EUR"}`)
+	if err == nil {
+		test.Fatal("to_currency_code was taken by spending_summary")
+	}
+	for _, said := range []string{"does not take to_currency_code", "currency_code instead of to_currency_code", "group_by", "month"} {
+		if !strings.Contains(err.Error(), said) {
+			test.Errorf("the refusal does not say %q: %s", said, err)
+		}
+	}
+	if len(operations.documents) != 0 {
+		test.Errorf("a refused call sent %d documents", len(operations.documents))
+	}
+	if _, err := call(test, operations, `{"operation":"spending_summary","month":"2026-08","currency_code":"EUR"}`); err != nil {
+		test.Fatal(err)
+	}
+	sent := operations.variables[0]
+	if sent["from"] != "2026-08-01" || sent["to"] != "2026-08-31" || sent["currencyCode"] != "EUR" || sent["month"] != nil {
+		test.Errorf("sent %v", sent)
+	}
+	if _, err := call(test, operations, `{"operation":"spending_summary","month":"2026-08","from":"2026-08-03"}`); err == nil {
+		test.Error("a month and a range were both taken")
+	}
+	if _, err := call(test, operations, `{"operation":"assets","asset_id":"asset-one"}`); err == nil || !strings.Contains(err.Error(), "no other arguments") {
+		test.Errorf("assets took an asset_id: %v", err)
+	}
+}
+
+// A month is a whole month for transactions too, and both ends of the
+// range for cash_flow.
+func TestFinanceToolMonthIsShorthandForARange(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"FinanceTransactions": `{"financeTransactions":[],"nextCursor":""}`,
+		"CashFlow":            `{"fromMonth":"2026-02","toMonth":"2026-02"}`,
+	}}
+	if _, err := call(test, operations, `{"operation":"transactions","month":"2026-02"}`); err != nil {
+		test.Fatal(err)
+	}
+	if sent := operations.variables[0]; sent["from"] != "2026-02-01" || sent["to"] != "2026-02-28" {
+		test.Errorf("sent %v", sent)
+	}
+	if _, err := call(test, operations, `{"operation":"cash_flow","month":"2026-02"}`); err != nil {
+		test.Fatal(err)
+	}
+	if sent := operations.variables[1]; sent["fromMonth"] != "2026-02" || sent["toMonth"] != "2026-02" {
+		test.Errorf("sent %v", sent)
+	}
+	if _, err := call(test, operations, `{"operation":"transactions","month":"February"}`); err == nil {
+		test.Error("a month not written 2026-02 was taken")
+	}
+}
+
+// The agent cannot allow itself to estimate an asset from the web.
+func TestFinanceToolLeavesEstimatesToThePerson(test *testing.T) {
+	test.Parallel()
+	for _, arguments := range []string{
+		`{"operation":"update_asset","asset_id":"asset-one","is_estimate_allowed":true}`,
+		`{"operation":"create_asset","asset_name":"the house","asset_kind":"property","currency_code":"USD","estimate_description":"an invented street"}`,
+	} {
+		operations := &fakeOperations{}
+		_, err := call(test, operations, arguments)
+		if err == nil || !strings.Contains(err.Error(), "the person's to set") {
+			test.Errorf("%s: %v", arguments, err)
+		}
+		if len(operations.documents) != 0 {
+			test.Errorf("%s was sent", arguments)
+		}
+	}
+}
+
+// An asset can be made with its first value in one call; the value is
+// the agent's reading, never the person's own.
+func TestFinanceToolCreatesAnAssetWithAValue(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{"CreateAsset": `{"id":"asset-one","assetName":"brokerage"}`}}
+	result, err := call(test, operations, `{"operation":"create_asset","asset_name":"brokerage","asset_kind":"investment","currency_code":"USD","value":"52380","valued_on":"2026-09-01"}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	sent := operations.variables[0]
+	if sent["value"] != "52380" || sent["valuedOn"] != "2026-09-01" || sent["valuationSource"] != "agent_reading" {
+		test.Errorf("sent %v", sent)
+	}
+	if !result.Untrusted {
+		test.Error("an asset's name came back trusted")
+	}
+	if _, err := call(test, operations, `{"operation":"create_asset","asset_name":"the car","asset_kind":"vehicle","currency_code":"USD","value":"18000","valuation_source":"manual"}`); err == nil {
+		test.Error("a manual value was recorded from the tool")
+	}
+}
+
+// Syncing a switched-off finance source is refused rather than switching
+// it on behind the person's back.
+func TestFinanceToolDoesNotSyncASwitchedOffSource(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{"FinanceSources": `[{"id":"source-one","name":"Invented Bank","isEnabled":false}]`}}
+	_, err := call(test, operations, `{"operation":"sync","source_id":"source-one"}`)
+	if err == nil || !strings.Contains(err.Error(), "enable_source") {
+		test.Errorf("a switched-off source was synced: %v", err)
+	}
+	for _, document := range operations.documents {
+		if strings.Contains(document, "SyncAgentKnowledgeSource") {
+			test.Error("the sync was sent")
+		}
+	}
+	operations.answers["FinanceSources"] = `[{"id":"source-one","name":"Invented Bank","isEnabled":true}]`
+	result, err := call(test, operations, `{"operation":"sync","source_id":"source-one"}`)
+	if err != nil || !result.Untrusted {
+		test.Errorf("%+v %v", result, err)
+	}
+}
+
+// The reporting currency is an operation of its own.
+func TestFinanceToolSaysTheReportingCurrency(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{"ReportingCurrency": `{"reportingCurrencyCode":"EUR","isChosen":false}`}}
+	result, err := call(test, operations, `{"operation":"reporting_currency"}`)
+	if err != nil || !strings.Contains(result.Content, `"reportingCurrencyCode":"EUR"`) {
+		test.Errorf("%+v %v", result, err)
+	}
+}
+
+// A confirmation card names what is approved: the spending category by
+// its name, and the transaction by what it was, its amount and its day.
+func TestFinanceToolPreviewsNameWhatIsApproved(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"SpendingCategories":  `[{"id":"category-dining","spendingCategoryName":"Dining"}]`,
+		"FinanceTransactions": `{"financeTransactions":[{"id":"transaction-one","postedOn":"2026-09-12","amount":"-42.17","currencyCode":"USD","description":"CORNER GROCER 0412","merchantName":"Corner Grocer"}],"nextCursor":""}`,
+	}}
+	ctx := tools.WithRun(context.Background(), &fakeRun{operations: operations})
+	tool := financeTool(test)
+	for arguments, wanted := range map[string][]string{
+		`{"operation":"set_budget","spending_category_id":"category-dining","monthly_amount":"400","currency_code":"USD"}`: {"400 USD", `"Dining"`},
+		`{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"category-dining"}`: {
+			`"Corner Grocer"`, "-42.17 USD", "2026-09-12", `"Dining"`,
+		},
+		`{"operation":"delete_spending_category","spending_category_id":"category-dining"}`: {`"Dining"`},
+	} {
+		line := tool.PreviewLine(ctx, json.RawMessage(arguments))
+		for _, said := range wanted {
+			if !strings.Contains(line, said) {
+				test.Errorf("%s: the card %q does not say %s", arguments, line, said)
+			}
+		}
 	}
 }

@@ -80,7 +80,7 @@ type FinanceTransaction struct {
 	CategorizedBy            string     `json:"categorizedBy,omitempty"`
 	CategorizationConfidence string     `json:"categorizationConfidence,omitempty"`
 	IsTransfer               bool       `json:"isTransfer"`
-	IsTransferSetByPerson    bool       `json:"isTransferSetByPerson"`
+	TransferMarkedBy         string     `json:"transferMarkedBy,omitempty"`
 }
 
 // FinanceTransactionPage is one page of finance transactions and the cursor
@@ -137,6 +137,13 @@ type CurrencyPairRate struct {
 	Rate             string `json:"rate"`
 	RateOn           string `json:"rateOn"`
 	RateSource       string `json:"rateSource"`
+}
+
+// ReportingCurrency is the currency totals are shown in, and whether the
+// person chose it or it falls back to their first finance account's.
+type ReportingCurrency struct {
+	ReportingCurrencyCode string `json:"reportingCurrencyCode"`
+	IsChosen              bool   `json:"isChosen"`
 }
 
 // CurrencyConversion is an amount converted, with its rate and day.
@@ -346,7 +353,7 @@ const (
 
 	financeSourceFields = `{ id name providerKind institutionId institutionName isEnabled cron lastRunAt nextRunAt lastError isSignInRequired createdAt financeAccounts ` + financeAccountFields + ` }`
 
-	financeTransactionFields = `{ id financeAccountId postedOn transactedAt amount currencyCode description merchantName providerCategoryPrimary providerCategoryDetailed isPending spendingCategoryId categorizedBy categorizationConfidence isTransfer isTransferSetByPerson }`
+	financeTransactionFields = `{ id financeAccountId postedOn transactedAt amount currencyCode description merchantName providerCategoryPrimary providerCategoryDetailed isPending spendingCategoryId categorizedBy categorizationConfidence isTransfer transferMarkedBy }`
 
 	currencyPairRateFields = `{ fromCurrencyCode toCurrencyCode rate rateOn rateSource }`
 
@@ -441,6 +448,8 @@ const (
 
 	DocumentSavingsTargets = `query { SavingsTargets ` + savingsTargetStandingFields + ` }`
 
+	DocumentReportingCurrency = `query { ReportingCurrency { reportingCurrencyCode isChosen } }`
+
 	DocumentCreateFinanceLinkToken = `mutation ($sourceId: String) { CreateFinanceLinkToken(sourceId: $sourceId) { linkToken sourceId } }`
 
 	DocumentCompleteFinanceLink = `mutation ($publicToken: String!, $institutionId: String, $institutionName: String) {
@@ -453,8 +462,8 @@ const (
 
 	DocumentSetReportingCurrency = `mutation ($currencyCode: String!) { SetReportingCurrency(currencyCode: $currencyCode) }`
 
-	DocumentCreateAsset = `mutation ($assetName: String!, $assetKind: String!, $currencyCode: String!, $valuationSource: String, $estimateDescription: String, $isEstimateAllowed: Boolean) {
-  CreateAsset(assetName: $assetName, assetKind: $assetKind, currencyCode: $currencyCode, valuationSource: $valuationSource, estimateDescription: $estimateDescription, isEstimateAllowed: $isEstimateAllowed) ` + assetFields + `
+	DocumentCreateAsset = `mutation ($assetName: String!, $assetKind: String!, $currencyCode: String!, $valuationSource: String, $estimateDescription: String, $isEstimateAllowed: Boolean, $value: String, $valuedOn: String) {
+  CreateAsset(assetName: $assetName, assetKind: $assetKind, currencyCode: $currencyCode, valuationSource: $valuationSource, estimateDescription: $estimateDescription, isEstimateAllowed: $isEstimateAllowed, value: $value, valuedOn: $valuedOn) ` + assetFields + `
 }`
 
 	DocumentUpdateAsset = `mutation ($assetId: String!, $assetName: String, $assetKind: String, $currencyCode: String, $valuationSource: String, $estimateDescription: String, $isEstimateAllowed: Boolean) {
@@ -530,6 +539,7 @@ var FinanceDocuments = map[string]string{
 	"AssetHistory": DocumentAssetHistory, "SpendingCategories": DocumentSpendingCategories,
 	"SpendingRules": DocumentSpendingRules, "Budgets": DocumentBudgets, "BudgetStatus": DocumentBudgetStatus,
 	"SpendingByDay": DocumentSpendingByDay, "CashFlow": DocumentCashFlow, "SavingsTargets": DocumentSavingsTargets,
+	"ReportingCurrency":      DocumentReportingCurrency,
 	"CreateFinanceLinkToken": DocumentCreateFinanceLinkToken, "CompleteFinanceLink": DocumentCompleteFinanceLink,
 	"CompleteFinanceRepair": DocumentCompleteFinanceRepair, "LinkSimpleFIN": DocumentLinkSimpleFIN,
 	"SetReportingCurrency": DocumentSetReportingCurrency, "CreateAsset": DocumentCreateAsset,

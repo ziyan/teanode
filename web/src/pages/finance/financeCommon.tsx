@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { graphql } from '../../api'
 import { formatMoney } from '../../components/common'
+import { compact } from '../../components/seriesChart'
 import { Select } from '../../components/select'
 import { useToast } from '../../components/toast'
 import { Key, useTranslation } from '../../i18n/i18n'
@@ -50,17 +51,20 @@ export function useAct(reload?: () => Promise<unknown> | void) {
   return { busy, act, run }
 }
 
-// useReportingCurrency is the currency the person chose for totals, empty
-// when they have not chosen one (the server then uses the currency of
-// their first finance account), with a way to read it again.
+// useReportingCurrency is the currency totals are shown in, as the server
+// works it out: the person's choice, or the currency of their first
+// finance account, else of their first asset (isChosen says which). Empty
+// only when there is nothing to take one from. With a way to read it again.
 export function useReportingCurrency(): {
   reportingCurrencyCode: string
+  isChosen: boolean
   isLoaded: boolean
   reload: () => Promise<void>
 } {
   const { data, reload } = useQuery(() => graphql<ReportingCurrencyAnswer>(REPORTING_CURRENCY), [], { refresh: false })
   return {
-    reportingCurrencyCode: data?.ReadAgent.agent?.reportingCurrencyCode ?? '',
+    reportingCurrencyCode: data?.ReportingCurrency.reportingCurrencyCode ?? '',
+    isChosen: data?.ReportingCurrency.isChosen ?? false,
     isLoaded: data !== null,
     reload: () => reload(true),
   }
@@ -75,6 +79,21 @@ export function Money({ amount, currency }: { amount?: string | number | null; c
     return <span className="muted">—</span>
   }
   return <span>{formatMoney(typeof amount === 'number' ? amount : amountOf(amount), currency)}</span>
+}
+
+// compactMoney is an amount in a few characters, for a chart's axis: the
+// currency's sign and a count to the thousand, $7.5k rather than
+// $7,500.00, so the axis stays narrow and the plot keeps its width.
+export function compactMoney(amount: number, currency?: string | null): string {
+  const code = (currency || 'USD').toUpperCase()
+  let sign = `${code} `
+  try {
+    const parts = new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).formatToParts(0)
+    sign = parts.find((part) => part.type === 'currency')?.value ?? sign
+  } catch {
+    // A code the browser does not know is written out.
+  }
+  return `${amount < 0 ? '-' : ''}${sign}${compact(Math.abs(amount))}`
 }
 
 // accountLabel names a finance account the way its statement does: its

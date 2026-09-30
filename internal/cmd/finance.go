@@ -3,11 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/urfave/cli/v3"
 
@@ -80,7 +82,7 @@ func NewFinanceCommand() *cli.Command {
 			&cli.DurationFlag{Name: "timeout", Usage: "how long to wait", Value: 15 * time.Minute},
 		}
 	}
-	return &cli.Command{
+	finance := &cli.Command{
 		Name:  "finance",
 		Usage: "your finance sources, accounts, transactions, net worth, budgets and savings targets",
 		Commands: []*cli.Command{
@@ -125,11 +127,19 @@ func NewFinanceCommand() *cli.Command {
 			},
 			{Name: "exchange-rate", Usage: "what one unit of a currency bought in another on a day", ArgsUsage: "<from> <to>", Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "on", Usage: "the day; today by default"}}, Action: runFinanceExchangeRate},
 			{Name: "convert-currency", Usage: "an amount in another currency at a day's rate", ArgsUsage: "<amount> <from> <to>", Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "on", Usage: "the day; today by default"}}, Action: runFinanceConvertCurrency},
+			{Name: "reporting-currency", Usage: "the currency totals are shown in, and whether you chose it", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceReportingCurrency},
 			{Name: "set-reporting-currency", Usage: "the one currency totals are shown in", ArgsUsage: "<currency>", Flags: []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "clear", Usage: "go back to the currency of your first finance account"}}, Action: runFinanceSetReportingCurrency},
 			{Name: "net-worth", Usage: "your net worth per day", Flags: append(rangeFlags(), JSONFlag(), currencyFlag()), Action: runFinanceNetWorth},
 			{Name: "assets", Usage: "what you own and owe, with each one's latest value", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceAssets},
 			{Name: "asset-history", Usage: "an asset's values, newest first", ArgsUsage: "<asset-id>", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceAssetHistory},
-			{Name: "create-asset", Usage: "add something you own or owe", ArgsUsage: "<name>", Flags: assetFlags(), Action: runFinanceCreateAsset},
+			{
+				Name: "create-asset", Usage: "add something you own or owe, with its first value if you give one", ArgsUsage: "<name>",
+				Flags: append(assetFlags(),
+					&cli.StringFlag{Name: "value", Usage: "its first value, positive for what is owed too"},
+					&cli.StringFlag{Name: "on", Usage: "the day of the first value; today by default"},
+				),
+				Action: runFinanceCreateAsset,
+			},
 			{Name: "update-asset", Usage: "change an asset", ArgsUsage: "<asset-id>", Flags: append(assetFlags(), &cli.StringFlag{Name: "name", Usage: "its new name"}), Action: runFinanceUpdateAsset},
 			{
 				Name: "close-asset", Usage: "record the day an asset was sold or paid off", ArgsUsage: "<asset-id>",
@@ -213,6 +223,43 @@ func NewFinanceCommand() *cli.Command {
 			},
 		},
 	}
+	for _, subcommand := range finance.Commands {
+		if operation := financeSubcommandOperations[subcommand.Name]; operation != "" {
+			subcommand.Metadata = map[string]any{financeOperationKey: operation}
+		}
+	}
+	return finance
+}
+
+// financeOperationKey is where a subcommand's metadata names the finance
+// operation its action calls, read back by operationOf.
+const financeOperationKey = "operation"
+
+// financeSubcommandOperations is the finance operation each subcommand
+// calls. The subcommand's action calls the one named here (operationOf),
+// so the parity test that checks these names checks what runs.
+var financeSubcommandOperations = map[string]string{
+	"providers": "FinanceProviders", "link-simplefin": "LinkSimpleFIN", "sources": "FinanceSources",
+	"accounts": "FinanceAccounts", "transactions": "FinanceTransactions", "spending-summary": "FinanceSpendingSummary",
+	"exchange-rate": "ExchangeRate", "convert-currency": "ConvertCurrency", "reporting-currency": "ReportingCurrency",
+	"set-reporting-currency": "SetReportingCurrency", "net-worth": "NetWorth", "assets": "Assets",
+	"asset-history": "AssetHistory", "create-asset": "CreateAsset", "update-asset": "UpdateAsset",
+	"close-asset": "CloseAsset", "delete-asset": "DeleteAsset", "record-valuation": "RecordValuation",
+	"delete-valuation": "DeleteValuation", "spending-categories": "SpendingCategories",
+	"create-spending-category": "CreateSpendingCategory", "update-spending-category": "UpdateSpendingCategory",
+	"delete-spending-category": "DeleteSpendingCategory", "spending-rules": "SpendingRules",
+	"create-spending-rule": "CreateSpendingRule", "update-spending-rule": "UpdateSpendingRule",
+	"delete-spending-rule": "DeleteSpendingRule", "categorize-transaction": "CategorizeTransaction",
+	"mark-transfer": "MarkTransfer", "budgets": "Budgets", "set-budget": "SetBudget", "budget-status": "BudgetStatus",
+	"spending-by-day": "SpendingByDay", "cash-flow": "CashFlow", "savings-targets": "SavingsTargets",
+	"create-savings-target": "CreateSavingsTarget", "update-savings-target": "UpdateSavingsTarget",
+	"close-savings-target": "CloseSavingsTarget",
+}
+
+// operationOf is the finance operation a subcommand calls.
+func operationOf(command *cli.Command) string {
+	operation, _ := command.Metadata[financeOperationKey].(string)
+	return operation
 }
 
 // --- helpers ------------------------------------------------------------
@@ -268,10 +315,11 @@ func rangeOf(command *cli.Command) (string, string, error) {
 }
 
 // dayBack is the day a span such as 30d, 12w, 6m or 1y reaches back from
-// now, or a day given as such.
+// now. Anything else is refused, a day included: taken as a span, a day
+// once gave a range of one day with nothing said.
 func dayBack(span string, now time.Time) (string, error) {
 	if _, err := time.Parse(time.DateOnly, span); err == nil {
-		return span, nil
+		return "", usage(fmt.Sprintf("--since takes a span back from today, as 30d, 12w, 6m or 1y; for a range from the day %s give --from %s", span, span))
 	}
 	if len(span) >= 2 {
 		count, err := strconv.Atoi(span[:len(span)-1])
@@ -288,29 +336,41 @@ func dayBack(span string, now time.Time) (string, error) {
 			}
 		}
 	}
-	return "", usage(fmt.Sprintf("%q is not a span like 30d, 12w, 6m or 1y, or a day like 2026-09-01", span))
+	return "", usage(fmt.Sprintf("--since %q is not a span; give days, weeks, months or years back from today, as 30d, 12w, 6m or 1y", span))
 }
 
-// money is an amount with its currency, as a person reads it: two places
-// unless it has more that are not zero.
+// currencyMinorUnits is how many decimal places a currency is written
+// with, where ISO 4217 says other than two.
+var currencyMinorUnits = map[string]int{
+	"BIF": 0, "CLP": 0, "DJF": 0, "GNF": 0, "ISK": 0, "JPY": 0, "KMF": 0, "KRW": 0, "PYG": 0,
+	"RWF": 0, "UGX": 0, "UYI": 0, "VND": 0, "VUV": 0, "XAF": 0, "XOF": 0, "XPF": 0,
+	"BHD": 3, "IQD": 3, "JOD": 3, "KWD": 3, "LYD": 3, "OMR": 3, "TND": 3,
+}
+
+// money is an amount with its currency, as a person reads it: rounded to
+// the places the currency is written with, two for most and none for the
+// yen. A converted total carries more places than that, which read as
+// noise in a column; --json keeps them all.
 func money(amount, currencyCode string) string {
 	if amount == "" {
 		return ""
 	}
-	if dot := strings.Index(amount, "."); dot >= 0 {
-		for len(amount) > dot+3 && strings.HasSuffix(amount, "0") {
-			amount = amount[:len(amount)-1]
+	places, isListed := currencyMinorUnits[strings.ToUpper(currencyCode)]
+	if !isListed {
+		places = 2
+	}
+	written := amount
+	if value, isNumber := new(big.Rat).SetString(amount); isNumber {
+		// Halves round away from zero, as the amounts are stored.
+		written = value.FloatString(places)
+		if strings.Trim(written, "-0.") == "" {
+			written = strings.TrimPrefix(written, "-")
 		}
-		for len(amount) < dot+3 {
-			amount += "0"
-		}
-	} else {
-		amount += ".00"
 	}
 	if currencyCode == "" {
-		return amount
+		return written
 	}
-	return amount + " " + currencyCode
+	return written + " " + currencyCode
 }
 
 // dayOf is a time as the day it fell on here, or "never".
@@ -367,7 +427,7 @@ func printDone(command *cli.Command, result any, line string) error {
 
 func runFinanceProviders(ctx context.Context, command *cli.Command) error {
 	var providers []*client.FinanceProvider
-	if err := financeCall(ctx, command, "FinanceProviders", nil, &providers); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), nil, &providers); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -451,7 +511,10 @@ func runFinanceLinkPlaid(ctx context.Context, command *cli.Command) error {
 	for _, source := range before {
 		isKnown[source.ID] = true
 	}
-	linked, err := waitForFinanceSource(ctx, command, func(source *client.FinanceSource) bool { return !isKnown[source.ID] })
+	// A SimpleFIN link made meanwhile is not the one being waited for.
+	linked, err := waitForFinanceSource(ctx, command, func(source *client.FinanceSource) bool {
+		return !isKnown[source.ID] && source.ProviderKind == "plaid"
+	})
 	if err != nil {
 		return err
 	}
@@ -471,8 +534,24 @@ func runFinanceRepair(ctx context.Context, command *cli.Command) error {
 		return printDone(command, map[string]string{"linkAddress": address}, "Open this address, signed in to the dashboard, to sign in to the institution again:\n  "+address)
 	}
 	fmt.Fprintf(os.Stderr, "Open this address, signed in to the dashboard, to sign in to the institution again:\n  %s\nWaiting for the finance source to be repaired (Ctrl-C to stop waiting)...\n", address)
+	// Done when the sign-in flag is seen cleared after being seen set, or,
+	// for a source that was not waiting for a sign-in, when it next syncs
+	// without asking for one. The first look is taken before the person
+	// has done anything, so an unflagged source there proves nothing.
+	startedAt := time.Now()
+	isFlagSeen := false
 	repaired, err := waitForFinanceSource(ctx, command, func(source *client.FinanceSource) bool {
-		return source.ID == sourceId && !source.IsSignInRequired
+		if source.ID != sourceId {
+			return false
+		}
+		if source.IsSignInRequired {
+			isFlagSeen = true
+			return false
+		}
+		if isFlagSeen {
+			return true
+		}
+		return source.LastRunAt != nil && source.LastRunAt.After(startedAt) && source.LastError == ""
 	})
 	if err != nil {
 		return err
@@ -493,7 +572,7 @@ func runFinanceLinkSimpleFin(ctx context.Context, command *cli.Command) error {
 		return usage("give the setup token from the SimpleFIN Bridge")
 	}
 	var linked *client.FinanceSource
-	if err := financeCall(ctx, command, "LinkSimpleFIN", map[string]any{"setupToken": setupToken}, &linked); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), map[string]any{"setupToken": setupToken}, &linked); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -539,10 +618,36 @@ func printFinanceSources(command *cli.Command, sources []*client.FinanceSource) 
 	return printTable([]string{"id", "institution", "provider", "last sync", "state", "accounts"}, rows)
 }
 
-func runFinanceSync(ctx context.Context, command *cli.Command) error {
+// financeSourceArgument is the finance source the first argument names,
+// looked up among the person's finance sources: the operations every
+// source has act on any source, and teanode finance acts on finance
+// sources only.
+func financeSourceArgument(ctx context.Context, command *cli.Command) (*client.FinanceSource, error) {
 	sourceId, err := financeArgument(command, 0, "the finance source's id; teanode finance sources lists them")
 	if err != nil {
+		return nil, err
+	}
+	sources, err := listFinanceSources(ctx, command)
+	if err != nil {
+		return nil, err
+	}
+	for _, source := range sources {
+		if source.ID == sourceId {
+			return source, nil
+		}
+	}
+	return nil, usage(fmt.Sprintf("there is no finance source %q; teanode finance sources lists them", sourceId))
+}
+
+func runFinanceSync(ctx context.Context, command *cli.Command) error {
+	source, err := financeSourceArgument(ctx, command)
+	if err != nil {
 		return err
+	}
+	sourceId := source.ID
+	// Syncing would switch it on again, which is enable-source's to do.
+	if !source.IsEnabled {
+		return usage(fmt.Sprintf("finance source %s is switched off; teanode finance enable-source %s switches it on and syncs it", sourceId, sourceId))
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -563,10 +668,11 @@ func runFinanceEnableSource(ctx context.Context, command *cli.Command) error {
 }
 
 func switchFinanceSource(ctx context.Context, command *cli.Command, isEnabled bool) error {
-	sourceId, err := financeArgument(command, 0, "the finance source's id; teanode finance sources lists them")
+	source, err := financeSourceArgument(ctx, command)
 	if err != nil {
 		return err
 	}
+	sourceId := source.ID
 	connection, err := openClient(command)
 	if err != nil {
 		return err
@@ -582,11 +688,16 @@ func switchFinanceSource(ctx context.Context, command *cli.Command, isEnabled bo
 }
 
 func runFinanceDeleteSource(ctx context.Context, command *cli.Command) error {
-	sourceId, err := financeArgument(command, 0, "the finance source's id; teanode finance sources lists them")
+	source, err := financeSourceArgument(ctx, command)
 	if err != nil {
 		return err
 	}
-	if err := confirm(command, "Delete finance source "+sourceId+"? Its accounts and transactions are deleted, it is ended at its provider, and some Plaid plans count a deleted link against their limit."); err != nil {
+	sourceId := source.ID
+	name := source.InstitutionName
+	if name == "" {
+		name = source.Name
+	}
+	if err := confirm(command, "Delete finance source "+sourceId+" ("+forTerminal(name)+")? Its accounts and transactions are deleted, it is ended at its provider, and some Plaid plans count a deleted link against their limit."); err != nil {
 		return err
 	}
 	connection, err := openClient(command)
@@ -605,7 +716,7 @@ func runFinanceAccounts(ctx context.Context, command *cli.Command) error {
 	variables := map[string]any{}
 	setString(command, variables, "currency", "currencyCode")
 	var accounts []*client.FinanceAccount
-	if err := financeCall(ctx, command, "FinanceAccounts", variables, &accounts); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &accounts); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -650,7 +761,7 @@ func runFinanceTransactions(ctx context.Context, command *cli.Command) error {
 		variables["spendingCategoryId"] = spendingCategory.ID
 	}
 	var page *client.FinanceTransactionPage
-	if err := financeCall(ctx, command, "FinanceTransactions", variables, &page); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &page); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -698,7 +809,7 @@ func runFinanceSpendingSummary(ctx context.Context, command *cli.Command) error 
 	setString(command, variables, "finance-account", "financeAccountId")
 	setString(command, variables, "currency", "currencyCode")
 	var summary *client.FinanceSpendingSummary
-	if err := financeCall(ctx, command, "FinanceSpendingSummary", variables, &summary); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &summary); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -728,7 +839,7 @@ func runFinanceSpendingSummary(ctx context.Context, command *cli.Command) error 
 			rows = append(rows, []string{label(row.GroupKey, row.GroupLabel), money(row.MoneyOut, row.CurrencyCode), money(row.MoneyIn, row.CurrencyCode)})
 		}
 	}
-	if err := printTable([]string{summary.GroupBy, "money out", "money in"}, rows); err != nil {
+	if err := printTable([]string{groupByHeader(summary.GroupBy), "money out", "money in"}, rows); err != nil {
 		return err
 	}
 	if len(summary.CurrencyTotals) > 1 {
@@ -740,6 +851,20 @@ func runFinanceSpendingSummary(ctx context.Context, command *cli.Command) error 
 		fmt.Fprintf(os.Stderr, "note: left out of the %s totals for want of an exchange rate: %s\n", summary.ReportingCurrencyCode, strings.Join(summary.UnconvertedCurrencyCodes, ", "))
 	}
 	return nil
+}
+
+// groupByHeader is a spending summary's grouping as a column's header:
+// spendingCategory is "spending category".
+func groupByHeader(groupBy string) string {
+	var words []string
+	start := 0
+	for index, letter := range groupBy {
+		if unicode.IsUpper(letter) {
+			words = append(words, strings.ToLower(groupBy[start:index]))
+			start = index
+		}
+	}
+	return strings.Join(append(words, strings.ToLower(groupBy[start:])), " ")
 }
 
 func runFinanceExchangeRate(ctx context.Context, command *cli.Command) error {
@@ -754,7 +879,7 @@ func runFinanceExchangeRate(ctx context.Context, command *cli.Command) error {
 	variables := map[string]any{"fromCurrencyCode": fromCurrencyCode, "toCurrencyCode": toCurrencyCode}
 	setString(command, variables, "on", "rateOn")
 	var rate *client.CurrencyPairRate
-	if err := financeCall(ctx, command, "ExchangeRate", variables, &rate); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &rate); err != nil {
 		return err
 	}
 	return printDone(command, rate, fmt.Sprintf("1 %s = %s %s on %s (%s)", rate.FromCurrencyCode, rate.Rate, rate.ToCurrencyCode, rate.RateOn, rate.RateSource))
@@ -776,12 +901,26 @@ func runFinanceConvertCurrency(ctx context.Context, command *cli.Command) error 
 	variables := map[string]any{"amount": amount, "fromCurrencyCode": fromCurrencyCode, "toCurrencyCode": toCurrencyCode}
 	setString(command, variables, "on", "rateOn")
 	var conversion *client.CurrencyConversion
-	if err := financeCall(ctx, command, "ConvertCurrency", variables, &conversion); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &conversion); err != nil {
 		return err
 	}
 	return printDone(command, conversion, fmt.Sprintf("%s = %s at %s on %s (%s)",
 		money(conversion.Amount, conversion.FromCurrencyCode), money(conversion.ConvertedAmount, conversion.ToCurrencyCode),
 		conversion.Rate, conversion.RateOn, conversion.RateSource))
+}
+
+func runFinanceReportingCurrency(ctx context.Context, command *cli.Command) error {
+	var reporting *client.ReportingCurrency
+	if err := financeCall(ctx, command, operationOf(command), nil, &reporting); err != nil {
+		return err
+	}
+	switch {
+	case reporting.ReportingCurrencyCode == "":
+		return printDone(command, reporting, "no reporting currency yet: you chose none, and there is no finance account or asset to take one from")
+	case reporting.IsChosen:
+		return printDone(command, reporting, "totals are shown in "+reporting.ReportingCurrencyCode+", which you chose")
+	}
+	return printDone(command, reporting, "totals are shown in "+reporting.ReportingCurrencyCode+", the currency of your first finance account or asset; teanode finance set-reporting-currency chooses another")
 }
 
 func runFinanceSetReportingCurrency(ctx context.Context, command *cli.Command) error {
@@ -792,7 +931,7 @@ func runFinanceSetReportingCurrency(ctx context.Context, command *cli.Command) e
 		return usage("give a currency code like EUR, or --clear")
 	}
 	var saved string
-	if err := financeCall(ctx, command, "SetReportingCurrency", map[string]any{"currencyCode": currencyCode}, &saved); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), map[string]any{"currencyCode": currencyCode}, &saved); err != nil {
 		return err
 	}
 	if saved == "" {
@@ -811,7 +950,7 @@ func runFinanceNetWorth(ctx context.Context, command *cli.Command) error {
 	variables := map[string]any{"from": from, "to": to}
 	setString(command, variables, "currency", "currencyCode")
 	var netWorth *client.NetWorth
-	if err := financeCall(ctx, command, "NetWorth", variables, &netWorth); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &netWorth); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -842,7 +981,7 @@ func runFinanceNetWorth(ctx context.Context, command *cli.Command) error {
 
 func runFinanceAssets(ctx context.Context, command *cli.Command) error {
 	var assets []*client.Asset
-	if err := financeCall(ctx, command, "Assets", nil, &assets); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), nil, &assets); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -856,10 +995,16 @@ func runFinanceAssets(ctx context.Context, command *cli.Command) error {
 	for _, asset := range assets {
 		value, valuedOn := "", ""
 		if asset.LatestValuation != nil {
-			value, valuedOn = money(asset.LatestValuation.Value, asset.LatestValuation.CurrencyCode), asset.LatestValuation.ValuedOn
+			amount := asset.LatestValuation.Value
 			if asset.IsLiability {
-				value = "-" + value
+				// What is owed subtracts; a card in credit adds.
+				if negative, isNegative := strings.CutPrefix(amount, "-"); isNegative {
+					amount = negative
+				} else {
+					amount = "-" + amount
+				}
 			}
+			value, valuedOn = money(amount, asset.LatestValuation.CurrencyCode), asset.LatestValuation.ValuedOn
 		}
 		closed := ""
 		if asset.ClosedOn != "" {
@@ -876,7 +1021,7 @@ func runFinanceAssetHistory(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	var history *client.AssetHistory
-	if err := financeCall(ctx, command, "AssetHistory", map[string]any{"assetId": assetId}, &history); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), map[string]any{"assetId": assetId}, &history); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -902,9 +1047,14 @@ func runFinanceCreateAsset(ctx context.Context, command *cli.Command) error {
 	setString(command, variables, "valuation-source", "valuationSource")
 	setString(command, variables, "estimate-description", "estimateDescription")
 	setBool(command, variables, "is-estimate-allowed", "isEstimateAllowed")
+	setString(command, variables, "value", "value")
+	setString(command, variables, "on", "valuedOn")
 	var asset *client.Asset
-	if err := financeCall(ctx, command, "CreateAsset", variables, &asset); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &asset); err != nil {
 		return err
+	}
+	if valuation := asset.LatestValuation; valuation != nil {
+		return printDone(command, asset, fmt.Sprintf("%s: added %s, worth %s on %s", asset.ID, asset.AssetName, money(valuation.Value, valuation.CurrencyCode), valuation.ValuedOn))
 	}
 	return printDone(command, asset, fmt.Sprintf("%s: added %s; teanode finance record-valuation %s <value> gives it a value", asset.ID, asset.AssetName, asset.ID))
 }
@@ -922,7 +1072,7 @@ func runFinanceUpdateAsset(ctx context.Context, command *cli.Command) error {
 	setString(command, variables, "estimate-description", "estimateDescription")
 	setBool(command, variables, "is-estimate-allowed", "isEstimateAllowed")
 	var asset *client.Asset
-	if err := financeCall(ctx, command, "UpdateAsset", variables, &asset); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &asset); err != nil {
 		return err
 	}
 	return printDone(command, asset, asset.ID+": changed")
@@ -937,7 +1087,7 @@ func runFinanceCloseAsset(ctx context.Context, command *cli.Command) error {
 	setString(command, variables, "on", "closedOn")
 	setBool(command, variables, "reopen", "shouldReopen")
 	var asset *client.Asset
-	if err := financeCall(ctx, command, "CloseAsset", variables, &asset); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &asset); err != nil {
 		return err
 	}
 	if asset.ClosedOn == "" {
@@ -954,7 +1104,7 @@ func runFinanceDeleteAsset(ctx context.Context, command *cli.Command) error {
 	if err := confirm(command, "Delete asset "+assetId+" and its whole history?"); err != nil {
 		return err
 	}
-	if err := financeCall(ctx, command, "DeleteAsset", map[string]any{"assetId": assetId}, nil); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), map[string]any{"assetId": assetId}, nil); err != nil {
 		return err
 	}
 	return printDone(command, map[string]any{"assetId": assetId, "isDeleted": true}, assetId+": deleted")
@@ -975,7 +1125,7 @@ func runFinanceRecordValuation(ctx context.Context, command *cli.Command) error 
 	setString(command, variables, "on", "valuedOn")
 	setString(command, variables, "note", "valuationNote")
 	var valuation *client.AssetValuation
-	if err := financeCall(ctx, command, "RecordValuation", variables, &valuation); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &valuation); err != nil {
 		return err
 	}
 	return printDone(command, valuation, fmt.Sprintf("%s: %s on %s", valuation.ID, money(valuation.Value, valuation.CurrencyCode), valuation.ValuedOn))
@@ -989,7 +1139,7 @@ func runFinanceDeleteValuation(ctx context.Context, command *cli.Command) error 
 	if err := confirm(command, "Delete valuation "+valuationId+"?"); err != nil {
 		return err
 	}
-	if err := financeCall(ctx, command, "DeleteValuation", map[string]any{"valuationId": valuationId}, nil); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), map[string]any{"valuationId": valuationId}, nil); err != nil {
 		return err
 	}
 	return printDone(command, map[string]any{"valuationId": valuationId, "isDeleted": true}, valuationId+": deleted")
@@ -999,7 +1149,7 @@ func runFinanceDeleteValuation(ctx context.Context, command *cli.Command) error 
 
 func runFinanceSpendingCategories(ctx context.Context, command *cli.Command) error {
 	var spendingCategories []*client.SpendingCategory
-	if err := financeCall(ctx, command, "SpendingCategories", nil, &spendingCategories); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), nil, &spendingCategories); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -1009,18 +1159,21 @@ func runFinanceSpendingCategories(ctx context.Context, command *cli.Command) err
 	for _, spendingCategory := range spendingCategories {
 		names[spendingCategory.ID] = spendingCategory.SpendingCategoryName
 	}
+	// Every column has a header and every cell a word, so an empty parent
+	// cannot make "income" read as the parent's name.
+	yesOrNo := map[bool]string{true: "yes", false: "no"}
 	rows := make([][]string, 0, len(spendingCategories))
 	for _, spendingCategory := range spendingCategories {
-		notes := []string{}
-		if spendingCategory.IsIncome {
-			notes = append(notes, "income")
+		parent := names[spendingCategory.ParentSpendingCategoryID]
+		if parent == "" {
+			parent = "-"
 		}
-		if spendingCategory.IsHidden {
-			notes = append(notes, "hidden")
-		}
-		rows = append(rows, []string{spendingCategory.ID, spendingCategory.SpendingCategoryName, names[spendingCategory.ParentSpendingCategoryID], strings.Join(notes, ", ")})
+		rows = append(rows, []string{
+			spendingCategory.ID, spendingCategory.SpendingCategoryName, parent,
+			yesOrNo[spendingCategory.IsIncome], yesOrNo[spendingCategory.IsHidden],
+		})
 	}
-	return printTable([]string{"id", "spending category", "parent", ""}, rows)
+	return printTable([]string{"id", "spending category", "parent", "income", "hidden"}, rows)
 }
 
 func runFinanceCreateSpendingCategory(ctx context.Context, command *cli.Command) error {
@@ -1039,7 +1192,7 @@ func runFinanceCreateSpendingCategory(ctx context.Context, command *cli.Command)
 	setBool(command, variables, "is-income", "isIncome")
 	setBool(command, variables, "is-hidden", "isHidden")
 	var spendingCategory *client.SpendingCategory
-	if err := financeCall(ctx, command, "CreateSpendingCategory", variables, &spendingCategory); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &spendingCategory); err != nil {
 		return err
 	}
 	return printDone(command, spendingCategory, spendingCategory.ID+": added "+spendingCategory.SpendingCategoryName)
@@ -1070,7 +1223,7 @@ func runFinanceUpdateSpendingCategory(ctx context.Context, command *cli.Command)
 	setBool(command, variables, "is-income", "isIncome")
 	setBool(command, variables, "is-hidden", "isHidden")
 	var spendingCategory *client.SpendingCategory
-	if err := financeCall(ctx, command, "UpdateSpendingCategory", variables, &spendingCategory); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &spendingCategory); err != nil {
 		return err
 	}
 	return printDone(command, spendingCategory, spendingCategory.ID+": changed")
@@ -1088,7 +1241,7 @@ func runFinanceDeleteSpendingCategory(ctx context.Context, command *cli.Command)
 	if err := confirm(command, "Delete spending category "+found.SpendingCategoryName+"? Its budgets and the spending rules that assign it go too, and its transactions become uncategorized."); err != nil {
 		return err
 	}
-	if err := financeCall(ctx, command, "DeleteSpendingCategory", map[string]any{"spendingCategoryId": found.ID}, nil); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), map[string]any{"spendingCategoryId": found.ID}, nil); err != nil {
 		return err
 	}
 	return printDone(command, map[string]any{"spendingCategoryId": found.ID, "isDeleted": true}, found.ID+": deleted")
@@ -1096,7 +1249,7 @@ func runFinanceDeleteSpendingCategory(ctx context.Context, command *cli.Command)
 
 func runFinanceSpendingRules(ctx context.Context, command *cli.Command) error {
 	var spendingRules []*client.SpendingRule
-	if err := financeCall(ctx, command, "SpendingRules", nil, &spendingRules); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), nil, &spendingRules); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -1155,7 +1308,7 @@ func runFinanceCreateSpendingRule(ctx context.Context, command *cli.Command) err
 		return err
 	}
 	var spendingRule *client.SpendingRule
-	if err := financeCall(ctx, command, "CreateSpendingRule", variables, &spendingRule); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &spendingRule); err != nil {
 		return err
 	}
 	return printDone(command, spendingRule, spendingRule.ID+": added, and applied to past transactions except the ones you chose")
@@ -1172,7 +1325,7 @@ func runFinanceUpdateSpendingRule(ctx context.Context, command *cli.Command) err
 		return err
 	}
 	var spendingRule *client.SpendingRule
-	if err := financeCall(ctx, command, "UpdateSpendingRule", variables, &spendingRule); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &spendingRule); err != nil {
 		return err
 	}
 	return printDone(command, spendingRule, spendingRule.ID+": changed, and applied again")
@@ -1186,7 +1339,7 @@ func runFinanceDeleteSpendingRule(ctx context.Context, command *cli.Command) err
 	if err := confirm(command, "Delete spending rule "+spendingRuleId+"?"); err != nil {
 		return err
 	}
-	if err := financeCall(ctx, command, "DeleteSpendingRule", map[string]any{"spendingRuleId": spendingRuleId}, nil); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), map[string]any{"spendingRuleId": spendingRuleId}, nil); err != nil {
 		return err
 	}
 	return printDone(command, map[string]any{"spendingRuleId": spendingRuleId, "isDeleted": true}, spendingRuleId+": deleted")
@@ -1212,7 +1365,7 @@ func runFinanceCategorizeTransaction(ctx context.Context, command *cli.Command) 
 	variables := map[string]any{"financeTransactionId": financeTransactionId, "spendingCategoryId": spendingCategoryId}
 	setBool(command, variables, "create-spending-rule", "shouldCreateSpendingRule")
 	var categorized *client.CategorizedTransaction
-	if err := financeCall(ctx, command, "CategorizeTransaction", variables, &categorized); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &categorized); err != nil {
 		return err
 	}
 	line := financeTransactionId + ": categorized"
@@ -1228,7 +1381,7 @@ func runFinanceMarkTransfer(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	var marked *client.FinanceTransaction
-	if err := financeCall(ctx, command, "MarkTransfer", map[string]any{"financeTransactionId": financeTransactionId, "isTransfer": command.Bool("is-transfer")}, &marked); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), map[string]any{"financeTransactionId": financeTransactionId, "isTransfer": command.Bool("is-transfer")}, &marked); err != nil {
 		return err
 	}
 	if marked.IsTransfer {
@@ -1241,7 +1394,7 @@ func runFinanceMarkTransfer(ctx context.Context, command *cli.Command) error {
 
 func runFinanceBudgets(ctx context.Context, command *cli.Command) error {
 	var budgets []*client.Budget
-	if err := financeCall(ctx, command, "Budgets", nil, &budgets); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), nil, &budgets); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -1279,7 +1432,7 @@ func runFinanceSetBudget(ctx context.Context, command *cli.Command) error {
 	setString(command, variables, "currency", "currencyCode")
 	setString(command, variables, "from", "effectiveFrom")
 	var budget *client.Budget
-	if err := financeCall(ctx, command, "SetBudget", variables, &budget); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &budget); err != nil {
 		return err
 	}
 	return printDone(command, budget, fmt.Sprintf("%s: %s a month from %s", found.SpendingCategoryName, money(budget.MonthlyAmount, budget.CurrencyCode), strings.TrimSuffix(budget.EffectiveFrom, "-01")))
@@ -1289,7 +1442,7 @@ func runFinanceBudgetStatus(ctx context.Context, command *cli.Command) error {
 	variables := map[string]any{}
 	setString(command, variables, "month", "month")
 	var status *client.BudgetStatus
-	if err := financeCall(ctx, command, "BudgetStatus", variables, &status); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &status); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -1316,7 +1469,7 @@ func runFinanceSpendingByDay(ctx context.Context, command *cli.Command) error {
 	setString(command, variables, "compare-month", "compareMonth")
 	setString(command, variables, "currency", "currencyCode")
 	var byDay *client.SpendingByDay
-	if err := financeCall(ctx, command, "SpendingByDay", variables, &byDay); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &byDay); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -1340,7 +1493,7 @@ func runFinanceCashFlow(ctx context.Context, command *cli.Command) error {
 	setString(command, variables, "to-month", "toMonth")
 	setString(command, variables, "currency", "currencyCode")
 	var cashFlow *client.CashFlow
-	if err := financeCall(ctx, command, "CashFlow", variables, &cashFlow); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &cashFlow); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -1367,7 +1520,7 @@ func runFinanceCashFlow(ctx context.Context, command *cli.Command) error {
 
 func runFinanceSavingsTargets(ctx context.Context, command *cli.Command) error {
 	var standings []*client.SavingsTargetStanding
-	if err := financeCall(ctx, command, "SavingsTargets", nil, &standings); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), nil, &standings); err != nil {
 		return err
 	}
 	if command.Bool("json") {
@@ -1426,7 +1579,7 @@ func runFinanceCreateSavingsTarget(ctx context.Context, command *cli.Command) er
 	variables := map[string]any{"savingsTargetName": name, "targetAmount": targetAmount}
 	savingsTargetVariables(command, variables)
 	var standing *client.SavingsTargetStanding
-	if err := financeCall(ctx, command, "CreateSavingsTarget", variables, &standing); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &standing); err != nil {
 		return err
 	}
 	return printDone(command, standing, fmt.Sprintf("%s: added; it needs %s a month", standing.SavingsTarget.ID,
@@ -1443,7 +1596,7 @@ func runFinanceUpdateSavingsTarget(ctx context.Context, command *cli.Command) er
 	setString(command, variables, "target-amount", "targetAmount")
 	savingsTargetVariables(command, variables)
 	var standing *client.SavingsTargetStanding
-	if err := financeCall(ctx, command, "UpdateSavingsTarget", variables, &standing); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &standing); err != nil {
 		return err
 	}
 	return printDone(command, standing, standing.SavingsTarget.ID+": changed")
@@ -1458,7 +1611,7 @@ func runFinanceCloseSavingsTarget(ctx context.Context, command *cli.Command) err
 	setString(command, variables, "on", "closedOn")
 	setBool(command, variables, "reopen", "shouldReopen")
 	var standing *client.SavingsTargetStanding
-	if err := financeCall(ctx, command, "CloseSavingsTarget", variables, &standing); err != nil {
+	if err := financeCall(ctx, command, operationOf(command), variables, &standing); err != nil {
 		return err
 	}
 	if standing.SavingsTarget.ClosedOn == "" {

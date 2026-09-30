@@ -27,8 +27,8 @@ import {
   UPDATE_SPENDING_RULE,
   amountOf,
   isDecimal,
-  isoMonth,
   monthLabel,
+  personMonth,
 } from './financeApi'
 import {
   CurrencyPicker,
@@ -71,17 +71,29 @@ function BudgetsPanel({ categories }: { categories: SpendingCategory[] }) {
   const [spendingCategoryId, setSpendingCategoryId] = useState('')
   const [monthlyAmount, setMonthlyAmount] = useState('')
   const [currencyCode, setCurrencyCode] = useState('')
-  const [effectiveFrom, setEffectiveFrom] = useState(() => isoMonth(new Date()))
+  const [effectiveFrom, setEffectiveFrom] = useState(() => personMonth())
 
-  // The budget in force for each spending category: its latest row. A
-  // budget of zero has ended and is not listed.
-  const current = useMemo(() => {
+  // The budget in force for each spending category this month: its latest
+  // row from this month or before. A budget of zero has ended and is not
+  // listed. Rows from a later month are changes already set to come, listed
+  // after the ones in force.
+  const { current, scheduled } = useMemo(() => {
+    const thisMonth = personMonth()
     const latest = new Map<string, Budget>()
+    const later: Budget[] = []
     for (const budget of budgets.data?.Budgets ?? []) {
+      if (budget.effectiveFrom.slice(0, 7) > thisMonth) {
+        later.push(budget)
+        continue
+      }
       const seen = latest.get(budget.spendingCategoryId)
       if (!seen || seen.effectiveFrom < budget.effectiveFrom) latest.set(budget.spendingCategoryId, budget)
     }
-    return [...latest.values()].filter((budget) => amountOf(budget.monthlyAmount) > 0)
+    later.sort((left, right) => left.effectiveFrom.localeCompare(right.effectiveFrom))
+    return {
+      current: [...latest.values()].filter((budget) => amountOf(budget.monthlyAmount) > 0),
+      scheduled: later,
+    }
   }, [budgets.data])
 
   const nameOf = (id: string) => {
@@ -93,7 +105,7 @@ function BudgetsPanel({ categories }: { categories: SpendingCategory[] }) {
     setSpendingCategoryId(budget?.spendingCategoryId ?? spendingCategoryOptions(categories)[0]?.value ?? '')
     setMonthlyAmount(budget ? String(amountOf(budget.monthlyAmount)) : '')
     setCurrencyCode(budget?.currencyCode ?? reportingCurrencyCode)
-    setEffectiveFrom(isoMonth(new Date()))
+    setEffectiveFrom(personMonth())
     setEditing({ spendingCategoryId: budget?.spendingCategoryId ?? '' })
   }
 
@@ -110,7 +122,9 @@ function BudgetsPanel({ categories }: { categories: SpendingCategory[] }) {
     >
       <ErrorMessage error={budgets.error} />
       {budgets.loading && !budgets.data ? <Loading /> : null}
-      {budgets.data && current.length === 0 ? <SettingsEmpty>{t('finance.noBudgets')}</SettingsEmpty> : null}
+      {budgets.data && current.length === 0 && scheduled.length === 0 ? (
+        <SettingsEmpty>{t('finance.noBudgets')}</SettingsEmpty>
+      ) : null}
       {current.map((budget) => (
         <SettingsRow
           key={budget.id}
@@ -128,6 +142,21 @@ function BudgetsPanel({ categories }: { categories: SpendingCategory[] }) {
             >
               {t('finance.changeBudget')}
             </button>
+          }
+        />
+      ))}
+      {scheduled.map((budget) => (
+        <SettingsRow
+          key={budget.id}
+          title={nameOf(budget.spendingCategoryId)}
+          badge={<Tag value={t('finance.scheduled')} />}
+          subtitle={
+            amountOf(budget.monthlyAmount) > 0
+              ? t('finance.budgetFrom', {
+                  amount: formatMoney(amountOf(budget.monthlyAmount), budget.currencyCode),
+                  month: monthLabel(budget.effectiveFrom, 'long'),
+                })
+              : t('finance.budgetEndsFrom', { month: monthLabel(budget.effectiveFrom, 'long') })
           }
         />
       ))}
@@ -383,9 +412,7 @@ function SpendingRulesPanel({ categories }: { categories: SpendingCategory[] }) 
 
   const describe = (rule: SpendingRule): string => {
     const parts: string[] = []
-    if (rule.isTransfer) {
-      parts.push(t('finance.ruleMarksTransfer'))
-    } else {
+    if (rule.spendingCategoryId || !rule.isTransfer) {
       const category = categories.find((candidate) => candidate.id === rule.spendingCategoryId)
       parts.push(
         t('finance.ruleFiles', {
@@ -393,6 +420,7 @@ function SpendingRulesPanel({ categories }: { categories: SpendingCategory[] }) 
         }),
       )
     }
+    if (rule.isTransfer) parts.push(t('finance.ruleMarksTransfer'))
     const account = accountList.find((candidate) => candidate.id === rule.financeAccountId)
     if (account) parts.push(t('finance.ruleOnAccount', { account: accountLabel(account) }))
     if (rule.minimumAmount) parts.push(t('finance.ruleAtLeast', { amount: rule.minimumAmount }))
@@ -467,7 +495,9 @@ function SpendingRulesPanel({ categories }: { categories: SpendingCategory[] }) 
               financeAccountId,
               minimumAmount: minimumAmount.trim(),
               maximumAmount: maximumAmount.trim(),
-              spendingCategoryId: isTransfer ? '' : spendingCategoryId,
+              // Sent as chosen whether or not it marks transfers too:
+              // ticking the box once erased the rule's spending category.
+              spendingCategoryId,
               isTransfer,
               rulePriority: rulePriority.trim() === '' ? undefined : Number(rulePriority.trim()),
             }
@@ -491,18 +521,20 @@ function SpendingRulesPanel({ categories }: { categories: SpendingCategory[] }) 
             <input type="checkbox" checked={isTransfer} onChange={(event) => setIsTransfer(event.target.checked)} />
             {t('finance.ruleIsTransfer')}
           </label>
-          {!isTransfer ? (
-            <label>
-              <span>{t('finance.spendingCategory')}</span>
-              <Select
-                block
-                value={spendingCategoryId}
-                label={t('finance.spendingCategory')}
-                options={spendingCategoryOptions(categories, spendingCategoryId)}
-                onChange={setSpendingCategoryId}
-              />
-            </label>
-          ) : null}
+          <label>
+            <span>{t('finance.spendingCategory')}</span>
+            <Select
+              block
+              value={spendingCategoryId}
+              label={t('finance.spendingCategory')}
+              options={[
+                // A rule that marks transfers need not file them anywhere.
+                ...(isTransfer ? [{ value: '', label: t('finance.uncategorized') }] : []),
+                ...spendingCategoryOptions(categories, spendingCategoryId),
+              ]}
+              onChange={setSpendingCategoryId}
+            />
+          </label>
           <label>
             <span>{t('finance.account')}</span>
             <Select

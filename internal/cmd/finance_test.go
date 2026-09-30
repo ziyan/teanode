@@ -118,33 +118,90 @@ func TestFinanceOperationWords(test *testing.T) {
 	}
 }
 
-// A span reaches back from now; a day is taken as it is.
+// Each subcommand calls the operation its name says by the rule: the
+// operation its action runs is the one its metadata names.
+func TestFinanceSubcommandsCallTheirOperation(test *testing.T) {
+	test.Parallel()
+	for _, subcommand := range NewFinanceCommand().Commands {
+		if _, isSpanning := financeSubcommandsSpanningOperations[subcommand.Name]; isSpanning {
+			continue
+		}
+		operation := operationOf(subcommand)
+		if operation == "" {
+			test.Errorf("teanode finance %s names no operation", subcommand.Name)
+			continue
+		}
+		if byRule := strings.Join(financeOperationWords(operation), "-"); byRule != subcommand.Name {
+			test.Errorf("teanode finance %s calls %s, whose subcommand by the rule is %s", subcommand.Name, operation, byRule)
+		}
+	}
+	for name := range financeSubcommandOperations {
+		found := false
+		for _, subcommand := range NewFinanceCommand().Commands {
+			found = found || subcommand.Name == name
+		}
+		if !found {
+			test.Errorf("%s names an operation for a subcommand there is not", name)
+		}
+	}
+}
+
+// A span reaches back from now; anything else, a day included, is refused
+// with the forms it takes.
 func TestFinanceDayBack(test *testing.T) {
 	test.Parallel()
 	now := time.Date(2026, time.March, 31, 12, 0, 0, 0, time.UTC)
 	for span, wanted := range map[string]string{
-		"30d": "2026-03-01", "2w": "2026-03-17", "1m": "2026-03-03", "1y": "2025-03-31", "2026-01-15": "2026-01-15",
+		"30d": "2026-03-01", "2w": "2026-03-17", "1m": "2026-03-03", "1y": "2025-03-31",
 	} {
 		have, err := dayBack(span, now)
 		if err != nil || have != wanted {
 			test.Errorf("%s: %q %v, not %q", span, have, err, wanted)
 		}
 	}
-	for _, refused := range []string{"", "d", "thirty days", "-3d", "3x"} {
-		if _, err := dayBack(refused, now); err == nil {
+	for _, refused := range []string{"", "d", "thirty days", "-3d", "3x", "2026-01-15", "2026-01"} {
+		_, err := dayBack(refused, now)
+		if err == nil {
 			test.Errorf("%q was taken as a span", refused)
+			continue
+		}
+		if !strings.Contains(err.Error(), "30d, 12w, 6m or 1y") {
+			test.Errorf("%q: the refusal does not give the forms: %s", refused, err)
 		}
 	}
 }
 
-// Amounts read as money: two places unless there are more that matter.
+// Amounts read as money: the places the currency is written with, halves
+// away from zero, none for the yen.
 func TestFinanceMoney(test *testing.T) {
 	test.Parallel()
-	for amount, wanted := range map[string]string{
-		"-42.1700": "-42.17 USD", "18000": "18000.00 USD", "0.1250": "0.125 USD", "5.5": "5.50 USD", "": "",
+	for _, example := range []struct{ amount, currencyCode, wanted string }{
+		{"-42.1700", "USD", "-42.17 USD"},
+		{"18000", "USD", "18000.00 USD"},
+		{"15599.272", "EUR", "15599.27 EUR"},
+		{"139286.605", "USD", "139286.61 USD"},
+		{"0.1250", "USD", "0.13 USD"},
+		{"-0.001", "USD", "0.00 USD"},
+		{"1500.4", "JPY", "1500 JPY"},
+		{"12.3456", "KWD", "12.346 KWD"},
+		{"5.5", "", "5.50"},
+		{"", "USD", ""},
 	} {
-		if have := money(amount, map[bool]string{true: "", false: "USD"}[amount == ""]); have != wanted {
-			test.Errorf("%q: %q, not %q", amount, have, wanted)
+		if have := money(example.amount, example.currencyCode); have != example.wanted {
+			test.Errorf("%q %s: %q, not %q", example.amount, example.currencyCode, have, example.wanted)
+		}
+	}
+}
+
+// A spending summary's grouping heads its column in words.
+func TestFinanceGroupByHeader(test *testing.T) {
+	test.Parallel()
+	for groupBy, wanted := range map[string]string{
+		"spendingCategory": "spending category", "providerCategory": "provider category",
+		"merchant": "merchant", "month": "month", "financeAccount": "finance account",
+	} {
+		if have := groupByHeader(groupBy); have != wanted {
+			test.Errorf("%s: %q, not %q", groupBy, have, wanted)
 		}
 	}
 }

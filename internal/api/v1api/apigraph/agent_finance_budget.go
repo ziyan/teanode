@@ -474,29 +474,53 @@ func (self *graph) CategorizeTransaction(ctx context.Context, arguments Categori
 		return nil, err
 	}
 	spendingCategoryId := strings.TrimSpace(arguments.SpendingCategoryID)
-	if _, err := tx.SetTransactionCategorization(found.ID, financeTransaction.ID, spendingCategoryId, models.CategorizedByPerson, nil); err != nil {
-		return nil, financeError(err)
-	}
-	view := &CategorizeTransactionView{}
-	if arguments.ShouldCreateSpendingRule != nil && *arguments.ShouldCreateSpendingRule {
-		if spendingCategoryId == "" {
-			return nil, fmt.Errorf("%w: a spending rule needs the spending category it assigns", api.ErrInvalidArguments)
-		}
-		// The rule matches what the transaction is matched by: its
-		// merchant, or its description when it has none.
-		matchText := strings.TrimSpace(financeTransaction.MerchantName)
-		if matchText == "" {
-			matchText = strings.TrimSpace(financeTransaction.Description)
-		}
-		priority, err := nextRulePriority(tx, found.ID)
+	// Everything is checked before the first write: the request commits
+	// what was written even when the resolver then fails, so a refused
+	// spending rule must not leave the categorization behind.
+	if spendingCategoryId != "" {
+		spendingCategory, err := tx.GetSpendingCategory(found.ID, spendingCategoryId)
 		if err != nil {
 			return nil, err
 		}
-		if view.SpendingRule, err = tx.CreateSpendingRule(&models.SpendingRule{
-			AgentID: found.ID, MatchText: matchText, SpendingCategoryID: spendingCategoryId, RulePriority: priority,
-		}); err != nil {
-			return nil, financeError(err)
+		if spendingCategory == nil {
+			return nil, fmt.Errorf("%w: there is no spending category %q; SpendingCategories lists them", api.ErrInvalidArguments, spendingCategoryId)
 		}
+	}
+	isSpendingRuleWanted := arguments.ShouldCreateSpendingRule != nil && *arguments.ShouldCreateSpendingRule
+	// The rule matches what the transaction is matched by: its merchant,
+	// or its description when it has none.
+	matchText := strings.TrimSpace(financeTransaction.MerchantName)
+	if matchText == "" {
+		matchText = strings.TrimSpace(financeTransaction.Description)
+	}
+	if isSpendingRuleWanted {
+		if spendingCategoryId == "" {
+			return nil, fmt.Errorf("%w: a spending rule needs the spending category it assigns", api.ErrInvalidArguments)
+		}
+		if matchText == "" {
+			return nil, fmt.Errorf("%w: this finance transaction has no merchant or description for a spending rule to match", api.ErrInvalidArguments)
+		}
+	}
+	view := &CategorizeTransactionView{}
+	// The two writes go together or not at all.
+	err = tx.TransactionContext(ctx, func(nested db.Transaction) error {
+		if _, err := nested.SetTransactionCategorization(found.ID, financeTransaction.ID, spendingCategoryId, models.CategorizedByPerson, nil); err != nil {
+			return err
+		}
+		if !isSpendingRuleWanted {
+			return nil
+		}
+		priority, err := nextRulePriority(nested, found.ID)
+		if err != nil {
+			return err
+		}
+		view.SpendingRule, err = nested.CreateSpendingRule(&models.SpendingRule{
+			AgentID: found.ID, MatchText: matchText, SpendingCategoryID: spendingCategoryId, RulePriority: priority,
+		})
+		return err
+	})
+	if err != nil {
+		return nil, financeError(err)
 	}
 	if view.FinanceTransaction, err = tx.GetFinanceTransaction(found.ID, financeTransaction.ID); err != nil {
 		return nil, err
@@ -517,7 +541,7 @@ func (self *graph) MarkTransfer(ctx context.Context, arguments MarkTransferArgum
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.MarkFinanceTransactionTransfer(found.ID, financeTransaction.ID, arguments.IsTransfer, true); err != nil {
+	if _, err := tx.MarkFinanceTransactionTransfer(found.ID, financeTransaction.ID, arguments.IsTransfer, models.TransferMarkedByPerson); err != nil {
 		return nil, financeError(err)
 	}
 	return tx.GetFinanceTransaction(found.ID, financeTransaction.ID)

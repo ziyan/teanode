@@ -600,6 +600,7 @@ and the tool and subcommand names for them are `sync`, `disable_source`,
     spending summary              FinanceSpendingSummary         Spending summary           spending-summary / spending_summary
     exchange rate                 ExchangeRate                   in converted totals        exchange-rate / exchange_rate
     convert an amount             ConvertCurrency                in converted totals        convert-currency / convert_currency
+    which reporting currency      ReportingCurrency              Finance settings           reporting-currency / reporting_currency
     reporting currency            SetReportingCurrency           Finance settings           set-reporting-currency / set_reporting_currency
 
 (1) Plaid Link needs a browser. The command line prints the address of

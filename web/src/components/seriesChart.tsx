@@ -22,6 +22,37 @@ export function niceCeiling(value: number): number {
   return 10 * power
 }
 
+// ChartScale is the range a chart is drawn over and its gridlines.
+export type ChartScale = { floor: number; ceiling: number; grid: number[] }
+
+// chartScale is a range in round steps, about four of them, from a step at
+// or below the lowest value to one at or above the highest. Zero is always
+// inside it and always on a gridline, so a line that goes below zero is
+// drawn whole and money in reads against money out.
+export function chartScale(values: number[]): ChartScale {
+  const highest = Math.max(0, ...values)
+  const lowest = Math.min(0, ...values)
+  if (highest === lowest) return { floor: 0, ceiling: 1, grid: [0, 1] }
+  const step = niceCeiling((highest - lowest) / 4)
+  const below = Math.ceil(-lowest / step - 1e-9)
+  const above = Math.ceil(highest / step - 1e-9)
+  const grid: number[] = []
+  for (let index = -below; index <= above; index++) grid.push(index * step)
+  return { floor: -below * step, ceiling: above * step, grid }
+}
+
+// CHART_AXIS_LETTER is about how wide one figure of an axis label is drawn,
+// at the axis's type size, in the drawing's units.
+const CHART_AXIS_LETTER = 6.6
+
+// axisWidthFor is the width the axis column needs for its widest label, so
+// a label as long as "$1.2M" is not cut off at the left and a short one
+// does not leave the plot narrower than it has to be.
+export function axisWidthFor(labels: string[]): number {
+  const longest = Math.max(1, ...labels.map((label) => label.length))
+  return Math.min(120, Math.max(28, Math.ceil(longest * CHART_AXIS_LETTER) + 12))
+}
+
 // daysBetween is every day from the first to the last, as the keys the
 // usage is grouped by, so a day nothing was spent on is a gap and not
 // missing from the axis.
@@ -103,12 +134,14 @@ export type ChartSeries = {
 // SeriesChart draws one or more series over the same keys: days of a
 // month, months of a year, or every day of a range. The scale reaches
 // below zero only when a value does, so money that went out of a total
-// draws under its line.
+// draws under its line. The axis is labelled with axisFormat, a shorter
+// form of format where one reads better at the side of a chart.
 export function SeriesChart({
   keys,
   keyLabel,
   series,
   format,
+  axisFormat,
   headline,
   caption,
   label,
@@ -117,6 +150,7 @@ export function SeriesChart({
   keyLabel: (key: string) => string
   series: ChartSeries[]
   format: (value: number) => string
+  axisFormat?: (value: number) => string
   headline?: React.ReactNode
   caption?: React.ReactNode
   // What the chart is, for a screen reader, ahead of its values.
@@ -124,16 +158,13 @@ export function SeriesChart({
 }) {
   const [hovered, setHovered] = useState<number | null>(null)
   const [holder, width] = useWidth()
+  const labelAxis = axisFormat ?? format
 
-  const { ceiling, floor } = useMemo(() => {
-    const values = series.flatMap((one) => one.values.filter((value): value is number => value !== null))
-    const highest = Math.max(0, ...values)
-    const lowest = Math.min(0, ...values)
-    return {
-      ceiling: highest > 0 ? niceCeiling(highest) : lowest < 0 ? 0 : 1,
-      floor: lowest < 0 ? -niceCeiling(-lowest) : 0,
-    }
-  }, [series])
+  const scale = useMemo(
+    () => chartScale(series.flatMap((one) => one.values.filter((value): value is number => value !== null))),
+    [series],
+  )
+  const axisWidth = axisWidthFor(scale.grid.map(labelAxis))
 
   return (
     <div className="usage-chart">
@@ -151,10 +182,11 @@ export function SeriesChart({
             keys={keys}
             keyLabel={keyLabel}
             series={series}
-            ceiling={ceiling}
-            floor={floor}
+            scale={scale}
+            axisWidth={axisWidth}
             width={width}
             format={format}
+            axisFormat={labelAxis}
             hovered={hovered}
             onHover={setHovered}
             label={label}
@@ -166,6 +198,7 @@ export function SeriesChart({
             index={hovered}
             count={keys.length}
             width={width}
+            axisWidth={axisWidth}
             lines={series.map((one) => ({
               id: one.id,
               label: one.label,
@@ -194,10 +227,11 @@ function SeriesDrawing({
   keys,
   keyLabel,
   series,
-  ceiling,
-  floor,
+  scale,
+  axisWidth,
   width,
   format,
+  axisFormat,
   hovered,
   onHover,
   label,
@@ -205,15 +239,17 @@ function SeriesDrawing({
   keys: string[]
   keyLabel: (key: string) => string
   series: ChartSeries[]
-  ceiling: number
-  floor: number
+  scale: ChartScale
+  axisWidth: number
   width: number
   format: (value: number) => string
+  axisFormat: (value: number) => string
   hovered: number | null
   onHover: (index: number | null) => void
   label: string
 }) {
-  const plotWidth = Math.max(40, width - CHART_AXIS_WIDTH)
+  const { ceiling, floor } = scale
+  const plotWidth = Math.max(40, width - axisWidth)
   const plotHeight = CHART_HEIGHT - CHART_TOP - CHART_BOTTOM
   const slot = plotWidth / Math.max(1, keys.length)
   const columns = series.filter((one) => one.shape === 'column')
@@ -224,14 +260,14 @@ function SeriesDrawing({
   const yOf = (value: number) => CHART_TOP + ((ceiling - value) / span) * plotHeight
   const zero = yOf(0)
   const labelEvery = Math.max(1, Math.ceil(keys.length / Math.max(2, Math.floor(plotWidth / 64))))
-  const grid = [0, 0.25, 0.5, 0.75, 1].map((fraction) => floor + fraction * span)
+  const grid = scale.grid
 
   // The drawing is scaled to the width it is shown at, so a pointer is
   // turned back into the drawing's own units first.
   const pointAt = (clientX: number, element: SVGSVGElement) => {
     const bounds = element.getBoundingClientRect()
     const x = ((clientX - bounds.left) * width) / Math.max(1, bounds.width)
-    const index = Math.floor((x - CHART_AXIS_WIDTH) / slot)
+    const index = Math.floor((x - axisWidth) / slot)
     onHover(index >= 0 && index < keys.length ? index : null)
   }
 
@@ -256,22 +292,22 @@ function SeriesDrawing({
         const y = yOf(value)
         return (
           <g key={value}>
-            <line className="usage-chart-grid" x1={CHART_AXIS_WIDTH} x2={width} y1={y} y2={y} />
+            <line className="usage-chart-grid" x1={axisWidth} x2={width} y1={y} y2={y} />
             <text
               className="usage-chart-axis"
-              x={CHART_AXIS_WIDTH - 8}
+              x={axisWidth - 8}
               y={y}
               textAnchor="end"
               dominantBaseline="middle"
             >
-              {format(value)}
+              {axisFormat(value)}
             </text>
           </g>
         )
       })}
-      {floor < 0 ? <line className="series-chart-zero" x1={CHART_AXIS_WIDTH} x2={width} y1={zero} y2={zero} /> : null}
+      {floor < 0 ? <line className="series-chart-zero" x1={axisWidth} x2={width} y1={zero} y2={zero} /> : null}
       {keys.map((key, index) => {
-        const groupX = CHART_AXIS_WIDTH + index * slot + (slot - groupWidth) / 2
+        const groupX = axisWidth + index * slot + (slot - groupWidth) / 2
         const isDimmed = hovered !== null && hovered !== index
         return (
           <g key={key} className={isDimmed ? 'usage-chart-dim' : ''}>
@@ -307,7 +343,7 @@ function SeriesDrawing({
         )
       })}
       {lines.map((one) => (
-        <path key={one.id} className={`series-chart-line ${one.tone}`} d={linePath(one.values, slot, yOf)} />
+        <path key={one.id} className={`series-chart-line ${one.tone}`} d={linePath(one.values, slot, yOf, axisWidth)} />
       ))}
       {hovered !== null
         ? lines.map((one) => {
@@ -317,7 +353,7 @@ function SeriesDrawing({
               <circle
                 key={one.id}
                 className={`series-chart-point ${one.tone}`}
-                cx={CHART_AXIS_WIDTH + hovered * slot + slot / 2}
+                cx={axisWidth + hovered * slot + slot / 2}
                 cy={yOf(value)}
                 r={3.5}
               />
@@ -330,7 +366,12 @@ function SeriesDrawing({
 
 // linePath runs through the middle of each slot, lifting the pen over a
 // key the series has nothing for.
-function linePath(values: (number | null)[], slot: number, yOf: (value: number) => number): string {
+function linePath(
+  values: (number | null)[],
+  slot: number,
+  yOf: (value: number) => number,
+  axisWidth: number,
+): string {
   const parts: string[] = []
   let isDrawing = false
   values.forEach((value, index) => {
@@ -338,7 +379,7 @@ function linePath(values: (number | null)[], slot: number, yOf: (value: number) 
       isDrawing = false
       return
     }
-    const x = CHART_AXIS_WIDTH + index * slot + slot / 2
+    const x = axisWidth + index * slot + slot / 2
     parts.push(`${isDrawing ? 'L' : 'M'}${x.toFixed(1)},${yOf(value).toFixed(1)}`)
     isDrawing = true
   })
@@ -350,6 +391,7 @@ function SeriesTooltip({
   index,
   count,
   width,
+  axisWidth,
   lines,
   format,
 }: {
@@ -357,11 +399,12 @@ function SeriesTooltip({
   index: number
   count: number
   width: number
+  axisWidth: number
   lines: { id: string; label: string; tone: SeriesTone; value: number | null }[]
   format: (value: number) => string
 }) {
-  const slot = (width - CHART_AXIS_WIDTH) / Math.max(1, count)
-  const center = CHART_AXIS_WIDTH + index * slot + slot / 2
+  const slot = (width - axisWidth) / Math.max(1, count)
+  const center = axisWidth + index * slot + slot / 2
   // Kept inside the chart: flipped to the left of the slot past halfway.
   const isLeft = center > width / 2
   return (

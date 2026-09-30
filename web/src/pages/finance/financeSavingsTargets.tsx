@@ -22,7 +22,7 @@ import {
   amountOf,
   formatDay,
   isDecimal,
-  isoDay,
+  personToday,
 } from './financeApi'
 import { CurrencyPicker, UnconvertedNote, useAct, useFinanceWords, useReportingCurrency } from './financeCommon'
 
@@ -38,8 +38,11 @@ export function FinanceSavingsTargetsSection() {
   const { busy, run } = useAct(targets.reload)
   const [editing, setEditing] = useState<SavingsTarget | 'new' | null>(null)
   const [closing, setClosing] = useState<SavingsTarget | null>(null)
-  // Open ones only: a closed savings target is done with.
-  const list = (targets.data?.SavingsTargets ?? []).filter((view) => !view.savingsTarget.closedOn)
+  const [isClosedShown, setIsClosedShown] = useState(false)
+  // Open ones, unless the closed ones are asked for: a closed savings
+  // target is done with, until it is opened again.
+  const all = targets.data?.SavingsTargets ?? []
+  const list = all.filter((view) => isClosedShown || !view.savingsTarget.closedOn)
 
   return (
     <SettingsSection
@@ -69,7 +72,8 @@ export function FinanceSavingsTargetsSection() {
             badge={
               <>
                 <Tag value={words.targetMeasure(target.targetMeasure)} />
-                {progressOf?.isBehind ? <Tag value={t('finance.behind')} tone="warn" /> : null}
+                {target.closedOn ? <Tag value={t('finance.closed')} /> : null}
+                {progressOf?.isBehind && !target.closedOn ? <Tag value={t('finance.behind')} tone="warn" /> : null}
               </>
             }
             subtitle={
@@ -96,6 +100,23 @@ export function FinanceSavingsTargetsSection() {
               </div>
             }
             actions={
+              target.closedOn ? (
+                <button
+                  type="button"
+                  className="link"
+                  disabled={busy}
+                  aria-label={`${target.savingsTargetName}: ${t('finance.reopen')}`}
+                  onClick={() =>
+                    void run(
+                      CLOSE_SAVINGS_TARGET,
+                      { savingsTargetId: target.id, shouldReopen: true },
+                      t('finance.savingsTargetReopened'),
+                    )
+                  }
+                >
+                  {t('finance.reopen')}
+                </button>
+              ) : (
               <div className="row-actions">
                 <Tooltip label={t('common.edit')}>
                   <button
@@ -118,10 +139,17 @@ export function FinanceSavingsTargetsSection() {
                   </button>
                 </Tooltip>
               </div>
+              )
             }
           />
         )
       })}
+      {all.some((view) => view.savingsTarget.closedOn) ? (
+        <label className="checkbox">
+          <input type="checkbox" checked={isClosedShown} onChange={(event) => setIsClosedShown(event.target.checked)} />
+          {t('finance.showClosedSavingsTargets')}
+        </label>
+      ) : null}
       {editing ? (
         <SavingsTargetDialog
           target={editing === 'new' ? undefined : editing}
@@ -170,7 +198,7 @@ function SavingsTargetDialog({
   const [targetOn, setTargetOn] = useState(target?.targetOn ?? '')
   const [targetMeasure, setTargetMeasure] = useState<'cash_flow' | 'asset_value'>(target?.targetMeasure ?? 'cash_flow')
   const [startingAmount, setStartingAmount] = useState(target?.startingAmount ?? '')
-  const [startedOn, setStartedOn] = useState(target?.startedOn ?? isoDay(new Date()))
+  const [startedOn, setStartedOn] = useState(target?.startedOn ?? personToday())
   const [assetIds, setAssetIds] = useState<string[]>(target?.assetIds ?? [])
   const currency = currencyCode || reportingCurrencyCode
   const assetList = (assets.data?.Assets ?? []).filter((asset) => !asset.isLiability && !asset.closedOn)
@@ -232,10 +260,12 @@ function SavingsTargetDialog({
       </div>
       <label>
         <span>{t('finance.targetOn')}</span>
+        {/* No earliest day on a target that exists: one already past its
+            day must still be editable, to move the day on. */}
         <input
           type="date"
           value={targetOn}
-          min={isoDay(new Date())}
+          min={target ? undefined : personToday()}
           onChange={(event) => setTargetOn(event.target.value)}
         />
       </label>

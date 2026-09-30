@@ -376,8 +376,12 @@ export function formatClock(value?: string, zone?: string): string {
 // rounded away to nothing.
 export function formatMoney(amount: number, currency?: string | null): string {
   const code = (currency || 'USD').toUpperCase()
-  const places = amount !== 0 && Math.abs(amount) < 0.01 ? 4 : 2
   try {
+    // The places the currency is written with (none for the yen), and
+    // four for a fraction of a cent, which a model's cost often is.
+    const usual = new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).resolvedOptions()
+      .maximumFractionDigits
+    const places = amount !== 0 && Math.abs(amount) < 0.01 ? 4 : (usual ?? 2)
     return new Intl.NumberFormat(undefined, {
       style: 'currency',
       currency: code,
@@ -386,7 +390,7 @@ export function formatMoney(amount: number, currency?: string | null): string {
     }).format(amount)
   } catch {
     // A code the browser does not know: the number, then the code.
-    return `${amount.toFixed(places)} ${code}`
+    return `${amount.toFixed(amount !== 0 && Math.abs(amount) < 0.01 ? 4 : 2)} ${code}`
   }
 }
 

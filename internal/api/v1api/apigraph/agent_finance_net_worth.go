@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/finance/rates"
 	"github.com/ziyan/teanode/internal/models"
@@ -80,6 +81,12 @@ type CreateAssetArguments struct {
 	// IsEstimateAllowed whether it may estimate this asset at all.
 	EstimateDescription string `json:"estimateDescription" graphapi:"nullable"`
 	IsEstimateAllowed   *bool  `json:"isEstimateAllowed" graphapi:"nullable"`
+
+	// Value, when given, is the asset's first valuation, recorded with
+	// the asset's valuation source on ValuedOn ("2006-01-02", today when
+	// left out), in the same change as the asset.
+	Value    string `json:"value" graphapi:"nullable"`
+	ValuedOn string `json:"valuedOn" graphapi:"nullable"`
 }
 
 // UpdateAssetArguments change what is given and leave the rest.
@@ -284,7 +291,7 @@ func assetValuationSourceArgument(value string) (models.ValuationSource, error) 
 }
 
 func (self *graph) CreateAsset(ctx context.Context, arguments CreateAssetArguments) (*models.Asset, error) {
-	_, found, err := self.requireAgentPerson(ctx)
+	principal, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -309,8 +316,43 @@ func (self *graph) CreateAsset(ctx context.Context, arguments CreateAssetArgumen
 	if arguments.IsEstimateAllowed != nil {
 		asset.IsEstimateAllowed = *arguments.IsEstimateAllowed
 	}
-	created, err := self.writing(ctx).CreateAsset(asset)
-	return created, financeError(err)
+	// The first value is read before anything is written: the request
+	// commits what was written even when the resolver then fails.
+	var firstValuation *models.AssetValuation
+	if strings.TrimSpace(arguments.Value) != "" {
+		value, err := amountArgument("value", arguments.Value)
+		if err != nil {
+			return nil, err
+		}
+		valuedOn, err := dayArgument("valuedOn", arguments.ValuedOn, personToday(principal))
+		if err != nil {
+			return nil, err
+		}
+		if valuationSource == models.ValuationSourceAgentEstimate && !asset.IsEstimateAllowed {
+			return nil, fmt.Errorf("%w: estimates are not allowed for %q; the person can allow them on the asset", api.ErrInvalidArguments, asset.AssetName)
+		}
+		firstValuation = &models.AssetValuation{AgentID: found.ID, ValuedOn: valuedOn, Value: value, CurrencyCode: currencyCode, ValuationSource: valuationSource}
+	} else if strings.TrimSpace(arguments.ValuedOn) != "" {
+		return nil, fmt.Errorf("%w: valuedOn is the day of the first value, which was not given", api.ErrInvalidArguments)
+	}
+	var created *models.Asset
+	err = self.writing(ctx).TransactionContext(ctx, func(tx db.Transaction) error {
+		var err error
+		if created, err = tx.CreateAsset(asset); err != nil {
+			return err
+		}
+		if firstValuation == nil {
+			return nil
+		}
+		firstValuation.AssetID = created.ID
+		// The one value it has is the one that counts.
+		created.LatestValuation, err = tx.RecordValuation(firstValuation)
+		return err
+	})
+	if err != nil {
+		return nil, financeError(err)
+	}
+	return created, nil
 }
 
 func (self *graph) UpdateAsset(ctx context.Context, arguments UpdateAssetArguments) (*models.Asset, error) {
