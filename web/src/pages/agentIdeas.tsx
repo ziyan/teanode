@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { graphql, openAgentConversation } from '../api'
+import { graphql, openAgentConversation, sendToAgentConversation } from '../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../components/common'
 import { Column, DataTable } from '../components/dataTable'
 import { CheckIcon, RestartIcon } from '../components/icons'
@@ -48,7 +48,7 @@ export function IdeasTab() {
   const onStart = (idea: Idea) =>
     void act(async () => {
       const started = await startIdea(idea, language)
-      openAgentConversation(started.conversationId, started.openingRequest)
+      sendToAgentConversation(started.conversationId, started.openingRequest)
     })
   const onDismiss = (idea: Idea) => void act(() => setIdeaStatus(idea, 'dismissed'), t('ideas.dismissed'))
 

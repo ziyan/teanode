@@ -11,7 +11,7 @@ import {
   agentViewing,
   announceMailChanged,
   graphql,
-  openAgentConversation,
+  sendToAgentConversation,
   subscribe,
   authorization,
   framedDrawer,
@@ -2187,6 +2187,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const movedAt = useRef(0)
   const input = useRef<HTMLTextAreaElement>(null)
   const draftLoadedFor = useRef('')
+  // The conversation whose draft is sent as soon as it is open and its
+  // draft read back: an idea or a goal started from a page, or from the
+  // suggestions here.
+  const sendWhenOpen = useRef('')
   const filePicker = useRef<HTMLInputElement>(null)
   useFitToContent(input, draft, open)
 
@@ -2485,10 +2489,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   }, [available, open])
 
   // Another page asking for a conversation to be opened here: a run's
-  // transcript from the agent page, or an idea started, whose request is
-  // written in as the conversation's draft so that it is in the box when
-  // the conversation is drawn, and nothing is sent until the person sends
-  // it.
+  // transcript from the agent page, or an idea or a goal started, whose
+  // first message is written in as the conversation's draft so that it is
+  // in the box when the conversation is drawn, and sent from there when
+  // asked, by the same send the button uses.
   useEffect(() => {
     const listener = (event: Event) => {
       const detail = (event as CustomEvent<AgentOpenDetail>).detail
@@ -2498,6 +2502,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         remember(draftKey(detail.conversationId), detail.draft)
         draftLoadedFor.current = ''
       }
+      sendWhenOpen.current = detail.draft && detail.shouldSendDraft ? detail.conversationId : ''
       setOpen(true)
       remember(OPEN_KEY, '1')
       void switchTo(detail.conversationId)
@@ -3123,8 +3128,34 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       follow(response.AskAgent.runId)
     } catch (caught) {
       toast.failed(caught instanceof Error ? caught.message : String(caught))
+      // What was not sent goes back in the box, so nothing is lost and a
+      // second press tries again; the line that said it was sent goes.
+      if (!isSuggested && conversationRef.current === sendingConversationId) {
+        setLines((previous) => previous.filter((line) => line.key !== key))
+        setDraft((current) => (current.trim() === '' ? message : current))
+        setPending((current) => [...files, ...current])
+        setReferences((current) => [...pointed, ...current])
+      }
     }
   }
+
+  // A draft asked to be sent is sent once its conversation is the one open
+  // and its draft has been read back into the box: the same send as the
+  // button, so the turn streams in and a failure keeps the words.
+  useEffect(() => {
+    const waiting = sendWhenOpen.current
+    if (!waiting || isReadingConversation) return
+    if (conversationId !== waiting) {
+      // The read failed, or the person went elsewhere first: the draft
+      // stays kept with its conversation, unsent.
+      sendWhenOpen.current = ''
+      return
+    }
+    if (draftLoadedFor.current !== waiting || draft.trim() === '') return
+    sendWhenOpen.current = ''
+    void send()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, draft, isReadingConversation])
 
   const resolve = async (line: Extract<Line, { kind: 'confirmation' }>, approve: boolean) => {
     try {
@@ -3968,14 +3999,14 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   <IdeaSuggestions
                     key={conversationId}
                     conversationId={conversationId}
-                    onDraft={(startedIn, openingRequest) => {
+                    onStarted={(startedIn, openingRequest) => {
                       if (startedIn !== conversationId) {
-                        openAgentConversation(startedIn, openingRequest)
+                        sendToAgentConversation(startedIn, openingRequest)
                         return
                       }
-                      setDraft(openingRequest)
                       remember(draftKey(startedIn), openingRequest)
-                      input.current?.focus()
+                      sendWhenOpen.current = startedIn
+                      setDraft(openingRequest)
                     }}
                   />
                 ) : null}

@@ -1023,19 +1023,30 @@ export function askAgentAbout(reference: AgentReference): boolean {
 }
 
 // A page asking the drawer to open a conversation: a run's transcript from
-// the agent page, or an idea started with its request waiting in the reply
-// box for the person to send. Handled the same way as a reference.
+// the agent page, or an idea or a goal started with its first message sent.
+// Handled the same way as a reference.
 export const AGENT_OPEN_EVENT = 'teanode:agent-open'
 
 export interface AgentOpenDetail {
   conversationId: string
-  // draft is put in the reply box, unsent.
+  // draft is put in the reply box, unsent unless shouldSendDraft says so.
   draft?: string
+  // shouldSendDraft sends the draft once the conversation is open, the way
+  // the send button does; if that fails, it stays in the box.
+  shouldSendDraft?: boolean
   handled: boolean
 }
 
 export function openAgentConversation(conversationId: string, draft?: string): boolean {
   const detail: AgentOpenDetail = { conversationId, draft, handled: false }
+  window.dispatchEvent(new CustomEvent<AgentOpenDetail>(AGENT_OPEN_EVENT, { detail }))
+  return detail.handled
+}
+
+// sendToAgentConversation opens a conversation in the drawer and sends a
+// message there as the person's own, so the turn is running when it opens.
+export function sendToAgentConversation(conversationId: string, message: string): boolean {
+  const detail: AgentOpenDetail = { conversationId, draft: message, shouldSendDraft: true, handled: false }
   window.dispatchEvent(new CustomEvent<AgentOpenDetail>(AGENT_OPEN_EVENT, { detail }))
   return detail.handled
 }

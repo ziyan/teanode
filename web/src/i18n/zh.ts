@@ -2996,7 +2996,7 @@ export const zh: Catalog = {
   'goals.set': '设定目标',
   'goals.setHint': '选择一个领域，说说你想要什么。你的助手会提出目标和计划，经你同意后设定。',
   'goals.newTitle': '目标：{area}',
-  'goals.draft': '我想设定一个关于{area}的目标。请先提出目标和计划，等我同意后再设定。',
+  'goals.openingRequest': '我想设定一个关于{area}的目标。请先提出目标和计划，等我同意后再设定。',
   'notes.new': '新建备忘录',
   'notes.untitled': '无标题',
   'notes.none': '还没有备忘录。在这里或手机上写的备忘录会显示在这里。',

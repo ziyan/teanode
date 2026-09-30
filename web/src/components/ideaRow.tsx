@@ -74,9 +74,9 @@ const SET_IDEA_STATUS = `
 const MARK_IDEAS_SHOWN = `mutation ($ideaIds: [String!]!) { MarkAgentIdeasShown(ideaIds: $ideaIds) }`
 
 // startIdea records that a conversation carries the idea out: the one
-// given, or a new one named after it. Nothing is sent; what it answers is
-// the conversation and the request to put in its reply box, for the person
-// to send or change first.
+// given, or a new one named after it. Nothing is sent here; what it answers
+// is the conversation and the request the caller sends there as the
+// person's first message, through the drawer.
 export async function startIdea(
   idea: Idea,
   language: string,
@@ -246,14 +246,14 @@ export function IdeaRow({
 const ideaSuggestionCount = 3
 
 // IdeaSuggestions is the best few open ideas, offered in an empty
-// conversation. Choosing one starts it there and puts its request in the
-// reply box through onDraft.
+// conversation. Choosing one starts it there and hands its request to
+// onStarted, which sends it.
 export function IdeaSuggestions({
   conversationId,
-  onDraft,
+  onStarted,
 }: {
   conversationId: string
-  onDraft: (conversationId: string, openingRequest: string) => void
+  onStarted: (conversationId: string, openingRequest: string) => void
 }) {
   const { t, language } = useTranslation()
   const toast = useToast()
@@ -265,7 +265,7 @@ export function IdeaSuggestions({
     setBusy(true)
     try {
       const started = await startIdea(chosen, language, conversationId)
-      onDraft(started.conversationId, started.openingRequest)
+      onStarted(started.conversationId, started.openingRequest)
     } catch (caught) {
       toast.failure(caught, t('ideas.failed'))
     } finally {

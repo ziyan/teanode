@@ -3087,7 +3087,7 @@ export const ja: Catalog = {
   'goals.set': '目標を設定',
   'goals.setHint': '分野を選んで、望むことを伝えてください。エージェントが目標と計画を提案し、あなたが同意したら設定します。',
   'goals.newTitle': '目標：{area}',
-  'goals.draft': '{area}について目標を立てたいです。まず目標と計画を提案して、私が同意してから設定してください。',
+  'goals.openingRequest': '{area}について目標を立てたいです。まず目標と計画を提案して、私が同意してから設定してください。',
   'notes.new': '新規メモ',
   'notes.untitled': '無題',
   'notes.none': 'メモはまだありません。ここやスマートフォンで書いたメモがここに表示されます。',
