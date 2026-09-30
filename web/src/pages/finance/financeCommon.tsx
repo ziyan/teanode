@@ -118,23 +118,31 @@ export function accountLabel(account: Pick<FinanceAccount, 'accountName' | 'acco
 }
 
 // spendingCategoryLabel names a spending category under its parent, so
-// two called "Other" under different parents can be told apart.
-export function spendingCategoryLabel(category: SpendingCategory, categories: SpendingCategory[]): string {
+// two called "Other" under different parents can be told apart, each name
+// as it is shown (see spendingCategoryDisplayName).
+export function spendingCategoryLabel(
+  category: SpendingCategory,
+  categories: SpendingCategory[],
+  displayName: (name: string) => string,
+): string {
   const parent = category.parentSpendingCategoryId
     ? categories.find((candidate) => candidate.id === category.parentSpendingCategoryId)
     : undefined
-  return parent ? `${parent.spendingCategoryName} › ${category.spendingCategoryName}` : category.spendingCategoryName
+  const name = displayName(category.spendingCategoryName)
+  return parent ? `${displayName(parent.spendingCategoryName)} › ${name}` : name
 }
 
 // spendingCategoryOptions is every spending category that can be chosen,
-// sorted by the name shown, hidden ones left out unless already chosen.
+// by its id, sorted by the name shown, hidden ones left out unless already
+// chosen.
 export function spendingCategoryOptions(
   categories: SpendingCategory[],
+  displayName: (name: string) => string,
   chosen?: string | null,
 ): { value: string; label: string }[] {
   return categories
     .filter((category) => !category.isHidden || category.id === chosen)
-    .map((category) => ({ value: category.id, label: spendingCategoryLabel(category, categories) }))
+    .map((category) => ({ value: category.id, label: spendingCategoryLabel(category, categories, displayName) }))
     .sort((left, right) => left.label.localeCompare(right.label))
 }
 

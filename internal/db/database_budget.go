@@ -115,6 +115,13 @@ type BudgetOperation interface {
 	// counted under an empty spending category.
 	ListSpendingCategoryDays(agentId, month string) ([]*models.SpendingCategoryDay, error)
 
+	// ListCashFlowDays is each day's income and spending per currency from
+	// one day to another, both included ("2006-01-02"), counted as
+	// ListSpendingCategoryDays counts spending, so the two agree: a refund
+	// in a spending category lowers spending rather than counting as
+	// income.
+	ListCashFlowDays(agentId, from, to string) ([]*models.CashFlowDay, error)
+
 	// ListMerchantMonthSpending is what each merchant charged each
 	// spending category in each of the three full months before a month
 	// ("2006-01"), per currency, transfers left out: what the budget pace
@@ -941,6 +948,46 @@ func (self *transaction) ListSpendingCategoryDays(agentId, month string) ([]*mod
 	for _, row := range rows {
 		days = append(days, &models.SpendingCategoryDay{
 			SpendingCategoryID: row.SpendingCategoryID, CurrencyCode: row.CurrencyCode, SpentOn: row.SpentOn, SpendingAmount: row.SpendingAmount,
+		})
+	}
+	return days, nil
+}
+
+func (self *transaction) ListCashFlowDays(agentId, from, to string) ([]*models.CashFlowDay, error) {
+	from, err := parseDay(from)
+	if err != nil {
+		return nil, err
+	}
+	to, err = parseDay(to)
+	if err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		CashFlowOn     string `gorm:"column:cash_flow_on"`
+		CurrencyCode   string `gorm:"column:currency_code"`
+		IncomeAmount   string `gorm:"column:income_amount"`
+		SpendingAmount string `gorm:"column:spending_amount"`
+	}
+	if err := self.tx.Raw(`SELECT to_char("flowed"."posted_on", 'YYYY-MM-DD') AS "cash_flow_on", "flowed"."currency_code",
+			SUM(CASE WHEN "spending_category"."id" IS NOT NULL AND "spending_category"."is_income" THEN "flowed"."amount"
+			         WHEN "spending_category"."id" IS NULL AND "flowed"."amount" > 0 THEN "flowed"."amount"
+			         ELSE 0 END)::text AS "income_amount",
+			SUM(CASE WHEN "spending_category"."id" IS NOT NULL AND NOT "spending_category"."is_income" THEN -"flowed"."amount"
+			         WHEN "spending_category"."id" IS NULL AND "flowed"."amount" < 0 THEN -"flowed"."amount"
+			         ELSE 0 END)::text AS "spending_amount"
+		FROM "agent_finance_transaction" AS "flowed"
+		LEFT JOIN "agent_spending_category" AS "spending_category"
+		  ON "spending_category"."id" = "flowed"."spending_category_id" AND "spending_category"."agent_id" = "flowed"."agent_id"
+		WHERE "flowed"."agent_id" = ? AND NOT "flowed"."is_transfer"
+		  AND "flowed"."posted_on" >= ?::date AND "flowed"."posted_on" <= ?::date
+		GROUP BY 1, 2
+		ORDER BY 1, 2`, agentId, from, to).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	days := make([]*models.CashFlowDay, 0, len(rows))
+	for _, row := range rows {
+		days = append(days, &models.CashFlowDay{
+			CashFlowOn: row.CashFlowOn, CurrencyCode: row.CurrencyCode, IncomeAmount: row.IncomeAmount, SpendingAmount: row.SpendingAmount,
 		})
 	}
 	return days, nil
