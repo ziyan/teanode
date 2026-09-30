@@ -200,6 +200,7 @@ const AGENT_TABS: TabItem[] = [
   { id: 'overview', label: 'agent.tabOverview' },
   { id: 'ideas', label: 'agent.tabIdeas' },
   { id: 'goals', label: 'agent.tabGoals' },
+  { id: 'alerts', label: 'agent.tabAlerts' },
   { id: 'mail', label: 'agent.tabMail' },
   { id: 'sources', label: 'agent.tabSources' },
   { id: 'memory', label: 'agent.tabMemory' },
@@ -325,7 +326,6 @@ export function AgentPage() {
             <AboutForm agent={agent} view={view} busy={busy} onSave={update} />
             <VoiceForm agent={agent} busy={busy} onSave={update} />
           </div>
-          {agent.enabled && !agent.operatorDisabledAt ? <AlertsCard /> : null}
           <div className="card">
             <h3>{t('agent.advanced')}</h3>
             <div className="form-narrow">
@@ -383,7 +383,6 @@ export function AgentPage() {
               </label>
               <p className="muted field-hint">{t('agent.ideasHint')}</p>
             </div>
-            <AlertSettings agent={agent} busy={busy} onSave={update} />
             <ConfirmForm agent={agent} busy={busy} onSave={update} />
             <div className="settings-subform">
               <h4>{t('agent.forget')}</h4>
@@ -436,6 +435,12 @@ export function AgentPage() {
         </>
       ) : null}
       {tab === 'ideas' ? <IdeasTab /> : null}
+      {tab === 'alerts' ? (
+        <>
+          <AlertSettings agent={agent} busy={busy} onSave={update} />
+          {agent.enabled && !agent.operatorDisabledAt ? <AlertsCard /> : null}
+        </>
+      ) : null}
       {tab === 'goals' ? <GoalsTab /> : null}
       {tab === 'connections' ? (
         <>
@@ -483,10 +488,10 @@ type SaveProps = {
   onSave: (variables: Record<string, unknown>, done: string) => Promise<void>
 }
 
-// AlertSettings: whether the agent tells the person, unasked, what their
-// mail says they should know now; their night, when only what cannot wait
-// is said; and how many a day at most. What it told them, and what they
-// muted, is the Alerts card on this tab.
+// AlertSettings: whether the agent tells the person, unasked, what they
+// should know now; their night, when only what cannot wait is said; and how
+// many a day at most. They have a tab of their own with what the agent told
+// them and what they muted, the Alerts card beneath them.
 function AlertSettings({ agent, busy, onSave }: SaveProps) {
   const { t } = useTranslation()
   const [dailyMost, setDailyMost] = useState(String(agent.alertDailyMost || 5))
@@ -497,9 +502,7 @@ function AlertSettings({ agent, busy, onSave }: SaveProps) {
     void onSave({ alertDailyMost: most }, t('agent.saved'))
   }
   return (
-    <div className="settings-subform">
-      <h4>{t('agent.alerts')}</h4>
-      <p className="muted">{t('agent.alertsHint')}</p>
+    <SettingsSection card title={t('agent.alerts')} description={t('agent.alertsHint')}>
       <label className="checkbox">
         <input
           type="checkbox"
@@ -549,7 +552,7 @@ function AlertSettings({ agent, busy, onSave }: SaveProps) {
         </div>
       </div>
       <p className="muted field-hint">{t('agent.alertQuietHint')}</p>
-    </div>
+    </SettingsSection>
   )
 }
 
