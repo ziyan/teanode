@@ -46,6 +46,31 @@ func (self AgentIdeaStatus) IsValid() bool {
 	return false
 }
 
+// AgentIdeaExpiredReason is why an idea expired: what stopped it being on
+// offer.
+type AgentIdeaExpiredReason string
+
+const (
+	// IdeaPastDate is a personal idea whose date passed.
+	IdeaPastDate AgentIdeaExpiredReason = "past_date"
+	// IdeaMissingTool is a catalog idea needing a tool the person does not
+	// have. It cannot be opened again until the tool is back, when it comes
+	// back on its own.
+	IdeaMissingTool AgentIdeaExpiredReason = "missing_tool"
+	// IdeaAlreadyUsed is a catalog idea about something the person already
+	// does. They may still open it again.
+	IdeaAlreadyUsed AgentIdeaExpiredReason = "already_used"
+)
+
+// IsValid says whether a reason is one of the three, or none.
+func (self AgentIdeaExpiredReason) IsValid() bool {
+	switch self {
+	case "", IdeaPastDate, IdeaMissingTool, IdeaAlreadyUsed:
+		return true
+	}
+	return false
+}
+
 // AgentIdeaCategory is the area of life an idea is about.
 type AgentIdeaCategory string
 
@@ -131,6 +156,19 @@ type AgentIdea struct {
 	SuggestionReason string              `json:"suggestionReason"`
 
 	IdeaStatus AgentIdeaStatus `json:"ideaStatus"`
+
+	// ExpiredReason is why an expired idea is not on offer, and empty for
+	// an idea in any other status. An expired catalog idea keeps the reason
+	// it is not offered now, which may have changed since it expired; one
+	// that expired before reasons were kept, or whose key the catalog no
+	// longer has, may have none.
+	ExpiredReason AgentIdeaExpiredReason `json:"expiredReason"`
+
+	// IsRestoredByPerson is a catalog idea the person opened again after it
+	// expired because they already do what it offers. The check that found
+	// that no longer expires it: they said they want it anyway, and it stays
+	// until they dismiss it or finish it. A missing tool still expires it.
+	IsRestoredByPerson bool `json:"isRestoredByPerson"`
 
 	// RankScore orders open ideas, highest first.
 	RankScore float64 `json:"rankScore"`

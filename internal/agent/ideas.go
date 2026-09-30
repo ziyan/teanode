@@ -274,11 +274,32 @@ func categoryWeights(ideas []*models.AgentIdea) map[models.AgentIdeaCategory]flo
 // ideasRefreshed is when each agent's catalog ideas were last refreshed.
 var ideasRefreshed sync.Map
 
+// notOfferedReason is why a catalog entry is not on offer to the person, or
+// empty when it is. The tools come first: without them the idea cannot be
+// carried out whatever the person already does, and that costs no query. An
+// idea the person restored after it expired for being already used
+// (IsRestoredByPerson) skips the used check: they asked for it back, and it
+// would otherwise expire again at the next reading of the catalog.
+func (self *ideaEntry) notOfferedReason(tx db.Transaction, agent *models.Agent, owner *models.User, toolRisks map[string]tools.Risk, kept *models.AgentIdea) (models.AgentIdeaExpiredReason, error) {
+	if !hasTools(self.NeededToolNames, toolRisks) {
+		return models.IdeaMissingTool, nil
+	}
+	check := ideaUsedChecks[self.UsedCheck]
+	if check == nil || (kept != nil && kept.IsRestoredByPerson) {
+		return "", nil
+	}
+	isUsed, err := check(tx, agent, owner)
+	if err != nil || !isUsed {
+		return "", err
+	}
+	return models.IdeaAlreadyUsed, nil
+}
+
 // refreshIdeas brings an agent's ideas up to date with the catalog and the
 // clock: every catalog idea the person has the tools for and does not
 // already do is on offer, one that no longer qualifies expires unless it
-// was taken up, and a personal idea past its date expires. Once an hour at
-// most, unless isForced.
+// was taken up, and a personal idea past its date expires. Each idea that
+// expires says why. Once an hour at most, unless isForced.
 func (self *Agent) refreshIdeas(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, isForced bool) error {
 	now := time.Now()
 	if last, ok := ideasRefreshed.Load(agent.ID); ok && !isForced && now.Sub(last.(time.Time)) < ideaRefreshEvery {
@@ -293,15 +314,20 @@ func (self *Agent) refreshIdeas(ctx context.Context, tx db.Transaction, agent *m
 		return err
 	}
 	weights := categoryWeights(every)
+	keptByKey := map[string]*models.AgentIdea{}
+	for _, idea := range every {
+		keptByKey[idea.IdeaKey] = idea
+	}
 	isOffered := map[string]bool{}
+	// notOfferedReasons is why each catalog entry not on offer is not.
+	notOfferedReasons := map[string]models.AgentIdeaExpiredReason{}
 	for index, entry := range ideaCatalog {
-		isUsed := false
-		if check := ideaUsedChecks[entry.UsedCheck]; check != nil {
-			if isUsed, err = check(tx, agent, owner); err != nil {
-				return err
-			}
+		notOfferedReason, err := entry.notOfferedReason(tx, agent, owner, toolRisks, keptByKey[entry.IdeaKey])
+		if err != nil {
+			return err
 		}
-		if isUsed || !hasTools(entry.NeededToolNames, toolRisks) {
+		if notOfferedReason != "" {
+			notOfferedReasons[entry.IdeaKey] = notOfferedReason
 			continue
 		}
 		isOffered[entry.IdeaKey] = true
@@ -310,11 +336,12 @@ func (self *Agent) refreshIdeas(ctx context.Context, tx db.Transaction, agent *m
 		if err != nil {
 			return err
 		}
-		// Expired because a tool went away, and on offer again now it is
-		// back. One the person dismissed stays dismissed.
+		// Expired because a tool went away or the person did it already, and
+		// on offer again now that has changed. One the person dismissed
+		// stays dismissed.
 		if kept.IdeaStatus == models.IdeaExpired {
 			if _, err := tx.UpdateAgentIdea(agent.ID, kept.ID, func(changing *models.AgentIdea) error {
-				changing.IdeaStatus, changing.ClosedAt = models.IdeaOpen, nil
+				changing.IdeaStatus, changing.ClosedAt, changing.ExpiredReason = models.IdeaOpen, nil, ""
 				return nil
 			}); err != nil {
 				return err
@@ -326,14 +353,28 @@ func (self *Agent) refreshIdeas(ctx context.Context, tx db.Transaction, agent *m
 		catalogByKey[entry.IdeaKey] = entry
 	}
 	for _, idea := range every {
+		entry := catalogByKey[idea.IdeaKey]
+		isUnofferedCatalogIdea := idea.IdeaKind == models.IdeaCatalog && entry != nil && !isOffered[idea.IdeaKey]
 		// The catalog's words for its ideas in every status, so one kept
 		// from before a rewording, or from before the catalog had words for
 		// it at all, reads as the catalog says now.
-		if entry := catalogByKey[idea.IdeaKey]; idea.IdeaKind == models.IdeaCatalog && entry != nil && !isOffered[idea.IdeaKey] &&
-			(idea.Headline != entry.Headline || idea.Body != entry.Body || idea.Emoji != entry.Emoji || string(idea.IdeaCategory) != entry.IdeaCategory) {
+		hasOldWords := isUnofferedCatalogIdea &&
+			(idea.Headline != entry.Headline || idea.Body != entry.Body || idea.Emoji != entry.Emoji || string(idea.IdeaCategory) != entry.IdeaCategory)
+		// An expired catalog idea says why it is not offered now, which is
+		// what decides whether it can be restored: that may have changed
+		// since it expired, and one that expired before reasons were kept
+		// had none.
+		currentReason := notOfferedReasons[idea.IdeaKey]
+		hasOldReason := isUnofferedCatalogIdea && idea.IdeaStatus == models.IdeaExpired && currentReason != "" && idea.ExpiredReason != currentReason
+		if hasOldWords || hasOldReason {
 			if _, err := tx.UpdateAgentIdea(agent.ID, idea.ID, func(changing *models.AgentIdea) error {
-				changing.Headline, changing.Body, changing.Emoji = entry.Headline, entry.Body, entry.Emoji
-				changing.IdeaCategory, changing.OpeningRequest = models.AgentIdeaCategory(entry.IdeaCategory), entry.OpeningRequest
+				if hasOldWords {
+					changing.Headline, changing.Body, changing.Emoji = entry.Headline, entry.Body, entry.Emoji
+					changing.IdeaCategory, changing.OpeningRequest = models.AgentIdeaCategory(entry.IdeaCategory), entry.OpeningRequest
+				}
+				if hasOldReason && changing.IdeaStatus == models.IdeaExpired {
+					changing.ExpiredReason = currentReason
+				}
 				return nil
 			}); err != nil {
 				return err
@@ -355,8 +396,14 @@ func (self *Agent) refreshIdeas(ctx context.Context, tx db.Transaction, agent *m
 			}
 			continue
 		}
+		// A catalog idea no longer offered says which of the two it is; one
+		// whose key the catalog dropped has neither, and says nothing.
+		expiredReason := models.IdeaPastDate
+		if isStale {
+			expiredReason = currentReason
+		}
 		if _, err := tx.UpdateAgentIdea(agent.ID, idea.ID, func(changing *models.AgentIdea) error {
-			changing.IdeaStatus, changing.ClosedAt = models.IdeaExpired, &now
+			changing.IdeaStatus, changing.ClosedAt, changing.ExpiredReason = models.IdeaExpired, &now, expiredReason
 			return nil
 		}); err != nil {
 			return err
@@ -450,18 +497,27 @@ func (self *Agent) SetIdeaStatus(tx db.Transaction, agent *models.Agent, ideaId 
 	now := time.Now()
 	return tx.UpdateAgentIdea(agent.ID, ideaId, func(changing *models.AgentIdea) error {
 		// A catalog idea expires when it stops being something the agent
-		// offers: a tool it needs went away, or the person already does
-		// it. Opened again, it would expire at the next reading of the
-		// catalog, so it is refused with the reason; it comes back on its
-		// own when that changes.
+		// offers. One that needs a tool the person does not have would
+		// expire again at the next reading of the catalog, so it is refused
+		// with the reason; it comes back on its own when the tool does. One
+		// they already do comes back, and stays: IsRestoredByPerson exempts
+		// it from the check that found it used.
 		if status == models.IdeaOpen && changing.IdeaKind == models.IdeaCatalog && changing.IdeaStatus == models.IdeaExpired {
-			return fmt.Errorf("%w: this idea is no longer offered, because a tool it needs is gone or it is already taken care of; it comes back on its own when that changes", db.ErrInvalidArguments)
+			switch changing.ExpiredReason {
+			case models.IdeaAlreadyUsed:
+				changing.IsRestoredByPerson = true
+			case models.IdeaMissingTool:
+				return fmt.Errorf("%w: this idea needs a tool that is not connected; it comes back on its own when the tool is", db.ErrInvalidArguments)
+			default:
+				return fmt.Errorf("%w: this idea is no longer offered; it comes back on its own when that changes", db.ErrInvalidArguments)
+			}
 		}
-		changing.IdeaStatus = status
+		changing.IdeaStatus, changing.ExpiredReason = status, ""
 		if status == models.IdeaOpen {
 			// Open again: taken up afresh, nothing of the last attempt kept.
-			// A personal idea brought back after its date stays: the person
-			// has said it still matters, and the clock would expire it again.
+			// A personal idea brought back after its date stays, with no date
+			// at all: the person has said it still matters, and the clock
+			// would expire it again.
 			changing.ClosedAt, changing.StartedAt, changing.StartedConversationID = nil, nil, ""
 			if changing.IdeaKind == models.IdeaPersonal && changing.ExpiresAt != nil && changing.ExpiresAt.Before(now) {
 				changing.ExpiresAt = nil

@@ -51,6 +51,8 @@ type agentIdeaModel struct {
 	Evidence              []byte         `gorm:"column:evidence;type:jsonb"`
 	SuggestionReason      string         `gorm:"column:suggestion_reason"`
 	IdeaStatus            string         `gorm:"column:idea_status"`
+	ExpiredReason         string         `gorm:"column:expired_reason"`
+	IsRestoredByPerson    bool           `gorm:"column:is_restored_by_person"`
 	RankScore             float64        `gorm:"column:rank_score"`
 	StartedConversationID string         `gorm:"column:started_conversation_id"`
 	CreatedAt             time.Time      `gorm:"column:created_at"`
@@ -76,6 +78,7 @@ func (self *agentIdeaModel) toModel() *models.AgentIdea {
 		Emoji: self.Emoji, Headline: self.Headline, Body: self.Body, OpeningRequest: self.OpeningRequest,
 		NeededToolNames: append([]string{}, self.NeededToolNames...), Evidence: evidence,
 		SuggestionReason: self.SuggestionReason, IdeaStatus: models.AgentIdeaStatus(self.IdeaStatus),
+		ExpiredReason: models.AgentIdeaExpiredReason(self.ExpiredReason), IsRestoredByPerson: self.IsRestoredByPerson,
 		RankScore: self.RankScore, StartedConversationID: self.StartedConversationID,
 		CreatedAt: self.CreatedAt.In(time.Local), ModifiedAt: self.ModifiedAt.In(time.Local),
 		ShownAt: inLocal(self.ShownAt), StartedAt: inLocal(self.StartedAt),
@@ -92,12 +95,20 @@ func agentIdeaToModel(idea *models.AgentIdea) (*agentIdeaModel, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Why it expired belongs to an expired idea only, so whatever takes an
+	// idea out of expired, reopening it or the catalog offering it again,
+	// cannot leave the old reason behind.
+	expiredReason := idea.ExpiredReason
+	if idea.IdeaStatus != models.IdeaExpired {
+		expiredReason = ""
+	}
 	return &agentIdeaModel{
 		ID: idea.ID, AgentID: idea.AgentID, IdeaKey: idea.IdeaKey,
 		IdeaKind: string(idea.IdeaKind), IdeaCategory: string(idea.IdeaCategory),
 		Emoji: idea.Emoji, Headline: idea.Headline, Body: idea.Body, OpeningRequest: idea.OpeningRequest,
 		NeededToolNames: pq.StringArray(append([]string{}, idea.NeededToolNames...)), Evidence: written,
 		SuggestionReason: idea.SuggestionReason, IdeaStatus: string(idea.IdeaStatus),
+		ExpiredReason: string(expiredReason), IsRestoredByPerson: idea.IsRestoredByPerson,
 		RankScore: idea.RankScore, StartedConversationID: idea.StartedConversationID,
 		CreatedAt: idea.CreatedAt, ModifiedAt: idea.ModifiedAt,
 		ShownAt: idea.ShownAt, StartedAt: idea.StartedAt, ClosedAt: idea.ClosedAt, ExpiresAt: idea.ExpiresAt,
@@ -126,6 +137,9 @@ func validIdea(idea *models.AgentIdea) error {
 	}
 	if !idea.IdeaStatus.IsValid() {
 		return fmt.Errorf("%w: %q is not what can become of an idea", ErrInvalidArguments, idea.IdeaStatus)
+	}
+	if !idea.ExpiredReason.IsValid() {
+		return fmt.Errorf("%w: %q is not why an idea expires", ErrInvalidArguments, idea.ExpiredReason)
 	}
 	return nil
 }
