@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.92.4] - 2026-09-30
+
+### Fixed
+
+- The agent can find an asset among hundreds of brokerage positions; `teanode finance assets` can be narrowed by kind, name, account and holdings. (#263)
+
 ## [0.92.3] - 2026-09-30
 
 ### Changed
