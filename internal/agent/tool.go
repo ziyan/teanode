@@ -37,6 +37,7 @@ const (
 	FamilySkills   = tools.FamilySkills
 	FamilyBrowser  = tools.FamilyBrowser
 	FamilyComputer = tools.FamilyComputer
+	FamilyFinance  = tools.FamilyFinance
 )
 
 var (

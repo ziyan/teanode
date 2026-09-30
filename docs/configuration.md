@@ -1544,9 +1544,9 @@ for each product on paid plans, which is why the operator chooses.
 
 Risk classes are the floor; this can only make the agent more cautious.
 Both lists take family names — `mailbox`, `domains`, `audit`, `people`,
-`server`, `account`, `general`, `servers`, `browser`, `computer`, `skills`
-— or tool names. `servers` is the family of the connected servers' tools, and `people`
-the family of the ones that reach accounts and access.
+`server`, `account`, `general`, `servers`, `browser`, `computer`, `skills`,
+`finance` — or tool names. `servers` is the family of the connected servers' tools, `people`
+the family of the ones that reach accounts and access, and `finance` the finance tool.
 
 **`disabled`** — Families or tools never offered to anybody.
 

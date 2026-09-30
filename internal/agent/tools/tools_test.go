@@ -105,7 +105,7 @@ func TestDecodeArgumentsRepairs(t *testing.T) {
 // anything tool-shaped does, and a name in the list that is no family
 // switches off nothing at all.
 func TestEveryFamilyIsAPolicyName(t *testing.T) {
-	families := []Family{FamilyMailbox, FamilyDomains, FamilyAudit, FamilyPeople, FamilyServer, FamilyAccount, FamilyGeneral, FamilyServers, FamilyBrowser, FamilyComputer, FamilySkills}
+	families := []Family{FamilyMailbox, FamilyDomains, FamilyAudit, FamilyPeople, FamilyServer, FamilyAccount, FamilyGeneral, FamilyServers, FamilyBrowser, FamilyComputer, FamilySkills, FamilyFinance}
 	for _, family := range families {
 		found := false
 		for _, name := range config.AgentToolFamilies {

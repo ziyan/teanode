@@ -493,52 +493,12 @@ func savingsTargetsBehind(tx db.Transaction, converter *rates.Converter, agentId
 		if err != nil {
 			continue
 		}
-		rows, err := tx.FinanceSpendingSummary(agentId, &db.FinanceSpendingSummaryFilter{
-			From: savingsTarget.StartedOn, To: monthStart.AddDate(0, 0, -1).Format(time.DateOnly),
-			GroupBy: models.FinanceSpendingSummaryGroupByMonth,
-		})
+		cashFlowByMonth, _, err := savingsTargetCashFlowByMonth(tx, converter, agentId, savingsTarget, monthStart.AddDate(0, 0, -1))
 		if err != nil {
 			return nil, err
 		}
-		cashFlowByMonth := map[string]*big.Rat{}
-		for _, row := range rows {
-			rowMonth, err := time.Parse("2006-01", row.GroupKey)
-			if err != nil {
-				continue
-			}
-			moneyIn, inErr := finance.ParseAmount(row.MoneyIn)
-			moneyOut, outErr := finance.ParseAmount(row.MoneyOut)
-			if inErr != nil || outErr != nil {
-				continue
-			}
-			net := new(big.Rat).Sub(moneyIn, moneyOut)
-			converted, isConverted, err := convertedAmount(converter, net.FloatString(finance.AmountDecimalPlaces), row.CurrencyCode, savingsTarget.CurrencyCode, rowMonth.AddDate(0, 1, -1).Format(time.DateOnly))
-			if err != nil {
-				return nil, err
-			}
-			if !isConverted {
-				continue
-			}
-			if cashFlowByMonth[row.GroupKey] == nil {
-				cashFlowByMonth[row.GroupKey] = new(big.Rat)
-			}
-			cashFlowByMonth[row.GroupKey].Add(cashFlowByMonth[row.GroupKey], converted)
-		}
-		isShort := func(month time.Time) (bool, *big.Rat, *big.Rat) {
-			savedBefore := new(big.Rat)
-			for key, cashFlow := range cashFlowByMonth {
-				if key < month.Format("2006-01") {
-					savedBefore.Add(savedBefore, cashFlow)
-				}
-			}
-			remaining := new(big.Rat).Sub(targetAmount, savedBefore)
-			monthsLeft := (targetOn.Year()-month.Year())*12 + int(targetOn.Month()) - int(month.Month()) + 1
-			required := new(big.Rat).Quo(remaining, big.NewRat(int64(max(monthsLeft, 1)), 1))
-			saved := ratOrZero(cashFlowByMonth[month.Format("2006-01")])
-			return remaining.Sign() > 0 && saved.Cmp(required) < 0, saved, required
-		}
-		isFirstShort, firstSaved, firstRequired := isShort(firstMonth)
-		isSecondShort, secondSaved, secondRequired := isShort(secondMonth)
+		isFirstShort, firstSaved, firstRequired := savingsTargetMonthShortfall(cashFlowByMonth, targetAmount, targetOn, firstMonth)
+		isSecondShort, secondSaved, secondRequired := savingsTargetMonthShortfall(cashFlowByMonth, targetAmount, targetOn, secondMonth)
 		if !isFirstShort || !isSecondShort {
 			continue
 		}
@@ -551,4 +511,183 @@ func savingsTargetsBehind(tx db.Transaction, converter *rates.Converter, agentId
 		})
 	}
 	return behind, nil
+}
+
+// savingsTargetCashFlowByMonth is a cash flow savings target's cash flow
+// per month ("2006-01") from the day it started to the day given, both
+// included, in its currency: money in less money out, transfers left out,
+// each currency converted at the rate of the month's last day. The
+// currencies with no rate into the target's are left out and named.
+func savingsTargetCashFlowByMonth(tx db.Transaction, converter *rates.Converter, agentId string, savingsTarget *models.SavingsTarget, through time.Time) (map[string]*big.Rat, []string, error) {
+	cashFlowByMonth := map[string]*big.Rat{}
+	if through.Format(time.DateOnly) < savingsTarget.StartedOn {
+		return cashFlowByMonth, nil, nil
+	}
+	rows, err := tx.FinanceSpendingSummary(agentId, &db.FinanceSpendingSummaryFilter{
+		From: savingsTarget.StartedOn, To: through.Format(time.DateOnly),
+		GroupBy: models.FinanceSpendingSummaryGroupByMonth,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	unconverted := map[string]bool{}
+	for _, row := range rows {
+		rowMonth, err := time.Parse("2006-01", row.GroupKey)
+		if err != nil {
+			continue
+		}
+		moneyIn, inErr := finance.ParseAmount(row.MoneyIn)
+		moneyOut, outErr := finance.ParseAmount(row.MoneyOut)
+		if inErr != nil || outErr != nil {
+			continue
+		}
+		net := new(big.Rat).Sub(moneyIn, moneyOut)
+		converted, isConverted, err := convertedAmount(converter, net.FloatString(finance.AmountDecimalPlaces), row.CurrencyCode, savingsTarget.CurrencyCode, rowMonth.AddDate(0, 1, -1).Format(time.DateOnly))
+		if err != nil {
+			return nil, nil, err
+		}
+		if !isConverted {
+			unconverted[row.CurrencyCode] = true
+			continue
+		}
+		if cashFlowByMonth[row.GroupKey] == nil {
+			cashFlowByMonth[row.GroupKey] = new(big.Rat)
+		}
+		cashFlowByMonth[row.GroupKey].Add(cashFlowByMonth[row.GroupKey], converted)
+	}
+	return cashFlowByMonth, sortedKeys(unconverted), nil
+}
+
+// savingsTargetMonthShortfall says whether a month saved less than the
+// pace it needed -- what remained at its start over the months left to
+// the target day, that month included -- with what it saved and what it
+// needed.
+func savingsTargetMonthShortfall(cashFlowByMonth map[string]*big.Rat, targetAmount *big.Rat, targetOn, month time.Time) (bool, *big.Rat, *big.Rat) {
+	savedBefore := new(big.Rat)
+	for key, cashFlow := range cashFlowByMonth {
+		if key < month.Format("2006-01") {
+			savedBefore.Add(savedBefore, cashFlow)
+		}
+	}
+	remaining := new(big.Rat).Sub(targetAmount, savedBefore)
+	required := new(big.Rat).Quo(remaining, big.NewRat(int64(max(monthsThrough(month, targetOn), 1)), 1))
+	saved := ratOrZero(cashFlowByMonth[month.Format("2006-01")])
+	return remaining.Sign() > 0 && saved.Cmp(required) < 0, saved, required
+}
+
+// monthsThrough is how many months from one month to the month of a day,
+// both included: one for the same month.
+func monthsThrough(month, day time.Time) int {
+	return (day.Year()-month.Year())*12 + int(day.Month()) - int(month.Month()) + 1
+}
+
+// SavingsTargetProgress is how a savings target stands, in its currency:
+// what it has saved, what remains, and the monthly pace that would still
+// reach it by its day.
+type SavingsTargetProgress struct {
+	// SavedAmount is, for a cash flow target, income less spending since
+	// it started; for an asset value target, what its assets are worth
+	// now less its starting amount. RemainingAmount is the target less
+	// that, never below zero.
+	SavedAmount     string `json:"savedAmount"`
+	RemainingAmount string `json:"remainingAmount"`
+
+	// MonthsLeftCount is the months from this one to the target's, both
+	// included, and RequiredMonthlyAmount what remains over them: the pace
+	// needed.
+	MonthsLeftCount       int    `json:"monthsLeftCount"`
+	RequiredMonthlyAmount string `json:"requiredMonthlyAmount"`
+
+	// IsBehind says a cash flow target's last two full months both saved
+	// less than the pace they needed: the same test its alert is written
+	// by. Always false for an asset value target.
+	IsBehind bool `json:"isBehind"`
+
+	// UnconvertedCurrencyCodes are the currencies left out for want of an
+	// exchange rate into the target's.
+	UnconvertedCurrencyCodes []string `json:"unconvertedCurrencyCodes"`
+}
+
+// SavingsTargetProgressOf is how one savings target stands as of today
+// ("2006-01-02", the person's local day), measured the way its alert is.
+// A nil fetcher converts with the rates already stored.
+func SavingsTargetProgressOf(ctx context.Context, tx db.Transaction, fetcher *rates.Fetcher, agentId string, savingsTarget *models.SavingsTarget, today string) (*SavingsTargetProgress, error) {
+	local, err := time.Parse(time.DateOnly, today)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %q is not a day written 2006-01-02", db.ErrInvalidArguments, today)
+	}
+	targetAmount, err := finance.ParseAmount(savingsTarget.TargetAmount)
+	if err != nil {
+		return nil, err
+	}
+	targetOn, err := time.Parse(time.DateOnly, savingsTarget.TargetOn)
+	if err != nil {
+		return nil, err
+	}
+	converter := rates.NewConverter(ctx, fetcher, tx)
+	monthStart := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, time.UTC)
+	progress := &SavingsTargetProgress{UnconvertedCurrencyCodes: []string{}}
+	saved := new(big.Rat)
+	switch savingsTarget.TargetMeasure {
+	case models.TargetMeasureAssetValue:
+		assets, err := tx.ListAssets(agentId)
+		if err != nil {
+			return nil, err
+		}
+		unconverted := map[string]bool{}
+		for _, asset := range assets {
+			if !slices.Contains(savingsTarget.AssetIDs, asset.ID) || asset.LatestValuation == nil {
+				continue
+			}
+			value, isConverted, err := convertedAmount(converter, asset.LatestValuation.Value, asset.LatestValuation.CurrencyCode, savingsTarget.CurrencyCode, today)
+			if err != nil {
+				return nil, err
+			}
+			if !isConverted {
+				unconverted[asset.LatestValuation.CurrencyCode] = true
+				continue
+			}
+			if asset.IsLiability {
+				value.Neg(value)
+			}
+			saved.Add(saved, value)
+		}
+		if savingsTarget.StartingAmount != "" {
+			startingAmount, err := finance.ParseAmount(savingsTarget.StartingAmount)
+			if err != nil {
+				return nil, err
+			}
+			saved.Sub(saved, startingAmount)
+		}
+		progress.UnconvertedCurrencyCodes = append(progress.UnconvertedCurrencyCodes, sortedKeys(unconverted)...)
+	default:
+		cashFlowByMonth, unconverted, err := savingsTargetCashFlowByMonth(tx, converter, agentId, savingsTarget, local)
+		if err != nil {
+			return nil, err
+		}
+		for _, cashFlow := range cashFlowByMonth {
+			saved.Add(saved, cashFlow)
+		}
+		progress.UnconvertedCurrencyCodes = append(progress.UnconvertedCurrencyCodes, unconverted...)
+		startedOn, startedOnErr := time.Parse(time.DateOnly, savingsTarget.StartedOn)
+		firstMonth, secondMonth := monthStart.AddDate(0, -2, 0), monthStart.AddDate(0, -1, 0)
+		if savingsTarget.ClosedOn == "" && startedOnErr == nil && !startedOn.After(firstMonth) && !targetOn.Before(monthStart) {
+			isFirstShort, _, _ := savingsTargetMonthShortfall(cashFlowByMonth, targetAmount, targetOn, firstMonth)
+			isSecondShort, _, _ := savingsTargetMonthShortfall(cashFlowByMonth, targetAmount, targetOn, secondMonth)
+			progress.IsBehind = isFirstShort && isSecondShort
+		}
+	}
+	remaining := new(big.Rat).Sub(targetAmount, saved)
+	if remaining.Sign() < 0 {
+		remaining = new(big.Rat)
+	}
+	progress.MonthsLeftCount = max(monthsThrough(monthStart, targetOn), 0)
+	required := new(big.Rat).Set(remaining)
+	if progress.MonthsLeftCount > 0 {
+		required.Quo(remaining, big.NewRat(int64(progress.MonthsLeftCount), 1))
+	}
+	progress.SavedAmount = finance.FormatAmount(saved)
+	progress.RemainingAmount = finance.FormatAmount(remaining)
+	progress.RequiredMonthlyAmount = finance.FormatAmount(required)
+	return progress, nil
 }

@@ -173,7 +173,7 @@ func (self *Agent) DirectTools(ctx context.Context, person *models.Agent, operat
 		}
 		kept = append(kept, tool)
 	}
-	return kept
+	return self.withoutFinanceTools(ctx, configuration, person.ID, kept)
 }
 
 // CallDirect runs one tool by name, as this person, outside a

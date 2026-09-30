@@ -1,0 +1,559 @@
+// Package finance is the person's money as the agent reads and keeps it for
+// them: their finance sources (logins at banks, card issuers, brokerages and
+// lenders, linked through a provider), finance accounts and transactions,
+// exchange rates, net worth, spending categories and rules, budgets and
+// savings targets. Every operation calls the operation of the same name the
+// dashboard's Finance tab and teanode finance call, so the three agree;
+// the tool has no logic of its own beyond saying where a browser is needed.
+package finance
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+	"unicode"
+
+	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/client"
+)
+
+// financeLinkPagePath is the dashboard page that opens Plaid Link.
+const financeLinkPagePath = "/finance-link"
+
+// financeOperation is one operation of the tool: the finance area's
+// operation it calls, what it costs, the arguments it passes on, and
+// whether its answer carries text outsiders wrote.
+type financeOperation struct {
+	// graphqlOperation is the finance area's operation, empty for the
+	// operations the tool answers itself or that act on a source.
+	graphqlOperation string
+	risk             tools.Risk
+	arguments        []string
+	required         []string
+
+	// isUntrusted marks an answer with merchant names, descriptions,
+	// account or institution names, notes or evidence in it: written by
+	// whoever charged the account, the provider, or a web page.
+	isUntrusted bool
+
+	// preview is the confirmation card's line for a write.
+	preview func(call map[string]any) string
+}
+
+// The arguments shared by several operations.
+var (
+	rangeArguments      = []string{"from", "to"}
+	assetArguments      = []string{"asset_name", "asset_kind", "currency_code", "valuation_source", "estimate_description", "is_estimate_allowed"}
+	spendingRuleFields  = []string{"match_text", "spending_category_id", "is_transfer", "finance_account_id", "minimum_amount", "maximum_amount", "rule_priority"}
+	savingsTargetFields = []string{"savings_target_name", "target_amount", "currency_code", "target_on", "target_measure", "starting_amount", "started_on", "asset_ids"}
+)
+
+// operations is every operation of the tool by its name: the finance
+// area's operation in snake case, a leading Finance dropped, and the few
+// that stand for more than one call.
+var operations = map[string]*financeOperation{
+	"providers": {graphqlOperation: "FinanceProviders", risk: tools.RiskRead},
+	"sources":   {graphqlOperation: "FinanceSources", risk: tools.RiskRead, isUntrusted: true},
+	"accounts":  {graphqlOperation: "FinanceAccounts", risk: tools.RiskRead, arguments: []string{"currency_code"}, isUntrusted: true},
+	"transactions": {
+		graphqlOperation: "FinanceTransactions", risk: tools.RiskRead, isUntrusted: true,
+		arguments: append([]string{"finance_account_id", "text", "minimum_amount", "maximum_amount", "provider_category", "spending_category_id", "is_uncategorized", "limit", "after"}, rangeArguments...),
+	},
+	"spending_summary": {
+		graphqlOperation: "FinanceSpendingSummary", risk: tools.RiskRead, isUntrusted: true,
+		arguments: append([]string{"group_by", "finance_account_id", "currency_code"}, rangeArguments...),
+	},
+	"exchange_rate": {
+		graphqlOperation: "ExchangeRate", risk: tools.RiskRead,
+		arguments: []string{"from_currency_code", "to_currency_code", "rate_on"}, required: []string{"from_currency_code", "to_currency_code"},
+	},
+	"convert_currency": {
+		graphqlOperation: "ConvertCurrency", risk: tools.RiskRead,
+		arguments: []string{"amount", "from_currency_code", "to_currency_code", "rate_on"}, required: []string{"amount", "from_currency_code", "to_currency_code"},
+	},
+	"set_reporting_currency": {
+		graphqlOperation: "SetReportingCurrency", risk: tools.RiskWrite, arguments: []string{"currency_code"}, required: []string{"currency_code"},
+		preview: func(call map[string]any) string { return "Show totals in " + text(call, "currency_code") },
+	},
+	"net_worth":     {graphqlOperation: "NetWorth", risk: tools.RiskRead, arguments: append([]string{"currency_code"}, rangeArguments...)},
+	"assets":        {graphqlOperation: "Assets", risk: tools.RiskRead, isUntrusted: true},
+	"asset_history": {graphqlOperation: "AssetHistory", risk: tools.RiskRead, arguments: []string{"asset_id"}, required: []string{"asset_id"}, isUntrusted: true},
+	"create_asset": {
+		graphqlOperation: "CreateAsset", risk: tools.RiskWrite, arguments: assetArguments, required: []string{"asset_name", "asset_kind", "currency_code"},
+		preview: func(call map[string]any) string {
+			return fmt.Sprintf("Add %s (%s, %s) to net worth", tools.Named(text(call, "asset_name"), "an asset"), text(call, "asset_kind"), text(call, "currency_code"))
+		},
+	},
+	"update_asset": {
+		graphqlOperation: "UpdateAsset", risk: tools.RiskWrite, arguments: append([]string{"asset_id"}, assetArguments...), required: []string{"asset_id"},
+		preview: func(call map[string]any) string { return "Change an asset" + namedSuffix(call, "asset_name") },
+	},
+	"close_asset": {
+		graphqlOperation: "CloseAsset", risk: tools.RiskWrite, arguments: []string{"asset_id", "closed_on", "should_reopen"}, required: []string{"asset_id"},
+		preview: func(call map[string]any) string {
+			if isTrue(call, "should_reopen") {
+				return "Open an asset again"
+			}
+			return "Record an asset as sold or paid off" + onSuffix(call, "closed_on")
+		},
+	},
+	"delete_asset": {
+		graphqlOperation: "DeleteAsset", risk: tools.RiskDestructive, arguments: []string{"asset_id"}, required: []string{"asset_id"},
+		preview: func(map[string]any) string { return "Delete an asset and its whole history" },
+	},
+	"record_valuation": {
+		graphqlOperation: "RecordValuation", risk: tools.RiskWrite, isUntrusted: true,
+		arguments: []string{"asset_id", "value", "valued_on", "valuation_source", "estimate_low", "estimate_high", "valuation_note", "evidence_urls"},
+		required:  []string{"asset_id", "value"},
+		preview: func(call map[string]any) string {
+			if text(call, "valuation_source") == "agent_estimate" {
+				return "Record an estimate of " + text(call, "value") + onSuffix(call, "valued_on")
+			}
+			return "Record a value of " + text(call, "value") + onSuffix(call, "valued_on")
+		},
+	},
+	"delete_valuation": {
+		graphqlOperation: "DeleteValuation", risk: tools.RiskDestructive, arguments: []string{"valuation_id"}, required: []string{"valuation_id"},
+		preview: func(map[string]any) string { return "Delete a value from an asset's history" },
+	},
+	"spending_categories": {graphqlOperation: "SpendingCategories", risk: tools.RiskRead},
+	"create_spending_category": {
+		graphqlOperation: "CreateSpendingCategory", risk: tools.RiskWrite,
+		arguments: []string{"spending_category_name", "parent_spending_category_id", "is_income", "is_hidden"}, required: []string{"spending_category_name"},
+		preview: func(call map[string]any) string {
+			return "Add the spending category " + tools.Named(text(call, "spending_category_name"), "a spending category")
+		},
+	},
+	"update_spending_category": {
+		graphqlOperation: "UpdateSpendingCategory", risk: tools.RiskWrite,
+		arguments: []string{"spending_category_id", "spending_category_name", "parent_spending_category_id", "is_income", "is_hidden"}, required: []string{"spending_category_id"},
+		preview: func(call map[string]any) string {
+			return "Change a spending category" + namedSuffix(call, "spending_category_name")
+		},
+	},
+	"delete_spending_category": {
+		graphqlOperation: "DeleteSpendingCategory", risk: tools.RiskDestructive, arguments: []string{"spending_category_id"}, required: []string{"spending_category_id"},
+		preview: func(map[string]any) string {
+			return "Delete a spending category, its budgets and its spending rules; its transactions become uncategorized"
+		},
+	},
+	"spending_rules": {graphqlOperation: "SpendingRules", risk: tools.RiskRead, isUntrusted: true},
+	"create_spending_rule": {
+		graphqlOperation: "CreateSpendingRule", risk: tools.RiskWrite, arguments: spendingRuleFields, required: []string{"match_text"}, isUntrusted: true,
+		preview: func(call map[string]any) string {
+			return fmt.Sprintf("Add a spending rule for %q, applied to past transactions too", text(call, "match_text"))
+		},
+	},
+	"update_spending_rule": {
+		graphqlOperation: "UpdateSpendingRule", risk: tools.RiskWrite, arguments: append([]string{"spending_rule_id"}, spendingRuleFields...), required: []string{"spending_rule_id"}, isUntrusted: true,
+		preview: func(map[string]any) string { return "Change a spending rule, applied again to past transactions" },
+	},
+	"delete_spending_rule": {
+		graphqlOperation: "DeleteSpendingRule", risk: tools.RiskDestructive, arguments: []string{"spending_rule_id"}, required: []string{"spending_rule_id"},
+		preview: func(map[string]any) string { return "Delete a spending rule" },
+	},
+	"categorize_transaction": {
+		graphqlOperation: "CategorizeTransaction", risk: tools.RiskWrite, isUntrusted: true,
+		arguments: []string{"finance_transaction_id", "spending_category_id", "should_create_spending_rule"}, required: []string{"finance_transaction_id"},
+		preview: func(call map[string]any) string {
+			if isTrue(call, "should_create_spending_rule") {
+				return "Categorize a transaction, and add a spending rule for its merchant"
+			}
+			return "Categorize a transaction"
+		},
+	},
+	"mark_transfer": {
+		graphqlOperation: "MarkTransfer", risk: tools.RiskWrite, isUntrusted: true,
+		arguments: []string{"finance_transaction_id", "is_transfer"}, required: []string{"finance_transaction_id", "is_transfer"},
+		preview: func(call map[string]any) string {
+			if isTrue(call, "is_transfer") {
+				return "Mark a transaction as a transfer between their own accounts"
+			}
+			return "Mark a transaction as not a transfer"
+		},
+	},
+	"budgets": {graphqlOperation: "Budgets", risk: tools.RiskRead},
+	"set_budget": {
+		graphqlOperation: "SetBudget", risk: tools.RiskWrite,
+		arguments: []string{"spending_category_id", "monthly_amount", "currency_code", "effective_from"}, required: []string{"spending_category_id", "monthly_amount"},
+		preview: func(call map[string]any) string {
+			return strings.TrimSpace("Set a monthly budget of " + text(call, "monthly_amount") + " " + text(call, "currency_code"))
+		},
+	},
+	"budget_status":   {graphqlOperation: "BudgetStatus", risk: tools.RiskRead, arguments: []string{"month"}},
+	"spending_by_day": {graphqlOperation: "SpendingByDay", risk: tools.RiskRead, arguments: []string{"month", "compare_month", "currency_code"}},
+	"cash_flow":       {graphqlOperation: "CashFlow", risk: tools.RiskRead, arguments: []string{"from_month", "to_month", "currency_code"}},
+	"savings_targets": {graphqlOperation: "SavingsTargets", risk: tools.RiskRead},
+	"create_savings_target": {
+		graphqlOperation: "CreateSavingsTarget", risk: tools.RiskWrite, arguments: savingsTargetFields, required: []string{"savings_target_name", "target_amount", "target_on"},
+		preview: func(call map[string]any) string {
+			return fmt.Sprintf("Add the savings target %s: %s by %s", tools.Named(text(call, "savings_target_name"), "a savings target"), text(call, "target_amount"), text(call, "target_on"))
+		},
+	},
+	"update_savings_target": {
+		graphqlOperation: "UpdateSavingsTarget", risk: tools.RiskWrite, arguments: append([]string{"savings_target_id"}, savingsTargetFields...), required: []string{"savings_target_id"},
+		preview: func(call map[string]any) string {
+			return "Change a savings target" + namedSuffix(call, "savings_target_name")
+		},
+	},
+	"close_savings_target": {
+		graphqlOperation: "CloseSavingsTarget", risk: tools.RiskWrite, arguments: []string{"savings_target_id", "closed_on", "should_reopen"}, required: []string{"savings_target_id"},
+		preview: func(call map[string]any) string {
+			if isTrue(call, "should_reopen") {
+				return "Open a savings target again"
+			}
+			return "Close a savings target" + onSuffix(call, "closed_on")
+		},
+	},
+
+	// The ones that stand for more than one call, act on a source, or
+	// answer with where to go.
+	"link_plaid":     {risk: tools.RiskRead},
+	"repair":         {risk: tools.RiskRead, arguments: []string{"source_id"}, required: []string{"source_id"}},
+	"link_simplefin": {risk: tools.RiskRead},
+	"sync": {
+		risk: tools.RiskWrite, arguments: []string{"source_id"}, required: []string{"source_id"},
+		preview: func(map[string]any) string { return "Sync a finance source now" },
+	},
+	"disable_source": {
+		risk: tools.RiskWrite, arguments: []string{"source_id"}, required: []string{"source_id"},
+		preview: func(map[string]any) string { return "Stop a finance source syncing, keeping what it holds" },
+	},
+	"enable_source": {
+		risk: tools.RiskWrite, arguments: []string{"source_id"}, required: []string{"source_id"},
+		preview: func(map[string]any) string { return "Let a finance source sync again" },
+	},
+	"delete_source": {
+		risk: tools.RiskDestructive, arguments: []string{"source_id"}, required: []string{"source_id"},
+		preview: func(map[string]any) string {
+			return "Delete a finance source and its transactions, ending it at its provider"
+		},
+	},
+}
+
+// operationNames is every operation's name, in order, for the schema.
+func operationNames() []string {
+	names := make([]string, 0, len(operations))
+	for name := range operations {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+const description = "The person's money: their finance sources (logins at banks, card issuers, brokerages and lenders, linked through a provider), " +
+	"finance accounts and transactions, exchange rates, net worth (assets and their valuations), spending categories and rules, budgets and savings targets. " +
+	"Pick one `operation`; the other arguments are the ones it takes, and ids come from the listing operations. Dates are 2026-09-01, months 2026-09; amounts are decimals, money out negative. " +
+	"Totals come per currency and converted into the reporting currency (or `currency_code`), each amount at its own day's exchange rate, naming any currency left out for want of a rate; never add different currencies yourself.\n" +
+	"Linking: `providers` says what the server offers. `link_plaid` gives an address for the person to open in their browser, signed in to the dashboard; `repair` gives the address that signs a finance source in again when `sources` says isSignInRequired. " +
+	"A SimpleFIN setup token is never taken in conversation: `link_simplefin` says where to paste it. `sync`, `disable_source`, `enable_source` and `delete_source` act on a finance source by source_id.\n" +
+	"Recipes, followed the same way every time:\n" +
+	"- Proposing budgets: `spending_summary` grouped by spendingCategory for each of the last three full months; propose the median of each, rounded, as a list; `set_budget` only what the person accepts. Once they set their first budget, offer a monthly review schedule on the first of the month.\n" +
+	"- A savings plan: `cash_flow` for what they save a month now, `savings_targets` for what a target needs a month, `budget_status` and `spending_summary` for which spending categories could close the gap, with numbers.\n" +
+	"- After the person corrects a transaction's spending category with `categorize_transaction`, offer a spending rule for that merchant (`should_create_spending_rule`), which applies to past transactions too, never over their own choices.\n" +
+	"- Tracking an account reachable only through a connected server: `create_asset` with valuation_source agent_reading if there is none, then a daily schedule whose prompt calls that server's tool for the account's total and records it with `record_valuation` (valuation_source agent_reading). Never over an asset valued by finance_sync.\n" +
+	"- Estimating a house or a car: only for an asset with isEstimateAllowed. Search the web for its estimate_description, read two to four pages that give a value or comparable sales, and `record_valuation` with valuation_source agent_estimate, estimate_low, estimate_high, the middle as value, the pages as evidence_urls and a valuation_note saying what it rests on. Where estimates are not allowed, say so and ask.\n" +
+	"- Converting currencies: `convert_currency` or `exchange_rate`, with rate_on for another day; the answer names the published day the rate is from."
+
+func init() {
+	tools.Register(func() []*tools.Tool {
+		return []*tools.Tool{
+			{
+				Name: "finance", Family: tools.FamilyFinance, Risk: tools.RiskWrite,
+				Description: description,
+				Parameters: tools.Object(map[string]any{
+					"operation":                   tools.EnumProperty("what to do", operationNames()...),
+					"source_id":                   tools.StringProperty("a finance source, by the id sources gives"),
+					"finance_account_id":          tools.StringProperty("a finance account, by the id accounts gives"),
+					"finance_transaction_id":      tools.StringProperty("a finance transaction, by the id transactions gives"),
+					"from":                        tools.StringProperty("the first day, 2026-09-01"),
+					"to":                          tools.StringProperty("the last day, 2026-09-30"),
+					"text":                        tools.StringProperty("for transactions: words within the description or merchant"),
+					"minimum_amount":              tools.StringProperty("the least signed amount; money out is negative"),
+					"maximum_amount":              tools.StringProperty("the greatest signed amount"),
+					"provider_category":           tools.StringProperty("for transactions: the provider's category"),
+					"spending_category_id":        tools.StringProperty("a spending category, by the id spending_categories gives; for categorize_transaction empty takes it away"),
+					"is_uncategorized":            tools.BooleanProperty("for transactions: only the ones with no spending category that are not transfers"),
+					"limit":                       tools.IntegerProperty("for transactions: how many, at most 200"),
+					"after":                       tools.StringProperty("for transactions: the nextCursor of the page before"),
+					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),
+					"currency_code":               tools.StringProperty("a currency code like EUR: what to convert totals into, or an asset's, budget's or target's currency, or the reporting currency to set"),
+					"from_currency_code":          tools.StringProperty("the currency converted from"),
+					"to_currency_code":            tools.StringProperty("the currency converted into"),
+					"amount":                      tools.StringProperty("for convert_currency: the amount"),
+					"rate_on":                     tools.StringProperty("the day of the exchange rate; today when left out"),
+					"asset_id":                    tools.StringProperty("an asset, by the id assets gives"),
+					"asset_name":                  tools.StringProperty("what the person calls the asset"),
+					"asset_kind":                  tools.EnumProperty("what the asset is; the last four are owed", "cash", "investment", "retirement", "property", "vehicle", "other_asset", "credit_card", "loan", "mortgage", "other_liability"),
+					"valuation_source":            tools.EnumProperty("for an asset, where its values come from; for record_valuation, agent_reading (read from a connected server, the default) or agent_estimate", "manual", "agent_reading", "agent_estimate"),
+					"estimate_description":        tools.StringProperty("what the agent may search the web with to estimate the asset, as the person wrote it"),
+					"is_estimate_allowed":         tools.BooleanProperty("the person allows estimating the asset from the web"),
+					"closed_on":                   tools.StringProperty("the day an asset was sold or paid off, or a savings target closed"),
+					"should_reopen":               tools.BooleanProperty("open the asset or savings target again instead of closing it"),
+					"value":                       tools.StringProperty("for record_valuation: what the asset is worth, positive for what is owed too"),
+					"valued_on":                   tools.StringProperty("for record_valuation: the day; today when left out"),
+					"estimate_low":                tools.StringProperty("for an estimate: the low end"),
+					"estimate_high":               tools.StringProperty("for an estimate: the high end"),
+					"valuation_note":              tools.StringProperty("for record_valuation: what the value rests on"),
+					"evidence_urls":               tools.ArrayProperty("for an estimate: the pages it rests on", tools.StringProperty("a web address")),
+					"valuation_id":                tools.StringProperty("a valuation, by the id asset_history gives"),
+					"spending_category_name":      tools.StringProperty("a spending category's name"),
+					"parent_spending_category_id": tools.StringProperty("the parent spending category's id; empty makes it top-level"),
+					"is_income":                   tools.BooleanProperty("money in the spending category is income"),
+					"is_hidden":                   tools.BooleanProperty("leave the spending category out of lists and charts"),
+					"spending_rule_id":            tools.StringProperty("a spending rule, by the id spending_rules gives"),
+					"match_text":                  tools.StringProperty("what a spending rule matches within the merchant, or the description when there is none"),
+					"is_transfer":                 tools.BooleanProperty("a transfer between the person's own accounts, neither spending nor income"),
+					"rule_priority":               tools.IntegerProperty("the order a spending rule is tried in, lowest first"),
+					"should_create_spending_rule": tools.BooleanProperty("for categorize_transaction: also add a spending rule for its merchant, only when the person said yes"),
+					"monthly_amount":              tools.StringProperty("for set_budget: the amount a month; 0 ends the budget"),
+					"effective_from":              tools.StringProperty("for set_budget: the month it starts, 2026-10; this month when left out"),
+					"month":                       tools.StringProperty("a month, 2026-09; this month when left out"),
+					"compare_month":               tools.StringProperty("for spending_by_day: the month to compare with; the one before when left out"),
+					"from_month":                  tools.StringProperty("for cash_flow: the first month"),
+					"to_month":                    tools.StringProperty("for cash_flow: the last month"),
+					"savings_target_id":           tools.StringProperty("a savings target, by the id savings_targets gives"),
+					"savings_target_name":         tools.StringProperty("what the person calls the savings target"),
+					"target_amount":               tools.StringProperty("the amount to save"),
+					"target_on":                   tools.StringProperty("the day to reach it by"),
+					"target_measure":              tools.EnumProperty("how progress is measured", "cash_flow", "asset_value"),
+					"starting_amount":             tools.StringProperty("for asset_value: what the assets were worth at the start"),
+					"started_on":                  tools.StringProperty("the day the savings target starts; today when left out"),
+					"asset_ids":                   tools.ArrayProperty("for asset_value: the assets it measures", tools.StringProperty("an asset id")),
+				}, "operation"),
+				Guidance: "finance: for anything about the person's accounts, spending, budgets, savings, net worth or exchange rates, use this and quote its numbers; never add amounts in different currencies yourself. A SimpleFIN setup token pasted in conversation is not used: point to the dashboard's Finance tab or teanode finance link-simplefin.",
+				RiskOf: func(arguments json.RawMessage) tools.Risk {
+					var call struct {
+						Operation string `json:"operation"`
+					}
+					if json.Unmarshal(arguments, &call) != nil {
+						return ""
+					}
+					if operation, isKnown := operations[strings.ToLower(strings.TrimSpace(call.Operation))]; isKnown {
+						return operation.risk
+					}
+					return ""
+				},
+				Preview: func(arguments json.RawMessage) string {
+					call := map[string]any{}
+					_ = json.Unmarshal(arguments, &call)
+					name := strings.ToLower(text(call, "operation"))
+					if operation, isKnown := operations[name]; isKnown && operation.preview != nil {
+						return operation.preview(call)
+					}
+					return "Read their finances: " + strings.ReplaceAll(name, "_", " ")
+				},
+				Run: run,
+			},
+		}
+	})
+}
+
+// text is a string argument, trimmed; empty when absent or not a string.
+func text(call map[string]any, key string) string {
+	value, _ := call[key].(string)
+	return strings.TrimSpace(value)
+}
+
+// isTrue says a boolean argument is true.
+func isTrue(call map[string]any, key string) bool {
+	value, _ := call[key].(bool)
+	return value
+}
+
+// namedSuffix is ": <name>" when the argument is given.
+func namedSuffix(call map[string]any, key string) string {
+	if name := text(call, key); name != "" {
+		return ": " + tools.Named(name, "")
+	}
+	return ""
+}
+
+// onSuffix is " on <day>" when the argument is given.
+func onSuffix(call map[string]any, key string) string {
+	if day := text(call, key); day != "" {
+		return " on " + day
+	}
+	return ""
+}
+
+// camelCase is an argument's name as the finance area spells it:
+// finance_account_id is financeAccountId.
+func camelCase(snake string) string {
+	var builder strings.Builder
+	isUpperNext := false
+	for _, letter := range snake {
+		if letter == '_' {
+			isUpperNext = true
+			continue
+		}
+		if isUpperNext {
+			builder.WriteRune(unicode.ToUpper(letter))
+			isUpperNext = false
+			continue
+		}
+		builder.WriteRune(letter)
+	}
+	return builder.String()
+}
+
+func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	asked := map[string]any{}
+	if err := json.Unmarshal(tools.SettledArguments(call.Arguments), &asked); err != nil {
+		return nil, fmt.Errorf("the arguments are not a JSON object: %w", err)
+	}
+	current, err := tools.RunFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	name := strings.ToLower(text(asked, "operation"))
+	operation, isKnown := operations[name]
+	if !isKnown {
+		return nil, fmt.Errorf("%q is not an operation; the operations are %s", name, strings.Join(operationNames(), ", "))
+	}
+	for _, key := range operation.required {
+		if value, isGiven := asked[key]; !isGiven || value == nil || value == "" {
+			return nil, fmt.Errorf("%s needs %s", name, key)
+		}
+	}
+	executor := current.Operations()
+	switch name {
+	case "link_plaid":
+		return linkAddress(current, "", "Give the person this address to open in their browser, signed in to the dashboard, to link an institution through Plaid. The new finance source appears in sources once they finish, and syncs within minutes."), nil
+	case "repair":
+		return linkAddress(current, text(asked, "source_id"), "Give the person this address to open in their browser, signed in to the dashboard, to sign in to the institution again. The same finance source syncs again once they finish."), nil
+	case "link_simplefin":
+		return tools.TextResult("A SimpleFIN setup token is never taken in a conversation: it would stay in the transcript and go to the model provider. " +
+			"The person pastes it on the Finance tab of their agent page in the dashboard, or runs `teanode finance link-simplefin`, which reads it without echoing. " +
+			"They make the token on the SimpleFIN Bridge's website."), nil
+	case "sync", "disable_source", "enable_source", "delete_source":
+		return sourceOperation(ctx, executor, name, text(asked, "source_id"))
+	}
+
+	variables := map[string]any{}
+	for _, key := range operation.arguments {
+		if value, isGiven := asked[key]; isGiven && value != nil {
+			variables[camelCase(key)] = value
+		}
+	}
+	if limit, isNumber := variables["limit"].(float64); isNumber {
+		variables["limit"] = int(limit)
+	}
+	if priority, isNumber := variables["rulePriority"].(float64); isNumber {
+		variables["rulePriority"] = int(priority)
+	}
+	if name == "record_valuation" {
+		// What the agent records is a reading or an estimate, never the
+		// person's own value, which wins over both on the same day.
+		valuationSource := text(asked, "valuation_source")
+		switch valuationSource {
+		case "":
+			variables["valuationSource"] = "agent_reading"
+		case "agent_reading", "agent_estimate":
+		default:
+			return nil, fmt.Errorf("record_valuation from here is agent_reading or agent_estimate; a value the person gives is theirs to record on the Finance tab or with teanode finance record-valuation")
+		}
+	}
+	var answered any
+	if err := client.RunFinance(ctx, executor, operation.graphqlOperation, variables, &answered); err != nil {
+		return nil, err
+	}
+	payload := map[string]any{name: answered}
+	if hint := emptyHint(name, answered); hint != "" {
+		payload["hint"] = hint
+	}
+	result, err := tools.JSONResult(payload)
+	if err != nil {
+		return nil, err
+	}
+	result.Untrusted = operation.isUntrusted
+	if operation.risk != tools.RiskRead {
+		result.Note = strings.ReplaceAll(name, "_", " ")
+	}
+	return result, nil
+}
+
+// emptyHint is what to tell the person when a listing came back empty
+// because nothing is linked or set up yet.
+func emptyHint(name string, answered any) string {
+	list, isList := answered.([]any)
+	if !isList || len(list) > 0 {
+		return ""
+	}
+	switch name {
+	case "providers":
+		return "this server offers no provider to link an institution through; the operator turns them on in the agent settings"
+	case "sources", "accounts":
+		return "nothing is linked yet: providers says what the server offers, link_plaid gives the address to link through Plaid, and a SimpleFIN setup token goes on the dashboard's Finance tab or teanode finance link-simplefin"
+	case "assets":
+		return "no assets yet; create_asset adds one, and linking a finance source adds one per finance account"
+	case "budgets":
+		return "no budgets yet; propose some from the last three months, and set only what the person accepts"
+	}
+	return ""
+}
+
+// linkAddress is the dashboard's linking page for the person to open.
+func linkAddress(current tools.Run, sourceId, instruction string) *tools.Result {
+	address := financeLinkPagePath
+	if base := current.Configuration().DashboardBase(); base != "" {
+		address = base + financeLinkPagePath
+	}
+	if sourceId != "" {
+		address += "?source=" + sourceId
+	}
+	result, err := tools.JSONResult(map[string]any{"linkAddress": address, "instruction": instruction})
+	if err != nil {
+		return tools.TextResult("%s: %s", instruction, address)
+	}
+	return result
+}
+
+// sourceOperation syncs, switches or deletes a finance source through the
+// operations every source has, after checking it is one of the person's
+// finance sources: the finance tool acts on nothing else.
+func sourceOperation(ctx context.Context, executor tools.Operations, name, sourceId string) (*tools.Result, error) {
+	var sources []*client.FinanceSource
+	if err := client.RunFinance(ctx, executor, "FinanceSources", nil, &sources); err != nil {
+		return nil, err
+	}
+	var source *client.FinanceSource
+	for _, candidate := range sources {
+		if candidate.ID == sourceId {
+			source = candidate
+		}
+	}
+	if source == nil {
+		return nil, fmt.Errorf("there is no finance source %q; sources lists them", sourceId)
+	}
+	switch name {
+	case "sync":
+		if err := executor.Execute(ctx, client.DocumentSyncAgentKnowledgeSource, map[string]any{"sourceId": sourceId}, nil); err != nil {
+			return nil, err
+		}
+		return noted("syncing "+source.Name+"; it starts within the minute", "syncing "+source.Name), nil
+	case "disable_source", "enable_source":
+		isEnabled := name == "enable_source"
+		if err := executor.Execute(ctx, client.DocumentSaveAgentKnowledgeSource, map[string]any{"sourceId": sourceId, "enabled": isEnabled}, nil); err != nil {
+			return nil, err
+		}
+		if isEnabled {
+			return noted(source.Name+" is on again and syncs within the minute", "switched on "+source.Name), nil
+		}
+		return noted(source.Name+" is off; what it holds is kept", "switched off "+source.Name), nil
+	default:
+		if err := executor.Execute(ctx, client.DocumentDeleteAgentKnowledgeSource, map[string]any{"sourceId": sourceId}, nil); err != nil {
+			return nil, err
+		}
+		return noted("deleted "+source.Name+" and its transactions, and ended it at its provider; its assets keep their history as manual ones", "deleted "+source.Name), nil
+	}
+}
+
+// noted is a text result with a line for the drawer.
+func noted(content, note string) *tools.Result {
+	result := tools.TextResult("%s", content)
+	result.Note = note
+	return result
+}

@@ -734,7 +734,7 @@ type AgentSkillSecret struct {
 // stay that list: two of the names here once said "access" and "mcp", which
 // name nothing, so a policy that switched off connected servers switched off
 // nothing and said so to nobody.
-var AgentToolFamilies = []string{"mailbox", "domains", "audit", "people", "server", "account", "general", "servers", "browser", "computer", "skills"}
+var AgentToolFamilies = []string{"mailbox", "domains", "audit", "people", "server", "account", "general", "servers", "browser", "computer", "skills", "finance"}
 
 // AgentBrowser is a headless browser reached over the DevTools protocol.
 type AgentBrowser struct {
