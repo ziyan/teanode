@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.92.1] - 2026-09-30
+
+### Changed
+
+- Finance page controls that looked like links are now buttons, and copying a transaction's provider record is an icon button. (#260)
+
 ## [0.92.0] - 2026-09-30
 
 ### Added
