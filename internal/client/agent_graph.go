@@ -92,8 +92,13 @@ type AgentRecall struct {
 
 // AgentRecalledPage is one of those pages.
 type AgentRecalledPage struct {
-	Path  string               `json:"path"`
-	Facts []*AgentRecalledFact `json:"facts"`
+	Path string `json:"path"`
+
+	// Summary and Overview are the page's opening and the section of its
+	// overview as recall carried them; empty where it carried none.
+	Summary  string               `json:"summary"`
+	Overview string               `json:"overview"`
+	Facts    []*AgentRecalledFact `json:"facts"`
 }
 
 // AgentRecalledFact is a fact as the page cites it.
@@ -297,7 +302,7 @@ const (
 	}`
 	DocumentRecallAgentMemory = `query ($question: String!) {
 		RecallAgentMemory(question: $question) {
-			pages { path facts { number text } }
+			pages { path summary overview facts { number text } }
 		}
 	}`
 	DocumentListAgentLearned = `query ($days: Int, $first: Int) {

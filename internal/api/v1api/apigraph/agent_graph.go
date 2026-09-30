@@ -531,8 +531,11 @@ type RecalledAgentPage struct {
 	Path string `json:"path"`
 	// Summary is the page's opening as recall carried it, or empty where
 	// it carried none.
-	Summary string               `json:"summary" graphapi:"nullable"`
-	Facts   []*RecalledAgentFact `json:"facts"`
+	Summary string `json:"summary" graphapi:"nullable"`
+	// Overview is the section of the page's overview recall carried, its
+	// heading included, or empty where it carried none.
+	Overview string               `json:"overview" graphapi:"nullable"`
+	Facts    []*RecalledAgentFact `json:"facts"`
 }
 
 // AgentSurveyView is what a survey answered.
@@ -1089,7 +1092,7 @@ func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentM
 	}
 	result := &RecallAgentMemoryResult{Pages: make([]*RecalledAgentPage, 0, len(recalled))}
 	for _, page := range recalled {
-		carried := &RecalledAgentPage{Path: page.Path, Summary: page.Summary, Facts: make([]*RecalledAgentFact, 0, len(page.Facts))}
+		carried := &RecalledAgentPage{Path: page.Path, Summary: page.Summary, Overview: page.Overview, Facts: make([]*RecalledAgentFact, 0, len(page.Facts))}
 		for _, fact := range page.Facts {
 			carried.Facts = append(carried.Facts, &RecalledAgentFact{Number: fact.Number, Text: fact.Text})
 		}

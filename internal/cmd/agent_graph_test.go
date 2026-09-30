@@ -122,6 +122,22 @@ func TestGradingAQuestionSet(t *testing.T) {
 			carried: carriedFor(portal),
 			failed:  `did not carry people/alice-chen saying "platform"`,
 		},
+		// What the page's overview section says is carried as much as a
+		// fact is: a turn is shown the paragraph.
+		"inTheOverviewSection": {
+			question: evaluationQuestion{ID: "o1", Kind: questionParaphrase, Question: "what depends on the portal?",
+				Expects: []evaluationClaim{{Path: "projects/portal", Words: []string{"billing"}}}},
+			carried: carriedFor(&client.AgentRecalledPage{Path: "projects/portal",
+				Overview: "## How it relates\n\nThe billing service reads its accounts.", Facts: []*client.AgentRecalledFact{}}),
+			hit: true,
+		},
+		"notInTheOverviewSection": {
+			question: evaluationQuestion{ID: "o2", Kind: questionParaphrase, Question: "what depends on the portal?",
+				Expects: []evaluationClaim{{Path: "projects/portal", Words: []string{"billing"}}}},
+			carried: carriedFor(&client.AgentRecalledPage{Path: "projects/portal",
+				Overview: "## What it is\n\nThe customer portal.", Facts: []*client.AgentRecalledFact{}}),
+			failed: `did not carry projects/portal saying "billing"`,
+		},
 		// A claim with no words is about the page: nothing from it at all
 		// is what an abstain question asks for.
 		"abstain": {

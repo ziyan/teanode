@@ -1665,7 +1665,10 @@ func gradeRecall(question evaluationQuestion, carried []*client.AgentRecalledPag
 }
 
 // carriesClaim says whether the carried pages hold a fact on the claim's
-// page containing every one of its words, compared without case.
+// page containing every one of its words, compared without case, or carry
+// them in the page's opening or its overview section: what a turn is
+// shown is what counts, and an overview's paragraph is shown as much as a
+// fact's sentence.
 func carriesClaim(carried []*client.AgentRecalledPage, claim evaluationClaim) bool {
 	path := strings.TrimSpace(claim.Path)
 	for _, page := range carried {
@@ -1679,6 +1682,9 @@ func carriesClaim(carried []*client.AgentRecalledPage, claim evaluationClaim) bo
 			if factSays(fact.Text, claim.Words) {
 				return true
 			}
+		}
+		if len(claim.Words) > 0 && (factSays(page.Summary, claim.Words) || factSays(page.Overview, claim.Words)) {
+			return true
 		}
 	}
 	return false
