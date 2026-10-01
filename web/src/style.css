@@ -12454,9 +12454,22 @@ button.idea-history-title {
   min-width: 12rem;
 }
 
+/* Every rule about to be saved is listed, up to fifty, so the list scrolls
+   inside the dialog rather than hiding the ones past the first few: what is
+   saved is what the person could read. */
 .finance-rule-proposals {
   margin: 0 0 var(--space-3);
   padding-left: var(--space-5);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.finance-rule-proposals li + li {
+  margin-top: var(--space-1);
+}
+
+.finance-rule-proposals .finance-rule-proposal-detail {
+  display: block;
 }
 
 /* The assets a group a kind: the kind's line opens it, and its assets sit

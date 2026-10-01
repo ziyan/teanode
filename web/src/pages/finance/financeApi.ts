@@ -532,27 +532,57 @@ export const CATEGORIZE_TRANSACTION = `mutation ($financeTransactionId: String!,
 
 // CATEGORIZE_TRANSACTIONS gives several transactions one spending category
 // as the person's choice, all or none, at most MAXIMUM_CATEGORIZED_TRANSACTION_COUNT
-// at a time, and saves the spending rules PROPOSE_SPENDING_RULES lists when
-// asked.
+// at a time, and saves exactly the spending rules given: the ones
+// PROPOSE_SPENDING_RULES proposed and the person confirmed.
 export const CATEGORIZE_TRANSACTIONS = `mutation ($financeTransactionIds: [String!]!, $spendingCategoryId: String,
-  $shouldCreateSpendingRules: Boolean) {
+  $spendingRules: [ConfirmedSpendingRuleInput!]) {
   CategorizeTransactions(financeTransactionIds: $financeTransactionIds, spendingCategoryId: $spendingCategoryId,
-    shouldCreateSpendingRules: $shouldCreateSpendingRules) {
+    spendingRules: $spendingRules) {
     financeTransactions { ${TRANSACTION_FIELDS} }
     spendingRules { id matchText }
   }
 }`
 
+// PROPOSE_SPENDING_RULES is the spending rules to offer for a whole
+// selection at once, at most MAXIMUM_PROPOSED_TRANSACTION_COUNT
+// transactions, and what it left out.
 export const PROPOSE_SPENDING_RULES = `query ($financeTransactionIds: [String!]!, $spendingCategoryId: String!) {
   ProposeSpendingRules(financeTransactionIds: $financeTransactionIds, spendingCategoryId: $spendingCategoryId) {
-    matchText financeTransactionCount
+    spendingRuleProposals {
+      matchText spendingCategoryId financeTransactionCount changedTransactionCount
+      aheadOfSpendingRule { id matchText spendingCategoryId }
+    }
+    tooGenericMatchTextCount changingNumberMatchTextCount overLimitMatchTextCount
   }
 }`
 
-// The server's limit on one CATEGORIZE_TRANSACTIONS or PROPOSE_SPENDING_RULES.
+// The server's limit on one CATEGORIZE_TRANSACTIONS.
 export const MAXIMUM_CATEGORIZED_TRANSACTION_COUNT = 500
 
-export type SpendingRuleProposal = { matchText: string; financeTransactionCount: number }
+// The server's limit on one PROPOSE_SPENDING_RULES, which saves nothing and
+// so takes a whole selection.
+export const MAXIMUM_PROPOSED_TRANSACTION_COUNT = 5000
+
+// The most spending rules one PROPOSE_SPENDING_RULES offers.
+export const MAXIMUM_SPENDING_RULE_PROPOSAL_COUNT = 50
+
+export type SpendingRuleProposal = {
+  matchText: string
+  spendingCategoryId: string
+  financeTransactionCount: number
+  changedTransactionCount: number
+  aheadOfSpendingRule?: { id: string; matchText: string; spendingCategoryId: string } | null
+}
+
+export type SpendingRuleProposals = {
+  spendingRuleProposals: SpendingRuleProposal[]
+  tooGenericMatchTextCount: number
+  changingNumberMatchTextCount: number
+  overLimitMatchTextCount: number
+}
+
+// A proposed spending rule as CATEGORIZE_TRANSACTIONS takes it back.
+export type ConfirmedSpendingRule = { matchText: string; spendingCategoryId: string; aheadOfSpendingRuleId?: string }
 
 export const COUNT_TRANSACTION = `mutation ($financeTransactionId: String!) {
   CountTransaction(financeTransactionId: $financeTransactionId) { ${TRANSACTION_FIELDS} }

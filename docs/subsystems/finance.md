@@ -504,17 +504,51 @@ Several transactions are categorized together with `CategorizeTransactions`
 (at most 500 ids): one statement in a savepoint, every one the person's
 choice as if chosen one by one, all or none, and an id that is not the
 caller's refuses the whole call. Mirrored copies can be among them, as they
-can be categorized one by one. With `shouldCreateSpendingRules` it also
-saves the rules `ProposeSpendingRules` lists for the same ids and spending
-category, in the same savepoint, after the categorizations, and applies the
-rules once after the last is saved (`CreateSpendingRules`), so the person's
-choices stand and the rules reach their other transactions. The proposal
-takes each distinct match text among the transactions (merchant, else
-description, compared in any case) and leaves out one that an existing rule
-already sends to that spending category for every account and amount (its
-words within the match text), and one that a shorter proposed match text
-already covers; a rule to another spending category covers nothing. The
-new rules go after every rule there is, the most matched first.
+can be categorized one by one.
+
+Spending rules for them are proposed first and saved only as confirmed.
+`ProposeSpendingRules` (read-only, at most 5000 ids, so a whole selection
+is proposed once rather than per piece of 500) takes each distinct match
+text among the transactions (merchant, else description, compared in any
+case), each its own proposal: a short one never absorbs a longer one, since
+a card processor's prefix would then recategorize every charge through it.
+A mirrored copy proposes nothing. A match text is left out, and counted,
+when it has fewer than four letters or more digits than letters
+(`tooGenericMatchTextCount`), or holds a run of six digits or more or a
+date (`changingNumberMatchTextCount`), since a rule for a per-charge number
+matches nothing again; numbers are never stripped to make a rule, so the
+single-transaction rule is unchanged. Coverage follows rule order: a match
+text is covered, and left out, only when the rule that applies first to
+each of its transactions (`FirstMatchingSpendingRules`, the same matching
+`ApplySpendingRules` uses, accounts and amounts included) already sends it
+to the chosen spending category; a later rule that would also send it
+there does not cover it. Otherwise the proposal names the existing rule it
+goes ahead of (`aheadOfSpendingRule`): the earliest rule that now wins for
+one of its transactions and sends it elsewhere, or none, after every rule,
+when no rule matches them. Each proposal also says how many other
+transactions it would recategorize (`changedTransactionCount`,
+`CountSpendingRuleChanges`): those it matches that no earlier rule wins
+for, whose spending category would change, leaving out the person's
+choices, transfers something other than a rule gave, and the selected
+transactions themselves, which become the person's choice. At most 50 are
+proposed, the most matched first, and the rest counted
+(`overLimitMatchTextCount`).
+
+`CategorizeTransactions` takes the confirmed rules (`spendingRules`: match
+text, spending category, the rule it goes ahead of) and saves exactly
+those; it never proposes again. Each is checked again before anything is
+written: the same letter and number limits, at most 50, none twice, and
+its spending category the one being given, so a proposal for another
+category is refused. In the same savepoint, after the categorizations,
+each new rule is placed ahead of the rule it names (`ErrConflict` when that
+rule is gone, so the person proposes again): existing rules keep their
+priorities where there is room and are pushed back only as far as needed,
+in the same order, two that shared a priority still sharing one
+(`SetSpendingRulePriorities`, which records each move and does not apply
+the rules), and a new rule never shares a priority with a neighbour, since
+ties are broken by id. The rules are then applied once after the last is
+saved (`CreateSpendingRules`), so the person's choices stand and the rules
+reach their other transactions.
 
 Transfers between the person's own finance accounts, and card payments,
 count as neither spending nor income. A transfer is a spending category:
@@ -676,9 +710,15 @@ address). One name stands for two operations: `categorize-transaction` and
 the tool's `categorize_transaction` call `CategorizeTransaction` for one id
 and `CategorizeTransactions` for several (`<id>... <category>` on the
 command line, `finance_transaction_ids` in the tool), so a person or a
-model categorizing several needs no second word for it; the tool's
-confirmation card says how many, names three, and lists the spending rules
-`ProposeSpendingRules` says would be saved. Two are deliberately missing from the tool: a SimpleFIN setup token
+model categorizing several needs no second word for it. With rules asked
+for (`--create-spending-rule`, `should_create_spending_rule`), both call
+`ProposeSpendingRules` and send back exactly what it proposed as
+`spendingRules`, so the command line and the tool save what the dashboard
+would after the person confirmed; the command line prints what it saved and
+what was left out, and `propose-spending-rules` shows the list beforehand
+with the rule each goes ahead of and how many other transactions each
+changes. The tool's confirmation card says how many, names three, and lists
+the same proposals with those numbers and what was left out. Two are deliberately missing from the tool: a SimpleFIN setup token
 and a credential brought in are refused in conversation, because they would
 stay in the transcript and go to the model provider; `link_simplefin` and
 `import_credential` only say where to give them. The tool's
@@ -728,10 +768,17 @@ spending categories as a row, a box to save them as spending rules, Apply,
 and an icon that lets go of them. Apply sends `CategorizeTransactions` 500
 at a time; what worked is shown and let go of, and a piece that failed
 stays chosen, with a toast saying how many. With the box ticked it first
-asks `ProposeSpendingRules` and shows the rules in a confirmation (their
-words, and how many of the chosen each matches), or, when existing rules
-cover them all, categorizes without asking and says so. Saved rules can
-change other rows, so every page read so far is read again.
+asks `ProposeSpendingRules` once for the whole selection (more than 5000
+chosen is refused with a toast) and lists every rule in a confirmation,
+scrolling rather than hiding any: its words, how many of the chosen it
+matches, how many other transactions it also changes, and "goes ahead of:
+zoomly eats → Dining" when it is placed ahead of an existing rule; then what
+was left out and why. Confirming sends those rules once, with the first
+piece of 500; if that piece fails they are not saved and its transactions
+stay chosen. When nothing is left to propose it categorizes without asking
+and the toast says why (existing rules already file them there, or what was
+left out). Saved rules can change other rows, so every page read so far is
+read again.
 
 The saving summary is a panel on Spending, for the month chosen there, above
 the month's budgets (spending budgets, then income budgets under a heading

@@ -20,11 +20,14 @@ import {
   FinanceAccount,
   FinanceTransaction,
   FinanceTransactionPage,
+  ConfirmedSpendingRule,
   MAXIMUM_CATEGORIZED_TRANSACTION_COUNT,
+  MAXIMUM_PROPOSED_TRANSACTION_COUNT,
+  MAXIMUM_SPENDING_RULE_PROPOSAL_COUNT,
   PROPOSE_SPENDING_RULES,
   SPENDING_CATEGORIES,
   SpendingCategory,
-  SpendingRuleProposal,
+  SpendingRuleProposals,
   UNDO_COUNT_TRANSACTION,
   amountOf,
   formatDay,
@@ -37,38 +40,74 @@ import {
   useFinanceWords,
 } from './financeCommon'
 import { FinanceTransactionDialog } from './financeTransactionDialog'
-import { FinanceSelectionToolbar, chunks, mergeProposals } from './financeTransactionSelection'
+import { FinanceSelectionToolbar, chunks, confirmedSpendingRules } from './financeTransactionSelection'
 import { useSpendingCategoryDisplayName } from './spendingCategoryName'
 import { TransactionFilters, searchFromTransactionFilters, transactionFiltersFromSearch } from './financeFilters'
 
 // How many finance transactions one read brings, and one Load more adds.
 const PAGE_SIZE = 100
 
-// How many proposed spending rules the confirmation names before saying
-// how many more there are.
-const SHOWN_PROPOSAL_COUNT = 8
+// useLeftOutLines says how many match texts a proposal left out and why,
+// one line each, for the confirmation and for the toast when nothing is
+// left to confirm.
+function useLeftOutLines(): (proposals: SpendingRuleProposals) => string[] {
+  const { t, plural } = useTranslation()
+  return (proposals) => {
+    const lines: string[] = []
+    if (proposals.tooGenericMatchTextCount > 0) {
+      lines.push(
+        plural(proposals.tooGenericMatchTextCount, {
+          one: 'finance.leftOutTooGenericOne',
+          other: 'finance.leftOutTooGenericOther',
+        }),
+      )
+    }
+    if (proposals.changingNumberMatchTextCount > 0) {
+      lines.push(
+        plural(proposals.changingNumberMatchTextCount, {
+          one: 'finance.leftOutChangingNumberOne',
+          other: 'finance.leftOutChangingNumberOther',
+        }),
+      )
+    }
+    if (proposals.overLimitMatchTextCount > 0) {
+      lines.push(
+        t('finance.leftOutOverLimit', {
+          count: String(proposals.overLimitMatchTextCount),
+          maximum: String(MAXIMUM_SPENDING_RULE_PROPOSAL_COUNT),
+        }),
+      )
+    }
+    return lines
+  }
+}
 
 // SpendingRulesConfirmation asks before saving spending rules for the
-// chosen transactions: which words each matches, and how many of the
-// chosen transactions it matches.
+// chosen transactions, listing every one that will be saved: its words,
+// how many of the chosen transactions it matches, how many other
+// transactions it would change, and the rule it goes ahead of; then what
+// was left out and why.
 function SpendingRulesConfirmation({
   proposals,
   spendingCategoryLabel,
+  categoryLabelOf,
   isApplying,
   onConfirm,
   onClose,
 }: {
-  proposals: SpendingRuleProposal[]
+  proposals: SpendingRuleProposals
   spendingCategoryLabel: string
+  categoryLabelOf: (spendingCategoryId: string) => string
   isApplying: boolean
   onConfirm: () => void
   onClose: () => void
 }) {
   const { t, plural } = useTranslation()
-  const hiddenCount = proposals.length - SHOWN_PROPOSAL_COUNT
+  const leftOutLines = useLeftOutLines()
+  const listed = proposals.spendingRuleProposals
   return (
     <ConfirmDialog
-      title={plural(proposals.length, {
+      title={plural(listed.length, {
         one: 'finance.saveSpendingRulesTitleOne',
         other: 'finance.saveSpendingRulesTitleOther',
       })}
@@ -77,7 +116,7 @@ function SpendingRulesConfirmation({
         <>
           <p className="muted">{t('finance.saveSpendingRulesBody', { category: spendingCategoryLabel })}</p>
           <ul className="finance-rule-proposals">
-            {proposals.slice(0, SHOWN_PROPOSAL_COUNT).map((proposal) => (
+            {listed.map((proposal) => (
               <li key={proposal.matchText}>
                 {proposal.matchText}{' '}
                 <span className="muted">
@@ -86,12 +125,28 @@ function SpendingRulesConfirmation({
                     other: 'finance.ruleMatchesOther',
                   })}
                 </span>
+                <span className="muted finance-rule-proposal-detail">
+                  {plural(proposal.changedTransactionCount, {
+                    one: 'finance.ruleChangesOne',
+                    other: 'finance.ruleChangesOther',
+                  })}
+                </span>
+                {proposal.aheadOfSpendingRule ? (
+                  <span className="muted finance-rule-proposal-detail">
+                    {t('finance.ruleGoesAheadOf', {
+                      matchText: proposal.aheadOfSpendingRule.matchText,
+                      category: categoryLabelOf(proposal.aheadOfSpendingRule.spendingCategoryId),
+                    })}
+                  </span>
+                ) : null}
               </li>
             ))}
           </ul>
-          {hiddenCount > 0 ? (
-            <p className="muted">{t('finance.moreSpendingRules', { count: String(hiddenCount) })}</p>
-          ) : null}
+          {leftOutLines(proposals).map((line) => (
+            <p key={line} className="muted">
+              {line}
+            </p>
+          ))}
         </>
       }
       confirmLabel={t('finance.applyAndSaveSpendingRules')}
@@ -202,8 +257,9 @@ export function FinanceTransactionsSection() {
   const [rulesConfirmation, setRulesConfirmation] = useState<{
     financeTransactionIds: string[]
     spendingCategoryId: string
-    proposals: SpendingRuleProposal[]
+    proposals: SpendingRuleProposals
   } | null>(null)
+  const leftOutLines = useLeftOutLines()
   const openedFrom = useRef<HTMLElement | null>(null)
   const openDetails = (row: FinanceTransaction) => {
     openedFrom.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -234,6 +290,12 @@ export function FinanceTransactionsSection() {
     : undefined
   const detailed = detailedRow && changed[detailedRow.id] ? { ...detailedRow, ...changed[detailedRow.id] } : detailedRow
   const categoryList = categories.data?.SpendingCategories ?? []
+  // categoryLabelOf is a spending category's label by its id, empty for
+  // one the list does not hold.
+  const categoryLabelOf = (spendingCategoryId: string) => {
+    const found = categoryList.find((candidate) => candidate.id === spendingCategoryId)
+    return found ? spendingCategoryLabel(found, categoryList, categoryName) : ''
+  }
   // Only what is in the list counts as chosen: a page read again may no
   // longer hold one that was.
   const selectedLoaded = useMemo(
@@ -346,28 +408,32 @@ export function FinanceTransactionsSection() {
 
   // categorizeSelection gives the chosen transactions the spending category
   // as the person's choice, a few pages at a time, each piece all or none.
+  // The confirmed spending rules go with the first piece only, once, so
+  // they are saved exactly as confirmed and never once per piece; if that
+  // piece fails they are not saved, and its transactions stay chosen.
   // What worked is shown at once and let go of; a piece that failed stays
   // chosen, so trying again acts on exactly what is left. Saved rules can
   // change other rows, so then every page read so far is read again.
   const categorizeSelection = async (
     financeTransactionIds: string[],
     spendingCategoryId: string,
-    shouldCreateSpendingRules: boolean,
-    isCoveredByRules = false,
+    spendingRules: ConfirmedSpendingRule[],
+    noRulesNote = '',
   ) => {
     setIsApplying(true)
     const categorizedRows: FinanceTransaction[] = []
     const failedIds: string[] = []
     let savedRuleCount = 0
     let failure: unknown = null
-    for (const piece of chunks(financeTransactionIds, MAXIMUM_CATEGORIZED_TRANSACTION_COUNT)) {
+    const pieces = chunks(financeTransactionIds, MAXIMUM_CATEGORIZED_TRANSACTION_COUNT)
+    for (const [index, piece] of pieces.entries()) {
       try {
         const answer = await graphql<{
           CategorizeTransactions: { financeTransactions: FinanceTransaction[]; spendingRules: { id: string }[] }
         }>(CATEGORIZE_TRANSACTIONS, {
           financeTransactionIds: piece,
           spendingCategoryId: spendingCategoryId || null,
-          shouldCreateSpendingRules,
+          spendingRules: index === 0 && spendingRules.length > 0 ? spendingRules : null,
         })
         categorizedRows.push(...answer.CategorizeTransactions.financeTransactions)
         savedRuleCount += answer.CategorizeTransactions.spendingRules.length
@@ -397,43 +463,50 @@ export function FinanceTransactionsSection() {
     } else if (savedRuleCount > 0) {
       const saved = plural(savedRuleCount, { one: 'finance.savedRuleCountOne', other: 'finance.savedRuleCountOther' })
       toast.done(t('finance.categorizedAndSaved', { categorized, saved }))
-    } else if (isCoveredByRules) {
-      toast.done(t('finance.categorizedCoveredByRules', { categorized }))
+    } else if (noRulesNote) {
+      toast.done(t('finance.categorizedNoRules', { categorized, note: noRulesNote }))
     } else {
       toast.done(t('finance.bulkCategorized', { categorized }))
     }
   }
 
   // applyToSelection is the toolbar's Apply. With rules asked for, it
-  // first asks the server which it would save and has the person confirm
-  // them; when existing rules already cover every one, there is nothing
-  // to confirm.
+  // first asks the server, once for the whole selection, which it would
+  // save and has the person confirm them; when there is none to save
+  // (existing rules already cover every one, or what is left out is all
+  // there was) there is nothing to confirm, and the toast says why.
   const applyToSelection = async (spendingCategoryId: string, shouldSaveSpendingRules: boolean) => {
     const financeTransactionIds = [...selectedLoaded]
     if (!shouldSaveSpendingRules) {
-      await categorizeSelection(financeTransactionIds, spendingCategoryId, false)
+      await categorizeSelection(financeTransactionIds, spendingCategoryId, [])
+      return
+    }
+    if (financeTransactionIds.length > MAXIMUM_PROPOSED_TRANSACTION_COUNT) {
+      toast.failed(t('finance.tooManyForSpendingRules', { count: String(MAXIMUM_PROPOSED_TRANSACTION_COUNT) }))
       return
     }
     setIsApplying(true)
-    let proposals: SpendingRuleProposal[]
+    let proposals: SpendingRuleProposals
     try {
-      const pieces: SpendingRuleProposal[][] = []
-      for (const piece of chunks(financeTransactionIds, MAXIMUM_CATEGORIZED_TRANSACTION_COUNT)) {
-        const answer = await graphql<{ ProposeSpendingRules: SpendingRuleProposal[] }>(PROPOSE_SPENDING_RULES, {
-          financeTransactionIds: piece,
-          spendingCategoryId,
-        })
-        pieces.push(answer.ProposeSpendingRules)
-      }
-      proposals = mergeProposals(pieces)
+      const answer = await graphql<{ ProposeSpendingRules: SpendingRuleProposals }>(PROPOSE_SPENDING_RULES, {
+        financeTransactionIds,
+        spendingCategoryId,
+      })
+      proposals = answer.ProposeSpendingRules
     } catch (caught) {
       toast.failure(caught, t('finance.failed'))
       setIsApplying(false)
       return
     }
     setIsApplying(false)
-    if (proposals.length === 0) {
-      await categorizeSelection(financeTransactionIds, spendingCategoryId, false, true)
+    if (proposals.spendingRuleProposals.length === 0) {
+      const leftOut = leftOutLines(proposals)
+      await categorizeSelection(
+        financeTransactionIds,
+        spendingCategoryId,
+        [],
+        leftOut.length > 0 ? leftOut.join('. ') : t('finance.coveredByRules'),
+      )
       return
     }
     setRulesConfirmation({ financeTransactionIds, spendingCategoryId, proposals })
@@ -678,14 +751,16 @@ export function FinanceTransactionsSection() {
       {rulesConfirmation ? (
         <SpendingRulesConfirmation
           proposals={rulesConfirmation.proposals}
-          spendingCategoryLabel={(() => {
-            const chosen = categoryList.find((candidate) => candidate.id === rulesConfirmation.spendingCategoryId)
-            return chosen ? spendingCategoryLabel(chosen, categoryList, categoryName) : ''
-          })()}
+          spendingCategoryLabel={categoryLabelOf(rulesConfirmation.spendingCategoryId)}
+          categoryLabelOf={categoryLabelOf}
           isApplying={isApplying}
           onConfirm={() => {
             setRulesConfirmation(null)
-            void categorizeSelection(rulesConfirmation.financeTransactionIds, rulesConfirmation.spendingCategoryId, true)
+            void categorizeSelection(
+              rulesConfirmation.financeTransactionIds,
+              rulesConfirmation.spendingCategoryId,
+              confirmedSpendingRules(rulesConfirmation.proposals.spendingRuleProposals),
+            )
           }}
           onClose={() => setRulesConfirmation(null)}
         />

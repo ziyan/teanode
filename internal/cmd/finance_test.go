@@ -450,7 +450,10 @@ func TestFinanceCategorizesSeveralTransactions(test *testing.T) {
 			_, _ = response.Write([]byte(`{"data":{"CategorizeTransaction":{"financeTransaction":{"id":"transaction-one"}}}}`))
 		case strings.Contains(document.Query, "ProposeSpendingRules("):
 			record("ProposeSpendingRules")
-			_, _ = response.Write([]byte(`{"data":{"ProposeSpendingRules":[{"matchText":"Invented Bistro","financeTransactionCount":2}]}}`))
+			_, _ = response.Write([]byte(`{"data":{"ProposeSpendingRules":{"spendingRuleProposals":[` +
+				`{"matchText":"Invented Bistro","spendingCategoryId":"category-dining","financeTransactionCount":2,"changedTransactionCount":3,` +
+				`"aheadOfSpendingRule":{"id":"rule-bistro","matchText":"bistro","spendingCategoryId":"category-groceries","rulePriority":0}}],` +
+				`"tooGenericMatchTextCount":1,"changingNumberMatchTextCount":2,"overLimitMatchTextCount":0}}}`))
 		default:
 			response.WriteHeader(http.StatusBadRequest)
 		}
@@ -464,11 +467,19 @@ func TestFinanceCategorizesSeveralTransactions(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	if !strings.Contains(printed, "2 transactions categorized") || !strings.Contains(printed, `"Invented Bistro"`) {
+	if !strings.Contains(printed, "2 transactions categorized") || !strings.Contains(printed, `"Invented Bistro"`) ||
+		!strings.Contains(printed, "2 left out: they hold a number that changes each time") {
 		test.Errorf("printed %q", printed)
 	}
-	if _, err := runFinanceAgainst(test, server, "propose-spending-rules", "transaction-one", "transaction-two", "category-dining"); err != nil {
+	printed, err = runFinanceAgainst(test, server, "propose-spending-rules", "transaction-one", "transaction-two", "category-dining")
+	if err != nil {
 		test.Fatal(err)
+	}
+	if !strings.Contains(printed, "1 left out: too short or too generic") || !strings.Contains(printed, "2 left out: they hold a number") {
+		test.Errorf("propose-spending-rules printed %q", printed)
+	}
+	if _, err := runFinanceAgainst(test, server, "categorize-transaction", "--create-spending-rule", "transaction-one", "transaction-two", "none"); err == nil {
+		test.Error("spending rules with no spending category were asked for")
 	}
 	if _, err := runFinanceAgainst(test, server, "categorize-transaction", "dining"); err == nil {
 		test.Error("a spending category with no transaction was taken")
@@ -480,11 +491,16 @@ func TestFinanceCategorizesSeveralTransactions(test *testing.T) {
 	}
 	bulk := asked["CategorizeTransactions"]
 	if len(bulk) != 1 || !reflect.DeepEqual(bulk[0]["financeTransactionIds"], []any{"transaction-one", "transaction-two"}) ||
-		bulk[0]["spendingCategoryId"] != "category-dining" || bulk[0]["shouldCreateSpendingRules"] != true {
+		bulk[0]["spendingCategoryId"] != "category-dining" || bulk[0]["shouldCreateSpendingRules"] != nil {
 		test.Errorf("several ids sent %v", bulk)
 	}
+	// The rules saved are the ones proposed, as proposed.
+	confirmed := []any{map[string]any{"matchText": "Invented Bistro", "spendingCategoryId": "category-dining", "aheadOfSpendingRuleId": "rule-bistro"}}
+	if len(bulk) == 1 && !reflect.DeepEqual(bulk[0]["spendingRules"], confirmed) {
+		test.Errorf("the rules sent to be saved were %v", bulk[0]["spendingRules"])
+	}
 	proposed := asked["ProposeSpendingRules"]
-	if len(proposed) != 1 || !reflect.DeepEqual(proposed[0]["financeTransactionIds"], []any{"transaction-one", "transaction-two"}) || proposed[0]["spendingCategoryId"] != "category-dining" {
+	if len(proposed) != 2 || !reflect.DeepEqual(proposed[0]["financeTransactionIds"], []any{"transaction-one", "transaction-two"}) || proposed[0]["spendingCategoryId"] != "category-dining" {
 		test.Errorf("propose-spending-rules sent %v", proposed)
 	}
 }

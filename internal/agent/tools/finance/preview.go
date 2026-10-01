@@ -250,24 +250,29 @@ func (self *previewLookup) transactionLines(financeTransactionIds []string) []st
 	return lines
 }
 
-// spendingRuleProposals is the match texts of the spending rules
-// categorizing these finance transactions would save, named; false when
-// they cannot be read.
-func (self *previewLookup) spendingRuleProposals(financeTransactionIds []string, spendingCategoryIdOrName string) ([]string, bool) {
+// spendingRuleProposals is the spending rules categorizing these finance
+// transactions would save, each named with how many other transactions it
+// would change and the rule it goes ahead of ("goes ahead of: zoomly eats →
+// Dining"), and what was left out and why; false when they cannot be read.
+func (self *previewLookup) spendingRuleProposals(financeTransactionIds []string, spendingCategoryIdOrName string) ([]string, []string, bool) {
 	spendingCategory := self.spendingCategoryFor(spendingCategoryIdOrName)
 	if self.executor == nil || spendingCategory == nil {
-		return nil, false
+		return nil, nil, false
 	}
-	var proposals []*client.SpendingRuleProposal
+	var proposals *client.SpendingRuleProposals
 	variables := map[string]any{"financeTransactionIds": financeTransactionIds, "spendingCategoryId": spendingCategory.ID}
-	if client.RunFinance(self.ctx, self.executor, "ProposeSpendingRules", variables, &proposals) != nil {
-		return nil, false
+	if client.RunFinance(self.ctx, self.executor, "ProposeSpendingRules", variables, &proposals) != nil || proposals == nil {
+		return nil, nil, false
 	}
-	named := make([]string, 0, len(proposals))
-	for _, proposal := range proposals {
-		named = append(named, tools.Named(proposal.MatchText, ""))
+	named := make([]string, 0, len(proposals.SpendingRuleProposals))
+	for _, proposal := range proposals.SpendingRuleProposals {
+		line := tools.Named(proposal.MatchText, "") + fmt.Sprintf(" (changes %d other transactions", proposal.ChangedTransactionCount)
+		if proposal.AheadOfSpendingRule != nil {
+			line += "; goes ahead of: " + proposal.AheadOfSpendingRule.MatchText + " → " + self.spendingCategoryName(proposal.AheadOfSpendingRule.SpendingCategoryID)
+		}
+		named = append(named, line+")")
 	}
-	return named, true
+	return named, proposals.LeftOutReasons(), true
 }
 
 // ruleEffect is what a spending rule does to what it matches.

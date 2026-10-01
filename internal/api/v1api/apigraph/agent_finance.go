@@ -87,12 +87,16 @@ type FinanceQuery interface {
 	// The caller's spending rules, in the order they are tried.
 	SpendingRules(ctx context.Context) ([]*models.SpendingRule, error)
 
-	// The spending rules CategorizeTransactions would save for these
-	// finance transactions and this spending category: one per merchant,
-	// or description where there is no merchant, that no spending rule
-	// already sends to that spending category, the most transactions
-	// first. Nothing is saved.
-	ProposeSpendingRules(ctx context.Context, arguments ProposeSpendingRulesArguments) ([]*SpendingRuleProposalView, error)
+	// The spending rules to offer when giving these finance transactions
+	// (at most 5000, mirrored copies left out) this spending category: one
+	// per distinct merchant, or description where there is no merchant,
+	// unless the spending rule that applies first already sends it there.
+	// Each says the existing rule it would go ahead of, so it takes effect,
+	// and how many other finance transactions it would recategorize. A
+	// match text too short or too generic, or holding a number that changes
+	// each time, is left out and counted; at most 50 are proposed, the most
+	// transactions first, and the rest counted. Nothing is saved.
+	ProposeSpendingRules(ctx context.Context, arguments ProposeSpendingRulesArguments) (*SpendingRuleProposalsView, error)
 
 	// Every budget row of the caller, by spending category and month.
 	Budgets(ctx context.Context) ([]*models.Budget, error)
@@ -219,9 +223,11 @@ type FinanceMutation interface {
 	// Give several finance transactions one spending category, at most
 	// 500 at a time, as the person's own choice, all or none: an id that
 	// is not the caller's refuses the whole call. Optionally save the
-	// spending rules ProposeSpendingRules lists, so later transactions
-	// like these get the same spending category; they are applied to
-	// past finance transactions once, after the last is saved.
+	// spending rules the person confirmed from ProposeSpendingRules,
+	// exactly those, each ahead of the rule it names, so later
+	// transactions like these get the same spending category; they are
+	// checked again, refused when proposed for another spending category,
+	// and applied to past finance transactions once, after the last.
 	CategorizeTransactions(ctx context.Context, arguments CategorizeTransactionsArguments) (*CategorizeTransactionsView, error)
 
 	// Count a mirrored copy, a duplicate of another finance transaction

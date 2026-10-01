@@ -4,7 +4,7 @@ import { CloseIcon } from '../../components/icons'
 import { Select, SelectOption } from '../../components/select'
 import { Tooltip } from '../../components/tooltip'
 import { useTranslation } from '../../i18n/i18n'
-import { SpendingRuleProposal } from './financeApi'
+import { ConfirmedSpendingRule, SpendingRuleProposal } from './financeApi'
 
 // The choice that takes the spending category away, as the first option
 // of the list in a transaction's row and its details. An empty value is
@@ -22,25 +22,16 @@ export function chunks<Item>(items: Item[], size: number): Item[][] {
   return pieces
 }
 
-// mergeProposals adds up the spending rules proposed for each piece of a
-// selection: one per match text in any case, its transactions counted
-// across the pieces, the most first.
-export function mergeProposals(pieces: SpendingRuleProposal[][]): SpendingRuleProposal[] {
-  const byText = new Map<string, SpendingRuleProposal>()
-  for (const proposal of pieces.flat()) {
-    const key = proposal.matchText.toLowerCase()
-    const known = byText.get(key)
-    byText.set(
-      key,
-      known
-        ? { ...known, financeTransactionCount: known.financeTransactionCount + proposal.financeTransactionCount }
-        : proposal,
-    )
-  }
-  return [...byText.values()].sort(
-    (left, right) =>
-      right.financeTransactionCount - left.financeTransactionCount || left.matchText.localeCompare(right.matchText),
-  )
+// confirmedSpendingRules is the proposed spending rules as
+// CATEGORIZE_TRANSACTIONS takes them back, so the server saves exactly
+// what the person read: the rules are proposed once over the whole
+// selection, never per piece, and sent once.
+export function confirmedSpendingRules(proposals: SpendingRuleProposal[]): ConfirmedSpendingRule[] {
+  return proposals.map((proposal) => ({
+    matchText: proposal.matchText,
+    spendingCategoryId: proposal.spendingCategoryId,
+    ...(proposal.aheadOfSpendingRule ? { aheadOfSpendingRuleId: proposal.aheadOfSpendingRule.id } : {}),
+  }))
 }
 
 // FinanceSelectionToolbar is what can be done to the transactions chosen

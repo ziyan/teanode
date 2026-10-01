@@ -3,8 +3,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { graphql } from '../../api'
-import { FinanceTransaction } from './financeApi'
-import { chunks, mergeProposals } from './financeTransactionSelection'
+import { FinanceTransaction, SpendingRuleProposals } from './financeApi'
+import { chunks, confirmedSpendingRules } from './financeTransactionSelection'
 import { FinanceTransactionsSection } from './financeTransactions'
 
 const toast = vi.hoisted(() => ({ done: vi.fn(), failed: vi.fn(), failure: vi.fn() }))
@@ -18,7 +18,8 @@ vi.mock('../../i18n/i18n', () => ({
 }))
 vi.mock('../../components/toast', () => ({ useToast: () => toast }))
 // Two at a time rather than five hundred, so a selection of three is two
-// pieces and one of them can fail on its own.
+// pieces and one of them can fail on its own: the path a selection of more
+// than five hundred takes.
 vi.mock('./financeApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./financeApi')>()),
   MAXIMUM_CATEGORIZED_TRANSACTION_COUNT: 2,
@@ -48,20 +49,30 @@ describe('chunks', () => {
   })
 })
 
-describe('mergeProposals', () => {
-  // The same words proposed for two pieces are one rule, counted across both.
-  it('adds up the same match text across pieces, the most first', () => {
-    expect(
-      mergeProposals([
-        [
-          { matchText: 'Invented Bistro', financeTransactionCount: 1 },
-          { matchText: 'Noodle Place', financeTransactionCount: 1 },
-        ],
-        [{ matchText: 'invented bistro', financeTransactionCount: 2 }],
-      ]),
-    ).toEqual([
-      { matchText: 'Invented Bistro', financeTransactionCount: 3 },
-      { matchText: 'Noodle Place', financeTransactionCount: 1 },
+// What the whole selection was proposed, the person confirmed.
+const proposed: SpendingRuleProposals = {
+  spendingRuleProposals: [
+    {
+      matchText: 'Invented Bistro',
+      spendingCategoryId: 'category-dining',
+      financeTransactionCount: 1,
+      changedTransactionCount: 3,
+      aheadOfSpendingRule: { id: 'rule-bistro', matchText: 'bistro', spendingCategoryId: 'category-groceries' },
+    },
+    { matchText: 'Noodle Place', spendingCategoryId: 'category-dining', financeTransactionCount: 1, changedTransactionCount: 0 },
+  ],
+  tooGenericMatchTextCount: 0,
+  changingNumberMatchTextCount: 2,
+  overLimitMatchTextCount: 0,
+}
+
+describe('confirmedSpendingRules', () => {
+  // Sent back as proposed: the words, the spending category and the rule
+  // each goes ahead of.
+  it('is each proposal as the server takes it back', () => {
+    expect(confirmedSpendingRules(proposed.spendingRuleProposals)).toEqual([
+      { matchText: 'Invented Bistro', spendingCategoryId: 'category-dining', aheadOfSpendingRuleId: 'rule-bistro' },
+      { matchText: 'Noodle Place', spendingCategoryId: 'category-dining' },
     ])
   })
 })
@@ -90,20 +101,20 @@ const firstPage = [
 const secondPage = [purchase('purchase-five', 'Late Example')]
 
 // serve answers the page's documents; categorize answers
-// CategorizeTransactions for one piece.
-function serve(categorize?: (variables: Record<string, unknown>) => unknown) {
+// CategorizeTransactions for one piece, and proposals is what
+// ProposeSpendingRules answers for the whole selection.
+function serve(categorize?: (variables: Record<string, unknown>) => unknown, proposals: SpendingRuleProposals = proposed) {
   execute.mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
     if (document.includes('FinanceAccounts')) return { FinanceAccounts: [] }
     if (document.includes('SpendingCategories')) {
-      return { SpendingCategories: [{ id: 'category-dining', spendingCategoryName: 'Invented Dining' }] }
-    }
-    if (document.includes('ProposeSpendingRules')) {
       return {
-        ProposeSpendingRules: (variables?.financeTransactionIds as string[]).includes('purchase-one')
-          ? [{ matchText: 'Invented Bistro', financeTransactionCount: 1 }]
-          : [{ matchText: 'Noodle Place', financeTransactionCount: 1 }],
+        SpendingCategories: [
+          { id: 'category-dining', spendingCategoryName: 'Invented Dining' },
+          { id: 'category-groceries', spendingCategoryName: 'Invented Groceries' },
+        ],
       }
     }
+    if (document.includes('ProposeSpendingRules')) return { ProposeSpendingRules: proposals }
     if (document.includes('CategorizeTransactions')) {
       if (categorize) return categorize(variables ?? {})
       const ids = variables?.financeTransactionIds as string[]
@@ -112,7 +123,10 @@ function serve(categorize?: (variables: Record<string, unknown>) => unknown) {
           financeTransactions: [...firstPage, ...secondPage]
             .filter((row) => ids.includes(row.id))
             .map((row) => ({ ...row, spendingCategoryId: variables?.spendingCategoryId, categorizedBy: 'person' })),
-          spendingRules: variables?.shouldCreateSpendingRules ? [{ id: `rule-${ids[0]}`, matchText: 'invented' }] : [],
+          spendingRules: ((variables?.spendingRules as { matchText: string }[] | null) ?? []).map((rule, index) => ({
+            id: `rule-${index}`,
+            matchText: rule.matchText,
+          })),
         },
       }
     }
@@ -185,14 +199,14 @@ it('gives the chosen ones a spending category, a duplicate among them, and lets 
   expect(execute).toHaveBeenCalledWith(expect.stringContaining('CategorizeTransactions('), {
     financeTransactionIds: ['purchase-one', 'purchase-four'],
     spendingCategoryId: 'category-dining',
-    shouldCreateSpendingRules: false,
+    spendingRules: null,
   })
   expect(execute.mock.calls.some(([document]) => document.includes('ProposeSpendingRules'))).toBe(false)
   expect(toast.done).toHaveBeenCalledWith(expect.stringContaining('finance.bulkCategorized'))
   expect(toast.done.mock.calls[0][0]).toContain('finance.categorizedCountOther 2')
 })
 
-it('says which spending rules it will save before saving them', async () => {
+it('proposes once for the whole selection, says what it will save, and sends it once', async () => {
   serve()
   await screen.findByText('Invented Bistro')
   fireEvent.click(rowBoxes()[0])
@@ -201,24 +215,58 @@ it('says which spending rules it will save before saving them', async () => {
   fireEvent.click(screen.getByText('finance.saveAsSpendingRules'))
   fireEvent.click(screen.getByText('finance.applySpendingCategory'))
 
-  // Two pieces asked, their proposals listed together.
-  await screen.findByText('Invented Bistro', { selector: '.finance-rule-proposals li' })
-  expect(screen.getByText('Noodle Place', { selector: '.finance-rule-proposals li' })).toBeTruthy()
+  // One proposal over all three, though they are categorized in two
+  // pieces: each rule with how many others it changes and the rule it goes
+  // ahead of, then what was left out.
+  const listed = await screen.findByText(/Invented Bistro/, { selector: '.finance-rule-proposals li' })
+  expect(listed.textContent).toContain('finance.ruleChangesOther 3')
+  expect(listed.textContent).toContain('finance.ruleGoesAheadOf {"matchText":"bistro","category":"Invented Groceries"}')
+  expect(screen.getByText(/Noodle Place/, { selector: '.finance-rule-proposals li' })).toBeTruthy()
+  expect(screen.getByText('finance.leftOutChangingNumberOther 2')).toBeTruthy()
+  const proposals = execute.mock.calls.filter(([document]) => document.includes('ProposeSpendingRules'))
+  expect(proposals).toHaveLength(1)
+  expect(proposals[0][1]).toEqual({
+    financeTransactionIds: ['purchase-one', 'purchase-two', 'purchase-three'],
+    spendingCategoryId: 'category-dining',
+  })
   expect(execute.mock.calls.some(([document]) => document.includes('CategorizeTransactions('))).toBe(false)
 
   fireEvent.click(screen.getByText('finance.applyAndSaveSpendingRules'))
   await waitFor(() => expect(toast.done).toHaveBeenCalled())
-  for (const piece of [['purchase-one', 'purchase-two'], ['purchase-three']]) {
-    expect(execute).toHaveBeenCalledWith(expect.stringContaining('CategorizeTransactions('), {
-      financeTransactionIds: piece,
-      spendingCategoryId: 'category-dining',
-      shouldCreateSpendingRules: true,
-    })
-  }
+  // The confirmed rules go with the first piece only.
+  expect(execute).toHaveBeenCalledWith(expect.stringContaining('CategorizeTransactions('), {
+    financeTransactionIds: ['purchase-one', 'purchase-two'],
+    spendingCategoryId: 'category-dining',
+    spendingRules: confirmedSpendingRules(proposed.spendingRuleProposals),
+  })
+  expect(execute).toHaveBeenCalledWith(expect.stringContaining('CategorizeTransactions('), {
+    financeTransactionIds: ['purchase-three'],
+    spendingCategoryId: 'category-dining',
+    spendingRules: null,
+  })
   expect(toast.done.mock.calls[0][0]).toContain('finance.categorizedAndSaved')
   expect(toast.done.mock.calls[0][0]).toContain('finance.categorizedCountOther 3')
   expect(toast.done.mock.calls[0][0]).toContain('finance.savedRuleCountOther 2')
   expect(toolbar()).toBeNull()
+})
+
+it('says why no rule was saved when every one was left out', async () => {
+  serve(undefined, {
+    spendingRuleProposals: [],
+    tooGenericMatchTextCount: 1,
+    changingNumberMatchTextCount: 0,
+    overLimitMatchTextCount: 0,
+  })
+  await screen.findByText('Invented Bistro')
+  fireEvent.click(rowBoxes()[0])
+  chooseCategory('Invented Dining')
+  fireEvent.click(screen.getByText('finance.saveAsSpendingRules'))
+  fireEvent.click(screen.getByText('finance.applySpendingCategory'))
+
+  await waitFor(() => expect(toast.done).toHaveBeenCalled())
+  expect(document.querySelector('.finance-rule-proposals')).toBeNull()
+  expect(toast.done.mock.calls[0][0]).toContain('finance.categorizedNoRules')
+  expect(toast.done.mock.calls[0][0]).toContain('finance.leftOutTooGenericOne 1')
 })
 
 it('keeps chosen the ones a failed piece held, and says how many', async () => {

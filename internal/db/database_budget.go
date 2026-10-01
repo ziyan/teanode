@@ -73,6 +73,29 @@ type BudgetOperation interface {
 	// the rest again.
 	DeleteSpendingRule(agentId, spendingRuleId string) error
 
+	// SetSpendingRulePriorities moves spending rules of the agent to the
+	// priorities given, by id, recording each move, without applying the
+	// rules: the caller adds the rules the room was made for with
+	// CreateSpendingRules, which applies them once. ErrNotFound when an id
+	// is none of the agent's.
+	SetSpendingRulePriorities(agentId string, rulePriorities map[string]int) error
+
+	// FirstMatchingSpendingRules is, for each finance transaction of the
+	// agent named, the id of the first spending rule by priority that
+	// matches it, as ApplySpendingRules judges it; one no rule matches,
+	// or that is none of the agent's, is left out.
+	FirstMatchingSpendingRules(agentId string, financeTransactionIds []string) (map[string]string, error)
+
+	// CountSpendingRuleChanges is, for each spending rule proposed, how
+	// many of the agent's finance transactions it would recategorize once
+	// placed ahead of the rule it names (after every rule when it names
+	// none): those it matches that no earlier rule matches, whose spending
+	// category would change, leaving out what ApplySpendingRules never
+	// touches (the person's choices, transfers something else gave) and
+	// the finance transactions excluded. One answer per proposal, in
+	// order.
+	CountSpendingRuleChanges(agentId string, proposedSpendingRules []*ProposedSpendingRule, excludedTransactionIds []string) ([]int, error)
+
 	// ApplySpendingRules applies the agent's spending rules to all of its
 	// finance transactions in one statement: each takes the first rule
 	// that matches by priority. A spending category the person chose is
@@ -409,6 +432,34 @@ func (self *transaction) transferSpendingCategory(agentId string) (*models.Spend
 
 // --- spending rules --------------------------------------------------------
 
+// ProposedSpendingRule is a spending rule not yet saved, for
+// CountSpendingRuleChanges: what it matches, what it assigns, and the
+// existing rule it would be placed ahead of, empty for after every rule.
+type ProposedSpendingRule struct {
+	MatchText             string
+	SpendingCategoryID    string
+	AheadOfSpendingRuleID string
+}
+
+// spendingRuleMatchesCandidate is when the spending rule "rule" matches
+// the finance transaction "candidate": its words within the merchant, or
+// the description when there is none, in any case, and its finance account
+// and amounts when it names them. Every query that asks which rule applies
+// uses it, so none can disagree with ApplySpendingRules.
+const spendingRuleMatchesCandidate = `"rule"."agent_id" = "candidate"."agent_id"
+	AND strpos(lower(CASE WHEN "candidate"."merchant_name" <> '' THEN "candidate"."merchant_name" ELSE "candidate"."description" END),
+	           lower("rule"."match_text")) > 0
+	AND ("rule"."finance_account_id" IS NULL OR "rule"."finance_account_id" = "candidate"."finance_account_id")
+	AND ("rule"."minimum_amount" IS NULL OR "candidate"."amount" >= "rule"."minimum_amount")
+	AND ("rule"."maximum_amount" IS NULL OR "candidate"."amount" <= "rule"."maximum_amount")`
+
+// candidateKeptFromRules is when spending rules leave the finance
+// transaction "candidate" as it is, its spending category joined as
+// "current_category": the person chose it, or it is a transfer something
+// other than a rule gave.
+const candidateKeptFromRules = `("candidate"."categorized_by" = 'person'
+	OR (COALESCE("current_category"."is_transfer", false) AND "candidate"."categorized_by" <> 'spending_rule'))`
+
 type agentSpendingRuleModel struct {
 	ID                 string    `gorm:"column:id;primaryKey"`
 	AgentID            string    `gorm:"column:agent_id"`
@@ -598,6 +649,134 @@ func (self *transaction) DeleteSpendingRule(agentId, spendingRuleId string) erro
 	return err
 }
 
+func (self *transaction) SetSpendingRulePriorities(agentId string, rulePriorities map[string]int) error {
+	spendingRuleIds := make([]string, 0, len(rulePriorities))
+	for spendingRuleId := range rulePriorities {
+		spendingRuleIds = append(spendingRuleIds, spendingRuleId)
+	}
+	// In a fixed order, so two of these never wait on each other's locks.
+	slices.Sort(spendingRuleIds)
+	for _, spendingRuleId := range spendingRuleIds {
+		var found []agentSpendingRuleModel
+		if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(`"agent_id" = ? AND "id" = ?`, agentId, spendingRuleId).
+			Limit(1).Find(&found).Error; err != nil {
+			return err
+		}
+		if len(found) == 0 {
+			return ErrNotFound
+		}
+		before := found[0].toModel()
+		if before.RulePriority == rulePriorities[spendingRuleId] {
+			continue
+		}
+		after := *before
+		after.RulePriority = rulePriorities[spendingRuleId]
+		after.ModifiedAt = time.Now()
+		if err := self.applyMutation(models.AuditResourceSpendingRule, spendingRuleId, models.AuditActionUpdate, before, &after, func(tx *gorm.DB) error {
+			return tx.Model(&agentSpendingRuleModel{}).Where(`"agent_id" = ? AND "id" = ?`, agentId, spendingRuleId).
+				Updates(map[string]any{"rule_priority": after.RulePriority, "modified_at": after.ModifiedAt}).Error
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (self *transaction) FirstMatchingSpendingRules(agentId string, financeTransactionIds []string) (map[string]string, error) {
+	firstMatching := map[string]string{}
+	if len(financeTransactionIds) == 0 {
+		return firstMatching, nil
+	}
+	var found []struct {
+		FinanceTransactionID string `gorm:"column:finance_transaction_id"`
+		SpendingRuleID       string `gorm:"column:spending_rule_id"`
+	}
+	if err := self.tx.Raw(`SELECT "candidate"."id" AS "finance_transaction_id", "matched"."id" AS "spending_rule_id"
+		FROM "agent_finance_transaction" AS "candidate"
+		CROSS JOIN LATERAL (
+			SELECT "rule"."id"
+			FROM "agent_spending_rule" AS "rule"
+			WHERE `+spendingRuleMatchesCandidate+`
+			ORDER BY "rule"."rule_priority" ASC, "rule"."id" ASC
+			LIMIT 1
+		) AS "matched"
+		WHERE "candidate"."agent_id" = ? AND "candidate"."id" = ANY(?::text[])`,
+		agentId, pq.Array(financeTransactionIds)).Scan(&found).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range found {
+		firstMatching[row.FinanceTransactionID] = row.SpendingRuleID
+	}
+	return firstMatching, nil
+}
+
+func (self *transaction) CountSpendingRuleChanges(agentId string, proposedSpendingRules []*ProposedSpendingRule, excludedTransactionIds []string) ([]int, error) {
+	changedCounts := make([]int, len(proposedSpendingRules))
+	if len(proposedSpendingRules) == 0 {
+		return changedCounts, nil
+	}
+	matchTexts := make([]string, 0, len(proposedSpendingRules))
+	spendingCategoryIds := make([]string, 0, len(proposedSpendingRules))
+	aheadOfSpendingRuleIds := make([]string, 0, len(proposedSpendingRules))
+	for _, proposed := range proposedSpendingRules {
+		matchTexts = append(matchTexts, strings.TrimSpace(proposed.MatchText))
+		spendingCategoryIds = append(spendingCategoryIds, proposed.SpendingCategoryID)
+		aheadOfSpendingRuleIds = append(aheadOfSpendingRuleIds, proposed.AheadOfSpendingRuleID)
+	}
+	if excludedTransactionIds == nil {
+		excludedTransactionIds = []string{}
+	}
+	// A proposed rule wins where no rule matches, or where the first rule
+	// that does is the one it goes ahead of or a later one; of those, only
+	// the rows ApplySpendingRules would give another spending category.
+	var found []struct {
+		ProposalIndex int `gorm:"column:proposal_index"`
+		ChangedCount  int `gorm:"column:changed_count"`
+	}
+	if err := self.tx.Raw(`WITH "proposed" AS (
+			SELECT "listed"."match_text", "listed"."spending_category_id", "listed"."proposal_index",
+				"ahead"."rule_priority" AS "ahead_priority", "ahead"."id" AS "ahead_id"
+			FROM unnest(CAST(@match_texts AS text[]), CAST(@spending_category_ids AS text[]), CAST(@ahead_of_spending_rule_ids AS text[]))
+				WITH ORDINALITY AS "listed"("match_text", "spending_category_id", "ahead_of_spending_rule_id", "proposal_index")
+			LEFT JOIN "agent_spending_rule" AS "ahead"
+			  ON "ahead"."agent_id" = @agent_id AND "ahead"."id" = "listed"."ahead_of_spending_rule_id"
+		)
+		SELECT "proposed"."proposal_index", count(*) AS "changed_count"
+		FROM "agent_finance_transaction" AS "candidate"
+		LEFT JOIN "agent_spending_category" AS "current_category"
+		  ON "current_category"."id" = "candidate"."spending_category_id" AND "current_category"."agent_id" = "candidate"."agent_id"
+		LEFT JOIN LATERAL (
+			SELECT "rule"."rule_priority", "rule"."id"
+			FROM "agent_spending_rule" AS "rule"
+			WHERE `+spendingRuleMatchesCandidate+`
+			ORDER BY "rule"."rule_priority" ASC, "rule"."id" ASC
+			LIMIT 1
+		) AS "matched" ON true
+		JOIN "proposed"
+		  ON strpos(lower(CASE WHEN "candidate"."merchant_name" <> '' THEN "candidate"."merchant_name" ELSE "candidate"."description" END),
+		            lower("proposed"."match_text")) > 0
+		WHERE "candidate"."agent_id" = @agent_id
+		  AND NOT `+candidateKeptFromRules+`
+		  AND NOT ("candidate"."id" = ANY(CAST(@excluded_transaction_ids AS text[])))
+		  AND ("matched"."id" IS NULL
+		       OR ("proposed"."ahead_id" IS NOT NULL
+		           AND ("matched"."rule_priority", "matched"."id") >= ("proposed"."ahead_priority", "proposed"."ahead_id")))
+		  AND "candidate"."spending_category_id" IS DISTINCT FROM "proposed"."spending_category_id"
+		GROUP BY "proposed"."proposal_index"`,
+		map[string]any{
+			"agent_id": agentId, "match_texts": pq.Array(matchTexts), "spending_category_ids": pq.Array(spendingCategoryIds),
+			"ahead_of_spending_rule_ids": pq.Array(aheadOfSpendingRuleIds), "excluded_transaction_ids": pq.Array(excludedTransactionIds),
+		}).Scan(&found).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range found {
+		if row.ProposalIndex >= 1 && row.ProposalIndex <= len(changedCounts) {
+			changedCounts[row.ProposalIndex-1] = row.ChangedCount
+		}
+	}
+	return changedCounts, nil
+}
+
 func (self *transaction) ApplySpendingRules(agentId string) (int, error) {
 	// For every finance transaction of the agent, the first rule by
 	// priority that matches it, if any; then what that decides, keeping
@@ -626,18 +805,12 @@ func (self *transaction) ApplySpendingRules(agentId string) (int, error) {
 			LEFT JOIN "agent_spending_category" AS "current_category"
 			  ON "current_category"."id" = "candidate"."spending_category_id" AND "current_category"."agent_id" = "candidate"."agent_id"
 			CROSS JOIN LATERAL (
-				SELECT "candidate"."categorized_by" = 'person'
-					OR (COALESCE("current_category"."is_transfer", false) AND "candidate"."categorized_by" <> 'spending_rule') AS "is_kept"
+				SELECT `+candidateKeptFromRules+` AS "is_kept"
 			) AS "kept"
 			LEFT JOIN LATERAL (
 				SELECT "rule"."spending_category_id"
 				FROM "agent_spending_rule" AS "rule"
-				WHERE "rule"."agent_id" = "candidate"."agent_id"
-				  AND strpos(lower(CASE WHEN "candidate"."merchant_name" <> '' THEN "candidate"."merchant_name" ELSE "candidate"."description" END),
-				             lower("rule"."match_text")) > 0
-				  AND ("rule"."finance_account_id" IS NULL OR "rule"."finance_account_id" = "candidate"."finance_account_id")
-				  AND ("rule"."minimum_amount" IS NULL OR "candidate"."amount" >= "rule"."minimum_amount")
-				  AND ("rule"."maximum_amount" IS NULL OR "candidate"."amount" <= "rule"."maximum_amount")
+				WHERE `+spendingRuleMatchesCandidate+`
 				ORDER BY "rule"."rule_priority" ASC, "rule"."id" ASC
 				LIMIT 1
 			) AS "matched" ON true
