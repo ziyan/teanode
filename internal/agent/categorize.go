@@ -222,7 +222,9 @@ type categorizeAnswer struct {
 
 // spendingCategoryChoices is the answers the categorize model chooses
 // among: each spending category the person has not hidden, by id, named
-// with its parent when it has one.
+// with its parent when it has one. The transfer category is not one: a
+// transfer is for the person, a spending rule, the provider category
+// mapping or pairing to say, and a guess there would hide spending.
 func spendingCategoryChoices(spendingCategories []*models.SpendingCategory) map[string]string {
 	nameById := map[string]string{}
 	for _, spendingCategory := range spendingCategories {
@@ -230,7 +232,7 @@ func spendingCategoryChoices(spendingCategories []*models.SpendingCategory) map[
 	}
 	choices := map[string]string{}
 	for _, spendingCategory := range spendingCategories {
-		if spendingCategory.IsHidden {
+		if spendingCategory.IsHidden || spendingCategory.IsTransfer {
 			continue
 		}
 		name := spendingCategory.SpendingCategoryName
@@ -417,7 +419,7 @@ func (self *Agent) writeCategorizations(ctx context.Context, run *Run, answers [
 			if err != nil {
 				return err
 			}
-			if current == nil || current.SpendingCategoryID != "" || current.IsTransfer {
+			if current == nil || current.SpendingCategoryID != "" {
 				continue
 			}
 			var categorizationConfidence *string

@@ -249,46 +249,18 @@ type FinanceTransaction struct {
 	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty" graphapi:"nullable"`
 
 	// SpendingCategoryID is the person's spending category for it, empty
-	// while uncategorized, and CategorizedBy what gave it.
+	// while uncategorized, and CategorizedBy what gave it. It is a
+	// transfer between the person's own accounts, neither spending nor
+	// income, exactly when the spending category is the agent's transfer
+	// category (SpendingCategory.IsTransfer); nothing else says so.
 	// CategorizationConfidence is the decision model's confidence, a
 	// decimal between 0 and 1, empty for anything else.
 	SpendingCategoryID       string        `json:"spendingCategoryId,omitempty" graphapi:"nullable"`
 	CategorizedBy            CategorizedBy `json:"categorizedBy,omitempty" graphapi:"nullable"`
 	CategorizationConfidence string        `json:"categorizationConfidence,omitempty" graphapi:"nullable"`
 
-	// IsTransfer says it moved money between the person's own accounts,
-	// and so is neither spending nor income. TransferMarkedBy says what
-	// decided that: the person, either way, after which nothing else may
-	// change it; or what marked it a transfer, which clears its own mark
-	// when it no longer holds. Empty when nothing did.
-	IsTransfer       bool             `json:"isTransfer"`
-	TransferMarkedBy TransferMarkedBy `json:"transferMarkedBy,omitempty" graphapi:"nullable"`
-
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
-}
-
-// TransferMarkedBy is what decided whether a finance transaction is a
-// transfer.
-type TransferMarkedBy string
-
-// What may mark a transfer: the person (either way), a spending rule, the
-// provider category mapping, or transfer detection pairing money out of
-// one account with the same amount into another.
-const (
-	TransferMarkedByPerson                  TransferMarkedBy = "person"
-	TransferMarkedBySpendingRule            TransferMarkedBy = "spending_rule"
-	TransferMarkedByProviderCategoryMapping TransferMarkedBy = "provider_category_mapping"
-	TransferMarkedByDetection               TransferMarkedBy = "detection"
-)
-
-// IsValid says it is one of the four.
-func (self TransferMarkedBy) IsValid() bool {
-	switch self {
-	case TransferMarkedByPerson, TransferMarkedBySpendingRule, TransferMarkedByProviderCategoryMapping, TransferMarkedByDetection:
-		return true
-	}
-	return false
 }
 
 // FinanceSpendingSummaryGroupBy is what a spending summary groups by.

@@ -42,6 +42,9 @@ tool and the dashboard.
   a fund, a bond, a coin), **holding** (an asset that is one security in one
   finance account) and **trade** (a buy, a sell, a cancelled trade or a
   security moved in or out).
+- **transfer category**: the built-in spending category, one per agent,
+  whose transactions moved money between the person's own accounts and
+  are neither spending nor income. There is no separate transfer mark.
 - **spending rule**, **budget**, **budget pace** (`under`, `on_track`,
   `at_risk`, `over`), **income pace** (`behind`, `on_track`, `ahead`),
   **saving summary** and **saving pace** (`behind`, `on_track`, `ahead`),
@@ -247,8 +250,8 @@ waits until the history is complete.
 A sync opens the credential, asks the provider for what changed, and writes it
 in one database transaction (`ApplyFinanceSync` in
 `internal/db/database_finance.go`): finance accounts upserted, finance
-transactions upserted by provider id (never overwriting a spending category or
-transfer mark the person set), removals deleted, pending rows replaced, an
+transactions upserted by provider id (never overwriting a spending category the
+person set, the transfer category included), removals deleted, pending rows replaced, an
 asset made for each new finance account, and one valuation per finance account
 per day from its balance. Then, outside that transaction: transfers are
 detected, spending rules applied, the provider category mapping applied to
@@ -378,7 +381,7 @@ A trade swaps cash for a security inside one account, so it is its own row
 in `agent_finance_trade` (`FinanceTrades`, `teanode finance trades`, the
 tool's `trades`), never a finance transaction: it is not spending or income,
 and it takes no part in budgets, cash flow, spending rules or transfer
-matching. The cash that does come and go in an investment account (dividends,
+detection. The cash that does come and go in an investment account (dividends,
 interest, fees, deposits and withdrawals) is a finance transaction like any
 other, with Plaid's categories, and goes through the same spending
 categories and transfer detection.
@@ -396,14 +399,78 @@ batches of fifty. The model is sent merchant, description, amount, currency,
 account kind and provider category, never account numbers or provider
 metadata.
 
-Transfers between the person's own finance accounts, and card payments, are
-marked and count as neither spending nor income.
+Transfers between the person's own finance accounts, and card payments,
+count as neither spending nor income. A transfer is a spending category:
+the agent's **transfer category** (`is_transfer` on
+`agent_spending_category`, migration 0143), built in, one per agent (a
+partial unique index), made with every agent. A finance transaction is a
+transfer exactly when its spending category is that one, so there is one
+source of truth and the two can never disagree: setting the transfer
+category marks a transfer, and setting any other takes the mark away. What
+put it there is `categorized_by`, the same column as for any spending
+category: `person`, `spending_rule`, `provider_category_mapping` (a
+provider category that says transfer, such as Plaid's `TRANSFER_OUT` or a
+card's OFX `PAYMENT`) or `transfer_detection` (a pair of the same amount
+leaving one account and arriving in another, see below). The categorize
+model is never offered the transfer category, and the database refuses it
+one, since what the model cannot place is spending until something surer
+says otherwise.
+
+The transfer category is named `transfer`, shown in the reader's language
+like the other built-in names, or `transfer between own accounts` for a
+person who already had a spending category called transfer, which stays
+theirs. It is found by its flag, never its name, so it can be renamed or
+hidden. The word `transfer`, in any case, given to the tool, its
+confirmation cards or the command line where a spending category goes, is
+the transfer category whatever it is called, ahead of a person's own
+`transfer` (still theirs by its id); the dashboard shows the built-in name
+in the reader's language only for the flagged category, and a person's own
+`transfer` as they wrote it. It cannot be deleted, be income, have a parent
+or children, or take a budget.
+
+Transfer detection gives it to the posted finance transactions whose
+provider category is a transfer, and pairs money out of one account with
+the same amount and currency into another within three days, one to one
+and closest first. Neither touches a transaction the person categorized;
+pairing may take a side the mapping already marked. A spending rule can
+target the transfer category like any other (match `ONLINE PAYMENT`, file
+under transfer), for past and future transactions, and a rule does not take
+over a transfer pairing or the mapping gave, so deleting the rule leaves
+those as they were. A pair is dropped when the amount changes, and a
+transfer from a rule or the mapping when the amount or the text changes,
+so they are judged again after the sync.
+
+Migration 0143 moved every transaction marked a transfer into the transfer
+category, keeping what marked it (`detection` became
+`transfer_detection`), and every spending rule that marked transfers onto
+it. The spending category such a transaction had beside the mark is not
+kept: it counted for nothing while the mark stood. A person's "not a
+transfer" became their choice of the spending category the transaction
+had, so pairing still leaves it alone. Totals are the same either side of
+it, which a test checks.
+
+Three cases the migration handles in a way worth knowing, none of which
+the data it was first run on had. A person's "not a transfer" on a
+transaction with no spending category becomes their choice of none, so
+the categorize model leaves it uncategorized until the person picks one;
+leaving it to the model instead would also let pairing mark it a transfer
+again, against what the person said. A transaction the person categorized
+that a rule or pairing had marked a transfer becomes a transfer by that
+rule or pairing, and the person's spending category is lost. And an agent
+with both a `transfer` (in any case) and a `transfer between own accounts`
+of its own fails the unique name index, so the migration does not run
+until one of them is renamed.
 
 Spending means one thing everywhere it is shown (budgets, the day-by-day
 chart, cash flow, the Spending section's month chart and summary): money out
-less money in for a spending category that is not income, so a refund lowers
-the spending it refunds, plus money out with no spending category. Income is
-what income categories took in, plus money in with no spending category.
+less money in for a spending category that is neither income nor the
+transfer category, so a refund lowers the spending it refunds, plus money
+out with no spending category. Income is what income categories took in,
+plus money in with no spending category. The transfer category is in
+neither, and every query that leaves transfers out (spending and income
+per day, cash flow, budget pace and repeat charges, the saving summary, the
+spending summary in every grouping, its currency conversion and the tool's
+and the command line's summaries) does so by the category.
 
 A budget is an amount per spending category per month, changed by adding a
 row effective from a month. `BudgetStatus` (`internal/agent/budget_status.go`)
@@ -505,6 +572,15 @@ Transactions, Accounts, Budgets, Net worth and Savings targets: a row of tabs
 on a wide screen, one full-width list to choose from on a phone. `/finance`
 alone opens Spending; with nothing linked yet the page says so and links to
 the setup.
+
+A transfer is chosen like any spending category: in a transaction's row, in
+its details (where the line under the choice says what made it a transfer:
+pairing, the provider, a rule or the person) and as a spending rule's
+target. Every list to choose from offers the transfer category last, under
+a heading saying it is neither spending nor income. The list of spending
+categories marks it built in and has no delete for it, and its dialog
+offers only its name and whether it is hidden. The set-a-budget dialog
+leaves it out.
 
 The saving summary is a panel on Spending, for the month chosen there, above
 the month's budgets (spending budgets, then income budgets under a heading

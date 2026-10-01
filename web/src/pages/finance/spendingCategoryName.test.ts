@@ -28,4 +28,14 @@ it('leaves a name the person chose as they wrote it', () => {
 it('names the later built-in categories too', () => {
   expect(spendingCategoryDisplayName('children', english)).toBe('Kids')
   expect(spendingCategoryDisplayName('taxes', english)).toBe('Taxes')
+  expect(spendingCategoryDisplayName('transfer', english, true)).toBe('Transfer')
+  expect(spendingCategoryDisplayName('transfer', (key) => ja[key], true)).toBe('振替')
+})
+
+// The built-in transfer category is known by its flag: a category the
+// person called transfer themselves keeps the name they gave it.
+it('shows Transfer only for the transfer category', () => {
+  expect(spendingCategoryDisplayName('transfer', english)).toBe('transfer')
+  expect(spendingCategoryDisplayName('transfer', (key) => ja[key], false)).toBe('transfer')
+  expect(spendingCategoryDisplayName('transfer between own accounts', english, true)).toBe('transfer between own accounts')
 })

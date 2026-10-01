@@ -110,8 +110,6 @@ type FinanceTransaction struct {
 	SpendingCategoryID       string     `json:"spendingCategoryId,omitempty"`
 	CategorizedBy            string     `json:"categorizedBy,omitempty"`
 	CategorizationConfidence string     `json:"categorizationConfidence,omitempty"`
-	IsTransfer               bool       `json:"isTransfer"`
-	TransferMarkedBy         string     `json:"transferMarkedBy,omitempty"`
 }
 
 // FinanceTransactionPage is one page of finance transactions and the cursor
@@ -285,25 +283,27 @@ type AssetHistory struct {
 	AssetValuations []*AssetValuation `json:"assetValuations"`
 }
 
-// SpendingCategory is a label in the person's own list.
+// SpendingCategory is a label in the person's own list. IsTransfer marks
+// the built-in transfer category: what is in it is neither spending nor
+// income.
 type SpendingCategory struct {
 	ID                       string `json:"id"`
 	SpendingCategoryName     string `json:"spendingCategoryName"`
 	ParentSpendingCategoryID string `json:"parentSpendingCategoryId,omitempty"`
 	IsIncome                 bool   `json:"isIncome"`
 	IsHidden                 bool   `json:"isHidden"`
+	IsTransfer               bool   `json:"isTransfer"`
 }
 
-// SpendingRule assigns a spending category, or marks a transfer, to the
-// finance transactions that match it.
+// SpendingRule assigns a spending category to the finance transactions
+// that match it; the transfer category marks them transfers.
 type SpendingRule struct {
 	ID                 string `json:"id"`
 	MatchText          string `json:"matchText"`
 	FinanceAccountID   string `json:"financeAccountId,omitempty"`
 	MinimumAmount      string `json:"minimumAmount,omitempty"`
 	MaximumAmount      string `json:"maximumAmount,omitempty"`
-	SpendingCategoryID string `json:"spendingCategoryId,omitempty"`
-	IsTransfer         bool   `json:"isTransfer"`
+	SpendingCategoryID string `json:"spendingCategoryId"`
 	RulePriority       int    `json:"rulePriority"`
 }
 
@@ -505,7 +505,7 @@ const (
 
 	financeSourceFields = `{ id name providerKind institutionId institutionName isEnabled cron lastRunAt nextRunAt lastError isSignInRequired createdAt financeAccounts ` + financeAccountFields + ` }`
 
-	financeTransactionFields = `{ id financeAccountId postedOn transactedAt amount currencyCode description merchantName providerCategoryPrimary providerCategoryDetailed isPending spendingCategoryId categorizedBy categorizationConfidence isTransfer transferMarkedBy }`
+	financeTransactionFields = `{ id financeAccountId postedOn transactedAt amount currencyCode description merchantName providerCategoryPrimary providerCategoryDetailed isPending spendingCategoryId categorizedBy categorizationConfidence }`
 
 	currencyPairRateFields = `{ fromCurrencyCode toCurrencyCode rate rateOn rateSource }`
 
@@ -517,9 +517,9 @@ const (
 
 	financeTradeFields = `{ id financeAccountId financeSecurityId financeSecurity ` + financeSecurityFields + ` providerTradeId tradedOn tradeKind tradeSubkind tradedQuantity unitPrice tradeAmount feeAmount currencyCode description }`
 
-	spendingCategoryFields = `{ id spendingCategoryName parentSpendingCategoryId isIncome isHidden }`
+	spendingCategoryFields = `{ id spendingCategoryName parentSpendingCategoryId isIncome isHidden isTransfer }`
 
-	spendingRuleFields = `{ id matchText financeAccountId minimumAmount maximumAmount spendingCategoryId isTransfer rulePriority }`
+	spendingRuleFields = `{ id matchText financeAccountId minimumAmount maximumAmount spendingCategoryId rulePriority }`
 
 	budgetFields = `{ id spendingCategoryId monthlyAmount currencyCode effectiveFrom }`
 
@@ -688,12 +688,12 @@ const (
 
 	DocumentDeleteSpendingCategory = `mutation ($spendingCategoryId: String!) { DeleteSpendingCategory(spendingCategoryId: $spendingCategoryId) }`
 
-	DocumentCreateSpendingRule = `mutation ($matchText: String!, $spendingCategoryId: String, $isTransfer: Boolean, $financeAccountId: String, $minimumAmount: String, $maximumAmount: String, $rulePriority: Int) {
-  CreateSpendingRule(matchText: $matchText, spendingCategoryId: $spendingCategoryId, isTransfer: $isTransfer, financeAccountId: $financeAccountId, minimumAmount: $minimumAmount, maximumAmount: $maximumAmount, rulePriority: $rulePriority) ` + spendingRuleFields + `
+	DocumentCreateSpendingRule = `mutation ($matchText: String!, $spendingCategoryId: String!, $financeAccountId: String, $minimumAmount: String, $maximumAmount: String, $rulePriority: Int) {
+  CreateSpendingRule(matchText: $matchText, spendingCategoryId: $spendingCategoryId, financeAccountId: $financeAccountId, minimumAmount: $minimumAmount, maximumAmount: $maximumAmount, rulePriority: $rulePriority) ` + spendingRuleFields + `
 }`
 
-	DocumentUpdateSpendingRule = `mutation ($spendingRuleId: String!, $matchText: String, $spendingCategoryId: String, $isTransfer: Boolean, $financeAccountId: String, $minimumAmount: String, $maximumAmount: String, $rulePriority: Int) {
-  UpdateSpendingRule(spendingRuleId: $spendingRuleId, matchText: $matchText, spendingCategoryId: $spendingCategoryId, isTransfer: $isTransfer, financeAccountId: $financeAccountId, minimumAmount: $minimumAmount, maximumAmount: $maximumAmount, rulePriority: $rulePriority) ` + spendingRuleFields + `
+	DocumentUpdateSpendingRule = `mutation ($spendingRuleId: String!, $matchText: String, $spendingCategoryId: String, $financeAccountId: String, $minimumAmount: String, $maximumAmount: String, $rulePriority: Int) {
+  UpdateSpendingRule(spendingRuleId: $spendingRuleId, matchText: $matchText, spendingCategoryId: $spendingCategoryId, financeAccountId: $financeAccountId, minimumAmount: $minimumAmount, maximumAmount: $maximumAmount, rulePriority: $rulePriority) ` + spendingRuleFields + `
 }`
 
 	DocumentDeleteSpendingRule = `mutation ($spendingRuleId: String!) { DeleteSpendingRule(spendingRuleId: $spendingRuleId) }`
@@ -702,10 +702,6 @@ const (
   CategorizeTransaction(financeTransactionId: $financeTransactionId, spendingCategoryId: $spendingCategoryId, shouldCreateSpendingRule: $shouldCreateSpendingRule) {
     financeTransaction ` + financeTransactionFields + ` spendingRule ` + spendingRuleFields + `
   }
-}`
-
-	DocumentMarkTransfer = `mutation ($financeTransactionId: String!, $isTransfer: Boolean!) {
-  MarkTransfer(financeTransactionId: $financeTransactionId, isTransfer: $isTransfer) ` + financeTransactionFields + `
 }`
 
 	DocumentSetBudget = `mutation ($spendingCategoryId: String!, $monthlyAmount: String!, $currencyCode: String, $effectiveFrom: String) {
@@ -748,8 +744,8 @@ var FinanceDocuments = map[string]string{
 	"CreateSpendingCategory": DocumentCreateSpendingCategory, "UpdateSpendingCategory": DocumentUpdateSpendingCategory,
 	"DeleteSpendingCategory": DocumentDeleteSpendingCategory, "CreateSpendingRule": DocumentCreateSpendingRule,
 	"UpdateSpendingRule": DocumentUpdateSpendingRule, "DeleteSpendingRule": DocumentDeleteSpendingRule,
-	"CategorizeTransaction": DocumentCategorizeTransaction, "MarkTransfer": DocumentMarkTransfer,
-	"SetBudget": DocumentSetBudget, "CreateSavingsTarget": DocumentCreateSavingsTarget,
+	"CategorizeTransaction": DocumentCategorizeTransaction, "SetBudget": DocumentSetBudget,
+	"CreateSavingsTarget": DocumentCreateSavingsTarget,
 	"UpdateSavingsTarget": DocumentUpdateSavingsTarget, "CloseSavingsTarget": DocumentCloseSavingsTarget,
 }
 

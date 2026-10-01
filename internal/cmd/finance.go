@@ -56,8 +56,7 @@ func NewFinanceCommand() *cli.Command {
 	spendingRuleFlags := func() []cli.Flag {
 		return []cli.Flag{
 			JSONFlag(),
-			&cli.StringFlag{Name: "spending-category", Usage: "the spending category it assigns, by id or name"},
-			&cli.BoolFlag{Name: "is-transfer", Usage: "mark what it matches as transfers"},
+			&cli.StringFlag{Name: "spending-category", Usage: "the spending category it assigns, by id or name; transfer marks what it matches as transfers"},
 			&cli.StringFlag{Name: "finance-account", Usage: "only this finance account's transactions, by id"},
 			&cli.StringFlag{Name: "minimum-amount", Usage: "only amounts at least this; money out is negative"},
 			&cli.StringFlag{Name: "maximum-amount", Usage: "only amounts at most this"},
@@ -235,14 +234,9 @@ func NewFinanceCommand() *cli.Command {
 			{Name: "update-spending-rule", Usage: "change a spending rule", ArgsUsage: "<spending-rule-id>", Flags: append(spendingRuleFlags(), &cli.StringFlag{Name: "match-text", Usage: "what it matches in the merchant or description"}), Action: runFinanceUpdateSpendingRule},
 			{Name: "delete-spending-rule", Usage: "delete a spending rule", ArgsUsage: "<spending-rule-id>", Flags: forceFlags(), Action: runFinanceDeleteSpendingRule},
 			{
-				Name: "categorize-transaction", Usage: "give a transaction a spending category, which nothing overwrites", ArgsUsage: "<transaction-id> <spending-category | none>",
+				Name: "categorize-transaction", Usage: "give a transaction a spending category, which nothing overwrites; transfer marks it a transfer between your own accounts", ArgsUsage: "<transaction-id> <spending-category | none>",
 				Flags:  []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "create-spending-rule", Usage: "and a spending rule for its merchant"}},
 				Action: runFinanceCategorizeTransaction,
-			},
-			{
-				Name: "mark-transfer", Usage: "mark a transaction as a transfer between your own accounts, or not", ArgsUsage: "<transaction-id>",
-				Flags:  []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "is-transfer", Usage: "a transfer; --is-transfer=false says it is not", Value: true}},
-				Action: runFinanceMarkTransfer,
 			},
 			{Name: "budgets", Usage: "your budgets, by spending category and month", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceBudgets},
 			{
@@ -313,7 +307,7 @@ var financeSubcommandOperations = map[string]string{
 	"delete-spending-category": "DeleteSpendingCategory", "spending-rules": "SpendingRules",
 	"create-spending-rule": "CreateSpendingRule", "update-spending-rule": "UpdateSpendingRule",
 	"delete-spending-rule": "DeleteSpendingRule", "categorize-transaction": "CategorizeTransaction",
-	"mark-transfer": "MarkTransfer", "budgets": "Budgets", "set-budget": "SetBudget", "budget-status": "BudgetStatus",
+	"budgets": "Budgets", "set-budget": "SetBudget", "budget-status": "BudgetStatus",
 	"saving-summary": "SavingSummary", "spending-by-day": "SpendingByDay", "cash-flow": "CashFlow", "savings-targets": "SavingsTargets",
 	"create-savings-target": "CreateSavingsTarget", "update-savings-target": "UpdateSavingsTarget",
 	"close-savings-target": "CloseSavingsTarget", "import-statement": "ImportStatement", "statement-import": "StatementImport",
@@ -515,7 +509,9 @@ func dayOf(value *time.Time) string {
 }
 
 // spendingCategoryNamed finds a spending category by id or, ignoring case,
-// by name.
+// by name. Transfer is the transfer category whatever it is called, ahead
+// of a person's own spending category named transfer, which the built-in
+// one was named around.
 func spendingCategoryNamed(ctx context.Context, command *cli.Command, wanted string) (*client.SpendingCategory, error) {
 	var spendingCategories []*client.SpendingCategory
 	if err := financeCall(ctx, command, "SpendingCategories", nil, &spendingCategories); err != nil {
@@ -524,6 +520,13 @@ func spendingCategoryNamed(ctx context.Context, command *cli.Command, wanted str
 	for _, spendingCategory := range spendingCategories {
 		if spendingCategory.ID == wanted {
 			return spendingCategory, nil
+		}
+	}
+	if strings.EqualFold(wanted, "transfer") {
+		for _, spendingCategory := range spendingCategories {
+			if spendingCategory.IsTransfer {
+				return spendingCategory, nil
+			}
 		}
 	}
 	for _, spendingCategory := range spendingCategories {
@@ -1152,9 +1155,6 @@ func runFinanceTransactions(ctx context.Context, command *cli.Command) error {
 			what = financeTransaction.Description
 		}
 		spendingCategory := names[financeTransaction.SpendingCategoryID]
-		if financeTransaction.IsTransfer {
-			spendingCategory = "transfer"
-		}
 		if financeTransaction.IsPending {
 			what += " (pending)"
 		}
@@ -1647,10 +1647,10 @@ func runFinanceSpendingCategories(ctx context.Context, command *cli.Command) err
 		}
 		rows = append(rows, []string{
 			spendingCategory.ID, spendingCategory.SpendingCategoryName, parent,
-			yesOrNo[spendingCategory.IsIncome], yesOrNo[spendingCategory.IsHidden],
+			yesOrNo[spendingCategory.IsIncome], yesOrNo[spendingCategory.IsHidden], yesOrNo[spendingCategory.IsTransfer],
 		})
 	}
-	return printTable([]string{"id", "spending category", "parent", "income", "hidden"}, rows)
+	return printTable([]string{"id", "spending category", "parent", "income", "hidden", "transfer"}, rows)
 }
 
 func runFinanceCreateSpendingCategory(ctx context.Context, command *cli.Command) error {
@@ -1739,9 +1739,6 @@ func runFinanceSpendingRules(ctx context.Context, command *cli.Command) error {
 	rows := make([][]string, 0, len(spendingRules))
 	for _, spendingRule := range spendingRules {
 		assigns := names[spendingRule.SpendingCategoryID]
-		if spendingRule.IsTransfer {
-			assigns = strings.TrimPrefix(assigns+", transfer", ", ")
-		}
 		bounds := ""
 		if spendingRule.MinimumAmount != "" || spendingRule.MaximumAmount != "" {
 			bounds = spendingRule.MinimumAmount + " to " + spendingRule.MaximumAmount
@@ -1765,7 +1762,6 @@ func spendingRuleVariables(ctx context.Context, command *cli.Command, variables 
 		}
 		variables["spendingCategoryId"] = spendingCategoryId
 	}
-	setBool(command, variables, "is-transfer", "isTransfer")
 	setString(command, variables, "finance-account", "financeAccountId")
 	setString(command, variables, "minimum-amount", "minimumAmount")
 	setString(command, variables, "maximum-amount", "maximumAmount")
@@ -1779,6 +1775,9 @@ func runFinanceCreateSpendingRule(ctx context.Context, command *cli.Command) err
 	matchText, err := financeArgument(command, 0, "what the rule matches in the merchant or description")
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(command.String("spending-category")) == "" {
+		return usage("a spending rule needs --spending-category, the spending category it assigns; transfer marks what it matches as transfers")
 	}
 	variables := map[string]any{"matchText": matchText}
 	if err := spendingRuleVariables(ctx, command, variables); err != nil {
@@ -1850,21 +1849,6 @@ func runFinanceCategorizeTransaction(ctx context.Context, command *cli.Command) 
 		line += fmt.Sprintf("; spending rule %s matches %q from now on and in the past", categorized.SpendingRule.ID, categorized.SpendingRule.MatchText)
 	}
 	return printDone(command, categorized, line)
-}
-
-func runFinanceMarkTransfer(ctx context.Context, command *cli.Command) error {
-	financeTransactionId, err := financeArgument(command, 0, "the transaction's id")
-	if err != nil {
-		return err
-	}
-	var marked *client.FinanceTransaction
-	if err := financeCall(ctx, command, operationOf(command), map[string]any{"financeTransactionId": financeTransactionId, "isTransfer": command.Bool("is-transfer")}, &marked); err != nil {
-		return err
-	}
-	if marked.IsTransfer {
-		return printDone(command, marked, marked.ID+": a transfer, left out of spending and income")
-	}
-	return printDone(command, marked, marked.ID+": not a transfer")
 }
 
 // --- budgets, spending and savings targets --------------------------------

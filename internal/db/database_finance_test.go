@@ -90,6 +90,17 @@ func applyFinanceSync(t *testing.T, database db.Database, fixture financeFixture
 	return applied
 }
 
+// transferCategoryId is the agent's transfer category: a finance
+// transaction in it is a transfer.
+func transferCategoryId(t *testing.T, tx db.Transaction, agentId string) string {
+	t.Helper()
+	transferCategory, err := tx.EnsureTransferSpendingCategory(agentId)
+	if err != nil {
+		t.Fatalf("EnsureTransferSpendingCategory: %s", err)
+	}
+	return transferCategory.ID
+}
+
 func financeTransactionsByProviderId(t *testing.T, tx db.Transaction, agentId string) map[string]*models.FinanceTransaction {
 	t.Helper()
 	page, err := tx.ListFinanceTransactions(agentId, &db.FinanceTransactionFilter{Limit: db.FinanceTransactionLimitMost})
@@ -250,11 +261,15 @@ func TestApplyFinanceSyncKeepsWhatThePersonChose(t *testing.T) {
 		if isSet, err := tx.SetTransactionCategorization(fixture.agentId, found["transaction-diner"].ID, dining.ID, models.CategorizedByCategorizeModel, &confidence); err != nil || !isSet {
 			t.Fatalf("the model categorizes: %v %v", isSet, err)
 		}
-		if isMarked, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["transaction-salary"].ID, true, models.TransferMarkedByPerson); err != nil || !isMarked {
-			t.Fatalf("the person marks a transfer: %v %v", isMarked, err)
+		transferId := transferCategoryId(t, tx, fixture.agentId)
+		if isSet, err := tx.SetTransactionCategorization(fixture.agentId, found["transaction-salary"].ID, transferId, models.CategorizedByPerson, nil); err != nil || !isSet {
+			t.Fatalf("the person marks a transfer: %v %v", isSet, err)
 		}
-		if isMarked, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["transaction-salary"].ID, false, models.TransferMarkedByDetection); err != nil || isMarked {
-			t.Fatalf("anything else must not unmark the person's transfer: %v %v", isMarked, err)
+		if isSet, err := tx.SetTransactionCategorization(fixture.agentId, found["transaction-salary"].ID, "", models.CategorizedBySpendingRule, nil); err != nil || isSet {
+			t.Fatalf("anything else must not unmark the person's transfer: %v %v", isSet, err)
+		}
+		if _, err := tx.SetTransactionCategorization(fixture.agentId, found["transaction-grocer"].ID, transferId, models.CategorizedByCategorizeModel, nil); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Fatalf("the categorize model must not mark a transfer: %v", err)
 		}
 	})
 
@@ -273,7 +288,7 @@ func TestApplyFinanceSyncKeepsWhatThePersonChose(t *testing.T) {
 		if grocer.CategorizedBy != models.CategorizedByPerson || grocer.SpendingCategoryID == "" || grocer.Description != "CORNER GROCER 0412 POSTED" {
 			t.Errorf("the person's spending category survives a modify: %+v", grocer)
 		}
-		if !salary.IsTransfer || salary.TransferMarkedBy != models.TransferMarkedByPerson || salary.Amount != "2600.0000" {
+		if salary.SpendingCategoryID != transferCategoryId(t, tx, fixture.agentId) || salary.CategorizedBy != models.CategorizedByPerson || salary.Amount != "2600.0000" {
 			t.Errorf("the person's transfer survives a modify: %+v", salary)
 		}
 		if diner.SpendingCategoryID != "" || diner.CategorizedBy != "" || diner.CategorizationConfidence != "" {
@@ -352,8 +367,10 @@ func TestDetectFinanceTransfersPairsAccounts(t *testing.T) {
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
-		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["person-out"].ID, false, models.TransferMarkedByPerson); err != nil {
-			t.Fatalf("MarkFinanceTransactionTransfer: %s", err)
+		// The person taking the spending category away is their decision
+		// that it is not a transfer either.
+		if _, err := tx.SetTransactionCategorization(fixture.agentId, found["person-out"].ID, "", models.CategorizedByPerson, nil); err != nil {
+			t.Fatalf("SetTransactionCategorization: %s", err)
 		}
 		markedCount, err := tx.DetectFinanceTransfers(fixture.agentId, fixture.sourceId, "2026-09-01")
 		if err != nil {
@@ -362,13 +379,16 @@ func TestDetectFinanceTransfersPairsAccounts(t *testing.T) {
 		if markedCount != 3 {
 			t.Errorf("the payment pair and the provider transfer, got %d", markedCount)
 		}
+		transferId := transferCategoryId(t, tx, fixture.agentId)
 		found = financeTransactionsByProviderId(t, tx, fixture.agentId)
-		for providerTransactionId, isTransfer := range map[string]bool{
-			"payment-out": true, "payment-in": true, "far-out": false, "far-in": false,
-			"person-out": false, "person-in": false, "other-currency": false, "provider-transfer": true,
+		for providerTransactionId, expectedCategorizedBy := range map[string]models.CategorizedBy{
+			"payment-out": models.CategorizedByTransferDetection, "payment-in": models.CategorizedByTransferDetection, "far-out": "", "far-in": "",
+			"person-out": "", "person-in": "", "other-currency": "", "provider-transfer": models.CategorizedByProviderCategoryMapping,
 		} {
-			if found[providerTransactionId].IsTransfer != isTransfer {
-				t.Errorf("%s: is transfer %v, want %v", providerTransactionId, found[providerTransactionId].IsTransfer, isTransfer)
+			financeTransaction := found[providerTransactionId]
+			isTransfer := financeTransaction.SpendingCategoryID == transferId
+			if isTransfer != (expectedCategorizedBy != "") || (isTransfer && financeTransaction.CategorizedBy != expectedCategorizedBy) {
+				t.Errorf("%s: transfer %v by %q, want by %q", providerTransactionId, isTransfer, financeTransaction.CategorizedBy, expectedCategorizedBy)
 			}
 		}
 		if again, err := tx.DetectFinanceTransfers(fixture.agentId, "", "2026-09-01"); err != nil || again != 0 {
@@ -465,8 +485,8 @@ func TestFinanceSpendingSummaryLeavesOutTransfers(t *testing.T) {
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
-		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["to-card"].ID, true, models.TransferMarkedByPerson); err != nil {
-			t.Fatalf("MarkFinanceTransactionTransfer: %s", err)
+		if _, err := tx.SetTransactionCategorization(fixture.agentId, found["to-card"].ID, transferCategoryId(t, tx, fixture.agentId), models.CategorizedByPerson, nil); err != nil {
+			t.Fatalf("SetTransactionCategorization: %s", err)
 		}
 		summary, err := tx.FinanceSpendingSummary(fixture.agentId, &db.FinanceSpendingSummaryFilter{
 			From: "2026-09-01", To: "2026-09-30", GroupBy: models.FinanceSpendingSummaryGroupByMerchant,
@@ -496,6 +516,19 @@ func TestFinanceSpendingSummaryLeavesOutTransfers(t *testing.T) {
 		byAccount, err := tx.FinanceSpendingSummary(fixture.agentId, &db.FinanceSpendingSummaryFilter{GroupBy: models.FinanceSpendingSummaryGroupByFinanceAccount})
 		if err != nil || len(byAccount) != 2 || byAccount[0].GroupLabel != "Everyday Checking" {
 			t.Errorf("by finance account, named: %v %+v", err, byAccount)
+		}
+		bySpendingCategory, err := tx.FinanceSpendingSummary(fixture.agentId, &db.FinanceSpendingSummaryFilter{GroupBy: models.FinanceSpendingSummaryGroupBySpendingCategory})
+		if err != nil || len(bySpendingCategory) != 1 || bySpendingCategory[0].GroupKey != "" || bySpendingCategory[0].MoneyOut != "60.5700" {
+			t.Errorf("by spending category, the transfer category is not a group: %v %+v", err, bySpendingCategory)
+		}
+		page, err := tx.ListFinanceTransactions(fixture.agentId, &db.FinanceTransactionFilter{IsTransferExcluded: true})
+		if err != nil || len(page.FinanceTransactions) != 4 {
+			t.Errorf("the transactions without transfers are the other four: %v %d", err, len(page.FinanceTransactions))
+		}
+		for _, financeTransaction := range page.FinanceTransactions {
+			if financeTransaction.ProviderTransactionID == "to-card" {
+				t.Errorf("the transfer is left out of the listing")
+			}
 		}
 		if _, err := tx.FinanceSpendingSummary(fixture.agentId, &db.FinanceSpendingSummaryFilter{GroupBy: "weekday"}); !errors.Is(err, db.ErrInvalidArguments) {
 			t.Errorf("an unknown grouping must be refused, got %v", err)
@@ -550,8 +583,11 @@ func TestFinanceRowsAreTheirOwnersOnly(t *testing.T) {
 		if _, err := tx.SetTransactionCategorization(owner.agentId, transactionId, strangerCategory.ID, models.CategorizedByPerson, nil); !errors.Is(err, db.ErrNotFound) {
 			t.Errorf("another agent's spending category must not be assigned: %v", err)
 		}
-		if _, err := tx.MarkFinanceTransactionTransfer(stranger.agentId, transactionId, true, models.TransferMarkedByPerson); !errors.Is(err, db.ErrNotFound) {
-			t.Errorf("MarkFinanceTransactionTransfer across agents: %v", err)
+		if _, err := tx.SetTransactionCategorization(stranger.agentId, transactionId, transferCategoryId(t, tx, stranger.agentId), models.CategorizedByPerson, nil); !errors.Is(err, db.ErrNotFound) {
+			t.Errorf("marking another agent's transaction a transfer: %v", err)
+		}
+		if _, err := tx.SetTransactionCategorization(owner.agentId, transactionId, transferCategoryId(t, tx, stranger.agentId), models.CategorizedByPerson, nil); !errors.Is(err, db.ErrNotFound) {
+			t.Errorf("another agent's transfer category must not be assigned: %v", err)
 		}
 		if _, err := tx.ApplyFinanceSync(stranger.agentId, owner.sourceId, sampleFinanceSync(), "2026-09-12"); !errors.Is(err, db.ErrNotFound) {
 			t.Errorf("ApplyFinanceSync into another agent's source: %v", err)
@@ -590,10 +626,10 @@ func TestFinanceRowsAreTheirOwnersOnly(t *testing.T) {
 			AssetIDs: []string{assets[0].ID}}); !errors.Is(err, db.ErrNotFound) {
 			t.Errorf("CreateSavingsTarget with another agent's asset: %v", err)
 		}
-		if _, err := tx.CreateSpendingRule(&models.SpendingRule{AgentID: stranger.agentId, MatchText: "grocer", IsTransfer: true}); err != nil {
+		if _, err := tx.CreateSpendingRule(&models.SpendingRule{AgentID: stranger.agentId, MatchText: "grocer", SpendingCategoryID: transferCategoryId(t, tx, stranger.agentId)}); err != nil {
 			t.Fatalf("the stranger's own rule: %s", err)
 		}
-		if found := financeTransactionsByProviderId(t, tx, owner.agentId); found["transaction-grocer"].IsTransfer || found["transaction-grocer"].SpendingCategoryID != "" {
+		if found := financeTransactionsByProviderId(t, tx, owner.agentId); found["transaction-grocer"].SpendingCategoryID != "" {
 			t.Errorf("another agent's rule must not touch the owner's rows: %+v", found["transaction-grocer"])
 		}
 	})
@@ -666,8 +702,8 @@ func TestPersonDecisionsFollowAPendingTransactionThatPosts(t *testing.T) {
 				t.Fatalf("SetTransactionCategorization: %s", err)
 			}
 		}
-		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["plaid-pending-move"].ID, true, models.TransferMarkedByPerson); err != nil {
-			t.Fatalf("MarkFinanceTransactionTransfer: %s", err)
+		if _, err := tx.SetTransactionCategorization(fixture.agentId, found["plaid-pending-move"].ID, transferCategoryId(t, tx, fixture.agentId), models.CategorizedByPerson, nil); err != nil {
+			t.Fatalf("SetTransactionCategorization: %s", err)
 		}
 	})
 
@@ -724,7 +760,7 @@ func TestPersonDecisionsFollowAPendingTransactionThatPosts(t *testing.T) {
 				t.Errorf("%s keeps the person's %s: %+v", providerTransactionId, spendingCategoryName, posted)
 			}
 		}
-		if move := found["plaid-posted-move"]; !move.IsTransfer || move.TransferMarkedBy != models.TransferMarkedByPerson {
+		if move := found["plaid-posted-move"]; move.SpendingCategoryID != transferCategoryId(t, tx, fixture.agentId) || move.CategorizedBy != models.CategorizedByPerson {
 			t.Errorf("the person's transfer follows the posted transaction: %+v", move)
 		}
 		if unrelated := found["simple-posted-unrelated"]; unrelated.CategorizedBy != "" {
@@ -766,11 +802,11 @@ func TestDetectFinanceTransfersPairsOneToOne(t *testing.T) {
 			models.CategorizedByPerson, nil); err != nil {
 			t.Fatalf("SetTransactionCategorization: %s", err)
 		}
-		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["already-out"].ID, true, models.TransferMarkedBySpendingRule); err != nil {
-			t.Fatalf("MarkFinanceTransactionTransfer: %s", err)
-		}
-		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["already-in"].ID, true, models.TransferMarkedBySpendingRule); err != nil {
-			t.Fatalf("MarkFinanceTransactionTransfer: %s", err)
+		transferId := byName[finance.SpendingCategoryTransfer]
+		for _, providerTransactionId := range []string{"already-out", "already-in"} {
+			if _, err := tx.SetTransactionCategorization(fixture.agentId, found[providerTransactionId].ID, transferId, models.CategorizedBySpendingRule, nil); err != nil {
+				t.Fatalf("SetTransactionCategorization: %s", err)
+			}
 		}
 		markedCount, err := tx.DetectFinanceTransfers(fixture.agentId, fixture.sourceId, "2026-09-01")
 		if err != nil {
@@ -780,14 +816,15 @@ func TestDetectFinanceTransfersPairsOneToOne(t *testing.T) {
 			t.Errorf("only the savings transfer pairs, got %d marked", markedCount)
 		}
 		found = financeTransactionsByProviderId(t, tx, fixture.agentId)
-		for providerTransactionId, expectedMarkedBy := range map[string]models.TransferMarkedBy{
-			"to-savings": models.TransferMarkedByDetection, "into-savings": models.TransferMarkedByDetection,
+		for providerTransactionId, expectedCategorizedBy := range map[string]models.CategorizedBy{
+			"to-savings": models.CategorizedByTransferDetection, "into-savings": models.CategorizedByTransferDetection,
 			"rent-check": "", "person-spending": "", "refund-in": "", "stray-in": "",
-			"already-out": models.TransferMarkedBySpendingRule, "already-in": models.TransferMarkedBySpendingRule,
+			"already-out": models.CategorizedBySpendingRule, "already-in": models.CategorizedBySpendingRule,
 		} {
 			financeTransaction := found[providerTransactionId]
-			if financeTransaction.TransferMarkedBy != expectedMarkedBy || financeTransaction.IsTransfer != (expectedMarkedBy != "") {
-				t.Errorf("%s: transfer %v marked by %q, want %q", providerTransactionId, financeTransaction.IsTransfer, financeTransaction.TransferMarkedBy, expectedMarkedBy)
+			isTransfer := financeTransaction.SpendingCategoryID == transferId
+			if isTransfer != (expectedCategorizedBy != "") || (isTransfer && financeTransaction.CategorizedBy != expectedCategorizedBy) {
+				t.Errorf("%s: transfer %v by %q, want by %q", providerTransactionId, isTransfer, financeTransaction.CategorizedBy, expectedCategorizedBy)
 			}
 		}
 	})
@@ -815,14 +852,15 @@ func TestDetectFinanceTransfersPairsWithAProviderMarkedSide(t *testing.T) {
 			t.Fatalf("DetectFinanceTransfers: %s", err)
 		}
 		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
+		transferId := transferCategoryId(t, tx, fixture.agentId)
 		pairedCredits := 0
 		for _, providerTransactionId := range []string{"card-payment-in", "second-credit"} {
-			if found[providerTransactionId].IsTransfer {
+			if found[providerTransactionId].SpendingCategoryID == transferId {
 				pairedCredits++
 			}
 		}
-		if !found["card-payment-out"].IsTransfer || found["card-payment-out"].TransferMarkedBy != models.TransferMarkedByDetection {
-			t.Errorf("the payment out: transfer %v marked by %q, want paired", found["card-payment-out"].IsTransfer, found["card-payment-out"].TransferMarkedBy)
+		if paymentOut := found["card-payment-out"]; paymentOut.SpendingCategoryID != transferId || paymentOut.CategorizedBy != models.CategorizedByTransferDetection {
+			t.Errorf("the payment out: %+v, want paired", paymentOut)
 		}
 		if pairedCredits != 1 {
 			t.Errorf("%d card credits paired with the one payment, want exactly 1", pairedCredits)
@@ -903,8 +941,10 @@ func TestDetectFinanceTransfersWaitsForPendingToPost(t *testing.T) {
 			t.Fatalf("the posted pair: %v %d", err, markedCount)
 		}
 		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
-		if !found["payment-posted"].IsTransfer || !found["payment-in"].IsTransfer || found["payment-pending"].IsTransfer {
-			t.Errorf("posted %v, in %v, pending %v", found["payment-posted"].IsTransfer, found["payment-in"].IsTransfer, found["payment-pending"].IsTransfer)
+		transferId := transferCategoryId(t, tx, fixture.agentId)
+		if found["payment-posted"].SpendingCategoryID != transferId || found["payment-in"].SpendingCategoryID != transferId ||
+			found["payment-pending"].SpendingCategoryID == transferId {
+			t.Errorf("posted %+v, in %+v, pending %+v", found["payment-posted"], found["payment-in"], found["payment-pending"])
 		}
 	})
 }

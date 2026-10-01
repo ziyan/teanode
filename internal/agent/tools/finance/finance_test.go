@@ -798,3 +798,141 @@ func TestFinanceToolDoesNotSyncTheStatementSource(test *testing.T) {
 		}
 	}
 }
+
+// Transfer is a spending category to the tool too: named transfer, it
+// marks a transaction a transfer through categorize_transaction, a rule
+// can assign it, and the cards say transfer rather than filing it. There
+// is no operation of its own for it any more.
+func TestFinanceToolMarksATransferByItsSpendingCategory(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"SpendingCategories":    `[{"id":"category-dining","spendingCategoryName":"dining"},{"id":"category-transfer","spendingCategoryName":"transfer","isTransfer":true}]`,
+		"FinanceTransactions":   `{"financeTransactions":[{"id":"transaction-one","postedOn":"2026-09-12","amount":"-500","currencyCode":"USD","description":"ONLINE PAYMENT"}],"nextCursor":""}`,
+		"CategorizeTransaction": `{"financeTransaction":{"id":"transaction-one","spendingCategoryId":"category-transfer","categorizedBy":"person"}}`,
+		"CreateSpendingRule":    `{"id":"rule-one","matchText":"online payment","spendingCategoryId":"category-transfer"}`,
+	}}
+	if _, err := call(test, operations, `{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"Transfer"}`); err != nil {
+		test.Fatal(err)
+	}
+	if sent := operations.variables[len(operations.variables)-1]; sent["spendingCategoryId"] != "category-transfer" {
+		test.Errorf("sent %v", sent)
+	}
+	if _, err := call(test, operations, `{"operation":"create_spending_rule","match_text":"online payment","spending_category_id":"transfer"}`); err != nil {
+		test.Fatal(err)
+	}
+	if sent := operations.variables[len(operations.variables)-1]; sent["spendingCategoryId"] != "category-transfer" || sent["isTransfer"] != nil {
+		test.Errorf("sent %v", sent)
+	}
+	if _, err := call(test, operations, `{"operation":"create_spending_rule","match_text":"online payment"}`); err == nil {
+		test.Error("a spending rule with no spending category was sent")
+	}
+
+	ctx := tools.WithRun(context.Background(), &fakeRun{operations: operations})
+	tool := financeTool(test)
+	for arguments, wanted := range map[string]string{
+		`{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"category-transfer"}`: "as a transfer between their own accounts",
+		`{"operation":"create_spending_rule","match_text":"online payment","spending_category_id":"category-transfer"}`:                "marks it a transfer",
+		`{"operation":"create_spending_rule","match_text":"bistro","spending_category_id":"category-dining"}`:                          `files it under "dining"`,
+	} {
+		if line := tool.PreviewLine(ctx, json.RawMessage(arguments)); !strings.Contains(line, wanted) {
+			test.Errorf("%s: the card %q does not say %s", arguments, line, wanted)
+		}
+	}
+	if properties := tool.Parameters["properties"].(map[string]any); properties["is_transfer"] != nil {
+		test.Error("is_transfer is still an argument")
+	}
+}
+
+// The word transfer is the transfer category, for the call and its card,
+// even beside a spending category the person named transfer themselves,
+// which the built-in one was named around. Their own is still theirs by
+// its id, and by any other name.
+func TestFinanceToolTransferIsTheTransferCategory(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"SpendingCategories": `[{"id":"category-own-transfer","spendingCategoryName":"transfer"},` +
+			`{"id":"category-transfer","spendingCategoryName":"transfer between own accounts","isTransfer":true}]`,
+		"FinanceTransactions":   `{"financeTransactions":[{"id":"transaction-one","postedOn":"2026-09-12","amount":"-500","currencyCode":"USD","description":"ONLINE PAYMENT"}],"nextCursor":""}`,
+		"CategorizeTransaction": `{"financeTransaction":{"id":"transaction-one","spendingCategoryId":"category-transfer","categorizedBy":"person"}}`,
+		"CreateSpendingRule":    `{"id":"rule-one","matchText":"online payment","spendingCategoryId":"category-transfer"}`,
+	}}
+	for _, arguments := range []string{
+		`{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"Transfer"}`,
+		`{"operation":"create_spending_rule","match_text":"online payment","spending_category_id":" transfer"}`,
+	} {
+		if _, err := call(test, operations, arguments); err != nil {
+			test.Fatal(err)
+		}
+		if sent := operations.variables[len(operations.variables)-1]; sent["spendingCategoryId"] != "category-transfer" {
+			test.Errorf("%s sent %v", arguments, sent)
+		}
+	}
+	if _, err := call(test, operations, `{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"category-own-transfer"}`); err != nil {
+		test.Fatal(err)
+	}
+	if sent := operations.variables[len(operations.variables)-1]; sent["spendingCategoryId"] != "category-own-transfer" {
+		test.Errorf("the person's own transfer by its id sent %v", sent)
+	}
+
+	ctx := tools.WithRun(context.Background(), &fakeRun{operations: operations})
+	tool := financeTool(test)
+	for arguments, wanted := range map[string]string{
+		`{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"transfer"}`:              "as a transfer between their own accounts",
+		`{"operation":"create_spending_rule","match_text":"online payment","spending_category_id":"TRANSFER"}`:                             "marks it a transfer",
+		`{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"category-own-transfer"}`: `as "transfer"`,
+	} {
+		if line := tool.PreviewLine(ctx, json.RawMessage(arguments)); !strings.Contains(line, wanted) {
+			test.Errorf("%s: the card %q does not say %s", arguments, line, wanted)
+		}
+	}
+}
+
+// mark_transfer, from before transfer was a spending category, is answered
+// with how a transfer is marked now, sends nothing, and is not put to the
+// person for approval.
+func TestFinanceToolAnswersMarkTransfer(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{}
+	arguments := `{"operation":"mark_transfer","finance_transaction_id":"transaction-one","is_transfer":true}`
+	result, err := call(test, operations, arguments)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(result.Content, "categorize_transaction") || !strings.Contains(result.Content, "spending_category_id transfer") {
+		test.Errorf("it does not say how to mark a transfer: %s", result.Content)
+	}
+	if len(operations.documents) != 0 {
+		test.Errorf("mark_transfer sent %d documents", len(operations.documents))
+	}
+	if risk := financeTool(test).RiskFor(json.RawMessage(arguments)); risk != tools.RiskRead {
+		test.Errorf("mark_transfer is %s, not read", risk)
+	}
+}
+
+// is_transfer on a spending rule or a transaction was the transfer flag.
+// Sent with something in it, it is refused, pointing to the transfer
+// category, rather than dropped as unread while the model says the rule
+// changed; sent false, as a model filling in every argument does, it is
+// dropped like any empty argument.
+func TestFinanceToolRefusesTheTransferFlag(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"UpdateSpendingRule": `{"id":"rule-one","matchText":"online payment","spendingCategoryId":"category-dining"}`,
+	}}
+	for _, arguments := range []string{
+		`{"operation":"update_spending_rule","spending_rule_id":"rule-one","is_transfer":true}`,
+		`{"operation":"create_spending_rule","match_text":"online payment","spending_category_id":"category-dining","is_transfer":true}`,
+		`{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","is_transfer":true}`,
+	} {
+		_, err := call(test, operations, arguments)
+		if err == nil || !strings.Contains(err.Error(), "spending_category_id transfer instead of is_transfer") {
+			test.Errorf("%s answered %v", arguments, err)
+		}
+	}
+	if len(operations.documents) != 0 {
+		test.Errorf("a refused call sent %d documents", len(operations.documents))
+	}
+	if _, err := call(test, operations, `{"operation":"update_spending_rule","spending_rule_id":"rule-one","match_text":"online payment","is_transfer":false}`); err != nil {
+		test.Errorf("an empty is_transfer was refused: %v", err)
+	}
+}

@@ -204,12 +204,10 @@ type FinanceMutation interface {
 
 	// Give a finance transaction a spending category, as the person's own
 	// choice, which nothing overwrites; optionally make a spending rule
-	// for its merchant too.
+	// for its merchant too. The transfer category (isTransfer in
+	// SpendingCategories) makes it a transfer between the person's own
+	// accounts, neither spending nor income; any other takes that away.
 	CategorizeTransaction(ctx context.Context, arguments CategorizeTransactionArguments) (*CategorizeTransactionView, error)
-
-	// Mark a finance transaction as a transfer between the person's own
-	// accounts, or not, as the person's own choice.
-	MarkTransfer(ctx context.Context, arguments MarkTransferArguments) (*models.FinanceTransaction, error)
 
 	// Set a spending category's monthly budget from a month on.
 	SetBudget(ctx context.Context, arguments SetBudgetArguments) (*models.Budget, error)
@@ -408,7 +406,7 @@ type FinanceTransactionsArguments struct {
 	SpendingCategoryID string `json:"spendingCategoryId" graphapi:"nullable"`
 
 	// IsUncategorized keeps only finance transactions with no spending
-	// category that are not transfers.
+	// category; a transfer has the transfer category.
 	IsUncategorized *bool `json:"isUncategorized" graphapi:"nullable"`
 
 	// Limit is at most 200; zero is 50. After is the nextCursor of the
@@ -1475,7 +1473,7 @@ func convertSpendingGroups(tx db.Transaction, converter *rates.Converter, agentI
 	after := ""
 	for scanned := 0; scanned < financeTransactionsScanned; {
 		page, err := tx.ListFinanceTransactions(agentId, &db.FinanceTransactionFilter{
-			From: filter.From, To: filter.To, FinanceAccountID: filter.FinanceAccountID,
+			From: filter.From, To: filter.To, FinanceAccountID: filter.FinanceAccountID, IsTransferExcluded: true,
 			Limit: db.FinanceTransactionLimitMost, After: after,
 		})
 		if err != nil {
@@ -1483,7 +1481,7 @@ func convertSpendingGroups(tx db.Transaction, converter *rates.Converter, agentI
 		}
 		for _, financeTransaction := range page.FinanceTransactions {
 			scanned++
-			if financeTransaction.IsTransfer || !isForeign[financeTransaction.CurrencyCode] || groups.unconverted[financeTransaction.CurrencyCode] {
+			if !isForeign[financeTransaction.CurrencyCode] || groups.unconverted[financeTransaction.CurrencyCode] {
 				continue
 			}
 			converted, isConverted, err := convertOrSkip(converter, financeTransaction.Amount, financeTransaction.CurrencyCode, currencyCode, financeTransaction.PostedOn)

@@ -68,7 +68,10 @@ func (self *previewLookup) spendingCategoryName(spendingCategoryId string) strin
 // spendingCategoryFor is the person's spending category given by its id or
 // by its name, in any case. The command line takes either, and a model
 // that asked by name was refused and had to list the spending categories
-// first to learn the id.
+// first to learn the id. Transfer is the transfer category whatever it is
+// called: a person who already had a "transfer" of their own keeps it,
+// and the built-in one beside it is named something else, but transfer is
+// the word the tool's description gives for marking one.
 func (self *previewLookup) spendingCategoryFor(idOrName string) *client.SpendingCategory {
 	if idOrName == "" || !self.read("SpendingCategories", nil, &self.spendingCategories) {
 		return nil
@@ -78,12 +81,26 @@ func (self *previewLookup) spendingCategoryFor(idOrName string) *client.Spending
 			return spendingCategory
 		}
 	}
+	if strings.EqualFold(strings.TrimSpace(idOrName), "transfer") {
+		for _, spendingCategory := range self.spendingCategories {
+			if spendingCategory.IsTransfer {
+				return spendingCategory
+			}
+		}
+	}
 	for _, spendingCategory := range self.spendingCategories {
 		if strings.EqualFold(strings.TrimSpace(spendingCategory.SpendingCategoryName), strings.TrimSpace(idOrName)) {
 			return spendingCategory
 		}
 	}
 	return nil
+}
+
+// isTransferSpendingCategory says the spending category is the transfer
+// category; false when it cannot be read.
+func (self *previewLookup) isTransferSpendingCategory(idOrName string) bool {
+	spendingCategory := self.spendingCategoryFor(idOrName)
+	return spendingCategory != nil && spendingCategory.IsTransfer
 }
 
 // isIncomeSpendingCategory says the spending category is income, whose
@@ -215,12 +232,10 @@ func (self *previewLookup) transaction(financeTransactionId string) string {
 func (self *previewLookup) ruleEffect(call map[string]any) string {
 	spendingCategoryId := text(call, "spending_category_id")
 	switch {
-	case spendingCategoryId != "" && isTrue(call, "is_transfer"):
-		return "files it under " + self.spendingCategoryName(spendingCategoryId) + " and marks it a transfer"
+	case self.isTransferSpendingCategory(spendingCategoryId):
+		return "marks it a transfer between their own accounts"
 	case spendingCategoryId != "":
 		return "files it under " + self.spendingCategoryName(spendingCategoryId)
-	case isTrue(call, "is_transfer"):
-		return "marks it a transfer"
 	}
 	return "files it under no spending category"
 }

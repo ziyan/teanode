@@ -30,6 +30,14 @@ const (
 	SpendingCategoryOther             = "other"
 )
 
+// The built-in transfer category's name, and the name it takes instead for
+// a person who already has a spending category called transfer, which
+// stays theirs. It is found by its flag, never by either name.
+const (
+	SpendingCategoryTransfer         = "transfer"
+	SpendingCategoryTransferFallback = "transfer between own accounts"
+)
+
 // ProviderCategoryMappingVersion names the mapping below. Raised whenever
 // the mapping changes, so a sync judges again the finance transactions the
 // earlier mapping categorized: version 2 added education, children,
@@ -191,7 +199,7 @@ var merchantCodeRanges = []merchantCodeRange{
 
 // MapProviderCategory turns a provider category into a default spending
 // category name, and says whether it is a transfer instead of spending or
-// income. Plaid's personal finance category arrives as primary and
+// income, which takes the agent's transfer category. Plaid's personal finance category arrives as primary and
 // detailed; SimpleFIN's merchant category code arrives as detailed only,
 // written "mcc:5411"; an imported statement's OFX transaction type arrives
 // as detailed, written "ofx:PAYMENT", with the account's side as primary.

@@ -203,3 +203,57 @@ func TestCompleteFinanceRepairKeepsTheLastError(test *testing.T) {
 		}
 	})
 }
+
+// Transfer is a spending category: categorizing a transaction as it marks
+// a transfer, with a spending rule for its merchant when asked, and any
+// other spending category takes the mark away. The transfer category is
+// built in, so deleting it, making it income or budgeting it is refused.
+func TestCategorizeTransactionAsTransfer(test *testing.T) {
+	fixture := newFinanceFixture(test, true)
+	_, _, transactions := fixture.seedFinanceSource(test)
+	resolver := fixture.resolver
+	isRuleWanted, isIncome := true, true
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		categories, err := resolver.SpendingCategories(ctx)
+		if err != nil {
+			test.Fatal(err)
+		}
+		var transferCategory, otherCategory *models.SpendingCategory
+		for _, category := range categories {
+			if category.IsTransfer {
+				transferCategory = category
+			} else if otherCategory == nil && !category.IsIncome {
+				otherCategory = category
+			}
+		}
+		if transferCategory == nil || otherCategory == nil {
+			test.Fatalf("the transfer category and another: %+v", categories)
+		}
+		categorized, err := resolver.CategorizeTransaction(ctx, CategorizeTransactionArguments{
+			FinanceTransactionID: transactions[0].ID, SpendingCategoryID: transferCategory.ID, ShouldCreateSpendingRule: &isRuleWanted,
+		})
+		if err != nil || categorized.FinanceTransaction.SpendingCategoryID != transferCategory.ID ||
+			categorized.FinanceTransaction.CategorizedBy != models.CategorizedByPerson ||
+			categorized.SpendingRule == nil || categorized.SpendingRule.SpendingCategoryID != transferCategory.ID {
+			test.Fatalf("marked a transfer by the person, with a rule to the transfer category: %+v %v", categorized, err)
+		}
+		recategorized, err := resolver.CategorizeTransaction(ctx, CategorizeTransactionArguments{
+			FinanceTransactionID: transactions[0].ID, SpendingCategoryID: otherCategory.ID,
+		})
+		if err != nil || recategorized.FinanceTransaction.SpendingCategoryID != otherCategory.ID {
+			test.Errorf("another spending category takes the mark away: %+v %v", recategorized, err)
+		}
+		if _, err := resolver.DeleteSpendingCategory(ctx, SpendingCategoryArguments{SpendingCategoryID: transferCategory.ID}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Errorf("deleting the transfer category answered %v", err)
+		}
+		if _, err := resolver.UpdateSpendingCategory(ctx, UpdateSpendingCategoryArguments{SpendingCategoryID: transferCategory.ID, IsIncome: &isIncome}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Errorf("making the transfer category income answered %v", err)
+		}
+		if _, err := resolver.SetBudget(ctx, SetBudgetArguments{SpendingCategoryID: transferCategory.ID, MonthlyAmount: "100", CurrencyCode: "USD"}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Errorf("budgeting the transfer category answered %v", err)
+		}
+		if _, err := resolver.CreateSpendingRule(ctx, CreateSpendingRuleArguments{MatchText: "online payment"}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Errorf("a spending rule with no spending category answered %v", err)
+		}
+	})
+}

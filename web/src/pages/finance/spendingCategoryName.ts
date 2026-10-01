@@ -32,11 +32,25 @@ const BUILT_IN_SPENDING_CATEGORY_KEYS: Record<string, Key> = {
   'business services': 'finance.builtInSpendingCategory.businessServices',
 }
 
+// The transfer category is found by its flag, never its name: a person
+// who already had a "transfer" of their own keeps it, and the built-in one
+// beside it is named something else. Only the flagged one, still under its
+// built-in name, is shown in the reader's words.
+const TRANSFER_SPENDING_CATEGORY_NAME = 'transfer'
+
 // spendingCategoryDisplayName is how a stored spending category name is
 // shown: a built-in name, exactly as stored, in the reader's words, and
 // anything else as it is. "Groceries" typed by a person is theirs, not the
-// built-in "groceries", and is left alone.
-export function spendingCategoryDisplayName(name: string, translate: (key: Key) => string): string {
+// built-in "groceries", and is left alone. isTransfer says the category is
+// the transfer category.
+export function spendingCategoryDisplayName(
+  name: string,
+  translate: (key: Key) => string,
+  isTransfer = false,
+): string {
+  if (name === TRANSFER_SPENDING_CATEGORY_NAME) {
+    return isTransfer ? translate('finance.builtInSpendingCategory.transfer') : name
+  }
   const key = Object.prototype.hasOwnProperty.call(BUILT_IN_SPENDING_CATEGORY_KEYS, name)
     ? BUILT_IN_SPENDING_CATEGORY_KEYS[name]
     : undefined
@@ -45,7 +59,7 @@ export function spendingCategoryDisplayName(name: string, translate: (key: Key) 
 
 // useSpendingCategoryDisplayName is spendingCategoryDisplayName in the
 // reader's language.
-export function useSpendingCategoryDisplayName(): (name: string) => string {
+export function useSpendingCategoryDisplayName(): (name: string, isTransfer?: boolean) => string {
   const { t } = useTranslation()
-  return (name: string) => spendingCategoryDisplayName(name, t)
+  return (name: string, isTransfer?: boolean) => spendingCategoryDisplayName(name, t, isTransfer)
 }

@@ -17,7 +17,6 @@ import {
   FinanceAccount,
   FinanceTransaction,
   FinanceTransactionPage,
-  MARK_TRANSFER,
   SPENDING_CATEGORIES,
   SpendingCategory,
   amountOf,
@@ -44,8 +43,8 @@ const PAGE_SIZE = 100
 // to a category's month and a narrowed list can be shared; changing one
 // here rewrites the address in place rather than adding a step to Back. Each one's spending
 // category is changed where it is, with the offer to do the same for every
-// transaction from that merchant, and each can be marked a transfer, which
-// takes it out of spending and income.
+// transaction from that merchant. A transfer is the transfer category,
+// chosen the same way, which takes it out of spending and income.
 export function FinanceTransactionsSection() {
   const { t } = useTranslation()
   const toast = useToast()
@@ -202,19 +201,6 @@ export function FinanceTransactionsSection() {
     }
   }
 
-  const markTransfer = async (row: FinanceTransaction, isTransfer: boolean) => {
-    try {
-      const answer = await graphql<{ MarkTransfer: FinanceTransaction }>(MARK_TRANSFER, {
-        financeTransactionId: row.id,
-        isTransfer,
-      })
-      setChanged((previous) => ({ ...previous, [row.id]: answer.MarkTransfer }))
-      toast.done(isTransfer ? t('finance.markedTransfer') : t('finance.unmarkedTransfer'))
-    } catch (caught) {
-      toast.failure(caught, t('finance.failed'))
-    }
-  }
-
   const columns: Column<FinanceTransaction>[] = [
     {
       key: 'postedOn',
@@ -284,23 +270,11 @@ export function FinanceTransactionsSection() {
             label={t('finance.spendingCategory')}
             options={[
               { value: '', label: t('finance.uncategorized') },
-              ...spendingCategoryOptions(categoryList, categoryName, row.spendingCategoryId),
+              ...spendingCategoryOptions(categoryList, categoryName, row.spendingCategoryId, t('finance.transferGroup')),
             ]}
             onChange={(value) => void categorize(row, value)}
           />
         </span>
-      ),
-    },
-    {
-      key: 'isTransfer',
-      header: t('finance.transfer'),
-      render: (row) => (
-        <input
-          type="checkbox"
-          checked={row.isTransfer}
-          aria-label={`${row.merchantName || row.description}: ${t('finance.transfer')}`}
-          onChange={(event) => void markTransfer(row, event.target.checked)}
-        />
       ),
     },
   ]
@@ -365,7 +339,7 @@ export function FinanceTransactionsSection() {
             label={t('finance.spendingCategory')}
             options={[
               { value: '', label: t('finance.allSpendingCategories') },
-              ...spendingCategoryOptions(categoryList, categoryName, filters.spendingCategoryId),
+              ...spendingCategoryOptions(categoryList, categoryName, filters.spendingCategoryId, t('finance.transferGroup')),
             ]}
             // A spending category and "only those without one" cannot both
             // hold, so choosing one lets go of the other.
@@ -439,7 +413,7 @@ export function FinanceTransactionsSection() {
         <FinanceTransactionDialog
           financeTransaction={detailed}
           financeAccount={accountList.find((candidate) => candidate.id === detailed.financeAccountId)}
-          categoryOptions={spendingCategoryOptions(categoryList, categoryName, detailed.spendingCategoryId)}
+          categoryOptions={spendingCategoryOptions(categoryList, categoryName, detailed.spendingCategoryId, t('finance.transferGroup'))}
           onCategorize={(value) => void categorize(detailed, value)}
           onClose={closeDetails}
         />

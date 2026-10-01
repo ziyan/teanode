@@ -282,8 +282,9 @@ func (self *Agent) afterFinanceSync(ctx context.Context, run *Run, source *model
 // applyProviderCategoryMapping gives the finance transactions a sync
 // wrote the default spending category their provider category maps to,
 // where the agent still has a spending category of that name and nothing
-// before it (the person, a spending rule) has categorized them. A mapping
-// that says transfer marks the finance transaction as one.
+// before it (the person, a spending rule, transfer detection) has
+// categorized them. A mapping that says transfer gives the transfer
+// category.
 func applyProviderCategoryMapping(tx db.Transaction, agentId string, financeTransactionIds []string) error {
 	if len(financeTransactionIds) == 0 {
 		return nil
@@ -294,20 +295,27 @@ func applyProviderCategoryMapping(tx db.Transaction, agentId string, financeTran
 	}
 	spendingCategoryIdByName := map[string]string{}
 	for _, spendingCategory := range spendingCategories {
-		spendingCategoryIdByName[strings.ToLower(strings.TrimSpace(spendingCategory.SpendingCategoryName))] = spendingCategory.ID
+		// The transfer category is found by its flag, never by its name,
+		// which the person may change or may have had for one of their own.
+		if !spendingCategory.IsTransfer {
+			spendingCategoryIdByName[strings.ToLower(strings.TrimSpace(spendingCategory.SpendingCategoryName))] = spendingCategory.ID
+		}
+	}
+	transferCategory, err := tx.EnsureTransferSpendingCategory(agentId)
+	if err != nil {
+		return err
 	}
 	for _, financeTransactionId := range financeTransactionIds {
 		financeTransaction, err := tx.GetFinanceTransaction(agentId, financeTransactionId)
 		if err != nil {
 			return err
 		}
-		if financeTransaction == nil || financeTransaction.SpendingCategoryID != "" || financeTransaction.IsTransfer ||
-			financeTransaction.TransferMarkedBy == models.TransferMarkedByPerson || financeTransaction.CategorizedBy == models.CategorizedByPerson {
+		if financeTransaction == nil || financeTransaction.SpendingCategoryID != "" || financeTransaction.CategorizedBy == models.CategorizedByPerson {
 			continue
 		}
 		spendingCategoryName, isTransfer := finance.MapProviderCategory(financeTransaction.ProviderCategoryPrimary, financeTransaction.ProviderCategoryDetailed)
 		if isTransfer {
-			if _, err := tx.MarkFinanceTransactionTransfer(agentId, financeTransaction.ID, true, models.TransferMarkedByProviderCategoryMapping); err != nil {
+			if _, err := tx.SetTransactionCategorization(agentId, financeTransaction.ID, transferCategory.ID, models.CategorizedByProviderCategoryMapping, nil); err != nil {
 				return err
 			}
 			continue
@@ -335,7 +343,12 @@ func remapProviderCategories(tx db.Transaction, agentId string) error {
 		return err
 	}
 	spendingCategoryIdByName := map[string]string{}
+	transferCategoryId := ""
 	for _, spendingCategory := range spendingCategories {
+		if spendingCategory.IsTransfer {
+			transferCategoryId = spendingCategory.ID
+			continue
+		}
 		spendingCategoryIdByName[strings.ToLower(strings.TrimSpace(spendingCategory.SpendingCategoryName))] = spendingCategory.ID
 	}
 	after := ""
@@ -345,7 +358,7 @@ func remapProviderCategories(tx db.Transaction, agentId string) error {
 			return err
 		}
 		for _, financeTransaction := range page.FinanceTransactions {
-			if financeTransaction.CategorizedBy != models.CategorizedByProviderCategoryMapping || financeTransaction.IsTransfer {
+			if financeTransaction.CategorizedBy != models.CategorizedByProviderCategoryMapping || financeTransaction.SpendingCategoryID == transferCategoryId {
 				continue
 			}
 			spendingCategoryName, isTransfer := finance.MapProviderCategory(financeTransaction.ProviderCategoryPrimary, financeTransaction.ProviderCategoryDetailed)

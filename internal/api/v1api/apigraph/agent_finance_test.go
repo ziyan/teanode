@@ -298,7 +298,8 @@ func TestFinanceDataIsTheCallersOwn(test *testing.T) {
 			test.Errorf("the finance source is %+v %v", stored, err)
 		}
 		categories, err := tx.ListSpendingCategories(fixture.ownerAgent.ID)
-		if err != nil || len(categories) != len(finance.DefaultSpendingCategoryNames)+1 {
+		// The defaults, the person's own and the transfer category.
+		if err != nil || len(categories) != len(finance.DefaultSpendingCategoryNames)+2 {
 			test.Errorf("the default spending categories were not made: %d %v", len(categories), err)
 		}
 	})
@@ -367,10 +368,6 @@ func TestFinanceDataIsTheCallersOwn(test *testing.T) {
 			_, err := resolver.CategorizeTransaction(ctx, CategorizeTransactionArguments{FinanceTransactionID: transactions[0].ID})
 			return err
 		},
-		"MarkTransfer": func(ctx context.Context) error {
-			_, err := resolver.MarkTransfer(ctx, MarkTransferArguments{FinanceTransactionID: transactions[0].ID, IsTransfer: true})
-			return err
-		},
 		"SetBudget": func(ctx context.Context) error {
 			_, err := resolver.SetBudget(ctx, SetBudgetArguments{SpendingCategoryID: spendingCategory.ID, MonthlyAmount: "1", CurrencyCode: "USD"})
 			return err
@@ -433,8 +430,9 @@ func TestFinanceDataIsTheCallersOwn(test *testing.T) {
 		if err != nil || len(assets) != 0 {
 			test.Errorf("Assets %v %v", assets, err)
 		}
+		// Only their own transfer category, which every agent has.
 		spendingCategories, err := resolver.SpendingCategories(ctx)
-		if err != nil || len(spendingCategories) != 0 {
+		if err != nil || len(spendingCategories) != 1 || !spendingCategories[0].IsTransfer || spendingCategories[0].AgentID == fixture.ownerAgent.ID {
 			test.Errorf("SpendingCategories %v %v", spendingCategories, err)
 		}
 		spendingRules, err := resolver.SpendingRules(ctx)
@@ -474,7 +472,7 @@ func TestFinanceDataIsTheCallersOwn(test *testing.T) {
 			test.Errorf("the savings targets are %v %v", targets, err)
 		}
 		transaction, err := tx.GetFinanceTransaction(fixture.ownerAgent.ID, transactions[0].ID)
-		if err != nil || transaction.TransferMarkedBy == models.TransferMarkedByPerson || transaction.CategorizedBy == models.CategorizedByPerson {
+		if err != nil || transaction.CategorizedBy == models.CategorizedByPerson {
 			test.Errorf("the transaction is %+v %v", transaction, err)
 		}
 		sources, err := resolver.FinanceSources(ctx)

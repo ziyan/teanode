@@ -35,14 +35,20 @@ type BudgetOperation interface {
 	// DeleteSpendingCategory removes a spending category of the agent,
 	// with its budgets and the spending rules that assign it. Its finance
 	// transactions become uncategorized, the person's choices included,
-	// so they are categorized again.
+	// so they are categorized again. The transfer category is refused.
 	DeleteSpendingCategory(agentId, spendingCategoryId string) error
 
 	// EnsureDefaultSpendingCategories gives an agent with no spending
-	// categories the default list, and does nothing for one that has any:
-	// a person who deleted a default does not get it back. It answers how
-	// many it made.
+	// categories but the transfer category the default list, and does
+	// nothing for one that has any: a person who deleted a default does
+	// not get it back. It makes the transfer category too where it is
+	// missing. It answers how many defaults it made.
 	EnsureDefaultSpendingCategories(agentId string) (int, error)
+
+	// EnsureTransferSpendingCategory is the agent's transfer category,
+	// made when the agent has none: every agent is given one when it is
+	// made, so this only mends one that somehow lost it.
+	EnsureTransferSpendingCategory(agentId string) (*models.SpendingCategory, error)
 
 	// ListSpendingRules is the agent's spending rules in the order they
 	// are tried.
@@ -65,17 +71,18 @@ type BudgetOperation interface {
 	// ApplySpendingRules applies the agent's spending rules to all of its
 	// finance transactions in one statement: each takes the first rule
 	// that matches by priority. A spending category the person chose is
-	// never touched, nor a transfer the person decided about. A spending
-	// category a rule gave that no rule matches any more is cleared, to be
-	// categorized again, and so is a transfer a rule marked. A rule does
-	// not take over a transfer something else marked first, so deleting
-	// the rule leaves that one as it was. It answers how many finance
-	// transactions changed.
+	// never touched. A spending category a rule gave that no rule matches
+	// any more is cleared, to be categorized again, the transfer category
+	// included. A rule does not take over a transfer something else gave
+	// first (transfer detection, the provider category mapping), so
+	// deleting the rule leaves that one as it was. It answers how many
+	// finance transactions changed.
 	ApplySpendingRules(agentId string) (int, error)
 
 	// SetBudget keeps the monthly amount of a spending category from a
 	// month on, replacing the one already set from that same month. On an
-	// income spending category it is the income expected each month.
+	// income spending category it is the income expected each month. The
+	// transfer category, which is neither spending nor income, is refused.
 	SetBudget(budget *models.Budget) (*models.Budget, error)
 
 	// ListBudgets is every budget row of the agent, by spending category
@@ -112,8 +119,8 @@ type BudgetOperation interface {
 
 	// ListSpendingCategoryDays is each day's spending in a month
 	// ("2006-01") per spending category and currency: money out less
-	// refunds in the same spending category, transfers and income
-	// categories left out. Money in that is not categorized is left out
+	// refunds in the same spending category, the transfer category and
+	// income categories left out. Money in that is not categorized is left out
 	// too, since it may be income; money out that is not categorized is
 	// counted under an empty spending category.
 	ListSpendingCategoryDays(agentId, month string) ([]*models.SpendingCategoryDay, error)
@@ -148,6 +155,7 @@ type agentSpendingCategoryModel struct {
 	ParentSpendingCategoryID *string   `gorm:"column:parent_spending_category_id"`
 	IsIncome                 bool      `gorm:"column:is_income"`
 	IsHidden                 bool      `gorm:"column:is_hidden"`
+	IsTransfer               bool      `gorm:"column:is_transfer"`
 	CreatedAt                time.Time `gorm:"column:created_at"`
 	ModifiedAt               time.Time `gorm:"column:modified_at"`
 }
@@ -158,7 +166,7 @@ func (self *agentSpendingCategoryModel) toModel() *models.SpendingCategory {
 	return &models.SpendingCategory{
 		ID: self.ID, AgentID: self.AgentID, SpendingCategoryName: self.SpendingCategoryName,
 		ParentSpendingCategoryID: optionalString(self.ParentSpendingCategoryID), IsIncome: self.IsIncome, IsHidden: self.IsHidden,
-		CreatedAt: self.CreatedAt.In(time.Local), ModifiedAt: self.ModifiedAt.In(time.Local),
+		IsTransfer: self.IsTransfer, CreatedAt: self.CreatedAt.In(time.Local), ModifiedAt: self.ModifiedAt.In(time.Local),
 	}
 }
 
@@ -166,18 +174,27 @@ func spendingCategoryToModel(spendingCategory *models.SpendingCategory) *agentSp
 	return &agentSpendingCategoryModel{
 		ID: spendingCategory.ID, AgentID: spendingCategory.AgentID, SpendingCategoryName: spendingCategory.SpendingCategoryName,
 		ParentSpendingCategoryID: optionalID(spendingCategory.ParentSpendingCategoryID),
-		IsIncome:                 spendingCategory.IsIncome, IsHidden: spendingCategory.IsHidden,
+		IsIncome:                 spendingCategory.IsIncome, IsHidden: spendingCategory.IsHidden, IsTransfer: spendingCategory.IsTransfer,
 		CreatedAt: spendingCategory.CreatedAt, ModifiedAt: spendingCategory.ModifiedAt,
 	}
 }
 
 // validateSpendingCategory checks a spending category before it is
 // written: a name no other of the agent's has, and a parent of the agent's
-// that is itself top-level, since there is one level of parents.
+// that is itself top-level, since there is one level of parents. The
+// transfer category stands alone: not income, with no parent and no
+// children, since a transfer counted as income, or spending filed under
+// it, would be counted where transfers are left out.
 func (self *transaction) validateSpendingCategory(spendingCategory *models.SpendingCategory) error {
 	spendingCategory.SpendingCategoryName = strings.TrimSpace(spendingCategory.SpendingCategoryName)
 	if spendingCategory.AgentID == "" || spendingCategory.SpendingCategoryName == "" {
 		return fmt.Errorf("%w: a spending category needs an agent and a name", ErrInvalidArguments)
+	}
+	if spendingCategory.IsTransfer && spendingCategory.IsIncome {
+		return fmt.Errorf("%w: the transfer category is neither spending nor income", ErrInvalidArguments)
+	}
+	if spendingCategory.IsTransfer && spendingCategory.ParentSpendingCategoryID != "" {
+		return fmt.Errorf("%w: the transfer category cannot have a parent", ErrInvalidArguments)
 	}
 	var sameNameCount int64
 	if err := self.tx.Model(&agentSpendingCategoryModel{}).
@@ -203,6 +220,9 @@ func (self *transaction) validateSpendingCategory(spendingCategory *models.Spend
 	}
 	if parent.ParentSpendingCategoryID != "" {
 		return fmt.Errorf("%w: a spending category's parent must not have a parent of its own", ErrInvalidArguments)
+	}
+	if parent.IsTransfer {
+		return fmt.Errorf("%w: the transfer category cannot have children", ErrInvalidArguments)
 	}
 	if spendingCategory.ID != "" {
 		var childCount int64
@@ -243,7 +263,9 @@ func (self *transaction) GetSpendingCategory(agentId, spendingCategoryId string)
 
 func (self *transaction) CreateSpendingCategory(spendingCategory *models.SpendingCategory) (*models.SpendingCategory, error) {
 	created := *spendingCategory
-	created.ID = ""
+	// The transfer category is built in, one per agent, and made only by
+	// EnsureTransferSpendingCategory.
+	created.ID, created.IsTransfer = "", false
 	if err := self.validateSpendingCategory(&created); err != nil {
 		return nil, err
 	}
@@ -272,7 +294,7 @@ func (self *transaction) UpdateSpendingCategory(agentId, spendingCategoryId stri
 	if err := modify(&after); err != nil {
 		return nil, err
 	}
-	after.ID, after.AgentID, after.CreatedAt = before.ID, before.AgentID, before.CreatedAt
+	after.ID, after.AgentID, after.CreatedAt, after.IsTransfer = before.ID, before.AgentID, before.CreatedAt, before.IsTransfer
 	if err := self.validateSpendingCategory(&after); err != nil {
 		return nil, err
 	}
@@ -297,6 +319,9 @@ func (self *transaction) DeleteSpendingCategory(agentId, spendingCategoryId stri
 	if before == nil {
 		return ErrNotFound
 	}
+	if before.IsTransfer {
+		return fmt.Errorf("%w: the transfer category is built in and cannot be deleted", ErrInvalidArguments)
+	}
 	return self.applyMutation(models.AuditResourceSpendingCategory, spendingCategoryId, models.AuditActionDelete, before, nil, func(tx *gorm.DB) error {
 		// The foreign key would leave categorized_by saying who chose a
 		// spending category that is gone, and the transaction would never
@@ -314,8 +339,11 @@ func (self *transaction) EnsureDefaultSpendingCategories(agentId string) (int, e
 	if agentId == "" {
 		return 0, fmt.Errorf("%w: default spending categories need an agent", ErrInvalidArguments)
 	}
+	if _, err := self.EnsureTransferSpendingCategory(agentId); err != nil {
+		return 0, err
+	}
 	var existingCount int64
-	if err := self.tx.Model(&agentSpendingCategoryModel{}).Where(`"agent_id" = ?`, agentId).Count(&existingCount).Error; err != nil {
+	if err := self.tx.Model(&agentSpendingCategoryModel{}).Where(`"agent_id" = ? AND NOT "is_transfer"`, agentId).Count(&existingCount).Error; err != nil {
 		return 0, err
 	}
 	if existingCount > 0 {
@@ -332,6 +360,48 @@ func (self *transaction) EnsureDefaultSpendingCategories(agentId string) (int, e
 	return len(finance.DefaultSpendingCategoryNames), nil
 }
 
+func (self *transaction) EnsureTransferSpendingCategory(agentId string) (*models.SpendingCategory, error) {
+	if agentId == "" {
+		return nil, fmt.Errorf("%w: the transfer category needs an agent", ErrInvalidArguments)
+	}
+	found, err := self.transferSpendingCategory(agentId)
+	if err != nil || found != nil {
+		return found, err
+	}
+	// A spending category the person named transfer, in any case, stays
+	// theirs, as migration 0143 left it.
+	name := finance.SpendingCategoryTransfer
+	var sameNameCount int64
+	if err := self.tx.Model(&agentSpendingCategoryModel{}).
+		Where(`"agent_id" = ? AND lower("spending_category_name") = ?`, agentId, finance.SpendingCategoryTransfer).
+		Count(&sameNameCount).Error; err != nil {
+		return nil, err
+	}
+	if sameNameCount > 0 {
+		name = finance.SpendingCategoryTransferFallback
+	}
+	now := time.Now()
+	created := &models.SpendingCategory{ID: newID(), AgentID: agentId, SpendingCategoryName: name, IsTransfer: true, CreatedAt: now, ModifiedAt: now}
+	if err := self.applyMutation(models.AuditResourceSpendingCategory, created.ID, models.AuditActionCreate, nil, created, func(tx *gorm.DB) error {
+		return tx.Create(spendingCategoryToModel(created)).Error
+	}); err != nil {
+		return nil, err
+	}
+	return self.transferSpendingCategory(agentId)
+}
+
+// transferSpendingCategory is the agent's transfer category, or nil.
+func (self *transaction) transferSpendingCategory(agentId string) (*models.SpendingCategory, error) {
+	var found []agentSpendingCategoryModel
+	if err := self.tx.Where(`"agent_id" = ? AND "is_transfer"`, agentId).Limit(1).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return found[0].toModel(), nil
+}
+
 // --- spending rules --------------------------------------------------------
 
 type agentSpendingRuleModel struct {
@@ -341,8 +411,7 @@ type agentSpendingRuleModel struct {
 	FinanceAccountID   *string   `gorm:"column:finance_account_id"`
 	MinimumAmount      *string   `gorm:"column:minimum_amount"`
 	MaximumAmount      *string   `gorm:"column:maximum_amount"`
-	SpendingCategoryID *string   `gorm:"column:spending_category_id"`
-	IsTransfer         bool      `gorm:"column:is_transfer"`
+	SpendingCategoryID string    `gorm:"column:spending_category_id"`
 	RulePriority       int       `gorm:"column:rule_priority"`
 	CreatedAt          time.Time `gorm:"column:created_at"`
 	ModifiedAt         time.Time `gorm:"column:modified_at"`
@@ -354,7 +423,7 @@ func (self *agentSpendingRuleModel) toModel() *models.SpendingRule {
 	return &models.SpendingRule{
 		ID: self.ID, AgentID: self.AgentID, MatchText: self.MatchText, FinanceAccountID: optionalString(self.FinanceAccountID),
 		MinimumAmount: optionalString(self.MinimumAmount), MaximumAmount: optionalString(self.MaximumAmount),
-		SpendingCategoryID: optionalString(self.SpendingCategoryID), IsTransfer: self.IsTransfer, RulePriority: self.RulePriority,
+		SpendingCategoryID: self.SpendingCategoryID, RulePriority: self.RulePriority,
 		CreatedAt: self.CreatedAt.In(time.Local), ModifiedAt: self.ModifiedAt.In(time.Local),
 	}
 }
@@ -367,8 +436,8 @@ func (self *transaction) validateSpendingRule(spendingRule *models.SpendingRule)
 	if spendingRule.AgentID == "" || spendingRule.MatchText == "" {
 		return nil, fmt.Errorf("%w: a spending rule needs an agent and a text to match", ErrInvalidArguments)
 	}
-	if spendingRule.SpendingCategoryID == "" && !spendingRule.IsTransfer {
-		return nil, fmt.Errorf("%w: a spending rule assigns a spending category, marks a transfer, or both", ErrInvalidArguments)
+	if spendingRule.SpendingCategoryID == "" {
+		return nil, fmt.Errorf("%w: a spending rule assigns a spending category; the transfer category marks transfers", ErrInvalidArguments)
 	}
 	minimumAmount, err := canonicalOptionalAmount("minimum amount", spendingRule.MinimumAmount)
 	if err != nil {
@@ -379,14 +448,12 @@ func (self *transaction) validateSpendingRule(spendingRule *models.SpendingRule)
 		return nil, err
 	}
 	spendingRule.MinimumAmount, spendingRule.MaximumAmount = optionalString(minimumAmount), optionalString(maximumAmount)
-	if spendingRule.SpendingCategoryID != "" {
-		spendingCategory, err := self.GetSpendingCategory(spendingRule.AgentID, spendingRule.SpendingCategoryID)
-		if err != nil {
-			return nil, err
-		}
-		if spendingCategory == nil {
-			return nil, ErrNotFound
-		}
+	spendingCategory, err := self.GetSpendingCategory(spendingRule.AgentID, spendingRule.SpendingCategoryID)
+	if err != nil {
+		return nil, err
+	}
+	if spendingCategory == nil {
+		return nil, ErrNotFound
 	}
 	if spendingRule.FinanceAccountID != "" {
 		account, err := self.GetFinanceAccount(spendingRule.AgentID, spendingRule.FinanceAccountID)
@@ -400,8 +467,8 @@ func (self *transaction) validateSpendingRule(spendingRule *models.SpendingRule)
 	return &agentSpendingRuleModel{
 		ID: spendingRule.ID, AgentID: spendingRule.AgentID, MatchText: spendingRule.MatchText,
 		FinanceAccountID: optionalID(spendingRule.FinanceAccountID), MinimumAmount: minimumAmount, MaximumAmount: maximumAmount,
-		SpendingCategoryID: optionalID(spendingRule.SpendingCategoryID), IsTransfer: spendingRule.IsTransfer,
-		RulePriority: spendingRule.RulePriority, CreatedAt: spendingRule.CreatedAt, ModifiedAt: spendingRule.ModifiedAt,
+		SpendingCategoryID: spendingRule.SpendingCategoryID,
+		RulePriority:       spendingRule.RulePriority, CreatedAt: spendingRule.CreatedAt, ModifiedAt: spendingRule.ModifiedAt,
 	}, nil
 }
 
@@ -472,8 +539,7 @@ func (self *transaction) UpdateSpendingRule(agentId, spendingRuleId string, modi
 		return tx.Model(&agentSpendingRuleModel{}).Where(`"agent_id" = ? AND "id" = ?`, agentId, spendingRuleId).Updates(map[string]any{
 			"match_text": model.MatchText, "finance_account_id": model.FinanceAccountID,
 			"minimum_amount": model.MinimumAmount, "maximum_amount": model.MaximumAmount,
-			"spending_category_id": model.SpendingCategoryID, "is_transfer": model.IsTransfer,
-			"rule_priority": model.RulePriority, "modified_at": model.ModifiedAt,
+			"spending_category_id": model.SpendingCategoryID, "rule_priority": model.RulePriority, "modified_at": model.ModifiedAt,
 		}).Error
 	}); err != nil {
 		return nil, err
@@ -504,40 +570,36 @@ func (self *transaction) DeleteSpendingRule(agentId, spendingRuleId string) erro
 func (self *transaction) ApplySpendingRules(agentId string) (int, error) {
 	// For every finance transaction of the agent, the first rule by
 	// priority that matches it, if any; then what that decides, keeping
-	// the person's choices; then only the rows whose outcome differs.
+	// the person's choices and the transfers something other than a rule
+	// gave; then only the rows whose outcome differs.
 	updated := self.tx.Exec(`UPDATE "agent_finance_transaction" AS "target" SET
 			"spending_category_id" = "decided"."spending_category_id",
 			"categorized_by" = "decided"."categorized_by",
 			"categorization_confidence" = "decided"."categorization_confidence",
-			"is_transfer" = "decided"."is_transfer",
-			"transfer_marked_by" = "decided"."transfer_marked_by",
 			"categorize_attempted_at" = CASE WHEN "decided"."categorized_by" = 'spending_rule' THEN NULL ELSE "target"."categorize_attempted_at" END,
 			"modified_at" = @modified_at
 		FROM (
 			SELECT "candidate"."id",
-				CASE WHEN "candidate"."categorized_by" = 'person' THEN "candidate"."spending_category_id"
+				CASE WHEN "kept"."is_kept" THEN "candidate"."spending_category_id"
 				     WHEN "matched"."spending_category_id" IS NOT NULL THEN "matched"."spending_category_id"
 				     WHEN "candidate"."categorized_by" = 'spending_rule' THEN NULL
 				     ELSE "candidate"."spending_category_id" END AS "spending_category_id",
-				CASE WHEN "candidate"."categorized_by" = 'person' THEN "candidate"."categorized_by"
+				CASE WHEN "kept"."is_kept" THEN "candidate"."categorized_by"
 				     WHEN "matched"."spending_category_id" IS NOT NULL THEN 'spending_rule'
 				     WHEN "candidate"."categorized_by" = 'spending_rule' THEN ''
 				     ELSE "candidate"."categorized_by" END AS "categorized_by",
-				CASE WHEN "candidate"."categorized_by" = 'person' THEN "candidate"."categorization_confidence"
+				CASE WHEN "kept"."is_kept" THEN "candidate"."categorization_confidence"
 				     WHEN "matched"."spending_category_id" IS NOT NULL OR "candidate"."categorized_by" = 'spending_rule' THEN NULL
-				     ELSE "candidate"."categorization_confidence" END AS "categorization_confidence",
-				CASE WHEN "candidate"."transfer_marked_by" = 'person' THEN "candidate"."is_transfer"
-				     WHEN "matched"."is_transfer" THEN true
-				     WHEN "candidate"."transfer_marked_by" = 'spending_rule' THEN false
-				     ELSE "candidate"."is_transfer" END AS "is_transfer",
-				CASE WHEN "candidate"."transfer_marked_by" = 'person' THEN "candidate"."transfer_marked_by"
-				     WHEN "matched"."is_transfer" AND NOT "candidate"."is_transfer" THEN 'spending_rule'
-				     WHEN "matched"."is_transfer" THEN "candidate"."transfer_marked_by"
-				     WHEN "candidate"."transfer_marked_by" = 'spending_rule' THEN ''
-				     ELSE "candidate"."transfer_marked_by" END AS "transfer_marked_by"
+				     ELSE "candidate"."categorization_confidence" END AS "categorization_confidence"
 			FROM "agent_finance_transaction" AS "candidate"
+			LEFT JOIN "agent_spending_category" AS "current_category"
+			  ON "current_category"."id" = "candidate"."spending_category_id" AND "current_category"."agent_id" = "candidate"."agent_id"
+			CROSS JOIN LATERAL (
+				SELECT "candidate"."categorized_by" = 'person'
+					OR (COALESCE("current_category"."is_transfer", false) AND "candidate"."categorized_by" <> 'spending_rule') AS "is_kept"
+			) AS "kept"
 			LEFT JOIN LATERAL (
-				SELECT "rule"."spending_category_id", "rule"."is_transfer"
+				SELECT "rule"."spending_category_id"
 				FROM "agent_spending_rule" AS "rule"
 				WHERE "rule"."agent_id" = "candidate"."agent_id"
 				  AND strpos(lower(CASE WHEN "candidate"."merchant_name" <> '' THEN "candidate"."merchant_name" ELSE "candidate"."description" END),
@@ -551,8 +613,8 @@ func (self *transaction) ApplySpendingRules(agentId string) (int, error) {
 			WHERE "candidate"."agent_id" = @agent_id
 		) AS "decided"
 		WHERE "target"."id" = "decided"."id" AND "target"."agent_id" = @agent_id
-		  AND ("target"."spending_category_id", "target"."categorized_by", "target"."categorization_confidence", "target"."is_transfer", "target"."transfer_marked_by")
-		      IS DISTINCT FROM ("decided"."spending_category_id", "decided"."categorized_by", "decided"."categorization_confidence", "decided"."is_transfer", "decided"."transfer_marked_by")`,
+		  AND ("target"."spending_category_id", "target"."categorized_by", "target"."categorization_confidence")
+		      IS DISTINCT FROM ("decided"."spending_category_id", "decided"."categorized_by", "decided"."categorization_confidence")`,
 		map[string]any{"agent_id": agentId, "modified_at": time.Now()})
 	if updated.Error != nil {
 		return 0, updated.Error
@@ -604,6 +666,9 @@ func (self *transaction) SetBudget(budget *models.Budget) (*models.Budget, error
 	}
 	if spendingCategory == nil {
 		return nil, ErrNotFound
+	}
+	if spendingCategory.IsTransfer {
+		return nil, fmt.Errorf("%w: transfers are neither spending nor income, so the transfer category takes no budget", ErrInvalidArguments)
 	}
 	now := time.Now()
 	written := &models.Budget{
@@ -1008,10 +1073,10 @@ func (self *transaction) ListSpendingCategoryDays(agentId, month string) ([]*mod
 		FROM "agent_finance_transaction" AS "spent"
 		LEFT JOIN "agent_spending_category" AS "spending_category"
 		  ON "spending_category"."id" = "spent"."spending_category_id" AND "spending_category"."agent_id" = "spent"."agent_id"
-		WHERE "spent"."agent_id" = ? AND NOT "spent"."is_transfer"
+		WHERE "spent"."agent_id" = ?
 		  AND "spent"."posted_on" >= ?::date AND "spent"."posted_on" < ?::date
 		  AND (("spending_category"."id" IS NULL AND "spent"."amount" < 0)
-		    OR ("spending_category"."id" IS NOT NULL AND NOT "spending_category"."is_income"))
+		    OR ("spending_category"."id" IS NOT NULL AND NOT "spending_category"."is_income" AND NOT "spending_category"."is_transfer"))
 		GROUP BY 1, 2, 3
 		ORDER BY 3, 1, 2`,
 		agentId, monthStart.Format(time.DateOnly), monthStart.AddDate(0, 1, 0).Format(time.DateOnly)).Scan(&rows).Error; err != nil {
@@ -1042,7 +1107,7 @@ func (self *transaction) ListIncomeCategoryDays(agentId, month string) ([]*model
 		FROM "agent_finance_transaction" AS "received"
 		JOIN "agent_spending_category" AS "spending_category"
 		  ON "spending_category"."id" = "received"."spending_category_id" AND "spending_category"."agent_id" = "received"."agent_id"
-		WHERE "received"."agent_id" = ? AND NOT "received"."is_transfer" AND "spending_category"."is_income"
+		WHERE "received"."agent_id" = ? AND "spending_category"."is_income" AND NOT "spending_category"."is_transfer"
 		  AND "received"."posted_on" >= ?::date AND "received"."posted_on" < ?::date
 		GROUP BY 1, 2, 3
 		ORDER BY 3, 1, 2`,
@@ -1083,7 +1148,7 @@ func (self *transaction) ListCashFlowDays(agentId, from, to string) ([]*models.C
 		FROM "agent_finance_transaction" AS "flowed"
 		LEFT JOIN "agent_spending_category" AS "spending_category"
 		  ON "spending_category"."id" = "flowed"."spending_category_id" AND "spending_category"."agent_id" = "flowed"."agent_id"
-		WHERE "flowed"."agent_id" = ? AND NOT "flowed"."is_transfer"
+		WHERE "flowed"."agent_id" = ? AND NOT COALESCE("spending_category"."is_transfer", false)
 		  AND "flowed"."posted_on" >= ?::date AND "flowed"."posted_on" <= ?::date
 		GROUP BY 1, 2
 		ORDER BY 1, 2`, agentId, from, to).Scan(&rows).Error; err != nil {
@@ -1118,8 +1183,8 @@ func (self *transaction) ListMerchantMonthSpending(agentId, month string) ([]*mo
 		FROM "agent_finance_transaction" AS "spent"
 		JOIN "agent_spending_category" AS "spending_category"
 		  ON "spending_category"."id" = "spent"."spending_category_id" AND "spending_category"."agent_id" = "spent"."agent_id"
-		WHERE "spent"."agent_id" = ? AND NOT "spent"."is_transfer" AND "spent"."amount" < 0
-		  AND NOT "spending_category"."is_income"
+		WHERE "spent"."agent_id" = ? AND "spent"."amount" < 0
+		  AND NOT "spending_category"."is_income" AND NOT "spending_category"."is_transfer"
 		  AND "spent"."posted_on" >= ?::date AND "spent"."posted_on" < ?::date
 		GROUP BY 1, 2, 3, 4
 		ORDER BY 1, 2, 3, 4`,

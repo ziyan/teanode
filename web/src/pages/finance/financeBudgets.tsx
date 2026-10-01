@@ -136,9 +136,10 @@ function BudgetsPanel({ categories, onChanged }: { categories: SpendingCategory[
   ].filter((group) => group.current.length + group.scheduled.length > 0)
 
   // The dialog's spending categories, the income ones in their own group
-  // after the rest: on those the amount is the income expected.
+  // after the rest: on those the amount is the income expected. Transfers
+  // are neither, so the transfer category takes no budget.
   const budgetOptions = (chosen?: string) =>
-    groupedCategoryOptions(spendingCategoryOptions(categories, categoryName, chosen), categories, {
+    groupedCategoryOptions(spendingCategoryOptions(categories.filter((category) => !category.isTransfer), categoryName, chosen), categories, {
       spending: t('finance.spending'),
       income: t('finance.income'),
     })
@@ -331,12 +332,18 @@ function SpendingCategoriesPanel({
   }
 
   // One level of parents: a spending category that has a parent cannot be
-  // one, and a spending category cannot be its own.
+  // one, and a spending category cannot be its own. The transfer category
+  // stands alone: no parent, no children, never income.
   const parentChoices = categories.filter(
-    (category) => !category.parentSpendingCategoryId && (editing === 'new' || category.id !== editing?.id),
+    (category) =>
+      !category.parentSpendingCategoryId && !category.isTransfer && (editing === 'new' || category.id !== editing?.id),
   )
-  const sorted = [...categories].sort((left, right) =>
-    spendingCategoryLabel(left, categories, categoryName).localeCompare(spendingCategoryLabel(right, categories, categoryName)),
+  const isEditingTransfer = editing !== null && editing !== 'new' && editing.isTransfer
+  // The transfer category last, as in every list to choose from.
+  const sorted = [...categories].sort(
+    (left, right) =>
+      Number(left.isTransfer) - Number(right.isTransfer) ||
+      spendingCategoryLabel(left, categories, categoryName).localeCompare(spendingCategoryLabel(right, categories, categoryName)),
   )
 
   return (
@@ -360,6 +367,7 @@ function SpendingCategoriesPanel({
           badge={
             <>
               {category.isIncome ? <Tag value={t('finance.income')} tone="good" /> : null}
+              {category.isTransfer ? <Tag value={t('finance.builtIn')} /> : null}
               {category.isHidden ? <Tag value={t('finance.hidden')} /> : null}
             </>
           }
@@ -369,22 +377,24 @@ function SpendingCategoriesPanel({
                 <button
                   type="button"
                   className="icon-action"
-                  aria-label={`${categoryName(category.spendingCategoryName)}: ${t('common.edit')}`}
+                  aria-label={`${categoryName(category.spendingCategoryName, category.isTransfer)}: ${t('common.edit')}`}
                   onClick={() => open(category)}
                 >
                   <PencilIcon size={16} />
                 </button>
               </Tooltip>
-              <Tooltip label={t('common.delete')}>
-                <button
-                  type="button"
-                  className="icon-action danger"
-                  aria-label={`${categoryName(category.spendingCategoryName)}: ${t('common.delete')}`}
-                  onClick={() => setDeleting(category)}
-                >
-                  <TrashIcon size={16} />
-                </button>
-              </Tooltip>
+              {category.isTransfer ? null : (
+                <Tooltip label={t('common.delete')}>
+                  <button
+                    type="button"
+                    className="icon-action danger"
+                    aria-label={`${categoryName(category.spendingCategoryName, category.isTransfer)}: ${t('common.delete')}`}
+                    onClick={() => setDeleting(category)}
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </Tooltip>
+              )}
             </div>
           }
         />
@@ -418,23 +428,32 @@ function SpendingCategoriesPanel({
             <span>{t('finance.spendingCategoryName')}</span>
             <input value={name} onChange={(event) => setName(event.target.value)} />
           </label>
-          <label>
-            <span>{t('finance.parentSpendingCategory')}</span>
-            <Select
-              block
-              value={parentId}
-              label={t('finance.parentSpendingCategory')}
-              options={[
-                { value: '', label: t('finance.noParent') },
-                ...parentChoices.map((category) => ({ value: category.id, label: categoryName(category.spendingCategoryName) })),
-              ]}
-              onChange={setParentId}
-            />
-          </label>
-          <label className="checkbox">
-            <input type="checkbox" checked={isIncome} onChange={(event) => setIsIncome(event.target.checked)} />
-            {t('finance.isIncome')}
-          </label>
+          {isEditingTransfer ? (
+            <p className="muted field-hint">{t('finance.transferCategoryHint')}</p>
+          ) : (
+            <>
+              <label>
+                <span>{t('finance.parentSpendingCategory')}</span>
+                <Select
+                  block
+                  value={parentId}
+                  label={t('finance.parentSpendingCategory')}
+                  options={[
+                    { value: '', label: t('finance.noParent') },
+                    ...parentChoices.map((category) => ({
+                      value: category.id,
+                      label: categoryName(category.spendingCategoryName, category.isTransfer),
+                    })),
+                  ]}
+                  onChange={setParentId}
+                />
+              </label>
+              <label className="checkbox">
+                <input type="checkbox" checked={isIncome} onChange={(event) => setIsIncome(event.target.checked)} />
+                {t('finance.isIncome')}
+              </label>
+            </>
+          )}
           <label className="checkbox">
             <input type="checkbox" checked={isHidden} onChange={(event) => setIsHidden(event.target.checked)} />
             {t('finance.isHidden')}
@@ -444,7 +463,7 @@ function SpendingCategoriesPanel({
       {deleting ? (
         <ConfirmDialog
           title={t('finance.deleteSpendingCategory')}
-          body={t('finance.deleteSpendingCategoryBody', { name: categoryName(deleting.spendingCategoryName) })}
+          body={t('finance.deleteSpendingCategoryBody', { name: categoryName(deleting.spendingCategoryName, deleting.isTransfer) })}
           confirmLabel={t('common.delete')}
           busy={busy}
           onClose={() => setDeleting(null)}
@@ -476,7 +495,6 @@ function SpendingRulesPanel({ categories }: { categories: SpendingCategory[] }) 
   const [minimumAmount, setMinimumAmount] = useState('')
   const [maximumAmount, setMaximumAmount] = useState('')
   const [spendingCategoryId, setSpendingCategoryId] = useState('')
-  const [isTransfer, setIsTransfer] = useState(false)
   const [rulePriority, setRulePriority] = useState('')
 
   const accountList = accounts.data?.FinanceAccounts ?? []
@@ -489,22 +507,20 @@ function SpendingRulesPanel({ categories }: { categories: SpendingCategory[] }) 
     setMinimumAmount(existing?.minimumAmount ?? '')
     setMaximumAmount(existing?.maximumAmount ?? '')
     setSpendingCategoryId(existing?.spendingCategoryId ?? spendingCategoryOptions(categories, categoryName)[0]?.value ?? '')
-    setIsTransfer(existing?.isTransfer ?? false)
     setRulePriority(existing ? String(existing.rulePriority) : '')
     setEditing(rule)
   }
 
   const describe = (rule: SpendingRule): string => {
     const parts: string[] = []
-    if (rule.spendingCategoryId || !rule.isTransfer) {
-      const category = categories.find((candidate) => candidate.id === rule.spendingCategoryId)
-      parts.push(
-        t('finance.ruleFiles', {
-          name: category ? spendingCategoryLabel(category, categories, categoryName) : t('finance.deletedSpendingCategory'),
-        }),
-      )
-    }
-    if (rule.isTransfer) parts.push(t('finance.ruleMarksTransfer'))
+    const category = categories.find((candidate) => candidate.id === rule.spendingCategoryId)
+    parts.push(
+      category?.isTransfer
+        ? t('finance.ruleMarksTransfer')
+        : t('finance.ruleFiles', {
+            name: category ? spendingCategoryLabel(category, categories, categoryName) : t('finance.deletedSpendingCategory'),
+          }),
+    )
     const account = accountList.find((candidate) => candidate.id === rule.financeAccountId)
     if (account) parts.push(t('finance.ruleOnAccount', { account: accountLabel(account) }))
     if (rule.minimumAmount) parts.push(t('finance.ruleAtLeast', { amount: rule.minimumAmount }))
@@ -516,7 +532,7 @@ function SpendingRulesPanel({ categories }: { categories: SpendingCategory[] }) 
   const isAmountValid = (typed: string) => typed.trim() === '' || isDecimal(typed)
   const canSubmit =
     matchText.trim() !== '' &&
-    (isTransfer || spendingCategoryId !== '') &&
+    spendingCategoryId !== '' &&
     isAmountValid(minimumAmount) &&
     isAmountValid(maximumAmount) &&
     (rulePriority.trim() === '' || /^\d+$/.test(rulePriority.trim()))
@@ -579,10 +595,7 @@ function SpendingRulesPanel({ categories }: { categories: SpendingCategory[] }) 
               financeAccountId,
               minimumAmount: minimumAmount.trim(),
               maximumAmount: maximumAmount.trim(),
-              // Sent as chosen whether or not it marks transfers too:
-              // ticking the box once erased the rule's spending category.
               spendingCategoryId,
-              isTransfer,
               rulePriority: rulePriority.trim() === '' ? undefined : Number(rulePriority.trim()),
             }
             void act(
@@ -601,21 +614,13 @@ function SpendingRulesPanel({ categories }: { categories: SpendingCategory[] }) 
             <input value={matchText} onChange={(event) => setMatchText(event.target.value)} />
           </label>
           <p className="muted field-hint">{t('finance.matchTextHint')}</p>
-          <label className="checkbox">
-            <input type="checkbox" checked={isTransfer} onChange={(event) => setIsTransfer(event.target.checked)} />
-            {t('finance.ruleIsTransfer')}
-          </label>
           <label>
             <span>{t('finance.spendingCategory')}</span>
             <Select
               block
               value={spendingCategoryId}
               label={t('finance.spendingCategory')}
-              options={[
-                // A rule that marks transfers need not file them anywhere.
-                ...(isTransfer ? [{ value: '', label: t('finance.uncategorized') }] : []),
-                ...spendingCategoryOptions(categories, categoryName, spendingCategoryId),
-              ]}
+              options={spendingCategoryOptions(categories, categoryName, spendingCategoryId, t('finance.transferGroup'))}
               onChange={setSpendingCategoryId}
             />
           </label>
