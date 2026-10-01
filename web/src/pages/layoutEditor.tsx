@@ -11,6 +11,8 @@ import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { MediaButton, imageTag } from '../components/media'
 import { useTranslation } from '../i18n/i18n'
 import { describeLayout } from './templates'
+import { TrashIcon } from '../components/icons'
+import { Tooltip } from '../components/tooltip'
 
 const LAYOUT = `
   query ($domainId: String!, $layoutId: String!) {
@@ -249,16 +251,19 @@ export function LayoutEditorPage() {
           <p className="muted field-hint">{t('editor.layoutHint')}</p>
           {active && (
             <p>
-              <button
-                className="link danger"
-                type="button"
-                onClick={() => {
-                  setForm({ ...form, translations: form.translations.filter((each) => each.locale !== active) })
-                  setActive('')
-                }}
-              >
-                {t('editor.removeTranslation', { locale: active })}
-              </button>
+              <Tooltip label={t('editor.removeTranslation', { locale: active })}>
+                <button
+                  className="icon-action danger"
+                  type="button"
+                  aria-label={t('editor.removeTranslation', { locale: active })}
+                  onClick={() => {
+                    setForm({ ...form, translations: form.translations.filter((each) => each.locale !== active) })
+                    setActive('')
+                  }}
+                >
+                  <TrashIcon size={16} />
+                </button>
+              </Tooltip>
             </p>
           )}
 
@@ -266,7 +271,7 @@ export function LayoutEditorPage() {
             <button className="primary" type="button" disabled={busy || !dirty} onClick={() => void save()}>
               {t('common.save')}
             </button>
-            <button className="link danger" type="button" onClick={() => setRemoving(true)}>
+            <button className="danger" type="button" onClick={() => setRemoving(true)}>
               {t('common.remove')}
             </button>
           </div>
