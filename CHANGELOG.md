@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.94.1] - 2026-10-01
+
+### Changed
+
+- A dream reads each document whole, a long one in parts, and a conversation's messages are read in full, so what was said after the first few exchanges is learned; reading costs grow with it. `agent.limits.digestDocumentRunes` bounds it. (#275)
+
 ## [0.94.0] - 2026-10-01
 
 ### Added
