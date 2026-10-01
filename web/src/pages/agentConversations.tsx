@@ -5,6 +5,7 @@ import { useAgentIdentity } from '../agentPreferences'
 import { CONVERSATIONS, type Conversation } from '../components/agentDrawer'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Loading } from '../components/common'
+import { HighlightText } from '../components/highlightText'
 import { PlusIcon, StarIcon, TargetIcon } from '../components/icons'
 import { RelativeTime } from '../components/relativeTime'
 import { SettingsEmpty } from '../components/settingsList'
@@ -69,15 +70,15 @@ export function AgentConversationsPage() {
 
   return (
     <>
-      <div className="page-actions">
-        <p className="muted">{t('agentConversations.intro', { name: agentLabel })}</p>
-        <button type="button" className="primary" onClick={startNew}>
+      <p className="muted">{t('agentConversations.intro', { name: agentLabel })}</p>
+      {/* Starting one first, then finding one: the button leads the row
+          and the search box takes the rest of it. */}
+      <div className="conversation-toolbar">
+        <button type="button" className="primary with-icon" onClick={startNew}>
           <PlusIcon size={16} />
           {t('agentConversations.new')}
         </button>
-      </div>
-      {hasConversations && (
-        <div className="conversation-search">
+        {hasConversations && (
           <input
             type="search"
             value={filter}
@@ -85,8 +86,8 @@ export function AgentConversationsPage() {
             aria-label={t('agentConversations.search')}
             onChange={(event) => setFilter(event.target.value)}
           />
-        </div>
-      )}
+        )}
+      </div>
       {loading && !data ? (
         <Loading />
       ) : !data ? null : !hasConversations ? (
@@ -100,16 +101,18 @@ export function AgentConversationsPage() {
               <button type="button" className="conversation-tile-title" onClick={() => open(conversation.id)}>
                 {conversation.kind === 'main' ? (
                   <>
-                    <StarIcon size={14} /> {t('agentDrawer.main')}
+                    <StarIcon size={14} /> <HighlightText text={t('agentDrawer.main')} search={filter} />
                   </>
                 ) : (
-                  conversation.title || t('agentDrawer.untitled')
+                  <HighlightText text={conversation.title || t('agentDrawer.untitled')} search={filter} />
                 )}
               </button>
               {/* What it is about: the agent's summary, else what it is
                   working toward, so no tile is a bare title. */}
               {conversation.summary || conversation.goal ? (
-                <p className="conversation-tile-summary">{conversation.summary || conversation.goal}</p>
+                <p className="conversation-tile-summary">
+                  <HighlightText text={conversation.summary || conversation.goal || ''} search={filter} />
+                </p>
               ) : (
                 <p className="conversation-tile-summary muted">{t('agentConversations.noSummary')}</p>
               )}
@@ -119,7 +122,7 @@ export function AgentConversationsPage() {
                 {conversation.goal ? (
                   <TargetIcon size={12} className={`agent-drawer-list-goal ${conversation.goalState || 'working'}`} />
                 ) : null}
-                {t('agentConversations.lastActive')} <RelativeTime value={conversation.lastAt} />
+                <RelativeTime value={conversation.lastAt} />
               </span>
             </li>
           ))}

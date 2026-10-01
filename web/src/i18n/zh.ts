@@ -1134,7 +1134,6 @@ export const zh: Catalog = {
   'agentConversations.empty': '还没有对话。开始一个，它就会出现在这里。',
   'agentConversations.nothingFound': '没有匹配的对话。',
   'agentConversations.noSummary': '暂无摘要。',
-  'agentConversations.lastActive': '最后活动',
   'agentConversations.unavailable': '你的助手没有开启，没有地方可以打开它。',
   'agentConversations.loadFailed': '无法读取对话。',
   'agentDrawer.delete': '删除',

@@ -1177,7 +1177,6 @@ export const en = {
   'agentConversations.empty': 'There are no conversations yet. Start one and it will be listed here.',
   'agentConversations.nothingFound': 'No conversation matches that.',
   'agentConversations.noSummary': 'No summary yet.',
-  'agentConversations.lastActive': 'Last active',
   'agentConversations.unavailable': 'Your agent is not on, so there is nothing to open it in.',
   'agentConversations.loadFailed': 'The conversations could not be read.',
   'agentDrawer.delete': 'Delete',

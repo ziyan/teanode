@@ -1171,7 +1171,6 @@ export const ja: Catalog = {
   'agentConversations.empty': '会話はまだありません。始めるとここに表示されます。',
   'agentConversations.nothingFound': '一致する会話はありません。',
   'agentConversations.noSummary': 'まだ要約はありません。',
-  'agentConversations.lastActive': '最終アクティビティ',
   'agentConversations.unavailable': 'エージェントがオフなので、開く場所がありません。',
   'agentConversations.loadFailed': '会話を読み込めませんでした。',
   'agentDrawer.delete': '削除',

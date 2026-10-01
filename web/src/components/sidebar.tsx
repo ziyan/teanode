@@ -315,6 +315,7 @@ export function Sidebar({
                   <span className="sidebar-label">{agentLabel}</span>
                 </NavLink>
               )}
+              {agent.isAvailable && <div className="sidebar-divider" />}
               {/* Only when there is a choice to make. One mailbox named at
                   the top of its own rail is a heading that says nothing: the
                   rows under it are that mailbox's folders and there is

@@ -563,12 +563,17 @@ a.tile:hover strong {
 /* --- the agent's conversations, a tile each ------------------------------ */
 /* The box that narrows the tiles, on a line of its own above them, as wide
    as a field is allowed to be rather than as wide as the page. */
-.conversation-search {
+.conversation-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
   margin-bottom: var(--space-4);
 }
 
-.conversation-search input[type='search'] {
-  width: 100%;
+.conversation-toolbar input[type='search'] {
+  flex: 1 1 220px;
+  min-width: 0;
   max-width: 420px;
 }
 
@@ -583,13 +588,50 @@ a.tile:hover strong {
 }
 
 .conversation-tile {
+  position: relative;
   min-width: 0;
   gap: var(--space-2);
+  cursor: pointer;
+}
+
+/* A tile that opens something lifts under the pointer: a little higher and
+   a shadow under it, so it reads as a thing to press rather than a panel. */
+.conversation-tile {
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease,
+    border-color 150ms ease;
+}
+
+.conversation-tile:hover,
+.conversation-tile:focus-within {
+  border-color: var(--muted);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-tile {
+    transition: none;
+  }
+
+  .conversation-tile:hover,
+  .conversation-tile:focus-within {
+    transform: none;
+  }
 }
 
 /* The title is the button that opens the conversation: it reads as the
-   tile's heading and takes the accent under the pointer, as a tile's name
-   does. */
+   tile's heading, and its ::after stretches over the whole tile so a click
+   anywhere on it opens the conversation, with one button for a keyboard or
+   a screen reader to find. */
+.conversation-tile-title::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
 .conversation-tile-title {
   display: inline-flex;
   align-items: center;
@@ -606,7 +648,7 @@ a.tile:hover strong {
   cursor: pointer;
 }
 
-.conversation-tile-title:hover,
+.conversation-tile:hover .conversation-tile-title,
 .conversation-tile-title:focus-visible {
   color: var(--accent);
 }
@@ -622,6 +664,15 @@ a.tile:hover strong {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   overflow-wrap: anywhere;
+}
+
+/* Where the search matched: a wash of the warning color under the words,
+   and the text keeps its own color so it still reads in either theme. */
+.conversation-tile mark {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--warn) 35%, transparent);
+  color: inherit;
 }
 
 .conversation-tile .tile-detail {
