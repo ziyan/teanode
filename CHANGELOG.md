@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.93.1] - 2026-10-01
+
+### Fixed
+
+- A dream no longer merges two facts into one when the merged-away fact names something the kept one does not, so a statement such as a rejected proposal stays on its page. (#274)
+
 ## [0.93.0] - 2026-09-30
 
 ### Added
