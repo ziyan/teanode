@@ -235,6 +235,7 @@ type agentFinanceAccountModel struct {
 	CurrentBalance    *string    `gorm:"column:current_balance"`
 	AvailableBalance  *string    `gorm:"column:available_balance"`
 	BalanceAt         *time.Time `gorm:"column:balance_at"`
+	CreditLimitAmount *string    `gorm:"column:credit_limit_amount"`
 	ProviderMetadata  []byte     `gorm:"column:provider_metadata;type:jsonb"`
 	CreatedAt         time.Time  `gorm:"column:created_at"`
 	ModifiedAt        time.Time  `gorm:"column:modified_at"`
@@ -248,8 +249,8 @@ func (self *agentFinanceAccountModel) toModel() *models.FinanceAccount {
 		AccountName: self.AccountName, AccountMask: self.AccountMask, AccountKind: models.FinanceAccountKind(self.AccountKind),
 		CurrencyCode: self.CurrencyCode, CurrentBalance: optionalString(self.CurrentBalance),
 		AvailableBalance: optionalString(self.AvailableBalance), BalanceAt: localTime(self.BalanceAt),
-		ProviderMetadata: rawJSON(self.ProviderMetadata),
-		CreatedAt:        self.CreatedAt.In(time.Local), ModifiedAt: self.ModifiedAt.In(time.Local),
+		CreditLimitAmount: optionalString(self.CreditLimitAmount), ProviderMetadata: rawJSON(self.ProviderMetadata),
+		CreatedAt: self.CreatedAt.In(time.Local), ModifiedAt: self.ModifiedAt.In(time.Local),
 	}
 }
 
@@ -772,6 +773,10 @@ func (self *transaction) upsertFinanceAccount(agentId, sourceId string, account 
 	if err != nil {
 		return "", false, err
 	}
+	creditLimitAmount, err := canonicalOptionalAmount("credit limit", account.CreditLimitAmount)
+	if err != nil {
+		return "", false, err
+	}
 	var balanceAt *time.Time
 	if !account.BalanceAt.IsZero() {
 		balanceAt = &account.BalanceAt
@@ -788,20 +793,21 @@ func (self *transaction) upsertFinanceAccount(agentId, sourceId string, account 
 	// updated, which is how the one round trip says which it was.
 	err = self.tx.Raw(`INSERT INTO "agent_finance_account" AS "existing" ("id", "agent_id", "source_id", "provider_account_id",
 			"account_name", "account_mask", "account_kind", "currency_code", "current_balance", "available_balance",
-			"balance_at", "provider_metadata", "created_at", "modified_at")
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::numeric, ?::numeric, ?, ?::jsonb, ?, ?)
+			"balance_at", "credit_limit_amount", "provider_metadata", "created_at", "modified_at")
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::numeric, ?::numeric, ?, ?::numeric, ?::jsonb, ?, ?)
 		ON CONFLICT ("source_id", "provider_account_id") DO UPDATE SET
 			"account_name" = EXCLUDED."account_name", "account_mask" = EXCLUDED."account_mask",
 			"account_kind" = EXCLUDED."account_kind", "currency_code" = EXCLUDED."currency_code",
 			"current_balance" = CASE WHEN `+financeBalanceIsOlder+` THEN "existing"."current_balance" ELSE EXCLUDED."current_balance" END,
 			"available_balance" = CASE WHEN `+financeBalanceIsOlder+` THEN "existing"."available_balance" ELSE EXCLUDED."available_balance" END,
 			"balance_at" = CASE WHEN `+financeBalanceIsOlder+` THEN "existing"."balance_at" ELSE EXCLUDED."balance_at" END,
+			"credit_limit_amount" = CASE WHEN `+financeBalanceIsOlder+` THEN "existing"."credit_limit_amount" ELSE EXCLUDED."credit_limit_amount" END,
 			"provider_metadata" = CASE WHEN `+financeBalanceIsOlder+` THEN "existing"."provider_metadata" ELSE EXCLUDED."provider_metadata" END,
 			"modified_at" = EXCLUDED."modified_at"
 		RETURNING "id", ("xmax" = 0) AS "is_inserted"`,
 		newID(), agentId, sourceId, account.ProviderAccountID, account.AccountName, account.AccountMask,
-		string(accountKind), account.CurrencyCode, currentBalance, availableBalance, balanceAt, providerMetadata, now, now,
-		isNewerBalanceKept, isNewerBalanceKept, isNewerBalanceKept, isNewerBalanceKept).
+		string(accountKind), account.CurrencyCode, currentBalance, availableBalance, balanceAt, creditLimitAmount, providerMetadata, now, now,
+		isNewerBalanceKept, isNewerBalanceKept, isNewerBalanceKept, isNewerBalanceKept, isNewerBalanceKept).
 		Scan(&upserted).Error
 	if err != nil {
 		return "", false, err

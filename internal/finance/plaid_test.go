@@ -431,3 +431,30 @@ func TestPlaidDescribeCredential(t *testing.T) {
 		t.Error("an empty credential was described")
 	}
 }
+
+// A credit account's limit is kept where Plaid gives one, and left empty
+// where it gives null, nothing, or a limit no usage can be measured
+// against; the card's balance reads the same either way.
+func TestPlaidAccountKeepsTheCreditLimit(t *testing.T) {
+	for balances, wanted := range map[string]string{
+		`{"current":250.5,"available":4749.5,"limit":5000,"iso_currency_code":"USD"}`:   "5000.0000",
+		`{"current":250.5,"available":4749.5,"limit":null,"iso_currency_code":"USD"}`:   "",
+		`{"current":250.5,"available":4749.5,"iso_currency_code":"USD"}`:                "",
+		`{"current":250.5,"available":4749.5,"limit":0,"iso_currency_code":"USD"}`:      "",
+		`{"current":250.5,"available":4749.5,"limit":-100,"iso_currency_code":"USD"}`:   "",
+		`{"current":250.5,"available":4749.5,"limit":1e3,"iso_currency_code":"USD"}`:    "1000.0000",
+		`{"current":250.5,"available":4749.5,"limit":"2500","iso_currency_code":"USD"}`: "2500.0000",
+	} {
+		account, err := plaidAccountFrom(json.RawMessage(`{"account_id":"card-1","name":"Example Card","type":"credit","balances":` + balances + `}`))
+		if err != nil {
+			t.Errorf("%s: %s", balances, err)
+			continue
+		}
+		if account.CreditLimitAmount != wanted {
+			t.Errorf("%s: limit %q, want %q", balances, account.CreditLimitAmount, wanted)
+		}
+		if account.CurrentBalance != "250.5000" || !account.IsOwedBalancePositive || account.AccountKind != AccountKindCredit {
+			t.Errorf("%s: account %+v", balances, account)
+		}
+	}
+}

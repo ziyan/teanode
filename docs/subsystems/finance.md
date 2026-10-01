@@ -47,6 +47,9 @@ tool and the dashboard.
   **saving summary** and **saving pace** (`behind`, `on_track`, `ahead`),
   **savings target**, **reporting currency**, **exchange rate**,
   **categorize model**.
+- **credit limit** (what a card may owe), **credit usage** (what the cards
+  owe against their credit limits) and **credit limit source** (`provider`,
+  `derived`, `unknown`).
 
 ## Providers
 
@@ -302,6 +305,50 @@ the person's, and a new one is made beside it; switched off, it stays off
 and nothing is estimated until the person switches it on again. Its prompt searches with each asset's estimate description
 and nothing else.
 
+## Credit usage
+
+Credit usage (`CreditUsage`, `internal/api/v1api/apigraph/agent_finance_credit_usage.go`)
+is what the credit cards owe against their credit limits. A credit card is
+a finance account of kind `credit`, other than a bank's line of credit
+imported from a statement (an OFX bank account of type `CREDITLINE`, which
+`finance.IsStatementCreditLine` reads from the account's metadata): it is
+kind `credit` so net worth counts it as a debt, but its limit is not a
+card's, and added to the cards' limits it would make them look less used
+than they are. It reads the accounts' stored balances, not the asset
+valuations, so it is as fresh as the last sync or statement. A SimpleFIN
+card whose name does not say it is a card is of kind `other` and is not
+counted.
+
+**What is owed.** A stored balance keeps the provider's sign:
+`finance.IsOwedBalancePositive` says Plaid reports what is owed as
+positive, and SimpleFIN and imported statements as negative. Owed is the
+balance turned to that convention and never less than zero: a card paid
+past its balance owes nothing.
+
+**The limit.** The provider's where it gives one: Plaid's
+`balances.limit`, kept in the account's `credit_limit_amount` (migration
+0142; null, zero or a negative limit is kept as none, and a limit Plaid
+sends that cannot be read does not stop the sync). Otherwise it is derived
+as what is owed plus the credit still available (`available_balance`),
+taken with the balance's sign, so an overpaid card still comes to its real
+limit. A derived limit of zero or less, or an available credit of exactly
+zero, which a provider with nothing to say sends more often than a card sits
+exactly at its limit, leaves the limit unknown. SimpleFIN's
+`available-balance` and a statement's `AVAILBAL` are what make a derived
+limit possible for them. Nothing sets a limit by hand yet: the finance
+accounts have no edit of their own.
+
+**The summary.** Each card has its owed amount, its limit, where the limit
+came from, and its usage share (owed over the limit, 0.25 for a quarter,
+more than 1 past the limit) in its own currency, and both amounts in the
+reporting currency at today's rate, the way net worth converts today's
+balances. The totals add up the cards whose limit and balance are both
+known and whose currency converts; the cards left out for want of a limit
+or a balance are counted (`leftOutCardCount`) with what they owe, and a
+currency with no rate is named (`unconvertedCurrencyCodes`). A card in such
+a currency is not counted as left out, since what it owes cannot be added
+to the rest. Cards are listed highest usage first.
+
 ## Investments
 
 A Plaid link asks for transactions, and for investments as an optional
@@ -474,6 +521,22 @@ this month's pace), and an info button opens how it is worked out with the
 merchants still expected. Income and saving rows have the same button,
 saying how their projection is made. A month that is over has no band and
 no explanation: it is its own figures.
+
+The Accounts section opens with **Credit usage**
+(`web/src/pages/finance/financeCreditUsage.tsx`), shown only when there is
+a credit card: the spending ring with a slice per card owed and one for the
+credit still available, the usage share in its middle, owed, available,
+limit and the share used beside it, and a table of the cards with their
+swatches, owed, limit and share. The ring's label for a screen reader says
+the share used and each slice by what it owes, not by its share of the
+combined limit, which is not the card's own usage. A share is colored by
+the common thresholds: under 30% good, 30% to 50% warn, above 50% bad
+(`usageTone` in `creditUsage.ts`), judged to the whole percent it is shown
+as. A derived
+limit is marked and explained under the table, and the cards left out are
+said with what they owe. It sits on Accounts rather than Net worth because it
+is read from the accounts' balances and limits, and Net worth is about assets
+over time.
 
 The Accounts section ends with **Import statements**
 (`web/src/pages/finance/financeStatementImport.tsx`): the import address

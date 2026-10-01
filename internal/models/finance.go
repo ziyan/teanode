@@ -176,12 +176,40 @@ type FinanceAccount struct {
 	AvailableBalance string     `json:"availableBalance,omitempty" graphapi:"nullable"`
 	BalanceAt        *time.Time `json:"balanceAt,omitempty" graphapi:"nullable"`
 
+	// CreditLimitAmount is a card's credit limit as the provider gives it,
+	// a positive decimal, empty when it gives none.
+	CreditLimitAmount string `json:"creditLimitAmount,omitempty" graphapi:"nullable"`
+
 	// ProviderMetadata is the provider's whole object for the account, as
 	// it arrived.
 	ProviderMetadata json.RawMessage `json:"providerMetadata,omitempty" graphapi:"nullable"`
 
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
+}
+
+// CreditLimitSource is where the credit limit a card's usage is measured
+// against comes from.
+type CreditLimitSource string
+
+const (
+	// CreditLimitSourceProvider is the limit the provider gave.
+	CreditLimitSourceProvider CreditLimitSource = "provider"
+	// CreditLimitSourceDerived is what is owed plus the credit still
+	// available, for a card whose provider gave no limit.
+	CreditLimitSourceDerived CreditLimitSource = "derived"
+	// CreditLimitSourceUnknown is a card with neither, whose usage cannot
+	// be measured.
+	CreditLimitSourceUnknown CreditLimitSource = "unknown"
+)
+
+// IsValid says the source is one of the three.
+func (self CreditLimitSource) IsValid() bool {
+	switch self {
+	case CreditLimitSourceProvider, CreditLimitSourceDerived, CreditLimitSourceUnknown:
+		return true
+	}
+	return false
 }
 
 // FinanceTransaction is one transaction on a finance account.

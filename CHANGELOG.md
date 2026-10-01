@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.101.0] - 2026-10-01
+
+### Added
+
+- Finance > Accounts shows credit usage: what your cards owe against their limits, overall in a ring and per card. (#299)
+
 ## [0.100.0] - 2026-10-01
 
 ### Added

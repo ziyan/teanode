@@ -347,6 +347,7 @@ type plaidAccount struct {
 	Balances     struct {
 		CurrentBalance         json.Number `json:"current"`
 		AvailableBalance       json.Number `json:"available"`
+		CreditLimitAmount      json.Number `json:"limit"`
 		CurrencyCode           string      `json:"iso_currency_code"`
 		UnofficialCurrencyCode string      `json:"unofficial_currency_code"`
 		LastUpdatedDatetime    string      `json:"last_updated_datetime"`
@@ -717,6 +718,20 @@ func plaidAccountFrom(raw json.RawMessage) (Account, error) {
 	if err != nil {
 		return Account{}, fmt.Errorf("finance: Plaid account %s has no usable available balance: %w", decoded.AccountID, err)
 	}
+	// Plaid gives a limit for a credit account where the institution
+	// reports one, and null otherwise. Unlike a balance, a limit that
+	// cannot be read does not stop the sync: credit usage then works the
+	// limit out from the balances, and the metadata keeps what Plaid sent.
+	// A limit of zero or less says nothing usage can be measured against.
+	creditLimitAmount, err := canonicalJsonAmount(decoded.Balances.CreditLimitAmount)
+	if err != nil {
+		creditLimitAmount = ""
+	}
+	if creditLimitAmount != "" {
+		if limitValue, err := ParseAmount(creditLimitAmount); err != nil || limitValue.Sign() <= 0 {
+			creditLimitAmount = ""
+		}
+	}
 	account := Account{
 		ProviderAccountID: decoded.AccountID,
 		AccountName:       firstNonEmpty(decoded.Name, decoded.OfficialName),
@@ -725,6 +740,7 @@ func plaidAccountFrom(raw json.RawMessage) (Account, error) {
 		CurrencyCode:      firstNonEmpty(decoded.Balances.CurrencyCode, decoded.Balances.UnofficialCurrencyCode),
 		CurrentBalance:    currentBalance,
 		AvailableBalance:  availableBalance,
+		CreditLimitAmount: creditLimitAmount,
 		// Plaid reports a card's or a loan's balance as the amount owed.
 		IsOwedBalancePositive: true,
 		ProviderMetadata:      raw,

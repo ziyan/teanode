@@ -59,6 +59,25 @@ type StatementImport struct {
 // account made before the institution was left out of the key.
 const statementAccountKeyInstitutionField = "statementAccountKeyInstitution"
 
+// statementAccountTypeCreditLine is the OFX bank account type of a line of
+// credit, which is imported as a credit account but is no credit card.
+const statementAccountTypeCreditLine = "CREDITLINE"
+
+// IsStatementCreditLine says a finance account's provider metadata is that
+// of a bank's line of credit imported from a statement: of kind credit, so
+// it counts as a debt, but its limit is not a card's, and adding it to the
+// cards' limits would make them look less used than they are.
+func IsStatementCreditLine(providerMetadata json.RawMessage) bool {
+	var metadata struct {
+		StatementKind string `json:"statementKind"`
+		AccountType   string `json:"accountType"`
+	}
+	if len(providerMetadata) == 0 || json.Unmarshal(providerMetadata, &metadata) != nil {
+		return false
+	}
+	return metadata.StatementKind == string(ofx.StatementKindBank) && metadata.AccountType == statementAccountTypeCreditLine
+}
+
 // ExistingStatementAccount is an account the statement source already
 // holds, which a statement is matched against before a new one is made.
 type ExistingStatementAccount struct {
@@ -188,7 +207,7 @@ func NewStatementImport(accountKey []byte, document *ofx.Document, statement *of
 	case statement.StatementKind == ofx.StatementKindCreditCard:
 		accountKind = AccountKindCredit
 		primaryCategory = StatementCategoryPrimaryCreditCard
-	case statement.AccountType == "CREDITLINE":
+	case statement.AccountType == statementAccountTypeCreditLine:
 		accountKind = AccountKindCredit
 	}
 	accountMask := StatementAccountMask(statement.AccountID)
