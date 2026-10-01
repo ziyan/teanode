@@ -1,0 +1,391 @@
+{
+  "name": "late corrections",
+  "description": "An invented project in which the person takes part: a dependency, a rejected proposal, a change reported five days late, a correction of its date two days after that, and an unconfirmed report left open. Questions ask what is current, what was true on a date, and what was known on a date.",
+  "steps": [
+    {
+      "id": "day-1",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "note-1",
+          "kind": "note",
+          "at": "2032-05-01T09:00:00Z",
+          "author": "@you",
+          "text": "The Brindle project renders its reports with the Tessel library, version 2. Tessel is what Brindle uses in production today.",
+          "title": "Brindle report rendering"
+        }
+      ]
+    },
+    {
+      "id": "dream-day-1",
+      "stepKind": "dream"
+    },
+    {
+      "id": "checkpoint-day-1",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "renderer-day-1",
+          "question": "Which library does Brindle render its reports with?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "Tessel"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Tessel, version 2."
+        }
+      ]
+    },
+    {
+      "id": "day-3-proposal",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "chat-11",
+          "kind": "chat",
+          "at": "2032-05-03T10:00:00Z",
+          "author": "design lead",
+          "text": "Proposal: should Brindle switch its reports from Tessel to Quarrel? Just an idea for now.",
+          "channel": "brindle-team",
+          "thread": "quarrel"
+        },
+        {
+          "id": "chat-12",
+          "kind": "chat",
+          "at": "2032-05-03T10:20:00Z",
+          "author": "@you",
+          "text": "Let's not. Quarrel cannot do the page layouts we need. Brindle is not switching to Quarrel.",
+          "channel": "brindle-team",
+          "thread": "quarrel"
+        },
+        {
+          "id": "chat-13",
+          "kind": "chat",
+          "at": "2032-05-03T10:25:00Z",
+          "author": "design lead",
+          "text": "Fine, Quarrel is off the table.",
+          "channel": "brindle-team",
+          "thread": "quarrel"
+        }
+      ]
+    },
+    {
+      "id": "day-10-late-news",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "chat-21",
+          "kind": "chat",
+          "at": "2032-05-10T15:00:00Z",
+          "author": "platform engineer",
+          "text": "Heads up, I never posted this: Brindle's reports moved from Tessel to Marrow in production on May 5. Tessel is no longer used there.",
+          "channel": "brindle-team",
+          "thread": "marrow"
+        },
+        {
+          "id": "chat-22",
+          "kind": "chat",
+          "at": "2032-05-10T15:05:00Z",
+          "author": "@you",
+          "text": "Thanks, I had no idea. So since May 5 production renders with Marrow.",
+          "channel": "brindle-team",
+          "thread": "marrow"
+        },
+        {
+          "id": "chat-23",
+          "kind": "chat",
+          "at": "2032-05-10T15:12:00Z",
+          "author": "platform engineer",
+          "text": "Right, Marrow since May 5.",
+          "channel": "brindle-team",
+          "thread": "marrow"
+        }
+      ]
+    },
+    {
+      "id": "dream-day-10",
+      "stepKind": "dream"
+    },
+    {
+      "id": "checkpoint-day-10",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "renderer-day-10",
+          "question": "Which library does Brindle render its reports with now?",
+          "kind": "changed",
+          "expects": [
+            {
+              "words": [
+                "Marrow"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Marrow, since the move from Tessel in production.",
+          "outdatedAnswer": "Tessel.",
+          "outdatedClaims": [
+            {
+              "words": [
+                "Tessel is what Brindle uses"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "quarrel-day-10",
+          "question": "Did Brindle switch to Quarrel?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "Quarrel"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "No. It was proposed on May 3 and rejected the same day because Quarrel cannot do the page layouts."
+        },
+        {
+          "id": "valid-may-6-day-10",
+          "question": "Which library was Brindle using in production on May 6, 2032?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "Marrow"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Marrow: the move from Tessel happened on May 5 (as reported on May 10)."
+        },
+        {
+          "id": "known-may-6-day-10",
+          "question": "On May 6, 2032, going by what had been said by then, which library did we believe Brindle used?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "Tessel"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Tessel. The move to Marrow was only reported on May 10."
+        }
+      ]
+    },
+    {
+      "id": "day-12-correction",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "chat-31",
+          "kind": "chat",
+          "at": "2032-05-12T11:00:00Z",
+          "author": "platform engineer",
+          "text": "Correction to what I said on the 10th: the Marrow switch in production happened on May 7, not May 5. May 5 was only the staging switch.",
+          "channel": "brindle-team",
+          "thread": "marrow-date"
+        },
+        {
+          "id": "chat-32",
+          "kind": "chat",
+          "at": "2032-05-12T11:03:00Z",
+          "author": "@you",
+          "text": "Noted: production moved to Marrow on May 7, staging on May 5.",
+          "channel": "brindle-team",
+          "thread": "marrow-date"
+        },
+        {
+          "id": "chat-33",
+          "kind": "chat",
+          "at": "2032-05-12T11:04:00Z",
+          "author": "platform engineer",
+          "text": "Yes, that's right.",
+          "channel": "brindle-team",
+          "thread": "marrow-date"
+        },
+        {
+          "id": "chat-41",
+          "kind": "chat",
+          "at": "2032-05-12T16:00:00Z",
+          "author": "support engineer",
+          "text": "A customer says their May 6 report still looked like a Tessel render. Could be a cached copy, nobody has checked.",
+          "channel": "brindle-team",
+          "thread": "may-6-report"
+        },
+        {
+          "id": "chat-42",
+          "kind": "chat",
+          "at": "2032-05-12T16:10:00Z",
+          "author": "@you",
+          "text": "Let's not conclude anything from one report until someone checks the cache.",
+          "channel": "brindle-team",
+          "thread": "may-6-report"
+        },
+        {
+          "id": "chat-43",
+          "kind": "chat",
+          "at": "2032-05-12T16:12:00Z",
+          "author": "support engineer",
+          "text": "Ok, leaving it open.",
+          "channel": "brindle-team",
+          "thread": "may-6-report"
+        }
+      ]
+    },
+    {
+      "id": "dream-day-12",
+      "stepKind": "dream"
+    },
+    {
+      "id": "checkpoint-day-12",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "date-day-12",
+          "question": "When did Brindle's production move to Marrow?",
+          "kind": "changed",
+          "expects": [
+            {
+              "words": [
+                "May 7"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "On May 7, 2032 (corrected on May 12; May 5 was the staging switch).",
+          "outdatedAnswer": "May 5.",
+          "outdatedClaims": [
+            {
+              "words": [
+                "production",
+                "May 5"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "valid-may-6-day-12",
+          "question": "Which library was Brindle using in production on May 6, 2032?",
+          "kind": "changed",
+          "expects": [
+            {
+              "words": [
+                "Tessel"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Tessel: production moved to Marrow on May 7, per the May 12 correction.",
+          "outdatedAnswer": "Marrow."
+        },
+        {
+          "id": "known-may-11-day-12",
+          "question": "On May 11, 2032, going by what had been said by then, when did we believe production had moved to Marrow?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "May 5"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "May 5. The correction to May 7 came on May 12."
+        },
+        {
+          "id": "cache-day-12",
+          "question": "Was the customer's May 6 report really rendered with Tessel?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "cache"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Unknown: one customer said so, it may have been a cached copy, and nobody has checked."
+        },
+        {
+          "id": "renderer-day-12",
+          "question": "Which library does Brindle render its reports with now?",
+          "kind": "changed",
+          "expects": [
+            {
+              "words": [
+                "Marrow"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Marrow.",
+          "outdatedAnswer": "Tessel.",
+          "outdatedClaims": [
+            {
+              "words": [
+                "Tessel is what Brindle uses"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dreams-without-news",
+      "stepKind": "dream",
+      "dreamCount": 2
+    },
+    {
+      "id": "checkpoint-final",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "date-final",
+          "question": "When did Brindle's production move to Marrow?",
+          "kind": "changed",
+          "expects": [
+            {
+              "words": [
+                "May 7"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "On May 7, 2032.",
+          "outdatedAnswer": "May 5.",
+          "outdatedClaims": [
+            {
+              "words": [
+                "production",
+                "May 5"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "valid-may-6-final",
+          "question": "Which library was Brindle using in production on May 6, 2032?",
+          "kind": "changed",
+          "expects": [
+            {
+              "words": [
+                "Tessel"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Tessel.",
+          "outdatedAnswer": "Marrow."
+        }
+      ]
+    }
+  ]
+}

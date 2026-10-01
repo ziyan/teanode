@@ -83,6 +83,10 @@ type InsightOperation interface {
 	// message's usage added up, keyed by conversation.
 	SumAgentRunUsage(conversationIds []string) (map[string]models.AgentUsageNote, error)
 
+	// SumAgentMessageCost is what every run of an agent has cost, from
+	// the usage on its messages: what a scenario run has spent so far.
+	SumAgentMessageCost(agentId string) (float64, error)
+
 	// SumAgentDreamCost is what each of these dreams cost, keyed by
 	// dream: its job's model calls made while it ran. By its own hours
 	// rather than its whole job, because a dream a restart cut short and
@@ -684,6 +688,16 @@ func (self *transaction) SumAgentRunUsage(conversationIds []string) (map[string]
 		}
 	}
 	return totals, nil
+}
+
+func (self *transaction) SumAgentMessageCost(agentId string) (float64, error) {
+	var cost float64
+	err := self.tx.Raw(`
+		SELECT coalesce(sum((m."usage"->>'cost')::double precision), 0)
+		FROM "agent_message" m
+		JOIN "agent_conversation" c ON c."id" = m."conversation_id"
+		WHERE c."agent_id" = ? AND m."usage" IS NOT NULL`, agentId).Scan(&cost).Error
+	return cost, err
 }
 
 func (self *transaction) SumAgentDreamCost(dreams []*models.AgentDream) (map[string]float64, error) {

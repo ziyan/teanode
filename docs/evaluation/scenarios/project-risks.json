@@ -1,0 +1,326 @@
+{
+  "name": "project risks",
+  "description": "An invented project in which the person takes part, asked the same standing question after each event: confirmed risks, a concern not yet measured, an unrelated update, a risk resolved, a concern that becomes a risk, and a corrected date. Repeated dreams with nothing new.",
+  "steps": [
+    {
+      "id": "risks-raised",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "note-1",
+          "kind": "note",
+          "at": "2033-02-01T09:00:00Z",
+          "author": "@you",
+          "text": "Harrow risk review, February 1: two confirmed risks. First, the payment vendor contract ends on March 31 and no renewal is signed, so checkout stops on April 1 if nothing is done. Second, only one engineer knows the billing code, and she leaves in April.",
+          "title": "Harrow risk review"
+        },
+        {
+          "id": "chat-1",
+          "kind": "chat",
+          "at": "2033-02-02T10:00:00Z",
+          "author": "data engineer",
+          "text": "I have a vague worry the daily usage import is getting slower. No numbers yet, just a feeling.",
+          "channel": "harrow-team",
+          "thread": "import"
+        },
+        {
+          "id": "chat-2",
+          "kind": "chat",
+          "at": "2033-02-02T10:05:00Z",
+          "author": "@you",
+          "text": "Let's treat that as a concern to watch, not a risk, until someone measures it.",
+          "channel": "harrow-team",
+          "thread": "import"
+        },
+        {
+          "id": "chat-3",
+          "kind": "chat",
+          "at": "2033-02-02T10:07:00Z",
+          "author": "data engineer",
+          "text": "Fair, I'll measure it when I can.",
+          "channel": "harrow-team",
+          "thread": "import"
+        }
+      ]
+    },
+    {
+      "id": "dream-1",
+      "stepKind": "dream"
+    },
+    {
+      "id": "checkpoint-1",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "risks-1",
+          "question": "What are the Harrow project's current risks, and what supports each?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "contract"
+              ]
+            },
+            {
+              "words": [
+                "billing"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Two confirmed risks: the payment vendor contract ends March 31 with no renewal signed (checkout would stop April 1), and only one engineer knows the billing code and she leaves in April. A slower usage import is an unmeasured concern, not a risk."
+        }
+      ]
+    },
+    {
+      "id": "unrelated-update",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "note-2",
+          "kind": "note",
+          "at": "2033-02-10T09:00:00Z",
+          "author": "@you",
+          "text": "Harrow's office moves to the fourth floor on February 20. Nothing changes for the project's work.",
+          "title": "Harrow office move"
+        }
+      ]
+    },
+    {
+      "id": "dream-2",
+      "stepKind": "dream"
+    },
+    {
+      "id": "checkpoint-2",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "risks-2",
+          "question": "What are the Harrow project's current risks, and what supports each?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "contract"
+              ]
+            },
+            {
+              "words": [
+                "billing"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Unchanged: the unsigned payment vendor renewal before March 31, and the single engineer who knows the billing code leaving in April. The slower import is still an unmeasured concern."
+        }
+      ]
+    },
+    {
+      "id": "risk-resolved",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "chat-11",
+          "kind": "chat",
+          "at": "2033-02-24T15:00:00Z",
+          "author": "finance lead",
+          "text": "The payment vendor renewal is signed, through March 2035.",
+          "channel": "harrow-team",
+          "thread": "vendor"
+        },
+        {
+          "id": "chat-12",
+          "kind": "chat",
+          "at": "2033-02-24T15:04:00Z",
+          "author": "@you",
+          "text": "Great, so the checkout risk is closed.",
+          "channel": "harrow-team",
+          "thread": "vendor"
+        },
+        {
+          "id": "chat-13",
+          "kind": "chat",
+          "at": "2033-02-24T15:05:00Z",
+          "author": "finance lead",
+          "text": "Yes, closed.",
+          "channel": "harrow-team",
+          "thread": "vendor"
+        }
+      ]
+    },
+    {
+      "id": "dream-3",
+      "stepKind": "dream"
+    },
+    {
+      "id": "checkpoint-3",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "risks-3",
+          "question": "What are the Harrow project's current risks, and what supports each?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "billing"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "One confirmed risk: only one engineer knows the billing code and she leaves in April. The vendor contract risk is closed: the renewal was signed on February 24 through March 2035. The slower import remains an unmeasured concern.",
+          "outdatedClaims": [
+            {
+              "words": [
+                "no renewal is signed"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "late-correction",
+      "stepKind": "records",
+      "records": [
+        {
+          "id": "chat-21",
+          "kind": "chat",
+          "at": "2033-03-02T11:00:00Z",
+          "author": "data engineer",
+          "text": "Measured the usage import: it went from 20 minutes to 95 minutes over February, and at this rate it overruns the morning reports by mid-March.",
+          "channel": "harrow-team",
+          "thread": "import-measured"
+        },
+        {
+          "id": "chat-22",
+          "kind": "chat",
+          "at": "2033-03-02T11:06:00Z",
+          "author": "@you",
+          "text": "Then the import is a real risk now, not just a worry.",
+          "channel": "harrow-team",
+          "thread": "import-measured"
+        },
+        {
+          "id": "chat-23",
+          "kind": "chat",
+          "at": "2033-03-02T11:08:00Z",
+          "author": "data engineer",
+          "text": "Agreed.",
+          "channel": "harrow-team",
+          "thread": "import-measured"
+        },
+        {
+          "id": "chat-24",
+          "kind": "chat",
+          "at": "2033-03-03T09:00:00Z",
+          "author": "engineering manager",
+          "text": "Correction on the billing risk: the billing engineer is staying until July, not leaving in April. We still need a second person on billing.",
+          "channel": "harrow-team",
+          "thread": "billing-date"
+        },
+        {
+          "id": "chat-25",
+          "kind": "chat",
+          "at": "2033-03-03T09:04:00Z",
+          "author": "@you",
+          "text": "Noted, July then. Still a risk.",
+          "channel": "harrow-team",
+          "thread": "billing-date"
+        },
+        {
+          "id": "chat-26",
+          "kind": "chat",
+          "at": "2033-03-03T09:05:00Z",
+          "author": "engineering manager",
+          "text": "Yes.",
+          "channel": "harrow-team",
+          "thread": "billing-date"
+        }
+      ]
+    },
+    {
+      "id": "dream-4",
+      "stepKind": "dream"
+    },
+    {
+      "id": "checkpoint-4",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "risks-4",
+          "question": "What are the Harrow project's current risks, and what supports each?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "import"
+              ]
+            },
+            {
+              "words": [
+                "July"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "Two confirmed risks: the usage import grew from 20 to 95 minutes over February and will overrun the morning reports by mid-March; and only one engineer knows the billing code, now leaving in July (corrected from April). The vendor contract risk is closed (renewed through March 2035).",
+          "outdatedClaims": [
+            {
+              "words": [
+                "no renewal is signed"
+              ]
+            },
+            {
+              "words": [
+                "leaves in April"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dreams-without-news",
+      "stepKind": "dream",
+      "dreamCount": 2
+    },
+    {
+      "id": "checkpoint-5",
+      "stepKind": "checkpoint",
+      "questions": [
+        {
+          "id": "risks-5",
+          "question": "What are the Harrow project's current risks, and what supports each?",
+          "kind": "direct",
+          "expects": [
+            {
+              "words": [
+                "import"
+              ]
+            },
+            {
+              "words": [
+                "July"
+              ]
+            }
+          ],
+          "forbids": [],
+          "expectedAnswer": "The usage import overrunning the morning reports by mid-March, and the single billing engineer leaving in July. The vendor risk is closed.",
+          "outdatedClaims": [
+            {
+              "words": [
+                "no renewal is signed"
+              ]
+            },
+            {
+              "words": [
+                "leaves in April"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

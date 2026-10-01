@@ -111,6 +111,11 @@ type KnowledgeOperation interface {
 	// what a period page is written from.
 	ListAgentDocumentsBetween(agentId string, kinds []models.AgentDocumentKind, from, until time.Time, limit int) ([]*models.AgentDocument, error)
 
+	// ListAgentChunkTexts is the words of every passage an agent's sources
+	// hold, keyed by document, for a scenario run to say whether a thing
+	// was ever said at all.
+	ListAgentChunkTexts(agentId string, limit int) (map[string][]string, error)
+
 	// Chunks.
 	ReplaceAgentChunks(document *models.AgentDocument, chunks []*models.AgentChunk) error
 	GetAgentChunks(agentId string, chunkIds []string) ([]*models.AgentChunk, error)
@@ -785,6 +790,23 @@ func (self *transaction) DeleteAgentDocumentsUnseen(sourceId string, before time
 		return 0, result.Error
 	}
 	return int(result.RowsAffected), nil
+}
+
+func (self *transaction) ListAgentChunkTexts(agentId string, limit int) (map[string][]string, error) {
+	var rows []struct {
+		DocumentID string
+		Text       string
+	}
+	if err := self.tx.Raw(`
+		SELECT "document_id", "text" FROM "agent_chunk"
+		WHERE "agent_id" = ? ORDER BY "document_id", "number" LIMIT ?`, agentId, limit).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	texts := map[string][]string{}
+	for _, row := range rows {
+		texts[row.DocumentID] = append(texts[row.DocumentID], row.Text)
+	}
+	return texts, nil
 }
 
 func (self *transaction) ListAgentDocumentsBetween(agentId string, kinds []models.AgentDocumentKind, from, until time.Time, limit int) ([]*models.AgentDocument, error) {

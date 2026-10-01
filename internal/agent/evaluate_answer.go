@@ -137,6 +137,11 @@ func (self *Agent) EvaluateAnswer(ctx context.Context, found *models.Agent, owne
 				factCount++
 			}
 		}
+		// The lessons a turn is shown beside recall. Left out, a question
+		// a lesson answers was graded against less than a turn is given.
+		for _, line := range self.LessonsForQuestion(ctx, found, owner, question) {
+			memory = append(memory, "lesson: "+strings.TrimPrefix(line, "- "))
+		}
 	}
 	if answerFrom == AnswerFromSources || answerFrom == AnswerFromBoth {
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
