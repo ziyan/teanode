@@ -292,19 +292,37 @@ type SpendingCategoryBudgetStatus struct {
 	// charge again this month and have not yet.
 	FixedChargesDueAmount string `json:"fixedChargesDueAmount"`
 
-	// ProjectedAmount is where the month is expected to end.
+	// ExpectedRepeatCharges are those merchants, one by one, so a
+	// projection can be explained: the ones in the budget's currency, or
+	// converted into it, add up to FixedChargesDueAmount, and the rest are
+	// in their own currency and in UnconvertedFixedChargesDue. Largest
+	// first.
+	ExpectedRepeatCharges []*ExpectedRepeatCharge `json:"expectedRepeatCharges"`
+
+	// ProjectedAmount is where the month is expected to end: SpendingAmount,
+	// plus FixedChargesDueAmount, plus the rest of the spending at the rate
+	// it has come this month for the days left.
 	ProjectedAmount string     `json:"projectedAmount"`
 	BudgetPace      BudgetPace `json:"budgetPace"`
 
 	// UnconvertedSpending is spending left out because its currency has no
 	// exchange rate into the budget's, and
 	// UnconvertedSpendingBySameDayLastMonth the same for last month's
-	// spending by the same day. UnconvertedFixedChargesDue is the regular
+	// spending by the same day. UnconvertedFixedChargesDue is the repeat
 	// charges still expected this month that were left out of
 	// FixedChargesDueAmount, and so of the projection, for the same reason.
 	UnconvertedSpending                   []*CurrencyAmount `json:"unconvertedSpending"`
 	UnconvertedSpendingBySameDayLastMonth []*CurrencyAmount `json:"unconvertedSpendingBySameDayLastMonth"`
 	UnconvertedFixedChargesDue            []*CurrencyAmount `json:"unconvertedFixedChargesDue"`
+}
+
+// ExpectedRepeatCharge is a merchant that charged a spending category in
+// each of the last three full months and has not yet this month: what it
+// is expected to charge, its median over those months.
+type ExpectedRepeatCharge struct {
+	MerchantName   string `json:"merchantName"`
+	ExpectedAmount string `json:"expectedAmount"`
+	CurrencyCode   string `json:"currencyCode"`
 }
 
 // IncomeCategoryBudgetStatus is one income spending category against the

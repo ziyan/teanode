@@ -7,11 +7,12 @@ import { useTranslation } from '../../i18n/i18n'
 import { formatSigned, reachTone, savingMeter } from './budgetGroups'
 import { SAVING_SUMMARY, SavingSummary, amountOf, monthLabel, personMonth } from './financeApi'
 import { UnconvertedNote, useFinanceWords } from './financeCommon'
+import { ForecastDetail } from './forecastDetail'
 
 // The month's saving: what the income budgets less the spending budgets
 // expect to be left, against what came in less what went out, in the
 // reporting currency. The bar is the saving so far against the expected
-// saving, with a mark where the month is heading; a month that is over is
+// saving, with a band to where the month is heading; a month that is over is
 // its own figures, with nothing left to head anywhere. Spending and income
 // are counted the way the chart of months counts them, budgeted or not.
 // A change to reloadKey reads it again: the Budgets section changes it
@@ -62,17 +63,34 @@ export function SavingSummaryPanel({ month, reloadKey = 0 }: { month: string; re
                 fraction={meter.fraction}
                 tone={reachTone(summary.savingPace)}
                 label={said}
-                marker={meter.marker}
+                forecast={meter.forecast}
+                forecastLabel={
+                  isPast ? undefined : t('finance.projected', { amount: money(summary.projectedSavingAmount) })
+                }
+                overTone="good"
               />
             ) : null}
-            <div className="muted finance-budget-row-detail">
-              {isPast
-                ? t('finance.savingEndedAgainstExpected', { amount: formatSigned(difference, currency) })
-                : t('finance.savingHeadingAgainstExpected', {
-                    amount: money(summary.projectedSavingAmount),
-                    difference: formatSigned(difference, currency),
-                  })}
-            </div>
+            {isPast ? (
+              <div className="muted finance-budget-row-detail">
+                {t('finance.savingEndedAgainstExpected', { amount: formatSigned(difference, currency) })}
+              </div>
+            ) : (
+              <ForecastDetail
+                name={t('finance.savedSoFar')}
+                line={t('finance.savingHeadingAgainstExpected', {
+                  amount: money(summary.projectedSavingAmount),
+                  difference: formatSigned(difference, currency),
+                })}
+                explanation={
+                  <p>
+                    {t('finance.forecastHowSaving', {
+                      income: money(summary.projectedIncomeAmount),
+                      spending: money(summary.projectedSpendingAmount),
+                    })}
+                  </p>
+                }
+              />
+            )}
           </div>
           <div className="table-wrap">
             <table className="numbers-table finance-table finance-saving-table">

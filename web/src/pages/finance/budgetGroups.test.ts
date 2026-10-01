@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatSigned, groupedCategoryOptions, reachTone, savingMeter, splitByIncome } from './budgetGroups'
+import {
+  formatSigned,
+  groupedCategoryOptions,
+  reachTone,
+  savingMeter,
+  spendingForecastParts,
+  splitByIncome,
+} from './budgetGroups'
 import type { SavingSummary, SpendingCategory } from './financeApi'
 
 function category(id: string, isIncome: boolean): SpendingCategory {
@@ -75,12 +82,12 @@ describe('reachTone', () => {
 })
 
 describe('savingMeter', () => {
-  it('is the saving so far against the expected saving, with the projection as the mark', () => {
-    expect(savingMeter(summary({}), false)).toEqual({ fraction: 0.5, marker: 0.8 })
+  it('is the saving so far against the expected saving, with the projection as the forecast', () => {
+    expect(savingMeter(summary({}), false)).toEqual({ fraction: 0.5, forecast: 0.8 })
   })
 
-  it('has no mark once the month is over', () => {
-    expect(savingMeter(summary({}), true)).toEqual({ fraction: 0.5, marker: null })
+  it('has no forecast once the month is over', () => {
+    expect(savingMeter(summary({}), true)).toEqual({ fraction: 0.5, forecast: null })
   })
 
   // A month spending more than came in has saved nothing, not less than
@@ -88,13 +95,40 @@ describe('savingMeter', () => {
   it('does not draw below zero', () => {
     expect(savingMeter(summary({ savingAmount: '-300.0000', projectedSavingAmount: '-100.0000' }), false)).toEqual({
       fraction: 0,
-      marker: 0,
+      forecast: 0,
     })
   })
 
   it('is nothing when the budgets expect nothing saved', () => {
     expect(savingMeter(summary({ expectedSavingAmount: '0.0000' }), false)).toBeNull()
     expect(savingMeter(summary({ expectedSavingAmount: '-500.0000' }), false)).toBeNull()
+  })
+})
+
+describe('spendingForecastParts', () => {
+  it('splits the projection into spent, repeat charges still to come and the rest at this pace', () => {
+    expect(
+      spendingForecastParts({
+        spendingAmount: '120.0000',
+        fixedChargesDueAmount: '45.0000',
+        projectedAmount: '405.0000',
+      }),
+    ).toEqual({ spentAmount: 120, repeatChargesAmount: 45, atPaceAmount: 240 })
+  })
+
+  // The first of the month with nothing spent: the projection is only the
+  // repeat charges, and nothing is carried on at a pace of nothing.
+  it('has nothing at pace when nothing was spent', () => {
+    expect(
+      spendingForecastParts({ spendingAmount: '0.0000', fixedChargesDueAmount: '60.0000', projectedAmount: '60.0000' }),
+    ).toEqual({ spentAmount: 0, repeatChargesAmount: 60, atPaceAmount: 0 })
+  })
+
+  it('never says a negative amount at pace', () => {
+    expect(
+      spendingForecastParts({ spendingAmount: '-20.0000', fixedChargesDueAmount: '30.0000', projectedAmount: '0.0000' })
+        .atPaceAmount,
+    ).toBe(0)
   })
 })
 

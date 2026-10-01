@@ -5603,17 +5603,49 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 }
 
 .agent-budget-bar {
+  position: relative;
   height: 6px;
   border-radius: 3px;
   background: var(--border);
   overflow: hidden;
 }
 
+/* Positioned so it is drawn over the forecast band, which starts a little
+   under its rounded end so no gap shows where the two meet. */
 .agent-budget-bar-fill {
+  position: relative;
   display: block;
   height: 100%;
   border-radius: 3px;
   transition: width 200ms ease;
+}
+
+/* Where the month is heading, past what has gone: faint stripes in the
+   fill's own color, ending in a firmer edge so the end can be read. A
+   band heading over the end of the bar ends in a solid edge instead. */
+.agent-budget-bar-band {
+  --band-color: var(--good);
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--band-color) 40%, transparent) 0 2px,
+    color-mix(in srgb, var(--band-color) 18%, transparent) 2px 4px
+  );
+  box-shadow: inset -2px 0 0 color-mix(in srgb, var(--band-color) 75%, transparent);
+  transition:
+    left 200ms ease,
+    width 200ms ease;
+}
+.agent-budget-bar-band.warn {
+  --band-color: var(--warn);
+}
+.agent-budget-bar-band.bad {
+  --band-color: var(--bad);
+}
+.agent-budget-bar-band.over {
+  box-shadow: inset -4px 0 0 var(--band-color);
 }
 .agent-budget-bar-fill.good {
   background: var(--good);
@@ -11863,6 +11895,53 @@ button.idea-history-title {
   font-size: var(--text-label);
 }
 
+/* Where the month is heading, and beside it the button that opens how
+   that is worked out: a small icon, so the line keeps the height of the
+   text. */
+.finance-forecast-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 var(--space-1);
+}
+
+.finance-forecast-explain.icon-action {
+  width: 22px;
+  height: 22px;
+}
+
+.finance-forecast-explanation {
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.finance-forecast-explanation p {
+  margin: 0 0 var(--space-2);
+}
+
+.finance-forecast-explanation > :last-child {
+  margin-bottom: 0;
+}
+
+.finance-forecast-charges {
+  max-width: 24rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.finance-forecast-charges li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.finance-forecast-charges .numeric {
+  font-variant-numeric: tabular-nums;
+}
+
 /* Budgets on spending and budgets on income, each under a small heading
    once both are there: the income ones read the other way round. */
 .finance-budget-group + .finance-budget-group {
@@ -11885,20 +11964,6 @@ button.idea-history-title {
 .finance-saving-table tbody th,
 .finance-saving-table tfoot th[scope='row'] {
   text-align: left;
-}
-
-/* The bar a meter is drawn with carries a mark where the month is heading. */
-.agent-budget-bar {
-  position: relative;
-}
-
-.agent-budget-bar-marker {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  margin-left: -1px;
-  background: var(--text);
 }
 
 .finance-evidence {

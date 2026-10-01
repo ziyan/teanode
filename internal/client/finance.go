@@ -302,16 +302,26 @@ type CurrencyAmount struct {
 // SpendingCategoryBudgetStatus is one spending category against its
 // budget, in the budget's currency.
 type SpendingCategoryBudgetStatus struct {
-	SpendingCategoryID               string            `json:"spendingCategoryId"`
-	SpendingCategoryName             string            `json:"spendingCategoryName"`
-	BudgetAmount                     string            `json:"budgetAmount"`
-	CurrencyCode                     string            `json:"currencyCode"`
-	SpendingAmount                   string            `json:"spendingAmount"`
-	SpendingBySameDayLastMonthAmount string            `json:"spendingBySameDayLastMonthAmount"`
-	FixedChargesDueAmount            string            `json:"fixedChargesDueAmount"`
-	ProjectedAmount                  string            `json:"projectedAmount"`
-	BudgetPace                       string            `json:"budgetPace"`
-	UnconvertedSpending              []*CurrencyAmount `json:"unconvertedSpending"`
+	SpendingCategoryID               string                  `json:"spendingCategoryId"`
+	SpendingCategoryName             string                  `json:"spendingCategoryName"`
+	BudgetAmount                     string                  `json:"budgetAmount"`
+	CurrencyCode                     string                  `json:"currencyCode"`
+	SpendingAmount                   string                  `json:"spendingAmount"`
+	SpendingBySameDayLastMonthAmount string                  `json:"spendingBySameDayLastMonthAmount"`
+	FixedChargesDueAmount            string                  `json:"fixedChargesDueAmount"`
+	ExpectedRepeatCharges            []*ExpectedRepeatCharge `json:"expectedRepeatCharges"`
+	ProjectedAmount                  string                  `json:"projectedAmount"`
+	BudgetPace                       string                  `json:"budgetPace"`
+	UnconvertedSpending              []*CurrencyAmount       `json:"unconvertedSpending"`
+}
+
+// ExpectedRepeatCharge is a merchant that charged a spending category in
+// each of the last three full months, expected to charge it again this
+// month and not seen yet.
+type ExpectedRepeatCharge struct {
+	MerchantName   string `json:"merchantName"`
+	ExpectedAmount string `json:"expectedAmount"`
+	CurrencyCode   string `json:"currencyCode"`
 }
 
 // IncomeCategoryBudgetStatus is one income spending category against the
@@ -521,7 +531,7 @@ const (
 	DocumentBudgetStatus = `query ($month: String) {
   BudgetStatus(month: $month) {
     month asOf dayOfMonth daysInMonth
-    spendingCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode spendingAmount spendingBySameDayLastMonthAmount fixedChargesDueAmount projectedAmount budgetPace unconvertedSpending { currencyCode amount } }
+    spendingCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode spendingAmount spendingBySameDayLastMonthAmount fixedChargesDueAmount expectedRepeatCharges { merchantName expectedAmount currencyCode } projectedAmount budgetPace unconvertedSpending { currencyCode amount } }
     incomeCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode incomeAmount incomeBySameDayLastMonthAmount expectedByTodayAmount projectedAmount incomePace unconvertedIncome { currencyCode amount } }
   }
 }`
