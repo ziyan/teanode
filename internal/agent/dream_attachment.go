@@ -181,17 +181,28 @@ func (self *Agent) dreamAttachments(ctx context.Context, run *Run, budget *dream
 		}
 		// A list that came back full is not the same answer as a list
 		// with room left in it. When the model named as many as it was
-		// allowed to, the rest of the batch never got a judgement, so the
-		// row says that instead of claiming one. They are declined either
-		// way, deliberately: ListAgentAttachmentsToDecide orders by
-		// happened_at and passes over what is already declined, so a file
-		// left undecided would be put to every night forever and the ones
-		// behind it would never be reached at all.
-		reason := declinedByDefault
+		// allowed to, the rest of the batch never got a judgement, so
+		// they are not declined: they go behind every file not yet shown
+		// (ListAgentAttachmentsToDecide orders by how often a file was
+		// passed over), and come back in another batch, against other
+		// files. They were declined outright, so a useful screenshot
+		// beside three better ones was never opened. A file passed over
+		// attachmentPassOvers times is declined as passed over, so the
+		// queue cannot fill with files that never win.
 		if len(chosen) >= attachmentsMost(len(batch)) {
-			reason = declinedWhenFull(len(batch))
+			var again, settled []string
+			for _, documentId := range declined {
+				if passedOverOf(batch, documentId)+1 >= attachmentPassOvers {
+					settled = append(settled, documentId)
+				} else {
+					again = append(again, documentId)
+				}
+			}
+			passOverAttachments(ctx, run, again)
+			declineAttachments(ctx, run, settled, declinedWhenFull(len(batch)))
+			continue
 		}
-		declineAttachments(ctx, run, declined, reason)
+		declineAttachments(ctx, run, declined, declinedByDefault)
 	}
 }
 
@@ -423,6 +434,36 @@ func (self *Agent) readPicture(ctx context.Context, run *Run, budget *dreamBudge
 
 // declineAttachments records that the night decided against opening these
 // and why, so that no later night pays to decide again.
+// attachmentPassOvers is how many full lists a file may be left out of
+// before it is declined as passed over.
+const attachmentPassOvers = 3
+
+// passedOverOf is how many full lists a file was left out of before.
+func passedOverOf(batch []*models.AgentDocument, documentId string) int {
+	for _, document := range batch {
+		if document.ID == documentId {
+			switch count := document.Metadata["passedOver"].(type) {
+			case float64:
+				return int(count)
+			case int:
+				return count
+			}
+		}
+	}
+	return 0
+}
+
+func passOverAttachments(ctx context.Context, run *Run, documentIds []string) {
+	if len(documentIds) == 0 {
+		return
+	}
+	if err := dreamBookkeeping(ctx, run, func(tx db.Transaction) error {
+		return tx.MarkAgentDocumentsPassedOver(documentIds)
+	}); err != nil {
+		log.Warningf("cannot record what a dream passed over: %s", err)
+	}
+}
+
 func declineAttachments(ctx context.Context, run *Run, documentIds []string, reason string) {
 	if len(documentIds) == 0 {
 		return

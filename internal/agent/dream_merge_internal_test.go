@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -293,4 +294,24 @@ func TestTheMergeKeepsTwoOccurrencesApart(t *testing.T) {
 	if stated := world.stated(t); len(stated) != 3 {
 		t.Fatalf("the page still says all three, not %v", stated)
 	}
+}
+
+// A page's opening and overview are written from its newest facts: the
+// first two hundred by number were the oldest, and what was filed last
+// never reached them.
+func TestTheNewestFactsAreTheOnesRewritten(t *testing.T) {
+	texts := make([]string, 0, 205)
+	for index := range 205 {
+		texts = append(texts, fmt.Sprintf("the boat was moved on day %d", index+1))
+	}
+	world := newMergeWorld(t, texts...)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		facts, err := newestFactsOf(tx, world.agent.ID, world.page.ID, 200)
+		if err != nil || len(facts) != 200 {
+			t.Fatalf("two hundred facts: %d, %v", len(facts), err)
+		}
+		if facts[0].Number != 6 || facts[199].Number != 205 {
+			t.Fatalf("the newest two hundred, in number order: %d to %d", facts[0].Number, facts[199].Number)
+		}
+	})
 }

@@ -156,7 +156,9 @@ func TestACommitWithNoSizeIsPutToTheModelRatherThanStampedRead(t *testing.T) {
 }
 
 // A document that really says nothing is still marked read without a
-// call, which is what the rule was written for.
+// call, which is what the rule was written for: no passages, or a few
+// bytes. A line of words is read, since a short document is exactly a
+// fact.
 func TestADocumentThatSaysNothingIsMarkedReadWithoutACall(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
@@ -166,7 +168,7 @@ func TestADocumentThatSaysNothingIsMarkedReadWithoutACall(t *testing.T) {
 
 	worker, run := digestSplitWorld(t, database, provider.URL)
 	documents := fileTinyDocuments(t, database, run, []tinyDocument{
-		{name: "a file of twenty bytes", kind: models.DocumentFile, bytes: 20, text: "a line, and no more\n"},
+		{name: "a file of three bytes", kind: models.DocumentFile, bytes: 3, text: "ok\n"},
 		{name: "a document with no passages", kind: models.DocumentFile},
 	})
 
