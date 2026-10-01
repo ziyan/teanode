@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.97.2] - 2026-10-01
+
+### Changed
+
+- Lessons are learned from the whole of a long working session, not only its end. (#287)
+
 ## [0.97.1] - 2026-10-01
 
 ### Changed
