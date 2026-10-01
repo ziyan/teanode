@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Field, Loading, Tag, formatMoney } from '../../components/common'
-import { ArrowLeftIcon } from '../../components/icons'
+import { ArrowLeftIcon, TrashIcon } from '../../components/icons'
 import { Column, DataTable } from '../../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SeriesChart, dayLabel } from '../../components/seriesChart'
@@ -11,6 +11,7 @@ import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
 import { useIsDesktop } from '../../components/sidebar'
 import { useToast } from '../../components/toast'
+import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { Key, useTranslation } from '../../i18n/i18n'
 import {
@@ -956,14 +957,16 @@ function AssetPage({
                       ))}
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        className="link danger"
-                        aria-label={`${formatDay(valuation.valuedOn)}: ${t('finance.deleteValuation')}`}
-                        onClick={() => setDeletingValuation(valuation)}
-                      >
-                        {t('common.delete')}
-                      </button>
+                      <Tooltip label={t('finance.deleteValuation')}>
+                        <button
+                          type="button"
+                          className="icon-action danger"
+                          aria-label={`${formatDay(valuation.valuedOn)}: ${t('finance.deleteValuation')}`}
+                          onClick={() => setDeletingValuation(valuation)}
+                        >
+                          <TrashIcon size={16} />
+                        </button>
+                      </Tooltip>
                     </td>
                   </tr>
                 ))}

@@ -1386,11 +1386,12 @@ function ReferenceChips({
             {onRemove && (
               <button
                 type="button"
-                className="link"
-                aria-label={t('agentDrawer.remove')}
+                className="icon-action"
+                title={t('agentDrawer.remove')}
+                aria-label={`${reference.subject || reference.name || reference.path || ''}: ${t('agentDrawer.remove')}`}
                 onClick={() => onRemove(index)}
               >
-                ×
+                <CloseIcon size={12} />
               </button>
             )}
           </span>
@@ -4137,11 +4138,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                       <PaperclipIcon size={12} /> {file.name} <span className="muted">{formatBytes(file.size)}</span>
                       <button
                         type="button"
-                        className="link"
-                        aria-label={t('agentDrawer.remove')}
+                        className="icon-action"
+                        title={t('agentDrawer.remove')}
+                        aria-label={`${file.name}: ${t('agentDrawer.remove')}`}
                         onClick={() => setPending((previous) => previous.filter((_, at) => at !== index))}
                       >
-                        ×
+                        <CloseIcon size={12} />
                       </button>
                     </span>
                   ))}

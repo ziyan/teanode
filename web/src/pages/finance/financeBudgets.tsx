@@ -74,6 +74,10 @@ function BudgetsPanel({ categories }: { categories: SpendingCategory[] }) {
   const [monthlyAmount, setMonthlyAmount] = useState('')
   const [currencyCode, setCurrencyCode] = useState('')
   const [effectiveFrom, setEffectiveFrom] = useState(() => personMonth())
+  // The budget being ended, asked about first. There is no deleting a
+  // budget: it ends by becoming nothing from this month, which keeps what
+  // it was in the months before.
+  const [ending, setEnding] = useState<Budget | null>(null)
 
   // The budget in force for each spending category this month: its latest
   // row from this month or before. A budget of zero has ended and is not
@@ -136,14 +140,29 @@ function BudgetsPanel({ categories }: { categories: SpendingCategory[] }) {
             month: monthLabel(budget.effectiveFrom, 'long'),
           })}
           actions={
-            <button
-              type="button"
-              className="link"
-              aria-label={`${nameOf(budget.spendingCategoryId)}: ${t('finance.changeBudget')}`}
-              onClick={() => open(budget)}
-            >
-              {t('finance.changeBudget')}
-            </button>
+            <div className="row-actions">
+              <Tooltip label={t('common.edit')}>
+                <button
+                  type="button"
+                  className="icon-action"
+                  aria-label={`${nameOf(budget.spendingCategoryId)}: ${t('common.edit')}`}
+                  onClick={() => open(budget)}
+                >
+                  <PencilIcon size={16} />
+                </button>
+              </Tooltip>
+              <Tooltip label={t('finance.endBudget')}>
+                <button
+                  type="button"
+                  className="icon-action danger"
+                  aria-label={`${nameOf(budget.spendingCategoryId)}: ${t('finance.endBudget')}`}
+                  disabled={busy}
+                  onClick={() => setEnding(budget)}
+                >
+                  <TrashIcon size={16} />
+                </button>
+              </Tooltip>
+            </div>
           }
         />
       ))}
@@ -162,6 +181,32 @@ function BudgetsPanel({ categories }: { categories: SpendingCategory[] }) {
           }
         />
       ))}
+      {ending ? (
+        <ConfirmDialog
+          title={t('finance.endBudget')}
+          body={t('finance.endBudgetBody', {
+            name: nameOf(ending.spendingCategoryId),
+            month: monthLabel(personMonth(), 'long'),
+          })}
+          confirmLabel={t('finance.endBudget')}
+          busy={busy}
+          onClose={() => setEnding(null)}
+          onConfirm={() => {
+            void act(
+              () =>
+                graphql(SET_BUDGET, {
+                  spendingCategoryId: ending.spendingCategoryId,
+                  monthlyAmount: '0',
+                  currencyCode: ending.currencyCode,
+                  effectiveFrom: personMonth(),
+                }),
+              t('finance.budgetEnded'),
+            ).then((isDone) => {
+              if (isDone) setEnding(null)
+            })
+          }}
+        />
+      ) : null}
       {editing ? (
         <FormDialog
           title={editing.spendingCategoryId ? t('finance.changeBudget') : t('finance.setBudget')}

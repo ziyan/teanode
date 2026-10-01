@@ -17,6 +17,8 @@ import {
   SmtpForm,
   StorageForm,
 } from './serverSettings'
+import { EraserIcon, TrashIcon } from '../../components/icons'
+import { Tooltip } from '../../components/tooltip'
 
 const SETTINGS = `
   {
@@ -397,9 +399,16 @@ function SecretField({
         {stored && <Tag value={t('integrations.secretStored')} />}
         {cleared && <Tag value={t('integrations.secretClearing')} tone="warn" />}
         {stored && value === '' && (
-          <button type="button" className="link danger secret-clear" onClick={onClear}>
-            {t('integrations.clearSecret')}
-          </button>
+          <Tooltip label={t('integrations.clearSecret')}>
+            <button
+              type="button"
+              className="icon-action danger secret-clear"
+              aria-label={`${label}: ${t('integrations.clearSecret')}`}
+              onClick={onClear}
+            >
+              <EraserIcon size={14} />
+            </button>
+          </Tooltip>
         )}
       </span>
       <input
@@ -1252,13 +1261,16 @@ function SSOForm({ settings, onSaved }: { settings: SSOSettings; onSaved: () => 
             {t('integrations.ssoRedirect')} <code>{`${origin}/api/v1/sso/${provider.id.trim() || 'id'}/callback`}</code>
           </p>
           <div className="row-actions">
-            <button
-              type="button"
-              className="link danger"
-              onClick={() => setProviders((previous) => previous.filter((_, at) => at !== index))}
-            >
-              {t('common.remove')}
-            </button>
+            <Tooltip label={t('common.remove')}>
+              <button
+                type="button"
+                className="icon-action danger"
+                aria-label={`${provider.name || provider.id}: ${t('common.remove')}`}
+                onClick={() => setProviders((previous) => previous.filter((_, at) => at !== index))}
+              >
+                <TrashIcon size={16} />
+              </button>
+            </Tooltip>
           </div>
         </div>
       ))}
