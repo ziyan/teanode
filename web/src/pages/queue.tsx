@@ -62,7 +62,7 @@ export function QueuePage() {
         value: (delivery) => delivery.recipient,
         sort: (first, second) => (first.recipient ?? '').localeCompare(second.recipient ?? ''),
         render: (delivery) =>
-          delivery.mailId ? <Link to={`/mail/${delivery.mailId}`}>{delivery.recipient}</Link> : delivery.recipient,
+          delivery.mailId ? <Link to={`/manage/mail/${delivery.mailId}`}>{delivery.recipient}</Link> : delivery.recipient,
       },
       {
         key: 'kind',
@@ -140,7 +140,7 @@ export function QueuePage() {
       columns={columns}
       rows={data?.ListPendingDeliveries ?? []}
       rowKey={(delivery) => delivery.id}
-      rowLink={(delivery) => (delivery.mailId ? `/mail/${delivery.mailId}` : undefined)}
+      rowLink={(delivery) => (delivery.mailId ? `/manage/mail/${delivery.mailId}` : undefined)}
       loading={loading}
       emptyMessage={t('queue.empty')}
       initialFilters={requestedFilters}

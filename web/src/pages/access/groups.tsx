@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading } from '../../components/common'
@@ -75,16 +75,6 @@ export function GroupsTab() {
   const navigate = useNavigate()
   const asked = useParams().selected ?? ''
 
-  // Links made before the row moved into the path still work, and become the
-  // new shape as they arrive.
-  const [parameters] = useSearchParams()
-  const legacy = parameters.get('group') ?? ''
-  useEffect(() => {
-    if (legacy) {
-      navigate(`/access/groups/${legacy}`, { replace: true })
-    }
-  }, [legacy, navigate])
-
   const [addingGroup, setAddingGroup] = useState(false)
   const [editingGroup, setEditingGroup] = useState<Group | null>(null)
   const [groupDraft, setGroupDraft] = useState<GroupDraft>(EMPTY_GROUP)
@@ -119,7 +109,7 @@ export function GroupsTab() {
   // The first group when none is asked for, so the page opens on something to
   // read rather than on an instruction to pick.
   const chosen = groups.find((group) => group.id === asked) ?? groups[0] ?? null
-  const choose = (groupId: string) => navigate(groupId ? `/access/groups/${groupId}` : '/access/groups')
+  const choose = (groupId: string) => navigate(groupId ? `/manage/access/groups/${groupId}` : '/manage/access/groups')
 
   const memberOf = (group: Group) => users.filter((user) => group.userIds.includes(user.id))
   const describePerson = (user: User) => (user.name ? `${user.username} (${user.name})` : user.username)

@@ -84,7 +84,7 @@ export function DomainTabsPage() {
   // A tab nobody has, or none named at all, is the first one. A path somebody
   // typed is not a tab.
   if (!TABS.some((candidate) => candidate.id === tab)) {
-    return <Navigate to={`/domains/${domainId}/${TABS[0].id}`} replace />
+    return <Navigate to={`/manage/domains/${domainId}/${TABS[0].id}`} replace />
   }
 
   if (loading && !data) {
@@ -103,17 +103,17 @@ export function DomainTabsPage() {
       <Tabs
         items={TABS}
         active={tab}
-        onSelect={(id) => navigate(`/domains/${domainId}/${id}`)}
+        onSelect={(id) => navigate(`/manage/domains/${domainId}/${id}`)}
         actions={
           /* Beside the tabs rather than among them. Both leave this page for a
              different one with a filter applied, and a tab that takes you
              somewhere else is a lie about where you are. They were two large
              tiles for exactly the same two links. */
           <div className="tab-actions">
-            <Link className="tab-action" to={`/mail?domain=${encodeURIComponent(domain.domain)}`}>
+            <Link className="tab-action" to={`/manage/mail?domain=${encodeURIComponent(domain.domain)}`}>
               {t('domain.viewMail')}
             </Link>
-            <Link className="tab-action" to={`/queue?domain=${encodeURIComponent(domain.domain)}`}>
+            <Link className="tab-action" to={`/manage/queue?domain=${encodeURIComponent(domain.domain)}`}>
               {t('domain.viewQueue')}
             </Link>
           </div>

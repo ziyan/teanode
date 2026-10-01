@@ -160,7 +160,7 @@ export function ReportsPage() {
           columns={columns}
           rows={rows}
           rowKey={(report) => report.id}
-          rowLink={(report) => `/reports/${report.id}`}
+          rowLink={(report) => `/manage/reports/${report.id}`}
           loading={reports.loading}
           emptyMessage={t('reports.empty')}
           initialFilters={requestedFilters}

@@ -1221,7 +1221,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
                     {managesDomains && (
                       <>
                         {' '}
-                        <Link to="/domains">{t('mailbox.noAddressLink')}</Link>
+                        <Link to="/manage/domains">{t('mailbox.noAddressLink')}</Link>
                       </>
                     )}
                   </>
@@ -2509,10 +2509,10 @@ function SortingRows({ insight }: { insight: MailInsight }) {
                   type="button"
                   className="link"
                   onClick={() => {
-                    // The drawer takes it when it is there; the agent page
-                    // is where the runs are otherwise.
+                    // The drawer takes it when it is there; the agent's
+                    // activity tab is where the runs are otherwise.
                     if (!openAgentConversation(insight.runId ?? '')) {
-                      window.location.assign('/agent')
+                      window.location.assign('/settings/agent/activity')
                     }
                   }}
                 >

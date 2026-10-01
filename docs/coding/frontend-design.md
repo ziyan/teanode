@@ -27,6 +27,25 @@ one of them gets the fix.
 | Row action icons | `components/icons.tsx` |
 | Tabs within a page | `Tabs` in `components/tabs.tsx` |
 
+## Where a page lives
+
+The first segment of a path says whose the page is, and the rail follows it:
+
+- `/settings/...` is the signed-in person's own settings: their preferences,
+  their agent, their mailbox, their passwords, passkeys, tokens and sessions.
+  The account's rail.
+- `/manage/...` is the operator's: every message, the queue, reports,
+  domains, who may do what, the server, everybody's agents. Anything that
+  needs an operator permission, or configures the server or other people,
+  goes here. The management rail.
+- A feature page is neither, and keeps a path of its own: the mailbox and
+  what hangs off it (`/mailbox/...`, its calendar and contacts), the agent's
+  conversations (`/agent`), Knowledge (`/knowledge`), Finance (`/finance`).
+  Their rows are in the mailbox's rail.
+
+A page that moves does not leave a redirect behind: every link to it in the
+code moves with it, and the old path is not found.
+
 ## Panels
 
 A page is a stack of panels. A panel is `.card`: a surface, a border, one

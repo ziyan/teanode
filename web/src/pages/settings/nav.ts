@@ -13,17 +13,17 @@ import type { Key } from '../../i18n/i18n'
 // signed in hangs off their own name at the foot of the rail, which is where
 // people look for it.
 //
-// Which is why the server's is at the top level — /server — and not under
-// /settings. It is not a section of anything: it sits in the rail next to Mail
-// and Domains and is reached the same way, and a breadcrumb reading
-// "Settings > Server" named a page that does not exist. The account's surfaces
-// do live under /settings, because that is a place you go into from your own
-// name.
+// Which is why the server's is under /manage, beside Mail and Domains, and
+// not under /settings: /settings is the signed-in person's own, and /manage
+// is the operator's. It is reached the way the other operator pages are, and
+// a breadcrumb reading "Settings > Server" named a page that does not exist.
+// The account's surfaces live under /settings, because that is a place you go
+// into from your own name.
 //
 // It was three rows — Setup, Integrations, Server — and they are one subject:
 // what this server is, what it talks to, and which version it is running.
 // Three rows made somebody choose between them before knowing which one held
-// the thing they wanted. They are tabs of /server now.
+// the thing they wanted. They are tabs of /manage/server now.
 export type SettingsCategory = 'server' | 'account'
 
 export type SettingsSurface = {
@@ -34,8 +34,12 @@ export type SettingsSurface = {
   category: SettingsCategory
   // Shown in the rail only when the person has what it is about: 'finance'
   // is there when their agent is on and a provider is offered or something
-  // is linked already.
-  shownWhen?: 'finance'
+  // is linked already, 'mailbox' when they have a mailbox.
+  shownWhen?: 'finance' | 'mailbox'
+  // 'mailbox' puts the row in the mailbox's rail rather than the account's:
+  // a place somebody reads every day, beside the calendar, rather than a
+  // setting. The page keeps its path and its name in the breadcrumb.
+  rail?: 'mailbox'
 }
 
 export const SETTINGS_CATEGORIES: { id: SettingsCategory; label: Key }[] = [
@@ -46,7 +50,7 @@ export const SETTINGS_CATEGORIES: { id: SettingsCategory; label: Key }[] = [
 export const SETTINGS_SURFACES: SettingsSurface[] = [
   {
     segment: 'server',
-    path: '/server',
+    path: '/manage/server',
     label: 'server.title',
     description: 'server.description',
     category: 'server',
@@ -70,15 +74,27 @@ export const SETTINGS_SURFACES: SettingsSurface[] = [
     description: 'settings.agent.description',
     category: 'account',
   },
+  // The mailbox's own settings: its name and signature, folders, rules, the
+  // auto reply and the mail programs that read it. The person's, so under
+  // /settings with the rest of what is theirs.
+  {
+    segment: 'mailbox',
+    path: '/settings/mailbox',
+    label: 'nav.mailboxSettings',
+    description: 'settings.mailbox.description',
+    category: 'account',
+    shownWhen: 'mailbox',
+  },
   // What the agent knows, as pages the person can read and correct. Its
   // own surface rather than a card on the agent page: it is a place
   // somebody browses, and a browser inside a settings form is neither.
   {
     segment: 'knowledge',
-    path: '/settings/knowledge',
+    path: '/knowledge',
     label: 'knowledge.title',
     description: 'settings.knowledge.description',
     category: 'account',
+    rail: 'mailbox',
   },
   // What the institutions a person linked report: spending, budgets, net
   // worth. Beside Knowledge and for the same reason, a place somebody reads
@@ -91,6 +107,7 @@ export const SETTINGS_SURFACES: SettingsSurface[] = [
     description: 'settings.finance.description',
     category: 'account',
     shownWhen: 'finance',
+    rail: 'mailbox',
   },
   {
     segment: 'password',
@@ -137,7 +154,7 @@ export function surfacesByCategory(category: SettingsCategory): SettingsSurface[
 }
 
 // matchSettingsSurface finds the surface a path is on, so that
-// /server/storage resolves to the server surface and names itself in the
+// /manage/server/storage resolves to the server surface and names itself in the
 // breadcrumb from the same list the rail renders.
 export function matchSettingsSurface(pathname: string): SettingsSurface | undefined {
   return SETTINGS_SURFACES.find(

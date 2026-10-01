@@ -313,7 +313,7 @@ export function TemplateEditorPage() {
             </button>
             <Link
               className="button"
-              to={`/mail/compose?domain=${encodeURIComponent(domainId)}&template=${encodeURIComponent(templateId)}`}
+              to={`/manage/mail/compose?domain=${encodeURIComponent(domainId)}&template=${encodeURIComponent(templateId)}`}
             >
               {t('templates.send')}
             </Link>
@@ -359,7 +359,7 @@ export function TemplateEditorPage() {
               setBusy(true)
               try {
                 await graphql(DELETE, { templateId })
-                navigate(`/domains/${domainId}/templates`)
+                navigate(`/manage/domains/${domainId}/templates`)
               } catch (caught) {
                 setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
               } finally {

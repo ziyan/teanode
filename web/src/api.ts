@@ -1055,6 +1055,22 @@ export function sendToAgentConversation(conversationId: string, message: string)
   return detail.handled
 }
 
+// A page asking the drawer to start a new conversation and open it, the
+// same as the drawer's own new chat. onStarted is told the conversation's
+// identifier once it exists, so the page can list it.
+export const AGENT_NEW_EVENT = 'teanode:agent-new'
+
+export interface AgentNewDetail {
+  onStarted?: (conversationId: string) => void
+  handled: boolean
+}
+
+export function startAgentConversation(onStarted?: (conversationId: string) => void): boolean {
+  const detail: AgentNewDetail = { onStarted, handled: false }
+  window.dispatchEvent(new CustomEvent<AgentNewDetail>(AGENT_NEW_EVENT, { detail }))
+  return detail.handled
+}
+
 // isNotFound says whether a call failed because what it named is not there
 // any more, such as a conversation deleted since the page was drawn.
 export function isNotFound(caught: unknown): boolean {

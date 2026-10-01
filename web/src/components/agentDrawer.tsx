@@ -2,8 +2,10 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useLocation } from 'react-router-dom'
 import {
   AGENT_ASK_EVENT,
+  AGENT_NEW_EVENT,
   AGENT_OPEN_EVENT,
   AgentAskDetail,
+  AgentNewDetail,
   AgentOpenDetail,
   AgentReference,
   AgentViewing,
@@ -56,7 +58,7 @@ import {
 import { BackgroundCommand, BackgroundPanel, useBackgroundCommands } from './backgroundCommands'
 import { Budget, BudgetBar } from './budgetBar'
 import { CodeBlock } from './codeBlock'
-import { ConfirmDialog, FormDialog } from './dialog'
+import { ConfirmDialog } from './dialog'
 import { ZoomablePicture } from './lightbox'
 import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
@@ -83,7 +85,7 @@ const DEVICES_EVERY = 10_000
 // the fourth answer and the commonest one: there is no goal.
 type GoalState = 'working' | 'waiting' | 'met'
 
-interface Conversation {
+export interface Conversation {
   id: string
   kind: 'main' | 'named' | 'run'
   // For a run, what made it: a dream, a triage, a call over MCP.
@@ -433,7 +435,9 @@ const TAB = `
     ReadAgent { budget { used limit resetsAt cost costLimit currency } timezone }
   }`
 
-const CONVERSATIONS = `
+// Also read by the agent's page of conversations, which lists the same
+// conversations the picker does.
+export const CONVERSATIONS = `
   query ($archived: Boolean, $query: String) {
     ListAgentConversations(archived: $archived, query: $query) {
       id kind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt
@@ -504,11 +508,11 @@ const STOP = `
     StopAgentRun(runId: $runId)
   }`
 
-// A goal given here starts the conversation already working toward it, so
-// the first turn runs with it rather than being told a moment later.
+// A new conversation starts with nothing but itself: it is named after its
+// first turn, and a goal, if it wants one, is set from the drawer's head.
 const START = `
-  mutation ($title: String, $goal: String) {
-    StartAgentConversation(title: $title, goal: $goal) { id kind title summary lastAt archivedAt }
+  mutation {
+    StartAgentConversation { id kind title summary lastAt archivedAt }
   }`
 
 // A variable left out is a field left alone: renaming sends no goal, and
@@ -2138,14 +2142,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const [runs, setRuns] = useState<string[]>([])
   const [showingList, setShowingList] = useState(false)
   const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null)
-  // The goal being typed, or null while the dialog is shut. An empty
-  // string is a dialog open on a conversation that has no goal yet.
   const [goalBusy, setGoalBusy] = useState(false)
   const [goalTurnsToday, setGoalTurnsToday] = useState(0)
-  // The goal a conversation about to be started is given, or null while
-  // the dialog is shut; an empty string starts one with no goal.
-  const [startingGoal, setStartingGoal] = useState<string | null>(null)
-  const [startingBusy, setStartingBusy] = useState(false)
+  // Whether a new conversation is being started, so a second press does
+  // not start a second one.
+  const isStarting = useRef(false)
   // The conversations that have been put away, and whether the picker is
   // showing them. Read only when the section is opened: most of the time
   // nobody looks, and the list is the one the drawer opens to.
@@ -2210,7 +2211,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         const view = response.ReadAgent
         const usable = Boolean(view.agent?.enabled && view.allowed.enabled && view.allowed.ask)
         setAvailable(usable)
-        announceAgentAvailable(usable)
+        announceAgentAvailable(usable, view.agent?.name?.trim() ?? '')
         setAgentName(view.agent?.name ?? '')
       })
       .catch(() => {
@@ -2517,6 +2518,22 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [available])
 
+  // Another page asking for a new conversation: the agent's page of
+  // conversations, whose button does what the picker's new chat does.
+  useEffect(() => {
+    const listener = (event: Event) => {
+      const detail = (event as CustomEvent<AgentNewDetail>).detail
+      if (!available || !detail) return
+      detail.handled = true
+      setOpen(true)
+      remember(OPEN_KEY, '1')
+      void startNew(detail.onStarted)
+    }
+    window.addEventListener(AGENT_NEW_EVENT, listener)
+    return () => window.removeEventListener(AGENT_NEW_EVENT, listener)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [available])
+
   // Whether this tab is in front of the person, told to the agent so that
   // it starts a conversation on its own only with somebody who is there.
   // Not from the extension's frame: the page behind it reports already.
@@ -2731,7 +2748,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         case 'subscriptions':
           return parts[2] ? { page: 'subscriptions', listKey: decodeURIComponent(parts[2]) } : { page: 'subscriptions' }
         case 'contacts':
-        case 'settings':
         case 'priority':
           return { page: parts[1] }
         case 'starred':
@@ -3254,25 +3270,22 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
   }
 
-  // A new conversation may be given what it is for before a word is said,
-  // so its first turn already works toward it; left empty it is an
-  // ordinary conversation, which is most of them.
-  const startNew = async (goal: string) => {
-    setStartingBusy(true)
+  // A new conversation opens straight away, empty, with the box ready for
+  // its first words. It used to ask for a goal first, which put a question
+  // most people skipped between them and the conversation they asked for.
+  const startNew = async (onStarted?: (conversationId: string) => void) => {
+    if (isStarting.current) return
+    isStarting.current = true
     try {
-      const response = await graphql<{ StartAgentConversation: Conversation }>(START, {
-        goal: goal.trim() || undefined,
-      })
-      setStartingGoal(null)
+      const response = await graphql<{ StartAgentConversation: Conversation }>(START)
       await loadConversations()
       await switchTo(response.StartAgentConversation.id)
-      if (goal.trim()) {
-        toast.done(t('agentDrawer.goal.saved'))
-      }
+      onStarted?.(response.StartAgentConversation.id)
+      setTimeout(() => input.current?.focus(), 50)
     } catch (caught) {
       toast.failed(caught instanceof Error ? caught.message : String(caught))
     } finally {
-      setStartingBusy(false)
+      isStarting.current = false
     }
   }
 
@@ -3942,7 +3955,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                       role="menuitem"
                       onClick={() => {
                         setShowingList(false)
-                        setStartingGoal('')
+                        void startNew()
                       }}
                     >
                       <PlusIcon size={14} />
@@ -4256,24 +4269,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           {dragging && <div className="agent-drawer-drop">{t('agentDrawer.dropHere')}</div>}
         </aside>
       )}
-      {/* A new conversation, with what it is for if there is one. The same
-          field as the goal dialog, asked before the first word rather than
-          after it, so the first turn already works toward it. */}
-      {startingGoal !== null ? (
-        <FormDialog
-          title={t('agentDrawer.new')}
-          submitLabel={t('agentDrawer.start')}
-          busy={startingBusy}
-          onClose={() => setStartingGoal(null)}
-          onSubmit={() => void startNew(startingGoal)}
-        >
-          <p className="muted">{t('agentDrawer.goal.hint')}</p>
-          <label>
-            <span>{t('agentDrawer.newGoal')}</span>
-            <textarea rows={3} value={startingGoal} onChange={(event) => setStartingGoal(event.target.value)} />
-          </label>
-        </FormDialog>
-      ) : null}
       {deleting ? (
         <ConfirmDialog
           title={t('agentDrawer.delete')}

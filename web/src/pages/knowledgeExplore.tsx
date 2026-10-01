@@ -1349,7 +1349,7 @@ export function KnowledgeGraph({
           submitLabel={t('knowledge.explore.open')}
           closeLabel={t('common.close')}
           wide
-          onSubmit={() => navigate(`/settings/knowledge/${chosen.path}`)}
+          onSubmit={() => navigate(`/knowledge/${chosen.path}`)}
           onClose={() => setSelected('')}
           otherAction={
             // Icons, with the words as their titles: four worded buttons
