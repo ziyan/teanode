@@ -65,10 +65,13 @@ const CHILDREN = `query ($path: String!, $first: Int, $offset: Int) {
   }
 }`
 
-const SEARCH = `query ($query: String!, $first: Int) {
-  SearchAgentGraph(query: $query, first: $first) {
+// The first page of an answer is asked without an offset; the pages after
+// it with the nextOffset the one before returned.
+const SEARCH = `query ($query: String!, $first: Int, $offset: Int) {
+  SearchAgentGraph(query: $query, first: $first, offset: $offset) {
     nodes { id path kind name summary }
     facts { fact { id number text inferred } path name }
+    moreNodeCount isMoreNodeCountLowerBound moreFactCount isMoreFactCountLowerBound nextOffset
   }
 }`
 
@@ -84,11 +87,11 @@ const RECALL = `query ($question: String!) {
 // What the sources indexed, searched the way the agent's own knowledge
 // tool searches it. The graph above is what the agent made of what it
 // read; this is what it read.
-const DOCUMENT_SEARCH = `query ($query: String!, $first: Int, $sourceId: String) {
-  SearchAgentDocuments(query: $query, first: $first, sourceId: $sourceId) {
+const DOCUMENT_SEARCH = `query ($query: String!, $first: Int, $offset: Int, $sourceId: String) {
+  SearchAgentDocuments(query: $query, first: $first, offset: $offset, sourceId: $sourceId) {
     passages { documentId externalId title kind author sourceId source happenedAt number text }
     definitions { symbol kind line documentId externalId title }
-    meaningful
+    meaningful moreCount isMoreCountLowerBound nextOffset
   }
 }`
 
@@ -254,7 +257,48 @@ type Definition = {
 // What a document search found, and how it found it: Meaningful is false
 // on a deployment with no embedding model, which finds what the words
 // find and misses a paraphrase sharing none of them.
-type FoundDocuments = { passages: Passage[]; definitions: Definition[]; meaningful: boolean }
+// MoreCount is how many passages the search found past these, at least
+// that many where IsMoreCountLowerBound is set, and NextOffset the offset
+// that reads them: zero on the last page. Definitions come with the first
+// page only.
+type FoundDocuments = {
+  passages: Passage[]
+  definitions: Definition[]
+  meaningful: boolean
+  moreCount: number
+  isMoreCountLowerBound: boolean
+  nextOffset: number
+}
+
+// A fact the search box found, with the page it is on.
+type FoundFact = { fact: Fact; path: string; name: string }
+
+// What the search box found, a page of the ranking at a time: how many
+// pages and facts there are past these -- at least that many where the
+// flag is set, because the server stops counting -- and the offset that
+// reads them, zero on the last page.
+type FoundInGraph = {
+  nodes: Node[]
+  facts: FoundFact[]
+  moreNodeCount: number
+  isMoreNodeCountLowerBound: boolean
+  moreFactCount: number
+  isMoreFactCountLowerBound: boolean
+  nextOffset: number
+}
+
+// How many pages and facts one search asks for, the first time and each
+// time Show more is pressed.
+const SEARCH_PAGE = 60
+
+// appendNew adds the rows of a later page that an earlier one did not
+// already have. The ranking is read again for every page, so something
+// learned in between can push a row across the boundary and bring it back
+// a second time.
+export function appendNew<T>(before: T[], after: T[], keyOf: (row: T) => string): T[] {
+  const seen = new Set(before.map(keyOf))
+  return [...before, ...after.filter((row) => !seen.has(keyOf(row)))]
+}
 
 // A slice of one document: where in the text it starts, how long the whole
 // document is, and where the read that carries on from it begins -- zero
@@ -396,7 +440,7 @@ function nameOf(node: Node, me: string): string {
 // of pages is not browsed; it is looked up, and the list is for when you
 // do not know the name yet.
 export function KnowledgePage() {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const toast = useToast()
   const desktop = useIsDesktop()
   const me = useSession().name || ''
@@ -495,14 +539,12 @@ export function KnowledgePage() {
   const found = useQuery(
     () =>
       search
-        ? graphql<{ SearchAgentGraph: { nodes: Node[]; facts: { fact: Fact; path: string; name: string }[] } }>(
-            SEARCH,
-            { query: search, first: 60 },
-          )
+        ? graphql<{ SearchAgentGraph: FoundInGraph }>(SEARCH, { query: search, first: SEARCH_PAGE })
         : Promise.resolve(null),
     [search],
     { refresh: false },
   )
+  const { shownFound, isSearchingMore, searchMore } = useSearchMore(search, found.data?.SearchAgentGraph ?? null, toast.failed)
 
   // Going somewhere is one move: the address changes, the lookup is put
   // away, and the navigator is told whether the chevron or the name was
@@ -616,7 +658,7 @@ export function KnowledgePage() {
   )
 
   const list = search ? (
-    <SearchResults found={found.data?.SearchAgentGraph} loading={found.loading} me={me} onSelect={goPage} />
+    <SearchResults found={shownFound} loading={found.loading} me={me} onSelect={goPage} />
   ) : (
     <Navigator
       path={folder}
@@ -735,6 +777,22 @@ export function KnowledgePage() {
           walked down. It cannot be drawn where it is counted: the panels
           slide inside a box that clips them, and a thing inside a clipped
           box cannot be pinned to the bottom of the list around it. */}
+      {/* The search's own strip, in the same place: how much more it
+          found, and the way to read it. Only while there is more, since
+          the last page has nothing to say here. */}
+      {search && shownFound && shownFound.nextOffset > 0 ? (
+        <div className="list-foot">
+          <span>{isSearchingMore ? t('common.loading') : moreFoundInGraph(shownFound, { t, plural })}</span>
+          <button
+            type="button"
+            className="show-more"
+            disabled={isSearchingMore || found.loading}
+            onClick={() => void searchMore()}
+          >
+            {t('list.showMore')}
+          </button>
+        </div>
+      ) : null}
       {!search && paging ? (
         <div className="list-foot">
           <span>
@@ -1144,13 +1202,48 @@ function PageRow({
 
 // SearchResults is what the lookup found, pages then facts, grouped by
 // the folder each is filed under so a hit in Projects reads as one.
+// moreFoundInGraph is the line under the search's results: how many more
+// pages and facts it found, either of them left out when there are none,
+// and "at least" where the server stopped counting.
+export function moreFoundInGraph(
+  found: FoundInGraph,
+  { t, plural }: Pick<ReturnType<typeof useTranslation>, 't' | 'plural'>,
+): string {
+  const pages =
+    found.moreNodeCount <= 0
+      ? ''
+      : found.isMoreNodeCountLowerBound
+        ? plural(found.moreNodeCount, {
+            one: 'knowledge.search.morePagesAtLeastOne',
+            other: 'knowledge.search.morePagesAtLeastOther',
+          })
+        : plural(found.moreNodeCount, {
+            one: 'knowledge.search.morePagesOne',
+            other: 'knowledge.search.morePagesOther',
+          })
+  const facts =
+    found.moreFactCount <= 0
+      ? ''
+      : found.isMoreFactCountLowerBound
+        ? plural(found.moreFactCount, {
+            one: 'knowledge.search.moreFactsAtLeastOne',
+            other: 'knowledge.search.moreFactsAtLeastOther',
+          })
+        : plural(found.moreFactCount, {
+            one: 'knowledge.search.moreFactsOne',
+            other: 'knowledge.search.moreFactsOther',
+          })
+  if (pages !== '' && facts !== '') return t('knowledge.search.moreBoth', { pages, facts })
+  return t('knowledge.search.moreEither', { what: pages || facts })
+}
+
 function SearchResults({
   found,
   loading,
   me,
   onSelect,
 }: {
-  found?: { nodes: Node[]; facts: { fact: Fact; path: string; name: string }[] } | null
+  found?: { nodes: Node[]; facts: FoundFact[] } | null
   loading: boolean
   me: string
   onSelect: (path: string) => void
@@ -1304,8 +1397,8 @@ function RecallDialog({ onSelect, onClose }: { onSelect: (path: string) => void;
 // the passages that matched, under the document each came from; Read opens
 // that document from its beginning in the same dialog, a slice at a time,
 // and the way back is the way back to the results rather than out.
-function DocumentsDialog({ onClose }: { onClose: () => void }) {
-  const { t } = useTranslation()
+export function DocumentsDialog({ onClose }: { onClose: () => void }) {
+  const { t, plural } = useTranslation()
   const [query, setQuery] = useState('')
   const [sourceId, setSourceId] = useState('')
   // The search the passages in hand answer -- the words and the source --
@@ -1345,6 +1438,44 @@ function DocumentsDialog({ onClose }: { onClose: () => void }) {
       } catch (caught) {
         setProblem(messageOf(caught))
         setAsked(null)
+      } finally {
+        setBusy(false)
+      }
+    })()
+  }
+
+  // The passages after the ones shown, for the search they answer, put
+  // under them. The definitions stay those of the first page, which is the
+  // only one that carries any.
+  const searchOn = () => {
+    if (asked === null || found === null || found.nextOffset <= 0 || busy) return
+    setBusy(true)
+    setProblem(null)
+    const variables: Record<string, unknown> = {
+      query: asked.words,
+      first: DOCUMENT_PASSAGES,
+      offset: found.nextOffset,
+    }
+    if (asked.sourceId !== '') variables.sourceId = asked.sourceId
+    void (async () => {
+      try {
+        const answer = await graphql<{ SearchAgentDocuments: FoundDocuments }>(DOCUMENT_SEARCH, variables)
+        const next = answer.SearchAgentDocuments
+        setFound((previous) =>
+          previous === null
+            ? next
+            : {
+                ...next,
+                definitions: previous.definitions,
+                passages: appendNew(
+                  previous.passages,
+                  next.passages,
+                  (passage) => `${passage.documentId}#${passage.number}`,
+                ),
+              },
+        )
+      } catch (caught) {
+        setProblem(messageOf(caught))
       } finally {
         setBusy(false)
       }
@@ -1495,6 +1626,24 @@ function DocumentsDialog({ onClose }: { onClose: () => void }) {
               )
             })}
           </ul>
+          {showing.nextOffset > 0 ? (
+            <div className="list-foot">
+              <span>
+                {showing.isMoreCountLowerBound
+                  ? plural(showing.moreCount, {
+                      one: 'knowledge.documents.moreAtLeastOne',
+                      other: 'knowledge.documents.moreAtLeastOther',
+                    })
+                  : plural(showing.moreCount, {
+                      one: 'knowledge.documents.moreOne',
+                      other: 'knowledge.documents.moreOther',
+                    })}
+              </span>
+              <button type="button" className="show-more" disabled={busy} onClick={searchOn}>
+                {t('list.showMore')}
+              </button>
+            </div>
+          ) : null}
           {showing.meaningful ? null : <p className="muted document-section">{t('knowledge.documents.wordsOnly')}</p>}
         </>
       )}
@@ -2586,4 +2735,48 @@ function EditFactDialog({
       />
     </FormDialog>
   )
+}
+
+// useSearchMore is the search box's pages after the first: what is shown
+// (the first page with the later ones appended), whether a later page is
+// on its way, and the way to ask for it.
+//
+// Both are tied to the first page they carry on from. A new answer to the
+// box puts the later pages away, and an answer to other words that arrives
+// after the box has moved on is dropped. The page on its way is kept the
+// same way, not as a flag: a flag set for the old words left the new
+// words' strip saying "loading" with its button off until the old request
+// finished.
+export function useSearchMore(search: string, firstFound: FoundInGraph | null, failed: (message: string) => void) {
+  const [searchedMore, setSearchedMore] = useState<{ from: FoundInGraph; found: FoundInGraph } | null>(null)
+  const [searchingMoreFrom, setSearchingMoreFrom] = useState<FoundInGraph | null>(null)
+  const shownFound = searchedMore !== null && searchedMore.from === firstFound ? searchedMore.found : firstFound
+  const isSearchingMore = searchingMoreFrom !== null && searchingMoreFrom === firstFound
+  const searchMore = async () => {
+    if (firstFound === null || shownFound === null || shownFound.nextOffset <= 0) return
+    const from = firstFound
+    const before = shownFound
+    setSearchingMoreFrom(from)
+    try {
+      const answer = await graphql<{ SearchAgentGraph: FoundInGraph }>(SEARCH, {
+        query: search,
+        first: SEARCH_PAGE,
+        offset: before.nextOffset,
+      })
+      const next = answer.SearchAgentGraph
+      setSearchedMore({
+        from,
+        found: {
+          ...next,
+          nodes: appendNew(before.nodes, next.nodes, (node) => node.id),
+          facts: appendNew(before.facts, next.facts, (row) => row.fact.id),
+        },
+      })
+    } catch (caught) {
+      failed(messageOf(caught))
+    } finally {
+      setSearchingMoreFrom((current) => (current === from ? null : current))
+    }
+  }
+  return { shownFound, isSearchingMore, searchMore }
 }
