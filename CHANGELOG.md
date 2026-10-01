@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.102.1] - 2026-10-01
+
+### Fixed
+
+- A charge a connection reports on several of its accounts counts once; the other copies show as duplicates. (#304)
+
 ## [0.102.0] - 2026-10-01
 
 ### Changed
