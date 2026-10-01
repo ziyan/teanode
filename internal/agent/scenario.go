@@ -179,6 +179,11 @@ type ScenarioSettings struct {
 	BudgetDollars float64
 
 	Progress io.Writer
+
+	// KeepRefreshTokens is handed a signed-in provider's refresh token
+	// each time the service rotates it, so a run's own sign-in is written
+	// back and still works for the next run.
+	KeepRefreshTokens func(provider, refreshToken string)
 }
 
 // ScenarioReport is what a run found.
@@ -292,6 +297,9 @@ func RunScenario(ctx context.Context, settings *ScenarioSettings) (*ScenarioRepo
 	registry, err := llm.Open(&configuration.Agent)
 	if err != nil {
 		return nil, err
+	}
+	if settings.KeepRefreshTokens != nil {
+		registry.KeepRefreshTokens(settings.KeepRefreshTokens)
 	}
 	worker := New(&Settings{
 		Database: settings.Database, Storage: settings.Storage, Registry: registry,

@@ -20,6 +20,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/storage"
 )
 
@@ -46,8 +47,20 @@ func NewEvaluateCommand() *cli.Command {
 					&cli.StringFlag{Name: "output", Usage: "the directory for the report, the records and the stored files", Required: true},
 					&cli.StringFlag{Name: "from", Value: "memory,sources,both", Usage: "what each question is answered from: memory, sources, both, memory@planned, both@planned; empty for recall alone, which costs nothing"},
 					&cli.FloatFlag{Name: "budget", Value: 2, Usage: "stop between steps once the run has spent this many dollars; 0 for no limit"},
+					&cli.StringFlag{Name: "sign-in", Usage: "a file written by 'evaluate sign-in': the models file's openai-codex providers use its sign-in, and a rotated token is written back to it"},
 				},
 				Action: runEvaluateScenario,
+			},
+			{
+				Name:  "sign-in",
+				Usage: "sign scenario runs in to a ChatGPT plan with a code typed on the plan's page, and keep the sign-in in a file",
+				Description: "A sign-in of its own, apart from any server's: a refresh token is replaced each time it is\n" +
+					"used, so two programs sharing one sign-in each leave the other holding a token that no\n" +
+					"longer works. The file holds the refresh token in the clear; keep it private.",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "file", Usage: "where to keep the sign-in", Required: true},
+				},
+				Action: runEvaluateSignIn,
 			},
 		},
 	}
@@ -94,6 +107,25 @@ func runEvaluateScenario(ctx context.Context, command *cli.Command) error {
 	}
 	_, _ = fmt.Fprintf(command.Writer, "database %s\n", name)
 
+	var keepRefreshTokens func(provider, refreshToken string)
+	if signInFile := command.String("sign-in"); signInFile != "" {
+		kept, err := readScenarioSignIn(signInFile)
+		if err != nil {
+			return err
+		}
+		for index := range configuration.Agent.Providers {
+			provider := &configuration.Agent.Providers[index]
+			if provider.Kind == config.AgentProviderKindCodex {
+				provider.RefreshToken, provider.Account = kept.RefreshToken, kept.Account
+			}
+		}
+		keepRefreshTokens = func(_, refreshToken string) {
+			kept.RefreshToken = refreshToken
+			if err := writeScenarioSignIn(signInFile, kept); err != nil {
+				_, _ = fmt.Fprintf(command.ErrWriter, "cannot keep the rotated sign-in in %s: %s\n", signInFile, err)
+			}
+		}
+	}
 	var sources []string
 	for _, source := range strings.Split(command.String("from"), ",") {
 		if source = strings.TrimSpace(source); source != "" {
@@ -104,6 +136,7 @@ func runEvaluateScenario(ctx context.Context, command *cli.Command) error {
 		Database: database, Storage: store, Configuration: configuration,
 		Scenario: scenario, RecordsDirectory: filepath.Join(output, "records"),
 		AnswerSources: sources, BudgetDollars: command.Float("budget"), Progress: command.Writer,
+		KeepRefreshTokens: keepRefreshTokens,
 	})
 	if report != nil {
 		content, err := json.MarshalIndent(report, "", "  ")
@@ -119,6 +152,56 @@ func runEvaluateScenario(ctx context.Context, command *cli.Command) error {
 		_, _ = fmt.Fprintf(command.Writer, "report in %s; spent %.4f\n", output, report.TotalCost)
 	}
 	return runErr
+}
+
+// scenarioSignIn is what 'evaluate sign-in' keeps.
+type scenarioSignIn struct {
+	RefreshToken string `json:"refreshToken"`
+	Account      string `json:"account"`
+}
+
+func runEvaluateSignIn(ctx context.Context, command *cli.Command) error {
+	started, err := llm.BeginDeviceSignIn(ctx, config.AgentProviderKindCodex)
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(command.Writer, "Open %s and enter the code %s (it works until %s).\n",
+		started.VerificationAddress, started.UserCode, started.ExpiresAt.Format("15:04"))
+	result, err := started.Wait(ctx)
+	if err != nil {
+		return err
+	}
+	if err := writeScenarioSignIn(command.String("file"), &scenarioSignIn{RefreshToken: result.RefreshToken, Account: result.Account}); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(command.Writer, "signed in (plan %q); kept in %s\n", result.Plan, command.String("file"))
+	return nil
+}
+
+func readScenarioSignIn(path string) (*scenarioSignIn, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var kept scenarioSignIn
+	if err := json.Unmarshal(content, &kept); err != nil || kept.RefreshToken == "" {
+		return nil, fmt.Errorf("%s holds no sign-in; run 'teanode-server evaluate sign-in --file %s'", path, path)
+	}
+	return &kept, nil
+}
+
+// writeScenarioSignIn writes the sign-in whole and then renames it into
+// place, so a run stopped halfway never leaves a file with no token.
+func writeScenarioSignIn(path string, kept *scenarioSignIn) error {
+	content, err := json.Marshal(kept)
+	if err != nil {
+		return err
+	}
+	written := path + ".new"
+	if err := os.WriteFile(written, content, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(written, path)
 }
 
 // readScenarioModels reads the agent section of a configuration on its
