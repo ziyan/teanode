@@ -234,10 +234,15 @@ func TestKnowledgeSearchAndReadAreWired(test *testing.T) {
 	knowledge := commandNamed(test, NewAgentCommand(), "knowledge")
 
 	search := commandNamed(test, knowledge, "search")
-	for _, name := range []string{"json", "first", "source"} {
+	for _, name := range []string{"json", "first", "offset", "source"} {
 		if flagNamed(search, name) == nil {
 			test.Errorf("knowledge search offers --%s", name)
 		}
+	}
+	// And the memory search reads on from an offset the same way.
+	memorySearch := commandNamed(test, commandNamed(test, NewAgentCommand(), "memory"), "search")
+	if flagNamed(memorySearch, "offset") == nil {
+		test.Errorf("memory search offers --offset")
 	}
 	// The same number of passages the agent's tool gets, so that what a
 	// person sees and what the model saw are the same rows.

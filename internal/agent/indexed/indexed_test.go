@@ -37,7 +37,7 @@ func TestWhatBothSearchesFoundComesFirst(test *testing.T) {
 	byMeaning := []*models.AgentChunk{{ID: "only-meaning"}, {ID: "both"}}
 	byWords := []*models.AgentChunk{{ID: "only-words"}, {ID: "both"}}
 
-	ranked := fuse(3, byMeaning, byWords)
+	ranked := fuse(byMeaning, byWords)
 	if len(ranked) != 3 {
 		test.Fatalf("three passages were found between them, and the fusion kept %d", len(ranked))
 	}

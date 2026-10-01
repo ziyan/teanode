@@ -81,6 +81,15 @@ type AgentLearnedFact struct {
 type AgentGraphSearch struct {
 	Nodes []*AgentNode        `json:"nodes"`
 	Facts []*AgentLearnedFact `json:"facts"`
+
+	// MoreNodeCount and MoreFactCount are how many more the search found
+	// past these, at least that many where the flag says so, and
+	// NextOffset the offset that reads them; zero is the last page.
+	MoreNodeCount             int  `json:"moreNodeCount"`
+	IsMoreNodeCountLowerBound bool `json:"isMoreNodeCountLowerBound"`
+	MoreFactCount             int  `json:"moreFactCount"`
+	IsMoreFactCountLowerBound bool `json:"isMoreFactCountLowerBound"`
+	NextOffset                int  `json:"nextOffset"`
 }
 
 // AgentRecall is what a turn asking a question would have been carried
@@ -268,6 +277,13 @@ type AgentDocumentSearch struct {
 	Passages    []*AgentPassage    `json:"passages"`
 	Definitions []*AgentDefinition `json:"definitions"`
 	Meaningful  bool               `json:"meaningful"`
+
+	// MoreCount is how many more passages the search found past these, at
+	// least that many where IsMoreCountLowerBound says so, and NextOffset
+	// the offset that reads them; zero is the last page.
+	MoreCount             int  `json:"moreCount"`
+	IsMoreCountLowerBound bool `json:"isMoreCountLowerBound"`
+	NextOffset            int  `json:"nextOffset"`
 }
 
 // AgentDocumentExtract is a document and a slice of its text. Next is
@@ -359,10 +375,11 @@ const (
 			contact { id name emails phones organization }
 		}
 	}`
-	DocumentSearchAgentGraph = `query ($query: String!, $first: Int) {
-		SearchAgentGraph(query: $query, first: $first) {
+	DocumentSearchAgentGraph = `query ($query: String!, $first: Int, $offset: Int) {
+		SearchAgentGraph(query: $query, first: $first, offset: $offset) {
 			nodes ` + nodeFields + `
 			facts { fact ` + factFields + ` path name }
+			moreNodeCount isMoreNodeCountLowerBound moreFactCount isMoreFactCountLowerBound nextOffset
 		}
 	}`
 	DocumentEvaluateAgentAnswer = `mutation ($question: String!, $expectedAnswer: String!, $outdatedAnswer: String, $answerFrom: String!, $plannedSearches: [String!], $isBroad: Boolean) {
@@ -423,11 +440,11 @@ const (
 	DocumentSaveAgentKnowledgeSource  = `mutation ($sourceId: String, $kind: String, $name: String, $computer: String, $path: String, $format: String, $rootPath: String, $cron: String, $enabled: Boolean, $mailboxId: String, $readEveryCheckout: Boolean, $commitsPerPass: Int, $ownCommitsAtLeast: Int, $type: String, $settings: JSON) {
 		SaveAgentKnowledgeSource(type: $type, settings: $settings, sourceId: $sourceId, kind: $kind, name: $name, computer: $computer, path: $path, format: $format, rootPath: $rootPath, cron: $cron, enabled: $enabled, mailboxId: $mailboxId, readEveryCheckout: $readEveryCheckout, commitsPerPass: $commitsPerPass, ownCommitsAtLeast: $ownCommitsAtLeast) ` + sourceFields + `
 	}`
-	DocumentSearchAgentDocuments = `query ($query: String!, $first: Int, $sourceId: String) {
-		SearchAgentDocuments(query: $query, first: $first, sourceId: $sourceId) {
+	DocumentSearchAgentDocuments = `query ($query: String!, $first: Int, $offset: Int, $sourceId: String) {
+		SearchAgentDocuments(query: $query, first: $first, offset: $offset, sourceId: $sourceId) {
 			passages ` + passageFields + `
 			definitions { symbol kind line documentId externalId title }
-			meaningful
+			meaningful moreCount isMoreCountLowerBound nextOffset
 		}
 	}`
 	DocumentReadAgentDocument = `query ($documentId: String!, $from: Int, $first: Int) {
@@ -471,12 +488,13 @@ func AgentGraphPageOf(ctx context.Context, connection *Client, path string) (*Ag
 	return result.AgentGraphPage, nil
 }
 
-// SearchAgentGraph finds pages and facts by words.
-func SearchAgentGraph(ctx context.Context, connection *Client, query string, first int) (*AgentGraphSearch, error) {
+// SearchAgentGraph finds pages and facts by words, past the first offset
+// of each.
+func SearchAgentGraph(ctx context.Context, connection *Client, query string, first, offset int) (*AgentGraphSearch, error) {
 	var result struct {
 		SearchAgentGraph *AgentGraphSearch `json:"SearchAgentGraph"`
 	}
-	if err := connection.Execute(ctx, DocumentSearchAgentGraph, map[string]any{"query": query, "first": first}, &result); err != nil {
+	if err := connection.Execute(ctx, DocumentSearchAgentGraph, map[string]any{"query": query, "first": first, "offset": offset}, &result); err != nil {
 		return nil, err
 	}
 	return result.SearchAgentGraph, nil
@@ -724,12 +742,13 @@ func DeleteAgentKnowledgeSource(ctx context.Context, connection *Client, sourceI
 }
 
 // SearchAgentDocuments finds passages in what the sources indexed: the
-// same search the agent's own knowledge tool runs.
-func SearchAgentDocuments(ctx context.Context, connection *Client, query string, first int, sourceId string) (*AgentDocumentSearch, error) {
+// same search the agent's own knowledge tool runs, past the first offset
+// passages of its ranking.
+func SearchAgentDocuments(ctx context.Context, connection *Client, query string, first, offset int, sourceId string) (*AgentDocumentSearch, error) {
 	var result struct {
 		SearchAgentDocuments *AgentDocumentSearch `json:"SearchAgentDocuments"`
 	}
-	variables := map[string]any{"query": query, "first": first}
+	variables := map[string]any{"query": query, "first": first, "offset": offset}
 	if sourceId != "" {
 		variables["sourceId"] = sourceId
 	}

@@ -899,6 +899,11 @@ func (self *transaction) ListAgentChunks(agentId, documentId string) ([]*models.
 // database has no vector index: the words find two thousand, and cosine
 // puts them in order. That finds everything the words find, in a better
 // order, and misses a paraphrase that shares no word with the question.
+//
+// The order ends with the identifier, so that two passages the words rank
+// the same come back in the same order every time: a search read a page
+// at a time asks for more of the same list, and the shorter list has to
+// be the start of the longer one.
 func (self *transaction) SearchAgentChunks(agentId string, sourceIds []string, query string, limit int) ([]*models.AgentChunk, error) {
 	if strings.TrimSpace(query) == "" {
 		return nil, nil
@@ -913,7 +918,7 @@ func (self *transaction) SearchAgentChunks(agentId string, sourceIds []string, q
 		SELECT * FROM "agent_chunk"
 		WHERE "agent_id" = ? AND "search" @@ `+AnyWord+`
 		  AND (? OR "source_id" = ANY(?))
-		ORDER BY ts_rank("search", `+AnyWord+`) DESC LIMIT ?`,
+		ORDER BY ts_rank("search", `+AnyWord+`) DESC, "id" ASC LIMIT ?`,
 		agentId, query, len(sourceIds) == 0, pq.Array(sourceIds), query, limit)
 	return self.chunksFrom(statement)
 }
