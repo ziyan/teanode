@@ -74,7 +74,8 @@ type BudgetOperation interface {
 	ApplySpendingRules(agentId string) (int, error)
 
 	// SetBudget keeps the monthly amount of a spending category from a
-	// month on, replacing the one already set from that same month.
+	// month on, replacing the one already set from that same month. On an
+	// income spending category it is the income expected each month.
 	SetBudget(budget *models.Budget) (*models.Budget, error)
 
 	// ListBudgets is every budget row of the agent, by spending category
@@ -116,6 +117,13 @@ type BudgetOperation interface {
 	// too, since it may be income; money out that is not categorized is
 	// counted under an empty spending category.
 	ListSpendingCategoryDays(agentId, month string) ([]*models.SpendingCategoryDay, error)
+
+	// ListIncomeCategoryDays is each day's income in a month ("2006-01")
+	// per income spending category and currency: money in less money
+	// taken back, transfers left out. Money in that is not categorized is
+	// left out, since no income budget can count it; ListCashFlowDays
+	// counts it as income.
+	ListIncomeCategoryDays(agentId, month string) ([]*models.IncomeCategoryDay, error)
 
 	// ListCashFlowDays is each day's income and spending per currency from
 	// one day to another, both included ("2006-01-02"), counted as
@@ -1013,6 +1021,38 @@ func (self *transaction) ListSpendingCategoryDays(agentId, month string) ([]*mod
 	for _, row := range rows {
 		days = append(days, &models.SpendingCategoryDay{
 			SpendingCategoryID: row.SpendingCategoryID, CurrencyCode: row.CurrencyCode, SpentOn: row.SpentOn, SpendingAmount: row.SpendingAmount,
+		})
+	}
+	return days, nil
+}
+
+func (self *transaction) ListIncomeCategoryDays(agentId, month string) ([]*models.IncomeCategoryDay, error) {
+	monthStart, err := parseMonth(month)
+	if err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		SpendingCategoryID string `gorm:"column:spending_category_id"`
+		CurrencyCode       string `gorm:"column:currency_code"`
+		ReceivedOn         string `gorm:"column:received_on"`
+		IncomeAmount       string `gorm:"column:income_amount"`
+	}
+	if err := self.tx.Raw(`SELECT "received"."spending_category_id", "received"."currency_code",
+			to_char("received"."posted_on", 'YYYY-MM-DD') AS "received_on", SUM("received"."amount")::text AS "income_amount"
+		FROM "agent_finance_transaction" AS "received"
+		JOIN "agent_spending_category" AS "spending_category"
+		  ON "spending_category"."id" = "received"."spending_category_id" AND "spending_category"."agent_id" = "received"."agent_id"
+		WHERE "received"."agent_id" = ? AND NOT "received"."is_transfer" AND "spending_category"."is_income"
+		  AND "received"."posted_on" >= ?::date AND "received"."posted_on" < ?::date
+		GROUP BY 1, 2, 3
+		ORDER BY 3, 1, 2`,
+		agentId, monthStart.Format(time.DateOnly), monthStart.AddDate(0, 1, 0).Format(time.DateOnly)).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	days := make([]*models.IncomeCategoryDay, 0, len(rows))
+	for _, row := range rows {
+		days = append(days, &models.IncomeCategoryDay{
+			SpendingCategoryID: row.SpendingCategoryID, CurrencyCode: row.CurrencyCode, ReceivedOn: row.ReceivedOn, IncomeAmount: row.IncomeAmount,
 		})
 	}
 	return days, nil

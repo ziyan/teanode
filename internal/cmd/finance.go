@@ -230,11 +230,16 @@ func NewFinanceCommand() *cli.Command {
 			},
 			{Name: "budgets", Usage: "your budgets, by spending category and month", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceBudgets},
 			{
-				Name: "set-budget", Usage: "set a spending category's monthly budget from a month on; 0 ends it", ArgsUsage: "<spending-category> <monthly-amount>",
+				Name: "set-budget", Usage: "set a spending category's monthly budget from a month on, or the income expected of an income category; 0 ends it", ArgsUsage: "<spending-category> <monthly-amount>",
 				Flags:  []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "currency", Usage: "its currency; the reporting currency by default"}, &cli.StringFlag{Name: "from", Usage: "the month it starts, as 2026-10; this month by default"}},
 				Action: runFinanceSetBudget,
 			},
-			{Name: "budget-status", Usage: "each spending category against its budget this month", Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "month", Usage: "another month, as 2026-08"}}, Action: runFinanceBudgetStatus},
+			{Name: "budget-status", Usage: "each spending category against its budget this month, and each income category against the income expected", Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "month", Usage: "another month, as 2026-08"}}, Action: runFinanceBudgetStatus},
+			{
+				Name: "saving-summary", Usage: "this month's saving: income budgets less spending budgets, against income less spending so far and projected",
+				Flags:  []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "month", Usage: "another month, as 2026-08"}, &cli.StringFlag{Name: "currency", Usage: "convert into this currency instead of the reporting currency"}},
+				Action: runFinanceSavingSummary,
+			},
 			{
 				Name: "spending-by-day", Usage: "this month's spending day by day against last month's",
 				Flags: []cli.Flag{
@@ -293,7 +298,7 @@ var financeSubcommandOperations = map[string]string{
 	"create-spending-rule": "CreateSpendingRule", "update-spending-rule": "UpdateSpendingRule",
 	"delete-spending-rule": "DeleteSpendingRule", "categorize-transaction": "CategorizeTransaction",
 	"mark-transfer": "MarkTransfer", "budgets": "Budgets", "set-budget": "SetBudget", "budget-status": "BudgetStatus",
-	"spending-by-day": "SpendingByDay", "cash-flow": "CashFlow", "savings-targets": "SavingsTargets",
+	"saving-summary": "SavingSummary", "spending-by-day": "SpendingByDay", "cash-flow": "CashFlow", "savings-targets": "SavingsTargets",
 	"create-savings-target": "CreateSavingsTarget", "update-savings-target": "UpdateSavingsTarget",
 	"close-savings-target": "CloseSavingsTarget",
 }
@@ -1695,15 +1700,26 @@ func runFinanceBudgets(ctx context.Context, command *cli.Command) error {
 		_, _ = fmt.Fprintln(command.Writer, "no budgets yet; teanode finance set-budget sets one")
 		return nil
 	}
-	names, err := spendingCategoryNames(ctx, command)
-	if err != nil {
+	var spendingCategories []*client.SpendingCategory
+	if err := financeCall(ctx, command, "SpendingCategories", nil, &spendingCategories); err != nil {
 		return err
+	}
+	byId := map[string]*client.SpendingCategory{}
+	for _, spendingCategory := range spendingCategories {
+		byId[spendingCategory.ID] = spendingCategory
 	}
 	rows := make([][]string, 0, len(budgets))
 	for _, budget := range budgets {
-		rows = append(rows, []string{names[budget.SpendingCategoryID], money(budget.MonthlyAmount, budget.CurrencyCode), strings.TrimSuffix(budget.EffectiveFrom, "-01"), budget.ID})
+		name, budgetKind := "", "spending"
+		if spendingCategory := byId[budget.SpendingCategoryID]; spendingCategory != nil {
+			name = spendingCategory.SpendingCategoryName
+			if spendingCategory.IsIncome {
+				budgetKind = "income"
+			}
+		}
+		rows = append(rows, []string{name, budgetKind, money(budget.MonthlyAmount, budget.CurrencyCode), strings.TrimSuffix(budget.EffectiveFrom, "-01"), budget.ID})
 	}
-	return printTable([]string{"spending category", "monthly", "from", "id"}, rows)
+	return printTable([]string{"spending category", "kind", "monthly", "from", "id"}, rows)
 }
 
 func runFinanceSetBudget(ctx context.Context, command *cli.Command) error {
@@ -1739,19 +1755,77 @@ func runFinanceBudgetStatus(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(status)
 	}
-	if len(status.SpendingCategories) == 0 {
+	if len(status.SpendingCategories) == 0 && len(status.IncomeCategories) == 0 {
 		_, _ = fmt.Fprintf(command.Writer, "no budgets in %s; teanode finance set-budget sets one\n", status.Month)
 		return nil
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s, day %d of %d\n", status.Month, status.DayOfMonth, status.DaysInMonth)
-	rows := make([][]string, 0, len(status.SpendingCategories))
-	for _, row := range status.SpendingCategories {
-		rows = append(rows, []string{
-			row.SpendingCategoryName, money(row.BudgetAmount, row.CurrencyCode), money(row.SpendingAmount, row.CurrencyCode),
-			money(row.SpendingBySameDayLastMonthAmount, row.CurrencyCode), money(row.ProjectedAmount, row.CurrencyCode), row.BudgetPace,
-		})
+	if len(status.SpendingCategories) > 0 {
+		rows := make([][]string, 0, len(status.SpendingCategories))
+		for _, row := range status.SpendingCategories {
+			rows = append(rows, []string{
+				row.SpendingCategoryName, money(row.BudgetAmount, row.CurrencyCode), money(row.SpendingAmount, row.CurrencyCode),
+				money(row.SpendingBySameDayLastMonthAmount, row.CurrencyCode), money(row.ProjectedAmount, row.CurrencyCode), row.BudgetPace,
+			})
+		}
+		if err := printTable([]string{"spending category", "budget", "spent", "same day last month", "projected", "pace"}, rows); err != nil {
+			return err
+		}
 	}
-	return printTable([]string{"spending category", "budget", "spent", "same day last month", "projected", "pace"}, rows)
+	if len(status.IncomeCategories) > 0 {
+		if len(status.SpendingCategories) > 0 {
+			_, _ = fmt.Fprintln(command.Writer)
+		}
+		rows := make([][]string, 0, len(status.IncomeCategories))
+		for _, row := range status.IncomeCategories {
+			rows = append(rows, []string{
+				row.SpendingCategoryName, money(row.BudgetAmount, row.CurrencyCode), money(row.IncomeAmount, row.CurrencyCode),
+				money(row.ExpectedByTodayAmount, row.CurrencyCode), money(row.IncomeBySameDayLastMonthAmount, row.CurrencyCode),
+				money(row.ProjectedAmount, row.CurrencyCode), row.IncomePace,
+			})
+		}
+		return printTable([]string{"income category", "expected", "received", "expected by today", "same day last month", "projected", "pace"}, rows)
+	}
+	return nil
+}
+
+func runFinanceSavingSummary(ctx context.Context, command *cli.Command) error {
+	variables := map[string]any{}
+	setString(command, variables, "month", "month")
+	setString(command, variables, "currency", "currencyCode")
+	var summary *client.SavingSummary
+	if err := financeCall(ctx, command, operationOf(command), variables, &summary); err != nil {
+		return err
+	}
+	if command.Bool("json") {
+		return PrintJSON(summary)
+	}
+	if summary.ReportingCurrencyCode == "" {
+		_, _ = fmt.Fprintln(command.Writer, "nothing to report in yet; link a finance source or set a reporting currency")
+		return nil
+	}
+	if summary.IncomeBudgetCount == 0 && summary.SpendingBudgetCount == 0 {
+		_, _ = fmt.Fprintf(command.Writer, "no budgets in %s; teanode finance set-budget sets one on an income or a spending category\n", summary.Month)
+		return nil
+	}
+	currencyCode := summary.ReportingCurrencyCode
+	_, _ = fmt.Fprintf(command.Writer, "%s, day %d of %d, %s\n", summary.Month, summary.DayOfMonth, summary.DaysInMonth, strings.ReplaceAll(summary.SavingPace, "_", " "))
+	rows := [][]string{
+		{"income", money(summary.ExpectedIncomeAmount, currencyCode), money(summary.IncomeAmount, currencyCode), money(summary.ProjectedIncomeAmount, currencyCode)},
+		{"spending", money(summary.ExpectedSpendingAmount, currencyCode), money(summary.SpendingAmount, currencyCode), money(summary.ProjectedSpendingAmount, currencyCode)},
+		{"saving", money(summary.ExpectedSavingAmount, currencyCode), money(summary.SavingAmount, currencyCode), money(summary.ProjectedSavingAmount, currencyCode)},
+	}
+	if err := printTable([]string{"", "budgeted", "so far", "projected"}, rows); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(command.Writer, "projected saving against budgeted: %s\n", money(summary.SavingDifferenceAmount, currencyCode))
+	if summary.IncomeBudgetCount == 0 {
+		_, _ = fmt.Fprintln(command.Writer, "no income budget yet, so the budgeted saving counts no income; teanode finance set-budget income 4000 sets one")
+	}
+	if len(summary.UnconvertedCurrencyCodes) > 0 {
+		_, _ = fmt.Fprintf(command.Writer, "left out, with no exchange rate into %s: %s\n", currencyCode, strings.Join(summary.UnconvertedCurrencyCodes, ", "))
+	}
+	return nil
 }
 
 func runFinanceSpendingByDay(ctx context.Context, command *cli.Command) error {

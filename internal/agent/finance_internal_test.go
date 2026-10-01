@@ -728,6 +728,95 @@ func TestBudgetStatusReportsWhatItCouldNotConvert(t *testing.T) {
 	}
 }
 
+// An income budget is listed apart from the spending budgets, against what
+// came in, and the saving summary sets the budgets' expected saving
+// against income less spending: so far and projected in the month in
+// progress, the month's own figures once it is over.
+func TestIncomeBudgetStatusAndSavingSummary(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	incomeId := fixture.spendingCategoryIdNamed(t, fixture.agent.ID, finance.SpendingCategoryIncome)
+	groceriesId := fixture.spendingCategoryIdNamed(t, fixture.agent.ID, finance.SpendingCategoryGroceries)
+	fixture.applySync(t, &finance.SyncResult{Accounts: []finance.Account{inventedAccount()}, Added: []finance.Transaction{
+		inventedTransaction("salary", "2026-06-01", "3000.00", "PAYROLL EXAMPLE CO", "", ""),
+		inventedTransaction("grocer-one", "2026-06-05", "-200.00", "CORNER GROCER", "Corner Grocer", ""),
+		inventedTransaction("grocer-two", "2026-06-10", "-100.00", "CORNER GROCER AGAIN", "Corner Grocer", ""),
+		inventedTransaction("gift", "2026-06-12", "50.00", "A GIFT", "", ""),
+	}})
+	categoryByDescription := map[string]string{"PAYROLL EXAMPLE CO": incomeId, "CORNER GROCER": groceriesId, "CORNER GROCER AGAIN": groceriesId}
+	var status, pastStatus *models.BudgetStatus
+	var summary, pastSummary *models.SavingSummary
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		page, err := tx.ListFinanceTransactions(fixture.agent.ID, &db.FinanceTransactionFilter{})
+		if err != nil {
+			t.Fatalf("ListFinanceTransactions: %s", err)
+		}
+		for _, financeTransaction := range page.FinanceTransactions {
+			// The gift stays uncategorized: no income budget counts it, but
+			// the month's income does.
+			spendingCategoryId := categoryByDescription[financeTransaction.Description]
+			if _, err := tx.SetTransactionCategorization(fixture.agent.ID, financeTransaction.ID, spendingCategoryId, models.CategorizedByPerson, nil); err != nil {
+				t.Fatalf("SetTransactionCategorization: %s", err)
+			}
+		}
+		for spendingCategoryId, monthlyAmount := range map[string]string{incomeId: "4000", groceriesId: "600"} {
+			if _, err := tx.SetBudget(&models.Budget{AgentID: fixture.agent.ID, SpendingCategoryID: spendingCategoryId, MonthlyAmount: monthlyAmount, CurrencyCode: "USD", EffectiveFrom: "2026-06"}); err != nil {
+				t.Fatalf("SetBudget: %s", err)
+			}
+		}
+		if status, err = BudgetStatus(t.Context(), tx, nil, fixture.agent.ID, "2026-06", "2026-06-15"); err != nil {
+			t.Fatalf("BudgetStatus: %s", err)
+		}
+		if summary, err = SavingSummary(t.Context(), tx, nil, fixture.agent.ID, "2026-06", "2026-06-15", "USD"); err != nil {
+			t.Fatalf("SavingSummary: %s", err)
+		}
+		if pastStatus, err = BudgetStatus(t.Context(), tx, nil, fixture.agent.ID, "2026-06", "2026-07-03"); err != nil {
+			t.Fatalf("BudgetStatus: %s", err)
+		}
+		if pastSummary, err = SavingSummary(t.Context(), tx, nil, fixture.agent.ID, "2026-06", "2026-07-03", "USD"); err != nil {
+			t.Fatalf("SavingSummary: %s", err)
+		}
+	})
+
+	if len(status.SpendingCategories) != 1 || status.SpendingCategories[0].SpendingCategoryID != groceriesId || status.SpendingCategories[0].SpendingAmount != "300.0000" {
+		t.Errorf("the spending budget is groceries alone: %+v", status.SpendingCategories)
+	}
+	if len(status.IncomeCategories) != 1 {
+		t.Fatalf("the income budget is listed apart: %+v", status)
+	}
+	income := status.IncomeCategories[0]
+	if income.SpendingCategoryID != incomeId || income.IncomeAmount != "3000.0000" || income.ExpectedByTodayAmount != "2000.0000" ||
+		income.ProjectedAmount != "4000.0000" || income.IncomePace != models.IncomePaceOnTrack {
+		t.Errorf("mid month, the salary in and the rest still expected: %+v", income)
+	}
+	pastIncome := pastStatus.IncomeCategories[0]
+	if pastIncome.ProjectedAmount != "3000.0000" || pastIncome.IncomePace != models.IncomePaceBehind {
+		t.Errorf("once the month is over it ended short of what was expected: %+v", pastIncome)
+	}
+
+	for what, compared := range map[string][2]string{
+		"expected income":    {summary.ExpectedIncomeAmount, "4000.0000"},
+		"expected spending":  {summary.ExpectedSpendingAmount, "600.0000"},
+		"expected saving":    {summary.ExpectedSavingAmount, "3400.0000"},
+		"income":             {summary.IncomeAmount, "3050.0000"},
+		"spending":           {summary.SpendingAmount, "300.0000"},
+		"saving":             {summary.SavingAmount, "2750.0000"},
+		"projected income":   {summary.ProjectedIncomeAmount, "4050.0000"},
+		"projected spending": {summary.ProjectedSpendingAmount, "600.0000"},
+		"projected saving":   {summary.ProjectedSavingAmount, "3450.0000"},
+		"difference":         {summary.SavingDifferenceAmount, "50.0000"},
+	} {
+		if compared[0] != compared[1] {
+			t.Errorf("mid month, the %s is %s, want %s", what, compared[0], compared[1])
+		}
+	}
+	if summary.SavingPace != models.SavingPaceOnTrack || summary.IncomeBudgetCount != 1 || summary.SpendingBudgetCount != 1 {
+		t.Errorf("mid month: %+v", summary)
+	}
+	if pastSummary.ProjectedSavingAmount != "2750.0000" || pastSummary.SavingDifferenceAmount != "-650.0000" || pastSummary.SavingPace != models.SavingPaceBehind {
+		t.Errorf("once the month is over, the projection is what happened: %+v", pastSummary)
+	}
+}
+
 // An asset value savings target counts what its assets are worth today:
 // not an asset sold before today, and not a valuation recorded for a day
 // still to come.

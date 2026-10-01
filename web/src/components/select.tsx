@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { ChevronDownIcon } from './icons'
@@ -16,7 +16,10 @@ import { ChevronDownIcon } from './icons'
 // password manager already understands. This is for the handful of controls
 // that are part of the furniture.
 
-export type SelectOption = { value: string; label: string }
+// Group names a heading the option sits under: options given in order with
+// the same group are listed under one heading, which is not an option and
+// cannot be chosen.
+export type SelectOption = { value: string; label: string; group?: string }
 
 // searchableFrom is how many options a list has before it gets a box to
 // narrow it by typing; fewer are read at a glance.
@@ -279,18 +282,24 @@ export function Select({
             <div role="listbox" aria-label={label}>
               {shown.length === 0 && <div className="select-empty muted">—</div>}
               {shown.map((option, index) => (
-                <button
-                  key={option.value}
-                  id={`${id}-option-${index}`}
-                  type="button"
-                  role="option"
-                  aria-selected={option.value === value}
-                  className={index === active ? 'active' : undefined}
-                  onMouseEnter={() => setActive(index)}
-                  onClick={() => choose(option)}
-                >
-                  {option.label}
-                </button>
+                <Fragment key={option.value}>
+                  {option.group && option.group !== shown[index - 1]?.group ? (
+                    <div className="select-group" role="presentation">
+                      {option.group}
+                    </div>
+                  ) : null}
+                  <button
+                    id={`${id}-option-${index}`}
+                    type="button"
+                    role="option"
+                    aria-selected={option.value === value}
+                    className={index === active ? 'active' : undefined}
+                    onMouseEnter={() => setActive(index)}
+                    onClick={() => choose(option)}
+                  >
+                    {option.label}
+                  </button>
+                </Fragment>
               ))}
             </div>
           </div>,

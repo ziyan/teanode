@@ -85,8 +85,15 @@ type FinanceQuery interface {
 	// Every budget row of the caller, by spending category and month.
 	Budgets(ctx context.Context) ([]*models.Budget, error)
 
-	// Each spending category with a budget in a month, against it.
+	// Each spending category with a budget in a month, against it: the
+	// spending budgets, and apart from them the income budgets against
+	// what came in.
 	BudgetStatus(ctx context.Context, arguments BudgetStatusArguments) (*models.BudgetStatus, error)
+
+	// A month's saving in the reporting currency: income budgets less
+	// spending budgets, against income less spending so far, and where
+	// the month is heading.
+	SavingSummary(ctx context.Context, arguments SavingSummaryArguments) (*models.SavingSummary, error)
 
 	// Cumulative spending per day of a month and of another to compare it
 	// with, in the reporting currency.

@@ -1,0 +1,107 @@
+import { describe, expect, it } from 'vitest'
+
+import { formatSigned, groupedCategoryOptions, reachTone, savingMeter, splitByIncome } from './budgetGroups'
+import type { SavingSummary, SpendingCategory } from './financeApi'
+
+function category(id: string, isIncome: boolean): SpendingCategory {
+  return { id, spendingCategoryName: id, isIncome, isHidden: false } as SpendingCategory
+}
+
+const categories = [category('dining', false), category('salary', true), category('travel', false)]
+
+function summary(overrides: Partial<SavingSummary>): SavingSummary {
+  return {
+    month: '2026-06',
+    asOf: '2026-06-15',
+    dayOfMonth: 15,
+    daysInMonth: 30,
+    reportingCurrencyCode: 'USD',
+    incomeBudgetCount: 1,
+    spendingBudgetCount: 2,
+    expectedIncomeAmount: '4000.0000',
+    expectedSpendingAmount: '3000.0000',
+    expectedSavingAmount: '1000.0000',
+    incomeAmount: '2000.0000',
+    spendingAmount: '1500.0000',
+    savingAmount: '500.0000',
+    projectedIncomeAmount: '4000.0000',
+    projectedSpendingAmount: '3200.0000',
+    projectedSavingAmount: '800.0000',
+    savingDifferenceAmount: '-200.0000',
+    savingPace: 'on_track',
+    unconvertedCurrencyCodes: [],
+    ...overrides,
+  }
+}
+
+describe('splitByIncome', () => {
+  it('puts budgets on income categories apart, keeping the order', () => {
+    const rows = [{ spendingCategoryId: 'travel' }, { spendingCategoryId: 'salary' }, { spendingCategoryId: 'dining' }]
+    const { spending, income } = splitByIncome(rows, categories)
+    expect(spending.map((row) => row.spendingCategoryId)).toEqual(['travel', 'dining'])
+    expect(income.map((row) => row.spendingCategoryId)).toEqual(['salary'])
+  })
+
+  // A budget on a spending category since deleted stays where it was.
+  it('keeps a row whose category is gone with the spending', () => {
+    const { spending, income } = splitByIncome([{ spendingCategoryId: 'gone' }], categories)
+    expect(spending).toHaveLength(1)
+    expect(income).toHaveLength(0)
+  })
+})
+
+describe('groupedCategoryOptions', () => {
+  it('lists the spending categories first and the income ones after, each named by group', () => {
+    const options = [
+      { value: 'dining', label: 'Dining' },
+      { value: 'salary', label: 'Salary' },
+      { value: 'travel', label: 'Travel' },
+    ]
+    expect(groupedCategoryOptions(options, categories, { spending: 'Spending', income: 'Income' })).toEqual([
+      { value: 'dining', label: 'Dining', group: 'Spending' },
+      { value: 'travel', label: 'Travel', group: 'Spending' },
+      { value: 'salary', label: 'Salary', group: 'Income' },
+    ])
+  })
+})
+
+describe('reachTone', () => {
+  // Falling short is what is worth a look, for income and for saving.
+  it('colors behind and nothing else', () => {
+    expect(reachTone('behind')).toBe('warn')
+    expect(reachTone('on_track')).toBe('good')
+    expect(reachTone('ahead')).toBe('good')
+  })
+})
+
+describe('savingMeter', () => {
+  it('is the saving so far against the expected saving, with the projection as the mark', () => {
+    expect(savingMeter(summary({}), false)).toEqual({ fraction: 0.5, marker: 0.8 })
+  })
+
+  it('has no mark once the month is over', () => {
+    expect(savingMeter(summary({}), true)).toEqual({ fraction: 0.5, marker: null })
+  })
+
+  // A month spending more than came in has saved nothing, not less than
+  // nothing, as far as a bar can say.
+  it('does not draw below zero', () => {
+    expect(savingMeter(summary({ savingAmount: '-300.0000', projectedSavingAmount: '-100.0000' }), false)).toEqual({
+      fraction: 0,
+      marker: 0,
+    })
+  })
+
+  it('is nothing when the budgets expect nothing saved', () => {
+    expect(savingMeter(summary({ expectedSavingAmount: '0.0000' }), false)).toBeNull()
+    expect(savingMeter(summary({ expectedSavingAmount: '-500.0000' }), false)).toBeNull()
+  })
+})
+
+describe('formatSigned', () => {
+  it('puts a plus in front of more and leaves less and nothing as they are', () => {
+    expect(formatSigned(200, 'USD')).toMatch(/^\+/)
+    expect(formatSigned(-200, 'USD')).not.toMatch(/^\+/)
+    expect(formatSigned(0, 'USD')).not.toMatch(/^\+/)
+  })
+})

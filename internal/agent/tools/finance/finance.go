@@ -238,13 +238,21 @@ var operations = map[string]*financeOperation{
 			if month := text(call, "effective_from"); month != "" {
 				from = " from " + month
 			}
+			isIncome := lookup.isIncomeSpendingCategory(text(call, "spending_category_id"))
 			if text(call, "monthly_amount") == "0" {
+				if isIncome {
+					return "Stop expecting income in " + name + from
+				}
 				return "End the budget for " + name + from
+			}
+			if isIncome {
+				return strings.TrimSpace("Expect a monthly income of "+text(call, "monthly_amount")+" "+text(call, "currency_code")) + " in " + name + from
 			}
 			return strings.TrimSpace("Set a monthly budget of "+text(call, "monthly_amount")+" "+text(call, "currency_code")) + " for " + name + from
 		},
 	},
 	"budget_status":   {graphqlOperation: "BudgetStatus", risk: tools.RiskRead, arguments: []string{"month"}},
+	"saving_summary":  {graphqlOperation: "SavingSummary", risk: tools.RiskRead, arguments: []string{"month", "currency_code"}},
 	"spending_by_day": {graphqlOperation: "SpendingByDay", risk: tools.RiskRead, arguments: []string{"month", "compare_month", "currency_code"}},
 	"cash_flow":       {graphqlOperation: "CashFlow", risk: tools.RiskRead, isMonthShorthand: true, arguments: []string{"from_month", "to_month", "currency_code"}},
 	"savings_targets": {graphqlOperation: "SavingsTargets", risk: tools.RiskRead},
@@ -501,6 +509,8 @@ const description = "The person's money: their finance sources (logins at banks,
 	"A SimpleFIN setup token, or the credential of an existing provider connection (a Plaid access token, a SimpleFIN access URL), is never taken in conversation: `link_simplefin` and `import_credential` say where to give it.`sync`, `disable_source`, `enable_source` and `delete_source` act on a finance source by source_id; a switched-off source is switched on with enable_source before it syncs.\n" +
 	"Recipes, followed the same way every time:\n" +
 	"- Proposing budgets: `spending_summary` grouped by spendingCategory for each of the last three full months (month 2026-06, then 2026-07, then 2026-08); propose the median of each, rounded, as a list; `set_budget` only what the person accepts. Once they set their first budget, offer a monthly review schedule on the first of the month.\n" +
+	"- Expected income: `set_budget` on an income spending category (isIncome) is the income expected each month, not a limit; `budget_status` lists those apart as incomeCategories, with incomePace behind, on_track or ahead.\n" +
+	"- How a month's saving is going: `saving_summary` gives the expected saving (income budgets less spending budgets), the actual saving so far, the projected month-end saving and the difference, with savingPace; quote those numbers rather than working them out. With no income budget, offer to set one from the last three months of `cash_flow` income.\n" +
 	"- A savings plan: `cash_flow` for what they save a month now, `savings_targets` for what a target needs a month, `budget_status` and `spending_summary` for which spending categories could close the gap, with numbers.\n" +
 	"- A savings target on what they own: target_measure net_worth for everything, or asset_value with finance_account_ids for whole accounts (an investment account counts with every holding, those bought later too) and asset_ids only for assets outside a finance account.\n" +
 	"- After the person corrects a transaction's spending category with `categorize_transaction`, offer a spending rule for that merchant (`should_create_spending_rule`), which applies to past transactions too, never over their own choices.\n" +
@@ -532,7 +542,7 @@ func init() {
 					"limit":                       tools.IntegerProperty("for transactions and trades: how many, at most 200"),
 					"after":                       tools.StringProperty("for transactions and trades: the nextCursor of the page before"),
 					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),
-					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, spending_summary, net_worth, spending_by_day and cash_flow: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in"),
+					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, spending_summary, net_worth, spending_by_day, cash_flow and saving_summary: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in"),
 					"from_currency_code":          tools.StringProperty("for exchange_rate and convert_currency: the currency converted from"),
 					"to_currency_code":            tools.StringProperty("for exchange_rate and convert_currency: the currency converted into"),
 					"amount":                      tools.StringProperty("for convert_currency: the amount"),
@@ -559,9 +569,9 @@ func init() {
 					"is_transfer":                 tools.BooleanProperty("a transfer between the person's own accounts, neither spending nor income"),
 					"rule_priority":               tools.IntegerProperty("the order a spending rule is tried in, lowest first"),
 					"should_create_spending_rule": tools.BooleanProperty("for categorize_transaction: also add a spending rule for its merchant, only when the person said yes"),
-					"monthly_amount":              tools.StringProperty("for set_budget: the amount a month; 0 ends the budget"),
+					"monthly_amount":              tools.StringProperty("for set_budget: the amount a month, or on an income spending category the income expected a month; 0 ends the budget"),
 					"effective_from":              tools.StringProperty("for set_budget: the month it starts, 2026-10; this month when left out"),
-					"month":                       tools.StringProperty("a month, 2026-09. For budget_status and spending_by_day: the month, this one when left out. For transactions, trades, spending_summary, net_worth and cash_flow: shorthand for that whole month, instead of from and to"),
+					"month":                       tools.StringProperty("a month, 2026-09. For budget_status, saving_summary and spending_by_day: the month, this one when left out. For transactions, trades, spending_summary, net_worth and cash_flow: shorthand for that whole month, instead of from and to"),
 					"compare_month":               tools.StringProperty("for spending_by_day: the month to compare with; the one before when left out"),
 					"from_month":                  tools.StringProperty("for cash_flow: the first month"),
 					"to_month":                    tools.StringProperty("for cash_flow: the last month"),

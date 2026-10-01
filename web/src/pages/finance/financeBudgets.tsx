@@ -9,6 +9,7 @@ import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/se
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
+import { groupedCategoryOptions, splitByIncome } from './budgetGroups'
 import {
   BUDGETS,
   Budget,
@@ -38,20 +39,28 @@ import {
   useAct,
   useReportingCurrency,
 } from './financeCommon'
+import { SavingSummaryPanel } from './financeSaving'
 import { useSpendingCategoryDisplayName } from './spendingCategoryName'
 
 // The Budgets section: a monthly budget per spending category, the
 // person's own list of spending categories, and the spending rules that
 // file finance transactions under them. A budget is changed by setting a new
-// amount from a month on; the months before keep the budget they had.
+// amount from a month on; the months before keep the budget they had. A
+// budget on an income spending category is the income expected, and the
+// month's saving the budgets expect heads the section, so a change to
+// either side shows what it leaves to save. The Spending section shows
+// the same for any month.
 export function FinanceBudgetsSection() {
   const categories = useQuery(() => graphql<{ SpendingCategories: SpendingCategory[] }>(SPENDING_CATEGORIES), [], {
     refresh: false,
   })
   const categoryList = categories.data?.SpendingCategories ?? []
+  // Bumped when a budget changes, so the saving above it reads again.
+  const [budgetsChangedCount, setBudgetsChangedCount] = useState(0)
   return (
     <>
-      <BudgetsPanel categories={categoryList} />
+      <SavingSummaryPanel month={personMonth()} reloadKey={budgetsChangedCount} />
+      <BudgetsPanel categories={categoryList} onChanged={() => setBudgetsChangedCount((count) => count + 1)} />
       <SpendingCategoriesPanel
         categories={categoryList}
         loading={categories.loading && !categories.data}
@@ -63,12 +72,15 @@ export function FinanceBudgetsSection() {
   )
 }
 
-function BudgetsPanel({ categories }: { categories: SpendingCategory[] }) {
+function BudgetsPanel({ categories, onChanged }: { categories: SpendingCategory[]; onChanged: () => void }) {
   const { t } = useTranslation()
   const categoryName = useSpendingCategoryDisplayName()
   const budgets = useQuery(() => graphql<{ Budgets: Budget[] }>(BUDGETS), [], { refresh: false })
   const { reportingCurrencyCode } = useReportingCurrency()
-  const { busy, act } = useAct(budgets.reload)
+  const { busy, act } = useAct(async () => {
+    await budgets.reload()
+    onChanged()
+  })
   const [editing, setEditing] = useState<{ spendingCategoryId: string } | null>(null)
   const [spendingCategoryId, setSpendingCategoryId] = useState('')
   const [monthlyAmount, setMonthlyAmount] = useState('')
@@ -106,9 +118,33 @@ function BudgetsPanel({ categories }: { categories: SpendingCategory[] }) {
     const category = categories.find((candidate) => candidate.id === id)
     return category ? spendingCategoryLabel(category, categories, categoryName) : t('finance.deletedSpendingCategory')
   }
+  const isIncomeCategory = (id: string) => categories.some((candidate) => candidate.id === id && candidate.isIncome)
+  // What a budget row says: a limit on spending, or the income expected.
+  const amountFrom = (budget: Budget) =>
+    t(isIncomeCategory(budget.spendingCategoryId) ? 'finance.incomeBudgetFrom' : 'finance.budgetFrom', {
+      amount: formatMoney(amountOf(budget.monthlyAmount), budget.currencyCode),
+      month: monthLabel(budget.effectiveFrom, 'long'),
+    })
+  // Income budgets in a group of their own under the spending ones, each
+  // group headed only once there is income to tell apart from spending.
+  const currentGroups = splitByIncome(current, categories)
+  const scheduledGroups = splitByIncome(scheduled, categories)
+  const hasIncome = currentGroups.income.length > 0 || scheduledGroups.income.length > 0
+  const groups = [
+    { id: 'spending', label: t('finance.spending'), current: currentGroups.spending, scheduled: scheduledGroups.spending },
+    { id: 'income', label: t('finance.income'), current: currentGroups.income, scheduled: scheduledGroups.income },
+  ].filter((group) => group.current.length + group.scheduled.length > 0)
+
+  // The dialog's spending categories, the income ones in their own group
+  // after the rest: on those the amount is the income expected.
+  const budgetOptions = (chosen?: string) =>
+    groupedCategoryOptions(spendingCategoryOptions(categories, categoryName, chosen), categories, {
+      spending: t('finance.spending'),
+      income: t('finance.income'),
+    })
 
   const open = (budget?: Budget) => {
-    setSpendingCategoryId(budget?.spendingCategoryId ?? spendingCategoryOptions(categories, categoryName)[0]?.value ?? '')
+    setSpendingCategoryId(budget?.spendingCategoryId ?? budgetOptions()[0]?.value ?? '')
     setMonthlyAmount(budget ? String(amountOf(budget.monthlyAmount)) : '')
     setCurrencyCode(budget?.currencyCode ?? reportingCurrencyCode)
     setEffectiveFrom(personMonth())
@@ -131,55 +167,54 @@ function BudgetsPanel({ categories }: { categories: SpendingCategory[] }) {
       {budgets.data && current.length === 0 && scheduled.length === 0 ? (
         <SettingsEmpty>{t('finance.noBudgets')}</SettingsEmpty>
       ) : null}
-      {current.map((budget) => (
-        <SettingsRow
-          key={budget.id}
-          title={nameOf(budget.spendingCategoryId)}
-          subtitle={t('finance.budgetFrom', {
-            amount: formatMoney(amountOf(budget.monthlyAmount), budget.currencyCode),
-            month: monthLabel(budget.effectiveFrom, 'long'),
-          })}
-          actions={
-            <div className="row-actions">
-              <Tooltip label={t('common.edit')}>
-                <button
-                  type="button"
-                  className="icon-action"
-                  aria-label={`${nameOf(budget.spendingCategoryId)}: ${t('common.edit')}`}
-                  onClick={() => open(budget)}
-                >
-                  <PencilIcon size={16} />
-                </button>
-              </Tooltip>
-              <Tooltip label={t('finance.endBudget')}>
-                <button
-                  type="button"
-                  className="icon-action danger"
-                  aria-label={`${nameOf(budget.spendingCategoryId)}: ${t('finance.endBudget')}`}
-                  disabled={busy}
-                  onClick={() => setEnding(budget)}
-                >
-                  <TrashIcon size={16} />
-                </button>
-              </Tooltip>
-            </div>
-          }
-        />
-      ))}
-      {scheduled.map((budget) => (
-        <SettingsRow
-          key={budget.id}
-          title={nameOf(budget.spendingCategoryId)}
-          badge={<Tag value={t('finance.scheduled')} />}
-          subtitle={
-            amountOf(budget.monthlyAmount) > 0
-              ? t('finance.budgetFrom', {
-                  amount: formatMoney(amountOf(budget.monthlyAmount), budget.currencyCode),
-                  month: monthLabel(budget.effectiveFrom, 'long'),
-                })
-              : t('finance.budgetEndsFrom', { month: monthLabel(budget.effectiveFrom, 'long') })
-          }
-        />
+      {groups.map((group) => (
+        <div key={group.id} className="finance-budget-group">
+          {hasIncome ? <h4 className="finance-group-heading">{group.label}</h4> : null}
+          {group.current.map((budget) => (
+            <SettingsRow
+              key={budget.id}
+              title={nameOf(budget.spendingCategoryId)}
+              subtitle={amountFrom(budget)}
+              actions={
+                <div className="row-actions">
+                  <Tooltip label={t('common.edit')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      aria-label={`${nameOf(budget.spendingCategoryId)}: ${t('common.edit')}`}
+                      onClick={() => open(budget)}
+                    >
+                      <PencilIcon size={16} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={t('finance.endBudget')}>
+                    <button
+                      type="button"
+                      className="icon-action danger"
+                      aria-label={`${nameOf(budget.spendingCategoryId)}: ${t('finance.endBudget')}`}
+                      disabled={busy}
+                      onClick={() => setEnding(budget)}
+                    >
+                      <TrashIcon size={16} />
+                    </button>
+                  </Tooltip>
+                </div>
+              }
+            />
+          ))}
+          {group.scheduled.map((budget) => (
+            <SettingsRow
+              key={budget.id}
+              title={nameOf(budget.spendingCategoryId)}
+              badge={<Tag value={t('finance.scheduled')} />}
+              subtitle={
+                amountOf(budget.monthlyAmount) > 0
+                  ? amountFrom(budget)
+                  : t('finance.budgetEndsFrom', { month: monthLabel(budget.effectiveFrom, 'long') })
+              }
+            />
+          ))}
+        </div>
       ))}
       {ending ? (
         <ConfirmDialog
@@ -236,7 +271,7 @@ function BudgetsPanel({ categories }: { categories: SpendingCategory[] }) {
               value={spendingCategoryId}
               label={t('finance.spendingCategory')}
               disabled={editing.spendingCategoryId !== ''}
-              options={spendingCategoryOptions(categories, categoryName, spendingCategoryId)}
+              options={budgetOptions(spendingCategoryId)}
               onChange={setSpendingCategoryId}
             />
           </label>
