@@ -174,7 +174,7 @@ export function GoalsTab() {
               📬
             </span>
             <div className="goal-text">
-              <Link className="goal-title" to="/mailbox/settings/rules">
+              <Link className="goal-title" to="/settings/mailbox/rules">
                 {t('goals.mailRules')}
               </Link>
               <span className="goal-meta muted">{t('goals.mailRulesHint')}</span>

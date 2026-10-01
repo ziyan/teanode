@@ -288,7 +288,7 @@ func beginOAuth(ctx context.Context, name string) (string, error) {
 	if base == "" {
 		return "", fmt.Errorf("this server has no name to bring the authorization back to; the person can connect it on the Agent page instead")
 	}
-	redirect := base + "/agent?connect=" + name
+	redirect := base + "/settings/agent?connect=" + name
 	var answer struct {
 		BeginAgentServerOAuth string `json:"BeginAgentServerOAuth"`
 	}

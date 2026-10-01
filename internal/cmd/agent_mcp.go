@@ -109,7 +109,7 @@ func runAgentMCPConnect(ctx context.Context, command *cli.Command) error {
 		if command.Bool("loopback") {
 			return connectThroughLoopback(ctx, command, connection, name)
 		}
-		address, err := client.BeginAgentServerOAuth(ctx, connection, name, strings.TrimSuffix(connection.URL(), "/")+"/agent?connect="+name)
+		address, err := client.BeginAgentServerOAuth(ctx, connection, name, strings.TrimSuffix(connection.URL(), "/")+"/settings/agent?connect="+name)
 		if err != nil {
 			return describeError(command, err)
 		}

@@ -106,7 +106,7 @@ export function MailPage() {
         value: (mail) => mail.subject ?? '',
         sort: (first, second) => (first.subject ?? '').localeCompare(second.subject ?? ''),
         render: (mail) => (
-          <Link to={`/mail/${mail.id}`}>{mail.subject || <span className="muted">{t('mail.noSubject')}</span>}</Link>
+          <Link to={`/manage/mail/${mail.id}`}>{mail.subject || <span className="muted">{t('mail.noSubject')}</span>}</Link>
         ),
       },
       {
@@ -197,7 +197,7 @@ export function MailPage() {
   if (domains.length === 0) {
     return (
       <p className="muted">
-        <Trans k="mail.noDomains" nodes={{ link: <Link to="/domains">{t('nav.domains')}</Link> }} />
+        <Trans k="mail.noDomains" nodes={{ link: <Link to="/manage/domains">{t('nav.domains')}</Link> }} />
       </p>
     )
   }
@@ -208,7 +208,7 @@ export function MailPage() {
       {/* Writing a message is the one thing to do here that is not reading
           the list, so it is the one action above it. */}
       <div className="page-actions page-actions-end">
-        <Link className="button primary" to="/mail/compose">
+        <Link className="button primary" to="/manage/mail/compose">
           {t('compose.new')}
         </Link>
       </div>
@@ -216,7 +216,7 @@ export function MailPage() {
         columns={columns}
         rows={mails.data?.ListMails ?? []}
         rowKey={(mail) => mail.id}
-        rowLink={(mail) => `/mail/${mail.id}`}
+        rowLink={(mail) => `/manage/mail/${mail.id}`}
         loading={mails.loading}
         emptyMessage={t('mail.empty')}
         initialFilters={requestedFilters}

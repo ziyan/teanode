@@ -53,14 +53,33 @@ export function writeAgentPreferences(next: Partial<AgentPreferences>) {
 
 // Whether there is an agent to show anything for, told by the drawer once
 // it knows, so that the menu offers the switches only where they mean
-// something.
+// something. The agent's name comes with it, for the rail's row that opens
+// its conversations: the drawer has already asked, and asking again from
+// the rail would be a second request for the same answer.
 let agentAvailable = false
+let agentName = ''
 const AVAILABLE = 'teanode:agent-available'
 
-export function announceAgentAvailable(available: boolean) {
-  if (agentAvailable === available) return
+export function announceAgentAvailable(available: boolean, name = '') {
+  if (agentAvailable === available && agentName === name) return
   agentAvailable = available
+  agentName = name
   window.dispatchEvent(new Event(AVAILABLE))
+}
+
+// useAgentIdentity is whether the person has an agent to talk to, and what
+// it is called; the name is empty until the drawer has heard it, or when the
+// agent has none.
+export function useAgentIdentity(): { isAvailable: boolean; name: string } {
+  const [identity, setIdentity] = useState(() => ({ isAvailable: agentAvailable, name: agentName }))
+  useEffect(() => {
+    const changed = () => setIdentity({ isAvailable: agentAvailable, name: agentName })
+    window.addEventListener(AVAILABLE, changed)
+    // Told before this mounted, between the first render and now.
+    changed()
+    return () => window.removeEventListener(AVAILABLE, changed)
+  }, [])
+  return identity
 }
 
 export function useAgentPreferences(): [AgentPreferences, (next: Partial<AgentPreferences>) => void, boolean] {

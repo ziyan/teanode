@@ -74,7 +74,7 @@ export function IdeasTab() {
         {personal.length === 0 ? (
           <SettingsEmpty>{t('ideas.noneForYou')}</SettingsEmpty>
         ) : (
-          <div className="idea-list idea-list-personal">
+          <div className="idea-list">
             {personal.map((idea) => (
               <IdeaRow key={idea.id} idea={idea} busy={busy} onStart={onStart} onDismiss={onDismiss} />
             ))}

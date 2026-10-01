@@ -90,7 +90,7 @@ function total(totals: UsageRow['totals']): number {
   return totals.promptTokens + totals.completionTokens + totals.cacheReadTokens + totals.cacheWriteTokens
 }
 
-// The tabs of /agent. Everyone's agents and their limits, what they cost,
+// The tabs of /manage/agent. Everyone's agents and their limits, what they cost,
 // every run any of them made, and the jobs given up on: four subjects that
 // were one long page under the server's tabs.
 const AGENT_TABS: { id: string; label: Key }[] = [
@@ -145,7 +145,7 @@ export function AgentAdminPage() {
   const [problem, setProblem] = useState<string | null>(null)
 
   if (!tabs.some((candidate) => candidate.id === tab)) {
-    return <Navigate to={`/agent/${tabs[0].id}`} replace />
+    return <Navigate to={`/manage/agent/${tabs[0].id}`} replace />
   }
   if (loading && !data) return <Loading />
   if (error) return <ErrorMessage error={error} />
@@ -212,7 +212,7 @@ export function AgentAdminPage() {
 
   return (
     <>
-      <Tabs items={tabs} active={tab} onSelect={(id) => navigate(`/agent/${id}`)} />
+      <Tabs items={tabs} active={tab} onSelect={(id) => navigate(`/manage/agent/${id}`)} />
       {tab === 'usage' ? (
         <>
           <SettingsSection
@@ -402,7 +402,7 @@ export function AgentAdminPage() {
                         type="button"
                         onClick={() => {
                           setJobRuns(job.id)
-                          navigate('/agent/runs')
+                          navigate('/manage/agent/runs')
                         }}
                       >
                         {t('agentAdmin.jobRuns')}

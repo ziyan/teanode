@@ -25,10 +25,6 @@ const TABS: Tab[] = [
   { id: 'audit', label: 'server.tabAudit', permissions: ['audit:read'] },
 ]
 
-// Where the one tab that became two used to be, so a link to it still
-// arrives somewhere.
-const MOVED: Record<string, string> = { people: 'users' }
-
 export function AccessPage() {
   // In the path rather than in state, so a tab can be linked to, survives a
   // reload and can be reached with the back button.
@@ -42,16 +38,13 @@ export function AccessPage() {
   if (permitted.length === 0) {
     return <Navigate to="/" replace />
   }
-  if (tab && MOVED[tab]) {
-    return <Navigate to={`/access/${MOVED[tab]}`} replace />
-  }
   if (!permitted.some((candidate) => candidate.id === tab)) {
-    return <Navigate to={`/access/${permitted[0].id}`} replace />
+    return <Navigate to={`/manage/access/${permitted[0].id}`} replace />
   }
 
   return (
     <>
-      <Tabs items={permitted} active={tab} onSelect={(id) => navigate(`/access/${id}`)} />
+      <Tabs items={permitted} active={tab} onSelect={(id) => navigate(`/manage/access/${id}`)} />
 
       {tab === 'users' && <UsersTab />}
       {tab === 'groups' && <GroupsTab />}

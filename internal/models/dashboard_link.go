@@ -49,7 +49,7 @@ func DashboardPath(scheme, target string) string {
 		for index, segment := range segments {
 			segments[index] = url.PathEscape(segment)
 		}
-		return "/settings/knowledge/" + strings.Join(segments, "/")
+		return "/knowledge/" + strings.Join(segments, "/")
 	}
 	return ""
 }

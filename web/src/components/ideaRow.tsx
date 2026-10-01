@@ -151,7 +151,7 @@ function evidenceLink(evidence: IdeaEvidence): string | null {
     case 'message':
       return `/mailbox/starred/${encodeURIComponent(evidence.evidenceId)}`
     case 'page':
-      return `/settings/knowledge/explore?from=${encodeURIComponent(evidence.evidenceId)}`
+      return `/knowledge/explore?from=${encodeURIComponent(evidence.evidenceId)}`
   }
   return null
 }
