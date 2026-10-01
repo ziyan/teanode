@@ -12076,7 +12076,8 @@ button.idea-history-title {
    the leaf, the amber and the text colour so no two side by side match. */
 .spending-ring,
 .finance-summary-table,
-.finance-assets-table {
+.finance-assets-table,
+.finance-credit-table {
   --ring-tone-0: var(--leaf);
   --ring-tone-1: var(--warn);
   --ring-tone-2: color-mix(in srgb, var(--text) 62%, var(--surface));
@@ -12219,6 +12220,50 @@ button.idea-history-title {
 
 .spending-ring-swatch.other {
   background: var(--ring-other);
+}
+
+/* Credit usage, on Accounts: the share in the ring's middle and in each
+   card's row takes the page's good, warn and bad, by the common
+   thresholds (under 30%, to 50%, above). */
+.spending-ring-total.good {
+  fill: var(--good);
+}
+
+.spending-ring-total.warn {
+  fill: var(--warn);
+}
+
+.spending-ring-total.bad {
+  fill: var(--bad);
+}
+
+.finance-credit-share {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-credit-share.good {
+  color: var(--good);
+}
+
+.finance-credit-share.warn {
+  color: var(--warn);
+}
+
+.finance-credit-share.bad {
+  color: var(--bad);
+}
+
+/* The issuer under the card's name, so the name keeps the column's width. */
+.finance-credit-institution {
+  display: block;
+  font-size: var(--text-label);
+}
+
+/* Marks a limit worked out from the balances; the note under the table
+   says so. */
+.finance-credit-mark {
+  margin-left: 2px;
 }
 
 

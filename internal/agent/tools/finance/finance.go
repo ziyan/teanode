@@ -68,6 +68,7 @@ var operations = map[string]*financeOperation{
 	"providers":          {graphqlOperation: "FinanceProviders", risk: tools.RiskRead},
 	"sources":            {graphqlOperation: "FinanceSources", risk: tools.RiskRead, isUntrusted: true},
 	"accounts":           {graphqlOperation: "FinanceAccounts", risk: tools.RiskRead, arguments: []string{"currency_code"}, isUntrusted: true},
+	"credit_usage":       {graphqlOperation: "CreditUsage", risk: tools.RiskRead, arguments: []string{"currency_code"}, isUntrusted: true},
 	"reporting_currency": {graphqlOperation: "ReportingCurrency", risk: tools.RiskRead},
 	"statement_import":   {graphqlOperation: "StatementImport", risk: tools.RiskRead, isUntrusted: true},
 	"regenerate_statement_import_address": {
@@ -530,6 +531,9 @@ const description = "The person's money: their finance sources (logins at banks,
 	"- Expected income: `set_budget` on an income spending category (isIncome) is the income expected each month, not a limit; `budget_status` lists those apart as incomeCategories, with incomePace behind, on_track or ahead.\n" +
 	"- Explaining where a month is heading: a spending budget's projectedAmount is spendingAmount, plus fixedChargesDueAmount (repeat charges: merchants that charged the spending category in each of the last three full months and not yet this month, at their median, listed in expectedRepeatCharges), plus the rest of the spending at the rate it has come this month for the days left; name those three amounts and the merchants. An income budget's projectedAmount is the income expected, or what came in when that is more already, since income is not projected on a straight line. The saving summary's projected saving is projected income less projected spending.\n" +
 	"- How a month's saving is going: `saving_summary` gives the expected saving (income budgets less spending budgets), the actual saving so far, the projected month-end saving and the difference, with savingPace; quote those numbers rather than working them out. With no income budget, offer to set one from the last three months of `cash_flow` income.\n" +
+	"- Credit card usage: `credit_usage` gives what the cards owe against their credit limits, overall (usageShare, 0.25 is 25%) and per card, highest first; quote it rather than working it out from `accounts`. " +
+	"Each card's creditLimitSource says whether the limit is the provider's or derived (owed plus available credit); a card with an unknown limit is listed with what it owes and counted in leftOutCardCount, not in the overall share. " +
+	"Common guidance: under 30% of the limit is good, 30% to 50% is worth watching, above 50% weighs on a credit score; name the cards that push the total up.\n" +
 	"- A savings plan: `cash_flow` for what they save a month now, `savings_targets` for what a target needs a month, `budget_status` and `spending_summary` for which spending categories could close the gap, with numbers.\n" +
 	"- A savings target on what they own: target_measure net_worth for everything, or asset_value with finance_account_ids for whole accounts (an investment account counts with every holding, those bought later too) and asset_ids only for assets outside a finance account.\n" +
 	"- After the person corrects a transaction's spending category with `categorize_transaction`, offer a spending rule for that merchant (`should_create_spending_rule`), which applies to past transactions too, never over their own choices.\n" +
@@ -562,7 +566,7 @@ func init() {
 					"limit":                       tools.IntegerProperty("for transactions and trades: how many, at most 200"),
 					"after":                       tools.StringProperty("for transactions and trades: the nextCursor of the page before"),
 					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),
-					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, spending_summary, net_worth, spending_by_day, cash_flow and saving_summary: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in"),
+					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, credit_usage, spending_summary, net_worth, spending_by_day, cash_flow and saving_summary: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in"),
 					"from_currency_code":          tools.StringProperty("for exchange_rate and convert_currency: the currency converted from"),
 					"to_currency_code":            tools.StringProperty("for exchange_rate and convert_currency: the currency converted into"),
 					"amount":                      tools.StringProperty("for convert_currency: the amount"),

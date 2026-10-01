@@ -222,7 +222,7 @@ func TestFinanceRiskPerOperation(test *testing.T) {
 	test.Parallel()
 	tool := financeTool(test)
 	reads := map[string]bool{
-		"providers": true, "sources": true, "accounts": true, "transactions": true, "trades": true, "spending_summary": true,
+		"providers": true, "sources": true, "accounts": true, "credit_usage": true, "transactions": true, "trades": true, "spending_summary": true,
 		"exchange_rate": true, "convert_currency": true, "net_worth": true, "assets": true, "asset_history": true,
 		"spending_categories": true, "spending_rules": true, "budgets": true, "budget_status": true, "saving_summary": true,
 		"spending_by_day": true, "cash_flow": true, "savings_targets": true,
@@ -389,6 +389,28 @@ func TestFinanceToolTransactionsAreUntrusted(test *testing.T) {
 	}
 	sent := operations.variables[0]
 	if sent["financeAccountId"] != "account-one" || sent["limit"] != 20 || sent["isUncategorized"] != true {
+		test.Errorf("sent %v", sent)
+	}
+}
+
+// Credit usage names each card as its provider wrote it, so it comes back
+// marked untrusted, with the currency passed on in the API's spelling.
+func TestFinanceToolCreditUsageIsUntrusted(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"CreditUsage": `{"reportingCurrencyCode":"EUR","totalOwedAmount":"250.0000","totalCreditLimitAmount":"1000.0000","usageShare":0.25,
+			"leftOutCardCount":0,"leftOutOwedAmount":"0.0000","unconvertedCurrencyCodes":[],
+			"creditCards":[{"financeAccountId":"account-one","accountName":"Example Rewards Card","currencyCode":"EUR","owedAmount":"250.0000",
+			"creditLimitAmount":"1000.0000","creditLimitSource":"derived","usageShare":0.25}]}`,
+	}}
+	result, err := call(test, operations, `{"operation":"credit_usage","currency_code":"EUR"}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !result.Untrusted || !strings.Contains(result.Content, "Example Rewards Card") || !strings.Contains(result.Content, "derived") {
+		test.Errorf("%+v", result)
+	}
+	if sent := operations.variables[0]; sent["currencyCode"] != "EUR" {
 		test.Errorf("sent %v", sent)
 	}
 }

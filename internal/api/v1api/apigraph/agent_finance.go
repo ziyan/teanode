@@ -45,6 +45,11 @@ type FinanceQuery interface {
 	// reporting currency where there is an exchange rate.
 	FinanceAccounts(ctx context.Context, arguments FinanceAccountsArguments) ([]*FinanceAccountView, error)
 
+	// What is owed on the caller's credit cards against their credit
+	// limits, overall in the reporting currency and per card: the limit
+	// the provider gave, else what is owed plus the credit available.
+	CreditUsage(ctx context.Context, arguments CreditUsageArguments) (*CreditUsageView, error)
+
 	// A page of the caller's finance transactions, newest first.
 	FinanceTransactions(ctx context.Context, arguments FinanceTransactionsArguments) (*FinanceTransactionPageView, error)
 
@@ -281,6 +286,10 @@ type FinanceAccountView struct {
 	AvailableBalance string                    `json:"availableBalance,omitempty" graphapi:"nullable"`
 	BalanceAt        *time.Time                `json:"balanceAt,omitempty" graphapi:"nullable"`
 	IsSignInRequired bool                      `json:"isSignInRequired"`
+
+	// CreditLimitAmount is a card's credit limit as the provider gave it;
+	// CreditUsage says what usage is measured against when it gave none.
+	CreditLimitAmount string `json:"creditLimitAmount,omitempty" graphapi:"nullable"`
 
 	// ReportingCurrencyCode is the currency totals are shown in, and
 	// ConvertedCurrentBalance the current balance in it, at the rate of
@@ -1195,8 +1204,8 @@ func financeAccountView(account *models.FinanceAccount, source *models.AgentKnow
 	view := &FinanceAccountView{
 		ID: account.ID, SourceID: account.SourceID, AccountName: account.AccountName, AccountMask: account.AccountMask,
 		AccountKind: account.AccountKind, CurrencyCode: account.CurrencyCode, CurrentBalance: account.CurrentBalance,
-		AvailableBalance: account.AvailableBalance, BalanceAt: account.BalanceAt, ProviderMetadata: account.ProviderMetadata,
-		CreatedAt: account.CreatedAt, ModifiedAt: account.ModifiedAt,
+		AvailableBalance: account.AvailableBalance, BalanceAt: account.BalanceAt, CreditLimitAmount: account.CreditLimitAmount,
+		ProviderMetadata: account.ProviderMetadata, CreatedAt: account.CreatedAt, ModifiedAt: account.ModifiedAt,
 	}
 	view.InstitutionName = accountInstitutionName(account.ProviderMetadata)
 	if source != nil {

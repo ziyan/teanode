@@ -169,6 +169,58 @@ func TestApplyFinanceSyncIsIdempotent(t *testing.T) {
 	})
 }
 
+// A card's credit limit is stored as the provider gives it, follows the
+// provider when it changes or stops being given, and is empty for an
+// account the provider gave none for.
+func TestApplyFinanceSyncKeepsTheCreditLimit(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "finance-credit-limit")
+
+	creditLimitOf := func() map[string]string {
+		found := map[string]string{}
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			accounts, err := tx.ListFinanceAccounts(fixture.agentId, fixture.sourceId)
+			if err != nil {
+				t.Fatalf("ListFinanceAccounts: %s", err)
+			}
+			for _, account := range accounts {
+				found[account.ProviderAccountID] = account.CreditLimitAmount
+				if fetched, err := tx.GetFinanceAccount(fixture.agentId, account.ID); err != nil || fetched.CreditLimitAmount != account.CreditLimitAmount {
+					t.Errorf("GetFinanceAccount: %+v %v", fetched, err)
+				}
+			}
+		})
+		return found
+	}
+
+	limited := sampleFinanceSync()
+	limited.Accounts[1].CreditLimitAmount = "5000"
+	applyFinanceSync(t, database, fixture, limited, "2026-09-12")
+	if found := creditLimitOf(); found["account-card"] != "5000.0000" || found["account-checking"] != "" {
+		t.Errorf("after a sync with a limit: %v", found)
+	}
+
+	limited.Accounts[1].CreditLimitAmount = "7500.5"
+	applyFinanceSync(t, database, fixture, limited, "2026-09-13")
+	if found := creditLimitOf(); found["account-card"] != "7500.5000" {
+		t.Errorf("a raised limit: %v", found)
+	}
+
+	applyFinanceSync(t, database, fixture, sampleFinanceSync(), "2026-09-14")
+	if found := creditLimitOf(); found["account-card"] != "" {
+		t.Errorf("a limit the provider no longer gives is not kept: %v", found)
+	}
+
+	refused := sampleFinanceSync()
+	refused.Accounts[1].CreditLimitAmount = "plenty"
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.ApplyFinanceSync(fixture.agentId, fixture.sourceId, refused, "2026-09-15"); err == nil {
+			t.Error("a limit that is not a decimal was stored")
+		}
+	})
+}
+
 // A modify from the provider keeps what the person chose, and drops a
 // spending category anything else gave when what it was judged from
 // changed.

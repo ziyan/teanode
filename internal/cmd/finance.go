@@ -140,6 +140,7 @@ func NewFinanceCommand() *cli.Command {
 			{Name: "enable-source", Usage: "let a finance source sync again", ArgsUsage: "<source-id>", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceEnableSource},
 			{Name: "delete-source", Usage: "delete a finance source and its transactions, ending it at its provider", ArgsUsage: "<source-id>", Flags: forceFlags(), Action: runFinanceDeleteSource},
 			{Name: "accounts", Usage: "your finance accounts and their balances", Flags: []cli.Flag{JSONFlag(), currencyFlag()}, Action: runFinanceAccounts},
+			{Name: "credit-usage", Usage: "what your credit cards owe against their credit limits, overall and per card", Flags: []cli.Flag{JSONFlag(), currencyFlag()}, Action: runFinanceCreditUsage},
 			{
 				Name: "transactions", Usage: "your finance transactions, newest first",
 				Flags: append(rangeFlags(), JSONFlag(),
@@ -302,7 +303,7 @@ const financeOperationKey = "operation"
 // so the parity test that checks these names checks what runs.
 var financeSubcommandOperations = map[string]string{
 	"providers": "FinanceProviders", "link-simplefin": "LinkSimpleFIN", "import-credential": "ImportFinanceCredential",
-	"sources": "FinanceSources", "accounts": "FinanceAccounts", "transactions": "FinanceTransactions", "trades": "FinanceTrades", "spending-summary": "FinanceSpendingSummary",
+	"sources": "FinanceSources", "accounts": "FinanceAccounts", "credit-usage": "CreditUsage", "transactions": "FinanceTransactions", "trades": "FinanceTrades", "spending-summary": "FinanceSpendingSummary",
 	"exchange-rate": "ExchangeRate", "convert-currency": "ConvertCurrency", "reporting-currency": "ReportingCurrency",
 	"set-reporting-currency": "SetReportingCurrency", "net-worth": "NetWorth", "assets": "Assets",
 	"asset-history": "AssetHistory", "create-asset": "CreateAsset", "update-asset": "UpdateAsset",
@@ -1055,6 +1056,58 @@ func runFinanceAccounts(ctx context.Context, command *cli.Command) error {
 		})
 	}
 	return printTable([]string{"id", "institution", "account", "kind", "balance", "converted", "as of"}, rows)
+}
+
+func runFinanceCreditUsage(ctx context.Context, command *cli.Command) error {
+	variables := map[string]any{}
+	setString(command, variables, "currency", "currencyCode")
+	var usage *client.CreditUsage
+	if err := financeCall(ctx, command, operationOf(command), variables, &usage); err != nil {
+		return err
+	}
+	if command.Bool("json") {
+		return PrintJSON(usage)
+	}
+	if len(usage.CreditCards) == 0 {
+		_, _ = fmt.Fprintln(command.Writer, "no credit cards among your finance accounts")
+		return nil
+	}
+	currencyCode := usage.ReportingCurrencyCode
+	if usage.UsageShare != nil {
+		_, _ = fmt.Fprintf(command.Writer, "%s owed of %s, %s used\n", money(usage.TotalOwedAmount, currencyCode),
+			money(usage.TotalCreditLimitAmount, currencyCode), usageShareWords(usage.UsageShare))
+	}
+	rows := make([][]string, 0, len(usage.CreditCards))
+	for _, card := range usage.CreditCards {
+		name := card.AccountName
+		if card.AccountMask != "" {
+			name += " ••" + card.AccountMask
+		}
+		rows = append(rows, []string{
+			card.FinanceAccountID, card.InstitutionName, name, money(card.OwedAmount, card.CurrencyCode),
+			money(card.CreditLimitAmount, card.CurrencyCode), card.CreditLimitSource, usageShareWords(card.UsageShare),
+		})
+	}
+	if err := printTable([]string{"id", "institution", "card", "owed", "limit", "limit from", "used"}, rows); err != nil {
+		return err
+	}
+	if usage.LeftOutCardCount > 0 {
+		_, _ = fmt.Fprintf(command.Writer, "left out of the total, with no known limit or balance: %d card(s) owing %s\n",
+			usage.LeftOutCardCount, money(usage.LeftOutOwedAmount, currencyCode))
+	}
+	if len(usage.UnconvertedCurrencyCodes) > 0 {
+		_, _ = fmt.Fprintf(command.Writer, "left out, with no exchange rate into %s: %s\n", currencyCode, strings.Join(usage.UnconvertedCurrencyCodes, ", "))
+	}
+	return nil
+}
+
+// usageShareWords is a share of a credit limit as a percent, "34%";
+// empty when it is not known.
+func usageShareWords(usageShare *float64) string {
+	if usageShare == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*usageShare*100, 'f', 0, 64) + "%"
 }
 
 func runFinanceTransactions(ctx context.Context, command *cli.Command) error {
