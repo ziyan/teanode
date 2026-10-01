@@ -75,7 +75,7 @@ export const SETTINGS_SURFACES: SettingsSurface[] = [
   // somebody browses, and a browser inside a settings form is neither.
   {
     segment: 'knowledge',
-    path: '/settings/knowledge',
+    path: '/knowledge',
     label: 'knowledge.title',
     description: 'settings.knowledge.description',
     category: 'account',

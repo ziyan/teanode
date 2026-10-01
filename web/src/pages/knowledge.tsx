@@ -400,8 +400,8 @@ export function KnowledgePage() {
   const toast = useToast()
   const desktop = useIsDesktop()
   const me = useSession().name || ''
-  // The URL is the graph path: /settings/knowledge/projects/portal is
-  // that page, /settings/knowledge/projects is that folder's list, and
+  // The URL is the graph path: /knowledge/projects/portal is
+  // that page, /knowledge/projects is that folder's list, and
   // nothing is the top. Which of the two a path is, is the node's own
   // kind and not the shape of the path: a folder can be nested, and a
   // page can have pages filed under it, so counting slashes gets both
@@ -518,7 +518,7 @@ export function KnowledgePage() {
       // address has moved on from it.
       if (into) setWalkedInto(next)
       setFilter('')
-      navigate('/settings/knowledge' + (next ? '/' + next : ''))
+      navigate('/knowledge' + (next ? '/' + next : ''))
     },
     [navigate],
   )
@@ -579,7 +579,7 @@ export function KnowledgePage() {
             {t('knowledge.documents.button')}
           </button>
         </Tooltip>
-        <Link to="/settings/knowledge/explore" title={t('knowledge.explore.go')}>
+        <Link to="/knowledge/explore" title={t('knowledge.explore.go')}>
           {t('knowledge.explore.title')}
         </Link>
       </div>
@@ -1931,7 +1931,7 @@ function PageView({
               <Link
                 className="icon-button"
                 aria-label={t('knowledge.explore.from')}
-                to={`/settings/knowledge/explore?from=${encodeURIComponent(node.path)}`}
+                to={`/knowledge/explore?from=${encodeURIComponent(node.path)}`}
               >
                 <GraphIcon />
               </Link>

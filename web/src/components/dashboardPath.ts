@@ -22,7 +22,7 @@ export function memoryPath(target: string): string | null {
   for (const segment of segments) {
     if (!MEMORY_SEGMENT.test(segment) || segment !== segment.toLowerCase() || [...segment].length > 60) return null
   }
-  return `/settings/knowledge/${path}`
+  return `/knowledge/${path}`
 }
 
 // mailPath is the message a mail:ITEM_ID link opens, or null. Starred opens
@@ -41,7 +41,7 @@ export const FINANCE_LINK_PATH = '/finance/link'
 // The parts of the dashboard the agent may take the person to: their own
 // pages, never an operator's (internal/agent/tools/openpage holds the same
 // list).
-const SHOWN_PREFIXES = ['/settings/knowledge', '/mailbox', '/settings/agent', '/settings', '/finance']
+const SHOWN_PREFIXES = ['/knowledge', '/mailbox', '/settings/agent', '/settings', '/finance']
 
 // shownPath is a path the agent asked the dashboard to show, or null: under
 // one of the prefixes above, in segments of letters, digits and -._~, so no

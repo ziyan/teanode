@@ -431,8 +431,12 @@ export function App() {
                     {/* Before the graph's own paths below: "explore" is the
                       drawing of the whole graph, not a folder in it, and the
                       splat route would read it as one. */}
-                    <Route path="/settings/knowledge/explore" element={<KnowledgeExplorePage />} />
-                    <Route path="/settings/knowledge/*" element={<KnowledgePage />} />
+                    <Route path="/knowledge/explore" element={<KnowledgeExplorePage />} />
+                    <Route path="/knowledge/*" element={<KnowledgePage />} />
+                    {/* Where Knowledge used to live, under Settings: links in
+                      past conversations and chat apps point here, and they
+                      open the same page at its new address. */}
+                    <Route path="/settings/knowledge/*" element={<RedirectKnowledge />} />
                     {/* What the linked institutions report, a page of its own
                       in the account's rail after Knowledge; linking them is
                       the agent page's Finance tab. */}
@@ -481,4 +485,13 @@ function RedirectDomain() {
 function RedirectIntegrations() {
   const section = window.location.pathname.split('/').filter(Boolean).pop()
   return <Navigate to={`/server/${section ?? 'sending'}`} replace />
+}
+
+// RedirectKnowledge sends an address under /settings/knowledge to the same
+// page under /knowledge, with its query, so a link written before the move
+// still opens what it named.
+function RedirectKnowledge() {
+  const location = useLocation()
+  const rest = location.pathname.slice('/settings/knowledge'.length)
+  return <Navigate to={'/knowledge' + rest + location.search} replace />
 }

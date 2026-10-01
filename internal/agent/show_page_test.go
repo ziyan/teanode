@@ -86,11 +86,11 @@ func TestOpenPageMovesTheDrawerAndIsOfferedNowhereElse(t *testing.T) {
 		if event.Kind == agent.EventNavigate {
 			navigated = event.Text
 		}
-		if event.Kind == agent.EventToolResult && event.Tool == "open_page" && event.Note != "Opened /settings/knowledge/people/some-person: the page they asked for" {
+		if event.Kind == agent.EventToolResult && event.Tool == "open_page" && event.Note != "Opened /knowledge/people/some-person: the page they asked for" {
 			t.Errorf("the drawer's line for the call: %q (%s)", event.Note, event.Text)
 		}
 	}
-	if navigated != "/settings/knowledge/people/some-person" {
+	if navigated != "/knowledge/people/some-person" {
 		t.Fatalf("the drawer was sent to %q", navigated)
 	}
 	if !requestedTools((*requests)[0])["open_page"] {

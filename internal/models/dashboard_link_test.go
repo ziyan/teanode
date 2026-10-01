@@ -11,10 +11,10 @@ func TestDashboardPath(t *testing.T) {
 
 	for _, testCase := range []struct{ scheme, target, want string }{
 		{"mail", "item42", "/mailbox/starred/item42"},
-		{"memory", "people/some-person", "/settings/knowledge/people/some-person"},
-		{"memory", "projects/example-app#3", "/settings/knowledge/projects/example-app"},
-		{"memory", "people/zoë", "/settings/knowledge/people/zo%C3%AB"},
-		{"memory", "self", "/settings/knowledge/self"},
+		{"memory", "people/some-person", "/knowledge/people/some-person"},
+		{"memory", "projects/example-app#3", "/knowledge/projects/example-app"},
+		{"memory", "people/zoë", "/knowledge/people/zo%C3%AB"},
+		{"memory", "self", "/knowledge/self"},
 		// What a model could put together to go somewhere else.
 		{"mail", "item42/../../settings", ""},
 		{"memory", "../settings/tokens", ""},
@@ -38,7 +38,7 @@ func TestLinkDashboardLinks(t *testing.T) {
 
 	const text = "See [Mooring invoice](mail:item42), [Some Person](memory:people/some-person#2), [a trick](memory:../settings) and [the club](https://example.org/club)."
 	if got, want := models.LinkDashboardLinks(text, "https://mail.example.com"),
-		"See [Mooring invoice](https://mail.example.com/mailbox/starred/item42), [Some Person](https://mail.example.com/settings/knowledge/people/some-person), a trick and [the club](https://example.org/club)."; got != want {
+		"See [Mooring invoice](https://mail.example.com/mailbox/starred/item42), [Some Person](https://mail.example.com/knowledge/people/some-person), a trick and [the club](https://example.org/club)."; got != want {
 		t.Errorf("with the dashboard's address:\n got %q\nwant %q", got, want)
 	}
 	if got, want := models.UnlinkDashboardLinks(text),
