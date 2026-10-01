@@ -6,6 +6,34 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.93.1] - 2026-10-01
+
+### Fixed
+
+- A dream no longer merges two facts into one when the merged-away fact names something the kept one does not, so a statement such as a rejected proposal stays on its page. (#274)
+
+## [0.93.0] - 2026-09-30
+
+### Added
+
+- `teanode agent memory plan` saves the retrieval plan a live turn would follow for each question; `recall`, `evaluate` and `answers` can replay it, and `recall --explain` shows each planned search. (#271)
+
+### Fixed
+
+- Answers graded from memory include the overview sections a turn would carry. (#271)
+
+## [0.92.6] - 2026-09-30
+
+### Fixed
+
+- Net worth totals no longer flash without foreign-currency assets, and a failure to load the reporting currency is shown instead of loading forever. (#272)
+
+## [0.92.5] - 2026-09-30
+
+### Changed
+
+- Net worth groups assets by kind with a ring chart, and the Spending section's top chart shows income, spending and what was left each month. (#266)
+
 ## [0.92.4] - 2026-09-30
 
 ### Fixed

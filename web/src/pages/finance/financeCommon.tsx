@@ -74,13 +74,19 @@ export function useReportingCurrency(): {
   reportingCurrencyCode: string
   isChosen: boolean
   isLoaded: boolean
+  // Why it could not be read, for a caller that waits on it and would
+  // otherwise wait for ever.
+  error: unknown
   reload: () => Promise<void>
 } {
-  const { data, reload } = useQuery(() => graphql<ReportingCurrencyAnswer>(REPORTING_CURRENCY), [], { refresh: false })
+  const { data, error, reload } = useQuery(() => graphql<ReportingCurrencyAnswer>(REPORTING_CURRENCY), [], {
+    refresh: false,
+  })
   return {
     reportingCurrencyCode: data?.ReportingCurrency.reportingCurrencyCode ?? '',
     isChosen: data?.ReportingCurrency.isChosen ?? false,
     isLoaded: data !== null,
+    error,
     reload: () => reload(true),
   }
 }
