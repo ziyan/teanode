@@ -276,11 +276,14 @@ export type SavingsTarget = {
   targetAmount: string
   currencyCode: string
   targetOn: string
-  targetMeasure: 'cash_flow' | 'asset_value'
+  targetMeasure: 'cash_flow' | 'asset_value' | 'net_worth'
   startingAmount?: string | null
   startedOn: string
   closedOn?: string | null
   assetIds: string[]
+  // Finance accounts counted whole: every asset each values, holdings
+  // bought after the target started included.
+  financeAccountIds: string[]
 }
 
 export type SavingsTargetProgress = {
@@ -530,23 +533,26 @@ export const FINANCE_TRADES = `query ($from: String, $to: String, $financeAccoun
 export const SAVINGS_TARGETS = `query {
   SavingsTargets {
     savingsTarget { id savingsTargetName targetAmount currencyCode targetOn targetMeasure startingAmount startedOn
-      closedOn assetIds }
+      closedOn assetIds financeAccountIds }
     savingsTargetProgress { savedAmount remainingAmount monthsLeftCount requiredMonthlyAmount isBehind
       unconvertedCurrencyCodes }
   }
 }`
 
 export const CREATE_SAVINGS_TARGET = `mutation ($savingsTargetName: String!, $targetAmount: String!, $currencyCode: String,
-  $targetOn: String!, $targetMeasure: String, $startingAmount: String, $startedOn: String, $assetIds: [String!]) {
+  $targetOn: String!, $targetMeasure: String, $startingAmount: String, $startedOn: String, $assetIds: [String!],
+  $financeAccountIds: [String!]) {
   CreateSavingsTarget(savingsTargetName: $savingsTargetName, targetAmount: $targetAmount, currencyCode: $currencyCode,
     targetOn: $targetOn, targetMeasure: $targetMeasure, startingAmount: $startingAmount, startedOn: $startedOn,
-    assetIds: $assetIds) { savingsTarget { id } }
+    assetIds: $assetIds, financeAccountIds: $financeAccountIds) { savingsTarget { id } }
 }`
 
 export const UPDATE_SAVINGS_TARGET = `mutation ($savingsTargetId: String!, $savingsTargetName: String,
-  $targetAmount: String, $targetOn: String, $startingAmount: String, $assetIds: [String!]) {
+  $targetAmount: String, $targetOn: String, $targetMeasure: String, $startingAmount: String, $assetIds: [String!],
+  $financeAccountIds: [String!]) {
   UpdateSavingsTarget(savingsTargetId: $savingsTargetId, savingsTargetName: $savingsTargetName,
-    targetAmount: $targetAmount, targetOn: $targetOn, startingAmount: $startingAmount, assetIds: $assetIds) {
+    targetAmount: $targetAmount, targetOn: $targetOn, targetMeasure: $targetMeasure, startingAmount: $startingAmount,
+    assetIds: $assetIds, financeAccountIds: $financeAccountIds) {
     savingsTarget { id } }
 }`
 

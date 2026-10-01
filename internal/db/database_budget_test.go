@@ -515,3 +515,61 @@ func TestBudgetAlertKeyIsWrittenOnceUnderConcurrentSyncs(t *testing.T) {
 		}
 	})
 }
+
+// A savings target keeps the finance accounts it measures, once each and
+// only the agent's own; a target measured otherwise keeps none, and a
+// deleted finance account leaves the targets that chose it.
+func TestSavingsTargetsKeepTheirFinanceAccounts(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "savings-target-accounts")
+	stranger := createFinanceFixture(t, database, "savings-target-stranger")
+	applyFinanceSync(t, database, fixture, brokerageSync("2150.25", fundHolding("12", "1824.58")), "2026-09-12")
+	applyFinanceSync(t, database, stranger, brokerageSync("10", nil), "2026-09-12")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		accounts, err := tx.ListFinanceAccounts(fixture.agentId, "")
+		if err != nil || len(accounts) != 1 {
+			t.Fatalf("ListFinanceAccounts: %v %v", accounts, err)
+		}
+		strangerAccounts, err := tx.ListFinanceAccounts(stranger.agentId, "")
+		if err != nil || len(strangerAccounts) != 1 {
+			t.Fatalf("ListFinanceAccounts: %v %v", strangerAccounts, err)
+		}
+		created, err := tx.CreateSavingsTarget(&models.SavingsTarget{AgentID: fixture.agentId, SavingsTargetName: "invested",
+			TargetAmount: "10000", CurrencyCode: "USD", TargetOn: "2028-06-01", TargetMeasure: models.TargetMeasureAssetValue,
+			StartedOn: "2026-09-12", FinanceAccountIDs: []string{accounts[0].ID, accounts[0].ID}})
+		if err != nil {
+			t.Fatalf("CreateSavingsTarget: %s", err)
+		}
+		if len(created.FinanceAccountIDs) != 1 || created.FinanceAccountIDs[0] != accounts[0].ID || len(created.AssetIDs) != 0 {
+			t.Errorf("CreateSavingsTarget keeps the account once: %+v", created)
+		}
+		if _, err := tx.CreateSavingsTarget(&models.SavingsTarget{AgentID: fixture.agentId, SavingsTargetName: "taken",
+			TargetAmount: "1", CurrencyCode: "USD", TargetOn: "2028-06-01", TargetMeasure: models.TargetMeasureAssetValue,
+			StartedOn: "2026-09-12", FinanceAccountIDs: []string{strangerAccounts[0].ID}}); !errors.Is(err, db.ErrNotFound) {
+			t.Errorf("another agent's finance account must be refused: %v", err)
+		}
+		netWorth, err := tx.UpdateSavingsTarget(fixture.agentId, created.ID, func(savingsTarget *models.SavingsTarget) error {
+			savingsTarget.TargetMeasure = models.TargetMeasureNetWorth
+			return nil
+		})
+		if err != nil || netWorth.TargetMeasure != models.TargetMeasureNetWorth || len(netWorth.FinanceAccountIDs) != 0 {
+			t.Errorf("a net worth target chooses nothing: %v %+v", err, netWorth)
+		}
+		if _, err := tx.UpdateSavingsTarget(fixture.agentId, created.ID, func(savingsTarget *models.SavingsTarget) error {
+			savingsTarget.TargetMeasure = models.TargetMeasureAssetValue
+			savingsTarget.FinanceAccountIDs = []string{accounts[0].ID}
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateSavingsTarget: %s", err)
+		}
+		if err := tx.DeleteAgentSource(fixture.agentId, fixture.sourceId); err != nil {
+			t.Fatalf("DeleteAgentSource: %s", err)
+		}
+		after, err := tx.GetSavingsTarget(fixture.agentId, created.ID)
+		if err != nil || after == nil || len(after.FinanceAccountIDs) != 0 {
+			t.Errorf("the deleted finance account leaves the target: %v %+v", err, after)
+		}
+	})
+}

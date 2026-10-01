@@ -27,6 +27,7 @@ type previewLookup struct {
 	spendingCategories []*client.SpendingCategory
 	assets             []*client.Asset
 	savingsTargets     []*client.SavingsTargetStanding
+	financeAccounts    []*client.FinanceAccount
 	spendingRules      []*client.SpendingRule
 	sources            []*client.FinanceSource
 	isRead             map[string]bool
@@ -94,6 +95,40 @@ func (self *previewLookup) assetName(assetId string) string {
 		}
 	}
 	return "an asset"
+}
+
+func (self *previewLookup) financeAccountName(financeAccountId string) string {
+	if self.read("FinanceAccounts", nil, &self.financeAccounts) {
+		for _, financeAccount := range self.financeAccounts {
+			if financeAccount.ID == financeAccountId {
+				return tools.Named(financeAccount.AccountName, "")
+			}
+		}
+	}
+	return "a finance account"
+}
+
+// targetMeasureSuffix says how a savings target call measures progress,
+// naming the finance accounts and assets an asset_value target counts;
+// empty when the call does not say.
+func (self *previewLookup) targetMeasureSuffix(call map[string]any) string {
+	var named []string
+	for _, financeAccountId := range texts(call, "finance_account_ids") {
+		named = append(named, self.financeAccountName(financeAccountId)+" (the whole account)")
+	}
+	for _, assetId := range texts(call, "asset_ids") {
+		named = append(named, self.assetName(assetId))
+	}
+	switch text(call, "target_measure") {
+	case "net_worth":
+		return ", measured by net worth"
+	case "cash_flow":
+		return ", measured by income less spending"
+	}
+	if len(named) == 0 {
+		return ""
+	}
+	return ", measured by what " + strings.Join(named, ", ") + " are worth"
 }
 
 func (self *previewLookup) savingsTargetName(savingsTargetId string) string {
