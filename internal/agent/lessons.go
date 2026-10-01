@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
@@ -31,19 +32,28 @@ import (
 
 // The bounds of the lessons pass.
 const (
-	// lessonCount is how many lessons one window may file.
-	lessonCount = 3
+	// minimumLessonCount is how many lessons one call may file however
+	// little it read, and lessonRunes how much more of the conversation one
+	// more lesson may be filed for: a part of a long working session read
+	// whole can teach more than a short exchange.
+	minimumLessonCount = 3
+	lessonRunes        = 5000
 
-	// lessonCallArgumentLength and lessonCallOutputLength are how much of
-	// a command and of what it printed the model is shown; the end of the
-	// output, where failures and summaries are.
-	lessonCallArgumentLength = 400
-	lessonCallOutputLength   = 800
+	// The head and the tail of a long command, and of what it printed, are
+	// what the model is shown, with how much was left out between them said
+	// where it was: the head says what ran, and the end of the output is
+	// where failures and summaries are.
+	lessonCallArgumentHeadLength = 300
+	lessonCallArgumentTailLength = 100
+	lessonCallOutputHeadLength   = 400
+	lessonCallOutputTailLength   = 800
 
-	// lessonTranscriptLength bounds what the lessons pass is shown of a
-	// window: a long stretch of work keeps its latest commands, where the
-	// approach that worked is.
-	lessonTranscriptLength = 40000
+	// lessonPartRunes is how much of a window one call reads. A longer
+	// window is read in consecutive parts of about this size, split where
+	// one message ends and the next begins, each in a call of its own, so
+	// the start of a long working session is read as well as its end. The
+	// size the dream reads a batch of documents at.
+	lessonPartRunes = digestBatchRunes
 
 	// lessonsRoot is where lessons are filed, a page for each topic.
 	lessonsRoot = "lessons"
@@ -97,12 +107,11 @@ func lessonCallsOf(messages []*models.AgentMessage) ([]*lessonCall, map[string]*
 		if !hasExitCode && !isBackground {
 			continue
 		}
-		if runes := []rune(strings.TrimSpace(output)); len(runes) > lessonCallOutputLength {
-			output = "…" + string(runes[len(runes)-lessonCallOutputLength:])
-		}
 		found := &lessonCall{
-			Number: len(calls) + 1, ToolName: call.Name, Arguments: cutMarked(call.Arguments, lessonCallArgumentLength),
-			ExitCode: exitCode, IsFinished: hasExitCode && !isBackground, Output: strings.TrimSpace(output),
+			Number: len(calls) + 1, ToolName: call.Name,
+			Arguments: headAndTail(call.Arguments, lessonCallArgumentHeadLength, lessonCallArgumentTailLength, "the command"),
+			ExitCode:  exitCode, IsFinished: hasExitCode && !isBackground,
+			Output: headAndTail(strings.TrimSpace(output), lessonCallOutputHeadLength, lessonCallOutputTailLength, "the output"),
 		}
 		calls = append(calls, found)
 		byToolCallId[message.ToolCallID] = found
@@ -110,14 +119,18 @@ func lessonCallsOf(messages []*models.AgentMessage) ([]*lessonCall, map[string]*
 	return calls, byToolCallId
 }
 
-// lastRunes is the end of a text, so many characters of it, marked as cut
-// where it was.
-func lastRunes(text string, count int) string {
+// headAndTail is a long text as its first and last so many characters,
+// with how many characters of what were left out between them said where
+// they were, so the model knows the two ends are not one piece. A text
+// that fits is returned whole.
+func headAndTail(text string, headLength, tailLength int, what string) string {
 	runes := []rune(text)
-	if len(runes) <= count {
+	if len(runes) <= headLength+tailLength {
 		return text
 	}
-	return "[the work before this is left out]\n" + string(runes[len(runes)-count:])
+	leftOutCount := len(runes) - headLength - tailLength
+	return string(runes[:headLength]) + fmt.Sprintf("\n[%d characters of %s left out here]\n", leftOutCount, what) +
+		string(runes[len(runes)-tailLength:])
 }
 
 // exitCodePattern finds a command's exit code in a result too long to have
@@ -166,35 +179,99 @@ func readCommandResult(content string) (exitCode int, hasExitCode, isBackground 
 	return exitCode, hasExitCode, isBackground, content
 }
 
-// lessonTranscript is the window as the lessons pass reads it: what was
-// said, and each command with its number, what it printed and how it
-// ended.
+// lessonEntryOf is one message as the lessons pass reads it: what was
+// said, or a command with its number, what it printed and how it ended.
+// A message with nothing to show is empty.
+func lessonEntryOf(message *models.AgentMessage, byToolCallId map[string]*lessonCall) string {
+	switch message.Role {
+	case string(llm.RoleUser):
+		if text := strings.TrimSpace(message.Content); text != "" {
+			return "them: " + unclosable(text) + "\n\n"
+		}
+	case string(llm.RoleAssistant):
+		if text := strings.TrimSpace(message.Content); text != "" {
+			return "you: " + unclosable(text) + "\n\n"
+		}
+	case string(llm.RoleTool):
+		call := byToolCallId[message.ToolCallID]
+		if call == nil {
+			return ""
+		}
+		ended := "still running in the background"
+		if call.IsFinished {
+			ended = "exit code " + strconv.Itoa(call.ExitCode)
+		}
+		return fmt.Sprintf("[command %d] %s %s\n%s\n(%s)\n\n", call.Number, call.ToolName,
+			unclosable(call.Arguments), unclosable(call.Output), ended)
+	}
+	return ""
+}
+
+// lessonTranscript is the window as the lessons pass reads it, whole.
 func lessonTranscript(messages []*models.AgentMessage, byToolCallId map[string]*lessonCall) string {
 	var builder strings.Builder
 	for _, message := range messages {
-		switch message.Role {
-		case string(llm.RoleUser):
-			if text := strings.TrimSpace(message.Content); text != "" {
-				builder.WriteString("them: " + unclosable(text) + "\n\n")
-			}
-		case string(llm.RoleAssistant):
-			if text := strings.TrimSpace(message.Content); text != "" {
-				builder.WriteString("you: " + unclosable(text) + "\n\n")
-			}
-		case string(llm.RoleTool):
-			call := byToolCallId[message.ToolCallID]
-			if call == nil {
-				continue
-			}
-			ended := "still running in the background"
-			if call.IsFinished {
-				ended = "exit code " + strconv.Itoa(call.ExitCode)
-			}
-			fmt.Fprintf(&builder, "[command %d] %s %s\n%s\n(%s)\n\n", call.Number, call.ToolName,
-				unclosable(call.Arguments), unclosable(call.Output), ended)
-		}
+		builder.WriteString(lessonEntryOf(message, byToolCallId))
 	}
 	return strings.TrimSpace(builder.String())
+}
+
+// lessonPart is a stretch of the window read in one call: its transcript,
+// the commands in it, which are the only ones that may verify a lesson
+// read from it, and EndIndex, the index in the window just past its last
+// message, which is how far the window has been read once it is answered.
+type lessonPart struct {
+	Transcript string
+	Calls      []*lessonCall
+	EndIndex   int
+}
+
+// lessonParts splits the window into consecutive parts of about partRunes
+// each, where one message ends and the next begins. Nothing is left out:
+// a message longer than a part is a part of its own.
+func lessonParts(messages []*models.AgentMessage, byToolCallId map[string]*lessonCall, partRunes int) []lessonPart {
+	var parts []lessonPart
+	var builder strings.Builder
+	builderRunes := 0
+	var calls []*lessonCall
+	for index, message := range messages {
+		entry := lessonEntryOf(message, byToolCallId)
+		if entry == "" {
+			continue
+		}
+		entryRunes := utf8.RuneCountInString(entry)
+		if builderRunes > 0 && builderRunes+entryRunes > partRunes {
+			parts = append(parts, lessonPart{Transcript: strings.TrimSpace(builder.String()), Calls: calls, EndIndex: index})
+			builder.Reset()
+			builderRunes = 0
+			calls = nil
+		}
+		builder.WriteString(entry)
+		builderRunes += entryRunes
+		if message.Role == string(llm.RoleTool) {
+			calls = append(calls, byToolCallId[message.ToolCallID])
+		}
+	}
+	if builderRunes > 0 {
+		parts = append(parts, lessonPart{Transcript: strings.TrimSpace(builder.String()), Calls: calls, EndIndex: len(messages)})
+	}
+	return parts
+}
+
+// hasAnySucceeded says whether one of the commands ended with exit code 0.
+func hasAnySucceeded(calls []*lessonCall) bool {
+	for _, call := range calls {
+		if call.hasSucceeded() {
+			return true
+		}
+	}
+	return false
+}
+
+// lessonsAllowedFor is how many lessons a call that read this transcript
+// may file: more for more work read, never fewer than minimumLessonCount.
+func lessonsAllowedFor(transcript string) int {
+	return max(minimumLessonCount, utf8.RuneCountInString(transcript)/lessonRunes)
 }
 
 // lessonAnswer is what the model said the work taught.
@@ -218,14 +295,19 @@ type verifiedLesson struct {
 	Evidence []models.Evidence
 }
 
-// verifyLessons keeps the lessons a command bears out: at least one of the
-// commands each names ended with exit code 0. A lesson naming none, or only
-// commands that failed or are still running, is the model's word alone and
-// is dropped.
-func verifyLessons(answer lessonAnswer, calls []*lessonCall, conversationId string) []verifiedLesson {
+// verifyLessons keeps the lessons a command bears out, as many as are
+// allowed: at least one of the commands each names, among the calls the
+// model was shown, ended with exit code 0. A lesson naming none, or only
+// commands that failed, are still running or were in another part of the
+// conversation, is the model's word alone and is dropped.
+func verifyLessons(answer lessonAnswer, calls []*lessonCall, conversationId string, allowedCount int) []verifiedLesson {
+	byNumber := make(map[int]*lessonCall, len(calls))
+	for _, call := range calls {
+		byNumber[call.Number] = call
+	}
 	var kept []verifiedLesson
 	for _, lesson := range answer.Lessons {
-		if len(kept) >= lessonCount {
+		if len(kept) >= allowedCount {
 			break
 		}
 		// Kept whole: a lesson is what a later turn is shown, and an
@@ -237,10 +319,10 @@ func verifyLessons(answer lessonAnswer, calls []*lessonCall, conversationId stri
 		}
 		var evidence []models.Evidence
 		for _, number := range lesson.VerifiedByCalls {
-			if number < 1 || number > len(calls) || !calls[number-1].hasSucceeded() || len(evidence) >= 2 {
+			call := byNumber[number]
+			if !call.hasSucceeded() || len(evidence) >= 2 {
 				continue
 			}
-			call := calls[number-1]
 			evidence = append(evidence, models.Evidence{Kind: models.EvidenceConversation, ID: conversationId,
 				Quote: call.ToolName + " " + call.Arguments + " → exit code 0"})
 		}
@@ -268,42 +350,75 @@ func verifyLessons(answer lessonAnswer, calls []*lessonCall, conversationId stri
 
 // readLessons reads a window of a conversation for lessons from the work
 // done in it, and files the ones a command bears out. A window in which no
-// command succeeded is not read at all. It says how many it filed; a
-// failure is the lessons' own and leaves the rest of the conversation's
-// filing as it was.
-func (self *Agent) readLessons(ctx context.Context, run *Run, conversation *models.AgentConversation, window []*models.AgentMessage) (int, error) {
+// command succeeded is not read at all. A window longer than one call holds
+// is read in consecutive parts, each in a call of its own that is told
+// which part it is; a part in which no command succeeded is not asked
+// about. An answer that cannot be read loses that part's lessons alone and
+// the parts after it are still read. It says how many lessons it filed and
+// how many messages of the window it read: all of them, or, when a part's
+// call or the filing of its lessons failed, those before that part, so the
+// caller keeps the rest for the next run.
+func (self *Agent) readLessons(ctx context.Context, run *Run, conversation *models.AgentConversation, window []*models.AgentMessage) (filedCount, readCount int, err error) {
 	calls, byToolCallId := lessonCallsOf(window)
-	isAnySucceeded := false
-	for _, call := range calls {
-		if call.hasSucceeded() {
-			isAnySucceeded = true
+	if !hasAnySucceeded(calls) {
+		return 0, len(window), nil
+	}
+	parts := lessonParts(window, byToolCallId, lessonPartRunes)
+	// Shared by the parts, so a lesson the work taught twice in one
+	// session is filed once.
+	var accepted []*meaning
+	for index, part := range parts {
+		if hasAnySucceeded(part.Calls) {
+			partFiledCount, err := self.readLessonPart(ctx, run, conversation, part, index+1, len(parts), &accepted)
+			filedCount += partFiledCount
+			if err != nil {
+				if len(parts) > 1 {
+					err = fmt.Errorf("part %d of %d: %w", index+1, len(parts), err)
+				}
+				return filedCount, readCount, err
+			}
 		}
+		readCount = part.EndIndex
 	}
-	if !isAnySucceeded {
-		return 0, nil
-	}
+	return filedCount, len(window), nil
+}
+
+// readLessonPart asks about one part of a window and files the lessons a
+// command in that part bears out, skipping any nearly the same in meaning
+// as one filed before or accepted earlier in this pass.
+func (self *Agent) readLessonPart(ctx context.Context, run *Run, conversation *models.AgentConversation, part lessonPart, partNumber, partCount int, accepted *[]*meaning) (int, error) {
+	allowedCount := lessonsAllowedFor(part.Transcript)
 	prompt, err := render("lessons.txt", map[string]any{
 		"PersonName":        personName(run.Owner),
 		"KnowledgeLanguage": languageName(KnowledgeLanguage(run.Agent, run.Owner)),
-		"Transcript":        lastRunes(lessonTranscript(window, byToolCallId), lessonTranscriptLength),
+		"Transcript":        part.Transcript,
+		"PartNumber":        partNumber,
+		"PartCount":         partCount,
+		"LessonCount":       allowedCount,
 	})
 	if err != nil {
 		return 0, err
 	}
-	thinking, err := self.oneShot(ctx, run, "Reading lessons from "+chatName(conversation), prompt, models.AgentJobRemember, config.AgentWorkScan)
+	title := "Reading lessons from " + chatName(conversation)
+	if partCount > 1 {
+		title += fmt.Sprintf(", part %d of %d", partNumber, partCount)
+	}
+	thinking, err := self.oneShot(ctx, run, title, prompt, models.AgentJobRemember, config.AgentWorkScan)
 	if err != nil {
 		return 0, fmt.Errorf("asking the model: %w", err)
 	}
 	answer := readModelAnswer[lessonAnswer](thinking.Text, "lessons")
 	if !answer.IsValid {
-		return 0, fmt.Errorf("the lessons were not readable: %s", answer.Problem)
+		// Read and answered, though with nothing usable: asking again is
+		// not worth holding back the filing of the whole conversation for.
+		log.Warningf("the lessons from conversation %s, part %d of %d, were not readable: %s", conversation.ID, partNumber, partCount, answer.Problem)
+		return 0, nil
 	}
-	lessons := verifyLessons(answer.Value, calls, conversation.ID)
+	lessons := verifyLessons(answer.Value, part.Calls, conversation.ID, allowedCount)
 
 	filed := 0
-	var accepted []*meaning
 	for _, lesson := range lessons {
-		lessonMeaning, isKnown := self.isLessonKnown(ctx, run.Agent.ID, lesson.Text, accepted)
+		lessonMeaning, isKnown := self.isLessonKnown(ctx, run.Agent.ID, lesson.Text, *accepted)
 		if isKnown {
 			continue
 		}
@@ -339,7 +454,7 @@ func (self *Agent) readLessons(ctx context.Context, run *Run, conversation *mode
 		}); err != nil {
 			return filed, err
 		}
-		accepted = append(accepted, lessonMeaning)
+		*accepted = append(*accepted, lessonMeaning)
 		filed++
 	}
 	return filed, nil

@@ -797,15 +797,26 @@ else the one sharing most of the question's words, else the first.
 `teanode agent memory recall --explain` says what each search found and
 why each page and fact was carried or left out.
 
-**Lessons from verified work.** After the pass that files what a
-conversation taught, the same stretch is read again with the commands run in
-it, each numbered with what it printed and its exit code, for what the work
-taught: when it applies, what worked, what to avoid, how it was verified. The
-code keeps a lesson only when a command it names ended with exit code 0, so
-what the assistant said about its work is never enough, and a stretch in which
-no command succeeded is not read at all. A lesson is a fact of kind `lesson`
-under `lessons/<topic>`, with the command as its evidence; one nearly the
-same in meaning as a lesson already filed is not filed again. A turn is shown
+**Lessons from verified work.** Before the pass that files what a
+conversation taught, the same stretch is read with the commands run in it,
+each numbered with what it printed and its exit code, for what the work
+taught: when it applies, what worked, what to avoid, how it was verified. A
+long command or output is shown as its head and its tail, with how many
+characters were left out between them. A stretch longer than one call holds
+(about 40,000 characters) is read whole, in consecutive parts split between
+messages, each in a call of its own that is told it is "part 2 of 4 of this
+conversation" and that the earlier parts were read separately; a call may file
+three lessons, or one for every 5,000 characters it read when that is more.
+The code keeps a lesson only when a command it names, among those in the part
+it was read from, ended with exit code 0, so what the assistant said about its
+work is never enough, and a part in which no command succeeded is not read at
+all. An answer that cannot be read loses that part's lessons alone. When a
+part's call fails, the filing stops where the lessons stopped and the rest
+waits for the next run; when that was the first part, the run fails and is
+tried again with the mark where it was. A lesson is a
+fact of kind `lesson` under `lessons/<topic>`, with the command as its
+evidence; one nearly the same in meaning as a lesson already filed, or filed
+from an earlier part, is not filed again. A turn is shown
 the two lessons nearest its words, apart from the rest of recall; they are in
 the prompt only, so a turn that repeats one without running anything cannot
 file it again. The Claude Code and Codex sources keep only what was said, not
