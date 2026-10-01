@@ -43,10 +43,13 @@ var financeSubcommandsSpanningOperations = map[string][]string{
 	// ImportFinanceCredential by the rule is import-finance-credential; the
 	// word finance says nothing inside teanode finance.
 	"import-credential": {"ImportFinanceCredential"},
-	"sync":              {},
-	"disable-source":    {},
-	"enable-source":     {},
-	"delete-source":     {},
+	// One transaction or several: categorize-transactions would be a
+	// second subcommand doing the same thing.
+	"categorize-transaction": {"CategorizeTransaction", "CategorizeTransactions"},
+	"sync":                   {},
+	"disable-source":         {},
+	"enable-source":          {},
+	"delete-source":          {},
 }
 
 // Every operation of the finance area has a teanode finance subcommand
@@ -409,5 +412,95 @@ func TestFinanceTransactionsMarkMirroredCopies(test *testing.T) {
 	defer mutex.Unlock()
 	if asked[0]["duplicateOfTransactionId"] != "fee-counted" || asked[len(asked)-1]["financeTransactionId"] != "fee-copy" {
 		test.Errorf("sent %v", asked)
+	}
+}
+
+// categorize-transaction with one id calls CategorizeTransaction as it
+// always has; with several, CategorizeTransactions with every id and the
+// rule flag in its plural. propose-spending-rules sends the ids and the
+// spending category, named or by id.
+func TestFinanceCategorizesSeveralTransactions(test *testing.T) {
+	test.Parallel()
+	var mutex sync.Mutex
+	asked := map[string][]map[string]any{}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var document struct {
+			Query     string         `json:"query"`
+			Variables map[string]any `json:"variables"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&document); err != nil {
+			response.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		response.Header().Set("Content-Type", "application/json")
+		record := func(operation string) {
+			mutex.Lock()
+			asked[operation] = append(asked[operation], document.Variables)
+			mutex.Unlock()
+		}
+		switch {
+		case strings.Contains(document.Query, "SpendingCategories"):
+			_, _ = response.Write([]byte(`{"data":{"SpendingCategories":[{"id":"category-dining","spendingCategoryName":"Dining"}]}}`))
+		case strings.Contains(document.Query, "CategorizeTransactions("):
+			record("CategorizeTransactions")
+			_, _ = response.Write([]byte(`{"data":{"CategorizeTransactions":{"financeTransactions":[{"id":"transaction-one"},{"id":"transaction-two"}],` +
+				`"spendingRules":[{"id":"rule-one","matchText":"Invented Bistro","spendingCategoryId":"category-dining"}]}}}`))
+		case strings.Contains(document.Query, "CategorizeTransaction("):
+			record("CategorizeTransaction")
+			_, _ = response.Write([]byte(`{"data":{"CategorizeTransaction":{"financeTransaction":{"id":"transaction-one"}}}}`))
+		case strings.Contains(document.Query, "ProposeSpendingRules("):
+			record("ProposeSpendingRules")
+			_, _ = response.Write([]byte(`{"data":{"ProposeSpendingRules":{"spendingRuleProposals":[` +
+				`{"matchText":"Invented Bistro","spendingCategoryId":"category-dining","financeTransactionCount":2,"changedTransactionCount":3,` +
+				`"aheadOfSpendingRule":{"id":"rule-bistro","matchText":"bistro","spendingCategoryId":"category-groceries","rulePriority":0}}],` +
+				`"tooGenericMatchTextCount":1,"changingNumberMatchTextCount":2,"overLimitMatchTextCount":0}}}`))
+		default:
+			response.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	test.Cleanup(server.Close)
+
+	if _, err := runFinanceAgainst(test, server, "categorize-transaction", "transaction-one", "dining"); err != nil {
+		test.Fatal(err)
+	}
+	printed, err := runFinanceAgainst(test, server, "categorize-transaction", "--create-spending-rule", "transaction-one", "transaction-two", "Dining")
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(printed, "2 transactions categorized") || !strings.Contains(printed, `"Invented Bistro"`) ||
+		!strings.Contains(printed, "2 left out: they hold a number that changes each time") {
+		test.Errorf("printed %q", printed)
+	}
+	printed, err = runFinanceAgainst(test, server, "propose-spending-rules", "transaction-one", "transaction-two", "category-dining")
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(printed, "1 left out: too short or too generic") || !strings.Contains(printed, "2 left out: they hold a number") {
+		test.Errorf("propose-spending-rules printed %q", printed)
+	}
+	if _, err := runFinanceAgainst(test, server, "categorize-transaction", "--create-spending-rule", "transaction-one", "transaction-two", "none"); err == nil {
+		test.Error("spending rules with no spending category were asked for")
+	}
+	if _, err := runFinanceAgainst(test, server, "categorize-transaction", "dining"); err == nil {
+		test.Error("a spending category with no transaction was taken")
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
+	if single := asked["CategorizeTransaction"]; len(single) != 1 || single[0]["financeTransactionId"] != "transaction-one" || single[0]["spendingCategoryId"] != "category-dining" {
+		test.Errorf("one id sent %v", single)
+	}
+	bulk := asked["CategorizeTransactions"]
+	if len(bulk) != 1 || !reflect.DeepEqual(bulk[0]["financeTransactionIds"], []any{"transaction-one", "transaction-two"}) ||
+		bulk[0]["spendingCategoryId"] != "category-dining" || bulk[0]["shouldCreateSpendingRules"] != nil {
+		test.Errorf("several ids sent %v", bulk)
+	}
+	// The rules saved are the ones proposed, as proposed.
+	confirmed := []any{map[string]any{"matchText": "Invented Bistro", "spendingCategoryId": "category-dining", "aheadOfSpendingRuleId": "rule-bistro"}}
+	if len(bulk) == 1 && !reflect.DeepEqual(bulk[0]["spendingRules"], confirmed) {
+		test.Errorf("the rules sent to be saved were %v", bulk[0]["spendingRules"])
+	}
+	proposed := asked["ProposeSpendingRules"]
+	if len(proposed) != 2 || !reflect.DeepEqual(proposed[0]["financeTransactionIds"], []any{"transaction-one", "transaction-two"}) || proposed[0]["spendingCategoryId"] != "category-dining" {
+		test.Errorf("propose-spending-rules sent %v", proposed)
 	}
 }

@@ -231,12 +231,18 @@ func NewFinanceCommand() *cli.Command {
 			},
 			{Name: "delete-spending-category", Usage: "delete a spending category; its transactions become uncategorized", ArgsUsage: "<spending-category>", Flags: forceFlags(), Action: runFinanceDeleteSpendingCategory},
 			{Name: "spending-rules", Usage: "your spending rules, in the order they are tried", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceSpendingRules},
+			{
+				Name: "propose-spending-rules", Usage: "the spending rules categorize-transaction --create-spending-rule would save for several transactions (up to 5000): each with the rule it goes ahead of and how many other transactions it would change, and what was left out; saves nothing",
+				ArgsUsage: "<transaction-id>... <spending-category>", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceProposeSpendingRules,
+			},
 			{Name: "create-spending-rule", Usage: "add a spending rule, applied at once to past transactions except the ones you chose", ArgsUsage: "<match-text>", Flags: spendingRuleFlags(), Action: runFinanceCreateSpendingRule},
 			{Name: "update-spending-rule", Usage: "change a spending rule", ArgsUsage: "<spending-rule-id>", Flags: append(spendingRuleFlags(), &cli.StringFlag{Name: "match-text", Usage: "what it matches in the merchant or description"}), Action: runFinanceUpdateSpendingRule},
 			{Name: "delete-spending-rule", Usage: "delete a spending rule", ArgsUsage: "<spending-rule-id>", Flags: forceFlags(), Action: runFinanceDeleteSpendingRule},
 			{
-				Name: "categorize-transaction", Usage: "give a transaction a spending category, which nothing overwrites; transfer marks it a transfer between your own accounts", ArgsUsage: "<transaction-id> <spending-category | none>",
-				Flags:  []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "create-spending-rule", Usage: "and a spending rule for its merchant"}},
+				Name: "categorize-transaction", Usage: "give one or more transactions a spending category, which nothing overwrites; transfer marks them transfers between your own accounts", ArgsUsage: "<transaction-id>... <spending-category | none>",
+				Flags: []cli.Flag{JSONFlag(), &cli.BoolFlag{
+					Name: "create-spending-rule", Usage: "and a spending rule for its merchant; for several transactions, saves what propose-spending-rules lists and prints it",
+				}},
 				Action: runFinanceCategorizeTransaction,
 			},
 			{
@@ -313,7 +319,7 @@ var financeSubcommandOperations = map[string]string{
 	"close-asset": "CloseAsset", "delete-asset": "DeleteAsset", "record-valuation": "RecordValuation",
 	"delete-valuation": "DeleteValuation", "spending-categories": "SpendingCategories",
 	"create-spending-category": "CreateSpendingCategory", "update-spending-category": "UpdateSpendingCategory",
-	"delete-spending-category": "DeleteSpendingCategory", "spending-rules": "SpendingRules",
+	"delete-spending-category": "DeleteSpendingCategory", "spending-rules": "SpendingRules", "propose-spending-rules": "ProposeSpendingRules",
 	"create-spending-rule": "CreateSpendingRule", "update-spending-rule": "UpdateSpendingRule",
 	"delete-spending-rule": "DeleteSpendingRule", "categorize-transaction": "CategorizeTransaction",
 	"count-transaction": "CountTransaction", "undo-count-transaction": "UndoCountTransaction",
@@ -1852,23 +1858,89 @@ func runFinanceDeleteSpendingRule(ctx context.Context, command *cli.Command) err
 	return printDone(command, map[string]any{"spendingRuleId": spendingRuleId, "isDeleted": true}, spendingRuleId+": deleted")
 }
 
-func runFinanceCategorizeTransaction(ctx context.Context, command *cli.Command) error {
-	financeTransactionId, err := financeArgument(command, 0, "the transaction's id and a spending category: teanode finance categorize-transaction <id> dining")
+// transactionsAndSpendingCategory reads the arguments of a subcommand that
+// takes one or more transaction ids and then a spending category: the ids,
+// and the spending category's id, empty for none when none is allowed.
+func transactionsAndSpendingCategory(ctx context.Context, command *cli.Command, isNoneAllowed bool) ([]string, string, error) {
+	arguments := command.Args().Slice()
+	var financeTransactionIds []string
+	for _, argument := range arguments[:max(len(arguments)-1, 0)] {
+		if financeTransactionId := strings.TrimSpace(argument); financeTransactionId != "" {
+			financeTransactionIds = append(financeTransactionIds, financeTransactionId)
+		}
+	}
+	if len(financeTransactionIds) == 0 {
+		return nil, "", usage("give the transactions' ids and then a spending category: teanode finance " + command.Name + " <id>... dining")
+	}
+	wanted := strings.TrimSpace(arguments[len(arguments)-1])
+	if isNoneAllowed && strings.EqualFold(wanted, "none") {
+		return financeTransactionIds, "", nil
+	}
+	found, err := spendingCategoryNamed(ctx, command, wanted)
+	if err != nil {
+		return nil, "", err
+	}
+	return financeTransactionIds, found.ID, nil
+}
+
+func runFinanceProposeSpendingRules(ctx context.Context, command *cli.Command) error {
+	financeTransactionIds, spendingCategoryId, err := transactionsAndSpendingCategory(ctx, command, false)
 	if err != nil {
 		return err
 	}
-	wanted, err := financeArgument(command, 1, "the spending category, by id or name, or none")
-	if err != nil {
+	var proposals *client.SpendingRuleProposals
+	variables := map[string]any{"financeTransactionIds": financeTransactionIds, "spendingCategoryId": spendingCategoryId}
+	if err := financeCall(ctx, command, operationOf(command), variables, &proposals); err != nil {
 		return err
 	}
-	spendingCategoryId := ""
-	if !strings.EqualFold(wanted, "none") {
-		found, err := spendingCategoryNamed(ctx, command, wanted)
+	if command.Bool("json") {
+		return PrintJSON(proposals)
+	}
+	if len(proposals.SpendingRuleProposals) == 0 {
+		_, _ = fmt.Fprintln(command.Writer, "no new spending rules: your spending rules already file these there, or they have no merchant or description to match")
+	} else {
+		names, err := spendingCategoryNames(ctx, command)
 		if err != nil {
 			return err
 		}
-		spendingCategoryId = found.ID
+		rows := make([][]string, 0, len(proposals.SpendingRuleProposals))
+		for _, proposal := range proposals.SpendingRuleProposals {
+			rows = append(rows, []string{
+				proposal.MatchText, strconv.Itoa(proposal.FinanceTransactionCount), strconv.Itoa(proposal.ChangedTransactionCount),
+				aheadOfSpendingRule(proposal, names),
+			})
+		}
+		if err := printTable([]string{"matches", "transactions", "also changes", "goes ahead of"}, rows); err != nil {
+			return err
+		}
 	}
+	for _, reason := range proposals.LeftOutReasons() {
+		_, _ = fmt.Fprintln(command.Writer, reason)
+	}
+	return nil
+}
+
+// aheadOfSpendingRule names the spending rule a proposed one goes ahead
+// of, "zoomly eats → Dining", or nothing when it goes after every rule.
+func aheadOfSpendingRule(proposal *client.SpendingRuleProposal, names map[string]string) string {
+	if proposal.AheadOfSpendingRule == nil {
+		return ""
+	}
+	return proposal.AheadOfSpendingRule.MatchText + " → " + names[proposal.AheadOfSpendingRule.SpendingCategoryID]
+}
+
+// runFinanceCategorizeTransaction categorizes one transaction with
+// CategorizeTransaction, and several together with
+// CategorizeTransactions, all or none.
+func runFinanceCategorizeTransaction(ctx context.Context, command *cli.Command) error {
+	financeTransactionIds, spendingCategoryId, err := transactionsAndSpendingCategory(ctx, command, true)
+	if err != nil {
+		return err
+	}
+	if len(financeTransactionIds) > 1 {
+		return categorizeTransactions(ctx, command, financeTransactionIds, spendingCategoryId)
+	}
+	financeTransactionId := financeTransactionIds[0]
 	variables := map[string]any{"financeTransactionId": financeTransactionId, "spendingCategoryId": spendingCategoryId}
 	setBool(command, variables, "create-spending-rule", "shouldCreateSpendingRule")
 	var categorized *client.CategorizedTransaction
@@ -1878,6 +1950,42 @@ func runFinanceCategorizeTransaction(ctx context.Context, command *cli.Command) 
 	line := financeTransactionId + ": categorized"
 	if categorized.SpendingRule != nil {
 		line += fmt.Sprintf("; spending rule %s matches %q from now on and in the past", categorized.SpendingRule.ID, categorized.SpendingRule.MatchText)
+	}
+	return printDone(command, categorized, line)
+}
+
+// categorizeTransactions is categorize-transaction given several ids. With
+// --create-spending-rule it asks ProposeSpendingRules first and saves
+// exactly what that proposes, as the dashboard does once the person
+// confirms; propose-spending-rules shows the same list beforehand.
+func categorizeTransactions(ctx context.Context, command *cli.Command, financeTransactionIds []string, spendingCategoryId string) error {
+	variables := map[string]any{"financeTransactionIds": financeTransactionIds, "spendingCategoryId": spendingCategoryId}
+	var proposals *client.SpendingRuleProposals
+	if command.Bool("create-spending-rule") {
+		if spendingCategoryId == "" {
+			return usage("a spending rule needs the spending category it assigns, not none")
+		}
+		if err := financeCall(ctx, command, "ProposeSpendingRules", variables, &proposals); err != nil {
+			return err
+		}
+		variables["spendingRules"] = proposals.Confirmed()
+	}
+	var categorized *client.CategorizedTransactions
+	if err := financeCall(ctx, command, "CategorizeTransactions", variables, &categorized); err != nil {
+		return err
+	}
+	line := fmt.Sprintf("%d transactions categorized", len(categorized.FinanceTransactions))
+	for _, spendingRule := range categorized.SpendingRules {
+		line += fmt.Sprintf("\nspending rule %s matches %q from now on and in the past", spendingRule.ID, spendingRule.MatchText)
+	}
+	if proposals != nil {
+		leftOutReasons := proposals.LeftOutReasons()
+		if len(categorized.SpendingRules) == 0 && len(leftOutReasons) == 0 {
+			line += "\nno new spending rules: your spending rules already file these there"
+		}
+		for _, reason := range leftOutReasons {
+			line += "\n" + reason
+		}
 	}
 	return printDone(command, categorized, line)
 }

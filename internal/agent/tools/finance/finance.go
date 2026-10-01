@@ -209,11 +209,25 @@ var operations = map[string]*financeOperation{
 			return "Delete the spending rule for " + lookup.spendingRuleMatch(text(call, "spending_rule_id"))
 		},
 	},
+	"propose_spending_rules": {
+		graphqlOperation: "ProposeSpendingRules", risk: tools.RiskRead, isUntrusted: true,
+		arguments: []string{"finance_transaction_ids", "spending_category_id"}, required: []string{"finance_transaction_ids", "spending_category_id"},
+	},
+	// categorize_transaction stands for CategorizeTransaction, for one
+	// finance transaction, and CategorizeTransactions, for several (run
+	// tells them apart), so one word does both as on the command line.
 	"categorize_transaction": {
-		graphqlOperation: "CategorizeTransaction", risk: tools.RiskWrite, isUntrusted: true,
-		arguments: []string{"finance_transaction_id", "spending_category_id", "should_create_spending_rule"}, required: []string{"finance_transaction_id"},
+		risk: tools.RiskWrite, isUntrusted: true,
+		arguments: []string{"finance_transaction_id", "finance_transaction_ids", "spending_category_id", "should_create_spending_rule"},
 		preview: func(lookup *previewLookup, call map[string]any) string {
+			financeTransactionIds := transactionIds(call)
+			if len(financeTransactionIds) > 1 {
+				return categorizeSeveralPreview(lookup, call, financeTransactionIds)
+			}
 			transaction := lookup.transaction(text(call, "finance_transaction_id"))
+			if len(financeTransactionIds) == 1 {
+				transaction = lookup.transaction(financeTransactionIds[0])
+			}
 			line := "Categorize " + transaction
 			if spendingCategoryId := text(call, "spending_category_id"); lookup.isTransferSpendingCategory(spendingCategoryId) {
 				line = "Mark " + transaction + " as a transfer between their own accounts, neither spending nor income"
@@ -554,6 +568,9 @@ const description = "The person's money: their finance sources (logins at banks,
 	"- A savings plan: `cash_flow` for what they save a month now, `savings_targets` for what a target needs a month, `budget_status` and `spending_summary` for which spending categories could close the gap, with numbers.\n" +
 	"- A savings target on what they own: target_measure net_worth for everything, or asset_value with finance_account_ids for whole accounts (an investment account counts with every holding, those bought later too) and asset_ids only for assets outside a finance account.\n" +
 	"- After the person corrects a transaction's spending category with `categorize_transaction`, offer a spending rule for that merchant (`should_create_spending_rule`), which applies to past transactions too, never over their own choices.\n" +
+	"- Categorizing several at once: `categorize_transaction` with finance_transaction_ids (up to 500) gives them all the spending category as the person's choice, all or none; finance_transaction_id still takes one. " +
+	"`propose_spending_rules` with the same ids (up to 5000) and spending category lists the spending rules should_create_spending_rule would add, at most 50: one per merchant (or description) unless the rule that applies first already files it there, each with aheadOfSpendingRule (the existing rule it goes ahead of so it takes effect) and changedTransactionCount (other transactions it would recategorize); " +
+	"tooGenericMatchTextCount, changingNumberMatchTextCount and overLimitMatchTextCount count what was left out (under four letters or mostly digits, a long number or a date that changes each time, past 50). Name them, with those numbers, when offering; categorize_transaction saves exactly that list.\n" +
 	"- Transfers: money moved between the person's own accounts (a card payment, savings) is the built-in spending category transfer (isTransfer in `spending_categories`), neither spending nor income; there is no separate transfer mark. " +
 	"Mark one with `categorize_transaction` and spending_category_id transfer; any other spending category takes the mark away. " +
 	"A spending rule can assign transfer like any spending category (`create_spending_rule` with match_text ONLINE PAYMENT and spending_category_id transfer), for past and future transactions. " +
@@ -581,6 +598,7 @@ func init() {
 					"finance_account_id":          tools.StringProperty("a finance account, by the id accounts gives; for assets, what it values: its own asset and its holdings"),
 					"is_holding":                  tools.BooleanProperty("for assets: true lists only the holdings of investment accounts (one asset per position); left out, assets leaves the holdings out unless finance_account_id is given"),
 					"finance_transaction_id":      tools.StringProperty("a finance transaction, by the id transactions gives"),
+					"finance_transaction_ids":     tools.ArrayProperty("several finance transactions, by the ids transactions gives. For transactions: only these, to read one by its id (a duplicate's counted copy, say). For categorize_transaction: at most 500 categorized together. For propose_spending_rules: at most 5000", tools.StringProperty("a finance transaction id")),
 					"finance_security_id":         tools.StringProperty("for trades: a security, by the financeSecurityId an asset or a trade gives"),
 					"from":                        tools.StringProperty("for transactions, trades, spending_summary and net_worth: the first day, 2026-09-01"),
 					"to":                          tools.StringProperty("for transactions, trades, spending_summary and net_worth: the last day, 2026-09-30"),
@@ -591,7 +609,6 @@ func init() {
 					"spending_category_id":        tools.StringProperty("a spending category, by its name or by the id spending_categories gives; transfer marks a transfer between the person's own accounts; for categorize_transaction empty takes it away"),
 					"is_uncategorized":            tools.BooleanProperty("for transactions: only the ones with no spending category (a transfer has the transfer category)"),
 					"duplicate_of_transaction_id": tools.StringProperty("for transactions: only the mirrored copies of this finance transaction, its duplicates"),
-					"finance_transaction_ids":     tools.ArrayProperty("for transactions: only these finance transactions, to read one by its id (a duplicate's counted copy, say)", tools.StringProperty("a finance transaction id")),
 					"limit":                       tools.IntegerProperty("for transactions and trades: how many, at most 200"),
 					"after":                       tools.StringProperty("for transactions and trades: the nextCursor of the page before"),
 					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),
@@ -620,7 +637,7 @@ func init() {
 					"spending_rule_id":            tools.StringProperty("a spending rule, by the id spending_rules gives"),
 					"match_text":                  tools.StringProperty("what a spending rule matches within the merchant, or the description when there is none"),
 					"rule_priority":               tools.IntegerProperty("the order a spending rule is tried in, lowest first"),
-					"should_create_spending_rule": tools.BooleanProperty("for categorize_transaction: also add a spending rule for its merchant, only when the person said yes"),
+					"should_create_spending_rule": tools.BooleanProperty("for categorize_transaction: also add a spending rule for its merchant, or for several, exactly the rules propose_spending_rules lists for the same ids and spending category; only when the person said yes"),
 					"monthly_amount":              tools.StringProperty("for set_budget: the amount a month, or on an income spending category the income expected a month; 0 ends the budget"),
 					"effective_from":              tools.StringProperty("for set_budget: the month it starts, 2026-10; this month when left out"),
 					"month":                       tools.StringProperty("a month, 2026-09. For budget_status, saving_summary and spending_by_day: the month, this one when left out. For transactions, trades, spending_summary, net_worth and cash_flow: shorthand for that whole month, instead of from and to"),
@@ -696,6 +713,112 @@ func texts(call map[string]any, key string) []string {
 		}
 	}
 	return found
+}
+
+// transactionIds is the finance transactions a call names, by
+// finance_transaction_ids and finance_transaction_id, each once.
+func transactionIds(call map[string]any) []string {
+	var financeTransactionIds []string
+	isNamed := map[string]bool{}
+	for _, financeTransactionId := range append(texts(call, "finance_transaction_ids"), text(call, "finance_transaction_id")) {
+		if financeTransactionId != "" && !isNamed[financeTransactionId] {
+			isNamed[financeTransactionId] = true
+			financeTransactionIds = append(financeTransactionIds, financeTransactionId)
+		}
+	}
+	return financeTransactionIds
+}
+
+// previewExampleCount is how many of the finance transactions a call
+// categorizes together its confirmation card names.
+const previewExampleCount = 3
+
+// categorizeSeveralPreview is the confirmation card's line for
+// categorizing several finance transactions together: how many, a few of
+// them, and the spending rules that would be added.
+func categorizeSeveralPreview(lookup *previewLookup, call map[string]any, financeTransactionIds []string) string {
+	transactionCount := len(financeTransactionIds)
+	spendingCategoryId := text(call, "spending_category_id")
+	var line string
+	switch {
+	case lookup.isTransferSpendingCategory(spendingCategoryId):
+		line = fmt.Sprintf("Mark %d transactions as transfers between their own accounts, neither spending nor income", transactionCount)
+	case spendingCategoryId != "":
+		line = fmt.Sprintf("Categorize %d transactions as %s", transactionCount, lookup.spendingCategoryName(spendingCategoryId))
+	default:
+		line = fmt.Sprintf("Take the spending category off %d transactions", transactionCount)
+	}
+	examples := lookup.transactionLines(financeTransactionIds[:min(previewExampleCount, transactionCount)])
+	if len(examples) > 0 {
+		line += ": " + strings.Join(examples, "; ")
+		if remainingCount := transactionCount - len(examples); remainingCount > 0 {
+			line += fmt.Sprintf("; and %d more", remainingCount)
+		}
+	}
+	if !isTrue(call, "should_create_spending_rule") {
+		return line
+	}
+	proposals, leftOutReasons, isRead := lookup.spendingRuleProposals(financeTransactionIds, spendingCategoryId)
+	switch {
+	case !isRead:
+		return line + ", and add a spending rule for each merchant no spending rule already files there, applied to past transactions too"
+	case len(proposals) == 0 && len(leftOutReasons) == 0:
+		return line + "; no new spending rule, since theirs already file these there"
+	case len(proposals) == 0:
+		line += "; no new spending rule"
+	default:
+		line += fmt.Sprintf(", and add %d spending rules, applied to past transactions too: %s", len(proposals), strings.Join(proposals, ", "))
+	}
+	for _, reason := range leftOutReasons {
+		line += "; " + reason
+	}
+	return line
+}
+
+// categorizeTransactions is categorize_transaction: CategorizeTransaction
+// for one finance transaction, as it always was, and
+// CategorizeTransactions for several, all or none.
+func categorizeTransactions(ctx context.Context, executor tools.Operations, name string, asked map[string]any) (*tools.Result, error) {
+	financeTransactionIds := transactionIds(asked)
+	if len(financeTransactionIds) == 0 {
+		return nil, fmt.Errorf("%s needs finance_transaction_id, or finance_transaction_ids for several", name)
+	}
+	variables := map[string]any{}
+	if spendingCategoryId, isGiven := asked["spending_category_id"]; isGiven {
+		variables["spendingCategoryId"] = spendingCategoryId
+	}
+	graphqlOperation := "CategorizeTransaction"
+	if len(financeTransactionIds) == 1 {
+		variables["financeTransactionId"] = financeTransactionIds[0]
+		if shouldCreate, isGiven := asked["should_create_spending_rule"]; isGiven {
+			variables["shouldCreateSpendingRule"] = shouldCreate
+		}
+	} else {
+		graphqlOperation = "CategorizeTransactions"
+		variables["financeTransactionIds"] = financeTransactionIds
+		// The rules saved are the ones ProposeSpendingRules proposes, the
+		// list the confirmation card showed, sent back to be saved as they
+		// are.
+		if isTrue(asked, "should_create_spending_rule") {
+			var proposals *client.SpendingRuleProposals
+			proposeVariables := map[string]any{"financeTransactionIds": financeTransactionIds, "spendingCategoryId": variables["spendingCategoryId"]}
+			if err := client.RunFinance(ctx, executor, "ProposeSpendingRules", proposeVariables, &proposals); err != nil {
+				return nil, err
+			}
+			variables["spendingRules"] = proposals.Confirmed()
+		}
+	}
+	var answered any
+	if err := client.RunFinance(ctx, executor, graphqlOperation, variables, &answered); err != nil {
+		return nil, err
+	}
+	result, err := tools.JSONResult(map[string]any{name: answered})
+	if err != nil {
+		return nil, err
+	}
+	result.Untrusted = true
+	result.Note = strings.ReplaceAll(name, "_", " ")
+	return result, nil
 }
 
 // isTrue says a boolean argument is true.
@@ -813,6 +936,8 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return linkAddress(current, text(asked, "source_id"), "Give the person this address to open in their browser, signed in to the dashboard, to sign in to the institution again. The same finance source syncs again once they finish."), nil
 	case "sync", "disable_source", "enable_source", "delete_source":
 		return sourceOperation(ctx, executor, name, text(asked, "source_id"))
+	case "categorize_transaction":
+		return categorizeTransactions(ctx, executor, name, asked)
 	case "import_statement":
 		// Only a message in a mailbox the person granted, as mail_read
 		// reads: a mailbox kept back from the agent stays kept back.

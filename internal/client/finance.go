@@ -319,6 +319,79 @@ type CategorizedTransaction struct {
 	SpendingRule       *SpendingRule       `json:"spendingRule,omitempty"`
 }
 
+// CategorizedTransactions are finance transactions categorized together,
+// and the spending rules saved for them, when they were asked for.
+type CategorizedTransactions struct {
+	FinanceTransactions []*FinanceTransaction `json:"financeTransactions"`
+	SpendingRules       []*SpendingRule       `json:"spendingRules"`
+}
+
+// SpendingRuleProposals is what ProposeSpendingRules offers: the spending
+// rules, and how many distinct match texts it left out and why.
+type SpendingRuleProposals struct {
+	SpendingRuleProposals        []*SpendingRuleProposal `json:"spendingRuleProposals"`
+	TooGenericMatchTextCount     int                     `json:"tooGenericMatchTextCount"`
+	ChangingNumberMatchTextCount int                     `json:"changingNumberMatchTextCount"`
+	OverLimitMatchTextCount      int                     `json:"overLimitMatchTextCount"`
+}
+
+// SpendingRuleProposal is a spending rule CategorizeTransactions would
+// save once confirmed: what it matches and assigns, how many of the
+// finance transactions named it matches, how many others it would
+// recategorize, and the spending rule it goes ahead of, if any.
+type SpendingRuleProposal struct {
+	MatchText               string        `json:"matchText"`
+	SpendingCategoryID      string        `json:"spendingCategoryId"`
+	FinanceTransactionCount int           `json:"financeTransactionCount"`
+	ChangedTransactionCount int           `json:"changedTransactionCount"`
+	AheadOfSpendingRule     *SpendingRule `json:"aheadOfSpendingRule,omitempty"`
+}
+
+// ConfirmedSpendingRule is a proposed spending rule as it is sent back to
+// CategorizeTransactions to be saved.
+type ConfirmedSpendingRule struct {
+	MatchText             string `json:"matchText"`
+	SpendingCategoryID    string `json:"spendingCategoryId"`
+	AheadOfSpendingRuleID string `json:"aheadOfSpendingRuleId,omitempty"`
+}
+
+// Confirmed is the spending rules proposed, as CategorizeTransactions
+// takes them to save exactly those.
+func (self *SpendingRuleProposals) Confirmed() []ConfirmedSpendingRule {
+	confirmed := make([]ConfirmedSpendingRule, 0, len(self.SpendingRuleProposals))
+	for _, proposal := range self.SpendingRuleProposals {
+		spendingRule := ConfirmedSpendingRule{MatchText: proposal.MatchText, SpendingCategoryID: proposal.SpendingCategoryID}
+		if proposal.AheadOfSpendingRule != nil {
+			spendingRule.AheadOfSpendingRuleID = proposal.AheadOfSpendingRule.ID
+		}
+		confirmed = append(confirmed, spendingRule)
+	}
+	return confirmed
+}
+
+// MaximumSpendingRuleProposalCount is the most spending rules one
+// ProposeSpendingRules offers and one CategorizeTransactions saves.
+const MaximumSpendingRuleProposalCount = 50
+
+// LeftOutReasons says, a phrase each, how many match texts the proposal
+// left out and why; none when it left out nothing.
+func (self *SpendingRuleProposals) LeftOutReasons() []string {
+	var reasons []string
+	if self.TooGenericMatchTextCount > 0 {
+		reasons = append(reasons, fmt.Sprintf("%d left out: too short or too generic to be a rule", self.TooGenericMatchTextCount))
+	}
+	switch {
+	case self.ChangingNumberMatchTextCount == 1:
+		reasons = append(reasons, "1 left out: it holds a number that changes each time")
+	case self.ChangingNumberMatchTextCount > 1:
+		reasons = append(reasons, fmt.Sprintf("%d left out: they hold a number that changes each time", self.ChangingNumberMatchTextCount))
+	}
+	if self.OverLimitMatchTextCount > 0 {
+		reasons = append(reasons, fmt.Sprintf("%d more left out: at most %d spending rules at a time", self.OverLimitMatchTextCount, MaximumSpendingRuleProposalCount))
+	}
+	return reasons
+}
+
 // Budget is an amount for one spending category for each month from a
 // month on.
 type Budget struct {
@@ -598,6 +671,13 @@ const (
 
 	DocumentSpendingRules = `query { SpendingRules ` + spendingRuleFields + ` }`
 
+	DocumentProposeSpendingRules = `query ($financeTransactionIds: [String!]!, $spendingCategoryId: String!) {
+  ProposeSpendingRules(financeTransactionIds: $financeTransactionIds, spendingCategoryId: $spendingCategoryId) {
+    spendingRuleProposals { matchText spendingCategoryId financeTransactionCount changedTransactionCount aheadOfSpendingRule ` + spendingRuleFields + ` }
+    tooGenericMatchTextCount changingNumberMatchTextCount overLimitMatchTextCount
+  }
+}`
+
 	DocumentBudgets = `query { Budgets ` + budgetFields + ` }`
 
 	DocumentBudgetStatus = `query ($month: String) {
@@ -709,6 +789,12 @@ const (
   }
 }`
 
+	DocumentCategorizeTransactions = `mutation ($financeTransactionIds: [String!]!, $spendingCategoryId: String, $spendingRules: [ConfirmedSpendingRuleInput!]) {
+  CategorizeTransactions(financeTransactionIds: $financeTransactionIds, spendingCategoryId: $spendingCategoryId, spendingRules: $spendingRules) {
+    financeTransactions ` + financeTransactionFields + ` spendingRules ` + spendingRuleFields + `
+  }
+}`
+
 	DocumentCountTransaction = `mutation ($financeTransactionId: String!) {
   CountTransaction(financeTransactionId: $financeTransactionId) ` + financeTransactionFields + `
 }`
@@ -743,7 +829,8 @@ var FinanceDocuments = map[string]string{
 	"FinanceSpendingSummary": DocumentFinanceSpendingSummary, "ExchangeRate": DocumentExchangeRate,
 	"ConvertCurrency": DocumentConvertCurrency, "NetWorth": DocumentNetWorth, "Assets": DocumentAssets,
 	"AssetHistory": DocumentAssetHistory, "SpendingCategories": DocumentSpendingCategories,
-	"SpendingRules": DocumentSpendingRules, "Budgets": DocumentBudgets, "BudgetStatus": DocumentBudgetStatus,
+	"SpendingRules": DocumentSpendingRules, "ProposeSpendingRules": DocumentProposeSpendingRules,
+	"Budgets": DocumentBudgets, "BudgetStatus": DocumentBudgetStatus,
 	"SavingSummary": DocumentSavingSummary, "SpendingByDay": DocumentSpendingByDay, "CashFlow": DocumentCashFlow, "SavingsTargets": DocumentSavingsTargets,
 	"ReportingCurrency": DocumentReportingCurrency,
 	"StatementImport":   DocumentStatementImport, "ImportStatement": DocumentImportStatement,
@@ -757,7 +844,8 @@ var FinanceDocuments = map[string]string{
 	"CreateSpendingCategory": DocumentCreateSpendingCategory, "UpdateSpendingCategory": DocumentUpdateSpendingCategory,
 	"DeleteSpendingCategory": DocumentDeleteSpendingCategory, "CreateSpendingRule": DocumentCreateSpendingRule,
 	"UpdateSpendingRule": DocumentUpdateSpendingRule, "DeleteSpendingRule": DocumentDeleteSpendingRule,
-	"CategorizeTransaction": DocumentCategorizeTransaction, "SetBudget": DocumentSetBudget,
+	"CategorizeTransaction": DocumentCategorizeTransaction, "CategorizeTransactions": DocumentCategorizeTransactions,
+	"SetBudget":        DocumentSetBudget,
 	"CountTransaction": DocumentCountTransaction, "UndoCountTransaction": DocumentUndoCountTransaction,
 	"CreateSavingsTarget": DocumentCreateSavingsTarget,
 	"UpdateSavingsTarget": DocumentUpdateSavingsTarget, "CloseSavingsTarget": DocumentCloseSavingsTarget,

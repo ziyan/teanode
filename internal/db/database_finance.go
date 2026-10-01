@@ -40,6 +40,11 @@ type FinanceOperation interface {
 	// GetFinanceTransaction is one finance transaction of the agent, or nil.
 	GetFinanceTransaction(agentId, financeTransactionId string) (*models.FinanceTransaction, error)
 
+	// GetFinanceTransactions is the finance transactions of the agent among
+	// the ids given, in no particular order. An id that is none of the
+	// agent's is left out, so the caller compares the counts.
+	GetFinanceTransactions(agentId string, financeTransactionIds []string) ([]*models.FinanceTransaction, error)
+
 	// ListFinanceTransactions is a page of the agent's finance
 	// transactions, newest first, narrowed by the filter.
 	ListFinanceTransactions(agentId string, filter *FinanceTransactionFilter) (*FinanceTransactionPage, error)
@@ -82,6 +87,14 @@ type FinanceOperation interface {
 	// transaction uncategorized for good: it is their decision, so the
 	// categorize model is not asked about it again.
 	SetTransactionCategorization(agentId, financeTransactionId, spendingCategoryId string, categorizedBy models.CategorizedBy, categorizationConfidence *string) (bool, error)
+
+	// CategorizeTransactionsByPerson gives every finance transaction named
+	// the spending category (empty for none) as the person's choice, in
+	// one statement, as SetTransactionCategorization does for one. It
+	// writes nothing and answers ErrNotFound when any id is none of the
+	// agent's or the spending category is not theirs; otherwise it
+	// answers how many it wrote.
+	CategorizeTransactionsByPerson(agentId string, financeTransactionIds []string, spendingCategoryId string) (int, error)
 
 	// DetectFinanceTransfers gives the transfer category to the finance
 	// transactions posted on or after sinceDate in one finance source's
@@ -1115,6 +1128,21 @@ func (self *transaction) GetFinanceTransaction(agentId, financeTransactionId str
 	return found[0].toModel(), nil
 }
 
+func (self *transaction) GetFinanceTransactions(agentId string, financeTransactionIds []string) ([]*models.FinanceTransaction, error) {
+	if len(financeTransactionIds) == 0 {
+		return nil, nil
+	}
+	var found []agentFinanceTransactionModel
+	if err := self.tx.Where(`"agent_id" = ? AND "id" = ANY(?::text[])`, agentId, pq.Array(financeTransactionIds)).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	financeTransactions := make([]*models.FinanceTransaction, 0, len(found))
+	for index := range found {
+		financeTransactions = append(financeTransactions, found[index].toModel())
+	}
+	return financeTransactions, nil
+}
+
 // financeTransactionCursor writes where a page ended: the posted day and
 // the id of its last row, which is the order pages are read in.
 func financeTransactionCursor(last *agentFinanceTransactionModel) string {
@@ -1302,6 +1330,42 @@ func (self *transaction) SetTransactionCategorization(agentId, financeTransactio
 		return false, ErrNotFound
 	}
 	return false, nil
+}
+
+func (self *transaction) CategorizeTransactionsByPerson(agentId string, financeTransactionIds []string, spendingCategoryId string) (int, error) {
+	isDistinct := map[string]bool{}
+	for _, financeTransactionId := range financeTransactionIds {
+		isDistinct[financeTransactionId] = true
+	}
+	if len(isDistinct) == 0 {
+		return 0, nil
+	}
+	if spendingCategoryId != "" {
+		category, err := self.GetSpendingCategory(agentId, spendingCategoryId)
+		if err != nil {
+			return 0, err
+		}
+		if category == nil {
+			return 0, ErrNotFound
+		}
+	}
+	// Counted before the write, so a list naming somebody else's finance
+	// transaction leaves none of the agent's written either.
+	var ownedCount int64
+	if err := self.tx.Model(&agentFinanceTransactionModel{}).
+		Where(`"agent_id" = ? AND "id" = ANY(?::text[])`, agentId, pq.Array(financeTransactionIds)).Count(&ownedCount).Error; err != nil {
+		return 0, err
+	}
+	if int(ownedCount) != len(isDistinct) {
+		return 0, ErrNotFound
+	}
+	updated := self.tx.Exec(`UPDATE "agent_finance_transaction" SET "spending_category_id" = ?, "categorized_by" = ?,
+			"categorization_confidence" = NULL, "modified_at" = ?,
+			"categorize_attempted_at" = CASE WHEN ? THEN NULL ELSE "categorize_attempted_at" END
+		WHERE "agent_id" = ? AND "id" = ANY(?::text[])`,
+		optionalID(spendingCategoryId), string(models.CategorizedByPerson), time.Now(), spendingCategoryId != "",
+		agentId, pq.Array(financeTransactionIds))
+	return int(updated.RowsAffected), updated.Error
 }
 
 func (self *transaction) DetectFinanceTransfers(agentId, sourceId, sinceDate string) (int, error) {

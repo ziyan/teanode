@@ -196,11 +196,26 @@ func (self *previewLookup) sourceName(sourceId string) string {
 // transaction is a finance transaction as a statement line: what it was,
 // its amount and its day.
 func (self *previewLookup) transaction(financeTransactionId string) string {
-	if self.executor == nil || financeTransactionId == "" {
-		return "a transaction"
+	if lines := self.transactionLines([]string{financeTransactionId}); len(lines) == 1 {
+		return lines[0]
 	}
+	return "a transaction"
+}
+
+// transactionLines is each finance transaction given that the newest
+// pages hold, as transaction says it, in the order given; one the pages do
+// not hold is left out.
+func (self *previewLookup) transactionLines(financeTransactionIds []string) []string {
+	if self.executor == nil || len(financeTransactionIds) == 0 {
+		return nil
+	}
+	wanted := map[string]string{}
+	for _, financeTransactionId := range financeTransactionIds {
+		wanted[financeTransactionId] = ""
+	}
+	foundCount := 0
 	after := ""
-	for page := 0; page < previewTransactionPages; page++ {
+	for page := 0; page < previewTransactionPages && foundCount < len(wanted); page++ {
 		var answered *client.FinanceTransactionPage
 		variables := map[string]any{"limit": 200}
 		if after != "" {
@@ -210,22 +225,54 @@ func (self *previewLookup) transaction(financeTransactionId string) string {
 			break
 		}
 		for _, financeTransaction := range answered.FinanceTransactions {
-			if financeTransaction.ID != financeTransactionId {
+			if line, isWanted := wanted[financeTransaction.ID]; !isWanted || line != "" {
 				continue
 			}
 			what := financeTransaction.MerchantName
 			if what == "" {
 				what = financeTransaction.Description
 			}
-			return fmt.Sprintf("the transaction %s, %s %s on %s", tools.Named(what, "with no description"),
+			wanted[financeTransaction.ID] = fmt.Sprintf("the transaction %s, %s %s on %s", tools.Named(what, "with no description"),
 				financeTransaction.Amount, financeTransaction.CurrencyCode, financeTransaction.PostedOn)
+			foundCount++
 		}
 		if answered.NextCursor == "" {
 			break
 		}
 		after = answered.NextCursor
 	}
-	return "a transaction"
+	var lines []string
+	for _, financeTransactionId := range financeTransactionIds {
+		if line := wanted[financeTransactionId]; line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+// spendingRuleProposals is the spending rules categorizing these finance
+// transactions would save, each named with how many other transactions it
+// would change and the rule it goes ahead of ("goes ahead of: zoomly eats →
+// Dining"), and what was left out and why; false when they cannot be read.
+func (self *previewLookup) spendingRuleProposals(financeTransactionIds []string, spendingCategoryIdOrName string) ([]string, []string, bool) {
+	spendingCategory := self.spendingCategoryFor(spendingCategoryIdOrName)
+	if self.executor == nil || spendingCategory == nil {
+		return nil, nil, false
+	}
+	var proposals *client.SpendingRuleProposals
+	variables := map[string]any{"financeTransactionIds": financeTransactionIds, "spendingCategoryId": spendingCategory.ID}
+	if client.RunFinance(self.ctx, self.executor, "ProposeSpendingRules", variables, &proposals) != nil || proposals == nil {
+		return nil, nil, false
+	}
+	named := make([]string, 0, len(proposals.SpendingRuleProposals))
+	for _, proposal := range proposals.SpendingRuleProposals {
+		line := tools.Named(proposal.MatchText, "") + fmt.Sprintf(" (changes %d other transactions", proposal.ChangedTransactionCount)
+		if proposal.AheadOfSpendingRule != nil {
+			line += "; goes ahead of: " + proposal.AheadOfSpendingRule.MatchText + " → " + self.spendingCategoryName(proposal.AheadOfSpendingRule.SpendingCategoryID)
+		}
+		named = append(named, line+")")
+	}
+	return named, proposals.LeftOutReasons(), true
 }
 
 // ruleEffect is what a spending rule does to what it matches.

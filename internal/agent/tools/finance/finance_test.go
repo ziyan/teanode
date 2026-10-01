@@ -11,6 +11,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/finance"
 	"github.com/ziyan/teanode/internal/api/v1api/apigraph"
+	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -40,10 +41,12 @@ var spanningOperations = map[string][]string{
 	"repair":            {"CreateFinanceLinkToken", "CompleteFinanceRepair"},
 	"link_simplefin":    {},
 	"import_credential": {},
-	"sync":              {},
-	"disable_source":    {},
-	"enable_source":     {},
-	"delete_source":     {},
+	// One finance transaction or several, as on the command line.
+	"categorize_transaction": {"CategorizeTransaction", "CategorizeTransactions"},
+	"sync":                   {},
+	"disable_source":         {},
+	"enable_source":          {},
+	"delete_source":          {},
 }
 
 // The deliberate gaps: a setup token and a provider credential are never
@@ -224,7 +227,7 @@ func TestFinanceRiskPerOperation(test *testing.T) {
 	reads := map[string]bool{
 		"providers": true, "sources": true, "accounts": true, "credit_usage": true, "transactions": true, "trades": true, "spending_summary": true,
 		"exchange_rate": true, "convert_currency": true, "net_worth": true, "assets": true, "asset_history": true,
-		"spending_categories": true, "spending_rules": true, "budgets": true, "budget_status": true, "saving_summary": true,
+		"spending_categories": true, "spending_rules": true, "propose_spending_rules": true, "budgets": true, "budget_status": true, "saving_summary": true,
 		"spending_by_day": true, "cash_flow": true, "savings_targets": true,
 		"link_plaid": true, "repair": true, "link_simplefin": true, "import_credential": true, "reporting_currency": true,
 		"statement_import": true,
@@ -985,5 +988,84 @@ func TestFinanceToolListsAndCountsMirroredCopies(test *testing.T) {
 	}
 	if !strings.Contains(tool.Description, "Mirrored copies") || !strings.Contains(tool.Description, "duplicateOfTransactionId") {
 		test.Error("the description does not explain mirrored copies")
+	}
+}
+
+// categorize_transaction takes a list: several ids go to
+// CategorizeTransactions with exactly the spending rules
+// ProposeSpendingRules proposed, one id (in either argument) still to
+// CategorizeTransaction, and none is refused. The card says how many,
+// names a few and the rest by count, and lists the spending rules that
+// would be added, with the rule each goes ahead of, how many other
+// transactions each would change, and what was left out.
+func TestFinanceToolCategorizesSeveralTransactions(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"SpendingCategories": `[{"id":"category-dining","spendingCategoryName":"Dining"},{"id":"category-groceries","spendingCategoryName":"Groceries"},` +
+			`{"id":"category-transfer","spendingCategoryName":"transfer","isTransfer":true}]`,
+		"FinanceTransactions": `{"financeTransactions":[` +
+			`{"id":"transaction-one","postedOn":"2026-09-12","amount":"-12.50","currencyCode":"USD","description":"INVENTED BISTRO 01","merchantName":"Invented Bistro"},` +
+			`{"id":"transaction-two","postedOn":"2026-09-13","amount":"-8.00","currencyCode":"USD","description":"INVENTED BISTRO 02","merchantName":"Invented Bistro"},` +
+			`{"id":"transaction-three","postedOn":"2026-09-14","amount":"-30.00","currencyCode":"USD","description":"NOODLE PLACE"},` +
+			`{"id":"transaction-four","postedOn":"2026-09-15","amount":"-4.00","currencyCode":"USD","description":"KIOSK"}],"nextCursor":""}`,
+		"CategorizeTransactions": `{"financeTransactions":[{"id":"transaction-one"},{"id":"transaction-two"}],"spendingRules":[]}`,
+		"CategorizeTransaction":  `{"financeTransaction":{"id":"transaction-one"}}`,
+		"ProposeSpendingRules": `{"spendingRuleProposals":[` +
+			`{"matchText":"Invented Bistro","spendingCategoryId":"category-dining","financeTransactionCount":2,"changedTransactionCount":3,` +
+			`"aheadOfSpendingRule":{"id":"rule-bistro","matchText":"bistro","spendingCategoryId":"category-groceries","rulePriority":0}},` +
+			`{"matchText":"NOODLE PLACE","spendingCategoryId":"category-dining","financeTransactionCount":1,"changedTransactionCount":0}],` +
+			`"tooGenericMatchTextCount":0,"changingNumberMatchTextCount":2,"overLimitMatchTextCount":0}`,
+	}}
+	if _, err := call(test, operations, `{"operation":"categorize_transaction","finance_transaction_ids":["transaction-one","transaction-two"],"spending_category_id":"Dining","should_create_spending_rule":true}`); err != nil {
+		test.Fatal(err)
+	}
+	sent := operations.variables[len(operations.variables)-1]
+	if !strings.Contains(operations.documents[len(operations.documents)-1], "CategorizeTransactions(") ||
+		!reflect.DeepEqual(sent["financeTransactionIds"], []string{"transaction-one", "transaction-two"}) ||
+		sent["spendingCategoryId"] != "category-dining" || sent["shouldCreateSpendingRules"] != nil || sent["shouldCreateSpendingRule"] != nil {
+		test.Errorf("several ids sent %v", sent)
+	}
+	confirmed := []client.ConfirmedSpendingRule{
+		{MatchText: "Invented Bistro", SpendingCategoryID: "category-dining", AheadOfSpendingRuleID: "rule-bistro"},
+		{MatchText: "NOODLE PLACE", SpendingCategoryID: "category-dining"},
+	}
+	if !reflect.DeepEqual(sent["spendingRules"], confirmed) {
+		test.Errorf("the rules sent to be saved were %#v, not the ones proposed", sent["spendingRules"])
+	}
+	for _, arguments := range []string{
+		`{"operation":"categorize_transaction","finance_transaction_ids":["transaction-one"],"spending_category_id":"Dining"}`,
+		`{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"Dining"}`,
+	} {
+		if _, err := call(test, operations, arguments); err != nil {
+			test.Fatal(err)
+		}
+		if sent := operations.variables[len(operations.variables)-1]; sent["financeTransactionId"] != "transaction-one" || sent["financeTransactionIds"] != nil {
+			test.Errorf("%s sent %v", arguments, sent)
+		}
+	}
+	if _, err := call(test, operations, `{"operation":"categorize_transaction","spending_category_id":"Dining"}`); err == nil {
+		test.Error("a categorization naming no transaction was sent")
+	}
+
+	ctx := tools.WithRun(context.Background(), &fakeRun{operations: operations})
+	tool := financeTool(test)
+	line := tool.PreviewLine(ctx, json.RawMessage(`{"operation":"categorize_transaction","finance_transaction_ids":["transaction-one","transaction-two","transaction-three","transaction-four"],"spending_category_id":"category-dining","should_create_spending_rule":true}`))
+	for _, said := range []string{
+		"Categorize 4 transactions", `"Dining"`, "-12.50 USD", `"NOODLE PLACE"`, "and 1 more", `add 2 spending rules`, `"Invented Bistro" (changes 3 other transactions`,
+		`goes ahead of: bistro → "Groceries"`, "2 left out: they hold a number that changes each time",
+	} {
+		if !strings.Contains(line, said) {
+			test.Errorf("the card %q does not say %s", line, said)
+		}
+	}
+	if strings.Contains(line, "KIOSK") {
+		test.Errorf("the card %q names more than three transactions", line)
+	}
+	line = tool.PreviewLine(ctx, json.RawMessage(`{"operation":"categorize_transaction","finance_transaction_ids":["transaction-one","transaction-two"],"spending_category_id":"transfer"}`))
+	if !strings.Contains(line, "Mark 2 transactions as transfers") {
+		test.Errorf("the card %q does not say they become transfers", line)
+	}
+	if !strings.Contains(tool.Description, "finance_transaction_ids") || !strings.Contains(tool.Description, "propose_spending_rules") {
+		test.Error("the description does not explain categorizing several at once")
 	}
 }
