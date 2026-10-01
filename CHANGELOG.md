@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.94.3] - 2026-10-01
+
+### Changed
+
+- Dreams read two-post threads the person took part in and short documents, give files left out of a full batch another turn instead of declining them, and write a page's opening and overview from its newest facts. (#278)
+
 ## [0.94.2] - 2026-10-01
 
 ### Fixed
