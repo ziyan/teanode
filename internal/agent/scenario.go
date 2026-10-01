@@ -61,6 +61,13 @@ type ScenarioStep struct {
 	// one with nothing new filed shows what repeating maintenance does.
 	DreamCount int `json:"dreamCount,omitempty"`
 
+	// IsUntilRead runs dreams until nothing is waiting to be read, as a
+	// server's later dreams would, at most scenarioDreamsUntilRead of
+	// them: a call the model did not answer leaves its documents for the
+	// next dream, and one dream would measure that call rather than the
+	// memory.
+	IsUntilRead bool `json:"isUntilRead,omitempty"`
+
 	Questions []*ScenarioQuestion `json:"questions,omitempty"`
 
 	// Messages are a conversation of the agent's own, filed as one and
@@ -356,6 +363,14 @@ func RunScenario(ctx context.Context, settings *ScenarioSettings) (*ScenarioRepo
 			stepReport.FiledCount, err = worker.fileScenarioRecords(ctx, settings, index, step, owner, found, source)
 		case ScenarioStepDream:
 			for count := 0; count < step.DreamCount && err == nil; count++ {
+				err = worker.dreamScenario(ctx, settings.Database, found.ID)
+			}
+			for count := 0; step.IsUntilRead && count < scenarioDreamsUntilRead && err == nil; count++ {
+				var waiting int64
+				if waiting, err = scenarioWaitingCount(ctx, settings.Database, owner, found.ID); err != nil || waiting == 0 {
+					break
+				}
+				_, _ = fmt.Fprintf(progress, "  %d documents still waiting; dreaming again\n", waiting)
 				err = worker.dreamScenario(ctx, settings.Database, found.ID)
 			}
 		case ScenarioStepConversation:
@@ -718,6 +733,19 @@ func scenarioLayers(ctx context.Context, database db.Database, agentId string, c
 		layers = append(layers, &ScenarioClaimLayers{Claim: describeScenarioClaim(claim), LayerCounts: counts})
 	}
 	return layers, nil
+}
+
+// scenarioDreamsUntilRead is how many more dreams a step that reads until
+// nothing waits may run.
+const scenarioDreamsUntilRead = 5
+
+// scenarioWaitingCount is how many documents are waiting to be read.
+func scenarioWaitingCount(ctx context.Context, database db.Database, owner *models.User, agentId string) (waiting int64, err error) {
+	err = database.TransactionContext(ctx, func(tx db.Transaction) error {
+		_, waiting, err = tx.ListAgentDocumentsToDigest(agentId, chatNamesOf(owner), 1)
+		return err
+	})
+	return waiting, err
 }
 
 // scenarioCost is what the run's calls have recorded as spent so far.

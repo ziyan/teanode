@@ -59,17 +59,20 @@ const (
 	surveyCombineReserve = 3 * time.Minute
 
 	// surveyFactCount is how many of a page's facts its run is shown,
-	// the most wanted first, and surveyFactLength how much of each.
+	// the most wanted first, and surveyFactLength how much of each. A
+	// fact cut short ends with an ellipsis and the get that reads it, and
+	// a page with more facts says how many more and how to list them.
 	surveyFactCount  = 40
 	surveyFactLength = 300
 
 	// surveyHeldCount is how many of the pages a page holds its run is
-	// named, and surveyReflectionCount how many reflections are shown.
+	// named, and surveyReflectionCount how many reflections are shown;
+	// past either, a line says how many more.
 	surveyHeldCount       = 30
 	surveyReflectionCount = 10
 
 	// surveyPartLength is how much of one page's answer the combining
-	// call reads.
+	// call reads. A part cut there says so, and how much it left out.
 	surveyPartLength = 6000
 
 	// surveyTitleLength is how much of the question a run's title
@@ -209,7 +212,7 @@ func (self *Agent) Survey(ctx context.Context, agent *models.Agent, owner *model
 		}
 		report.CoveredPaths = append(report.CoveredPaths, path)
 		if part.isRelevant {
-			answers = append(answers, fmt.Sprintf("### %s — %s\n%s", path, scope.pages[index].page.Name, cutRunes(part.answer, surveyPartLength)))
+			answers = append(answers, fmt.Sprintf("### %s — %s\n%s", path, scope.pages[index].page.Name, surveyPartShown(part.answer)))
 		}
 	}
 	if len(report.CoveredPaths) == 0 {
@@ -560,11 +563,13 @@ func resolveSurveyScope(tx db.Transaction, agentId, scopePath string, question *
 	if reflectionsPage, err := tx.GetAgentNode(agentId, reflectionsPath); err != nil {
 		return nil, err
 	} else if reflectionsPage != nil {
-		facts, err := tx.ListAgentFacts(agentId, reflectionsPage.ID, false, 200)
+		facts, err := tx.ListAgentFacts(agentId, reflectionsPage.ID, false, everyFactOnPage)
 		if err != nil {
 			return nil, err
 		}
-		scope.reflections = reflectionLines(reflectionsPage.Path, facts)
+		// The combining call has no tools, so the line about the
+		// reflections left out says how many and not how to read them.
+		scope.reflections = reflectionLines(reflectionsPage.Path, facts, false)
 	}
 	return scope, nil
 }
@@ -668,6 +673,16 @@ func heldBy(tx db.Transaction, agentId string, page *models.AgentNode) ([]*model
 // its reflections, its facts and the pages it holds.
 func readSurveyPage(tx db.Transaction, agentId string, page *models.AgentNode) (*surveyPage, error) {
 	surveyedPage := &surveyPage{page: page}
+	every, err := tx.ListAgentFacts(agentId, page.ID, false, everyFactOnPage)
+	if err != nil {
+		return nil, err
+	}
+	statedCount := 0
+	for _, fact := range every {
+		if fact.Kind != models.FactReflection {
+			statedCount++
+		}
+	}
 	facts, err := tx.ListAgentFactsLively(agentId, page.ID, surveyFactCount)
 	if err != nil {
 		return nil, err
@@ -680,15 +695,17 @@ func readSurveyPage(tx db.Transaction, agentId string, page *models.AgentNode) (
 	}
 	sort.SliceStable(stated, func(left, right int) bool { return stated[left].Number < stated[right].Number })
 	for _, fact := range stated {
-		surveyedPage.facts = append(surveyedPage.facts, fact.Reference(page.Path)+" "+cutRunes(fact.Line(), surveyFactLength))
+		readIt := fmt.Sprintf("memory get with path %s and from %d", page.Path, fact.Number)
+		surveyedPage.facts = append(surveyedPage.facts, fact.Reference(page.Path)+" "+cutWithMore(fact.Line(), surveyFactLength, readIt))
 	}
-	// Every reflection, not the few the lively order put among the
+	// The run is told what it was not shown, and how to read it: a list
+	// that stops without a word reads as all the page knows.
+	if moreCount := statedCount - len(stated); moreCount > 0 {
+		surveyedPage.facts = append(surveyedPage.facts, fmt.Sprintf("(and %d more facts on this page, not shown here: memory get with path %s and from 1 lists every one)", moreCount, page.Path))
+	}
+	// The reflections apart, not the few the lively order put among the
 	// facts: they are the night's reading of the whole page.
-	reflections, err := tx.ListAgentFacts(agentId, page.ID, false, 200)
-	if err != nil {
-		return nil, err
-	}
-	surveyedPage.reflections = reflectionLines(page.Path, reflections)
+	surveyedPage.reflections = reflectionLines(page.Path, every, true)
 	held, err := heldBy(tx, agentId, page)
 	if err != nil {
 		return nil, err
@@ -704,15 +721,19 @@ func readSurveyPage(tx db.Transaction, agentId string, page *models.AgentNode) (
 }
 
 // reflectionLines is a page's live reflections as a prompt shows them:
-// the reference, the observation, its kind and what it cites.
-func reflectionLines(path string, facts []*models.AgentFact) []string {
+// the reference, the observation, its kind and what it cites. The first
+// surveyReflectionCount of them, and then a line saying how many more
+// there are and, for a reader with the memory tool, how to read them.
+func reflectionLines(path string, facts []*models.AgentFact, canRead bool) []string {
 	var lines []string
+	moreCount := 0
 	for _, fact := range facts {
 		if fact.Kind != models.FactReflection {
 			continue
 		}
 		if len(lines) >= surveyReflectionCount {
-			break
+			moreCount++
+			continue
 		}
 		line := fact.Reference(path) + " " + strings.TrimSpace(fact.Text)
 		if reflectionKind := fact.ReflectionKind(); reflectionKind != "" {
@@ -723,7 +744,26 @@ func reflectionLines(path string, facts []*models.AgentFact) []string {
 		}
 		lines = append(lines, line)
 	}
+	if moreCount > 0 {
+		more := fmt.Sprintf("(and %d more reflections on %s, not shown here", moreCount, path)
+		if canRead {
+			more += ": memory get with path " + path + " and from 1 lists every one"
+		}
+		lines = append(lines, more+")")
+	}
 	return lines
+}
+
+// surveyPartShown is one page's answer as the combining call reads it: to
+// surveyPartLength characters, and where it is cut, a line saying so and
+// how much was left out, so that the report does not treat the start of
+// a part as the whole of it.
+func surveyPartShown(answer string) string {
+	moreCount := len([]rune(answer)) - surveyPartLength
+	if moreCount <= 0 {
+		return answer
+	}
+	return cutMarked(answer, surveyPartLength) + fmt.Sprintf("\n(this part is cut here; %d more characters of it are left out)", moreCount)
 }
 
 // withOverviews is the live pages among these that have an overview.

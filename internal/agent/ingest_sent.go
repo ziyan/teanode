@@ -80,7 +80,9 @@ func (self *Agent) readSentMail(ctx context.Context, run *Run, source *models.Ag
 		}
 		// Without the quoted reply underneath: what they wrote is the
 		// example, and the message they were answering is not.
-		message, err := buildMessageContext(ctx, run.Storage(), mail, sentCharacters, false, false)
+		// The whole message, however long: what is kept is stored, and a
+		// message cut where it is stored has lost its end for every reader.
+		message, err := buildMessageContext(ctx, run.Storage(), mail, 0, false, false)
 		if err != nil {
 			return "", counts, err
 		}
@@ -118,8 +120,3 @@ func (self *Agent) readSentMail(ctx context.Context, run *Run, source *models.Ag
 	}
 	return "", counts, nil
 }
-
-// sentCharacters is how much of one sent message is kept as an example.
-// Long enough to show how they structure something; short enough that two
-// thousand of them are a reasonable corpus.
-const sentCharacters = 4000

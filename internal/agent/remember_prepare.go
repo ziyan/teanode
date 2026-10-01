@@ -75,15 +75,18 @@ func (self *Agent) prepareRememberedEvidence(ctx context.Context, agentId string
 		if ready.Node == nil {
 			continue
 		}
+		// The sentence and its quote are kept whole, as the run wrote
+		// them. Both were cut to a length here, and the end of a long
+		// sentence was gone for every reader with nothing to say so.
 		ready.Fact = &models.AgentFact{
 			AgentID: agentId, NodeID: ready.Node.ID, Kind: ready.Kind,
-			Text:       cutRunes(ready.Text, models.FactLength),
+			Text:       ready.Text,
 			HappenedAt: ready.Happened,
 			Confidence: 1,
 			Evidence: []models.Evidence{{
 				Kind:  evidenceKind,
 				ID:    ready.MessageID,
-				Quote: cutRunes(ready.Quote, models.QuoteLength),
+				Quote: ready.Quote,
 			}},
 			Audiences: []models.AgentAudience{models.AudienceAsk},
 		}

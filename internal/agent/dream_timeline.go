@@ -121,7 +121,7 @@ func (self *Agent) writeMonth(ctx context.Context, run *Run, record *models.Agen
 		tx.AsActor(models.ActorDream)
 		page, err := tx.PutAgentNode(&models.AgentNode{
 			AgentID: run.Agent.ID, Path: path, Kind: models.NodePeriod,
-			Name: from.Format("January 2006"), Summary: cutRunes(text, models.SummaryLength),
+			Name: from.Format("January 2006"), Summary: text,
 		})
 		if err != nil {
 			return err
