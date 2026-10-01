@@ -246,7 +246,7 @@ func readOverviewInputs(tx db.Transaction, agentId string, page *models.AgentNod
 	}
 	inputs := &overviewInputs{overviewInputsHash: overviewInputsHash, pageIdByPath: map[string]string{page.Path: page.ID}}
 
-	facts, err := tx.ListAgentFacts(agentId, page.ID, false, 200)
+	facts, err := newestFactsOf(tx, agentId, page.ID, pageFactsRewritten)
 	if err != nil {
 		return nil, err
 	}

@@ -64,7 +64,7 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 	readAt := time.Now()
 	var facts []*models.AgentFact
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		facts, err = tx.ListAgentFacts(run.Agent.ID, page.ID, false, 200)
+		facts, err = newestFactsOf(tx, run.Agent.ID, page.ID, pageFactsRewritten)
 		return err
 	}); err != nil {
 		return false
@@ -314,4 +314,22 @@ func survivingFact(tx db.Transaction, agentId, factId string) (*models.AgentFact
 		factId = found[0].SupersededBy
 	}
 	return nil, nil
+}
+
+// pageFactsRewritten is how many of a page's facts its opening and its
+// overview are written from.
+const pageFactsRewritten = 200
+
+// newestFactsOf is the last facts filed on a page, in number order. The
+// first two hundred by number were the oldest two hundred, so on a page
+// larger than that what was learned last never reached its opening or its
+// overview, which are what recall carries first. Every fact is read, the
+// newest are kept: a page past forty facts is divided, so the whole page
+// is a few hundred rows at the most.
+func newestFactsOf(tx db.Transaction, agentId, pageId string, most int) ([]*models.AgentFact, error) {
+	facts, err := tx.ListAgentFacts(agentId, pageId, false, 100000)
+	if err != nil || len(facts) <= most {
+		return facts, err
+	}
+	return facts[len(facts)-most:], nil
 }

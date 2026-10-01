@@ -527,7 +527,7 @@ or eight personal ideas are already waiting.
 **Read what arrived.** Documents, by priority rather than by order: what
 the person wrote, then what they took part in, then the rest, newest
 first, and a chat archive only where the person was in the thread: a
-thread they took part in, of three posts or more, is read before
+thread they took part in, of two posts or more, is read before
 anything else, and a thread they were not in is never read on its own —
 it is searched when a question needs it. A quarter of a million other
 people's threads at four hundred a dream is years of reading and none of

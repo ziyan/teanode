@@ -88,6 +88,10 @@ type DreamOperation interface {
 	// opening these, and why, so that it is not paid for twice.
 	MarkAgentDocumentsDeclined(documentIds []string, reason string, at time.Time) error
 
+	// MarkAgentDocumentsPassedOver counts that a night showed these files
+	// and could not judge them, so the queue puts them behind the rest.
+	MarkAgentDocumentsPassedOver(documentIds []string) error
+
 	// UnmarkAgentDocumentsDigested puts back into the queue everything
 	// marked read since the given time: for a night that marked what it
 	// never read. Says how many.
@@ -339,8 +343,10 @@ func (self *transaction) ListAgentDocumentsToDigest(agentId string, names []stri
 	// ? is how a parameter is written, so the driver read the operator as
 	// one and substituted the next argument into it.
 	//
-	// A chat unit is read only when the person was in it and it is a
-	// conversation rather than a remark: three posts or more. The rest of
+	// A chat unit is read only when the person was in it and it is an
+	// exchange rather than a remark: two posts or more. Three left out
+	// the shortest decisions there are, a question and its answer ("we go
+	// with the second one" -- "ok"). The rest of
 	// an archive -- other people's channels, a quarter of a million of
 	// them -- is searched when a question needs it and never read on its
 	// own; reading it at four hundred a night would take years and file
@@ -355,7 +361,7 @@ func (self *transaction) ListAgentDocumentsToDigest(agentId string, names []stri
 	const eligible = `"agent_id" = ? AND NOT jsonb_exists("metadata", 'digested')
 		AND ("kind" <> 'chat' OR (
 			jsonb_exists_any("metadata"->'participants', ?::text[])
-			AND coalesce(("metadata"->>'posts')::int, 0) >= 3))
+			AND coalesce(("metadata"->>'posts')::int, 0) >= 2))
 		AND ("kind" <> 'attachment' OR EXISTS (
 			SELECT 1 FROM "agent_chunk" WHERE "document_id" = "agent_document"."id"))`
 	var total []int64
@@ -441,7 +447,7 @@ func (self *transaction) CountAgentDocumentsReading(agentId string, names []stri
 			WHERE d."agent_id" = ?
 			AND (d."kind" <> 'chat' OR (
 				jsonb_exists_any(d."metadata"->'participants', ?::text[])
-				AND coalesce((d."metadata"->>'posts')::int, 0) >= 3))) AS "documents"`,
+				AND coalesce((d."metadata"->>'posts')::int, 0) >= 2))) AS "documents"`,
 		string(models.DocumentAttachment), string(models.DocumentAttachment),
 		agentId, pq.Array(names)).Scan(&counts).Error; err != nil {
 		return nil, err
@@ -469,8 +475,20 @@ func (self *transaction) ListAgentAttachmentsToDecide(agentId string, limit int)
 		  AND NOT jsonb_exists("metadata", 'digested')
 		  AND NOT EXISTS (
 			SELECT 1 FROM "agent_chunk" WHERE "document_id" = "agent_document"."id")
-		ORDER BY "happened_at" DESC NULLS LAST
+		ORDER BY coalesce(("metadata"->>'passedOver')::int, 0) ASC, "happened_at" DESC NULLS LAST
 		LIMIT ?`, agentId, string(models.DocumentAttachment), limit))
+}
+
+// MarkAgentDocumentsPassedOver says a night showed these files to the
+// model in a batch whose list came back full, so they were not judged:
+// they go behind the files never shown, and come back in another batch.
+func (self *transaction) MarkAgentDocumentsPassedOver(documentIds []string) error {
+	if len(documentIds) == 0 {
+		return nil
+	}
+	return self.tx.Exec(
+		`UPDATE "agent_document" SET "metadata" = "metadata" || jsonb_build_object('passedOver', coalesce(("metadata"->>'passedOver')::int, 0) + 1) WHERE "id" = ANY(?)`,
+		pq.Array(documentIds)).Error
 }
 
 // MarkAgentDocumentsDeclined says the night looked at what these would

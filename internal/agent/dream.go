@@ -56,10 +56,13 @@ const (
 	// hard bound the filing itself enforces.
 	digestFacts = dreamBatch / 2
 
-	// digestSmallest is how much a document must hold to be worth a
-	// share of a call: about two short lines. See markTinyRead for what
-	// is measured against it.
-	digestSmallest = 160
+	// digestSmallest is how much a document must hold to be read at all:
+	// anything, by either measure (see markTinyRead). It was two short
+	// lines, and a one-line journal entry or a commit that says "switched
+	// the database to the new host" was marked read without being read;
+	// a short document is exactly a fact, and twenty of them to a call
+	// cost almost nothing to read.
+	digestSmallest = 8
 
 	// dreamShareDefault is how much of the day's budget a night may
 	// spend when the operator has not said.
