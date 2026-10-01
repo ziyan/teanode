@@ -86,6 +86,18 @@ not an event. A fact that says how something is has no `happened`.
 decision somebody recorded and why. How something is done that would take
 an afternoon to work out again. A date that anchors a period.
 
+**What {{.PersonName}} says about themselves.** In a thread they took
+part in, their own words about their own life are worth keeping even when
+said in passing in a conversation about something else: what they did and
+when, where they went, what they bought, own or made, who the people in
+their life are, what they like, use or plan, a number or a date they gave.
+"I went to Lisbon with my family for a week last month" is a fact about
+them, filed on `self` or on the page of the thing, with their line as the
+quote. Where they changed something they said before -- moved it, sold it,
+started doing it differently -- file the new state, with when. Somebody
+else's general advice, an assistant's suggestions included, is not about
+{{.PersonName}} and is not kept, unless they said they took it.
+
 **A question somebody answered is a `howto`.** Where a thread has one
 person asking how to do something, whether something can be done, or why
 something happens, and another answering, file the answer as a `howto` on
