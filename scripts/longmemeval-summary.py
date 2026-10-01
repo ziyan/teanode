@@ -2,7 +2,11 @@
 """Sum up scenario reports of LongMemEval instances.
 
 Usage:
-    longmemeval-summary.py <scenario-directory> <runs-directory>
+    longmemeval-summary.py <scenario-directory> <runs-directory> [report.json]
+
+The third argument names the file read in each run's directory: report.json
+by default, or a file `teanode-server evaluate ask-again` wrote, such as
+again-recall-2400.json, which holds the last checkpoint asked again.
 
 The scenario directory is what longmemeval-scenarios.py wrote; the runs
 directory holds one report directory per question id, as
@@ -24,6 +28,7 @@ SCORE = {"correct": 1.0, "not_known": 1.0, "partial": 0.5}
 
 def main():
     scenario_directory, runs_directory = sys.argv[1], sys.argv[2]
+    report_name = sys.argv[3] if len(sys.argv) > 3 else "report.json"
     types = {}
     for path in glob.glob(os.path.join(scenario_directory, "*.json")):
         with open(path) as scenario_file:
@@ -35,17 +40,19 @@ def main():
     totals = collections.defaultdict(lambda: collections.defaultdict(list))
     costs, seconds, facts, missing = [], [], [], []
     for question_id, question_type in sorted(types.items()):
-        path = os.path.join(runs_directory, question_id, "report.json")
+        path = os.path.join(runs_directory, question_id, report_name)
         if not os.path.exists(path):
             missing.append(question_id)
             continue
         with open(path) as report_file:
             report = json.load(report_file)
-        costs.append(report["totalCost"])
-        seconds.append(sum(step["durationMS"] for step in report["steps"]) / 1000)
+        # A run's report holds its steps; a checkpoint asked again is one step.
+        steps = report["steps"] if "steps" in report else [report]
+        costs.append(report.get("totalCost", report.get("cost", 0)))
+        seconds.append(sum(step["durationMS"] for step in steps) / 1000)
         if report.get("graphCounts"):
             facts.append(report["graphCounts"]["factCount"])
-        for step in report["steps"]:
+        for step in steps:
             for question in step.get("questions") or []:
                 for answer in question["answers"]:
                     score = SCORE.get(answer["answerVerdict"], 0.0)
