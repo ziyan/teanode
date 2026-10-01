@@ -562,7 +562,13 @@ each told which part it is, and marked read only with its last part. It
 used to be the first twelve hundred characters of each, which is a note
 and the first exchange of a conversation; what was said after that never
 became a fact. A call may file about one fact for each six hundred
-characters it read, ten at the least. Every bound here is pacing,
+characters it read, ten at the least. In a thread the person took part
+in, what they say about their own life is kept even when said in passing
+(what they did, where they went, what they own, who is in their life, a
+number or a date they gave), and somebody else's general advice, an
+assistant's included, is not, unless they said they took it: reading a
+person's chats with an assistant once filed the assistant's tips and none
+of the person's own news. Every bound here is pacing,
 never truncation — what is not read
 in this dream is read in the next, the backlog is reported as a number the person
 can see, and when the backlog is larger than anybody would wait for the
