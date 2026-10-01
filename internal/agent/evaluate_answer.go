@@ -49,11 +49,13 @@ const (
 )
 
 // evaluationPassages is how many passages an answer from the sources is
-// given: what one search by the agent's own tool would return.
-const evaluationPassages = 8
-
-// evaluationPassageRunes cuts each passage as a turn's tool result would.
-const evaluationPassageRunes = 1200
+// given, and evaluationPassageRunes how much of each: what one search by
+// the agent's own tool returns, read from the same constants so the two
+// cannot drift apart again (they had: eight of 1200 against twelve of 700).
+const (
+	evaluationPassages     = indexed.SearchLimit
+	evaluationPassageRunes = indexed.PassageShown
+)
 
 // AnswerEvaluation is one question answered and graded.
 type AnswerEvaluation struct {
@@ -117,6 +119,13 @@ func (self *Agent) EvaluateAnswer(ctx context.Context, found *models.Agent, owne
 		// a miss that no turn would have made.
 		for _, line := range self.selfPageLines(ctx, found, owner) {
 			memory = append(memory, models.PathSelf+": "+strings.TrimPrefix(line, "- "))
+		}
+		// And the index every turn's prompt carries: recall leaves out the
+		// opening of a page the index already names, so without the index
+		// that page was graded with neither.
+		indexLines, _ := self.graphIndex(ctx, found, owner, indexTokens)
+		for _, line := range indexLines {
+			memory = append(memory, "index: "+strings.TrimPrefix(line, "- "))
 		}
 		recalled, err := self.RecallForQuestionPlanned(ctx, found, owner, question, plan)
 		if err != nil {
