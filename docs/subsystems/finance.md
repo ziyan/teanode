@@ -45,9 +45,9 @@ tool and the dashboard.
 - **transfer category**: the built-in spending category, one per agent,
   whose transactions moved money between the person's own accounts and
   are neither spending nor income. There is no separate transfer mark.
-- **mirrored copy**: the same charge reported again on another finance
-  account of the same finance source, a **duplicate** of the **counted
-  copy**. What decided it is `mirror_detection` or the `person`.
+- **mirrored copy**: the same charge reported again on another investment
+  account of the same Plaid finance source, a **duplicate** of the
+  **counted copy**. What decided it is `mirror_detection` or the `person`.
 - **spending rule**, **budget**, **budget pace** (`under`, `on_track`,
   `at_risk`, `over`), **income pace** (`behind`, `on_track`, `ahead`),
   **saving summary** and **saving pace** (`behind`, `on_track`, `ahead`),
@@ -282,19 +282,30 @@ day, the same amount and the same description, each with its own provider
 transaction id. It was charged once, so counting each would count it once
 per account.
 
-**The rule.** Within one finance source, posted finance transactions on two
-or more different finance accounts with the same posted day, the same
-amount and currency, and the same description (trimmed, in any case) are
-mirrored copies. One is the counted copy; each other one is a duplicate
-of it (`duplicate_of_transaction_id` on `agent_finance_transaction`,
-migration 0144, with `duplicate_decided_by`). Never across finance
-sources, and never two on one account: a fee charged twice on one account
-is two charges, so the n-th of a day's repeats on one account goes with
-the n-th on each other account. A pending transaction is not grouped until
-it posts, since it is replaced by a new row when it does. The statement
-source is left out: its accounts are from different institutions, whose
-same-day fees are separate charges. A description that is empty groups
-nothing.
+**The rule.** Within one Plaid finance source, finance transactions on two
+or more different finance accounts, every one of them an investment
+account, with the same day, the same amount and currency, and the same
+description (trimmed, in any case) are mirrored copies. One is the counted
+copy; each other one is a duplicate of it (`duplicate_of_transaction_id`
+on `agent_finance_transaction`, migration 0144, with
+`duplicate_decided_by`). Never across finance sources, and never two on
+one account: a fee charged twice on one account is two charges, so the
+n-th of a day's repeats on one account goes with the n-th on each other
+account. A description that is empty groups nothing.
+
+The rule is kept to where the pattern is seen, so a real charge is never
+hidden. Only Plaid: one SimpleFIN credential can reach accounts at several
+institutions, and the statement source's accounts are from different
+institutions, whose same-day fees are separate charges. Only investment
+accounts: a checking and a savings account of one Plaid item can each be
+charged the same monthly fee for real, so a set with any other kind of
+account in it is not mirrored at all.
+
+A pending transaction is grouped only with pending ones, and a posted one
+only with posted ones, so a pending fee on three accounts counts once
+while it is pending. When it posts, the provider replaces the pending rows
+with new posted ones; the pending rows go, and detection groups the posted
+ones.
 
 **The counted copy** is the one stored first, so a copy that arrives later
 never takes over; among those one sync stored together, the one on the
@@ -326,12 +337,21 @@ the person's word, and detection decides again at once. There is no "this
 is a duplicate of that" from the person: detection is the only thing that
 marks a copy.
 
+Detection and the person's word take turns per finance source: each locks
+the source's `agent_source` row first (a sync holds it already), so a sync
+never writes over a "count this one" made while it ran, and two
+detections never wait on each other's rows. Detection's update also
+checks again, on the row as it is when written, that the person has not
+decided it.
+
 A duplicate is left out exactly where a transfer is (below): spending,
 income, cash flow, budgets and their pace and repeat charges, the saving
 summary, the spending summary in every grouping and its conversion, and
 so the tool's and the command line's summaries. Transfer pairing does not
 take one either: the money moved once, on its counted copy. It is still
-listed, and still categorized like any other.
+listed and can be given a spending category, which counts for nothing
+while it is a duplicate, so it is neither listed as uncategorized nor
+handed to the categorize model.
 
 ## Currencies
 

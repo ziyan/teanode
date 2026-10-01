@@ -3412,6 +3412,7 @@ export const en = {
   'finance.copyOnAccount': '{account}, {day}',
   'finance.countedCopy': 'the copy on another account',
   'finance.duplicateHint': 'The same charge, reported again on another account of this connection. It is left out of spending, income and budgets, so it counts once.',
+  'finance.duplicateCategoryNotCounted': 'While this is a duplicate, its spending category does not count anywhere.',
   'finance.countThisOne': 'Count this one',
   'finance.counting': 'Counting',
   'finance.countedByPerson': 'You counted this one as a charge of its own, so it is not checked for copies.',

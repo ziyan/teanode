@@ -20,7 +20,8 @@ func TestMirroredCopiesCountOnceAndThePersonCanCountOne(test *testing.T) {
 	fixture := newFinanceFixture(test, true)
 	resolver := fixture.resolver
 	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
-		source, err := resolver.LinkSimpleFIN(ctx, LinkSimpleFINArguments{SetupToken: "aW52ZW50ZWQtc2V0dXAtdG9rZW4="})
+		// Plaid, the only provider whose copies are looked for.
+		source, err := resolver.CompleteFinanceLink(ctx, CompleteFinanceLinkArguments{PublicToken: "public-invented", InstitutionID: "institution-invented"})
 		if err != nil {
 			test.Fatal(err)
 		}

@@ -212,9 +212,30 @@ export function FinanceTransactionsSection() {
     }
   }
 
-  // count records or takes back the person's word that a mirrored copy is
-  // a charge of its own, and lays the answer over its row.
-  const count = async (row: FinanceTransaction, isCountedByPerson: boolean) => {
+  // reloadLoadedPages reads again every page read so far. Counting a copy,
+  // or handing it back to detection, can change which of its copies is
+  // counted, so rows other than the one clicked change too. It moves no
+  // row, so the pages below the first are read again from the same
+  // cursors.
+  const reloadLoadedPages = async () => {
+    const reloadedRows: FinanceTransaction[] = []
+    let reloadedAfter = firstPage?.nextCursor ?? null
+    while (more.isLoaded && reloadedAfter && reloadedRows.length < more.rows.length) {
+      const answer = await graphql<{ FinanceTransactions: FinanceTransactionPage }>(FINANCE_TRANSACTIONS, {
+        ...variables,
+        after: reloadedAfter,
+      })
+      reloadedRows.push(...answer.FinanceTransactions.financeTransactions)
+      reloadedAfter = answer.FinanceTransactions.nextCursor ?? null
+    }
+    await first.reload(true)
+    if (more.isLoaded) setMore({ rows: reloadedRows, after: reloadedAfter, isLoaded: true })
+    setChanged({})
+  }
+
+  // countThisOne records or takes back the person's word that a mirrored
+  // copy is a charge of its own, then reads the list again.
+  const countThisOne = async (row: FinanceTransaction, isCountedByPerson: boolean) => {
     setIsCounting(true)
     try {
       const answer = await graphql<{
@@ -222,8 +243,10 @@ export function FinanceTransactionsSection() {
         UndoCountTransaction?: FinanceTransaction
       }>(isCountedByPerson ? COUNT_TRANSACTION : UNDO_COUNT_TRANSACTION, { financeTransactionId: row.id })
       const counted = answer.CountTransaction ?? answer.UndoCountTransaction
-      if (counted) setChanged((previous) => ({ ...previous, [row.id]: counted }))
+      // One opened from another's details may be on no page read so far.
+      if (counted) setOpened((previous) => (previous[row.id] ? { ...previous, [row.id]: counted } : previous))
       toast.done(isCountedByPerson ? t('finance.transactionCounted') : t('finance.transactionCountUndone'))
+      await reloadLoadedPages()
     } catch (caught) {
       toast.failure(caught, t('finance.failed'))
     } finally {
@@ -460,8 +483,8 @@ export function FinanceTransactionsSection() {
           categoryOptions={spendingCategoryOptions(categoryList, categoryName, detailed.spendingCategoryId, t('finance.transferGroup'))}
           isCounting={isCounting}
           onCategorize={(value) => void categorize(detailed, value)}
-          onCount={() => void count(detailed, true)}
-          onUndoCount={() => void count(detailed, false)}
+          onCount={() => void countThisOne(detailed, true)}
+          onUndoCount={() => void countThisOne(detailed, false)}
           onOpenTransaction={(financeTransaction) => {
             setOpened((previous) => ({ ...previous, [financeTransaction.id]: financeTransaction }))
             setDetailedId(financeTransaction.id)

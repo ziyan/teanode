@@ -23,34 +23,42 @@ CREATE INDEX "agent_finance_transaction_duplicate_of" ON "agent_finance_transact
     WHERE "duplicate_of_transaction_id" IS NOT NULL;
 
 -- The copies already stored, marked now rather than at each source's next
--- sync. The same rule as DetectMirroredFinanceTransactions: posted
--- transactions of one finance source, other than the statement source, on
--- different accounts with the same day, amount, currency and description
--- (trimmed, in any case). Two on one account are never copies of each
--- other: the n-th of a day's repeats on one account goes with the n-th on
--- each other account. The counted copy is the one stored first, then the
--- one on the oldest account.
+-- sync. The same rule as DetectMirroredFinanceTransactions: transactions of
+-- one Plaid finance source on different accounts, every one of them an
+-- investment account, with the same day, amount, currency and description
+-- (trimmed, in any case), all pending or all posted. Other providers are
+-- left alone: one SimpleFIN credential can reach several institutions,
+-- and two deposit accounts of one Plaid item can each be charged the same
+-- fee for real. Two on one account are never copies of each other: the
+-- n-th of a day's repeats on one account goes with the n-th on each other
+-- account. The counted copy is the one stored first, then the one on the
+-- oldest account.
 WITH "scope" AS (
-    SELECT "copy"."id", "copy"."finance_account_id", "account"."source_id", "copy"."posted_on", "copy"."amount",
+    SELECT "copy"."id", "copy"."finance_account_id", "account"."source_id", "copy"."is_pending", "copy"."posted_on", "copy"."amount",
         "copy"."currency_code", lower(btrim("copy"."description")) AS "description_key",
+        "account"."account_kind" = 'investment' AS "is_investment_account",
         "copy"."created_at", "account"."created_at" AS "account_created_at"
     FROM "agent_finance_transaction" AS "copy"
     JOIN "agent_finance_account" AS "account" ON "account"."id" = "copy"."finance_account_id"
     JOIN "agent_source" AS "source" ON "source"."id" = "account"."source_id"
-    WHERE NOT "copy"."is_pending" AND btrim("copy"."description") <> ''
-      AND COALESCE("source"."specification"->>'type', '') <> 'statement'
+    WHERE btrim("copy"."description") <> ''
+      AND COALESCE("source"."specification"->>'type', '') = 'plaid'
 ), "numbered" AS (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY "finance_account_id", "posted_on", "amount", "currency_code", "description_key"
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY "finance_account_id", "is_pending", "posted_on", "amount", "currency_code", "description_key"
         ORDER BY "created_at", "id") AS "occurrence"
     FROM "scope"
 ), "ranked" AS (
     SELECT "id",
-        FIRST_VALUE("id") OVER (PARTITION BY "source_id", "posted_on", "amount", "currency_code", "description_key", "occurrence"
-            ORDER BY "created_at", "account_created_at", "finance_account_id", "id") AS "counted_id",
-        COUNT(*) OVER (PARTITION BY "source_id", "posted_on", "amount", "currency_code", "description_key", "occurrence") AS "member_count"
+        FIRST_VALUE("id") OVER "mirrored_set" AS "counted_id",
+        COUNT(*) OVER "mirrored_set" AS "member_count",
+        bool_and("is_investment_account") OVER "mirrored_set" AS "is_every_account_investment"
     FROM "numbered"
+    WINDOW "mirrored_set" AS (PARTITION BY "source_id", "is_pending", "posted_on", "amount", "currency_code", "description_key", "occurrence"
+        ORDER BY "created_at", "account_created_at", "finance_account_id", "id"
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 )
 UPDATE "agent_finance_transaction" AS "target"
 SET "duplicate_of_transaction_id" = "ranked"."counted_id", "duplicate_decided_by" = 'mirror_detection'
 FROM "ranked"
-WHERE "target"."id" = "ranked"."id" AND "ranked"."member_count" > 1 AND "ranked"."counted_id" <> "ranked"."id";
+WHERE "target"."id" = "ranked"."id" AND "ranked"."member_count" > 1 AND "ranked"."is_every_account_investment"
+  AND "ranked"."counted_id" <> "ranked"."id";

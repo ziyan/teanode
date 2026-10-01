@@ -260,11 +260,12 @@ type FinanceTransaction struct {
 	CategorizationConfidence string        `json:"categorizationConfidence,omitempty" graphapi:"nullable"`
 
 	// DuplicateOfTransactionID is the counted copy this one mirrors: the
-	// same charge reported again on another account of the same finance
-	// source, left out of every total like a transfer. Empty when it is
-	// counted. DuplicateDecidedBy says what decided: mirror detection,
-	// which marks and clears copies after each sync, or the person, whose
-	// "count this one" detection then leaves alone. Empty when nothing did.
+	// same charge reported again on another investment account of the
+	// same Plaid finance source, left out of every total like a transfer.
+	// Empty when it is counted. DuplicateDecidedBy says what decided:
+	// mirror detection, which marks and clears copies after each sync, or
+	// the person, whose "count this one" detection then leaves alone.
+	// Empty when nothing did.
 	DuplicateOfTransactionID string             `json:"duplicateOfTransactionId,omitempty" graphapi:"nullable"`
 	DuplicateDecidedBy       DuplicateDecidedBy `json:"duplicateDecidedBy,omitempty" graphapi:"nullable"`
 
@@ -277,9 +278,9 @@ type FinanceTransaction struct {
 type DuplicateDecidedBy string
 
 // What may decide it: mirror detection, which finds the same day, amount,
-// currency and description on two or more accounts of one finance source
-// and keeps one of them counted; or the person, who says a copy is real
-// and counts, after which detection leaves it alone.
+// currency and description on two or more investment accounts of one
+// Plaid finance source and keeps one of them counted; or the person, who
+// says a copy is real and counts, after which detection leaves it alone.
 const (
 	DuplicateDecidedByMirrorDetection DuplicateDecidedBy = "mirror_detection"
 	DuplicateDecidedByPerson          DuplicateDecidedBy = "person"

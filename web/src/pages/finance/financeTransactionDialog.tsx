@@ -229,6 +229,9 @@ export function FinanceTransactionDialog({
                 onChange={onCategorize}
               />
               {categorizedBy ? <span className="muted finance-detail-note">{categorizedBy}</span> : null}
+              {duplicateOfTransactionId ? (
+                <span className="muted finance-detail-note">{t('finance.duplicateCategoryNotCounted')}</span>
+              ) : null}
             </dd>
             {property(t('finance.providerCategoryPrimary'), financeTransaction.providerCategoryPrimary, 'mono')}
             {property(t('finance.providerCategoryDetailed'), financeTransaction.providerCategoryDetailed, 'mono')}

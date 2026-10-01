@@ -3369,6 +3369,7 @@ export const ja: Catalog = {
   'finance.copyOnAccount': '{account}、{day}',
   'finance.countedCopy': '別の口座の同じ取引',
   'finance.duplicateHint': '同じ請求が、この接続の別の口座にもう一度報告されたものです。支出・収入・予算には数えず、一度だけ数えます。',
+  'finance.duplicateCategoryNotCounted': '重複である間は、この支出カテゴリはどこにも数えられません。',
   'finance.countThisOne': 'これも数える',
   'finance.counting': '数え方',
   'finance.countedByPerson': 'この取引は別の請求として数えるようにしたので、重複かどうかは確かめません。',

@@ -3,7 +3,12 @@ package db_test
 import (
 	"errors"
 	"fmt"
+	"os"
 	"testing"
+	"time"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -16,6 +21,8 @@ import (
 // and a checking account. The account-level fee arrives once per brokerage
 // account, each copy with its own id; a fee charged twice on one account
 // that same day, and the copies of a pending charge, are there too.
+// Mirrored copies are looked for in a Plaid source only, so the fixture
+// syncing it is createPlaidFinanceFixture.
 func mirroredBrokerageSync() *finance.SyncResult {
 	brokerage := func(providerAccountId, name string) finance.Account {
 		return finance.Account{ProviderAccountID: providerAccountId, AccountName: name, AccountKind: finance.AccountKindInvestment,
@@ -40,7 +47,7 @@ func mirroredBrokerageSync() *finance.SyncResult {
 				Amount: "-4.50", CurrencyCode: "USD", Description: "CORNER CAFE"},
 			{ProviderTransactionID: "coffee-second", ProviderAccountID: "account-checking", PostedOn: "2026-09-15",
 				Amount: "-4.50", CurrencyCode: "USD", Description: "CORNER CAFE"},
-			// Pending on two accounts: not grouped until posted.
+			// Pending on two accounts: grouped with each other only.
 			{ProviderTransactionID: "pending-individual", ProviderAccountID: "account-individual", PostedOn: "2026-09-16",
 				Amount: "-10", CurrencyCode: "USD", Description: "WIRE FEE", IsPending: true},
 			{ProviderTransactionID: "pending-joint", ProviderAccountID: "account-joint", PostedOn: "2026-09-16",
@@ -52,6 +59,22 @@ func mirroredBrokerageSync() *finance.SyncResult {
 				Amount: "-25", CurrencyCode: "USD", Description: "ACCOUNT FEE"},
 		},
 	}
+}
+
+// createPlaidFinanceFixture is a finance fixture whose source is a Plaid
+// connection, the only provider whose copies are looked for.
+func createPlaidFinanceFixture(t *testing.T, database db.Database, username string) financeFixture {
+	t.Helper()
+	fixture := createFinanceFixture(t, database, username)
+	setFinanceSourceType(t, database, fixture.sourceId, string(finance.ProviderKindPlaid))
+	return fixture
+}
+
+// setFinanceSourceType makes a source one of this provider's.
+func setFinanceSourceType(t *testing.T, database db.Database, sourceId, sourceType string) {
+	t.Helper()
+	dbtest.Exec(t, database, fmt.Sprintf(`UPDATE "agent_source" SET "specification" = jsonb_set("specification"::jsonb, '{type}', to_jsonb('%s'::text))
+		WHERE "id" = '%s'`, sourceType, sourceId))
 }
 
 // duplicateOfByProviderId is what each finance transaction is a duplicate
@@ -76,19 +99,23 @@ func duplicateOfByProviderId(t *testing.T, tx db.Transaction, agentId string) ma
 	return duplicates
 }
 
-// One fee on three accounts of one connection is one counted copy and two
-// duplicates of it; two charges on one account, a pending pair, and a
-// different amount or day are none.
+// One fee on three brokerage accounts of one Plaid connection is one
+// counted copy and two duplicates of it, and a pending pair is one and its
+// duplicate; two charges on one account, and a different amount or day,
+// are none.
 func TestMirroredFinanceTransactionsWithinOneSource(t *testing.T) {
 	database, releaseDatabase := dbtest.AcquireDatabase(t)
 	defer releaseDatabase()
-	fixture := createFinanceFixture(t, database, "mirrored-one-source")
+	fixture := createPlaidFinanceFixture(t, database, "mirrored-one-source")
 	result := mirroredBrokerageSync()
 	applyFinanceSync(t, database, fixture, result, "2026-09-16")
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		duplicates := duplicateOfByProviderId(t, tx, fixture.agentId)
-		if len(duplicates) != 2 {
-			t.Fatalf("two duplicates, of one counted copy: %v", duplicates)
+		if len(duplicates) != 3 {
+			t.Fatalf("two duplicates of one counted copy, and one of the pending pair: %v", duplicates)
+		}
+		if (duplicates["pending-individual"] == "pending-joint") == (duplicates["pending-joint"] == "pending-individual") {
+			t.Errorf("one of the pending pair is a duplicate of the other: %v", duplicates)
 		}
 		counted := duplicates["fee-joint"]
 		if counted == "" || duplicates["fee-retirement"] != counted || duplicates[counted] != "" {
@@ -108,8 +135,8 @@ func TestMirroredFinanceTransactionsWithinOneSource(t *testing.T) {
 		}
 	})
 
-	// The pending pair, posted, is grouped; the pending rows the provider
-	// replaced are gone.
+	// The pending pair, posted, is grouped again; the pending rows the
+	// provider replaced are gone.
 	posted := &finance.SyncResult{
 		Accounts: result.Accounts,
 		Added: []finance.Transaction{
@@ -134,7 +161,7 @@ func TestMirroredFinanceTransactionsWithinOneSource(t *testing.T) {
 func TestMirroredFinanceTransactionsNeverAcrossSources(t *testing.T) {
 	database, releaseDatabase := dbtest.AcquireDatabase(t)
 	defer releaseDatabase()
-	fixture := createFinanceFixture(t, database, "mirrored-two-sources")
+	fixture := createPlaidFinanceFixture(t, database, "mirrored-two-sources")
 	var other financeFixture
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		source, err := tx.PutAgentSource(&models.AgentKnowledgeSource{
@@ -146,6 +173,7 @@ func TestMirroredFinanceTransactionsNeverAcrossSources(t *testing.T) {
 		}
 		other = financeFixture{agentId: fixture.agentId, sourceId: source.ID}
 	})
+	setFinanceSourceType(t, database, other.sourceId, string(finance.ProviderKindPlaid))
 	single := func(providerAccountId, providerTransactionId string) *finance.SyncResult {
 		return &finance.SyncResult{
 			Accounts: []finance.Account{{ProviderAccountID: providerAccountId, AccountName: "Brokerage", AccountKind: finance.AccountKindInvestment, CurrencyCode: "USD"}},
@@ -171,7 +199,7 @@ func TestMirroredFinanceTransactionsNeverAcrossSources(t *testing.T) {
 func TestMirroredFinanceTransactionsAreDecidedAgain(t *testing.T) {
 	database, releaseDatabase := dbtest.AcquireDatabase(t)
 	defer releaseDatabase()
-	fixture := createFinanceFixture(t, database, "mirrored-again")
+	fixture := createPlaidFinanceFixture(t, database, "mirrored-again")
 	first := mirroredBrokerageSync()
 	// The first sync brings the fee on one account only.
 	first.Added = first.Added[:1]
@@ -213,7 +241,7 @@ func TestMirroredFinanceTransactionsAreDecidedAgain(t *testing.T) {
 func TestMirroredFinanceTransactionCountedByThePerson(t *testing.T) {
 	database, releaseDatabase := dbtest.AcquireDatabase(t)
 	defer releaseDatabase()
-	fixture := createFinanceFixture(t, database, "mirrored-person")
+	fixture := createPlaidFinanceFixture(t, database, "mirrored-person")
 	first := mirroredBrokerageSync()
 	first.Added = first.Added[:1]
 	applyFinanceSync(t, database, fixture, first, "2026-09-15")
@@ -243,7 +271,7 @@ func TestMirroredFinanceTransactionCountedByThePerson(t *testing.T) {
 		if err != nil || joint.DuplicateOfTransactionID != "" || joint.DuplicateDecidedBy != models.DuplicateDecidedByPerson {
 			t.Fatalf("the person's count survives the sync: %v %+v", err, joint)
 		}
-		if duplicates := duplicateOfByProviderId(t, tx, fixture.agentId); duplicates["fee-retirement"] != "fee-individual" || len(duplicates) != 1 {
+		if duplicates := duplicateOfByProviderId(t, tx, fixture.agentId); duplicates["fee-retirement"] != "fee-individual" || duplicates["fee-joint"] != "" {
 			t.Errorf("the other copy stays a duplicate of the counted one: %v", duplicates)
 		}
 		if err := tx.SetFinanceTransactionCountedByPerson(fixture.agentId, jointId, false); err != nil {
@@ -261,7 +289,7 @@ func TestMirroredFinanceTransactionCountedByThePerson(t *testing.T) {
 func TestMirroredFinanceTransactionsCountOnce(t *testing.T) {
 	database, releaseDatabase := dbtest.AcquireDatabase(t)
 	defer releaseDatabase()
-	fixture := createFinanceFixture(t, database, "mirrored-totals")
+	fixture := createPlaidFinanceFixture(t, database, "mirrored-totals")
 	result := mirroredBrokerageSync()
 	// Mirrored money in too, and a fee in an earlier month for the
 	// merchant months.
@@ -319,18 +347,291 @@ func containsLine(text, line string) bool {
 	return false
 }
 
-// The statement source holds accounts from different institutions, whose
-// same-day fees are separate charges, so it is never looked at.
-func TestMirroredFinanceTransactionsLeaveTheStatementSourceAlone(t *testing.T) {
+// Copies are looked for in a Plaid source only: a SimpleFIN credential
+// can reach accounts at several institutions, and the statement source
+// holds accounts from different ones, whose same-day fees are separate
+// charges.
+func TestMirroredFinanceTransactionsOnlyInPlaidSources(t *testing.T) {
 	database, releaseDatabase := dbtest.AcquireDatabase(t)
 	defer releaseDatabase()
-	fixture := createFinanceFixture(t, database, "mirrored-statement")
-	dbtest.Exec(t, database, fmt.Sprintf(`UPDATE "agent_source" SET "specification" = jsonb_set("specification"::jsonb, '{type}', '"statement"')
-		WHERE "id" = '%s'`, fixture.sourceId))
-	applyFinanceSync(t, database, fixture, mirroredBrokerageSync(), "2026-09-16")
+	for _, sourceType := range []finance.ProviderKind{finance.ProviderKindSimpleFIN, finance.ProviderKindStatement} {
+		fixture := createFinanceFixture(t, database, "mirrored-"+string(sourceType))
+		setFinanceSourceType(t, database, fixture.sourceId, string(sourceType))
+		applyFinanceSync(t, database, fixture, mirroredBrokerageSync(), "2026-09-16")
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			if duplicates := duplicateOfByProviderId(t, tx, fixture.agentId); len(duplicates) != 0 {
+				t.Errorf("%s: nothing is a copy: %v", sourceType, duplicates)
+			}
+		})
+	}
+}
+
+// Within one Plaid connection, a checking and a savings account can each
+// be charged the same monthly fee for real, so only a set whose every copy
+// is on an investment account is mirrored: two deposit accounts are not,
+// and neither are two brokerage accounts with a deposit account beside
+// them.
+func TestMirroredFinanceTransactionsOnlyOnInvestmentAccounts(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createPlaidFinanceFixture(t, database, "mirrored-deposit")
+	account := func(providerAccountId, accountKind string) finance.Account {
+		return finance.Account{ProviderAccountID: providerAccountId, AccountName: providerAccountId, AccountKind: accountKind, CurrencyCode: "USD"}
+	}
+	charge := func(providerTransactionId, providerAccountId, description string) finance.Transaction {
+		return finance.Transaction{ProviderTransactionID: providerTransactionId, ProviderAccountID: providerAccountId, PostedOn: "2026-09-15",
+			Amount: "-12", CurrencyCode: "USD", Description: description}
+	}
+	applyFinanceSync(t, database, fixture, &finance.SyncResult{
+		Accounts: []finance.Account{
+			account("account-checking", finance.AccountKindDepository), account("account-savings", finance.AccountKindDepository),
+			account("account-brokerage", finance.AccountKindInvestment), account("account-retirement", finance.AccountKindInvestment),
+		},
+		Added: []finance.Transaction{
+			charge("monthly-checking", "account-checking", "MONTHLY SERVICE FEE"),
+			charge("monthly-savings", "account-savings", "MONTHLY SERVICE FEE"),
+			charge("advisory-brokerage", "account-brokerage", "ADVISORY FEE"),
+			charge("advisory-retirement", "account-retirement", "ADVISORY FEE"),
+			charge("advisory-checking", "account-checking", "ADVISORY FEE"),
+		},
+	}, "2026-09-16")
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		if duplicates := duplicateOfByProviderId(t, tx, fixture.agentId); len(duplicates) != 0 {
-			t.Errorf("nothing in the statement source is a copy: %v", duplicates)
+			t.Errorf("nothing beside a deposit account is a copy: %v", duplicates)
+		}
+	})
+}
+
+// A pending fee mirrored on three brokerage accounts counts once, and is
+// never grouped with a posted one of the same day; the posted rows that
+// replace the pending ones are grouped in turn.
+func TestMirroredPendingCopiesCountOnce(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createPlaidFinanceFixture(t, database, "mirrored-pending")
+	accounts := mirroredBrokerageSync().Accounts
+	wireFee := func(providerTransactionId, providerAccountId string, isPending bool) finance.Transaction {
+		return finance.Transaction{ProviderTransactionID: providerTransactionId, ProviderAccountID: providerAccountId, PostedOn: "2026-09-16",
+			Amount: "-10", CurrencyCode: "USD", Description: "WIRE FEE", IsPending: isPending}
+	}
+	applyFinanceSync(t, database, fixture, &finance.SyncResult{
+		Accounts: accounts,
+		Added: []finance.Transaction{
+			wireFee("pending-individual", "account-individual", true), wireFee("pending-joint", "account-joint", true),
+			wireFee("pending-retirement", "account-retirement", true),
+			// Posted already on one account, so its pending copy is gone:
+			// a pending set is not a posted one.
+			wireFee("posted-individual", "account-individual", false),
+		},
+	}, "2026-09-16")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		duplicates := duplicateOfByProviderId(t, tx, fixture.agentId)
+		countedIds := map[string]bool{}
+		for _, counted := range duplicates {
+			countedIds[counted] = true
+		}
+		if len(duplicates) != 2 || len(countedIds) != 1 {
+			t.Fatalf("one pending copy is counted and the other two are its duplicates: %v", duplicates)
+		}
+		for _, providerTransactionId := range []string{"pending-individual", "pending-joint", "pending-retirement"} {
+			if duplicates[providerTransactionId] == "" && !countedIds[providerTransactionId] {
+				t.Errorf("%s is in the pending set: %v", providerTransactionId, duplicates)
+			}
+		}
+		if _, isDuplicate := duplicates["posted-individual"]; isDuplicate || countedIds["posted-individual"] {
+			t.Errorf("the posted fee is not grouped with the pending ones: %v", duplicates)
+		}
+		page, err := tx.ListFinanceTransactions(fixture.agentId, &db.FinanceTransactionFilter{IsDuplicateExcluded: true})
+		if err != nil || len(page.FinanceTransactions) != 2 {
+			t.Errorf("the pending fee and the posted one count once each: %v %+v", err, page)
+		}
+	})
+
+	posted := &finance.SyncResult{Accounts: accounts, RemovedProviderTransactionIDs: []string{"pending-individual", "pending-joint", "pending-retirement"}}
+	for _, providerAccountId := range []string{"account-joint", "account-retirement"} {
+		replacement := wireFee("posted-"+providerAccountId, providerAccountId, false)
+		replacement.PendingProviderTransactionID = "pending-" + providerAccountId[len("account-"):]
+		posted.Added = append(posted.Added, replacement)
+	}
+	applyFinanceSync(t, database, fixture, posted, "2026-09-17")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		duplicates := duplicateOfByProviderId(t, tx, fixture.agentId)
+		if len(duplicates) != 2 || duplicates["posted-account-joint"] != "posted-individual" || duplicates["posted-account-retirement"] != "posted-individual" {
+			t.Errorf("the posted fee stored first is counted and the replacements are its duplicates: %v", duplicates)
+		}
+	})
+}
+
+// A duplicate's category counts for nothing, so it is neither listed as
+// uncategorized nor handed to the categorize model.
+func TestMirroredCopiesAreNotUncategorized(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createPlaidFinanceFixture(t, database, "mirrored-uncategorized")
+	applyFinanceSync(t, database, fixture, mirroredBrokerageSync(), "2026-09-16")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		duplicates := duplicateOfByProviderId(t, tx, fixture.agentId)
+		if len(duplicates) == 0 {
+			t.Fatal("the data set has no duplicates")
+		}
+		uncategorized, err := tx.ListUncategorizedFinanceTransactions(fixture.agentId, 0)
+		if err != nil {
+			t.Fatalf("ListUncategorizedFinanceTransactions: %s", err)
+		}
+		page, err := tx.ListFinanceTransactions(fixture.agentId, &db.FinanceTransactionFilter{IsUncategorized: true, Limit: db.FinanceTransactionLimitMost})
+		if err != nil {
+			t.Fatalf("ListFinanceTransactions: %s", err)
+		}
+		for name, listed := range map[string][]*models.FinanceTransaction{"to categorize": uncategorized, "uncategorized": page.FinanceTransactions} {
+			if len(listed) == 0 {
+				t.Errorf("%s: nothing is listed", name)
+			}
+			for _, financeTransaction := range listed {
+				if financeTransaction.DuplicateOfTransactionID != "" {
+					t.Errorf("%s: the duplicate %s is listed", name, financeTransaction.ProviderTransactionID)
+				}
+			}
+		}
+	})
+}
+
+// waitForLockWaiter waits until a statement on the test's database waits
+// for a lock another transaction holds.
+func waitForLockWaiter(t *testing.T, database db.Database) bool {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		waiterCount := rawQueryString(t, database, `SELECT COUNT(*)::text FROM "pg_stat_activity"
+			WHERE "datname" = current_database() AND "wait_event_type" = 'Lock'`)
+		if waiterCount != "0" {
+			return true
+		}
+	}
+	return false
+}
+
+// mirroredJointCopy syncs the brokerage fee so that the joint account's
+// copy is a duplicate of the individual account's, and answers its id.
+func mirroredJointCopy(t *testing.T, database db.Database, fixture financeFixture) string {
+	t.Helper()
+	first := mirroredBrokerageSync()
+	first.Added = first.Added[:1]
+	applyFinanceSync(t, database, fixture, first, "2026-09-15")
+	applyFinanceSync(t, database, fixture, mirroredBrokerageSync(), "2026-09-16")
+	var jointId string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if duplicates := duplicateOfByProviderId(t, tx, fixture.agentId); duplicates["fee-joint"] != "fee-individual" {
+			t.Fatalf("the joint copy is a duplicate of the individual one: %v", duplicates)
+		}
+		jointId = financeTransactionsByProviderId(t, tx, fixture.agentId)["fee-joint"].ID
+	})
+	return jointId
+}
+
+// Detection waits for the person counting a copy of the same source to
+// finish, so it reads their word rather than what was there before.
+func TestMirroredDetectionWaitsForThePersonCounting(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createPlaidFinanceFixture(t, database, "mirrored-count-lock")
+	jointId := mirroredJointCopy(t, database, fixture)
+
+	isCounted, release, countDone := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	go func() {
+		countDone <- database.Transaction(func(tx db.Transaction) error {
+			if err := tx.SetFinanceTransactionCountedByPerson(fixture.agentId, jointId, true); err != nil {
+				return err
+			}
+			close(isCounted)
+			<-release
+			return nil
+		})
+	}()
+	select {
+	case <-isCounted:
+	case err := <-countDone:
+		t.Fatalf("SetFinanceTransactionCountedByPerson: %v", err)
+	}
+	detectDone := make(chan error, 1)
+	go func() {
+		detectDone <- database.Transaction(func(tx db.Transaction) error {
+			_, err := tx.DetectMirroredFinanceTransactions(fixture.agentId, fixture.sourceId)
+			return err
+		})
+	}()
+	isWaiting := waitForLockWaiter(t, database)
+	close(release)
+	if err := <-countDone; err != nil {
+		t.Fatalf("the count: %s", err)
+	}
+	if err := <-detectDone; err != nil {
+		t.Fatalf("the detection: %s", err)
+	}
+	if !isWaiting {
+		t.Error("detection did not wait for the person counting a copy of its source")
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		joint, err := tx.GetFinanceTransaction(fixture.agentId, jointId)
+		if err != nil || joint.DuplicateDecidedBy != models.DuplicateDecidedByPerson || joint.DuplicateOfTransactionID != "" {
+			t.Errorf("the person's count stands: %v %+v", err, joint)
+		}
+	})
+}
+
+// A row the person counted after detection's statement read it, but before
+// detection wrote it, is left alone: detection checks again that the
+// person has not decided it, on the row as it is by then.
+func TestMirroredDetectionNeverWritesOverThePerson(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createPlaidFinanceFixture(t, database, "mirrored-count-race")
+	jointId := mirroredJointCopy(t, database, fixture)
+	// As a sync leaves a copy it has just stored: not decided yet, so the
+	// detection below has a row to write.
+	dbtest.Exec(t, database, fmt.Sprintf(`UPDATE "agent_finance_transaction" SET "duplicate_of_transaction_id" = NULL, "duplicate_decided_by" = ''
+		WHERE "id" = '%s'`, jointId))
+
+	// A writer that does not take the source's lock holds the row, saying
+	// the person counted it, while detection reads and then waits for it.
+	databaseName := rawQueryString(t, database, `SELECT current_database()`)
+	writer, err := gorm.Open(postgres.Open(fmt.Sprintf("host=%s port=5432 user=teanode password=teanode dbname=%s sslmode=disable",
+		os.Getenv("TEANODE_TEST_DATABASE_HOST"), databaseName)), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("a second connection: %s", err)
+	}
+	writerConnection, err := writer.DB()
+	if err != nil {
+		t.Fatalf("a second connection: %s", err)
+	}
+	defer func() {
+		if err := writerConnection.Close(); err != nil {
+			t.Errorf("closing the second connection: %s", err)
+		}
+	}()
+	writing := writer.Begin()
+	if err := writing.Exec(`UPDATE "agent_finance_transaction" SET "duplicate_decided_by" = 'person' WHERE "id" = ?`, jointId).Error; err != nil {
+		t.Fatalf("the person's count: %s", err)
+	}
+	detectDone := make(chan error, 1)
+	go func() {
+		detectDone <- database.Transaction(func(tx db.Transaction) error {
+			_, err := tx.DetectMirroredFinanceTransactions(fixture.agentId, fixture.sourceId)
+			return err
+		})
+	}()
+	isWaiting := waitForLockWaiter(t, database)
+	if err := writing.Commit().Error; err != nil {
+		t.Fatalf("committing the person's count: %s", err)
+	}
+	if err := <-detectDone; err != nil {
+		t.Fatalf("the detection: %s", err)
+	}
+	if !isWaiting {
+		t.Fatal("detection did not wait for the row, so this test proved nothing")
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		joint, err := tx.GetFinanceTransaction(fixture.agentId, jointId)
+		if err != nil || joint.DuplicateDecidedBy != models.DuplicateDecidedByPerson || joint.DuplicateOfTransactionID != "" {
+			t.Errorf("the person's count stands: %v %+v", err, joint)
 		}
 	})
 }
@@ -340,16 +641,43 @@ func TestMirroredFinanceTransactionsLeaveTheStatementSourceAlone(t *testing.T) {
 func TestMirroredMigrationMarksStoredCopies(t *testing.T) {
 	database, releaseDatabase := dbtest.AcquireDatabase(t)
 	defer releaseDatabase()
-	fixture := createFinanceFixture(t, database, "mirrored-migration")
+	fixture := createPlaidFinanceFixture(t, database, "mirrored-migration")
 	first := mirroredBrokerageSync()
 	first.Added = first.Added[:1]
 	applyFinanceSync(t, database, fixture, first, "2026-09-15")
-	applyFinanceSync(t, database, fixture, mirroredBrokerageSync(), "2026-09-16")
+	full := mirroredBrokerageSync()
+	// Two deposit accounts charged the same fee, which is not mirrored.
+	full.Accounts = append(full.Accounts, finance.Account{ProviderAccountID: "account-savings", AccountName: "Savings",
+		AccountKind: finance.AccountKindDepository, CurrencyCode: "USD"})
+	for _, providerAccountId := range []string{"account-checking", "account-savings"} {
+		full.Added = append(full.Added, finance.Transaction{ProviderTransactionID: "monthly-" + providerAccountId, ProviderAccountID: providerAccountId,
+			PostedOn: "2026-09-15", Amount: "-12", CurrencyCode: "USD", Description: "MONTHLY SERVICE FEE"})
+	}
+	applyFinanceSync(t, database, fixture, full, "2026-09-16")
+	// A SimpleFIN source of the same person with the brokerage fee, which
+	// is not looked at either.
+	var simpleFIN financeFixture
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		source, err := tx.PutAgentSource(&models.AgentKnowledgeSource{
+			AgentID: fixture.agentId, Kind: models.SourceWeb, Name: "another credential",
+			Specification: models.AgentKnowledgeSpecification{Start: "https://example.net/"},
+		})
+		if err != nil {
+			t.Fatalf("PutAgentSource: %s", err)
+		}
+		simpleFIN = financeFixture{agentId: fixture.agentId, sourceId: source.ID}
+	})
+	setFinanceSourceType(t, database, simpleFIN.sourceId, string(finance.ProviderKindSimpleFIN))
+	simpleFINSync := mirroredBrokerageSync()
+	for index := range simpleFINSync.Added {
+		simpleFINSync.Added[index].ProviderTransactionID = "simplefin-" + simpleFINSync.Added[index].ProviderTransactionID
+	}
+	applyFinanceSync(t, database, simpleFIN, simpleFINSync, "2026-09-16")
 	var detected map[string]string
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		detected = duplicateOfByProviderId(t, tx, fixture.agentId)
 	})
-	if len(detected) != 2 {
+	if len(detected) != 3 {
 		t.Fatalf("the data set does not say what it was meant to: %v", detected)
 	}
 

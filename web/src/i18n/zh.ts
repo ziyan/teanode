@@ -3278,6 +3278,7 @@ export const zh: Catalog = {
   'finance.copyOnAccount': '{account}，{day}',
   'finance.countedCopy': '另一个账户上的那一笔',
   'finance.duplicateHint': '同一笔费用，在这个连接的另一个账户上又报告了一次。它不计入支出、收入和预算，所以只算一次。',
+  'finance.duplicateCategoryNotCounted': '在它是重复项期间，它的支出类别不计入任何地方。',
   'finance.countThisOne': '计入这一笔',
   'finance.counting': '计入',
   'finance.countedByPerson': '你已把这一笔算作独立的费用，所以不再检查它是否重复。',
