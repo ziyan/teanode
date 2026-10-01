@@ -14,7 +14,9 @@ import {
   YearCashFlow,
   cashFlowYears,
   firstCashFlowMonth,
+  firstIncomeMonth,
   historyRange,
+  incomeStartMonthWithin,
   monthOptions,
   monthStartLabel,
   partialYearStartMonth,
@@ -32,6 +34,7 @@ export type SpendingHistory = {
   loading: boolean
   years: YearCashFlow[]
   firstMonth: string | null
+  incomeMonth: string | null
 }
 
 export function useSpendingHistory(currentMonth: string): SpendingHistory {
@@ -49,6 +52,7 @@ export function useSpendingHistory(currentMonth: string): SpendingHistory {
     loading: loading && !data,
     years: cashFlowYears(months, currentMonth.slice(0, 4)),
     firstMonth: firstCashFlowMonth(months),
+    incomeMonth: firstIncomeMonth(months),
   }
 }
 
@@ -167,7 +171,7 @@ export function SpendingByYearPanel({
   onSelectYear: (year: string) => void
 }) {
   const { t } = useTranslation()
-  const { flow, error, loading, years, firstMonth } = history
+  const { flow, error, loading, years, firstMonth, incomeMonth } = history
   const currency = flow?.reportingCurrencyCode || 'USD'
   const currentYear = currentMonth.slice(0, 4)
   const isCurrent = year === currentYear
@@ -179,8 +183,16 @@ export function SpendingByYearPanel({
       const values = { year: key, month: monthLabel(startMonth) }
       return key === currentYear ? t('finance.yearFromSoFar', values) : t('finance.yearFrom', values)
     }
+    // Spending known all year but income only from partway: said, so the
+    // year does not read as one of spending with nothing coming in.
+    const incomeStart = incomeStartMonthWithin(key, incomeMonth)
+    if (incomeStart) {
+      const values = { year: key, month: monthLabel(incomeStart) }
+      return key === currentYear ? t('finance.yearIncomeFromSoFar', values) : t('finance.yearIncomeFrom', values)
+    }
     return key === currentYear ? t('finance.yearSoFar', { year: key }) : key
   }
+  const chosenIncomeStart = incomeStartMonthWithin(year, incomeMonth)
   // The chosen year's days, when they are not the whole of it: from the
   // first of January, or of the month its history starts in, to today or
   // to the end of the year.
@@ -250,6 +262,9 @@ export function SpendingByYearPanel({
             {t('finance.leftOver')} <strong>{formatMoney(chosen?.netAmount ?? 0, currency)}</strong>
           </span>
         </p>
+      ) : null}
+      {hasCashFlow && chosenIncomeStart ? (
+        <p className="muted field-hint">{t('finance.incomeKnownFrom', { from: monthStartLabel(chosenIncomeStart) })}</p>
       ) : null}
       <UnconvertedNote currencyCodes={flow?.unconvertedCurrencyCodes} />
     </SettingsSection>

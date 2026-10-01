@@ -44,6 +44,25 @@ export function firstCashFlowMonth(months: CashFlowMonth[]): string | null {
   return first
 }
 
+// firstIncomeMonth is the earliest month with any income, or none. Income
+// can begin later than spending: a card's statements may reach further
+// back than the bank account the pay goes into.
+export function firstIncomeMonth(months: CashFlowMonth[]): string | null {
+  let first: string | null = null
+  for (const month of months) {
+    if (amountOf(month.incomeAmount) !== 0 && (first === null || month.cashFlowMonth < first)) first = month.cashFlowMonth
+  }
+  return first
+}
+
+// incomeStartMonthWithin is the month income starts in, when that falls
+// partway through the given year: a year that reads as spending with no
+// income only because the income was not yet known. Null otherwise.
+export function incomeStartMonthWithin(year: string, incomeMonth: string | null): string | null {
+  if (!incomeMonth || incomeMonth.slice(0, 4) !== year || incomeMonth.slice(5, 7) === '01') return null
+  return incomeMonth
+}
+
 export type YearCashFlow = { year: string } & YearCashFlowTotals
 
 // cashFlowYears is every year from the first with any income or spending

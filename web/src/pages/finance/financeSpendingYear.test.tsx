@@ -202,13 +202,17 @@ it('does not step past this year', async () => {
 // marked with its month, and choosing a year group shows it.
 it('draws a group a year and chooses the year clicked', async () => {
   renderAt('/finance/spending?year=2031')
-  const groups = await screen.findAllByRole('button', { name: /^(finance\.yearFrom|2029|2030|finance\.yearSoFar)/ })
-  expect(groups.map((group) => group.getAttribute('aria-label')?.split(': ')[0])).toEqual([
-    `finance.yearFrom {"year":"2028","month":"${monthLabel('2028-03')}"}`,
-    '2029',
-    '2030',
-    'finance.yearSoFar {"year":"2031"}',
-  ])
+  const groups = await screen.findAllByRole('button', {
+    name: /^(finance\.yearFrom|2029|2030|finance\.yearIncomeFrom|finance\.yearSoFar)/,
+  })
+  const labels = groups.map((group) => group.getAttribute('aria-label')?.split(': ')[0])
+  expect(labels[0]).toBe(`finance.yearFrom {"year":"2028","month":"${monthLabel('2028-03')}"}`)
+  expect(labels[1]).toBe('2029')
+  // Income first comes in partway through 2030 in this history, which the
+  // year's label says rather than leaving it to read as a loss year.
+  expect(labels[2]).toMatch(/^(2030|finance\.yearIncomeFrom \{"year":"2030")/)
+  expect(labels[3]).toBe('finance.yearSoFar {"year":"2031"}')
+  expect(labels).toHaveLength(4)
   expect(groups[3].getAttribute('aria-pressed')).toBe('true')
   fireEvent.click(groups[2])
   await waitFor(() => expect(search()).toBe('?year=2030'))

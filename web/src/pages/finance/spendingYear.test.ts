@@ -4,7 +4,9 @@ import type { CashFlowMonth } from './financeApi'
 import {
   cashFlowYears,
   firstCashFlowMonth,
+  firstIncomeMonth,
   historyRange,
+  incomeStartMonthWithin,
   monthOptions,
   partialYearStartMonth,
   yearCashFlowTotals,
@@ -82,4 +84,16 @@ it('finds the month a partial first year starts in', () => {
   expect(partialYearStartMonth('2028', '2028-01')).toBeNull()
   expect(partialYearStartMonth('2029', '2028-08')).toBeNull()
   expect(partialYearStartMonth('2028', null)).toBeNull()
+})
+
+// Income can start later than spending, a card's statements reaching
+// further back than the bank account pay goes into; the year it starts in
+// says so, unless it starts in January.
+it('finds the month income starts in, partway through a year', () => {
+  const months = [month('2028-01', '0', '-40'), month('2028-09', '1200', '-50'), month('2029-01', '1300', '-60')]
+  expect(firstIncomeMonth(months)).toBe('2028-09')
+  expect(incomeStartMonthWithin('2028', '2028-09')).toBe('2028-09')
+  expect(incomeStartMonthWithin('2029', '2028-09')).toBeNull()
+  expect(incomeStartMonthWithin('2028', '2028-01')).toBeNull()
+  expect(incomeStartMonthWithin('2028', null)).toBeNull()
 })
