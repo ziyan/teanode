@@ -3049,13 +3049,13 @@ body,
 }
 
 @media (max-width: 600px) {
-  /* The action drops below what it acts on rather than sitting beside it: an
-     action as wide as its words leaves the description a column four words
-     across, and a subtitle wrapping to four lines next to two buttons has a
-     lot of nothing under them.
+  /* The description never shares its width with the action: an action as
+     wide as its words left the description a column four words across, and
+     a subtitle wrapping to four lines next to a button has a lot of nothing
+     under it.
 
-     It stays on the right when it drops, which is where it was. Stacked to
-     the left, an action that is one icon — a plus, a cross — was a mark alone
+     Any action drops below, on the right, which is where it was. Stacked to
+     the left, an action that is one icon (a plus, a cross) was a mark alone
      on a line under a heading, and read as something the heading had said
      rather than a button. */
   .settings-section-head {
@@ -3064,11 +3064,45 @@ body,
   }
 
   .settings-section-head > div:first-child {
-    min-width: 60%;
+    min-width: 100%;
   }
 
   .settings-section-head > *:not(:first-child) {
     margin-left: auto;
+  }
+
+  /* One button sits on the title's line instead, and the description runs
+     the full width under both: the title is short, so the line has room,
+     and the button stays beside what it adds to. A row of controls keeps
+     the rule above, since beside the title it would squeeze it. */
+  .settings-section-head:has(> div:first-child + button:last-child) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--space-3);
+    row-gap: 0;
+    align-items: center;
+  }
+
+  .settings-section-head:has(> div:first-child + button:last-child) > div:first-child {
+    display: contents;
+  }
+
+  .settings-section-head:has(> div:first-child + button:last-child) h3 {
+    grid-row: 1;
+    grid-column: 1;
+    margin: 0;
+  }
+
+  .settings-section-head:has(> div:first-child + button:last-child) > div:first-child > p {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    margin-top: 4px;
+  }
+
+  .settings-section-head:has(> div:first-child + button:last-child) > button {
+    grid-row: 1;
+    grid-column: 2;
+    margin-left: 0;
   }
 
   .settings-row-body {
