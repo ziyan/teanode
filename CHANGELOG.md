@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.98.0] - 2026-10-01
+
+### Added
+
+- Budget your monthly income and see expected saving beside actual saving for each month. (#289)
+
 ## [0.97.2] - 2026-10-01
 
 ### Changed
