@@ -7,16 +7,16 @@ import { memoryPath, shownPath, useShowPage } from './dashboardPath'
 afterEach(cleanup)
 
 it('reads a memory link as a page the graph could hold and nothing else', () => {
-  expect(memoryPath('people/some-person')).toBe('/settings/knowledge/people/some-person')
-  expect(memoryPath('projects/example-app#12')).toBe('/settings/knowledge/projects/example-app')
-  expect(memoryPath('people/zoë')).toBe('/settings/knowledge/people/zoë')
+  expect(memoryPath('people/some-person')).toBe('/knowledge/people/some-person')
+  expect(memoryPath('projects/example-app#12')).toBe('/knowledge/projects/example-app')
+  expect(memoryPath('people/zoë')).toBe('/knowledge/people/zoë')
   for (const target of ['', '../x', 'a//b', 'A/b', 'a b', 'a?b', 'a/b#c', 'a#1#2', 'a--b', '-a']) {
     expect(memoryPath(target), target).toBeNull()
   }
 })
 
 it('shows only the parts of the dashboard the agent may take the person to', () => {
-  expect(shownPath('/settings/knowledge/people/some-person')).toBe('/settings/knowledge/people/some-person')
+  expect(shownPath('/knowledge/people/some-person')).toBe('/knowledge/people/some-person')
   expect(shownPath('/mailbox/starred/item42/')).toBe('/mailbox/starred/item42')
   expect(shownPath('/settings/agent')).toBe('/settings/agent')
   expect(shownPath('/finance/budgets')).toBe('/finance/budgets')
@@ -61,9 +61,9 @@ it('moves the dashboard on a navigate event once, and puts the drawer away as a 
       </Routes>
     </MemoryRouter>,
   )
-  const event = { kind: 'navigate', runId: 'run1', sequence: 4, text: '/settings/knowledge/people/some-person' }
+  const event = { kind: 'navigate', runId: 'run1', sequence: 4, text: '/knowledge/people/some-person' }
   act(() => handle(event))
-  expect(getByTestId('where').textContent).toBe('/settings/knowledge/people/some-person')
+  expect(getByTestId('where').textContent).toBe('/knowledge/people/some-person')
   expect(leaving).toHaveBeenCalledTimes(1)
 
   // The person moves on; the same event replayed when the socket comes
@@ -98,10 +98,10 @@ it('waits in a hidden tab and moves when the person comes back soon enough', () 
       </MemoryRouter>,
     )
     setVisibility('hidden')
-    act(() => handle({ kind: 'navigate', runId: 'run2', sequence: 1, text: '/settings/knowledge/people/some-person' }))
+    act(() => handle({ kind: 'navigate', runId: 'run2', sequence: 1, text: '/knowledge/people/some-person' }))
     expect(getByTestId('where').textContent).toBe('/mailbox')
     act(() => setVisibility('visible'))
-    expect(getByTestId('where').textContent).toBe('/settings/knowledge/people/some-person')
+    expect(getByTestId('where').textContent).toBe('/knowledge/people/some-person')
     expect(leaving).toHaveBeenCalledTimes(1)
 
     // Back after too long, the page they are on stays.

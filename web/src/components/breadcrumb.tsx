@@ -176,7 +176,7 @@ function useTrail(): { label: string; to?: string }[] {
       // list.
       const under = location.pathname.split('/').slice(3).filter(Boolean).slice(0, -1).join('/')
       if (item) {
-        return [...crumbs, { label: detail, to: '/settings/knowledge' + (under ? '/' + under : '') }, { label: item }]
+        return [...crumbs, { label: detail, to: '/knowledge' + (under ? '/' + under : '') }, { label: item }]
       }
       return [...crumbs, { label: detail }]
     }

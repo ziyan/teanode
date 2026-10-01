@@ -40,9 +40,8 @@ The first segment of a path says whose the page is, and the rail follows it:
   goes here. The management rail.
 - A feature page is neither, and keeps a path of its own: the mailbox and
   what hangs off it (`/mailbox/...`, its calendar and contacts), the agent's
-  conversations (`/agent`), Finance (`/finance`). Their rows are in the
-  mailbox's rail. Knowledge is a page of this kind at `/settings/knowledge`,
-  for the history of its links, and its row is in the mailbox's rail too.
+  conversations (`/agent`), Knowledge (`/knowledge`), Finance (`/finance`).
+  Their rows are in the mailbox's rail.
 
 A page that moves does not leave a redirect behind: every link to it in the
 code moves with it, and the old path is not found.

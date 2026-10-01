@@ -34,7 +34,7 @@ func TestAnswerLinksTheDashboard(t *testing.T) {
 	const answer = "He is on [Some Person](memory:people/some-person#4), from [Mooring invoice](mail:item42)."
 	chat := &recordingChat{}
 	(&preview{chat: chat, dashboard: "https://mail.example.com"}).finish(context.Background(), answer)
-	if len(chat.sent) != 1 || chat.sent[0] != "He is on [Some Person](https://mail.example.com/settings/knowledge/people/some-person), from [Mooring invoice](https://mail.example.com/mailbox/starred/item42)." {
+	if len(chat.sent) != 1 || chat.sent[0] != "He is on [Some Person](https://mail.example.com/knowledge/people/some-person), from [Mooring invoice](https://mail.example.com/mailbox/starred/item42)." {
 		t.Fatalf("sent %q", chat.sent)
 	}
 

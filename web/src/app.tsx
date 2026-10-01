@@ -444,8 +444,8 @@ export function App() {
                     {/* Before the graph's own paths below: "explore" is the
                       drawing of the whole graph, not a folder in it, and the
                       splat route would read it as one. */}
-                    <Route path="/settings/knowledge/explore" element={<KnowledgeExplorePage />} />
-                    <Route path="/settings/knowledge/*" element={<KnowledgePage />} />
+                    <Route path="/knowledge/explore" element={<KnowledgeExplorePage />} />
+                    <Route path="/knowledge/*" element={<KnowledgePage />} />
                     {/* What the linked institutions report, a page of its own
                       in the account's rail after Knowledge; linking them is
                       the agent page's Finance tab. */}
