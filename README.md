@@ -21,6 +21,15 @@ spam.
 
 A mailbox is read in the dashboard or in any mail program over IMAP. An address
 that should not have a mailbox forwards instead, and one domain can do both.
+Each account also has a calendar, a reminders list and an address book, which
+a phone keeps in step over CalDAV and CardDAV.
+
+Each person can turn on an agent of their own, pointed at a model the operator
+chose (OpenAI, Anthropic, Gemini, an Ollama or vLLM on the same machine, or a
+ChatGPT plan). It sorts the mail that arrives, drafts replies, answers
+questions with exactly that person's permissions, keeps a memory of what it
+learns, and can read the banks and cards they link. It is off until somebody
+turns it on.
 
 ```mermaid
 flowchart LR
@@ -46,12 +55,58 @@ built in rather than bolted on.
 
 The dashboard is compiled into the binary; there is nothing else to deploy. It
 opens on your mailbox, and the pages that run the server are a mode behind
-**Manage**, which shows only what your permissions allow.
+**Manage**, which shows only what your permissions allow. Every picture here
+is of invented people and invented mail.
 
 ![A mailbox, with a message open](docs/images/mailbox.jpg)
 
 Folders nest, search covers one folder or the whole mailbox, and a message is
 shown the way a mail program would show it.
+
+![The Priority view, with the agent's chips on each row](docs/images/priority.jpg)
+
+With the agent on, each message gets a category, a priority and a note of
+whether somebody is waiting on you, and Priority lists what needs you first.
+
+![A week of the calendar](docs/images/calendar.jpg)
+
+The calendar, with the reminders list a tab away. An invitation that arrives
+as mail becomes an event you can answer.
+
+![The address book](docs/images/contacts.jpg)
+
+The address book holds the people you keep, not everyone who ever wrote.
+
+![The chat drawer open beside the mailbox](docs/images/drawer.jpg)
+
+The agent is a drawer on every page. Asked what needs you today, it searches
+your mail and answers from what it found; anything it cannot undo, and
+anything that leaves the server, waits for you to approve it.
+
+![The agent's own settings page](docs/images/agent.jpg)
+
+Its own page says what to call it, how it should write, which mailboxes it may
+reach, and what it has spent today.
+
+![One page of the agent's memory](docs/images/knowledge.jpg)
+
+What it knows is a graph of pages. Each fact is numbered and carries the words
+it came from, and every change records who made it and what was there before.
+
+![The same memory as a graph](docs/images/graph.jpg)
+
+The same pages as a graph, joined by links that say how they relate.
+
+![Income and spending across twelve months](docs/images/finance-spending.jpg)
+
+Link a bank, a card or a brokerage through Plaid or SimpleFIN, and the Finance
+page shows where the money went, against budgets that say where the month is
+heading.
+
+![Net worth and assets](docs/images/finance-net-worth.jpg)
+
+Net worth counts the linked accounts, what you enter yourself, and estimates
+the agent makes where you allowed it.
 
 Behind **Manage** is the server: every message it has handled with what it
 decided about each one, the queue, DMARC reports, the domains, and who may do
@@ -62,6 +117,11 @@ what.
 A group is the only thing a role or a domain is attached to. Tie one to a
 domain and its permissions reach that far and no further; give it the name of a
 group in your identity provider and its membership follows the directory.
+
+![A domain's DNS records, each one checked](docs/images/dns.jpg)
+
+Each domain lists the DNS records it needs and checks every one, so you can
+see what is left rather than guessing.
 
 ## Getting started
 
@@ -147,6 +207,37 @@ mail keeps an ARC chain so it still passes at the far end.
 **Forwards flexibly.** Aliases match the address with a regular expression and
 send the message to an address, an HTTP endpoint, or another mail server. An
 empty pattern is a catch-all, which receives whatever nothing else matched.
+
+**Calendar, reminders and contacts.** A calendar and a reminders list over
+CalDAV, and an address book over CardDAV, so a phone keeps them in step. An
+invitation that arrives by mail becomes an event you can accept or decline.
+The notes a phone keeps in the mail account show in the dashboard too.
+
+**A personal agent, if you want one.** Off until the operator configures a
+model and each person turns their own on, and blind to every mailbox until it
+is granted one. It sorts what arrives, summarizes long conversations, drafts
+replies in your voice, and can answer on your behalf under a policy you write.
+It answers questions in a drawer on every page or with `teanode agent ask`,
+through the same operations the dashboard uses, with your permissions. It can
+reach your calendar and contacts, your own computer and browser tab while you
+are present, the web, and servers you connect over the Model Context
+Protocol. It tells you, unasked, when mail shows something that cannot wait,
+within quiet hours and a daily limit you set. Operators cap what it may spend.
+
+**A memory that learns you.** The agent keeps what it learns as a graph of
+pages, each fact numbered and tied to the words it came from. It writes pages
+without being asked, reads the places you point it at (a code checkout, a chat
+archive, your notes, a wiki), and works over the graph while you are away.
+Nothing is deleted, and every change can be put back.
+
+**Finance.** Banks, cards, brokerages and lenders linked through Plaid or
+SimpleFIN, kept in your own database: transactions in your own categories,
+budgets that project the month, savings targets, and net worth over time. The
+agent reads the same rows, so you can ask it how the month is going.
+
+**Model Context Protocol, both ways.** An editor or a coding tool can use your
+agent's tools and ask it questions; approve it in your browser and there is no
+token to copy.
 
 **Relays your outbound mail.** Per-device SMTP credentials on the submission
 port, each optionally restricted to one sender address.
