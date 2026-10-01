@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.94.0] - 2026-10-01
+
+### Added
+
+- `teanode-server evaluate scenario` runs a memory scenario in a database of its own and reports what recall carried and how answers were graded at each checkpoint. (#273)
+
 ## [0.93.1] - 2026-10-01
 
 ### Fixed
