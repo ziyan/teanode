@@ -83,8 +83,15 @@ const (
 	// overlay that kept the last ten lines, so the pages it had ranked
 	// highest were exactly the ones dropped, and every fact on them had
 	// `used_at` moved for a prompt that never carried them.
-	recallBlocks      = 10
-	recallGraphBlocks = recallBlocks - recallChunks
+	//
+	// And every writer counted: the graph's share, the passages, and the
+	// two lines that are neither, the note on a question about a whole
+	// area and the lessons. Left out of the sum, a broad question with
+	// facts, lessons and passages wrote twelve lines into ten, and the
+	// note that says a survey reads all of the area was the one dropped.
+	recallGraphBlocks = 7
+	recallNoteBlocks  = 2
+	recallBlocks      = recallGraphBlocks + recallChunks + recallNoteBlocks
 
 	// meaningFloorGraph is the least similarity worth calling a match.
 	// Embedding models put unrelated text between a tenth and three
