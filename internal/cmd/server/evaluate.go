@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/urfave/cli/v3"
@@ -33,7 +34,7 @@ func NewEvaluateCommand() *cli.Command {
 			{
 				Name:      "scenario",
 				Usage:     "feed a scenario's records through filing and dreams in a database of its own, and grade its questions at each checkpoint",
-				ArgsUsage: "<scenario.json>",
+				ArgsUsage: "<scenario.json>...",
 				Description: "Creates a database for the run on the PostgreSQL named, migrates it, and makes a person,\n" +
 					"an agent and a records source in it; nothing of a running server is read or changed. The\n" +
 					"models come from --models, the agent section of a server's configuration on its own. The database is kept afterwards, for inspection; drop it when\n" +
@@ -47,6 +48,7 @@ func NewEvaluateCommand() *cli.Command {
 					&cli.StringFlag{Name: "output", Usage: "the directory for the report, the records and the stored files", Required: true},
 					&cli.StringFlag{Name: "from", Value: "memory,sources,both", Usage: "what each question is answered from: memory, sources, both, memory@planned, both@planned; empty for recall alone, which costs nothing"},
 					&cli.FloatFlag{Name: "budget", Value: 2, Usage: "stop between steps once the run has spent this many dollars; 0 for no limit"},
+					&cli.IntFlag{Name: "concurrency", Value: 1, Usage: "how many of the scenarios given run at once, each in a database of its own and a directory of its own under --output; a scenario whose report is already there is skipped"},
 					&cli.StringFlag{Name: "sign-in", Usage: "a file written by 'evaluate sign-in': the models file's openai-codex providers use its sign-in, and a rotated token is written back to it"},
 				},
 				Action: runEvaluateScenario,
@@ -69,18 +71,84 @@ func NewEvaluateCommand() *cli.Command {
 var scenarioDatabaseUnsafe = regexp.MustCompile(`[^a-z0-9]+`)
 
 func runEvaluateScenario(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() != 1 {
-		return fmt.Errorf("which scenario? teanode-server evaluate scenario <scenario.json>")
-	}
-	scenario, err := agent.ReadScenario(command.Args().First())
-	if err != nil {
-		return err
+	if command.Args().Len() < 1 {
+		return fmt.Errorf("which scenario? teanode-server evaluate scenario <scenario.json>...")
 	}
 	configuration, err := readScenarioModels(command.String("models"))
 	if err != nil {
 		return err
 	}
-	output := command.String("output")
+	var keepRefreshTokens func(provider, refreshToken string)
+	if signInFile := command.String("sign-in"); signInFile != "" {
+		kept, err := readScenarioSignIn(signInFile)
+		if err != nil {
+			return err
+		}
+		for index := range configuration.Agent.Providers {
+			provider := &configuration.Agent.Providers[index]
+			if provider.Kind == config.AgentProviderKindCodex {
+				provider.RefreshToken, provider.Account = kept.RefreshToken, kept.Account
+			}
+		}
+		var keeping sync.Mutex
+		keepRefreshTokens = func(_, refreshToken string) {
+			keeping.Lock()
+			defer keeping.Unlock()
+			kept.RefreshToken = refreshToken
+			if err := writeScenarioSignIn(signInFile, kept); err != nil {
+				_, _ = fmt.Fprintf(command.ErrWriter, "cannot keep the rotated sign-in in %s: %s\n", signInFile, err)
+			}
+		}
+	}
+	var sources []string
+	for _, source := range strings.Split(command.String("from"), ",") {
+		if source = strings.TrimSpace(source); source != "" {
+			sources = append(sources, source)
+		}
+	}
+	// Several scenarios run in this one process, side by side, so that a
+	// sign-in is shared: two processes holding one refresh token each
+	// replace it under the other.
+	paths := command.Args().Slice()
+	concurrency := max(1, int(command.Int("concurrency")))
+	slots := make(chan struct{}, concurrency)
+	var group sync.WaitGroup
+	var failed sync.Mutex
+	var failures []string
+	for _, path := range paths {
+		output := command.String("output")
+		if len(paths) > 1 {
+			output = filepath.Join(output, strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
+		}
+		if _, err := os.Stat(filepath.Join(output, "report.json")); err == nil && len(paths) > 1 {
+			continue
+		}
+		slots <- struct{}{}
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			defer func() { <-slots }()
+			if err := runOneScenario(ctx, command, path, output, configuration, sources, keepRefreshTokens); err != nil {
+				failed.Lock()
+				failures = append(failures, path+": "+err.Error())
+				failed.Unlock()
+			}
+		}()
+	}
+	group.Wait()
+	if len(failures) > 0 {
+		return fmt.Errorf("%d of %d scenarios failed:\n%s", len(failures), len(paths), strings.Join(failures, "\n"))
+	}
+	return nil
+}
+
+// runOneScenario runs one scenario in a database of its own and writes
+// its report into output.
+func runOneScenario(ctx context.Context, command *cli.Command, path, output string, configuration *config.Configuration, sources []string, keepRefreshTokens func(provider, refreshToken string)) error {
+	scenario, err := agent.ReadScenario(path)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(output, 0o700); err != nil {
 		return err
 	}
@@ -88,7 +156,6 @@ func runEvaluateScenario(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-
 	name := "scenario_" + strings.Trim(scenarioDatabaseUnsafe.ReplaceAllString(strings.ToLower(scenario.Name), "_"), "_") + "_" + time.Now().Format("20060102150405")
 	settings := &db.Settings{
 		Host: command.String("database-host"), Port: uint16(command.Int("database-port")),
@@ -106,32 +173,6 @@ func runEvaluateScenario(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	_, _ = fmt.Fprintf(command.Writer, "database %s\n", name)
-
-	var keepRefreshTokens func(provider, refreshToken string)
-	if signInFile := command.String("sign-in"); signInFile != "" {
-		kept, err := readScenarioSignIn(signInFile)
-		if err != nil {
-			return err
-		}
-		for index := range configuration.Agent.Providers {
-			provider := &configuration.Agent.Providers[index]
-			if provider.Kind == config.AgentProviderKindCodex {
-				provider.RefreshToken, provider.Account = kept.RefreshToken, kept.Account
-			}
-		}
-		keepRefreshTokens = func(_, refreshToken string) {
-			kept.RefreshToken = refreshToken
-			if err := writeScenarioSignIn(signInFile, kept); err != nil {
-				_, _ = fmt.Fprintf(command.ErrWriter, "cannot keep the rotated sign-in in %s: %s\n", signInFile, err)
-			}
-		}
-	}
-	var sources []string
-	for _, source := range strings.Split(command.String("from"), ",") {
-		if source = strings.TrimSpace(source); source != "" {
-			sources = append(sources, source)
-		}
-	}
 	report, runErr := agent.RunScenario(ctx, &agent.ScenarioSettings{
 		Database: database, Storage: store, Configuration: configuration,
 		Scenario: scenario, RecordsDirectory: filepath.Join(output, "records"),
