@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -26,7 +27,7 @@ func (self *Agent) graphIndex(ctx context.Context, agent *models.Agent, owner *m
 		if err := tx.EnsureAgentRoots(agent.ID); err != nil {
 			return err
 		}
-		nodes, err := tx.ListAgentIndex(agent.ID, 400)
+		nodes, err := tx.ListAgentIndex(agent.ID, indexReadPages)
 		if err != nil {
 			return err
 		}
@@ -51,27 +52,17 @@ func (self *Agent) graphIndex(ctx context.Context, agent *models.Agent, owner *m
 				ordered = append(ordered, node)
 			}
 		}
-		spent := 0
+		// The self page is not a line in the index; it is the block above
+		// it, written by selfLines.
+		var listed []*models.AgentNode
 		for _, node := range ordered {
-			// The self page is not a line in the index; it is the block
-			// above it, written by selfLines.
-			if node.Path == models.PathSelf {
-				continue
+			if node.Path != models.PathSelf {
+				listed = append(listed, node)
 			}
-			// A folder with nothing under it says nothing. The roots are
-			// made for every agent whether or not anything is filed in
-			// them, and seven empty headings at the top of every prompt
-			// teach the model that the graph is empty.
-			if node.Kind == models.NodeFolder && node.Summary == "" && node.ParentID == "" {
-				continue
-			}
-			line := node.IndexLine(140)
-			cost := llm.EstimateTokens(line)
-			if spent+cost > budget {
-				break
-			}
-			spent += cost
-			lines = append(lines, line)
+		}
+		var carriedNodes []*models.AgentNode
+		lines, carriedNodes = indexLines(listed, budget, len(nodes) >= indexReadPages, true)
+		for _, node := range carriedNodes {
 			carried = append(carried, node.ID)
 		}
 		return nil
@@ -79,6 +70,58 @@ func (self *Agent) graphIndex(ctx context.Context, agent *models.Agent, owner *m
 		log.Warningf("cannot read the graph of %q: %s", owner.Username, err)
 	}
 	return lines, carried
+}
+
+// indexWidth is how many characters one line of an index may take.
+const indexWidth = 140
+
+// indexLines is the index lines of these pages, in order, as many as fit
+// in budget tokens, and the pages they are. Where pages are left out for
+// the budget, the last line says how many, "at least" where the read that
+// found them stopped at its limit, and, where the reader has the memory
+// tool, how to list them: an index that ends without a word reads as the
+// whole graph.
+//
+// A folder with nothing under it says nothing and is left out without
+// being counted. The roots are made for every agent whether or not
+// anything is filed in them, and seven empty headings at the top of every
+// prompt teach the model that the graph is empty.
+func indexLines(nodes []*models.AgentNode, budget int, isReadCut, canList bool) ([]string, []*models.AgentNode) {
+	var lines []string
+	var carried []*models.AgentNode
+	spent, leftOutCount := 0, 0
+	for _, node := range nodes {
+		if node.Kind == models.NodeFolder && node.Summary == "" && node.ParentID == "" {
+			continue
+		}
+		if leftOutCount > 0 {
+			leftOutCount++
+			continue
+		}
+		line := node.IndexLine(indexWidth)
+		cost := llm.EstimateTokens(line)
+		if spent+cost > budget {
+			leftOutCount++
+			continue
+		}
+		spent += cost
+		lines = append(lines, line)
+		carried = append(carried, node)
+	}
+	if leftOutCount == 0 && !isReadCut {
+		return lines, carried
+	}
+	more := fmt.Sprintf("%d more pages are not listed here", leftOutCount)
+	switch {
+	case leftOutCount == 0:
+		more = "there may be more pages than are listed here"
+	case isReadCut:
+		more = "at least " + more
+	}
+	if canList {
+		more += ": the memory tool's index action lists every page, and get reads one"
+	}
+	return append(lines, "("+more+")"), carried
 }
 
 // carryIndex is the index for a turn, remembering which pages went in so
@@ -97,7 +140,10 @@ func (self *AskRun) carryIndex(ctx context.Context, budget int) []string {
 }
 
 // selfLines is the self page: the card that is the person, then whatever
-// the page itself says. Always first, and always in full.
+// the page itself says. Always first. The card goes in whole; the page's
+// opening goes in to selfSummary characters and its facts to selfFacts of
+// them, the most lively, and a page with more than that ends with a line
+// saying how much more and the memory get that reads it.
 //
 // The card is read rather than copied. A person who changes their
 // telephone number changes it in one place, and the agent is right about
@@ -133,15 +179,24 @@ func (self *Agent) selfPageLines(ctx context.Context, agent *models.Agent, owner
 			return err
 		}
 		if summary := strings.TrimSpace(node.Summary); summary != "" {
-			lines = append(lines, cutRunes(summary, selfSummary))
+			lines = append(lines, cutWithMore(summary, selfSummary, "memory get self"))
 		}
-		facts, err := tx.ListAgentFactsLively(agent.ID, node.ID, 20)
+		facts, err := tx.ListAgentFacts(agent.ID, node.ID, false, everyFactOnPage)
 		if err != nil {
 			return err
+		}
+		factCount := len(facts)
+		if factCount > selfFacts {
+			if facts, err = tx.ListAgentFactsLively(agent.ID, node.ID, selfFacts); err != nil {
+				return err
+			}
 		}
 		byNumber(facts)
 		for _, fact := range facts {
 			lines = append(lines, "- "+fact.Line())
+		}
+		if moreCount := factCount - len(facts); moreCount > 0 {
+			lines = append(lines, fmt.Sprintf("(and %d more facts on self, not shown here: memory get with path self and from 1 lists every one)", moreCount))
 		}
 		return nil
 	}); err != nil {
@@ -198,24 +253,15 @@ func memoryLines(tx db.Transaction, agentId string, audience models.AgentAudienc
 	if err := tx.EnsureAgentRoots(agentId); err != nil {
 		return nil, err
 	}
-	var lines []string
-	nodes, err := tx.ListAgentIndex(agentId, 200)
+	nodes, err := tx.ListAgentIndex(agentId, runIndexReadPages)
 	if err != nil {
 		return nil, err
 	}
-	spent := 0
-	var nodeIds []string
-	for _, node := range nodes {
-		if node.Kind == models.NodeFolder && node.Summary == "" && node.ParentID == "" {
-			continue
-		}
-		line := node.IndexLine(140)
-		cost := llm.EstimateTokens(line)
-		if spent+cost > runIndexTokens {
-			break
-		}
-		spent += cost
-		lines = append(lines, line)
+	// Not every run that reads this has the memory tool, so the line
+	// about the pages left out says how many and not how to list them.
+	lines, carriedNodes := indexLines(nodes, runIndexTokens, len(nodes) >= runIndexReadPages, false)
+	nodeIds := make([]string, 0, len(carriedNodes))
+	for _, node := range carriedNodes {
 		nodeIds = append(nodeIds, node.ID)
 	}
 	facts, err := tx.ListAgentFactsForAudience(agentId, audience, limit)

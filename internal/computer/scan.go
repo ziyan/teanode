@@ -26,26 +26,26 @@ const (
 	// Bounding by bytes is pacing, not truncation -- a page that fills up
 	// early sets Next and the rest comes in the following one, so a tree
 	// of any size is read completely, a few megabytes at a time.
+	//
+	// A file's text is always sent whole, however large, so one entry
+	// can come to more than this on its own. The page then ends after
+	// that entry: the server's socket takes a message far larger than a
+	// page, and cutting the text to fit would lose the rest of the file
+	// for good, where a long page costs nothing.
 	scanPageBytes = 3 << 20
-
-	// scanTextBytes is the largest file whose text is sent whole; above
-	// it only the opening is, so that a search can still find the file.
-	scanTextBytes = 512 << 10
-
-	// scanHeadBytes is how much of a large text file is kept.
-	scanHeadBytes = 64 << 10
 
 	// scanSniffBytes is how much of a file is read to decide whether it is
 	// text at all.
 	scanSniffBytes = 8 << 10
 
-	// scanFileBytes is the largest file read for any purpose.
+	// scanFileBytes is the largest file read for any purpose. A larger
+	// one is not cut: it is refused whole, with the reason shown on the
+	// source's page.
 	scanFileBytes = 32 << 20
 
 	// scanCommitsPerPass is how many commits one pass over a tree
 	// offers when the server does not say, shared out among the
-	// checkouts in it; scanDiffBytes is how much of one commit's diff is
-	// kept.
+	// checkouts in it.
 	//
 	// A bound on the pass and not on the page. Commits used to be
 	// offered only on the last page of a pass and only out of whatever
@@ -54,7 +54,6 @@ const (
 	// held not one commit. What a pass offers is now a number somebody
 	// chose, here or on the source.
 	scanCommitsPerPass = 2000
-	scanDiffBytes      = 4000
 
 	// scanOwnCommitsAtLeast, scanOwnCommitsOneIn and scanOwnCommitsEnough
 	// are the bar a checkout's history has to clear before its files are
@@ -103,13 +102,6 @@ const (
 	// takes, and a night that ends early still ends with an authorship
 	// map.
 	scanCommitShare = 8
-
-	// scanCommitBytes is the largest a commit's document is: its
-	// subject, its body and the files it touched. The commit that drops
-	// a vendored tree into a checkout touches tens of thousands of
-	// files, and the list of them alone is megabytes -- more than a
-	// whole page is allowed to carry, for one entry.
-	scanCommitBytes = 16 << 10
 
 	// scanExtractTimeout bounds one call to an outside extractor. A PDF
 	// that takes longer than this is one nobody is waiting for.

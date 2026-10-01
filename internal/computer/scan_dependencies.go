@@ -12,17 +12,12 @@ import (
 	"strings"
 )
 
-// The bounds of reading a checkout's build files. A build file larger
-// than a megabyte is generated or is data, and a checkout that names more
-// than five hundred things it needs is one whose list says nothing a
-// person could read anyway. Modules have a bound of their own: a
-// moduleset of a whole product lists hundreds, and a long list of what
-// the checkout itself needs must not crowd them out, nor they it.
-const (
-	dependencyFileBytes = 1 << 20
-	dependencyEntries   = 500
-	moduleEntries       = 500
-)
+// A build file is read whatever its size, up to the largest file this
+// program reads at all, and every name in it is kept. A list cut at a
+// bound would leave out what the checkout needs without a word, and the
+// links the server draws between checkouts from it would be missing for
+// no reason anyone could see. A build file larger than that is refused
+// whole by the walk, with the reason shown on the source's page.
 
 // The ecosystems a dependency can come from, which is which kind of build
 // file named it.
@@ -46,8 +41,9 @@ const (
 // a checkout that holds them usually keeps them in a directory of their
 // own.
 //
-// Nothing here fails the profile. A file that cannot be read, is too
-// large or does not parse is skipped, and the rest still counts.
+// Nothing here fails the profile. A file that cannot be read, is larger
+// than any file this program reads, or does not parse is skipped, and the
+// rest still counts.
 func repositoryDependencies(directory string, tracked []string) ([]RepositoryDependency, []RepositoryModule) {
 	isTracked := make(map[string]bool, len(tracked))
 	var modulesets []string
@@ -68,7 +64,7 @@ func repositoryDependencies(directory string, tracked []string) ([]RepositoryDep
 	add := func(ecosystem, file string, names []string) {
 		for _, dependencyName := range names {
 			dependencyName = strings.TrimSpace(dependencyName)
-			if dependencyName == "" || len(dependencies) >= dependencyEntries {
+			if dependencyName == "" {
 				continue
 			}
 			key := ecosystem + "\x00" + dependencyName
@@ -108,7 +104,7 @@ func repositoryDependencies(directory string, tracked []string) ([]RepositoryDep
 	for _, file := range modulesets {
 		isQueued[file] = true
 	}
-	for len(modulesets) > 0 && len(modules) < moduleEntries {
+	for len(modulesets) > 0 {
 		file := modulesets[0]
 		modulesets = modulesets[1:]
 		content, isRead := readBuildFile(directory, file)
@@ -116,12 +112,7 @@ func repositoryDependencies(directory string, tracked []string) ([]RepositoryDep
 			continue
 		}
 		found, includes := modulesetModules(content, file)
-		for _, module := range found {
-			if len(modules) >= moduleEntries {
-				break
-			}
-			modules = append(modules, module)
-		}
+		modules = append(modules, found...)
 		for _, include := range includes {
 			if isTracked[include] && !isQueued[include] {
 				isQueued[include] = true
@@ -208,13 +199,13 @@ func isOthersBuildFile(file string) bool {
 }
 
 // readBuildFile is one build file of the checkout, when it is an ordinary
-// file no larger than the bound. A link is not followed: a tracked link
+// file no larger than the largest file this program reads. A link is not followed: a tracked link
 // can point anywhere on the machine, and what it points at is not the
 // checkout's own word.
 func readBuildFile(directory, file string) ([]byte, bool) {
 	full := filepath.Join(directory, filepath.FromSlash(file))
 	information, err := os.Lstat(full)
-	if err != nil || !information.Mode().IsRegular() || information.Size() > dependencyFileBytes {
+	if err != nil || !information.Mode().IsRegular() || information.Size() > scanFileBytes {
 		return nil, false
 	}
 	content, err := os.ReadFile(full)

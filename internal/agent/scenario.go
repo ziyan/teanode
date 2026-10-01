@@ -61,6 +61,13 @@ type ScenarioStep struct {
 	// one with nothing new filed shows what repeating maintenance does.
 	DreamCount int `json:"dreamCount,omitempty"`
 
+	// IsUntilRead runs dreams until nothing is waiting to be read, as a
+	// server's later dreams would, at most scenarioDreamsUntilRead of
+	// them: a call the model did not answer leaves its documents for the
+	// next dream, and one dream would measure that call rather than the
+	// memory.
+	IsUntilRead bool `json:"isUntilRead,omitempty"`
+
 	Questions []*ScenarioQuestion `json:"questions,omitempty"`
 
 	// Messages are a conversation of the agent's own, filed as one and
@@ -189,6 +196,7 @@ type ScenarioSettings struct {
 // ScenarioReport is what a run found.
 type ScenarioReport struct {
 	Scenario    string                `json:"scenario"`
+	Database    string                `json:"database,omitempty"`
 	StartedAt   time.Time             `json:"startedAt"`
 	FinishedAt  time.Time             `json:"finishedAt"`
 	Models      map[string]string     `json:"models"`
@@ -356,6 +364,14 @@ func RunScenario(ctx context.Context, settings *ScenarioSettings) (*ScenarioRepo
 			stepReport.FiledCount, err = worker.fileScenarioRecords(ctx, settings, index, step, owner, found, source)
 		case ScenarioStepDream:
 			for count := 0; count < step.DreamCount && err == nil; count++ {
+				err = worker.dreamScenario(ctx, settings.Database, found.ID)
+			}
+			for count := 0; step.IsUntilRead && count < scenarioDreamsUntilRead && err == nil; count++ {
+				var waiting int64
+				if waiting, err = scenarioWaitingCount(ctx, settings.Database, owner, found.ID); err != nil || waiting == 0 {
+					break
+				}
+				_, _ = fmt.Fprintf(progress, "  %d documents still waiting; dreaming again\n", waiting)
 				err = worker.dreamScenario(ctx, settings.Database, found.ID)
 			}
 		case ScenarioStepConversation:
@@ -720,6 +736,19 @@ func scenarioLayers(ctx context.Context, database db.Database, agentId string, c
 	return layers, nil
 }
 
+// scenarioDreamsUntilRead is how many more dreams a step that reads until
+// nothing waits may run.
+const scenarioDreamsUntilRead = 5
+
+// scenarioWaitingCount is how many documents are waiting to be read.
+func scenarioWaitingCount(ctx context.Context, database db.Database, owner *models.User, agentId string) (waiting int64, err error) {
+	err = database.TransactionContext(ctx, func(tx db.Transaction) error {
+		_, waiting, err = tx.ListAgentDocumentsToDigest(agentId, chatNamesOf(owner), 1)
+		return err
+	})
+	return waiting, err
+}
+
 // scenarioCost is what the run's calls have recorded as spent so far.
 func scenarioCost(ctx context.Context, database db.Database, agentId string) (cost float64, err error) {
 	err = database.TransactionContext(ctx, func(tx db.Transaction) error {
@@ -761,4 +790,64 @@ func scenarioModels(configuration *config.Configuration) map[string]string {
 		"default": named.Default, "fast": named.Fast, "scan": named.Scan, "synthesize": named.Synthesize,
 		"research": named.Research, "embedding": named.Embedding,
 	}
+}
+
+// AskScenarioAgain asks a scenario's last checkpoint again, of the graph a
+// run left in its database, with the configuration given: what a change
+// to recall or answering does to the same memory, without reading the
+// history again. Only the last checkpoint, because the graph is as it was
+// at the end of the run.
+func AskScenarioAgain(ctx context.Context, settings *ScenarioSettings) (*ScenarioStepReport, error) {
+	var last *ScenarioStep
+	for _, step := range settings.Scenario.Steps {
+		if step.StepKind == ScenarioStepCheckpoint {
+			last = step
+		}
+	}
+	if last == nil {
+		return nil, errors.New("the scenario has no checkpoint to ask")
+	}
+	configuration := *settings.Configuration
+	configuration.Agent.Enabled = true
+	configuration.Agent.Limits.DailyTokensPerAgent = 0
+	registry, err := llm.Open(&configuration.Agent)
+	if err != nil {
+		return nil, err
+	}
+	if settings.KeepRefreshTokens != nil {
+		registry.KeepRefreshTokens(settings.KeepRefreshTokens)
+	}
+	worker := New(&Settings{
+		Database: settings.Database, Storage: settings.Storage, Registry: registry,
+		Configuration: func() *config.Configuration { return &configuration },
+		Instance:      "scenario", Tick: time.Hour,
+	})
+	worker.SetOperationsFactory(func(context.Context, *models.User) (Operations, error) { return scenarioOperations{}, nil })
+	var owner *models.User
+	var found *models.Agent
+	if err := settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		if owner, err = tx.GetUserByUsername("scenario"); err != nil || owner == nil {
+			return fmt.Errorf("this database holds no scenario run: %v", err)
+		}
+		found, err = tx.GetAgentByUser(owner.ID)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	started := time.Now()
+	spent, err := scenarioCost(ctx, settings.Database, found.ID)
+	if err != nil {
+		return nil, err
+	}
+	report := &ScenarioStepReport{ID: last.ID, StepKind: last.StepKind}
+	if report.Questions, err = worker.askScenario(ctx, settings, last, owner, found); err != nil {
+		return nil, err
+	}
+	after, err := scenarioCost(ctx, settings.Database, found.ID)
+	if err != nil {
+		return nil, err
+	}
+	report.Cost, report.DurationMS = after-spent, time.Since(started).Milliseconds()
+	report.GraphCounts, err = scenarioGraphCounts(ctx, settings.Database, found.ID)
+	return report, err
 }

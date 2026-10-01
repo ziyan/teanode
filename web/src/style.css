@@ -1807,7 +1807,9 @@ label span {
    hands over a command to copy rather than asking for anything. */
 .auth-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: var(--space-2);
   margin-top: var(--space-3);
 }
 
@@ -6786,9 +6788,16 @@ main.content:has(> .mailbox-frame) {
   text-overflow: ellipsis;
 }
 
-.agent-attachment-chip .link,
-.agent-reference-chip .link {
-  padding: 0 2px;
+/* The cross that takes a chip off: an icon action, at the chip's size
+   rather than a row's. */
+.agent-attachment-chip .icon-action,
+.agent-reference-chip .icon-action,
+.attachments-kept li .icon-action,
+.attachments ul li .icon-action,
+.uploads li .icon-action {
+  width: 20px;
+  height: 20px;
+  padding: 0;
 }
 
 .agent-attachment-image {

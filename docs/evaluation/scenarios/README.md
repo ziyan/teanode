@@ -82,7 +82,7 @@ A step is one of four kinds:
   see where one still stands as current.
 
 A chat thread becomes facts only when the person took part in it and it
-has three posts or more; the rest of a chat archive is searched, never
+has two posts or more; the rest of a chat archive is searched, never
 read on its own. A scenario about the person's own project has them in
 its threads.
 

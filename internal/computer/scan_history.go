@@ -300,10 +300,11 @@ func entryOfCommit(root string, record commitRecord, known map[string]string) Sc
 		"author": record.Name, "address": record.Address,
 		"repository": filepath.Base(where), "commit": record.Hash,
 	}
-	if len(text) > scanCommitBytes {
-		text = firstRunes(text, scanCommitBytes)
-		entry.Metadata["truncated"] = true
-	}
+	// The whole of it, however many files it touched. A commit that
+	// drops a vendored tree into a checkout lists tens of thousands of
+	// them and can come to more than a page carries; the page then ends
+	// after it, which is cheaper than losing what the rest of the list
+	// says about where the work was.
 	entry.Text = text
 	// A commit is not a file, so nothing stats it and for years it was
 	// filed with no size at all. Anything downstream that asked how much

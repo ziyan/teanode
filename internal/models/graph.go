@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // The graph: what the agent knows about the person, as pages addressed by
@@ -556,23 +557,19 @@ const (
 	PathSegments = 8
 	PathLength   = 500
 
-	// SummaryLength is how long a page may be. Long enough for a page
-	// about a person or a project written as prose; short enough that the
-	// twenty of them a recall can reach do not fill a prompt.
-	SummaryLength = 8000
-
-	// FactLength is how long one statement may be. A fact that needs more
-	// than this is two facts, or a page.
-	FactLength = 1000
-
 	// NameLength and AliasCount bound what a page is called.
 	NameLength = 200
 	AliasCount = 16
 
-	// EvidenceCount is how many places one fact may cite, and QuoteLength
-	// how much of each is kept.
+	// EvidenceCount is how many places one fact may cite.
+	//
+	// A page's opening, a fact's text and a quote have no bound. Each
+	// had one, and what was written past it was cut off where it was
+	// stored, with nothing to say a sentence had ended early: the words
+	// were gone for every reader. A prompt that cannot hold all of a
+	// long text cuts it where it shows it, and says there is more and
+	// how to read it.
 	EvidenceCount = 12
-	QuoteLength   = 400
 )
 
 // Slug is a name as a path segment: lowercase, letters digits and dashes,
@@ -685,9 +682,6 @@ func (self *AgentNode) Validate() error {
 	if len(self.Name) > NameLength {
 		errors.add("name", "at most %d characters", NameLength)
 	}
-	if len(self.Summary) > SummaryLength {
-		errors.add("summary", "at most %d characters", SummaryLength)
-	}
 	if len(self.Aliases) > AliasCount {
 		errors.add("aliases", "at most %d", AliasCount)
 	}
@@ -699,9 +693,6 @@ func (self *AgentFact) Validate() error {
 	var errors ValidationErrors
 	if strings.TrimSpace(self.Text) == "" {
 		errors.add("text", "required")
-	}
-	if len(self.Text) > FactLength {
-		errors.add("text", "at most %d characters", FactLength)
 	}
 	if !IsAgentFactKind(self.Kind) {
 		errors.add("kind", "%q is not a kind of fact", self.Kind)
@@ -798,9 +789,13 @@ func (self *AgentNode) IndexLine(width int) string {
 		summary = summary[:index]
 	}
 	summary = strings.TrimSpace(summary)
-	if remaining := width - len(line) - 3; remaining > 16 && summary != "" {
-		if len(summary) > remaining {
-			summary = strings.TrimSpace(summary[:remaining]) + "…"
+	// Counted and cut in characters, not bytes: a cut through a character
+	// left half of it before the ellipsis, which a prompt shows as a
+	// replacement mark. A sentence cut short ends with the ellipsis, so
+	// that a model reading the line can tell the words go on.
+	if remaining := width - utf8.RuneCountInString(line) - 3; remaining > 16 && summary != "" {
+		if runes := []rune(summary); len(runes) > remaining {
+			summary = strings.TrimSpace(string(runes[:remaining])) + "…"
 		}
 		line += ": " + summary
 	}

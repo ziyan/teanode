@@ -6,6 +6,30 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.95.1] - 2026-10-01
+
+### Changed
+
+- A dream keeps what the person says about their own life in their chats, even in passing, and no longer files other people's general advice as if it were about them. (#284)
+
+## [0.95.0] - 2026-10-01
+
+### Added
+
+- `agent.limits.recallTokens` sets how much of a turn's prompt the pages and facts recall carries may take. (#281)
+
+## [0.94.4] - 2026-10-01
+
+### Changed
+
+- Nothing a source holds is cut on the way in (large files, every page of a scan, whole commits), nothing the agent writes is cut when stored, and the agent's tools page through long results and say how much more there is. (#280)
+
+## [0.94.3] - 2026-10-01
+
+### Changed
+
+- Dreams read two-post threads the person took part in and short documents, give files left out of a full batch another turn instead of declining them, and write a page's opening and overview from its newest facts. (#278)
+
 ## [0.94.2] - 2026-10-01
 
 ### Fixed

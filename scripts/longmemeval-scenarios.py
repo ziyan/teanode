@@ -3,7 +3,7 @@
 
 Each instance becomes one scenario: its haystack sessions as chat threads
 the person took part in, dated as the dataset dates them and filed in
-order; one dream; then its question, asked with the question's date the
+order; dreams until nothing waits to be read; then its question, asked with the question's date the
 way the benchmark gives it to a model. The reference answer is the
 scenario's expected answer and never enters the records.
 
@@ -70,7 +70,7 @@ def scenario_for(instance):
         "description": "LongMemEval-S instance of type " + instance["question_type"] + ".",
         "questionType": instance["question_type"],
         "steps": records_steps + [
-            {"id": "dream", "stepKind": "dream", "dreamCount": 1},
+            {"id": "dream", "stepKind": "dream", "dreamCount": 1, "isUntilRead": True},
             {"id": "question", "stepKind": "checkpoint", "questions": [question]},
         ],
     }

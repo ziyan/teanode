@@ -32,6 +32,10 @@ After this change a computer with `pdftoppm` and `tesseract` reads the pages of 
   Rationale: the opening of a long scan is what a search needs to find it, and the bytes are kept for the rest.
   Date/Author: 2026-09-24, agent.
 
+- Decision: every page of a scan is read, superseding the 30 page bound above. Pages are read one at a time and kept as they are read; a scan not finished within two minutes is held back with the reason, and the next pass carries on from the first page not yet read.
+  Rationale: nothing a source holds is cut on its way in. Pacing the work is fine, filing part of a document as if it were the whole is not.
+  Date/Author: 2026-09-30, agent.
+
 - Decision: unread PDFs and office files are left out of the held list for good, not only once.
   Rationale: a file stays unread until the computer gains a way to read it, which can happen at any time (a program installed, a language added); sending a few hundred small entries without text each pass costs little, and the OCR cache means a file that has been tried is not tried at length again.
   Date/Author: 2026-09-24, agent.

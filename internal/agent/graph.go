@@ -21,9 +21,25 @@ const (
 	// because such a run cannot ask for more.
 	runIndexTokens = 1000
 
-	// selfSummary is how much of the self page always goes in. It is the
-	// one page worth its tokens on every turn: who the person is.
+	// selfSummary is how much of the self page's opening always goes in,
+	// and selfFacts how many of its facts. It is the one page worth its
+	// tokens on every turn: who the person is. A self page with more than
+	// either is carried to that much, with a line saying how much more
+	// there is and how to read it.
 	selfSummary = 2000
+	selfFacts   = 60
+
+	// everyFactOnPage is the limit that reads every live fact on a page:
+	// one far past any page, since a page past forty facts is divided.
+	everyFactOnPage = 100000
+
+	// indexReadPages is how many pages the prompt's index reads to fill
+	// its budget, and runIndexReadPages the same for a run with nobody
+	// present. An index that reads all of them and still has pages left
+	// over can say exactly how many; one that stops at the read says "at
+	// least".
+	indexReadPages    = 400
+	runIndexReadPages = 200
 
 	// recallCandidates is how many rows each of the four searches offers
 	// the fusion below.
@@ -72,6 +88,11 @@ const (
 	recallOverviewLength   = 600
 	recallReflections      = 3
 	recallReflectionLength = 400
+
+	// recallOpeningLength is how much of a page's opening recall carries.
+	// A text recall cuts to any of these ends with an ellipsis and the
+	// call that reads the rest.
+	recallOpeningLength = 600
 
 	// recallBlocks is how many lines the overlay carries in all, and
 	// recallGraphBlocks how many of them the graph may fill: the

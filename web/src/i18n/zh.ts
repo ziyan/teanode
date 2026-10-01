@@ -3325,6 +3325,8 @@ export const zh: Catalog = {
   'finance.budgetDialogHint': '其他货币的支出按入账当天的汇率换算。预算设为零即结束。',
   'finance.budgetSet': '已设置预算。',
   'finance.budgetEnded': '已结束预算。',
+  'finance.endBudget': '结束预算',
+  'finance.endBudgetBody': '{name}的预算从{month}起结束。之前的月份保留原来的预算。',
   'finance.spendingCategoriesTitle': '支出类别',
   'finance.spendingCategoriesHint': '你自己定义的钱的去向。每笔财务交易都归到其中一个：由你、支出规则、服务商类别或模型归类。',
   'finance.addSpendingCategory': '添加支出类别',

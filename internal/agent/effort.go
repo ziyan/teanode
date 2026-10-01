@@ -35,7 +35,19 @@ const (
 
 // depthRecentMessages is how much of the conversation the judgement reads:
 // enough to see a pushback on the last answer, not a whole history.
-const depthRecentMessages = 6
+// depthRecentCharacters is how much of each of those messages it reads, and
+// depthMessageCharacters how much of the message being judged; a message
+// cut to either ends with an ellipsis.
+const (
+	depthRecentMessages    = 6
+	depthRecentCharacters  = 600
+	depthMessageCharacters = 4000
+)
+
+// plannedSearchCharacters is the longest a planned search may be. A longer
+// one is a paraphrase of the message rather than a search, and is dropped
+// with a line in the log saying so.
+const plannedSearchCharacters = 120
 
 // deepenedTurn is what a depth turns on. Only digging changes the turn:
 // measured on answered questions from a chat archive, the research
@@ -132,15 +144,17 @@ func (self *AskRun) judgeDepth() depthJudgement {
 			default:
 				continue
 			}
+			// Marked where cut, so that the judgement does not read the
+			// start of a long message as all of it.
 			if text := strings.TrimSpace(message.Content); text != "" {
-				recent = append(recent, who+": "+cutRunes(text, 600))
+				recent = append(recent, who+": "+cutMarked(text, depthRecentCharacters))
 			}
 		}
 		return nil
 	})
 	// The newest message is the one being judged, and may already be
 	// stored as the last of these.
-	if count := len(recent); count > 0 && strings.HasSuffix(recent[count-1], strings.TrimSpace(cutRunes(settings.Message, 600))) {
+	if count := len(recent); count > 0 && strings.HasSuffix(recent[count-1], cutMarked(strings.TrimSpace(settings.Message), depthRecentCharacters)) {
 		recent = recent[:count-1]
 	}
 	if len(recent) > depthRecentMessages {
@@ -150,7 +164,7 @@ func (self *AskRun) judgeDepth() depthJudgement {
 		"AgentName":  settings.Agent.DisplayName(),
 		"PersonName": personName(settings.Owner),
 		"Recent":     recent,
-		"Message":    cutRunes(settings.Message, 4000),
+		"Message":    cutMarked(settings.Message, depthMessageCharacters),
 		"Language":   languageName(Language(settings.Agent, settings.Owner)),
 	})
 	if err != nil {
@@ -200,7 +214,11 @@ func readDepth(text string) depthJudgement {
 		for _, search := range judged.Value.Searches {
 			search = strings.TrimSpace(search)
 			key := strings.ToLower(search)
-			if search == "" || len([]rune(search)) > 120 || seen[key] || len(judgement.searches) >= plannedSearchCount {
+			if search == "" || seen[key] || len(judgement.searches) >= plannedSearchCount {
+				continue
+			}
+			if len([]rune(search)) > plannedSearchCharacters {
+				log.Debugf("dropped a planned search longer than %d characters: %q", plannedSearchCharacters, search)
 				continue
 			}
 			seen[key] = true

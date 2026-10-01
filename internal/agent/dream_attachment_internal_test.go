@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -375,7 +376,9 @@ func TestTheNightOpensWhatItChoseAndSaysWhyItLeftTheRest(t *testing.T) {
 	// The two it did not: a reason on each, no passages, and their bytes
 	// never left the store.
 	for _, name := range []string{"avatar.png", "logo.png"} {
-		if reason := declinedReason(t, database, documents[name]); reason == "" {
+		// Either judged and declined, or left out of a full list and
+		// waiting for another batch: never neither.
+		if reason := declinedReason(t, database, documents[name]); reason == "" && passedOverCount(t, database, documents[name]) == 0 {
 			t.Fatalf("%s says why it was left alone", name)
 		}
 		if text := passagesOf(t, database, documents[name]); text != "" {
@@ -391,14 +394,17 @@ func TestTheNightOpensWhatItChoseAndSaysWhyItLeftTheRest(t *testing.T) {
 		}
 	}
 
-	// And a second night pays for none of it again.
+	// And a second night decides again only about what it could not
+	// judge: the files left out of the full list, and nothing it opened.
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		waiting, err := tx.ListAgentAttachmentsToDecide(run.Agent.ID, 10)
 		if err != nil {
 			t.Fatalf("ListAgentAttachmentsToDecide: %s", err)
 		}
-		if len(waiting) != 0 {
-			t.Fatalf("nothing is left to decide about: %d", len(waiting))
+		for _, document := range waiting {
+			if document.ID == documents["shot.png"].ID || passedOverCount(t, database, document) == 0 {
+				t.Fatalf("only what was passed over waits for another judgement: %s", document.Title)
+			}
 		}
 	})
 }
@@ -602,13 +608,23 @@ func TestAFileLeftOverFromAFullListSaysItWasPassedOver(t *testing.T) {
 
 	worker.dreamAttachments(context.Background(), run, &dreamBudget{})
 
+	// Never judged, so not declined: they wait, behind the files not yet
+	// shown, for another batch.
 	for _, name := range []string{"board.png", "trace.png", "avatar.png"} {
-		reason := declinedReason(t, database, documents[name])
-		if reason == declinedByDefault {
-			t.Fatalf("%s was never judged, so its row must not say it was: %q", name, reason)
+		if reason := declinedReason(t, database, documents[name]); reason != "" {
+			t.Fatalf("%s was never judged, so it is not declined: %q", name, reason)
 		}
-		if reason != declinedWhenFull(4) {
-			t.Fatalf("%s says how many the night could take and that it was passed over: %q", name, reason)
+		if count := passedOverCount(t, database, documents[name]); count != 1 {
+			t.Fatalf("%s was passed over once: %d", name, count)
+		}
+	}
+
+	// The next batch has room, and the model chooses none of them: that
+	// is a judgement, and the row says so.
+	worker.dreamAttachments(context.Background(), run, &dreamBudget{})
+	for _, name := range []string{"board.png", "trace.png", "avatar.png"} {
+		if reason := declinedReason(t, database, documents[name]); reason != declinedByDefault {
+			t.Fatalf("%s, shown with room and not chosen, was judged: %q", name, reason)
 		}
 	}
 	if reason := declinedReason(t, database, documents["shot.png"]); reason != "" {
@@ -647,4 +663,12 @@ func TestAFileLeftWhileThereWasRoomSaysItWasJudged(t *testing.T) {
 			t.Fatalf("%s was judged and not chosen, and its row says that: %q", name, reason)
 		}
 	}
+}
+
+// passedOverCount is how many full lists a file was left out of.
+func passedOverCount(t *testing.T, database db.Database, document *models.AgentDocument) int {
+	t.Helper()
+	count := dbtest.QueryString(t, database, `SELECT coalesce("metadata"->>'passedOver', '0') FROM "agent_document" WHERE "id" = '`+document.ID+`'`)
+	value, _ := strconv.Atoi(count)
+	return value
 }

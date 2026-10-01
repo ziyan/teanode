@@ -293,3 +293,22 @@ func cutRunes(text string, characters int) string {
 	}
 	return string(runes[:characters])
 }
+
+// cutMarked is text shortened to at most characters and ending with an
+// ellipsis where it was shortened, for a prompt that has room for only
+// part of it: a text that stops without a mark reads as all there is.
+func cutMarked(text string, characters int) string {
+	if len([]rune(text)) <= characters {
+		return text
+	}
+	return strings.TrimSpace(cutRunes(text, characters)) + "…"
+}
+
+// cutWithMore is cutMarked with where the rest is read, for a reader
+// that has the tool to read it: "… (more: memory get people/alice-chen)".
+func cutWithMore(text string, characters int, where string) string {
+	if len([]rune(text)) <= characters {
+		return text
+	}
+	return cutMarked(text, characters) + " (more: " + where + ")"
+}

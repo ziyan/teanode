@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
@@ -246,8 +248,11 @@ func (self *AskRun) recallFromKnowledge(ctx context.Context, words string) {
 			if document == nil {
 				continue
 			}
-			line := document.Cite() + "  [" + document.ID + "#" + strconv.Itoa(chunk.Number) + "]\n  " +
-				cutRunes(chunk.Text, recallChunkCharacters)
+			passage, err := recalledPassage(tx, self.settings.Agent.ID, chunk)
+			if err != nil {
+				return err
+			}
+			line := document.Cite() + "  [" + document.ID + "#" + strconv.Itoa(chunk.Number) + "]\n  " + passage
 			cost := llm.EstimateTokens(line)
 			if spent+cost > recallKnowledgeTokens {
 				break
@@ -259,6 +264,29 @@ func (self *AskRun) recallFromKnowledge(ctx context.Context, words string) {
 	}); err != nil {
 		log.Debugf("cannot recall from what was indexed: %s", err)
 	}
+}
+
+// recalledPassage is a passage as recall carries it: to
+// recallChunkCharacters, and where it is cut, an ellipsis and the knowledge
+// read that goes on from the cut. The offset is counted the way the read
+// counts it, over the document's passages joined one per line.
+func recalledPassage(tx db.Transaction, agentId string, chunk *models.AgentChunk) (string, error) {
+	if len([]rune(chunk.Text)) <= recallChunkCharacters {
+		return chunk.Text, nil
+	}
+	chunks, err := tx.ListAgentChunks(agentId, chunk.DocumentID)
+	if err != nil {
+		return "", err
+	}
+	from := 0
+	for _, before := range chunks {
+		if before.Number >= chunk.Number {
+			break
+		}
+		from += len([]rune(before.Text)) + 1
+	}
+	from += recallChunkCharacters
+	return cutWithMore(chunk.Text, recallChunkCharacters, fmt.Sprintf("knowledge read with id %s and from %d", chunk.DocumentID, from)), nil
 }
 
 // graphSearch is what one search of the graph found: the pages and facts
@@ -430,10 +458,11 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 	if err != nil {
 		return nil, err
 	}
+	budget, factBudget := recallBudgetOf(self.agent.settings.Configuration())
 	explanation := self.explanation
 	if explanation != nil {
 		explanation.explainFacts(paths)
-		explanation.TokenBudget = recallTokens
+		explanation.TokenBudget = budget
 	}
 	// Which of the search's facts sit on which page, in the order the
 	// search put them. That order is the ranking, and nothing here ranks
@@ -458,10 +487,10 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 	reservedBlocks, reservedTokens := 0, 0
 	if len(facts) > 0 {
 		// One block: the loose facts go in together below.
-		reservedBlocks, reservedTokens = 1, recallFactTokens
+		reservedBlocks, reservedTokens = 1, factBudget
 	}
 	pageBlocks := recallGraphBlocks - reservedBlocks
-	pageTokens := recallTokens - reservedTokens
+	pageTokens := budget - reservedTokens
 
 	spent := 0
 	shown := map[string]bool{}
@@ -517,16 +546,21 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 		// same when the turn's words hit the page, and only the
 		// opening, which the index line already has the gist of, is
 		// left out.
+		//
+		// What is cut to fit ends with an ellipsis and the call that
+		// reads the rest, so that the model does not answer from the
+		// start of a page as though it were all of it.
+		readPage := "memory get " + node.Path
 		summary := ""
 		if opening := strings.TrimSpace(node.Summary); opening != "" && !self.inPrompt(node.ID) {
-			summary = cutRunes(opening, 600)
+			summary = cutWithMore(opening, recallOpeningLength, readPage)
 			text += "\n  " + summary
 		}
 		factLines := ""
 		for _, fact := range pageFactsFound {
 			line := fact.Line()
 			if isTheme {
-				line = cutRunes(line, recallReflectionLength)
+				line = cutWithMore(line, recallReflectionLength, readPage)
 			}
 			factLines += "\n  #" + strconv.Itoa(fact.Number) + " " + line
 		}
@@ -536,6 +570,11 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 		// page still fits with it; a page that does not is carried
 		// without it before it is passed over.
 		overview, sectionChoice := chooseOverviewSection(node, sections[node.ID], self.settings.Message, recallOverviewLength)
+		// One section, perhaps cut: where the overview has more than is
+		// carried, the get that reads all of it is said after it.
+		if overview != "" && (strings.HasSuffix(overview, "…") || len(overviewSectionsOf(node)) > 1) {
+			overview += " (more: " + readPage + ")"
+		}
 		cost := 0
 		if overview != "" {
 			cost = llm.EstimateTokens(text + "\n  " + overview + factLines)
@@ -557,7 +596,7 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 			// is passed over rather than ending the loop -- but once
 			// what is left could not hold a page at all there is no
 			// sense reading the rest of them out of the store.
-			if pageTokens-spent < recallTokens/8 {
+			if pageTokens-spent < budget/8 {
 				break
 			}
 			continue
@@ -602,7 +641,7 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 		}
 		line := fact.Reference(paths[fact.NodeID]) + " " + fact.Line()
 		cost := llm.EstimateTokens(line)
-		if spent+cost > recallTokens {
+		if spent+cost > budget {
 			if explainedFact != nil {
 				explainedFact.RecallDecision = RecallDecisionTokenBudget
 			}
@@ -945,7 +984,18 @@ func (self *Agent) exemplarsFor(ctx context.Context, agent *models.Agent, messag
 		if document.HappenedAt != nil {
 			when = document.HappenedAt.Format("Jan 2006") + ": "
 		}
-		exemplars = append(exemplars, when+cutRunes(strings.TrimSpace(chunk.Text), 1200))
+		exemplars = append(exemplars, when+cutMarked(strings.TrimSpace(chunk.Text), 1200))
 	}
 	return exemplars
+}
+
+// recallBudgetOf is the overlay's budget for graph blocks and the part of
+// it held back for loose facts: recallTokens and recallFactTokens, or the
+// operator's agent.limits.recallTokens with a third of it for the facts.
+func recallBudgetOf(configuration *config.Configuration) (int, int) {
+	if configuration != nil && configuration.Agent.Limits.RecallTokens > 0 {
+		budget := configuration.Agent.Limits.RecallTokens
+		return budget, budget / 3
+	}
+	return recallTokens, recallFactTokens
 }

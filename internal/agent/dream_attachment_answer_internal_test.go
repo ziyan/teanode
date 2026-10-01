@@ -162,11 +162,11 @@ func TestTheNightTakesNoMoreThanItsShareOfABatch(test *testing.T) {
 	most := attachmentsMost(len(documents))
 	kept := 0
 	for _, document := range documents {
-		if declinedReason(test, database, document) == "" {
+		if passagesOf(test, database, document) != "" {
 			kept++
 		}
 	}
 	if kept > most {
-		test.Fatalf("the night kept %d of %d files when it was allowed %d", kept, len(documents), most)
+		test.Fatalf("the night opened %d of %d files when it was allowed %d", kept, len(documents), most)
 	}
 }
