@@ -57,6 +57,9 @@ type preparedFact struct {
 	Quote     string
 	Happened  *time.Time
 
+	// HappenedPrecision is how precisely Happened was given.
+	HappenedPrecision string
+
 	// AskedPath is the path the writer actually wrote, before this was
 	// tidied into PagePath. A link in the same answer names a page by
 	// that path rather than by whatever tidying it went through, so it is

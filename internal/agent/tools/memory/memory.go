@@ -49,8 +49,9 @@ const (
 
 	// indexShown is how many lines an index answers with when nobody
 	// says, and childrenShown how many of the pages under a page a get
-	// names. searchCounted is how many rows a search by words reads to
-	// say how many more there are than it shows.
+	// names. searchCounted is how many rows past searchLimit the first
+	// round of a search reads by words, so that the answer can say how
+	// many more there are than it shows.
 	indexShown    = 200
 	childrenShown = 24
 	searchCounted = 200
@@ -84,7 +85,7 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "memory", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "What you know about the person, kept between conversations as pages with facts on them. Every page has a path: people/alice-chen, projects/portal, self, time/2026/09. A fact on a page is cited as people/alice-chen#3. Your prompt carries the top of the graph and whatever this turn's words touched; `get` a path before telling them you do not know something about them, and `search` when you cannot guess the path. A partial answer ends with how many more there are and the call that reads them: `get` with `from`, `index` with `offset`, `search` with a larger `limit`. You need not file what you learn -- a run after this conversation does that -- but `note` anything they ask you to remember, and correct a page that is wrong: `note` with the fact's number rewrites that one sentence where it stands. `history` says what has happened to a page and who did it, which is how a line nobody recognizes is accounted for. `look` shows you the picture a fact was read out of, when the answer is in the screenshot rather than in the sentence about it.",
+				Description: "What you know about the person, kept between conversations as pages with facts on them. Every page has a path: people/alice-chen, projects/portal, self, time/2026/09. A fact on a page is cited as people/alice-chen#3. Your prompt carries the top of the graph and whatever this turn's words touched; `get` a path before telling them you do not know something about them, and `search` when you cannot guess the path. A partial answer ends with how many more there are and the call that reads them: `get` with `from`, `index` and `search` with `offset`. You need not file what you learn -- a run after this conversation does that -- but `note` anything they ask you to remember, and correct a page that is wrong: `note` with the fact's number rewrites that one sentence where it stands. `history` says what has happened to a page and who did it, which is how a line nobody recognizes is accounted for. `look` shows you the picture a fact was read out of, when the answer is in the screenshot rather than in the sentence about it.",
 				Parameters: tools.Object(map[string]any{
 					"action": tools.EnumProperty("what to do; move files a page under another, or with number moves one fact onto another page",
 						"index", "get", "search", "look", "note", "page", "history", "link", "unlink", "move", "merge", "forget", "batch"),
@@ -106,7 +107,7 @@ func init() {
 					"number":     tools.IntegerProperty("for note: the fact to rewrite where it stands, keeping its number, its evidence and the day it was learned, rather than adding another one. For forget: the fact's number on the page; without it the whole page goes. For move: the fact to move onto the page in to, rather than the page itself. For look: the fact whose picture to show you"),
 					"limit":      tools.IntegerProperty("for search, index and history: how many"),
 					"from":       tools.IntegerProperty("for get: list the page's facts in number order starting at this fact number, 60 at a time; 1 starts at the first. Without it get shows the 60 most recently used"),
-					"offset":     tools.IntegerProperty("for index: how many lines to skip, to read on from where a listing stopped"),
+					"offset":     tools.IntegerProperty("for index: how many lines to skip, and for search: how many pages and facts of the ranking to pass over; to read on from where a listing stopped"),
 					"items":      tools.ArrayProperty("for batch: up to 25 of the above, each with its own action", map[string]any{"type": "object"}),
 				}, "action"),
 				Guidance: "memory: pages by path (people/alice-chen, projects/portal, self), facts by number (people/alice-chen#3). What is known about the person lives on `self`; a people page about them is a duplicate to `merge` into self, never the other way. Correct a wrong fact with `note` and its number, and `move` one on the wrong page by number: both keep its evidence and the day it was learned, which forgetting and writing it again loses. `history` says where a fact came from or who changed it. A fact read out of a picture: `look` at the picture with the page and number before answering from the sentence. A fact addressed to triage or to reply changes how mail is sorted or answered from the next message on; prefer a rule for anything rule-shaped.",
@@ -232,8 +233,9 @@ type memoryItem struct {
 	Limit int    `json:"limit"`
 
 	// From is the fact number a get lists a page's facts from, and
-	// Offset how many lines of an index to skip: how a partial answer is
-	// read on from where it stopped.
+	// Offset how many lines of an index, or how many pages and facts of a
+	// search, to skip: how a partial answer is read on from where it
+	// stopped.
 	From   int `json:"from"`
 	Offset int `json:"offset"`
 
@@ -616,7 +618,8 @@ func notThere(ctx context.Context, run tools.Run, path string) (*tools.Result, e
 }
 
 // searchAction finds pages and facts by words, and by meaning where the
-// deployment can say what a page means.
+// deployment can say what a page means. Pages and facts are two lists, and
+// an offset reads both of them on from the same place.
 func searchAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (*tools.Result, error) {
 	query := strings.TrimSpace(arguments.Query)
 	if query == "" {
@@ -629,32 +632,18 @@ func searchAction(ctx context.Context, run tools.Run, arguments *memoryArguments
 	if limit <= 0 {
 		limit = searchLimit
 	}
-	agentId := run.Agent().ID
-	// The search by words reads past the limit, so that the answer can say
-	// how many more there are than it shows.
-	counted := limit + searchCounted
-	var nodes []*models.AgentNode
-	var facts []*models.AgentFact
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		nodes, facts, err = tx.SearchAgentGraph(agentId, query, counted)
-		return err
-	}); err != nil {
+	offset := max(arguments.Offset, 0)
+	ranked, err := rankGraph(ctx, run, query, offset+limit*2)
+	if err != nil {
 		return nil, err
 	}
-	isCountCut := len(nodes) >= counted || len(facts) >= counted
-	// And by meaning, in front of the words: a person asking about "the
-	// boat" means the page that says "Marigold", and no word of theirs
-	// appears in it.
-	var nearNodes []*models.AgentNode
-	var nearFacts []*models.AgentFact
-	if searcher, ok := run.(tools.GraphSearching); ok {
-		nearNodes, nearFacts = searcher.SearchGraphByMeaning(ctx, query, limit)
-	}
-	nodeCount := len(mergeNodes(nearNodes, nodes, len(nearNodes)+len(nodes)))
-	factCount := len(mergeFacts(nearFacts, facts, len(nearFacts)+len(facts)))
-	nodes = mergeNodes(nearNodes, nodes, limit)
-	facts = mergeFacts(nearFacts, facts, limit)
+	nodes := pageOf(ranked.nodes, offset, limit)
+	facts := pageOf(ranked.facts, offset, limit)
 	if len(nodes) == 0 && len(facts) == 0 {
+		if offset > 0 && (len(ranked.nodes) > 0 || len(ranked.facts) > 0) {
+			return tools.TextResult("nothing past the first %d; it found %d pages and %d facts, and search again with offset: 0 starts at the first",
+				offset, len(ranked.nodes), len(ranked.facts)), nil
+		}
 		return tools.TextResult("nothing about that"), nil
 	}
 
@@ -669,7 +658,10 @@ func searchAction(ctx context.Context, run tools.Run, arguments *memoryArguments
 	for _, fact := range facts {
 		builder.WriteString(fact.Reference(paths[fact.NodeID]) + " " + fact.Line() + "\n")
 	}
-	if more := searchMore(nodeCount-len(nodes), factCount-len(facts), isCountCut, limit); more != "" {
+	end := offset + max(len(nodes), len(facts))
+	moreNodeCount := max(len(ranked.nodes)-offset-len(nodes), 0)
+	moreFactCount := max(len(ranked.facts)-offset-len(facts), 0)
+	if more := searchMore(moreNodeCount, !ranked.isNodesComplete, moreFactCount, !ranked.isFactsComplete, end, arguments.Limit); more != "" {
 		builder.WriteString("\n" + more + "\n")
 	}
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
@@ -691,18 +683,109 @@ func searchAction(ctx context.Context, run tools.Run, arguments *memoryArguments
 	return tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), nil
 }
 
+// rankedGraph is what a search of the graph found, best first, and
+// whether each list is all the search can find.
+type rankedGraph struct {
+	nodes           []*models.AgentNode
+	facts           []*models.AgentFact
+	isNodesComplete bool
+	isFactsComplete bool
+}
+
+// rankGraph is the ranking a search pages through: the pages and the facts
+// from the top to at least wanted of each, or to the last of them.
+//
+// It goes in rounds. The first reads searchLimit rows by meaning and
+// searchLimit plus searchCounted by words, the meaning's in front: a
+// person asking about "the boat" means the page that says "Marigold", and
+// no word of theirs appears in it. Each round after reads twice as many
+// and adds what the rounds before did not have, behind them. Every round
+// reads lists of a fixed depth whichever page is asked for, so the second
+// page of a search carries on from exactly where the first stopped; lists
+// as deep as the page would put a deeper meaning list in front of words
+// the first page already showed.
+func rankGraph(ctx context.Context, run tools.Run, query string, wanted int) (*rankedGraph, error) {
+	agentId := run.Agent().ID
+	searcher, isMeaningful := run.(tools.GraphSearching)
+	ranked := &rankedGraph{}
+	seenNodes := map[string]bool{}
+	seenFacts := map[string]bool{}
+	for round := 0; ; round++ {
+		meaningDepth := searchLimit << round
+		wordsDepth := (searchLimit + searchCounted) << round
+		var nodes []*models.AgentNode
+		var facts []*models.AgentFact
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			nodes, facts, err = tx.SearchAgentGraph(agentId, query, wordsDepth)
+			return err
+		}); err != nil {
+			return nil, err
+		}
+		// A list shorter than was asked for is all there is. For the
+		// meaning that includes what the similarity floor left out, which
+		// no deeper read would bring back either, so it is not counted as
+		// more.
+		isNodesComplete := len(nodes) < wordsDepth
+		isFactsComplete := len(facts) < wordsDepth
+		if isMeaningful {
+			nearNodes, nearFacts := searcher.SearchGraphByMeaning(ctx, query, meaningDepth)
+			isNodesComplete = isNodesComplete && len(nearNodes) < meaningDepth
+			isFactsComplete = isFactsComplete && len(nearFacts) < meaningDepth
+			nodes = mergeNodes(nearNodes, nodes, len(nearNodes)+len(nodes))
+			facts = mergeFacts(nearFacts, facts, len(nearFacts)+len(facts))
+		}
+		for _, node := range nodes {
+			if !seenNodes[node.ID] {
+				seenNodes[node.ID] = true
+				ranked.nodes = append(ranked.nodes, node)
+			}
+		}
+		for _, fact := range facts {
+			if !seenFacts[fact.ID] {
+				seenFacts[fact.ID] = true
+				ranked.facts = append(ranked.facts, fact)
+			}
+		}
+		// Each list is read until it is long enough or there is no more
+		// of it; one that ran out first is not read to the end of the
+		// other.
+		if (isNodesComplete || len(ranked.nodes) >= wanted) && (isFactsComplete || len(ranked.facts) >= wanted) {
+			ranked.isNodesComplete = isNodesComplete
+			ranked.isFactsComplete = isFactsComplete
+			return ranked, nil
+		}
+	}
+}
+
+// pageOf is the rows of one page: limit of them from the offset.
+func pageOf[Row any](rows []Row, offset, limit int) []Row {
+	if offset >= len(rows) {
+		return nil
+	}
+	return rows[offset:min(offset+limit, len(rows))]
+}
+
 // searchMore is the line a search ends with when it found more than it
-// shows: how many more pages and facts, "at least" where the count itself
-// stopped at its limit, and the limit that shows them.
-func searchMore(moreNodeCount, moreFactCount int, isCountCut bool, limit int) string {
+// shows: how many more pages and facts, "at least" where the search
+// stopped counting that list, and the offset that reads the next page.
+func searchMore(moreNodeCount int, isNodeCountCut bool, moreFactCount int, isFactCountCut bool, next, limit int) string {
 	if moreNodeCount <= 0 && moreFactCount <= 0 {
 		return ""
 	}
-	more := fmt.Sprintf("%d more pages and %d more facts match", max(moreNodeCount, 0), max(moreFactCount, 0))
-	if isCountCut {
-		more = "at least " + more
+	nodesMore := fmt.Sprintf("%d more pages", moreNodeCount)
+	if isNodeCountCut {
+		nodesMore = "at least " + nodesMore
 	}
-	return "… " + more + "; search again with limit: " + strconv.Itoa(limit+max(moreNodeCount, moreFactCount))
+	factsMore := fmt.Sprintf("%d more facts", moreFactCount)
+	if isFactCountCut {
+		factsMore = "at least " + factsMore
+	}
+	more := nodesMore + " and " + factsMore + " match"
+	call := "search again with offset: " + strconv.Itoa(next)
+	if limit > 0 && limit != searchLimit {
+		call += " and limit: " + strconv.Itoa(limit)
+	}
+	return "… " + more + "; " + call
 }
 
 // pathsOf is the path of every page these facts sit on.

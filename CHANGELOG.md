@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.97.0] - 2026-10-01
+
+### Added
+
+- The agent's memory and knowledge searches page through all their results and say how many more there are; the API and command line take an offset. (#286)
+
+## [0.96.0] - 2026-10-01
+
+### Added
+
+- Savings targets can track your net worth, or whole finance accounts instead of single assets. (#282)
+
 ## [0.95.3] - 2026-10-01
 
 ### Changed

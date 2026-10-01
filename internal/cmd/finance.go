@@ -67,10 +67,20 @@ func NewFinanceCommand() *cli.Command {
 			JSONFlag(),
 			&cli.StringFlag{Name: "target-on", Usage: "the day to reach it by, as 2027-06-30"},
 			&cli.StringFlag{Name: "currency", Usage: "its currency; the reporting currency by default"},
-			&cli.StringFlag{Name: "measure", Usage: "cash_flow (income less spending, the default) or asset_value (what --asset is worth)"},
-			&cli.StringFlag{Name: "starting-amount", Usage: "for asset_value: what the assets were worth at the start"},
+			&cli.StringFlag{
+				Name:  "measure",
+				Usage: "cash_flow (income less spending, the default), asset_value (what --asset and --finance-account are worth) or net_worth",
+			},
+			&cli.StringFlag{
+				Name:  "starting-amount",
+				Usage: "what the assets, or net worth, were at the start; for net_worth, net worth on --started-on by default",
+			},
 			&cli.StringFlag{Name: "started-on", Usage: "the day it starts; today by default"},
 			&cli.StringSliceFlag{Name: "asset", Usage: "an asset it measures, by id; repeatable"},
+			&cli.StringSliceFlag{
+				Name:  "finance-account",
+				Usage: "a finance account it measures whole, by id: every asset it values, holdings bought later too; repeatable",
+			},
 		}
 	}
 	waitFlags := func() []cli.Flag {
@@ -1825,11 +1835,11 @@ func runFinanceSavingsTargets(ctx context.Context, command *cli.Command) error {
 			state = "behind"
 		}
 		rows = append(rows, []string{
-			target.ID, target.SavingsTargetName, money(target.TargetAmount, target.CurrencyCode), target.TargetOn,
+			target.ID, target.SavingsTargetName, target.TargetMeasure, money(target.TargetAmount, target.CurrencyCode), target.TargetOn,
 			money(progress.SavedAmount, target.CurrencyCode), money(progress.RequiredMonthlyAmount, target.CurrencyCode), state,
 		})
 	}
-	return printTable([]string{"id", "savings target", "target", "by", "saved", "needed a month", "state"}, rows)
+	return printTable([]string{"id", "savings target", "measure", "target", "by", "saved", "needed a month", "state"}, rows)
 }
 
 // savingsTargetVariables reads the flags a savings target shares between
@@ -1842,6 +1852,9 @@ func savingsTargetVariables(command *cli.Command, variables map[string]any) {
 	setString(command, variables, "started-on", "startedOn")
 	if command.IsSet("asset") {
 		variables["assetIds"] = command.StringSlice("asset")
+	}
+	if command.IsSet("finance-account") {
+		variables["financeAccountIds"] = command.StringSlice("finance-account")
 	}
 }
 

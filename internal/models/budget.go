@@ -94,16 +94,18 @@ type Budget struct {
 // TargetMeasure is how a savings target's progress is measured.
 type TargetMeasure string
 
-// The two measures: money not spent (income minus spending since the
-// start), or what chosen assets are worth now against what they were.
+// The three measures: money not spent (income minus spending since the
+// start), what chosen assets and finance accounts are worth now against
+// what they were, or net worth now against what it was.
 const (
 	TargetMeasureCashFlow   TargetMeasure = "cash_flow"
 	TargetMeasureAssetValue TargetMeasure = "asset_value"
+	TargetMeasureNetWorth   TargetMeasure = "net_worth"
 )
 
-// IsValid says the measure is one of the two.
+// IsValid says the measure is one of the three.
 func (self TargetMeasure) IsValid() bool {
-	return self == TargetMeasureCashFlow || self == TargetMeasureAssetValue
+	return self == TargetMeasureCashFlow || self == TargetMeasureAssetValue || self == TargetMeasureNetWorth
 }
 
 // SavingsTarget is an amount to save by a date. Not an agent goal, which
@@ -121,13 +123,18 @@ type SavingsTarget struct {
 	TargetMeasure TargetMeasure `json:"targetMeasure"`
 
 	// StartingAmount is what the assets were worth when it started, for
-	// an asset_value target; StartedOn when it started.
+	// an asset_value target, or the net worth then, for a net_worth one;
+	// StartedOn when it started.
 	StartingAmount string `json:"startingAmount,omitempty" graphapi:"nullable"`
 	StartedOn      string `json:"startedOn"`
 	ClosedOn       string `json:"closedOn,omitempty" graphapi:"nullable"`
 
-	// AssetIDs are the assets an asset_value target measures.
-	AssetIDs []string `json:"assetIds"`
+	// AssetIDs are the assets an asset_value target measures, and
+	// FinanceAccountIDs the finance accounts it measures whole: every
+	// asset the account values, its holdings included, as they are on the
+	// day the progress is read. An asset reached both ways counts once.
+	AssetIDs          []string `json:"assetIds"`
+	FinanceAccountIDs []string `json:"financeAccountIds"`
 
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`

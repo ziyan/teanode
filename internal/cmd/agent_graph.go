@@ -58,8 +58,12 @@ func newAgentGraphCommands() []*cli.Command {
 			Name:      "search",
 			Usage:     "find pages and facts by words",
 			ArgsUsage: "<words>",
-			Flags:     []cli.Flag{JSONFlag(), &cli.IntFlag{Name: "first", Usage: "how many", Value: 40}},
-			Action:    runAgentGraphSearch,
+			Flags: []cli.Flag{
+				JSONFlag(),
+				&cli.IntFlag{Name: "first", Usage: "how many", Value: 40},
+				&cli.IntFlag{Name: "offset", Usage: "how many pages and facts to pass over, to read the next page of results"},
+			},
+			Action: runAgentGraphSearch,
 		},
 		{
 			Name:      "note",
@@ -237,6 +241,7 @@ func newAgentKnowledgeCommand() *cli.Command {
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.IntFlag{Name: "first", Usage: "how many passages", Value: indexed.SearchLimit},
+					&cli.IntFlag{Name: "offset", Usage: "how many passages to pass over, to read the next page of results"},
 					&cli.StringFlag{Name: "source", Usage: "narrow to one source, by name or identifier"},
 				},
 				Action: runKnowledgeSearch,
@@ -732,7 +737,7 @@ func runAgentGraphSearch(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	found, err := client.SearchAgentGraph(ctx, connection, strings.Join(command.Args().Slice(), " "), int(command.Int("first")))
+	found, err := client.SearchAgentGraph(ctx, connection, strings.Join(command.Args().Slice(), " "), int(command.Int("first")), int(command.Int("offset")))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -753,7 +758,22 @@ func runAgentGraphSearch(ctx context.Context, command *cli.Command) error {
 	for _, row := range found.Facts {
 		_, _ = fmt.Fprintf(command.Writer, "%s#%d %s\n", row.Path, row.Fact.Number, row.Fact.Text)
 	}
+	if found.NextOffset > 0 {
+		_, _ = fmt.Fprintf(command.Writer, "\n… %s and %s match; search again with --offset %d\n",
+			countMore(found.MoreNodeCount, found.IsMoreNodeCountLowerBound, "pages"),
+			countMore(found.MoreFactCount, found.IsMoreFactCountLowerBound, "facts"), found.NextOffset)
+	}
 	return nil
+}
+
+// countMore is "12 more facts", or "at least 12 more facts" where the
+// search stopped counting.
+func countMore(count int, isLowerBound bool, what string) string {
+	more := fmt.Sprintf("%d more %s", count, what)
+	if isLowerBound {
+		more = "at least " + more
+	}
+	return more
 }
 
 func runAgentGraphNote(ctx context.Context, command *cli.Command) error {
@@ -1121,7 +1141,7 @@ func runKnowledgeSearch(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	found, err := client.SearchAgentDocuments(ctx, connection,
-		strings.Join(command.Args().Slice(), " "), int(command.Int("first")), command.String("source"))
+		strings.Join(command.Args().Slice(), " "), int(command.Int("first")), int(command.Int("offset")), command.String("source"))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -1129,6 +1149,10 @@ func runKnowledgeSearch(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(found)
 	}
 	if found == nil || (len(found.Passages) == 0 && len(found.Definitions) == 0) {
+		if command.Int("offset") > 0 {
+			_, _ = fmt.Fprintf(command.Writer, "no passages past the first %d\n", command.Int("offset"))
+			return nil
+		}
 		_, _ = fmt.Fprintln(command.Writer, "nothing in what has been indexed is about that")
 		return nil
 	}
@@ -1158,6 +1182,10 @@ func runKnowledgeSearch(ctx context.Context, command *cli.Command) error {
 	}
 	if !found.Meaningful {
 		_, _ = fmt.Fprintln(command.Writer, "(found by words alone; this deployment cannot search by meaning)")
+	}
+	if found.NextOffset > 0 {
+		_, _ = fmt.Fprintf(command.Writer, "… %s; search again with --offset %d\n",
+			countMore(found.MoreCount, found.IsMoreCountLowerBound, "passages"), found.NextOffset)
 	}
 	return nil
 }

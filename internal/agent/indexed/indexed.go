@@ -11,6 +11,7 @@ package indexed
 
 import (
 	"context"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -48,6 +49,15 @@ const (
 	// Sixty is what the method was published with, and what the graph's
 	// own fusion uses.
 	fuseConstant = 60
+
+	// wordsPoolFirst and meaningPoolFirst are how many passages the
+	// first round of a search reads by words and by meaning, before the
+	// two are fused. Each further round reads twice as many as the one
+	// before. They are what a search of SearchLimit passages has always
+	// read, and they do not depend on the page asked for, so the first
+	// page of a search is ranked the same way whichever page is asked.
+	wordsPoolFirst   = SearchLimit * 4
+	meaningPoolFirst = SearchLimit * 2
 )
 
 // Meaning is the half of a search that knows what a passage means rather
@@ -77,6 +87,10 @@ type Query struct {
 
 	// Limit is how many passages to answer with; zero is SearchLimit.
 	Limit int
+
+	// Offset is how many passages of the ranking to pass over, to read
+	// the page after one already shown; zero is the first page.
+	Offset int
 }
 
 // Passage is one passage a search found, with everything needed to cite
@@ -144,6 +158,19 @@ type Found struct {
 	// model, or one whose database cannot rank vectors: what the words
 	// find, which misses a paraphrase sharing no word.
 	Meaningful bool `json:"meaningful"`
+
+	// Offset is how many passages of the ranking came before these.
+	Offset int `json:"offset"`
+
+	// MoreCount is how many passages the search found past these, which
+	// the next offset reads. Where IsMoreCountLowerBound is set the
+	// search stopped counting there and there are at least that many.
+	MoreCount             int  `json:"moreCount"`
+	IsMoreCountLowerBound bool `json:"isMoreCountLowerBound"`
+
+	// NextOffset is the offset that reads the passages after these, and
+	// zero where there are none.
+	NextOffset int `json:"nextOffset"`
 }
 
 // Extract is a document and a slice of its text.
@@ -176,6 +203,11 @@ type Extract struct {
 // Search finds passages, and the definitions of any identifier among the
 // words.
 //
+// A page past the first is the same ranking read on from its offset, so
+// that pages read one after another show every passage once, in order.
+// The definitions are answered with the first page only: they are exact
+// lookups, the same on every page.
+//
 // The transaction reads the passages, the documents and the sources; the
 // Meaning, where there is one, opens a connection of its own, as it does
 // in a turn.
@@ -192,20 +224,37 @@ func Search(ctx context.Context, tx db.Transaction, meaning Meaning, agentId str
 	if limit > SearchMost {
 		limit = SearchMost
 	}
+	offset := max(query.Offset, 0)
+	found.Offset = offset
 
-	definitions, err := lookUpSymbols(tx, agentId, words)
-	if err != nil {
-		return nil, err
+	if offset == 0 {
+		definitions, err := lookUpSymbols(tx, agentId, words)
+		if err != nil {
+			return nil, err
+		}
+		found.Definitions = definitions
 	}
-	found.Definitions = definitions
 
-	ranked, meaningful, err := findChunks(ctx, tx, meaning, agentId, query.SourceIds, words, limit)
+	// Ranked past this page by another page's worth, so that the line
+	// saying what is left can say how many rather than only that there
+	// is more.
+	ordered, isComplete, meaningful, err := findChunks(ctx, tx, meaning, agentId, query.SourceIds, words, offset+limit*2)
 	if err != nil {
 		return nil, err
 	}
 	found.Meaningful = meaningful
-	if len(ranked) == 0 {
+	if offset >= len(ordered) {
 		return found, nil
+	}
+	end := min(offset+limit, len(ordered))
+	ranked := ordered[offset:end]
+	// What is left is what paging can still read: a passage the meaning
+	// passed over for being too far from the question is in no list, and
+	// is not counted.
+	found.MoreCount = len(ordered) - end
+	found.IsMoreCountLowerBound = !isComplete
+	if found.MoreCount > 0 || !isComplete {
+		found.NextOffset = end
 	}
 
 	documents, err := documentsOf(tx, agentId, ranked)
@@ -302,35 +351,70 @@ type scored struct {
 }
 
 // findChunks is the hybrid search: words, and meaning where the
-// deployment can say what a passage means.
+// deployment can say what a passage means. It answers with the ranking
+// from the top to at least wanted passages, or to the last if there are
+// fewer, and whether that is every passage the search can find.
 //
 // Where the database can rank vectors itself the two are separate
 // searches fused by rank. Where it cannot, meaning re-ranks what the
 // words found, which is honest and bounded: it finds everything the words
 // find, in a better order, and misses a paraphrase sharing no word.
-func findChunks(ctx context.Context, tx db.Transaction, meaning Meaning, agentId string, sourceIds []string, words string, limit int) ([]*scored, bool, error) {
-	byWords, err := tx.SearchAgentChunks(agentId, sourceIds, words, limit*4)
-	if err != nil {
-		return nil, false, err
+//
+// The search goes in rounds. The first reads wordsPoolFirst passages by
+// words and meaningPoolFirst by meaning and ranks them; each round after
+// reads twice as many, ranks them the same way, and adds whatever the
+// rounds before did not have, in its own order, behind them. A fused
+// ranking of deeper lists is a different ranking, so a page read from it
+// could repeat what the page before showed or skip what it did not; a
+// round is ranked from lists of a fixed depth whatever page is asked for,
+// so every page is a slice of one list.
+func findChunks(ctx context.Context, tx db.Transaction, meaning Meaning, agentId string, sourceIds []string, words string, wanted int) ([]*scored, bool, bool, error) {
+	var ordered []*scored
+	seen := map[string]bool{}
+	isMeaningful := false
+	for round := 0; ; round++ {
+		wordsDepth := wordsPoolFirst << round
+		meaningDepth := meaningPoolFirst << round
+		byWords, err := tx.SearchAgentChunks(agentId, sourceIds, words, wordsDepth)
+		if err != nil {
+			return nil, false, false, err
+		}
+		// A list shorter than was asked for is all there is. For the
+		// meaning that includes what the similarity floor left out, which
+		// no deeper read would bring back either.
+		isComplete := len(byWords) < wordsDepth
+		var ranked []*scored
+		switch byMeaning, hasVectorIndex := searchByMeaning(ctx, meaning, sourceIds, words, meaningDepth); {
+		case meaning == nil:
+			ranked = rank(byWords)
+		case !hasVectorIndex:
+			// No index: re-rank what the words found, rather than reading
+			// a hundred thousand vectors into memory to sort them.
+			ranked = rank(meaning.RankChunksByMeaning(ctx, words, byWords, len(byWords)))
+			isMeaningful = len(byWords) > 0
+		default:
+			ranked = fuse(byMeaning, byWords)
+			isComplete = isComplete && len(byMeaning) < meaningDepth
+			isMeaningful = true
+		}
+		for _, found := range ranked {
+			if !seen[found.chunk.ID] {
+				seen[found.chunk.ID] = true
+				ordered = append(ordered, found)
+			}
+		}
+		if isComplete || len(ordered) >= wanted {
+			return ordered, isComplete, isMeaningful, nil
+		}
 	}
-	if meaning == nil {
-		return rank(cutTo(byWords, limit)), false, nil
-	}
-	byMeaning, hasVectorIndex := meaning.SearchKnowledgeByMeaning(ctx, sourceIds, words, limit*2)
-	if !hasVectorIndex {
-		// No index: re-rank what the words found, rather than reading a
-		// hundred thousand vectors into memory to sort them.
-		reranked := meaning.RankChunksByMeaning(ctx, words, byWords, limit)
-		return rank(cutTo(reranked, limit)), len(byWords) > 0, nil
-	}
-	return fuse(limit, byMeaning, byWords), true, nil
 }
 
-func cutTo(chunks []*models.AgentChunk, limit int) []*models.AgentChunk {
-	if len(chunks) > limit {
-		return chunks[:limit]
+// searchByMeaning is the meaning's own list, where there is a meaning.
+func searchByMeaning(ctx context.Context, meaning Meaning, sourceIds []string, words string, limit int) ([]*models.AgentChunk, bool) {
+	if meaning == nil {
+		return nil, false
 	}
-	return chunks
+	return meaning.SearchKnowledgeByMeaning(ctx, sourceIds, words, limit)
 }
 
 // rank scores a single list by position, on the same scale the fusion
@@ -346,7 +430,9 @@ func rank(chunks []*models.AgentChunk) []*scored {
 
 // fuse ranks what two searches found by reciprocal rank: position rather
 // than score, because a full-text rank and a cosine are not on one scale.
-func fuse(limit int, lists ...[]*models.AgentChunk) []*scored {
+// Two at the same score go by identifier, so the same lists are always
+// fused into the same order.
+func fuse(lists ...[]*models.AgentChunk) []*scored {
 	scores := map[string]float64{}
 	byId := map[string]*models.AgentChunk{}
 	var order []string
@@ -359,18 +445,14 @@ func fuse(limit int, lists ...[]*models.AgentChunk) []*scored {
 			byId[chunk.ID] = chunk
 		}
 	}
-	for index := 0; index < len(order); index++ {
-		for other := index + 1; other < len(order); other++ {
-			if scores[order[other]] > scores[order[index]] {
-				order[index], order[other] = order[other], order[index]
-			}
+	sort.SliceStable(order, func(left, right int) bool {
+		if scores[order[left]] != scores[order[right]] {
+			return scores[order[left]] > scores[order[right]]
 		}
-	}
-	ranked := make([]*scored, 0, limit)
+		return order[left] < order[right]
+	})
+	ranked := make([]*scored, 0, len(order))
 	for _, id := range order {
-		if len(ranked) >= limit {
-			break
-		}
 		ranked = append(ranked, &scored{chunk: byId[id], score: scores[id]})
 	}
 	return ranked

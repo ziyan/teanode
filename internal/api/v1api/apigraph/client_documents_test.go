@@ -72,6 +72,7 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"SetAgentKnowledgeSourceSecret":   client.DocumentSetAgentKnowledgeSourceSecret,
 		"ClearAgentKnowledgeSourceSecret": client.DocumentClearAgentKnowledgeSourceSecret,
 		"SearchAgentDocuments":            client.DocumentSearchAgentDocuments,
+		"SearchAgentGraph":                client.DocumentSearchAgentGraph,
 		"ReadAgentDocument":               client.DocumentReadAgentDocument,
 		"RecallAgentMemory":               client.DocumentRecallAgentMemory,
 		"EvaluateAgentAnswer":             client.DocumentEvaluateAgentAnswer,
