@@ -61,11 +61,12 @@ export type FinanceTransaction = {
   // The provider's whole object for the transaction, as it arrived: text
   // from outside, to be shown and never interpreted.
   providerMetadata?: unknown
+  // A transaction is a transfer between the person's own accounts when its
+  // spending category is the transfer category (isTransfer on it), and
+  // categorizedBy says what put it there.
   spendingCategoryId?: string | null
   categorizedBy?: string | null
   categorizationConfidence?: string | null
-  isTransfer: boolean
-  transferMarkedBy?: string | null
   createdAt: string
   modifiedAt: string
 }
@@ -81,6 +82,9 @@ export type SpendingCategory = {
   parentSpendingCategoryId?: string | null
   isIncome: boolean
   isHidden: boolean
+  // The built-in transfer category: neither spending nor income, and it
+  // cannot be deleted.
+  isTransfer: boolean
 }
 
 export type SpendingRule = {
@@ -89,8 +93,7 @@ export type SpendingRule = {
   financeAccountId?: string | null
   minimumAmount?: string | null
   maximumAmount?: string | null
-  spendingCategoryId?: string | null
-  isTransfer: boolean
+  spendingCategoryId: string
   rulePriority: number
 }
 
@@ -497,7 +500,7 @@ export const CREDIT_USAGE = `query {
 // transaction to fetch it with when the dialog opens.
 const TRANSACTION_FIELDS = `id financeAccountId providerTransactionId postedOn transactedAt amount currencyCode
   description merchantName providerCategoryPrimary providerCategoryDetailed isPending pendingProviderTransactionId
-  providerMetadata spendingCategoryId categorizedBy categorizationConfidence isTransfer transferMarkedBy
+  providerMetadata spendingCategoryId categorizedBy categorizationConfidence
   createdAt modifiedAt`
 
 export const FINANCE_TRANSACTIONS = `query ($from: String, $to: String, $financeAccountId: String, $text: String,
@@ -516,10 +519,6 @@ export const CATEGORIZE_TRANSACTION = `mutation ($financeTransactionId: String!,
     financeTransaction { ${TRANSACTION_FIELDS} }
     spendingRule { id matchText }
   }
-}`
-
-export const MARK_TRANSFER = `mutation ($financeTransactionId: String!, $isTransfer: Boolean!) {
-  MarkTransfer(financeTransactionId: $financeTransactionId, isTransfer: $isTransfer) { ${TRANSACTION_FIELDS} }
 }`
 
 // --- spending --------------------------------------------------------------
@@ -568,7 +567,7 @@ export const CASH_FLOW = `query ($fromMonth: String, $toMonth: String) {
 // --- budgets, spending categories and spending rules ------------------------
 
 export const SPENDING_CATEGORIES = `query {
-  SpendingCategories { id spendingCategoryName parentSpendingCategoryId isIncome isHidden }
+  SpendingCategories { id spendingCategoryName parentSpendingCategoryId isIncome isHidden isTransfer }
 }`
 
 export const CREATE_SPENDING_CATEGORY = `mutation ($spendingCategoryName: String!, $parentSpendingCategoryId: String,
@@ -588,21 +587,20 @@ export const DELETE_SPENDING_CATEGORY = `mutation ($spendingCategoryId: String!)
 }`
 
 export const SPENDING_RULES = `query {
-  SpendingRules { id matchText financeAccountId minimumAmount maximumAmount spendingCategoryId isTransfer rulePriority }
+  SpendingRules { id matchText financeAccountId minimumAmount maximumAmount spendingCategoryId rulePriority }
 }`
 
 export const CREATE_SPENDING_RULE = `mutation ($matchText: String!, $financeAccountId: String, $minimumAmount: String,
-  $maximumAmount: String, $spendingCategoryId: String, $isTransfer: Boolean, $rulePriority: Int) {
+  $maximumAmount: String, $spendingCategoryId: String!, $rulePriority: Int) {
   CreateSpendingRule(matchText: $matchText, financeAccountId: $financeAccountId, minimumAmount: $minimumAmount,
-    maximumAmount: $maximumAmount, spendingCategoryId: $spendingCategoryId, isTransfer: $isTransfer,
-    rulePriority: $rulePriority) { id }
+    maximumAmount: $maximumAmount, spendingCategoryId: $spendingCategoryId, rulePriority: $rulePriority) { id }
 }`
 
 export const UPDATE_SPENDING_RULE = `mutation ($spendingRuleId: String!, $matchText: String, $financeAccountId: String,
-  $minimumAmount: String, $maximumAmount: String, $spendingCategoryId: String, $isTransfer: Boolean, $rulePriority: Int) {
+  $minimumAmount: String, $maximumAmount: String, $spendingCategoryId: String, $rulePriority: Int) {
   UpdateSpendingRule(spendingRuleId: $spendingRuleId, matchText: $matchText, financeAccountId: $financeAccountId,
     minimumAmount: $minimumAmount, maximumAmount: $maximumAmount, spendingCategoryId: $spendingCategoryId,
-    isTransfer: $isTransfer, rulePriority: $rulePriority) { id }
+    rulePriority: $rulePriority) { id }
 }`
 
 export const DELETE_SPENDING_RULE = `mutation ($spendingRuleId: String!) { DeleteSpendingRule(spendingRuleId: $spendingRuleId) }`

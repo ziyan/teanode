@@ -30,6 +30,7 @@ const BUILT_IN_SPENDING_CATEGORY_KEYS: Record<string, Key> = {
   education: 'finance.builtInSpendingCategory.education',
   children: 'finance.builtInSpendingCategory.children',
   'business services': 'finance.builtInSpendingCategory.businessServices',
+  transfer: 'finance.builtInSpendingCategory.transfer',
 }
 
 // spendingCategoryDisplayName is how a stored spending category name is

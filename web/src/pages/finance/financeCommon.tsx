@@ -140,16 +140,28 @@ export function spendingCategoryLabel(
 
 // spendingCategoryOptions is every spending category that can be chosen,
 // by its id, sorted by the name shown, hidden ones left out unless already
-// chosen.
+// chosen. The transfer category comes last, under transferGroup when one
+// is given, so it reads as what it is: not one more kind of spending.
 export function spendingCategoryOptions(
   categories: SpendingCategory[],
   displayName: (name: string) => string,
   chosen?: string | null,
-): { value: string; label: string }[] {
-  return categories
-    .filter((category) => !category.isHidden || category.id === chosen)
-    .map((category) => ({ value: category.id, label: spendingCategoryLabel(category, categories, displayName) }))
-    .sort((left, right) => left.label.localeCompare(right.label))
+  transferGroup?: string,
+): { value: string; label: string; group?: string }[] {
+  const shown = categories.filter((category) => !category.isHidden || category.id === chosen)
+  const option = (category: SpendingCategory) => ({
+    value: category.id,
+    label: spendingCategoryLabel(category, categories, displayName),
+  })
+  return [
+    ...shown
+      .filter((category) => !category.isTransfer)
+      .map(option)
+      .sort((left, right) => left.label.localeCompare(right.label)),
+    ...shown
+      .filter((category) => category.isTransfer)
+      .map((category) => (transferGroup ? { ...option(category), group: transferGroup } : option(category))),
+  ]
 }
 
 // CurrencyPicker is a currency code: one of those with an exchange rate,
@@ -208,7 +220,6 @@ export function useFinanceWords() {
     incomePace: (value?: string | null) => word('finance.incomePace', value),
     savingPace: (value?: string | null) => word('finance.savingPace', value),
     categorizedBy: (value?: string | null) => word('finance.categorizedBy', value),
-    transferMarkedBy: (value?: string | null) => word('finance.transferMarkedBy', value),
     targetMeasure: (value?: string | null) => word('finance.targetMeasure', value),
     securityKind: (value?: string | null) => word('finance.securityKind', value),
     tradeKind: (value?: string | null) => word('finance.tradeKind', value),

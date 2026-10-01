@@ -16,9 +16,9 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// Budgets: spending categories and rules, categorizing and transfers,
-// budgets and their status, spending by day, cash flow and savings
-// targets. Part of the finance area (FinanceQuery, FinanceMutation).
+// Budgets: spending categories and rules, categorizing (transfers being
+// the transfer category), budgets and their status, spending by day, cash
+// flow and savings targets. Part of the finance area (FinanceQuery, FinanceMutation).
 
 // CategorizeTransactionView is the finance transaction as categorized, and
 // the spending rule made for its merchant when one was asked for.
@@ -120,13 +120,13 @@ type SpendingRuleArguments struct {
 }
 
 // CreateSpendingRuleArguments describe a new spending rule. It assigns a
-// spending category, marks transfers, or both.
+// spending category; the transfer category marks what it matches as
+// transfers.
 type CreateSpendingRuleArguments struct {
 	// MatchText is matched case-insensitively within the merchant, or the
 	// description when there is no merchant.
 	MatchText          string `json:"matchText"`
-	SpendingCategoryID string `json:"spendingCategoryId" graphapi:"nullable"`
-	IsTransfer         *bool  `json:"isTransfer" graphapi:"nullable"`
+	SpendingCategoryID string `json:"spendingCategoryId"`
 
 	// FinanceAccountID limits it to one finance account; MinimumAmount and
 	// MaximumAmount bound the signed amount.
@@ -145,7 +145,6 @@ type UpdateSpendingRuleArguments struct {
 	SpendingRuleID     string  `json:"spendingRuleId"`
 	MatchText          *string `json:"matchText" graphapi:"nullable"`
 	SpendingCategoryID *string `json:"spendingCategoryId" graphapi:"nullable"`
-	IsTransfer         *bool   `json:"isTransfer" graphapi:"nullable"`
 	FinanceAccountID   *string `json:"financeAccountId" graphapi:"nullable"`
 	MinimumAmount      *string `json:"minimumAmount" graphapi:"nullable"`
 	MaximumAmount      *string `json:"maximumAmount" graphapi:"nullable"`
@@ -159,12 +158,6 @@ type CategorizeTransactionArguments struct {
 	FinanceTransactionID     string `json:"financeTransactionId"`
 	SpendingCategoryID       string `json:"spendingCategoryId" graphapi:"nullable"`
 	ShouldCreateSpendingRule *bool  `json:"shouldCreateSpendingRule" graphapi:"nullable"`
-}
-
-// MarkTransferArguments mark a finance transaction as a transfer or not.
-type MarkTransferArguments struct {
-	FinanceTransactionID string `json:"financeTransactionId"`
-	IsTransfer           bool   `json:"isTransfer"`
 }
 
 // SetBudgetArguments are a spending category's monthly amount, its
@@ -381,9 +374,6 @@ func (self *graph) CreateSpendingRule(ctx context.Context, arguments CreateSpend
 		AgentID: found.ID, MatchText: strings.TrimSpace(arguments.MatchText),
 		SpendingCategoryID: strings.TrimSpace(arguments.SpendingCategoryID), FinanceAccountID: strings.TrimSpace(arguments.FinanceAccountID),
 	}
-	if arguments.IsTransfer != nil {
-		spendingRule.IsTransfer = *arguments.IsTransfer
-	}
 	if spendingRule.MinimumAmount, err = optionalAmountArgument("minimumAmount", arguments.MinimumAmount); err != nil {
 		return nil, err
 	}
@@ -424,9 +414,6 @@ func (self *graph) UpdateSpendingRule(ctx context.Context, arguments UpdateSpend
 		}
 		if arguments.SpendingCategoryID != nil {
 			spendingRule.SpendingCategoryID = strings.TrimSpace(*arguments.SpendingCategoryID)
-		}
-		if arguments.IsTransfer != nil {
-			spendingRule.IsTransfer = *arguments.IsTransfer
 		}
 		if arguments.FinanceAccountID != nil {
 			spendingRule.FinanceAccountID = strings.TrimSpace(*arguments.FinanceAccountID)
@@ -540,25 +527,6 @@ func (self *graph) CategorizeTransaction(ctx context.Context, arguments Categori
 		return nil, err
 	}
 	return view, nil
-}
-
-func (self *graph) MarkTransfer(ctx context.Context, arguments MarkTransferArguments) (*models.FinanceTransaction, error) {
-	_, found, err := self.requireAgentPerson(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := self.requireFinanceOffered(); err != nil {
-		return nil, err
-	}
-	tx := self.writing(ctx)
-	financeTransaction, err := ownFinanceTransaction(tx, found.ID, arguments.FinanceTransactionID)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := tx.MarkFinanceTransactionTransfer(found.ID, financeTransaction.ID, arguments.IsTransfer, models.TransferMarkedByPerson); err != nil {
-		return nil, financeError(err)
-	}
-	return tx.GetFinanceTransaction(found.ID, financeTransaction.ID)
 }
 
 // --- budgets ------------------------------------------------------------

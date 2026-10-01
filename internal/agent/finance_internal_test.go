@@ -127,6 +127,21 @@ func (self *financeFixture) run() *Run {
 	return &Run{Agent: self.agent, Owner: self.owner, Now: time.Now(), settings: self.worker.settings}
 }
 
+// transferCategoryId is the agent's transfer category: a finance
+// transaction in it is a transfer.
+func (self *financeFixture) transferCategoryId(t *testing.T) string {
+	t.Helper()
+	var transferCategoryId string
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		transferCategory, err := tx.EnsureTransferSpendingCategory(self.agent.ID)
+		if err != nil {
+			t.Fatalf("EnsureTransferSpendingCategory: %s", err)
+		}
+		transferCategoryId = transferCategory.ID
+	})
+	return transferCategoryId
+}
+
 // sync runs the finance source's ingest job once, on the source as it is
 // stored now.
 func (self *financeFixture) sync(t *testing.T) *models.AgentKnowledgeSource {

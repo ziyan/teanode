@@ -23,11 +23,13 @@ export function providerMetadataText(providerMetadata: unknown): string {
 
 // FinanceTransactionDialog is everything known about one finance
 // transaction: what the list shows, what it leaves out (the provider's
-// categories and ids, who decided its spending category and its transfer
-// mark, when it was added and changed), and the provider's whole record of
-// it. The spending category can be changed here as in the row. What the
-// provider wrote is shown as text and nothing else: it comes from whoever
-// charged the account.
+// categories and ids, who decided its spending category, when it was added
+// and changed), and the provider's whole record of it. The spending
+// category can be changed here as in the row; a transfer is the transfer
+// category, and the line under it says what made it one (paired with the
+// other side, the provider, a rule or the person). What the provider wrote
+// is shown as text and nothing else: it comes from whoever charged the
+// account.
 export function FinanceTransactionDialog({
   financeTransaction,
   financeAccount,
@@ -115,14 +117,6 @@ export function FinanceTransactionDialog({
             {property(t('finance.providerCategoryDetailed'), financeTransaction.providerCategoryDetailed, 'mono')}
             {property(t('finance.pending'), yesOrNo(financeTransaction.isPending))}
             {property(t('finance.replacedPending'), financeTransaction.pendingProviderTransactionId, 'mono')}
-            {property(
-              t('finance.transfer'),
-              financeTransaction.isTransfer || financeTransaction.transferMarkedBy
-                ? [yesOrNo(financeTransaction.isTransfer), words.transferMarkedBy(financeTransaction.transferMarkedBy)]
-                    .filter(Boolean)
-                    .join(' · ')
-                : yesOrNo(false),
-            )}
             {property(t('finance.providerTransactionId'), financeTransaction.providerTransactionId, 'mono')}
             {property(t('finance.createdAt'), formatTime(financeTransaction.createdAt))}
             {property(t('finance.modifiedAt'), formatTime(financeTransaction.modifiedAt))}

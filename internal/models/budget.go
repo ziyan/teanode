@@ -8,17 +8,22 @@ type CategorizedBy string
 // Who may categorize, in the order they are asked: the person, then their
 // spending rules, then the fixed mapping from provider categories, then
 // the categorize model. What the person chose nothing else overwrites.
+// Transfer detection, pairing money out of one account with the same
+// amount into another, gives only the transfer category, and a transfer
+// it or the mapping gave is not taken over by a spending rule.
 const (
 	CategorizedByPerson                  CategorizedBy = "person"
 	CategorizedBySpendingRule            CategorizedBy = "spending_rule"
 	CategorizedByProviderCategoryMapping CategorizedBy = "provider_category_mapping"
 	CategorizedByCategorizeModel         CategorizedBy = "categorize_model"
+	CategorizedByTransferDetection       CategorizedBy = "transfer_detection"
 )
 
-// IsValid says it is one of the four.
+// IsValid says it is one of the five.
 func (self CategorizedBy) IsValid() bool {
 	switch self {
-	case CategorizedByPerson, CategorizedBySpendingRule, CategorizedByProviderCategoryMapping, CategorizedByCategorizeModel:
+	case CategorizedByPerson, CategorizedBySpendingRule, CategorizedByProviderCategoryMapping, CategorizedByCategorizeModel,
+		CategorizedByTransferDetection:
 		return true
 	}
 	return false
@@ -40,12 +45,18 @@ type SpendingCategory struct {
 	IsIncome bool `json:"isIncome"`
 	IsHidden bool `json:"isHidden"`
 
+	// IsTransfer says it is the agent's transfer category, built in and
+	// one per agent: a finance transaction in it moved money between the
+	// person's own accounts and is neither spending nor income. It cannot
+	// be deleted, be income, or have a parent or children.
+	IsTransfer bool `json:"isTransfer"`
+
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
 }
 
-// SpendingRule assigns a spending category, or marks a transfer, to the
-// finance transactions that match it.
+// SpendingRule assigns a spending category to the finance transactions
+// that match it; the transfer category marks them transfers.
 type SpendingRule struct {
 	ID      string `json:"id"`
 	AgentID string `json:"agentId"`
@@ -61,10 +72,8 @@ type SpendingRule struct {
 	MinimumAmount    string `json:"minimumAmount,omitempty" graphapi:"nullable"`
 	MaximumAmount    string `json:"maximumAmount,omitempty" graphapi:"nullable"`
 
-	// SpendingCategoryID is what it assigns; IsTransfer marks matches as
-	// transfers. At least one of the two.
-	SpendingCategoryID string `json:"spendingCategoryId,omitempty" graphapi:"nullable"`
-	IsTransfer         bool   `json:"isTransfer"`
+	// SpendingCategoryID is what it assigns.
+	SpendingCategoryID string `json:"spendingCategoryId"`
 
 	// RulePriority orders the rules: the lowest that matches wins.
 	RulePriority int `json:"rulePriority"`

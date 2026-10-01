@@ -151,16 +151,17 @@ func TestStatementImportDeduplicatesByFITID(t *testing.T) {
 	purchase := transactions["aaaa0001-0000-0000-0000-000000000001"]
 	payment := transactions["aaaa0001-0000-0000-0000-000000000002"]
 	refund := transactions["aaaa0001-0000-0000-0000-000000000003"]
-	if purchase.Amount != "-23.4000" || purchase.Description != "INVENTED COFFEE ROASTERS LTD" || purchase.IsTransfer {
+	transferCategoryId := fixture.transferCategoryId(t)
+	if purchase.Amount != "-23.4000" || purchase.Description != "INVENTED COFFEE ROASTERS LTD" || purchase.SpendingCategoryID == transferCategoryId {
 		t.Errorf("purchase %+v", purchase)
 	}
 	// A payment to the card is a transfer: neither spending nor income.
-	if payment.Amount != "150.0000" || !payment.IsTransfer {
+	if payment.Amount != "150.0000" || payment.SpendingCategoryID != transferCategoryId || payment.CategorizedBy != models.CategorizedByProviderCategoryMapping {
 		t.Errorf("payment %+v", payment)
 	}
 	// A refund is money in on the card, left for the categorize model to
 	// place against what it refunds.
-	if refund.Amount != "12.0000" || refund.IsTransfer {
+	if refund.Amount != "12.0000" || refund.SpendingCategoryID == transferCategoryId {
 		t.Errorf("refund %+v", refund)
 	}
 

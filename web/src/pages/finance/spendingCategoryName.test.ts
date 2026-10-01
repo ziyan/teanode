@@ -28,4 +28,6 @@ it('leaves a name the person chose as they wrote it', () => {
 it('names the later built-in categories too', () => {
   expect(spendingCategoryDisplayName('children', english)).toBe('Kids')
   expect(spendingCategoryDisplayName('taxes', english)).toBe('Taxes')
+  expect(spendingCategoryDisplayName('transfer', english)).toBe('Transfer')
+  expect(spendingCategoryDisplayName('transfer', (key) => ja[key])).toBe('振替')
 })

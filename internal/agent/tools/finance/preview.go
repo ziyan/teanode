@@ -86,6 +86,13 @@ func (self *previewLookup) spendingCategoryFor(idOrName string) *client.Spending
 	return nil
 }
 
+// isTransferSpendingCategory says the spending category is the transfer
+// category; false when it cannot be read.
+func (self *previewLookup) isTransferSpendingCategory(idOrName string) bool {
+	spendingCategory := self.spendingCategoryFor(idOrName)
+	return spendingCategory != nil && spendingCategory.IsTransfer
+}
+
 // isIncomeSpendingCategory says the spending category is income, whose
 // budget is the income expected rather than a limit; false when it cannot
 // be read.
@@ -215,12 +222,10 @@ func (self *previewLookup) transaction(financeTransactionId string) string {
 func (self *previewLookup) ruleEffect(call map[string]any) string {
 	spendingCategoryId := text(call, "spending_category_id")
 	switch {
-	case spendingCategoryId != "" && isTrue(call, "is_transfer"):
-		return "files it under " + self.spendingCategoryName(spendingCategoryId) + " and marks it a transfer"
+	case self.isTransferSpendingCategory(spendingCategoryId):
+		return "marks it a transfer between their own accounts"
 	case spendingCategoryId != "":
 		return "files it under " + self.spendingCategoryName(spendingCategoryId)
-	case isTrue(call, "is_transfer"):
-		return "marks it a transfer"
 	}
 	return "files it under no spending category"
 }

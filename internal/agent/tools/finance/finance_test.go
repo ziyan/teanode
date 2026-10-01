@@ -798,3 +798,50 @@ func TestFinanceToolDoesNotSyncTheStatementSource(test *testing.T) {
 		}
 	}
 }
+
+// Transfer is a spending category to the tool too: named transfer, it
+// marks a transaction a transfer through categorize_transaction, a rule
+// can assign it, and the cards say transfer rather than filing it. There
+// is no operation of its own for it any more.
+func TestFinanceToolMarksATransferByItsSpendingCategory(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"SpendingCategories":    `[{"id":"category-dining","spendingCategoryName":"dining"},{"id":"category-transfer","spendingCategoryName":"transfer","isTransfer":true}]`,
+		"FinanceTransactions":   `{"financeTransactions":[{"id":"transaction-one","postedOn":"2026-09-12","amount":"-500","currencyCode":"USD","description":"ONLINE PAYMENT"}],"nextCursor":""}`,
+		"CategorizeTransaction": `{"financeTransaction":{"id":"transaction-one","spendingCategoryId":"category-transfer","categorizedBy":"person"}}`,
+		"CreateSpendingRule":    `{"id":"rule-one","matchText":"online payment","spendingCategoryId":"category-transfer"}`,
+	}}
+	if _, err := call(test, operations, `{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"Transfer"}`); err != nil {
+		test.Fatal(err)
+	}
+	if sent := operations.variables[len(operations.variables)-1]; sent["spendingCategoryId"] != "category-transfer" {
+		test.Errorf("sent %v", sent)
+	}
+	if _, err := call(test, operations, `{"operation":"create_spending_rule","match_text":"online payment","spending_category_id":"transfer"}`); err != nil {
+		test.Fatal(err)
+	}
+	if sent := operations.variables[len(operations.variables)-1]; sent["spendingCategoryId"] != "category-transfer" || sent["isTransfer"] != nil {
+		test.Errorf("sent %v", sent)
+	}
+	if _, err := call(test, operations, `{"operation":"create_spending_rule","match_text":"online payment"}`); err == nil {
+		test.Error("a spending rule with no spending category was sent")
+	}
+	if _, err := call(test, operations, `{"operation":"mark_transfer","finance_transaction_id":"transaction-one","is_transfer":true}`); err == nil {
+		test.Error("mark_transfer is still an operation")
+	}
+
+	ctx := tools.WithRun(context.Background(), &fakeRun{operations: operations})
+	tool := financeTool(test)
+	for arguments, wanted := range map[string]string{
+		`{"operation":"categorize_transaction","finance_transaction_id":"transaction-one","spending_category_id":"category-transfer"}`: "as a transfer between their own accounts",
+		`{"operation":"create_spending_rule","match_text":"online payment","spending_category_id":"category-transfer"}`:                "marks it a transfer",
+		`{"operation":"create_spending_rule","match_text":"bistro","spending_category_id":"category-dining"}`:                          `files it under "dining"`,
+	} {
+		if line := tool.PreviewLine(ctx, json.RawMessage(arguments)); !strings.Contains(line, wanted) {
+			test.Errorf("%s: the card %q does not say %s", arguments, line, wanted)
+		}
+	}
+	if properties := tool.Parameters["properties"].(map[string]any); properties["is_transfer"] != nil {
+		test.Error("is_transfer is still an argument")
+	}
+}

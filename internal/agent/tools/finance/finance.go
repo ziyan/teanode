@@ -51,7 +51,7 @@ type financeOperation struct {
 var (
 	rangeArguments      = []string{"from", "to"}
 	assetArguments      = []string{"asset_name", "asset_kind", "currency_code", "valuation_source"}
-	spendingRuleFields  = []string{"match_text", "spending_category_id", "is_transfer", "finance_account_id", "minimum_amount", "maximum_amount", "rule_priority"}
+	spendingRuleFields  = []string{"match_text", "spending_category_id", "finance_account_id", "minimum_amount", "maximum_amount", "rule_priority"}
 	savingsTargetFields = []string{"savings_target_name", "target_amount", "currency_code", "target_on", "target_measure", "starting_amount", "started_on", "asset_ids", "finance_account_ids"}
 )
 
@@ -188,7 +188,7 @@ var operations = map[string]*financeOperation{
 	},
 	"spending_rules": {graphqlOperation: "SpendingRules", risk: tools.RiskRead, isUntrusted: true},
 	"create_spending_rule": {
-		graphqlOperation: "CreateSpendingRule", risk: tools.RiskWrite, arguments: spendingRuleFields, required: []string{"match_text"}, isUntrusted: true,
+		graphqlOperation: "CreateSpendingRule", risk: tools.RiskWrite, arguments: spendingRuleFields, required: []string{"match_text", "spending_category_id"}, isUntrusted: true,
 		preview: func(lookup *previewLookup, call map[string]any) string {
 			return fmt.Sprintf("Add a spending rule for %q that %s, applied to past transactions too", text(call, "match_text"), lookup.ruleEffect(call))
 		},
@@ -197,7 +197,7 @@ var operations = map[string]*financeOperation{
 		graphqlOperation: "UpdateSpendingRule", risk: tools.RiskWrite, arguments: append([]string{"spending_rule_id"}, spendingRuleFields...), required: []string{"spending_rule_id"}, isUntrusted: true,
 		preview: func(lookup *previewLookup, call map[string]any) string {
 			line := "Change the spending rule for " + lookup.spendingRuleMatch(text(call, "spending_rule_id"))
-			if _, isGiven := call["spending_category_id"]; isGiven || isGivenBool(call, "is_transfer") {
+			if _, isGiven := call["spending_category_id"]; isGiven {
 				line += " so it " + lookup.ruleEffect(call)
 			}
 			return line + ", applied again to past transactions"
@@ -215,7 +215,9 @@ var operations = map[string]*financeOperation{
 		preview: func(lookup *previewLookup, call map[string]any) string {
 			transaction := lookup.transaction(text(call, "finance_transaction_id"))
 			line := "Categorize " + transaction
-			if spendingCategoryId := text(call, "spending_category_id"); spendingCategoryId != "" {
+			if spendingCategoryId := text(call, "spending_category_id"); lookup.isTransferSpendingCategory(spendingCategoryId) {
+				line = "Mark " + transaction + " as a transfer between their own accounts, neither spending nor income"
+			} else if spendingCategoryId != "" {
 				line += " as " + lookup.spendingCategoryName(spendingCategoryId)
 			} else {
 				line = "Take the spending category off " + transaction
@@ -224,17 +226,6 @@ var operations = map[string]*financeOperation{
 				line += ", and add a spending rule for its merchant, applied to past transactions too"
 			}
 			return line
-		},
-	},
-	"mark_transfer": {
-		graphqlOperation: "MarkTransfer", risk: tools.RiskWrite, isUntrusted: true,
-		arguments: []string{"finance_transaction_id", "is_transfer"}, required: []string{"finance_transaction_id", "is_transfer"},
-		preview: func(lookup *previewLookup, call map[string]any) string {
-			transaction := lookup.transaction(text(call, "finance_transaction_id"))
-			if isTrue(call, "is_transfer") {
-				return "Mark " + transaction + " as a transfer between their own accounts"
-			}
-			return "Mark " + transaction + " as not a transfer"
 		},
 	},
 	"budgets": {graphqlOperation: "Budgets", risk: tools.RiskRead},
@@ -388,8 +379,7 @@ func acceptedArguments(operation *financeOperation) []string {
 // spending into all of time, and a setting only the person may change, each
 // when sent with something in it. An argument the operation reads keeps
 // what was sent, since empty may mean something there (an empty spending
-// category takes one away, is_transfer false unmarks a transfer), except
-// null, which says nothing anywhere.
+// category takes one away), except null, which says nothing anywhere.
 func dropUnreadArguments(operation *financeOperation, asked map[string]any) {
 	isAccepted := map[string]bool{"operation": true}
 	for _, key := range acceptedArguments(operation) {
@@ -537,6 +527,11 @@ const description = "The person's money: their finance sources (logins at banks,
 	"- A savings plan: `cash_flow` for what they save a month now, `savings_targets` for what a target needs a month, `budget_status` and `spending_summary` for which spending categories could close the gap, with numbers.\n" +
 	"- A savings target on what they own: target_measure net_worth for everything, or asset_value with finance_account_ids for whole accounts (an investment account counts with every holding, those bought later too) and asset_ids only for assets outside a finance account.\n" +
 	"- After the person corrects a transaction's spending category with `categorize_transaction`, offer a spending rule for that merchant (`should_create_spending_rule`), which applies to past transactions too, never over their own choices.\n" +
+	"- Transfers: money moved between the person's own accounts (a card payment, savings) is the built-in spending category transfer (isTransfer in `spending_categories`), neither spending nor income; there is no separate transfer mark. " +
+	"Mark one with `categorize_transaction` and spending_category_id transfer; any other spending category takes the mark away. " +
+	"A spending rule can assign transfer like any spending category (`create_spending_rule` with match_text ONLINE PAYMENT and spending_category_id transfer), for past and future transactions. " +
+	"Pairing a card payment with its checking withdrawal and the provider's own transfer categories assign it too (categorizedBy transfer_detection or provider_category_mapping), and a spending rule does not take those over; the person's choice beats both. " +
+	"The transfer category cannot be deleted, made income or budgeted.\n" +
 	"- Tracking an account reachable only through a connected server: `create_asset` with valuation_source agent_reading if there is none (a value read now can go in the same call), then a daily schedule whose prompt calls that server's tool for the account's total and records it with `record_valuation` (valuation_source agent_reading). Never over an asset valued by finance_sync.\n" +
 	"- Estimating a house or a car: only for an asset with isEstimateAllowed, which only the person sets (on the dashboard's Finance page or with teanode finance update-asset). Search the web for its estimateDescription, read two to four pages that give a value or comparable sales, and `record_valuation` with valuation_source agent_estimate, estimate_low, estimate_high, the middle as value, the pages as evidence_urls and a valuation_note saying what it rests on. Where estimates are not allowed, say so and say where the person can allow them.\n" +
 	"- Converting currencies: `convert_currency` or `exchange_rate`, with from_currency_code, to_currency_code and rate_on for another day; the answer names the published day the rate is from."
@@ -561,8 +556,8 @@ func init() {
 					"minimum_amount":              tools.StringProperty("the least signed amount; money out is negative"),
 					"maximum_amount":              tools.StringProperty("the greatest signed amount"),
 					"provider_category":           tools.StringProperty("for transactions: the provider's category"),
-					"spending_category_id":        tools.StringProperty("a spending category, by its name or by the id spending_categories gives; for categorize_transaction empty takes it away"),
-					"is_uncategorized":            tools.BooleanProperty("for transactions: only the ones with no spending category that are not transfers"),
+					"spending_category_id":        tools.StringProperty("a spending category, by its name or by the id spending_categories gives; transfer marks a transfer between the person's own accounts; for categorize_transaction empty takes it away"),
+					"is_uncategorized":            tools.BooleanProperty("for transactions: only the ones with no spending category (a transfer has the transfer category)"),
 					"limit":                       tools.IntegerProperty("for transactions and trades: how many, at most 200"),
 					"after":                       tools.StringProperty("for transactions and trades: the nextCursor of the page before"),
 					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),
@@ -590,7 +585,6 @@ func init() {
 					"is_hidden":                   tools.BooleanProperty("leave the spending category out of lists and charts"),
 					"spending_rule_id":            tools.StringProperty("a spending rule, by the id spending_rules gives"),
 					"match_text":                  tools.StringProperty("what a spending rule matches within the merchant, or the description when there is none"),
-					"is_transfer":                 tools.BooleanProperty("a transfer between the person's own accounts, neither spending nor income"),
 					"rule_priority":               tools.IntegerProperty("the order a spending rule is tried in, lowest first"),
 					"should_create_spending_rule": tools.BooleanProperty("for categorize_transaction: also add a spending rule for its merchant, only when the person said yes"),
 					"monthly_amount":              tools.StringProperty("for set_budget: the amount a month, or on an income spending category the income expected a month; 0 ends the budget"),
@@ -668,12 +662,6 @@ func texts(call map[string]any, key string) []string {
 func isTrue(call map[string]any, key string) bool {
 	value, _ := call[key].(bool)
 	return value
-}
-
-// isGivenBool says a boolean argument was given at all.
-func isGivenBool(call map[string]any, key string) bool {
-	_, isBool := call[key].(bool)
-	return isBool
 }
 
 // renamedSuffix is ", renaming it <name>" when a new name is given.

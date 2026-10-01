@@ -74,6 +74,102 @@ func TestEnsureDefaultSpendingCategoriesOnce(t *testing.T) {
 	})
 }
 
+// Every agent has one transfer category from the start, built in: it
+// cannot be deleted, made income, put under a parent, given children or a
+// budget, and no second one can be made. It can be renamed and keeps
+// being the transfer category, since it is found by its flag.
+func TestTransferSpendingCategoryIsBuiltIn(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "transfer-category")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		spendingCategories, err := tx.ListSpendingCategories(fixture.agentId)
+		if err != nil || len(spendingCategories) != 1 || !spendingCategories[0].IsTransfer ||
+			spendingCategories[0].SpendingCategoryName != finance.SpendingCategoryTransfer || spendingCategories[0].IsIncome {
+			t.Fatalf("a new agent has the transfer category and nothing else: %v %+v", err, spendingCategories)
+		}
+		transferId := spendingCategories[0].ID
+		if createdCount, err := tx.EnsureDefaultSpendingCategories(fixture.agentId); err != nil || createdCount != len(finance.DefaultSpendingCategoryNames) {
+			t.Errorf("the transfer category does not stand in for the defaults: %v %d", err, createdCount)
+		}
+		if again, err := tx.EnsureTransferSpendingCategory(fixture.agentId); err != nil || again.ID != transferId {
+			t.Errorf("one transfer category per agent: %v %+v", err, again)
+		}
+		if err := tx.DeleteSpendingCategory(fixture.agentId, transferId); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("the transfer category cannot be deleted: %v", err)
+		}
+		if _, err := tx.UpdateSpendingCategory(fixture.agentId, transferId, func(spendingCategory *models.SpendingCategory) error {
+			spendingCategory.IsIncome = true
+			return nil
+		}); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("the transfer category cannot be income: %v", err)
+		}
+		byName := spendingCategoryIdsByName(t, tx, fixture.agentId)
+		if _, err := tx.UpdateSpendingCategory(fixture.agentId, transferId, func(spendingCategory *models.SpendingCategory) error {
+			spendingCategory.ParentSpendingCategoryID = byName[finance.SpendingCategoryOther]
+			return nil
+		}); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("the transfer category cannot have a parent: %v", err)
+		}
+		if _, err := tx.CreateSpendingCategory(&models.SpendingCategory{AgentID: fixture.agentId, SpendingCategoryName: "card payments",
+			ParentSpendingCategoryID: transferId}); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("the transfer category cannot have children: %v", err)
+		}
+		if _, err := tx.UpdateSpendingCategory(fixture.agentId, byName[finance.SpendingCategoryOther], func(spendingCategory *models.SpendingCategory) error {
+			spendingCategory.IsTransfer = true
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateSpendingCategory: %s", err)
+		}
+		if other, err := tx.GetSpendingCategory(fixture.agentId, byName[finance.SpendingCategoryOther]); err != nil || other.IsTransfer {
+			t.Errorf("no other spending category becomes the transfer category: %v %+v", err, other)
+		}
+		made, err := tx.CreateSpendingCategory(&models.SpendingCategory{AgentID: fixture.agentId, SpendingCategoryName: "moving money", IsTransfer: true})
+		if err != nil || made.IsTransfer {
+			t.Errorf("a second transfer category cannot be made: %v %+v", err, made)
+		}
+		if _, err := tx.SetBudget(&models.Budget{AgentID: fixture.agentId, SpendingCategoryID: transferId, MonthlyAmount: "100",
+			CurrencyCode: "USD", EffectiveFrom: "2026-09"}); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Errorf("the transfer category takes no budget: %v", err)
+		}
+		renamed, err := tx.UpdateSpendingCategory(fixture.agentId, transferId, func(spendingCategory *models.SpendingCategory) error {
+			spendingCategory.SpendingCategoryName = "between my accounts"
+			return nil
+		})
+		if err != nil || !renamed.IsTransfer || renamed.SpendingCategoryName != "between my accounts" {
+			t.Errorf("renamed, it is still the transfer category: %v %+v", err, renamed)
+		}
+		if found, err := tx.EnsureTransferSpendingCategory(fixture.agentId); err != nil || found.ID != transferId {
+			t.Errorf("found by its flag, not its name: %v %+v", err, found)
+		}
+	})
+}
+
+// An agent that already had a spending category of its own called
+// transfer, and somehow lost its transfer category, gets one under the
+// other built-in name, and theirs stays an ordinary spending category.
+func TestTransferSpendingCategoryLeavesAPersonsTransferAlone(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "transfer-category-taken")
+	dbtest.Exec(t, database, fmt.Sprintf(`DELETE FROM "agent_spending_category" WHERE "agent_id" = '%s'`, fixture.agentId))
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		theirs, err := tx.CreateSpendingCategory(&models.SpendingCategory{AgentID: fixture.agentId, SpendingCategoryName: "Transfer"})
+		if err != nil {
+			t.Fatalf("CreateSpendingCategory: %s", err)
+		}
+		transferCategory, err := tx.EnsureTransferSpendingCategory(fixture.agentId)
+		if err != nil || transferCategory.ID == theirs.ID || transferCategory.SpendingCategoryName != finance.SpendingCategoryTransferFallback {
+			t.Fatalf("EnsureTransferSpendingCategory: %v %+v", err, transferCategory)
+		}
+		if kept, err := tx.GetSpendingCategory(fixture.agentId, theirs.ID); err != nil || kept.IsTransfer {
+			t.Errorf("theirs stays theirs: %v %+v", err, kept)
+		}
+	})
+}
+
 // The first rule by priority wins; reapplying skips what the person chose;
 // a rule's spending category goes when no rule matches any more; a
 // transfer rule marks transfers.
@@ -111,7 +207,8 @@ func TestSpendingRulesApplyByPriority(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateSpendingRule: %s", err)
 		}
-		if _, err := tx.CreateSpendingRule(&models.SpendingRule{AgentID: fixture.agentId, MatchText: "autopay", IsTransfer: true, RulePriority: 30}); err != nil {
+		if _, err := tx.CreateSpendingRule(&models.SpendingRule{AgentID: fixture.agentId, MatchText: "autopay",
+			SpendingCategoryID: byName[finance.SpendingCategoryTransfer], RulePriority: 30}); err != nil {
 			t.Fatalf("CreateSpendingRule: %s", err)
 		}
 		if _, err := tx.CreateSpendingRule(&models.SpendingRule{AgentID: fixture.agentId, MatchText: "nothing to assign"}); !errors.Is(err, db.ErrInvalidArguments) {
@@ -125,8 +222,8 @@ func TestSpendingRulesApplyByPriority(t *testing.T) {
 		if grocerTwo := found["grocer-two"]; grocerTwo.CategorizedBy != models.CategorizedBySpendingRule || grocerTwo.SpendingCategoryID != byName[finance.SpendingCategoryShopping] {
 			t.Errorf("the rule with the lower priority number wins: %+v", grocerTwo)
 		}
-		if payment := found["card-payment"]; !payment.IsTransfer || payment.SpendingCategoryID != "" {
-			t.Errorf("a transfer rule marks a transfer: %+v", payment)
+		if payment := found["card-payment"]; payment.SpendingCategoryID != byName[finance.SpendingCategoryTransfer] || payment.CategorizedBy != models.CategorizedBySpendingRule {
+			t.Errorf("a rule to the transfer category marks a transfer: %+v", payment)
 		}
 
 		if err := tx.DeleteSpendingRule(fixture.agentId, large.ID); err != nil {
@@ -246,7 +343,7 @@ func TestSpendingCategoryDaysAndMerchantMonths(t *testing.T) {
 			{MatchText: "corner grocer", SpendingCategoryID: byName[finance.SpendingCategoryGroceries]},
 			{MatchText: "maple lettings", SpendingCategoryID: byName[finance.SpendingCategoryHousing]},
 			{MatchText: "payroll", SpendingCategoryID: byName[finance.SpendingCategoryIncome]},
-			{MatchText: "autopay", IsTransfer: true},
+			{MatchText: "autopay", SpendingCategoryID: byName[finance.SpendingCategoryTransfer]},
 		} {
 			spendingRule.AgentID = fixture.agentId
 			if _, err := tx.CreateSpendingRule(&spendingRule); err != nil {
@@ -339,7 +436,7 @@ func TestIncomeBudgetsAndIncomeCategoryDays(t *testing.T) {
 		byName := spendingCategoryIdsByName(t, tx, fixture.agentId)
 		incomeId := byName[finance.SpendingCategoryIncome]
 		for _, spendingRule := range []models.SpendingRule{
-			{MatchText: "transfer", IsTransfer: true, RulePriority: 0},
+			{MatchText: "transfer", SpendingCategoryID: byName[finance.SpendingCategoryTransfer], RulePriority: 0},
 			{MatchText: "payroll", SpendingCategoryID: incomeId, RulePriority: 1},
 			{MatchText: "corner grocer", SpendingCategoryID: byName[finance.SpendingCategoryGroceries], RulePriority: 2},
 		} {
@@ -477,9 +574,10 @@ func TestBudgetAlertKeyIsWrittenOnce(t *testing.T) {
 	})
 }
 
-// A transfer a spending rule marked is cleared when no rule matches it any
-// more. A transfer something else marked first is not the rule's to
-// clear, and a person's decision is never touched.
+// A transfer a spending rule gave is cleared when no rule matches it any
+// more. A transfer something else gave first is not the rule's to take
+// over or clear, whatever the rule assigns, and a person's decision is
+// never touched.
 func TestSpendingRuleClearsOnlyTheTransfersItMarked(t *testing.T) {
 	database, releaseDatabase := dbtest.AcquireDatabase(t)
 	defer releaseDatabase()
@@ -496,43 +594,138 @@ func TestSpendingRuleClearsOnlyTheTransfersItMarked(t *testing.T) {
 	applyFinanceSync(t, database, fixture, result, "2026-09-12")
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.EnsureDefaultSpendingCategories(fixture.agentId); err != nil {
+			t.Fatalf("EnsureDefaultSpendingCategories: %s", err)
+		}
+		byName := spendingCategoryIdsByName(t, tx, fixture.agentId)
+		transferId := byName[finance.SpendingCategoryTransfer]
 		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
-		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["autopay-detected"].ID, true, models.TransferMarkedByDetection); err != nil {
-			t.Fatalf("MarkFinanceTransactionTransfer: %s", err)
+		if _, err := tx.SetTransactionCategorization(fixture.agentId, found["autopay-detected"].ID, transferId, models.CategorizedByTransferDetection, nil); err != nil {
+			t.Fatalf("SetTransactionCategorization: %s", err)
 		}
-		if _, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["autopay-person"].ID, false, models.TransferMarkedByPerson); err != nil {
-			t.Fatalf("MarkFinanceTransactionTransfer: %s", err)
+		if _, err := tx.SetTransactionCategorization(fixture.agentId, found["autopay-person"].ID, byName[finance.SpendingCategoryHealth], models.CategorizedByPerson, nil); err != nil {
+			t.Fatalf("SetTransactionCategorization: %s", err)
 		}
-		rule, err := tx.CreateSpendingRule(&models.SpendingRule{AgentID: fixture.agentId, MatchText: "autopay", IsTransfer: true, RulePriority: 10})
+		rule, err := tx.CreateSpendingRule(&models.SpendingRule{AgentID: fixture.agentId, MatchText: "autopay", SpendingCategoryID: transferId, RulePriority: 10})
+		if err != nil {
+			t.Fatalf("CreateSpendingRule: %s", err)
+		}
+		storeCard, err := tx.CreateSpendingRule(&models.SpendingRule{AgentID: fixture.agentId, MatchText: "store card",
+			SpendingCategoryID: byName[finance.SpendingCategoryShopping], RulePriority: 5})
 		if err != nil {
 			t.Fatalf("CreateSpendingRule: %s", err)
 		}
 		found = financeTransactionsByProviderId(t, tx, fixture.agentId)
-		if marked := found["autopay-rule"]; !marked.IsTransfer || marked.TransferMarkedBy != models.TransferMarkedBySpendingRule {
+		if marked := found["autopay-rule"]; marked.SpendingCategoryID != transferId || marked.CategorizedBy != models.CategorizedBySpendingRule {
 			t.Errorf("the rule marks a transfer and says so: %+v", marked)
 		}
-		if detected := found["autopay-detected"]; !detected.IsTransfer || detected.TransferMarkedBy != models.TransferMarkedByDetection {
-			t.Errorf("the rule does not take over a transfer detection marked: %+v", detected)
+		if detected := found["autopay-detected"]; detected.SpendingCategoryID != transferId || detected.CategorizedBy != models.CategorizedByTransferDetection {
+			t.Errorf("no rule takes over a transfer detection marked: %+v", detected)
 		}
-		if decided := found["autopay-person"]; decided.IsTransfer || decided.TransferMarkedBy != models.TransferMarkedByPerson {
+		if decided := found["autopay-person"]; decided.SpendingCategoryID != byName[finance.SpendingCategoryHealth] || decided.CategorizedBy != models.CategorizedByPerson {
 			t.Errorf("the rule does not override the person: %+v", decided)
 		}
 
-		if err := tx.DeleteSpendingRule(fixture.agentId, rule.ID); err != nil {
-			t.Fatalf("DeleteSpendingRule: %s", err)
+		for _, spendingRuleId := range []string{rule.ID, storeCard.ID} {
+			if err := tx.DeleteSpendingRule(fixture.agentId, spendingRuleId); err != nil {
+				t.Fatalf("DeleteSpendingRule: %s", err)
+			}
 		}
 		found = financeTransactionsByProviderId(t, tx, fixture.agentId)
-		if cleared := found["autopay-rule"]; cleared.IsTransfer || cleared.TransferMarkedBy != "" {
+		if cleared := found["autopay-rule"]; cleared.SpendingCategoryID != "" || cleared.CategorizedBy != "" {
 			t.Errorf("with the rule gone its transfer is cleared: %+v", cleared)
 		}
-		if detected := found["autopay-detected"]; !detected.IsTransfer || detected.TransferMarkedBy != models.TransferMarkedByDetection {
+		if detected := found["autopay-detected"]; detected.SpendingCategoryID != transferId || detected.CategorizedBy != models.CategorizedByTransferDetection {
 			t.Errorf("a transfer detection marked outlives the rule: %+v", detected)
 		}
-		if decided := found["autopay-person"]; decided.IsTransfer || decided.TransferMarkedBy != models.TransferMarkedByPerson {
+		if decided := found["autopay-person"]; decided.SpendingCategoryID != byName[finance.SpendingCategoryHealth] || decided.CategorizedBy != models.CategorizedByPerson {
 			t.Errorf("the person's decision outlives the rule: %+v", decided)
 		}
-		if isCleared, err := tx.MarkFinanceTransactionTransfer(fixture.agentId, found["autopay-detected"].ID, false, models.TransferMarkedBySpendingRule); err != nil || isCleared {
-			t.Errorf("nothing but what marked a transfer clears it: %v %v", err, isCleared)
+	})
+}
+
+// The owner's case: a rule matching a description classifies what it
+// matches as transfers, the ones already there and the ones a later sync
+// brings, so spending leaves them out. A person's choice on one of them
+// beats the rule, and a rule's transfer is judged again when the amount
+// changes, as a pair is.
+func TestSpendingRuleMarksTransfersPastAndFuture(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "spending-rule-transfer-future")
+	result := sampleFinanceSync()
+	result.Added = append(result.Added,
+		finance.Transaction{ProviderTransactionID: "payment-august", ProviderAccountID: "account-card", PostedOn: "2026-09-02",
+			Amount: "250", CurrencyCode: "USD", Description: "ONLINE PAYMENT THANK YOU"},
+	)
+	applyFinanceSync(t, database, fixture, result, "2026-09-12")
+
+	var transferId string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		transferId = transferCategoryId(t, tx, fixture.agentId)
+		if _, err := tx.CreateSpendingRule(&models.SpendingRule{AgentID: fixture.agentId, MatchText: "online payment", SpendingCategoryID: transferId}); err != nil {
+			t.Fatalf("CreateSpendingRule: %s", err)
+		}
+		if past := financeTransactionsByProviderId(t, tx, fixture.agentId)["payment-august"]; past.SpendingCategoryID != transferId {
+			t.Errorf("the rule classifies the transaction already there: %+v", past)
+		}
+	})
+
+	later := sampleFinanceSync()
+	later.Added = append(later.Added,
+		finance.Transaction{ProviderTransactionID: "payment-august", ProviderAccountID: "account-card", PostedOn: "2026-09-02",
+			Amount: "250", CurrencyCode: "USD", Description: "ONLINE PAYMENT THANK YOU"},
+		finance.Transaction{ProviderTransactionID: "payment-september", ProviderAccountID: "account-card", PostedOn: "2026-09-20",
+			Amount: "410", CurrencyCode: "USD", Description: "ONLINE PAYMENT THANK YOU"},
+		finance.Transaction{ProviderTransactionID: "payment-refund", ProviderAccountID: "account-card", PostedOn: "2026-09-21",
+			Amount: "35", CurrencyCode: "USD", Description: "ONLINE PAYMENT REVERSAL"},
+	)
+	applyFinanceSync(t, database, fixture, later, "2026-09-22")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.ApplySpendingRules(fixture.agentId); err != nil {
+			t.Fatalf("ApplySpendingRules: %s", err)
+		}
+		found := financeTransactionsByProviderId(t, tx, fixture.agentId)
+		for _, providerTransactionId := range []string{"payment-august", "payment-september", "payment-refund"} {
+			if found[providerTransactionId].SpendingCategoryID != transferId || found[providerTransactionId].CategorizedBy != models.CategorizedBySpendingRule {
+				t.Errorf("%s is a transfer by the rule: %+v", providerTransactionId, found[providerTransactionId])
+			}
+		}
+		if _, err := tx.SetTransactionCategorization(fixture.agentId, found["payment-refund"].ID, "", models.CategorizedByPerson, nil); err != nil {
+			t.Fatalf("SetTransactionCategorization: %s", err)
+		}
+		if _, err := tx.ApplySpendingRules(fixture.agentId); err != nil {
+			t.Fatalf("ApplySpendingRules: %s", err)
+		}
+		if refund := financeTransactionsByProviderId(t, tx, fixture.agentId)["payment-refund"]; refund.SpendingCategoryID != "" || refund.CategorizedBy != models.CategorizedByPerson {
+			t.Errorf("the person's choice beats the rule: %+v", refund)
+		}
+		summary, err := tx.FinanceSpendingSummary(fixture.agentId, &db.FinanceSpendingSummaryFilter{GroupBy: models.FinanceSpendingSummaryGroupByMerchant})
+		if err != nil {
+			t.Fatalf("FinanceSpendingSummary: %s", err)
+		}
+		for _, row := range summary {
+			if row.GroupKey == "ONLINE PAYMENT THANK YOU" {
+				t.Errorf("the rule's transfers are left out of spending: %+v", row)
+			}
+		}
+	})
+
+	changed := sampleFinanceSync()
+	changed.Added = append(changed.Added,
+		finance.Transaction{ProviderTransactionID: "payment-september", ProviderAccountID: "account-card", PostedOn: "2026-09-20",
+			Amount: "415", CurrencyCode: "USD", Description: "ONLINE PAYMENT THANK YOU"},
+	)
+	applyFinanceSync(t, database, fixture, changed, "2026-09-23")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if changedAmount := financeTransactionsByProviderId(t, tx, fixture.agentId)["payment-september"]; changedAmount.SpendingCategoryID != "" {
+			t.Errorf("a rule's transfer is dropped when the amount changes, to be judged again: %+v", changedAmount)
+		}
+		if _, err := tx.ApplySpendingRules(fixture.agentId); err != nil {
+			t.Fatalf("ApplySpendingRules: %s", err)
+		}
+		if again := financeTransactionsByProviderId(t, tx, fixture.agentId)["payment-september"]; again.SpendingCategoryID != transferId {
+			t.Errorf("and the rule gives it again: %+v", again)
 		}
 	})
 }
