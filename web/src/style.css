@@ -12363,6 +12363,33 @@ button.idea-history-title {
   margin-bottom: var(--space-3);
 }
 
+/* Month or Year, and beside it the month or the year. It wraps under the
+   headline on a phone, the segmented pair staying beside its picker while
+   they fit. */
+.finance-period {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.finance-period .segmented {
+  flex: 0 0 auto;
+  margin-bottom: 6px;
+}
+
+.finance-month-alone:has(.finance-period) {
+  max-width: none;
+}
+
+/* The year with a step either way: the menu between two arrows. */
+.finance-year {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 /* On a phone the transactions' filters fold into one line that says which
    hold, opened to change them. */
 .finance-filter-disclosure {

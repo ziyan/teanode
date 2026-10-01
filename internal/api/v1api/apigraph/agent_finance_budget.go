@@ -241,16 +241,19 @@ type SetBudgetArguments struct {
 }
 
 // BudgetStatusArguments name the month, "2006-01", this month when left
-// out.
+// out, or instead a calendar year, "2006", whose months are added up as
+// each was budgeted.
 type BudgetStatusArguments struct {
 	Month string `json:"month" graphapi:"nullable"`
+	Year  string `json:"year" graphapi:"nullable"`
 }
 
 // SavingSummaryArguments name the month, "2006-01" (this one when left
-// out), and the currency to convert into instead of the reporting
-// currency.
+// out), or instead a calendar year, "2006", and the currency to convert
+// into instead of the reporting currency.
 type SavingSummaryArguments struct {
 	Month        string `json:"month" graphapi:"nullable"`
+	Year         string `json:"year" graphapi:"nullable"`
 	CurrencyCode string `json:"currencyCode" graphapi:"nullable"`
 }
 
@@ -1143,6 +1146,14 @@ func (self *graph) BudgetStatus(ctx context.Context, arguments BudgetStatusArgum
 		return nil, err
 	}
 	today := personToday(principal)
+	year, err := yearArgument("year", arguments.Year, arguments.Month)
+	if err != nil {
+		return nil, err
+	}
+	if year != "" {
+		status, err := agent.YearBudgetStatus(ctx, self.transaction(ctx), self.exchangeRateFetcher(), found.ID, year, today)
+		return status, financeError(err)
+	}
 	month, err := monthArgument("month", arguments.Month, today[:len("2006-01")])
 	if err != nil {
 		return nil, err
@@ -1157,6 +1168,10 @@ func (self *graph) SavingSummary(ctx context.Context, arguments SavingSummaryArg
 		return nil, err
 	}
 	today := personToday(principal)
+	year, err := yearArgument("year", arguments.Year, arguments.Month)
+	if err != nil {
+		return nil, err
+	}
 	month, err := monthArgument("month", arguments.Month, today[:len("2006-01")])
 	if err != nil {
 		return nil, err
@@ -1165,6 +1180,10 @@ func (self *graph) SavingSummary(ctx context.Context, arguments SavingSummaryArg
 	currencyCode, err := reportingCurrency(tx, found, arguments.CurrencyCode)
 	if err != nil {
 		return nil, err
+	}
+	if year != "" {
+		summary, err := agent.YearSavingSummary(ctx, tx, self.exchangeRateFetcher(), found.ID, year, today, currencyCode)
+		return summary, financeError(err)
 	}
 	summary, err := agent.SavingSummary(ctx, tx, self.exchangeRateFetcher(), found.ID, month, today, currencyCode)
 	return summary, financeError(err)

@@ -583,6 +583,36 @@ func TestIncomeBudgetAndSavingSummary(test *testing.T) {
 		if _, err := resolver.SavingSummary(ctx, SavingSummaryArguments{Month: "September"}); !errors.Is(err, api.ErrInvalidArguments) {
 			test.Errorf("a month that is not 2006-01 answered %v", err)
 		}
+
+		// The year adds up September to December, the months the budgets
+		// are in force, whichever of them have begun by today.
+		yearStatus, err := resolver.BudgetStatus(ctx, BudgetStatusArguments{Year: "2026"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if yearStatus.Year != "2026" || yearStatus.Month != "" || len(yearStatus.SpendingCategories) != 1 || len(yearStatus.IncomeCategories) != 1 {
+			test.Fatalf("the year's budgets: %+v", yearStatus)
+		}
+		if row := yearStatus.SpendingCategories[0]; row.BudgetAmount != "1600.0000" || row.BudgetedMonthCount != 4 {
+			test.Errorf("four months of groceries at 400: %+v", row)
+		}
+		if row := yearStatus.IncomeCategories[0]; row.BudgetAmount != "12000.0000" || row.BudgetedMonthCount != 4 {
+			test.Errorf("four months of salary at 3000: %+v", row)
+		}
+		yearSummary, err := resolver.SavingSummary(ctx, SavingSummaryArguments{Year: "2026", CurrencyCode: "USD"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if yearSummary.Year != "2026" || yearSummary.ExpectedIncomeAmount != "12000.0000" || yearSummary.ExpectedSpendingAmount != "1600.0000" ||
+			yearSummary.IncomeBudgetCount != 1 || yearSummary.SpendingBudgetCount != 1 {
+			test.Errorf("the year's saving: %+v", yearSummary)
+		}
+		if _, err := resolver.BudgetStatus(ctx, BudgetStatusArguments{Month: "2026-09", Year: "2026"}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Errorf("a month beside a year answered %v", err)
+		}
+		if _, err := resolver.SavingSummary(ctx, SavingSummaryArguments{Year: "last year"}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Errorf("a year that is not 2006 answered %v", err)
+		}
 	})
 	fixture.as(test, fixture.stranger, func(ctx context.Context, tx db.Transaction) {
 		summary, err := resolver.SavingSummary(ctx, SavingSummaryArguments{Month: "2026-09", CurrencyCode: "USD"})

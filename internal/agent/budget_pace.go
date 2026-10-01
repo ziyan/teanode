@@ -255,3 +255,217 @@ func ratOrZero(value *big.Rat) *big.Rat {
 	}
 	return value
 }
+
+// BudgetMonthPhase is where one month of a year stands on the day a
+// year's budgets are computed for.
+type BudgetMonthPhase string
+
+// The three phases: the month is over, it is the month in progress, or it
+// has not begun.
+const (
+	BudgetMonthPhaseOver       BudgetMonthPhase = "over"
+	BudgetMonthPhaseInProgress BudgetMonthPhase = "in_progress"
+	BudgetMonthPhaseToCome     BudgetMonthPhase = "to_come"
+)
+
+// SpendingCategoryYearMonth is one month of a year in which a spending
+// category had a budget, every amount in the year's currency.
+type SpendingCategoryYearMonth struct {
+	BudgetMonthPhase BudgetMonthPhase
+
+	// BudgetAmount is the month's budget as it was in force that month.
+	BudgetAmount *big.Rat
+
+	// SpendingAmount is the month's spending, so far for the month in
+	// progress; nil for a month to come.
+	SpendingAmount *big.Rat
+
+	// ProjectedAmount and BudgetToDateAmount are the month in progress's
+	// projection (ProjectSpendingCategoryMonth) and its budget over the
+	// days so far; ignored for the other phases.
+	ProjectedAmount    *big.Rat
+	BudgetToDateAmount *big.Rat
+}
+
+// SpendingCategoryYearInput is what ProjectSpendingCategoryYear reads: the
+// months of the year that had a budget, whichever they were.
+type SpendingCategoryYearInput struct {
+	Months []*SpendingCategoryYearMonth
+
+	// DayOfYear is the day computed for, from one, or zero for a year not
+	// begun; IsYearOver says that day is past the year's last.
+	DayOfYear  int
+	IsYearOver bool
+}
+
+// SpendingCategoryYearProjection is where a spending category's year is
+// heading against the budgets of its months.
+type SpendingCategoryYearProjection struct {
+	BudgetAmount       *big.Rat
+	BudgetToDateAmount *big.Rat
+	SpendingAmount     *big.Rat
+	ProjectedAmount    *big.Rat
+	BudgetedMonthCount int
+	BudgetPace         models.BudgetPace
+}
+
+// ProjectSpendingCategoryYear adds up a spending category's budgeted
+// months and projects the year's end. The budget is each month's budget
+// as it was in force that month, so a budget changed or ended part way
+// through the year counts each month at what it was then, and the
+// spending is that of the months that had a budget.
+//
+// The projection is built from the monthly ones where they exist: a month
+// that is over as it ended, the month in progress as it is projected
+// (repeat charges and its pace counted), and each budgeted month still to
+// come at the average of those, which is the year carried on the way it
+// has gone. With no month begun there is nothing to carry on, and a month
+// to come counts at its budget.
+//
+// The pace is a month's thresholds over the year: over once spending
+// passes the year's budget; at_risk, after the first week of the year,
+// when the projection passes it by more than ten percent; under below
+// ninety percent of it; on_track otherwise.
+func ProjectSpendingCategoryYear(input *SpendingCategoryYearInput) *SpendingCategoryYearProjection {
+	projection := &SpendingCategoryYearProjection{
+		BudgetAmount: new(big.Rat), BudgetToDateAmount: new(big.Rat), SpendingAmount: new(big.Rat), BudgetedMonthCount: len(input.Months),
+	}
+	monthFigures := []*big.Rat{}
+	toComeCount := 0
+	toComeBudget := new(big.Rat)
+	for _, month := range input.Months {
+		budget := ratOrZero(month.BudgetAmount)
+		projection.BudgetAmount.Add(projection.BudgetAmount, budget)
+		switch month.BudgetMonthPhase {
+		case BudgetMonthPhaseOver:
+			spending := ratOrZero(month.SpendingAmount)
+			projection.BudgetToDateAmount.Add(projection.BudgetToDateAmount, budget)
+			projection.SpendingAmount.Add(projection.SpendingAmount, spending)
+			monthFigures = append(monthFigures, spending)
+		case BudgetMonthPhaseInProgress:
+			projection.BudgetToDateAmount.Add(projection.BudgetToDateAmount, ratOrZero(month.BudgetToDateAmount))
+			projection.SpendingAmount.Add(projection.SpendingAmount, ratOrZero(month.SpendingAmount))
+			monthFigures = append(monthFigures, ratOrZero(month.ProjectedAmount))
+		default:
+			toComeCount++
+			toComeBudget.Add(toComeBudget, budget)
+		}
+	}
+	projection.ProjectedAmount = carriedOnYear(monthFigures, toComeCount, toComeBudget)
+
+	budget := projection.BudgetAmount
+	isSettled := input.IsYearOver || input.DayOfYear > budgetPaceSettlingDays
+	switch {
+	case budget.Sign() > 0 && projection.SpendingAmount.Cmp(budget) > 0:
+		projection.BudgetPace = models.BudgetPaceOver
+	case budget.Sign() > 0 && isSettled && projection.ProjectedAmount.Cmp(new(big.Rat).Mul(budget, budgetPaceAtRiskShare)) > 0:
+		projection.BudgetPace = models.BudgetPaceAtRisk
+	case projection.ProjectedAmount.Cmp(new(big.Rat).Mul(budget, budgetPaceUnderShare)) < 0:
+		projection.BudgetPace = models.BudgetPaceUnder
+	default:
+		projection.BudgetPace = models.BudgetPaceOnTrack
+	}
+	return projection
+}
+
+// carriedOnYear is the months begun added up (monthFigures: each month
+// that is over as it ended, the month in progress as projected), and
+// toComeCount months more at their average; with no month begun, the
+// months to come at toComeFallback, what they were budgeted.
+func carriedOnYear(monthFigures []*big.Rat, toComeCount int, toComeFallback *big.Rat) *big.Rat {
+	total := new(big.Rat)
+	for _, figure := range monthFigures {
+		total.Add(total, figure)
+	}
+	if toComeCount == 0 {
+		return total
+	}
+	if len(monthFigures) == 0 {
+		return total.Add(total, ratOrZero(toComeFallback))
+	}
+	carried := new(big.Rat).Mul(total, big.NewRat(int64(toComeCount), int64(len(monthFigures))))
+	return total.Add(total, carried)
+}
+
+// IncomeCategoryYearMonth is one month of a year in which an income
+// spending category had a budget, every amount in the year's currency.
+type IncomeCategoryYearMonth struct {
+	BudgetMonthPhase BudgetMonthPhase
+
+	// BudgetAmount is the income expected that month.
+	BudgetAmount *big.Rat
+
+	// IncomeAmount is what came in, so far for the month in progress; nil
+	// for a month to come.
+	IncomeAmount *big.Rat
+
+	// ProjectedAmount and ExpectedByTodayAmount are the month in
+	// progress's (ProjectIncomeCategoryMonth); ignored for the other
+	// phases.
+	ProjectedAmount       *big.Rat
+	ExpectedByTodayAmount *big.Rat
+}
+
+// IncomeCategoryYearInput is what ProjectIncomeCategoryYear reads.
+type IncomeCategoryYearInput struct {
+	Months     []*IncomeCategoryYearMonth
+	DayOfYear  int
+	IsYearOver bool
+}
+
+// IncomeCategoryYearProjection is where an income spending category's
+// year is heading against the income expected in its months.
+type IncomeCategoryYearProjection struct {
+	BudgetAmount          *big.Rat
+	IncomeAmount          *big.Rat
+	ExpectedByTodayAmount *big.Rat
+	ProjectedAmount       *big.Rat
+	BudgetedMonthCount    int
+	IncomePace            models.IncomePace
+}
+
+// ProjectIncomeCategoryYear adds up an income spending category's
+// budgeted months the way ProjectIncomeCategoryMonth does one: a month that
+// is over ends at what came in, the month in progress at its projection,
+// and a month to come at the income expected of it. The income expected by
+// today is the months that are over whole and the month in progress's
+// share by its days.
+//
+// The pace is a month's over the year: ahead once more than the whole
+// year's expected income, by over ten percent, came in; behind, after the
+// first week of the year, when less than ninety percent of what was
+// expected by today came in; on_track otherwise.
+func ProjectIncomeCategoryYear(input *IncomeCategoryYearInput) *IncomeCategoryYearProjection {
+	projection := &IncomeCategoryYearProjection{
+		BudgetAmount: new(big.Rat), IncomeAmount: new(big.Rat), ExpectedByTodayAmount: new(big.Rat), ProjectedAmount: new(big.Rat),
+		BudgetedMonthCount: len(input.Months),
+	}
+	for _, month := range input.Months {
+		budget := ratOrZero(month.BudgetAmount)
+		projection.BudgetAmount.Add(projection.BudgetAmount, budget)
+		switch month.BudgetMonthPhase {
+		case BudgetMonthPhaseOver:
+			income := ratOrZero(month.IncomeAmount)
+			projection.IncomeAmount.Add(projection.IncomeAmount, income)
+			projection.ExpectedByTodayAmount.Add(projection.ExpectedByTodayAmount, budget)
+			projection.ProjectedAmount.Add(projection.ProjectedAmount, income)
+		case BudgetMonthPhaseInProgress:
+			projection.IncomeAmount.Add(projection.IncomeAmount, ratOrZero(month.IncomeAmount))
+			projection.ExpectedByTodayAmount.Add(projection.ExpectedByTodayAmount, ratOrZero(month.ExpectedByTodayAmount))
+			projection.ProjectedAmount.Add(projection.ProjectedAmount, ratOrZero(month.ProjectedAmount))
+		default:
+			projection.ProjectedAmount.Add(projection.ProjectedAmount, budget)
+		}
+	}
+	budget := projection.BudgetAmount
+	isSettled := input.IsYearOver || input.DayOfYear > budgetPaceSettlingDays
+	switch {
+	case budget.Sign() > 0 && projection.IncomeAmount.Cmp(new(big.Rat).Mul(budget, incomePaceAheadShare)) > 0:
+		projection.IncomePace = models.IncomePaceAhead
+	case budget.Sign() > 0 && isSettled && projection.IncomeAmount.Cmp(new(big.Rat).Mul(projection.ExpectedByTodayAmount, incomePaceBehindShare)) < 0:
+		projection.IncomePace = models.IncomePaceBehind
+	default:
+		projection.IncomePace = models.IncomePaceOnTrack
+	}
+	return projection
+}

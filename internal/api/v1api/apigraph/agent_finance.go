@@ -664,6 +664,23 @@ func monthArgument(name, value, fallback string) (string, error) {
 	return "", fmt.Errorf("%w: %s %q is not a month written 2006-01", api.ErrInvalidArguments, name, value)
 }
 
+// yearArgument is a calendar year, "2006", or empty when none was given.
+// A month given beside it is refused rather than one of them ignored.
+func yearArgument(name, value, month string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if strings.TrimSpace(month) != "" {
+		return "", fmt.Errorf("%w: give month or %s, not both", api.ErrInvalidArguments, name)
+	}
+	year, err := time.Parse("2006", value)
+	if err != nil {
+		return "", fmt.Errorf("%w: %s %q is not a year written 2006", api.ErrInvalidArguments, name, value)
+	}
+	return year.Format("2006"), nil
+}
+
 // amountArgument is a decimal amount in its canonical form.
 func amountArgument(name, value string) (string, error) {
 	canonical, err := finance.CanonicalAmount(strings.ReplaceAll(strings.TrimSpace(value), ",", ""))

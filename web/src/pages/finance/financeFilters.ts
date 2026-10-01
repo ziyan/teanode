@@ -25,6 +25,7 @@ export const NO_TRANSACTION_FILTERS: TransactionFilters = {
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
+const YEAR_PATTERN = /^\d{4}$/
 
 function isDay(value: string): boolean {
   if (!DAY_PATTERN.test(value)) return false
@@ -93,4 +94,45 @@ export function monthRange(month: string, today: string): { from: string; to: st
 export function spendingMonthFromSearch(search: URLSearchParams, currentMonth: string): string {
   const month = (search.get('month') ?? '').trim()
   return MONTH_PATTERN.test(month) && month <= currentMonth ? month : currentMonth
+}
+
+// SpendingPeriodKind is whether the Spending section shows one month or one
+// calendar year.
+export type SpendingPeriodKind = 'month' | 'year'
+
+// SpendingPeriod is what the Spending section shows: a month, or a year.
+// Both are always set, so switching between them has somewhere to land:
+// in a year, month is its latest month that has begun, and in a month,
+// year is the month's.
+export type SpendingPeriod = { spendingPeriodKind: SpendingPeriodKind; month: string; year: string }
+
+// latestMonthOfYear is the last month of a year that has begun: this month
+// in the year in progress, December in a year that is over.
+export function latestMonthOfYear(year: string, currentMonth: string): string {
+  return year === currentMonth.slice(0, 4) ? currentMonth : `${year}-12`
+}
+
+// spendingPeriodFromSearch is the period the Spending section shows: a
+// year when the address names one that has begun, otherwise the month
+// spendingMonthFromSearch reads.
+export function spendingPeriodFromSearch(search: URLSearchParams, currentMonth: string): SpendingPeriod {
+  const year = (search.get('year') ?? '').trim()
+  if (YEAR_PATTERN.test(year) && year <= currentMonth.slice(0, 4)) {
+    return { spendingPeriodKind: 'year', year, month: latestMonthOfYear(year, currentMonth) }
+  }
+  const month = spendingMonthFromSearch(search, currentMonth)
+  return { spendingPeriodKind: 'month', month, year: month.slice(0, 4) }
+}
+
+// searchFromSpendingPeriod writes a period into the address: a year always
+// (a bare address is this month), a month only when it is not this one.
+export function searchFromSpendingPeriod(period: SpendingPeriod, currentMonth: string): Record<string, string> {
+  if (period.spendingPeriodKind === 'year') return { year: period.year }
+  return period.month === currentMonth ? {} : { month: period.month }
+}
+
+// yearRange is the days a year's spending is read over: its first day to
+// its last, or to today while it is the year in progress.
+export function yearRange(year: string, today: string): { from: string; to: string } {
+  return { from: `${year}-01-01`, to: today.slice(0, 4) === year ? today : `${year}-12-31` }
 }

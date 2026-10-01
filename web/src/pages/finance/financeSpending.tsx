@@ -33,38 +33,73 @@ import {
 import { reachTone, spendingForecastParts } from './budgetGroups'
 import { Money, UnconvertedNote, compactMoney, useFinanceWords } from './financeCommon'
 import {
+  SpendingPeriod,
   TransactionFilters,
   lastDayOfMonth,
   monthRange,
-  spendingMonthFromSearch,
+  searchFromSpendingPeriod,
+  spendingPeriodFromSearch,
   transactionsPath,
+  yearRange,
 } from './financeFilters'
 import { SavingSummaryPanel } from './financeSaving'
+import { SpendingByYearPanel, SpendingPeriodPicker } from './financeSpendingYear'
+import { yearStartLabel } from './spendingYear'
 import { ForecastDetail } from './forecastDetail'
 import { SpendingGroupBy, SummaryAmounts, spendingLines, spendingTotals } from './spendingLines'
 import { useSpendingCategoryDisplayName } from './spendingCategoryName'
 import { RING_SLICE_COUNT, SpendingRing, foldIntoOther, ringSliceClass } from './spendingRing'
 
-// The Spending section: a year of spending a bar a month, and under it the
-// month chosen there: its spending day by day against the month before,
-// each spending category against its budget, and what went where, each
-// group opening its transactions. All of it converted into the reporting
-// currency where there is an exchange rate, with what could not be
-// converted named rather than quietly left out. The month is in the
-// address, so coming Back from a category's transactions lands on it.
+// The Spending section, a month or a year at a time. A month: a year of
+// spending a bar a month, and under it the month chosen there: its
+// spending day by day against the month before, each spending category
+// against its budget, and what went where, each group opening its
+// transactions. A year: its twelve months, its saving and budgets added up
+// month by month as each was budgeted, and what went where over the whole
+// of it. All of it converted into the reporting currency where there is an
+// exchange rate, with what could not be converted named rather than
+// quietly left out. The period is in the address, so coming Back from a
+// category's transactions lands on it, and a year can be linked to.
 export function FinanceSpendingSection() {
+  const { t } = useTranslation()
   const [search, setSearch] = useSearchParams()
   const currentMonth = personMonth()
-  const month = spendingMonthFromSearch(search, currentMonth)
-  const selectMonth = (chosen: string) =>
-    setSearch(chosen === currentMonth ? {} : { month: chosen }, { replace: true })
+  const period = spendingPeriodFromSearch(search, currentMonth)
+  const selectPeriod = (chosen: SpendingPeriod, isKindChange: boolean) =>
+    setSearch(searchFromSpendingPeriod(chosen, currentMonth), { replace: !isKindChange })
+  const selectMonth = (month: string) =>
+    selectPeriod({ spendingPeriodKind: 'month', month, year: month.slice(0, 4) }, period.spendingPeriodKind !== 'month')
+  const picker = <SpendingPeriodPicker period={period} currentMonth={currentMonth} onSelectPeriod={selectPeriod} />
+  if (period.spendingPeriodKind === 'year') {
+    const today = personToday()
+    const isCurrentYear = period.year === currentMonth.slice(0, 4)
+    const periodLabel = isCurrentYear
+      ? t('finance.yearToDateLabel', { year: period.year, from: yearStartLabel(period.year) })
+      : period.year
+    return (
+      <>
+        <SpendingByYearPanel year={period.year} currentMonth={currentMonth} picker={picker} onOpenMonth={selectMonth} />
+        <SavingSummaryPanel month={period.month} year={period.year} />
+        <BudgetStatusPanel period={period} />
+        <SpendingSummaryPanel range={yearRange(period.year, today)} periodLabel={periodLabel} />
+      </>
+    )
+  }
   return (
     <>
-      <SpendingByMonthPanel month={month} currentMonth={currentMonth} onSelectMonth={selectMonth} />
-      <SpendingByDayPanel month={month} />
-      <SavingSummaryPanel month={month} />
-      <BudgetStatusPanel month={month} />
-      <SpendingSummaryPanel month={month} />
+      <SpendingByMonthPanel
+        month={period.month}
+        currentMonth={currentMonth}
+        onSelectMonth={selectMonth}
+        picker={picker}
+      />
+      <SpendingByDayPanel month={period.month} />
+      <SavingSummaryPanel month={period.month} />
+      <BudgetStatusPanel period={period} />
+      <SpendingSummaryPanel
+        range={monthRange(period.month, personToday())}
+        periodLabel={monthLabel(period.month, 'long')}
+      />
     </>
   )
 }
@@ -78,10 +113,12 @@ function SpendingByMonthPanel({
   month,
   currentMonth,
   onSelectMonth,
+  picker,
 }: {
   month: string
   currentMonth: string
   onSelectMonth: (month: string) => void
+  picker: React.ReactNode
 }) {
   const { t } = useTranslation()
   const toMonth = month >= monthBefore(currentMonth, 11) ? currentMonth : month
@@ -101,26 +138,13 @@ function SpendingByMonthPanel({
   const hasSpending = months.some(
     (candidate) => amountOf(candidate.spendingAmount) !== 0 || amountOf(candidate.incomeAmount) !== 0,
   )
-  // On the headline's line rather than in the panel's heading: there it
-  // sat alone at the right of an empty band above the chart on a phone.
-  const monthPicker = (
-    <label className="finance-month">
-      <span>{t('finance.month')}</span>
-      <input
-        type="month"
-        value={month}
-        max={currentMonth}
-        onChange={(event) => event.target.value && onSelectMonth(event.target.value)}
-      />
-    </label>
-  )
   return (
     <SettingsSection card title={t('finance.cashFlowByMonthTitle')} description={t('finance.cashFlowByMonthHint')}>
       <ErrorMessage error={error} />
       {loading && !data ? <Loading /> : null}
       {flow && !hasSpending ? (
         <>
-          <div className="finance-month-alone">{monthPicker}</div>
+          <div className="finance-month-alone">{picker}</div>
           <SettingsEmpty>{t('finance.noCashFlow')}</SettingsEmpty>
         </>
       ) : null}
@@ -162,7 +186,10 @@ function SpendingByMonthPanel({
           ]}
           selectedKey={month}
           onSelectKey={onSelectMonth}
-          headAction={monthPicker}
+          // On the headline's line rather than in the panel's heading: there
+          // it sat alone at the right of an empty band above the chart on a
+          // phone.
+          headAction={picker}
         />
       ) : null}
       {chosen ? (
@@ -269,35 +296,49 @@ function paceTone(pace: BudgetPace): 'good' | 'warn' | 'bad' {
   return 'good'
 }
 
-function BudgetStatusPanel({ month }: { month: string }) {
+// The budgets of the period: a month's, or a year's, each of a year's
+// rows adding up the months that had its budget as it was then.
+function BudgetStatusPanel({ period }: { period: SpendingPeriod }) {
   const { t } = useTranslation()
-  const { data, error, loading } = useQuery(
-    () => graphql<{ BudgetStatus: BudgetStatus }>(BUDGET_STATUS, { month }),
-    [month],
+  const isYear = period.spendingPeriodKind === 'year'
+  const variables = isYear ? { year: period.year } : { month: period.month }
+  const asked = isYear ? `year ${period.year}` : `month ${period.month}`
+  const {
+    data: answered,
+    error,
+    loading,
+  } = useQuery(
+    () => graphql<{ BudgetStatus: BudgetStatus }>(BUDGET_STATUS, variables).then((answer) => ({ ...answer, asked })),
+    [asked],
     { refresh: false },
   )
+  // A month's rows under a year's heading would be wrong for a moment.
+  const data = answered?.asked === asked ? answered : undefined
   const status = data?.BudgetStatus
   const rows = status?.spendingCategories ?? []
   const incomeRows = status?.incomeCategories ?? []
-  // A month that is over has nowhere left to head: it is the whole month,
-  // with no projection and no repeat charges still to come.
-  const isPast = month < personMonth()
+  // A month or a year that is over has nowhere left to head: it is the
+  // whole of it, with no projection and no repeat charges still to come.
+  const isPast = isYear ? period.year < personMonth().slice(0, 4) : period.month < personMonth()
   // The groups are headed only once there is income to tell apart.
   const hasBoth = rows.length > 0 && incomeRows.length > 0
+  const description = !status
+    ? undefined
+    : isYear
+      ? isPast
+        ? t('finance.budgetStatusYearHintPast', { year: period.year })
+        : t('finance.budgetStatusYearHint', { year: period.year, from: yearStartLabel(period.year) })
+      : isPast
+        ? t('finance.budgetStatusHintPast', { month: monthLabel(period.month, 'long') })
+        : t('finance.budgetStatusHint', { day: status.dayOfMonth, days: status.daysInMonth })
   return (
     <SettingsSection
       card
-      title={t('finance.budgetStatusTitle')}
-      description={
-        status
-          ? isPast
-            ? t('finance.budgetStatusHintPast', { month: monthLabel(month, 'long') })
-            : t('finance.budgetStatusHint', { day: status.dayOfMonth, days: status.daysInMonth })
-          : undefined
-      }
+      title={isYear ? t('finance.budgetStatusYearTitle') : t('finance.budgetStatusTitle')}
+      description={description}
     >
       <ErrorMessage error={error} />
-      {loading && !data ? <Loading /> : null}
+      {(loading || answered) && !data ? <Loading /> : null}
       {status && rows.length === 0 && incomeRows.length === 0 ? (
         <SettingsEmpty>{t('finance.noBudgetStatus')}</SettingsEmpty>
       ) : null}
@@ -306,7 +347,7 @@ function BudgetStatusPanel({ month }: { month: string }) {
           {hasBoth ? <h4 className="finance-group-heading">{t('finance.spending')}</h4> : null}
           <div className="finance-budget-bars">
             {rows.map((row) => (
-              <BudgetStatusRow key={row.spendingCategoryId} row={row} isPast={isPast} />
+              <BudgetStatusRow key={row.spendingCategoryId} row={row} isPast={isPast} isYear={isYear} />
             ))}
           </div>
         </div>
@@ -316,7 +357,7 @@ function BudgetStatusPanel({ month }: { month: string }) {
           {hasBoth ? <h4 className="finance-group-heading">{t('finance.income')}</h4> : null}
           <div className="finance-budget-bars">
             {incomeRows.map((row) => (
-              <IncomeStatusRow key={row.spendingCategoryId} row={row} isPast={isPast} />
+              <IncomeStatusRow key={row.spendingCategoryId} row={row} isPast={isPast} isYear={isYear} />
             ))}
           </div>
         </div>
@@ -326,10 +367,19 @@ function BudgetStatusPanel({ month }: { month: string }) {
 }
 
 // IncomeStatusRow is an income budget: what came in against what was
-// expected, the bar filling toward the month's expected income, and the
-// band to where the month is expected to end. Falling short is what is
-// colored, not going past, so a band past the end has no tone of its own.
-function IncomeStatusRow({ row, isPast }: { row: IncomeCategoryBudgetStatus; isPast: boolean }) {
+// expected, the bar filling toward the month's (or the year's) expected
+// income, and the band to where it is expected to end. Falling short is
+// what is colored, not going past, so a band past the end has no tone of
+// its own.
+function IncomeStatusRow({
+  row,
+  isPast,
+  isYear,
+}: {
+  row: IncomeCategoryBudgetStatus
+  isPast: boolean
+  isYear: boolean
+}) {
   const { t } = useTranslation()
   const words = useFinanceWords()
   const categoryName = useSpendingCategoryDisplayName()
@@ -356,7 +406,22 @@ function IncomeStatusRow({ row, isPast }: { row: IncomeCategoryBudgetStatus; isP
         forecast={expected > 0 && !isPast ? projected / expected : null}
         forecastLabel={isPast ? undefined : headingFor}
       />
-      {isPast ? null : (
+      {isYear ? <BudgetedMonthsNote budgetedMonthCount={row.budgetedMonthCount} /> : null}
+      {isPast ? null : isYear ? (
+        <ForecastDetail
+          name={categoryName(row.spendingCategoryName)}
+          line={
+            <>
+              {headingFor}
+              {' · '}
+              {t('finance.expectedByToday', {
+                amount: formatMoney(amountOf(row.expectedByTodayAmount), row.currencyCode),
+              })}
+            </>
+          }
+          explanation={<p>{t('finance.forecastHowIncomeYear')}</p>}
+        />
+      ) : (
         <ForecastDetail
           name={categoryName(row.spendingCategoryName)}
           line={
@@ -388,12 +453,31 @@ function IncomeStatusRow({ row, isPast }: { row: IncomeCategoryBudgetStatus; isP
   )
 }
 
+// BudgetedMonthsNote says a year's budget covered only some of its months,
+// so its amount and spending are of those months alone.
+function BudgetedMonthsNote({ budgetedMonthCount }: { budgetedMonthCount: number }) {
+  const { t } = useTranslation()
+  if (budgetedMonthCount >= 12) return null
+  return (
+    <div className="muted finance-budget-row-detail">{t('finance.budgetedMonths', { count: budgetedMonthCount })}</div>
+  )
+}
+
 // BudgetStatusRow is a spending budget: what was spent against the
-// budget, and a band to where the month is heading, which turns the bad
-// tone once the pace says the month is heading over. The line under it
-// gives that forecast as the sum it is, and opens how it is made and which
-// repeat charges it counts.
-function BudgetStatusRow({ row, isPast }: { row: SpendingCategoryBudgetStatus; isPast: boolean }) {
+// budget, and a band to where the month (or the year) is heading, which
+// turns the bad tone once the pace says it is heading over. Under a
+// month's bar the line gives that forecast as the sum it is, and opens how
+// it is made and which repeat charges it counts; under a year's, the
+// budget for the days so far, and how the year is carried on.
+function BudgetStatusRow({
+  row,
+  isPast,
+  isYear,
+}: {
+  row: SpendingCategoryBudgetStatus
+  isPast: boolean
+  isYear: boolean
+}) {
   const { t } = useTranslation()
   const words = useFinanceWords()
   const categoryName = useSpendingCategoryDisplayName()
@@ -426,7 +510,27 @@ function BudgetStatusRow({ row, isPast }: { row: SpendingCategoryBudgetStatus; i
         forecastLabel={isPast ? undefined : t('finance.projected', { amount: money(projected) })}
         overTone={row.budgetPace === 'at_risk' ? 'bad' : undefined}
       />
-      {isPast ? null : (
+      {isYear ? <BudgetedMonthsNote budgetedMonthCount={row.budgetedMonthCount} /> : null}
+      {isPast ? null : isYear ? (
+        <ForecastDetail
+          name={categoryName(row.spendingCategoryName)}
+          line={
+            <>
+              {t('finance.projected', { amount: money(projected) })}
+              {' · '}
+              {t('finance.budgetToDate', { amount: money(amountOf(row.budgetToDateAmount)) })}
+            </>
+          }
+          explanation={
+            <>
+              <p>{t('finance.forecastHowSpendingYear')}</p>
+              {repeatChargesAmount > 0 ? (
+                <p>{t('finance.forecastRepeatChargesThisMonth', { amount: money(repeatChargesAmount) })}</p>
+              ) : null}
+            </>
+          }
+        />
+      ) : (
         <ForecastDetail
           name={categoryName(row.spendingCategoryName)}
           line={
@@ -473,13 +577,13 @@ function BudgetStatusRow({ row, isPast }: { row: SpendingCategoryBudgetStatus; i
   )
 }
 
-// The ways a month's spending is grouped. By month is not one of them: the
-// section shows one month at a time, and the chart at its top is by month.
+// The ways the period's spending is grouped. By month is not one of them:
+// the chart at the section's top is by month, in a year as in a month.
 const GROUP_BY: SpendingGroupBy[] = ['spendingCategory', 'merchant', 'financeAccount']
 
 // groupTransactionFilters is how a group's transactions are found on the
-// Transactions section, over the month's days: a spending category (or
-// none), a finance account, or a merchant's words.
+// Transactions section, over the month's or the year's days: a spending
+// category (or none), a finance account, or a merchant's words.
 function groupTransactionFilters(
   groupBy: SpendingGroupBy,
   groupKey: string,
@@ -493,27 +597,30 @@ function groupTransactionFilters(
   return null
 }
 
-// What went where in the month, counted as the chart above counts it (see
-// spendingLines), so the table's total is the month's headline: one amount
-// a group, what it spent, and how many transactions it holds.
+// What went where in the month or the year, counted as the chart above
+// counts it (see spendingLines), so the table's total is the headline: one
+// amount a group, what it spent, and how many transactions it holds.
 // How many groups a long grouping shows before "Show all": a month has
 // dozens of merchants, and the few at the top are what the table is read
 // for.
 const SHORT_GROUP_COUNT = 20
 
-function SpendingSummaryPanel({ month }: { month: string }) {
+function SpendingSummaryPanel({ range, periodLabel }: { range: { from: string; to: string }; periodLabel: string }) {
   const { t } = useTranslation()
   const categoryName = useSpendingCategoryDisplayName()
   const [groupBy, setGroupBy] = useState<SpendingGroupBy>('spendingCategory')
   const [isShowingAll, setIsShowingAll] = useState(false)
   const [highlightedKey, setHighlightedKey] = useState<string | null>(null)
-  useEffect(() => setIsShowingAll(false), [groupBy, month])
-  const range = monthRange(month, personToday())
+  useEffect(() => setIsShowingAll(false), [groupBy, range.from, range.to])
   // Each answer says what it was asked for: useQuery keeps the last answer
   // while the next is on its way, and last month's rows under this month's
   // range, or category ids read as merchants, would be wrong for a moment.
   const asked = `${range.from}|${range.to}|${groupBy}`
-  const { data: answered, error, loading } = useQuery(
+  const {
+    data: answered,
+    error,
+    loading,
+  } = useQuery(
     () =>
       graphql<{ FinanceSpendingSummary: SpendingSummary }>(SPENDING_SUMMARY, {
         from: range.from,
@@ -598,7 +705,7 @@ function SpendingSummaryPanel({ month }: { month: string }) {
     <SettingsSection
       card
       title={t('finance.summaryTitle')}
-      description={t('finance.summaryHint', { month: monthLabel(month, 'long') })}
+      description={t('finance.summaryHint', { month: periodLabel })}
       action={
         <label className="shrink finance-group-by">
           <span>{t('finance.groupByLabel')}</span>
@@ -619,7 +726,7 @@ function SpendingSummaryPanel({ month }: { month: string }) {
         <SpendingRing
           slices={slices}
           currency={summary.reportingCurrencyCode}
-          label={t('finance.ringLabel', { month: monthLabel(month, 'long') })}
+          label={t('finance.ringLabel', { month: periodLabel })}
           totalLabel={t('finance.spending')}
           totalAmount={reportingTotal?.spendingAmount}
           highlightedKey={highlightedKey}
@@ -654,7 +761,10 @@ function SpendingSummaryPanel({ month }: { month: string }) {
                       ? `<${percent.format(0.01)}`
                       : percent.format(fraction)
                 const highlight = slice
-                  ? { onPointerEnter: () => setHighlightedKey(slice.sliceKey), onPointerLeave: () => setHighlightedKey(null) }
+                  ? {
+                      onPointerEnter: () => setHighlightedKey(slice.sliceKey),
+                      onPointerLeave: () => setHighlightedKey(null),
+                    }
                   : {}
                 return (
                   <tr key={line.key} {...highlight}>

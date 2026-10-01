@@ -259,10 +259,17 @@ func NewFinanceCommand() *cli.Command {
 				Flags:  []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "currency", Usage: "its currency; the reporting currency by default"}, &cli.StringFlag{Name: "from", Usage: "the month it starts, as 2026-10; this month by default"}},
 				Action: runFinanceSetBudget,
 			},
-			{Name: "budget-status", Usage: "each spending category against its budget this month, and each income category against the income expected", Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "month", Usage: "another month, as 2026-08"}}, Action: runFinanceBudgetStatus},
+			{
+				Name: "budget-status", Usage: "each spending category against its budget this month, and each income category against the income expected",
+				Flags:  []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "month", Usage: "another month, as 2026-08"}, yearFlag()},
+				Action: runFinanceBudgetStatus,
+			},
 			{
 				Name: "saving-summary", Usage: "this month's saving: income budgets less spending budgets, against income less spending so far and projected",
-				Flags:  []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "month", Usage: "another month, as 2026-08"}, &cli.StringFlag{Name: "currency", Usage: "convert into this currency instead of the reporting currency"}},
+				Flags: []cli.Flag{
+					JSONFlag(), &cli.StringFlag{Name: "month", Usage: "another month, as 2026-08"}, yearFlag(),
+					&cli.StringFlag{Name: "currency", Usage: "convert into this currency instead of the reporting currency"},
+				},
 				Action: runFinanceSavingSummary,
 			},
 			{
@@ -2066,9 +2073,31 @@ func runFinanceSetBudget(ctx context.Context, command *cli.Command) error {
 	return printDone(command, budget, fmt.Sprintf("%s: %s a month from %s", found.SpendingCategoryName, money(budget.MonthlyAmount, budget.CurrencyCode), strings.TrimSuffix(budget.EffectiveFrom, "-01")))
 }
 
+// yearFlag is the --year a budget status or a saving summary takes
+// instead of --month.
+func yearFlag() cli.Flag {
+	return &cli.StringFlag{Name: "year", Usage: "a calendar year instead of a month, as 2026: each month's budgets as they were in force, added up, and the year to date for this one"}
+}
+
+// periodLine is the line that heads a month's or a year's budgets: which
+// month and how far into it, or which year and how far into it.
+func periodLine(month, year, asOf string, dayOfMonth, daysInMonth, monthsElapsedCount, dayOfYear, daysInYear int) string {
+	if year == "" {
+		return fmt.Sprintf("%s, day %d of %d", month, dayOfMonth, daysInMonth)
+	}
+	switch {
+	case monthsElapsedCount == 0:
+		return year + ", not begun: the budgets in force for it today"
+	case dayOfYear == daysInYear:
+		return year + ", the whole year"
+	}
+	return fmt.Sprintf("%s, %s-01-01 to %s, day %d of %d", year, year, asOf, dayOfYear, daysInYear)
+}
+
 func runFinanceBudgetStatus(ctx context.Context, command *cli.Command) error {
 	variables := map[string]any{}
 	setString(command, variables, "month", "month")
+	setString(command, variables, "year", "year")
 	var status *client.BudgetStatus
 	if err := financeCall(ctx, command, operationOf(command), variables, &status); err != nil {
 		return err
@@ -2077,10 +2106,13 @@ func runFinanceBudgetStatus(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(status)
 	}
 	if len(status.SpendingCategories) == 0 && len(status.IncomeCategories) == 0 {
-		_, _ = fmt.Fprintf(command.Writer, "no budgets in %s; teanode finance set-budget sets one\n", status.Month)
+		_, _ = fmt.Fprintf(command.Writer, "no budgets in %s; teanode finance set-budget sets one\n", status.Month+status.Year)
 		return nil
 	}
-	_, _ = fmt.Fprintf(command.Writer, "%s, day %d of %d\n", status.Month, status.DayOfMonth, status.DaysInMonth)
+	_, _ = fmt.Fprintln(command.Writer, periodLine(status.Month, status.Year, status.AsOf, status.DayOfMonth, status.DaysInMonth, status.MonthsElapsedCount, status.DayOfYear, status.DaysInYear))
+	if status.Year != "" {
+		return printYearBudgetStatus(command, status)
+	}
 	if len(status.SpendingCategories) > 0 {
 		rows := make([][]string, 0, len(status.SpendingCategories))
 		for _, row := range status.SpendingCategories {
@@ -2123,9 +2155,47 @@ func runFinanceBudgetStatus(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
+// printYearBudgetStatus is a year's budgets: each against the budgets of
+// the months it had one, with the part of them for the days so far, and
+// where the year is heading.
+func printYearBudgetStatus(command *cli.Command, status *client.BudgetStatus) error {
+	if len(status.SpendingCategories) > 0 {
+		rows := make([][]string, 0, len(status.SpendingCategories))
+		for _, row := range status.SpendingCategories {
+			rows = append(rows, []string{
+				row.SpendingCategoryName, money(row.BudgetAmount, row.CurrencyCode), money(row.BudgetToDateAmount, row.CurrencyCode),
+				money(row.SpendingAmount, row.CurrencyCode), money(row.ProjectedAmount, row.CurrencyCode), row.BudgetPace, strconv.Itoa(row.BudgetedMonthCount),
+			})
+		}
+		if err := printTable([]string{"spending category", "budget", "budget to date", "spent", "projected", "pace", "months budgeted"}, rows); err != nil {
+			return err
+		}
+	}
+	if len(status.IncomeCategories) > 0 {
+		if len(status.SpendingCategories) > 0 {
+			_, _ = fmt.Fprintln(command.Writer)
+		}
+		rows := make([][]string, 0, len(status.IncomeCategories))
+		for _, row := range status.IncomeCategories {
+			rows = append(rows, []string{
+				row.SpendingCategoryName, money(row.BudgetAmount, row.CurrencyCode), money(row.ExpectedByTodayAmount, row.CurrencyCode),
+				money(row.IncomeAmount, row.CurrencyCode), money(row.ProjectedAmount, row.CurrencyCode), row.IncomePace, strconv.Itoa(row.BudgetedMonthCount),
+			})
+		}
+		if err := printTable([]string{"income category", "expected", "expected by today", "received", "projected", "pace", "months budgeted"}, rows); err != nil {
+			return err
+		}
+	}
+	if status.MonthsElapsedCount > 0 && status.MonthsElapsedCount < 12 {
+		_, _ = fmt.Fprintln(command.Writer, "projected: the months over as they ended, this month as projected, and each budgeted month to come at their average")
+	}
+	return nil
+}
+
 func runFinanceSavingSummary(ctx context.Context, command *cli.Command) error {
 	variables := map[string]any{}
 	setString(command, variables, "month", "month")
+	setString(command, variables, "year", "year")
 	setString(command, variables, "currency", "currencyCode")
 	var summary *client.SavingSummary
 	if err := financeCall(ctx, command, operationOf(command), variables, &summary); err != nil {
@@ -2139,11 +2209,12 @@ func runFinanceSavingSummary(ctx context.Context, command *cli.Command) error {
 		return nil
 	}
 	if summary.IncomeBudgetCount == 0 && summary.SpendingBudgetCount == 0 {
-		_, _ = fmt.Fprintf(command.Writer, "no budgets in %s; teanode finance set-budget sets one on an income or a spending category\n", summary.Month)
+		_, _ = fmt.Fprintf(command.Writer, "no budgets in %s; teanode finance set-budget sets one on an income or a spending category\n", summary.Month+summary.Year)
 		return nil
 	}
 	currencyCode := summary.ReportingCurrencyCode
-	_, _ = fmt.Fprintf(command.Writer, "%s, day %d of %d, %s\n", summary.Month, summary.DayOfMonth, summary.DaysInMonth, strings.ReplaceAll(summary.SavingPace, "_", " "))
+	_, _ = fmt.Fprintf(command.Writer, "%s, %s\n", periodLine(summary.Month, summary.Year, summary.AsOf, summary.DayOfMonth, summary.DaysInMonth, summary.MonthsElapsedCount, summary.DayOfYear, summary.DaysInYear),
+		strings.ReplaceAll(summary.SavingPace, "_", " "))
 	rows := [][]string{
 		{"income", money(summary.ExpectedIncomeAmount, currencyCode), money(summary.IncomeAmount, currencyCode), money(summary.ProjectedIncomeAmount, currencyCode)},
 		{"spending", money(summary.ExpectedSpendingAmount, currencyCode), money(summary.SpendingAmount, currencyCode), money(summary.ProjectedSpendingAmount, currencyCode)},

@@ -120,6 +120,11 @@ export type SpendingCategoryBudgetStatus = {
   spendingCategoryName: string
   budgetAmount: string
   currencyCode: string
+  // The part of the budget for the days so far, and how many months it was
+  // in force: one for a month, and for a year the months that had it,
+  // which budgetAmount adds up.
+  budgetToDateAmount: string
+  budgetedMonthCount: number
   spendingAmount: string
   spendingBySameDayLastMonthAmount: string
   fixedChargesDueAmount: string
@@ -143,6 +148,7 @@ export type IncomeCategoryBudgetStatus = {
   spendingCategoryName: string
   budgetAmount: string
   currencyCode: string
+  budgetedMonthCount: number
   incomeAmount: string
   incomeBySameDayLastMonthAmount: string
   expectedByTodayAmount: string
@@ -151,11 +157,17 @@ export type IncomeCategoryBudgetStatus = {
   unconvertedIncome: CurrencyAmount[]
 }
 
+// A month's budgets, or a year's: then month is empty, year is set, and
+// each row adds up the months of the year that had its budget.
 export type BudgetStatus = {
   month: string
   asOf: string
   dayOfMonth: number
   daysInMonth: number
+  year: string
+  monthsElapsedCount: number
+  dayOfYear: number
+  daysInYear: number
   spendingCategories: SpendingCategoryBudgetStatus[]
   incomeCategories: IncomeCategoryBudgetStatus[]
 }
@@ -169,6 +181,10 @@ export type SavingSummary = {
   asOf: string
   dayOfMonth: number
   daysInMonth: number
+  year: string
+  monthsElapsedCount: number
+  dayOfYear: number
+  daysInYear: number
   reportingCurrencyCode: string
   incomeBudgetCount: number
   spendingBudgetCount: number
@@ -612,19 +628,21 @@ export const SPENDING_BY_DAY = `query ($month: String, $compareMonth: String) {
   }
 }`
 
-export const BUDGET_STATUS = `query ($month: String) {
-  BudgetStatus(month: $month) { month asOf dayOfMonth daysInMonth
-    spendingCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode spendingAmount
+export const BUDGET_STATUS = `query ($month: String, $year: String) {
+  BudgetStatus(month: $month, year: $year) { month asOf dayOfMonth daysInMonth year monthsElapsedCount dayOfYear daysInYear
+    spendingCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode budgetToDateAmount
+      budgetedMonthCount spendingAmount
       spendingBySameDayLastMonthAmount fixedChargesDueAmount projectedAmount budgetPace
       expectedRepeatCharges { merchantName expectedAmount currencyCode }
       unconvertedSpending { currencyCode amount } }
-    incomeCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode incomeAmount
+    incomeCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode budgetedMonthCount incomeAmount
       incomeBySameDayLastMonthAmount expectedByTodayAmount projectedAmount incomePace
       unconvertedIncome { currencyCode amount } } }
 }`
 
-export const SAVING_SUMMARY = `query ($month: String) {
-  SavingSummary(month: $month) { month asOf dayOfMonth daysInMonth reportingCurrencyCode incomeBudgetCount
+export const SAVING_SUMMARY = `query ($month: String, $year: String) {
+  SavingSummary(month: $month, year: $year) { month asOf dayOfMonth daysInMonth year monthsElapsedCount dayOfYear
+    daysInYear reportingCurrencyCode incomeBudgetCount
     spendingBudgetCount expectedIncomeAmount expectedSpendingAmount expectedSavingAmount incomeAmount spendingAmount
     savingAmount projectedIncomeAmount projectedSpendingAmount projectedSavingAmount savingDifferenceAmount savingPace
     unconvertedCurrencyCodes }

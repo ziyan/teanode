@@ -675,6 +675,39 @@ the saving pace is `on_track` within a tenth of the spending budgets
 either side, `behind` below that after the first week, `ahead` above it.
 A month that is over uses its own figures.
 
+**A year.** `BudgetStatus` and `SavingSummary` take a calendar year
+(`year: "2026"`, `teanode finance budget-status --year 2026`, the tool's
+`budget_status` and `saving_summary` with `year`) instead of a month, and
+refuse both at once. A year is built from its months
+(`internal/agent/budget_year.go`): each month that has begun is that
+month's own `BudgetStatus` or `SavingSummary`, so the year never says
+another number for a month than the month does, and each month still to
+come is the budgets in force for it as they stand today. A budget counts
+each month at the amount it had that month, so one raised in July is six
+months at each amount, and one ended in May is January to April; its
+spending (or income) is that of the months it was in force, and
+`budgetedMonthCount` says how many. `budgetToDateAmount` is the budget for
+the days so far: the months that are over whole and the month in progress
+spread over its days (a month's status has it too). The projection
+(`ProjectSpendingCategoryYear`) is each month that is over as it ended, the
+month in progress as its own projection (repeat charges and its pace), and
+each budgeted month still to come at the average of those months: the year
+carried on the way it has gone, rather than assumed to land on its budget.
+With no month begun there is nothing to carry on, and a month to come
+counts at its budget. An income budget's year
+(`ProjectIncomeCategoryYear`) counts what came in for the months that are
+over, the month in progress's projection, and the income expected of each
+month to come; expected by today is the months over and the month in
+progress's share by its days. The paces are a month's thresholds over the
+year, with the first week of the year as the settling days. A year's rows
+are in the currency of the budget's latest month begun, a month in another
+currency converted at its as-of day's rate. The year's saving is its months'
+expected, actual and projected saving added up the same way, the projected
+spending of the months to come at the average of the months begun, budgeted
+or not, and the counts are of the spending categories with a budget in any
+month. Each month of a year is read in turn, so a year costs about twelve
+months' queries.
+
 A savings target is measured one of three ways (`target_measure`):
 `cash_flow`, income less spending since it started; `net_worth`, net worth
 today less the net worth it started from, converted per currency at the
@@ -786,6 +819,25 @@ The saving summary is a panel on Spending, for the month chosen there, above
 the month's budgets (spending budgets, then income budgets under a heading
 of their own), and heads Budgets for this month, where the list and the
 "Set a budget" dialog group income categories under Income.
+
+Spending shows a month or a year: a Month | Year segmented pair beside the
+period picker (`SpendingPeriodPicker` in
+`web/src/pages/finance/financeSpendingYear.tsx`), the year chosen with a
+step either way or from a menu. The period is in the address, `?month=` or
+`?year=` (`spendingPeriodFromSearch` in `financeFilters.ts`), so a year can
+be linked to; changing Month to Year or back is a step in the browser's
+history and Back returns to it, while choosing another month or year
+replaces the address as the month always has. Year to month lands on the
+year's latest month begun. In Year mode the section is the year's cash
+flow a bar a month (the months to come empty; choosing a month opens it in
+Month), with the year's income, spending and what was left added up from
+those months as cash flow counts them (`yearCashFlowTotals`); the year's
+saving; the year's budgets, each noting when it covered only some months,
+with the budget to date and an explanation of the year's projection; and
+the spending summary over the year, each group opening Transactions over
+the year's days. The current year reads from January 1 to today, and says
+so in the chart's caption and the panels' hints. The day-by-day chart is a
+month's only.
 
 Each bar is what has gone so far, and a faint striped band past it runs to
 where the month is heading (`MeterBar` in
