@@ -544,7 +544,12 @@ func (self *Agent) askScenario(ctx context.Context, settings *ScenarioSettings, 
 			}
 			var evaluation *AnswerEvaluation
 			if answerFrom == ScenarioAnswerFromSurvey {
-				evaluation, err = self.surveyScenario(ctx, found, owner, question)
+				// A survey that cannot run, over a graph no dream has written
+				// overviews for yet, is an answer that was not given: it is
+				// reported as missed, with why, and the run goes on.
+				if evaluation, err = self.surveyScenario(ctx, found, owner, question); err != nil {
+					evaluation, err = &AnswerEvaluation{AnswerVerdict: AnswerMissed, VerdictReason: "the survey could not run: " + err.Error()}, nil
+				}
 			} else {
 				evaluation, err = self.EvaluateAnswer(ctx, found, owner, question.Question, question.ExpectedAnswer, question.OutdatedAnswer, answerFrom, plan)
 			}
