@@ -109,6 +109,7 @@ export function SpendingRing({
   totalAmount,
   totalText,
   totalTone,
+  isSliceShareSpoken = true,
 }: {
   slices: RingSlice[]
   currency: string
@@ -126,6 +127,11 @@ export function SpendingRing({
   // good, warn and bad.
   totalText?: string
   totalTone?: 'good' | 'warn' | 'bad'
+  // Whether a screen reader hears each slice's share of the whole ring
+  // after its amount. Not where the whole is no total anyone reads: the
+  // credit usage ring's is the cards' combined limit, and a card's share of
+  // that is not the usage its row shows.
+  isSliceShareSpoken?: boolean
 }) {
   const total = slices.reduce((sum, slice) => sum + slice.amount, 0)
   if (total <= 0) return null
@@ -137,7 +143,11 @@ export function SpendingRing({
     return { slice, index, path: ringSlicePath(RING_SIZE / 2, RING_OUTER, RING_INNER, start, reached / total) }
   })
   const said = slices
-    .map((slice) => `${slice.label}: ${formatMoney(slice.amount, currency)} (${percent.format(slice.amount / total)})`)
+    .map((slice) =>
+      isSliceShareSpoken
+        ? `${slice.label}: ${formatMoney(slice.amount, currency)} (${percent.format(slice.amount / total)})`
+        : `${slice.label}: ${formatMoney(slice.amount, currency)}`,
+    )
     .join('; ')
   return (
     <div className="spending-ring">

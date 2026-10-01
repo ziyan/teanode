@@ -6,11 +6,18 @@ import { CreditCardUsage, CreditUsage } from './financeApi'
 describe('usageTone', () => {
   it('is good under 30%, a warning from 30% to 50%, and bad above', () => {
     expect(usageTone(0)).toBe('good')
-    expect(usageTone(0.2999)).toBe('good')
+    expect(usageTone(0.2949)).toBe('good')
     expect(usageTone(0.3)).toBe('warn')
     expect(usageTone(0.5)).toBe('warn')
-    expect(usageTone(0.5001)).toBe('bad')
+    expect(usageTone(0.5051)).toBe('bad')
     expect(usageTone(1.2)).toBe('bad')
+  })
+
+  // The tone is that of the share as it is shown, to the whole percent.
+  it('judges a share as it is rounded to be shown', () => {
+    expect(usageTone(0.2996)).toBe('warn')
+    expect(usageTone(0.5001)).toBe('warn')
+    expect(usageTone(0.5049)).toBe('warn')
   })
 })
 

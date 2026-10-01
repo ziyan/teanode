@@ -170,6 +170,40 @@ func TestStatementImportOfABank(test *testing.T) {
 	}
 }
 
+// A bank's line of credit is a credit account, as a debt, and its metadata
+// says it is a line of credit so credit usage can leave it out; a card's
+// and a checking account's do not.
+func TestStatementImportOfACreditLine(test *testing.T) {
+	test.Parallel()
+	document := &ofx.Document{InstitutionOrganization: "Invented Savings Bank", Statements: []*ofx.Statement{{
+		StatementKind: ofx.StatementKindBank, CurrencyCode: "USD", AccountID: "000987654321", BankID: "000000000", AccountType: "CREDITLINE",
+		LedgerBalance: &ofx.Balance{Amount: "-5000.00", AsOfDay: "2026-02-28"},
+	}}}
+	statementImport, err := NewStatementImport(inventedAccountKey, document, document.Statements[0], nil)
+	if err != nil {
+		test.Fatal(err)
+	}
+	account := statementImport.SyncResult.Accounts[0]
+	if account.AccountKind != AccountKindCredit || !IsStatementCreditLine(account.ProviderMetadata) {
+		test.Errorf("a line of credit was imported as %s with %s", account.AccountKind, account.ProviderMetadata)
+	}
+	card, err := NewStatementImport(inventedAccountKey, inventedCardDocument(), inventedCardDocument().Statements[0], nil)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if IsStatementCreditLine(card.SyncResult.Accounts[0].ProviderMetadata) {
+		test.Error("a card is taken for a line of credit")
+	}
+	document.Statements[0].AccountType = "CHECKING"
+	checking, err := NewStatementImport(inventedAccountKey, document, document.Statements[0], nil)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if IsStatementCreditLine(checking.SyncResult.Accounts[0].ProviderMetadata) || IsStatementCreditLine(nil) {
+		test.Error("a checking account or no metadata is taken for a line of credit")
+	}
+}
+
 // Two exports of one card, one with the FI block's FID and one with only
 // its ORG, are one account: the institution used to be in the key, and
 // the optional FI block split the account in two.

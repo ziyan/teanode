@@ -80,6 +80,24 @@ it('draws the share used and every card', async () => {
   expect(container.querySelectorAll('.spending-ring-swatch')).toHaveLength(2)
 })
 
+// A screen reader hears the share used, both from the figures beside the
+// ring and from the ring itself, and hears each slice by what it owes: Card
+// A is 30% of the combined limit, which is not the 60% its row says.
+it('says the share used to a screen reader', async () => {
+  execute.mockResolvedValue({ CreditUsage: usage })
+  const { container } = render(<FinanceCreditUsageSection refreshKey={0} />)
+  expect(await screen.findByText('finance.creditUsageTitle')).toBeTruthy()
+  const terms = [...container.querySelectorAll('.finance-worth-line dt')].map((term) => term.textContent)
+  expect(terms).toContain('finance.creditUsedShare')
+  const used = container.querySelector('.finance-worth-line .finance-credit-share')
+  expect(used?.textContent).toBe('43%')
+  expect(used?.className).toContain('warn')
+  const ringLabel = container.querySelector('.spending-ring-drawing')?.getAttribute('aria-label') ?? ''
+  expect(ringLabel).toContain('{"share":"43%"}')
+  expect(ringLabel).toContain('Card A ··0001: $600.00')
+  expect(ringLabel).not.toContain('30%')
+})
+
 it('draws nothing for a person with no credit card', async () => {
   execute.mockResolvedValue({ CreditUsage: { ...usage, creditCards: [], usageShare: null } })
   const { container } = render(<FinanceCreditUsageSection refreshKey={0} />)

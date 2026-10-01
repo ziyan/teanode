@@ -15,10 +15,13 @@ export type UsageTone = 'good' | 'warn' | 'bad'
 
 // usageTone is a share's tone: under 30% good, 30% to 50% warn, above 50%
 // bad. The bounds belong to the middle band, so a card at exactly half its
-// limit is a warning, not yet bad.
+// limit is a warning, not yet bad. The share is judged as it is shown, to
+// the whole percent, so a share shown as 30% is never drawn as good beside
+// a hint that says 30% is worth watching.
 export function usageTone(usageShare: number): UsageTone {
-  if (usageShare > USAGE_SHARE_BAD) return 'bad'
-  if (usageShare >= USAGE_SHARE_WARN) return 'warn'
+  const shownPercent = Math.round(usageShare * 100)
+  if (shownPercent > Math.round(USAGE_SHARE_BAD * 100)) return 'bad'
+  if (shownPercent >= Math.round(USAGE_SHARE_WARN * 100)) return 'warn'
   return 'good'
 }
 

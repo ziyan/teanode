@@ -3359,7 +3359,7 @@ export const en = {
   'finance.fromStatements': 'From statements',
   'finance.creditUsageTitle': 'Credit usage',
   'finance.creditUsageHint': 'What your credit cards owe against their credit limits. Under 30% of a limit is commonly taken as good, 30% to 50% as worth watching, and more than 50% weighs on a credit score.',
-  'finance.creditUsageRingLabel': 'Credit used on each card, and the credit still available',
+  'finance.creditUsageRingLabel': '{share} of the combined credit limit used. What each card owes, and the credit still available',
   'finance.creditUsed': 'used',
   'finance.creditAvailable': 'Available',
   'finance.creditOwed': 'Owed',

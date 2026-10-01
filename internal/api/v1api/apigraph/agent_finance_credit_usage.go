@@ -15,7 +15,9 @@ import (
 
 // Credit usage: what is owed on the person's credit cards against their
 // credit limits, overall and per card. Part of the finance area
-// (FinanceQuery). A credit card is a finance account of kind credit.
+// (FinanceQuery). A credit card is a finance account of kind credit,
+// other than a bank's line of credit imported from a statement, whose
+// limit is no card's and would make the cards look less used than they are.
 
 // CreditUsageView is what is owed on the caller's credit cards against
 // their credit limits.
@@ -38,7 +40,9 @@ type CreditUsageView struct {
 	// LeftOutCardCount is how many cards are left out of the totals
 	// because their credit limit or their balance is not known, and
 	// LeftOutOwedAmount what is owed on them, so the whole of what the
-	// cards owe can still be said.
+	// cards owe can still be said. A card in a currency that does not
+	// convert is not among them, since what it owes cannot be added in:
+	// UnconvertedCurrencyCodes names its currency instead.
 	LeftOutCardCount  int    `json:"leftOutCardCount"`
 	LeftOutOwedAmount string `json:"leftOutOwedAmount"`
 
@@ -138,7 +142,7 @@ func creditUsageOf(accounts []*FinanceAccountView, reportingCurrencyCode string,
 	isAnyMeasured := false
 	unconverted := map[string]bool{}
 	for _, account := range accounts {
-		if account.AccountKind != models.FinanceAccountKindCredit {
+		if account.AccountKind != models.FinanceAccountKindCredit || finance.IsStatementCreditLine(account.ProviderMetadata) {
 			continue
 		}
 		usage, err := creditCardUsageOf(account.CurrentBalance, account.AvailableBalance, account.CreditLimitAmount,
@@ -161,8 +165,6 @@ func creditUsageOf(accounts []*FinanceAccountView, reportingCurrencyCode string,
 		isMeasured := usage.owedAmount != nil && usage.creditLimitAmount != nil
 		if isMeasured {
 			card.UsageShare = usageShare(usage.owedAmount, usage.creditLimitAmount)
-		} else {
-			view.LeftOutCardCount++
 		}
 		if reportingCurrencyCode == "" || unconverted[account.CurrencyCode] {
 			continue
@@ -194,8 +196,11 @@ func creditUsageOf(accounts []*FinanceAccountView, reportingCurrencyCode string,
 			totalOwed.Add(totalOwed, convertedOwed)
 			totalCreditLimit.Add(totalCreditLimit, convertedCreditLimit)
 			isAnyMeasured = true
-		case convertedOwed != nil:
-			leftOutOwed.Add(leftOutOwed, convertedOwed)
+		default:
+			view.LeftOutCardCount++
+			if convertedOwed != nil {
+				leftOutOwed.Add(leftOutOwed, convertedOwed)
+			}
 		}
 	}
 	view.UnconvertedCurrencyCodes = sortedCurrencyCodes(unconverted)

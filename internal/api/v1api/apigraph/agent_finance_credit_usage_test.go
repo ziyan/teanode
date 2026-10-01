@@ -65,6 +65,9 @@ func TestCreditCardUsageOf(test *testing.T) {
 
 // The summary adds up the cards it can measure, converted, and leaves out
 // and counts the ones it cannot; each card's share is in its own currency.
+// A card with no limit in a currency with no rate is named by its currency,
+// not counted as left out owing nothing, and a bank's line of credit is no
+// card.
 func TestCreditUsageOfAddsUpTheMeasuredCards(test *testing.T) {
 	test.Parallel()
 	euroInDollars := big.NewRat(5, 4)
@@ -90,6 +93,9 @@ func TestCreditUsageOfAddsUpTheMeasuredCards(test *testing.T) {
 		{ID: "unknown", ProviderKind: "simplefin", AccountName: "Card D", AccountKind: credit, CurrencyCode: "USD", CurrentBalance: "-80.0000"},
 		{ID: "unrated", ProviderKind: "simplefin", AccountName: "Card E", AccountKind: credit, CurrencyCode: "GBP", CurrentBalance: "-50.0000", AvailableBalance: "950.0000"},
 		{ID: "overpaid", ProviderKind: "plaid", AccountName: "Card F", AccountKind: credit, CurrencyCode: "USD", CurrentBalance: "-40.0000", AvailableBalance: "1040.0000"},
+		{ID: "unrated-unknown", ProviderKind: "simplefin", AccountName: "Card G", AccountKind: credit, CurrencyCode: "GBP", CurrentBalance: "-30.0000"},
+		{ID: "credit-line", ProviderKind: "statement", AccountName: "Home Equity Line", AccountKind: credit, CurrencyCode: "USD",
+			CurrentBalance: "-5000.0000", AvailableBalance: "45000.0000", ProviderMetadata: []byte(`{"statementKind":"bank","accountType":"CREDITLINE"}`)},
 	}
 	view, err := creditUsageOf(accounts, "USD", convert)
 	if err != nil {
@@ -109,7 +115,7 @@ func TestCreditUsageOfAddsUpTheMeasuredCards(test *testing.T) {
 		order = append(order, card.FinanceAccountID)
 		byId[card.FinanceAccountID] = card
 	}
-	if strings.Join(order, ",") != "provider,derived,euro,unrated,overpaid,unknown" {
+	if strings.Join(order, ",") != "provider,derived,euro,unrated,overpaid,unknown,unrated-unknown" {
 		test.Errorf("cards in the order %v", order)
 	}
 	if card := byId["euro"]; card.OwedAmount != "100.0000" || card.ConvertedOwedAmount != "125.0000" || card.ConvertedCreditLimitAmount != "625.0000" ||
@@ -130,12 +136,12 @@ func TestCreditUsageOfAddsUpTheMeasuredCards(test *testing.T) {
 	}
 
 	// Nothing to convert into: each card still has its own share, and no
-	// totals.
+	// totals to leave a card out of.
 	view, err = creditUsageOf(accounts, "", convert)
 	if err != nil {
 		test.Fatal(err)
 	}
-	if view.UsageShare != nil || view.TotalOwedAmount != "0.0000" || len(view.CreditCards) != 6 || view.LeftOutCardCount != 1 {
+	if view.UsageShare != nil || view.TotalOwedAmount != "0.0000" || len(view.CreditCards) != 7 || view.LeftOutCardCount != 0 {
 		test.Errorf("without a reporting currency %+v", view)
 	}
 
@@ -205,6 +211,11 @@ func TestCreditUsageThroughTheAPI(test *testing.T) {
 		}
 		if usage.UsageShare != nil || strings.Join(usage.UnconvertedCurrencyCodes, ",") != "EUR,USD" || usage.CreditCards[0].UsageShare == nil {
 			test.Errorf("unconverted %+v", usage)
+		}
+		// The card with no limit is named by its currency, not said to be
+		// left out owing nothing.
+		if usage.LeftOutCardCount != 0 || usage.LeftOutOwedAmount != "0.0000" {
+			test.Errorf("left out %d owing %s into a currency with no rate", usage.LeftOutCardCount, usage.LeftOutOwedAmount)
 		}
 
 		accounts, err := fixture.resolver.FinanceAccounts(ctx, FinanceAccountsArguments{})

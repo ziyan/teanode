@@ -3225,7 +3225,7 @@ export const zh: Catalog = {
   'finance.fromStatements': '来自对账单',
   'finance.creditUsageTitle': '信用额度使用',
   'finance.creditUsageHint': '信用卡欠款与其信用额度之比。通常认为低于额度的 30% 为良好，30% 到 50% 需要留意，超过 50% 会影响信用评分。',
-  'finance.creditUsageRingLabel': '每张卡已用的额度，以及剩余可用额度',
+  'finance.creditUsageRingLabel': '已用合计信用额度的 {share}。每张卡的欠款，以及剩余可用额度',
   'finance.creditUsed': '已用',
   'finance.creditAvailable': '可用',
   'finance.creditOwed': '欠款',

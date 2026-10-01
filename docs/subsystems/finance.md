@@ -308,10 +308,16 @@ and nothing else.
 ## Credit usage
 
 Credit usage (`CreditUsage`, `internal/api/v1api/apigraph/agent_finance_credit_usage.go`)
-is what the finance accounts of kind `credit` owe against their credit
-limits. It reads the accounts' stored balances, not the asset valuations,
-so it is as fresh as the last sync or statement. A SimpleFIN card whose name
-does not say it is a card is of kind `other` and is not counted.
+is what the credit cards owe against their credit limits. A credit card is
+a finance account of kind `credit`, other than a bank's line of credit
+imported from a statement (an OFX bank account of type `CREDITLINE`, which
+`finance.IsStatementCreditLine` reads from the account's metadata): it is
+kind `credit` so net worth counts it as a debt, but its limit is not a
+card's, and added to the cards' limits it would make them look less used
+than they are. It reads the accounts' stored balances, not the asset
+valuations, so it is as fresh as the last sync or statement. A SimpleFIN
+card whose name does not say it is a card is of kind `other` and is not
+counted.
 
 **What is owed.** A stored balance keeps the provider's sign:
 `finance.IsOwedBalancePositive` says Plaid reports what is owed as
@@ -339,7 +345,9 @@ reporting currency at today's rate, the way net worth converts today's
 balances. The totals add up the cards whose limit and balance are both
 known and whose currency converts; the cards left out for want of a limit
 or a balance are counted (`leftOutCardCount`) with what they owe, and a
-currency with no rate is named. Cards are listed highest usage first.
+currency with no rate is named (`unconvertedCurrencyCodes`). A card in such
+a currency is not counted as left out, since what it owes cannot be added
+to the rest. Cards are listed highest usage first.
 
 ## Investments
 
@@ -517,10 +525,14 @@ no explanation: it is its own figures.
 The Accounts section opens with **Credit usage**
 (`web/src/pages/finance/financeCreditUsage.tsx`), shown only when there is
 a credit card: the spending ring with a slice per card owed and one for the
-credit still available, the usage share in its middle, owed, available and
-limit beside it, and a table of the cards with their swatches, owed, limit
-and share. A share is colored by the common thresholds: under 30% good, 30%
-to 50% warn, above 50% bad (`usageTone` in `creditUsage.ts`). A derived
+credit still available, the usage share in its middle, owed, available,
+limit and the share used beside it, and a table of the cards with their
+swatches, owed, limit and share. The ring's label for a screen reader says
+the share used and each slice by what it owes, not by its share of the
+combined limit, which is not the card's own usage. A share is colored by
+the common thresholds: under 30% good, 30% to 50% warn, above 50% bad
+(`usageTone` in `creditUsage.ts`), judged to the whole percent it is shown
+as. A derived
 limit is marked and explained under the table, and the cards left out are
 said with what they owe. It sits on Accounts rather than Net worth because it
 is read from the accounts' balances and limits, and Net worth is about assets

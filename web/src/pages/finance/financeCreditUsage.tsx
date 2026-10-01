@@ -33,6 +33,8 @@ export function FinanceCreditUsageSection({ refreshKey }: { refreshKey: number }
   const sliceIndexes = new Map(slices.map((slice, index) => [slice.key, index]))
   const isDerivedShown = usage.creditCards.some((card) => card.creditLimitSource === 'derived')
   const hasShare = usage.usageShare !== undefined && usage.usageShare !== null
+  const usageShareText = shareWords(usage.usageShare ?? 0)
+  const usageShareTone = usageTone(usage.usageShare ?? 0)
 
   return (
     <SettingsSection card title={t('finance.creditUsageTitle')} description={t('finance.creditUsageHint')}>
@@ -43,11 +45,12 @@ export function FinanceCreditUsageSection({ refreshKey }: { refreshKey: number }
             <SpendingRing
               slices={slices}
               currency={currency}
-              label={t('finance.creditUsageRingLabel')}
+              label={t('finance.creditUsageRingLabel', { share: usageShareText })}
               totalLabel={t('finance.creditUsed')}
-              totalText={shareWords(usage.usageShare ?? 0)}
-              totalTone={usageTone(usage.usageShare ?? 0)}
+              totalText={usageShareText}
+              totalTone={usageShareTone}
               highlightedKey={highlightedKey}
+              isSliceShareSpoken={false}
             />
           ) : null}
           <dl className="finance-worth-line">
@@ -63,6 +66,10 @@ export function FinanceCreditUsageSection({ refreshKey }: { refreshKey: number }
             <dt>{t('finance.creditLimit')}</dt>
             <dd>
               <strong>{formatMoney(amountOf(usage.totalCreditLimitAmount), currency)}</strong>
+            </dd>
+            <dt>{t('finance.creditUsedShare')}</dt>
+            <dd>
+              <span className={`finance-credit-share ${usageShareTone}`}>{usageShareText}</span>
             </dd>
           </dl>
         </div>

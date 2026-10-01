@@ -3316,7 +3316,7 @@ export const ja: Catalog = {
   'finance.fromStatements': '明細書から',
   'finance.creditUsageTitle': 'クレジット利用率',
   'finance.creditUsageHint': 'クレジットカードの利用残高と利用限度額の割合です。一般に限度額の 30% 未満は良好、30% から 50% は要注意、50% を超えると信用スコアに響くとされます。',
-  'finance.creditUsageRingLabel': 'カードごとの利用額と、残りの利用可能額',
+  'finance.creditUsageRingLabel': '合計利用限度額の {share} を利用中。カードごとの利用額と、残りの利用可能額',
   'finance.creditUsed': '利用',
   'finance.creditAvailable': '利用可能',
   'finance.creditOwed': '利用残高',
