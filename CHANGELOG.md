@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.95.2] - 2026-10-01
+
+### Fixed
+
+- Row actions in Finance, mail and settings are icon buttons, and the buttons after linking a bank are no longer stuck together. (#277)
+
 ## [0.95.1] - 2026-10-01
 
 ### Changed
