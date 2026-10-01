@@ -728,6 +728,95 @@ func TestBudgetStatusReportsWhatItCouldNotConvert(t *testing.T) {
 	}
 }
 
+// An income budget is listed apart from the spending budgets, against what
+// came in, and the saving summary sets the budgets' expected saving
+// against income less spending: so far and projected in the month in
+// progress, the month's own figures once it is over.
+func TestIncomeBudgetStatusAndSavingSummary(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	incomeId := fixture.spendingCategoryIdNamed(t, fixture.agent.ID, finance.SpendingCategoryIncome)
+	groceriesId := fixture.spendingCategoryIdNamed(t, fixture.agent.ID, finance.SpendingCategoryGroceries)
+	fixture.applySync(t, &finance.SyncResult{Accounts: []finance.Account{inventedAccount()}, Added: []finance.Transaction{
+		inventedTransaction("salary", "2026-06-01", "3000.00", "PAYROLL EXAMPLE CO", "", ""),
+		inventedTransaction("grocer-one", "2026-06-05", "-200.00", "CORNER GROCER", "Corner Grocer", ""),
+		inventedTransaction("grocer-two", "2026-06-10", "-100.00", "CORNER GROCER AGAIN", "Corner Grocer", ""),
+		inventedTransaction("gift", "2026-06-12", "50.00", "A GIFT", "", ""),
+	}})
+	categoryByDescription := map[string]string{"PAYROLL EXAMPLE CO": incomeId, "CORNER GROCER": groceriesId, "CORNER GROCER AGAIN": groceriesId}
+	var status, pastStatus *models.BudgetStatus
+	var summary, pastSummary *models.SavingSummary
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		page, err := tx.ListFinanceTransactions(fixture.agent.ID, &db.FinanceTransactionFilter{})
+		if err != nil {
+			t.Fatalf("ListFinanceTransactions: %s", err)
+		}
+		for _, financeTransaction := range page.FinanceTransactions {
+			// The gift stays uncategorized: no income budget counts it, but
+			// the month's income does.
+			spendingCategoryId := categoryByDescription[financeTransaction.Description]
+			if _, err := tx.SetTransactionCategorization(fixture.agent.ID, financeTransaction.ID, spendingCategoryId, models.CategorizedByPerson, nil); err != nil {
+				t.Fatalf("SetTransactionCategorization: %s", err)
+			}
+		}
+		for spendingCategoryId, monthlyAmount := range map[string]string{incomeId: "4000", groceriesId: "600"} {
+			if _, err := tx.SetBudget(&models.Budget{AgentID: fixture.agent.ID, SpendingCategoryID: spendingCategoryId, MonthlyAmount: monthlyAmount, CurrencyCode: "USD", EffectiveFrom: "2026-06"}); err != nil {
+				t.Fatalf("SetBudget: %s", err)
+			}
+		}
+		if status, err = BudgetStatus(t.Context(), tx, nil, fixture.agent.ID, "2026-06", "2026-06-15"); err != nil {
+			t.Fatalf("BudgetStatus: %s", err)
+		}
+		if summary, err = SavingSummary(t.Context(), tx, nil, fixture.agent.ID, "2026-06", "2026-06-15", "USD"); err != nil {
+			t.Fatalf("SavingSummary: %s", err)
+		}
+		if pastStatus, err = BudgetStatus(t.Context(), tx, nil, fixture.agent.ID, "2026-06", "2026-07-03"); err != nil {
+			t.Fatalf("BudgetStatus: %s", err)
+		}
+		if pastSummary, err = SavingSummary(t.Context(), tx, nil, fixture.agent.ID, "2026-06", "2026-07-03", "USD"); err != nil {
+			t.Fatalf("SavingSummary: %s", err)
+		}
+	})
+
+	if len(status.SpendingCategories) != 1 || status.SpendingCategories[0].SpendingCategoryID != groceriesId || status.SpendingCategories[0].SpendingAmount != "300.0000" {
+		t.Errorf("the spending budget is groceries alone: %+v", status.SpendingCategories)
+	}
+	if len(status.IncomeCategories) != 1 {
+		t.Fatalf("the income budget is listed apart: %+v", status)
+	}
+	income := status.IncomeCategories[0]
+	if income.SpendingCategoryID != incomeId || income.IncomeAmount != "3000.0000" || income.ExpectedByTodayAmount != "2000.0000" ||
+		income.ProjectedAmount != "4000.0000" || income.IncomePace != models.IncomePaceOnTrack {
+		t.Errorf("mid month, the salary in and the rest still expected: %+v", income)
+	}
+	pastIncome := pastStatus.IncomeCategories[0]
+	if pastIncome.ProjectedAmount != "3000.0000" || pastIncome.IncomePace != models.IncomePaceBehind {
+		t.Errorf("once the month is over it ended short of what was expected: %+v", pastIncome)
+	}
+
+	for what, compared := range map[string][2]string{
+		"expected income":    {summary.ExpectedIncomeAmount, "4000.0000"},
+		"expected spending":  {summary.ExpectedSpendingAmount, "600.0000"},
+		"expected saving":    {summary.ExpectedSavingAmount, "3400.0000"},
+		"income":             {summary.IncomeAmount, "3050.0000"},
+		"spending":           {summary.SpendingAmount, "300.0000"},
+		"saving":             {summary.SavingAmount, "2750.0000"},
+		"projected income":   {summary.ProjectedIncomeAmount, "4050.0000"},
+		"projected spending": {summary.ProjectedSpendingAmount, "600.0000"},
+		"projected saving":   {summary.ProjectedSavingAmount, "3450.0000"},
+		"difference":         {summary.SavingDifferenceAmount, "50.0000"},
+	} {
+		if compared[0] != compared[1] {
+			t.Errorf("mid month, the %s is %s, want %s", what, compared[0], compared[1])
+		}
+	}
+	if summary.SavingPace != models.SavingPaceOnTrack || summary.IncomeBudgetCount != 1 || summary.SpendingBudgetCount != 1 {
+		t.Errorf("mid month: %+v", summary)
+	}
+	if pastSummary.ProjectedSavingAmount != "2750.0000" || pastSummary.SavingDifferenceAmount != "-650.0000" || pastSummary.SavingPace != models.SavingPaceBehind {
+		t.Errorf("once the month is over, the projection is what happened: %+v", pastSummary)
+	}
+}
+
 // An asset value savings target counts what its assets are worth today:
 // not an asset sold before today, and not a valuation recorded for a day
 // still to come.
@@ -768,5 +857,152 @@ func TestSavingsTargetProgressCountsWhatTheAssetsAreWorthToday(t *testing.T) {
 	})
 	if progress.SavedAmount != "1000.0000" || progress.RemainingAmount != "9000.0000" {
 		t.Fatalf("only the fund, at today's value: %+v", progress)
+	}
+}
+
+// brokerageSyncOn is an invented investment account worth balance, holding
+// what holdings say, with every security they name.
+func brokerageSyncOn(balance string, holdings []finance.Holding) *finance.SyncResult {
+	securities := []finance.Security{}
+	for _, holding := range holdings {
+		securities = append(securities, finance.Security{
+			ProviderSecurityID: holding.ProviderSecurityID, TickerSymbol: strings.ToUpper(strings.TrimPrefix(holding.ProviderSecurityID, "security-")),
+			SecurityName: "Invented " + holding.ProviderSecurityID, SecurityKind: finance.SecurityKindMutualFund, CurrencyCode: "USD",
+		})
+	}
+	return &finance.SyncResult{
+		Accounts: []finance.Account{{
+			ProviderAccountID: "account-brokerage", AccountName: "Invented Brokerage", AccountKind: finance.AccountKindInvestment,
+			CurrencyCode: "USD", CurrentBalance: balance, ProviderMetadata: json.RawMessage(`{}`),
+		}},
+		Securities: securities, Holdings: holdings, HoldingsReadAccountIDs: []string{"account-brokerage"},
+	}
+}
+
+func inventedHolding(providerSecurityId, holdingValue string) finance.Holding {
+	return finance.Holding{
+		ProviderAccountID: "account-brokerage", ProviderSecurityID: providerSecurityId, HeldQuantity: "10",
+		HoldingValue: holdingValue, CurrencyCode: "USD",
+	}
+}
+
+// An asset value target that chose a whole finance account counts every
+// asset the account values as it is today, a holding bought after the
+// target started included, and an asset chosen both on its own and
+// through its account counts once.
+func TestSavingsTargetProgressCountsWholeFinanceAccounts(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	agentId := fixture.agent.ID
+	var savingsTarget *models.SavingsTarget
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		// 300 in cash and a fund worth 1000.
+		if _, err := tx.ApplyFinanceSync(agentId, fixture.source.ID, brokerageSyncOn("1300", []finance.Holding{
+			inventedHolding("security-fund", "1000"),
+		}), "2026-09-01"); err != nil {
+			t.Fatalf("ApplyFinanceSync: %s", err)
+		}
+		accounts, err := tx.ListFinanceAccounts(agentId, "")
+		if err != nil || len(accounts) != 1 {
+			t.Fatalf("ListFinanceAccounts: %v %v", accounts, err)
+		}
+		assets, err := tx.ListAssets(agentId)
+		if err != nil {
+			t.Fatalf("ListAssets: %s", err)
+		}
+		var fundId string
+		for _, asset := range assets {
+			if asset.FinanceSecurityID != "" {
+				fundId = asset.ID
+			}
+		}
+		if fundId == "" {
+			t.Fatalf("no holding among %+v", assets)
+		}
+		if savingsTarget, err = tx.CreateSavingsTarget(&models.SavingsTarget{AgentID: agentId, SavingsTargetName: "invested", TargetAmount: "5000",
+			CurrencyCode: "USD", TargetOn: "2027-09-01", TargetMeasure: models.TargetMeasureAssetValue, StartingAmount: "1300", StartedOn: "2026-09-01",
+			AssetIDs: []string{fundId}, FinanceAccountIDs: []string{accounts[0].ID}}); err != nil {
+			t.Fatalf("CreateSavingsTarget: %s", err)
+		}
+		// Later: 500 in cash, the fund worth 1100 and a bond bought for 1200.
+		if _, err := tx.ApplyFinanceSync(agentId, fixture.source.ID, brokerageSyncOn("2800", []finance.Holding{
+			inventedHolding("security-fund", "1100"), inventedHolding("security-bond", "1200"),
+		}), "2026-09-10"); err != nil {
+			t.Fatalf("ApplyFinanceSync: %s", err)
+		}
+	})
+	var progress, before *SavingsTargetProgress
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		var err error
+		if progress, err = SavingsTargetProgressOf(t.Context(), tx, nil, agentId, savingsTarget, "2026-09-10"); err != nil {
+			t.Fatalf("SavingsTargetProgressOf: %s", err)
+		}
+		if before, err = SavingsTargetProgressOf(t.Context(), tx, nil, agentId, savingsTarget, "2026-09-05"); err != nil {
+			t.Fatalf("SavingsTargetProgressOf: %s", err)
+		}
+	})
+	// 500 + 1100 + 1200 = 2800, less the 1300 it started from; the fund
+	// once, though it was chosen twice.
+	if progress.SavedAmount != "1500.0000" || progress.RemainingAmount != "3500.0000" {
+		t.Errorf("the whole account today, each asset once: %+v", progress)
+	}
+	// The bond had no value yet: nothing saved before the second sync.
+	if before.SavedAmount != "0.0000" {
+		t.Errorf("before the bond was bought: %+v", before)
+	}
+}
+
+// A net worth target counts net worth today, owned less owed, against the
+// net worth it started from, converted the way the Net worth section
+// converts, naming a currency it could not convert.
+func TestSavingsTargetProgressCountsNetWorth(t *testing.T) {
+	fixture := newFinanceFixture(t, "")
+	agentId := fixture.agent.ID
+	var progress *SavingsTargetProgress
+	var startingAmount string
+	var startingUnconverted []string
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		savings, err := tx.CreateAsset(&models.Asset{AgentID: agentId, AssetName: "savings", AssetKind: models.AssetKindCash, CurrencyCode: "USD"})
+		if err != nil {
+			t.Fatalf("CreateAsset: %s", err)
+		}
+		loan, err := tx.CreateAsset(&models.Asset{AgentID: agentId, AssetName: "car loan", AssetKind: models.AssetKindLoan, CurrencyCode: "USD"})
+		if err != nil {
+			t.Fatalf("CreateAsset: %s", err)
+		}
+		testMoney, err := tx.CreateAsset(&models.Asset{AgentID: agentId, AssetName: "test money", AssetKind: models.AssetKindCash, CurrencyCode: "XTS"})
+		if err != nil {
+			t.Fatalf("CreateAsset: %s", err)
+		}
+		for _, valuation := range []*models.AssetValuation{
+			{AgentID: agentId, AssetID: savings.ID, ValuedOn: "2026-09-01", Value: "5000", ValuationSource: models.ValuationSourceManual},
+			{AgentID: agentId, AssetID: loan.ID, ValuedOn: "2026-09-01", Value: "2000", ValuationSource: models.ValuationSourceManual},
+			{AgentID: agentId, AssetID: savings.ID, ValuedOn: "2026-09-15", Value: "6500", ValuationSource: models.ValuationSourceManual},
+			{AgentID: agentId, AssetID: testMoney.ID, ValuedOn: "2026-09-15", Value: "700", ValuationSource: models.ValuationSourceManual},
+		} {
+			if _, err := tx.RecordValuation(valuation); err != nil {
+				t.Fatalf("RecordValuation: %s", err)
+			}
+		}
+		if startingAmount, startingUnconverted, err = NetWorthOn(t.Context(), tx, nil, agentId, "USD", "2026-09-01"); err != nil {
+			t.Fatalf("NetWorthOn: %s", err)
+		}
+		savingsTarget, err := tx.CreateSavingsTarget(&models.SavingsTarget{AgentID: agentId, SavingsTargetName: "net worth up", TargetAmount: "4000",
+			CurrencyCode: "USD", TargetOn: "2027-09-01", TargetMeasure: models.TargetMeasureNetWorth, StartingAmount: startingAmount, StartedOn: "2026-09-01"})
+		if err != nil {
+			t.Fatalf("CreateSavingsTarget: %s", err)
+		}
+		if progress, err = SavingsTargetProgressOf(t.Context(), tx, nil, agentId, savingsTarget, "2026-09-20"); err != nil {
+			t.Fatalf("SavingsTargetProgressOf: %s", err)
+		}
+	})
+	if startingAmount != "3000.0000" || len(startingUnconverted) != 0 {
+		t.Errorf("5000 owned less 2000 owed at the start: %s %v", startingAmount, startingUnconverted)
+	}
+	// 6500 - 2000 = 4500 today, 1500 more than at the start.
+	if progress.SavedAmount != "1500.0000" || progress.RemainingAmount != "2500.0000" || progress.IsBehind {
+		t.Errorf("net worth gained since the start: %+v", progress)
+	}
+	if strings.Join(progress.UnconvertedCurrencyCodes, ",") != "XTS" {
+		t.Errorf("the currency with no rate is named: %v", progress.UnconvertedCurrencyCodes)
 	}
 }

@@ -267,7 +267,23 @@ func (self *transaction) nearestIndexed(table VectorTable, scope, model string, 
 			kept = append(kept, row)
 		}
 	}
+	// The relaxed walk may hand rows back slightly out of order, and a
+	// search read a page at a time needs the nearest few to come first
+	// every time it is asked.
+	sortScored(kept)
 	return kept, nil
+}
+
+// sortScored puts the nearest first, and two at the same distance by
+// identifier, so that a longer list of the same search starts with the
+// shorter one.
+func sortScored(scored []Scored) {
+	sort.SliceStable(scored, func(left, right int) bool {
+		if scored[left].Score != scored[right].Score {
+			return scored[left].Score > scored[right].Score
+		}
+		return scored[left].ID < scored[right].ID
+	})
 }
 
 // nearestInServer reads a bounded set and ranks it here. It is what a
@@ -315,7 +331,7 @@ func (self *transaction) nearestInServer(table VectorTable, scope, model string,
 			scored = append(scored, Scored{ID: row.ID, Score: score})
 		}
 	}
-	sort.SliceStable(scored, func(left, right int) bool { return scored[left].Score > scored[right].Score })
+	sortScored(scored)
 	if len(scored) > limit {
 		scored = scored[:limit]
 	}

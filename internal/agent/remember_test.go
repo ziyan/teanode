@@ -48,6 +48,10 @@ type rememberWorld struct {
 var theirMessage = regexp.MustCompile(`\[([a-zA-Z0-9]+)\] them:`)
 var agentMessage = regexp.MustCompile(`\[([a-zA-Z0-9]+)\] you:`)
 
+// providerRefuses is what an answer function says to have the provider
+// refuse the call outright rather than answer it.
+const providerRefuses = "\x00refuse"
+
 // newRememberWorld is a world with no embedding model, which is what
 // most of these want: nothing is compared by meaning, so every fact a
 // run files stands as its own row.
@@ -97,7 +101,13 @@ func rememberWorldFor(t *testing.T, embedding bool, answer func(prompt string) s
 		world.asked.Lock()
 		world.prompts = append(world.prompts, prompt)
 		world.asked.Unlock()
-		content, _ := json.Marshal(answer(prompt))
+		said := answer(prompt)
+		if said == providerRefuses {
+			writer.WriteHeader(http.StatusBadRequest)
+			_, _ = fmt.Fprint(writer, `{"error":{"message":"the request was refused","type":"invalid_request_error"}}`)
+			return
+		}
+		content, _ := json.Marshal(said)
 		if body.Stream {
 			// A round of the loop streams: one chunk with the whole answer.
 			writer.Header().Set("Content-Type", "text/event-stream")

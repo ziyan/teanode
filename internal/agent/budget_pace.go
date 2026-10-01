@@ -26,6 +26,23 @@ var (
 	// budgetPaceUnderShare is where under ends and on_track begins: a
 	// month projected to end below ninety percent of its budget is under.
 	budgetPaceUnderShare = big.NewRat(9, 10)
+
+	// incomePaceBehindShare is how much of the income expected by today
+	// must have come in for an income spending category not to be behind:
+	// ninety percent, the mirror of budgetPaceUnderShare.
+	incomePaceBehindShare = big.NewRat(9, 10)
+
+	// incomePaceAheadShare is how far past the whole month's expected
+	// income what came in must be to be ahead: ten percent, the mirror of
+	// budgetPaceAtRiskShare. Measured against the whole month rather than
+	// the days so far, so a pay day early in the month is not ahead for a
+	// week and then on track for the rest of it.
+	incomePaceAheadShare = big.NewRat(11, 10)
+
+	// savingPaceShare is how far from the expected saving a projection may
+	// land and still be on track: a tenth of the month's spending budgets,
+	// the band a spending budget is on track within.
+	savingPaceShare = big.NewRat(1, 10)
 )
 
 // SpendingCategoryMonthInput is what ProjectSpendingCategoryMonth reads,
@@ -106,6 +123,128 @@ func ProjectSpendingCategoryMonth(input *SpendingCategoryMonthInput) *SpendingCa
 		projection.BudgetPace = models.BudgetPaceUnder
 	default:
 		projection.BudgetPace = models.BudgetPaceOnTrack
+	}
+	return projection
+}
+
+// IncomeCategoryMonthInput is what ProjectIncomeCategoryMonth reads, every
+// amount already in the budget's currency.
+type IncomeCategoryMonthInput struct {
+	// BudgetAmount is the income expected in the whole month, and
+	// IncomeAmount what has come in so far.
+	BudgetAmount *big.Rat
+	IncomeAmount *big.Rat
+
+	// DayOfMonth is today, from one; DaysInMonth how many days the month
+	// has; IsMonthOver says today is past the month's last day.
+	DayOfMonth  int
+	DaysInMonth int
+	IsMonthOver bool
+}
+
+// IncomeCategoryMonthProjection is where an income spending category's
+// month is heading.
+type IncomeCategoryMonthProjection struct {
+	ExpectedByTodayAmount *big.Rat
+	ProjectedAmount       *big.Rat
+	IncomePace            models.IncomePace
+}
+
+// ProjectIncomeCategoryMonth projects an income spending category's month
+// end and names its pace. Income comes in a few large amounts (a salary on
+// one day, a payment on another), so the straight line spending is
+// projected with would read a month before its pay day as heading for
+// nothing. The projection is the expected income instead, or what came in
+// when that is more already; a month that is over ends at what came in.
+//
+// The pace compares what came in with the expected income spread evenly
+// over the month up to today: behind after the first week (or in a month
+// that is over) when less than ninety percent of that came in; ahead when
+// more than the whole month's expected income, by over ten percent, came
+// in; on_track otherwise.
+func ProjectIncomeCategoryMonth(input *IncomeCategoryMonthInput) *IncomeCategoryMonthProjection {
+	budget := ratOrZero(input.BudgetAmount)
+	income := ratOrZero(input.IncomeAmount)
+	daysInMonth := max(input.DaysInMonth, 1)
+	dayOfMonth := min(max(input.DayOfMonth, 1), daysInMonth)
+	if input.IsMonthOver {
+		dayOfMonth = daysInMonth
+	}
+	expectedByToday := new(big.Rat).Mul(budget, big.NewRat(int64(dayOfMonth), int64(daysInMonth)))
+
+	projected := new(big.Rat).Set(income)
+	if !input.IsMonthOver && income.Cmp(budget) < 0 {
+		projected.Set(budget)
+	}
+
+	projection := &IncomeCategoryMonthProjection{ExpectedByTodayAmount: expectedByToday, ProjectedAmount: projected}
+	switch {
+	case budget.Sign() > 0 && income.Cmp(new(big.Rat).Mul(budget, incomePaceAheadShare)) > 0:
+		projection.IncomePace = models.IncomePaceAhead
+	case budget.Sign() > 0 && (input.IsMonthOver || dayOfMonth > budgetPaceSettlingDays) &&
+		income.Cmp(new(big.Rat).Mul(expectedByToday, incomePaceBehindShare)) < 0:
+		projection.IncomePace = models.IncomePaceBehind
+	default:
+		projection.IncomePace = models.IncomePaceOnTrack
+	}
+	return projection
+}
+
+// SavingMonthInput is what ProjectSavingMonth reads, every amount in one
+// currency.
+type SavingMonthInput struct {
+	// ExpectedIncomeAmount and ExpectedSpendingAmount are the month's
+	// income and spending budgets added up.
+	ExpectedIncomeAmount   *big.Rat
+	ExpectedSpendingAmount *big.Rat
+
+	// ProjectedIncomeAmount and ProjectedSpendingAmount are where the
+	// month's income and spending are heading, or ended for a month that
+	// is over.
+	ProjectedIncomeAmount   *big.Rat
+	ProjectedSpendingAmount *big.Rat
+
+	// DayOfMonth is today, from one; IsMonthOver says today is past the
+	// month's last day.
+	DayOfMonth  int
+	IsMonthOver bool
+}
+
+// SavingMonthProjection is a month's saving as its budgets expect it and
+// as it is heading.
+type SavingMonthProjection struct {
+	ExpectedSavingAmount   *big.Rat
+	ProjectedSavingAmount  *big.Rat
+	SavingDifferenceAmount *big.Rat
+	SavingPace             models.SavingPace
+}
+
+// ProjectSavingMonth is a month's expected saving (income budgets less
+// spending budgets), its projected saving (projected income less projected
+// spending) and the difference. The pace is on_track while the projection
+// lands within a tenth of the spending budgets (of the income budgets when
+// there are no spending budgets) either side of the expected saving;
+// behind below that, only after the first week or in a month that is
+// over, since a hot first week projects spending high; ahead above it.
+func ProjectSavingMonth(input *SavingMonthInput) *SavingMonthProjection {
+	expectedSaving := new(big.Rat).Sub(ratOrZero(input.ExpectedIncomeAmount), ratOrZero(input.ExpectedSpendingAmount))
+	projectedSaving := new(big.Rat).Sub(ratOrZero(input.ProjectedIncomeAmount), ratOrZero(input.ProjectedSpendingAmount))
+	difference := new(big.Rat).Sub(projectedSaving, expectedSaving)
+
+	toleranceBase := ratOrZero(input.ExpectedSpendingAmount)
+	if toleranceBase.Sign() <= 0 {
+		toleranceBase = ratOrZero(input.ExpectedIncomeAmount)
+	}
+	tolerance := new(big.Rat).Mul(new(big.Rat).Abs(toleranceBase), savingPaceShare)
+
+	projection := &SavingMonthProjection{ExpectedSavingAmount: expectedSaving, ProjectedSavingAmount: projectedSaving, SavingDifferenceAmount: difference}
+	switch {
+	case difference.Cmp(new(big.Rat).Neg(tolerance)) < 0 && (input.IsMonthOver || input.DayOfMonth > budgetPaceSettlingDays):
+		projection.SavingPace = models.SavingPaceBehind
+	case difference.Cmp(tolerance) > 0:
+		projection.SavingPace = models.SavingPaceAhead
+	default:
+		projection.SavingPace = models.SavingPaceOnTrack
 	}
 	return projection
 }

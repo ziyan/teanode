@@ -560,6 +560,127 @@ a.tile:hover strong {
   color: var(--accent);
 }
 
+/* --- the agent's conversations, a tile each ------------------------------ */
+/* The box that narrows the tiles, on a line of its own above them, as wide
+   as a field is allowed to be rather than as wide as the page. */
+.conversation-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.conversation-toolbar input[type='search'] {
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 420px;
+}
+
+/* auto-fill rather than the band's auto-fit: one conversation is one tile's
+   width, not a banner across the page. min() so a phone's single column is
+   never wider than the screen. */
+.conversation-tiles {
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.conversation-tile {
+  position: relative;
+  min-width: 0;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+/* A tile that opens something lifts under the pointer: a little higher and
+   a shadow under it, so it reads as a thing to press rather than a panel. */
+.conversation-tile {
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease,
+    border-color 150ms ease;
+}
+
+.conversation-tile:hover,
+.conversation-tile:focus-within {
+  border-color: var(--muted);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-tile {
+    transition: none;
+  }
+
+  .conversation-tile:hover,
+  .conversation-tile:focus-within {
+    transform: none;
+  }
+}
+
+/* The title is the button that opens the conversation: it reads as the
+   tile's heading, and its ::after stretches over the whole tile so a click
+   anywhere on it opens the conversation, with one button for a keyboard or
+   a screen reader to find. */
+.conversation-tile-title::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.conversation-tile-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.conversation-tile:hover .conversation-tile-title,
+.conversation-tile-title:focus-visible {
+  color: var(--accent);
+}
+
+/* What the agent wrote of the conversation, cut at three lines so a long
+   one does not make its whole row of tiles tall. */
+.conversation-tile-summary {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--text-label);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow-wrap: anywhere;
+}
+
+/* Where the search matched: a wash of the warning color under the words,
+   and the text keeps its own color so it still reads in either theme. */
+.conversation-tile mark {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--warn) 35%, transparent);
+  color: inherit;
+}
+
+.conversation-tile .tile-detail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 /* --- a modal asking for one thing ---------------------------------------- */
 .dialog-scrim {
   position: fixed;
@@ -1807,7 +1928,9 @@ label span {
    hands over a command to copy rather than asking for anything. */
 .auth-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: var(--space-2);
   margin-top: var(--space-3);
 }
 
@@ -4199,6 +4322,11 @@ main.content:has(> .mailbox-frame) {
   display: flex;
   flex-direction: column;
 }
+/* Only the frame gives up height. The breadcrumb hides its overflow, so
+   left to shrink it was squeezed to a sliver above the heading. */
+main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
+  flex-shrink: 0;
+}
 .mailbox {
   display: grid;
   grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
@@ -4581,6 +4709,15 @@ main.content:has(> .mailbox-frame) {
 .select-empty {
   padding: 7px 10px;
   font-size: 13px;
+}
+
+/* The heading over a group of options, such as the income spending
+   categories after the spending ones: smaller than an option and not one. */
+.select-group {
+  padding: 8px 10px 2px;
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: 600;
 }
 
 /* The list under the box that finds a page in the graph. Its rows are the
@@ -6786,9 +6923,16 @@ main.content:has(> .mailbox-frame) {
   text-overflow: ellipsis;
 }
 
-.agent-attachment-chip .link,
-.agent-reference-chip .link {
-  padding: 0 2px;
+/* The cross that takes a chip off: an icon action, at the chip's size
+   rather than a row's. */
+.agent-attachment-chip .icon-action,
+.agent-reference-chip .icon-action,
+.attachments-kept li .icon-action,
+.attachments ul li .icon-action,
+.uploads li .icon-action {
+  width: 20px;
+  height: 20px;
+  padding: 0;
 }
 
 .agent-attachment-image {
@@ -7822,19 +7966,10 @@ p.notice.domain-logo-note {
   }
 }
 
-/* Where presses are drawn. Above the page and untouchable, so nothing it
-   contains can take a click meant for what is underneath. */
-.ripple-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  overflow: hidden;
-  pointer-events: none;
-}
-
 /* A copy of the pressed control's box, which is what the circle is clipped
-   to — the control itself is not touched, so no layout anywhere changes to
-   make room for this. */
+   to, at the height of what holds the control (set by ripple.ts). The
+   control itself is not touched, so no layout anywhere changes to make room
+   for this, and nothing here can take a click meant for what is under it. */
 .ripple-clip {
   position: fixed;
   overflow: hidden;
@@ -10986,14 +11121,6 @@ main.content:has(> .knowledge-frame) {
   }
 }
 
-/* An idea of their own carries its reason and what prompted it under it, so
-   it is read rather than scanned: one column, at a line length that reads,
-   rather than half the card beside an empty half. */
-.idea-list.idea-list-personal {
-  grid-template-columns: minmax(0, 1fr);
-  max-width: 720px;
-}
-
 .idea-row {
   position: relative;
   padding-right: 28px;
@@ -11736,6 +11863,30 @@ button.idea-history-title {
   font-size: var(--text-label);
 }
 
+/* Budgets on spending and budgets on income, each under a small heading
+   once both are there: the income ones read the other way round. */
+.finance-budget-group + .finance-budget-group {
+  margin-top: var(--space-4);
+}
+
+.finance-group-heading {
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+/* The month's income, spending and saving, budgeted against actual,
+   under the saving's bar. */
+.finance-saving-table {
+  margin-top: var(--space-3);
+}
+
+.finance-saving-table tbody th,
+.finance-saving-table tfoot th[scope='row'] {
+  text-align: left;
+}
+
 /* The bar a meter is drawn with carries a mark where the month is heading. */
 .agent-budget-bar {
   position: relative;
@@ -11767,6 +11918,19 @@ button.idea-history-title {
   margin-bottom: var(--space-2);
   color: var(--muted);
   font-size: var(--text-label);
+}
+
+/* One institution's finance accounts, or one account's assets, in a
+   savings target's choices: the name above, the checkboxes under it. */
+.finance-choice-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.finance-choice-group-name {
+  font-size: var(--text-label);
+  font-weight: 600;
 }
 
 .finance-converted strong {

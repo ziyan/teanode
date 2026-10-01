@@ -310,6 +310,81 @@ func TestSpendingCategoryDaysAndMerchantMonths(t *testing.T) {
 	})
 }
 
+// A budget on an income spending category is kept like any other, and
+// income per day counts what income categories took in, a reversal
+// against it, never transfers, spending or money in nothing categorized.
+func TestIncomeBudgetsAndIncomeCategoryDays(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "income-days")
+	result := sampleFinanceSync()
+	result.Added = append(result.Added,
+		finance.Transaction{ProviderTransactionID: "payroll-correction", ProviderAccountID: "account-checking", PostedOn: "2026-09-01",
+			Amount: "-100", CurrencyCode: "USD", Description: "PAYROLL EXAMPLE CO CORRECTION"},
+		finance.Transaction{ProviderTransactionID: "payroll-second", ProviderAccountID: "account-checking", PostedOn: "2026-09-15",
+			Amount: "1200", CurrencyCode: "USD", Description: "PAYROLL EXAMPLE CO"},
+		finance.Transaction{ProviderTransactionID: "payroll-august", ProviderAccountID: "account-checking", PostedOn: "2026-08-15",
+			Amount: "2400", CurrencyCode: "USD", Description: "PAYROLL EXAMPLE CO"},
+		finance.Transaction{ProviderTransactionID: "from-savings", ProviderAccountID: "account-checking", PostedOn: "2026-09-16",
+			Amount: "300", CurrencyCode: "USD", Description: "PAYROLL EXAMPLE CO TRANSFER"},
+		finance.Transaction{ProviderTransactionID: "gift", ProviderAccountID: "account-checking", PostedOn: "2026-09-17",
+			Amount: "50", CurrencyCode: "USD", Description: "A GIFT"},
+	)
+	applyFinanceSync(t, database, fixture, result, "2026-09-18")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.EnsureDefaultSpendingCategories(fixture.agentId); err != nil {
+			t.Fatalf("EnsureDefaultSpendingCategories: %s", err)
+		}
+		byName := spendingCategoryIdsByName(t, tx, fixture.agentId)
+		incomeId := byName[finance.SpendingCategoryIncome]
+		for _, spendingRule := range []models.SpendingRule{
+			{MatchText: "transfer", IsTransfer: true, RulePriority: 0},
+			{MatchText: "payroll", SpendingCategoryID: incomeId, RulePriority: 1},
+			{MatchText: "corner grocer", SpendingCategoryID: byName[finance.SpendingCategoryGroceries], RulePriority: 2},
+		} {
+			spendingRule.AgentID = fixture.agentId
+			if _, err := tx.CreateSpendingRule(&spendingRule); err != nil {
+				t.Fatalf("CreateSpendingRule: %s", err)
+			}
+		}
+
+		budget, err := tx.SetBudget(&models.Budget{AgentID: fixture.agentId, SpendingCategoryID: incomeId, MonthlyAmount: "3500", CurrencyCode: "USD", EffectiveFrom: "2026-09"})
+		if err != nil {
+			t.Fatalf("an income spending category takes a budget: %s", err)
+		}
+		budgets, err := tx.BudgetsForMonth(fixture.agentId, "2026-09")
+		if err != nil || len(budgets) != 1 || budgets[0].ID != budget.ID || budgets[0].MonthlyAmount != "3500.0000" {
+			t.Fatalf("the income budget is in force in September: %v %+v", err, budgets)
+		}
+
+		days, err := tx.ListIncomeCategoryDays(fixture.agentId, "2026-09")
+		if err != nil {
+			t.Fatalf("ListIncomeCategoryDays: %s", err)
+		}
+		byDay := map[string]string{}
+		for _, day := range days {
+			if day.SpendingCategoryID != incomeId || day.CurrencyCode != "USD" {
+				t.Errorf("only the income spending category is listed: %+v", day)
+			}
+			byDay[day.ReceivedOn] = day.IncomeAmount
+		}
+		expected := map[string]string{"2026-09-01": "2400.0000", "2026-09-15": "1200.0000"}
+		if len(byDay) != len(expected) {
+			t.Errorf("the transfer, the gift with no category and the groceries are left out, and August is another month: %v", byDay)
+		}
+		for receivedOn, amount := range expected {
+			if byDay[receivedOn] != amount {
+				t.Errorf("%s: got %q, want %q (all: %v)", receivedOn, byDay[receivedOn], amount, byDay)
+			}
+		}
+		august, err := tx.ListIncomeCategoryDays(fixture.agentId, "2026-08")
+		if err != nil || len(august) != 1 || august[0].IncomeAmount != "2400.0000" {
+			t.Errorf("August has its one payroll: %v %+v", err, august)
+		}
+	})
+}
+
 // A savings target keeps the assets it measures, and replaces them when
 // changed.
 func TestSavingsTargetsKeepTheirAssets(t *testing.T) {
@@ -512,6 +587,64 @@ func TestBudgetAlertKeyIsWrittenOnceUnderConcurrentSyncs(t *testing.T) {
 		candidates, err := tx.ListWaitingAgentAlertCandidates(fixture.agentId, 10)
 		if err != nil || len(candidates) != 1 {
 			t.Errorf("one waiting candidate: %v %d", err, len(candidates))
+		}
+	})
+}
+
+// A savings target keeps the finance accounts it measures, once each and
+// only the agent's own; a target measured otherwise keeps none, and a
+// deleted finance account leaves the targets that chose it.
+func TestSavingsTargetsKeepTheirFinanceAccounts(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "savings-target-accounts")
+	stranger := createFinanceFixture(t, database, "savings-target-stranger")
+	applyFinanceSync(t, database, fixture, brokerageSync("2150.25", fundHolding("12", "1824.58")), "2026-09-12")
+	applyFinanceSync(t, database, stranger, brokerageSync("10", nil), "2026-09-12")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		accounts, err := tx.ListFinanceAccounts(fixture.agentId, "")
+		if err != nil || len(accounts) != 1 {
+			t.Fatalf("ListFinanceAccounts: %v %v", accounts, err)
+		}
+		strangerAccounts, err := tx.ListFinanceAccounts(stranger.agentId, "")
+		if err != nil || len(strangerAccounts) != 1 {
+			t.Fatalf("ListFinanceAccounts: %v %v", strangerAccounts, err)
+		}
+		created, err := tx.CreateSavingsTarget(&models.SavingsTarget{AgentID: fixture.agentId, SavingsTargetName: "invested",
+			TargetAmount: "10000", CurrencyCode: "USD", TargetOn: "2028-06-01", TargetMeasure: models.TargetMeasureAssetValue,
+			StartedOn: "2026-09-12", FinanceAccountIDs: []string{accounts[0].ID, accounts[0].ID}})
+		if err != nil {
+			t.Fatalf("CreateSavingsTarget: %s", err)
+		}
+		if len(created.FinanceAccountIDs) != 1 || created.FinanceAccountIDs[0] != accounts[0].ID || len(created.AssetIDs) != 0 {
+			t.Errorf("CreateSavingsTarget keeps the account once: %+v", created)
+		}
+		if _, err := tx.CreateSavingsTarget(&models.SavingsTarget{AgentID: fixture.agentId, SavingsTargetName: "taken",
+			TargetAmount: "1", CurrencyCode: "USD", TargetOn: "2028-06-01", TargetMeasure: models.TargetMeasureAssetValue,
+			StartedOn: "2026-09-12", FinanceAccountIDs: []string{strangerAccounts[0].ID}}); !errors.Is(err, db.ErrNotFound) {
+			t.Errorf("another agent's finance account must be refused: %v", err)
+		}
+		netWorth, err := tx.UpdateSavingsTarget(fixture.agentId, created.ID, func(savingsTarget *models.SavingsTarget) error {
+			savingsTarget.TargetMeasure = models.TargetMeasureNetWorth
+			return nil
+		})
+		if err != nil || netWorth.TargetMeasure != models.TargetMeasureNetWorth || len(netWorth.FinanceAccountIDs) != 0 {
+			t.Errorf("a net worth target chooses nothing: %v %+v", err, netWorth)
+		}
+		if _, err := tx.UpdateSavingsTarget(fixture.agentId, created.ID, func(savingsTarget *models.SavingsTarget) error {
+			savingsTarget.TargetMeasure = models.TargetMeasureAssetValue
+			savingsTarget.FinanceAccountIDs = []string{accounts[0].ID}
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateSavingsTarget: %s", err)
+		}
+		if err := tx.DeleteAgentSource(fixture.agentId, fixture.sourceId); err != nil {
+			t.Fatalf("DeleteAgentSource: %s", err)
+		}
+		after, err := tx.GetSavingsTarget(fixture.agentId, created.ID)
+		if err != nil || after == nil || len(after.FinanceAccountIDs) != 0 {
+			t.Errorf("the deleted finance account leaves the target: %v %+v", err, after)
 		}
 	})
 }

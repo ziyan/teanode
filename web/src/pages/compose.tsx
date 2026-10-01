@@ -3,13 +3,14 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import { Domain, Rendered, Template, graphql } from '../api'
 import { ErrorMessage, Loading, formatBytes } from '../components/common'
-import { PaperclipIcon } from '../components/icons'
+import { CloseIcon, PaperclipIcon } from '../components/icons'
 import { RenderedPreview, useDebounced } from '../components/preview'
 import { RichTextEditor, htmlToText, textToHtml } from '../components/richText'
 import { Tabs } from '../components/tabs'
 import { useQuery } from '../components/useQuery'
 import { Trans, useTranslation } from '../i18n/i18n'
 import { Select } from '../components/select'
+import { Tooltip } from '../components/tooltip'
 
 const DOMAINS = `{ ListDomains { id domain } }`
 
@@ -260,7 +261,7 @@ export function ComposePage() {
   if (domains.length === 0) {
     return (
       <p className="muted">
-        <Trans k="mail.noDomains" nodes={{ link: <Link to="/domains">{t('nav.domains')}</Link> }} />
+        <Trans k="mail.noDomains" nodes={{ link: <Link to="/manage/domains">{t('nav.domains')}</Link> }} />
       </p>
     )
   }
@@ -282,7 +283,7 @@ export function ComposePage() {
             {sent.id ? (
               <Trans
                 k="compose.sent"
-                nodes={{ link: <Link to={`/mail/${sent.id}`}>{sent.subject || t('mail.noSubject')}</Link> }}
+                nodes={{ link: <Link to={`/manage/mail/${sent.id}`}>{sent.subject || t('mail.noSubject')}</Link> }}
               />
             ) : (
               t('compose.sentUnseen')
@@ -371,7 +372,7 @@ export function ComposePage() {
                   {template && (
                     <>
                       {' · '}
-                      <Link to={`/domains/${domainId}/templates/${template.id}`}>{t('compose.editTemplate')}</Link>
+                      <Link to={`/manage/domains/${domainId}/templates/${template.id}`}>{t('compose.editTemplate')}</Link>
                     </>
                   )}
                 </span>
@@ -495,13 +496,16 @@ export function ComposePage() {
               <PaperclipIcon size={14} />
               <span className="attachment-name">{file.name}</span>
               <span className="muted">{formatBytes(file.size)}</span>
-              <button
-                className="link"
-                type="button"
-                onClick={() => setFiles(files.filter((_, position) => position !== index))}
-              >
-                {t('common.remove')}
-              </button>
+              <Tooltip label={t('common.remove')}>
+                <button
+                  className="icon-action"
+                  type="button"
+                  aria-label={`${file.name}: ${t('common.remove')}`}
+                  onClick={() => setFiles(files.filter((_, position) => position !== index))}
+                >
+                  <CloseIcon size={14} />
+                </button>
+              </Tooltip>
             </div>
           ))}
           <div className="attachment-actions">

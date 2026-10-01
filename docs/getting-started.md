@@ -192,15 +192,16 @@ The account you make this way is an administrator with a mailbox of its own,
 called Personal. The web UI opens on it: the folders in the rail, a
 folder's messages beside the one being read. The management pages — every
 message the server handled, the queue, reports, domains, the server itself —
-are behind **Manage** at the foot of the rail, and **Back to mailbox** at the
-top brings you back.
+are under `/manage`, behind **Manage** at the foot of the rail, and **Back to
+mailbox** at the top brings you back. Your own settings, the mailbox's among
+them, are under `/settings`, behind your name at the foot of the rail.
 
 The Inbox and **Starred**, every flagged message wherever it sits, stay at
 the top of the rail; hover any other folder for a pin that puts it up beside
 them. The search box looks in the open folder, or in the whole mailbox with
 sender, recipient, subject, date and attachment filters behind **More**.
 Contacts, kept from whoever you write to, have a page of their own in the
-rail, above Mailbox settings.
+rail, beside the calendar, what your agent knows and your finances.
 
 ## 6. Give the mailbox an address
 

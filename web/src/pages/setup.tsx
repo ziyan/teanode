@@ -97,7 +97,7 @@ export function SetupPage() {
           // "Integrations" surface to name any more: it became tabs of
           // /server, which is why this link had outlived both its label and
           // its destination.
-          nodes={{ integrations: <Link to="/server/about">{t('server.title')}</Link> }}
+          nodes={{ integrations: <Link to="/manage/server/about">{t('server.title')}</Link> }}
         />
       </p>
 

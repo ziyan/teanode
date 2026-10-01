@@ -119,3 +119,173 @@ func TestProjectSpendingCategoryMonth(t *testing.T) {
 		})
 	}
 }
+
+func TestProjectIncomeCategoryMonth(t *testing.T) {
+	for _, testCase := range []struct {
+		name                    string
+		input                   *IncomeCategoryMonthInput
+		expectedPace            models.IncomePace
+		expectedProjection      int64
+		expectedByTodayExpected int64
+	}{
+		{
+			// Pay day is later in the month: nothing in yet in the first
+			// week is not behind, and the month still heads for the salary.
+			name: "nothing in during the first week is on track",
+			input: &IncomeCategoryMonthInput{
+				BudgetAmount: big.NewRat(3000, 1), IncomeAmount: big.NewRat(0, 1), DayOfMonth: 6, DaysInMonth: 30,
+			},
+			expectedPace: models.IncomePaceOnTrack, expectedProjection: 3000, expectedByTodayExpected: 600,
+		},
+		{
+			// Half the month gone and nothing in: behind the 1500 expected
+			// by today, while the projection still assumes it arrives.
+			name: "nothing in by mid month is behind",
+			input: &IncomeCategoryMonthInput{
+				BudgetAmount: big.NewRat(3000, 1), IncomeAmount: big.NewRat(0, 1), DayOfMonth: 15, DaysInMonth: 30,
+			},
+			expectedPace: models.IncomePaceBehind, expectedProjection: 3000, expectedByTodayExpected: 1500,
+		},
+		{
+			// One of two pay days in by the middle: what was expected by
+			// today, on track.
+			name: "half in by mid month is on track",
+			input: &IncomeCategoryMonthInput{
+				BudgetAmount: big.NewRat(3000, 1), IncomeAmount: big.NewRat(1500, 1), DayOfMonth: 15, DaysInMonth: 30,
+			},
+			expectedPace: models.IncomePaceOnTrack, expectedProjection: 3000, expectedByTodayExpected: 1500,
+		},
+		{
+			// A bonus on top of the salary: past the whole month by more
+			// than a tenth, and the projection is what came in.
+			name: "more than the month already is ahead",
+			input: &IncomeCategoryMonthInput{
+				BudgetAmount: big.NewRat(3000, 1), IncomeAmount: big.NewRat(4000, 1), DayOfMonth: 3, DaysInMonth: 30,
+			},
+			expectedPace: models.IncomePaceAhead, expectedProjection: 4000, expectedByTodayExpected: 300,
+		},
+		{
+			// The whole salary on the first is a lot of the month by
+			// prorating, but not past the month: on track, not ahead.
+			name: "the whole salary on the first is on track",
+			input: &IncomeCategoryMonthInput{
+				BudgetAmount: big.NewRat(3000, 1), IncomeAmount: big.NewRat(3000, 1), DayOfMonth: 1, DaysInMonth: 30,
+			},
+			expectedPace: models.IncomePaceOnTrack, expectedProjection: 3000, expectedByTodayExpected: 100,
+		},
+		{
+			// A month that is over ends at what came in, and is judged
+			// against all of it.
+			name: "a past month short of its income is behind",
+			input: &IncomeCategoryMonthInput{
+				BudgetAmount: big.NewRat(3000, 1), IncomeAmount: big.NewRat(2000, 1), DayOfMonth: 30, DaysInMonth: 30, IsMonthOver: true,
+			},
+			expectedPace: models.IncomePaceBehind, expectedProjection: 2000, expectedByTodayExpected: 3000,
+		},
+		{
+			name: "a past month near its income is on track",
+			input: &IncomeCategoryMonthInput{
+				BudgetAmount: big.NewRat(3000, 1), IncomeAmount: big.NewRat(2900, 1), DayOfMonth: 31, DaysInMonth: 31, IsMonthOver: true,
+			},
+			expectedPace: models.IncomePaceOnTrack, expectedProjection: 2900, expectedByTodayExpected: 3000,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			projection := ProjectIncomeCategoryMonth(testCase.input)
+			if projection.IncomePace != testCase.expectedPace {
+				t.Fatalf("the pace is %s, not %s", projection.IncomePace, testCase.expectedPace)
+			}
+			if projection.ProjectedAmount.Cmp(big.NewRat(testCase.expectedProjection, 1)) != 0 {
+				t.Fatalf("the projection is %s, not %d", projection.ProjectedAmount.FloatString(2), testCase.expectedProjection)
+			}
+			if projection.ExpectedByTodayAmount.Cmp(big.NewRat(testCase.expectedByTodayExpected, 1)) != 0 {
+				t.Fatalf("expected by today is %s, not %d", projection.ExpectedByTodayAmount.FloatString(2), testCase.expectedByTodayExpected)
+			}
+		})
+	}
+}
+
+func TestProjectSavingMonth(t *testing.T) {
+	for _, testCase := range []struct {
+		name               string
+		input              *SavingMonthInput
+		expectedPace       models.SavingPace
+		expectedSaving     int64
+		expectedProjected  int64
+		expectedDifference int64
+	}{
+		{
+			// 4000 expected in, 3000 budgeted out: 1000 to save. Heading for
+			// 4000 in and 3100 out is 900, within 300 of it.
+			name: "close to the expected saving is on track",
+			input: &SavingMonthInput{
+				ExpectedIncomeAmount: big.NewRat(4000, 1), ExpectedSpendingAmount: big.NewRat(3000, 1),
+				ProjectedIncomeAmount: big.NewRat(4000, 1), ProjectedSpendingAmount: big.NewRat(3100, 1), DayOfMonth: 12,
+			},
+			expectedPace: models.SavingPaceOnTrack, expectedSaving: 1000, expectedProjected: 900, expectedDifference: -100,
+		},
+		{
+			name: "spending well over the budgets is behind",
+			input: &SavingMonthInput{
+				ExpectedIncomeAmount: big.NewRat(4000, 1), ExpectedSpendingAmount: big.NewRat(3000, 1),
+				ProjectedIncomeAmount: big.NewRat(4000, 1), ProjectedSpendingAmount: big.NewRat(3600, 1), DayOfMonth: 12,
+			},
+			expectedPace: models.SavingPaceBehind, expectedSaving: 1000, expectedProjected: 400, expectedDifference: -600,
+		},
+		{
+			// The same in the first week: a hot first week projects
+			// spending high, so it is not called behind yet.
+			name: "a hot first week is on track",
+			input: &SavingMonthInput{
+				ExpectedIncomeAmount: big.NewRat(4000, 1), ExpectedSpendingAmount: big.NewRat(3000, 1),
+				ProjectedIncomeAmount: big.NewRat(4000, 1), ProjectedSpendingAmount: big.NewRat(3600, 1), DayOfMonth: 4,
+			},
+			expectedPace: models.SavingPaceOnTrack, expectedSaving: 1000, expectedProjected: 400, expectedDifference: -600,
+		},
+		{
+			name: "a bonus on top is ahead",
+			input: &SavingMonthInput{
+				ExpectedIncomeAmount: big.NewRat(4000, 1), ExpectedSpendingAmount: big.NewRat(3000, 1),
+				ProjectedIncomeAmount: big.NewRat(5000, 1), ProjectedSpendingAmount: big.NewRat(3000, 1), DayOfMonth: 2,
+			},
+			expectedPace: models.SavingPaceAhead, expectedSaving: 1000, expectedProjected: 2000, expectedDifference: 1000,
+		},
+		{
+			name: "a past month that saved less is behind",
+			input: &SavingMonthInput{
+				ExpectedIncomeAmount: big.NewRat(4000, 1), ExpectedSpendingAmount: big.NewRat(3000, 1),
+				ProjectedIncomeAmount: big.NewRat(3500, 1), ProjectedSpendingAmount: big.NewRat(3000, 1), DayOfMonth: 30, IsMonthOver: true,
+			},
+			expectedPace: models.SavingPaceBehind, expectedSaving: 1000, expectedProjected: 500, expectedDifference: -500,
+		},
+		{
+			// No spending budgets: the band is a tenth of the income budgets.
+			name: "with only an income budget the band is a tenth of it",
+			input: &SavingMonthInput{
+				ExpectedIncomeAmount: big.NewRat(4000, 1), ProjectedIncomeAmount: big.NewRat(4000, 1),
+				ProjectedSpendingAmount: big.NewRat(300, 1), DayOfMonth: 20,
+			},
+			expectedPace: models.SavingPaceOnTrack, expectedSaving: 4000, expectedProjected: 3700, expectedDifference: -300,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			projection := ProjectSavingMonth(testCase.input)
+			if projection.SavingPace != testCase.expectedPace {
+				t.Fatalf("the pace is %s, not %s", projection.SavingPace, testCase.expectedPace)
+			}
+			for _, compared := range []struct {
+				what     string
+				got      *big.Rat
+				expected int64
+			}{
+				{"expected saving", projection.ExpectedSavingAmount, testCase.expectedSaving},
+				{"projected saving", projection.ProjectedSavingAmount, testCase.expectedProjected},
+				{"difference", projection.SavingDifferenceAmount, testCase.expectedDifference},
+			} {
+				if compared.got.Cmp(big.NewRat(compared.expected, 1)) != 0 {
+					t.Errorf("the %s is %s, not %d", compared.what, compared.got.FloatString(2), compared.expected)
+				}
+			}
+		})
+	}
+}

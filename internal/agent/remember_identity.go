@@ -7,11 +7,12 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// whenHappened reads the date the run gave, in the person's zone.
-func whenHappened(run *Run, said string) *time.Time {
+// whenHappened reads the date the run gave, in the person's zone, and how
+// precisely it was given.
+func whenHappened(run *Run, said string) (*time.Time, string) {
 	said = strings.TrimSpace(said)
 	if said == "" || strings.EqualFold(said, "null") {
-		return nil
+		return nil, ""
 	}
 	location := time.Local
 	if run.Owner != nil && run.Owner.Timezone != "" {
@@ -19,12 +20,15 @@ func whenHappened(run *Run, said string) *time.Time {
 			location = loaded
 		}
 	}
-	for _, layout := range []string{"2006-01-02", "2006-01", "2006", time.RFC3339} {
-		if when, err := time.ParseInLocation(layout, said, location); err == nil {
-			return &when
+	for _, layout := range []struct{ format, precision string }{
+		{"2006-01-02", models.HappenedDay}, {"2006-01", models.HappenedMonth},
+		{"2006", models.HappenedYear}, {time.RFC3339, models.HappenedDay},
+	} {
+		if when, err := time.ParseInLocation(layout.format, said, location); err == nil {
+			return &when, layout.precision
 		}
 	}
-	return nil
+	return nil, ""
 }
 
 // kindOfPath guesses what a page is about from where it was filed.

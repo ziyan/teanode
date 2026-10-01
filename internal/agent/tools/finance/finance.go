@@ -51,7 +51,7 @@ var (
 	rangeArguments      = []string{"from", "to"}
 	assetArguments      = []string{"asset_name", "asset_kind", "currency_code", "valuation_source"}
 	spendingRuleFields  = []string{"match_text", "spending_category_id", "is_transfer", "finance_account_id", "minimum_amount", "maximum_amount", "rule_priority"}
-	savingsTargetFields = []string{"savings_target_name", "target_amount", "currency_code", "target_on", "target_measure", "starting_amount", "started_on", "asset_ids"}
+	savingsTargetFields = []string{"savings_target_name", "target_amount", "currency_code", "target_on", "target_measure", "starting_amount", "started_on", "asset_ids", "finance_account_ids"}
 )
 
 // PersonOnlyAssetArguments are the asset settings the tool does not take,
@@ -238,26 +238,36 @@ var operations = map[string]*financeOperation{
 			if month := text(call, "effective_from"); month != "" {
 				from = " from " + month
 			}
+			isIncome := lookup.isIncomeSpendingCategory(text(call, "spending_category_id"))
 			if text(call, "monthly_amount") == "0" {
+				if isIncome {
+					return "Stop expecting income in " + name + from
+				}
 				return "End the budget for " + name + from
+			}
+			if isIncome {
+				return strings.TrimSpace("Expect a monthly income of "+text(call, "monthly_amount")+" "+text(call, "currency_code")) + " in " + name + from
 			}
 			return strings.TrimSpace("Set a monthly budget of "+text(call, "monthly_amount")+" "+text(call, "currency_code")) + " for " + name + from
 		},
 	},
 	"budget_status":   {graphqlOperation: "BudgetStatus", risk: tools.RiskRead, arguments: []string{"month"}},
+	"saving_summary":  {graphqlOperation: "SavingSummary", risk: tools.RiskRead, arguments: []string{"month", "currency_code"}},
 	"spending_by_day": {graphqlOperation: "SpendingByDay", risk: tools.RiskRead, arguments: []string{"month", "compare_month", "currency_code"}},
 	"cash_flow":       {graphqlOperation: "CashFlow", risk: tools.RiskRead, isMonthShorthand: true, arguments: []string{"from_month", "to_month", "currency_code"}},
 	"savings_targets": {graphqlOperation: "SavingsTargets", risk: tools.RiskRead},
 	"create_savings_target": {
 		graphqlOperation: "CreateSavingsTarget", risk: tools.RiskWrite, arguments: savingsTargetFields, required: []string{"savings_target_name", "target_amount", "target_on"},
-		preview: func(_ *previewLookup, call map[string]any) string {
-			return fmt.Sprintf("Add the savings target %s: %s by %s", tools.Named(text(call, "savings_target_name"), "a savings target"), text(call, "target_amount"), text(call, "target_on"))
+		preview: func(lookup *previewLookup, call map[string]any) string {
+			return fmt.Sprintf("Add the savings target %s: %s by %s", tools.Named(text(call, "savings_target_name"), "a savings target"), text(call, "target_amount"), text(call, "target_on")) +
+				lookup.targetMeasureSuffix(call)
 		},
 	},
 	"update_savings_target": {
 		graphqlOperation: "UpdateSavingsTarget", risk: tools.RiskWrite, arguments: append([]string{"savings_target_id"}, savingsTargetFields...), required: []string{"savings_target_id"},
 		preview: func(lookup *previewLookup, call map[string]any) string {
-			return "Change the savings target " + lookup.savingsTargetName(text(call, "savings_target_id")) + renamedSuffix(call, "savings_target_name")
+			return "Change the savings target " + lookup.savingsTargetName(text(call, "savings_target_id")) + renamedSuffix(call, "savings_target_name") +
+				lookup.targetMeasureSuffix(call)
 		},
 	},
 	"close_savings_target": {
@@ -499,7 +509,10 @@ const description = "The person's money: their finance sources (logins at banks,
 	"A SimpleFIN setup token, or the credential of an existing provider connection (a Plaid access token, a SimpleFIN access URL), is never taken in conversation: `link_simplefin` and `import_credential` say where to give it.`sync`, `disable_source`, `enable_source` and `delete_source` act on a finance source by source_id; a switched-off source is switched on with enable_source before it syncs.\n" +
 	"Recipes, followed the same way every time:\n" +
 	"- Proposing budgets: `spending_summary` grouped by spendingCategory for each of the last three full months (month 2026-06, then 2026-07, then 2026-08); propose the median of each, rounded, as a list; `set_budget` only what the person accepts. Once they set their first budget, offer a monthly review schedule on the first of the month.\n" +
+	"- Expected income: `set_budget` on an income spending category (isIncome) is the income expected each month, not a limit; `budget_status` lists those apart as incomeCategories, with incomePace behind, on_track or ahead.\n" +
+	"- How a month's saving is going: `saving_summary` gives the expected saving (income budgets less spending budgets), the actual saving so far, the projected month-end saving and the difference, with savingPace; quote those numbers rather than working them out. With no income budget, offer to set one from the last three months of `cash_flow` income.\n" +
 	"- A savings plan: `cash_flow` for what they save a month now, `savings_targets` for what a target needs a month, `budget_status` and `spending_summary` for which spending categories could close the gap, with numbers.\n" +
+	"- A savings target on what they own: target_measure net_worth for everything, or asset_value with finance_account_ids for whole accounts (an investment account counts with every holding, those bought later too) and asset_ids only for assets outside a finance account.\n" +
 	"- After the person corrects a transaction's spending category with `categorize_transaction`, offer a spending rule for that merchant (`should_create_spending_rule`), which applies to past transactions too, never over their own choices.\n" +
 	"- Tracking an account reachable only through a connected server: `create_asset` with valuation_source agent_reading if there is none (a value read now can go in the same call), then a daily schedule whose prompt calls that server's tool for the account's total and records it with `record_valuation` (valuation_source agent_reading). Never over an asset valued by finance_sync.\n" +
 	"- Estimating a house or a car: only for an asset with isEstimateAllowed, which only the person sets (on the dashboard's Finance page or with teanode finance update-asset). Search the web for its estimateDescription, read two to four pages that give a value or comparable sales, and `record_valuation` with valuation_source agent_estimate, estimate_low, estimate_high, the middle as value, the pages as evidence_urls and a valuation_note saying what it rests on. Where estimates are not allowed, say so and say where the person can allow them.\n" +
@@ -529,7 +542,7 @@ func init() {
 					"limit":                       tools.IntegerProperty("for transactions and trades: how many, at most 200"),
 					"after":                       tools.StringProperty("for transactions and trades: the nextCursor of the page before"),
 					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),
-					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, spending_summary, net_worth, spending_by_day and cash_flow: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in"),
+					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, spending_summary, net_worth, spending_by_day, cash_flow and saving_summary: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in"),
 					"from_currency_code":          tools.StringProperty("for exchange_rate and convert_currency: the currency converted from"),
 					"to_currency_code":            tools.StringProperty("for exchange_rate and convert_currency: the currency converted into"),
 					"amount":                      tools.StringProperty("for convert_currency: the amount"),
@@ -556,9 +569,9 @@ func init() {
 					"is_transfer":                 tools.BooleanProperty("a transfer between the person's own accounts, neither spending nor income"),
 					"rule_priority":               tools.IntegerProperty("the order a spending rule is tried in, lowest first"),
 					"should_create_spending_rule": tools.BooleanProperty("for categorize_transaction: also add a spending rule for its merchant, only when the person said yes"),
-					"monthly_amount":              tools.StringProperty("for set_budget: the amount a month; 0 ends the budget"),
+					"monthly_amount":              tools.StringProperty("for set_budget: the amount a month, or on an income spending category the income expected a month; 0 ends the budget"),
 					"effective_from":              tools.StringProperty("for set_budget: the month it starts, 2026-10; this month when left out"),
-					"month":                       tools.StringProperty("a month, 2026-09. For budget_status and spending_by_day: the month, this one when left out. For transactions, trades, spending_summary, net_worth and cash_flow: shorthand for that whole month, instead of from and to"),
+					"month":                       tools.StringProperty("a month, 2026-09. For budget_status, saving_summary and spending_by_day: the month, this one when left out. For transactions, trades, spending_summary, net_worth and cash_flow: shorthand for that whole month, instead of from and to"),
 					"compare_month":               tools.StringProperty("for spending_by_day: the month to compare with; the one before when left out"),
 					"from_month":                  tools.StringProperty("for cash_flow: the first month"),
 					"to_month":                    tools.StringProperty("for cash_flow: the last month"),
@@ -566,10 +579,11 @@ func init() {
 					"savings_target_name":         tools.StringProperty("what the person calls the savings target"),
 					"target_amount":               tools.StringProperty("the amount to save"),
 					"target_on":                   tools.StringProperty("the day to reach it by"),
-					"target_measure":              tools.EnumProperty("how progress is measured", "cash_flow", "asset_value"),
-					"starting_amount":             tools.StringProperty("for asset_value: what the assets were worth at the start"),
+					"target_measure":              tools.EnumProperty("how progress is measured: cash_flow (income less spending), asset_value (what asset_ids and finance_account_ids are worth) or net_worth", "cash_flow", "asset_value", "net_worth"),
+					"starting_amount":             tools.StringProperty("for asset_value: what the assets were worth at the start; for net_worth: net worth at the start, recorded on started_on when left out"),
 					"started_on":                  tools.StringProperty("the day the savings target starts; today when left out"),
-					"asset_ids":                   tools.ArrayProperty("for asset_value: the assets it measures", tools.StringProperty("an asset id")),
+					"asset_ids":                   tools.ArrayProperty("for asset_value: single assets it measures", tools.StringProperty("an asset id")),
+					"finance_account_ids":         tools.ArrayProperty("for asset_value: finance accounts it measures whole, every asset each values (its cash and its holdings, those bought later too); prefer this to listing an investment account's holdings", tools.StringProperty("a finance account id")),
 				}, "operation"),
 				Guidance: "finance: for anything about the person's accounts, spending, budgets, savings, net worth or exchange rates, use this and quote its numbers; never add amounts in different currencies yourself. A SimpleFIN setup token or a provider credential pasted in conversation is not used: point to the Finance tab of their agent page in the dashboard, teanode finance link-simplefin or teanode finance import-credential.",
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
@@ -603,6 +617,27 @@ func init() {
 func text(call map[string]any, key string) string {
 	value, _ := call[key].(string)
 	return strings.TrimSpace(value)
+}
+
+// texts is a list argument's strings, trimmed, blanks left out; nil when
+// absent or not a list.
+func texts(call map[string]any, key string) []string {
+	var found []string
+	switch typed := call[key].(type) {
+	case []any:
+		for _, element := range typed {
+			if value, isString := element.(string); isString && strings.TrimSpace(value) != "" {
+				found = append(found, strings.TrimSpace(value))
+			}
+		}
+	case []string:
+		for _, value := range typed {
+			if strings.TrimSpace(value) != "" {
+				found = append(found, strings.TrimSpace(value))
+			}
+		}
+	}
+	return found
 }
 
 // isTrue says a boolean argument is true.

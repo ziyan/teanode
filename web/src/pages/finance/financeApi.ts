@@ -117,12 +117,56 @@ export type SpendingCategoryBudgetStatus = {
   unconvertedSpending: CurrencyAmount[]
 }
 
+// How an income budget is going: falling short is the bad direction, so it
+// has words of its own rather than a BudgetPace.
+export type IncomePace = 'behind' | 'on_track' | 'ahead'
+
+export type IncomeCategoryBudgetStatus = {
+  spendingCategoryId: string
+  spendingCategoryName: string
+  budgetAmount: string
+  currencyCode: string
+  incomeAmount: string
+  incomeBySameDayLastMonthAmount: string
+  expectedByTodayAmount: string
+  projectedAmount: string
+  incomePace: IncomePace
+  unconvertedIncome: CurrencyAmount[]
+}
+
 export type BudgetStatus = {
   month: string
   asOf: string
   dayOfMonth: number
   daysInMonth: number
   spendingCategories: SpendingCategoryBudgetStatus[]
+  incomeCategories: IncomeCategoryBudgetStatus[]
+}
+
+export type SavingPace = 'behind' | 'on_track' | 'ahead'
+
+// A month's saving in the reporting currency: income budgets less spending
+// budgets, against income less spending so far and where it is heading.
+export type SavingSummary = {
+  month: string
+  asOf: string
+  dayOfMonth: number
+  daysInMonth: number
+  reportingCurrencyCode: string
+  incomeBudgetCount: number
+  spendingBudgetCount: number
+  expectedIncomeAmount: string
+  expectedSpendingAmount: string
+  expectedSavingAmount: string
+  incomeAmount: string
+  spendingAmount: string
+  savingAmount: string
+  projectedIncomeAmount: string
+  projectedSpendingAmount: string
+  projectedSavingAmount: string
+  savingDifferenceAmount: string
+  savingPace: SavingPace
+  unconvertedCurrencyCodes: string[]
 }
 
 // A spending summary's figures are money out and money in, both positive.
@@ -276,11 +320,14 @@ export type SavingsTarget = {
   targetAmount: string
   currencyCode: string
   targetOn: string
-  targetMeasure: 'cash_flow' | 'asset_value'
+  targetMeasure: 'cash_flow' | 'asset_value' | 'net_worth'
   startingAmount?: string | null
   startedOn: string
   closedOn?: string | null
   assetIds: string[]
+  // Finance accounts counted whole: every asset each values, holdings
+  // bought after the target started included.
+  financeAccountIds: string[]
 }
 
 export type SavingsTargetProgress = {
@@ -403,7 +450,17 @@ export const BUDGET_STATUS = `query ($month: String) {
   BudgetStatus(month: $month) { month asOf dayOfMonth daysInMonth
     spendingCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode spendingAmount
       spendingBySameDayLastMonthAmount fixedChargesDueAmount projectedAmount budgetPace
-      unconvertedSpending { currencyCode amount } } }
+      unconvertedSpending { currencyCode amount } }
+    incomeCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode incomeAmount
+      incomeBySameDayLastMonthAmount expectedByTodayAmount projectedAmount incomePace
+      unconvertedIncome { currencyCode amount } } }
+}`
+
+export const SAVING_SUMMARY = `query ($month: String) {
+  SavingSummary(month: $month) { month asOf dayOfMonth daysInMonth reportingCurrencyCode incomeBudgetCount
+    spendingBudgetCount expectedIncomeAmount expectedSpendingAmount expectedSavingAmount incomeAmount spendingAmount
+    savingAmount projectedIncomeAmount projectedSpendingAmount projectedSavingAmount savingDifferenceAmount savingPace
+    unconvertedCurrencyCodes }
 }`
 
 export const CASH_FLOW = `query ($fromMonth: String, $toMonth: String) {
@@ -530,23 +587,26 @@ export const FINANCE_TRADES = `query ($from: String, $to: String, $financeAccoun
 export const SAVINGS_TARGETS = `query {
   SavingsTargets {
     savingsTarget { id savingsTargetName targetAmount currencyCode targetOn targetMeasure startingAmount startedOn
-      closedOn assetIds }
+      closedOn assetIds financeAccountIds }
     savingsTargetProgress { savedAmount remainingAmount monthsLeftCount requiredMonthlyAmount isBehind
       unconvertedCurrencyCodes }
   }
 }`
 
 export const CREATE_SAVINGS_TARGET = `mutation ($savingsTargetName: String!, $targetAmount: String!, $currencyCode: String,
-  $targetOn: String!, $targetMeasure: String, $startingAmount: String, $startedOn: String, $assetIds: [String!]) {
+  $targetOn: String!, $targetMeasure: String, $startingAmount: String, $startedOn: String, $assetIds: [String!],
+  $financeAccountIds: [String!]) {
   CreateSavingsTarget(savingsTargetName: $savingsTargetName, targetAmount: $targetAmount, currencyCode: $currencyCode,
     targetOn: $targetOn, targetMeasure: $targetMeasure, startingAmount: $startingAmount, startedOn: $startedOn,
-    assetIds: $assetIds) { savingsTarget { id } }
+    assetIds: $assetIds, financeAccountIds: $financeAccountIds) { savingsTarget { id } }
 }`
 
 export const UPDATE_SAVINGS_TARGET = `mutation ($savingsTargetId: String!, $savingsTargetName: String,
-  $targetAmount: String, $targetOn: String, $startingAmount: String, $assetIds: [String!]) {
+  $targetAmount: String, $targetOn: String, $targetMeasure: String, $startingAmount: String, $assetIds: [String!],
+  $financeAccountIds: [String!]) {
   UpdateSavingsTarget(savingsTargetId: $savingsTargetId, savingsTargetName: $savingsTargetName,
-    targetAmount: $targetAmount, targetOn: $targetOn, startingAmount: $startingAmount, assetIds: $assetIds) {
+    targetAmount: $targetAmount, targetOn: $targetOn, targetMeasure: $targetMeasure, startingAmount: $startingAmount,
+    assetIds: $assetIds, financeAccountIds: $financeAccountIds) {
     savingsTarget { id } }
 }`
 

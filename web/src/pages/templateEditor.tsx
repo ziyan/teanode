@@ -12,6 +12,8 @@ import { MediaButton, imageTag } from '../components/media'
 import { useTranslation } from '../i18n/i18n'
 import { describeLayout } from './templates'
 import { Select } from '../components/select'
+import { TrashIcon } from '../components/icons'
+import { Tooltip } from '../components/tooltip'
 
 const TEMPLATE = `
   query ($domainId: String!, $templateId: String!) {
@@ -289,16 +291,19 @@ export function TemplateEditorPage() {
           <p className="muted field-hint">{t('editor.syntaxHint')}</p>
           {active && (
             <p>
-              <button
-                className="link danger"
-                type="button"
-                onClick={() => {
-                  setForm({ ...form, translations: form.translations.filter((each) => each.locale !== active) })
-                  setActive('')
-                }}
-              >
-                {t('editor.removeTranslation', { locale: active })}
-              </button>
+              <Tooltip label={t('editor.removeTranslation', { locale: active })}>
+                <button
+                  className="icon-action danger"
+                  type="button"
+                  aria-label={t('editor.removeTranslation', { locale: active })}
+                  onClick={() => {
+                    setForm({ ...form, translations: form.translations.filter((each) => each.locale !== active) })
+                    setActive('')
+                  }}
+                >
+                  <TrashIcon size={16} />
+                </button>
+              </Tooltip>
             </p>
           )}
 
@@ -308,11 +313,11 @@ export function TemplateEditorPage() {
             </button>
             <Link
               className="button"
-              to={`/mail/compose?domain=${encodeURIComponent(domainId)}&template=${encodeURIComponent(templateId)}`}
+              to={`/manage/mail/compose?domain=${encodeURIComponent(domainId)}&template=${encodeURIComponent(templateId)}`}
             >
               {t('templates.send')}
             </Link>
-            <button className="link danger" type="button" onClick={() => setRemoving(true)}>
+            <button className="danger" type="button" onClick={() => setRemoving(true)}>
               {t('common.remove')}
             </button>
           </div>
@@ -354,7 +359,7 @@ export function TemplateEditorPage() {
               setBusy(true)
               try {
                 await graphql(DELETE, { templateId })
-                navigate(`/domains/${domainId}/templates`)
+                navigate(`/manage/domains/${domainId}/templates`)
               } catch (caught) {
                 setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
               } finally {

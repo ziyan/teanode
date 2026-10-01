@@ -1858,7 +1858,7 @@ function LearnedCard() {
         title={t('agent.learned')}
         description={t('agent.learnedHint')}
         action={
-          <Link className="button" to="/settings/knowledge">
+          <Link className="button" to="/knowledge">
             {t('agent.learnedOpen')}
           </Link>
         }
@@ -1872,7 +1872,7 @@ function LearnedCard() {
             title={row.fact.text}
             badge={
               <>
-                <Link className="tag knowledge-path" to={`/settings/knowledge/${row.path}`}>
+                <Link className="tag knowledge-path" to={`/knowledge/${row.path}`}>
                   {row.path}#{row.fact.number}
                 </Link>
                 {row.fact.inferred ? <Tag value={t('knowledge.inferred')} tone="warn" /> : null}

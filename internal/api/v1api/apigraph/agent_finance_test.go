@@ -390,6 +390,13 @@ func TestFinanceDataIsTheCallersOwn(test *testing.T) {
 			})
 			return err
 		},
+		"CreateSavingsTarget naming their finance account": func(ctx context.Context) error {
+			_, err := resolver.CreateSavingsTarget(ctx, CreateSavingsTargetArguments{
+				SavingsTargetName: "taken", TargetAmount: "1", CurrencyCode: "USD", TargetOn: "2027-01-01", TargetMeasure: "asset_value",
+				FinanceAccountIDs: []string{account.ID},
+			})
+			return err
+		},
 		"SaveAgentKnowledgeSource": func(ctx context.Context) error {
 			isEnabled := false
 			_, err := resolver.SaveAgentKnowledgeSource(ctx, SaveAgentKnowledgeSourceArguments{SourceID: source.ID, Enabled: &isEnabled})
@@ -521,6 +528,122 @@ func TestFinanceTotalsConvertEachDay(test *testing.T) {
 		}
 		if _, err := fixture.resolver.ExchangeRate(ctx, ExchangeRateArguments{FromCurrencyCode: "ZZZ", ToCurrencyCode: "USD"}); !errors.Is(err, api.ErrInvalidArguments) {
 			test.Errorf("a currency with no rate answered %v", err)
+		}
+	})
+}
+
+// SetBudget takes an income spending category as the income expected,
+// BudgetStatus lists it apart from the spending budgets, and
+// SavingSummary sets the expected saving against the month's own income
+// and spending, naming what it could not convert. A stranger's summary
+// counts none of it.
+func TestIncomeBudgetAndSavingSummary(test *testing.T) {
+	fixture := newFinanceFixture(test, true)
+	fixture.seedFinanceSource(test)
+	resolver := fixture.resolver
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		isIncome := true
+		salary, err := resolver.CreateSpendingCategory(ctx, CreateSpendingCategoryArguments{SpendingCategoryName: "invented salary", IsIncome: &isIncome})
+		if err != nil {
+			test.Fatal(err)
+		}
+		groceries, err := resolver.CreateSpendingCategory(ctx, CreateSpendingCategoryArguments{SpendingCategoryName: "invented groceries"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := resolver.SetBudget(ctx, SetBudgetArguments{SpendingCategoryID: salary.ID, MonthlyAmount: "3000", CurrencyCode: "USD", EffectiveFrom: "2026-09"}); err != nil {
+			test.Fatalf("an income budget is refused: %s", err)
+		}
+		if _, err := resolver.SetBudget(ctx, SetBudgetArguments{SpendingCategoryID: groceries.ID, MonthlyAmount: "400", CurrencyCode: "USD", EffectiveFrom: "2026-09"}); err != nil {
+			test.Fatal(err)
+		}
+		status, err := resolver.BudgetStatus(ctx, BudgetStatusArguments{Month: "2026-09"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if len(status.IncomeCategories) != 1 || status.IncomeCategories[0].SpendingCategoryID != salary.ID || status.IncomeCategories[0].BudgetAmount != "3000.0000" {
+			test.Errorf("the income budget is listed apart: %+v", status.IncomeCategories)
+		}
+		if len(status.SpendingCategories) != 1 || status.SpendingCategories[0].SpendingCategoryID != groceries.ID {
+			test.Errorf("the spending budgets leave the income out: %+v", status.SpendingCategories)
+		}
+
+		// The seeded month spent 42.17 USD and 20 EUR, with no rate for the
+		// euros, and took nothing in.
+		summary, err := resolver.SavingSummary(ctx, SavingSummaryArguments{Month: "2026-09", CurrencyCode: "USD"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if summary.ReportingCurrencyCode != "USD" || summary.ExpectedIncomeAmount != "3000.0000" || summary.ExpectedSpendingAmount != "400.0000" ||
+			summary.ExpectedSavingAmount != "2600.0000" || summary.IncomeAmount != "0.0000" || summary.SpendingAmount != "42.1700" ||
+			summary.SavingAmount != "-42.1700" || strings.Join(summary.UnconvertedCurrencyCodes, ",") != "EUR" {
+			test.Errorf("summary %+v", summary)
+		}
+		if summary.IncomeBudgetCount != 1 || summary.SpendingBudgetCount != 1 || !summary.SavingPace.IsValid() {
+			test.Errorf("summary %+v", summary)
+		}
+		if _, err := resolver.SavingSummary(ctx, SavingSummaryArguments{Month: "September"}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Errorf("a month that is not 2006-01 answered %v", err)
+		}
+	})
+	fixture.as(test, fixture.stranger, func(ctx context.Context, tx db.Transaction) {
+		summary, err := resolver.SavingSummary(ctx, SavingSummaryArguments{Month: "2026-09", CurrencyCode: "USD"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if summary.IncomeBudgetCount != 0 || summary.SpendingBudgetCount != 0 || summary.SpendingAmount != "0.0000" {
+			test.Errorf("a stranger's summary counts the owner's money: %+v", summary)
+		}
+	})
+}
+
+// A net worth savings target given no starting amount records net worth
+// on the day it started, so it measures what was gained since; changing a
+// target to net worth does the same, and drops the accounts it chose.
+func TestNetWorthSavingsTargetRecordsWhereItStarted(test *testing.T) {
+	fixture := newFinanceFixture(test, true)
+	_, account, _ := fixture.seedFinanceSource(test)
+	resolver := fixture.resolver
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		car, err := resolver.CreateAsset(ctx, CreateAssetArguments{AssetName: "the car", AssetKind: "vehicle", CurrencyCode: "USD", Value: "18000", ValuedOn: "2026-09-01"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		// The checking account's 1200.50 from the 20th, and the car.
+		created, err := resolver.CreateSavingsTarget(ctx, CreateSavingsTargetArguments{
+			SavingsTargetName: "worth more", TargetAmount: "5000", CurrencyCode: "USD", TargetOn: "2027-06-30", TargetMeasure: "net_worth", StartedOn: "2026-09-21",
+		})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if created.SavingsTarget.StartingAmount != "19200.5000" || len(created.SavingsTarget.FinanceAccountIDs) != 0 {
+			test.Errorf("the net worth it started from: %+v", created.SavingsTarget)
+		}
+		if _, err := resolver.RecordValuation(ctx, RecordValuationArguments{AssetID: car.ID, Value: "19000", ValuedOn: "2026-09-22"}); err != nil {
+			test.Fatal(err)
+		}
+		targets, err := resolver.SavingsTargets(ctx)
+		if err != nil || len(targets) != 1 || targets[0].SavingsTargetProgress.SavedAmount != "1000.0000" {
+			test.Errorf("gained since the start: %+v %v", targets, err)
+		}
+
+		accounts, err := resolver.CreateSavingsTarget(ctx, CreateSavingsTargetArguments{
+			SavingsTargetName: "checking", TargetAmount: "5000", CurrencyCode: "USD", TargetOn: "2027-06-30", TargetMeasure: "asset_value",
+			StartedOn: "2026-09-21", FinanceAccountIDs: []string{" " + account.ID + " ", ""},
+		})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if len(accounts.SavingsTarget.FinanceAccountIDs) != 1 || accounts.SavingsTargetProgress.SavedAmount != "1200.5000" {
+			test.Errorf("the whole checking account: %+v %+v", accounts.SavingsTarget, accounts.SavingsTargetProgress)
+		}
+		measure := "net_worth"
+		changed, err := resolver.UpdateSavingsTarget(ctx, UpdateSavingsTargetArguments{SavingsTargetID: accounts.SavingsTarget.ID, TargetMeasure: &measure})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if changed.SavingsTarget.StartingAmount != "19200.5000" || len(changed.SavingsTarget.FinanceAccountIDs) != 0 {
+			test.Errorf("changed to net worth: %+v", changed.SavingsTarget)
 		}
 	})
 }

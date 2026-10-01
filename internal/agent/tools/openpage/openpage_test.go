@@ -14,14 +14,14 @@ func TestPagePath(t *testing.T) {
 	t.Parallel()
 
 	for _, testCase := range []struct{ written, want string }{
-		{"/settings/knowledge/people/some-person", "/settings/knowledge/people/some-person"},
-		{"/settings/knowledge/people/zoë/", "/settings/knowledge/people/zoë"},
+		{"/knowledge/people/some-person", "/knowledge/people/some-person"},
+		{"/knowledge/people/zoë/", "/knowledge/people/zoë"},
 		{"/mailbox", "/mailbox"},
 		{"/mailbox/starred/item42", "/mailbox/starred/item42"},
 		{"/settings/agent/instructions", "/settings/agent/instructions"},
 		{"/settings/preference", "/settings/preference"},
 		{"/finance/net-worth", "/finance/net-worth"},
-		{"memory:projects/example-app#2", "/settings/knowledge/projects/example-app"},
+		{"memory:projects/example-app#2", "/knowledge/projects/example-app"},
 		{"mail:item42", "/mailbox/starred/item42"},
 	} {
 		got, err := openpage.PagePath(testCase.written)
@@ -31,7 +31,7 @@ func TestPagePath(t *testing.T) {
 	}
 	for _, written := range []string{
 		"", "/", "https://example.net/settings", "//example.net/settings", "javascript:alert(1)",
-		"settings/agent", "/server/about", "/access/users", "/domains", "/mail/abc",
+		"settings/agent", "/manage/server/about", "/manage/access/users", "/manage/domains", "/manage/mail/abc",
 		"/settings/../server", "/settings/./agent", "/settings//agent", "/mailbox?search=x",
 		"/mailbox#top", "/settings/agent/a b", "/settings\\agent", "/settingsx", "/finance-link", "/finance/link", "/finance/link/", "memory:../server", "mail:a/b",
 		"/settings/" + strings.Repeat("a", openpage.PathLength),
@@ -75,14 +75,14 @@ func TestOpenPageShowsAPageOfTheDashboard(t *testing.T) {
 	t.Parallel()
 
 	run := &showingRun{}
-	result, err := call(t, run, `{"path":"/settings/knowledge/people/some-person","reason":"the corrected page"}`)
+	result, err := call(t, run, `{"path":"/knowledge/people/some-person","reason":"the corrected page"}`)
 	if err != nil {
 		t.Fatalf("open_page: %s", err)
 	}
-	if len(run.shown) != 1 || run.shown[0] != "/settings/knowledge/people/some-person" {
+	if len(run.shown) != 1 || run.shown[0] != "/knowledge/people/some-person" {
 		t.Fatalf("shown %q", run.shown)
 	}
-	if result.Note != "Opened /settings/knowledge/people/some-person: the corrected page" {
+	if result.Note != "Opened /knowledge/people/some-person: the corrected page" {
 		t.Errorf("note %q", result.Note)
 	}
 

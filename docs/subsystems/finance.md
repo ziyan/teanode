@@ -39,8 +39,10 @@ tool and the dashboard.
   finance account) and **trade** (a buy, a sell, a cancelled trade or a
   security moved in or out).
 - **spending rule**, **budget**, **budget pace** (`under`, `on_track`,
-  `at_risk`, `over`), **savings target**, **reporting currency**,
-  **exchange rate**, **categorize model**.
+  `at_risk`, `over`), **income pace** (`behind`, `on_track`, `ahead`),
+  **saving summary** and **saving pace** (`behind`, `on_track`, `ahead`),
+  **savings target**, **reporting currency**, **exchange rate**,
+  **categorize model**.
 
 ## Providers
 
@@ -185,8 +187,9 @@ the holdings. Plaid's cash holdings are that cash, not assets of their own. A
 holding no longer reported is valued at zero and closed on that day. When the
 holdings cannot be read on a sync, nothing is recorded that day for that
 finance source's investment accounts, and the earlier values carry forward.
-So net worth, savings targets measured by assets, and each position's history
-come from the same valuations as any other asset.
+So net worth, savings targets measured by net worth or by assets and
+accounts, and each position's history come from the same valuations as any
+other asset.
 
 A trade swaps cash for a security inside one account, so it is its own row
 in `agent_finance_trade` (`FinanceTrades`, `teanode finance trades`, the
@@ -223,8 +226,53 @@ A budget is an amount per spending category per month, changed by adding a
 row effective from a month. `BudgetStatus` (`internal/agent/budget_status.go`)
 converts spending into the budget's currency, projects the month's end with
 fixed monthly charges counted before they land (`budget_pace.go`), and names
-the budget pace. Savings targets are measured by cash flow or by what chosen
-assets are worth.
+the budget pace.
+
+A budget on an income spending category is the income expected each month,
+set the same way (`SetBudget` takes any spending category; nothing in the
+schema ever refused an income one, it only went uncounted).
+`BudgetStatus` lists it in `incomeCategories`, apart from the spending
+budgets, against what that category and its children without a budget of
+their own took in (`ListIncomeCategoryDays`: money in less money taken
+back, transfers left out). Income comes in a few large amounts, so it is
+not projected on a straight line: the month in progress is projected to
+end at the expected income, or at what came in when that is more already,
+and a month that is over at what came in. The income pace compares what
+came in with the expected income spread evenly over the days so far:
+`behind` under ninety percent of that after the first week (or in a month
+that is over), `ahead` past the whole month's expected income by more than
+ten percent, `on_track` otherwise. Nothing detects recurring income the way
+fixed charges are detected, so a salary paid late in the month reads
+`behind` in the days before it lands. Budget alerts read only the spending
+budgets.
+
+The saving summary (`SavingSummary`, `internal/agent/saving_summary.go`)
+is one month in the reporting currency: the expected saving (every income
+budget less every spending budget, converted at the day's rate), the
+actual saving (income less spending as cash flow counts them, budgeted or
+not, each day at its own rate), and the projected saving (income so far
+plus what each income budget still expects, less all spending projected
+the way one budget's is). The difference is projected less expected, and
+the saving pace is `on_track` within a tenth of the spending budgets
+either side, `behind` below that after the first week, `ahead` above it.
+A month that is over uses its own figures.
+
+A savings target is measured one of three ways (`target_measure`):
+`cash_flow`, income less spending since it started; `net_worth`, net worth
+today less the net worth it started from, converted per currency at the
+day's rate the way the Net worth section converts it; or `asset_value`, what
+the chosen assets and finance accounts are worth today less what they held
+at the start. A chosen finance account counts every asset whose
+`finance_account_id` is that account, read when the progress is read rather
+than copied when the target is saved, so a holding bought later counts and a
+brokerage is one choice instead of one per position
+(`agent_savings_target_finance_account`, beside the chosen assets in
+`agent_savings_target_asset`). An asset chosen on its own and through its
+account counts once, and a deleted finance account drops out of the targets
+that chose it. A `net_worth` target saved without a starting amount records
+the net worth on its starting day, and changing a target's measure clears
+the starting amount it had, since one measure's start means nothing to
+another. Only an `asset_value` target keeps chosen assets and accounts.
 
 Budget and savings target alerts are candidates of kind `budget` in the alert
 path every agent alert uses, so they share its daily limit, quiet night hours,
@@ -251,17 +299,21 @@ stay in the transcript and go to the model provider; `link_simplefin` and
 
 Two places, split by how often a person goes there. The **Finance page**
 (`web/src/pages/financePage.tsx`, `/finance/<section>`) is an item in the
-account's rail after Knowledge, shown when the person's agent is on and a
+mailbox's rail after Knowledge, under the calendar (the account's rail for a
+person with no mailbox), shown when the person's agent is on and a
 provider is offered or a finance source exists. Its sections are Spending,
 Transactions, Accounts, Budgets, Net worth and Savings targets: a row of tabs
 on a wide screen, one full-width list to choose from on a phone. `/finance`
 alone opens Spending; with nothing linked yet the page says so and links to
 the setup.
 
+The saving summary is a panel on Spending, for the month chosen there, above
+the month's budgets (spending budgets, then income budgets under a heading
+of their own), and heads Budgets for this month, where the list and the
+"Set a budget" dialog group income categories under Income.
+
 The **agent page's Finance tab** (`web/src/pages/agentFinance.tsx`,
 `/settings/agent/finance`) is the setup: the finance sources (link, repair,
 bring an existing connection in, sync, switch, delete) and the settings (the
 reporting currency and the converter), in one scroll. `/finance/link`, the
-page Plaid's window runs on, comes back to it. The addresses the sections had
-under the tab before they moved (`/settings/agent/finance/spending` and the
-rest) open the tab and are not sent on to the Finance page.
+page Plaid's window runs on, comes back to it.

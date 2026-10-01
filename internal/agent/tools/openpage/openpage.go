@@ -22,7 +22,7 @@ const PathLength = 600
 // pagePrefixes are the parts of the dashboard the tool may show: the
 // person's own pages. Not an operator's page, and never anywhere off the
 // dashboard. The dashboard holds the same list (web/src/components/dashboardPath.ts).
-var pagePrefixes = []string{"/settings/knowledge", "/mailbox", "/settings/agent", "/settings", "/finance"}
+var pagePrefixes = []string{"/knowledge", "/mailbox", "/settings/agent", "/settings", "/finance"}
 
 func init() {
 	tools.Register(func() []*tools.Tool {
@@ -33,10 +33,10 @@ func init() {
 				Core:          true,
 				Risk:          tools.RiskRead,
 				DashboardOnly: true,
-				Description: "Show the person a page of the dashboard they are reading you in, by taking it there: a page of your memory (/settings/knowledge/people/some-person), a message (/mailbox/starred/ITEM_ID), your settings (/settings/agent), theirs (/settings/preference), their finance (/finance/spending, /finance/budgets). " +
+				Description: "Show the person a page of the dashboard they are reading you in, by taking it there: a page of your memory (/knowledge/people/some-person), a message (/mailbox/starred/ITEM_ID), your settings (/settings/agent), theirs (/settings/preference), their finance (/finance/spending, /finance/budgets). " +
 					"Use it when they ask to be shown or taken to a page. To point at a page in an answer, link it instead: [name](memory:PATH), [subject](mail:ITEM_ID). Never open the dashboard with the browser tool.",
 				Parameters: tools.Object(map[string]any{
-					"path":   tools.StringProperty("the dashboard path, starting with /settings/knowledge/, /mailbox/, /settings/agent/, /settings/ or /finance/; a memory:PATH or mail:ITEM_ID link is taken too"),
+					"path":   tools.StringProperty("the dashboard path, starting with /knowledge/, /mailbox/, /settings/agent/, /settings/ or /finance/; a memory:PATH or mail:ITEM_ID link is taken too"),
 					"reason": tools.StringProperty("a few words on why, for the line the drawer shows"),
 				}, "path"),
 				Run: runOpenPage,
@@ -87,7 +87,7 @@ func PagePath(written string) (string, error) {
 		}
 	}
 	if written == "" {
-		return "", fmt.Errorf("say which page: a path such as /settings/knowledge/people/some-person")
+		return "", fmt.Errorf("say which page: a path such as /knowledge/people/some-person")
 	}
 	if len(written) > PathLength {
 		return "", fmt.Errorf("the path is longer than %d characters", PathLength)

@@ -74,7 +74,8 @@ type BudgetOperation interface {
 	ApplySpendingRules(agentId string) (int, error)
 
 	// SetBudget keeps the monthly amount of a spending category from a
-	// month on, replacing the one already set from that same month.
+	// month on, replacing the one already set from that same month. On an
+	// income spending category it is the income expected each month.
 	SetBudget(budget *models.Budget) (*models.Budget, error)
 
 	// ListBudgets is every budget row of the agent, by spending category
@@ -92,12 +93,14 @@ type BudgetOperation interface {
 	// GetSavingsTarget is one savings target of the agent, or nil.
 	GetSavingsTarget(agentId, savingsTargetId string) (*models.SavingsTarget, error)
 
-	// CreateSavingsTarget adds a savings target with the assets it
+	// CreateSavingsTarget adds a savings target with the assets and
+	// finance accounts it
 	// measures, each of which must be the agent's.
 	CreateSavingsTarget(savingsTarget *models.SavingsTarget) (*models.SavingsTarget, error)
 
 	// UpdateSavingsTarget changes a savings target of the agent through a
-	// function given a copy; its AssetIDs replace the ones it had.
+	// function given a copy; its AssetIDs and FinanceAccountIDs replace
+	// the ones it had.
 	UpdateSavingsTarget(agentId, savingsTargetId string, modify func(*models.SavingsTarget) error) (*models.SavingsTarget, error)
 
 	// CloseSavingsTarget records the day a savings target was closed; an
@@ -114,6 +117,13 @@ type BudgetOperation interface {
 	// too, since it may be income; money out that is not categorized is
 	// counted under an empty spending category.
 	ListSpendingCategoryDays(agentId, month string) ([]*models.SpendingCategoryDay, error)
+
+	// ListIncomeCategoryDays is each day's income in a month ("2006-01")
+	// per income spending category and currency: money in less money
+	// taken back, transfers left out. Money in that is not categorized is
+	// left out, since no income budget can count it; ListCashFlowDays
+	// counts it as income.
+	ListIncomeCategoryDays(agentId, month string) ([]*models.IncomeCategoryDay, error)
 
 	// ListCashFlowDays is each day's income and spending per currency from
 	// one day to another, both included ("2006-01-02"), counted as
@@ -688,21 +698,25 @@ type agentSavingsTargetModel struct {
 
 func (agentSavingsTargetModel) TableName() string { return "agent_savings_target" }
 
-func (self *agentSavingsTargetModel) toModel(assetIds []string) *models.SavingsTarget {
+func (self *agentSavingsTargetModel) toModel(assetIds, financeAccountIds []string) *models.SavingsTarget {
 	if assetIds == nil {
 		assetIds = []string{}
+	}
+	if financeAccountIds == nil {
+		financeAccountIds = []string{}
 	}
 	return &models.SavingsTarget{
 		ID: self.ID, AgentID: self.AgentID, SavingsTargetName: self.SavingsTargetName, TargetAmount: self.TargetAmount,
 		CurrencyCode: self.CurrencyCode, TargetOn: formatDay(self.TargetOn), TargetMeasure: models.TargetMeasure(self.TargetMeasure),
 		StartingAmount: optionalString(self.StartingAmount), StartedOn: formatDay(self.StartedOn), ClosedOn: formatOptionalDay(self.ClosedOn),
-		AssetIDs: assetIds, CreatedAt: self.CreatedAt.In(time.Local), ModifiedAt: self.ModifiedAt.In(time.Local),
+		AssetIDs: assetIds, FinanceAccountIDs: financeAccountIds, CreatedAt: self.CreatedAt.In(time.Local), ModifiedAt: self.ModifiedAt.In(time.Local),
 	}
 }
 
 // validateSavingsTarget checks a savings target before it is written and
 // writes its amounts and days the way the columns keep them. Its assets
-// must be the agent's.
+// and finance accounts must be the agent's. Only an asset_value target
+// keeps them: the other measures choose nothing.
 func (self *transaction) validateSavingsTarget(savingsTarget *models.SavingsTarget) error {
 	savingsTarget.SavingsTargetName = strings.TrimSpace(savingsTarget.SavingsTargetName)
 	savingsTarget.CurrencyCode = strings.TrimSpace(savingsTarget.CurrencyCode)
@@ -747,11 +761,31 @@ func (self *transaction) validateSavingsTarget(savingsTarget *models.SavingsTarg
 		uniqueAssetIds = append(uniqueAssetIds, assetId)
 	}
 	savingsTarget.AssetIDs = uniqueAssetIds
+	uniqueFinanceAccountIds := []string{}
+	seen = map[string]bool{}
+	for _, financeAccountId := range savingsTarget.FinanceAccountIDs {
+		if financeAccountId == "" || seen[financeAccountId] {
+			continue
+		}
+		seen[financeAccountId] = true
+		financeAccount, err := self.GetFinanceAccount(savingsTarget.AgentID, financeAccountId)
+		if err != nil {
+			return err
+		}
+		if financeAccount == nil {
+			return ErrNotFound
+		}
+		uniqueFinanceAccountIds = append(uniqueFinanceAccountIds, financeAccountId)
+	}
+	savingsTarget.FinanceAccountIDs = uniqueFinanceAccountIds
+	if savingsTarget.TargetMeasure != models.TargetMeasureAssetValue {
+		savingsTarget.AssetIDs, savingsTarget.FinanceAccountIDs = []string{}, []string{}
+	}
 	return nil
 }
 
-// writeSavingsTarget inserts or replaces the savings target's row and its
-// assets.
+// writeSavingsTarget inserts or replaces the savings target's row, its
+// assets and its finance accounts.
 func writeSavingsTarget(tx *gorm.DB, savingsTarget *models.SavingsTarget, isCreate bool) error {
 	arguments := []any{
 		savingsTarget.SavingsTargetName, savingsTarget.TargetAmount, savingsTarget.CurrencyCode, savingsTarget.TargetOn,
@@ -776,12 +810,23 @@ func writeSavingsTarget(tx *gorm.DB, savingsTarget *models.SavingsTarget, isCrea
 		if err := tx.Exec(`DELETE FROM "agent_savings_target_asset" WHERE "savings_target_id" = ?`, savingsTarget.ID).Error; err != nil {
 			return err
 		}
+		if err := tx.Exec(`DELETE FROM "agent_savings_target_finance_account" WHERE "savings_target_id" = ?`, savingsTarget.ID).Error; err != nil {
+			return err
+		}
 	}
-	if len(savingsTarget.AssetIDs) == 0 {
-		return nil
+	if len(savingsTarget.AssetIDs) > 0 {
+		if err := tx.Exec(`INSERT INTO "agent_savings_target_asset" ("savings_target_id", "asset_id")
+			SELECT ?, unnest(?::text[])`, savingsTarget.ID, pq.Array(savingsTarget.AssetIDs)).Error; err != nil {
+			return err
+		}
 	}
-	return tx.Exec(`INSERT INTO "agent_savings_target_asset" ("savings_target_id", "asset_id")
-		SELECT ?, unnest(?::text[])`, savingsTarget.ID, pq.Array(savingsTarget.AssetIDs)).Error
+	if len(savingsTarget.FinanceAccountIDs) > 0 {
+		if err := tx.Exec(`INSERT INTO "agent_savings_target_finance_account" ("savings_target_id", "finance_account_id")
+			SELECT ?, unnest(?::text[])`, savingsTarget.ID, pq.Array(savingsTarget.FinanceAccountIDs)).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // savingsTargetAssetIds is the assets of each savings target given, by id.
@@ -805,6 +850,28 @@ func (self *transaction) savingsTargetAssetIds(savingsTargetIds []string) (map[s
 	return assetIdsBySavingsTargetId, nil
 }
 
+// savingsTargetFinanceAccountIds is the finance accounts of each savings
+// target given, by id.
+func (self *transaction) savingsTargetFinanceAccountIds(savingsTargetIds []string) (map[string][]string, error) {
+	financeAccountIdsBySavingsTargetId := map[string][]string{}
+	if len(savingsTargetIds) == 0 {
+		return financeAccountIdsBySavingsTargetId, nil
+	}
+	var rows []struct {
+		SavingsTargetID  string `gorm:"column:savings_target_id"`
+		FinanceAccountID string `gorm:"column:finance_account_id"`
+	}
+	if err := self.tx.Raw(`SELECT "savings_target_id", "finance_account_id" FROM "agent_savings_target_finance_account"
+		WHERE "savings_target_id" = ANY(?::text[]) ORDER BY "savings_target_id", "finance_account_id"`, pq.Array(savingsTargetIds)).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		financeAccountIdsBySavingsTargetId[row.SavingsTargetID] = append(financeAccountIdsBySavingsTargetId[row.SavingsTargetID], row.FinanceAccountID)
+	}
+	return financeAccountIdsBySavingsTargetId, nil
+}
+
 func (self *transaction) savingsTargetsFrom(found []agentSavingsTargetModel) ([]*models.SavingsTarget, error) {
 	savingsTargetIds := make([]string, 0, len(found))
 	for index := range found {
@@ -814,9 +881,14 @@ func (self *transaction) savingsTargetsFrom(found []agentSavingsTargetModel) ([]
 	if err != nil {
 		return nil, err
 	}
+	financeAccountIdsBySavingsTargetId, err := self.savingsTargetFinanceAccountIds(savingsTargetIds)
+	if err != nil {
+		return nil, err
+	}
 	savingsTargets := make([]*models.SavingsTarget, 0, len(found))
 	for index := range found {
-		savingsTargets = append(savingsTargets, found[index].toModel(assetIdsBySavingsTargetId[found[index].ID]))
+		savingsTargets = append(savingsTargets, found[index].toModel(assetIdsBySavingsTargetId[found[index].ID],
+			financeAccountIdsBySavingsTargetId[found[index].ID]))
 	}
 	return savingsTargets, nil
 }
@@ -877,6 +949,7 @@ func (self *transaction) UpdateSavingsTarget(agentId, savingsTargetId string, mo
 	before := savingsTargets[0]
 	after := *before
 	after.AssetIDs = append([]string(nil), before.AssetIDs...)
+	after.FinanceAccountIDs = append([]string(nil), before.FinanceAccountIDs...)
 	if err := modify(&after); err != nil {
 		return nil, err
 	}
@@ -948,6 +1021,38 @@ func (self *transaction) ListSpendingCategoryDays(agentId, month string) ([]*mod
 	for _, row := range rows {
 		days = append(days, &models.SpendingCategoryDay{
 			SpendingCategoryID: row.SpendingCategoryID, CurrencyCode: row.CurrencyCode, SpentOn: row.SpentOn, SpendingAmount: row.SpendingAmount,
+		})
+	}
+	return days, nil
+}
+
+func (self *transaction) ListIncomeCategoryDays(agentId, month string) ([]*models.IncomeCategoryDay, error) {
+	monthStart, err := parseMonth(month)
+	if err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		SpendingCategoryID string `gorm:"column:spending_category_id"`
+		CurrencyCode       string `gorm:"column:currency_code"`
+		ReceivedOn         string `gorm:"column:received_on"`
+		IncomeAmount       string `gorm:"column:income_amount"`
+	}
+	if err := self.tx.Raw(`SELECT "received"."spending_category_id", "received"."currency_code",
+			to_char("received"."posted_on", 'YYYY-MM-DD') AS "received_on", SUM("received"."amount")::text AS "income_amount"
+		FROM "agent_finance_transaction" AS "received"
+		JOIN "agent_spending_category" AS "spending_category"
+		  ON "spending_category"."id" = "received"."spending_category_id" AND "spending_category"."agent_id" = "received"."agent_id"
+		WHERE "received"."agent_id" = ? AND NOT "received"."is_transfer" AND "spending_category"."is_income"
+		  AND "received"."posted_on" >= ?::date AND "received"."posted_on" < ?::date
+		GROUP BY 1, 2, 3
+		ORDER BY 3, 1, 2`,
+		agentId, monthStart.Format(time.DateOnly), monthStart.AddDate(0, 1, 0).Format(time.DateOnly)).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	days := make([]*models.IncomeCategoryDay, 0, len(rows))
+	for _, row := range rows {
+		days = append(days, &models.IncomeCategoryDay{
+			SpendingCategoryID: row.SpendingCategoryID, CurrencyCode: row.CurrencyCode, ReceivedOn: row.ReceivedOn, IncomeAmount: row.IncomeAmount,
 		})
 	}
 	return days, nil

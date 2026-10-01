@@ -159,6 +159,11 @@ type GraphOperation interface {
 	// SearchAgentGraph finds pages and facts by words, best match first.
 	SearchAgentGraph(agentId, query string, limit int) ([]*models.AgentNode, []*models.AgentFact, error)
 
+	// SearchAgentGraphFrom is the same search read on from an offset: the
+	// pages and the facts past the first offset of each, in the same
+	// order, so that one page of results carries on from the last.
+	SearchAgentGraphFrom(agentId, query string, offset, limit int) ([]*models.AgentNode, []*models.AgentFact, error)
+
 	// PutAgentEdge joins two pages, or changes the join.
 	PutAgentEdge(edge *models.AgentEdge) error
 	DeleteAgentEdge(agentId, fromId, toId string, relation models.AgentEdgeRelation) error
@@ -239,23 +244,25 @@ type agentNodeModel struct {
 func (agentNodeModel) TableName() string { return "agent_node" }
 
 type agentFactModel struct {
-	ID           string     `gorm:"column:id;primaryKey"`
-	AgentID      string     `gorm:"column:agent_id"`
-	NodeID       string     `gorm:"column:node_id"`
-	Number       int        `gorm:"column:number"`
-	Kind         string     `gorm:"column:kind"`
-	Text         string     `gorm:"column:text"`
-	HappenedAt   *time.Time `gorm:"column:happened_at"`
-	Confidence   float32    `gorm:"column:confidence"`
-	Inferred     bool       `gorm:"column:inferred"`
-	Evidence     []byte     `gorm:"column:evidence;type:jsonb"`
-	Audiences    []byte     `gorm:"column:audiences;type:jsonb"`
-	SupersededBy *string    `gorm:"column:superseded_by"`
-	Dormant      bool       `gorm:"column:dormant"`
-	UsedAt       *time.Time `gorm:"column:used_at"`
-	Version      string     `gorm:"column:version"`
-	CreatedAt    time.Time  `gorm:"column:created_at"`
-	ModifiedAt   time.Time  `gorm:"column:modified_at"`
+	ID         string     `gorm:"column:id;primaryKey"`
+	AgentID    string     `gorm:"column:agent_id"`
+	NodeID     string     `gorm:"column:node_id"`
+	Number     int        `gorm:"column:number"`
+	Kind       string     `gorm:"column:kind"`
+	Text       string     `gorm:"column:text"`
+	HappenedAt *time.Time `gorm:"column:happened_at"`
+	// HappenedPrecision is how precisely HappenedAt is known.
+	HappenedPrecision string     `gorm:"column:happened_precision"`
+	Confidence        float32    `gorm:"column:confidence"`
+	Inferred          bool       `gorm:"column:inferred"`
+	Evidence          []byte     `gorm:"column:evidence;type:jsonb"`
+	Audiences         []byte     `gorm:"column:audiences;type:jsonb"`
+	SupersededBy      *string    `gorm:"column:superseded_by"`
+	Dormant           bool       `gorm:"column:dormant"`
+	UsedAt            *time.Time `gorm:"column:used_at"`
+	Version           string     `gorm:"column:version"`
+	CreatedAt         time.Time  `gorm:"column:created_at"`
+	ModifiedAt        time.Time  `gorm:"column:modified_at"`
 }
 
 func (agentFactModel) TableName() string { return "agent_fact" }
@@ -356,7 +363,8 @@ func factToModel(fact *models.AgentFact) (*agentFactModel, error) {
 	row := &agentFactModel{
 		ID: fact.ID, AgentID: fact.AgentID, NodeID: fact.NodeID, Number: fact.Number,
 		Kind: string(fact.Kind), Text: fact.Text, HappenedAt: fact.HappenedAt,
-		Confidence: fact.Confidence, Inferred: fact.Inferred,
+		HappenedPrecision: fact.HappenedPrecision,
+		Confidence:        fact.Confidence, Inferred: fact.Inferred,
 		Evidence: encodedEvidence, Audiences: encodedAudiences,
 		Dormant: fact.Dormant, UsedAt: fact.UsedAt, Version: version.Version(),
 		CreatedAt: fact.CreatedAt, ModifiedAt: fact.ModifiedAt,
@@ -372,7 +380,8 @@ func (self *agentFactModel) toModel() (*models.AgentFact, error) {
 	fact := &models.AgentFact{
 		ID: self.ID, AgentID: self.AgentID, NodeID: self.NodeID, Number: self.Number,
 		Kind: models.AgentFactKind(self.Kind), Text: self.Text, HappenedAt: self.HappenedAt,
-		Confidence: self.Confidence, Inferred: self.Inferred, Dormant: self.Dormant,
+		HappenedPrecision: self.HappenedPrecision,
+		Confidence:        self.Confidence, Inferred: self.Inferred, Dormant: self.Dormant,
 		UsedAt: self.UsedAt, Version: self.Version,
 		CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt,
 		Evidence: []models.Evidence{}, Audiences: []models.AgentAudience{},
@@ -1259,27 +1268,39 @@ const AnyWord = `replace(plainto_tsquery('simple', ?)::text, ' & ', ' | ')::tsqu
 
 // SearchAgentGraph finds pages and facts by words.
 func (self *transaction) SearchAgentGraph(agentId, query string, limit int) ([]*models.AgentNode, []*models.AgentFact, error) {
+	return self.SearchAgentGraphFrom(agentId, query, 0, limit)
+}
+
+// SearchAgentGraphFrom finds pages and facts by words, past the first
+// offset of each.
+//
+// Each order ends with the identifier. Two rows the words rank the same
+// otherwise come back in whatever order the table gives them, which can
+// differ from one statement to the next, and a second page read that way
+// can repeat a row the first one showed and skip another.
+func (self *transaction) SearchAgentGraphFrom(agentId, query string, offset, limit int) ([]*models.AgentNode, []*models.AgentFact, error) {
 	if strings.TrimSpace(query) == "" {
 		return nil, nil, nil
 	}
 	if limit <= 0 {
 		limit = 20
 	}
+	offset = max(offset, 0)
 	query = SearchText(query)
 	var nodeIds []string
 	if err := self.tx.Raw(
 		`SELECT "id" FROM "agent_node"
 		 WHERE "agent_id" = ? AND "search" @@ `+AnyWord+`
-		 ORDER BY ts_rank("search", `+AnyWord+`) DESC, "importance" DESC LIMIT ?`,
-		agentId, query, query, limit).Scan(&nodeIds).Error; err != nil {
+		 ORDER BY ts_rank("search", `+AnyWord+`) DESC, "importance" DESC, "id" ASC LIMIT ? OFFSET ?`,
+		agentId, query, query, limit, offset).Scan(&nodeIds).Error; err != nil {
 		return nil, nil, err
 	}
 	var factIds []string
 	if err := self.tx.Raw(
 		`SELECT "id" FROM "agent_fact"
 		 WHERE "agent_id" = ? AND NOT "dormant" AND "superseded_by" IS NULL AND "search" @@ `+AnyWord+`
-		 ORDER BY ts_rank("search", `+AnyWord+`) DESC, "modified_at" DESC LIMIT ?`,
-		agentId, query, query, limit).Scan(&factIds).Error; err != nil {
+		 ORDER BY ts_rank("search", `+AnyWord+`) DESC, "modified_at" DESC, "id" ASC LIMIT ? OFFSET ?`,
+		agentId, query, query, limit, offset).Scan(&factIds).Error; err != nil {
 		return nil, nil, err
 	}
 	nodes, err := self.GetAgentNodes(agentId, nodeIds)

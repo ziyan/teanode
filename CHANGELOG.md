@@ -6,6 +6,43 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.97.2] - 2026-10-01
+
+### Changed
+
+- Lessons are learned from the whole of a long working session, not only its end. (#287)
+
+## [0.97.1] - 2026-10-01
+
+### Changed
+
+- The agent sees when a remembered fact happened to the day, and when it learned it, so it can count days between events and say what it knew at a given time. (#288)
+
+## [0.97.0] - 2026-10-01
+
+### Added
+
+- The agent's memory and knowledge searches page through all their results and say how many more there are; the API and command line take an offset. (#286)
+
+## [0.96.0] - 2026-10-01
+
+### Added
+
+- Savings targets can track your net worth, or whole finance accounts instead of single assets. (#282)
+
+## [0.95.3] - 2026-10-01
+
+### Changed
+
+- Operator pages now live under `/manage/` and mailbox settings under `/settings/mailbox`. Old links to them no longer work. (#279)
+- The sidebar has a page listing your conversations with the agent, and a new chat opens without asking for a goal. (#279)
+
+## [0.95.2] - 2026-10-01
+
+### Fixed
+
+- Row actions in Finance, mail and settings are icon buttons, and the buttons after linking a bank are no longer stuck together. (#277)
+
 ## [0.95.1] - 2026-10-01
 
 ### Changed

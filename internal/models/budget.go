@@ -74,7 +74,9 @@ type SpendingRule struct {
 }
 
 // Budget is an amount for one spending category for each month from a
-// given month on, until a later row for the same spending category.
+// given month on, until a later row for the same spending category. On a
+// spending category that is income it is the income expected each month
+// rather than a limit on spending.
 type Budget struct {
 	ID                 string `json:"id"`
 	AgentID            string `json:"agentId"`
@@ -94,16 +96,18 @@ type Budget struct {
 // TargetMeasure is how a savings target's progress is measured.
 type TargetMeasure string
 
-// The two measures: money not spent (income minus spending since the
-// start), or what chosen assets are worth now against what they were.
+// The three measures: money not spent (income minus spending since the
+// start), what chosen assets and finance accounts are worth now against
+// what they were, or net worth now against what it was.
 const (
 	TargetMeasureCashFlow   TargetMeasure = "cash_flow"
 	TargetMeasureAssetValue TargetMeasure = "asset_value"
+	TargetMeasureNetWorth   TargetMeasure = "net_worth"
 )
 
-// IsValid says the measure is one of the two.
+// IsValid says the measure is one of the three.
 func (self TargetMeasure) IsValid() bool {
-	return self == TargetMeasureCashFlow || self == TargetMeasureAssetValue
+	return self == TargetMeasureCashFlow || self == TargetMeasureAssetValue || self == TargetMeasureNetWorth
 }
 
 // SavingsTarget is an amount to save by a date. Not an agent goal, which
@@ -121,13 +125,18 @@ type SavingsTarget struct {
 	TargetMeasure TargetMeasure `json:"targetMeasure"`
 
 	// StartingAmount is what the assets were worth when it started, for
-	// an asset_value target; StartedOn when it started.
+	// an asset_value target, or the net worth then, for a net_worth one;
+	// StartedOn when it started.
 	StartingAmount string `json:"startingAmount,omitempty" graphapi:"nullable"`
 	StartedOn      string `json:"startedOn"`
 	ClosedOn       string `json:"closedOn,omitempty" graphapi:"nullable"`
 
-	// AssetIDs are the assets an asset_value target measures.
-	AssetIDs []string `json:"assetIds"`
+	// AssetIDs are the assets an asset_value target measures, and
+	// FinanceAccountIDs the finance accounts it measures whole: every
+	// asset the account values, its holdings included, as they are on the
+	// day the progress is read. An asset reached both ways counts once.
+	AssetIDs          []string `json:"assetIds"`
+	FinanceAccountIDs []string `json:"financeAccountIds"`
 
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
@@ -144,6 +153,17 @@ type SpendingCategoryDay struct {
 	// SpentOn is the day, "2006-01-02".
 	SpentOn        string `json:"spentOn"`
 	SpendingAmount string `json:"spendingAmount"`
+}
+
+// IncomeCategoryDay is one day's income in one income spending category
+// and one currency: money in less money taken back, transfers left out.
+type IncomeCategoryDay struct {
+	SpendingCategoryID string `json:"spendingCategoryId"`
+	CurrencyCode       string `json:"currencyCode"`
+
+	// ReceivedOn is the day, "2006-01-02".
+	ReceivedOn   string `json:"receivedOn"`
+	IncomeAmount string `json:"incomeAmount"`
 }
 
 // CashFlowDay is one day's income and spending in one currency, as the
@@ -198,6 +218,42 @@ func (self BudgetPace) IsValid() bool {
 	return false
 }
 
+// IncomePace is how an income spending category's month is going against
+// the income expected of it. Falling short is the bad direction, so it is
+// not a BudgetPace.
+type IncomePace string
+
+// The three paces: less has come in than was expected by this day of the
+// month (after the first week), about what was expected, or more than the
+// whole month was expected to bring already.
+const (
+	IncomePaceBehind  IncomePace = "behind"
+	IncomePaceOnTrack IncomePace = "on_track"
+	IncomePaceAhead   IncomePace = "ahead"
+)
+
+// IsValid says the pace is one of the three.
+func (self IncomePace) IsValid() bool {
+	return self == IncomePaceBehind || self == IncomePaceOnTrack || self == IncomePaceAhead
+}
+
+// SavingPace is how a month's saving, income less spending, is heading
+// against the saving its budgets expect.
+type SavingPace string
+
+// The three paces: the month is heading for less saved than its budgets
+// expect, about what they expect, or more.
+const (
+	SavingPaceBehind  SavingPace = "behind"
+	SavingPaceOnTrack SavingPace = "on_track"
+	SavingPaceAhead   SavingPace = "ahead"
+)
+
+// IsValid says the pace is one of the three.
+func (self SavingPace) IsValid() bool {
+	return self == SavingPaceBehind || self == SavingPaceOnTrack || self == SavingPaceAhead
+}
+
 // BudgetStatus is every spending category with a budget in one month,
 // against that budget, as of one day.
 type BudgetStatus struct {
@@ -208,7 +264,11 @@ type BudgetStatus struct {
 	DayOfMonth  int    `json:"dayOfMonth"`
 	DaysInMonth int    `json:"daysInMonth"`
 
+	// SpendingCategories are the budgets on spending, and
+	// IncomeCategories the budgets on income spending categories: the
+	// income expected each month.
 	SpendingCategories []*SpendingCategoryBudgetStatus `json:"spendingCategories"`
+	IncomeCategories   []*IncomeCategoryBudgetStatus   `json:"incomeCategories"`
 }
 
 // SpendingCategoryBudgetStatus is one spending category against its
@@ -245,6 +305,99 @@ type SpendingCategoryBudgetStatus struct {
 	UnconvertedSpending                   []*CurrencyAmount `json:"unconvertedSpending"`
 	UnconvertedSpendingBySameDayLastMonth []*CurrencyAmount `json:"unconvertedSpendingBySameDayLastMonth"`
 	UnconvertedFixedChargesDue            []*CurrencyAmount `json:"unconvertedFixedChargesDue"`
+}
+
+// IncomeCategoryBudgetStatus is one income spending category against the
+// income expected of it. Every amount is a decimal in CurrencyCode, the
+// budget's: income in another currency is converted at the rate of the day
+// it came in.
+type IncomeCategoryBudgetStatus struct {
+	SpendingCategoryID   string `json:"spendingCategoryId"`
+	SpendingCategoryName string `json:"spendingCategoryName"`
+
+	// BudgetAmount is the income expected in the whole month.
+	BudgetAmount string `json:"budgetAmount"`
+	CurrencyCode string `json:"currencyCode"`
+
+	// IncomeAmount is what came in this month so far, and
+	// IncomeBySameDayLastMonthAmount what came in last month by the same
+	// day.
+	IncomeAmount                   string `json:"incomeAmount"`
+	IncomeBySameDayLastMonthAmount string `json:"incomeBySameDayLastMonthAmount"`
+
+	// ExpectedByTodayAmount is the month's expected income spread evenly
+	// over its days, up to and including today: what the pace compares
+	// IncomeAmount with.
+	ExpectedByTodayAmount string `json:"expectedByTodayAmount"`
+
+	// ProjectedAmount is where the month is expected to end: for a month
+	// in progress, the expected income, or what came in when that is more
+	// already, since income comes in a few large amounts that a straight
+	// line cannot project; for a month that is over, what came in.
+	ProjectedAmount string     `json:"projectedAmount"`
+	IncomePace      IncomePace `json:"incomePace"`
+
+	// UnconvertedIncome is income left out because its currency has no
+	// exchange rate into the budget's, and
+	// UnconvertedIncomeBySameDayLastMonth the same for last month's.
+	UnconvertedIncome                   []*CurrencyAmount `json:"unconvertedIncome"`
+	UnconvertedIncomeBySameDayLastMonth []*CurrencyAmount `json:"unconvertedIncomeBySameDayLastMonth"`
+}
+
+// SavingSummary is one month's saving, income less spending, as its
+// budgets expect it and as it is going, in one currency. Spending and
+// income are counted the way cash flow counts them, transfers left out and
+// every spending category included, whether or not it has a budget.
+type SavingSummary struct {
+	// Month is "2006-01"; AsOf the day it is computed for, "2006-01-02",
+	// which is the last day of a past month.
+	Month       string `json:"month"`
+	AsOf        string `json:"asOf"`
+	DayOfMonth  int    `json:"dayOfMonth"`
+	DaysInMonth int    `json:"daysInMonth"`
+
+	// ReportingCurrencyCode is what every amount is in. A budget is
+	// converted at AsOf's rate, and income and spending at the rate of the
+	// day each came in or went out. Empty, and every amount zero, when
+	// there is no currency to report in yet.
+	ReportingCurrencyCode string `json:"reportingCurrencyCode"`
+
+	// IncomeBudgetCount and SpendingBudgetCount are how many budgets of
+	// each kind are in force in the month.
+	IncomeBudgetCount   int `json:"incomeBudgetCount"`
+	SpendingBudgetCount int `json:"spendingBudgetCount"`
+
+	// ExpectedIncomeAmount is the income budgets added up, and
+	// ExpectedSpendingAmount the spending budgets; ExpectedSavingAmount is
+	// the first less the second.
+	ExpectedIncomeAmount   string `json:"expectedIncomeAmount"`
+	ExpectedSpendingAmount string `json:"expectedSpendingAmount"`
+	ExpectedSavingAmount   string `json:"expectedSavingAmount"`
+
+	// IncomeAmount, SpendingAmount and SavingAmount are the month's so
+	// far: the whole month for a month that is over.
+	IncomeAmount   string `json:"incomeAmount"`
+	SpendingAmount string `json:"spendingAmount"`
+	SavingAmount   string `json:"savingAmount"`
+
+	// ProjectedIncomeAmount is the income so far plus what each income
+	// budget still expects; ProjectedSpendingAmount the spending projected
+	// to the month's end the way a budget projects a spending category's;
+	// ProjectedSavingAmount the first less the second. For a month that is
+	// over they are the month's own figures.
+	ProjectedIncomeAmount   string `json:"projectedIncomeAmount"`
+	ProjectedSpendingAmount string `json:"projectedSpendingAmount"`
+	ProjectedSavingAmount   string `json:"projectedSavingAmount"`
+
+	// SavingDifferenceAmount is ProjectedSavingAmount less
+	// ExpectedSavingAmount: how far the month is heading from what its
+	// budgets expect, or for a month that is over, how far it ended.
+	SavingDifferenceAmount string     `json:"savingDifferenceAmount"`
+	SavingPace             SavingPace `json:"savingPace"`
+
+	// UnconvertedCurrencyCodes are the currencies left out for want of an
+	// exchange rate into ReportingCurrencyCode.
+	UnconvertedCurrencyCodes []string `json:"unconvertedCurrencyCodes"`
 }
 
 // CurrencyAmount is an amount in one currency, a decimal.
