@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.102.0] - 2026-10-01
+
+### Changed
+
+- Transfer is now a spending category: choose it on a transaction or as a rule's target. The separate transfer checkbox is gone. (#303)
+
+### Removed
+
+- The `MarkTransfer` mutation, `teanode finance mark-transfer`, the rule's `--is-transfer` flag and the `isTransfer` / `transferMarkedBy` transaction fields. Categorize a transaction as Transfer instead (`teanode finance categorize-transaction <id> transfer`). (#303)
+
 ## [0.101.1] - 2026-10-01
 
 ### Fixed
