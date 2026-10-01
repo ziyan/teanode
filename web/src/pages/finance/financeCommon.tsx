@@ -205,6 +205,8 @@ export function useFinanceWords() {
     assetKind: (value?: string | null) => word('finance.assetKind', value),
     valuationSource: (value?: string | null) => word('finance.valuationSource', value),
     budgetPace: (value?: string | null) => word('finance.budgetPace', value),
+    incomePace: (value?: string | null) => word('finance.incomePace', value),
+    savingPace: (value?: string | null) => word('finance.savingPace', value),
     categorizedBy: (value?: string | null) => word('finance.categorizedBy', value),
     transferMarkedBy: (value?: string | null) => word('finance.transferMarkedBy', value),
     targetMeasure: (value?: string | null) => word('finance.targetMeasure', value),

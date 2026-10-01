@@ -86,6 +86,14 @@ func (self *previewLookup) spendingCategoryFor(idOrName string) *client.Spending
 	return nil
 }
 
+// isIncomeSpendingCategory says the spending category is income, whose
+// budget is the income expected rather than a limit; false when it cannot
+// be read.
+func (self *previewLookup) isIncomeSpendingCategory(idOrName string) bool {
+	spendingCategory := self.spendingCategoryFor(idOrName)
+	return spendingCategory != nil && spendingCategory.IsIncome
+}
+
 func (self *previewLookup) assetName(assetId string) string {
 	if self.read("Assets", nil, &self.assets) {
 		for _, asset := range self.assets {

@@ -314,13 +314,54 @@ type SpendingCategoryBudgetStatus struct {
 	UnconvertedSpending              []*CurrencyAmount `json:"unconvertedSpending"`
 }
 
-// BudgetStatus is every spending category with a budget in a month.
+// IncomeCategoryBudgetStatus is one income spending category against the
+// income expected of it, in the budget's currency.
+type IncomeCategoryBudgetStatus struct {
+	SpendingCategoryID             string            `json:"spendingCategoryId"`
+	SpendingCategoryName           string            `json:"spendingCategoryName"`
+	BudgetAmount                   string            `json:"budgetAmount"`
+	CurrencyCode                   string            `json:"currencyCode"`
+	IncomeAmount                   string            `json:"incomeAmount"`
+	IncomeBySameDayLastMonthAmount string            `json:"incomeBySameDayLastMonthAmount"`
+	ExpectedByTodayAmount          string            `json:"expectedByTodayAmount"`
+	ProjectedAmount                string            `json:"projectedAmount"`
+	IncomePace                     string            `json:"incomePace"`
+	UnconvertedIncome              []*CurrencyAmount `json:"unconvertedIncome"`
+}
+
+// BudgetStatus is every spending category with a budget in a month: the
+// spending budgets, and the income budgets apart.
 type BudgetStatus struct {
 	Month              string                          `json:"month"`
 	AsOf               string                          `json:"asOf"`
 	DayOfMonth         int                             `json:"dayOfMonth"`
 	DaysInMonth        int                             `json:"daysInMonth"`
 	SpendingCategories []*SpendingCategoryBudgetStatus `json:"spendingCategories"`
+	IncomeCategories   []*IncomeCategoryBudgetStatus   `json:"incomeCategories"`
+}
+
+// SavingSummary is a month's saving in the reporting currency: what its
+// budgets expect, what it is so far, and where it is heading.
+type SavingSummary struct {
+	Month                    string   `json:"month"`
+	AsOf                     string   `json:"asOf"`
+	DayOfMonth               int      `json:"dayOfMonth"`
+	DaysInMonth              int      `json:"daysInMonth"`
+	ReportingCurrencyCode    string   `json:"reportingCurrencyCode"`
+	IncomeBudgetCount        int      `json:"incomeBudgetCount"`
+	SpendingBudgetCount      int      `json:"spendingBudgetCount"`
+	ExpectedIncomeAmount     string   `json:"expectedIncomeAmount"`
+	ExpectedSpendingAmount   string   `json:"expectedSpendingAmount"`
+	ExpectedSavingAmount     string   `json:"expectedSavingAmount"`
+	IncomeAmount             string   `json:"incomeAmount"`
+	SpendingAmount           string   `json:"spendingAmount"`
+	SavingAmount             string   `json:"savingAmount"`
+	ProjectedIncomeAmount    string   `json:"projectedIncomeAmount"`
+	ProjectedSpendingAmount  string   `json:"projectedSpendingAmount"`
+	ProjectedSavingAmount    string   `json:"projectedSavingAmount"`
+	SavingDifferenceAmount   string   `json:"savingDifferenceAmount"`
+	SavingPace               string   `json:"savingPace"`
+	UnconvertedCurrencyCodes []string `json:"unconvertedCurrencyCodes"`
 }
 
 // SpendingDay is one day's spending and the month's up to it.
@@ -481,6 +522,15 @@ const (
   BudgetStatus(month: $month) {
     month asOf dayOfMonth daysInMonth
     spendingCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode spendingAmount spendingBySameDayLastMonthAmount fixedChargesDueAmount projectedAmount budgetPace unconvertedSpending { currencyCode amount } }
+    incomeCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode incomeAmount incomeBySameDayLastMonthAmount expectedByTodayAmount projectedAmount incomePace unconvertedIncome { currencyCode amount } }
+  }
+}`
+
+	DocumentSavingSummary = `query ($month: String, $currencyCode: String) {
+  SavingSummary(month: $month, currencyCode: $currencyCode) {
+    month asOf dayOfMonth daysInMonth reportingCurrencyCode incomeBudgetCount spendingBudgetCount
+    expectedIncomeAmount expectedSpendingAmount expectedSavingAmount incomeAmount spendingAmount savingAmount
+    projectedIncomeAmount projectedSpendingAmount projectedSavingAmount savingDifferenceAmount savingPace unconvertedCurrencyCodes
   }
 }`
 
@@ -600,7 +650,7 @@ var FinanceDocuments = map[string]string{
 	"ConvertCurrency": DocumentConvertCurrency, "NetWorth": DocumentNetWorth, "Assets": DocumentAssets,
 	"AssetHistory": DocumentAssetHistory, "SpendingCategories": DocumentSpendingCategories,
 	"SpendingRules": DocumentSpendingRules, "Budgets": DocumentBudgets, "BudgetStatus": DocumentBudgetStatus,
-	"SpendingByDay": DocumentSpendingByDay, "CashFlow": DocumentCashFlow, "SavingsTargets": DocumentSavingsTargets,
+	"SavingSummary": DocumentSavingSummary, "SpendingByDay": DocumentSpendingByDay, "CashFlow": DocumentCashFlow, "SavingsTargets": DocumentSavingsTargets,
 	"ReportingCurrency":      DocumentReportingCurrency,
 	"CreateFinanceLinkToken": DocumentCreateFinanceLinkToken, "CompleteFinanceLink": DocumentCompleteFinanceLink,
 	"CompleteFinanceRepair": DocumentCompleteFinanceRepair, "LinkSimpleFIN": DocumentLinkSimpleFIN,

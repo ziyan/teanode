@@ -4711,6 +4711,15 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   font-size: 13px;
 }
 
+/* The heading over a group of options, such as the income spending
+   categories after the spending ones: smaller than an option and not one. */
+.select-group {
+  padding: 8px 10px 2px;
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
 /* The list under the box that finds a page in the graph. Its rows are the
    select's rows, two lines instead of one: two pages can be called the same
    thing and only the path tells them apart, so the path is drawn under the
@@ -11852,6 +11861,30 @@ button.idea-history-title {
 
 .finance-budget-row-detail {
   font-size: var(--text-label);
+}
+
+/* Budgets on spending and budgets on income, each under a small heading
+   once both are there: the income ones read the other way round. */
+.finance-budget-group + .finance-budget-group {
+  margin-top: var(--space-4);
+}
+
+.finance-group-heading {
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+/* The month's income, spending and saving, budgeted against actual,
+   under the saving's bar. */
+.finance-saving-table {
+  margin-top: var(--space-3);
+}
+
+.finance-saving-table tbody th,
+.finance-saving-table tfoot th[scope='row'] {
+  text-align: left;
 }
 
 /* The bar a meter is drawn with carries a mark where the month is heading. */

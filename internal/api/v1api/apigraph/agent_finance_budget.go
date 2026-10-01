@@ -183,6 +183,14 @@ type BudgetStatusArguments struct {
 	Month string `json:"month" graphapi:"nullable"`
 }
 
+// SavingSummaryArguments name the month, "2006-01" (this one when left
+// out), and the currency to convert into instead of the reporting
+// currency.
+type SavingSummaryArguments struct {
+	Month        string `json:"month" graphapi:"nullable"`
+	CurrencyCode string `json:"currencyCode" graphapi:"nullable"`
+}
+
 // SpendingByDayArguments name the month (this one when left out), the
 // month to compare it with (the one before when left out), and the
 // currency to convert into instead of the reporting currency.
@@ -627,6 +635,25 @@ func (self *graph) BudgetStatus(ctx context.Context, arguments BudgetStatusArgum
 	}
 	status, err := agent.BudgetStatus(ctx, self.transaction(ctx), self.exchangeRateFetcher(), found.ID, month, today)
 	return status, financeError(err)
+}
+
+func (self *graph) SavingSummary(ctx context.Context, arguments SavingSummaryArguments) (*models.SavingSummary, error) {
+	principal, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	today := personToday(principal)
+	month, err := monthArgument("month", arguments.Month, today[:len("2006-01")])
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	currencyCode, err := reportingCurrency(tx, found, arguments.CurrencyCode)
+	if err != nil {
+		return nil, err
+	}
+	summary, err := agent.SavingSummary(ctx, tx, self.exchangeRateFetcher(), found.ID, month, today, currencyCode)
+	return summary, financeError(err)
 }
 
 func (self *graph) SpendingByDay(ctx context.Context, arguments SpendingByDayArguments) (*SpendingByDayView, error) {

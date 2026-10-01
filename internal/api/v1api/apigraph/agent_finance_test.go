@@ -532,6 +532,71 @@ func TestFinanceTotalsConvertEachDay(test *testing.T) {
 	})
 }
 
+// SetBudget takes an income spending category as the income expected,
+// BudgetStatus lists it apart from the spending budgets, and
+// SavingSummary sets the expected saving against the month's own income
+// and spending, naming what it could not convert. A stranger's summary
+// counts none of it.
+func TestIncomeBudgetAndSavingSummary(test *testing.T) {
+	fixture := newFinanceFixture(test, true)
+	fixture.seedFinanceSource(test)
+	resolver := fixture.resolver
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		isIncome := true
+		salary, err := resolver.CreateSpendingCategory(ctx, CreateSpendingCategoryArguments{SpendingCategoryName: "invented salary", IsIncome: &isIncome})
+		if err != nil {
+			test.Fatal(err)
+		}
+		groceries, err := resolver.CreateSpendingCategory(ctx, CreateSpendingCategoryArguments{SpendingCategoryName: "invented groceries"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := resolver.SetBudget(ctx, SetBudgetArguments{SpendingCategoryID: salary.ID, MonthlyAmount: "3000", CurrencyCode: "USD", EffectiveFrom: "2026-09"}); err != nil {
+			test.Fatalf("an income budget is refused: %s", err)
+		}
+		if _, err := resolver.SetBudget(ctx, SetBudgetArguments{SpendingCategoryID: groceries.ID, MonthlyAmount: "400", CurrencyCode: "USD", EffectiveFrom: "2026-09"}); err != nil {
+			test.Fatal(err)
+		}
+		status, err := resolver.BudgetStatus(ctx, BudgetStatusArguments{Month: "2026-09"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if len(status.IncomeCategories) != 1 || status.IncomeCategories[0].SpendingCategoryID != salary.ID || status.IncomeCategories[0].BudgetAmount != "3000.0000" {
+			test.Errorf("the income budget is listed apart: %+v", status.IncomeCategories)
+		}
+		if len(status.SpendingCategories) != 1 || status.SpendingCategories[0].SpendingCategoryID != groceries.ID {
+			test.Errorf("the spending budgets leave the income out: %+v", status.SpendingCategories)
+		}
+
+		// The seeded month spent 42.17 USD and 20 EUR, with no rate for the
+		// euros, and took nothing in.
+		summary, err := resolver.SavingSummary(ctx, SavingSummaryArguments{Month: "2026-09", CurrencyCode: "USD"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if summary.ReportingCurrencyCode != "USD" || summary.ExpectedIncomeAmount != "3000.0000" || summary.ExpectedSpendingAmount != "400.0000" ||
+			summary.ExpectedSavingAmount != "2600.0000" || summary.IncomeAmount != "0.0000" || summary.SpendingAmount != "42.1700" ||
+			summary.SavingAmount != "-42.1700" || strings.Join(summary.UnconvertedCurrencyCodes, ",") != "EUR" {
+			test.Errorf("summary %+v", summary)
+		}
+		if summary.IncomeBudgetCount != 1 || summary.SpendingBudgetCount != 1 || !summary.SavingPace.IsValid() {
+			test.Errorf("summary %+v", summary)
+		}
+		if _, err := resolver.SavingSummary(ctx, SavingSummaryArguments{Month: "September"}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Errorf("a month that is not 2006-01 answered %v", err)
+		}
+	})
+	fixture.as(test, fixture.stranger, func(ctx context.Context, tx db.Transaction) {
+		summary, err := resolver.SavingSummary(ctx, SavingSummaryArguments{Month: "2026-09", CurrencyCode: "USD"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if summary.IncomeBudgetCount != 0 || summary.SpendingBudgetCount != 0 || summary.SpendingAmount != "0.0000" {
+			test.Errorf("a stranger's summary counts the owner's money: %+v", summary)
+		}
+	})
+}
+
 // A net worth savings target given no starting amount records net worth
 // on the day it started, so it measures what was gained since; changing a
 // target to net worth does the same, and drops the accounts it chose.

@@ -310,6 +310,81 @@ func TestSpendingCategoryDaysAndMerchantMonths(t *testing.T) {
 	})
 }
 
+// A budget on an income spending category is kept like any other, and
+// income per day counts what income categories took in, a reversal
+// against it, never transfers, spending or money in nothing categorized.
+func TestIncomeBudgetsAndIncomeCategoryDays(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "income-days")
+	result := sampleFinanceSync()
+	result.Added = append(result.Added,
+		finance.Transaction{ProviderTransactionID: "payroll-correction", ProviderAccountID: "account-checking", PostedOn: "2026-09-01",
+			Amount: "-100", CurrencyCode: "USD", Description: "PAYROLL EXAMPLE CO CORRECTION"},
+		finance.Transaction{ProviderTransactionID: "payroll-second", ProviderAccountID: "account-checking", PostedOn: "2026-09-15",
+			Amount: "1200", CurrencyCode: "USD", Description: "PAYROLL EXAMPLE CO"},
+		finance.Transaction{ProviderTransactionID: "payroll-august", ProviderAccountID: "account-checking", PostedOn: "2026-08-15",
+			Amount: "2400", CurrencyCode: "USD", Description: "PAYROLL EXAMPLE CO"},
+		finance.Transaction{ProviderTransactionID: "from-savings", ProviderAccountID: "account-checking", PostedOn: "2026-09-16",
+			Amount: "300", CurrencyCode: "USD", Description: "PAYROLL EXAMPLE CO TRANSFER"},
+		finance.Transaction{ProviderTransactionID: "gift", ProviderAccountID: "account-checking", PostedOn: "2026-09-17",
+			Amount: "50", CurrencyCode: "USD", Description: "A GIFT"},
+	)
+	applyFinanceSync(t, database, fixture, result, "2026-09-18")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.EnsureDefaultSpendingCategories(fixture.agentId); err != nil {
+			t.Fatalf("EnsureDefaultSpendingCategories: %s", err)
+		}
+		byName := spendingCategoryIdsByName(t, tx, fixture.agentId)
+		incomeId := byName[finance.SpendingCategoryIncome]
+		for _, spendingRule := range []models.SpendingRule{
+			{MatchText: "transfer", IsTransfer: true, RulePriority: 0},
+			{MatchText: "payroll", SpendingCategoryID: incomeId, RulePriority: 1},
+			{MatchText: "corner grocer", SpendingCategoryID: byName[finance.SpendingCategoryGroceries], RulePriority: 2},
+		} {
+			spendingRule.AgentID = fixture.agentId
+			if _, err := tx.CreateSpendingRule(&spendingRule); err != nil {
+				t.Fatalf("CreateSpendingRule: %s", err)
+			}
+		}
+
+		budget, err := tx.SetBudget(&models.Budget{AgentID: fixture.agentId, SpendingCategoryID: incomeId, MonthlyAmount: "3500", CurrencyCode: "USD", EffectiveFrom: "2026-09"})
+		if err != nil {
+			t.Fatalf("an income spending category takes a budget: %s", err)
+		}
+		budgets, err := tx.BudgetsForMonth(fixture.agentId, "2026-09")
+		if err != nil || len(budgets) != 1 || budgets[0].ID != budget.ID || budgets[0].MonthlyAmount != "3500.0000" {
+			t.Fatalf("the income budget is in force in September: %v %+v", err, budgets)
+		}
+
+		days, err := tx.ListIncomeCategoryDays(fixture.agentId, "2026-09")
+		if err != nil {
+			t.Fatalf("ListIncomeCategoryDays: %s", err)
+		}
+		byDay := map[string]string{}
+		for _, day := range days {
+			if day.SpendingCategoryID != incomeId || day.CurrencyCode != "USD" {
+				t.Errorf("only the income spending category is listed: %+v", day)
+			}
+			byDay[day.ReceivedOn] = day.IncomeAmount
+		}
+		expected := map[string]string{"2026-09-01": "2400.0000", "2026-09-15": "1200.0000"}
+		if len(byDay) != len(expected) {
+			t.Errorf("the transfer, the gift with no category and the groceries are left out, and August is another month: %v", byDay)
+		}
+		for receivedOn, amount := range expected {
+			if byDay[receivedOn] != amount {
+				t.Errorf("%s: got %q, want %q (all: %v)", receivedOn, byDay[receivedOn], amount, byDay)
+			}
+		}
+		august, err := tx.ListIncomeCategoryDays(fixture.agentId, "2026-08")
+		if err != nil || len(august) != 1 || august[0].IncomeAmount != "2400.0000" {
+			t.Errorf("August has its one payroll: %v %+v", err, august)
+		}
+	})
+}
+
 // A savings target keeps the assets it measures, and replaces them when
 // changed.
 func TestSavingsTargetsKeepTheirAssets(t *testing.T) {
