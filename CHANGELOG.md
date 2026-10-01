@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.101.1] - 2026-10-01
+
+### Fixed
+
+- On a phone, a section's button no longer squeezes its description into a narrow column. (#302)
+
 ## [0.101.0] - 2026-10-01
 
 ### Added
