@@ -612,10 +612,24 @@ button.conversation-tile {
 
 /* It lifts under the pointer, a little higher with a shadow under it, so
    it reads as a thing to press rather than a panel. Nothing inside it
-   changes color: the card is what is pressed, not its title. */
+   changes color: the card is what is pressed, not its title. Only where
+   there is a pointer to hover: a phone's tap sets hover as it presses,
+   and a tile that moves under the finger takes the press's ripple away
+   with it (ripple.ts lets a mark go when its control moves). */
 button.conversation-tile:hover:not(:disabled),
 button.conversation-tile:focus-visible {
   background: var(--surface);
+}
+
+@media (hover: hover) {
+  button.conversation-tile:hover:not(:disabled) {
+    border-color: var(--muted);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+    transform: translateY(-2px);
+  }
+}
+
+button.conversation-tile:focus-visible {
   border-color: var(--muted);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
   transform: translateY(-2px);
