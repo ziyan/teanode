@@ -461,7 +461,7 @@ export function MessageContent({
                     source. Behind the menu, since most people reading their
                     mail have no use for it and some may not open it at all. */}
                   {canAudit && (
-                    <Link to={`/mail/${mailId}`} role="menuitem" onClick={close}>
+                    <Link to={`/manage/mail/${mailId}`} role="menuitem" onClick={close}>
                       {t('mailDetail.trace')}
                     </Link>
                   )}

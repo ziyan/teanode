@@ -23,10 +23,13 @@ import { useIsDesktop } from './sidebar'
 // has somewhere to go today, but the shape allows for one that does not.
 type Crumb = { label: Key; to?: string }
 
+// The operator's pages are all under /manage, and each names itself here: the
+// trail starts at the page, with no "Manage" crumb above it, because /manage
+// on its own is only a way into the first of them.
 const TRAILS: { prefix: string; trail: Crumb[] }[] = [
-  { prefix: '/domains', trail: [{ label: 'nav.domains', to: '/domains' }] },
-  { prefix: '/access', trail: [{ label: 'nav.access', to: '/access' }] },
-  { prefix: '/agent', trail: [{ label: 'nav.agentAdmin', to: '/agent' }] },
+  { prefix: '/manage/domains', trail: [{ label: 'nav.domains', to: '/manage/domains' }] },
+  { prefix: '/manage/access', trail: [{ label: 'nav.access', to: '/manage/access' }] },
+  { prefix: '/manage/agent', trail: [{ label: 'nav.agentAdmin', to: '/manage/agent' }] },
   // No entry for /settings: every page under it names itself from
   // SETTINGS_SURFACES below, and there is no page above them to go back
   // to. /settings is a redirect to the first of them, so a "Settings"
@@ -36,9 +39,9 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   // menu of these pages; the trail only needs to carry a page's own
   // ancestors, which a knowledge page has and the others do not.
   { prefix: '/mailbox', trail: [{ label: 'nav.mailbox', to: '/mailbox' }] },
-  { prefix: '/mail', trail: [{ label: 'nav.mail', to: '/mail' }] },
-  { prefix: '/queue', trail: [{ label: 'nav.queue', to: '/queue' }] },
-  { prefix: '/reports', trail: [{ label: 'nav.reports', to: '/reports' }] },
+  { prefix: '/manage/mail', trail: [{ label: 'nav.mail', to: '/manage/mail' }] },
+  { prefix: '/manage/queue', trail: [{ label: 'nav.queue', to: '/manage/queue' }] },
+  { prefix: '/manage/reports', trail: [{ label: 'nav.reports', to: '/manage/reports' }] },
 ]
 
 // A domain's own pages — its DNS, its aliases, its templates — used to add a
@@ -56,15 +59,18 @@ const DOMAIN_ITEM_PAGES: { prefix: string; label: Key; list: string }[] = [
 
 // A page under a section that is a page of its own rather than a thing in
 // the section: writing a message is under Mail, and is not a message.
-const SECTION_PAGES: { path: string; label: Key }[] = [
-  { path: '/mail/compose', label: 'nav.compose' },
-  { path: '/mailbox/settings', label: 'nav.mailboxSettings' },
-  { path: '/mailbox/contacts', label: 'nav.contacts' },
-  { path: '/mailbox/calendar', label: 'nav.calendar' },
+//
+// isRailItem marks a page that is a row of the mailbox's rail itself. It
+// is a place of its own, the way the mailbox is, so it has no trail above
+// it: a "Mailbox" crumb there led back to a folder the page was never in.
+const SECTION_PAGES: { path: string; label: Key; isRailItem?: boolean }[] = [
+  { path: '/manage/mail/compose', label: 'nav.compose' },
+  { path: '/mailbox/contacts', label: 'nav.contacts', isRailItem: true },
+  { path: '/mailbox/calendar', label: 'nav.calendar', isRailItem: true },
   { path: '/mailbox/compose', label: 'nav.compose' },
   // Missing, so this page fell back to the section it is in and called
   // itself Mailbox — in the trail, in the heading, and in the tab.
-  { path: '/mailbox/subscriptions', label: 'nav.subscriptions' },
+  { path: '/mailbox/subscriptions', label: 'nav.subscriptions', isRailItem: true },
 ]
 
 const SetDetailContext = createContext<((details: string[]) => void) | null>(null)
@@ -123,6 +129,11 @@ function useTrail(): { label: string; to?: string }[] {
     const sectionPage = SECTION_PAGES.find(
       (candidate) => candidate.path === location.pathname || location.pathname.startsWith(candidate.path + '/'),
     )
+    // A row of the mailbox's rail is the whole trail, and so is a path
+    // under it: one list open on Subscriptions is still that page.
+    if (sectionPage?.isRailItem) {
+      return [{ label: t(sectionPage.label), to: sectionPage.path }]
+    }
     // Only when the page has no name of its own to give. The composer's name
     // says which kind of message is being written — a reply, a forward — and
     // "Compose" in front of it was the same word twice, which on a phone bar
@@ -171,14 +182,14 @@ function useTrail(): { label: string; to?: string }[] {
     }
 
     if (detail) {
-      const owner = /^\/domains\/([^/]+)(\/[^?#]*)?$/.exec(location.pathname)
+      const owner = /^\/manage\/domains\/([^/]+)(\/[^?#]*)?$/.exec(location.pathname)
       const rest = owner?.[2] ?? ''
       const itemPage = owner && DOMAIN_ITEM_PAGES.find((candidate) => rest.startsWith(candidate.prefix))
       if (owner && itemPage) {
         return [
           ...crumbs,
-          { label: detail, to: `/domains/${owner[1]}` },
-          { label: t(itemPage.label), to: `/domains/${owner[1]}${itemPage.list}` },
+          { label: detail, to: `/manage/domains/${owner[1]}` },
+          { label: t(itemPage.label), to: `/manage/domains/${owner[1]}${itemPage.list}` },
           { label: item ?? '…' },
         ]
       }
@@ -192,7 +203,7 @@ function useTrail(): { label: string; to?: string }[] {
     // took, and every navigation between two of a domain's pages — the
     // template editor back to the list, say — cleared the detail and flashed
     // it. A blank says "still coming"; the wrong word in 30px does not.
-    if (/^\/domains\/[^/]+(\/|$)/.test(location.pathname)) {
+    if (/^\/manage\/domains\/[^/]+(\/|$)/.test(location.pathname)) {
       return [...crumbs, { label: '' }]
     }
     return crumbs

@@ -107,7 +107,7 @@ export function DomainOverviewTab({ domain }: { domain: Domain }) {
               t('domainOverview.dnsNever')
             )
           }
-          to={`/domains/${domainId}/settings`}
+          to={`/manage/domains/${domainId}/settings`}
         />
 
         <StatTile
@@ -120,20 +120,20 @@ export function DomainOverviewTab({ domain }: { domain: Domain }) {
               t('domainOverview.nothingReceived')
             )
           }
-          to={`/mail?domain=${encodeURIComponent(domain.domain)}`}
+          to={`/manage/mail?domain=${encodeURIComponent(domain.domain)}`}
         />
 
         <StatTile
           label={t('domainOverview.accepted')}
           value={counts.byStatus.get('accepted') ?? 0}
-          to={`/mail?domain=${encodeURIComponent(domain.domain)}&status=accepted`}
+          to={`/manage/mail?domain=${encodeURIComponent(domain.domain)}&status=accepted`}
           detail={t('domainOverview.deliveredOrForwarded')}
         />
 
         <StatTile
           label={t('domainOverview.rejected')}
           value={counts.byStatus.get('rejected') ?? 0}
-          to={`/mail?domain=${encodeURIComponent(domain.domain)}&status=rejected`}
+          to={`/manage/mail?domain=${encodeURIComponent(domain.domain)}&status=rejected`}
           detail={t('domainOverview.refused')}
         />
 
@@ -150,7 +150,7 @@ export function DomainOverviewTab({ domain }: { domain: Domain }) {
                 ? t('domainOverview.queueFailing', { count: failing })
                 : t('domainOverview.queueWaiting')
           }
-          to={`/queue?domain=${encodeURIComponent(domain.domain)}`}
+          to={`/manage/queue?domain=${encodeURIComponent(domain.domain)}`}
         />
       </Section>
     </>

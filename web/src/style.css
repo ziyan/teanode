@@ -560,6 +560,76 @@ a.tile:hover strong {
   color: var(--accent);
 }
 
+/* --- the agent's conversations, a tile each ------------------------------ */
+/* The box that narrows the tiles, on a line of its own above them, as wide
+   as a field is allowed to be rather than as wide as the page. */
+.conversation-search {
+  margin-bottom: var(--space-4);
+}
+
+.conversation-search input[type='search'] {
+  width: 100%;
+  max-width: 420px;
+}
+
+/* auto-fill rather than the band's auto-fit: one conversation is one tile's
+   width, not a banner across the page. min() so a phone's single column is
+   never wider than the screen. */
+.conversation-tiles {
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.conversation-tile {
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+/* The title is the button that opens the conversation: it reads as the
+   tile's heading and takes the accent under the pointer, as a tile's name
+   does. */
+.conversation-tile-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.conversation-tile-title:hover,
+.conversation-tile-title:focus-visible {
+  color: var(--accent);
+}
+
+/* What the agent wrote of the conversation, cut at three lines so a long
+   one does not make its whole row of tiles tall. */
+.conversation-tile-summary {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--text-label);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow-wrap: anywhere;
+}
+
+.conversation-tile .tile-detail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 /* --- a modal asking for one thing ---------------------------------------- */
 .dialog-scrim {
   position: fixed;
@@ -4198,6 +4268,11 @@ label.check-list-item {
 main.content:has(> .mailbox-frame) {
   display: flex;
   flex-direction: column;
+}
+/* Only the frame gives up height. The breadcrumb hides its overflow, so
+   left to shrink it was squeezed to a sliver above the heading. */
+main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
+  flex-shrink: 0;
 }
 .mailbox {
   display: grid;
@@ -10984,14 +11059,6 @@ main.content:has(> .knowledge-frame) {
   .idea-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-}
-
-/* An idea of their own carries its reason and what prompted it under it, so
-   it is read rather than scanned: one column, at a line length that reads,
-   rather than half the card beside an empty half. */
-.idea-list.idea-list-personal {
-  grid-template-columns: minmax(0, 1fr);
-  max-width: 720px;
 }
 
 .idea-row {

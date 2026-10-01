@@ -124,7 +124,7 @@ export function TemplatesTab() {
         {templates.map((template) => (
           <SettingsRow
             key={template.id}
-            title={<Link to={`/domains/${domainId}/templates/${template.id}`}>{template.name}</Link>}
+            title={<Link to={`/manage/domains/${domainId}/templates/${template.id}`}>{template.name}</Link>}
             badge={
               <Languages
                 defaultLocale={template.locale}
@@ -155,7 +155,7 @@ export function TemplatesTab() {
               <>
                 <Link
                   className="button"
-                  to={`/mail/compose?domain=${encodeURIComponent(domainId)}&template=${encodeURIComponent(template.id)}`}
+                  to={`/manage/mail/compose?domain=${encodeURIComponent(domainId)}&template=${encodeURIComponent(template.id)}`}
                 >
                   {t('templates.send')}
                 </Link>
@@ -190,7 +190,7 @@ export function TemplatesTab() {
         {layouts.map((layout) => (
           <SettingsRow
             key={layout.id}
-            title={<Link to={`/domains/${domainId}/layouts/${layout.id}`}>{describeLayout(layout, t)}</Link>}
+            title={<Link to={`/manage/domains/${domainId}/layouts/${layout.id}`}>{describeLayout(layout, t)}</Link>}
             badge={
               <Languages
                 defaultLocale={layout.locale}
@@ -245,7 +245,7 @@ export function TemplatesTab() {
               })
               setAddingTemplate(false)
               setName('')
-              navigate(`/domains/${domainId}/templates/${result.CreateTemplate.template.id}`)
+              navigate(`/manage/domains/${domainId}/templates/${result.CreateTemplate.template.id}`)
             })
           }
         >
@@ -282,7 +282,7 @@ export function TemplatesTab() {
               })
               setAddingLayout(false)
               setComment('')
-              navigate(`/domains/${domainId}/layouts/${result.CreateLayout.layout.id}`)
+              navigate(`/manage/domains/${domainId}/layouts/${result.CreateLayout.layout.id}`)
             })
           }
         >

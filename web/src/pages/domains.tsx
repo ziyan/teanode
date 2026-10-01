@@ -60,7 +60,7 @@ export function DomainsPage() {
         sort: (first, second) => first.domain.localeCompare(second.domain),
         render: (entry) => (
           <>
-            <Link to={`/domains/${entry.id}`}>{entry.domain}</Link>
+            <Link to={`/manage/domains/${entry.id}`}>{entry.domain}</Link>
             {entry.comment && <div className="muted">{entry.comment}</div>}
           </>
         ),
@@ -96,7 +96,7 @@ export function DomainsPage() {
         sort: (first, second) => first.aliases.length - second.aliases.length,
         // Filtered to the domain, so the number and the list behind it agree.
         render: (entry) => (
-          <Link to={`/domains/${entry.id}`}>
+          <Link to={`/manage/domains/${entry.id}`}>
             {plural(entry.aliases.length, { one: 'domains.aliasOne', other: 'domains.aliasOther' })}
           </Link>
         ),
@@ -109,7 +109,7 @@ export function DomainsPage() {
         value: (entry) => String(entry.credentials.length),
         sort: (first, second) => first.credentials.length - second.credentials.length,
         render: (entry) => (
-          <Link to={`/domains/${entry.id}`}>
+          <Link to={`/manage/domains/${entry.id}`}>
             {plural(entry.credentials.length, {
               one: 'domains.credentialOne',
               other: 'domains.credentialOther',
@@ -124,7 +124,7 @@ export function DomainsPage() {
         optional: true,
         // Straight to the mail this domain received, which is the question
         // most often asked next.
-        render: (entry) => <Link to={`/mail?domain=${encodeURIComponent(entry.domain)}`}>{t('domains.viewMail')}</Link>,
+        render: (entry) => <Link to={`/manage/mail?domain=${encodeURIComponent(entry.domain)}`}>{t('domains.viewMail')}</Link>,
       },
     ],
     [t, plural],
@@ -169,7 +169,7 @@ export function DomainsPage() {
         columns={columns}
         rows={domains}
         rowKey={(entry) => entry.id}
-        rowLink={(entry) => `/domains/${entry.id}`}
+        rowLink={(entry) => `/manage/domains/${entry.id}`}
         loading={loading}
         emptyMessage={t('domains.empty')}
         countLabel={(count) => plural(count, { one: 'domains.countOne', other: 'domains.countOther' })}

@@ -260,7 +260,7 @@ export function ComposePage() {
   if (domains.length === 0) {
     return (
       <p className="muted">
-        <Trans k="mail.noDomains" nodes={{ link: <Link to="/domains">{t('nav.domains')}</Link> }} />
+        <Trans k="mail.noDomains" nodes={{ link: <Link to="/manage/domains">{t('nav.domains')}</Link> }} />
       </p>
     )
   }
@@ -282,7 +282,7 @@ export function ComposePage() {
             {sent.id ? (
               <Trans
                 k="compose.sent"
-                nodes={{ link: <Link to={`/mail/${sent.id}`}>{sent.subject || t('mail.noSubject')}</Link> }}
+                nodes={{ link: <Link to={`/manage/mail/${sent.id}`}>{sent.subject || t('mail.noSubject')}</Link> }}
               />
             ) : (
               t('compose.sentUnseen')
@@ -371,7 +371,7 @@ export function ComposePage() {
                   {template && (
                     <>
                       {' · '}
-                      <Link to={`/domains/${domainId}/templates/${template.id}`}>{t('compose.editTemplate')}</Link>
+                      <Link to={`/manage/domains/${domainId}/templates/${template.id}`}>{t('compose.editTemplate')}</Link>
                     </>
                   )}
                 </span>

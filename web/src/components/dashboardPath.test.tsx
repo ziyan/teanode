@@ -26,7 +26,7 @@ it('shows only the parts of the dashboard the agent may take the person to', () 
     'https://example.net/settings',
     '//example.net/settings',
     'javascript:alert(1)',
-    '/server/about',
+    '/manage/server/about',
     '/settingsx',
     '/finance-link',
     '/finance/link',
@@ -74,7 +74,7 @@ it('moves the dashboard on a navigate event once, and puts the drawer away as a 
   expect(getByTestId('where').textContent).toBe('/mailbox')
 
   // Nor anywhere off the allow list.
-  act(() => handle({ kind: 'navigate', runId: 'run1', sequence: 6, text: '/server/about' }))
+  act(() => handle({ kind: 'navigate', runId: 'run1', sequence: 6, text: '/manage/server/about' }))
   act(() => handle({ kind: 'navigate', runId: 'run1', sequence: 7, text: 'https://example.net/' }))
   expect(getByTestId('where').textContent).toBe('/mailbox')
   expect(leaving).toHaveBeenCalledTimes(2)

@@ -15,7 +15,6 @@ import {
   QueueIcon,
   ServerIcon,
   ServiceIcon,
-  SettingsIcon,
   SetupIcon,
   ShieldIcon,
   LinkIcon,
@@ -28,6 +27,7 @@ import {
 } from './icons'
 import { Logo } from './logo'
 import { useAgentFinancePresence } from '../pages/finance/financePresence'
+import { useAgentIdentity } from '../agentPreferences'
 import { matchSettingsSurface, surfacesByCategory } from '../pages/settings/nav'
 import { useFreshness } from './freshness'
 import { Permissions as ApiPermissions } from '../api'
@@ -41,7 +41,14 @@ import { Tooltip } from './tooltip'
 // permission is what a row needs, when it needs one: a domain permission held
 // over at least one domain, or a server permission. A row nothing gates is
 // for everyone who is signed in.
-type Item = { label: Key; to: string; icon: React.ReactNode; anyOf?: string[]; shownWhen?: 'finance' }
+type Item = {
+  label: Key
+  to: string
+  icon: React.ReactNode
+  anyOf?: string[]
+  shownWhen?: 'finance' | 'mailbox'
+  rail?: 'mailbox'
+}
 type Group = { label?: Key; items: Item[] }
 
 // One icon per settings surface that appears in the rail. Here rather than in
@@ -55,6 +62,7 @@ const SERVER_ICONS: Record<string, React.ReactNode> = {
 const ACCOUNT_ICONS: Record<string, React.ReactNode> = {
   preference: <UserIcon />,
   agent: <SparkIcon />,
+  mailbox: <MailIcon />,
   knowledge: <GridIcon />,
   finance: <WalletIcon />,
   password: <KeyIcon />,
@@ -74,12 +82,18 @@ const ACCOUNT_GROUP: Group = {
     to: surface.path,
     icon: ACCOUNT_ICONS[surface.segment],
     shownWhen: surface.shownWhen,
+    rail: surface.rail,
   })),
 }
 
-// The rail. Two groups, each under its own label: what is arriving and what is
-// stuck, then what it arrives for and how this server is set up. They are
-// separate questions, asked at different times.
+// The account's pages whose row is in the mailbox's rail instead, after the
+// calendar: Knowledge and Finance are read the way the mail is, not set once.
+const MAILBOX_RAIL_ITEMS: Item[] = ACCOUNT_GROUP.items.filter((item) => item.rail === 'mailbox')
+
+// The rail. Two groups: what is arriving and what is stuck, then what it
+// arrives for and how this server is set up. They are separate questions,
+// asked at different times, and the space between the groups says so; a
+// label over each was two more words in a rail that is already a short list.
 //
 // The server's own settings are rows here rather than pages behind a Settings
 // row, because they are configuration of the thing the rail is about, and one
@@ -98,20 +112,18 @@ export function firstManagementPath(permissions: ApiPermissions | undefined | nu
 
 const GROUPS: Group[] = [
   {
-    label: 'nav.groupMail',
     items: [
-      { label: 'nav.mail', to: '/mail', icon: <MailIcon />, anyOf: ['mail:audit'] },
-      { label: 'nav.queue', to: '/queue', icon: <QueueIcon />, anyOf: ['queue:manage'] },
-      { label: 'nav.reports', to: '/reports', icon: <ShieldIcon />, anyOf: ['report:read'] },
+      { label: 'nav.mail', to: '/manage/mail', icon: <MailIcon />, anyOf: ['mail:audit'] },
+      { label: 'nav.queue', to: '/manage/queue', icon: <QueueIcon />, anyOf: ['queue:manage'] },
+      { label: 'nav.reports', to: '/manage/reports', icon: <ShieldIcon />, anyOf: ['report:read'] },
     ],
   },
   {
-    label: 'nav.groupConfiguration',
     items: [
-      { label: 'nav.domains', to: '/domains', icon: <DomainsIcon />, anyOf: ['domain:manage'] },
+      { label: 'nav.domains', to: '/manage/domains', icon: <DomainsIcon />, anyOf: ['domain:manage'] },
       {
         label: 'nav.access',
-        to: '/access',
+        to: '/manage/access',
         icon: <PeopleIcon />,
         anyOf: ['user:manage', 'group:manage', 'role:manage', 'audit:read'],
       },
@@ -121,7 +133,7 @@ const GROUPS: Group[] = [
         icon: SERVER_ICONS[surface.segment],
         anyOf: ['server:manage'],
       })),
-      { label: 'nav.agentAdmin', to: '/agent', icon: <SparkIcon />, anyOf: ['agent:audit', 'agent:act'] },
+      { label: 'nav.agentAdmin', to: '/manage/agent', icon: <SparkIcon />, anyOf: ['agent:audit', 'agent:act'] },
     ],
   },
 ]
@@ -188,38 +200,52 @@ export function Sidebar({
   // the ordinary rail, because they are configuration of the thing the rail
   // is already about.
   const surface = matchSettingsSurface(location.pathname)
-  const inAccount = surface?.category === 'account'
-
-  // The mailbox is where the page opens and where most people stay. The
-  // management pages — every message, the queue, reports, domains, the
-  // server — are a mode entered from the foot of the rail, in parallel with
-  // the account settings, and left by the row at the top of it. Somebody
-  // with nothing to manage never sees that mode at all.
-  const inMailbox = location.pathname === '/mailbox' || location.pathname.startsWith('/mailbox/')
-  const inManagement = !inAccount && !inMailbox
   const navigate = useNavigate()
   const mailboxes = useMailboxes()
-
-  // Only the rows the caller may open. What is hidden here is refused by the
-  // server anyway; hiding it is the courtesy of not offering a door that
-  // does not open. A group with no rows left is not drawn at all.
   const session = useSession()
-  // Finance is a row only for somebody who has finance, asked only while
-  // the account's rows are the ones shown.
-  const finance = useAgentFinancePresence(inAccount)
-  const permitted = (item: Item) =>
-    (item.shownWhen !== 'finance' || finance.isShown === true) &&
-    (!item.anyOf ||
-      item.anyOf.some((key) => hasPermission(session.permissions, key) || hasAnywhere(session.permissions, key)))
-  const groups = (inAccount ? [ACCOUNT_GROUP] : inMailbox ? [] : GROUPS)
-    .map((group) => ({ ...group, items: group.items.filter(permitted) }))
-    .filter((group) => group.items.length > 0)
+  const agent = useAgentIdentity()
 
   // Somebody whose only permission is over their own mailbox has no
   // management side, and a person with no mailbox at all (the console, or a
   // group with no mail:read) has no mailbox side.
   const hasMailbox = Boolean(session.userId) && (!mailboxes.loaded || mailboxes.views.length > 0)
   const current = mailboxes.current
+
+  // The mailbox is where the page opens and where most people stay, and the
+  // agent's conversations, Knowledge and Finance are rows of its rail, so
+  // they keep it. Without a mailbox there is no such rail, and Knowledge and
+  // Finance are rows of the account's instead. The management pages, all
+  // under /manage, are a mode entered from the foot of the rail, in
+  // parallel with the account settings, and left by the row at the top of
+  // it. Somebody with nothing to manage never sees that mode at all.
+  const inMailbox =
+    location.pathname === '/mailbox' ||
+    location.pathname.startsWith('/mailbox/') ||
+    (hasMailbox && (location.pathname === '/agent' || surface?.rail === 'mailbox'))
+  const inAccount = surface?.category === 'account' && !inMailbox
+  const inManagement = !inAccount && !inMailbox
+
+  // Only the rows the caller may open. What is hidden here is refused by the
+  // server anyway; hiding it is the courtesy of not offering a door that
+  // does not open. A group with no rows left is not drawn at all.
+  // Finance is a row only for somebody who has finance, asked only while a
+  // rail that can hold it is the one shown.
+  const finance = useAgentFinancePresence(inAccount || inMailbox)
+  const permitted = (item: Item) =>
+    (item.shownWhen !== 'finance' || finance.isShown === true) &&
+    (item.shownWhen !== 'mailbox' || hasMailbox) &&
+    (!item.anyOf ||
+      item.anyOf.some((key) => hasPermission(session.permissions, key) || hasAnywhere(session.permissions, key)))
+  const accountGroup: Group = {
+    ...ACCOUNT_GROUP,
+    items: ACCOUNT_GROUP.items.filter((item) => !(hasMailbox && item.rail === 'mailbox')),
+  }
+  const groups = (inAccount ? [accountGroup] : inMailbox ? [] : GROUPS)
+    .map((group) => ({ ...group, items: group.items.filter(permitted) }))
+    .filter((group) => group.items.length > 0)
+  // The agent's row at the top of the mailbox's rail is called what the
+  // agent is called, and is there only when there is an agent to talk to.
+  const agentLabel = agent.name || t('nav.agent')
 
   return (
     <>
@@ -278,6 +304,17 @@ export function Sidebar({
               where navigation lives. */}
           {inMailbox && current && (
             <div className="sidebar-group">
+              {/* The agent, first and by its name: its conversations, as a
+                  page of their own. Above the mailbox's folders because it
+                  reads every mailbox, not one. */}
+              {agent.isAvailable && (
+                <NavLink to="/agent" end title={collapsed ? agentLabel : undefined}>
+                  <span className="sidebar-icon">
+                    <SparkIcon />
+                  </span>
+                  <span className="sidebar-label">{agentLabel}</span>
+                </NavLink>
+              )}
               {/* Only when there is a choice to make. One mailbox named at
                   the top of its own rail is a heading that says nothing: the
                   rows under it are that mailbox's folders and there is
@@ -425,12 +462,19 @@ export function Sidebar({
                 </span>
                 <span className="sidebar-label">{t('nav.calendar')}</span>
               </NavLink>
-              <NavLink to="/mailbox/settings" title={collapsed ? t('nav.mailboxSettings') : undefined}>
-                <span className="sidebar-icon">
-                  <SettingsIcon />
-                </span>
-                <span className="sidebar-label">{t('nav.mailboxSettings')}</span>
-              </NavLink>
+              {/* What the agent knows and what the person's money did, under
+                  the calendar: pages read often, not settings. The mailbox's
+                  own settings are with the rest of the person's, in the
+                  account's rail. */}
+              {MAILBOX_RAIL_ITEMS.filter(permitted).map((item) => {
+                const label = t(item.label)
+                return (
+                  <NavLink key={item.to} to={item.to} title={collapsed ? label : undefined}>
+                    <span className="sidebar-icon">{item.icon}</span>
+                    <span className="sidebar-label">{label}</span>
+                  </NavLink>
+                )
+              })}
             </div>
           )}
 
@@ -444,7 +488,7 @@ export function Sidebar({
                 // The one row that has something waiting on it. A dot rather
                 // than a number or a word: it says "look here" and nothing
                 // else, which is all a rail should say.
-                const marked = upgradeAvailable && item.to === '/server'
+                const marked = upgradeAvailable && item.to === '/manage/server'
                 return (
                   <NavLink key={item.to} to={item.to} title={collapsed ? label : undefined}>
                     <span className="sidebar-icon">{item.icon}</span>

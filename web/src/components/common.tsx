@@ -458,7 +458,7 @@ export function DomainLink({ domainId, names }: { domainId?: string; names: Map<
   if (!name || !domainId) {
     return <span className="muted">{t('mail.deletedDomain')}</span>
   }
-  return <Link to={`/domains/${domainId}`}>{name}</Link>
+  return <Link to={`/manage/domains/${domainId}`}>{name}</Link>
 }
 
 // The enums the server speaks, in the reader's language.

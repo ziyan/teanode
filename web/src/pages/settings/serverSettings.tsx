@@ -49,7 +49,7 @@ function RestartNote() {
   const { t } = useTranslation()
   return (
     <p className="notice">
-      {t('serverSettings.needsRestart')} <Link to="/server/about">{t('serverSettings.restartHere')}</Link>
+      {t('serverSettings.needsRestart')} <Link to="/manage/server/about">{t('serverSettings.restartHere')}</Link>
     </p>
   )
 }

@@ -31,7 +31,7 @@ func TestPagePath(t *testing.T) {
 	}
 	for _, written := range []string{
 		"", "/", "https://example.net/settings", "//example.net/settings", "javascript:alert(1)",
-		"settings/agent", "/server/about", "/access/users", "/domains", "/mail/abc",
+		"settings/agent", "/manage/server/about", "/manage/access/users", "/manage/domains", "/manage/mail/abc",
 		"/settings/../server", "/settings/./agent", "/settings//agent", "/mailbox?search=x",
 		"/mailbox#top", "/settings/agent/a b", "/settings\\agent", "/settingsx", "/finance-link", "/finance/link", "/finance/link/", "memory:../server", "mail:a/b",
 		"/settings/" + strings.Repeat("a", openpage.PathLength),

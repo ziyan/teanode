@@ -303,7 +303,7 @@ export function LayoutEditorPage() {
               setBusy(true)
               try {
                 await graphql(DELETE, { layoutId })
-                navigate(`/domains/${domainId}/templates`)
+                navigate(`/manage/domains/${domainId}/templates`)
               } catch (caught) {
                 setProblem(caught instanceof Error ? caught.message : t('domain.failed'))
               } finally {

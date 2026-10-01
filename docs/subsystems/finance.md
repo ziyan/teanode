@@ -251,7 +251,8 @@ stay in the transcript and go to the model provider; `link_simplefin` and
 
 Two places, split by how often a person goes there. The **Finance page**
 (`web/src/pages/financePage.tsx`, `/finance/<section>`) is an item in the
-account's rail after Knowledge, shown when the person's agent is on and a
+mailbox's rail after Knowledge, under the calendar (the account's rail for a
+person with no mailbox), shown when the person's agent is on and a
 provider is offered or a finance source exists. Its sections are Spending,
 Transactions, Accounts, Budgets, Net worth and Savings targets: a row of tabs
 on a wide screen, one full-width list to choose from on a phone. `/finance`
@@ -262,6 +263,4 @@ The **agent page's Finance tab** (`web/src/pages/agentFinance.tsx`,
 `/settings/agent/finance`) is the setup: the finance sources (link, repair,
 bring an existing connection in, sync, switch, delete) and the settings (the
 reporting currency and the converter), in one scroll. `/finance/link`, the
-page Plaid's window runs on, comes back to it. The addresses the sections had
-under the tab before they moved (`/settings/agent/finance/spending` and the
-rest) open the tab and are not sent on to the Finance page.
+page Plaid's window runs on, comes back to it.

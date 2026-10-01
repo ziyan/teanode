@@ -28,12 +28,6 @@ const SERVER_TABS: Tab[] = [
   ...INTEGRATION_SECTIONS,
 ]
 
-// Who may do what moved out of here to /access, its own row in the rail:
-// the accounts and the groups were four tabs deep in a page about TLS and
-// spam, and they are what an operator reaches for most. Links to the old
-// paths still work, below.
-const ACCESS_TABS = ['users', 'groups', 'roles', 'audit']
-
 export function ServerPage() {
   // In the path rather than in state, so a tab can be linked to, survives a
   // reload and can be reached with the back button. A tab that only exists in
@@ -43,11 +37,6 @@ export function ServerPage() {
   const session = useSession()
   const { t } = useTranslation()
   const { upgradeAvailable } = useFreshness()
-
-  // A link to where the access tabs used to be goes where they are.
-  if (tab && ACCESS_TABS.includes(tab)) {
-    return <Navigate to={`/access/${tab}`} replace />
-  }
 
   // The rail's dot says "there is something on the Server page"; this one
   // says which tab it is on.
@@ -59,35 +48,18 @@ export function ServerPage() {
       )
     : []
   if (TABS.length === 0) {
-    return <Navigate to="/access" replace />
-  }
-
-  // The people's agents were a tab here, and then a long one, and the
-  // agent's own settings another; they are a row of the rail with tabs of
-  // their own now, the settings among them.
-  if (tab === 'agents') {
-    return <Navigate to="/agent/general" replace />
-  }
-  if (tab === 'agent') {
-    return <Navigate to="/agent/general" replace />
-  }
-
-  // The certificates tab was called "dns" while the only DNS on this page was
-  // the challenge solver. There is a resolver tab now, and two tabs whose
-  // names both mean DNS is a page nobody can navigate.
-  if (tab === 'dns') {
-    return <Navigate to="/server/certificates" replace />
+    return <Navigate to="/manage/access" replace />
   }
 
   // A tab nobody has, or none named at all, is the first one. A path somebody
   // typed is not a tab.
   if (!TABS.some((candidate) => candidate.id === tab)) {
-    return <Navigate to={`/server/${TABS[0].id}`} replace />
+    return <Navigate to={`/manage/server/${TABS[0].id}`} replace />
   }
 
   return (
     <>
-      <Tabs items={TABS} active={tab} onSelect={(id) => navigate(`/server/${id}`)} />
+      <Tabs items={TABS} active={tab} onSelect={(id) => navigate(`/manage/server/${id}`)} />
 
       {tab === 'setup' && <SetupPage />}
       {tab === 'about' && <ServerAboutPage />}

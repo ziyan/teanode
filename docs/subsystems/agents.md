@@ -131,8 +131,10 @@ A feature has to pass all three:
    and a word with their agent as them — the same tools, the same
    permissions, logged each time as the operator speaking as that person.
    It is on the Administrator role only, for the operator of a private
-   server debugging what an agent did. The `/agent` page in the rail has
-   the tabs: agents, use and cost, every run, jobs given up on.
+   server debugging what an agent did. The `/manage/agent` page in the
+   management rail has the tabs: agents, use and cost, every run, jobs
+   given up on. (`/agent` is the person's own conversations with their
+   agent, a row at the top of the mailbox's rail.)
 3. **The person.** Their agent's own switch, and the policy on each source.
 
 An operator can also switch one person's agent off (`OperatorDisabledAt`),

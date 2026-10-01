@@ -104,18 +104,12 @@ export function MailboxSettingsPage() {
   if (!view) {
     return <p className="muted">{t('mailbox.none')}</p>
   }
-  // The agent used to have a tab here, showing the one card that the Agent
-  // page shows for every source. Somebody who kept the link is sent to it
-  // rather than quietly landing on General.
-  if (tab === 'agent') {
-    return <Navigate to="/settings/agent" replace />
-  }
   if (!TABS.some((candidate) => candidate.id === tab)) {
-    return <Navigate to="/mailbox/settings/general" replace />
+    return <Navigate to="/settings/mailbox/general" replace />
   }
   return (
     <>
-      <Tabs items={TABS} active={tab} onSelect={(id) => navigate(`/mailbox/settings/${id}`)} />
+      <Tabs items={TABS} active={tab} onSelect={(id) => navigate(`/settings/mailbox/${id}`)} />
       {tab === 'general' && <GeneralTab key={view.mailbox.id} view={view} />}
       {tab === 'folders' && <FoldersTab key={view.mailbox.id} view={view} />}
       {tab === 'rules' && <RulesTab key={view.mailbox.id} view={view} />}
