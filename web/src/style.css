@@ -12076,7 +12076,8 @@ button.idea-history-title {
    the leaf, the amber and the text colour so no two side by side match. */
 .spending-ring,
 .finance-summary-table,
-.finance-assets-table {
+.finance-assets-table,
+.finance-credit-table {
   --ring-tone-0: var(--leaf);
   --ring-tone-1: var(--warn);
   --ring-tone-2: color-mix(in srgb, var(--text) 62%, var(--surface));
