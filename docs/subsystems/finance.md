@@ -21,6 +21,10 @@ tool and the dashboard.
 
 - **provider**: Plaid or SimpleFIN, the outside service that signs in to
   institutions for us.
+- **statement**: an OFX file (`.ofx`, `.qfx` or `.qbo`) an institution
+  exports, which the person mails in or uploads. The **statement source** is
+  the finance source that holds what statements bring in, and the
+  **statement import address** is where they are mailed.
 - **institution**: a bank, card issuer, brokerage or lender.
 - **finance source**: one person's link to one login at one institution
   through one provider. It is an agent source of the kind `finance`.
@@ -88,6 +92,105 @@ Every finance account and finance transaction keeps the provider's whole
 object, as it arrived, in `provider_metadata`. The columns are what the code
 reads; the metadata is there so a field nobody mapped, or a mapping mistake,
 can be dealt with from stored data. The tool never returns it.
+
+## Imported statements
+
+For an account no provider reaches, such as a card whose issuer only lets
+its holder export transactions as a file, a person imports OFX statements.
+They go into one finance source per agent, the statement source, of provider
+kind `statement`: no credential, no schedule and nothing to poll, so it
+changes only when a statement arrives (a sync asked of it does nothing). It
+is made the first time the person's import address is asked for (a unique
+index, migration 0141, keeps it to one), and it is listed among the finance
+sources only once it holds an account. Statements need nothing from the
+operator and are offered whenever finance is.
+
+**Reading a file.** `internal/finance/ofx` reads OFX 1.x (SGML: a header
+block, then leaves that are never closed) and OFX 2.x (XML) with one
+tolerant reader: a leaf ends at the next tag, closed or not. It reads bank
+statements (`STMTRS`) and card statements (`CCSTMTRS`): `CURDEF`, the
+account (`ACCTID`, and `BANKID` and `ACCTTYPE` for a bank), `DTSTART` and
+`DTEND`, `LEDGERBAL` and `AVAILBAL`, and each `STMTTRN`'s `TRNTYPE`,
+`DTPOSTED`, `TRNAMT`, `FITID`, `NAME`, `MEMO` and `PAYEE`. Dates take a zone
+in brackets, signed or not (`[-5:EST]`, `[0:GMT]`); the day kept is the day
+the institution wrote, in its own zone. Amounts may use a comma as the
+decimal separator. A file over 10 MB is refused, and nothing in a file is
+run or shown, only parsed. `finance.NewStatementImport` turns one statement
+into what a sync writes, and the import goes through `ApplyFinanceSync` like
+any sync, then through what follows a sync (transfers across the whole
+history the statement reaches back over, spending rules, the provider
+category mapping, the categorize job, budget alert candidates).
+
+**Signs and balances.** OFX signs amounts from the holder's side, which is
+this program's convention already: a card purchase is negative, a payment
+to the card and a refund positive. A card's ledger balance is negative for
+what is owed, so the account says its owed balance is not positive and the
+valuation is the amount owed, recorded on the day the balance is as of. A
+statement imported after a newer one records its own day's valuation and
+leaves the account's balance at the newer one.
+
+**Categories.** A statement's transaction has the OFX transaction type as
+its detailed provider category (`ofx:DEBIT`, `ofx:PAYMENT`) and the side of
+the account as its primary (`ofx:creditcard`, `ofx:bank`). The mapping takes
+a `PAYMENT` on a card as a transfer (the person paying their own card), on a
+bank account as spending; `XFER` as a transfer; `FEE` and `SRVCHG` as fees;
+interest as a fee on a card and income on a bank account; cash out as other.
+A purchase (`DEBIT`) and a refund (`CREDIT`) say nothing about what was
+bought and go to the categorize model with the merchant's name, so a refund
+lowers the spending it refunds once it is placed.
+
+**The account and deduplication.** A statement's account is identified by
+its `ACCTID` with the institution (`FID`, else `ORG`) and `BANKID`, hashed
+with a key the statement source keeps sealed: for a bank the identifier is
+the account number, and neither it nor anything that could be turned back
+into it is stored. The account is named for the institution (`ORG`) and
+keeps the last four letters and digits of the identifier as its mask, to
+tell two accounts apart. A transaction is its account and its `FITID`, so
+importing a file again, or statements that overlap, adds nothing twice, and
+a transaction whose fields changed is updated in place. A transaction
+without a `FITID` is known instead by a hash of its day, amount and name,
+numbered when two are identical on one day so a genuine second charge is
+kept; the import says how many were. Whether an institution keeps a
+transaction's `FITID` the same across exports is up to the institution: one
+that does not would have its transactions counted twice when overlapping
+ranges are exported, and there is deliberately no fuzzy merge by day and
+amount, which would swallow genuine same-day duplicates.
+
+**By mail.** The statement import address is the person's first mailbox
+address with a detail after a plus: `name+statements-<token>@domain`, the
+token sixteen random characters kept sealed on the statement source. Nothing
+is added to DNS or to the aliases. `mx`'s `matchAliases` asks first whether
+a recipient has that shape and, through the agent (`StatementHook`), whether
+the token is the mailbox owner's and their statement source is on. If so,
+the message is filed in the mailbox's Archive, read, without rules, triage,
+the calendar or an out-of-office reply, and a `statement_import` job is
+queued in the delivery transaction. A wrong token is no statement address:
+the recipient is matched like any other, which for an address nobody
+configured is a refusal. A message the spam filter failed, or that failed
+DMARC under a quarantine policy, is not imported; one that failed
+authentication outright was refused before delivery. The same works for a
+message the person sends from their own account through the submission
+port, since a local recipient goes through the same matching. The job reads
+the stored message, imports every part named `.ofx`, `.qfx` or `.qbo` and
+every part whose content is OFX however it is typed (a phone sends one as
+`application/octet-stream`), records the import on the statement source,
+and tells the person in their main conversation, the way an alert is said
+but without the alert decision: which account, how many transactions were
+added, updated or already there, or why nothing was imported. A notice that
+meets a running turn waits a minute and is told then, without importing
+again. Regenerating the address (`RegenerateStatementImportAddress`) gives a
+new token and the old address stops taking mail at once.
+
+**Uploaded or pointed at.** `ImportStatement` takes a file uploaded to the
+agent's attachments (`agentAttachmentId`, how the dashboard and `teanode
+finance import-statement` send it) or a message in the person's mailbox
+(`mailboxItemId`, how the agent's `import_statement` sends one the person
+points it at). `StatementImport` answers the address, whether importing is
+on, and the last import (`lastStatementImport` on the source's cursor).
+Switching the statement source off refuses mail to the address and imports
+nothing; deleting it removes its accounts and transactions like any finance
+source's, and the next look at the address makes a new source with a new
+token.
 
 ## Syncing
 
@@ -306,7 +409,10 @@ in a browser; the command line and the tool hand the person the page's
 address). Two are deliberately missing from the tool: a SimpleFIN setup token
 and a credential brought in are refused in conversation, because they would
 stay in the transcript and go to the model provider; `link_simplefin` and
-`import_credential` only say where to give them.
+`import_credential` only say where to give them. The tool's
+`import_statement` takes a message (`mailbox_item_id`) in a mailbox the
+person granted the agent, as `mail_read` reads, and never an uploaded file,
+whose id the model is not shown.
 
 ## In the dashboard
 
@@ -335,6 +441,12 @@ this month's pace), and an info button opens how it is worked out with the
 merchants still expected. Income and saving rows have the same button,
 saying how their projection is made. A month that is over has no band and
 no explanation: it is its own figures.
+
+The Accounts section ends with **Import statements**
+(`web/src/pages/finance/financeStatementImport.tsx`): the import address
+with a copy button, how to export from a phone's wallet, changing the
+address behind a confirmation, uploading a file, and the last import.
+Accounts from statements are marked so in the table.
 
 The **agent page's Finance tab** (`web/src/pages/agentFinance.tsx`,
 `/settings/agent/finance`) is the setup: the finance sources (link, repair,

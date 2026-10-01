@@ -112,7 +112,9 @@ type FinanceSyncApplied struct {
 
 	// WrittenTransactionCount is the finance transactions inserted or
 	// changed; one sent again unchanged is not counted.
-	WrittenTransactionCount int
+	// InsertedTransactionCount is those of them that were new.
+	WrittenTransactionCount  int
+	InsertedTransactionCount int
 
 	// RemovedTransactionCount is the finance transactions the provider
 	// removed, and ReplacedPendingTransactionCount the pending ones it
@@ -486,6 +488,10 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *
 		return nil, ErrNotFound
 	}
 	providerKind := foundSources[0].ProviderKind
+	// Statements arrive in any order, and one imported after a newer one
+	// must not put the account's balance back to an older day; its
+	// valuation is still recorded, on its own day.
+	isNewerBalanceKept := providerKind == string(finance.ProviderKindStatement)
 
 	applied := &FinanceSyncApplied{
 		InsertedFinanceAccountIDs: []string{}, CreatedAssetIDs: []string{}, FinanceTransactionIDsToCategorize: []string{},
@@ -495,7 +501,7 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *
 	reportedAccountIds := make([]string, 0, len(syncResult.Accounts))
 	reportedBalances := map[string]finance.Account{}
 	for _, account := range syncResult.Accounts {
-		financeAccountId, isInserted, err := self.upsertFinanceAccount(agentId, sourceId, account, now)
+		financeAccountId, isInserted, err := self.upsertFinanceAccount(agentId, sourceId, account, isNewerBalanceKept, now)
 		if err != nil {
 			return nil, err
 		}
@@ -584,7 +590,11 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *
 		writtenIds = append(writtenIds, written.ID)
 		// Inserted rather than changed: an insert writes both times as the
 		// same moment, an update only the modified one.
-		if !written.IsPending && written.CreatedAt.Equal(written.ModifiedAt) {
+		isInserted := written.CreatedAt.Equal(written.ModifiedAt)
+		if isInserted {
+			applied.InsertedTransactionCount++
+		}
+		if !written.IsPending && isInserted {
 			insertedPostedIdsByFinanceAccountId[financeAccountId] = append(insertedPostedIdsByFinanceAccountId[financeAccountId], written.ID)
 		}
 	}
@@ -744,8 +754,9 @@ func (self *transaction) carryReplacedPendingDecisions(agentId, financeAccountId
 }
 
 // upsertFinanceAccount writes one finance account as the provider reported
-// it, and says whether it was new.
-func (self *transaction) upsertFinanceAccount(agentId, sourceId string, account finance.Account, now time.Time) (string, bool, error) {
+// it, and says whether it was new. With isNewerBalanceKept, a balance
+// older than the one stored leaves the stored one in place.
+func (self *transaction) upsertFinanceAccount(agentId, sourceId string, account finance.Account, isNewerBalanceKept bool, now time.Time) (string, bool, error) {
 	if account.ProviderAccountID == "" {
 		return "", false, fmt.Errorf("%w: a finance account needs the provider's id", ErrInvalidArguments)
 	}
@@ -775,25 +786,34 @@ func (self *transaction) upsertFinanceAccount(agentId, sourceId string, account 
 	}
 	// xmax is zero on a row this statement inserted and set on one it
 	// updated, which is how the one round trip says which it was.
-	err = self.tx.Raw(`INSERT INTO "agent_finance_account" ("id", "agent_id", "source_id", "provider_account_id",
+	err = self.tx.Raw(`INSERT INTO "agent_finance_account" AS "existing" ("id", "agent_id", "source_id", "provider_account_id",
 			"account_name", "account_mask", "account_kind", "currency_code", "current_balance", "available_balance",
 			"balance_at", "provider_metadata", "created_at", "modified_at")
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::numeric, ?::numeric, ?, ?::jsonb, ?, ?)
 		ON CONFLICT ("source_id", "provider_account_id") DO UPDATE SET
 			"account_name" = EXCLUDED."account_name", "account_mask" = EXCLUDED."account_mask",
 			"account_kind" = EXCLUDED."account_kind", "currency_code" = EXCLUDED."currency_code",
-			"current_balance" = EXCLUDED."current_balance", "available_balance" = EXCLUDED."available_balance",
-			"balance_at" = EXCLUDED."balance_at", "provider_metadata" = EXCLUDED."provider_metadata",
+			"current_balance" = CASE WHEN `+financeBalanceIsOlder+` THEN "existing"."current_balance" ELSE EXCLUDED."current_balance" END,
+			"available_balance" = CASE WHEN `+financeBalanceIsOlder+` THEN "existing"."available_balance" ELSE EXCLUDED."available_balance" END,
+			"balance_at" = CASE WHEN `+financeBalanceIsOlder+` THEN "existing"."balance_at" ELSE EXCLUDED."balance_at" END,
+			"provider_metadata" = CASE WHEN `+financeBalanceIsOlder+` THEN "existing"."provider_metadata" ELSE EXCLUDED."provider_metadata" END,
 			"modified_at" = EXCLUDED."modified_at"
 		RETURNING "id", ("xmax" = 0) AS "is_inserted"`,
 		newID(), agentId, sourceId, account.ProviderAccountID, account.AccountName, account.AccountMask,
-		string(accountKind), account.CurrencyCode, currentBalance, availableBalance, balanceAt, providerMetadata, now, now).
+		string(accountKind), account.CurrencyCode, currentBalance, availableBalance, balanceAt, providerMetadata, now, now,
+		isNewerBalanceKept, isNewerBalanceKept, isNewerBalanceKept, isNewerBalanceKept).
 		Scan(&upserted).Error
 	if err != nil {
 		return "", false, err
 	}
 	return upserted.ID, upserted.IsInserted, nil
 }
+
+// financeBalanceIsOlder is true inside the account upsert when the caller
+// keeps the newer balance (its one argument) and the balance being
+// written is from before the one stored.
+const financeBalanceIsOlder = `(CAST(? AS boolean) AND "existing"."balance_at" IS NOT NULL AND EXCLUDED."balance_at" IS NOT NULL
+	AND EXCLUDED."balance_at" < "existing"."balance_at")`
 
 // retirementAccountSubtypes are Plaid's subtypes of an investment account
 // that is saved for retirement, in the United States and Canada and the

@@ -88,6 +88,12 @@ func (self *Agent) runFinanceSync(ctx context.Context, run *Run, source *models.
 	}
 
 	providerKind := source.Specification.Type
+	if IsStatementSource(source) {
+		// Nothing to poll: a statement source changes when a statement
+		// arrives. Asked to sync, it says it did and keeps what its last
+		// import said.
+		return mark(source.LastError)
+	}
 	if !configuration.Agent.Finance.Offers(providerKind) {
 		return mark(fmt.Sprintf("this server no longer offers %s, so the institution cannot be synced; ask the operator", providerKind))
 	}

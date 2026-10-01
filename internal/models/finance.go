@@ -16,6 +16,65 @@ const FinanceSourceCron = "0 */6 * * *"
 // its credential under.
 const FinanceCredentialSecretKey = "credential"
 
+// The source secrets of the finance source that holds imported statements
+// (provider kind "statement"): the token that makes its import address,
+// which is what lets mail in, and the key its accounts' identifiers are
+// hashed with, so the institution's account identifier is never stored.
+const (
+	FinanceStatementTokenSecretKey      = "statementImportToken"
+	FinanceStatementAccountKeySecretKey = "statementAccountKey"
+)
+
+// FinanceCursorLastStatementImport is the cursor key of the statement
+// finance source that holds its last import, a FinanceStatementImport.
+const FinanceCursorLastStatementImport = "lastStatementImport"
+
+// StatementImportOrigin is how a statement reached the server.
+type StatementImportOrigin string
+
+// A statement mailed to the person's import address, a file uploaded from
+// the dashboard or the command line, or the attachment of a message the
+// person pointed at.
+const (
+	StatementImportOriginMail    StatementImportOrigin = "mail"
+	StatementImportOriginUpload  StatementImportOrigin = "upload"
+	StatementImportOriginMessage StatementImportOrigin = "message"
+)
+
+// FinanceStatementImport is what one import of statement files did: kept
+// on the statement finance source as its last import, and answered to
+// whoever imported.
+type FinanceStatementImport struct {
+	ImportedAt            time.Time             `json:"importedAt"`
+	StatementImportOrigin StatementImportOrigin `json:"statementImportOrigin"`
+
+	// StatementFileNames are the files read, as they were named.
+	StatementFileNames []string `json:"statementFileNames"`
+
+	// The transactions: new ones added, stored ones whose fields changed,
+	// stored ones the file repeated unchanged, and ones not written
+	// because their account could not be found.
+	AddedTransactionCount     int `json:"addedTransactionCount"`
+	UpdatedTransactionCount   int `json:"updatedTransactionCount"`
+	UnchangedTransactionCount int `json:"unchangedTransactionCount"`
+	SkippedTransactionCount   int `json:"skippedTransactionCount"`
+
+	// TransactionWithoutFITIDCount is how many had no FITID, the
+	// institution's identifier, and were known by their day, amount and
+	// name instead.
+	TransactionWithoutFITIDCount int `json:"transactionWithoutFitIdCount"`
+
+	// FinanceAccountIDs and FinanceAccountNames are the accounts the
+	// statements went into, the names with the end of the account's
+	// identifier.
+	FinanceAccountIDs   []string `json:"financeAccountIds"`
+	FinanceAccountNames []string `json:"financeAccountNames"`
+
+	// ImportErrorMessage says why nothing was imported; empty when the
+	// import worked.
+	ImportErrorMessage string `json:"importErrorMessage,omitempty" graphapi:"nullable"`
+}
+
 // The keys of a finance source's cursor, which only its sync reads and
 // writes: the provider's own cursor; whether the institution is waiting
 // for the person to sign in again, while which the sync does not call the

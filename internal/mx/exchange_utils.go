@@ -752,6 +752,13 @@ func (self *exchange) checkIp(ctx context.Context, ip net.IP, timeout time.Durat
 }
 
 func (self *exchange) matchAliases(tx db.Transaction, domain *models.Domain, recipientAlias string, mail *models.Mail) ([]*models.Delivery, error) {
+	// A statement import address is decided first, so an alias whose
+	// pattern happens to take plus addressing does not file the statement
+	// as ordinary mail; one whose token is wrong is matched as any other
+	// address would be.
+	if deliveries, isStatement, err := self.matchStatementImport(tx, domain, recipientAlias, mail); err != nil || isStatement {
+		return deliveries, err
+	}
 	aliases := self.matchingAliases(domain, recipientAlias)
 	if len(aliases) == 0 {
 		return nil, nil

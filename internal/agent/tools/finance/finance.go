@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/agent/tools/mailbox"
 	"github.com/ziyan/teanode/internal/client"
 )
 
@@ -68,6 +69,13 @@ var operations = map[string]*financeOperation{
 	"sources":            {graphqlOperation: "FinanceSources", risk: tools.RiskRead, isUntrusted: true},
 	"accounts":           {graphqlOperation: "FinanceAccounts", risk: tools.RiskRead, arguments: []string{"currency_code"}, isUntrusted: true},
 	"reporting_currency": {graphqlOperation: "ReportingCurrency", risk: tools.RiskRead},
+	"statement_import":   {graphqlOperation: "StatementImport", risk: tools.RiskRead, isUntrusted: true},
+	"regenerate_statement_import_address": {
+		graphqlOperation: "RegenerateStatementImportAddress", risk: tools.RiskWrite,
+		preview: func(*previewLookup, map[string]any) string {
+			return "Give the statement import address a new token; mail to the old address will be refused"
+		},
+	},
 	"transactions": {
 		graphqlOperation: "FinanceTransactions", risk: tools.RiskRead, isUntrusted: true, isMonthShorthand: true,
 		arguments: append([]string{"finance_account_id", "text", "minimum_amount", "maximum_amount", "provider_category", "spending_category_id", "is_uncategorized", "limit", "after"}, rangeArguments...),
@@ -287,6 +295,15 @@ var operations = map[string]*financeOperation{
 	"repair":            {risk: tools.RiskRead, arguments: []string{"source_id"}, required: []string{"source_id"}},
 	"link_simplefin":    {risk: tools.RiskRead},
 	"import_credential": {risk: tools.RiskRead},
+	// ImportStatement with a message's OFX attachments only: a file the
+	// person hands over in conversation carries no id the model is shown,
+	// so the tool takes the message, which mail_search and mail_read name.
+	"import_statement": {
+		risk: tools.RiskWrite, arguments: []string{"mailbox_item_id"}, required: []string{"mailbox_item_id"},
+		preview: func(*previewLookup, map[string]any) string {
+			return "Import the OFX statements attached to a message into their finance accounts"
+		},
+	},
 	"sync": {
 		risk: tools.RiskWrite, arguments: []string{"source_id"}, required: []string{"source_id"},
 		preview: func(lookup *previewLookup, call map[string]any) string {
@@ -507,6 +524,7 @@ const description = "The person's money: their finance sources (logins at banks,
 	"Totals come per currency and converted into the reporting currency (`reporting_currency` says which), or into `currency_code` where given, each amount at its own day's exchange rate, naming any currency left out for want of a rate; never add different currencies yourself.\n" +
 	"Linking: `providers` says what the server offers. `link_plaid` gives an address for the person to open in their browser, signed in to the dashboard; `repair` gives the address that signs a finance source in again when `sources` says isSignInRequired. " +
 	"A SimpleFIN setup token, or the credential of an existing provider connection (a Plaid access token, a SimpleFIN access URL), is never taken in conversation: `link_simplefin` and `import_credential` say where to give it.`sync`, `disable_source`, `enable_source` and `delete_source` act on a finance source by source_id; a switched-off source is switched on with enable_source before it syncs.\n" +
+	"Statements: for an account no provider reaches (a card that only exports OFX, .ofx, .qfx or .qbo), `statement_import` gives the person's statement import address, where mailing the exported file imports it (from a phone's wallet: Export Transactions, then share to Mail), and what the last import did. `import_statement` imports the OFX attachments of a message in their mailbox by mailbox_item_id; a transaction already imported is updated, never added twice. `regenerate_statement_import_address` ends the old address and makes a new one, only when the person asks.\n" +
 	"Recipes, followed the same way every time:\n" +
 	"- Proposing budgets: `spending_summary` grouped by spendingCategory for each of the last three full months (month 2026-06, then 2026-07, then 2026-08); propose the median of each, rounded, as a list; `set_budget` only what the person accepts. Once they set their first budget, offer a monthly review schedule on the first of the month.\n" +
 	"- Expected income: `set_budget` on an income spending category (isIncome) is the income expected each month, not a limit; `budget_status` lists those apart as incomeCategories, with incomePace behind, on_track or ahead.\n" +
@@ -528,6 +546,7 @@ func init() {
 				Parameters: tools.Object(map[string]any{
 					"operation":                   tools.EnumProperty("what to do", operationNames()...),
 					"source_id":                   tools.StringProperty("a finance source, by the id sources gives"),
+					"mailbox_item_id":             tools.StringProperty("for import_statement: the message whose OFX attachments (.ofx, .qfx, .qbo) to import, by the item_id mail_search or mail_read gives"),
 					"finance_account_id":          tools.StringProperty("a finance account, by the id accounts gives; for assets, what it values: its own asset and its holdings"),
 					"is_holding":                  tools.BooleanProperty("for assets: true lists only the holdings of investment accounts (one asset per position); left out, assets leaves the holdings out unless finance_account_id is given"),
 					"finance_transaction_id":      tools.StringProperty("a finance transaction, by the id transactions gives"),
@@ -754,6 +773,28 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return linkAddress(current, text(asked, "source_id"), "Give the person this address to open in their browser, signed in to the dashboard, to sign in to the institution again. The same finance source syncs again once they finish."), nil
 	case "sync", "disable_source", "enable_source", "delete_source":
 		return sourceOperation(ctx, executor, name, text(asked, "source_id"))
+	case "import_statement":
+		// Only a message in a mailbox the person granted, as mail_read
+		// reads: a mailbox kept back from the agent stays kept back.
+		itemId := text(asked, "mailbox_item_id")
+		views, err := mailbox.GrantedMailboxes(ctx, executor)
+		if err != nil {
+			return nil, err
+		}
+		if _, _, err := mailbox.MailboxOfItem(ctx, executor, views, itemId); err != nil {
+			return nil, err
+		}
+		var imported any
+		if err := client.RunFinance(ctx, executor, "ImportStatement", map[string]any{"mailboxItemId": itemId}, &imported); err != nil {
+			return nil, err
+		}
+		result, err := tools.JSONResult(map[string]any{name: imported})
+		if err != nil {
+			return nil, err
+		}
+		result.Untrusted = true
+		result.Note = "import statement"
+		return result, nil
 	}
 
 	variables := map[string]any{}
@@ -873,6 +914,9 @@ func sourceOperation(ctx context.Context, executor tools.Operations, name, sourc
 	}
 	switch name {
 	case "sync":
+		if source.ProviderKind == "statement" {
+			return nil, fmt.Errorf("the finance source %q holds imported statements and has nothing to sync; import_statement imports a statement mailed to the person", sourceId)
+		}
 		// Syncing a switched-off source would switch it on again, which
 		// is its own decision.
 		if !source.IsEnabled {

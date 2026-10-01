@@ -6,7 +6,9 @@
 // strings, exact as the database keeps them; they become numbers only to
 // be drawn or formatted.
 
-export type ProviderKind = 'plaid' | 'simplefin'
+// 'statement' is the finance source of imported statements: OFX files
+// mailed in or uploaded, for the accounts no provider reaches.
+export type ProviderKind = 'plaid' | 'simplefin' | 'statement'
 
 // A provider people may link through. One that needs a browser (Plaid) is
 // linked on /finance-link; the other (SimpleFIN) by pasting a setup token.
@@ -397,6 +399,52 @@ export const DELETE_SOURCE = `mutation ($sourceId: String!) { DeleteAgentKnowled
 export const SWITCH_SOURCE = `mutation ($sourceId: String, $enabled: Boolean) {
   SaveAgentKnowledgeSource(sourceId: $sourceId, enabled: $enabled) { id }
 }`
+
+// --- imported statements -------------------------------------------------
+
+// What one import of statement files did.
+export type FinanceStatementImport = {
+  importedAt: string
+  statementImportOrigin: 'mail' | 'upload' | 'message'
+  statementFileNames: string[]
+  addedTransactionCount: number
+  updatedTransactionCount: number
+  unchangedTransactionCount: number
+  skippedTransactionCount: number
+  transactionWithoutFitIdCount: number
+  financeAccountIds: string[]
+  financeAccountNames: string[]
+  importErrorMessage?: string | null
+}
+
+// The address to mail statements to, whether importing is on, and the
+// last import. Asking makes the address the first time.
+export type StatementImport = {
+  sourceId: string
+  importAddress?: string | null
+  isEnabled: boolean
+  maximumStatementBytes: number
+  lastStatementImport?: FinanceStatementImport | null
+}
+
+const STATEMENT_IMPORT_RESULT_FIELDS = `importedAt statementImportOrigin statementFileNames addedTransactionCount
+  updatedTransactionCount unchangedTransactionCount skippedTransactionCount transactionWithoutFitIdCount
+  financeAccountIds financeAccountNames importErrorMessage`
+
+const STATEMENT_IMPORT_FIELDS = `sourceId importAddress isEnabled maximumStatementBytes
+  lastStatementImport { ${STATEMENT_IMPORT_RESULT_FIELDS} }`
+
+export const STATEMENT_IMPORT = `query { StatementImport { ${STATEMENT_IMPORT_FIELDS} } }`
+
+// A file reaches the import the way a file reaches the agent: uploaded to
+// its attachments, then named by id.
+export const IMPORT_STATEMENT = `mutation ($agentAttachmentId: String) {
+  ImportStatement(agentAttachmentId: $agentAttachmentId) { ${STATEMENT_IMPORT_RESULT_FIELDS} }
+}`
+
+export const REGENERATE_STATEMENT_IMPORT_ADDRESS = `mutation { RegenerateStatementImportAddress { ${STATEMENT_IMPORT_FIELDS} } }`
+
+export const AGENT_ATTACHMENTS_PATH = '/api/v1/agent/attachments'
 
 // --- accounts and transactions ---------------------------------------------
 

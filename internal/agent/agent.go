@@ -254,6 +254,7 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobBackground, self.runBackgroundWork)
 	self.Register(models.AgentJobAlert, self.runAlert)
 	self.Register(models.AgentJobCategorize, self.runCategorize)
+	self.Register(models.AgentJobStatementImport, self.runStatementImport)
 	self.catalog = FullCatalog()
 	return self
 }

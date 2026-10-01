@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/big"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/finance/ofx"
 )
 
 // teanode finance: the person's finance sources, accounts and transactions,
@@ -117,6 +119,19 @@ func NewFinanceCommand() *cli.Command {
 					&cli.StringFlag{Name: "institution-name", Usage: "what to call the finance source; the provider is asked when left out"},
 				},
 				Action: runFinanceImportCredential,
+			},
+			{
+				Name: "import-statement", Usage: "import an OFX statement file (.ofx, .qfx or .qbo), such as a card's exported transactions",
+				ArgsUsage: "<file>",
+				Description: "A transaction already imported, by its account and the institution's FITID, is updated rather\n" +
+					"added again, so importing overlapping statements adds nothing twice. Use - to read the file from\n" +
+					"standard input.",
+				Flags: []cli.Flag{JSONFlag()}, Action: runFinanceImportStatement,
+			},
+			{Name: "statement-import", Usage: "the address to mail OFX statements to, and what the last import did", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceStatementImport},
+			{
+				Name: "regenerate-statement-import-address", Usage: "give the statement import address a new token; the old address stops taking mail",
+				Flags: forceFlags(), Action: runFinanceRegenerateStatementImportAddress,
 			},
 			{Name: "repair", Usage: "sign in to a finance source's institution again: prints the address to open, then waits", ArgsUsage: "<source-id>", Flags: waitFlags(), Action: runFinanceRepair},
 			{Name: "sources", Usage: "your finance sources, their state and their accounts", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceSources},
@@ -300,7 +315,8 @@ var financeSubcommandOperations = map[string]string{
 	"mark-transfer": "MarkTransfer", "budgets": "Budgets", "set-budget": "SetBudget", "budget-status": "BudgetStatus",
 	"saving-summary": "SavingSummary", "spending-by-day": "SpendingByDay", "cash-flow": "CashFlow", "savings-targets": "SavingsTargets",
 	"create-savings-target": "CreateSavingsTarget", "update-savings-target": "UpdateSavingsTarget",
-	"close-savings-target": "CloseSavingsTarget",
+	"close-savings-target": "CloseSavingsTarget", "import-statement": "ImportStatement", "statement-import": "StatementImport",
+	"regenerate-statement-import-address": "RegenerateStatementImportAddress",
 }
 
 // operationOf is the finance operation a subcommand calls.
@@ -769,6 +785,118 @@ func runFinanceImportCredential(ctx context.Context, command *cli.Command) error
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s: %s, brought in through %s; its first sync starts within the minute\n", imported.ID, name, imported.ProviderKind)
 	return nil
+}
+
+// --- imported statements ------------------------------------------------
+
+func runFinanceImportStatement(ctx context.Context, command *cli.Command) error {
+	path, err := financeArgument(command, 0, "the OFX file: teanode finance import-statement transactions.ofx")
+	if err != nil {
+		return err
+	}
+	var content []byte
+	fileName := filepath.Base(path)
+	if path == "-" {
+		fileName = "statement.ofx"
+		content, err = io.ReadAll(io.LimitReader(os.Stdin, ofx.MaximumFileBytes+1))
+	} else {
+		content, err = readLimitedFile(path, ofx.MaximumFileBytes+1)
+	}
+	if err != nil {
+		return err
+	}
+	if len(content) > ofx.MaximumFileBytes {
+		return usage(fmt.Sprintf("%s is larger than %d MB, more than any statement", fileName, ofx.MaximumFileBytes/(1024*1024)))
+	}
+	if !ofx.IsOFX(content) {
+		return usage(fmt.Sprintf("%s is not an OFX file; export the transactions as OFX, QFX or QBO", fileName))
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	// Up the way a file for the agent goes, then named by id, as the
+	// dashboard does it: bytes are not a GraphQL argument.
+	attachment, err := client.UploadAgentAttachment(ctx, connection, fileName, content)
+	if err != nil {
+		return describeError(command, err)
+	}
+	var imported *client.FinanceStatementImport
+	if err := describeError(command, client.RunFinance(ctx, connection, operationOf(command), map[string]any{"agentAttachmentId": attachment.ID}, &imported)); err != nil {
+		return err
+	}
+	return printDone(command, imported, statementImportLine(imported))
+}
+
+// readLimitedFile reads at most limit bytes of a file.
+func readLimitedFile(path string, limit int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+	return io.ReadAll(io.LimitReader(file, limit))
+}
+
+// statementImportLine says what an import did.
+func statementImportLine(imported *client.FinanceStatementImport) string {
+	if imported == nil {
+		return "nothing was imported"
+	}
+	if len(imported.FinanceAccountNames) == 0 {
+		return "nothing was imported: " + imported.ImportErrorMessage
+	}
+	line := fmt.Sprintf("into %s: %d added, %d updated, %d already here", strings.Join(imported.FinanceAccountNames, ", "),
+		imported.AddedTransactionCount, imported.UpdatedTransactionCount, imported.UnchangedTransactionCount)
+	if imported.SkippedTransactionCount > 0 {
+		line += fmt.Sprintf(", %d skipped", imported.SkippedTransactionCount)
+	}
+	if imported.TransactionWithoutFITIDCount > 0 {
+		line += fmt.Sprintf("; %d had no FITID and are known by their day, amount and name", imported.TransactionWithoutFITIDCount)
+	}
+	if imported.ImportErrorMessage != "" {
+		line += "; not imported: " + imported.ImportErrorMessage
+	}
+	return line
+}
+
+func runFinanceStatementImport(ctx context.Context, command *cli.Command) error {
+	var statementImport *client.StatementImport
+	if err := financeCall(ctx, command, operationOf(command), nil, &statementImport); err != nil {
+		return err
+	}
+	return printStatementImport(command, statementImport)
+}
+
+func printStatementImport(command *cli.Command, statementImport *client.StatementImport) error {
+	if command.Bool("json") {
+		return PrintJSON(statementImport)
+	}
+	address := statementImport.ImportAddress
+	if address == "" {
+		address = "none: you have no mailbox address to receive statements; teanode finance import-statement takes a file"
+	}
+	_, _ = fmt.Fprintf(command.Writer, "import address: %s\n", address)
+	if !statementImport.IsEnabled {
+		_, _ = fmt.Fprintf(command.Writer, "importing is off: teanode finance enable-source %s switches it on\n", statementImport.SourceID)
+	}
+	if last := statementImport.LastStatementImport; last != nil {
+		_, _ = fmt.Fprintf(command.Writer, "last import: %s, %s\n", last.ImportedAt.Local().Format("2006-01-02 15:04"), statementImportLine(last))
+	} else {
+		_, _ = fmt.Fprintln(command.Writer, "nothing imported yet")
+	}
+	return nil
+}
+
+func runFinanceRegenerateStatementImportAddress(ctx context.Context, command *cli.Command) error {
+	if err := confirm(command, "Give the statement import address a new token? Mail to the old address will be refused."); err != nil {
+		return err
+	}
+	var statementImport *client.StatementImport
+	if err := financeCall(ctx, command, operationOf(command), nil, &statementImport); err != nil {
+		return err
+	}
+	return printStatementImport(command, statementImport)
 }
 
 func runFinanceSources(ctx context.Context, command *cli.Command) error {

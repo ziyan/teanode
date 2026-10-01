@@ -442,6 +442,31 @@ type SavingsTargetStanding struct {
 	SavingsTargetProgress *SavingsTargetProgress `json:"savingsTargetProgress"`
 }
 
+// FinanceStatementImport is what one import of statement files did.
+type FinanceStatementImport struct {
+	ImportedAt                   time.Time `json:"importedAt"`
+	StatementImportOrigin        string    `json:"statementImportOrigin"`
+	StatementFileNames           []string  `json:"statementFileNames"`
+	AddedTransactionCount        int       `json:"addedTransactionCount"`
+	UpdatedTransactionCount      int       `json:"updatedTransactionCount"`
+	UnchangedTransactionCount    int       `json:"unchangedTransactionCount"`
+	SkippedTransactionCount      int       `json:"skippedTransactionCount"`
+	TransactionWithoutFITIDCount int       `json:"transactionWithoutFitIdCount"`
+	FinanceAccountIDs            []string  `json:"financeAccountIds"`
+	FinanceAccountNames          []string  `json:"financeAccountNames"`
+	ImportErrorMessage           string    `json:"importErrorMessage,omitempty"`
+}
+
+// StatementImport is the address to mail statements to, whether importing
+// is on, and what the last import did.
+type StatementImport struct {
+	SourceID              string                  `json:"sourceId"`
+	ImportAddress         string                  `json:"importAddress,omitempty"`
+	IsEnabled             bool                    `json:"isEnabled"`
+	MaximumStatementBytes int                     `json:"maximumStatementBytes"`
+	LastStatementImport   *FinanceStatementImport `json:"lastStatementImport,omitempty"`
+}
+
 // The fields each document selects, so a type is read the same way by
 // every document that returns it.
 const (
@@ -466,6 +491,10 @@ const (
 	spendingRuleFields = `{ id matchText financeAccountId minimumAmount maximumAmount spendingCategoryId isTransfer rulePriority }`
 
 	budgetFields = `{ id spendingCategoryId monthlyAmount currencyCode effectiveFrom }`
+
+	financeStatementImportFields = `{ importedAt statementImportOrigin statementFileNames addedTransactionCount updatedTransactionCount unchangedTransactionCount skippedTransactionCount transactionWithoutFitIdCount financeAccountIds financeAccountNames importErrorMessage }`
+
+	statementImportFields = `{ sourceId importAddress isEnabled maximumStatementBytes lastStatementImport ` + financeStatementImportFields + ` }`
 
 	savingsTargetStandingFields = `{ savingsTarget { id savingsTargetName targetAmount currencyCode targetOn targetMeasure startingAmount startedOn closedOn assetIds financeAccountIds } savingsTargetProgress { savedAmount remainingAmount monthsLeftCount requiredMonthlyAmount isBehind unconvertedCurrencyCodes } }`
 )
@@ -567,6 +596,14 @@ const (
 
 	DocumentReportingCurrency = `query { ReportingCurrency { reportingCurrencyCode isChosen } }`
 
+	DocumentStatementImport = `query { StatementImport ` + statementImportFields + ` }`
+
+	DocumentImportStatement = `mutation ($agentAttachmentId: String, $mailboxItemId: String) {
+  ImportStatement(agentAttachmentId: $agentAttachmentId, mailboxItemId: $mailboxItemId) ` + financeStatementImportFields + `
+}`
+
+	DocumentRegenerateStatementImportAddress = `mutation { RegenerateStatementImportAddress ` + statementImportFields + ` }`
+
 	DocumentCreateFinanceLinkToken = `mutation ($sourceId: String) { CreateFinanceLinkToken(sourceId: $sourceId) { linkToken sourceId } }`
 
 	DocumentCompleteFinanceLink = `mutation ($publicToken: String!, $institutionId: String, $institutionName: String) {
@@ -661,8 +698,10 @@ var FinanceDocuments = map[string]string{
 	"AssetHistory": DocumentAssetHistory, "SpendingCategories": DocumentSpendingCategories,
 	"SpendingRules": DocumentSpendingRules, "Budgets": DocumentBudgets, "BudgetStatus": DocumentBudgetStatus,
 	"SavingSummary": DocumentSavingSummary, "SpendingByDay": DocumentSpendingByDay, "CashFlow": DocumentCashFlow, "SavingsTargets": DocumentSavingsTargets,
-	"ReportingCurrency":      DocumentReportingCurrency,
-	"CreateFinanceLinkToken": DocumentCreateFinanceLinkToken, "CompleteFinanceLink": DocumentCompleteFinanceLink,
+	"ReportingCurrency": DocumentReportingCurrency,
+	"StatementImport":   DocumentStatementImport, "ImportStatement": DocumentImportStatement,
+	"RegenerateStatementImportAddress": DocumentRegenerateStatementImportAddress,
+	"CreateFinanceLinkToken":           DocumentCreateFinanceLinkToken, "CompleteFinanceLink": DocumentCompleteFinanceLink,
 	"CompleteFinanceRepair": DocumentCompleteFinanceRepair, "LinkSimpleFIN": DocumentLinkSimpleFIN,
 	"ImportFinanceCredential": DocumentImportFinanceCredential, "SetReportingCurrency": DocumentSetReportingCurrency,
 	"CreateAsset": DocumentCreateAsset,
