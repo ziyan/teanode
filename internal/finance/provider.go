@@ -52,6 +52,9 @@ const (
 // IsOwedBalancePositive says which of the two the provider does, so the
 // amount owed on a liability can be told from a credit in the person's
 // favour, such as a refund left on a card.
+//
+// CreditLimitAmount is a card's credit limit where the provider says it
+// (Plaid does, for some institutions), positive, "" when it does not.
 type Account struct {
 	ProviderAccountID     string
 	AccountName           string
@@ -60,9 +63,19 @@ type Account struct {
 	CurrencyCode          string
 	CurrentBalance        string // decimal, "" when unknown
 	AvailableBalance      string // decimal, "" when unknown
+	CreditLimitAmount     string // decimal, "" when unknown
 	IsOwedBalancePositive bool
 	BalanceAt             time.Time
 	ProviderMetadata      json.RawMessage
+}
+
+// IsOwedBalancePositive says whether the accounts of a finance source of
+// this provider report what is owed as a positive balance, as each
+// provider's Account says when it syncs: Plaid does; SimpleFIN and an
+// imported statement, whose institutions write the holder's side, do not.
+// It is for reading a stored balance, which keeps the provider's sign.
+func IsOwedBalancePositive(providerKind ProviderKind) bool {
+	return providerKind == ProviderKindPlaid
 }
 
 // Transaction is one finance transaction as a provider reported it.

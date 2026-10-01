@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../../components/common'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
@@ -5,14 +7,16 @@ import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
 import { FINANCE_ACCOUNTS, FinanceAccount } from './financeApi'
 import { Money, accountLabel, useFinanceWords } from './financeCommon'
+import { FinanceCreditUsageSection } from './financeCreditUsage'
 import { FinanceStatementImportSection } from './financeStatementImport'
 
 // The finance accounts every finance source reports, with their balances
 // in their own currency and, where there is an exchange rate, in the
 // reporting currency. A table: the balances line up down the page, which is
 // the point of looking at them together, and on a phone it scrolls sideways
-// rather than falling apart into cards. Under it, the statement import, for
-// the accounts no provider reaches.
+// rather than falling apart into cards. Above it, the credit cards' usage,
+// which is read from these same balances; under it, the statement import,
+// for the accounts no provider reaches, after which both are read again.
 export function FinanceAccountsSection() {
   const { t } = useTranslation()
   const words = useFinanceWords()
@@ -21,9 +25,11 @@ export function FinanceAccountsSection() {
     [],
   )
   const accounts = data?.FinanceAccounts ?? []
+  const [importCount, setImportCount] = useState(0)
 
   return (
     <>
+      <FinanceCreditUsageSection refreshKey={importCount} />
       <SettingsSection card title={t('finance.accountsTitle')} description={t('finance.accountsHint')}>
         <ErrorMessage error={error} />
         {loading && !data ? <Loading /> : null}
@@ -77,7 +83,12 @@ export function FinanceAccountsSection() {
           </div>
         ) : null}
       </SettingsSection>
-      <FinanceStatementImportSection onImported={() => void reload()} />
+      <FinanceStatementImportSection
+        onImported={() => {
+          setImportCount((count) => count + 1)
+          void reload()
+        }}
+      />
     </>
   )
 }

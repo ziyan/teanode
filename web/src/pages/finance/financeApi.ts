@@ -450,6 +450,48 @@ export const AGENT_ATTACHMENTS_PATH = '/api/v1/agent/attachments'
 
 export const FINANCE_ACCOUNTS = `query { FinanceAccounts { ${ACCOUNT_FIELDS} } }`
 
+// Where the limit a card's usage is measured against comes from: the
+// provider, what is owed plus the credit available, or nowhere.
+export type CreditLimitSource = 'provider' | 'derived' | 'unknown'
+
+// One credit card's owed amount against its credit limit, in its own
+// currency and in the reporting currency. A usage share is a fraction:
+// 0.25 is a quarter of the limit used.
+export type CreditCardUsage = {
+  financeAccountId: string
+  accountName: string
+  accountMask?: string | null
+  institutionName?: string | null
+  currencyCode: string
+  owedAmount?: string | null
+  creditLimitAmount?: string | null
+  creditLimitSource: CreditLimitSource
+  usageShare?: number | null
+  convertedOwedAmount?: string | null
+  convertedCreditLimitAmount?: string | null
+}
+
+// What the credit cards owe against their limits. The totals count only
+// the cards whose limit and balance are known, in the reporting currency;
+// the rest are counted in leftOutCardCount.
+export type CreditUsage = {
+  reportingCurrencyCode?: string | null
+  unconvertedCurrencyCodes: string[]
+  totalOwedAmount: string
+  totalCreditLimitAmount: string
+  usageShare?: number | null
+  leftOutCardCount: number
+  leftOutOwedAmount: string
+  creditCards: CreditCardUsage[]
+}
+
+export const CREDIT_USAGE = `query {
+  CreditUsage { reportingCurrencyCode unconvertedCurrencyCodes totalOwedAmount totalCreditLimitAmount usageShare
+    leftOutCardCount leftOutOwedAmount
+    creditCards { financeAccountId accountName accountMask institutionName currencyCode owedAmount creditLimitAmount
+      creditLimitSource usageShare convertedOwedAmount convertedCreditLimitAmount } }
+}`
+
 // Everything about a finance transaction, the provider's own object too:
 // the details dialog shows it all, and there is no query for one
 // transaction to fetch it with when the dialog opens.

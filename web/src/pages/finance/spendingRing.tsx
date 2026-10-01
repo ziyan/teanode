@@ -4,7 +4,8 @@ import { formatMoney } from '../../components/common'
 // in SVG with the page's own colours. The table under it has every
 // category; the ring keeps the largest few and folds the rest into one
 // slice, since a ring of twenty slivers says nothing a table does not say
-// better.
+// better. Net worth draws what is owned with it, and Accounts the credit
+// cards' usage, a slice a card and one for the credit still available.
 
 // RING_SLICE_COUNT is how many categories keep a slice of their own, and
 // how many colours there are for them.
@@ -106,6 +107,8 @@ export function SpendingRing({
   totalLabel,
   highlightedKey,
   totalAmount,
+  totalText,
+  totalTone,
 }: {
   slices: RingSlice[]
   currency: string
@@ -118,6 +121,11 @@ export function SpendingRing({
   // month's spending, which counts a category whose refunds outweighed its
   // purchases, where no slice can.
   totalAmount?: number
+  // The figure in the middle already written, where it is not money: the
+  // share of a credit limit used. totalTone colours it by the page's
+  // good, warn and bad.
+  totalText?: string
+  totalTone?: 'good' | 'warn' | 'bad'
 }) {
   const total = slices.reduce((sum, slice) => sum + slice.amount, 0)
   if (total <= 0) return null
@@ -152,8 +160,13 @@ export function SpendingRing({
             d={path}
           />
         ))}
-        <text className="spending-ring-total" x={RING_SIZE / 2} y={RING_SIZE / 2 - 2} textAnchor="middle">
-          {formatMoney(totalAmount ?? total, currency)}
+        <text
+          className={totalTone ? `spending-ring-total ${totalTone}` : 'spending-ring-total'}
+          x={RING_SIZE / 2}
+          y={RING_SIZE / 2 - 2}
+          textAnchor="middle"
+        >
+          {totalText ?? formatMoney(totalAmount ?? total, currency)}
         </text>
         <text className="spending-ring-caption" x={RING_SIZE / 2} y={RING_SIZE / 2 + 18} textAnchor="middle">
           {totalLabel}

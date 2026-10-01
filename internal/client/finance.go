@@ -39,10 +39,41 @@ type FinanceAccount struct {
 	AvailableBalance        string     `json:"availableBalance,omitempty"`
 	BalanceAt               *time.Time `json:"balanceAt,omitempty"`
 	IsSignInRequired        bool       `json:"isSignInRequired"`
+	CreditLimitAmount       string     `json:"creditLimitAmount,omitempty"`
 	ReportingCurrencyCode   string     `json:"reportingCurrencyCode,omitempty"`
 	ConvertedCurrentBalance string     `json:"convertedCurrentBalance,omitempty"`
 	CreatedAt               time.Time  `json:"createdAt"`
 	ModifiedAt              time.Time  `json:"modifiedAt"`
+}
+
+// CreditUsage is what is owed on the credit cards against their credit
+// limits, overall in the reporting currency and per card.
+type CreditUsage struct {
+	ReportingCurrencyCode    string             `json:"reportingCurrencyCode,omitempty"`
+	UnconvertedCurrencyCodes []string           `json:"unconvertedCurrencyCodes"`
+	TotalOwedAmount          string             `json:"totalOwedAmount"`
+	TotalCreditLimitAmount   string             `json:"totalCreditLimitAmount"`
+	UsageShare               *float64           `json:"usageShare,omitempty"`
+	LeftOutCardCount         int                `json:"leftOutCardCount"`
+	LeftOutOwedAmount        string             `json:"leftOutOwedAmount"`
+	CreditCards              []*CreditCardUsage `json:"creditCards"`
+}
+
+// CreditCardUsage is one credit card's owed amount against its credit
+// limit, and where the limit comes from (provider, derived or unknown).
+type CreditCardUsage struct {
+	FinanceAccountID           string     `json:"financeAccountId"`
+	AccountName                string     `json:"accountName"`
+	AccountMask                string     `json:"accountMask,omitempty"`
+	InstitutionName            string     `json:"institutionName,omitempty"`
+	CurrencyCode               string     `json:"currencyCode"`
+	OwedAmount                 string     `json:"owedAmount,omitempty"`
+	CreditLimitAmount          string     `json:"creditLimitAmount,omitempty"`
+	CreditLimitSource          string     `json:"creditLimitSource"`
+	UsageShare                 *float64   `json:"usageShare,omitempty"`
+	ConvertedOwedAmount        string     `json:"convertedOwedAmount,omitempty"`
+	ConvertedCreditLimitAmount string     `json:"convertedCreditLimitAmount,omitempty"`
+	BalanceAt                  *time.Time `json:"balanceAt,omitempty"`
 }
 
 // FinanceSource is one login at one institution through one provider.
@@ -470,7 +501,7 @@ type StatementImport struct {
 // The fields each document selects, so a type is read the same way by
 // every document that returns it.
 const (
-	financeAccountFields = `{ id sourceId institutionName providerKind accountName accountMask accountKind currencyCode currentBalance availableBalance balanceAt isSignInRequired reportingCurrencyCode convertedCurrentBalance createdAt modifiedAt }`
+	financeAccountFields = `{ id sourceId institutionName providerKind accountName accountMask accountKind currencyCode currentBalance availableBalance balanceAt isSignInRequired creditLimitAmount reportingCurrencyCode convertedCurrentBalance createdAt modifiedAt }`
 
 	financeSourceFields = `{ id name providerKind institutionId institutionName isEnabled cron lastRunAt nextRunAt lastError isSignInRequired createdAt financeAccounts ` + financeAccountFields + ` }`
 
@@ -506,6 +537,13 @@ const (
 	DocumentFinanceSources = `query { FinanceSources ` + financeSourceFields + ` }`
 
 	DocumentFinanceAccounts = `query ($currencyCode: String) { FinanceAccounts(currencyCode: $currencyCode) ` + financeAccountFields + ` }`
+
+	DocumentCreditUsage = `query ($currencyCode: String) {
+  CreditUsage(currencyCode: $currencyCode) {
+    reportingCurrencyCode unconvertedCurrencyCodes totalOwedAmount totalCreditLimitAmount usageShare leftOutCardCount leftOutOwedAmount
+    creditCards { financeAccountId accountName accountMask institutionName currencyCode owedAmount creditLimitAmount creditLimitSource usageShare convertedOwedAmount convertedCreditLimitAmount balanceAt }
+  }
+}`
 
 	DocumentFinanceTransactions = `query ($from: String, $to: String, $financeAccountId: String, $text: String, $minimumAmount: String, $maximumAmount: String, $providerCategory: String, $spendingCategoryId: String, $isUncategorized: Boolean, $limit: Int, $after: String) {
   FinanceTransactions(from: $from, to: $to, financeAccountId: $financeAccountId, text: $text, minimumAmount: $minimumAmount, maximumAmount: $maximumAmount, providerCategory: $providerCategory, spendingCategoryId: $spendingCategoryId, isUncategorized: $isUncategorized, limit: $limit, after: $after) {
@@ -691,7 +729,7 @@ const (
 // the test that checks each against the schema.
 var FinanceDocuments = map[string]string{
 	"FinanceProviders": DocumentFinanceProviders, "FinanceSources": DocumentFinanceSources,
-	"FinanceAccounts": DocumentFinanceAccounts, "FinanceTransactions": DocumentFinanceTransactions,
+	"FinanceAccounts": DocumentFinanceAccounts, "CreditUsage": DocumentCreditUsage, "FinanceTransactions": DocumentFinanceTransactions,
 	"FinanceTrades":          DocumentFinanceTrades,
 	"FinanceSpendingSummary": DocumentFinanceSpendingSummary, "ExchangeRate": DocumentExchangeRate,
 	"ConvertCurrency": DocumentConvertCurrency, "NetWorth": DocumentNetWorth, "Assets": DocumentAssets,
