@@ -686,7 +686,8 @@ come is the budgets in force for it as they stand today. A budget counts
 each month at the amount it had that month, so one raised in July is six
 months at each amount, and one ended in May is January to April; its
 spending (or income) is that of the months it was in force, and
-`budgetedMonthCount` says how many. `budgetToDateAmount` is the budget for
+`budgetedMonthCount` says how many, `firstBudgetedMonth` and
+`lastBudgetedMonth` which. `budgetToDateAmount` is the budget for
 the days so far: the months that are over whole and the month in progress
 spread over its days (a month's status has it too). The projection
 (`ProjectSpendingCategoryYear`) is each month that is over as it ended, the

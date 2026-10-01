@@ -593,10 +593,12 @@ func TestIncomeBudgetAndSavingSummary(test *testing.T) {
 		if yearStatus.Year != "2026" || yearStatus.Month != "" || len(yearStatus.SpendingCategories) != 1 || len(yearStatus.IncomeCategories) != 1 {
 			test.Fatalf("the year's budgets: %+v", yearStatus)
 		}
-		if row := yearStatus.SpendingCategories[0]; row.BudgetAmount != "1600.0000" || row.BudgetedMonthCount != 4 {
+		if row := yearStatus.SpendingCategories[0]; row.BudgetAmount != "1600.0000" || row.BudgetedMonthCount != 4 ||
+			row.FirstBudgetedMonth != "2026-09" || row.LastBudgetedMonth != "2026-12" {
 			test.Errorf("four months of groceries at 400: %+v", row)
 		}
-		if row := yearStatus.IncomeCategories[0]; row.BudgetAmount != "12000.0000" || row.BudgetedMonthCount != 4 {
+		if row := yearStatus.IncomeCategories[0]; row.BudgetAmount != "12000.0000" || row.BudgetedMonthCount != 4 ||
+			row.FirstBudgetedMonth != "2026-09" || row.LastBudgetedMonth != "2026-12" {
 			test.Errorf("four months of salary at 3000: %+v", row)
 		}
 		yearSummary, err := resolver.SavingSummary(ctx, SavingSummaryArguments{Year: "2026", CurrencyCode: "USD"})

@@ -3,7 +3,15 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { graphql } from '../../api'
-import { FinanceSpendingSection, usualBudgetedMonthCount } from './financeSpending'
+import { monthLabel } from './financeApi'
+import {
+  BudgetedMonths,
+  FinanceSpendingSection,
+  budgetStatusYearHint,
+  budgetedMonthsNote,
+  usualBudgetedMonths,
+} from './financeSpending'
+import { monthStartLabel, yearEndLabel } from './spendingYear'
 
 vi.mock('../../api', () => ({ graphql: vi.fn() }))
 vi.mock('../../i18n/i18n', () => ({
@@ -21,6 +29,10 @@ const historyMonths = [
   { cashFlowMonth: '2030-08', incomeAmount: '2500.0000', spendingAmount: '900.0000', netAmount: '1600.0000' },
   { cashFlowMonth: '2031-02', incomeAmount: '2500.0000', spendingAmount: '1000.0000', netAmount: '1500.0000' },
 ]
+
+// The year's spending budget rows a test answers BudgetStatus with: none
+// unless a test sets some.
+let spendingBudgetRows: unknown[] = []
 
 // What each question is answered with: cash flow in a few months and
 // nothing budgeted, so the budget panels draw their empty states.
@@ -52,7 +64,7 @@ function answer(query: string, variables?: Record<string, string>): unknown {
         asOf: '',
         dayOfMonth: 14,
         daysInMonth: 31,
-        spendingCategories: [],
+        spendingCategories: spendingBudgetRows,
         incomeCategories: [],
       },
     }
@@ -105,6 +117,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  spendingBudgetRows = []
   execute.mockReset()
   vi.useRealTimers()
   vi.unstubAllGlobals()
@@ -185,12 +198,13 @@ it('does not step past this year', async () => {
 })
 
 // The chart of years runs from the first year with money in or out to this
-// one, this one marked as so far, and choosing a year group shows it.
+// one, this one marked as so far and the first, which starts in March,
+// marked with its month, and choosing a year group shows it.
 it('draws a group a year and chooses the year clicked', async () => {
   renderAt('/finance/spending?year=2031')
-  const groups = await screen.findAllByRole('button', { name: /^(2028|2029|2030|finance\.yearSoFar)/ })
+  const groups = await screen.findAllByRole('button', { name: /^(finance\.yearFrom|2029|2030|finance\.yearSoFar)/ })
   expect(groups.map((group) => group.getAttribute('aria-label')?.split(': ')[0])).toEqual([
-    '2028',
+    `finance.yearFrom {"year":"2028","month":"${monthLabel('2028-03')}"}`,
     '2029',
     '2030',
     'finance.yearSoFar {"year":"2031"}',
@@ -199,6 +213,22 @@ it('draws a group a year and chooses the year clicked', async () => {
   fireEvent.click(groups[2])
   await waitFor(() => expect(search()).toBe('?year=2030'))
   await waitFor(() => expect(variablesOf('BudgetStatus')).toContainEqual({ year: '2030' }))
+})
+
+// A first year whose history starts in March is not a whole year: chosen,
+// its totals say they run from the first of March to the end of December.
+it('says a partial first year runs from its first month', async () => {
+  renderAt('/finance/spending?year=2028')
+  const range = `finance.yearRange {"from":"${monthStartLabel('2028-03')}","to":"${yearEndLabel('2028')}"}`
+  expect(await screen.findByText(range)).toBeTruthy()
+  expect(
+    screen.getByText(`finance.spentInRange {"from":"${monthStartLabel('2028-03')}","to":"${yearEndLabel('2028')}"}`),
+  ).toBeTruthy()
+  // A whole year past says neither.
+  cleanup()
+  renderAt('/finance/spending?year=2030')
+  expect(await screen.findByText('finance.spentInYear {"year":"2030"}')).toBeTruthy()
+  expect(screen.queryByText(/finance\.yearRange/)).toBeNull()
 })
 
 // Month or Year and the period sit in the one row above the panels in
@@ -220,12 +250,89 @@ it('keeps Month or Year in the same row above the panels in both modes', async (
   await waitFor(() => expect(search()).toBe('?month=2031-04'))
 })
 
-// The months most budgets covered are said once; a row says its own only
-// when it differs.
-it('finds how many months most budgets were in force', () => {
-  const rows = (...counts: number[]) => counts.map((budgetedMonthCount) => ({ budgetedMonthCount }))
-  expect(usualBudgetedMonthCount(rows(4, 4, 12))).toBe(4)
-  expect(usualBudgetedMonthCount(rows(12, 12, 3))).toBe(12)
-  expect(usualBudgetedMonthCount(rows(4, 6))).toBe(6)
-  expect(usualBudgetedMonthCount([])).toBe(12)
+const budgetedMonths = (budgetedMonthCount: number, firstBudgetedMonth: string, lastBudgetedMonth: string) => ({
+  budgetedMonthCount,
+  firstBudgetedMonth,
+  lastBudgetedMonth,
+})
+const translate = ((key: string, values?: Record<string, unknown>) =>
+  values ? `${key} ${JSON.stringify(values)}` : key) as Parameters<typeof budgetStatusYearHint>[0]
+
+// The months most budgets covered are named once; a row names its own
+// only when they differ.
+it('finds the months most budgets were in force', () => {
+  const fromSeptember = budgetedMonths(4, '2030-09', '2030-12')
+  const all: BudgetedMonths = budgetedMonths(12, '2030-01', '2030-12')
+  expect(usualBudgetedMonths([fromSeptember, fromSeptember, all])).toEqual(fromSeptember)
+  expect(usualBudgetedMonths([all, all, fromSeptember]).budgetedMonthCount).toBe(12)
+  // Four months from September and four from March are not the same months.
+  const fromMarch = budgetedMonths(4, '2030-03', '2030-06')
+  expect(usualBudgetedMonths([fromSeptember, fromMarch, fromMarch])).toEqual(fromMarch)
+  // Of two as common, the more months.
+  expect(usualBudgetedMonths([fromSeptember, budgetedMonths(6, '2030-07', '2030-12')]).budgetedMonthCount).toBe(6)
+  expect(usualBudgetedMonths([]).budgetedMonthCount).toBe(12)
+})
+
+it('names the months most budgets counted in the description, and a row its own when they differ', () => {
+  const fromSeptember = budgetedMonths(4, '2030-09', '2030-12')
+  const september = monthLabel('2030-09')
+  const december = monthLabel('2030-12')
+  expect(budgetStatusYearHint(translate, '2030', true, fromSeptember)).toBe(
+    `finance.budgetStatusYearMonthsHintPast {"year":"2030","count":4,"from":"${september}","to":"${december}"}`,
+  )
+  expect(budgetStatusYearHint(translate, '2031', false, budgetedMonths(1, '2031-05', '2031-05'))).toBe(
+    `finance.budgetStatusYearMonthHint {"year":"2031","month":"${monthLabel('2031-05')}"}`,
+  )
+  // A whole year is counted from the first of January.
+  expect(budgetStatusYearHint(translate, '2030', true, budgetedMonths(12, '2030-01', '2030-12'))).toBe(
+    'finance.budgetStatusYearHintPast {"year":"2030"}',
+  )
+  expect(budgetedMonthsNote(translate, fromSeptember, fromSeptember)).toBeNull()
+  expect(budgetedMonthsNote(translate, budgetedMonths(2, '2030-11', '2030-12'), fromSeptember)).toBe(
+    `finance.budgetedMonths {"count":2,"from":"${monthLabel('2030-11')}","to":"${december}"}`,
+  )
+  expect(budgetedMonthsNote(translate, budgetedMonths(1, '2030-10', '2030-10'), fromSeptember)).toBe(
+    `finance.budgetedOneMonth {"month":"${monthLabel('2030-10')}"}`,
+  )
+  expect(budgetedMonthsNote(translate, budgetedMonths(12, '2030-01', '2030-12'), fromSeptember)).toBe(
+    'finance.budgetedAllMonths',
+  )
+})
+
+// The year's budgets panel says over which months it counts, the ones
+// most of its budgets were in force, not from the first of January.
+it('describes the year of budgets by the months they counted', async () => {
+  const row = (spendingCategoryId: string, budgetedMonthCount: number, firstBudgetedMonth: string) => ({
+    spendingCategoryId,
+    spendingCategoryName: `Invented ${spendingCategoryId}`,
+    budgetAmount: '400.0000',
+    currencyCode: 'USD',
+    budgetToDateAmount: '400.0000',
+    budgetedMonthCount,
+    firstBudgetedMonth,
+    lastBudgetedMonth: '2030-12',
+    spendingAmount: '300.0000',
+    spendingBySameDayLastMonthAmount: '0.0000',
+    fixedChargesDueAmount: '0.0000',
+    expectedRepeatCharges: [],
+    projectedAmount: '300.0000',
+    budgetPace: 'under',
+    unconvertedSpending: [],
+  })
+  spendingBudgetRows = [
+    row('category-one', 4, '2030-09'),
+    row('category-two', 4, '2030-09'),
+    row('category-three', 2, '2030-11'),
+  ]
+  renderAt('/finance/spending?year=2030')
+  const september = monthLabel('2030-09')
+  const december = monthLabel('2030-12')
+  expect(
+    await screen.findByText(
+      `finance.budgetStatusYearMonthsHintPast {"year":"2030","count":4,"from":"${september}","to":"${december}"}`,
+    ),
+  ).toBeTruthy()
+  expect(screen.getAllByText(/^finance\.budgetedMonths /).map((note) => note.textContent)).toEqual([
+    `finance.budgetedMonths {"count":2,"from":"${monthLabel('2030-11')}","to":"${december}"}`,
+  ])
 })

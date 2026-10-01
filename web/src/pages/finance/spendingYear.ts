@@ -80,10 +80,36 @@ export function monthOptions(firstMonth: string | null, currentMonth: string, ch
   return options
 }
 
+// partialYearStartMonth is the month a year's history starts in, when
+// that is not January: the first year's, when the first month with any
+// income or spending (firstCashFlowMonth) falls partway through it. Null
+// for every other year, which the history covers from January.
+export function partialYearStartMonth(year: string, firstMonth: string | null): string | null {
+  if (!firstMonth || firstMonth.slice(0, 4) !== year || firstMonth.slice(5, 7) === '01') return null
+  return firstMonth
+}
+
+// dayLabel is a day, "2006-01-02", the way the reader writes a day without
+// its year, for "Jan 1 to today".
+function dayLabel(day: string): string {
+  const parsed = new Date(`${day}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) return day
+  return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
 // yearStartLabel is the first of January the way the reader writes a day
 // without its year, for "Jan 1 to today".
 export function yearStartLabel(year: string): string {
-  const day = new Date(`${year}-01-01T00:00:00`)
-  if (Number.isNaN(day.getTime())) return `${year}-01-01`
-  return day.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return dayLabel(`${year}-01-01`)
+}
+
+// monthStartLabel is the first day of a month, "2006-01", the same way:
+// where a year that starts partway is counted from.
+export function monthStartLabel(month: string): string {
+  return dayLabel(`${month.slice(0, 7)}-01`)
+}
+
+// yearEndLabel is the thirty-first of December the same way.
+export function yearEndLabel(year: string): string {
+  return dayLabel(`${year}-12-31`)
 }

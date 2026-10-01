@@ -16,6 +16,9 @@ import {
   firstCashFlowMonth,
   historyRange,
   monthOptions,
+  monthStartLabel,
+  partialYearStartMonth,
+  yearEndLabel,
   yearOptions,
   yearStartLabel,
 } from './spendingYear'
@@ -147,7 +150,11 @@ export function SpendingPeriodPicker({
 // The cash flow of every year there is, a group a year: income and spending
 // side by side and what was left as a line, this year marked as the year
 // to date. Choosing a year shows it in the rest of the section, and the
-// line under the chart is the chosen year's three figures.
+// line under the chart is the chosen year's three figures. The first year
+// usually starts partway, at the first month with money in or out, and is
+// labelled with that month the way this year is with "so far": months of
+// spending against a few weeks of income would otherwise read as a year
+// spent at a loss.
 export function SpendingByYearPanel({
   year,
   currentMonth,
@@ -160,16 +167,35 @@ export function SpendingByYearPanel({
   onSelectYear: (year: string) => void
 }) {
   const { t } = useTranslation()
-  const { flow, error, loading, years } = history
+  const { flow, error, loading, years, firstMonth } = history
   const currency = flow?.reportingCurrencyCode || 'USD'
   const currentYear = currentMonth.slice(0, 4)
   const isCurrent = year === currentYear
   const chosen = years.find((candidate) => candidate.year === year)
   const hasCashFlow = years.some((candidate) => candidate.incomeAmount !== 0 || candidate.spendingAmount !== 0)
-  const yearLabel = (key: string) => (key === currentYear ? t('finance.yearSoFar', { year: key }) : key)
+  const yearLabel = (key: string) => {
+    const startMonth = partialYearStartMonth(key, firstMonth)
+    if (startMonth) {
+      const values = { year: key, month: monthLabel(startMonth) }
+      return key === currentYear ? t('finance.yearFromSoFar', values) : t('finance.yearFrom', values)
+    }
+    return key === currentYear ? t('finance.yearSoFar', { year: key }) : key
+  }
+  // The chosen year's days, when they are not the whole of it: from the
+  // first of January, or of the month its history starts in, to today or
+  // to the end of the year.
+  const chosenStartMonth = partialYearStartMonth(year, firstMonth)
+  const from = chosenStartMonth ? monthStartLabel(chosenStartMonth) : yearStartLabel(year)
+  const range = isCurrent
+    ? t('finance.yearToDate', { from })
+    : chosenStartMonth
+      ? t('finance.yearRange', { from, to: yearEndLabel(year) })
+      : null
   const caption = isCurrent
-    ? t('finance.spentYearToDate', { from: yearStartLabel(year) })
-    : t('finance.spentInYear', { year })
+    ? t('finance.spentYearToDate', { from })
+    : chosenStartMonth
+      ? t('finance.spentInRange', { from, to: yearEndLabel(year) })
+      : t('finance.spentInYear', { year })
   return (
     <SettingsSection card title={t('finance.cashFlowByYearTitle')} description={t('finance.cashFlowByYearHint')}>
       <ErrorMessage error={error} />
@@ -213,7 +239,7 @@ export function SpendingByYearPanel({
       ) : null}
       {hasCashFlow ? (
         <p className="muted finance-month-flow">
-          {isCurrent ? <span>{t('finance.yearToDate', { from: yearStartLabel(year) })}</span> : null}
+          {range ? <span>{range}</span> : null}
           <span>
             {t('finance.income')} <strong>{formatMoney(chosen?.incomeAmount ?? 0, currency)}</strong>
           </span>

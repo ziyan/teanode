@@ -274,6 +274,12 @@ func TestYearBudgetStatusAndSavingSummary(t *testing.T) {
 	if groceries.BudgetedMonthCount != 12 || dining.BudgetedMonthCount != 4 || groceries.BudgetPace != models.BudgetPaceUnder {
 		t.Errorf("twelve budgeted months of groceries, four of dining: %+v %+v", groceries, dining)
 	}
+	// Dining's budget ended at zero in May: January to April.
+	if groceries.FirstBudgetedMonth != "2026-01" || groceries.LastBudgetedMonth != "2026-12" ||
+		dining.FirstBudgetedMonth != "2026-01" || dining.LastBudgetedMonth != "2026-04" {
+		t.Errorf("groceries budgeted %s to %s, dining %s to %s", groceries.FirstBudgetedMonth, groceries.LastBudgetedMonth,
+			dining.FirstBudgetedMonth, dining.LastBudgetedMonth)
+	}
 	if len(status.IncomeCategories) != 1 {
 		t.Fatalf("the pay is listed apart: %+v", status.IncomeCategories)
 	}

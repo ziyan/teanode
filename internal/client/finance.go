@@ -417,6 +417,8 @@ type SpendingCategoryBudgetStatus struct {
 	CurrencyCode                     string                  `json:"currencyCode"`
 	BudgetToDateAmount               string                  `json:"budgetToDateAmount"`
 	BudgetedMonthCount               int                     `json:"budgetedMonthCount"`
+	FirstBudgetedMonth               string                  `json:"firstBudgetedMonth"`
+	LastBudgetedMonth                string                  `json:"lastBudgetedMonth"`
 	SpendingAmount                   string                  `json:"spendingAmount"`
 	SpendingBySameDayLastMonthAmount string                  `json:"spendingBySameDayLastMonthAmount"`
 	FixedChargesDueAmount            string                  `json:"fixedChargesDueAmount"`
@@ -443,6 +445,8 @@ type IncomeCategoryBudgetStatus struct {
 	BudgetAmount                   string            `json:"budgetAmount"`
 	CurrencyCode                   string            `json:"currencyCode"`
 	BudgetedMonthCount             int               `json:"budgetedMonthCount"`
+	FirstBudgetedMonth             string            `json:"firstBudgetedMonth"`
+	LastBudgetedMonth              string            `json:"lastBudgetedMonth"`
 	IncomeAmount                   string            `json:"incomeAmount"`
 	IncomeBySameDayLastMonthAmount string            `json:"incomeBySameDayLastMonthAmount"`
 	ExpectedByTodayAmount          string            `json:"expectedByTodayAmount"`
@@ -698,8 +702,8 @@ const (
 	DocumentBudgetStatus = `query ($month: String, $year: String) {
   BudgetStatus(month: $month, year: $year) {
     month asOf dayOfMonth daysInMonth year monthsElapsedCount dayOfYear daysInYear
-    spendingCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode budgetToDateAmount budgetedMonthCount spendingAmount spendingBySameDayLastMonthAmount fixedChargesDueAmount expectedRepeatCharges { merchantName expectedAmount currencyCode } projectedAmount budgetPace unconvertedSpending { currencyCode amount } }
-    incomeCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode budgetedMonthCount incomeAmount incomeBySameDayLastMonthAmount expectedByTodayAmount projectedAmount incomePace unconvertedIncome { currencyCode amount } }
+    spendingCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode budgetToDateAmount budgetedMonthCount firstBudgetedMonth lastBudgetedMonth spendingAmount spendingBySameDayLastMonthAmount fixedChargesDueAmount expectedRepeatCharges { merchantName expectedAmount currencyCode } projectedAmount budgetPace unconvertedSpending { currencyCode amount } }
+    incomeCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode budgetedMonthCount firstBudgetedMonth lastBudgetedMonth incomeAmount incomeBySameDayLastMonthAmount expectedByTodayAmount projectedAmount incomePace unconvertedIncome { currencyCode amount } }
   }
 }`
 

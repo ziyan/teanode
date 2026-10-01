@@ -325,18 +325,13 @@ function BudgetStatusPanel({ period }: { period: SpendingPeriod }) {
   const isPast = isYear ? period.year < personMonth().slice(0, 4) : period.month < personMonth()
   // The groups are headed only once there is income to tell apart.
   const hasBoth = rows.length > 0 && incomeRows.length > 0
-  // How many months most of a year's budgets were in force, said once in
-  // the description; a row says its own only when it differs.
-  const usualMonthCount = isYear ? usualBudgetedMonthCount([...rows, ...incomeRows]) : 12
-  const yearHint = isPast
-    ? t('finance.budgetStatusYearHintPast', { year: period.year })
-    : t('finance.budgetStatusYearHint', { year: period.year, from: yearStartLabel(period.year) })
+  // The months most of a year's budgets were in force, named once in the
+  // description; a row names its own only when they differ.
+  const usualMonths = usualBudgetedMonths(isYear ? [...rows, ...incomeRows] : [])
   const description = !status
     ? undefined
     : isYear
-      ? usualMonthCount < 12
-        ? `${yearHint} ${t('finance.budgetedMonthsMost', { count: usualMonthCount })}`
-        : yearHint
+      ? budgetStatusYearHint(t, period.year, isPast, usualMonths)
       : isPast
         ? t('finance.budgetStatusHintPast', { month: monthLabel(period.month, 'long') })
         : t('finance.budgetStatusHint', { day: status.dayOfMonth, days: status.daysInMonth })
@@ -361,7 +356,7 @@ function BudgetStatusPanel({ period }: { period: SpendingPeriod }) {
                 row={row}
                 isPast={isPast}
                 isYear={isYear}
-                usualMonthCount={usualMonthCount}
+                usualMonths={usualMonths}
               />
             ))}
           </div>
@@ -377,7 +372,7 @@ function BudgetStatusPanel({ period }: { period: SpendingPeriod }) {
                 row={row}
                 isPast={isPast}
                 isYear={isYear}
-                usualMonthCount={usualMonthCount}
+                usualMonths={usualMonths}
               />
             ))}
           </div>
@@ -396,12 +391,12 @@ function IncomeStatusRow({
   row,
   isPast,
   isYear,
-  usualMonthCount,
+  usualMonths,
 }: {
   row: IncomeCategoryBudgetStatus
   isPast: boolean
   isYear: boolean
-  usualMonthCount: number
+  usualMonths: BudgetedMonths
 }) {
   const { t } = useTranslation()
   const words = useFinanceWords()
@@ -429,9 +424,7 @@ function IncomeStatusRow({
         forecast={expected > 0 && !isPast ? projected / expected : null}
         forecastLabel={isPast ? undefined : headingFor}
       />
-      {isYear ? (
-        <BudgetedMonthsNote budgetedMonthCount={row.budgetedMonthCount} usualMonthCount={usualMonthCount} />
-      ) : null}
+      {isYear ? <BudgetedMonthsNote months={row} usualMonths={usualMonths} /> : null}
       {isPast ? null : isYear ? (
         <ForecastDetail
           name={categoryName(row.spendingCategoryName)}
@@ -478,44 +471,82 @@ function IncomeStatusRow({
   )
 }
 
-// usualBudgetedMonthCount is how many months of a year most of its
-// budgets were in force, the larger count when two are as common: twelve
-// when every budget covered the whole year.
-export function usualBudgetedMonthCount(rows: { budgetedMonthCount: number }[]): number {
-  const rowCountByMonthCount = new Map<number, number>()
+// BudgetedMonths is the months of a year a budget was in force: how
+// many, and the first and last of them, "2006-01".
+export type BudgetedMonths = { budgetedMonthCount: number; firstBudgetedMonth: string; lastBudgetedMonth: string }
+
+const ALL_MONTHS: BudgetedMonths = { budgetedMonthCount: 12, firstBudgetedMonth: '', lastBudgetedMonth: '' }
+
+const isSameMonths = (left: BudgetedMonths, right: BudgetedMonths) =>
+  left.budgetedMonthCount === right.budgetedMonthCount &&
+  (left.budgetedMonthCount >= 12 ||
+    (left.firstBudgetedMonth === right.firstBudgetedMonth && left.lastBudgetedMonth === right.lastBudgetedMonth))
+
+// usualBudgetedMonths is the months of a year most of its budgets were in
+// force: of two as common, the more months, then the earlier start. All
+// twelve when every budget covered the whole year, or there is none.
+export function usualBudgetedMonths(rows: BudgetedMonths[]): BudgetedMonths {
+  const candidates: { months: BudgetedMonths; rowCount: number }[] = []
   for (const row of rows) {
-    rowCountByMonthCount.set(row.budgetedMonthCount, (rowCountByMonthCount.get(row.budgetedMonthCount) ?? 0) + 1)
+    const found = candidates.find((candidate) => isSameMonths(candidate.months, row))
+    if (found) found.rowCount++
+    else candidates.push({ months: row, rowCount: 1 })
   }
-  let usual = 12
-  let usualRowCount = 0
-  for (const [monthCount, rowCount] of rowCountByMonthCount) {
-    if (rowCount > usualRowCount || (rowCount === usualRowCount && monthCount > usual)) {
-      usual = monthCount
-      usualRowCount = rowCount
-    }
+  let usual: { months: BudgetedMonths; rowCount: number } = { months: ALL_MONTHS, rowCount: 0 }
+  for (const candidate of candidates) {
+    const isMore =
+      candidate.rowCount > usual.rowCount ||
+      (candidate.rowCount === usual.rowCount &&
+        (candidate.months.budgetedMonthCount > usual.months.budgetedMonthCount ||
+          (candidate.months.budgetedMonthCount === usual.months.budgetedMonthCount &&
+            candidate.months.firstBudgetedMonth < usual.months.firstBudgetedMonth)))
+    if (isMore) usual = candidate
   }
-  return usual
+  return usual.months.budgetedMonthCount >= 12 ? ALL_MONTHS : usual.months
 }
 
-// BudgetedMonthsNote says a year's budget was in force a different number
-// of months from most of the others, which the panel's description names,
-// so its amount and spending are of its own months.
-function BudgetedMonthsNote({
-  budgetedMonthCount,
-  usualMonthCount,
-}: {
-  budgetedMonthCount: number
-  usualMonthCount: number
-}) {
+type Translate = ReturnType<typeof useTranslation>['t']
+
+// budgetStatusYearHint is the year's budgets' description: over the whole
+// year, or over the months most budgets were in force when those are
+// fewer, named, as the year's saving names its months.
+export function budgetStatusYearHint(t: Translate, year: string, isPast: boolean, usualMonths: BudgetedMonths): string {
+  if (usualMonths.budgetedMonthCount >= 12 || !usualMonths.firstBudgetedMonth) {
+    return isPast
+      ? t('finance.budgetStatusYearHintPast', { year })
+      : t('finance.budgetStatusYearHint', { year, from: yearStartLabel(year) })
+  }
+  const from = monthLabel(usualMonths.firstBudgetedMonth)
+  if (usualMonths.budgetedMonthCount === 1) {
+    return isPast
+      ? t('finance.budgetStatusYearMonthHintPast', { year, month: from })
+      : t('finance.budgetStatusYearMonthHint', { year, month: from })
+  }
+  const values = { year, count: usualMonths.budgetedMonthCount, from, to: monthLabel(usualMonths.lastBudgetedMonth) }
+  return isPast ? t('finance.budgetStatusYearMonthsHintPast', values) : t('finance.budgetStatusYearMonthsHint', values)
+}
+
+// budgetedMonthsNote is what a year's budget row says of its months when
+// they are not the ones the panel's description names, so its amount and
+// spending are read as of its own months; null when they are.
+export function budgetedMonthsNote(t: Translate, months: BudgetedMonths, usualMonths: BudgetedMonths): string | null {
+  if (isSameMonths(months, usualMonths)) return null
+  if (months.budgetedMonthCount >= 12) return t('finance.budgetedAllMonths')
+  if (!months.firstBudgetedMonth) return t('finance.budgetedMonthCount', { count: months.budgetedMonthCount })
+  const from = monthLabel(months.firstBudgetedMonth)
+  if (months.budgetedMonthCount === 1) return t('finance.budgetedOneMonth', { month: from })
+  return t('finance.budgetedMonths', {
+    count: months.budgetedMonthCount,
+    from,
+    to: monthLabel(months.lastBudgetedMonth),
+  })
+}
+
+function BudgetedMonthsNote({ months, usualMonths }: { months: BudgetedMonths; usualMonths: BudgetedMonths }) {
   const { t } = useTranslation()
-  if (budgetedMonthCount === usualMonthCount) return null
-  return (
-    <div className="muted finance-budget-row-detail">
-      {budgetedMonthCount >= 12
-        ? t('finance.budgetedAllMonths')
-        : t('finance.budgetedMonths', { count: budgetedMonthCount })}
-    </div>
-  )
+  const note = budgetedMonthsNote(t, months, usualMonths)
+  if (!note) return null
+  return <div className="muted finance-budget-row-detail">{note}</div>
 }
 
 // BudgetStatusRow is a spending budget: what was spent against the
@@ -528,12 +559,12 @@ function BudgetStatusRow({
   row,
   isPast,
   isYear,
-  usualMonthCount,
+  usualMonths,
 }: {
   row: SpendingCategoryBudgetStatus
   isPast: boolean
   isYear: boolean
-  usualMonthCount: number
+  usualMonths: BudgetedMonths
 }) {
   const { t } = useTranslation()
   const words = useFinanceWords()
@@ -567,9 +598,7 @@ function BudgetStatusRow({
         forecastLabel={isPast ? undefined : t('finance.projected', { amount: money(projected) })}
         overTone={row.budgetPace === 'at_risk' ? 'bad' : undefined}
       />
-      {isYear ? (
-        <BudgetedMonthsNote budgetedMonthCount={row.budgetedMonthCount} usualMonthCount={usualMonthCount} />
-      ) : null}
+      {isYear ? <BudgetedMonthsNote months={row} usualMonths={usualMonths} /> : null}
       {isPast ? null : isYear ? (
         <ForecastDetail
           name={categoryName(row.spendingCategoryName)}

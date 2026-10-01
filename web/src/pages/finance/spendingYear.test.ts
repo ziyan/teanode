@@ -6,6 +6,7 @@ import {
   firstCashFlowMonth,
   historyRange,
   monthOptions,
+  partialYearStartMonth,
   yearCashFlowTotals,
   yearOptions,
 } from './spendingYear'
@@ -72,4 +73,13 @@ it('offers the months back to the first with cash flow, or a year of them withou
   const yearOfMonths = monthOptions(null, '2031-05', '2031-05')
   expect(yearOfMonths).toHaveLength(12)
   expect(yearOfMonths[11]).toBe('2030-06')
+})
+
+// Only the year the history starts in, and only when it starts after
+// January, is a partial year.
+it('finds the month a partial first year starts in', () => {
+  expect(partialYearStartMonth('2028', '2028-08')).toBe('2028-08')
+  expect(partialYearStartMonth('2028', '2028-01')).toBeNull()
+  expect(partialYearStartMonth('2029', '2028-08')).toBeNull()
+  expect(partialYearStartMonth('2028', null)).toBeNull()
 })

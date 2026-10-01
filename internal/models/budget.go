@@ -314,6 +314,12 @@ type SpendingCategoryBudgetStatus struct {
 	// this spending category, which BudgetAmount adds up.
 	BudgetedMonthCount int `json:"budgetedMonthCount"`
 
+	// FirstBudgetedMonth and LastBudgetedMonth, "2006-01", are the first
+	// and last of those months: the month itself for a month. A year's
+	// budgeted months need not run unbroken between them.
+	FirstBudgetedMonth string `json:"firstBudgetedMonth"`
+	LastBudgetedMonth  string `json:"lastBudgetedMonth"`
+
 	// SpendingAmount is the month's spending so far, and
 	// SpendingBySameDayLastMonthAmount last month's by the same day. For a
 	// year, SpendingAmount is the spending of the months that had this
@@ -379,6 +385,11 @@ type IncomeCategoryBudgetStatus struct {
 	// BudgetedMonthCount is how many months the budget was in force: one
 	// for a month, and for a year the months of it BudgetAmount adds up.
 	BudgetedMonthCount int `json:"budgetedMonthCount"`
+
+	// FirstBudgetedMonth and LastBudgetedMonth are as a
+	// SpendingCategoryBudgetStatus's: the first and last of those months.
+	FirstBudgetedMonth string `json:"firstBudgetedMonth"`
+	LastBudgetedMonth  string `json:"lastBudgetedMonth"`
 
 	// IncomeAmount is what came in this month so far, and
 	// IncomeBySameDayLastMonthAmount what came in last month by the same

@@ -122,9 +122,11 @@ export type SpendingCategoryBudgetStatus = {
   currencyCode: string
   // The part of the budget for the days so far, and how many months it was
   // in force: one for a month, and for a year the months that had it,
-  // which budgetAmount adds up.
+  // which budgetAmount adds up, the first and last of them "2006-01".
   budgetToDateAmount: string
   budgetedMonthCount: number
+  firstBudgetedMonth: string
+  lastBudgetedMonth: string
   spendingAmount: string
   spendingBySameDayLastMonthAmount: string
   fixedChargesDueAmount: string
@@ -149,6 +151,8 @@ export type IncomeCategoryBudgetStatus = {
   budgetAmount: string
   currencyCode: string
   budgetedMonthCount: number
+  firstBudgetedMonth: string
+  lastBudgetedMonth: string
   incomeAmount: string
   incomeBySameDayLastMonthAmount: string
   expectedByTodayAmount: string
@@ -635,12 +639,12 @@ export const SPENDING_BY_DAY = `query ($month: String, $compareMonth: String) {
 export const BUDGET_STATUS = `query ($month: String, $year: String) {
   BudgetStatus(month: $month, year: $year) { month asOf dayOfMonth daysInMonth year monthsElapsedCount dayOfYear daysInYear
     spendingCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode budgetToDateAmount
-      budgetedMonthCount spendingAmount
+      budgetedMonthCount firstBudgetedMonth lastBudgetedMonth spendingAmount
       spendingBySameDayLastMonthAmount fixedChargesDueAmount projectedAmount budgetPace
       expectedRepeatCharges { merchantName expectedAmount currencyCode }
       unconvertedSpending { currencyCode amount } }
-    incomeCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode budgetedMonthCount incomeAmount
-      incomeBySameDayLastMonthAmount expectedByTodayAmount projectedAmount incomePace
+    incomeCategories { spendingCategoryId spendingCategoryName budgetAmount currencyCode budgetedMonthCount
+      firstBudgetedMonth lastBudgetedMonth incomeAmount incomeBySameDayLastMonthAmount expectedByTodayAmount projectedAmount incomePace
       unconvertedIncome { currencyCode amount } } }
 }`
 

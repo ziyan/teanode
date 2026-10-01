@@ -157,6 +157,7 @@ func BudgetStatus(ctx context.Context, tx db.Transaction, fetcher *rates.Fetcher
 		row := &models.SpendingCategoryBudgetStatus{
 			SpendingCategoryID: budget.SpendingCategoryID, SpendingCategoryName: nameById[budget.SpendingCategoryID],
 			BudgetAmount: finance.FormatAmount(budgetAmount), CurrencyCode: budget.CurrencyCode, BudgetedMonthCount: 1,
+			FirstBudgetedMonth: month, LastBudgetedMonth: month,
 			BudgetToDateAmount: finance.FormatAmount(new(big.Rat).Mul(budgetAmount, big.NewRat(int64(budgetStatus.DayOfMonth), int64(budgetStatus.DaysInMonth)))),
 		}
 		unconverted := map[string]*big.Rat{}
@@ -287,6 +288,7 @@ func incomeCategoryBudgetStatus(converter *rates.Converter, budgetStatus *models
 	})
 	return &models.IncomeCategoryBudgetStatus{
 		SpendingCategoryID: budget.SpendingCategoryID, BudgetAmount: finance.FormatAmount(budgetAmount), CurrencyCode: budget.CurrencyCode, BudgetedMonthCount: 1,
+		FirstBudgetedMonth: budgetStatus.Month, LastBudgetedMonth: budgetStatus.Month,
 		IncomeAmount: finance.FormatAmount(incomeAmount), IncomeBySameDayLastMonthAmount: finance.FormatAmount(lastMonthIncome),
 		ExpectedByTodayAmount: finance.FormatAmount(projection.ExpectedByTodayAmount),
 		ProjectedAmount:       finance.FormatAmount(projection.ProjectedAmount), IncomePace: projection.IncomePace,

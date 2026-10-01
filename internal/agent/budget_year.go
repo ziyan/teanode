@@ -74,6 +74,7 @@ func (self *budgetYear) phaseOf(monthNumber int) BudgetMonthPhase {
 // budget's currency that month: the month's own status row once it has
 // begun, its budget alone for a month to come.
 type budgetYearMonth struct {
+	month            string
 	budgetMonthPhase BudgetMonthPhase
 	currencyCode     string
 	convertOn        string
@@ -125,7 +126,7 @@ func YearBudgetStatus(ctx context.Context, tx db.Transaction, fetcher *rates.Fet
 			}
 			for _, budget := range budgets {
 				monthsByCategory[budget.SpendingCategoryID] = append(monthsByCategory[budget.SpendingCategoryID], &budgetYearMonth{
-					budgetMonthPhase: phase, currencyCode: budget.CurrencyCode, convertOn: asOf, budgetAmount: budget.MonthlyAmount,
+					month: month, budgetMonthPhase: phase, currencyCode: budget.CurrencyCode, convertOn: asOf, budgetAmount: budget.MonthlyAmount,
 				})
 			}
 			continue
@@ -136,12 +137,12 @@ func YearBudgetStatus(ctx context.Context, tx db.Transaction, fetcher *rates.Fet
 		}
 		for _, row := range monthStatus.SpendingCategories {
 			monthsByCategory[row.SpendingCategoryID] = append(monthsByCategory[row.SpendingCategoryID], &budgetYearMonth{
-				budgetMonthPhase: phase, currencyCode: row.CurrencyCode, convertOn: monthStatus.AsOf, budgetAmount: row.BudgetAmount, spendingRow: row,
+				month: month, budgetMonthPhase: phase, currencyCode: row.CurrencyCode, convertOn: monthStatus.AsOf, budgetAmount: row.BudgetAmount, spendingRow: row,
 			})
 		}
 		for _, row := range monthStatus.IncomeCategories {
 			monthsByCategory[row.SpendingCategoryID] = append(monthsByCategory[row.SpendingCategoryID], &budgetYearMonth{
-				budgetMonthPhase: phase, currencyCode: row.CurrencyCode, convertOn: monthStatus.AsOf, budgetAmount: row.BudgetAmount, incomeRow: row,
+				month: month, budgetMonthPhase: phase, currencyCode: row.CurrencyCode, convertOn: monthStatus.AsOf, budgetAmount: row.BudgetAmount, incomeRow: row,
 			})
 		}
 	}
@@ -190,6 +191,22 @@ func yearCurrencyOf(months []*budgetYearMonth) string {
 	return currencyCode
 }
 
+// budgetedMonthRange is the first and last of the months a budget's year
+// counts, the ones BudgetedMonthCount counts: a month whose budget could
+// not be converted is not one of them.
+type budgetedMonthRange struct {
+	firstMonth string
+	lastMonth  string
+}
+
+// add counts a month, "2006-01"; months come in the year's order.
+func (self *budgetedMonthRange) add(month string) {
+	if self.firstMonth == "" {
+		self.firstMonth = month
+	}
+	self.lastMonth = month
+}
+
 // yearAmount is an amount of one month in the year's currency, converted
 // at the month's as-of day when the month's budget was in another one, and
 // false when there is no rate for it.
@@ -208,6 +225,7 @@ func spendingCategoryYearStatus(converter *rates.Converter, frame *budgetYear, m
 	unconverted := map[string]*big.Rat{}
 	unconvertedDue := map[string]*big.Rat{}
 	input := &SpendingCategoryYearInput{DayOfYear: frame.dayOfYear, IsYearOver: frame.isYearOver}
+	budgeted := &budgetedMonthRange{}
 	dueAmount := new(big.Rat)
 	dueCharges := []*models.ExpectedRepeatCharge{}
 	for _, month := range months {
@@ -257,12 +275,14 @@ func spendingCategoryYearStatus(converter *rates.Converter, frame *budgetYear, m
 			}
 		}
 		input.Months = append(input.Months, yearMonth)
+		budgeted.add(month.month)
 	}
 	projection := ProjectSpendingCategoryYear(input)
 	zero := finance.FormatAmount(new(big.Rat))
 	return &models.SpendingCategoryBudgetStatus{
 		BudgetAmount: finance.FormatAmount(projection.BudgetAmount), CurrencyCode: currencyCode,
 		BudgetToDateAmount: finance.FormatAmount(projection.BudgetToDateAmount), BudgetedMonthCount: projection.BudgetedMonthCount,
+		FirstBudgetedMonth: budgeted.firstMonth, LastBudgetedMonth: budgeted.lastMonth,
 		SpendingAmount: finance.FormatAmount(projection.SpendingAmount), SpendingBySameDayLastMonthAmount: zero,
 		FixedChargesDueAmount: finance.FormatAmount(dueAmount), ExpectedRepeatCharges: dueCharges,
 		ProjectedAmount: finance.FormatAmount(projection.ProjectedAmount), BudgetPace: projection.BudgetPace,
@@ -276,6 +296,7 @@ func spendingCategoryYearStatus(converter *rates.Converter, frame *budgetYear, m
 func incomeCategoryYearStatus(converter *rates.Converter, frame *budgetYear, months []*budgetYearMonth, currencyCode string) (*models.IncomeCategoryBudgetStatus, error) {
 	unconverted := map[string]*big.Rat{}
 	input := &IncomeCategoryYearInput{DayOfYear: frame.dayOfYear, IsYearOver: frame.isYearOver}
+	budgeted := &budgetedMonthRange{}
 	for _, month := range months {
 		yearMonth := &IncomeCategoryYearMonth{BudgetMonthPhase: month.budgetMonthPhase}
 		budgetAmount, isConverted, err := yearAmount(converter, month, month.budgetAmount, currencyCode)
@@ -306,10 +327,12 @@ func incomeCategoryYearStatus(converter *rates.Converter, frame *budgetYear, mon
 			}
 		}
 		input.Months = append(input.Months, yearMonth)
+		budgeted.add(month.month)
 	}
 	projection := ProjectIncomeCategoryYear(input)
 	return &models.IncomeCategoryBudgetStatus{
 		BudgetAmount: finance.FormatAmount(projection.BudgetAmount), CurrencyCode: currencyCode, BudgetedMonthCount: projection.BudgetedMonthCount,
+		FirstBudgetedMonth: budgeted.firstMonth, LastBudgetedMonth: budgeted.lastMonth,
 		IncomeAmount: finance.FormatAmount(projection.IncomeAmount), IncomeBySameDayLastMonthAmount: finance.FormatAmount(new(big.Rat)),
 		ExpectedByTodayAmount: finance.FormatAmount(projection.ExpectedByTodayAmount),
 		ProjectedAmount:       finance.FormatAmount(projection.ProjectedAmount), IncomePace: projection.IncomePace,

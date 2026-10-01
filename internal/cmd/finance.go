@@ -2164,7 +2164,7 @@ func printYearBudgetStatus(command *cli.Command, status *client.BudgetStatus) er
 		for _, row := range status.SpendingCategories {
 			rows = append(rows, []string{
 				row.SpendingCategoryName, money(row.BudgetAmount, row.CurrencyCode), money(row.BudgetToDateAmount, row.CurrencyCode),
-				money(row.SpendingAmount, row.CurrencyCode), money(row.ProjectedAmount, row.CurrencyCode), row.BudgetPace, strconv.Itoa(row.BudgetedMonthCount),
+				money(row.SpendingAmount, row.CurrencyCode), money(row.ProjectedAmount, row.CurrencyCode), row.BudgetPace, budgetedMonthsCell(row.BudgetedMonthCount, row.FirstBudgetedMonth, row.LastBudgetedMonth),
 			})
 		}
 		if err := printTable([]string{"spending category", "budget", "budget to date", "spent", "projected", "pace", "months budgeted"}, rows); err != nil {
@@ -2179,7 +2179,7 @@ func printYearBudgetStatus(command *cli.Command, status *client.BudgetStatus) er
 		for _, row := range status.IncomeCategories {
 			rows = append(rows, []string{
 				row.SpendingCategoryName, money(row.BudgetAmount, row.CurrencyCode), money(row.ExpectedByTodayAmount, row.CurrencyCode),
-				money(row.IncomeAmount, row.CurrencyCode), money(row.ProjectedAmount, row.CurrencyCode), row.IncomePace, strconv.Itoa(row.BudgetedMonthCount),
+				money(row.IncomeAmount, row.CurrencyCode), money(row.ProjectedAmount, row.CurrencyCode), row.IncomePace, budgetedMonthsCell(row.BudgetedMonthCount, row.FirstBudgetedMonth, row.LastBudgetedMonth),
 			})
 		}
 		if err := printTable([]string{"income category", "expected", "expected by today", "received", "projected", "pace", "months budgeted"}, rows); err != nil {
@@ -2190,6 +2190,19 @@ func printYearBudgetStatus(command *cli.Command, status *client.BudgetStatus) er
 		_, _ = fmt.Fprintln(command.Writer, "projected: the months over as they ended, this month as projected, and each budgeted month to come at their average")
 	}
 	return nil
+}
+
+// budgetedMonthsCell is how many months of a year a budget was in force,
+// and which, when that is fewer than all twelve: "4, 2026-09 to 2026-12".
+func budgetedMonthsCell(budgetedMonthCount int, firstBudgetedMonth, lastBudgetedMonth string) string {
+	count := strconv.Itoa(budgetedMonthCount)
+	switch {
+	case budgetedMonthCount >= 12 || firstBudgetedMonth == "":
+		return count
+	case firstBudgetedMonth == lastBudgetedMonth:
+		return count + ", " + firstBudgetedMonth
+	}
+	return count + ", " + firstBudgetedMonth + " to " + lastBudgetedMonth
 }
 
 // budgetedMonthsLine says which months of a year its saving counts: only

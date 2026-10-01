@@ -528,8 +528,13 @@ func TestFinanceBudgetStatusSendsTheYear(test *testing.T) {
 		switch {
 		case strings.Contains(document.Query, "BudgetStatus("):
 			_, _ = response.Write([]byte(`{"data":{"BudgetStatus":{` + year + `,"spendingCategories":[{"spendingCategoryId":"category-one","spendingCategoryName":"groceries",` +
-				`"budgetAmount":"6000.0000","currencyCode":"USD","budgetToDateAmount":"3900.0000","budgetedMonthCount":12,"spendingAmount":"2550.0000",` +
-				`"projectedAmount":"3600.0000","budgetPace":"under","expectedRepeatCharges":[],"unconvertedSpending":[]}],"incomeCategories":[]}}}`))
+				`"budgetAmount":"6000.0000","currencyCode":"USD","budgetToDateAmount":"3900.0000","budgetedMonthCount":12,` +
+				`"firstBudgetedMonth":"2026-01","lastBudgetedMonth":"2026-12","spendingAmount":"2550.0000",` +
+				`"projectedAmount":"3600.0000","budgetPace":"under","expectedRepeatCharges":[],"unconvertedSpending":[]},` +
+				`{"spendingCategoryId":"category-two","spendingCategoryName":"dining","budgetAmount":"800.0000","currencyCode":"USD",` +
+				`"budgetToDateAmount":"800.0000","budgetedMonthCount":4,"firstBudgetedMonth":"2026-01","lastBudgetedMonth":"2026-04",` +
+				`"spendingAmount":"350.0000","projectedAmount":"350.0000","budgetPace":"under","expectedRepeatCharges":[],"unconvertedSpending":[]}],` +
+				`"incomeCategories":[]}}}`))
 		case strings.Contains(document.Query, "SavingSummary("):
 			_, _ = response.Write([]byte(`{"data":{"SavingSummary":{` + year + `,"reportingCurrencyCode":"USD","incomeBudgetCount":1,"spendingBudgetCount":1,` +
 				`"budgetedMonths":["2026-01","2026-02","2026-03","2026-04","2026-05","2026-06","2026-07","2026-08","2026-09","2026-10","2026-11","2026-12"],` +
@@ -554,6 +559,27 @@ func TestFinanceBudgetStatusSendsTheYear(test *testing.T) {
 	for _, sent := range asked {
 		if _, hasMonth := sent["month"]; sent["year"] != "2026" || hasMonth {
 			test.Errorf("sent %v", sent)
+		}
+	}
+}
+
+// A year's budget in force in fewer than all twelve months says which,
+// so its row is not read as the whole year's.
+func TestBudgetedMonthsCellSaysWhichMonths(test *testing.T) {
+	test.Parallel()
+	for _, testCase := range []struct {
+		budgetedMonthCount int
+		firstMonth         string
+		lastMonth          string
+		expected           string
+	}{
+		{12, "2026-01", "2026-12", "12"},
+		{4, "2026-09", "2026-12", "4, 2026-09 to 2026-12"},
+		{1, "2026-09", "2026-09", "1, 2026-09"},
+		{3, "", "", "3"},
+	} {
+		if cell := budgetedMonthsCell(testCase.budgetedMonthCount, testCase.firstMonth, testCase.lastMonth); cell != testCase.expected {
+			test.Errorf("%d months from %q to %q: %q, want %q", testCase.budgetedMonthCount, testCase.firstMonth, testCase.lastMonth, cell, testCase.expected)
 		}
 	}
 }
