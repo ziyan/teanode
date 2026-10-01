@@ -13,6 +13,21 @@ The flat list of memories this replaced is gone. What it held was moved
 onto the graph the first time the graph was touched, and the API keeps
 the old queries for one release.
 
+## Nothing is cut
+
+What a source holds is kept whole: a file of any size up to the one a
+computer sends at all (32 MiB, above which it is refused whole, with the
+reason on the source's page), every page of a scan, a commit with all it
+says, a message however long. What the agent writes (a fact, its quote,
+a page's opening and overview, a lesson) is stored whole too. A model is
+often shown only part of something, because a prompt has a size: a page's
+first sixty facts, a recalled passage, the top of the index, a long
+document a part at a time. Wherever it is, the text it sees says so, how
+much more there is, and the call that reads the rest ("… (more: memory
+get people/alice-chen)", "15 more facts after #60; get again with from:
+61"). A silent cut was a fact the agent could never learn and never knew
+it was missing.
+
 ## The shape of it
 
 Four things, and everything else is built from them.
@@ -320,9 +335,12 @@ a model; its bytes are still fetched and kept, because the original is
 what somebody opens later. Where the script says nothing, the daemon
 reads the file itself if anything on that machine can: a PDF through
 `pdftotext`, an office document or a spreadsheet through `soffice`, and a
-file that is simply UTF-8 text as itself. Text longer than 512 kB is sent
-as its first 64 kB, marked `truncated` in the document's metadata, the
-same as a large file in a tree; text carrying something that looks like a
+file that is simply UTF-8 text as itself. Text of any length is sent
+whole, the same as a large file in a tree, and the server chunks and
+indexes all of it. A PDF with no text layer has every page read with
+`tesseract`; one whose pages cannot all be read in one pass is held back
+with the reason, and a later pass carries on from the pages already read,
+so a scan is never filed with only some of its pages. Text carrying something that looks like a
 credential is not sent at all, though the bytes still are. Only what
 nothing there can read — a picture, a video, a sound file — arrives with
 no text, and that is what a later night opens with a model.
@@ -562,7 +580,9 @@ rather than making a second page beside it. The person's own page divides the sa
 way, into topics: who they are stays, their finances go under it. Five
 pages a dream. A turn reads twenty facts of a page and the tool shows
 sixty, most recently wanted or changed first — by number they were the
-oldest twenty, and the fact filed last week never reached a prompt.
+oldest twenty, and the fact filed last week never reached a prompt. It
+then says how many more there are; `get` with `from` lists them all, in
+number order, sixty at a time.
 
 **Write up the month.** One call for the month in hand, from a digest
 assembled without a model at all (`digest.go`: commits by repository,

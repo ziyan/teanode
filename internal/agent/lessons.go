@@ -45,9 +45,6 @@ const (
 	// approach that worked is.
 	lessonTranscriptLength = 40000
 
-	// lessonFieldLength bounds each part of a lesson.
-	lessonFieldLength = 400
-
 	// lessonsRoot is where lessons are filed, a page for each topic.
 	lessonsRoot = "lessons"
 
@@ -104,7 +101,7 @@ func lessonCallsOf(messages []*models.AgentMessage) ([]*lessonCall, map[string]*
 			output = "…" + string(runes[len(runes)-lessonCallOutputLength:])
 		}
 		found := &lessonCall{
-			Number: len(calls) + 1, ToolName: call.Name, Arguments: cutRunes(call.Arguments, lessonCallArgumentLength),
+			Number: len(calls) + 1, ToolName: call.Name, Arguments: cutMarked(call.Arguments, lessonCallArgumentLength),
 			ExitCode: exitCode, IsFinished: hasExitCode && !isBackground, Output: strings.TrimSpace(output),
 		}
 		calls = append(calls, found)
@@ -231,8 +228,10 @@ func verifyLessons(answer lessonAnswer, calls []*lessonCall, conversationId stri
 		if len(kept) >= lessonCount {
 			break
 		}
-		appliesWhen := cutRunes(strings.TrimSpace(lesson.AppliesWhen), lessonFieldLength)
-		approach := cutRunes(strings.TrimSpace(lesson.Approach), lessonFieldLength)
+		// Kept whole: a lesson is what a later turn is shown, and an
+		// approach cut where it was filed lost its last step for good.
+		appliesWhen := strings.TrimSpace(lesson.AppliesWhen)
+		approach := strings.TrimSpace(lesson.Approach)
 		if appliesWhen == "" || approach == "" {
 			continue
 		}
@@ -243,19 +242,19 @@ func verifyLessons(answer lessonAnswer, calls []*lessonCall, conversationId stri
 			}
 			call := calls[number-1]
 			evidence = append(evidence, models.Evidence{Kind: models.EvidenceConversation, ID: conversationId,
-				Quote: cutRunes(call.ToolName+" "+call.Arguments, 200) + " → exit code 0"})
+				Quote: call.ToolName + " " + call.Arguments + " → exit code 0"})
 		}
 		if len(evidence) == 0 {
 			continue
 		}
 		text := "When " + strings.TrimSuffix(appliesWhen, ".") + ": " + strings.TrimSuffix(approach, ".") + "."
-		if avoid := cutRunes(strings.TrimSpace(lesson.Avoid), lessonFieldLength); avoid != "" {
+		if avoid := strings.TrimSpace(lesson.Avoid); avoid != "" {
 			text += " Avoid: " + strings.TrimSuffix(avoid, ".") + "."
 		}
-		if verification := cutRunes(strings.TrimSpace(lesson.Verification), lessonFieldLength); verification != "" {
+		if verification := strings.TrimSpace(lesson.Verification); verification != "" {
 			text += " Verified by: " + strings.TrimSuffix(verification, ".") + "."
 		}
-		if scope := cutRunes(strings.TrimSpace(lesson.Scope), lessonFieldLength); scope != "" {
+		if scope := strings.TrimSpace(lesson.Scope); scope != "" {
 			text += " Held for: " + strings.TrimSuffix(scope, ".") + "."
 		}
 		topic := models.Slug(lesson.Topic)

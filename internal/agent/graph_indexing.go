@@ -130,7 +130,7 @@ func (self *Agent) MigrateMemories(ctx context.Context, agent *models.Agent) err
 			}
 			if _, err := tx.AddAgentFact(&models.AgentFact{
 				AgentID: agent.ID, NodeID: notes.ID, Kind: models.FactPlain,
-				Text: cutRunes(text, models.FactLength), Confidence: 1,
+				Text: text, Confidence: 1,
 				Evidence:  []models.Evidence{{Kind: models.EvidenceMemory, ID: memory.ID, At: &memory.CreatedAt}},
 				Audiences: memory.AppliesTo,
 			}); err != nil {

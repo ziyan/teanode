@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -45,6 +46,14 @@ func readOneFile(ctx context.Context, root, relative string, known map[string]st
 	}
 
 	text, kind, err := textOf(ctx, path, content)
+	var unread *pagesUnreadError
+	if errors.As(err, &unread) {
+		// A scan whose pages are not all read yet is held back with the
+		// reason, so that the next pass reads the rest of it, rather than
+		// filed with some of its pages as if that were all it said.
+		entry.Refused = unread.Error()
+		return entry
+	}
 	if err != nil || text == "" {
 		if entry.Refused == "" {
 			entry.Refused = "nothing here can read this kind of file"
@@ -52,10 +61,9 @@ func readOneFile(ctx context.Context, root, relative string, known map[string]st
 		return entry
 	}
 	entry.Kind = kind
-	if len(text) > scanTextBytes {
-		text = text[:scanHeadBytes]
-		entry.Metadata = map[string]any{"truncated": true}
-	}
+	// The whole text, however long. The server cuts it into chunks and
+	// indexes every one; the opening alone left the rest of a long file
+	// impossible to find.
 	entry.Text = text
 	entry.Symbols = symbolsIn(relative, text)
 	return entry
@@ -81,8 +89,11 @@ func textOf(ctx context.Context, path string, content []byte) (string, string, e
 		if err == nil && strings.TrimSpace(text) == "" {
 			// No text layer: a scan. Its pages are read as pictures where
 			// this computer can.
-			if read, err := readPages(ctx, path, key); err == nil {
+			read, err := readPages(ctx, path, key)
+			if err == nil {
 				text = read
+			} else if isPagesUnread(err) {
+				return "", "file", err
 			}
 		}
 		return text, "file", err
@@ -245,8 +256,11 @@ func extractOffice(ctx context.Context, path, key string) (string, error) {
 	if extension == ".pdf" {
 		text, err := extract(ctx, "pdftotext", "-q", "-enc", "UTF-8", written, "-")
 		if err == nil && strings.TrimSpace(text) == "" {
-			if read, err := readPages(ctx, written, key); err == nil {
+			read, err := readPages(ctx, written, key)
+			if err == nil {
 				text = read
+			} else if isPagesUnread(err) {
+				return "", err
 			}
 		}
 		return text, err

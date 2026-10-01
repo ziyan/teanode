@@ -66,11 +66,8 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 	// timeline, and no way to find out that the reason is one unmarked
 	// card.
 	if own == nil && len(profile.Authors) > 0 {
-		unplaced := make([]string, 0, unknownAuthorsKept)
+		unplaced := make([]string, 0, len(profile.Authors))
 		for index := range profile.Authors {
-			if index >= unknownAuthorsKept {
-				break
-			}
 			if address := strings.ToLower(strings.TrimSpace(profile.Authors[index].Address)); address != "" {
 				unplaced = append(unplaced, address)
 			}
@@ -96,16 +93,13 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 		if err := tx.EnsureAgentRoots(source.AgentID); err != nil {
 			return err
 		}
-		// By character, never by byte. A readme cut at the 1200th byte can
-		// land in the middle of a character, and PostgreSQL refuses the
-		// whole statement -- "invalid byte sequence for encoding UTF8" --
-		// so one em-dash in the wrong place lost everything git had to
-		// say about that checkout.
 		// The opening is what the README says the thing is, not the
 		// README. The whole file is indexed as a document and found by
 		// search; a page that opened with "# Northwind Portal" and six badges
-		// was a page nobody could read.
-		summary := cutRunes(strings.TrimSpace(profile.Description), 600)
+		// was a page nobody could read. The description is kept as the
+		// checkout's reader gave it: a second cut here ended a sentence
+		// early on the page with nothing to say so.
+		summary := strings.TrimSpace(profile.Description)
 		if opening != "" {
 			summary = opening
 		}
@@ -137,7 +131,7 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 		// readme the facts did not mention was rewritten into "This is
 		// Ziyan's Go project, with Ziyan as the sole author" -- the
 		// readme's one useful sentence gone, and padding in its place.
-		if description := cutRunes(strings.TrimSpace(profile.Description), 300); description != "" {
+		if description := strings.TrimSpace(profile.Description); description != "" {
 			facts = append(facts, line{"description", "Its readme says: " + description})
 		}
 		if where != "" {
@@ -296,7 +290,7 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 			}
 			if err := tx.PutAgentEdge(&models.AgentEdge{
 				AgentID: source.AgentID, FromID: node.ID, ToID: target.ID,
-				Relation: models.AgentEdgeRelation(link.Relation), Note: cutRunes(link.Note, 200),
+				Relation: models.AgentEdgeRelation(link.Relation), Note: strings.TrimSpace(link.Note),
 				Evidence: []models.Evidence{{Kind: models.EvidenceRepository, ID: profile.Head, Quote: "readme"}},
 			}); err != nil {
 				return err
@@ -531,12 +525,21 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 					}
 				}
 			}
-			for index := 1; index <= 5; index++ {
-				if text, found := byKey[fmt.Sprintf("about-%d", index)]; found {
+			// Every about- line there is, in order: the description keeps
+			// every fact the model wrote, so there may be more than the
+			// five the prompt asks for.
+			for index := 1; ; index++ {
+				key := fmt.Sprintf("about-%d", index)
+				text, isNow := byKey[key]
+				if isNow {
 					existing = append(existing, text)
 				}
-				if text, found := older[fmt.Sprintf("about-%d", index)]; found {
-					fallback = append(fallback, text)
+				olderText, isOlder := older[key]
+				if isOlder {
+					fallback = append(fallback, olderText)
+				}
+				if !isNow && !isOlder {
+					break
 				}
 			}
 			existingOpening = node.Summary
@@ -569,7 +572,13 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 				text.WriteString(chunk.Text)
 				text.WriteByte('\n')
 			}
-			readme = cutRunes(strings.TrimSpace(text.String()), 8000)
+			// The first readmeShown characters, and where it is cut, a
+			// line saying how much more there is and how to read it: the
+			// describing run has the knowledge tool.
+			readme = strings.TrimSpace(text.String())
+			if remaining := len([]rune(readme)) - readmeShown; remaining > 0 {
+				readme = strings.TrimSpace(cutRunes(readme, readmeShown)) + fmt.Sprintf("…\n[the readme goes on for %d more characters: knowledge read with id %s and from %d]", remaining, document.ID, readmeShown)
+			}
 			break
 		}
 		return nil
@@ -623,13 +632,15 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 	if err := json.Unmarshal([]byte(extracted), &answer); err != nil {
 		return existingOpening, fallback, nil
 	}
+	// Every fact the model wrote, each whole. The five the prompt asks
+	// for were a cap here too, and each was cut to four hundred
+	// characters: whatever a model wrote past either was dropped without
+	// a word.
 	var about []string
 	for _, text := range answer.Facts {
-		text = strings.TrimSpace(text)
-		if text == "" || len(about) >= 5 {
-			continue
+		if text = strings.TrimSpace(text); text != "" {
+			about = append(about, text)
 		}
-		about = append(about, cutRunes(text, 400))
 	}
 	var links []describedLink
 	for _, link := range answer.Links {
@@ -640,7 +651,7 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 		}
 		links = append(links, link)
 	}
-	opening := cutRunes(strings.TrimSpace(answer.Opening), 600)
+	opening := strings.TrimSpace(answer.Opening)
 	// An opening and no facts is an answer, not a failure: a checkout
 	// whose readme says what it is in one line has nothing else to file.
 	// Kept as the one about- line all the same, because those lines are
@@ -664,6 +675,10 @@ const (
 	dependenciesElsewhereFactKey = "dependencies-elsewhere"
 	activityFactKey              = "activity"
 )
+
+// readmeShown is how much of a readme the describing run is shown. The
+// rest is in the indexed document, which the prompt says how to read.
+const readmeShown = 8000
 
 // checkoutFactKey is the key of the line on a checkout's page that says
 // where it is. The overview of the page reads it back to find the

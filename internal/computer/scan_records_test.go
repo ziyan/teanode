@@ -943,6 +943,29 @@ func TestAPlainFileThatCameWithARecordArrivesWithItsContents(t *testing.T) {
 	}
 }
 
+// A long text file that came with a record arrives whole, not as the first
+// 64 KiB of it, and nothing on it says it was cut.
+func TestALargeFileThatCameWithARecordArrivesWhole(t *testing.T) {
+	log := strings.Repeat("a line of a long log that goes on\n", (600<<10)/34+1)
+	root, scan := recordsIn(t, map[string]string{"files/long.log": log})
+	if err := os.WriteFile(filepath.Join(root, "posts.jsonl"), []byte(
+		`{"id":"post:1","kind":"chat","channel":"example","at":"2026-01-02T09:30:00Z","author":"example","text":"the log",`+
+			`"attachments":[{"path":"files/long.log","name":"long.log"}]}`+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+	result, err := scan(nil)
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	entry, found := entriesOfKind(result.Entries, KindAttachment)["posts.jsonl#"+hashOfBytes([]byte(log))]
+	if !found || entry.Text != log {
+		t.Fatalf("the whole %d bytes arrive, not %d", len(log), len(entry.Text))
+	}
+	if _, isMarked := entry.Metadata["truncated"]; isMarked {
+		t.Fatalf("and nothing says it was cut: %v", entry.Metadata)
+	}
+}
+
 // And a file nothing here can read is exactly what it was before any of
 // this: reported, hashed, with no text, for a night to decide about. A
 // reader that failed is not the pass failing, and not the file being
@@ -1008,5 +1031,22 @@ func TestAPictureIsNotReadToLearnItIsNotText(t *testing.T) {
 		if skipped := neverText(attachment, trial.name); skipped != trial.skipped {
 			t.Errorf("%s (%q): opened=%v, wanted opened=%v", trial.name, trial.contentType, !skipped, !trial.skipped)
 		}
+	}
+}
+
+// What a record said, on the entry for a file it came with, is the opening
+// of a long message and says that the message goes on.
+func TestWhatARecordSaidSaysThatItContinues(t *testing.T) {
+	folder := &recordsFolder{}
+	short := folder.attachmentMetadata("/example/a.png", "a.png", "image/png", &record{Text: "look at this"})
+	if short["said"] != "look at this" {
+		t.Fatalf("a short message is kept as it is: %q", short["said"])
+	}
+	long := strings.Repeat("word ", attachmentSaidRunes)
+	cut := folder.attachmentMetadata("/example/a.png", "a.png", "image/png", &record{Text: long})
+	said, _ := cut["said"].(string)
+	opening, isCut := strings.CutSuffix(said, attachmentSaidContinues)
+	if !isCut || len([]rune(opening)) != attachmentSaidRunes || !strings.HasPrefix(long, opening) {
+		t.Fatalf("a long message is its opening and says it continues: %q", said)
 	}
 }

@@ -130,7 +130,9 @@ func (self *Agent) consolidatePage(ctx context.Context, run *Run, record *models
 	// The prompt says to write "" for no opening, and a model that writes
 	// the two characters is answering as asked: an opening of two quote
 	// marks is no opening.
-	summary := cutRunes(strings.Trim(strings.TrimSpace(answer.Summary), "\"'\u201c\u201d"), models.SummaryLength)
+	// Kept whole: an opening cut to a length where it is stored lost its
+	// last sentences with nothing to say they had been written.
+	summary := strings.Trim(strings.TrimSpace(answer.Summary), "\"'\u201c\u201d")
 	if strings.EqualFold(summary, "null") {
 		summary = ""
 	}

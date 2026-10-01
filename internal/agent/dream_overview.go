@@ -43,11 +43,11 @@ const (
 	overviewMemberFactCount  = 5
 	overviewMemberFactLength = 200
 
-	// overviewSectionCount, overviewSectionLength and overviewLength
-	// bound what is kept of an answer.
-	overviewSectionCount  = 6
-	overviewSectionLength = 2500
-	overviewLength        = 10000
+	// overviewSectionCount is how many sections an overview usually has:
+	// its five headings and room for one more. A search over pages'
+	// sections asks for this many a page; nothing an overview says is
+	// cut to it.
+	overviewSectionCount = 6
 
 	// overviewEvidenceCount is how many cited pages and files are kept.
 	overviewEvidenceCount = 24
@@ -345,7 +345,7 @@ func readOverviewInputs(tx db.Transaction, agentId string, page *models.AgentNod
 					if fact.Kind == models.FactReflection || shown >= overviewMemberFactCount {
 						continue
 					}
-					said += "\n- " + fact.Reference(member.Path) + " " + cutRunes(strings.ReplaceAll(fact.Line(), "\n", " "), overviewMemberFactLength)
+					said += "\n- " + fact.Reference(member.Path) + " " + cutMarked(strings.ReplaceAll(fact.Line(), "\n", " "), overviewMemberFactLength)
 					shown++
 				}
 			}
@@ -378,7 +378,7 @@ func readOverviewInputs(tx db.Transaction, agentId string, page *models.AgentNod
 		line := edge.Sentence(page.Path, false)
 		if other := otherById[otherIds[index]]; other != nil {
 			inputs.pageIdByPath[other.Path] = other.ID
-			if opening := cutRunes(strings.TrimSpace(other.Summary), overviewOpeningLength); opening != "" {
+			if opening := cutMarked(strings.TrimSpace(other.Summary), overviewOpeningLength); opening != "" {
 				line += ": " + strings.ReplaceAll(opening, "\n", " ")
 			}
 		}
@@ -395,9 +395,9 @@ func readOverviewInputs(tx db.Transaction, agentId string, page *models.AgentNod
 // overviewOfPage is a page under or in the one being written, as its
 // prompt shows it: its overview where it has one, its opening where not.
 func overviewOfPage(page *models.AgentNode) string {
-	said := cutRunes(strings.TrimSpace(page.Overview), overviewChildLength)
+	said := cutMarked(strings.TrimSpace(page.Overview), overviewChildLength)
 	if said == "" {
-		said = cutRunes(strings.TrimSpace(page.Summary), overviewOpeningLength)
+		said = cutMarked(strings.TrimSpace(page.Summary), overviewOpeningLength)
 	}
 	if said == "" {
 		said = "(nothing written about it yet)"
@@ -409,11 +409,10 @@ func overviewOfPage(page *models.AgentNode) string {
 // heading, bounded; empty where no section says anything.
 func renderOverview(answer overviewAnswer) string {
 	var written strings.Builder
-	count := 0
 	for _, section := range answer.Sections {
 		heading := strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(section.Heading), "#"))
 		text := strings.TrimSpace(section.Text)
-		if text == "" || count >= overviewSectionCount {
+		if text == "" {
 			continue
 		}
 		if heading == "" {
@@ -422,10 +421,12 @@ func renderOverview(answer overviewAnswer) string {
 		if written.Len() > 0 {
 			written.WriteString("\n\n")
 		}
-		written.WriteString("## " + cutRunes(strings.ReplaceAll(heading, "\n", " "), 120) + "\n\n" + cutRunes(text, overviewSectionLength))
-		count++
+		// Stored whole: an overview is what recall carries first, and a
+		// section cut where it was written lost its end for good. What a
+		// prompt shows of it is bounded, and marked, where it is shown.
+		written.WriteString("## " + strings.ReplaceAll(heading, "\n", " ") + "\n\n" + text)
 	}
-	return cutRunes(written.String(), overviewLength)
+	return written.String()
 }
 
 // overviewEvidence is the pages and files an answer cites, keeping only

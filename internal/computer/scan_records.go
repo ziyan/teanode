@@ -88,8 +88,16 @@ const (
 	// this is the message the picture came with, which is the single most
 	// useful thing there is for deciding whether the picture is worth
 	// opening, and a sentence or two of it is all that decision needs.
+	//
+	// Longer than this, it ends with attachmentSaidContinues, so that
+	// nobody reading it takes the opening for all the message said. The
+	// message itself is never cut: it is indexed whole with the record.
 	attachmentSaidRunes = 400
 )
+
+// attachmentSaidContinues ends what a record said, on the entry for a file
+// it came with, where that is longer than attachmentSaidRunes.
+const attachmentSaidContinues = " ... (the message continues; it is indexed whole with the record this file came with)"
 
 // recordAttachment is one file a record came with: a picture pasted into
 // a thread, a document sent with a message. Path is where it is on this
@@ -952,18 +960,19 @@ func (self *recordsFolder) attachmentsOf(ctx context.Context, relative string, o
 		seen[entry.ExternalID] = true
 		entry.Hash, entry.Size = hash, read
 		entry.Metadata = self.attachmentMetadata(path, name, attachment.ContentType, one)
-		if text := self.attachmentText(ctx, attachment, path); text != "" {
-			if len(text) > scanTextBytes {
-				// The opening of it, the way a large file in a tree is
-				// sent: enough for a search to find the thing, and the
-				// bytes are kept anyway for whatever wants the rest. Cut
-				// on a character, because a byte offset landing inside one
-				// makes a string PostgreSQL refuses.
-				text = string(trimPartialRune([]byte(text[:scanHeadBytes])))
-				entry.Metadata["truncated"] = true
-			}
-			entry.Text = text
+		text, err := self.attachmentText(ctx, attachment, path)
+		if err != nil {
+			// A scan whose pages are not all read yet. Sent now with no
+			// text, it would be known by its hash on the next pass and
+			// never read again; held back with the reason, the next pass
+			// reads the rest of its pages and sends it then.
+			entry.Refused = err.Error()
+			entries = append(entries, entry)
+			continue
 		}
+		// The whole text, however long, the way a file in a tree is sent:
+		// the server cuts it into chunks and indexes every one.
+		entry.Text = text
 		entries = append(entries, entry)
 	}
 	return entries
@@ -983,8 +992,10 @@ func (self *recordsFolder) attachmentsOf(ctx context.Context, relative string, o
 //
 // A reader that fails is not the pass failing and not the file being
 // passed over: the entry is reported and its bytes are kept exactly as
-// before, and only the text is missing.
-func (self *recordsFolder) attachmentText(ctx context.Context, attachment *recordAttachment, path string) string {
+// before, and only the text is missing. The one error it answers with is
+// a scan whose pages are not all read yet, which the caller holds back
+// until they are.
+func (self *recordsFolder) attachmentText(ctx context.Context, attachment *recordAttachment, path string) (string, error) {
 	text := attachment.Text
 	if strings.TrimSpace(text) == "" {
 		if neverText(attachment, path) {
@@ -995,7 +1006,7 @@ func (self *recordsFolder) attachmentText(ctx context.Context, attachment *recor
 			// each one would read the whole archive a second time on
 			// every pass, to learn every time what its name said at
 			// the start.
-			return ""
+			return "", nil
 		}
 		// The bound that decides whether the file is reported at all
 		// decides how much of it is read. It has been measured twice
@@ -1003,15 +1014,18 @@ func (self *recordsFolder) attachmentText(ctx context.Context, attachment *recor
 		// grown.
 		content, err := contentOfFile(path, self.maxAttachmentBytes)
 		if err != nil {
-			return ""
+			return "", nil
 		}
 		read, _, err := textOf(ctx, path, content)
+		if isPagesUnread(err) {
+			return "", err
+		}
 		if err != nil {
-			return ""
+			return "", nil
 		}
 		text = read
 	}
-	return text
+	return text, nil
 }
 
 // neverText says whether a file is one of the kinds no reader here turns
@@ -1069,6 +1083,10 @@ func (self *recordsFolder) tooLarge(size int64) string {
 // is.
 func (self *recordsFolder) attachmentMetadata(path, name, contentType string, one *record) map[string]any {
 	metadata := map[string]any{"path": path}
+	said := strings.TrimSpace(one.Text)
+	if len([]rune(said)) > attachmentSaidRunes {
+		said = firstRunes(said, attachmentSaidRunes) + attachmentSaidContinues
+	}
 	if contentType = strings.TrimSpace(contentType); contentType == "" {
 		contentType = mime.TypeByExtension(strings.ToLower(filepath.Ext(name)))
 	}
@@ -1078,7 +1096,7 @@ func (self *recordsFolder) attachmentMetadata(path, name, contentType string, on
 		"thread":      one.Thread,
 		"channel":     one.Channel,
 		"id":          one.ID,
-		"said":        firstRunes(strings.TrimSpace(one.Text), attachmentSaidRunes),
+		"said":        said,
 	} {
 		if value != "" {
 			metadata[key] = value

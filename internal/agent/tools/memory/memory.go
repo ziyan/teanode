@@ -37,9 +37,23 @@ const (
 	indexDepth = 2
 
 	// factsShown is how many of a page's facts a get answers with, and
-	// searchLimit how many rows a search answers with.
+	// searchLimit how many rows a search answers with. A get of a page
+	// with more facts, and a search that found more, end with a line
+	// saying how many more and the call that reads them.
 	factsShown  = 60
 	searchLimit = 20
+
+	// everyFact is the limit that reads every live fact on a page: one
+	// far past any page, since a page past forty facts is divided.
+	everyFact = 100000
+
+	// indexShown is how many lines an index answers with when nobody
+	// says, and childrenShown how many of the pages under a page a get
+	// names. searchCounted is how many rows a search by words reads to
+	// say how many more there are than it shows.
+	indexShown    = 200
+	childrenShown = 24
+	searchCounted = 200
 
 	// historyShown is how many changes a history answers with, and
 	// historyMost the ceiling on asking for more. The same numbers the
@@ -70,7 +84,7 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "memory", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "What you know about the person, kept between conversations as pages with facts on them. Every page has a path: people/alice-chen, projects/portal, self, time/2026/09. A fact on a page is cited as people/alice-chen#3. Your prompt carries the top of the graph and whatever this turn's words touched; `get` a path before telling them you do not know something about them, and `search` when you cannot guess the path. You need not file what you learn -- a run after this conversation does that -- but `note` anything they ask you to remember, and correct a page that is wrong: `note` with the fact's number rewrites that one sentence where it stands. `history` says what has happened to a page and who did it, which is how a line nobody recognizes is accounted for. `look` shows you the picture a fact was read out of, when the answer is in the screenshot rather than in the sentence about it.",
+				Description: "What you know about the person, kept between conversations as pages with facts on them. Every page has a path: people/alice-chen, projects/portal, self, time/2026/09. A fact on a page is cited as people/alice-chen#3. Your prompt carries the top of the graph and whatever this turn's words touched; `get` a path before telling them you do not know something about them, and `search` when you cannot guess the path. A partial answer ends with how many more there are and the call that reads them: `get` with `from`, `index` with `offset`, `search` with a larger `limit`. You need not file what you learn -- a run after this conversation does that -- but `note` anything they ask you to remember, and correct a page that is wrong: `note` with the fact's number rewrites that one sentence where it stands. `history` says what has happened to a page and who did it, which is how a line nobody recognizes is accounted for. `look` shows you the picture a fact was read out of, when the answer is in the screenshot rather than in the sentence about it.",
 				Parameters: tools.Object(map[string]any{
 					"action": tools.EnumProperty("what to do; move files a page under another, or with number moves one fact onto another page",
 						"index", "get", "search", "look", "note", "page", "history", "link", "unlink", "move", "merge", "forget", "batch"),
@@ -91,6 +105,8 @@ func init() {
 					"relation":   tools.EnumProperty("for link: what the first page is to the second", relations...),
 					"number":     tools.IntegerProperty("for note: the fact to rewrite where it stands, keeping its number, its evidence and the day it was learned, rather than adding another one. For forget: the fact's number on the page; without it the whole page goes. For move: the fact to move onto the page in to, rather than the page itself. For look: the fact whose picture to show you"),
 					"limit":      tools.IntegerProperty("for search, index and history: how many"),
+					"from":       tools.IntegerProperty("for get: list the page's facts in number order starting at this fact number, 60 at a time; 1 starts at the first. Without it get shows the 60 most recently used"),
+					"offset":     tools.IntegerProperty("for index: how many lines to skip, to read on from where a listing stopped"),
 					"items":      tools.ArrayProperty("for batch: up to 25 of the above, each with its own action", map[string]any{"type": "object"}),
 				}, "action"),
 				Guidance: "memory: pages by path (people/alice-chen, projects/portal, self), facts by number (people/alice-chen#3). What is known about the person lives on `self`; a people page about them is a duplicate to `merge` into self, never the other way. Correct a wrong fact with `note` and its number, and `move` one on the wrong page by number: both keep its evidence and the day it was learned, which forgetting and writing it again loses. `history` says where a fact came from or who changed it. A fact read out of a picture: `look` at the picture with the page and number before answering from the sentence. A fact addressed to triage or to reply changes how mail is sorted or answered from the next message on; prefer a rule for anything rule-shaped.",
@@ -215,6 +231,12 @@ type memoryItem struct {
 	Depth int    `json:"depth"`
 	Limit int    `json:"limit"`
 
+	// From is the fact number a get lists a page's facts from, and
+	// Offset how many lines of an index to skip: how a partial answer is
+	// read on from where it stopped.
+	From   int `json:"from"`
+	Offset int `json:"offset"`
+
 	// Document is one file on its own, for look: the identifier the
 	// knowledge tool answers a search and a read with.
 	Document string `json:"document"`
@@ -293,7 +315,8 @@ func ownPath(run tools.Run, path string) string {
 
 // indexAction is the tree, as lines. Not the whole graph: a tree under a
 // path, to a depth, so that a model looking for where something lives can
-// walk down rather than read everything.
+// walk down rather than read everything. A listing that stops before the
+// end says how many more lines there are and the offset that reads on.
 func indexAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (*tools.Result, error) {
 	root := models.NormalizePath(arguments.Path)
 	depth := arguments.Depth
@@ -302,20 +325,27 @@ func indexAction(ctx context.Context, run tools.Run, arguments *memoryArguments)
 	}
 	limit := arguments.Limit
 	if limit <= 0 {
-		limit = 200
+		limit = indexShown
 	}
+	offset := max(arguments.Offset, 0)
+	// Read with room to spare, since the pages deeper than the depth are
+	// read and passed over: what is under the root comes back by path,
+	// all of it.
+	readLimit := (offset + limit + 1) * 4
 	var nodes []*models.AgentNode
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		nodes, err = tx.ListAgentNodesUnder(run.Agent().ID, root, limit*4)
+		nodes, err = tx.ListAgentNodesUnder(run.Agent().ID, root, readLimit)
 		return err
 	}); err != nil {
 		return nil, err
 	}
+	isReadCut := len(nodes) >= readLimit
 	rootDepth := 0
 	if root != "" {
 		rootDepth = strings.Count(root, "/") + 1
 	}
-	lines := make([]string, 0, len(nodes))
+	lines := make([]string, 0, min(len(nodes), limit))
+	lineCount := 0
 	for _, node := range nodes {
 		if node.Dormant {
 			continue
@@ -324,14 +354,27 @@ func indexAction(ctx context.Context, run tools.Run, arguments *memoryArguments)
 		if level-rootDepth > depth {
 			continue
 		}
+		lineCount++
+		if lineCount <= offset || len(lines) >= limit {
+			continue
+		}
 		indent := strings.Repeat("  ", max(level-rootDepth-1, 0))
 		lines = append(lines, indent+node.IndexLine(120))
-		if len(lines) >= limit {
-			break
-		}
 	}
 	if len(lines) == 0 {
+		if offset > 0 && lineCount > 0 {
+			return tools.TextResult("nothing past line %d under %s; it has %d", offset, tools.Named(root, "the graph"), lineCount), nil
+		}
 		return tools.TextResult("nothing under %s yet", tools.Named(root, "the graph")), nil
+	}
+	next := offset + len(lines)
+	switch moreCount := lineCount - next; {
+	case moreCount > 0 && isReadCut:
+		lines = append(lines, fmt.Sprintf("\n… at least %d more; index again with offset: %d", moreCount, next))
+	case moreCount > 0:
+		lines = append(lines, fmt.Sprintf("\n… %d more; index again with offset: %d", moreCount, next))
+	case isReadCut:
+		lines = append(lines, fmt.Sprintf("\n… there may be more; index again with offset: %d", next))
 	}
 	return tools.TextResult("%s", strings.Join(lines, "\n")), nil
 }
@@ -347,18 +390,19 @@ func getAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (
 	var facts []*models.AgentFact
 	var edges []*models.AgentEdge
 	var children []*models.AgentNode
+	var more string
 	agentId := run.Agent().ID
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if node, err = tx.GetAgentNode(agentId, path); err != nil || node == nil {
 			return err
 		}
-		// The liveliest sixty, shown in number order: a page of two
-		// hundred is not read whole, and the sixty oldest were the wrong
-		// sixty.
-		if facts, err = tx.ListAgentFactsLively(agentId, node.ID, factsShown); err != nil {
+		every, err := tx.ListAgentFacts(agentId, node.ID, false, everyFact)
+		if err != nil {
 			return err
 		}
-		sort.Slice(facts, func(left, right int) bool { return facts[left].Number < facts[right].Number })
+		if facts, more, err = factsToGet(tx, agentId, node, every, arguments.From); err != nil {
+			return err
+		}
 		if edges, err = tx.ListAgentEdges(agentId, node.ID); err != nil {
 			return err
 		}
@@ -382,7 +426,52 @@ func getAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (
 		// guess again from the answer instead of searching.
 		return notThere(ctx, run, path)
 	}
-	return tools.TextResult("%s", renderPage(node, facts, edges, children)), nil
+	page := renderPage(node, facts, edges, children)
+	if more != "" {
+		page += "\n\n" + more
+	}
+	return tools.TextResult("%s", page), nil
+}
+
+// factsToGet is the facts a get shows of a page's live facts, which are in
+// number order, and the line that says what it left out.
+//
+// Without from, the liveliest sixty, shown in number order: a page of two
+// hundred is not read whole, and the sixty oldest were the wrong sixty.
+// With from, sixty in number order from that number, which a model can
+// read on from to the end. Either way a page with more says how many more
+// and the call that reads them: a list that stops without a word reads as
+// all the page knows.
+func factsToGet(tx db.Transaction, agentId string, node *models.AgentNode, every []*models.AgentFact, from int) ([]*models.AgentFact, string, error) {
+	if from > 0 {
+		var facts []*models.AgentFact
+		for _, fact := range every {
+			if fact.Number >= from {
+				facts = append(facts, fact)
+			}
+		}
+		if len(facts) == 0 {
+			if len(every) == 0 {
+				return nil, "", nil
+			}
+			return nil, fmt.Sprintf("… no facts numbered %d or above; the last is #%d, and get again with from: 1 starts at the first", from, every[len(every)-1].Number), nil
+		}
+		if moreCount := len(facts) - factsShown; moreCount > 0 {
+			facts = facts[:factsShown]
+			next := facts[len(facts)-1].Number + 1
+			return facts, fmt.Sprintf("… %d more facts after #%d; get again with from: %d", moreCount, next-1, next), nil
+		}
+		return facts, "", nil
+	}
+	if len(every) <= factsShown {
+		return every, "", nil
+	}
+	facts, err := tx.ListAgentFactsLively(agentId, node.ID, factsShown)
+	if err != nil {
+		return nil, "", err
+	}
+	sort.Slice(facts, func(left, right int) bool { return facts[left].Number < facts[right].Number })
+	return facts, fmt.Sprintf("… %d more facts on this page are not shown: these are the %d most recently used of %d. get again with from: 1 to list every fact in number order, %d at a time", len(every)-len(facts), len(facts), len(every), factsShown), nil
 }
 
 // renderPage is a page as the model reads it.
@@ -471,15 +560,15 @@ func renderPage(node *models.AgentNode, facts []*models.AgentFact, edges []*mode
 	}
 	if len(children) > 0 {
 		builder.WriteString("\n\nunder it: ")
-		paths := make([]string, 0, len(children))
-		for _, child := range children {
+		paths := make([]string, 0, min(len(children), childrenShown))
+		for _, child := range children[:min(len(children), childrenShown)] {
 			paths = append(paths, models.LastSegment(child.Path))
-			if len(paths) >= 24 {
-				paths = append(paths, "…")
-				break
-			}
 		}
 		builder.WriteString(strings.Join(paths, ", "))
+		// The rest named by count, with the call that lists them.
+		if moreCount := len(children) - childrenShown; moreCount > 0 {
+			fmt.Fprintf(&builder, " … and %d more: index with path %s and depth 1 lists them", moreCount, node.Path)
+		}
 	}
 	return builder.String()
 }
@@ -541,22 +630,30 @@ func searchAction(ctx context.Context, run tools.Run, arguments *memoryArguments
 		limit = searchLimit
 	}
 	agentId := run.Agent().ID
+	// The search by words reads past the limit, so that the answer can say
+	// how many more there are than it shows.
+	counted := limit + searchCounted
 	var nodes []*models.AgentNode
 	var facts []*models.AgentFact
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		nodes, facts, err = tx.SearchAgentGraph(agentId, query, limit)
+		nodes, facts, err = tx.SearchAgentGraph(agentId, query, counted)
 		return err
 	}); err != nil {
 		return nil, err
 	}
+	isCountCut := len(nodes) >= counted || len(facts) >= counted
 	// And by meaning, in front of the words: a person asking about "the
 	// boat" means the page that says "Marigold", and no word of theirs
 	// appears in it.
+	var nearNodes []*models.AgentNode
+	var nearFacts []*models.AgentFact
 	if searcher, ok := run.(tools.GraphSearching); ok {
-		nearNodes, nearFacts := searcher.SearchGraphByMeaning(ctx, query, limit)
-		nodes = mergeNodes(nearNodes, nodes, limit)
-		facts = mergeFacts(nearFacts, facts, limit)
+		nearNodes, nearFacts = searcher.SearchGraphByMeaning(ctx, query, limit)
 	}
+	nodeCount := len(mergeNodes(nearNodes, nodes, len(nearNodes)+len(nodes)))
+	factCount := len(mergeFacts(nearFacts, facts, len(nearFacts)+len(facts)))
+	nodes = mergeNodes(nearNodes, nodes, limit)
+	facts = mergeFacts(nearFacts, facts, limit)
 	if len(nodes) == 0 && len(facts) == 0 {
 		return tools.TextResult("nothing about that"), nil
 	}
@@ -571,6 +668,9 @@ func searchAction(ctx context.Context, run tools.Run, arguments *memoryArguments
 	}
 	for _, fact := range facts {
 		builder.WriteString(fact.Reference(paths[fact.NodeID]) + " " + fact.Line() + "\n")
+	}
+	if more := searchMore(nodeCount-len(nodes), factCount-len(facts), isCountCut, limit); more != "" {
+		builder.WriteString("\n" + more + "\n")
 	}
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		nodeIds := make([]string, 0, len(nodes))
@@ -589,6 +689,20 @@ func searchAction(ctx context.Context, run tools.Run, arguments *memoryArguments
 		return nil, err
 	}
 	return tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), nil
+}
+
+// searchMore is the line a search ends with when it found more than it
+// shows: how many more pages and facts, "at least" where the count itself
+// stopped at its limit, and the limit that shows them.
+func searchMore(moreNodeCount, moreFactCount int, isCountCut bool, limit int) string {
+	if moreNodeCount <= 0 && moreFactCount <= 0 {
+		return ""
+	}
+	more := fmt.Sprintf("%d more pages and %d more facts match", max(moreNodeCount, 0), max(moreFactCount, 0))
+	if isCountCut {
+		more = "at least " + more
+	}
+	return "… " + more + "; search again with limit: " + strconv.Itoa(limit+max(moreNodeCount, moreFactCount))
 }
 
 // pathsOf is the path of every page these facts sit on.
@@ -691,6 +805,14 @@ func historyAction(ctx context.Context, run tools.Run, arguments *memoryArgument
 		}
 		if now := revision.TextAfter(); now != "" {
 			builder.WriteString("  now: " + tools.FirstWords(now, 25) + "\n")
+		}
+	}
+	// A full list may not be all of it: say so, and how to ask for more.
+	if len(revisions) == limit {
+		if limit < historyMost {
+			fmt.Fprintf(&builder, "… there may be earlier changes; history again with limit: %d\n", historyMost)
+		} else {
+			fmt.Fprintf(&builder, "… there may be changes earlier than these %d, which is as many as one history lists\n", limit)
 		}
 	}
 	return tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), nil

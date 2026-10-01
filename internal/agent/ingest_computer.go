@@ -228,8 +228,10 @@ func (self *Agent) computerNamed(agentId, name string) *attachedComputer {
 // notedUnknownAuthors keeps the commit addresses a source found that are
 // not the person's, so that a silence becomes something they can see.
 //
-// At most a handful: this is a prompt to go and mark a card, not a
-// census of everybody who has ever committed to a mirrored upstream.
+// Every one of them, most commits first as the profile lists them. Only
+// the first eight were kept, and the rest were dropped with nothing to
+// say there were more: the address that was the person's could be the
+// ninth.
 func (self *Agent) notedUnknownAuthors(ctx context.Context, source *models.AgentKnowledgeSource, addresses []string) {
 	if len(addresses) == 0 {
 		return
@@ -248,7 +250,7 @@ func (self *Agent) notedUnknownAuthors(ctx context.Context, source *models.Agent
 		}
 		changed := false
 		for _, address := range addresses {
-			if seen[address] || len(found.UnknownAuthors) >= unknownAuthorsKept {
+			if seen[address] {
 				continue
 			}
 			found.UnknownAuthors = append(found.UnknownAuthors, address)

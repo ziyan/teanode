@@ -103,11 +103,6 @@ const (
 	// pass that did not see everything must not delete what it missed.
 	cursorPassUnfinished = "passUnfinished"
 
-	// unknownAuthorsKept is how many unplaced commit addresses a source
-	// remembers. Enough to recognise yourself in the list, not a census
-	// of everybody who ever committed to a mirrored upstream.
-	unknownAuthorsKept = 8
-
 	// ownCommitsWorthRecording is how much of a repository has to be the
 	// person's before it is an event on their own page. Ten keeps the
 	// timeline to what they worked on rather than what they once cloned
