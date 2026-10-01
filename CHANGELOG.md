@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.97.1] - 2026-10-01
+
+### Changed
+
+- The agent sees when a remembered fact happened to the day, and when it learned it, so it can count days between events and say what it knew at a given time. (#288)
+
 ## [0.97.0] - 2026-10-01
 
 ### Added
