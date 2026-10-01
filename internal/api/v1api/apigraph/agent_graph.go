@@ -272,6 +272,10 @@ type AgentGraphNeighboursResult struct {
 type SearchAgentGraphArguments struct {
 	Query string `json:"query"`
 	First int    `json:"first" graphapi:"nullable"`
+
+	// Offset is how many pages and facts of the ranking to pass over, to
+	// read the page of results after one already shown.
+	Offset int `json:"offset" graphapi:"nullable"`
 }
 
 // RecallAgentMemoryArguments are the question to recall for, as a person
@@ -470,6 +474,11 @@ type SearchAgentDocumentsArguments struct {
 	// First is how many passages; zero is indexed.SearchLimit.
 	First int `json:"first" graphapi:"nullable"`
 
+	// Offset is how many passages of the ranking to pass over, to read
+	// the page after one already shown; the result's nextOffset is the
+	// one to ask for next.
+	Offset int `json:"offset" graphapi:"nullable"`
+
 	// SourceID narrows the search to one source, by its identifier or by
 	// its name, because a person types the name and a script has the
 	// identifier.
@@ -548,6 +557,16 @@ type AgentGraphPageResult struct {
 type AgentGraphSearchResult struct {
 	Nodes []*models.AgentNode `json:"nodes"`
 	Facts []*AgentLearnedFact `json:"facts"`
+
+	// MoreNodeCount and MoreFactCount are how many pages and facts the
+	// search found past these, which NextOffset reads; zero NextOffset is
+	// the last page. Where the matching flag is set the search stopped
+	// counting there, and there are at least that many.
+	MoreNodeCount             int  `json:"moreNodeCount"`
+	IsMoreNodeCountLowerBound bool `json:"isMoreNodeCountLowerBound"`
+	MoreFactCount             int  `json:"moreFactCount"`
+	IsMoreFactCountLowerBound bool `json:"isMoreFactCountLowerBound"`
+	NextOffset                int  `json:"nextOffset"`
 }
 
 // RecallAgentMemoryResult is what a turn would have been carried.
@@ -1133,19 +1152,31 @@ func (self *graph) SearchAgentGraph(ctx context.Context, arguments SearchAgentGr
 	if limit <= 0 || limit > 200 {
 		limit = 40
 	}
+	offset := max(arguments.Offset, 0)
 	tx := self.transaction(ctx)
-	nodes, facts, err := tx.SearchAgentGraph(found.ID, query, limit)
+	// Another page's worth past this one, so that the result can say how
+	// many more there are and not only that there are more.
+	counted := limit * 2
+	nodes, facts, err := tx.SearchAgentGraphFrom(found.ID, query, offset, counted)
 	if err != nil {
 		return nil, err
 	}
-	withPaths, err := self.factsWithPaths(tx, found.ID, facts)
-	if err != nil {
+	result := &AgentGraphSearchResult{
+		MoreNodeCount: max(len(nodes)-limit, 0), IsMoreNodeCountLowerBound: len(nodes) >= counted,
+		MoreFactCount: max(len(facts)-limit, 0), IsMoreFactCountLowerBound: len(facts) >= counted,
+	}
+	if result.MoreNodeCount > 0 || result.MoreFactCount > 0 {
+		result.NextOffset = offset + limit
+	}
+	nodes, facts = nodes[:min(len(nodes), limit)], facts[:min(len(facts), limit)]
+	if result.Facts, err = self.factsWithPaths(tx, found.ID, facts); err != nil {
 		return nil, err
 	}
-	if nodes == nil {
-		nodes = []*models.AgentNode{}
+	result.Nodes = nodes
+	if result.Nodes == nil {
+		result.Nodes = []*models.AgentNode{}
 	}
-	return &AgentGraphSearchResult{Nodes: nodes, Facts: withPaths}, nil
+	return result, nil
 }
 
 func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentMemoryArguments) (*RecallAgentMemoryResult, error) {
@@ -1626,7 +1657,7 @@ func (self *graph) SearchAgentDocuments(ctx context.Context, arguments SearchAge
 		meaning = worker.KnowledgeMeaning(found.ID)
 	}
 	return indexed.Search(ctx, tx, meaning, found.ID, indexed.Query{
-		Words: arguments.Query, SourceIds: sourceIds, Limit: arguments.First,
+		Words: arguments.Query, SourceIds: sourceIds, Limit: arguments.First, Offset: arguments.Offset,
 	})
 }
 
