@@ -1,5 +1,7 @@
-Below is a stretch of a conversation in which you, {{.PersonName}}'s assistant, did some work by running commands. Each command you ran is numbered, with what it printed and how it ended.
-
+Below is a stretch of a conversation in which you, {{.PersonName}}'s assistant, did some work by running commands. Each command you ran is numbered, with what it printed and how it ended. A long command or output is shown as its start and its end, with how many characters were left out between them.
+{{if gt .PartCount 1}}
+This conversation is too long to read in one call, so it is read in {{.PartCount}} parts, each in a call of its own. This is part {{.PartNumber}} of {{.PartCount}} of this conversation.{{if gt .PartNumber 1}} The earlier parts were read separately, and what they taught was written down from them; it is not shown here.{{end}}{{if lt .PartNumber .PartCount}} The later parts are read after this one.{{end}} The commands are numbered across the whole conversation; name only commands shown in this part.
+{{end}}
 Write down what this work taught that would help the next time similar work comes up: a way of doing it that worked, or a mistake to avoid. Only lessons a command below showed to work: one that ended with exit code 0 and whose output bears the approach out. What you said about the work, or planned, is not a lesson unless a command confirmed it.
 
 Not a lesson: a fact about {{.PersonName}}, their people or their plans (those are filed elsewhere); something true of the tools in general that anyone would know; a step that only makes sense for this one task and never again.
@@ -8,7 +10,7 @@ Not a lesson: a fact about {{.PersonName}}, their people or their plans (those a
 {{.Transcript}}
 </conversation>
 
-For each lesson, at most three:
+For each lesson, at most {{.LessonCount}}:
 
 - `appliesWhen`: the kind of work it is for, in words the next such request would use: "building the web dashboard on a machine without Node 20", not "the build".
 - `approach`: what worked, specific enough to repeat: the commands, flags, order or setting.

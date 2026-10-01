@@ -162,7 +162,16 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 		}
 	}
 
-	read := unread[len(unread)-1]
+	// The same window again, with the commands run in it, for what the work
+	// taught. Read before the filing, because the mark the filing moves is
+	// the lessons' mark too: a window past it is never read again. When a
+	// part of a long window was not answered, the filing stops where the
+	// lessons stopped, and the rest of the window waits for the next run
+	// as a backlog does.
+	unread, read, backlog, err := self.readLessonsOf(ctx, run, conversation, messages, unread, backlog)
+	if err != nil {
+		return err
+	}
 	said, transcript, err := self.askWhatWasLearned(ctx, run, conversation, unread)
 	if err != nil {
 		return err
@@ -227,16 +236,40 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 	if filed.Filed > 0 {
 		log.Debugf("filed %d fact(s) from conversation %s", filed.Filed, conversation.ID)
 	}
-	// The same window again, with the commands run in it, for what the work
-	// taught. Its own failure is logged and leaves what was filed above,
-	// and the mark, as they are: a lesson missed is not worth reading the
-	// window twice for.
-	if lessonCount, err := self.readLessons(ctx, run, conversation, lessonWindowOf(messages, conversation.RememberedThrough, read)); err != nil {
-		log.Warningf("cannot read lessons from conversation %s: %s", conversation.ID, err)
-	} else if lessonCount > 0 {
-		log.Debugf("filed %d lesson(s) from conversation %s", lessonCount, conversation.ID)
-	}
 	return deferTheBacklog(backlog)
+}
+
+// readLessonsOf reads the lessons of the window the filing is about to
+// cover, and gives back the messages to file, the last of them and the
+// backlog, cut back to what the lessons read when a part was not answered.
+// When not even the first part was answered nothing is filed: the run
+// fails and is tried again with the mark where it was, as it does when the
+// filing's own call fails. Lessons a retry reads again are the same in
+// meaning as those filed and are not filed twice.
+func (self *Agent) readLessonsOf(ctx context.Context, run *Run, conversation *models.AgentConversation, messages, unread []*models.AgentMessage, backlog int) ([]*models.AgentMessage, *models.AgentMessage, int, error) {
+	read := unread[len(unread)-1]
+	window := lessonWindowOf(messages, conversation.RememberedThrough, read)
+	filedCount, readCount, err := self.readLessons(ctx, run, conversation, window)
+	if filedCount > 0 {
+		log.Debugf("filed %d lesson(s) from conversation %s", filedCount, conversation.ID)
+	}
+	if err == nil {
+		return unread, read, backlog, nil
+	}
+	isRead := make(map[string]bool, readCount)
+	for _, message := range window[:readCount] {
+		isRead[message.ID] = true
+	}
+	keptCount := 0
+	for keptCount < len(unread) && isRead[unread[keptCount].ID] {
+		keptCount++
+	}
+	if keptCount > 0 {
+		log.Warningf("cannot read the rest of the lessons from conversation %s, filing %d of %d messages and leaving the rest for the next run: %s",
+			conversation.ID, keptCount, len(unread), err)
+		return unread[:keptCount], unread[keptCount-1], backlog + len(unread) - keptCount, nil
+	}
+	return nil, nil, 0, fmt.Errorf("reading the lessons: %w", err)
 }
 
 // lessonWindowOf is every message the filing above covered, tool calls
