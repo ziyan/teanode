@@ -169,12 +169,12 @@ function useTrail(): { label: string; to?: string }[] {
     // it, and the trail is the way back up: the page names its folder as
     // the detail and itself as the item. Side by side, the page is still
     // Knowledge and names nothing.
-    if (section === 'settings' && folderId === 'knowledge' && detail) {
+    if (section === 'knowledge' && detail) {
       // The folder is the whole path but the last segment, not its first
       // segment: the graph nests as deep as it likes, and a page four
       // levels down whose way back was its root came back to the wrong
       // list.
-      const under = location.pathname.split('/').slice(3).filter(Boolean).slice(0, -1).join('/')
+      const under = location.pathname.split('/').slice(2).filter(Boolean).slice(0, -1).join('/')
       if (item) {
         return [...crumbs, { label: detail, to: '/knowledge' + (under ? '/' + under : '') }, { label: item }]
       }
