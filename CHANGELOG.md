@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.98.2] - 2026-10-01
+
+### Changed
+
+- A transaction's details name the institution its account belongs to. (#300)
+
 ## [0.98.1] - 2026-10-01
 
 ### Changed
