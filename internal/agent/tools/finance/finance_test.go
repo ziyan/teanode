@@ -221,7 +221,7 @@ func TestFinanceRiskPerOperation(test *testing.T) {
 	reads := map[string]bool{
 		"providers": true, "sources": true, "accounts": true, "transactions": true, "trades": true, "spending_summary": true,
 		"exchange_rate": true, "convert_currency": true, "net_worth": true, "assets": true, "asset_history": true,
-		"spending_categories": true, "spending_rules": true, "budgets": true, "budget_status": true,
+		"spending_categories": true, "spending_rules": true, "budgets": true, "budget_status": true, "saving_summary": true,
 		"spending_by_day": true, "cash_flow": true, "savings_targets": true,
 		"link_plaid": true, "repair": true, "link_simplefin": true, "import_credential": true, "reporting_currency": true,
 	}
@@ -646,6 +646,36 @@ func TestFinanceToolPreviewsNameWhatIsApproved(test *testing.T) {
 				test.Errorf("%s: the card %q does not say %s", arguments, line, said)
 			}
 		}
+	}
+}
+
+// A budget on an income spending category is the income expected, and
+// the card says so rather than calling it a limit; saving_summary passes
+// the month and the currency through.
+func TestFinanceToolIncomeBudgetAndSavingSummary(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"SpendingCategories": `[{"id":"category-salary","spendingCategoryName":"Salary","isIncome":true},{"id":"category-dining","spendingCategoryName":"Dining"}]`,
+		"SavingSummary":      `{"month":"2026-08","expectedSavingAmount":"1000.0000","savingPace":"on_track"}`,
+	}}
+	ctx := tools.WithRun(context.Background(), &fakeRun{operations: operations})
+	tool := financeTool(test)
+	for arguments, wanted := range map[string]string{
+		`{"operation":"set_budget","spending_category_id":"category-salary","monthly_amount":"4000","currency_code":"USD"}`: `Expect a monthly income of 4000 USD in "Salary"`,
+		`{"operation":"set_budget","spending_category_id":"category-salary","monthly_amount":"0"}`:                          `Stop expecting income in "Salary"`,
+		`{"operation":"set_budget","spending_category_id":"category-dining","monthly_amount":"400","currency_code":"USD"}`:  `Set a monthly budget of 400 USD for "Dining"`,
+	} {
+		if line := tool.PreviewLine(ctx, json.RawMessage(arguments)); !strings.Contains(line, wanted) {
+			test.Errorf("%s: the card %q does not say %s", arguments, line, wanted)
+		}
+	}
+	result, err := call(test, operations, `{"operation":"saving_summary","month":"2026-08","currency_code":"EUR"}`)
+	if err != nil || !strings.Contains(result.Content, `"expectedSavingAmount":"1000.0000"`) {
+		test.Fatalf("%+v %v", result, err)
+	}
+	sent := operations.variables[len(operations.variables)-1]
+	if sent["month"] != "2026-08" || sent["currencyCode"] != "EUR" {
+		test.Errorf("sent %v", sent)
 	}
 }
 

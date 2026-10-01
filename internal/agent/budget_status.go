@@ -58,7 +58,9 @@ func (self *Agent) exchangeRateFetcher() *rates.Fetcher {
 // guessed. A nil fetcher converts with the rates already stored.
 //
 // A budget on a spending category counts its child spending categories
-// that have no budget of their own.
+// that have no budget of their own. A budget on an income spending
+// category is the income expected, and is listed apart with a pace of its
+// own (ProjectIncomeCategoryMonth); budget alerts read only the spending.
 func BudgetStatus(ctx context.Context, tx db.Transaction, fetcher *rates.Fetcher, agentId, month, today string) (*models.BudgetStatus, error) {
 	monthStart, err := time.Parse("2006-01", month)
 	if err != nil {
@@ -78,7 +80,7 @@ func BudgetStatus(ctx context.Context, tx db.Transaction, fetcher *rates.Fetcher
 	}
 	budgetStatus := &models.BudgetStatus{
 		Month: month, AsOf: asOf.Format(time.DateOnly), DayOfMonth: asOf.Day(), DaysInMonth: monthEnd.Day(),
-		SpendingCategories: []*models.SpendingCategoryBudgetStatus{},
+		SpendingCategories: []*models.SpendingCategoryBudgetStatus{}, IncomeCategories: []*models.IncomeCategoryBudgetStatus{},
 	}
 	budgets, err := tx.BudgetsForMonth(agentId, month)
 	if err != nil || len(budgets) == 0 {
@@ -88,7 +90,20 @@ func BudgetStatus(ctx context.Context, tx db.Transaction, fetcher *rates.Fetcher
 	if err != nil {
 		return nil, err
 	}
+	isIncome := map[string]bool{}
+	for _, spendingCategory := range spendingCategories {
+		isIncome[spendingCategory.ID] = spendingCategory.IsIncome
+	}
 	previousMonth := monthStart.AddDate(0, -1, 0)
+	var thisMonthIncomeDays, previousMonthIncomeDays []*models.IncomeCategoryDay
+	if slices.ContainsFunc(budgets, func(budget *models.Budget) bool { return isIncome[budget.SpendingCategoryID] }) {
+		if thisMonthIncomeDays, err = tx.ListIncomeCategoryDays(agentId, month); err != nil {
+			return nil, err
+		}
+		if previousMonthIncomeDays, err = tx.ListIncomeCategoryDays(agentId, previousMonth.Format("2006-01")); err != nil {
+			return nil, err
+		}
+	}
 	thisMonthDays, err := tx.ListSpendingCategoryDays(agentId, month)
 	if err != nil {
 		return nil, err
@@ -128,6 +143,16 @@ func BudgetStatus(ctx context.Context, tx db.Transaction, fetcher *rates.Fetcher
 		budgetAmount, err := finance.ParseAmount(budget.MonthlyAmount)
 		if err != nil {
 			return nil, err
+		}
+		if isIncome[budget.SpendingCategoryID] {
+			incomeRow, err := incomeCategoryBudgetStatus(converter, budgetStatus, budget, budgetAmount, counted, thisMonthIncomeDays, previousMonthIncomeDays,
+				previousMonthLastDay, todayDay.After(monthEnd))
+			if err != nil {
+				return nil, err
+			}
+			incomeRow.SpendingCategoryName = nameById[budget.SpendingCategoryID]
+			budgetStatus.IncomeCategories = append(budgetStatus.IncomeCategories, incomeRow)
+			continue
 		}
 		row := &models.SpendingCategoryBudgetStatus{
 			SpendingCategoryID: budget.SpendingCategoryID, SpendingCategoryName: nameById[budget.SpendingCategoryID],
@@ -203,7 +228,68 @@ func BudgetStatus(ctx context.Context, tx db.Transaction, fetcher *rates.Fetcher
 	sort.SliceStable(budgetStatus.SpendingCategories, func(left, right int) bool {
 		return budgetStatus.SpendingCategories[left].SpendingCategoryName < budgetStatus.SpendingCategories[right].SpendingCategoryName
 	})
+	sort.SliceStable(budgetStatus.IncomeCategories, func(left, right int) bool {
+		return budgetStatus.IncomeCategories[left].SpendingCategoryName < budgetStatus.IncomeCategories[right].SpendingCategoryName
+	})
 	return budgetStatus, nil
+}
+
+// incomeCategoryBudgetStatus is one income budget against what came in:
+// the counted income spending categories' income this month up to the
+// status's day, and last month's by the same day, each converted into the
+// budget's currency at the rate of the day it came in, with what has no
+// rate reported apart.
+func incomeCategoryBudgetStatus(converter *rates.Converter, budgetStatus *models.BudgetStatus, budget *models.Budget, budgetAmount *big.Rat,
+	counted map[string]bool, thisMonthDays, previousMonthDays []*models.IncomeCategoryDay, previousMonthLastDay int, isMonthOver bool,
+) (*models.IncomeCategoryBudgetStatus, error) {
+	unconverted := map[string]*big.Rat{}
+	unconvertedLastMonth := map[string]*big.Rat{}
+	incomeAmount := new(big.Rat)
+	for _, day := range thisMonthDays {
+		if !counted[day.SpendingCategoryID] || day.ReceivedOn > budgetStatus.AsOf {
+			continue
+		}
+		amount, isConverted, err := convertedAmount(converter, day.IncomeAmount, day.CurrencyCode, budget.CurrencyCode, day.ReceivedOn)
+		if err != nil {
+			return nil, err
+		}
+		if !isConverted {
+			addTo(unconverted, day.CurrencyCode, day.IncomeAmount)
+			continue
+		}
+		incomeAmount.Add(incomeAmount, amount)
+	}
+	lastMonthIncome := new(big.Rat)
+	lastMonthDayBound := min(budgetStatus.DayOfMonth, previousMonthLastDay)
+	for _, day := range previousMonthDays {
+		receivedOn, err := time.Parse(time.DateOnly, day.ReceivedOn)
+		if err != nil {
+			return nil, err
+		}
+		if !counted[day.SpendingCategoryID] || receivedOn.Day() > lastMonthDayBound {
+			continue
+		}
+		amount, isConverted, err := convertedAmount(converter, day.IncomeAmount, day.CurrencyCode, budget.CurrencyCode, day.ReceivedOn)
+		if err != nil {
+			return nil, err
+		}
+		if !isConverted {
+			addTo(unconvertedLastMonth, day.CurrencyCode, day.IncomeAmount)
+			continue
+		}
+		lastMonthIncome.Add(lastMonthIncome, amount)
+	}
+	projection := ProjectIncomeCategoryMonth(&IncomeCategoryMonthInput{
+		BudgetAmount: budgetAmount, IncomeAmount: incomeAmount,
+		DayOfMonth: budgetStatus.DayOfMonth, DaysInMonth: budgetStatus.DaysInMonth, IsMonthOver: isMonthOver,
+	})
+	return &models.IncomeCategoryBudgetStatus{
+		SpendingCategoryID: budget.SpendingCategoryID, BudgetAmount: finance.FormatAmount(budgetAmount), CurrencyCode: budget.CurrencyCode,
+		IncomeAmount: finance.FormatAmount(incomeAmount), IncomeBySameDayLastMonthAmount: finance.FormatAmount(lastMonthIncome),
+		ExpectedByTodayAmount: finance.FormatAmount(projection.ExpectedByTodayAmount),
+		ProjectedAmount:       finance.FormatAmount(projection.ProjectedAmount), IncomePace: projection.IncomePace,
+		UnconvertedIncome: currencyAmountsOf(unconverted), UnconvertedIncomeBySameDayLastMonth: currencyAmountsOf(unconvertedLastMonth),
+	}, nil
 }
 
 // fixedChargeAmounts is what fixedCharges finds, in the budget's currency:
