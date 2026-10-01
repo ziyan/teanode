@@ -587,49 +587,49 @@ a.tile:hover strong {
   list-style: none;
 }
 
-.conversation-tile {
+/* The tile is a button: the whole card opens the conversation. What a
+   button is given everywhere else (its padding, its centred text, the
+   background it takes under the pointer) is put back to the tile's own. */
+button.conversation-tile {
   position: relative;
-  min-width: 0;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: inherit;
+  text-align: left;
   cursor: pointer;
-}
-
-/* A tile that opens something lifts under the pointer: a little higher and
-   a shadow under it, so it reads as a thing to press rather than a panel. */
-.conversation-tile {
   transition:
     transform 150ms ease,
     box-shadow 150ms ease,
     border-color 150ms ease;
 }
 
-.conversation-tile:hover,
-.conversation-tile:focus-within {
+/* It lifts under the pointer, a little higher with a shadow under it, so
+   it reads as a thing to press rather than a panel. Nothing inside it
+   changes color: the card is what is pressed, not its title. */
+button.conversation-tile:hover:not(:disabled),
+button.conversation-tile:focus-visible {
+  background: var(--surface);
   border-color: var(--muted);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
   transform: translateY(-2px);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .conversation-tile {
+  button.conversation-tile {
     transition: none;
   }
 
-  .conversation-tile:hover,
-  .conversation-tile:focus-within {
+  button.conversation-tile:hover:not(:disabled),
+  button.conversation-tile:focus-visible {
     transform: none;
   }
-}
-
-/* The title is the button that opens the conversation: it reads as the
-   tile's heading, and its ::after stretches over the whole tile so a click
-   anywhere on it opens the conversation, with one button for a keyboard or
-   a screen reader to find. */
-.conversation-tile-title::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
 }
 
 .conversation-tile-title {
@@ -637,20 +637,8 @@ a.tile:hover strong {
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--text);
-  font: inherit;
   font-weight: 600;
-  text-align: left;
   overflow-wrap: anywhere;
-  cursor: pointer;
-}
-
-.conversation-tile:hover .conversation-tile-title,
-.conversation-tile-title:focus-visible {
-  color: var(--accent);
 }
 
 /* What the agent wrote of the conversation, cut at three lines so a long
