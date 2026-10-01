@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.95.0] - 2026-10-01
+
+### Added
+
+- `agent.limits.recallTokens` sets how much of a turn's prompt the pages and facts recall carries may take. (#281)
+
 ## [0.94.4] - 2026-10-01
 
 ### Changed
