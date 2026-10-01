@@ -97,33 +97,48 @@ export function AgentConversationsPage() {
       ) : (
         <ul className="tile-grid conversation-tiles">
           {conversations.map((conversation) => (
-            <li key={conversation.id} className="tile conversation-tile">
-              <button type="button" className="conversation-tile-title" onClick={() => open(conversation.id)}>
-                {conversation.kind === 'main' ? (
-                  <>
-                    <StarIcon size={14} /> <HighlightText text={t('agentDrawer.main')} search={filter} />
-                  </>
-                ) : (
-                  <HighlightText text={conversation.title || t('agentDrawer.untitled')} search={filter} />
-                )}
+            <li key={conversation.id}>
+              {/* The whole tile is the button that opens the conversation.
+                  It is named by its title alone, and its summary describes
+                  it, so a screen reader hears the name first rather than
+                  three lines of summary and a time. */}
+              <button
+                type="button"
+                className="tile conversation-tile"
+                aria-labelledby={`conversation-${conversation.id}-title`}
+                aria-describedby={`conversation-${conversation.id}-summary`}
+                onClick={() => open(conversation.id)}
+              >
+                <span className="conversation-tile-title" id={`conversation-${conversation.id}-title`}>
+                  {conversation.kind === 'main' ? (
+                    <>
+                      <StarIcon size={14} /> <HighlightText text={t('agentDrawer.main')} search={filter} />
+                    </>
+                  ) : (
+                    <HighlightText text={conversation.title || t('agentDrawer.untitled')} search={filter} />
+                  )}
+                </span>
+                {/* What it is about: the agent's summary, else what it is
+                    working toward, so no tile is a bare title. */}
+                <span
+                  className={conversation.summary || conversation.goal ? 'conversation-tile-summary' : 'conversation-tile-summary muted'}
+                  id={`conversation-${conversation.id}-summary`}
+                >
+                  {conversation.summary || conversation.goal ? (
+                    <HighlightText text={conversation.summary || conversation.goal || ''} search={filter} />
+                  ) : (
+                    t('agentConversations.noSummary')
+                  )}
+                </span>
+                <span className="tile-detail">
+                  {/* A conversation working toward something says so, in the
+                      color of where it stands, the way the picker marks it. */}
+                  {conversation.goal ? (
+                    <TargetIcon size={12} className={`agent-drawer-list-goal ${conversation.goalState || 'working'}`} />
+                  ) : null}
+                  <RelativeTime value={conversation.lastAt} />
+                </span>
               </button>
-              {/* What it is about: the agent's summary, else what it is
-                  working toward, so no tile is a bare title. */}
-              {conversation.summary || conversation.goal ? (
-                <p className="conversation-tile-summary">
-                  <HighlightText text={conversation.summary || conversation.goal || ''} search={filter} />
-                </p>
-              ) : (
-                <p className="conversation-tile-summary muted">{t('agentConversations.noSummary')}</p>
-              )}
-              <span className="tile-detail">
-                {/* A conversation working toward something says so, in the
-                    color of where it stands, the way the picker marks it. */}
-                {conversation.goal ? (
-                  <TargetIcon size={12} className={`agent-drawer-list-goal ${conversation.goalState || 'working'}`} />
-                ) : null}
-                <RelativeTime value={conversation.lastAt} />
-              </span>
             </li>
           ))}
         </ul>
