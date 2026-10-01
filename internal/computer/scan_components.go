@@ -9,13 +9,12 @@ import (
 	"strings"
 )
 
-// The bounds of finding a checkout's components: how many, how deep a
-// directory one may be in, and how many things each may be said to need.
-const (
-	componentEntries           = 200
-	componentDepth             = 4
-	componentDependencyEntries = 100
-)
+// componentDepth is how deep a directory a component may be in. It says
+// what a component is, a part near the top of the checkout, rather than
+// cutting a list: every component found is kept, and everything each one
+// says it needs, since a list cut at a bound would leave out parts of the
+// checkout and their links without a word.
+const componentDepth = 4
 
 // EcosystemJhbuild is a component that is a module of a jhbuild moduleset.
 const EcosystemJhbuild = "jhbuild"
@@ -103,9 +102,7 @@ func repositoryComponents(directory string, tracked []string, ownNames []string,
 	sort.Strings(cmakeFiles)
 	targets := cmakeTargetsOf(directory, cmakeFiles)
 
-	// Shallowest first, then by name, so a checkout with more components
-	// than the bound keeps its top-level parts rather than whatever sorts
-	// first, all of one deep subtree.
+	// Shallowest first, then by name, so the top-level parts come first.
 	directories := make([]string, 0, len(filesByDirectory))
 	for fileDirectory := range filesByDirectory {
 		directories = append(directories, fileDirectory)
@@ -119,9 +116,6 @@ func repositoryComponents(directory string, tracked []string, ownNames []string,
 	})
 	var components []RepositoryComponent
 	for _, fileDirectory := range directories {
-		if len(components) >= componentEntries {
-			break
-		}
 		for _, base := range componentBuildFiles {
 			if !filesByDirectory[fileDirectory][base] {
 				continue
@@ -156,7 +150,7 @@ func repositoryComponents(directory string, tracked []string, ownNames []string,
 				}
 			}
 		}
-		component.Dependencies = boundedNames(append(needed, component.Dependencies...))
+		component.Dependencies = distinctNames(append(needed, component.Dependencies...))
 	}
 
 	isOwnName := map[string]bool{}
@@ -173,12 +167,9 @@ func repositoryComponents(directory string, tracked []string, ownNames []string,
 	}
 	if len(ownModules) > 1 {
 		for _, module := range ownModules {
-			if len(components) >= componentEntries {
-				break
-			}
 			components = append(components, RepositoryComponent{
 				Name: module.Name, Ecosystem: EcosystemJhbuild, File: module.File,
-				Dependencies: boundedNames(module.Dependencies),
+				Dependencies: distinctNames(module.Dependencies),
 			})
 		}
 	}
@@ -243,18 +234,17 @@ func readComponent(directory, fileDirectory, base string, targets *cmakeTargets)
 	if component.Name == "" {
 		component.Name = path.Base(fileDirectory)
 	}
-	component.Dependencies = boundedNames(component.Dependencies)
+	component.Dependencies = distinctNames(component.Dependencies)
 	return component, true
 }
 
-// boundedNames is a list of names without blanks or repeats, and no longer
-// than a component may say it needs.
-func boundedNames(names []string) []string {
+// distinctNames is a list of names without blanks or repeats.
+func distinctNames(names []string) []string {
 	var kept []string
 	seen := map[string]bool{}
 	for _, name := range names {
 		name = strings.TrimSpace(name)
-		if name == "" || seen[name] || len(kept) >= componentDependencyEntries {
+		if name == "" || seen[name] {
 			continue
 		}
 		seen[name] = true

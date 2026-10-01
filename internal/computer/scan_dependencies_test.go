@@ -96,15 +96,15 @@ func TestDependenciesComeOnlyFromTheCheckoutsOwnTrackedFiles(test *testing.T) {
 	if len(dependencies) != 0 || len(modules) != 0 {
 		test.Fatalf("read what is not the checkout's own: %+v %+v", dependencies, modules)
 	}
-	// A build file too large to be a build file is skipped, and the rest
-	// still counts.
+	// A large build file is read like any other: what it names is not
+	// left out for its size.
 	tracked = writeCheckoutFiles(test, directory, map[string]string{
 		"go.mod":       "module example\n\nrequire git.example.com/core/example-lib v1.0.0\n",
-		"package.json": `{"dependencies": {"example-widgets": "1"}, "padding": "` + strings.Repeat("x", dependencyFileBytes) + `"}`,
+		"package.json": `{"dependencies": {"example-widgets": "1"}, "padding": "` + strings.Repeat("x", 2<<20) + `"}`,
 	})
 	dependencies, _ = repositoryDependencies(directory, tracked)
-	if len(dependencies) != 1 || dependencies[0].Name != "git.example.com/core/example-lib" {
-		test.Fatalf("the large file is skipped and go.mod still read: %+v", dependencies)
+	if len(dependencies) != 2 || dependencies[0].Name != "git.example.com/core/example-lib" || dependencies[1].Name != "example-widgets" {
+		test.Fatalf("the large file is read beside go.mod: %+v", dependencies)
 	}
 }
 
@@ -165,13 +165,15 @@ func TestAModulesetsModulesAndTheirRepositories(test *testing.T) {
 	}
 }
 
-// A checkout that names more than the bound is cut at the bound.
-func TestDependenciesAreBounded(test *testing.T) {
+// A checkout that names hundreds of things it needs has every one of them
+// read, and a long go.mod does not crowd out the moduleset.
+func TestEveryDependencyIsKept(test *testing.T) {
 	directory := test.TempDir()
+	const dependencyCount = 620
 	var goMod strings.Builder
 	goMod.WriteString("module example\n\nrequire (\n")
-	for index := range dependencyEntries + 20 {
-		goMod.WriteString("\tgit.example.com/many/example-" + strings.Repeat("a", index%7+1) + "-" + string(rune('a'+index%26)) + string(rune('a'+index/26%26)) + " v1.0.0\n")
+	for index := range dependencyCount {
+		fmt.Fprintf(&goMod, "\tgit.example.com/many/example-%04d v1.0.0\n", index)
 	}
 	goMod.WriteString(")\n")
 	tracked := writeCheckoutFiles(test, directory, map[string]string{
@@ -179,10 +181,11 @@ func TestDependenciesAreBounded(test *testing.T) {
 		"example.modules": `<moduleset><cmake id="exampleone"/></moduleset>`,
 	})
 	dependencies, modules := repositoryDependencies(directory, tracked)
-	// Each list has its own bound, so a long go.mod does not crowd out
-	// the moduleset.
-	if len(dependencies) != dependencyEntries || len(modules) != 1 {
-		test.Fatalf("read %d dependencies and %d modules, want %d and 1", len(dependencies), len(modules), dependencyEntries)
+	if len(dependencies) != dependencyCount || len(modules) != 1 {
+		test.Fatalf("read %d dependencies and %d modules, want %d and 1", len(dependencies), len(modules), dependencyCount)
+	}
+	if last := dependencies[dependencyCount-1].Name; last != fmt.Sprintf("git.example.com/many/example-%04d", dependencyCount-1) {
+		test.Fatalf("the last dependency is %q", last)
 	}
 }
 
@@ -254,15 +257,16 @@ func TestCMakeTargetsNamedByTheProjectAreRead(test *testing.T) {
 	}
 }
 
-// With more components than the bound, the shallowest are kept.
-func TestComponentsAreKeptShallowestFirst(test *testing.T) {
+// Every component is kept, however many, the shallowest first.
+func TestEveryComponentIsKeptShallowestFirst(test *testing.T) {
 	directory := test.TempDir()
+	const deepCount = 260
 	files := map[string]string{"zeta/go.mod": "module example.com/zeta\n"}
-	for index := range componentEntries {
+	for index := range deepCount {
 		files[fmt.Sprintf("alpha/deep/part%03d/go.mod", index)] = fmt.Sprintf("module example.com/part%03d\n", index)
 	}
 	components := repositoryComponents(directory, writeCheckoutFiles(test, directory, files), nil, nil)
-	if len(components) != componentEntries || components[0].Path != "zeta" {
+	if len(components) != deepCount+1 || components[0].Path != "zeta" {
 		test.Fatalf("%d components, the first %+v", len(components), components[0])
 	}
 }

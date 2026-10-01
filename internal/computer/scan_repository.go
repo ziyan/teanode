@@ -3,12 +3,22 @@ package computer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+)
+
+// readmeRunes is how much of a README a repository's profile carries,
+// and readmeContinues what ends it where the README is longer, naming the
+// file the whole of it is indexed as.
+const (
+	readmeRunes      = 4000
+	readmeContinues  = " ... (the README continues; it is indexed whole as %s)"
+	descriptionRunes = 600
 )
 
 func isRepository(path string) bool {
@@ -90,7 +100,14 @@ func repositoryProfile(ctx context.Context, directory string, tracked []string) 
 	for _, name := range []string{"README.md", "README.rst", "README.txt", "README"} {
 		if content, err := os.ReadFile(filepath.Join(directory, name)); err == nil {
 			text := strings.TrimSpace(string(content))
-			profile.Readme = firstRunes(text, 4000)
+			profile.Readme = text
+			if len([]rune(text)) > readmeRunes {
+				// The README file is indexed whole as a file of the
+				// checkout; this is only the opening of it for the
+				// profile, and it says so and where the rest is.
+				profile.Readme = firstRunes(text, readmeRunes) +
+					fmt.Sprintf(readmeContinues, name)
+			}
 			profile.Description = readmeDescription(text)
 			break
 		}
@@ -176,9 +193,9 @@ func repositoryProfile(ctx context.Context, directory string, tracked []string) 
 		sort.Slice(profile.Authors, func(left, right int) bool {
 			return profile.Authors[left].Commits > profile.Authors[right].Commits
 		})
-		if len(profile.Authors) > 200 {
-			profile.Authors = profile.Authors[:200]
-		}
+		// Every author, never only the busiest: the server looks for the
+		// person's own addresses among them, and somebody with a handful
+		// of commits in a long-lived project is far down the list.
 	}
 	return profile
 }
@@ -233,7 +250,13 @@ func readmeDescription(text string) string {
 		if len([]rune(line)) < 24 {
 			continue // "Usage" on its own is not a description
 		}
-		return firstRunes(line, 600)
+		// A description is a paragraph, and one longer than this is not
+		// an opening any more. Where it is cut, the reader is told the
+		// rest is in the README.
+		if len([]rune(line)) > descriptionRunes {
+			return firstRunes(line, descriptionRunes) + " ... (continued in the README)"
+		}
+		return line
 	}
 	return ""
 }

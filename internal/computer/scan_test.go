@@ -472,10 +472,12 @@ func TestReadmeDescriptionIsTheFirstRealParagraph(t *testing.T) {
 	if got := readmeDescription("# Tool\n\n## Usage\n\n```\ntool --help\n```\n"); got != "" {
 		t.Fatalf("nothing to say is the honest answer, not %q", got)
 	}
-	// Cut by character, never by byte.
+	// Cut by character, never by byte, and saying that it goes on.
 	long := strings.Repeat("é", 700)
-	if got := readmeDescription(long); len([]rune(got)) != 600 || !strings.HasSuffix(got, "é") {
-		t.Fatalf("a long paragraph is cut at 600 characters, whole ones: %d runes", len([]rune(got)))
+	got := readmeDescription(long)
+	opening, continues, isCut := strings.Cut(got, " ... ")
+	if !isCut || len([]rune(opening)) != descriptionRunes || continues != "(continued in the README)" {
+		t.Fatalf("a long paragraph is cut at %d characters, whole ones, and says it continues: %q", descriptionRunes, got)
 	}
 }
 
@@ -1715,5 +1717,108 @@ func TestAFileDeletedBetweenPagesDoesNotEndThePass(t *testing.T) {
 			t.Fatalf("%s was offered %d times and not once, so the pass that finished would have swept it: %v",
 				name, seen[name], seen)
 		}
+	}
+}
+
+// A text file of any size is sent whole, and nothing on it says it was
+// cut. A file over the old 512 KiB bound used to arrive as its first
+// 64 KiB, which left the rest of it impossible to find.
+func TestALargeTextFileArrivesWhole(t *testing.T) {
+	body := strings.Repeat("a line of a long log that goes on\n", (600<<10)/34+1)
+	result := scanIn(t, map[string]string{"long.log": body}, nil)
+	if len(result.Entries) != 1 {
+		t.Fatalf("one file, not %d entries", len(result.Entries))
+	}
+	entry := result.Entries[0]
+	if entry.Refused != "" || entry.Text != body {
+		t.Fatalf("the whole %d bytes arrive, not %d (refused %q)", len(body), len(entry.Text), entry.Refused)
+	}
+	if _, found := entry.Metadata["truncated"]; found {
+		t.Fatalf("and nothing says it was cut: %v", entry.Metadata)
+	}
+}
+
+// One file larger than a page carries is sent whole, on a page of its own
+// that ends after it, and the files after it come on the next page.
+func TestAPageEndsAfterAnEntryLargerThanThePage(t *testing.T) {
+	large := strings.Repeat("x", scanPageBytes+(1<<20)) + "\n"
+	files := map[string]string{
+		"a-large.txt": large,
+		"b-small.txt": "small one",
+		"c-small.txt": "small two",
+	}
+	result := scanIn(t, files, &ScanArguments{Most: 256})
+	if len(result.Entries) != 1 || result.Entries[0].ExternalID != "a-large.txt" || result.Entries[0].Text != large {
+		t.Fatalf("the large file alone, whole, on the first page: %d entries", len(result.Entries))
+	}
+	if result.Next == "" {
+		t.Fatalf("and the page says where the next one starts")
+	}
+	seen := pagesOf(t, files, ScanArguments{Most: 256})
+	for name := range files {
+		if seen[name] != 1 {
+			t.Fatalf("%s was sent %d times across the pages, not once: %v", name, seen[name], seen)
+		}
+	}
+}
+
+// A commit is sent whole however long its message and its list of files.
+// It used to be cut at 16 KiB and marked as cut.
+func TestALongCommitArrivesWhole(t *testing.T) {
+	var files []string
+	for index := range 2000 {
+		files = append(files, fmt.Sprintf("vendor/example.com/library/part%04d/file.go", index))
+	}
+	record := commitRecord{
+		Hash: strings.Repeat("a", 40), Name: "Alice Example", Address: "alice@example.com",
+		Subject: "add the vendored library", Body: strings.Repeat("Why it was added. ", 200),
+		Files: files,
+	}
+	entry := entryOfCommit(t.TempDir(), record, nil)
+	if len(entry.Text) <= 16<<10 {
+		t.Fatalf("the fixture is meant to be longer than 16 KiB: %d bytes", len(entry.Text))
+	}
+	if !strings.HasSuffix(entry.Text, files[len(files)-1]) || !strings.Contains(entry.Text, record.Body) {
+		t.Fatalf("the whole body and every file arrive: %d bytes ending %q", len(entry.Text), entry.Text[len(entry.Text)-60:])
+	}
+	if _, found := entry.Metadata["truncated"]; found || entry.Size != int64(len(entry.Text)) {
+		t.Fatalf("and nothing says it was cut: %v, size %d", entry.Metadata, entry.Size)
+	}
+}
+
+// A repository's profile carries every author, and the opening of a long
+// README with a note saying where the whole of it is.
+func TestAProfileKeepsEveryAuthorAndSaysTheReadmeContinues(t *testing.T) {
+	root := t.TempDir()
+	run := func(environment []string, arguments ...string) {
+		t.Helper()
+		command := exec.Command("git", arguments...)
+		command.Dir = root
+		command.Env = append(append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null"), environment...)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Skipf("git is not usable here: %s: %s", err, output)
+		}
+	}
+	run(nil, "init", "-q", "-b", "main")
+	readme := strings.Repeat("The example project does one thing well. ", 200)
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte(readme), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run(nil, "add", "README.md")
+	const authorCount = 230
+	for index := range authorCount {
+		name, address := fmt.Sprintf("Author %03d", index), fmt.Sprintf("author%03d@example.com", index)
+		run([]string{"GIT_AUTHOR_NAME=" + name, "GIT_AUTHOR_EMAIL=" + address,
+			"GIT_COMMITTER_NAME=" + name, "GIT_COMMITTER_EMAIL=" + address},
+			"commit", "-q", "--allow-empty", "-m", "change "+name)
+	}
+	profile := repositoryProfile(context.Background(), root, []string{"README.md"})
+	if len(profile.Authors) != authorCount || profile.Contributors != authorCount {
+		t.Fatalf("every author is kept: %d of %d", len(profile.Authors), authorCount)
+	}
+	want := " ... (the README continues; it is indexed whole as README.md)"
+	opening, isCut := strings.CutSuffix(profile.Readme, want)
+	if !isCut || len([]rune(opening)) != readmeRunes || !strings.HasPrefix(readme, opening) {
+		t.Fatalf("the README's opening, saying where the rest is: %q", profile.Readme[len(profile.Readme)-80:])
 	}
 }
