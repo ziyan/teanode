@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.94.3] - 2026-10-01
+
+### Changed
+
+- Dreams read two-post threads the person took part in and short documents, give files left out of a full batch another turn instead of declining them, and write a page's opening and overview from its newest facts. (#278)
+
+## [0.94.2] - 2026-10-01
+
+### Fixed
+
+- A question about a whole area keeps its note that a survey reads all of it, which was dropped when recall also carried facts, lessons and passages. (#276)
+
 ## [0.94.1] - 2026-10-01
 
 ### Changed
