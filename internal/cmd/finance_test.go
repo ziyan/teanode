@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"github.com/ziyan/teanode/internal/client"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -350,5 +351,63 @@ func TestFinanceTransferIsTheTransferCategory(test *testing.T) {
 	}
 	if asked[1]["spendingCategoryId"] != "category-own-transfer" {
 		test.Errorf("the person's own transfer by its id sent %v", asked[1])
+	}
+}
+
+// A mirrored copy is listed marked, naming the copy that counts, and
+// count-transaction counts it. The rows are read rather than the table,
+// which goes to the terminal.
+func TestFinanceTransactionsMarkMirroredCopies(test *testing.T) {
+	test.Parallel()
+	var mutex sync.Mutex
+	var asked []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var document struct {
+			Query     string         `json:"query"`
+			Variables map[string]any `json:"variables"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&document); err != nil {
+			response.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		mutex.Lock()
+		asked = append(asked, document.Variables)
+		mutex.Unlock()
+		response.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(document.Query, "FinanceTransactions("):
+			_, _ = response.Write([]byte(`{"data":{"FinanceTransactions":{"financeTransactions":[` +
+				`{"id":"fee-counted","financeAccountId":"one","postedOn":"2026-09-15","amount":"-25","currencyCode":"USD","description":"ACCOUNT FEE","isPending":false},` +
+				`{"id":"fee-copy","financeAccountId":"two","postedOn":"2026-09-15","amount":"-25","currencyCode":"USD","description":"ACCOUNT FEE","isPending":false,"duplicateOfTransactionId":"fee-counted","duplicateDecidedBy":"mirror_detection"}` +
+				`],"nextCursor":null}}}`))
+		case strings.Contains(document.Query, "CountTransaction("):
+			_, _ = response.Write([]byte(`{"data":{"CountTransaction":{"id":"fee-copy","financeAccountId":"two","postedOn":"2026-09-15","amount":"-25","currencyCode":"USD","description":"ACCOUNT FEE","isPending":false,"duplicateDecidedBy":"person"}}}`))
+		default:
+			_, _ = response.Write([]byte(`{"data":{"SpendingCategories":[]}}`))
+		}
+	}))
+	test.Cleanup(server.Close)
+
+	if _, err := runFinanceAgainst(test, server, "transactions", "--duplicate-of", "fee-counted"); err != nil {
+		test.Fatal(err)
+	}
+	rows, duplicateCount := financeTransactionRows([]*client.FinanceTransaction{
+		{ID: "fee-counted", PostedOn: "2026-09-15", Amount: "-25", CurrencyCode: "USD", Description: "ACCOUNT FEE"},
+		{ID: "fee-copy", PostedOn: "2026-09-15", Amount: "-25", CurrencyCode: "USD", Description: "ACCOUNT FEE", DuplicateOfTransactionID: "fee-counted"},
+	}, map[string]string{})
+	if duplicateCount != 1 || rows[0][2] != "ACCOUNT FEE" || rows[1][2] != "ACCOUNT FEE (duplicate of fee-counted, not counted)" {
+		test.Errorf("the rows are %v, %d of them duplicates", rows, duplicateCount)
+	}
+	printed, err := runFinanceAgainst(test, server, "count-transaction", "fee-copy")
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(printed, "fee-copy: counted") {
+		test.Errorf("printed %q", printed)
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
+	if asked[0]["duplicateOfTransactionId"] != "fee-counted" || asked[len(asked)-1]["financeTransactionId"] != "fee-copy" {
+		test.Errorf("sent %v", asked)
 	}
 }

@@ -12,6 +12,7 @@ import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
 import {
   CATEGORIZE_TRANSACTION,
+  COUNT_TRANSACTION,
   FINANCE_ACCOUNTS,
   FINANCE_TRANSACTIONS,
   FinanceAccount,
@@ -19,6 +20,7 @@ import {
   FinanceTransactionPage,
   SPENDING_CATEGORIES,
   SpendingCategory,
+  UNDO_COUNT_TRANSACTION,
   amountOf,
   formatDay,
 } from './financeApi'
@@ -44,7 +46,9 @@ const PAGE_SIZE = 100
 // here rewrites the address in place rather than adding a step to Back. Each one's spending
 // category is changed where it is, with the offer to do the same for every
 // transaction from that merchant. A transfer is the transfer category,
-// chosen the same way, which takes it out of spending and income.
+// chosen the same way, which takes it out of spending and income. A
+// mirrored copy stays in the list, muted, tagged and with its amount struck
+// through, since it is left out of every total.
 export function FinanceTransactionsSection() {
   const { t } = useTranslation()
   const toast = useToast()
@@ -115,6 +119,13 @@ export function FinanceTransactionsSection() {
   // dialog shows there as it does in its row; and what had the focus when
   // it opened, to give it back when it closes.
   const [detailedId, setDetailedId] = useState<string | null>(null)
+  // Transactions opened from another's details (a counted copy and its
+  // duplicates) that the pages read so far may not hold.
+  const [opened, setOpened] = useState<Record<string, FinanceTransaction>>({})
+  const [isCounting, setIsCounting] = useState(false)
+  // Raised after the person counts a copy or takes that back, so the open
+  // details read again the copies they name.
+  const [detailsRefreshCount, setDetailsRefreshCount] = useState(0)
   const openedFrom = useRef<HTMLElement | null>(null)
   const openDetails = (row: FinanceTransaction) => {
     openedFrom.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -139,7 +150,10 @@ export function FinanceTransactionsSection() {
     [firstPage, more.rows, changed],
   )
   const accountList = accounts.data?.FinanceAccounts ?? []
-  const detailed = detailedId ? rows.find((row) => row.id === detailedId) : undefined
+  const detailedRow = detailedId
+    ? (rows.find((row) => row.id === detailedId) ?? opened[detailedId])
+    : undefined
+  const detailed = detailedRow && changed[detailedRow.id] ? { ...detailedRow, ...changed[detailedRow.id] } : detailedRow
   const categoryList = categories.data?.SpendingCategories ?? []
 
   const loadMore = async () => {
@@ -201,6 +215,50 @@ export function FinanceTransactionsSection() {
     }
   }
 
+  // reloadLoadedPages reads again every page read so far. Counting a copy,
+  // or handing it back to detection, can change which of its copies is
+  // counted, so rows other than the one clicked change too. It moves no
+  // row, so the pages below the first are read again from the same
+  // cursors.
+  const reloadLoadedPages = async () => {
+    const reloadedRows: FinanceTransaction[] = []
+    let reloadedAfter = firstPage?.nextCursor ?? null
+    while (more.isLoaded && reloadedAfter && reloadedRows.length < more.rows.length) {
+      const answer = await graphql<{ FinanceTransactions: FinanceTransactionPage }>(FINANCE_TRANSACTIONS, {
+        ...variables,
+        after: reloadedAfter,
+      })
+      reloadedRows.push(...answer.FinanceTransactions.financeTransactions)
+      reloadedAfter = answer.FinanceTransactions.nextCursor ?? null
+    }
+    await first.reload(true)
+    if (more.isLoaded) setMore({ rows: reloadedRows, after: reloadedAfter, isLoaded: true })
+    setChanged({})
+  }
+
+  // countThisOne records or takes back the person's word that a mirrored
+  // copy is a charge of its own, then reads the list again.
+  const countThisOne = async (row: FinanceTransaction, isCountedByPerson: boolean) => {
+    setIsCounting(true)
+    try {
+      const answer = await graphql<{
+        CountTransaction?: FinanceTransaction
+        UndoCountTransaction?: FinanceTransaction
+      }>(isCountedByPerson ? COUNT_TRANSACTION : UNDO_COUNT_TRANSACTION, { financeTransactionId: row.id })
+      const counted = answer.CountTransaction ?? answer.UndoCountTransaction
+      // Kept beside the pages, so its details show the answer even when
+      // no page read so far holds it, or the pages read again leave it out.
+      if (counted) setOpened((previous) => ({ ...previous, [row.id]: counted }))
+      toast.done(isCountedByPerson ? t('finance.transactionCounted') : t('finance.transactionCountUndone'))
+      await reloadLoadedPages()
+      setDetailsRefreshCount((previous) => previous + 1)
+    } catch (caught) {
+      toast.failure(caught, t('finance.failed'))
+    } finally {
+      setIsCounting(false)
+    }
+  }
+
   const columns: Column<FinanceTransaction>[] = [
     {
       key: 'postedOn',
@@ -216,7 +274,14 @@ export function FinanceTransactionsSection() {
       header: t('finance.amount'),
       numeric: true,
       value: (row) => row.amount,
-      render: (row) => <Money amount={row.amount} currency={row.currencyCode} />,
+      render: (row) =>
+        row.duplicateOfTransactionId ? (
+          <s className="finance-duplicate-amount" title={t('finance.duplicateNotCounted')}>
+            <Money amount={row.amount} currency={row.currencyCode} />
+          </s>
+        ) : (
+          <Money amount={row.amount} currency={row.currencyCode} />
+        ),
       sort: (left, right) => amountOf(left.amount) - amountOf(right.amount),
     },
     {
@@ -225,7 +290,7 @@ export function FinanceTransactionsSection() {
       value: (row) => [row.merchantName, row.description].filter(Boolean).join(' · '),
       render: (row) => (
         <span
-          className="finance-description"
+          className={row.duplicateOfTransactionId ? 'finance-description muted' : 'finance-description'}
           title={[row.merchantName, row.description].filter(Boolean).join(' · ')}
         >
           {row.merchantName || row.description}
@@ -236,6 +301,12 @@ export function FinanceTransactionsSection() {
             <>
               {' '}
               <Tag value={t('finance.pending')} />
+            </>
+          ) : null}
+          {row.duplicateOfTransactionId ? (
+            <>
+              {' '}
+              <Tag value={t('finance.duplicate')} />
             </>
           ) : null}
         </span>
@@ -413,8 +484,17 @@ export function FinanceTransactionsSection() {
         <FinanceTransactionDialog
           financeTransaction={detailed}
           financeAccount={accountList.find((candidate) => candidate.id === detailed.financeAccountId)}
+          financeAccounts={accountList}
           categoryOptions={spendingCategoryOptions(categoryList, categoryName, detailed.spendingCategoryId, t('finance.transferGroup'))}
+          isCounting={isCounting}
+          refreshCount={detailsRefreshCount}
           onCategorize={(value) => void categorize(detailed, value)}
+          onCount={() => void countThisOne(detailed, true)}
+          onUndoCount={() => void countThisOne(detailed, false)}
+          onOpenTransaction={(financeTransaction) => {
+            setOpened((previous) => ({ ...previous, [financeTransaction.id]: financeTransaction }))
+            setDetailedId(financeTransaction.id)
+          }}
           onClose={closeDetails}
         />
       ) : null}

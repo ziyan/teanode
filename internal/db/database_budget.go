@@ -119,30 +119,30 @@ type BudgetOperation interface {
 
 	// ListSpendingCategoryDays is each day's spending in a month
 	// ("2006-01") per spending category and currency: money out less
-	// refunds in the same spending category, the transfer category and
-	// income categories left out. Money in that is not categorized is left out
-	// too, since it may be income; money out that is not categorized is
-	// counted under an empty spending category.
+	// refunds in the same spending category, the transfer category,
+	// income categories and mirrored copies left out. Money in that is not
+	// categorized is left out too, since it may be income; money out that
+	// is not categorized is counted under an empty spending category.
 	ListSpendingCategoryDays(agentId, month string) ([]*models.SpendingCategoryDay, error)
 
 	// ListIncomeCategoryDays is each day's income in a month ("2006-01")
 	// per income spending category and currency: money in less money
-	// taken back, transfers left out. Money in that is not categorized is
-	// left out, since no income budget can count it; ListCashFlowDays
-	// counts it as income.
+	// taken back, transfers and mirrored copies left out. Money in that is
+	// not categorized is left out, since no income budget can count it;
+	// ListCashFlowDays counts it as income.
 	ListIncomeCategoryDays(agentId, month string) ([]*models.IncomeCategoryDay, error)
 
 	// ListCashFlowDays is each day's income and spending per currency from
 	// one day to another, both included ("2006-01-02"), counted as
 	// ListSpendingCategoryDays counts spending, so the two agree: a refund
 	// in a spending category lowers spending rather than counting as
-	// income.
+	// income. Transfers and mirrored copies are left out.
 	ListCashFlowDays(agentId, from, to string) ([]*models.CashFlowDay, error)
 
 	// ListMerchantMonthSpending is what each merchant charged each
 	// spending category in each of the three full months before a month
-	// ("2006-01"), per currency, transfers left out: what the budget pace
-	// reads to expect a fixed monthly charge.
+	// ("2006-01"), per currency, transfers and mirrored copies left out:
+	// what the budget pace reads to expect a fixed monthly charge.
 	ListMerchantMonthSpending(agentId, month string) ([]*models.MerchantMonthSpending, error)
 }
 
@@ -1073,7 +1073,7 @@ func (self *transaction) ListSpendingCategoryDays(agentId, month string) ([]*mod
 		FROM "agent_finance_transaction" AS "spent"
 		LEFT JOIN "agent_spending_category" AS "spending_category"
 		  ON "spending_category"."id" = "spent"."spending_category_id" AND "spending_category"."agent_id" = "spent"."agent_id"
-		WHERE "spent"."agent_id" = ?
+		WHERE "spent"."agent_id" = ? AND "spent"."duplicate_of_transaction_id" IS NULL
 		  AND "spent"."posted_on" >= ?::date AND "spent"."posted_on" < ?::date
 		  AND (("spending_category"."id" IS NULL AND "spent"."amount" < 0)
 		    OR ("spending_category"."id" IS NOT NULL AND NOT "spending_category"."is_income" AND NOT "spending_category"."is_transfer"))
@@ -1108,6 +1108,7 @@ func (self *transaction) ListIncomeCategoryDays(agentId, month string) ([]*model
 		JOIN "agent_spending_category" AS "spending_category"
 		  ON "spending_category"."id" = "received"."spending_category_id" AND "spending_category"."agent_id" = "received"."agent_id"
 		WHERE "received"."agent_id" = ? AND "spending_category"."is_income" AND NOT "spending_category"."is_transfer"
+		  AND "received"."duplicate_of_transaction_id" IS NULL
 		  AND "received"."posted_on" >= ?::date AND "received"."posted_on" < ?::date
 		GROUP BY 1, 2, 3
 		ORDER BY 3, 1, 2`,
@@ -1149,6 +1150,7 @@ func (self *transaction) ListCashFlowDays(agentId, from, to string) ([]*models.C
 		LEFT JOIN "agent_spending_category" AS "spending_category"
 		  ON "spending_category"."id" = "flowed"."spending_category_id" AND "spending_category"."agent_id" = "flowed"."agent_id"
 		WHERE "flowed"."agent_id" = ? AND NOT COALESCE("spending_category"."is_transfer", false)
+		  AND "flowed"."duplicate_of_transaction_id" IS NULL
 		  AND "flowed"."posted_on" >= ?::date AND "flowed"."posted_on" <= ?::date
 		GROUP BY 1, 2
 		ORDER BY 1, 2`, agentId, from, to).Scan(&rows).Error; err != nil {
@@ -1183,7 +1185,7 @@ func (self *transaction) ListMerchantMonthSpending(agentId, month string) ([]*mo
 		FROM "agent_finance_transaction" AS "spent"
 		JOIN "agent_spending_category" AS "spending_category"
 		  ON "spending_category"."id" = "spent"."spending_category_id" AND "spending_category"."agent_id" = "spent"."agent_id"
-		WHERE "spent"."agent_id" = ? AND "spent"."amount" < 0
+		WHERE "spent"."agent_id" = ? AND "spent"."amount" < 0 AND "spent"."duplicate_of_transaction_id" IS NULL
 		  AND NOT "spending_category"."is_income" AND NOT "spending_category"."is_transfer"
 		  AND "spent"."posted_on" >= ?::date AND "spent"."posted_on" < ?::date
 		GROUP BY 1, 2, 3, 4

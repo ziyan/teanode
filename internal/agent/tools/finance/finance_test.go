@@ -936,3 +936,54 @@ func TestFinanceToolRefusesTheTransferFlag(test *testing.T) {
 		test.Errorf("an empty is_transfer was refused: %v", err)
 	}
 }
+
+// Mirrored copies reach the tool as they are: a listing carries each
+// duplicate's counted copy, a counted copy's duplicates are listed by it,
+// count_transaction and undo_count_transaction send the transaction, and
+// the description says what a mirrored copy is.
+func TestFinanceToolListsAndCountsMirroredCopies(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"FinanceTransactions": `{"financeTransactions":[` +
+			`{"id":"fee-counted","postedOn":"2026-09-15","amount":"-25","currencyCode":"USD","description":"ACCOUNT FEE"},` +
+			`{"id":"fee-copy","postedOn":"2026-09-15","amount":"-25","currencyCode":"USD","description":"ACCOUNT FEE","duplicateOfTransactionId":"fee-counted","duplicateDecidedBy":"mirror_detection"}` +
+			`],"nextCursor":""}`,
+		"CountTransaction":     `{"id":"fee-copy","duplicateDecidedBy":"person"}`,
+		"UndoCountTransaction": `{"id":"fee-copy","duplicateOfTransactionId":"fee-counted","duplicateDecidedBy":"mirror_detection"}`,
+	}}
+	result, err := call(test, operations, `{"operation":"transactions","duplicate_of_transaction_id":"fee-counted"}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if sent := operations.variables[len(operations.variables)-1]; sent["duplicateOfTransactionId"] != "fee-counted" {
+		test.Errorf("sent %v", sent)
+	}
+	if !strings.Contains(result.Content, `"duplicateOfTransactionId":"fee-counted"`) {
+		test.Errorf("the listing does not say which is a duplicate: %s", result.Content)
+	}
+	for _, operation := range []string{"count_transaction", "undo_count_transaction"} {
+		if _, err := call(test, operations, `{"operation":"`+operation+`","finance_transaction_id":"fee-copy"}`); err != nil {
+			test.Fatalf("%s: %s", operation, err)
+		}
+		if sent := operations.variables[len(operations.variables)-1]; sent["financeTransactionId"] != "fee-copy" {
+			test.Errorf("%s sent %v", operation, sent)
+		}
+		if _, err := call(test, operations, `{"operation":"`+operation+`"}`); err == nil {
+			test.Errorf("%s with no transaction was sent", operation)
+		}
+	}
+
+	ctx := tools.WithRun(context.Background(), &fakeRun{operations: operations})
+	tool := financeTool(test)
+	for arguments, wanted := range map[string]string{
+		`{"operation":"count_transaction","finance_transaction_id":"fee-copy"}`:      "as a real charge of its own",
+		`{"operation":"undo_count_transaction","finance_transaction_id":"fee-copy"}`: "decide again",
+	} {
+		if line := tool.PreviewLine(ctx, json.RawMessage(arguments)); !strings.Contains(line, wanted) || !strings.Contains(line, "ACCOUNT FEE") {
+			test.Errorf("%s: the card %q does not say %s about the transaction", arguments, line, wanted)
+		}
+	}
+	if !strings.Contains(tool.Description, "Mirrored copies") || !strings.Contains(tool.Description, "duplicateOfTransactionId") {
+		test.Error("the description does not explain mirrored copies")
+	}
+}

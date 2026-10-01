@@ -1,10 +1,20 @@
 import { useEffect } from 'react'
 
+import { graphql } from '../../api'
 import { CopyIconButton, formatMoney, formatTime } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
 import { Select } from '../../components/select'
+import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
-import { FinanceAccount, FinanceTransaction, amountOf, formatDay, hasAmount } from './financeApi'
+import {
+  FINANCE_TRANSACTIONS,
+  FinanceAccount,
+  FinanceTransaction,
+  FinanceTransactionPage,
+  amountOf,
+  formatDay,
+  hasAmount,
+} from './financeApi'
 import { accountLabel, useFinanceWords } from './financeCommon'
 
 // providerMetadataText is the provider's object for a transaction laid out
@@ -30,22 +40,72 @@ export function providerMetadataText(providerMetadata: unknown): string {
 // other side, the provider, a rule or the person). What the provider wrote
 // is shown as text and nothing else: it comes from whoever charged the
 // account.
+//
+// A mirrored copy says which copy is counted, by account and day, and
+// opens it; Count this one is the person's word that it is a charge of
+// its own. The counted copy names its duplicates the same way. Both are
+// read again whenever refreshCount changes, after the person counts a
+// copy or takes that back, since that can change which copy is counted.
 export function FinanceTransactionDialog({
   financeTransaction,
   financeAccount,
+  financeAccounts,
   categoryOptions,
+  isCounting,
+  refreshCount = 0,
   onCategorize,
+  onCount,
+  onUndoCount,
+  onOpenTransaction,
   onClose,
 }: {
   financeTransaction: FinanceTransaction
   financeAccount?: FinanceAccount
+  financeAccounts: FinanceAccount[]
   categoryOptions: { value: string; label: string }[]
+  isCounting?: boolean
+  refreshCount?: number
   onCategorize: (spendingCategoryId: string) => void
+  onCount: () => void
+  onUndoCount: () => void
+  onOpenTransaction: (financeTransaction: FinanceTransaction) => void
   onClose: () => void
 }) {
   const { t } = useTranslation()
   const words = useFinanceWords()
   const metadata = providerMetadataText(financeTransaction.providerMetadata)
+  const duplicateOfTransactionId = financeTransaction.duplicateOfTransactionId ?? ''
+  // The counted copy of a duplicate, asked for by its id, or the
+  // duplicates of a counted copy.
+  const related = useQuery(
+    async () => {
+      if (duplicateOfTransactionId) {
+        const answer = await graphql<{ FinanceTransactions: FinanceTransactionPage }>(FINANCE_TRANSACTIONS, {
+          financeTransactionIds: [duplicateOfTransactionId],
+        })
+        return {
+          countedCopy: answer.FinanceTransactions.financeTransactions.find((copy) => copy.id === duplicateOfTransactionId),
+          duplicates: [] as FinanceTransaction[],
+        }
+      }
+      const answer = await graphql<{ FinanceTransactions: FinanceTransactionPage }>(FINANCE_TRANSACTIONS, {
+        duplicateOfTransactionId: financeTransaction.id,
+        limit: 200,
+      })
+      return { countedCopy: undefined, duplicates: answer.FinanceTransactions.financeTransactions }
+    },
+    [financeTransaction.id, duplicateOfTransactionId, refreshCount],
+    { refresh: false },
+  )
+  const countedCopy = related.data?.countedCopy
+  const duplicates = related.data?.duplicates ?? []
+  const copyLabel = (copy: FinanceTransaction) => {
+    const account = financeAccounts.find((candidate) => candidate.id === copy.financeAccountId)
+    return t('finance.copyOnAccount', {
+      account: account ? accountLabel(account) : t('finance.deletedFinanceAccount'),
+      day: formatDay(copy.postedOn),
+    })
+  }
   // Into the dialog when it opens, so the keyboard that opened it from its
   // row is in it: on the close button, out of the way of the fields.
   useEffect(() => {
@@ -93,8 +153,66 @@ export function FinanceTransactionDialog({
             {property(
               t('finance.amount'),
               `${formatMoney(amountOf(financeTransaction.amount), financeTransaction.currencyCode)} ${financeTransaction.currencyCode}`,
-              'numeric-value',
+              duplicateOfTransactionId ? 'numeric-value finance-duplicate-amount' : 'numeric-value',
             )}
+            {duplicateOfTransactionId ? (
+              <>
+                <dt>{t('finance.duplicateOf')}</dt>
+                <dd>
+                  {countedCopy ? (
+                    <button /* link-button: goes to the counted copy, inline in a sentence */
+                      type="button"
+                      className="link"
+                      onClick={() => onOpenTransaction(countedCopy)}
+                    >
+                      {copyLabel(countedCopy)}
+                    </button>
+                  ) : (
+                    <span className="muted">{t('finance.countedCopy')}</span>
+                  )}
+                  <span className="muted finance-detail-note">{t('finance.duplicateHint')}</span>
+                  <div className="finance-detail-actions">
+                    <button type="button" disabled={isCounting} onClick={onCount}>
+                      {t('finance.countThisOne')}
+                    </button>
+                  </div>
+                </dd>
+              </>
+            ) : null}
+            {financeTransaction.duplicateDecidedBy === 'person' ? (
+              <>
+                <dt>{t('finance.counting')}</dt>
+                <dd>
+                  {t('finance.countedByPerson')}
+                  <div className="finance-detail-actions">
+                    <button type="button" disabled={isCounting} onClick={onUndoCount}>
+                      {t('finance.letDetectionDecide')}
+                    </button>
+                  </div>
+                </dd>
+              </>
+            ) : null}
+            {duplicates.length > 0 ? (
+              <>
+                <dt>{t('finance.duplicates')}</dt>
+                <dd>
+                  <ul className="finance-duplicate-list">
+                    {duplicates.map((copy) => (
+                      <li key={copy.id}>
+                        <button /* link-button: goes to a duplicate, inline in a list of them */
+                          type="button"
+                          className="link"
+                          onClick={() => onOpenTransaction(copy)}
+                        >
+                          {copyLabel(copy)}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <span className="muted finance-detail-note">{t('finance.duplicatesHint')}</span>
+                </dd>
+              </>
+            ) : null}
             {property(t('finance.merchant'), financeTransaction.merchantName)}
             {property(t('finance.fullDescription'), financeTransaction.description)}
             {property(
@@ -112,6 +230,9 @@ export function FinanceTransactionDialog({
                 onChange={onCategorize}
               />
               {categorizedBy ? <span className="muted finance-detail-note">{categorizedBy}</span> : null}
+              {duplicateOfTransactionId ? (
+                <span className="muted finance-detail-note">{t('finance.duplicateCategoryNotCounted')}</span>
+              ) : null}
             </dd>
             {property(t('finance.providerCategoryPrimary'), financeTransaction.providerCategoryPrimary, 'mono')}
             {property(t('finance.providerCategoryDetailed'), financeTransaction.providerCategoryDetailed, 'mono')}

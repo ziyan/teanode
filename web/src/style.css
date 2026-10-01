@@ -12569,6 +12569,25 @@ button.idea-history-title {
   font-size: var(--text-label);
 }
 
+/* A mirrored copy's amount, in its row and its details: still shown, but
+   struck through and muted, since it is left out of every total. */
+.finance-duplicate-amount {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+/* The counted copy's duplicates, one account and day a line. */
+.finance-duplicate-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* What can be done about a copy, under what is said about it. */
+.finance-detail-actions {
+  margin-top: var(--space-2);
+}
+
 .finance-metadata-head {
   display: flex;
   align-items: baseline;

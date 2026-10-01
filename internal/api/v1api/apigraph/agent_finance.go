@@ -59,7 +59,7 @@ type FinanceQuery interface {
 	FinanceTrades(ctx context.Context, arguments FinanceTradesArguments) (*FinanceTradePageView, error)
 
 	// Money out and money in per group, per currency and in the reporting
-	// currency, transfers left out.
+	// currency, transfers and mirrored copies left out.
 	FinanceSpendingSummary(ctx context.Context, arguments FinanceSpendingSummaryArguments) (*FinanceSpendingSummaryView, error)
 
 	// What one unit of one currency bought in another on a day, from the
@@ -208,6 +208,15 @@ type FinanceMutation interface {
 	// SpendingCategories) makes it a transfer between the person's own
 	// accounts, neither spending nor income; any other takes that away.
 	CategorizeTransaction(ctx context.Context, arguments CategorizeTransactionArguments) (*CategorizeTransactionView, error)
+
+	// Count a mirrored copy, a duplicate of another finance transaction
+	// (duplicateOfTransactionId), as the person's own decision that it is
+	// a real charge of its own; mirror detection then leaves it alone.
+	CountTransaction(ctx context.Context, arguments CountTransactionArguments) (*models.FinanceTransaction, error)
+
+	// Take back CountTransaction: mirror detection decides again at once
+	// whether the finance transaction is a duplicate.
+	UndoCountTransaction(ctx context.Context, arguments CountTransactionArguments) (*models.FinanceTransaction, error)
 
 	// Set a spending category's monthly budget from a month on.
 	SetBudget(ctx context.Context, arguments SetBudgetArguments) (*models.Budget, error)
@@ -408,6 +417,14 @@ type FinanceTransactionsArguments struct {
 	// IsUncategorized keeps only finance transactions with no spending
 	// category; a transfer has the transfer category.
 	IsUncategorized *bool `json:"isUncategorized" graphapi:"nullable"`
+
+	// DuplicateOfTransactionID keeps only the mirrored copies of this
+	// finance transaction, its duplicates.
+	DuplicateOfTransactionID string `json:"duplicateOfTransactionId" graphapi:"nullable"`
+
+	// FinanceTransactionIDs keeps only these finance transactions, to read
+	// one by its id.
+	FinanceTransactionIDs []string `json:"financeTransactionIds" graphapi:"nullable"`
 
 	// Limit is at most 200; zero is 50. After is the nextCursor of the
 	// page before.
@@ -1340,7 +1357,16 @@ func (self *graph) FinanceTransactions(ctx context.Context, arguments FinanceTra
 	filter := &db.FinanceTransactionFilter{
 		FinanceAccountID: strings.TrimSpace(arguments.FinanceAccountID), Text: strings.TrimSpace(arguments.Text),
 		ProviderCategory: strings.TrimSpace(arguments.ProviderCategory), SpendingCategoryID: strings.TrimSpace(arguments.SpendingCategoryID),
-		After: strings.TrimSpace(arguments.After),
+		DuplicateOfTransactionID: strings.TrimSpace(arguments.DuplicateOfTransactionID), After: strings.TrimSpace(arguments.After),
+	}
+	// A blank id is refused rather than dropped: dropping the only one
+	// would list every finance transaction instead of none.
+	for _, financeTransactionId := range arguments.FinanceTransactionIDs {
+		trimmed := strings.TrimSpace(financeTransactionId)
+		if trimmed == "" {
+			return nil, fmt.Errorf("%w: financeTransactionIds holds an empty id", api.ErrInvalidArguments)
+		}
+		filter.FinanceTransactionIDs = append(filter.FinanceTransactionIDs, trimmed)
 	}
 	if filter.From, err = dayArgument("from", arguments.From, ""); err != nil {
 		return nil, err
@@ -1473,7 +1499,7 @@ func convertSpendingGroups(tx db.Transaction, converter *rates.Converter, agentI
 	after := ""
 	for scanned := 0; scanned < financeTransactionsScanned; {
 		page, err := tx.ListFinanceTransactions(agentId, &db.FinanceTransactionFilter{
-			From: filter.From, To: filter.To, FinanceAccountID: filter.FinanceAccountID, IsTransferExcluded: true,
+			From: filter.From, To: filter.To, FinanceAccountID: filter.FinanceAccountID, IsTransferExcluded: true, IsDuplicateExcluded: true,
 			Limit: db.FinanceTransactionLimitMost, After: after,
 		})
 		if err != nil {

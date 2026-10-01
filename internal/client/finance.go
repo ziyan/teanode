@@ -95,6 +95,9 @@ type FinanceSource struct {
 
 // FinanceTransaction is one transaction on a finance account. Description
 // and MerchantName are written by whoever charged the account.
+// DuplicateOfTransactionID names the counted copy when it is a mirrored
+// copy, left out of every total, and DuplicateDecidedBy what decided
+// (mirror_detection, or person when the person counted it).
 type FinanceTransaction struct {
 	ID                       string     `json:"id"`
 	FinanceAccountID         string     `json:"financeAccountId"`
@@ -110,6 +113,8 @@ type FinanceTransaction struct {
 	SpendingCategoryID       string     `json:"spendingCategoryId,omitempty"`
 	CategorizedBy            string     `json:"categorizedBy,omitempty"`
 	CategorizationConfidence string     `json:"categorizationConfidence,omitempty"`
+	DuplicateOfTransactionID string     `json:"duplicateOfTransactionId,omitempty"`
+	DuplicateDecidedBy       string     `json:"duplicateDecidedBy,omitempty"`
 }
 
 // FinanceTransactionPage is one page of finance transactions and the cursor
@@ -505,7 +510,7 @@ const (
 
 	financeSourceFields = `{ id name providerKind institutionId institutionName isEnabled cron lastRunAt nextRunAt lastError isSignInRequired createdAt financeAccounts ` + financeAccountFields + ` }`
 
-	financeTransactionFields = `{ id financeAccountId postedOn transactedAt amount currencyCode description merchantName providerCategoryPrimary providerCategoryDetailed isPending spendingCategoryId categorizedBy categorizationConfidence }`
+	financeTransactionFields = `{ id financeAccountId postedOn transactedAt amount currencyCode description merchantName providerCategoryPrimary providerCategoryDetailed isPending spendingCategoryId categorizedBy categorizationConfidence duplicateOfTransactionId duplicateDecidedBy }`
 
 	currencyPairRateFields = `{ fromCurrencyCode toCurrencyCode rate rateOn rateSource }`
 
@@ -545,8 +550,8 @@ const (
   }
 }`
 
-	DocumentFinanceTransactions = `query ($from: String, $to: String, $financeAccountId: String, $text: String, $minimumAmount: String, $maximumAmount: String, $providerCategory: String, $spendingCategoryId: String, $isUncategorized: Boolean, $limit: Int, $after: String) {
-  FinanceTransactions(from: $from, to: $to, financeAccountId: $financeAccountId, text: $text, minimumAmount: $minimumAmount, maximumAmount: $maximumAmount, providerCategory: $providerCategory, spendingCategoryId: $spendingCategoryId, isUncategorized: $isUncategorized, limit: $limit, after: $after) {
+	DocumentFinanceTransactions = `query ($from: String, $to: String, $financeAccountId: String, $text: String, $minimumAmount: String, $maximumAmount: String, $providerCategory: String, $spendingCategoryId: String, $isUncategorized: Boolean, $duplicateOfTransactionId: String, $limit: Int, $after: String) {
+  FinanceTransactions(from: $from, to: $to, financeAccountId: $financeAccountId, text: $text, minimumAmount: $minimumAmount, maximumAmount: $maximumAmount, providerCategory: $providerCategory, spendingCategoryId: $spendingCategoryId, isUncategorized: $isUncategorized, duplicateOfTransactionId: $duplicateOfTransactionId, limit: $limit, after: $after) {
     financeTransactions ` + financeTransactionFields + ` nextCursor
   }
 }`
@@ -704,6 +709,14 @@ const (
   }
 }`
 
+	DocumentCountTransaction = `mutation ($financeTransactionId: String!) {
+  CountTransaction(financeTransactionId: $financeTransactionId) ` + financeTransactionFields + `
+}`
+
+	DocumentUndoCountTransaction = `mutation ($financeTransactionId: String!) {
+  UndoCountTransaction(financeTransactionId: $financeTransactionId) ` + financeTransactionFields + `
+}`
+
 	DocumentSetBudget = `mutation ($spendingCategoryId: String!, $monthlyAmount: String!, $currencyCode: String, $effectiveFrom: String) {
   SetBudget(spendingCategoryId: $spendingCategoryId, monthlyAmount: $monthlyAmount, currencyCode: $currencyCode, effectiveFrom: $effectiveFrom) ` + budgetFields + `
 }`
@@ -745,6 +758,7 @@ var FinanceDocuments = map[string]string{
 	"DeleteSpendingCategory": DocumentDeleteSpendingCategory, "CreateSpendingRule": DocumentCreateSpendingRule,
 	"UpdateSpendingRule": DocumentUpdateSpendingRule, "DeleteSpendingRule": DocumentDeleteSpendingRule,
 	"CategorizeTransaction": DocumentCategorizeTransaction, "SetBudget": DocumentSetBudget,
+	"CountTransaction": DocumentCountTransaction, "UndoCountTransaction": DocumentUndoCountTransaction,
 	"CreateSavingsTarget": DocumentCreateSavingsTarget,
 	"UpdateSavingsTarget": DocumentUpdateSavingsTarget, "CloseSavingsTarget": DocumentCloseSavingsTarget,
 }

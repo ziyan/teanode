@@ -17,8 +17,9 @@ import (
 )
 
 // Budgets: spending categories and rules, categorizing (transfers being
-// the transfer category), budgets and their status, spending by day, cash
-// flow and savings targets. Part of the finance area (FinanceQuery, FinanceMutation).
+// the transfer category), counting mirrored copies, budgets and their
+// status, spending by day, cash flow and savings targets. Part of the
+// finance area (FinanceQuery, FinanceMutation).
 
 // CategorizeTransactionView is the finance transaction as categorized, and
 // the spending rule made for its merchant when one was asked for.
@@ -158,6 +159,12 @@ type CategorizeTransactionArguments struct {
 	FinanceTransactionID     string `json:"financeTransactionId"`
 	SpendingCategoryID       string `json:"spendingCategoryId" graphapi:"nullable"`
 	ShouldCreateSpendingRule *bool  `json:"shouldCreateSpendingRule" graphapi:"nullable"`
+}
+
+// CountTransactionArguments name the finance transaction, a mirrored
+// copy, the person counts or hands back to mirror detection.
+type CountTransactionArguments struct {
+	FinanceTransactionID string `json:"financeTransactionId"`
 }
 
 // SetBudgetArguments are a spending category's monthly amount, its
@@ -527,6 +534,42 @@ func (self *graph) CategorizeTransaction(ctx context.Context, arguments Categori
 		return nil, err
 	}
 	return view, nil
+}
+
+func (self *graph) CountTransaction(ctx context.Context, arguments CountTransactionArguments) (*models.FinanceTransaction, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := self.requireFinanceOffered(); err != nil {
+		return nil, err
+	}
+	return setTransactionCounted(self.writing(ctx), found.ID, arguments.FinanceTransactionID, true)
+}
+
+func (self *graph) UndoCountTransaction(ctx context.Context, arguments CountTransactionArguments) (*models.FinanceTransaction, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := self.requireFinanceOffered(); err != nil {
+		return nil, err
+	}
+	return setTransactionCounted(self.writing(ctx), found.ID, arguments.FinanceTransactionID, false)
+}
+
+// setTransactionCounted records or forgets the person's decision that a
+// mirrored copy counts, and answers the finance transaction as it is
+// after mirror detection has decided again.
+func setTransactionCounted(tx db.Transaction, agentId, financeTransactionId string, isCountedByPerson bool) (*models.FinanceTransaction, error) {
+	financeTransaction, err := ownFinanceTransaction(tx, agentId, financeTransactionId)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.SetFinanceTransactionCountedByPerson(agentId, financeTransaction.ID, isCountedByPerson); err != nil {
+		return nil, financeError(err)
+	}
+	return tx.GetFinanceTransaction(agentId, financeTransaction.ID)
 }
 
 // --- budgets ------------------------------------------------------------

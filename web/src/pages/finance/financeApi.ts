@@ -67,6 +67,12 @@ export type FinanceTransaction = {
   spendingCategoryId?: string | null
   categorizedBy?: string | null
   categorizationConfidence?: string | null
+  // A mirrored copy: the same charge reported again on another account of
+  // the same finance source. It names the copy that is counted and is
+  // itself left out of every total. duplicateDecidedBy says what decided,
+  // mirror_detection or person (the person counted it).
+  duplicateOfTransactionId?: string | null
+  duplicateDecidedBy?: string | null
   createdAt: string
   modifiedAt: string
 }
@@ -501,12 +507,15 @@ export const CREDIT_USAGE = `query {
 const TRANSACTION_FIELDS = `id financeAccountId providerTransactionId postedOn transactedAt amount currencyCode
   description merchantName providerCategoryPrimary providerCategoryDetailed isPending pendingProviderTransactionId
   providerMetadata spendingCategoryId categorizedBy categorizationConfidence
-  createdAt modifiedAt`
+  duplicateOfTransactionId duplicateDecidedBy createdAt modifiedAt`
 
 export const FINANCE_TRANSACTIONS = `query ($from: String, $to: String, $financeAccountId: String, $text: String,
-  $spendingCategoryId: String, $isUncategorized: Boolean, $limit: Int, $after: String) {
+  $spendingCategoryId: String, $isUncategorized: Boolean, $duplicateOfTransactionId: String,
+  $financeTransactionIds: [String!], $limit: Int, $after: String) {
   FinanceTransactions(from: $from, to: $to, financeAccountId: $financeAccountId, text: $text,
-    spendingCategoryId: $spendingCategoryId, isUncategorized: $isUncategorized, limit: $limit, after: $after) {
+    spendingCategoryId: $spendingCategoryId, isUncategorized: $isUncategorized,
+    duplicateOfTransactionId: $duplicateOfTransactionId, financeTransactionIds: $financeTransactionIds,
+    limit: $limit, after: $after) {
     financeTransactions { ${TRANSACTION_FIELDS} }
     nextCursor
   }
@@ -519,6 +528,14 @@ export const CATEGORIZE_TRANSACTION = `mutation ($financeTransactionId: String!,
     financeTransaction { ${TRANSACTION_FIELDS} }
     spendingRule { id matchText }
   }
+}`
+
+export const COUNT_TRANSACTION = `mutation ($financeTransactionId: String!) {
+  CountTransaction(financeTransactionId: $financeTransactionId) { ${TRANSACTION_FIELDS} }
+}`
+
+export const UNDO_COUNT_TRANSACTION = `mutation ($financeTransactionId: String!) {
+  UndoCountTransaction(financeTransactionId: $financeTransactionId) { ${TRANSACTION_FIELDS} }
 }`
 
 // --- spending --------------------------------------------------------------

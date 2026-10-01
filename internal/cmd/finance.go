@@ -150,6 +150,7 @@ func NewFinanceCommand() *cli.Command {
 					&cli.StringFlag{Name: "provider-category", Usage: "only this provider category"},
 					&cli.StringFlag{Name: "spending-category", Usage: "only this spending category, by id or name"},
 					&cli.BoolFlag{Name: "is-uncategorized", Usage: "only those with no spending category that are not transfers"},
+					&cli.StringFlag{Name: "duplicate-of", Usage: "only the mirrored copies of this transaction, by id"},
 					&cli.IntFlag{Name: "limit", Usage: "how many, at most 200", Value: 50},
 					&cli.StringFlag{Name: "after", Usage: "the next page: the cursor the page before printed"},
 				),
@@ -238,6 +239,14 @@ func NewFinanceCommand() *cli.Command {
 				Flags:  []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "create-spending-rule", Usage: "and a spending rule for its merchant"}},
 				Action: runFinanceCategorizeTransaction,
 			},
+			{
+				Name: "count-transaction", Usage: "count a mirrored copy, the same charge reported again on another account, as a real charge of its own", ArgsUsage: "<transaction-id>",
+				Flags: []cli.Flag{JSONFlag()}, Action: runFinanceCountTransaction,
+			},
+			{
+				Name: "undo-count-transaction", Usage: "take back count-transaction, so mirror detection decides again whether it is a duplicate", ArgsUsage: "<transaction-id>",
+				Flags: []cli.Flag{JSONFlag()}, Action: runFinanceCountTransaction,
+			},
 			{Name: "budgets", Usage: "your budgets, by spending category and month", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceBudgets},
 			{
 				Name: "set-budget", Usage: "set a spending category's monthly budget from a month on, or the income expected of an income category; 0 ends it", ArgsUsage: "<spending-category> <monthly-amount>",
@@ -307,6 +316,7 @@ var financeSubcommandOperations = map[string]string{
 	"delete-spending-category": "DeleteSpendingCategory", "spending-rules": "SpendingRules",
 	"create-spending-rule": "CreateSpendingRule", "update-spending-rule": "UpdateSpendingRule",
 	"delete-spending-rule": "DeleteSpendingRule", "categorize-transaction": "CategorizeTransaction",
+	"count-transaction": "CountTransaction", "undo-count-transaction": "UndoCountTransaction",
 	"budgets": "Budgets", "set-budget": "SetBudget", "budget-status": "BudgetStatus",
 	"saving-summary": "SavingSummary", "spending-by-day": "SpendingByDay", "cash-flow": "CashFlow", "savings-targets": "SavingsTargets",
 	"create-savings-target": "CreateSavingsTarget", "update-savings-target": "UpdateSavingsTarget",
@@ -1126,6 +1136,7 @@ func runFinanceTransactions(ctx context.Context, command *cli.Command) error {
 	setString(command, variables, "provider-category", "providerCategory")
 	setString(command, variables, "after", "after")
 	setBool(command, variables, "is-uncategorized", "isUncategorized")
+	setString(command, variables, "duplicate-of", "duplicateOfTransactionId")
 	if wanted := strings.TrimSpace(command.String("spending-category")); wanted != "" {
 		spendingCategory, err := spendingCategoryNamed(ctx, command, wanted)
 		if err != nil {
@@ -1148,25 +1159,45 @@ func runFinanceTransactions(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	rows := make([][]string, 0, len(page.FinanceTransactions))
-	for _, financeTransaction := range page.FinanceTransactions {
-		what := financeTransaction.MerchantName
-		if what == "" {
-			what = financeTransaction.Description
-		}
-		spendingCategory := names[financeTransaction.SpendingCategoryID]
-		if financeTransaction.IsPending {
-			what += " (pending)"
-		}
-		rows = append(rows, []string{financeTransaction.PostedOn, money(financeTransaction.Amount, financeTransaction.CurrencyCode), truncate(what, 48), spendingCategory, financeTransaction.ID})
-	}
+	rows, duplicateCount := financeTransactionRows(page.FinanceTransactions, names)
 	if err := printTable([]string{"posted", "amount", "merchant", "spending category", "id"}, rows); err != nil {
 		return err
+	}
+	if duplicateCount > 0 {
+		fmt.Fprintf(os.Stderr, "note: %d are mirrored copies, the same charge reported again on another account, left out of every total; "+
+			"teanode finance count-transaction <id> counts one that is real\n", duplicateCount)
 	}
 	if page.NextCursor != "" {
 		fmt.Fprintf(os.Stderr, "note: there are more; add --after %s for the next page\n", page.NextCursor)
 	}
 	return nil
+}
+
+// financeTransactionRows is the transactions table's rows, and how many
+// of them are mirrored copies, each marked with the copy that counts.
+func financeTransactionRows(financeTransactions []*client.FinanceTransaction, names map[string]string) ([][]string, int) {
+	rows := make([][]string, 0, len(financeTransactions))
+	duplicateCount := 0
+	for _, financeTransaction := range financeTransactions {
+		what := financeTransaction.MerchantName
+		if what == "" {
+			what = financeTransaction.Description
+		}
+		if financeTransaction.IsPending {
+			what += " (pending)"
+		}
+		what = truncate(what, 48)
+		// After the cut, so the mark is never what is cut off.
+		if financeTransaction.DuplicateOfTransactionID != "" {
+			what += " (duplicate of " + financeTransaction.DuplicateOfTransactionID + ", not counted)"
+			duplicateCount++
+		}
+		rows = append(rows, []string{
+			financeTransaction.PostedOn, money(financeTransaction.Amount, financeTransaction.CurrencyCode), what,
+			names[financeTransaction.SpendingCategoryID], financeTransaction.ID,
+		})
+	}
+	return rows, duplicateCount
 }
 
 func runFinanceTrades(ctx context.Context, command *cli.Command) error {
@@ -1849,6 +1880,23 @@ func runFinanceCategorizeTransaction(ctx context.Context, command *cli.Command) 
 		line += fmt.Sprintf("; spending rule %s matches %q from now on and in the past", categorized.SpendingRule.ID, categorized.SpendingRule.MatchText)
 	}
 	return printDone(command, categorized, line)
+}
+
+// runFinanceCountTransaction is count-transaction and
+// undo-count-transaction, which differ only in the operation they call.
+func runFinanceCountTransaction(ctx context.Context, command *cli.Command) error {
+	financeTransactionId, err := financeArgument(command, 0, "the transaction's id")
+	if err != nil {
+		return err
+	}
+	var counted *client.FinanceTransaction
+	if err := financeCall(ctx, command, operationOf(command), map[string]any{"financeTransactionId": financeTransactionId}, &counted); err != nil {
+		return err
+	}
+	if counted.DuplicateOfTransactionID != "" {
+		return printDone(command, counted, counted.ID+": a duplicate of "+counted.DuplicateOfTransactionID+", left out of every total")
+	}
+	return printDone(command, counted, counted.ID+": counted")
 }
 
 // --- budgets, spending and savings targets --------------------------------

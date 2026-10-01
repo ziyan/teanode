@@ -79,7 +79,7 @@ var operations = map[string]*financeOperation{
 	},
 	"transactions": {
 		graphqlOperation: "FinanceTransactions", risk: tools.RiskRead, isUntrusted: true, isMonthShorthand: true,
-		arguments: append([]string{"finance_account_id", "text", "minimum_amount", "maximum_amount", "provider_category", "spending_category_id", "is_uncategorized", "limit", "after"}, rangeArguments...),
+		arguments: append([]string{"finance_account_id", "text", "minimum_amount", "maximum_amount", "provider_category", "spending_category_id", "is_uncategorized", "duplicate_of_transaction_id", "finance_transaction_ids", "limit", "after"}, rangeArguments...),
 	},
 	"trades": {
 		graphqlOperation: "FinanceTrades", risk: tools.RiskRead, isUntrusted: true, isMonthShorthand: true,
@@ -226,6 +226,20 @@ var operations = map[string]*financeOperation{
 				line += ", and add a spending rule for its merchant, applied to past transactions too"
 			}
 			return line
+		},
+	},
+	"count_transaction": {
+		graphqlOperation: "CountTransaction", risk: tools.RiskWrite, isUntrusted: true,
+		arguments: []string{"finance_transaction_id"}, required: []string{"finance_transaction_id"},
+		preview: func(lookup *previewLookup, call map[string]any) string {
+			return "Count " + lookup.transaction(text(call, "finance_transaction_id")) + " as a real charge of its own, not a mirrored copy of another account's"
+		},
+	},
+	"undo_count_transaction": {
+		graphqlOperation: "UndoCountTransaction", risk: tools.RiskWrite, isUntrusted: true,
+		arguments: []string{"finance_transaction_id"}, required: []string{"finance_transaction_id"},
+		preview: func(lookup *previewLookup, call map[string]any) string {
+			return "Let mirror detection decide again whether " + lookup.transaction(text(call, "finance_transaction_id")) + " is a mirrored copy"
 		},
 	},
 	"budgets": {graphqlOperation: "Budgets", risk: tools.RiskRead},
@@ -545,6 +559,11 @@ const description = "The person's money: their finance sources (logins at banks,
 	"A spending rule can assign transfer like any spending category (`create_spending_rule` with match_text ONLINE PAYMENT and spending_category_id transfer), for past and future transactions. " +
 	"Pairing a card payment with its checking withdrawal and the provider's own transfer categories assign it too (categorizedBy transfer_detection or provider_category_mapping), and a spending rule does not take those over; the person's choice beats both. " +
 	"The transfer category cannot be deleted, made income or budgeted.\n" +
+	"- Mirrored copies: some institutions report one charge, such as an account-level fee, once on every account of a connection. " +
+	"Only investment accounts within one Plaid connection are grouped: the same day, amount, currency and description on two or more of them, pending or posted, is one charge (a posted copy counts before a pending one): one copy counts, and each other has duplicateOfTransactionId (the counted copy) and is left out of every total, like a transfer. " +
+	"A genuinely identical fee on two such accounts (two retirement accounts charged the same fee the same day, say) is marked too, and `count_transaction` is the recourse; copies posted on different days are not matched. " +
+	"Say so when listing transactions rather than adding them up. `transactions` with duplicate_of_transaction_id lists a counted copy's duplicates. " +
+	"When the person says a duplicate is a real charge of its own, `count_transaction` counts it (duplicateDecidedBy person) and detection leaves it alone; `undo_count_transaction` takes that back.\n" +
 	"- Tracking an account reachable only through a connected server: `create_asset` with valuation_source agent_reading if there is none (a value read now can go in the same call), then a daily schedule whose prompt calls that server's tool for the account's total and records it with `record_valuation` (valuation_source agent_reading). Never over an asset valued by finance_sync.\n" +
 	"- Estimating a house or a car: only for an asset with isEstimateAllowed, which only the person sets (on the dashboard's Finance page or with teanode finance update-asset). Search the web for its estimateDescription, read two to four pages that give a value or comparable sales, and `record_valuation` with valuation_source agent_estimate, estimate_low, estimate_high, the middle as value, the pages as evidence_urls and a valuation_note saying what it rests on. Where estimates are not allowed, say so and say where the person can allow them.\n" +
 	"- Converting currencies: `convert_currency` or `exchange_rate`, with from_currency_code, to_currency_code and rate_on for another day; the answer names the published day the rate is from."
@@ -571,6 +590,8 @@ func init() {
 					"provider_category":           tools.StringProperty("for transactions: the provider's category"),
 					"spending_category_id":        tools.StringProperty("a spending category, by its name or by the id spending_categories gives; transfer marks a transfer between the person's own accounts; for categorize_transaction empty takes it away"),
 					"is_uncategorized":            tools.BooleanProperty("for transactions: only the ones with no spending category (a transfer has the transfer category)"),
+					"duplicate_of_transaction_id": tools.StringProperty("for transactions: only the mirrored copies of this finance transaction, its duplicates"),
+					"finance_transaction_ids":     tools.ArrayProperty("for transactions: only these finance transactions, to read one by its id (a duplicate's counted copy, say)", tools.StringProperty("a finance transaction id")),
 					"limit":                       tools.IntegerProperty("for transactions and trades: how many, at most 200"),
 					"after":                       tools.StringProperty("for transactions and trades: the nextCursor of the page before"),
 					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"gorm.io/gorm/clause"
 
 	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/models"
@@ -49,7 +50,8 @@ type FinanceOperation interface {
 
 	// ListUncategorizedFinanceTransactions is the agent's finance
 	// transactions with no spending category (a transfer has the transfer
-	// category) that the person has not decided about, and that the
+	// category) that the person has not decided about, that are not
+	// mirrored copies (whose category counts for nothing), and that the
 	// categorize model has not already been asked about and failed to
 	// place: what
 	// the categorize model is asked about. Newest first, since this
@@ -94,9 +96,34 @@ type FinanceOperation interface {
 	// neither marked nor paired. It answers how many it marked.
 	DetectFinanceTransfers(agentId, sourceId, sinceDate string) (int, error)
 
+	// DetectMirroredFinanceTransactions decides again which finance
+	// transactions of one finance source (every source of the agent's when
+	// sourceId is empty) are mirrored copies: on two or more different
+	// finance accounts of one Plaid finance source, every one of them an
+	// investment account, with the same day, amount, currency and
+	// description (trimmed, in any case), pending or posted. One of each
+	// set is counted, a posted one before a pending one, then the one
+	// stored first and then the one on the oldest finance account, and the
+	// rest become duplicates of it.
+	// Two on one account are never copies of each other. Other providers'
+	// sources and other kinds of account are not looked at, and neither is
+	// a finance transaction the person counted. A copy whose set no longer
+	// holds (a member deleted or changed) counts again, and a set whose
+	// counted copy went counts another. It locks the finance source first.
+	// It answers how many changed.
+	DetectMirroredFinanceTransactions(agentId, sourceId string) (int, error)
+
+	// SetFinanceTransactionCountedByPerson records the person saying a
+	// mirrored copy is real and counts, after which detection leaves it
+	// alone; with isCountedByPerson false it forgets that, and detection
+	// decides again at once. Counting a finance transaction that is not a
+	// duplicate is refused, since it counts already. ErrNotFound when the
+	// agent has no such finance transaction.
+	SetFinanceTransactionCountedByPerson(agentId, financeTransactionId string, isCountedByPerson bool) error
+
 	// FinanceSpendingSummary is money out and money in per group per
 	// currency over a range of posted days, transfers (the transfer
-	// category) left out, biggest money out first.
+	// category) and mirrored copies left out, biggest money out first.
 	FinanceSpendingSummary(agentId string, filter *FinanceSpendingSummaryFilter) ([]*models.FinanceSpendingSummaryRow, error)
 }
 
@@ -166,12 +193,25 @@ type FinanceTransactionFilter struct {
 	SpendingCategoryID string
 
 	// IsUncategorized keeps only finance transactions with no spending
-	// category; a transfer has the transfer category.
+	// category; a transfer has the transfer category, and a mirrored copy
+	// is left out, since its category counts for nothing.
 	IsUncategorized bool
 
 	// IsTransferExcluded leaves out the transfers, the finance
 	// transactions in the transfer category.
 	IsTransferExcluded bool
+
+	// IsDuplicateExcluded leaves out the mirrored copies, the finance
+	// transactions that are duplicates of another.
+	IsDuplicateExcluded bool
+
+	// DuplicateOfTransactionID keeps only the duplicates of this finance
+	// transaction.
+	DuplicateOfTransactionID string
+
+	// FinanceTransactionIDs keeps only these finance transactions, so one
+	// can be read by its id with the same fields as a page.
+	FinanceTransactionIDs []string
 
 	// Limit is at most FinanceTransactionLimitMost; zero is
 	// FinanceTransactionLimitDefault.
@@ -275,6 +315,8 @@ type agentFinanceTransactionModel struct {
 	CategorizedBy                string     `gorm:"column:categorized_by"`
 	CategorizationConfidence     *string    `gorm:"column:categorization_confidence"`
 	CategorizeAttemptedAt        *time.Time `gorm:"column:categorize_attempted_at"`
+	DuplicateOfTransactionID     *string    `gorm:"column:duplicate_of_transaction_id"`
+	DuplicateDecidedBy           string     `gorm:"column:duplicate_decided_by"`
 	CreatedAt                    time.Time  `gorm:"column:created_at"`
 	ModifiedAt                   time.Time  `gorm:"column:modified_at"`
 }
@@ -291,8 +333,9 @@ func (self *agentFinanceTransactionModel) toModel() *models.FinanceTransaction {
 		IsPending: self.IsPending, PendingProviderTransactionID: self.PendingProviderTransactionID,
 		ProviderMetadata:   rawJSON(self.ProviderMetadata),
 		SpendingCategoryID: optionalString(self.SpendingCategoryID), CategorizedBy: models.CategorizedBy(self.CategorizedBy),
-		CategorizationConfidence: optionalString(self.CategorizationConfidence), CreatedAt: self.CreatedAt.In(time.Local),
-		ModifiedAt: self.ModifiedAt.In(time.Local),
+		CategorizationConfidence: optionalString(self.CategorizationConfidence),
+		DuplicateOfTransactionID: optionalString(self.DuplicateOfTransactionID), DuplicateDecidedBy: models.DuplicateDecidedBy(self.DuplicateDecidedBy),
+		CreatedAt: self.CreatedAt.In(time.Local), ModifiedAt: self.ModifiedAt.In(time.Local),
 	}
 }
 
@@ -653,6 +696,12 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *
 		}
 	}
 
+	// Within the sync's own transaction, so a copy whose counted copy this
+	// sync removed or changed never reads as a duplicate of nothing.
+	if _, err := self.DetectMirroredFinanceTransactions(agentId, sourceId); err != nil {
+		return nil, err
+	}
+
 	// Read back rather than taken from the upsert: a decision carried
 	// from a pending transaction may have categorized or marked one since.
 	if len(writtenIds) > 0 {
@@ -669,9 +718,11 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *
 
 // carriedDecisions is the SET list that gives the finance transaction
 // "posted" what the person decided about the pending one it became,
-// "pending": their spending category, the transfer category included,
-// only where the person decided it and has not decided again on the
-// posted one.
+// "pending": their spending category, the transfer category included, and
+// their word that a mirrored copy counts, each only where the person
+// decided it and has not decided again on the posted one. Without the
+// second, detection would mark the posted copy a duplicate again as soon
+// as the charge posted.
 const carriedDecisions = `
 	"spending_category_id" = CASE WHEN "pending"."categorized_by" = 'person' AND "posted"."categorized_by" <> 'person'
 		THEN "pending"."spending_category_id" ELSE "posted"."spending_category_id" END,
@@ -679,11 +730,16 @@ const carriedDecisions = `
 		THEN NULL ELSE "posted"."categorization_confidence" END,
 	"categorized_by" = CASE WHEN "pending"."categorized_by" = 'person' AND "posted"."categorized_by" <> 'person'
 		THEN 'person' ELSE "posted"."categorized_by" END,
+	"duplicate_of_transaction_id" = CASE WHEN "pending"."duplicate_decided_by" = 'person' AND "posted"."duplicate_decided_by" <> 'person'
+		THEN NULL ELSE "posted"."duplicate_of_transaction_id" END,
+	"duplicate_decided_by" = CASE WHEN "pending"."duplicate_decided_by" = 'person' AND "posted"."duplicate_decided_by" <> 'person'
+		THEN 'person' ELSE "posted"."duplicate_decided_by" END,
 	"modified_at" = @modified_at`
 
 // hasDecisionToCarry is true when the pending finance transaction holds a
 // decision of the person's the posted one does not have yet.
-const hasDecisionToCarry = `("pending"."categorized_by" = 'person' AND "posted"."categorized_by" <> 'person')`
+const hasDecisionToCarry = `(("pending"."categorized_by" = 'person' AND "posted"."categorized_by" <> 'person')
+	OR ("pending"."duplicate_decided_by" = 'person' AND "posted"."duplicate_decided_by" <> 'person'))`
 
 // carryPendingDecisions gives a posted finance transaction what the person
 // decided about the pending one of the same finance source it names, which
@@ -1131,11 +1187,20 @@ func (self *transaction) ListFinanceTransactions(agentId string, filter *Finance
 		query = query.Where(`"spending_category_id" = ?`, filter.SpendingCategoryID)
 	}
 	if filter.IsUncategorized {
-		query = query.Where(`"spending_category_id" IS NULL`)
+		query = query.Where(`"spending_category_id" IS NULL AND "duplicate_of_transaction_id" IS NULL`)
 	}
 	if filter.IsTransferExcluded {
 		query = query.Where(`("spending_category_id" IS NULL OR "spending_category_id" NOT IN (
 			SELECT "id" FROM "agent_spending_category" WHERE "agent_id" = ? AND "is_transfer"))`, agentId)
+	}
+	if filter.IsDuplicateExcluded {
+		query = query.Where(`"duplicate_of_transaction_id" IS NULL`)
+	}
+	if filter.DuplicateOfTransactionID != "" {
+		query = query.Where(`"duplicate_of_transaction_id" = ?`, filter.DuplicateOfTransactionID)
+	}
+	if len(filter.FinanceTransactionIDs) > 0 {
+		query = query.Where(`"id" = ANY(?::text[])`, pq.Array(filter.FinanceTransactionIDs))
 	}
 	if filter.After != "" {
 		postedOn, financeTransactionId, err := parseFinanceTransactionCursor(filter.After)
@@ -1166,7 +1231,7 @@ func (self *transaction) ListUncategorizedFinanceTransactions(agentId string, li
 	}
 	var found []agentFinanceTransactionModel
 	if err := self.tx.Where(`"agent_id" = ? AND "spending_category_id" IS NULL AND "categorized_by" <> 'person'
-			AND "categorize_attempted_at" IS NULL`, agentId).
+			AND "categorize_attempted_at" IS NULL AND "duplicate_of_transaction_id" IS NULL`, agentId).
 		Order(`"posted_on" DESC, "id" DESC`).Limit(limit).Find(&found).Error; err != nil {
 		return nil, err
 	}
@@ -1314,12 +1379,13 @@ func (self *transaction) DetectFinanceTransfers(agentId, sourceId, sinceDate str
 	// pairing. Leaving the marked side out left that credit counted as a
 	// refund on the card, and a month's spending went below zero. A side
 	// already paired, given the transfer category by a spending rule, or
-	// categorized by the person is never taken again.
+	// categorized by the person is never taken again, and a mirrored copy
+	// is never taken at all: the money moved once, on its counted copy.
 	arguments["pairing_days"] = transferPairingDays
 	for round := 0; round < transferPairingRounds; round++ {
 		paired := self.tx.Exec(`WITH "eligible" AS (
 				SELECT "id", "finance_account_id", "currency_code", "amount", "posted_on" FROM "agent_finance_transaction"
-				WHERE "agent_id" = @agent_id AND "categorized_by" <> 'person' AND NOT "is_pending"
+				WHERE "agent_id" = @agent_id AND "categorized_by" <> 'person' AND NOT "is_pending" AND "duplicate_of_transaction_id" IS NULL
 				  AND ("spending_category_id" IS DISTINCT FROM @transfer_category_id OR "categorized_by" = 'provider_category_mapping')
 			), "ranked" AS (
 				SELECT "money_out"."id" AS "money_out_id", "money_in"."id" AS "money_in_id",
@@ -1356,6 +1422,159 @@ func (self *transaction) DetectFinanceTransfers(agentId, sourceId, sinceDate str
 	return markedCount, nil
 }
 
+// --- mirrored copies ---------------------------------------------------
+
+// mirroredFinanceTransactionsDecided is every finance transaction of the
+// agent in scope (one source's accounts, or all of them when @source_id is
+// empty) that the person has not counted, with the counted copy it is a
+// duplicate of, or null. Migration 0144 marked the copies stored before it
+// by the same rule.
+//
+// Only Plaid sources, and only sets whose every copy is on an investment
+// account: that is where one account-level fee is reported on each
+// account of a connection. A SimpleFIN credential can reach accounts at
+// several institutions, and a checking and a savings account of one Plaid
+// item can each be charged the same monthly fee for real.
+//
+// A pending copy goes with posted ones too: the copies of one charge post
+// on different syncs, and a pending copy left alone in its set while
+// another account's copy has posted would count the charge twice until
+// it posted too. A posted copy is counted before a pending one, so the
+// counted copy is never one the provider is about to replace while a
+// posted copy is there to count instead.
+//
+// The n-th of a day's repeats on one account goes with the n-th on each
+// other account, posted ones numbered first, so a set never holds two of
+// one account: a fee charged twice on one account is two charges, not a
+// copy. Among posted copies, or among pending ones, the counted copy is the
+// one stored first, so a copy that arrives later never takes over; among
+// those a sync stored together, the one on the oldest account, so a source's
+// fees are counted on the same account month after month.
+const mirroredFinanceTransactionsDecided = `WITH "scope" AS (
+		SELECT "copy"."id", "copy"."finance_account_id", "account"."source_id", "copy"."is_pending", "copy"."posted_on", "copy"."amount",
+			"copy"."currency_code", lower(btrim("copy"."description")) AS "description_key",
+			"account"."account_kind" = 'investment' AS "is_investment_account",
+			"copy"."created_at", "account"."created_at" AS "account_created_at"
+		FROM "agent_finance_transaction" AS "copy"
+		JOIN "agent_finance_account" AS "account" ON "account"."id" = "copy"."finance_account_id" AND "account"."agent_id" = "copy"."agent_id"
+		JOIN "agent_source" AS "source" ON "source"."id" = "account"."source_id" AND "source"."agent_id" = "copy"."agent_id"
+		WHERE "copy"."agent_id" = @agent_id AND (@source_id = '' OR "account"."source_id" = @source_id)
+		  AND "copy"."duplicate_decided_by" <> 'person' AND btrim("copy"."description") <> ''
+		  AND COALESCE("source"."specification"->>'type', '') = 'plaid'
+	), "numbered" AS (
+		SELECT *, ROW_NUMBER() OVER (PARTITION BY "finance_account_id", "posted_on", "amount", "currency_code", "description_key"
+			ORDER BY "is_pending", "created_at", "id") AS "occurrence"
+		FROM "scope"
+	), "ranked" AS (
+		SELECT "id",
+			FIRST_VALUE("id") OVER "mirrored_set" AS "counted_id",
+			COUNT(*) OVER "mirrored_set" AS "member_count",
+			bool_and("is_investment_account") OVER "mirrored_set" AS "is_every_account_investment"
+		FROM "numbered"
+		WINDOW "mirrored_set" AS (PARTITION BY "source_id", "posted_on", "amount", "currency_code", "description_key", "occurrence"
+			ORDER BY "is_pending", "created_at", "account_created_at", "finance_account_id", "id"
+			ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+	), "decided" AS (
+		SELECT "candidate"."id",
+			CASE WHEN "ranked"."member_count" > 1 AND "ranked"."is_every_account_investment" AND "ranked"."counted_id" <> "ranked"."id"
+				THEN "ranked"."counted_id" END AS "duplicate_of_transaction_id"
+		FROM "agent_finance_transaction" AS "candidate"
+		JOIN "agent_finance_account" AS "account" ON "account"."id" = "candidate"."finance_account_id" AND "account"."agent_id" = "candidate"."agent_id"
+		LEFT JOIN "ranked" ON "ranked"."id" = "candidate"."id"
+		WHERE "candidate"."agent_id" = @agent_id AND (@source_id = '' OR "account"."source_id" = @source_id)
+		  AND "candidate"."duplicate_decided_by" <> 'person'
+	)`
+
+// lockMirroredFinanceSources locks the finance source (every source of the
+// agent's when sourceId is empty, in id order) the way LockAgentSource
+// does, so detection and the person counting a copy of the same source
+// take turns: a sync never writes over a "count this one" made while it
+// ran, and two detections never wait on each other's rows.
+func (self *transaction) lockMirroredFinanceSources(agentId, sourceId string) error {
+	query := self.tx.Model(&agentSourceModel{}).Clauses(clause.Locking{Strength: "UPDATE"}).Where(`"agent_id" = ?`, agentId)
+	if sourceId != "" {
+		query = query.Where(`"id" = ?`, sourceId)
+	}
+	var lockedIds []string
+	return query.Order(`"id"`).Pluck(`"id"`, &lockedIds).Error
+}
+
+func (self *transaction) DetectMirroredFinanceTransactions(agentId, sourceId string) (int, error) {
+	if agentId == "" {
+		return 0, fmt.Errorf("%w: mirror detection needs an agent", ErrInvalidArguments)
+	}
+	if err := self.lockMirroredFinanceSources(agentId, sourceId); err != nil {
+		return 0, err
+	}
+	// Every row in scope is decided afresh rather than only those a sync
+	// wrote: a deleted counted copy is no longer there to say which rows
+	// were its copies, and one source's rows are few enough to group in
+	// one statement. A row the person counted after this statement read
+	// it is checked again on its new version and left alone.
+	updated := self.tx.Exec(mirroredFinanceTransactionsDecided+`
+		UPDATE "agent_finance_transaction" AS "target" SET
+			"duplicate_of_transaction_id" = "decided"."duplicate_of_transaction_id",
+			"duplicate_decided_by" = CASE WHEN "decided"."duplicate_of_transaction_id" IS NULL THEN '' ELSE 'mirror_detection' END,
+			"modified_at" = @modified_at
+		FROM "decided"
+		WHERE "target"."id" = "decided"."id" AND "target"."agent_id" = @agent_id AND "target"."duplicate_decided_by" <> 'person'
+		  AND ("target"."duplicate_of_transaction_id", "target"."duplicate_decided_by")
+		      IS DISTINCT FROM ("decided"."duplicate_of_transaction_id",
+		          CASE WHEN "decided"."duplicate_of_transaction_id" IS NULL THEN '' ELSE 'mirror_detection' END)`,
+		map[string]any{"agent_id": agentId, "source_id": sourceId, "modified_at": time.Now()})
+	if updated.Error != nil {
+		return 0, updated.Error
+	}
+	return int(updated.RowsAffected), nil
+}
+
+func (self *transaction) SetFinanceTransactionCountedByPerson(agentId, financeTransactionId string, isCountedByPerson bool) error {
+	var sourceIds []string
+	if err := self.tx.Raw(`SELECT "account"."source_id" FROM "agent_finance_transaction" AS "copy"
+		JOIN "agent_finance_account" AS "account" ON "account"."id" = "copy"."finance_account_id" AND "account"."agent_id" = "copy"."agent_id"
+		WHERE "copy"."agent_id" = ? AND "copy"."id" = ?`, agentId, financeTransactionId).Scan(&sourceIds).Error; err != nil {
+		return err
+	}
+	if len(sourceIds) == 0 {
+		return ErrNotFound
+	}
+	// The source first, then the row read under it, so a sync of the same
+	// source finishes before or starts after the person's word.
+	if err := self.lockMirroredFinanceSources(agentId, sourceIds[0]); err != nil {
+		return err
+	}
+	var found []agentFinanceTransactionModel
+	if err := self.tx.Where(`"agent_id" = ? AND "id" = ?`, agentId, financeTransactionId).Limit(1).Find(&found).Error; err != nil {
+		return err
+	}
+	if len(found) == 0 {
+		return ErrNotFound
+	}
+	existing := found[0]
+	if isCountedByPerson {
+		if existing.DuplicateDecidedBy == string(models.DuplicateDecidedByPerson) {
+			return nil
+		}
+		if existing.DuplicateOfTransactionID == nil {
+			return fmt.Errorf("%w: the finance transaction is not a duplicate of another, so it counts already", ErrInvalidArguments)
+		}
+	} else if existing.DuplicateDecidedBy != string(models.DuplicateDecidedByPerson) {
+		return nil
+	}
+	decidedBy := ""
+	if isCountedByPerson {
+		decidedBy = string(models.DuplicateDecidedByPerson)
+	}
+	if err := self.tx.Exec(`UPDATE "agent_finance_transaction" SET "duplicate_of_transaction_id" = NULL, "duplicate_decided_by" = ?, "modified_at" = ?
+		WHERE "agent_id" = ? AND "id" = ?`, decidedBy, time.Now(), agentId, financeTransactionId).Error; err != nil {
+		return err
+	}
+	// Decided again now rather than at the next sync, so a copy handed back
+	// to detection is left out of the totals as soon as the person says so.
+	_, err := self.DetectMirroredFinanceTransactions(agentId, sourceIds[0])
+	return err
+}
+
 // --- the spending summary ----------------------------------------------
 
 func (self *transaction) FinanceSpendingSummary(agentId string, filter *FinanceSpendingSummaryFilter) ([]*models.FinanceSpendingSummaryRow, error) {
@@ -1386,7 +1605,10 @@ func (self *transaction) FinanceSpendingSummary(agentId string, filter *FinanceS
 	default:
 		return nil, fmt.Errorf("%w: %q is not a way to group spending", ErrInvalidArguments, groupBy)
 	}
-	conditions := []string{`"summarized"."agent_id" = @agent_id`, `NOT COALESCE("spending_category"."is_transfer", false)`}
+	conditions := []string{
+		`"summarized"."agent_id" = @agent_id`, `NOT COALESCE("spending_category"."is_transfer", false)`,
+		`"summarized"."duplicate_of_transaction_id" IS NULL`,
+	}
 	arguments := map[string]any{"agent_id": agentId}
 	from, err := parseOptionalDay(filter.From)
 	if err != nil {
