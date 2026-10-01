@@ -193,7 +193,9 @@ var merchantCodeRanges = []merchantCodeRange{
 // category name, and says whether it is a transfer instead of spending or
 // income. Plaid's personal finance category arrives as primary and
 // detailed; SimpleFIN's merchant category code arrives as detailed only,
-// written "mcc:5411". Anything not mapped answers "" and false, and is
+// written "mcc:5411"; an imported statement's OFX transaction type arrives
+// as detailed, written "ofx:PAYMENT", with the account's side as primary.
+// Anything not mapped answers "" and false, and is
 // left for a spending rule or the categorize model.
 func MapProviderCategory(primary, detailed string) (spendingCategoryName string, isTransfer bool) {
 	primary = strings.TrimSpace(primary)
@@ -201,6 +203,9 @@ func MapProviderCategory(primary, detailed string) (spendingCategoryName string,
 
 	if merchantCode, isMerchantCode := strings.CutPrefix(detailed, "mcc:"); isMerchantCode {
 		return merchantCodeSpendingCategory(merchantCode), false
+	}
+	if transactionType, isStatement := strings.CutPrefix(detailed, StatementCategoryPrefix); isStatement {
+		return statementSpendingCategory(primary, transactionType)
 	}
 
 	// Plaid's detailed category always begins with its primary, so a
@@ -230,6 +235,41 @@ func MapProviderCategory(primary, detailed string) (spendingCategoryName string,
 		return "", true
 	}
 	return plaidSpendingCategoryByPrimary[primary], false
+}
+
+// statementSpendingCategory maps an OFX transaction type, from an imported
+// statement, for the few types that settle it. A purchase (DEBIT, POS) and
+// a refund (CREDIT) say nothing about what was bought, and are left for a
+// spending rule or the categorize model, which reads the merchant's name.
+//
+// A PAYMENT on a card's statement is the person paying their own card,
+// which counting as income or spending would count every purchase on the
+// card twice; on a bank's statement it is a bill paid, which is spending.
+// Interest on a card is a charge; on a bank account it is earned.
+func statementSpendingCategory(primary, transactionType string) (string, bool) {
+	isCreditCard := primary == StatementCategoryPrimaryCreditCard
+	switch strings.ToUpper(strings.TrimSpace(transactionType)) {
+	case "XFER":
+		return "", true
+	case "PAYMENT":
+		if isCreditCard {
+			return "", true
+		}
+	case "FEE", "SRVCHG":
+		return SpendingCategoryFees, false
+	case "INT":
+		if isCreditCard {
+			return SpendingCategoryFees, false
+		}
+		return SpendingCategoryIncome, false
+	case "DIV":
+		return SpendingCategoryIncome, false
+	case "ATM", "CASH":
+		// Cash taken out leaves the person's accounts for good, as far as
+		// a budget can see, as Plaid's withdrawal does.
+		return SpendingCategoryOther, false
+	}
+	return "", false
 }
 
 func merchantCodeSpendingCategory(merchantCode string) string {

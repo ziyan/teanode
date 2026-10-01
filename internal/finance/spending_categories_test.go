@@ -59,6 +59,21 @@ func TestMapProviderCategory(t *testing.T) {
 		{"", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", "", true},
 		{"", "LOAN_PAYMENTS_CAR_PAYMENT", SpendingCategoryLoans, false},
 		{"", "TRAVEL_LODGING", SpendingCategoryTravel, false},
+		// OFX transaction types from an imported statement: a payment is a
+		// transfer on a card and spending on a bank account, interest a
+		// charge on a card and income on a bank account, and a purchase or a
+		// refund is left for the categorize model, which reads the name.
+		{"ofx:creditcard", "ofx:PAYMENT", "", true},
+		{"ofx:bank", "ofx:PAYMENT", "", false},
+		{"ofx:creditcard", "ofx:DEBIT", "", false},
+		{"ofx:creditcard", "ofx:CREDIT", "", false},
+		{"ofx:bank", "ofx:XFER", "", true},
+		{"ofx:creditcard", "ofx:FEE", SpendingCategoryFees, false},
+		{"ofx:bank", "ofx:SRVCHG", SpendingCategoryFees, false},
+		{"ofx:creditcard", "ofx:INT", SpendingCategoryFees, false},
+		{"ofx:bank", "ofx:INT", SpendingCategoryIncome, false},
+		{"ofx:bank", "ofx:ATM", SpendingCategoryOther, false},
+		{"ofx:bank", "ofx:DIRECTDEP", "", false},
 		// Merchant category codes from SimpleFIN.
 		{"", "mcc:5411", SpendingCategoryGroceries, false},
 		{"", "mcc:5499", SpendingCategoryGroceries, false},

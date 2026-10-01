@@ -111,6 +111,12 @@ type FinanceQuery interface {
 	// it falls back to the currency of their first finance account, else
 	// of their first asset.
 	ReportingCurrency(ctx context.Context) (*ReportingCurrencyView, error)
+
+	// The caller's statement import: the address to mail OFX statements
+	// to, whether importing is on, and what the last import did. The
+	// statement finance source and its address are made the first time
+	// this is asked.
+	StatementImport(ctx context.Context) (*StatementImportView, error)
 }
 
 // FinanceMutation links institutions and changes the person's finance
@@ -142,6 +148,16 @@ type FinanceMutation interface {
 	// Set the one currency totals are shown in; empty goes back to the
 	// currency of the first finance account.
 	SetReportingCurrency(ctx context.Context, arguments SetReportingCurrencyArguments) (string, error)
+
+	// Import an OFX statement (.ofx, .qfx or .qbo): a file uploaded to the
+	// agent's attachments, or every OFX attachment of a message in the
+	// caller's mailbox. A transaction already imported, by its account and
+	// FITID, is updated rather than added again.
+	ImportStatement(ctx context.Context, arguments ImportStatementArguments) (*models.FinanceStatementImport, error)
+
+	// Give the statement import address a new token. The old address stops
+	// taking mail at once.
+	RegenerateStatementImportAddress(ctx context.Context) (*StatementImportView, error)
 
 	// Add an asset: something owned or owed that counts toward net worth.
 	CreateAsset(ctx context.Context, arguments CreateAssetArguments) (*models.Asset, error)
@@ -1197,7 +1213,8 @@ func financeAccountView(account *models.FinanceAccount, source *models.AgentKnow
 // accountInstitutionName is the institution a finance account's provider
 // metadata names: SimpleFIN gives each account its institution ("org"),
 // since one of its finance sources can reach several, and the finance
-// source itself keeps none.
+// source itself keeps none; an imported statement names the institution
+// that wrote it ("institutionOrganization").
 func accountInstitutionName(providerMetadata json.RawMessage) string {
 	if len(providerMetadata) == 0 {
 		return ""
@@ -1206,11 +1223,15 @@ func accountInstitutionName(providerMetadata json.RawMessage) string {
 		Organization struct {
 			Name string `json:"name"`
 		} `json:"org"`
+		InstitutionOrganization string `json:"institutionOrganization"`
 	}
 	if json.Unmarshal(providerMetadata, &metadata) != nil {
 		return ""
 	}
-	return strings.TrimSpace(metadata.Organization.Name)
+	if name := strings.TrimSpace(metadata.Organization.Name); name != "" {
+		return name
+	}
+	return strings.TrimSpace(metadata.InstitutionOrganization)
 }
 
 // financeSourcesOf is the agent's finance sources by id.
@@ -1243,6 +1264,13 @@ func (self *graph) FinanceSources(ctx context.Context) ([]*FinanceSourceView, er
 		view, err := financeSourceView(tx, found, source)
 		if err != nil {
 			return nil, err
+		}
+		// The statement source is made when somebody first looks at their
+		// import address, before anything was imported; it is a finance
+		// source to list once it holds an account, and not before, so
+		// having looked does not read as having linked something.
+		if agent.IsStatementSource(source) && len(view.FinanceAccounts) == 0 {
+			continue
 		}
 		views = append(views, view)
 	}

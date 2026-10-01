@@ -31,8 +31,11 @@ func operationRule(operation string) string {
 }
 
 // The tool operations that stand for more than one call, act on a source
-// through the operations every source has, or answer with where to go.
+// through the operations every source has, answer with where to go, or
+// take fewer arguments than the operation they call (import_statement takes
+// a message, never an uploaded file, whose id the model is not shown).
 var spanningOperations = map[string][]string{
+	"import_statement":  {"ImportStatement"},
 	"link_plaid":        {"CreateFinanceLinkToken", "CompleteFinanceLink"},
 	"repair":            {"CreateFinanceLinkToken", "CompleteFinanceRepair"},
 	"link_simplefin":    {},
@@ -224,6 +227,7 @@ func TestFinanceRiskPerOperation(test *testing.T) {
 		"spending_categories": true, "spending_rules": true, "budgets": true, "budget_status": true, "saving_summary": true,
 		"spending_by_day": true, "cash_flow": true, "savings_targets": true,
 		"link_plaid": true, "repair": true, "link_simplefin": true, "import_credential": true, "reporting_currency": true,
+		"statement_import": true,
 	}
 	for name := range toolOperations(test, tool) {
 		wanted := tools.RiskWrite
@@ -711,6 +715,64 @@ func TestFinanceToolSavingsTargetOnWholeAccounts(test *testing.T) {
 			if !strings.Contains(line, said) {
 				test.Errorf("%s: the card %q does not say %s", arguments, line, said)
 			}
+		}
+	}
+}
+
+// import_statement sends the message it was pointed at and nothing else,
+// and what comes back, account names included, is untrusted.
+func TestFinanceToolImportsAStatementFromAMessage(test *testing.T) {
+	test.Parallel()
+	answers := func(isGranted bool) map[string]string {
+		granted := "false"
+		if isGranted {
+			granted = "true"
+		}
+		return map[string]string{
+			"ListMailboxes":    `[{"mailbox":{"id":"mailbox-one","name":"Personal","agent":{"granted":` + granted + `}},"folders":[{"id":"folder-archive","mailboxId":"mailbox-one","name":"Archive","kind":"archive"}]}]`,
+			"GetMailboxThread": `{"threadId":"thread-one","items":[{"folderId":"folder-archive","item":{"id":"item-one"}}]}`,
+			"ImportStatement":  `{"addedTransactionCount":3,"financeAccountNames":["Invented Card ··a1b2"]}`,
+		}
+	}
+	operations := &fakeOperations{answers: answers(true)}
+	result, err := call(test, operations, `{"operation":"import_statement","mailbox_item_id":"item-one"}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !result.Untrusted || !strings.Contains(result.Content, "Invented Card") {
+		test.Errorf("%+v", result)
+	}
+	sent := operations.variables[len(operations.variables)-1]
+	if !strings.Contains(operations.documents[len(operations.documents)-1], "ImportStatement(") || len(sent) != 1 || sent["mailboxItemId"] != "item-one" {
+		test.Errorf("sent %v", operations.variables)
+	}
+	// A mailbox the person kept back from the agent stays kept back.
+	kept := &fakeOperations{answers: answers(false)}
+	if _, err := call(test, kept, `{"operation":"import_statement","mailbox_item_id":"item-one"}`); err == nil {
+		test.Error("a message in a mailbox not granted was imported")
+	}
+	for _, document := range kept.documents {
+		if strings.Contains(document, "ImportStatement(") {
+			test.Error("the import was sent for a mailbox not granted")
+		}
+	}
+	if _, err := call(test, &fakeOperations{}, `{"operation":"import_statement","agent_attachment_id":"attachment-one"}`); err == nil {
+		test.Error("an uploaded file's id was taken")
+	}
+}
+
+// The finance source of imported statements has nothing to sync.
+func TestFinanceToolDoesNotSyncTheStatementSource(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{
+		"FinanceSources": `[{"id":"source-one","name":"Imported statements","providerKind":"statement","isEnabled":true}]`,
+	}}
+	if _, err := call(test, operations, `{"operation":"sync","source_id":"source-one"}`); err == nil || !strings.Contains(err.Error(), "nothing to sync") {
+		test.Errorf("the statement source was synced: %v", err)
+	}
+	for _, document := range operations.documents {
+		if strings.Contains(document, "SyncAgentKnowledgeSource") {
+			test.Error("the sync was sent")
 		}
 	}
 }

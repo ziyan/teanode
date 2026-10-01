@@ -44,6 +44,8 @@ naming:
     # Vocabulary from outside mail, written the way its specification writes it.
     - AAGUID   # Authenticator Attestation GUID, WebAuthn
     - CSS      # Cascading Style Sheets
+    - FITID    # Financial Institution Transaction ID, OFX's id for a transaction
+    - OFX      # Open Financial Exchange, the format banks export statements in
     - PEM      # Privacy-Enhanced Mail, the container format for keys, RFC 7468
     - QL       # the tail of GraphQL, which its authors spell that way
   compounds:

@@ -127,6 +127,19 @@ type AgentHook interface {
 	OnMailboxDelivery(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail)
 }
 
+// StatementHook is what an AgentHook also is when it imports statements
+// mailed to a person's statement import address: the person's own mailbox
+// address with "+statements-" and a token after the local part. Asked in
+// the delivery transaction whether a token is the mailbox owner's, and told
+// once the message is in the mailbox (the item is the copy already there
+// when the person sent it or it reached them by another address too), it
+// reads and queues and never calls anything slow, for the same reason as
+// the AgentHook.
+type StatementHook interface {
+	IsStatementImportToken(tx db.Transaction, mailbox *models.Mailbox, token string) bool
+	OnStatementDelivery(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail)
+}
+
 // CalendarHook is told the same thing, and for the same reason: a message may
 // carry an invitation, and working out whether it does means reading the
 // message from storage. It notes the message in the delivery transaction and

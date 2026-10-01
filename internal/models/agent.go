@@ -588,6 +588,11 @@ const (
 	// subject is the agent, so syncs of several finance sources close
 	// together queue one.
 	AgentJobCategorize AgentJobKind = "categorize"
+
+	// AgentJobStatementImport imports the OFX statements attached to a
+	// message that arrived at the person's statement import address, and
+	// tells them what came of it. Its subject is the message.
+	AgentJobStatementImport AgentJobKind = "statement_import"
 )
 
 // AgentJobStatus is where a job is.

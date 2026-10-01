@@ -161,7 +161,9 @@ export function FinanceSourcesSection() {
                     list reads itself again in the background, so this line
                     turns into the last sync's time when it is done. */}
                 {source.lastRunAt
-                  ? t('finance.lastSync', { time: formatTime(source.lastRunAt) })
+                  ? source.providerKind === 'statement'
+                    ? t('finance.lastStatementImport', { time: formatTime(source.lastRunAt) })
+                    : t('finance.lastSync', { time: formatTime(source.lastRunAt) })
                   : source.isEnabled
                     ? t('finance.firstSyncUnderWay')
                     : t('finance.neverSynced')}
@@ -187,17 +189,21 @@ export function FinanceSourcesSection() {
                     </button>
                   </Tooltip>
                 ) : null}
-                <Tooltip label={t('finance.syncNow')}>
-                  <button
-                    type="button"
-                    className="icon-action"
-                    disabled={busy}
-                    aria-label={`${nameOf(source)}: ${t('finance.syncNow')}`}
-                    onClick={() => void run(SYNC_SOURCE, { sourceId: source.id }, t('finance.syncing'))}
-                  >
-                    <RefreshIcon size={16} />
-                  </button>
-                </Tooltip>
+                {/* Imported statements have nothing to sync: they change
+                    when a statement arrives. */}
+                {source.providerKind !== 'statement' ? (
+                  <Tooltip label={t('finance.syncNow')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      disabled={busy}
+                      aria-label={`${nameOf(source)}: ${t('finance.syncNow')}`}
+                      onClick={() => void run(SYNC_SOURCE, { sourceId: source.id }, t('finance.syncing'))}
+                    >
+                      <RefreshIcon size={16} />
+                    </button>
+                  </Tooltip>
+                ) : null}
                 <Tooltip label={source.isEnabled ? t('finance.turnOff') : t('finance.turnOn')}>
                   <button
                     type="button"
@@ -332,7 +338,11 @@ export function FinanceSourcesSection() {
             <>
               <p className="muted">{t('finance.deleteSourceBody', { name: nameOf(deleting) })}</p>
               <p className="muted">
-                {deleting.providerKind === 'plaid' ? t('finance.deletePlaidLimit') : t('finance.deleteSimpleFINRevoke')}
+                {deleting.providerKind === 'plaid'
+                  ? t('finance.deletePlaidLimit')
+                  : deleting.providerKind === 'statement'
+                    ? t('finance.deleteStatementSource')
+                    : t('finance.deleteSimpleFINRevoke')}
               </p>
             </>
           }

@@ -11824,6 +11824,13 @@ button.idea-history-title {
   min-width: 12rem;
 }
 
+/* The statement import address is long and has no spaces; on a phone it
+   breaks anywhere rather than pushing the page sideways. */
+.statement-address {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
 .finance-table tfoot th {
   color: var(--text);
   font-weight: 600;
