@@ -135,6 +135,27 @@ func TestOverlappingMergesFoldIntoWhatIsLeft(t *testing.T) {
 	}
 }
 
+// A pair whose other wording names what the kept wording does not is two
+// statements, whatever the model answered: merging it would leave the page
+// without the name, and a true statement behind one that never said it.
+func TestAMergeThatWouldDropANameIsNotMade(t *testing.T) {
+	world := newMergeWorld(t,
+		"Job state is kept in Burrowdb.",
+		"Moving job state to Ferrox was proposed and rejected.")
+
+	if merged := world.merge(t, [][]int{{1, 2}}); merged != 0 {
+		t.Fatalf("a merge that drops Ferrox was made: %d", merged)
+	}
+	if stated := world.stated(t); len(stated) != 2 {
+		t.Fatalf("both statements stay on the page: %v", stated)
+	}
+	// A rewording that drops nothing is still merged.
+	world = newMergeWorld(t, "The boat is moored at Blakeney.", "She is moored at Blakeney.")
+	if merged := world.merge(t, [][]int{{1, 2}}); merged != 1 {
+		t.Fatalf("a plain rewording is merged, not %d", merged)
+	}
+}
+
 // And a chain of pairs ends at one row rather than at a row that has
 // itself gone.
 func TestChainedMergesEndAtOneRow(t *testing.T) {
