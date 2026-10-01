@@ -23,6 +23,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/storage"
+	"github.com/ziyan/teanode/internal/util/security"
 )
 
 // NewEvaluateCommand builds "teanode-server evaluate".
@@ -160,7 +161,10 @@ func runOneScenario(ctx context.Context, command *cli.Command, path, output stri
 	if err != nil {
 		return err
 	}
-	name := "scenario_" + strings.Trim(scenarioDatabaseUnsafe.ReplaceAllString(strings.ToLower(scenario.Name), "_"), "_") + "_" + time.Now().Format("20060102150405")
+	// The time and a random tail: two runs of one scenario started in the
+	// same second, side by side, were given the same database name.
+	name := "scenario_" + strings.Trim(scenarioDatabaseUnsafe.ReplaceAllString(strings.ToLower(scenario.Name), "_"), "_") +
+		"_" + time.Now().Format("20060102150405") + "_" + security.NewULID()[20:]
 	settings := &db.Settings{
 		Host: command.String("database-host"), Port: uint16(command.Int("database-port")),
 		User: command.String("database-user"), Password: command.String("database-password"),
