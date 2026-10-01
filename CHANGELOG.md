@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.94.4] - 2026-10-01
+
+### Changed
+
+- Nothing a source holds is cut on the way in (large files, every page of a scan, whole commits), nothing the agent writes is cut when stored, and the agent's tools page through long results and say how much more there is. (#280)
+
 ## [0.94.3] - 2026-10-01
 
 ### Changed
