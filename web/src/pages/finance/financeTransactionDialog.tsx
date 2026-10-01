@@ -99,6 +99,7 @@ export function FinanceTransactionDialog({
               t('finance.account'),
               financeAccount ? accountLabel(financeAccount) : t('finance.deletedFinanceAccount'),
             )}
+            {property(t('finance.institution'), financeAccount?.institutionName ?? '')}
             <dt>{t('finance.spendingCategory')}</dt>
             <dd>
               <Select
