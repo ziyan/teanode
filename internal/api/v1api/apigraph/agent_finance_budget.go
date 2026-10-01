@@ -28,6 +28,21 @@ type CategorizeTransactionView struct {
 	SpendingRule       *models.SpendingRule       `json:"spendingRule,omitempty" graphapi:"nullable"`
 }
 
+// CategorizeTransactionsView is the finance transactions as categorized,
+// in the order they were named, and the spending rules saved for them
+// when that was asked for.
+type CategorizeTransactionsView struct {
+	FinanceTransactions []*models.FinanceTransaction `json:"financeTransactions"`
+	SpendingRules       []*models.SpendingRule       `json:"spendingRules"`
+}
+
+// SpendingRuleProposalView is a spending rule that would be saved: what
+// it matches, and how many of the finance transactions named it matches.
+type SpendingRuleProposalView struct {
+	MatchText               string `json:"matchText"`
+	FinanceTransactionCount int    `json:"financeTransactionCount"`
+}
+
 // SpendingByDayView is cumulative spending per day of two months, in the
 // reporting currency, each finance transaction converted at the rate of
 // the day it posted.
@@ -159,6 +174,22 @@ type CategorizeTransactionArguments struct {
 	FinanceTransactionID     string `json:"financeTransactionId"`
 	SpendingCategoryID       string `json:"spendingCategoryId" graphapi:"nullable"`
 	ShouldCreateSpendingRule *bool  `json:"shouldCreateSpendingRule" graphapi:"nullable"`
+}
+
+// CategorizeTransactionsArguments give several finance transactions one
+// spending category (empty takes it away) and may ask for the spending
+// rules ProposeSpendingRules lists.
+type CategorizeTransactionsArguments struct {
+	FinanceTransactionIDs     []string `json:"financeTransactionIds"`
+	SpendingCategoryID        string   `json:"spendingCategoryId" graphapi:"nullable"`
+	ShouldCreateSpendingRules *bool    `json:"shouldCreateSpendingRules" graphapi:"nullable"`
+}
+
+// ProposeSpendingRulesArguments name the finance transactions and the
+// spending category the rules would assign.
+type ProposeSpendingRulesArguments struct {
+	FinanceTransactionIDs []string `json:"financeTransactionIds"`
+	SpendingCategoryID    string   `json:"spendingCategoryId"`
 }
 
 // CountTransactionArguments name the finance transaction, a mirrored
@@ -361,11 +392,16 @@ func nextRulePriority(tx db.Transaction, agentId string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	return rulePriorityAfter(spendingRules), nil
+}
+
+// rulePriorityAfter is one after the last of the spending rules given.
+func rulePriorityAfter(spendingRules []*models.SpendingRule) int {
 	next := 0
 	for _, spendingRule := range spendingRules {
 		next = max(next, spendingRule.RulePriority+1)
 	}
-	return next, nil
+	return next
 }
 
 func (self *graph) CreateSpendingRule(ctx context.Context, arguments CreateSpendingRuleArguments) (*models.SpendingRule, error) {
@@ -486,21 +522,12 @@ func (self *graph) CategorizeTransaction(ctx context.Context, arguments Categori
 	// what was written even when the resolver then fails, so a refused
 	// spending rule must not leave the categorization behind.
 	if spendingCategoryId != "" {
-		spendingCategory, err := tx.GetSpendingCategory(found.ID, spendingCategoryId)
-		if err != nil {
+		if err := requireSpendingCategory(tx, found.ID, spendingCategoryId); err != nil {
 			return nil, err
-		}
-		if spendingCategory == nil {
-			return nil, fmt.Errorf("%w: there is no spending category %q; SpendingCategories lists them", api.ErrInvalidArguments, spendingCategoryId)
 		}
 	}
 	isSpendingRuleWanted := arguments.ShouldCreateSpendingRule != nil && *arguments.ShouldCreateSpendingRule
-	// The rule matches what the transaction is matched by: its merchant,
-	// or its description when it has none.
-	matchText := strings.TrimSpace(financeTransaction.MerchantName)
-	if matchText == "" {
-		matchText = strings.TrimSpace(financeTransaction.Description)
-	}
+	matchText := spendingRuleMatchText(financeTransaction)
 	if isSpendingRuleWanted {
 		if spendingCategoryId == "" {
 			return nil, fmt.Errorf("%w: a spending rule needs the spending category it assigns", api.ErrInvalidArguments)
@@ -531,6 +558,227 @@ func (self *graph) CategorizeTransaction(ctx context.Context, arguments Categori
 		return nil, financeError(err)
 	}
 	if view.FinanceTransaction, err = tx.GetFinanceTransaction(found.ID, financeTransaction.ID); err != nil {
+		return nil, err
+	}
+	return view, nil
+}
+
+// maximumCategorizedTransactionCount is how many finance transactions one
+// CategorizeTransactions or ProposeSpendingRules takes: a few pages of the
+// dashboard's list, and a bound on one statement and on one confirmation.
+const maximumCategorizedTransactionCount = 500
+
+// requireSpendingCategory refuses a spending category that is not the
+// caller's.
+func requireSpendingCategory(tx db.Transaction, agentId, spendingCategoryId string) error {
+	spendingCategory, err := tx.GetSpendingCategory(agentId, spendingCategoryId)
+	if err != nil {
+		return err
+	}
+	if spendingCategory == nil {
+		return fmt.Errorf("%w: there is no spending category %q; SpendingCategories lists them", api.ErrInvalidArguments, spendingCategoryId)
+	}
+	return nil
+}
+
+// spendingRuleMatchText is what a spending rule for a finance transaction
+// matches: what the rules are matched against, its merchant, or its
+// description when it has none.
+func spendingRuleMatchText(financeTransaction *models.FinanceTransaction) string {
+	if matchText := strings.TrimSpace(financeTransaction.MerchantName); matchText != "" {
+		return matchText
+	}
+	return strings.TrimSpace(financeTransaction.Description)
+}
+
+// ownFinanceTransactions is the caller's finance transactions by the ids
+// given, each once, in the order first named. None, or more than the
+// maximum, is refused, and any id that is not the caller's finds nothing,
+// so a list with somebody else's id in it acts on none of them.
+func ownFinanceTransactions(tx db.Transaction, agentId string, financeTransactionIds []string) ([]*models.FinanceTransaction, error) {
+	var distinctIds []string
+	isNamed := map[string]bool{}
+	for _, financeTransactionId := range financeTransactionIds {
+		financeTransactionId = strings.TrimSpace(financeTransactionId)
+		if financeTransactionId == "" || isNamed[financeTransactionId] {
+			continue
+		}
+		isNamed[financeTransactionId] = true
+		distinctIds = append(distinctIds, financeTransactionId)
+	}
+	if len(distinctIds) == 0 {
+		return nil, fmt.Errorf("%w: which finance transactions", api.ErrInvalidArguments)
+	}
+	if len(distinctIds) > maximumCategorizedTransactionCount {
+		return nil, fmt.Errorf("%w: %d finance transactions at a time at most, not %d", api.ErrInvalidArguments, maximumCategorizedTransactionCount, len(distinctIds))
+	}
+	found, err := tx.GetFinanceTransactions(agentId, distinctIds)
+	if err != nil {
+		return nil, err
+	}
+	if len(found) != len(distinctIds) {
+		return nil, api.ErrNotFound
+	}
+	byId := make(map[string]*models.FinanceTransaction, len(found))
+	for _, financeTransaction := range found {
+		byId[financeTransaction.ID] = financeTransaction
+	}
+	financeTransactions := make([]*models.FinanceTransaction, 0, len(distinctIds))
+	for _, financeTransactionId := range distinctIds {
+		financeTransactions = append(financeTransactions, byId[financeTransactionId])
+	}
+	return financeTransactions, nil
+}
+
+// proposeSpendingRules is a spending rule to the spending category for
+// each distinct match text of the finance transactions (in any case),
+// leaving out one already covered: by a spending rule that sends it to the
+// same spending category for every finance account and amount and whose
+// words are within it, or by a shorter match text proposed here, whose
+// rule would match it too. A rule that sends it elsewhere does not cover
+// it. Most finance transactions matched first, then by match text.
+func proposeSpendingRules(financeTransactions []*models.FinanceTransaction, spendingRules []*models.SpendingRule, spendingCategoryId string) []*SpendingRuleProposalView {
+	var coveringWords []string
+	for _, spendingRule := range spendingRules {
+		if spendingRule.SpendingCategoryID == spendingCategoryId && spendingRule.FinanceAccountID == "" &&
+			spendingRule.MinimumAmount == "" && spendingRule.MaximumAmount == "" && strings.TrimSpace(spendingRule.MatchText) != "" {
+			coveringWords = append(coveringWords, strings.ToLower(strings.TrimSpace(spendingRule.MatchText)))
+		}
+	}
+	isCovered := func(lowered string) bool {
+		for _, words := range coveringWords {
+			if strings.Contains(lowered, words) {
+				return true
+			}
+		}
+		return false
+	}
+	// Each distinct match text, as first written.
+	var candidates []string
+	writtenAs := map[string]bool{}
+	var loweredTexts []string
+	for _, financeTransaction := range financeTransactions {
+		matchText := spendingRuleMatchText(financeTransaction)
+		lowered := strings.ToLower(matchText)
+		loweredTexts = append(loweredTexts, lowered)
+		if matchText == "" || writtenAs[lowered] {
+			continue
+		}
+		writtenAs[lowered] = true
+		candidates = append(candidates, matchText)
+	}
+	// The shorter first, so one that would cover a longer one is proposed
+	// and the longer left out.
+	sort.SliceStable(candidates, func(left, right int) bool { return len(candidates[left]) < len(candidates[right]) })
+	proposals := []*SpendingRuleProposalView{}
+	for _, matchText := range candidates {
+		lowered := strings.ToLower(matchText)
+		if isCovered(lowered) {
+			continue
+		}
+		coveringWords = append(coveringWords, lowered)
+		proposal := &SpendingRuleProposalView{MatchText: matchText}
+		for _, candidate := range loweredTexts {
+			if candidate != "" && strings.Contains(candidate, lowered) {
+				proposal.FinanceTransactionCount++
+			}
+		}
+		proposals = append(proposals, proposal)
+	}
+	sort.SliceStable(proposals, func(left, right int) bool {
+		if proposals[left].FinanceTransactionCount != proposals[right].FinanceTransactionCount {
+			return proposals[left].FinanceTransactionCount > proposals[right].FinanceTransactionCount
+		}
+		return strings.ToLower(proposals[left].MatchText) < strings.ToLower(proposals[right].MatchText)
+	})
+	return proposals
+}
+
+func (self *graph) ProposeSpendingRules(ctx context.Context, arguments ProposeSpendingRulesArguments) ([]*SpendingRuleProposalView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	spendingCategoryId := strings.TrimSpace(arguments.SpendingCategoryID)
+	if spendingCategoryId == "" {
+		return nil, fmt.Errorf("%w: a spending rule needs the spending category it assigns", api.ErrInvalidArguments)
+	}
+	if err := requireSpendingCategory(tx, found.ID, spendingCategoryId); err != nil {
+		return nil, err
+	}
+	financeTransactions, err := ownFinanceTransactions(tx, found.ID, arguments.FinanceTransactionIDs)
+	if err != nil {
+		return nil, err
+	}
+	spendingRules, err := tx.ListSpendingRules(found.ID)
+	if err != nil {
+		return nil, err
+	}
+	return proposeSpendingRules(financeTransactions, spendingRules, spendingCategoryId), nil
+}
+
+func (self *graph) CategorizeTransactions(ctx context.Context, arguments CategorizeTransactionsArguments) (*CategorizeTransactionsView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := self.requireFinanceOffered(); err != nil {
+		return nil, err
+	}
+	tx := self.writing(ctx)
+	// Checked before the first write, as CategorizeTransaction is.
+	financeTransactions, err := ownFinanceTransactions(tx, found.ID, arguments.FinanceTransactionIDs)
+	if err != nil {
+		return nil, err
+	}
+	spendingCategoryId := strings.TrimSpace(arguments.SpendingCategoryID)
+	if spendingCategoryId != "" {
+		if err := requireSpendingCategory(tx, found.ID, spendingCategoryId); err != nil {
+			return nil, err
+		}
+	}
+	isSpendingRuleWanted := arguments.ShouldCreateSpendingRules != nil && *arguments.ShouldCreateSpendingRules
+	if isSpendingRuleWanted && spendingCategoryId == "" {
+		return nil, fmt.Errorf("%w: a spending rule needs the spending category it assigns", api.ErrInvalidArguments)
+	}
+	financeTransactionIds := make([]string, 0, len(financeTransactions))
+	for _, financeTransaction := range financeTransactions {
+		financeTransactionIds = append(financeTransactionIds, financeTransaction.ID)
+	}
+	view := &CategorizeTransactionsView{SpendingRules: []*models.SpendingRule{}}
+	// Every categorization and every rule go together or not at all. The
+	// person's choices are written first, so the rules applied after them
+	// leave these transactions as the person said.
+	err = tx.TransactionContext(ctx, func(nested db.Transaction) error {
+		if _, err := nested.CategorizeTransactionsByPerson(found.ID, financeTransactionIds, spendingCategoryId); err != nil {
+			return err
+		}
+		if !isSpendingRuleWanted {
+			return nil
+		}
+		spendingRules, err := nested.ListSpendingRules(found.ID)
+		if err != nil {
+			return err
+		}
+		proposals := proposeSpendingRules(financeTransactions, spendingRules, spendingCategoryId)
+		if len(proposals) == 0 {
+			return nil
+		}
+		priority := rulePriorityAfter(spendingRules)
+		newSpendingRules := make([]*models.SpendingRule, 0, len(proposals))
+		for index, proposal := range proposals {
+			newSpendingRules = append(newSpendingRules, &models.SpendingRule{
+				AgentID: found.ID, MatchText: proposal.MatchText, SpendingCategoryID: spendingCategoryId, RulePriority: priority + index,
+			})
+		}
+		view.SpendingRules, err = nested.CreateSpendingRules(newSpendingRules)
+		return err
+	})
+	if err != nil {
+		return nil, financeError(err)
+	}
+	if view.FinanceTransactions, err = ownFinanceTransactions(tx, found.ID, financeTransactionIds); err != nil {
 		return nil, err
 	}
 	return view, nil

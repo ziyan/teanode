@@ -319,6 +319,20 @@ type CategorizedTransaction struct {
 	SpendingRule       *SpendingRule       `json:"spendingRule,omitempty"`
 }
 
+// CategorizedTransactions are finance transactions categorized together,
+// and the spending rules saved for them, when they were asked for.
+type CategorizedTransactions struct {
+	FinanceTransactions []*FinanceTransaction `json:"financeTransactions"`
+	SpendingRules       []*SpendingRule       `json:"spendingRules"`
+}
+
+// SpendingRuleProposal is a spending rule CategorizeTransactions would
+// save, and how many of the finance transactions named it matches.
+type SpendingRuleProposal struct {
+	MatchText               string `json:"matchText"`
+	FinanceTransactionCount int    `json:"financeTransactionCount"`
+}
+
 // Budget is an amount for one spending category for each month from a
 // month on.
 type Budget struct {
@@ -598,6 +612,10 @@ const (
 
 	DocumentSpendingRules = `query { SpendingRules ` + spendingRuleFields + ` }`
 
+	DocumentProposeSpendingRules = `query ($financeTransactionIds: [String!]!, $spendingCategoryId: String!) {
+  ProposeSpendingRules(financeTransactionIds: $financeTransactionIds, spendingCategoryId: $spendingCategoryId) { matchText financeTransactionCount }
+}`
+
 	DocumentBudgets = `query { Budgets ` + budgetFields + ` }`
 
 	DocumentBudgetStatus = `query ($month: String) {
@@ -709,6 +727,12 @@ const (
   }
 }`
 
+	DocumentCategorizeTransactions = `mutation ($financeTransactionIds: [String!]!, $spendingCategoryId: String, $shouldCreateSpendingRules: Boolean) {
+  CategorizeTransactions(financeTransactionIds: $financeTransactionIds, spendingCategoryId: $spendingCategoryId, shouldCreateSpendingRules: $shouldCreateSpendingRules) {
+    financeTransactions ` + financeTransactionFields + ` spendingRules ` + spendingRuleFields + `
+  }
+}`
+
 	DocumentCountTransaction = `mutation ($financeTransactionId: String!) {
   CountTransaction(financeTransactionId: $financeTransactionId) ` + financeTransactionFields + `
 }`
@@ -743,7 +767,8 @@ var FinanceDocuments = map[string]string{
 	"FinanceSpendingSummary": DocumentFinanceSpendingSummary, "ExchangeRate": DocumentExchangeRate,
 	"ConvertCurrency": DocumentConvertCurrency, "NetWorth": DocumentNetWorth, "Assets": DocumentAssets,
 	"AssetHistory": DocumentAssetHistory, "SpendingCategories": DocumentSpendingCategories,
-	"SpendingRules": DocumentSpendingRules, "Budgets": DocumentBudgets, "BudgetStatus": DocumentBudgetStatus,
+	"SpendingRules": DocumentSpendingRules, "ProposeSpendingRules": DocumentProposeSpendingRules,
+	"Budgets": DocumentBudgets, "BudgetStatus": DocumentBudgetStatus,
 	"SavingSummary": DocumentSavingSummary, "SpendingByDay": DocumentSpendingByDay, "CashFlow": DocumentCashFlow, "SavingsTargets": DocumentSavingsTargets,
 	"ReportingCurrency": DocumentReportingCurrency,
 	"StatementImport":   DocumentStatementImport, "ImportStatement": DocumentImportStatement,
@@ -757,7 +782,8 @@ var FinanceDocuments = map[string]string{
 	"CreateSpendingCategory": DocumentCreateSpendingCategory, "UpdateSpendingCategory": DocumentUpdateSpendingCategory,
 	"DeleteSpendingCategory": DocumentDeleteSpendingCategory, "CreateSpendingRule": DocumentCreateSpendingRule,
 	"UpdateSpendingRule": DocumentUpdateSpendingRule, "DeleteSpendingRule": DocumentDeleteSpendingRule,
-	"CategorizeTransaction": DocumentCategorizeTransaction, "SetBudget": DocumentSetBudget,
+	"CategorizeTransaction": DocumentCategorizeTransaction, "CategorizeTransactions": DocumentCategorizeTransactions,
+	"SetBudget":        DocumentSetBudget,
 	"CountTransaction": DocumentCountTransaction, "UndoCountTransaction": DocumentUndoCountTransaction,
 	"CreateSavingsTarget": DocumentCreateSavingsTarget,
 	"UpdateSavingsTarget": DocumentUpdateSavingsTarget, "CloseSavingsTarget": DocumentCloseSavingsTarget,

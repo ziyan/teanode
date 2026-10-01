@@ -329,6 +329,8 @@ export function DataTable<Row>({
   const narrowed = filtering || pinnedFilters.length > 0
   const selecting = onSelect !== undefined
   const chosen = selected ? [...selected] : []
+  // The row whose box was clicked last, where a shift-click's run starts.
+  const rangeAnchor = useRef<string | null>(null)
   const filterable = columns.some((column) => column.filter)
 
   return (
@@ -506,12 +508,24 @@ export function DataTable<Row>({
                         aria-label={t('table.choose')}
                         checked={selected?.has(rowKey(row)) ?? false}
                         onChange={(event) => {
+                          // Shift chooses, or lets go of, every row shown
+                          // from the last box clicked to this one, the way
+                          // a mail program's list does.
+                          const index = visible.indexOf(row)
+                          const anchorIndex = visible.findIndex((candidate) => rowKey(candidate) === rangeAnchor.current)
+                          const isRange = (event.nativeEvent as MouseEvent).shiftKey && anchorIndex >= 0
+                          const span = isRange
+                            ? visible.slice(Math.min(index, anchorIndex), Math.max(index, anchorIndex) + 1)
+                            : [row]
                           const next = new Set(selected)
-                          if (event.target.checked) {
-                            next.add(rowKey(row))
-                          } else {
-                            next.delete(rowKey(row))
+                          for (const spanned of span) {
+                            if (event.target.checked) {
+                              next.add(rowKey(spanned))
+                            } else {
+                              next.delete(rowKey(spanned))
+                            }
                           }
+                          rangeAnchor.current = rowKey(row)
                           onSelect?.(next)
                         }}
                       />

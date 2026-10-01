@@ -530,6 +530,30 @@ export const CATEGORIZE_TRANSACTION = `mutation ($financeTransactionId: String!,
   }
 }`
 
+// CATEGORIZE_TRANSACTIONS gives several transactions one spending category
+// as the person's choice, all or none, at most MAXIMUM_CATEGORIZED_TRANSACTION_COUNT
+// at a time, and saves the spending rules PROPOSE_SPENDING_RULES lists when
+// asked.
+export const CATEGORIZE_TRANSACTIONS = `mutation ($financeTransactionIds: [String!]!, $spendingCategoryId: String,
+  $shouldCreateSpendingRules: Boolean) {
+  CategorizeTransactions(financeTransactionIds: $financeTransactionIds, spendingCategoryId: $spendingCategoryId,
+    shouldCreateSpendingRules: $shouldCreateSpendingRules) {
+    financeTransactions { ${TRANSACTION_FIELDS} }
+    spendingRules { id matchText }
+  }
+}`
+
+export const PROPOSE_SPENDING_RULES = `query ($financeTransactionIds: [String!]!, $spendingCategoryId: String!) {
+  ProposeSpendingRules(financeTransactionIds: $financeTransactionIds, spendingCategoryId: $spendingCategoryId) {
+    matchText financeTransactionCount
+  }
+}`
+
+// The server's limit on one CATEGORIZE_TRANSACTIONS or PROPOSE_SPENDING_RULES.
+export const MAXIMUM_CATEGORIZED_TRANSACTION_COUNT = 500
+
+export type SpendingRuleProposal = { matchText: string; financeTransactionCount: number }
+
 export const COUNT_TRANSACTION = `mutation ($financeTransactionId: String!) {
   CountTransaction(financeTransactionId: $financeTransactionId) { ${TRANSACTION_FIELDS} }
 }`

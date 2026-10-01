@@ -87,6 +87,13 @@ type FinanceQuery interface {
 	// The caller's spending rules, in the order they are tried.
 	SpendingRules(ctx context.Context) ([]*models.SpendingRule, error)
 
+	// The spending rules CategorizeTransactions would save for these
+	// finance transactions and this spending category: one per merchant,
+	// or description where there is no merchant, that no spending rule
+	// already sends to that spending category, the most transactions
+	// first. Nothing is saved.
+	ProposeSpendingRules(ctx context.Context, arguments ProposeSpendingRulesArguments) ([]*SpendingRuleProposalView, error)
+
 	// Every budget row of the caller, by spending category and month.
 	Budgets(ctx context.Context) ([]*models.Budget, error)
 
@@ -208,6 +215,14 @@ type FinanceMutation interface {
 	// SpendingCategories) makes it a transfer between the person's own
 	// accounts, neither spending nor income; any other takes that away.
 	CategorizeTransaction(ctx context.Context, arguments CategorizeTransactionArguments) (*CategorizeTransactionView, error)
+
+	// Give several finance transactions one spending category, at most
+	// 500 at a time, as the person's own choice, all or none: an id that
+	// is not the caller's refuses the whole call. Optionally save the
+	// spending rules ProposeSpendingRules lists, so later transactions
+	// like these get the same spending category; they are applied to
+	// past finance transactions once, after the last is saved.
+	CategorizeTransactions(ctx context.Context, arguments CategorizeTransactionsArguments) (*CategorizeTransactionsView, error)
 
 	// Count a mirrored copy, a duplicate of another finance transaction
 	// (duplicateOfTransactionId), as the person's own decision that it is

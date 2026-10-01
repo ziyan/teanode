@@ -493,6 +493,29 @@ batches of fifty. The model is sent merchant, description, amount, currency,
 account kind and provider category, never account numbers or provider
 metadata.
 
+A spending rule matches words within a transaction's merchant, or its
+description when it has none, in any case, and may be limited to one
+finance account and to amounts; the first by `rule_priority` wins. The rule
+made from one transaction (`CategorizeTransaction` with
+`shouldCreateSpendingRule`) matches that transaction's whole merchant, or
+description, as it is.
+
+Several transactions are categorized together with `CategorizeTransactions`
+(at most 500 ids): one statement in a savepoint, every one the person's
+choice as if chosen one by one, all or none, and an id that is not the
+caller's refuses the whole call. Mirrored copies can be among them, as they
+can be categorized one by one. With `shouldCreateSpendingRules` it also
+saves the rules `ProposeSpendingRules` lists for the same ids and spending
+category, in the same savepoint, after the categorizations, and applies the
+rules once after the last is saved (`CreateSpendingRules`), so the person's
+choices stand and the rules reach their other transactions. The proposal
+takes each distinct match text among the transactions (merchant, else
+description, compared in any case) and leaves out one that an existing rule
+already sends to that spending category for every account and amount (its
+words within the match text), and one that a shorter proposed match text
+already covers; a rule to another spending category covers nothing. The
+new rules go after every rule there is, the most matched first.
+
 Transfers between the person's own finance accounts, and card payments,
 count as neither spending nor income. A transfer is a spending category:
 the agent's **transfer category** (`is_transfer` on
@@ -649,7 +672,13 @@ and the subcommand the same name in kebab-case; parity tests in
 `internal/cmd/finance_test.go` and the tool's package check it. Two operations
 span two GraphQL calls (`link_plaid` and `repair`, which need Plaid's window
 in a browser; the command line and the tool hand the person the page's
-address). Two are deliberately missing from the tool: a SimpleFIN setup token
+address). One name stands for two operations: `categorize-transaction` and
+the tool's `categorize_transaction` call `CategorizeTransaction` for one id
+and `CategorizeTransactions` for several (`<id>... <category>` on the
+command line, `finance_transaction_ids` in the tool), so a person or a
+model categorizing several needs no second word for it; the tool's
+confirmation card says how many, names three, and lists the spending rules
+`ProposeSpendingRules` says would be saved. Two are deliberately missing from the tool: a SimpleFIN setup token
 and a credential brought in are refused in conversation, because they would
 stay in the transcript and go to the model provider; `link_simplefin` and
 `import_credential` only say where to give them. The tool's
@@ -686,6 +715,23 @@ one the person counted says so and offers to check for copies again. The
 counted copy's details name its duplicates the same way. Both actions
 answer with a toast, and read again the list and what the open details
 show.
+
+Transactions are chosen with a box at the start of each row
+(`web/src/pages/finance/financeTransactions.tsx`, through `DataTable`'s
+selection): shift chooses the run of rows shown since the last box
+clicked, the header's box every row on the table's page, and the toolbar
+offers to choose every row loaded. A row clicked anywhere else still opens
+its details. The choice survives Load more and is let go of when a filter
+changes. While any are chosen, the row above the table
+(`financeTransactionSelection.tsx`) says how many, offers the same list of
+spending categories as a row, a box to save them as spending rules, Apply,
+and an icon that lets go of them. Apply sends `CategorizeTransactions` 500
+at a time; what worked is shown and let go of, and a piece that failed
+stays chosen, with a toast saying how many. With the box ticked it first
+asks `ProposeSpendingRules` and shows the rules in a confirmation (their
+words, and how many of the chosen each matches), or, when existing rules
+cover them all, categorizes without asking and says so. Saved rules can
+change other rows, so every page read so far is read again.
 
 The saving summary is a panel on Spending, for the month chosen there, above
 the month's budgets (spending budgets, then income budgets under a heading

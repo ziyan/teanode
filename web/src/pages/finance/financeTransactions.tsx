@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { graphql } from '../../api'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
 import { Column, DataTable } from '../../components/dataTable'
+import { ConfirmDialog } from '../../components/dialog'
 import { Select } from '../../components/select'
 import { SettingsSection } from '../../components/settingsList'
 import { useIsDesktop } from '../../components/sidebar'
@@ -12,14 +13,18 @@ import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
 import {
   CATEGORIZE_TRANSACTION,
+  CATEGORIZE_TRANSACTIONS,
   COUNT_TRANSACTION,
   FINANCE_ACCOUNTS,
   FINANCE_TRANSACTIONS,
   FinanceAccount,
   FinanceTransaction,
   FinanceTransactionPage,
+  MAXIMUM_CATEGORIZED_TRANSACTION_COUNT,
+  PROPOSE_SPENDING_RULES,
   SPENDING_CATEGORIES,
   SpendingCategory,
+  SpendingRuleProposal,
   UNDO_COUNT_TRANSACTION,
   amountOf,
   formatDay,
@@ -32,11 +37,70 @@ import {
   useFinanceWords,
 } from './financeCommon'
 import { FinanceTransactionDialog } from './financeTransactionDialog'
+import { FinanceSelectionToolbar, chunks, mergeProposals } from './financeTransactionSelection'
 import { useSpendingCategoryDisplayName } from './spendingCategoryName'
 import { TransactionFilters, searchFromTransactionFilters, transactionFiltersFromSearch } from './financeFilters'
 
 // How many finance transactions one read brings, and one Load more adds.
 const PAGE_SIZE = 100
+
+// How many proposed spending rules the confirmation names before saying
+// how many more there are.
+const SHOWN_PROPOSAL_COUNT = 8
+
+// SpendingRulesConfirmation asks before saving spending rules for the
+// chosen transactions: which words each matches, and how many of the
+// chosen transactions it matches.
+function SpendingRulesConfirmation({
+  proposals,
+  spendingCategoryLabel,
+  isApplying,
+  onConfirm,
+  onClose,
+}: {
+  proposals: SpendingRuleProposal[]
+  spendingCategoryLabel: string
+  isApplying: boolean
+  onConfirm: () => void
+  onClose: () => void
+}) {
+  const { t, plural } = useTranslation()
+  const hiddenCount = proposals.length - SHOWN_PROPOSAL_COUNT
+  return (
+    <ConfirmDialog
+      title={plural(proposals.length, {
+        one: 'finance.saveSpendingRulesTitleOne',
+        other: 'finance.saveSpendingRulesTitleOther',
+      })}
+      destructive={false}
+      body={
+        <>
+          <p className="muted">{t('finance.saveSpendingRulesBody', { category: spendingCategoryLabel })}</p>
+          <ul className="finance-rule-proposals">
+            {proposals.slice(0, SHOWN_PROPOSAL_COUNT).map((proposal) => (
+              <li key={proposal.matchText}>
+                {proposal.matchText}{' '}
+                <span className="muted">
+                  {plural(proposal.financeTransactionCount, {
+                    one: 'finance.ruleMatchesOne',
+                    other: 'finance.ruleMatchesOther',
+                  })}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {hiddenCount > 0 ? (
+            <p className="muted">{t('finance.moreSpendingRules', { count: String(hiddenCount) })}</p>
+          ) : null}
+        </>
+      }
+      confirmLabel={t('finance.applyAndSaveSpendingRules')}
+      busy={isApplying}
+      onConfirm={onConfirm}
+      onClose={onClose}
+    />
+  )
+}
 
 // The finance transactions, newest first, narrowed on the server by dates,
 // a finance account, a spending category, words and whether a spending
@@ -49,8 +113,13 @@ const PAGE_SIZE = 100
 // chosen the same way, which takes it out of spending and income. A
 // mirrored copy stays in the list, muted, tagged and with its amount struck
 // through, since it is left out of every total.
+//
+// Transactions can be chosen with the boxes at the start of their rows
+// (shift chooses the run since the last one), kept while more pages load,
+// and given one spending category together, with spending rules for them
+// when asked, after saying which. Changing a filter lets go of them.
 export function FinanceTransactionsSection() {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const toast = useToast()
   const words = useFinanceWords()
   const isDesktop = useIsDesktop()
@@ -126,6 +195,15 @@ export function FinanceTransactionsSection() {
   // Raised after the person counts a copy or takes that back, so the open
   // details read again the copies they name.
   const [detailsRefreshCount, setDetailsRefreshCount] = useState(0)
+  // The transactions chosen to categorize together, by id; the spending
+  // rules about to be saved for them, while the person is asked.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isApplying, setIsApplying] = useState(false)
+  const [rulesConfirmation, setRulesConfirmation] = useState<{
+    financeTransactionIds: string[]
+    spendingCategoryId: string
+    proposals: SpendingRuleProposal[]
+  } | null>(null)
   const openedFrom = useRef<HTMLElement | null>(null)
   const openDetails = (row: FinanceTransaction) => {
     openedFrom.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -138,6 +216,7 @@ export function FinanceTransactionsSection() {
   useEffect(() => {
     setMore({ rows: [], after: null, isLoaded: false })
     setChanged({})
+    setSelectedIds(new Set())
   }, [filterKey])
 
   const firstPage = first.data?.FinanceTransactions
@@ -155,6 +234,12 @@ export function FinanceTransactionsSection() {
     : undefined
   const detailed = detailedRow && changed[detailedRow.id] ? { ...detailedRow, ...changed[detailedRow.id] } : detailedRow
   const categoryList = categories.data?.SpendingCategories ?? []
+  // Only what is in the list counts as chosen: a page read again may no
+  // longer hold one that was.
+  const selectedLoaded = useMemo(
+    () => new Set(rows.filter((row) => selectedIds.has(row.id)).map((row) => row.id)),
+    [rows, selectedIds],
+  )
 
   const loadMore = async () => {
     if (!after) return
@@ -257,6 +342,101 @@ export function FinanceTransactionsSection() {
     } finally {
       setIsCounting(false)
     }
+  }
+
+  // categorizeSelection gives the chosen transactions the spending category
+  // as the person's choice, a few pages at a time, each piece all or none.
+  // What worked is shown at once and let go of; a piece that failed stays
+  // chosen, so trying again acts on exactly what is left. Saved rules can
+  // change other rows, so then every page read so far is read again.
+  const categorizeSelection = async (
+    financeTransactionIds: string[],
+    spendingCategoryId: string,
+    shouldCreateSpendingRules: boolean,
+    isCoveredByRules = false,
+  ) => {
+    setIsApplying(true)
+    const categorizedRows: FinanceTransaction[] = []
+    const failedIds: string[] = []
+    let savedRuleCount = 0
+    let failure: unknown = null
+    for (const piece of chunks(financeTransactionIds, MAXIMUM_CATEGORIZED_TRANSACTION_COUNT)) {
+      try {
+        const answer = await graphql<{
+          CategorizeTransactions: { financeTransactions: FinanceTransaction[]; spendingRules: { id: string }[] }
+        }>(CATEGORIZE_TRANSACTIONS, {
+          financeTransactionIds: piece,
+          spendingCategoryId: spendingCategoryId || null,
+          shouldCreateSpendingRules,
+        })
+        categorizedRows.push(...answer.CategorizeTransactions.financeTransactions)
+        savedRuleCount += answer.CategorizeTransactions.spendingRules.length
+      } catch (caught) {
+        failedIds.push(...piece)
+        failure = caught
+      }
+    }
+    setChanged((previous) => ({ ...previous, ...Object.fromEntries(categorizedRows.map((row) => [row.id, row])) }))
+    setSelectedIds(new Set(failedIds))
+    if (savedRuleCount > 0) {
+      try {
+        await reloadLoadedPages()
+      } catch (caught) {
+        toast.failure(caught, t('finance.failed'))
+      }
+    }
+    setIsApplying(false)
+    const categorized = plural(categorizedRows.length, {
+      one: 'finance.categorizedCountOne',
+      other: 'finance.categorizedCountOther',
+    })
+    if (categorizedRows.length === 0) {
+      toast.failure(failure, t('finance.failed'))
+    } else if (failedIds.length > 0) {
+      toast.failed(t('finance.categorizePartlyFailed', { categorized, failedCount: String(failedIds.length) }))
+    } else if (savedRuleCount > 0) {
+      const saved = plural(savedRuleCount, { one: 'finance.savedRuleCountOne', other: 'finance.savedRuleCountOther' })
+      toast.done(t('finance.categorizedAndSaved', { categorized, saved }))
+    } else if (isCoveredByRules) {
+      toast.done(t('finance.categorizedCoveredByRules', { categorized }))
+    } else {
+      toast.done(t('finance.bulkCategorized', { categorized }))
+    }
+  }
+
+  // applyToSelection is the toolbar's Apply. With rules asked for, it
+  // first asks the server which it would save and has the person confirm
+  // them; when existing rules already cover every one, there is nothing
+  // to confirm.
+  const applyToSelection = async (spendingCategoryId: string, shouldSaveSpendingRules: boolean) => {
+    const financeTransactionIds = [...selectedLoaded]
+    if (!shouldSaveSpendingRules) {
+      await categorizeSelection(financeTransactionIds, spendingCategoryId, false)
+      return
+    }
+    setIsApplying(true)
+    let proposals: SpendingRuleProposal[]
+    try {
+      const pieces: SpendingRuleProposal[][] = []
+      for (const piece of chunks(financeTransactionIds, MAXIMUM_CATEGORIZED_TRANSACTION_COUNT)) {
+        const answer = await graphql<{ ProposeSpendingRules: SpendingRuleProposal[] }>(PROPOSE_SPENDING_RULES, {
+          financeTransactionIds: piece,
+          spendingCategoryId,
+        })
+        pieces.push(answer.ProposeSpendingRules)
+      }
+      proposals = mergeProposals(pieces)
+    } catch (caught) {
+      toast.failure(caught, t('finance.failed'))
+      setIsApplying(false)
+      return
+    }
+    setIsApplying(false)
+    if (proposals.length === 0) {
+      await categorizeSelection(financeTransactionIds, spendingCategoryId, false, true)
+      return
+    }
+    setRulesConfirmation({ financeTransactionIds, spendingCategoryId, proposals })
   }
 
   const columns: Column<FinanceTransaction>[] = [
@@ -477,8 +657,38 @@ export function FinanceTransactionsSection() {
             countLabel={(count) => t('finance.transactionsLoaded', { count: String(count) })}
             onRowOpen={openDetails}
             rowOpenLabel={(row) => t('finance.transactionDetailsOf', { name: row.merchantName || row.description })}
+            selected={selectedLoaded}
+            onSelect={setSelectedIds}
+            selectionActions={(chosen) => (
+              <FinanceSelectionToolbar
+                selectedTransactionCount={chosen.length}
+                loadedTransactionCount={rows.length}
+                categoryOptions={spendingCategoryOptions(categoryList, categoryName, null, t('finance.transferGroup'))}
+                isApplying={isApplying}
+                onSelectAllLoaded={() => setSelectedIds(new Set(rows.map((row) => row.id)))}
+                onClear={() => setSelectedIds(new Set())}
+                onApply={(spendingCategoryId, shouldSaveSpendingRules) =>
+                  void applyToSelection(spendingCategoryId, shouldSaveSpendingRules)
+                }
+              />
+            )}
           />
         </div>
+      ) : null}
+      {rulesConfirmation ? (
+        <SpendingRulesConfirmation
+          proposals={rulesConfirmation.proposals}
+          spendingCategoryLabel={(() => {
+            const chosen = categoryList.find((candidate) => candidate.id === rulesConfirmation.spendingCategoryId)
+            return chosen ? spendingCategoryLabel(chosen, categoryList, categoryName) : ''
+          })()}
+          isApplying={isApplying}
+          onConfirm={() => {
+            setRulesConfirmation(null)
+            void categorizeSelection(rulesConfirmation.financeTransactionIds, rulesConfirmation.spendingCategoryId, true)
+          }}
+          onClose={() => setRulesConfirmation(null)}
+        />
       ) : null}
       {detailed ? (
         <FinanceTransactionDialog

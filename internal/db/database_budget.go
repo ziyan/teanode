@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -59,6 +60,10 @@ type BudgetOperation interface {
 
 	// CreateSpendingRule adds a spending rule and applies the rules again.
 	CreateSpendingRule(spendingRule *models.SpendingRule) (*models.SpendingRule, error)
+
+	// CreateSpendingRules adds several spending rules and applies the
+	// rules again once, after the last.
+	CreateSpendingRules(spendingRules []*models.SpendingRule) ([]*models.SpendingRule, error)
 
 	// UpdateSpendingRule changes a spending rule of the agent through a
 	// function given a copy, and applies the rules again.
@@ -496,23 +501,49 @@ func (self *transaction) GetSpendingRule(agentId, spendingRuleId string) (*model
 }
 
 func (self *transaction) CreateSpendingRule(spendingRule *models.SpendingRule) (*models.SpendingRule, error) {
-	created := *spendingRule
-	created.ID = newID()
-	created.CreatedAt = time.Now()
-	created.ModifiedAt = created.CreatedAt
-	model, err := self.validateSpendingRule(&created)
+	created, err := self.CreateSpendingRules([]*models.SpendingRule{spendingRule})
 	if err != nil {
 		return nil, err
 	}
-	if err := self.applyMutation(models.AuditResourceSpendingRule, created.ID, models.AuditActionCreate, nil, &created, func(tx *gorm.DB) error {
-		return tx.Create(model).Error
-	}); err != nil {
-		return nil, err
+	return created[0], nil
+}
+
+func (self *transaction) CreateSpendingRules(spendingRules []*models.SpendingRule) ([]*models.SpendingRule, error) {
+	createdIds := make([]string, 0, len(spendingRules))
+	agentIds := []string{}
+	for _, spendingRule := range spendingRules {
+		created := *spendingRule
+		created.ID = newID()
+		created.CreatedAt = time.Now()
+		created.ModifiedAt = created.CreatedAt
+		model, err := self.validateSpendingRule(&created)
+		if err != nil {
+			return nil, err
+		}
+		if err := self.applyMutation(models.AuditResourceSpendingRule, created.ID, models.AuditActionCreate, nil, &created, func(tx *gorm.DB) error {
+			return tx.Create(model).Error
+		}); err != nil {
+			return nil, err
+		}
+		createdIds = append(createdIds, created.ID)
+		if !slices.Contains(agentIds, created.AgentID) {
+			agentIds = append(agentIds, created.AgentID)
+		}
 	}
-	if _, err := self.ApplySpendingRules(created.AgentID); err != nil {
-		return nil, err
+	for _, agentId := range agentIds {
+		if _, err := self.ApplySpendingRules(agentId); err != nil {
+			return nil, err
+		}
 	}
-	return self.GetSpendingRule(created.AgentID, created.ID)
+	createdRules := make([]*models.SpendingRule, 0, len(createdIds))
+	for index, createdId := range createdIds {
+		createdRule, err := self.GetSpendingRule(spendingRules[index].AgentID, createdId)
+		if err != nil {
+			return nil, err
+		}
+		createdRules = append(createdRules, createdRule)
+	}
+	return createdRules, nil
 }
 
 func (self *transaction) UpdateSpendingRule(agentId, spendingRuleId string, modify func(*models.SpendingRule) error) (*models.SpendingRule, error) {
