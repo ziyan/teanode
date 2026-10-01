@@ -348,19 +348,45 @@ func parseWithin(test *testing.T, ctx context.Context, content string, limit tim
 // all of it before, so a couple of megabytes took minutes. Every skipped
 // tag counts toward the limit on tags too, so a file of nothing else is
 // refused.
+//
+// The cost is judged against itself rather than a clock: eight times the
+// input takes about eight times as long when it is linear and about sixty
+// four times when it is quadratic, whatever the machine. A bound in
+// seconds failed on a loaded CI runner. Not parallel, so the timings are
+// not measured against the other tests.
 func TestParseCostIsLinearInSkippedTags(test *testing.T) {
-	test.Parallel()
 	prefix := "OFXHEADER:100\n<OFX><SIGNONMSGSRSV1><SONRS><FI><ORG>x"
 	for _, skipped := range []string{"a<>", "a<!---->", "a<?>"} {
-		content := prefix + strings.Repeat(skipped, 2*1024*1024/len(skipped))
-		if err := parseWithin(test, test.Context(), content, 2*time.Second); err == nil {
-			test.Errorf("%q repeated: a file without a statement was read", skipped)
+		small := prefix + strings.Repeat(skipped, 128*1024/len(skipped))
+		large := prefix + strings.Repeat(skipped, 8*128*1024/len(skipped))
+		smallDuration := fastestParse(test, small)
+		largeDuration := fastestParse(test, large)
+		if ratio := float64(largeDuration) / float64(max(smallDuration, time.Microsecond)); ratio > 24 {
+			test.Errorf("%q repeated: eight times the input took %.1f times as long (%s against %s)", skipped, ratio, largeDuration, smallDuration)
 		}
 	}
 	tooMany := prefix + strings.Repeat("a<>", (ofx.MaximumFileBytes-len(prefix))/3)
-	if err := parseWithin(test, test.Context(), tooMany, 2*time.Second); err == nil || !strings.Contains(err.Error(), "too many tags") {
+	if err := parseWithin(test, test.Context(), tooMany, time.Minute); err == nil || !strings.Contains(err.Error(), "too many tags") {
 		test.Errorf("a file of nothing but empty tags: %v", err)
 	}
+}
+
+// fastestParse is the shortest of three parses of content, which is the one
+// least disturbed by whatever else the machine was doing. A file without a
+// statement is refused, and that refusal is what is timed.
+func fastestParse(test *testing.T, content string) time.Duration {
+	test.Helper()
+	fastest := time.Duration(0)
+	for attempt := 0; attempt < 3; attempt++ {
+		started := time.Now()
+		if err := parseWithin(test, test.Context(), content, time.Minute); err == nil {
+			test.Fatalf("parsing %d bytes: a file without a statement was read", len(content))
+		}
+		if elapsed := time.Since(started); attempt == 0 || elapsed < fastest {
+			fastest = elapsed
+		}
+	}
+	return fastest
 }
 
 // A parse whose context is done stops with the context's error.
