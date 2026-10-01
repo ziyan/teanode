@@ -26,12 +26,13 @@ CREATE INDEX "agent_finance_transaction_duplicate_of" ON "agent_finance_transact
 -- sync. The same rule as DetectMirroredFinanceTransactions: transactions of
 -- one Plaid finance source on different accounts, every one of them an
 -- investment account, with the same day, amount, currency and description
--- (trimmed, in any case), all pending or all posted. Other providers are
+-- (trimmed, in any case), pending or posted. Other providers are
 -- left alone: one SimpleFIN credential can reach several institutions,
 -- and two deposit accounts of one Plaid item can each be charged the same
 -- fee for real. Two on one account are never copies of each other: the
 -- n-th of a day's repeats on one account goes with the n-th on each other
--- account. The counted copy is the one stored first, then the one on the
+-- account, posted ones numbered first. The counted copy is a posted one
+-- before a pending one, then the one stored first, then the one on the
 -- oldest account.
 WITH "scope" AS (
     SELECT "copy"."id", "copy"."finance_account_id", "account"."source_id", "copy"."is_pending", "copy"."posted_on", "copy"."amount",
@@ -44,8 +45,8 @@ WITH "scope" AS (
     WHERE btrim("copy"."description") <> ''
       AND COALESCE("source"."specification"->>'type', '') = 'plaid'
 ), "numbered" AS (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY "finance_account_id", "is_pending", "posted_on", "amount", "currency_code", "description_key"
-        ORDER BY "created_at", "id") AS "occurrence"
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY "finance_account_id", "posted_on", "amount", "currency_code", "description_key"
+        ORDER BY "is_pending", "created_at", "id") AS "occurrence"
     FROM "scope"
 ), "ranked" AS (
     SELECT "id",
@@ -53,8 +54,8 @@ WITH "scope" AS (
         COUNT(*) OVER "mirrored_set" AS "member_count",
         bool_and("is_investment_account") OVER "mirrored_set" AS "is_every_account_investment"
     FROM "numbered"
-    WINDOW "mirrored_set" AS (PARTITION BY "source_id", "is_pending", "posted_on", "amount", "currency_code", "description_key", "occurrence"
-        ORDER BY "created_at", "account_created_at", "finance_account_id", "id"
+    WINDOW "mirrored_set" AS (PARTITION BY "source_id", "posted_on", "amount", "currency_code", "description_key", "occurrence"
+        ORDER BY "is_pending", "created_at", "account_created_at", "finance_account_id", "id"
         ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 )
 UPDATE "agent_finance_transaction" AS "target"

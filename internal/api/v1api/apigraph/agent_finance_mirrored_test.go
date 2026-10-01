@@ -15,7 +15,7 @@ import (
 // naming the counted one, and counts once in the spending summary. The
 // person counting the copy makes it count; taking that back makes it a
 // duplicate again. Counting the counted copy, or another person's
-// transaction, is refused.
+// transaction, is refused, and one is read by its id only by its owner.
 func TestMirroredCopiesCountOnceAndThePersonCanCountOne(test *testing.T) {
 	fixture := newFinanceFixture(test, true)
 	resolver := fixture.resolver
@@ -61,6 +61,14 @@ func TestMirroredCopiesCountOnceAndThePersonCanCountOne(test *testing.T) {
 		if err != nil || len(duplicates.FinanceTransactions) != 1 || duplicates.FinanceTransactions[0].ID != copyId {
 			test.Errorf("the counted copy's duplicates: %+v %v", duplicates, err)
 		}
+		// The details of a copy ask for its counted copy by id.
+		byId, err := resolver.FinanceTransactions(ctx, FinanceTransactionsArguments{FinanceTransactionIDs: []string{countedId}})
+		if err != nil || len(byId.FinanceTransactions) != 1 || byId.FinanceTransactions[0].ID != countedId {
+			test.Errorf("the counted copy by its id: %+v %v", byId, err)
+		}
+		if _, err := resolver.FinanceTransactions(ctx, FinanceTransactionsArguments{FinanceTransactionIDs: []string{" "}}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Errorf("a blank id answered %v", err)
+		}
 		if moneyOut := summaryMoneyOut(test, ctx, resolver); moneyOut != "25.0000" {
 			test.Errorf("the fee counts once: %s", moneyOut)
 		}
@@ -82,6 +90,9 @@ func TestMirroredCopiesCountOnceAndThePersonCanCountOne(test *testing.T) {
 	fixture.as(test, fixture.stranger, func(ctx context.Context, tx db.Transaction) {
 		if _, err := resolver.CountTransaction(ctx, CountTransactionArguments{FinanceTransactionID: copyId}); !errors.Is(err, api.ErrNotFound) {
 			test.Errorf("another person's transaction answered %v", err)
+		}
+		if page, err := resolver.FinanceTransactions(ctx, FinanceTransactionsArguments{FinanceTransactionIDs: []string{copyId}}); err != nil || len(page.FinanceTransactions) != 0 {
+			test.Errorf("another person's transaction by its id: %+v %v", page, err)
 		}
 	})
 }

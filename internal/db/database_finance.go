@@ -101,9 +101,10 @@ type FinanceOperation interface {
 	// sourceId is empty) are mirrored copies: on two or more different
 	// finance accounts of one Plaid finance source, every one of them an
 	// investment account, with the same day, amount, currency and
-	// description (trimmed, in any case), and all pending or all posted.
-	// One of each set is counted, the one stored first and then the one on
-	// the oldest finance account, and the rest become duplicates of it.
+	// description (trimmed, in any case), pending or posted. One of each
+	// set is counted, a posted one before a pending one, then the one
+	// stored first and then the one on the oldest finance account, and the
+	// rest become duplicates of it.
 	// Two on one account are never copies of each other. Other providers'
 	// sources and other kinds of account are not looked at, and neither is
 	// a finance transaction the person counted. A copy whose set no longer
@@ -207,6 +208,10 @@ type FinanceTransactionFilter struct {
 	// DuplicateOfTransactionID keeps only the duplicates of this finance
 	// transaction.
 	DuplicateOfTransactionID string
+
+	// FinanceTransactionIDs keeps only these finance transactions, so one
+	// can be read by its id with the same fields as a page.
+	FinanceTransactionIDs []string
 
 	// Limit is at most FinanceTransactionLimitMost; zero is
 	// FinanceTransactionLimitDefault.
@@ -713,9 +718,11 @@ func (self *transaction) applyFinanceSync(agentId, sourceId string, syncResult *
 
 // carriedDecisions is the SET list that gives the finance transaction
 // "posted" what the person decided about the pending one it became,
-// "pending": their spending category, the transfer category included,
-// only where the person decided it and has not decided again on the
-// posted one.
+// "pending": their spending category, the transfer category included, and
+// their word that a mirrored copy counts, each only where the person
+// decided it and has not decided again on the posted one. Without the
+// second, detection would mark the posted copy a duplicate again as soon
+// as the charge posted.
 const carriedDecisions = `
 	"spending_category_id" = CASE WHEN "pending"."categorized_by" = 'person' AND "posted"."categorized_by" <> 'person'
 		THEN "pending"."spending_category_id" ELSE "posted"."spending_category_id" END,
@@ -723,11 +730,16 @@ const carriedDecisions = `
 		THEN NULL ELSE "posted"."categorization_confidence" END,
 	"categorized_by" = CASE WHEN "pending"."categorized_by" = 'person' AND "posted"."categorized_by" <> 'person'
 		THEN 'person' ELSE "posted"."categorized_by" END,
+	"duplicate_of_transaction_id" = CASE WHEN "pending"."duplicate_decided_by" = 'person' AND "posted"."duplicate_decided_by" <> 'person'
+		THEN NULL ELSE "posted"."duplicate_of_transaction_id" END,
+	"duplicate_decided_by" = CASE WHEN "pending"."duplicate_decided_by" = 'person' AND "posted"."duplicate_decided_by" <> 'person'
+		THEN 'person' ELSE "posted"."duplicate_decided_by" END,
 	"modified_at" = @modified_at`
 
 // hasDecisionToCarry is true when the pending finance transaction holds a
 // decision of the person's the posted one does not have yet.
-const hasDecisionToCarry = `("pending"."categorized_by" = 'person' AND "posted"."categorized_by" <> 'person')`
+const hasDecisionToCarry = `(("pending"."categorized_by" = 'person' AND "posted"."categorized_by" <> 'person')
+	OR ("pending"."duplicate_decided_by" = 'person' AND "posted"."duplicate_decided_by" <> 'person'))`
 
 // carryPendingDecisions gives a posted finance transaction what the person
 // decided about the pending one of the same finance source it names, which
@@ -1187,6 +1199,9 @@ func (self *transaction) ListFinanceTransactions(agentId string, filter *Finance
 	if filter.DuplicateOfTransactionID != "" {
 		query = query.Where(`"duplicate_of_transaction_id" = ?`, filter.DuplicateOfTransactionID)
 	}
+	if len(filter.FinanceTransactionIDs) > 0 {
+		query = query.Where(`"id" = ANY(?::text[])`, pq.Array(filter.FinanceTransactionIDs))
+	}
 	if filter.After != "" {
 		postedOn, financeTransactionId, err := parseFinanceTransactionCursor(filter.After)
 		if err != nil {
@@ -1421,13 +1436,17 @@ func (self *transaction) DetectFinanceTransfers(agentId, sourceId, sinceDate str
 // several institutions, and a checking and a savings account of one Plaid
 // item can each be charged the same monthly fee for real.
 //
-// A pending copy goes only with pending ones and a posted copy only with
-// posted ones, so a pending fee on three accounts counts once too; the
-// posted rows that replace them are grouped when they arrive.
+// A pending copy goes with posted ones too: the copies of one charge post
+// on different syncs, and a pending copy left alone in its set while
+// another account's copy has posted would count the charge twice until
+// it posted too. A posted copy is counted before a pending one, so the
+// counted copy is never one the provider is about to replace while a
+// posted copy is there to count instead.
 //
 // The n-th of a day's repeats on one account goes with the n-th on each
-// other account, so a set never holds two of one account: a fee charged
-// twice on one account is two charges, not a copy. The counted copy is the
+// other account, posted ones numbered first, so a set never holds two of
+// one account: a fee charged twice on one account is two charges, not a
+// copy. Among posted copies, or among pending ones, the counted copy is the
 // one stored first, so a copy that arrives later never takes over; among
 // those a sync stored together, the one on the oldest account, so a source's
 // fees are counted on the same account month after month.
@@ -1443,8 +1462,8 @@ const mirroredFinanceTransactionsDecided = `WITH "scope" AS (
 		  AND "copy"."duplicate_decided_by" <> 'person' AND btrim("copy"."description") <> ''
 		  AND COALESCE("source"."specification"->>'type', '') = 'plaid'
 	), "numbered" AS (
-		SELECT *, ROW_NUMBER() OVER (PARTITION BY "finance_account_id", "is_pending", "posted_on", "amount", "currency_code", "description_key"
-			ORDER BY "created_at", "id") AS "occurrence"
+		SELECT *, ROW_NUMBER() OVER (PARTITION BY "finance_account_id", "posted_on", "amount", "currency_code", "description_key"
+			ORDER BY "is_pending", "created_at", "id") AS "occurrence"
 		FROM "scope"
 	), "ranked" AS (
 		SELECT "id",
@@ -1452,8 +1471,8 @@ const mirroredFinanceTransactionsDecided = `WITH "scope" AS (
 			COUNT(*) OVER "mirrored_set" AS "member_count",
 			bool_and("is_investment_account") OVER "mirrored_set" AS "is_every_account_investment"
 		FROM "numbered"
-		WINDOW "mirrored_set" AS (PARTITION BY "source_id", "is_pending", "posted_on", "amount", "currency_code", "description_key", "occurrence"
-			ORDER BY "created_at", "account_created_at", "finance_account_id", "id"
+		WINDOW "mirrored_set" AS (PARTITION BY "source_id", "posted_on", "amount", "currency_code", "description_key", "occurrence"
+			ORDER BY "is_pending", "created_at", "account_created_at", "finance_account_id", "id"
 			ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 	), "decided" AS (
 		SELECT "candidate"."id",

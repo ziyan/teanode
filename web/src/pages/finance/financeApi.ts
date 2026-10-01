@@ -510,10 +510,12 @@ const TRANSACTION_FIELDS = `id financeAccountId providerTransactionId postedOn t
   duplicateOfTransactionId duplicateDecidedBy createdAt modifiedAt`
 
 export const FINANCE_TRANSACTIONS = `query ($from: String, $to: String, $financeAccountId: String, $text: String,
-  $spendingCategoryId: String, $isUncategorized: Boolean, $duplicateOfTransactionId: String, $limit: Int, $after: String) {
+  $spendingCategoryId: String, $isUncategorized: Boolean, $duplicateOfTransactionId: String,
+  $financeTransactionIds: [String!], $limit: Int, $after: String) {
   FinanceTransactions(from: $from, to: $to, financeAccountId: $financeAccountId, text: $text,
     spendingCategoryId: $spendingCategoryId, isUncategorized: $isUncategorized,
-    duplicateOfTransactionId: $duplicateOfTransactionId, limit: $limit, after: $after) {
+    duplicateOfTransactionId: $duplicateOfTransactionId, financeTransactionIds: $financeTransactionIds,
+    limit: $limit, after: $after) {
     financeTransactions { ${TRANSACTION_FIELDS} }
     nextCursor
   }

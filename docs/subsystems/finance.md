@@ -293,21 +293,31 @@ one account: a fee charged twice on one account is two charges, so the
 n-th of a day's repeats on one account goes with the n-th on each other
 account. A description that is empty groups nothing.
 
-The rule is kept to where the pattern is seen, so a real charge is never
-hidden. Only Plaid: one SimpleFIN credential can reach accounts at several
+Only investment accounts within one Plaid connection are grouped, nothing
+else. Only Plaid: one SimpleFIN credential can reach accounts at several
 institutions, and the statement source's accounts are from different
 institutions, whose same-day fees are separate charges. Only investment
 accounts: a checking and a savings account of one Plaid item can each be
 charged the same monthly fee for real, so a set with any other kind of
 account in it is not mirrored at all.
 
-A pending transaction is grouped only with pending ones, and a posted one
-only with posted ones, so a pending fee on three accounts counts once
-while it is pending. When it posts, the provider replaces the pending rows
-with new posted ones; the pending rows go, and detection groups the posted
-ones.
+The rule cannot tell a mirrored copy from a genuinely identical charge on
+two such accounts: two retirement accounts of one connection each charged
+the same fee on the same day are marked too, one counted and the other a
+duplicate. "Count this one" (below) is the recourse. Copies posted on
+different days are not matched, and each counts.
 
-**The counted copy** is the one stored first, so a copy that arrives later
+A pending copy is grouped with posted ones as well as pending ones. The
+copies of one charge post on different syncs: when one account's copy
+posts, the provider replaces its pending row with a posted one, and a
+pending copy on another account grouped only with pending ones would be
+alone and count beside the posted one until it posted too. Grouped
+together, the charge counts once at every sync while its copies post.
+
+**The counted copy** is a posted one before a pending one, so while the
+copies post the posted one counts and the pending ones, which the provider
+is about to replace, are its duplicates. Among posted copies, or among
+pending ones, it is the one stored first, so a copy that arrives later
 never takes over; among those one sync stored together, the one on the
 oldest finance account (then the lowest ids), so a source's fees land on
 the same account month after month. Which account's balance moved would be
@@ -330,7 +340,8 @@ copies already stored by the same rule, so nothing waited for a sync.
 count-transaction`, the tool's `count_transaction`) says a duplicate is a
 real charge of its own: it counts, `duplicate_decided_by` is `person`,
 and detection leaves it out of every set from then on, across syncs that
-send it again or change it. Counting a transaction that is not a
+send it again or change it, and to the posted row that replaces a pending
+one it was said of. Counting a transaction that is not a
 duplicate is refused, since it counts already and taking it out of its set
 would make one of its copies count too. `UndoCountTransaction` forgets
 the person's word, and detection decides again at once. There is no "this
@@ -669,11 +680,12 @@ leaves it out.
 
 A mirrored copy stays in the Transactions list, muted, with a Duplicate
 tag and its amount struck through. Its details say "Duplicate of" the
-counted copy's account and day, which opens it (found among that day's
-transactions, since a copy and its counted copy share the day), and offer
-Count this one; one the person counted says so and offers to check for
-copies again. The counted copy's details name its duplicates the same
-way. Both actions answer with a toast.
+counted copy's account and day, which opens it (asked for by its id, with
+`FinanceTransactions(financeTransactionIds:)`), and offer Count this one;
+one the person counted says so and offers to check for copies again. The
+counted copy's details name its duplicates the same way. Both actions
+answer with a toast, and read again the list and what the open details
+show.
 
 The saving summary is a panel on Spending, for the month chosen there, above
 the month's budgets (spending budgets, then income budgets under a heading

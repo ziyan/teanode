@@ -123,6 +123,9 @@ export function FinanceTransactionsSection() {
   // duplicates) that the pages read so far may not hold.
   const [opened, setOpened] = useState<Record<string, FinanceTransaction>>({})
   const [isCounting, setIsCounting] = useState(false)
+  // Raised after the person counts a copy or takes that back, so the open
+  // details read again the copies they name.
+  const [detailsRefreshCount, setDetailsRefreshCount] = useState(0)
   const openedFrom = useRef<HTMLElement | null>(null)
   const openDetails = (row: FinanceTransaction) => {
     openedFrom.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -243,10 +246,12 @@ export function FinanceTransactionsSection() {
         UndoCountTransaction?: FinanceTransaction
       }>(isCountedByPerson ? COUNT_TRANSACTION : UNDO_COUNT_TRANSACTION, { financeTransactionId: row.id })
       const counted = answer.CountTransaction ?? answer.UndoCountTransaction
-      // One opened from another's details may be on no page read so far.
-      if (counted) setOpened((previous) => (previous[row.id] ? { ...previous, [row.id]: counted } : previous))
+      // Kept beside the pages, so its details show the answer even when
+      // no page read so far holds it, or the pages read again leave it out.
+      if (counted) setOpened((previous) => ({ ...previous, [row.id]: counted }))
       toast.done(isCountedByPerson ? t('finance.transactionCounted') : t('finance.transactionCountUndone'))
       await reloadLoadedPages()
+      setDetailsRefreshCount((previous) => previous + 1)
     } catch (caught) {
       toast.failure(caught, t('finance.failed'))
     } finally {
@@ -482,6 +487,7 @@ export function FinanceTransactionsSection() {
           financeAccounts={accountList}
           categoryOptions={spendingCategoryOptions(categoryList, categoryName, detailed.spendingCategoryId, t('finance.transferGroup'))}
           isCounting={isCounting}
+          refreshCount={detailsRefreshCount}
           onCategorize={(value) => void categorize(detailed, value)}
           onCount={() => void countThisOne(detailed, true)}
           onUndoCount={() => void countThisOne(detailed, false)}

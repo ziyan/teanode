@@ -59,8 +59,8 @@ function renderDialog(financeTransaction: FinanceTransaction, handlers: Partial<
   return { onOpenTransaction }
 }
 
-// A duplicate names the counted copy by its account and day, from that
-// day's transactions, opens it, and offers Count this one as a real
+// A duplicate names the counted copy by its account and day, asked for by
+// its id so a busy day cannot hide it, opens it, and offers Count this one as a real
 // button; its amount is struck through, and it says its spending category
 // counts for nothing while it is a duplicate.
 it('says what a duplicate mirrors and counts it on request', async () => {
@@ -73,7 +73,7 @@ it('says what a duplicate mirrors and counts it on request', async () => {
   )
   expect(screen.getByText('finance.duplicateOf')).toBeTruthy()
   const link = await screen.findByText(/finance\.copyOnAccount .*First Brokerage/)
-  expect(execute).toHaveBeenCalledWith(expect.any(String), { from: '2026-09-15', to: '2026-09-15', limit: 200 })
+  expect(execute).toHaveBeenCalledWith(expect.any(String), { financeTransactionIds: ['fee-counted'] })
   fireEvent.click(link)
   expect(onOpenTransaction).toHaveBeenCalledWith(counted)
   expect(screen.getByText('finance.duplicateCategoryNotCounted')).toBeTruthy()
@@ -124,8 +124,8 @@ function isDuplicateTagged(merchantName: string): boolean {
 // Handing a copy back to detection can make it the counted copy and the
 // one that was counted a duplicate of it, so every page read so far is
 // read again, the second page from the same cursor, and not only the row
-// clicked.
-it('reads every loaded page again after the person counts or takes it back', async () => {
+// clicked; and the open details read again the duplicates they name.
+it('reads every loaded page and the details again after the person counts or takes it back', async () => {
   window.matchMedia = ((query: string) => ({
     matches: true,
     media: query,
@@ -135,9 +135,11 @@ it('reads every loaded page again after the person counts or takes it back', asy
   const second = fee('fee-second', 'account-second', { merchantName: 'Fee on second', duplicateDecidedBy: 'person' })
   let firstPage = [second, fee('fee-first', 'account-first', { merchantName: 'Fee on first' })]
   let secondPage = [fee('fee-third', 'account-first', { merchantName: 'Fee on third', duplicateOfTransactionId: 'fee-first' })]
-  const undone = { ...second, duplicateDecidedBy: 'mirror_detection' }
+  const undone = { ...second, duplicateDecidedBy: '' }
+  let isUndone = false
   execute.mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
     if (document.includes('UndoCountTransaction')) {
+      isUndone = true
       // The copy stored first counts again, and the others are its duplicates.
       firstPage = [
         { ...second, duplicateDecidedBy: '' },
@@ -158,8 +160,8 @@ it('reads every loaded page again after the person counts or takes it back', asy
     }
     if (document.includes('FinanceAccounts')) return { FinanceAccounts: accounts }
     if (document.includes('SpendingCategories')) return { SpendingCategories: [] }
-    if (variables?.duplicateOfTransactionId || variables?.from) {
-      return { FinanceTransactions: { financeTransactions: [], nextCursor: null } }
+    if (variables?.duplicateOfTransactionId === 'fee-second') {
+      return { FinanceTransactions: { financeTransactions: isUndone ? [firstPage[1], secondPage[0]] : [], nextCursor: null } }
     }
     if (variables?.after === 'cursor-second-page') {
       return { FinanceTransactions: { financeTransactions: secondPage, nextCursor: null } }
@@ -180,6 +182,10 @@ it('reads every loaded page again after the person counts or takes it back', asy
   await waitFor(() => expect(isDuplicateTagged('Fee on first')).toBe(true))
   expect(isDuplicateTagged('Fee on third')).toBe(true)
   expect(isDuplicateTagged('Fee on second')).toBe(false)
+  // Still on the copy taken back, which counts now: its details name the
+  // two that became its duplicates, though nothing about it changed.
+  expect(await screen.findByText('finance.duplicates')).toBeTruthy()
+  expect(screen.getAllByText(/finance\.copyOnAccount .*First Brokerage/).length).toBe(2)
   expect(execute).toHaveBeenCalledWith(expect.stringContaining('UndoCountTransaction'), { financeTransactionId: 'fee-second' })
   const secondPageReads = execute.mock.calls.filter(([, variables]) => variables?.after === 'cursor-second-page')
   expect(secondPageReads.length).toBe(2)

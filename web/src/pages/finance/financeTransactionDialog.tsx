@@ -43,13 +43,16 @@ export function providerMetadataText(providerMetadata: unknown): string {
 //
 // A mirrored copy says which copy is counted, by account and day, and
 // opens it; Count this one is the person's word that it is a charge of
-// its own. The counted copy names its duplicates the same way.
+// its own. The counted copy names its duplicates the same way. Both are
+// read again whenever refreshCount changes, after the person counts a
+// copy or takes that back, since that can change which copy is counted.
 export function FinanceTransactionDialog({
   financeTransaction,
   financeAccount,
   financeAccounts,
   categoryOptions,
   isCounting,
+  refreshCount = 0,
   onCategorize,
   onCount,
   onUndoCount,
@@ -61,6 +64,7 @@ export function FinanceTransactionDialog({
   financeAccounts: FinanceAccount[]
   categoryOptions: { value: string; label: string }[]
   isCounting?: boolean
+  refreshCount?: number
   onCategorize: (spendingCategoryId: string) => void
   onCount: () => void
   onUndoCount: () => void
@@ -71,16 +75,13 @@ export function FinanceTransactionDialog({
   const words = useFinanceWords()
   const metadata = providerMetadataText(financeTransaction.providerMetadata)
   const duplicateOfTransactionId = financeTransaction.duplicateOfTransactionId ?? ''
-  // The counted copy of a duplicate, or the duplicates of a counted copy.
-  // There is no query for one transaction, but a copy and its counted copy
-  // posted on the same day, so that day's transactions hold it.
+  // The counted copy of a duplicate, asked for by its id, or the
+  // duplicates of a counted copy.
   const related = useQuery(
     async () => {
       if (duplicateOfTransactionId) {
         const answer = await graphql<{ FinanceTransactions: FinanceTransactionPage }>(FINANCE_TRANSACTIONS, {
-          from: financeTransaction.postedOn,
-          to: financeTransaction.postedOn,
-          limit: 200,
+          financeTransactionIds: [duplicateOfTransactionId],
         })
         return {
           countedCopy: answer.FinanceTransactions.financeTransactions.find((copy) => copy.id === duplicateOfTransactionId),
@@ -93,7 +94,7 @@ export function FinanceTransactionDialog({
       })
       return { countedCopy: undefined, duplicates: answer.FinanceTransactions.financeTransactions }
     },
-    [financeTransaction.id, duplicateOfTransactionId],
+    [financeTransaction.id, duplicateOfTransactionId, refreshCount],
     { refresh: false },
   )
   const countedCopy = related.data?.countedCopy

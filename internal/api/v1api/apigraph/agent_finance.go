@@ -422,6 +422,10 @@ type FinanceTransactionsArguments struct {
 	// finance transaction, its duplicates.
 	DuplicateOfTransactionID string `json:"duplicateOfTransactionId" graphapi:"nullable"`
 
+	// FinanceTransactionIDs keeps only these finance transactions, to read
+	// one by its id.
+	FinanceTransactionIDs []string `json:"financeTransactionIds" graphapi:"nullable"`
+
 	// Limit is at most 200; zero is 50. After is the nextCursor of the
 	// page before.
 	Limit *int   `json:"limit" graphapi:"nullable"`
@@ -1354,6 +1358,15 @@ func (self *graph) FinanceTransactions(ctx context.Context, arguments FinanceTra
 		FinanceAccountID: strings.TrimSpace(arguments.FinanceAccountID), Text: strings.TrimSpace(arguments.Text),
 		ProviderCategory: strings.TrimSpace(arguments.ProviderCategory), SpendingCategoryID: strings.TrimSpace(arguments.SpendingCategoryID),
 		DuplicateOfTransactionID: strings.TrimSpace(arguments.DuplicateOfTransactionID), After: strings.TrimSpace(arguments.After),
+	}
+	// A blank id is refused rather than dropped: dropping the only one
+	// would list every finance transaction instead of none.
+	for _, financeTransactionId := range arguments.FinanceTransactionIDs {
+		trimmed := strings.TrimSpace(financeTransactionId)
+		if trimmed == "" {
+			return nil, fmt.Errorf("%w: financeTransactionIds holds an empty id", api.ErrInvalidArguments)
+		}
+		filter.FinanceTransactionIDs = append(filter.FinanceTransactionIDs, trimmed)
 	}
 	if filter.From, err = dayArgument("from", arguments.From, ""); err != nil {
 		return nil, err
