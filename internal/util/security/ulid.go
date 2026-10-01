@@ -67,3 +67,13 @@ func DerivedULID(secret []byte, label string) string {
 	copy(id[:], SignString(label, secret))
 	return strings.ToLower(id.String())
 }
+
+// TimeOfULID is when an identifier was made, which a ULID carries in its
+// first ten characters; false where the identifier is not a ULID.
+func TimeOfULID(id string) (time.Time, bool) {
+	parsed, err := ulid.ParseStrict(strings.ToUpper(id))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return ulid.Time(parsed.Time()), true
+}

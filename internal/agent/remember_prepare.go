@@ -3,8 +3,11 @@ package agent
 import (
 	"context"
 	"strings"
+	"time"
 
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/security"
 )
 
 // Model calls stay outside the transactions that write pages and facts.
@@ -42,6 +45,7 @@ func (self *Agent) prepareRememberedFacts(ctx context.Context, run *Run, answer 
 		pagePath, pageKind, pageName := pageIdentity(path,
 			models.AgentNodeKind(strings.ToLower(strings.TrimSpace(wanted.NodeKind))),
 			strings.TrimSpace(wanted.NodeName))
+		happened, precision := whenHappened(run, wanted.Happened)
 		prepared = append(prepared, &preparedFact{
 			AnswerIndex: index,
 			AskedPath:   models.NormalizePath(wanted.Path),
@@ -50,8 +54,8 @@ func (self *Agent) prepareRememberedFacts(ctx context.Context, run *Run, answer 
 			// the marker whole is answering as asked.
 			MessageID: strings.Trim(strings.TrimSpace(wanted.MessageID), "[]"),
 			Quote:     strings.TrimSpace(wanted.Quote),
-			Happened:  whenHappened(run, wanted.Happened),
-			PagePath:  pagePath, PageKind: pageKind, PageName: pageName,
+			Happened:  happened, HappenedPrecision: precision,
+			PagePath: pagePath, PageKind: pageKind, PageName: pageName,
 			PageSense: self.meaningOf(ctx, agentId, "remember", pageName),
 		})
 	}
@@ -81,7 +85,7 @@ func (self *Agent) prepareRememberedEvidence(ctx context.Context, agentId string
 		ready.Fact = &models.AgentFact{
 			AgentID: agentId, NodeID: ready.Node.ID, Kind: ready.Kind,
 			Text:       ready.Text,
-			HappenedAt: ready.Happened,
+			HappenedAt: ready.Happened, HappenedPrecision: ready.HappenedPrecision,
 			Confidence: 1,
 			Evidence: []models.Evidence{{
 				Kind:  evidenceKind,
@@ -90,6 +94,10 @@ func (self *Agent) prepareRememberedEvidence(ctx context.Context, agentId string
 			}},
 			Audiences: []models.AgentAudience{models.AudienceAsk},
 		}
+		// When the source said it, so a fact says when it was learned as
+		// well as when it happened: what was known on a given day is read
+		// from this, and a fact with no date of its own still has one.
+		ready.Fact.Evidence[0].At = self.whenSaid(ctx, agentId, evidenceKind, ready.MessageID)
 		ready.Outcome = checkTheEvidence(ready.Fact, shown)
 		ready.Sense = self.meaningOf(ctx, agentId, "remember", factText(ready.Fact, ready.Node.Path, ready.Node.Name))
 	}
@@ -108,4 +116,31 @@ func (self *Agent) prepareRememberedEvidence(ctx context.Context, agentId string
 	}
 
 	return tally
+}
+
+// whenSaid is when the item a fact cites was written or said: a
+// document's date, or the time a message of a conversation was stored,
+// which its identifier carries. Nil where neither is known.
+func (self *Agent) whenSaid(ctx context.Context, agentId string, evidenceKind models.EvidenceKind, itemId string) *time.Time {
+	if itemId == "" {
+		return nil
+	}
+	if evidenceKind == models.EvidenceDocument {
+		var document *models.AgentDocument
+		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			document, err = tx.GetAgentDocument(agentId, itemId)
+			return err
+		}); err != nil || document == nil {
+			return nil
+		}
+		if document.HappenedAt != nil {
+			return document.HappenedAt
+		}
+		created := document.CreatedAt
+		return &created
+	}
+	if made, isULID := security.TimeOfULID(itemId); isULID {
+		return &made
+	}
+	return nil
 }

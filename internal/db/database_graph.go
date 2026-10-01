@@ -244,23 +244,25 @@ type agentNodeModel struct {
 func (agentNodeModel) TableName() string { return "agent_node" }
 
 type agentFactModel struct {
-	ID           string     `gorm:"column:id;primaryKey"`
-	AgentID      string     `gorm:"column:agent_id"`
-	NodeID       string     `gorm:"column:node_id"`
-	Number       int        `gorm:"column:number"`
-	Kind         string     `gorm:"column:kind"`
-	Text         string     `gorm:"column:text"`
-	HappenedAt   *time.Time `gorm:"column:happened_at"`
-	Confidence   float32    `gorm:"column:confidence"`
-	Inferred     bool       `gorm:"column:inferred"`
-	Evidence     []byte     `gorm:"column:evidence;type:jsonb"`
-	Audiences    []byte     `gorm:"column:audiences;type:jsonb"`
-	SupersededBy *string    `gorm:"column:superseded_by"`
-	Dormant      bool       `gorm:"column:dormant"`
-	UsedAt       *time.Time `gorm:"column:used_at"`
-	Version      string     `gorm:"column:version"`
-	CreatedAt    time.Time  `gorm:"column:created_at"`
-	ModifiedAt   time.Time  `gorm:"column:modified_at"`
+	ID         string     `gorm:"column:id;primaryKey"`
+	AgentID    string     `gorm:"column:agent_id"`
+	NodeID     string     `gorm:"column:node_id"`
+	Number     int        `gorm:"column:number"`
+	Kind       string     `gorm:"column:kind"`
+	Text       string     `gorm:"column:text"`
+	HappenedAt *time.Time `gorm:"column:happened_at"`
+	// HappenedPrecision is how precisely HappenedAt is known.
+	HappenedPrecision string     `gorm:"column:happened_precision"`
+	Confidence        float32    `gorm:"column:confidence"`
+	Inferred          bool       `gorm:"column:inferred"`
+	Evidence          []byte     `gorm:"column:evidence;type:jsonb"`
+	Audiences         []byte     `gorm:"column:audiences;type:jsonb"`
+	SupersededBy      *string    `gorm:"column:superseded_by"`
+	Dormant           bool       `gorm:"column:dormant"`
+	UsedAt            *time.Time `gorm:"column:used_at"`
+	Version           string     `gorm:"column:version"`
+	CreatedAt         time.Time  `gorm:"column:created_at"`
+	ModifiedAt        time.Time  `gorm:"column:modified_at"`
 }
 
 func (agentFactModel) TableName() string { return "agent_fact" }
@@ -361,7 +363,8 @@ func factToModel(fact *models.AgentFact) (*agentFactModel, error) {
 	row := &agentFactModel{
 		ID: fact.ID, AgentID: fact.AgentID, NodeID: fact.NodeID, Number: fact.Number,
 		Kind: string(fact.Kind), Text: fact.Text, HappenedAt: fact.HappenedAt,
-		Confidence: fact.Confidence, Inferred: fact.Inferred,
+		HappenedPrecision: fact.HappenedPrecision,
+		Confidence:        fact.Confidence, Inferred: fact.Inferred,
 		Evidence: encodedEvidence, Audiences: encodedAudiences,
 		Dormant: fact.Dormant, UsedAt: fact.UsedAt, Version: version.Version(),
 		CreatedAt: fact.CreatedAt, ModifiedAt: fact.ModifiedAt,
@@ -377,7 +380,8 @@ func (self *agentFactModel) toModel() (*models.AgentFact, error) {
 	fact := &models.AgentFact{
 		ID: self.ID, AgentID: self.AgentID, NodeID: self.NodeID, Number: self.Number,
 		Kind: models.AgentFactKind(self.Kind), Text: self.Text, HappenedAt: self.HappenedAt,
-		Confidence: self.Confidence, Inferred: self.Inferred, Dormant: self.Dormant,
+		HappenedPrecision: self.HappenedPrecision,
+		Confidence:        self.Confidence, Inferred: self.Inferred, Dormant: self.Dormant,
 		UsedAt: self.UsedAt, Version: self.Version,
 		CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt,
 		Evidence: []models.Evidence{}, Audiences: []models.AgentAudience{},

@@ -3,6 +3,7 @@ package models
 import (
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 )
 
@@ -51,5 +52,33 @@ func TestALongFactAndOpeningAreValid(t *testing.T) {
 	node := &AgentNode{Path: "things/shed", Kind: NodeThing, Summary: strings.Repeat("a", 20000)}
 	if err := node.Validate(); err != nil {
 		t.Errorf("a long opening: %s", err)
+	}
+}
+
+// A fact's line says when it happened as precisely as it is known, and when
+// it was learned where that adds something.
+func TestAFactLineSaysWhenItHappenedAndWhenItWasSaid(t *testing.T) {
+	day := time.Date(2023, time.January, 14, 0, 0, 0, 0, time.UTC)
+	month := time.Date(2023, time.January, 1, 0, 0, 0, 0, time.UTC)
+	said := time.Date(2023, time.January, 16, 9, 30, 0, 0, time.UTC)
+	cases := []struct {
+		fact AgentFact
+		want string
+	}{
+		{AgentFact{Text: "Went to the exhibit.", HappenedAt: &day, HappenedPrecision: HappenedDay}, "Went to the exhibit. (14 Jan 2023)"},
+		{AgentFact{Text: "Moved house.", HappenedAt: &month, HappenedPrecision: HappenedMonth}, "Moved house. (Jan 2023)"},
+		{AgentFact{Text: "Started a garden.", HappenedAt: &month, HappenedPrecision: HappenedYear}, "Started a garden. (2023)"},
+		// Recorded before the precision was: a day is shown as a day.
+		{AgentFact{Text: "Went to the exhibit.", HappenedAt: &day}, "Went to the exhibit. (14 Jan 2023)"},
+		{AgentFact{Text: "Went to the exhibit.", HappenedAt: &day, HappenedPrecision: HappenedDay,
+			Evidence: []Evidence{{Kind: EvidenceDocument, At: &said}}}, "Went to the exhibit. (14 Jan 2023, said 16 Jan 2023)"},
+		{AgentFact{Text: "Owns a stand mixer.", Evidence: []Evidence{{Kind: EvidenceConversation, At: &said}}}, "Owns a stand mixer. (said 16 Jan 2023)"},
+		{AgentFact{Text: "Went to the exhibit.", HappenedAt: &day, HappenedPrecision: HappenedDay,
+			Evidence: []Evidence{{Kind: EvidenceDocument, At: &day}}}, "Went to the exhibit. (14 Jan 2023)"},
+	}
+	for _, each := range cases {
+		if got := each.fact.Line(); got != each.want {
+			t.Errorf("%q, want %q", got, each.want)
+		}
 	}
 }
