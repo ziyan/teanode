@@ -1450,6 +1450,11 @@ One for a service metered by the call; as many as it has slots for a
 model of the person's own, where the reading is bound by nothing but the
 machine. Zero and one both mean one at a time.
 
+**`recallTokens`** — How much of a turn's prompt the pages and facts
+recall carries may take, in tokens, a third of it held for facts that no
+carried page holds. Zero resolves to `1200`, about two to four pages. More
+carries more of what recall found, on every turn.
+
 **`digestDocumentRunes`** — A bound on how much of each document a
 dream's reading is shown, in characters, from its first passage on. Zero,
 the default, reads every document whole: a call holds as many documents

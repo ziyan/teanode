@@ -541,6 +541,11 @@ type AgentLimits struct {
 	// by nothing but the machine.
 	ScanConcurrency int `yaml:"scanConcurrency,omitempty"`
 
+	// RecallTokens is how much of a turn's prompt the pages and facts
+	// recall carries may take, a third of it held for facts no page
+	// carries. Zero resolves to 1200.
+	RecallTokens int `yaml:"recallTokens,omitempty"`
+
 	// DigestDocumentRunes bounds how much of each document a dream's
 	// reading is shown, in characters, from its first passage on. Zero,
 	// the default, reads every document whole, a long one in parts of

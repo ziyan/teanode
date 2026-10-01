@@ -196,6 +196,7 @@ type ScenarioSettings struct {
 // ScenarioReport is what a run found.
 type ScenarioReport struct {
 	Scenario    string                `json:"scenario"`
+	Database    string                `json:"database,omitempty"`
 	StartedAt   time.Time             `json:"startedAt"`
 	FinishedAt  time.Time             `json:"finishedAt"`
 	Models      map[string]string     `json:"models"`
@@ -789,4 +790,64 @@ func scenarioModels(configuration *config.Configuration) map[string]string {
 		"default": named.Default, "fast": named.Fast, "scan": named.Scan, "synthesize": named.Synthesize,
 		"research": named.Research, "embedding": named.Embedding,
 	}
+}
+
+// AskScenarioAgain asks a scenario's last checkpoint again, of the graph a
+// run left in its database, with the configuration given: what a change
+// to recall or answering does to the same memory, without reading the
+// history again. Only the last checkpoint, because the graph is as it was
+// at the end of the run.
+func AskScenarioAgain(ctx context.Context, settings *ScenarioSettings) (*ScenarioStepReport, error) {
+	var last *ScenarioStep
+	for _, step := range settings.Scenario.Steps {
+		if step.StepKind == ScenarioStepCheckpoint {
+			last = step
+		}
+	}
+	if last == nil {
+		return nil, errors.New("the scenario has no checkpoint to ask")
+	}
+	configuration := *settings.Configuration
+	configuration.Agent.Enabled = true
+	configuration.Agent.Limits.DailyTokensPerAgent = 0
+	registry, err := llm.Open(&configuration.Agent)
+	if err != nil {
+		return nil, err
+	}
+	if settings.KeepRefreshTokens != nil {
+		registry.KeepRefreshTokens(settings.KeepRefreshTokens)
+	}
+	worker := New(&Settings{
+		Database: settings.Database, Storage: settings.Storage, Registry: registry,
+		Configuration: func() *config.Configuration { return &configuration },
+		Instance:      "scenario", Tick: time.Hour,
+	})
+	worker.SetOperationsFactory(func(context.Context, *models.User) (Operations, error) { return scenarioOperations{}, nil })
+	var owner *models.User
+	var found *models.Agent
+	if err := settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		if owner, err = tx.GetUserByUsername("scenario"); err != nil || owner == nil {
+			return fmt.Errorf("this database holds no scenario run: %v", err)
+		}
+		found, err = tx.GetAgentByUser(owner.ID)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	started := time.Now()
+	spent, err := scenarioCost(ctx, settings.Database, found.ID)
+	if err != nil {
+		return nil, err
+	}
+	report := &ScenarioStepReport{ID: last.ID, StepKind: last.StepKind}
+	if report.Questions, err = worker.askScenario(ctx, settings, last, owner, found); err != nil {
+		return nil, err
+	}
+	after, err := scenarioCost(ctx, settings.Database, found.ID)
+	if err != nil {
+		return nil, err
+	}
+	report.Cost, report.DurationMS = after-spent, time.Since(started).Milliseconds()
+	report.GraphCounts, err = scenarioGraphCounts(ctx, settings.Database, found.ID)
+	return report, err
 }
